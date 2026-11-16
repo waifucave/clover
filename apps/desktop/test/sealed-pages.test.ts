@@ -2,7 +2,7 @@
 // `card.*` tokens, with the escapes, and no identifier beyond the frame's own token (spec §5.5).
 import { describe, expect, test } from "bun:test";
 import { SEALED_PRESS_WORDS, buttonPage, fieldPage, sealedEscape } from "../src/main/sealed-pages";
-import type { SealedValue } from "@waifucave/clover-protocol";
+import type { SealedValue } from "@waifucave/moss-protocol";
 
 const TOKEN = "se_001abcdef";
 describe("a sealed field's page", () => {
@@ -11,10 +11,10 @@ describe("a sealed field's page", () => {
   test("the field's frame shows the sealed words, with the card's own tokens in, and nothing out", () => {
     const p = fieldPage({ cardId: "card_0a1b2c3d", token: TOKEN, field: "title", value: text, tokens: { "card.radius": "12px", "plugin.other": "x" } });
     expect(p).toContain("Run a command?");
-    expect(p).toContain('--clover-card-radius: 12px;');
+    expect(p).toContain('--moss-card-radius: 12px;');
     expect(p).not.toContain("plugin.other");
     expect(p).toContain(`data-token="${TOKEN}"`);
-    expect(p).not.toContain("cloverSealed.answer"); // a field answers nothing.
+    expect(p).not.toContain("mossSealed.answer"); // a field answers nothing.
   });
 
   test("code and lists and rows come through their own tags", () => {
@@ -42,8 +42,8 @@ describe("a sealed field's page", () => {
     expect(sealedEscape("a\nb")).toBe("a\nb");
     const tricky = fieldPage({ cardId: "card_x", token: TOKEN, field: "title", value: { type: "text", text: "x" }, tokens: { "card.font.family": "a); b { color: red }", "card.radius": "12px" } });
     // The token's value goes in only when it parses as its grammar's own run: a `;`'s own injection is dropped (S1).
-    expect(tricky).not.toContain("--clover-card-font-family:");
-    expect(tricky).toContain("--clover-card-radius: 12px;");
+    expect(tricky).not.toContain("--moss-card-font-family:");
+    expect(tricky).toContain("--moss-card-radius: 12px;");
     expect(tricky).not.toContain("{ color: red }");
   });
 });
@@ -67,7 +67,7 @@ describe("a sealed button's page", () => {
   test("a deny button takes the deny's own colours, not the approve's", () => {
     const p = buttonPage({ cardId: "card_x", token: TOKEN, option: "deny", label: "Deny", kind: "deny" });
     expect(p).toContain("seal-deny");
-    expect(p).toContain('--clover-card-deny-background');
+    expect(p).toContain('--moss-card-deny-background');
   });
 
   test("the page says the answer only once: the answering flag holds through the response", () => {

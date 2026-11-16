@@ -1,8 +1,8 @@
 // `keys.publicKey`, `keys.open` and `keys.delete` (spec §5.4 "The account token and per-computer keys", item 84): a
-// plugin of the bundled `clover` tree gets X25519 key pairs per computer, by name, whose private half never leaves the
+// plugin of the bundled `moss` tree gets X25519 key pairs per computer, by name, whose private half never leaves the
 // core. Owner: lane A.
 //
-// * **Where:** only the `clover` plugin-host process (the catalog's `where: "clover"`, which the router and the process
+// * **Where:** only the `moss` plugin-host process (the catalog's `where: "moss"`, which the router and the process
 //   check enforce): the forwarder opens webhooks sealed to its key.
 // * **Whose:** each key is its plugin's own (the plugin's id and the key's name), never another plugin's, so no
 //   capability is asked: a plugin's own keys are its own data.
@@ -14,7 +14,7 @@
 //   for a message that doesn't open. `open` never makes a key.
 // * **`delete`:** drops the pair; what was sealed to it can't be opened again.
 import { createHash } from "node:crypto";
-import { KEY_NAME_RE, KEYS_PER_PLUGIN_MAX } from "@waifucave/clover-plugin-sdk";
+import { KEY_NAME_RE, KEYS_PER_PLUGIN_MAX } from "@waifucave/moss-plugin-sdk";
 import { ContractError } from "../../contracts/common";
 import type { SecretRef, SecretStore } from "../../contracts/secret-store";
 import { BoxKey } from "../../identity/box-key";

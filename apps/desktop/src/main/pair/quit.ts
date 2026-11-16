@@ -2,8 +2,8 @@
 // computer running bots, routines or agents, Quit first says what will stop and offers Hand over and quit, which
 // releases the lease at once so another computer takes the bots (§6.4); with no other computer to take them, it says
 // they stay offline until this one is back. Pure: the question is data, which the main process shows as a native
-// dialog and the tests read. The strings move to `clover.` keys in E-M2.
-import { PairStatus } from "@waifucave/clover-protocol";
+// dialog and the tests read. The strings move to `moss.` keys in E-M2.
+import { PairStatus } from "@waifucave/moss-protocol";
 
 export type QuitChoice = "quit" | "handover" | "cancel";
 
@@ -47,5 +47,5 @@ export function quitQuestion(raw: unknown): QuitQuestion {
   const buttons: { id: QuitChoice; label: string }[] = [];
   if (status.bots.length > 0 && status.canHandOver) buttons.push({ id: "handover", label: "Hand over and quit" });
   buttons.push({ id: "quit", label: "Quit" }, { id: "cancel", label: "Cancel" });
-  return { ask: true, message: "Quit Clover?", detail: lines.join("\n\n"), buttons };
+  return { ask: true, message: "Quit MOSS?", detail: lines.join("\n\n"), buttons };
 }

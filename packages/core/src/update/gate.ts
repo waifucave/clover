@@ -1,13 +1,13 @@
 // The update's idle gate (spec §3.1: "An update waits until the daemon is between turns and no agent runs, then
 // stops the pair, installs both and starts them again", as the Sparkle gate did). An update downloads in the background
 // but installs only while nothing is busy. "Busy" is a registry each lane adds its own work to:
-//   turns       a turn in flight in any session (the Clover drivers)
+//   turns       a turn in flight in any session (the MOSS drivers)
 //   agents      a background agent still running
 //   approvals   a card waiting for an answer
 //   questions, elicitations, workflows   pending questions and URL elicitations, workflow runs
 //   …           K's runners, routines, live Bash runners and the bots register theirs (`register`, on the
 //               daemon's gate: `RunningDaemon.updateGate`)
-//   TODO(lane D): the bots' DurableSessionHost runs turns of its own, outside the Clover drivers. When it is wired
+//   TODO(lane D): the bots' DurableSessionHost runs turns of its own, outside the MOSS drivers. When it is wired
 //               into the daemon it must register its running turns here and refuse a new turn while `closed`
 //               (in `#accept`), as the drivers' pre-turn gate does.
 // The app asks over the socket (`update.status`'s `idle` and `busy`), and so does the daemon's own self-update
@@ -15,7 +15,7 @@
 //
 // Between "idle" and the stop there is a window (the steps before a restart, the app stopping its side): the gate
 // CLOSES for it (`close`), and while it is closed no new turn starts (the session drivers' pre-turn gate asks `closed`
-// and refuses with a retry: "Clover is restarting for an update"). Whoever closes it checks idle again after the
+// and refuses with a retry: "MOSS is restarting for an update"). Whoever closes it checks idle again after the
 // steps before the restart, and reopens it if work started meanwhile; a close that no restart follows reopens by
 // itself after `reopenAfterMs`, so a lost app never leaves turns refused. Once the restart is under way (the app's
 // `pair.exiting{update}` accepted, a server's binaries swapped) the gate COMMITS: closed for the rest of the process,
@@ -28,7 +28,7 @@
 // lease held here, and the new daemon renews it under the same epoch (test/update/gate.test.ts checks both).
 
 /** The message a turn refused while the gate closes is given (the drivers' and the bots' alike). */
-export const UPDATE_RESTARTING_MESSAGE = "Clover is restarting for an update; send it again in a moment";
+export const UPDATE_RESTARTING_MESSAGE = "MOSS is restarting for an update; send it again in a moment";
 
 /** A turn refused while the gate closes for a restart: typed like the drivers' (`daemon_shutting_down`, reason
  *  `update-restarting`), and a retry — nothing was appended, and the same request works once the gate reopens or the

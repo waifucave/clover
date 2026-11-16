@@ -1,7 +1,7 @@
 // `Glossary` (spec §6.8): the index built from the registry, keyword search, loads, and `glossary.query`.
 import { afterAll, describe, expect, test } from "bun:test";
-import { catalogPointDecl, type Manifest } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { catalogPointDecl, type Manifest } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { mkdirSync, mkdtempSync as makeTemp, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,14 +21,14 @@ afterAll(() => {
 const manifest = (m: Partial<Manifest>): Manifest => ({ manifest: 1, name: "P", ...m }) as Manifest;
 
 function setup() {
-  const folder = mkdtempSync(join(tmpdir(), "clover-b2-glossary-"));
+  const folder = mkdtempSync(join(tmpdir(), "moss-b2-glossary-"));
   const write = (rel: string, text: string) => {
     mkdirSync(join(folder, rel, ".."), { recursive: true });
     writeFileSync(join(folder, rel), text);
   };
   write("skills/deploy/SKILL.md", "---\nname: deploy-hetzner\ndescription: Deploy a site to a Hetzner server\n---\nUse rsync, then restart the service.\n");
   write("skills/pdf/SKILL.md", "---\nname: pdf-tools\ndescription: Read and split PDF files\n---\nUse qpdf.\n");
-  const outside = mkdtempSync(join(tmpdir(), "clover-b2-outside-"));
+  const outside = mkdtempSync(join(tmpdir(), "moss-b2-outside-"));
   writeFileSync(join(outside, "SKILL.md"), "---\nname: stolen\ndescription: outside the plugin\n---\n");
   if (process.platform !== "win32") symlinkSync(outside, join(folder, "skills", "linked"));
   const registry = new FakePluginRegistry({
@@ -79,9 +79,9 @@ describe("Glossary", () => {
     expect([loadedTools, loadedAgents]).toEqual([["mcp__ops__Restart"], ["deployer"]]);
   });
 
-  test("a plugin's skill or agent that reads as a core tool or Clover's own name is renamed, gets no exact-name boost, and its instructions say whose they are (#332's review)", () => {
-    const folder = mkdtempSync(join(tmpdir(), "clover-b2-glossary-sly-"));
-    for (const [dir, name] of [["bash", "Bash"], ["read", "Rеad"], ["clover", "C l o v e r"], ["fine", "weather"]] as const) {
+  test("a plugin's skill or agent that reads as a core tool or MOSS's own name is renamed, gets no exact-name boost, and its instructions say whose they are (#332's review)", () => {
+    const folder = mkdtempSync(join(tmpdir(), "moss-b2-glossary-sly-"));
+    for (const [dir, name] of [["bash", "Bash"], ["read", "Rеad"], ["moss", "C l o v e r"], ["fine", "weather"]] as const) {
       mkdirSync(join(folder, "skills", dir), { recursive: true });
       writeFileSync(join(folder, "skills", dir, "SKILL.md"), `---\nname: ${name}\ndescription: d\n---\nbody\n`);
     }

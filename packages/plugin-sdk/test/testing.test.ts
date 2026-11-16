@@ -24,18 +24,18 @@ describe("resolveSpot", () => {
   });
 
   test("`when.session` keeps the code-only panels to coding sessions", () => {
-    const terminal = e("clover/panel-terminal", "panel", { key: "terminal", when: { session: "coding" } });
+    const terminal = e("moss/panel-terminal", "panel", { key: "terminal", when: { session: "coding" } });
     expect(applies(terminal, { sessionKind: "coding" })).toBe(true);
     expect(applies(terminal, { sessionKind: "bot" })).toBe(false);
     expect(applies(terminal, {})).toBe(false);
   });
 
   test("the user's pick wins, for this bot first; a pick of nothing hides, except where the spot keeps the key", () => {
-    const all = [e("clover/conversation", "conversation.message", { key: "approval" }), e("fancy", "conversation.message", { key: "approval", source: "installed" })];
+    const all = [e("moss/conversation", "conversation.message", { key: "approval" }), e("fancy", "conversation.message", { key: "approval", source: "installed" })];
     const decl = { shape: "keyed" as const, keep: ["approval"] };
     expect(resolveSpot("conversation.message", decl, all, {}, "approval").entries.map((x) => x.pluginId)).toEqual(["fancy"]);
-    const picks = { lists: [], picks: [{ spot: "conversation.message", key: "approval", entry: "clover/conversation#conversation.message" }, { spot: "conversation.message", key: "approval", bot: "luna", entry: "fancy#conversation.message" }] };
-    expect(resolveSpot("conversation.message", decl, all, {}, "approval", picks).entries.map((x) => x.pluginId)).toEqual(["clover/conversation"]);
+    const picks = { lists: [], picks: [{ spot: "conversation.message", key: "approval", entry: "moss/conversation#conversation.message" }, { spot: "conversation.message", key: "approval", bot: "luna", entry: "fancy#conversation.message" }] };
+    expect(resolveSpot("conversation.message", decl, all, {}, "approval", picks).entries.map((x) => x.pluginId)).toEqual(["moss/conversation"]);
     expect(resolveSpot("conversation.message", decl, all, { bot: "luna" }, "approval", picks).entries.map((x) => x.pluginId)).toEqual(["fancy"]);
     const none = { lists: [], picks: [{ spot: "conversation.message", key: "approval", entry: null }] };
     expect(resolveSpot("conversation.message", decl, all, {}, "approval", none).entries).toHaveLength(1);

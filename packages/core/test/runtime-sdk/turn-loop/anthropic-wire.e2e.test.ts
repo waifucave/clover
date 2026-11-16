@@ -15,7 +15,7 @@ import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
 import { requestRefusal, startFakeAnthropic } from "../../../../../scripts/acceptance/fake-anthropic";
 import { FileSecretStore } from "../../../src/auth/secret-store";
 import { writeCredentialMaterial } from "../../../src/auth/credential-material";
-import { CLOVER_CREDENTIAL_INVENTORY } from "../../../src/runtime-sdk/keychain";
+import { MOSS_CREDENTIAL_INVENTORY } from "../../../src/runtime-sdk/keychain";
 import { createHostCredentialBroker } from "../../../src/runtime-sdk/host-credentials";
 import { keychainService } from "../../../src/profile";
 import { botProviderFill } from "../../../src/runtime-sdk/turn-loop/provider-fill";
@@ -29,12 +29,12 @@ const BETA = "mid-conversation-output-config-2026-07-01";
 
 describeWithEmbeddedRuntime("the Anthropic wire, through the strict fake", (spawn) => {
   test("two turns, an install, a tool turn: no request the API refuses; the leading system message carries the effort; the tool comes as a tool_addition", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a3-wire-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-a3-wire-")));
     temps.push(home);
     const KEY = "a3-wire-dummy-key";
     const fake = startFakeAnthropic({ key: KEY, writePath: join(home, "w.txt"), writeContent: "x" });
     const secrets = new FileSecretStore(join(home, "secrets.json"));
-    await writeCredentialMaterial(secrets, CLOVER_CREDENTIAL_INVENTORY.find((x) => x.provider === "anthropic")!.secretName, { kind: "api-key", key: KEY });
+    await writeCredentialMaterial(secrets, MOSS_CREDENTIAL_INVENTORY.find((x) => x.provider === "anthropic")!.secretName, { kind: "api-key", key: KEY });
     const provider = botProviderFill({ home, broker: createHostCredentialBroker({ secrets, keychainService: keychainService(undefined, home) }), secrets, settings: () => ({ providers: { anthropic: { baseUrl: fake.url } } }) as never, modelPlugins: () => undefined });
     const runner: McpRunner = { async run() { return { result: { content: [{ type: "text", text: "acceptance-echo-pong: hi" }] }, computer: "Studio" }; } };
     const servers: BotMcpServer[] = [];

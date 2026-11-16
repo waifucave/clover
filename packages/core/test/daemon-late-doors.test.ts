@@ -1,6 +1,6 @@
 // The late doors' race (try 14e: the acceptance's setup failed with "plugin.auth.list is not served yet" at load ~9,
 // and passed on a retry). The plugin registry's `plugin.auth.*`, the links' `device.*` and the bot side's `bot.*` join
-// the Clover server's handlers after the socket listens; a client that connects and says hello the instant the socket
+// the MOSS server's handlers after the socket listens; a client that connects and says hello the instant the socket
 // answers used to be told "not served yet" for them. Now such a call waits for its door. A real daemon, its late parts
 // held back on purpose (as a loaded machine's slow start does), each door called right after the hello. Temp home,
 // in-memory links; nothing opens a window.
@@ -8,7 +8,7 @@ import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/clover-protocol";
+import { MOSS_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/moss-protocol";
 import { catalogPointDecl } from "../../plugin-sdk/src/catalogs/index";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { Drivers } from "../src/bots/tests/fixtures";
@@ -52,7 +52,7 @@ const DELAY = 1_500;
 const notServed = (m: Record<string, unknown>) => /not served yet|no such method/.test(String((m["error"] as { message?: unknown } | undefined)?.message ?? ""));
 
 test("a door that joins after the socket listens is answered when it is in, never 'not served yet' in between; a door already in answers at once", async () => {
-  const home = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-a-late-doors-"))), "clover-home");
+  const home = join(realpathSync(mkdtempSync(join(tmpdir(), "moss-a-late-doors-"))), "moss-home");
   const net = new MemoryNetwork();
   daemon = await startDaemon({
     home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, appPeer: "none",
@@ -70,12 +70,12 @@ test("a door that joins after the socket listens is answered when it is in, neve
   // The instant the socket answers: hello, then every door at once.
   const t0 = Date.now();
   const app = await rpc(daemon.socketPath);
-  const hello = await app.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: [] });
+  const hello = await app.request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: [] });
   expect(hello["error"]).toBeUndefined();
   const at = (p: Promise<Record<string, unknown>>) => p.then((m) => ({ m, ms: Date.now() - t0 }));
   const [list, auth, devices, bots] = await Promise.all([
     at(app.request("plugin.list", {})),
-    at(app.request("plugin.auth.list", { id: "clover" })),
+    at(app.request("plugin.auth.list", { id: "moss" })),
     at(app.request("device.list", {})),
     at(app.request("bot.list", {})),
   ]);
@@ -90,7 +90,7 @@ test("a door that joins after the socket listens is answered when it is in, neve
   expect(devices.m["result"]).toBeDefined();
   expect(bots.m["result"]).toBeDefined();
   // Once the parts are up, a method this daemon doesn't serve answers at once.
-  await daemon.cloverParts.ready;
+  await daemon.mossParts.ready;
   const t1 = Date.now();
   const unserved = await app.request("codeAgent.send", { text: "x" });
   expect(unserved["error"]).toBeDefined();

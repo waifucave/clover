@@ -8,7 +8,7 @@
 // * a device turn (`device/speech`): the capability the turns catalog names (`audio`).
 // A `take` is a watch on the wire: its listener hears the take's events, and its watch ending (the frame gone, the
 // host process exited, the app quit, or the SDK's own leave) ends the take. The SDK makes the `Turn` from it.
-import { parseTurnName, TURN_LIMIT_MAX_MS, TURN_LIMIT_MIN_MS, TURN_NOTE_MAX, type TurnEvent, type TurnState } from "@waifucave/clover-plugin-sdk";
+import { parseTurnName, TURN_LIMIT_MAX_MS, TURN_LIMIT_MIN_MS, TURN_NOTE_MAX, type TurnEvent, type TurnState } from "@waifucave/moss-plugin-sdk";
 import { ContractError } from "../contracts/common";
 import type { PluginRecord } from "../contracts/plugin-registry";
 import { listenerArg, stringArg, type ApiCallContext, type ApiHandlers } from "../plugin-host/api/router";

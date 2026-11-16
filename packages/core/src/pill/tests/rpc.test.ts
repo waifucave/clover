@@ -2,7 +2,7 @@
 // conversation or a session through lane D's session.send, a pill.target entry's handler as the plugin's own call, and
 // only the user may send them.
 import { afterEach, describe, expect, test } from "bun:test";
-import { APP_METHODS, CLOVER_ERR, ERR, allowedMethods, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
+import { APP_METHODS, MOSS_ERR, ERR, allowedMethods, type Caller, type MethodSpec } from "@waifucave/moss-protocol";
 import type { z } from "zod";
 import { flush } from "../../contracts/fakes/clock";
 import type { Contribution } from "../../contracts/plugin-registry";
@@ -53,8 +53,8 @@ describe("user.send", () => {
     expect(allowedMethods("layer").has("user.send")).toBe(false);
     const { b, fails } = await setup();
     const words = { to: { bot: "alpha" }, text: "dim the lights", clientMessageId: "c-1" };
-    expect((await fails(words, aBot)).code).toBe(CLOVER_ERR.NOT_THE_USER);
-    expect((await fails(words, aPlugin)).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await fails(words, aBot)).code).toBe(MOSS_ERR.NOT_THE_USER);
+    expect((await fails(words, aPlugin)).code).toBe(MOSS_ERR.NOT_THE_USER);
     await b.shutdown();
   });
 
@@ -72,7 +72,7 @@ describe("user.send", () => {
     b.drivers.for("b_alpha").end();
     await flush();
     b.host.setAsleep("b_alpha", true);
-    expect((await fails({ to: { bot: "alpha" }, text: "x", clientMessageId: "c-3" })).code).toBe(CLOVER_ERR.BOT_ASLEEP);
+    expect((await fails({ to: { bot: "alpha" }, text: "x", clientMessageId: "c-3" })).code).toBe(MOSS_ERR.BOT_ASLEEP);
     b.host.setAsleep("b_alpha", false);
     await b.shutdown();
   });
@@ -112,8 +112,8 @@ describe("user.send", () => {
     const { b, call, fails, invoked } = await setup();
     expect(await call(M.userSend, { to: { target: "home#lights" }, text: "dim to 30%", clientMessageId: "c-5" })).toEqual({});
     expect(invoked).toEqual([{ pluginId: "home", handler: "lights", method: "send", args: { text: "dim to 30%", device: "studio0000000000000" }, caller: { kind: "plugin", pluginId: "home" } }]);
-    expect((await fails({ to: { target: "home#fan" }, text: "x", clientMessageId: "c-6" })).code).toBe(CLOVER_ERR.NOT_INSTALLED);
-    expect((await fails({ to: { target: "home#nothing" }, text: "x", clientMessageId: "c-7" })).code).toBe(CLOVER_ERR.NOT_INSTALLED);
+    expect((await fails({ to: { target: "home#fan" }, text: "x", clientMessageId: "c-6" })).code).toBe(MOSS_ERR.NOT_INSTALLED);
+    expect((await fails({ to: { target: "home#nothing" }, text: "x", clientMessageId: "c-7" })).code).toBe(MOSS_ERR.NOT_INSTALLED);
     expect((await fails({ to: { target: "home#lights" }, text: "x", images: [{ mediaType: "image/png", data: PNG }], clientMessageId: "c-8" })).code).toBe(ERR.INVALID_PARAMS);
     // Nothing reached a bot.
     await flush();
@@ -123,7 +123,7 @@ describe("user.send", () => {
 
   test("without a plugin host, an entry is not installed and bots still get the user's words", async () => {
     const { b, call, fails } = await setup(false);
-    expect((await fails({ to: { target: "home#lights" }, text: "x", clientMessageId: "c-9" })).code).toBe(CLOVER_ERR.NOT_INSTALLED);
+    expect((await fails({ to: { target: "home#lights" }, text: "x", clientMessageId: "c-9" })).code).toBe(MOSS_ERR.NOT_INSTALLED);
     expect(typeof (await call(M.userSend, { to: { bot: "alpha" }, text: "hi", clientMessageId: "c-10" })).seq).toBe("number");
     await b.shutdown();
   });

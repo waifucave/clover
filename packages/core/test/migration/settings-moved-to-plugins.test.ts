@@ -1,5 +1,5 @@
 // Settings that moved from the core to a plugin (the table's rows; today F1's: the speak-replies switch and each bot's
-// voice → Clover Voice's settings): moved once, each in one log line, the core's copies gone after it (only the moved
+// voice → MOSS Voice's settings): moved once, each in one log line, the core's copies gone after it (only the moved
 // keys), a value the plugin already holds never overwritten, nothing to do on a home that never had them.
 import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -13,7 +13,7 @@ import { uiSettingsFile } from "../../src/plugin-host/ui-settings";
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 const home = () => {
-  const h = mkdtempSync(join(tmpdir(), "clover-a-move-"));
+  const h = mkdtempSync(join(tmpdir(), "moss-a-move-"));
   temps.push(h);
   mkdirSync(join(h, "settings"), { recursive: true });
   mkdirSync(userLayersDir(h), { recursive: true });
@@ -21,7 +21,7 @@ const home = () => {
 };
 const json = (p: string) => JSON.parse(readFileSync(p, "utf8"));
 
-test("the speak-replies switch and each bot's voice move into Clover Voice's settings, once; the core's fields go", () => {
+test("the speak-replies switch and each bot's voice move into MOSS Voice's settings, once; the core's fields go", () => {
   const h = home();
   writeFileSync(uiSettingsFile(h), JSON.stringify({ picks: [], lists: [], appearance: "dark", voice: { speakReplies: false } }));
   writeFileSync(userLayerFile(h, "alpha"), JSON.stringify({ userLayer: 1, bot: "alpha", fields: { voice: { provider: "fish-audio", voice: "v1", model: "s2.1-pro" }, theme: "alpha#t" } }));
@@ -30,13 +30,13 @@ test("the speak-replies switch and each bot's voice move into Clover Voice's set
   const moved = moveSettingsToPlugins(h, { log: (l) => lines.push(l) });
   expect(moved.length).toBe(8);
   expect(lines).toHaveLength(8);
-  expect(lines).toContain("migration: luna's voice.provider → clover/voice's bot setting providerPlugin (clover/fish-audio)");
-  expect(lines).toContain("migration: alpha's voice.model → clover/voice's bot setting model");
-  expect(lines).toContain("migration: voice.speakReplies → clover/voice's account setting speakReplies");
-  const v = filePluginSettings(h).read("clover/voice");
+  expect(lines).toContain("migration: luna's voice.provider → moss/voice's bot setting providerPlugin (moss/fish-audio)");
+  expect(lines).toContain("migration: alpha's voice.model → moss/voice's bot setting model");
+  expect(lines).toContain("migration: voice.speakReplies → moss/voice's account setting speakReplies");
+  const v = filePluginSettings(h).read("moss/voice");
   expect(v.account).toEqual({ speakReplies: false });
   // A Fish Audio pick is tied to Fish Audio's plugin.
-  expect(v.bot).toEqual({ alpha: { providerPlugin: "clover/fish-audio", provider: "fish-audio", voice: "v1", model: "s2.1-pro" }, luna: { providerPlugin: "clover/fish-audio", provider: "fish-audio", voice: "v2" } });
+  expect(v.bot).toEqual({ alpha: { providerPlugin: "moss/fish-audio", provider: "fish-audio", voice: "v1", model: "s2.1-pro" }, luna: { providerPlugin: "moss/fish-audio", provider: "fish-audio", voice: "v2" } });
   // The core holds neither any more: ui.json keeps the rest, Alpha's layer its theme, Luna's (only a voice) is gone.
   expect(json(uiSettingsFile(h))).toEqual({ picks: [], lists: [], appearance: "dark" });
   expect(json(userLayerFile(h, "alpha")).fields).toEqual({ theme: "alpha#t" });
@@ -47,11 +47,11 @@ test("the speak-replies switch and each bot's voice move into Clover Voice's set
 
 test("a value the plugin already holds is kept; a home with nothing to move is left as it is", () => {
   const h = home();
-  filePluginSettings(h).write("clover/voice", { account: { speakReplies: true }, device: {}, bot: { alpha: { provider: "acme", voice: "mine" } } });
+  filePluginSettings(h).write("moss/voice", { account: { speakReplies: true }, device: {}, bot: { alpha: { provider: "acme", voice: "mine" } } });
   writeFileSync(uiSettingsFile(h), JSON.stringify({ picks: [], lists: [], voice: { speakReplies: false } }));
   writeFileSync(userLayerFile(h, "alpha"), JSON.stringify({ userLayer: 1, bot: "alpha", fields: { voice: { provider: "fish-audio", voice: "v1" } } }));
   moveSettingsToPlugins(h);
-  const v = filePluginSettings(h).read("clover/voice");
+  const v = filePluginSettings(h).read("moss/voice");
   expect(v.account).toEqual({ speakReplies: true });
   expect(v.bot.alpha).toEqual({ provider: "acme", voice: "mine" });
   expect(json(uiSettingsFile(h))).toEqual({ picks: [], lists: [] });

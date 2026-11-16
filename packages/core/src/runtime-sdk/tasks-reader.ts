@@ -1,7 +1,7 @@
-import type { SessionEvent, Task } from "@waifucave/clover-protocol";
+import type { SessionEvent, Task } from "@waifucave/moss-protocol";
 
 /**
- * `task.list` over the Clover leg (P8c-11, Task 2.3).
+ * `task.list` over the MOSS leg (P8c-11, Task 2.3).
  *
  * ── WHY THIS IS NOT A FILE READER, DESPITE THE BRIEF'S NAME FOR THIS FILE ───────────────────────
  *
@@ -38,7 +38,7 @@ import type { SessionEvent, Task } from "@waifucave/clover-protocol";
  * tombstone entry that `list()` would echo back.
  */
 
-/** The structural subset `tasksFromEvents`/`readCloverTasks` need from `SessionStore` — narrowed
+/** The structural subset `tasksFromEvents`/`readMossTasks` need from `SessionStore` — narrowed
  *  so this module can be unit-tested with a plain array, and so it never depends on the concrete
  *  store class for a read this simple. */
 export interface TaskEventSource {
@@ -61,10 +61,10 @@ export function tasksFromEvents(events: readonly SessionEvent[]): Task[] {
 }
 
 /** Convenience wrapper reading a session's FULL log and folding it — what `ipc/server.ts`'s
- *  `task.list` case calls when the session is on the Clover leg. A full-log read is acceptable
+ *  `task.list` case calls when the session is on the MOSS leg. A full-log read is acceptable
  *  here for the same reason `ipc/server.ts` already does one for `session_created` elsewhere
  *  (`store.read(sessionId, 0)[0]`): `task.list` is a low-frequency, human-triggered call, not a hot
  *  path, and `task_updated` rows are a small fraction of any session's log. */
-export function readCloverTasks(store: TaskEventSource, sessionId: string): Task[] {
+export function readMossTasks(store: TaskEventSource, sessionId: string): Task[] {
   return tasksFromEvents(store.read(sessionId, 0));
 }

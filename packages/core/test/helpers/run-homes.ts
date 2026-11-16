@@ -12,11 +12,11 @@
 import { existsSync } from "node:fs";
 import { buildRunHome, type RunHome, type RunHomeInput } from "../../src/runtime-sdk/host";
 import { runHomeInputFor, type RunHomeSessionFacts } from "../../src/runtime-sdk/run-home-input";
-import type { CloverLegDeps } from "../../src/runtime-sdk/session-driver";
+import type { MossLegDeps } from "../../src/runtime-sdk/session-driver";
 import type { Settings } from "../../src/settings";
 
 export interface RecordedRunHomes {
-  deps: NonNullable<CloverLegDeps["runHome"]>;
+  deps: NonNullable<MossLegDeps["runHome"]>;
   facts: RunHomeSessionFacts[];
   inputs: RunHomeInput[];
   built: RunHome[];
@@ -37,7 +37,7 @@ export function recordedRunHomes(
   const facts: RunHomeSessionFacts[] = [];
   const inputs: RunHomeInput[] = [];
   const built: RunHome[] = [];
-  const deps: NonNullable<CloverLegDeps["runHome"]> = {
+  const deps: NonNullable<MossLegDeps["runHome"]> = {
     inputFor: (f) => {
       facts.push(f);
       return runHomeInputFor({

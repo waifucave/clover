@@ -14,7 +14,7 @@
 //     (`pruneDroppedTools`), so the tool, listed again, starts at Ask and is new; a plugin's whole server goes when the plugin
 //     is uninstalled (`dropPluginServers`; a stop or a switch-off keeps the user's choices).
 //   * The Always allow / Always block a tool takes is a per-tool value only: a tool literally named `*` is refused.
-import { PLUGINS_METHODS } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS } from "@waifucave/moss-protocol";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { connectorPermissionTable, type Settings } from "../settings";
 import { setConnectorToolPermission } from "../settings";

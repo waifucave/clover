@@ -17,7 +17,7 @@
 import {
   TREE_TRANSFER, callBindingInput, canonicalJson,
   type CallBinding, type CardContent, type CardOption, type Level, type SealedValue, type TreeTransferParams,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import { plainOf } from "../approvals/strings";
 import type { CallCardRenderer } from "../contracts/approval-broker";
 
@@ -160,7 +160,7 @@ function fieldsFor(computer: string, method: string, params: unknown): { kind: C
   }
 }
 
-/** A call card's first line, in Clover's words, naming the computer whose card it is (the one that holds the call):
+/** A call card's first line, in MOSS's words, naming the computer whose card it is (the one that holds the call):
  *  the card's `title`, first in every surface's order. The computer that shows the card for it (askUser) requires
  *  exactly this line, so a paired computer can word the rest of its card but never its first line (the stage 1
  *  review). */

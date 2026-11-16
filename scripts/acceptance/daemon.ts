@@ -1,7 +1,7 @@
-// The source target's daemon for the acceptance run: `startDaemon` from this checkout, as `clover daemon run` starts it,
+// The source target's daemon for the acceptance run: `startDaemon` from this checkout, as `moss daemon run` starts it,
 // with two differences a test daemon needs:
 //   - the `app` role's caller check accepts the acceptance run itself and the processes it started directly (the
-//     driver speaks as the app, and the headless app is unsigned): `CLOVER_ACCEPTANCE_RUN_PID`. A daemon from source
+//     driver speaks as the app, and the headless app is unsigned): `MOSS_ACCEPTANCE_RUN_PID`. A daemon from source
 //     has no signed app to check against; this predicate goes to `startDaemon` as the test seam it takes
 //     (`appPeer`), never through the environment of a real daemon;
 //   - the bots' `home/<this computer>` is the run's own user folder, not this user's home;
@@ -15,14 +15,14 @@ import { MemoryNetwork } from "../../packages/core/src/links/memory-wire";
 import { USAGE_INERT } from "../../packages/core/src/usage/wiring";
 import { fakeExa, searchOnlySeam } from "./fake-exa";
 
-const runPid = Number(process.env.CLOVER_ACCEPTANCE_RUN_PID);
-const userHome = process.env.CLOVER_ACCEPTANCE_USER_HOME;
+const runPid = Number(process.env.MOSS_ACCEPTANCE_RUN_PID);
+const userHome = process.env.MOSS_ACCEPTANCE_USER_HOME;
 if (!Number.isInteger(runPid) || runPid <= 1 || userHome === undefined || userHome === "") {
   console.error("acceptance daemon: start it through scripts/acceptance/run.ts");
   process.exit(2);
 }
-if (!process.env.CLOVER_HOME || !process.env.CLOVER_TEST_KEYCHAIN) {
-  console.error("acceptance daemon: refusing to start without a temp CLOVER_HOME and a throwaway keychain file");
+if (!process.env.MOSS_HOME || !process.env.MOSS_TEST_KEYCHAIN) {
+  console.error("acceptance daemon: refusing to start without a temp MOSS_HOME and a throwaway keychain file");
   process.exit(2);
 }
 
@@ -40,8 +40,8 @@ const links = {
 // Usage-inert (packages/core/src/usage/wiring.ts): it never reads or runs the user's own Codex, Claude Code, Antigravity or
 // OpenCode, nor the plan beat, temp home or not.
 // A wait before the plugin registry opens (the cold-start step widens the window the app can connect into).
-const opening = Number(process.env.CLOVER_ACCEPTANCE_REGISTRY_DELAY_MS);
-const answering = Number(process.env.CLOVER_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS);
+const opening = Number(process.env.MOSS_ACCEPTANCE_REGISTRY_DELAY_MS);
+const answering = Number(process.env.MOSS_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS);
 // The plugins' keyed net.fetch reaches nothing outside this machine: the bundled web plugin's search host is answered
 // here by the run's fake search backend (fake-exa.ts), and any other host is refused and logged (the run fails on it).
 const exa = fakeExa();
@@ -54,13 +54,13 @@ const pluginFetch = searchOnlySeam({
   },
 }, (host) => console.error(`acceptance daemon: net.fetch to ${host} refused: the run reaches no network`),
 // The run's fake plugin index and npm registry (fake-exa.ts pluginWorldResponse): files the run writes to publish.
-process.env.CLOVER_ACCEPTANCE_PLUGIN_WORLD);
+process.env.MOSS_ACCEPTANCE_PLUGIN_WORLD);
 const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;
-// A stop cut off at its bound (CLOVER_TEST_STOP_BUDGET_MS, the capped reopen step's): the bound a slow stop hits
+// A stop cut off at its bound (MOSS_TEST_STOP_BUDGET_MS, the capped reopen step's): the bound a slow stop hits
 // (try 9's took about 20 s against the 5 s one), made short, so the process ends while the stop's tail still runs.
-const budget = Number(process.env.CLOVER_TEST_STOP_BUDGET_MS);
+const budget = Number(process.env.MOSS_TEST_STOP_BUDGET_MS);
 const stop = async (): Promise<void> => {
   if (stopping) return;
   stopping = true;
@@ -69,11 +69,11 @@ const stop = async (): Promise<void> => {
 };
 process.on("SIGTERM", () => void stop());
 process.on("SIGINT", () => void stop());
-// A daemon slow to go (CLOVER_TEST_STOP_HOLD_FILE, the reopen step's, as a test-marked core takes it in
+// A daemon slow to go (MOSS_TEST_STOP_HOLD_FILE, the reopen step's, as a test-marked core takes it in
 // packages/cli/src/main.ts): once the pair stopped (the listener already closed by the core), it holds the process, its
 // lock and its runtime until the run writes that file (once the reopened app has dialled), at most 30 s, as a daemon
 // finishing a turn's teardown does.
-const holdFile = process.env.CLOVER_TEST_STOP_HOLD_FILE;
+const holdFile = process.env.MOSS_TEST_STOP_HOLD_FILE;
 void daemon.pairStopped.then(async (why) => {
   console.error(`acceptance daemon: the pair stopped (${why})`);
   if (holdFile !== undefined && holdFile !== "") {

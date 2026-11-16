@@ -4,7 +4,7 @@ import { Database } from "bun:sqlite";
 import { openSync, closeSync, fstatSync, readSync, constants, appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
-import { HOST_WORKSPACE_EVENT_TYPES, SessionEvent, SESSION_TITLE_MAX_CHARS, type NewSessionEvent } from "@waifucave/clover-protocol";
+import { HOST_WORKSPACE_EVENT_TYPES, SessionEvent, SESSION_TITLE_MAX_CHARS, type NewSessionEvent } from "@waifucave/moss-protocol";
 import type { SessionApprovalPolicy } from "../agent/gate";
 import { hasOpenPanelTabs } from "../panel/store";
 import type { SessionDirs } from "./dirs";
@@ -247,7 +247,7 @@ export class SessionStore {
 
   /** WS-20 (review round 2, M5): `presentProviders` (`credentialPresenceFrom(secrets)`'s keys) is
    *  threaded into `migrateBareModelColumnToTags`'s own rule-5 tie-break — only the daemon boot
-   *  hook has `secrets` in hand at construction time, so every other caller (tests, `clover doctor`,
+   *  hook has `secrets` in hand at construction time, so every other caller (tests, `moss doctor`,
    *  any direct `new SessionStore(home)`) omits it and gets the same fixed-preference tie-break as
    *  before this field existed. */
   constructor(private readonly homeDir: string, private readonly storeOpts?: {
@@ -398,7 +398,7 @@ export class SessionStore {
    *  logs are rewritten only when bad lines were found, using a temp+rename atomic swap.
    *
    *  PUBLIC as of WS-16 §13 (P8a task 7): the constructor still calls it, but startup recovery's
-   *  step 1 and `clover doctor`'s `rebuild-index` repair both have to run it EXPLICITLY on a store
+   *  step 1 and `moss doctor`'s `rebuild-index` repair both have to run it EXPLICITLY on a store
    *  they already hold — recovery because "recover each store according to its ownership rules" is
    *  a step it must be able to report on, and the repair because it deletes `index.db` first. It is
    *  idempotent by construction (pass 1 resyncs known rows, pass 2 inserts unknown logs), so
@@ -1345,7 +1345,7 @@ export class SessionStore {
    *  (`canonicalSeqLine`), as the core writes its own lines. A log's readers take an over-long line's seq from its head
    *  (`log-range.ts`), so a line may never name another seq there: not a forged `{"seq":999,…,"seq":4}` (JSON.parse
    *  keeps the last key, so validation saw 4), and not an honest encoder's `{"type":…,"seq":4,…}` either, which would
-   *  leave its head without one. Lines the core's own encoder wrote, and every Clover client's, already start so and
+   *  leave its head without one. Lines the core's own encoder wrote, and every MOSS client's, already start so and
    *  stay byte for byte.
    *
    *  Re-validates contiguity and ownership INSIDE the store rather than trusting the IPC layer —

@@ -6,7 +6,7 @@
 //   cd apps/desktop && bun run scripts/browser-live-gate.ts [--out <folder>] [--section <name>] [--all]
 //
 // `--out` is the run folder (default: a new folder under the system's temp folder; nothing is written anywhere else,
-// and no Clover home, Keychain or account is touched). `--section` runs one section (macos, windows, linux-wayland,
+// and no MOSS home, Keychain or account is touched). `--section` runs one section (macos, windows, linux-wayland,
 // companion, proxy, server); `--all` lists every step whatever the OS (for the ones that need another machine).
 import { spawn } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -32,7 +32,7 @@ if (why !== undefined) {
   process.exit(1);
 }
 
-const out = flag("--out") ?? mkdtempSync(join(tmpdir(), "clover-browser-live-"));
+const out = flag("--out") ?? mkdtempSync(join(tmpdir(), "moss-browser-live-"));
 mkdirSync(out, { recursive: true });
 const section = flag("--section") as Step["section"] | undefined;
 if (section !== undefined && !(section in SECTIONS)) {
@@ -45,7 +45,7 @@ if (section !== undefined && !(section in SECTIONS)) {
 // ------------------------------------------------------------------------------------------------
 const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Live gate page</title>
 <style>body{margin:0;padding:12px;font:16px system-ui,sans-serif} #box{width:60px;height:60px;background:#c33;position:fixed;right:20px;top:20px}</style></head><body>
-<h1 id="h">Clover browser live gate</h1>
+<h1 id="h">MOSS browser live gate</h1>
 <p id="sel">select and copy this sentence</p>
 <textarea id="ime" rows="4" cols="60" placeholder="type here (IME)"></textarea><br>
 <input type="file" id="file"> <button id="popup" onclick="window.open('/popup','p')">Open same-site window</button>
@@ -94,7 +94,7 @@ async function buildApp(): Promise<{ main: string; preload: string; html: string
 
 const built = await buildApp();
 const electron = createRequire(join(root, "package.json"))("electron") as string;
-const env: NodeJS.ProcessEnv = { ...process.env, CLOVER_LIVE_SITE: site, CLOVER_LIVE_PRELOAD: built.preload, CLOVER_LIVE_HTML: built.html };
+const env: NodeJS.ProcessEnv = { ...process.env, MOSS_LIVE_SITE: site, MOSS_LIVE_PRELOAD: built.preload, MOSS_LIVE_HTML: built.html };
 delete env.ELECTRON_RUN_AS_NODE;
 // Its own user-data folder in the run folder, never the real app's; no proxy of its own (the browser sets its own).
 const child = spawn(electron, [`--user-data-dir=${join(out, "user-data")}`, "--no-proxy-server", ...(flag("--electron-arg") !== undefined ? [flag("--electron-arg")!] : []), built.main], { env, stdio: ["pipe", "pipe", "inherit"] });
@@ -204,7 +204,7 @@ async function auto(step: Step): Promise<unknown> {
 }
 
 const steps = stepsFor(process.platform, { all: argv.includes("--all"), ...(section !== undefined ? { section } : {}) });
-console.log(`\nClover browser live gate: ${steps.length} steps for ${process.platform}. The run folder is ${out}\nAnswer p (pass), f (fail) or s (skip); add a note when asked. Ctrl+C stops; what you answered is saved.\n`);
+console.log(`\nMOSS browser live gate: ${steps.length} steps for ${process.platform}. The run folder is ${out}\nAnswer p (pass), f (fail) or s (skip); add a note when asked. Ctrl+C stops; what you answered is saved.\n`);
 let currentSection = "";
 try {
   for (const step of steps) {

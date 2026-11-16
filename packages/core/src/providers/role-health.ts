@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { SessionEvent } from "@waifucave/clover-protocol";
+import type { SessionEvent } from "@waifucave/moss-protocol";
 import type { ModelRole } from "../settings";
 import { agentErrorDetail, readableFailureText } from "../projector/errors";
 

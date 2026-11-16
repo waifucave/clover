@@ -28,7 +28,7 @@ export { endpointAnswers };
 /** A daemon already holds this home and answers on its endpoint. The second daemon exits 0. */
 export class AlreadyRunningError extends Error {
   constructor(public readonly pid: number) {
-    super(`clover-core already running (pid ${pid})`);
+    super(`moss-core already running (pid ${pid})`);
   }
 }
 

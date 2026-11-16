@@ -23,23 +23,23 @@ describe("its call sites share it", () => {
     "packages/core/src/runtime-sdk/tool-display.ts",
     "packages/core/src/bots/user-layer.ts",
     "apps/desktop/src/main/ui/tree-calls.ts",
-    "plugins/clover/plugins/character/client/section.tsx",
+    "plugins/moss/plugins/character/client/section.tsx",
     // A spot entry's title, as the sidebar, the title bar and Settings show it (`fieldText`: each part's own copy, F2b).
-    "plugins/clover/plugins/bot-editor/client/local.ts",
-    "plugins/clover/plugins/character/client/local.ts",
-    "plugins/clover/plugins/composer/client/local.ts",
-    "plugins/clover/plugins/conversation/client/local.ts",
-    "plugins/clover/plugins/panel-files/client/local.ts",
-    "plugins/clover/plugins/plugin-index/client/local.ts",
-    "plugins/clover/plugins/settings/client/local.ts",
-    "plugins/clover/plugins/shell/client/local.ts",
-    "plugins/clover/plugins/sidebar/client/local.ts",
-    "plugins/clover/plugins/voice/client/local.ts",
+    "plugins/moss/plugins/bot-editor/client/local.ts",
+    "plugins/moss/plugins/character/client/local.ts",
+    "plugins/moss/plugins/composer/client/local.ts",
+    "plugins/moss/plugins/conversation/client/local.ts",
+    "plugins/moss/plugins/panel-files/client/local.ts",
+    "plugins/moss/plugins/plugin-index/client/local.ts",
+    "plugins/moss/plugins/settings/client/local.ts",
+    "plugins/moss/plugins/shell/client/local.ts",
+    "plugins/moss/plugins/sidebar/client/local.ts",
+    "plugins/moss/plugins/voice/client/local.ts",
   ];
   test("each imports the cleaner from the SDK's plain subpath and carries no copy of its character classes", () => {
     for (const site of sites) {
       const text = readFileSync(join(REPO, site), "utf8");
-      expect([site, /from "@waifucave\/clover-plugin-sdk\/plain"/.test(text)]).toEqual([site, true]);
+      expect([site, /from "@waifucave\/moss-plugin-sdk\/plain"/.test(text)]).toEqual([site, true]);
       expect([site, /\\u200b-\\u200f|\\u202a-\\u202e|\\ufff9/.test(text)]).toEqual([site, false]);
     }
   });

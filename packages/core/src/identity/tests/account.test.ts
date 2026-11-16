@@ -5,8 +5,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { verifyAccountToken } from "@waifucave/clover-service-shared/account-token";
-import { startSignInStub } from "@waifucave/clover-test-harness/signin-stub";
+import { verifyAccountToken } from "@waifucave/moss-service-shared/account-token";
+import { startSignInStub } from "@waifucave/moss-test-harness/signin-stub";
 import { isContractError } from "../../contracts/common";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { Secret } from "../../contracts/secret-store";
@@ -39,7 +39,7 @@ async function device(s: ReturnType<typeof stack>, name: string, opts: { emailSi
   const store = new MemorySecretStore();
   const key = await DeviceKey.loadOrCreate(store);
   const boxKey = await BoxKey.loadOrCreate(store);
-  const home = mkdtempSync(join(tmpdir(), "clover-h-account-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-h-account-"));
   const registry = await FileDeviceRegistry.open({ home, key, clock, self: { name, os: "macos" } });
   const account = new AccountClient({ config: { authUrl: s.auth.url, anonKey: s.auth.anonKey, serviceUrl: s.service.url, ...(opts.emailSignIn ? { emailSignInUrl: s.auth.emailSignInUrl } : {}) }, store, device: key, clock });
   stops.push(() => account.close());
@@ -49,7 +49,7 @@ async function device(s: ReturnType<typeof stack>, name: string, opts: { emailSi
 describe("the account service's statements, byte for byte with lane I's", () => {
   test("mint names the account, as services/accounts' own test vector has it", async () => {
     const { mintStatement } = await import("../account");
-    expect(new TextDecoder().decode(mintStatement("acct", "push.waifucave.com", "dev", 1793000000123))).toBe("clover-account-v1 mint\nacct\npush.waifucave.com\ndev\n1793000000123");
+    expect(new TextDecoder().decode(mintStatement("acct", "push.waifucave.com", "dev", 1793000000123))).toBe("moss-account-v1 mint\nacct\npush.waifucave.com\ndev\n1793000000123");
   });
 });
 

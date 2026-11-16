@@ -6,7 +6,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLIENT_BARE_IMPORTS, resolveShell } from "@waifucave/clover-plugin-sdk";
+import { CLIENT_BARE_IMPORTS, resolveShell } from "@waifucave/moss-plugin-sdk";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -17,7 +17,7 @@ import { pluginRegistryMethods } from "../registry-methods";
 import { pluginToolContained, pluginToolReadOnly } from "../../registry/read-only-tools";
 import { pluginHooks, type HookSession } from "../../runtime-sdk/turn-loop/hooks";
 import type { InvokeRequest } from "../../contracts/plugin-host";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { Notes, NOTE_TEXT_MAX, readNotes } from "../../../../plugin-sdk/examples/example-notes/server/notes";
 
 const EXAMPLES = join(import.meta.dir, "..", "..", "..", "..", "plugin-sdk", "examples");
@@ -34,10 +34,10 @@ const APP = { caller: { kind: "user", client: "app" } } as never;
 
 /** A second bot plugin, in a temp folder of its own: a bot and nothing else. */
 const botPlugin = (id: string): string => {
-  const dir = join(temp(`clover-d-bot-${id}-`), id);
+  const dir = join(temp(`moss-d-bot-${id}-`), id);
   mkdirSync(join(dir, "bot"), { recursive: true });
   writeFileSync(join(dir, "bot", "instructions.md"), "Be kind.\n");
-  writeFileSync(join(dir, "clover.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: "^1.0.0" }, contributes: { bot: { name: id, instructions: "bot/instructions.md" } } }));
+  writeFileSync(join(dir, "moss.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { moss: "^1.0.0" }, contributes: { bot: { name: id, instructions: "bot/instructions.md" } } }));
   return dir;
 };
 
@@ -65,9 +65,9 @@ describe("the SDK's examples install as they ship", () => {
   });
 
   test("example-notes: installed, OK'd and running with its child bot; its card names its cardless tools and no network; its two lists hold", async () => {
-    const home = temp("clover-d-examples-");
+    const home = temp("moss-d-examples-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: join(EXAMPLES, "example-notes") } }, APP)) as { id: string; state: string; treeHash: string; card?: string };
@@ -114,7 +114,7 @@ describe("the SDK's examples install as they ship", () => {
       expect(invoked.map((i) => [i.pluginId, i.handler, i.bot])).toEqual([["example-notes", "onTurnEnd", "example-notes/bot"], ["example-notes", "onTurnEnd", "example-notes/bot"]]);
       expect(readFileSync(join(EXAMPLES, "example-notes", "server", "index.ts"), "utf8")).not.toMatch(/args\??\.bot\s*!==/);
       // Its client, TSX importing React and the UI SDK, builds to the layer's imports only.
-      const built = await buildPluginModule({ entry: join(home, "plugins", "example-notes", "client", "index.tsx"), outFile: join(temp("clover-d-ex-out-"), "index.js"), side: "client" });
+      const built = await buildPluginModule({ entry: join(home, "plugins", "example-notes", "client", "index.tsx"), outFile: join(temp("moss-d-ex-out-"), "index.js"), side: "client" });
       for (const spec of built.imports) expect([spec, (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)]).toEqual([spec, true]);
     } finally {
       opened.close();
@@ -122,9 +122,9 @@ describe("the SDK's examples install as they ship", () => {
   });
 
   test("example-pngtuber: a third-party character renderer installs from its folder; its manifest holds the format it declares and its TSX builds to the layer's imports only", async () => {
-    const home = temp("clover-d-pngtuber-");
+    const home = temp("moss-d-pngtuber-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: join(EXAMPLES, "example-pngtuber") } }, APP)) as { id: string; treeHash: string };
@@ -134,7 +134,7 @@ describe("the SDK's examples install as they ship", () => {
       // is the platform's own point (no plugin declares it), so it waits for nothing; the view's `avatarFormats` is tested
       // against the part in ui.test.ts.
       expect(opened.registry.get("example-pngtuber")?.waitingFor).toEqual(["avatar"]);
-      const built = await buildPluginModule({ entry: join(home, "plugins", "example-pngtuber", "client", "index.tsx"), outFile: join(temp("clover-d-pt-out-"), "index.js"), side: "client" });
+      const built = await buildPluginModule({ entry: join(home, "plugins", "example-pngtuber", "client", "index.tsx"), outFile: join(temp("moss-d-pt-out-"), "index.js"), side: "client" });
       for (const spec of built.imports) expect([spec, (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)]).toEqual([spec, true]);
     } finally {
       opened.close();
@@ -142,9 +142,9 @@ describe("the SDK's examples install as they ship", () => {
   });
 
   test("example-weather: installed and OK'd; its card names its host and notifications, and says its readOnly and contained tools still ask; the lists don't hold", async () => {
-    const home = temp("clover-d-examples-w-");
+    const home = temp("moss-d-examples-w-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: join(EXAMPLES, "example-weather") } }, APP)) as { id: string; treeHash: string; card?: string };
@@ -152,7 +152,7 @@ describe("the SDK's examples install as they ship", () => {
       expect(text).toContain("api.example.com");
       expect(text).toContain("It sends you notifications");
       expect(text).toContain("Its server forecast says one tool only reads, but it can reach the network, so it still asks before running");
-      expect(text).toContain("Its server forecast says one tool only changes its own display, but it can reach the network or do more than read Clover's state, so it still asks before running");
+      expect(text).toContain("Its server forecast says one tool only changes its own display, but it can reach the network or do more than read MOSS's state, so it still asks before running");
       expect(text).not.toContain("runs without asking");
       expect(await opened.registry.approve(r.id, r.treeHash)).toBe("approved");
       expect(pluginToolReadOnly(opened.registry, "example-weather", "forecast", "forecast", { fenced: true })).toBe(false);
@@ -187,7 +187,7 @@ describe("the Notes example's own logic", () => {
     expect(readNotes([{ id: "n1", text: "ok", at: 1 }, { id: 2 }, "junk", null])).toEqual([{ id: "n1", text: "ok", at: 1 }]);
   });
 
-  test("Notes keeper's window skin passes Clover's own marks in both appearances (a group that fails is dropped, and the window isn't skinned)", () => {
+  test("Notes keeper's window skin passes MOSS's own marks in both appearances (a group that fails is dropped, and the window isn't skinned)", () => {
     const theme = JSON.parse(readFileSync(join(EXAMPLES, "example-notes", "plugins", "bot", "theme", "theme.json"), "utf8")) as { shell: never; tokens: Record<string, string>; dark: { tokens: Record<string, string> } };
     for (const [mode, ground] of [["light", theme.tokens["color.canvas"]!], ["dark", theme.dark.tokens["color.canvas"]!], ["light", "#FFFFFF"], ["dark", "#191919"]] as const) {
       expect([mode, ground, resolveShell(theme.shell, mode, ground).dropped]).toEqual([mode, ground, []]);
@@ -201,7 +201,7 @@ describe("the Notes example's own logic", () => {
     expect(await host.note({ text: "From the slash menu" })).toEqual({ text: "Noted: From the slash menu" });
     await host.onTurnEnd({ bot: "example-notes/bot" });
     expect(await host.ui!.list!(undefined, {} as never)).toMatchObject({ notes: [{ text: "From the slash menu" }], turns: 1 });
-    expect(JSON.parse(readFileSync(join(EXAMPLES, "example-notes", "clover.json"), "utf8")).contributes.hooks[0].scope).toBe("own-bot");
+    expect(JSON.parse(readFileSync(join(EXAMPLES, "example-notes", "moss.json"), "utf8")).contributes.hooks[0].scope).toBe("own-bot");
     host.stop();
   });
 });

@@ -2,7 +2,7 @@
 // the core once (its own synced store's keys) and shows that it was answered, which opens its layer's own connection. TSX
 // importing React and the UI SDK, with no react in the folder: each layer's import map serves them.
 import { useEffect, useState } from "react";
-import { usePluginApi, useT } from "@waifucave/clover-plugin-sdk/ui";
+import { usePluginApi, useT } from "@waifucave/moss-plugin-sdk/ui";
 
 export function AcceptanceMain() {
   const api = usePluginApi();

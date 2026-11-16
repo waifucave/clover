@@ -1,9 +1,9 @@
 // The plugin API's version and the file formats this SDK reads (spec §5.1 "Formats", §5.6).
 //
-// A plugin whose `engines.clover` range leaves out `PLUGIN_API_VERSION` is invalid, with the version it needs. A new
+// A plugin whose `engines.moss` range leaves out `PLUGIN_API_VERSION` is invalid, with the version it needs. A new
 // core point is a minor version of the plugin API (§5.3); a breaking change is a major one, with one major version of
 // deprecation notice (§14.2 item 22). Each format below is read in every version the app has shipped, and a newer one
-// is refused with "needs a newer Clover".
+// is refused with "needs a newer MOSS".
 
 /** The plugin API this SDK describes. */
 export const PLUGIN_API_VERSION = "1.0.0";
@@ -24,4 +24,4 @@ export type FormatName = keyof typeof FORMATS;
 export const CATALOG_VERSION = 1;
 
 /** The manifest's file name in a plugin folder (§5.1). */
-export const MANIFEST_FILE = "clover.json";
+export const MANIFEST_FILE = "moss.json";

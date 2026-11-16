@@ -4,7 +4,7 @@
 // could ask stays held; a watch's values go to the one connection that opened it, and it ends (with why) when the plugin
 // stops, is turned off or removed, or loses the capability, and silently when its connection closes or it is unwatched.
 import { describe, expect, test } from "bun:test";
-import { PLUGINS_EVENTS, PLUGINS_METHODS } from "@waifucave/clover-protocol";
+import { PLUGINS_EVENTS, PLUGINS_METHODS } from "@waifucave/moss-protocol";
 import type { ApiRouter } from "../../contracts/plugin-host";
 import type { PluginRecord, RegistryChange } from "../../contracts/plugin-registry";
 import { LAYER_CALL_MAX_BYTES, LAYER_FETCHES_PER_PLUGIN, LAYER_RESULT_MAX_BYTES, LAYER_WATCH_VALUE_MAX_BYTES, LAYER_WATCHES_PER_CONNECTION, pluginUi } from "../ui";
@@ -66,15 +66,15 @@ describe("a component's calls of the catalog", () => {
     w.ui.close();
   });
 
-  test("never a host-only, own-process or clover-process member, a listener member, the account token from a third party, or args past the cap", async () => {
-    const w = world({ records: { luna: {}, "clover/notifier": { source: "bundled" } } });
+  test("never a host-only, own-process or moss-process member, a listener member, the account token from a third party, or args past the cap", async () => {
+    const w = world({ records: { luna: {}, "moss/notifier": { source: "bundled" } } });
     const refused = async (pluginId: string, c: string, args: unknown[]) => ((await w.ui.methods[M.pluginLayerCall.name]!({ call: c, args }, w.conn(pluginId).ctx).catch((e: unknown) => e)) as Error).message;
     for (const c of ["secrets.get", "keys.open", "desktop.show", "ui.send", "storage.synced.set", "routines.fire", "computers.takeHold", "files.path"]) expect(await refused("luna", c, [])).toContain("exists only in a plugin's host code");
     expect(await refused("luna", "files.watch", ["home/Studio/x", null])).toContain("plugin.layer.watch");
     expect(await refused("luna", "nope", [])).toContain("isn't a call of the plugin API");
-    expect(await refused("luna", "net.fetch", ["https://api.example.com/x", {}, { auth: "waifucave" }])).toContain("only from the bundled clover tree");
+    expect(await refused("luna", "net.fetch", ["https://api.example.com/x", {}, { auth: "waifucave" }])).toContain("only from the bundled moss tree");
     // The bundled tree's own component may ask for it (the core places the account token; the page never sees it).
-    expect((await w.ui.methods[M.pluginLayerCall.name]!({ call: "net.fetch", args: ["https://api.example.com/x", {}, { auth: "waifucave" }] }, w.conn("clover/notifier").ctx) as { result: unknown }).result).toHaveProperty("$response");
+    expect((await w.ui.methods[M.pluginLayerCall.name]!({ call: "net.fetch", args: ["https://api.example.com/x", {}, { auth: "waifucave" }] }, w.conn("moss/notifier").ctx) as { result: unknown }).result).toHaveProperty("$response");
     expect(await refused("luna", "conversation.note", ["s_1", { text: "x".repeat(LAYER_CALL_MAX_BYTES) }])).toContain(`at most ${LAYER_CALL_MAX_BYTES}`);
     // A file's bytes may be bigger.
     await w.ui.methods[M.pluginLayerCall.name]!({ call: "files.write", args: ["grant:00000000-0000-0000-0000-000000000000", { $bytes: "A".repeat(LAYER_CALL_MAX_BYTES * 2) }] }, w.conn("luna").ctx);

@@ -1,7 +1,7 @@
 // Picked files (the coordinator's ruling for the owner's video-editor test, agreed with lane G): a file or folder the
 // user picked in a plugin's page is THAT plugin's to reach, through its host half's `files.*` (`grant:<uuid>` paths),
 // `files.path` for a program it starts, and its own processes' fence; nothing else of the user's comes with it, no
-// other plugin reaches it, and a grant can never be the disk, the home, Clover's folder, a secret place, a fenced place
+// other plugin reaches it, and a grant can never be the disk, the home, MOSS's folder, a secret place, a fenced place
 // or a folder holding one. Kept until the user removes it or the plugin goes.
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -9,7 +9,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { filesApiRoutes } from "../../src/computers/api";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { grantFiles, grantRefusal, pluginGrantMethods, PluginGrants } from "../../src/fence/plugin-grants";
 import { pluginFenceProfile } from "../../src/registry/plugin-fence";
 import type { CoreTree } from "../../src/tree/tree";
@@ -28,20 +28,20 @@ afterAll(() => {
   }
 });
 
-/** A user's home with a video, an export folder, secret places (Mail closed to this process) and a Clover home. */
+/** A user's home with a video, an export folder, secret places (Mail closed to this process) and a MOSS home. */
 function world() {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "grants-home-")));
   const t = { dir: home, locked: [] as string[] };
   temps.push(t);
-  const clover = join(home, ".clover");
-  for (const d of ["Movies/project", "Movies/export", ".ssh", "Library/Mail/V10", ".clover/plugins/cutter", ".clover/plugins-state"]) mkdirSync(join(home, d), { recursive: true });
+  const moss = join(home, ".moss");
+  for (const d of ["Movies/project", "Movies/export", ".ssh", "Library/Mail/V10", ".moss/plugins/cutter", ".moss/plugins-state"]) mkdirSync(join(home, d), { recursive: true });
   writeFileSync(join(home, "Movies/project/clip.mp4"), "VIDEO");
   writeFileSync(join(home, "Movies/other.mp4"), "OTHER");
   writeFileSync(join(home, ".ssh/id_ed25519"), "KEY");
   writeFileSync(join(home, ".zshrc"), "# shell");
-  const fenced = () => new CloverFence({ home, cloverHome: clover }).fencedSet();
-  const grants = new PluginGrants({ cloverHome: clover, userHome: home, fenced, installed: (id) => id === "cutter" || id === "other", now: () => 1000 });
-  return { home, clover, grants, fenced, lock: (rel: string) => { chmodSync(join(home, rel), 0o000); t.locked.push(join(home, rel)); } };
+  const fenced = () => new MossFence({ home, mossHome: moss }).fencedSet();
+  const grants = new PluginGrants({ mossHome: moss, userHome: home, fenced, installed: (id) => id === "cutter" || id === "other", now: () => 1000 });
+  return { home, moss, grants, fenced, lock: (rel: string) => { chmodSync(join(home, rel), 0o000); t.locked.push(join(home, rel)); } };
 }
 
 describe("plugin.grant.add: what a pick can be", () => {
@@ -54,23 +54,23 @@ describe("plugin.grant.add: what a pick can be", () => {
     expect(grants.list("other")).toEqual([]);
   });
 
-  test("never the disk, the home, a folder holding it, Clover's folder or anything in it, a secret place, a fenced place, or a folder holding one", () => {
-    const { home, clover, grants, lock } = world();
+  test("never the disk, the home, a folder holding it, MOSS's folder or anything in it, a secret place, a fenced place, or a folder holding one", () => {
+    const { home, moss, grants, lock } = world();
     // ~/Library/Mail is a secret place on macOS only.
     const mac = process.platform === "darwin";
     lock("Library/Mail");
     const refused = (path: string, kind: "file" | "folder" = "folder", access: "read" | "write" = "read") => {
       try { grants.add({ pluginId: "cutter", token: T4, path, kind, access }); return "added"; } catch (e) { return (e as { code?: string }).code ?? "threw"; }
     };
-    for (const p of ["/", home, dirname(home), clover, join(clover, "plugins"), join(clover, "plugins/cutter"), join(home, ".ssh"), join(home, "Library"), ...(mac ? [join(home, "Library/Mail")] : [])]) {
+    for (const p of ["/", home, dirname(home), moss, join(moss, "plugins"), join(moss, "plugins/cutter"), join(home, ".ssh"), join(home, "Library"), ...(mac ? [join(home, "Library/Mail")] : [])]) {
       expect([p, refused(p)]).toEqual([p, "refused"]);
     }
-    for (const p of [join(home, ".ssh/id_ed25519"), join(home, ".zshrc"), join(clover, "settings.json"), ...(mac ? [join(home, "Library/Mail/V10/inbox.mbox")] : [])]) {
+    for (const p of [join(home, ".ssh/id_ed25519"), join(home, ".zshrc"), join(moss, "settings.json"), ...(mac ? [join(home, "Library/Mail/V10/inbox.mbox")] : [])]) {
       expect([p, refused(p, "file", "write")]).toEqual([p, "refused"]);
     }
     // The sentence main shows.
-    expect(grantRefusal(join(home, ".ssh"), { cloverHome: clover, userHome: home })).toContain("SSH");
-    expect(grantRefusal(home, { cloverHome: clover, userHome: home })).toContain("whole home folder");
+    expect(grantRefusal(join(home, ".ssh"), { mossHome: moss, userHome: home })).toContain("SSH");
+    expect(grantRefusal(home, { mossHome: moss, userHome: home })).toContain("whole home folder");
     // An unknown plugin, a malformed token, another plugin's token.
     const add = (pluginId: string, token: string) => { try { grants.add({ pluginId, token, path: join(home, "Movies/other.mp4"), kind: "file", access: "read" }); return "added"; } catch (e) { return (e as { code?: string }).code; } };
     expect(add("stranger", T1)).toBe("refused");
@@ -83,17 +83,17 @@ describe("plugin.grant.add: what a pick can be", () => {
     expect(grants.list("cutter").map((g) => g.token)).toEqual([T1]);
   });
 
-  test("kept in the Clover home until the user removes it or the plugin goes", () => {
-    const { home, clover, grants, fenced } = world();
+  test("kept in the MOSS home until the user removes it or the plugin goes", () => {
+    const { home, moss, grants, fenced } = world();
     grants.add({ pluginId: "cutter", token: T1, path: join(home, "Movies/project/clip.mp4"), kind: "file", access: "read" });
     grants.add({ pluginId: "other", token: T2, path: join(home, "Movies/other.mp4"), kind: "file", access: "read" });
-    expect(existsSync(join(clover, "plugins-state/grants.json"))).toBe(true);
-    const again = new PluginGrants({ cloverHome: clover, userHome: home, fenced });
+    expect(existsSync(join(moss, "plugins-state/grants.json"))).toBe(true);
+    const again = new PluginGrants({ mossHome: moss, userHome: home, fenced });
     expect(again.list("cutter").map((g) => g.token)).toEqual([T1]);
     expect(again.remove("cutter", T2)).toBe(false); // not cutter's
     expect(again.remove("cutter", T1)).toBe(true);
     expect(again.dropPlugin("other")).toBe(1);
-    expect(new PluginGrants({ cloverHome: clover, userHome: home, fenced }).list("other")).toEqual([]);
+    expect(new PluginGrants({ mossHome: moss, userHome: home, fenced }).list("other")).toEqual([]);
   });
 
   test("the app's methods: adding and removing are the user's", async () => {
@@ -175,11 +175,11 @@ describe("the plugin's own processes", () => {
   });
 
   darwinTest("live under sandbox-exec: ffmpeg's stand-in reads the picked input, writes the picked output, and reaches nothing else", () => {
-    const { home, clover, grants } = world();
+    const { home, moss, grants } = world();
     grants.add({ pluginId: "cutter", token: T1, path: join(home, "Movies/project/clip.mp4"), kind: "file", access: "read" });
     grants.add({ pluginId: "cutter", token: T2, path: join(home, "Movies/cut.mp4"), kind: "file", access: "write" });
     const picked = grants.fencePaths("cutter");
-    const profile = pluginFenceProfile({ cloverHome: clover, userHome: home, read: [], write: [...picked.write], picked: picked.read, exec: "any" });
+    const profile = pluginFenceProfile({ mossHome: moss, userHome: home, read: [], write: [...picked.write], picked: picked.read, exec: "any" });
     const sh = (script: string, ...args: string[]) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", script, "sh", ...args], { encoding: "utf8" });
     const r = sh('cat "$1" > "$2"', join(home, "Movies/project/clip.mp4"), join(home, "Movies/cut.mp4"));
     expect([r.status, r.stderr]).toEqual([0, ""]);

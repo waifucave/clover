@@ -23,7 +23,7 @@
 //   `__require`, `import.meta.require`) of anything but a literal the module may import, `createRequire` outside the
 //   bundler's own `__require` shim, `process.getBuiltinModule` of `module` or of a computed name, a `Worker`,
 //   `Bun.resolve`/`Bun.resolveSync`, `import.meta.resolve` and `process.dlopen`.
-import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
+import { CLIENT_BARE_IMPORTS } from "@waifucave/moss-plugin-sdk";
 import { mkdirSync, readFileSync, renameSync } from "node:fs";
 import { isBuiltin } from "node:module";
 import { basename, dirname, extname, resolve } from "node:path";
@@ -118,7 +118,7 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
       banner: client ? `const ${DIRNAME} = "/", ${FILENAME} = "/index.js";` : `const ${DIRNAME} = import.meta.dirname, ${FILENAME} = import.meta.filename;`,
       ...(client ? { external: [...CLIENT_BARE_IMPORTS] } : {}),
       plugins: client || keepExternal === undefined ? [] : [{
-        name: "clover-keep-external",
+        name: "moss-keep-external",
         setup(build) {
           build.onResolve({ filter: /^[^./]/ }, (args) => {
             if (!isBare(args.path) || isRuntimeBuiltin(args.path)) return undefined;
@@ -189,8 +189,8 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
 }
 
 /** What a bundle's CommonJS `__dirname` and `__filename` become: the module's own, at run time. */
-const DIRNAME = "__clover_dirname";
-const FILENAME = "__clover_filename";
+const DIRNAME = "__moss_dirname";
+const FILENAME = "__moss_filename";
 
 /** Each forbidden string in `text`, by its label. */
 export function forbiddenIn(text: string, file: string, forbid: readonly Forbidden[]): string[] {

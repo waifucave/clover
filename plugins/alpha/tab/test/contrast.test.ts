@@ -7,8 +7,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BASE_THEME, readTheme, resolveTokens, tokensFor } from "../../../clover/plugins/base-theme/src/index";
-import { composite, luminance, parseHex, type Rgba } from "../../../clover/plugins/base-theme/src/contrast";
+import { BASE_THEME, readTheme, resolveTokens, tokensFor } from "../../../moss/plugins/base-theme/src/index";
+import { composite, luminance, parseHex, type Rgba } from "../../../moss/plugins/base-theme/src/contrast";
 import themeA from "../theme.json" with { type: "json" };
 import pane from "../pane.json" with { type: "json" };
 
@@ -20,8 +20,8 @@ const VARIANTS = [
   { name: "her pane", theme: themeA, over: [pane] as unknown[], css: "tab/pane.css", least: 30 },
 ] as const;
 
-/** The custom property a token paints through (`color.text.muted` -> `--clover-color-text-muted`). */
-const property = (name: string) => `--clover-${name.replace(/\./g, "-")}`;
+/** The custom property a token paints through (`color.text.muted` -> `--moss-color-text-muted`). */
+const property = (name: string) => `--moss-${name.replace(/\./g, "-")}`;
 const ratio = (a: Rgba, b: Rgba) => {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
   return (hi + 0.05) / (lo + 0.05);

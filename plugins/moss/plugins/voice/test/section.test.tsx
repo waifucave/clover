@@ -1,0 +1,140 @@
+// MOSS Voice's parts in the window: Settings › Voice ("Speak replies" in its own settings; which voice speaks is the
+// platform's one-at-a-time picker, not this section's), the section of a bot's editor (the bot's voice: the user's, or
+// the default from the plugin that brings it, with why it can't speak) and the stage's chip (speaking from the device's speech turn; its
+// press stops or mutes).
+import { fakeApi, settle, runtimeWith, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
+import type { BotRef } from "../client/local";
+import type { EntryProps } from "@waifucave/moss-plugin-sdk";
+import { afterEach, describe, expect, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { BotVoiceSection, VoiceChip, VoiceSection } from "../client";
+import type { PluginApi, PointEntry, TurnState } from "@waifucave/moss-plugin-sdk";
+
+afterEach(cleanup);
+
+/** The entry props a spot gives its component, for Alpha. */
+const alpha = { props: { bot: { id: "alpha", name: "Alpha" } } } as unknown as EntryProps<{ bot: BotRef }>;
+
+function mount(api: PluginApi, node: React.ReactNode) {
+  render(<TestLayer runtime={runtimeWith({ api: () => api })}>{node}</TestLayer>);
+}
+
+/** A fake API whose settings know bots (`key@bot`). */
+function api(o: { settings?: Record<string, unknown>; modes?: PointEntry[]; turn?: TurnState; calls?: { name: string; args: unknown }[]; byBot?: Record<string, unknown> } = {}) {
+  const a = fakeApi({ pluginId: "moss/voice", settings: o.settings ?? {}, points: { "moss.voice.modes": o.modes ?? [] } });
+  const stored = a.stored;
+  const watchers = new Set<(s: TurnState) => void>();
+  return Object.assign(a, {
+    settings: {
+      get: async <T,>(key: string, opts?: { bot?: string }) => stored.get(opts?.bot ? `${key}@${opts.bot}` : key) as T | undefined,
+      set: async (key: string, value: unknown, opts?: { bot?: string }) => void stored.set(opts?.bot ? `${key}@${opts.bot}` : key, value),
+      watch: () => () => undefined,
+    },
+    turns: { ...a.turns, state: async () => o.turn ?? { name: "device/speech", waiting: 0 }, watch: (_n: string, l: (s: TurnState) => void) => { watchers.add(l); return () => watchers.delete(l); } },
+    host: {
+      call: async (name: string, args: unknown) => {
+        const bot = (args as { bot?: string }).bot;
+        if (name === "voiceOf") {
+          const p = stored.get(`provider@${bot}`), v = stored.get(`voice@${bot}`);
+          const off = stored.get(`silent@${bot}`) === true ? { off: true } : {};
+          return typeof p === "string" && p !== "" && typeof v === "string" ? { provider: p, voice: v, from: "user", ...off } : (o.byBot?.[bot!] ?? (off.off ? off : null));
+        }
+        if (name === "setOff") { stored.set(`silent@${bot}`, (args as { off: boolean }).off ? true : null); return { ok: true }; }
+        if (name === "forget") { stored.set(`provider@${bot}`, null); stored.set(`voice@${bot}`, null); return { ok: true }; }
+        o.calls?.push({ name, args });
+        return { ok: true };
+      },
+      on: () => () => undefined,
+    },
+    turnWatchers: watchers,
+  }) as PluginApi & { stored: Map<string, unknown>; turnWatchers: Set<(s: TurnState) => void> };
+}
+
+describe("Settings › Voice", () => {
+  test("no voice picker of its own: which voice speaks is the platform's one-at-a-time picker", async () => {
+    mount(api(), <VoiceSection />);
+    await act(() => settle(6));
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+  });
+
+  test("Speak replies: on while unset; the user's click writes the plugin's own speakReplies", async () => {
+    const a = api();
+    mount(a, <VoiceSection />);
+    await act(() => settle(6));
+    const sw = screen.getByRole("switch", { name: "Speak replies" });
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    await act(async () => { fireEvent.click(sw); await settle(4); });
+    expect(a.stored.get("speakReplies")).toBe(false);
+    expect(screen.getByRole("switch", { name: "Speak replies" }).getAttribute("aria-checked")).toBe("false");
+  });
+});
+
+describe("a bot's editor: its voice", () => {
+  test("shows the bot's voice from the plugin's bot setting, and resets it to none", async () => {
+    const a = api({ settings: { "provider@alpha": "fish-audio", "voice@alpha": "abc" } });
+    mount(a, <BotVoiceSection {...alpha} />);
+    await act(() => settle(6));
+    expect(screen.getByText("abc · fish-audio")).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Reset" })); await settle(4); });
+    expect(screen.getByText("None")).toBeTruthy();
+    expect(a.stored.get("provider@alpha")).toBeNull();
+  });
+
+  test("its switch turns this one bot's voice off, as the user's own setting, and back on", async () => {
+    const a = api({ settings: { "provider@alpha": "fish-audio", "voice@alpha": "abc" } });
+    mount(a, <BotVoiceSection {...alpha} />);
+    await act(() => settle(6));
+    const sw = () => screen.getByRole("switch", { name: "Speaks its replies" });
+    expect(sw().getAttribute("aria-checked")).toBe("true");
+    await act(async () => { fireEvent.click(sw()); await settle(4); });
+    expect(a.stored.get("silent@alpha")).toBe(true);
+    expect(sw().getAttribute("aria-checked")).toBe("false");
+    await act(async () => { fireEvent.click(sw()); await settle(4); });
+    expect(a.stored.get("silent@alpha")).toBeNull();
+  });
+
+  test("the default from the plugin that brings the bot shows as such, with no reset, and says why it can't speak when its provider isn't set up", async () => {
+    const a = api({ byBot: { alpha: { provider: "fish-audio", voice: "hers", from: "bot", why: "Fish Audio isn't set up: add your key" } } });
+    mount(a, <BotVoiceSection {...alpha} />);
+    await act(() => settle(6));
+    expect(screen.getByText("hers · fish-audio")).toBeTruthy();
+    expect(screen.getByText("The bot's own default. A voice you choose takes its place.")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toBe("Fish Audio isn't set up: add your key");
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+  });
+});
+
+describe("the stage's chip", () => {
+  test("none for a bot with no voice", async () => {
+    mount(api(), <VoiceChip {...alpha} />);
+    await act(() => settle(6));
+    expect(document.querySelector("button.cl-bot-stage__chip")).toBeNull();
+  });
+
+  test("mutes and unmutes; while the bot holds the device's speech turn it stops it", async () => {
+    const calls: { name: string; args: unknown }[] = [];
+    const a = api({ settings: { "provider@alpha": "fish-audio", "voice@alpha": "abc" }, calls });
+    mount(a, <VoiceChip {...alpha} />);
+    await act(() => settle(6));
+    const chip = () => document.querySelector("button.cl-bot-stage__chip")!;
+    expect(chip().getAttribute("data-voice")).toBe("on");
+    await act(async () => { fireEvent.click(chip()); await settle(4); });
+    expect(a.stored.get("speakReplies")).toBe(false);
+    expect(chip().getAttribute("data-voice")).toBe("muted");
+    await act(async () => { fireEvent.click(chip()); await settle(4); });
+    expect(a.stored.get("speakReplies")).toBe(true);
+    await act(async () => {
+      for (const w of a.turnWatchers) w({ name: "device/speech", holder: { plugin: "moss/voice", note: "alpha", since: 0, until: 1 }, waiting: 0 });
+      await settle(2);
+    });
+    expect(chip().getAttribute("data-voice")).toBe("speaking");
+    await act(async () => { fireEvent.click(chip()); await settle(4); });
+    expect(calls).toEqual([{ name: "stop", args: { bot: "alpha" } }]);
+    // Another plugin's speech, or another bot's, isn't this bot speaking.
+    await act(async () => {
+      for (const w of a.turnWatchers) w({ name: "device/speech", holder: { plugin: "acme-voice", note: "alpha", since: 0, until: 1 }, waiting: 0 });
+      await settle(2);
+    });
+    expect(chip().getAttribute("data-voice")).toBe("on");
+  });
+});

@@ -1,5 +1,5 @@
 // Every provider a model plugin (spec §3.3, A-M2). The pieces:
-//   bundled.ts     the plugins Clover bundles, one per provider, and the six code plugins' templates
+//   bundled.ts     the plugins MOSS bundles, one per provider, and the six code plugins' templates
 //   generate.ts    their generator and the check that the committed folders match the SDK's catalog
 //   load.ts        the enabled `models` entries read from the plugin registry, built into one catalog
 //   host-adapter.ts  a code plugin's adapter through the plugin host

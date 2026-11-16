@@ -13,7 +13,7 @@ import { bearerToken } from "../../shared/account-token";
 import { verifyAccountTokenFrom } from "../../shared/jwks";
 import { b64u, fromB64u } from "../../shared/encoding";
 import { errorResponse, json, readBodyCapped, readJsonObject, TooLarge } from "../../shared/http";
-import { encodeRequestRecord, ROUTINE_ID_RE } from "../../../plugins/clover/plugins/forwarder/src/wire/envelope";
+import { encodeRequestRecord, ROUTINE_ID_RE } from "../../../plugins/moss/plugins/forwarder/src/wire/envelope";
 import {
   DEVICE_ID_RE,
   hookKeyHash,
@@ -21,7 +21,7 @@ import {
   type RoutineConflict,
   type RoutineRegistered,
   type Ticket,
-} from "../../../plugins/clover/plugins/forwarder/src/wire/protocol";
+} from "../../../plugins/moss/plugins/forwarder/src/wire/protocol";
 import type { Caller, ForwarderDO, Refusal } from "./forwarder-do";
 import { limitsFrom, type Env } from "./env";
 import { accountObject, accountTag, mintTicket, ownerHash, readTag, readTicket, TAG_RE, tagKeysFrom } from "./identity";
@@ -223,9 +223,9 @@ async function connect(request: Request, env: Env, url: URL): Promise<Response> 
   const headers = new Headers(request.headers);
   headers.delete("authorization");
   headers.delete("cookie");
-  headers.set("x-clover-device", claims.device);
-  headers.set("x-clover-nonce", claims.nonce);
-  headers.set("x-clover-ticket-expires", String(claims.expiresAt));
-  headers.set("x-clover-auth-expires", String(claims.authExpiresAt));
+  headers.set("x-moss-device", claims.device);
+  headers.set("x-moss-nonce", claims.nonce);
+  headers.set("x-moss-ticket-expires", String(claims.expiresAt));
+  headers.set("x-moss-auth-expires", String(claims.authExpiresAt));
   return env.FORWARDER.getByName(claims.object).fetch(new Request("https://forwarder.internal/connect", { method: "GET", headers }));
 }

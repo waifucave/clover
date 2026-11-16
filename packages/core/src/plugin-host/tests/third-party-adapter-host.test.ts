@@ -7,7 +7,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import type { ProviderEvent, TurnRequest } from "@waifucave/clover-provider-runtime";
 import type { SecretStore as DaemonSecretStore } from "../../auth/secret-store";
@@ -58,8 +58,8 @@ function plugin(home: string): void {
   const row = loadCatalog().models.find((m) => m.providerId === "groq")!;
   const rows = [{ ...row, key: "acme-models/acme-fast", providerId: "acme-models", upstreamId: "acme-fast", displayName: "Acme Fast", aliases: [] }];
   writeFileSync(join(folder, "catalog.json"), JSON.stringify({ catalog: 1, rows }));
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({
-    manifest: 1, id: "acme-models", name: "Acme Models", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({
+    manifest: 1, id: "acme-models", name: "Acme Models", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
     host: { entry: "host/index.js" }, capabilities: ["network:api.acme-models.test"],
     contributes: { models: [{ provider: "acme-models", name: "Acme Models", catalog: "catalog.json", auth: [{ method: "api-key", secret: "api-key", placement: { header: "x-api-key" } }], adapter: "adapter" }] },
   }));
@@ -78,7 +78,7 @@ async function text(events: AsyncIterable<ProviderEvent>): Promise<{ text: strin
 
 describe("a third-party code model plugin through a real plugin host", () => {
   test("its adapter is described and served; its turn reaches its own host with the key the user stored for it, and nothing else", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-thirdparty-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-thirdparty-")));
     temps.push(home);
     plugin(home);
     // Its provider on loopback, reached through the keyed fetch's platform-fetch seam under its declared name.
@@ -97,7 +97,7 @@ describe("a third-party code model plugin through a real plugin host", () => {
     await secrets.set({ owner: { kind: "plugin", pluginId: "acme-models" }, name: "api-key" }, "ACME-OWN-KEY");
     const slots = new DaemonStore();
     slots.values.set("groq:default", JSON.stringify({ kind: "api-key", key: "SLOT-KEY-groq" }));
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
     let started: Awaited<ReturnType<typeof startModelPlugins>> | undefined;
     try {
@@ -127,21 +127,21 @@ describe("a third-party code model plugin through a real plugin host", () => {
   }, 90_000);
 
   test("the acceptance run's fixture (scripts/acceptance/fixtures/acceptance-models), its provider on this computer: its OK names the address, and with the production fetch (no seam) it answers a turn with its stored key", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-thirdparty-fixture-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-thirdparty-fixture-")));
     temps.push(home);
     const keys: (string | null)[] = [];
     const local = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => { keys.push(req.headers.get("x-api-key")); return new Response("ACCEPTANCE-THIRDPARTY-OK"); } });
     // As the run places it (scripts/acceptance/fake-models.ts placeModelsFixture): its provider at this server's port.
     const dest = join(home, "plugins", "acceptance-models");
     cpSync(join(import.meta.dir, "..", "..", "..", "..", "..", "scripts", "acceptance", "fixtures", "acceptance-models"), dest, { recursive: true });
-    const manifest = JSON.parse(readFileSync(join(dest, "clover.json"), "utf8")) as { capabilities: string[] };
+    const manifest = JSON.parse(readFileSync(join(dest, "moss.json"), "utf8")) as { capabilities: string[] };
     manifest.capabilities = [`network:127.0.0.1:${local.port}`];
-    writeFileSync(join(dest, "clover.json"), JSON.stringify(manifest));
+    writeFileSync(join(dest, "moss.json"), JSON.stringify(manifest));
     writeFileSync(join(dest, "host", "endpoint.json"), JSON.stringify({ url: `http://127.0.0.1:${local.port}/v1/turn` }));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     await secrets.set({ owner: { kind: "plugin", pluginId: "acceptance-models" }, name: "api-key" }, "FIXTURE-KEY");
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
     let started: Awaited<ReturnType<typeof startModelPlugins>> | undefined;
     try {

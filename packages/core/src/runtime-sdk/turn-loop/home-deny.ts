@@ -1,4 +1,4 @@
-// The Clover home is default-deny for a coding session's Bash: it reads the folders it is given and nothing else.
+// The MOSS home is default-deny for a coding session's Bash: it reads the folders it is given and nothing else.
 // Owner: lane A. A coding session's list (its store, run folder, outputs and working directories) is built here by
 // `homeDenyRead`; a bot's comes from lane C's fence (`sandboxSettingsOf`).
 //
@@ -13,13 +13,13 @@
 // (bounded by the kept names' length, slower), so no list outgrows what a sandbox profile carries.
 import { lstatSync, readdirSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import { fenceLayout } from "../../fence/layout";
 import { escapeSandboxGlobPath } from "../host/run-home/settings";
 
 /** The generated config copies of a run folder or a staging root (the MCP fold with stdio servers' `env`, the
  *  official child's credentials): never readable by a runner's Bash. */
-export const CONFIG_COPY_FILES = [".clover.json", ".claude.json", ".credentials.json"] as const;
+export const CONFIG_COPY_FILES = [".moss.json", ".claude.json", ".credentials.json"] as const;
 
 const ALNUM = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz";
 /** The letters a name may start its difference from the kept names with and still be matched by a pattern. */
@@ -49,7 +49,7 @@ export function configCopyDenies(staging: { base: string; prefix: string }): str
  *  `readOwnGlobalMcpControl`); a pattern that also matches it would keep the session's MCP servers from loading. */
 export function ownHomeConfigDenies(dir: string): string[] {
   const d = escapeSandboxGlobPath(resolve(dir));
-  // A top-level copy that is a link (a run folder's `.claude.json` points at its `.clover.json`) is left to its target's
+  // A top-level copy that is a link (a run folder's `.claude.json` points at its `.moss.json`) is left to its target's
   // denial: naming it would deny the target too, past the exact spelling the runtime's own read needs.
   const isLink = (f: string) => { try { return lstatSync(join(dir, f)).isSymbolicLink(); } catch { return false; } };
   return [...CONFIG_COPY_FILES.filter((f) => !isLink(f)).map((f) => `${d}/${f}`), `${d}/backups`, ...CONFIG_COPY_FILES.map((f) => `${d}/*/**/${f}`), `${d}/*/**/backups`];

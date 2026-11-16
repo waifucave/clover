@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MODEL_MAX_BYTES, modelResponse } from "../src/main/ui/files";
 
-const dir = mkdtempSync(join(tmpdir(), "clover-model-"));
+const dir = mkdtempSync(join(tmpdir(), "moss-model-"));
 const H = { "X-Content-Type-Options": "nosniff" };
 
 describe("a bot's avatar model file", () => {

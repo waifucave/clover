@@ -1,27 +1,27 @@
 // A plugin's `onlyBackends` (spec §5.1: "A plugin may also limit itself to certain agent backends, for example only
 // Claude Code"): an agent session on a backend the list leaves out gets none of the plugin's MCP servers, skills, agent
 // definitions or hooks. Bots aren't agent backends: the list never narrows what a bot gets (its `scope` does). A
-// session Clover's own runtime drives (a bot's delegation on Clover's agent, or the user's coding session) is on the
-// in-process backend, `clover`; an ACP agent's is its backend's id (`claude-code`, `codex`, …).
-import { topPluginIdOf } from "@waifucave/clover-protocol";
+// session MOSS's own runtime drives (a bot's delegation on MOSS's agent, or the user's coding session) is on the
+// in-process backend, `moss`; an ACP agent's is its backend's id (`claude-code`, `codex`, …).
+import { topPluginIdOf } from "@waifucave/moss-protocol";
 import type { PluginRegistry } from "../../contracts/plugin-registry";
 
-/** Clover's own in-process backend (`IN_PROCESS_BACKEND_ID`, subagent-backend.ts, and the agent manager's
+/** MOSS's own in-process backend (`IN_PROCESS_BACKEND_ID`, subagent-backend.ts, and the agent manager's
  *  `HOOKED_IN_RUNTIME_BACKEND`). */
-export const CLOVER_BACKEND = "clover";
+export const MOSS_BACKEND = "moss";
 
-/** Clover's own coding agent (`clover-code`, the user's coding session): its runtime is Clover's, so its sessions are
- *  on the backend `clover` as far as a plugin's list goes (spec §5.1). */
-const CLOVER_RUNTIME_BACKENDS: ReadonlySet<string> = new Set([CLOVER_BACKEND, "clover-code"]);
+/** MOSS's own coding agent (`moss-code`, the user's coding session): its runtime is MOSS's, so its sessions are
+ *  on the backend `moss` as far as a plugin's list goes (spec §5.1). */
+const MOSS_RUNTIME_BACKENDS: ReadonlySet<string> = new Set([MOSS_BACKEND, "moss-code"]);
 
-/** The backend id a plugin's `onlyBackends` names for a session on `backend`: `clover` for Clover's own runtime. */
+/** The backend id a plugin's `onlyBackends` names for a session on `backend`: `moss` for MOSS's own runtime. */
 export function listedBackendOf(backend: string): string {
-  return CLOVER_RUNTIME_BACKENDS.has(backend) ? CLOVER_BACKEND : backend;
+  return MOSS_RUNTIME_BACKENDS.has(backend) ? MOSS_BACKEND : backend;
 }
 
 /** Whether `pluginId`'s entries reach a session of `kind` on `backend` by its `onlyBackends` (its own list, else its top
  *  plugin's). Every session but an agent's or a coding one is reached; so is every backend when there is no list. */
-export function servesBackend(registry: Pick<PluginRegistry, "get">, pluginId: string, kind: string, backend: string = CLOVER_BACKEND): boolean {
+export function servesBackend(registry: Pick<PluginRegistry, "get">, pluginId: string, kind: string, backend: string = MOSS_BACKEND): boolean {
   if (kind !== "agent" && kind !== "coding") return true;
   const own = (registry.get(pluginId)?.manifest as { onlyBackends?: unknown } | undefined)?.onlyBackends;
   const list = own ?? (registry.get(topPluginIdOf(pluginId))?.manifest as { onlyBackends?: unknown } | undefined)?.onlyBackends;
@@ -33,7 +33,7 @@ export function servesBackend(registry: Pick<PluginRegistry, "get">, pluginId: s
 export type PluginScope = "bots" | "agents" | "both" | "own-bot";
 
 /** A session as the scope rule reads it: its kind, and its bot (a bot's own session's, or the bot whose delegation an
- *  `agent` session is). In Clover an `agent` session is always a bot's delegation (the agent manager's); a session the
+ *  `agent` session is). In MOSS an `agent` session is always a bot's delegation (the agent manager's); a session the
  *  user started is `coding`. */
 export interface ScopeSession {
   kind: string;

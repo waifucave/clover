@@ -1,6 +1,6 @@
 # link
 
-`clover-link`, clover-core's link sidecar (spec §8.2, lane H). Spike S1 chose iroh 1.4.1 driven from a sidecar over a napi binding (docs/research/2026-11-05-s1-transport.md); `native/link-sidecar/` keeps the spike's prototype, and this is the one the core ships with.
+`moss-link`, moss-core's link sidecar (spec §8.2, lane H). Spike S1 chose iroh 1.4.1 driven from a sidecar over a napi binding (docs/research/2026-11-05-s1-transport.md); `native/link-sidecar/` keeps the spike's prototype, and this is the one the core ships with.
 
 ## What it does
 
@@ -28,7 +28,7 @@ Frames go both ways: a big-endian u32 length, then that many bytes. The first by
 
 ```sh
 cargo build --release --locked --manifest-path native/link/Cargo.toml
-cd packages/core && bun test src/links/tests/sidecar.test.ts   # or CLOVER_LINK_BIN=<path> for another build
+cd packages/core && bun test src/links/tests/sidecar.test.ts   # or MOSS_LINK_BIN=<path> for another build
 ```
 
 CI's `link` job (`.github/workflows/ci.yml`; its macOS leg is in the `macos` job) builds it on macOS, Windows and Linux (x64 and arm64) and runs the core's link tests over it on loopback. The relay is off and the endpoints bind 127.0.0.1, so nothing leaves the runner.
@@ -44,4 +44,4 @@ It needs no files, no other network access and no other process. Lane C's fence 
 
 ## How it ships
 
-Beside the daemon, in the app's `resources/daemon/` (`clover-link`, `clover-link.exe` on Windows), where the daemon looks for it (`packages/core/src/links/sidecar-binary.ts`: beside its own executable, never from the environment or the PATH, since the sidecar is handed the device key). `scripts/build-packages.ts` builds it with `cargo build --release --locked` for the machine it is on and stages it with the daemon; the Linux packages' check holds them to it (`rwxr-xr-x`, root's). Release signing (macOS's Developer ID and notarization, Windows' Authenticode) is M2's, with the daemon's.
+Beside the daemon, in the app's `resources/daemon/` (`moss-link`, `moss-link.exe` on Windows), where the daemon looks for it (`packages/core/src/links/sidecar-binary.ts`: beside its own executable, never from the environment or the PATH, since the sidecar is handed the device key). `scripts/build-packages.ts` builds it with `cargo build --release --locked` for the machine it is on and stages it with the daemon; the Linux packages' check holds them to it (`rwxr-xr-x`, root's). Release signing (macOS's Developer ID and notarization, Windows' Authenticode) is M2's, with the daemon's.

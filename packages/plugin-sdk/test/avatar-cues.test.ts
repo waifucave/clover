@@ -14,8 +14,8 @@ describe("the avatar cues", () => {
   });
 
   test("a renderer's report keeps only the catalog's capabilities and clean names", () => {
-    const r = cleanAvatarReport({ format: "live2d", renderer: "clover/live2d", capabilities: ["expressions", "juggling", "expressions"], names: { expressions: ["a", "a", "", "b"], motions: [], outfits: [{ name: "hat", on: false }, { name: "hat", on: true }, { name: 3 }] } });
-    expect(r).toEqual({ format: "live2d", renderer: "clover/live2d", capabilities: ["expressions"], names: { expressions: ["a", "b"], motions: [], outfits: [{ name: "hat", on: false }] } });
+    const r = cleanAvatarReport({ format: "live2d", renderer: "moss/live2d", capabilities: ["expressions", "juggling", "expressions"], names: { expressions: ["a", "a", "", "b"], motions: [], outfits: [{ name: "hat", on: false }, { name: "hat", on: true }, { name: 3 }] } });
+    expect(r).toEqual({ format: "live2d", renderer: "moss/live2d", capabilities: ["expressions"], names: { expressions: ["a", "b"], motions: [], outfits: [{ name: "hat", on: false }] } });
     expect(cleanAvatarReport({ format: "", renderer: "x" })).toBeUndefined();
     expect(cleanAvatarReport(null)).toBeUndefined();
   });

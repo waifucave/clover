@@ -136,7 +136,7 @@ test("an idle session running background work is left until it ends, unless its 
 });
 
 test("the internal jobs' provider is built again when what the model plugins give ITS provider moves (their coming up, its own plugin changing), and kept on another provider's change", async () => {
-  const secrets = new FileSecretStore(mkdtempSync(join(tmpdir(), "clover-a-catalog-change-")));
+  const secrets = new FileSecretStore(mkdtempSync(join(tmpdir(), "moss-a-catalog-change-")));
   await writeCredentialMaterial(secrets, "deepseek:default", { kind: "api-key", key: "sk-deepseek" });
   const view = createInternalProviderView({ secrets, log: () => {} });
   await view.refresh();

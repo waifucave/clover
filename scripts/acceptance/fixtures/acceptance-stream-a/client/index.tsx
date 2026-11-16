@@ -4,7 +4,7 @@
 // half's "go-up" event opens "up" to its host half and writes `bytes` of seed 2 (it reports what it wrote). The host half
 // counts what it read: the run compares the two ends.
 import { useEffect, useState } from "react";
-import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
+import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 
 /** Bytes `from`..`from + n` of the stream of `seed`: the same function in every half. */
 function gen(seed: number, from: number, n: number): Uint8Array {

@@ -11,18 +11,18 @@
 //   bin) runs through `cmd.exe` (`spawnPlan`), since `node:child_process` won't start one without a shell. The job is also
 //   the bridge's caller check there (`contains`), since a Windows process tree proves nothing.
 // * Its environment comes from an allow-list (edit 4): a small base set every program needs, plus the names the
-//   backend's quirks allow and set. Nothing named `CLOVER_*` from the daemon's own environment passes. The bridge
-//   entry's `env` at `session/new` is the one place Clover's names reach the agent: the token, the session id, and the
-//   bridge socket's path, which names the Clover home's run folder (the fence denies that folder to the agent).
+//   backend's quirks allow and set. Nothing named `MOSS_*` from the daemon's own environment passes. The bridge
+//   entry's `env` at `session/new` is the one place MOSS's names reach the agent: the token, the session id, and the
+//   bridge socket's path, which names the MOSS home's run folder (the fence denies that folder to the agent).
 // * Nothing it runs may open a window: `windowsHide`, and its stdio are pipes. Its stderr goes to the transcript,
 //   which redacts the bridge's token.
 // * Stop: the caller cancels first (`session/cancel`); then SIGTERM to the group, a grace period, SIGKILL. Both agents
 //   S5 measured exited on SIGTERM.
 import { spawn, type ChildProcess } from "node:child_process";
-import { noteSpawned } from "../../auth/clover-caller";
+import { noteSpawned } from "../../auth/moss-caller";
 import { descendantsOf, readProcessTable, type ProcessTableReader } from "./table";
 
-/** What every program needs to run, on each OS: no secrets, no Clover paths. */
+/** What every program needs to run, on each OS: no secrets, no MOSS paths. */
 export const BASE_ENV_ALLOW: readonly string[] = [
   "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TZ", "TMPDIR", "TERM",
   // Windows
@@ -33,8 +33,8 @@ export const BASE_ENV_ALLOW: readonly string[] = [
   "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
 ];
 
-/** Builds an agent's environment from the allow-list (S5 edit 4). `LC_*` passes with the locale. Names Clover owns
- *  (`CLOVER_*`) never pass, whatever a backend's quirks list. */
+/** Builds an agent's environment from the allow-list (S5 edit 4). `LC_*` passes with the locale. Names MOSS owns
+ *  (`MOSS_*`) never pass, whatever a backend's quirks list. */
 export function buildAgentEnv(
   allow: readonly string[],
   set: Readonly<Record<string, string>>,
@@ -44,12 +44,12 @@ export function buildAgentEnv(
   const lower = new Map([...names].map((n) => [n.toLowerCase(), n]));
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(base)) {
-    if (value === undefined || /^CLOVER_/i.test(name)) continue;
+    if (value === undefined || /^MOSS_/i.test(name)) continue;
     // Windows names are case-insensitive (`Path`).
     const allowed = names.has(name) || /^LC_[A-Z_]+$/.test(name) || (process.platform === "win32" && lower.has(name.toLowerCase()));
     if (allowed) env[name] = value;
   }
-  for (const [name, value] of Object.entries(set)) if (!/^CLOVER_/i.test(name)) env[name] = value;
+  for (const [name, value] of Object.entries(set)) if (!/^MOSS_/i.test(name)) env[name] = value;
   return env;
 }
 

@@ -6,8 +6,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../../src/contracts/fakes/approval-broker";
 import { FakeClock } from "../../../src/contracts/fakes/clock";
 import { MemorySecretStore } from "../../../src/contracts/fakes/secret-store";
@@ -35,14 +35,14 @@ const temp = (prefix: string) => {
 const NASTY = `it's "eu" $(touch PWNED_OPT) \`touch PWNED_OPT2\` a  b * c\nsecond line; touch PWNED_OPT3`;
 
 async function world() {
-  // A home whose path has a `*` (a Clover home may hold no space: Bun's options can't carry one, `ensurePluginRunFiles`):
+  // A home whose path has a `*` (a MOSS home may hold no space: Bun's options can't carry one, `ensurePluginRunFiles`):
   // every path the hooks get must stay one word, unglobbed. A plugin folder with spaces is tried below (a dev folder).
-  const home = temp("clover-hook*inj-");
+  const home = temp("moss-hook*inj-");
   const userHome = join(home, "user");
   mkdirSync(userHome, { recursive: true });
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const secrets = new MemorySecretStore();
-  const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+  const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
   const methods = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, secrets });
   const settings = new PluginSettings({ registry: opened.registry, backend: filePluginSettings(home), secrets });
   const approve = async (id: string, card: string | undefined) => {
@@ -54,7 +54,7 @@ async function world() {
       const off = opened.registry.watch(() => { if (done()) { off(); resolve(); } });
     });
   };
-  const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], fence: { userHome } };
+  const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { mossHome: home }), shared: [], fence: { userHome } };
   const skipped: string[] = [];
   const hooks = pluginHooks({
     registry: opened.registry,
@@ -72,7 +72,7 @@ darwinDescribe("a hook's stdin is data, never a script (the real fenced door)", 
   test("a wrapped Claude Code plugin's PostToolUse hook: its own script runs and reads the input as data; nothing in the input or its option runs", async () => {
     const w = await world();
     try {
-      const src = join(temp("clover-hookinj-src-"), "logger");
+      const src = join(temp("moss-hookinj-src-"), "logger");
       mkdirSync(join(src, ".claude-plugin"), { recursive: true });
       mkdirSync(join(src, "hooks"), { recursive: true });
       writeFileSync(join(src, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "logger", userConfig: { region: { type: "string", title: "Region", default: NASTY } } }));
@@ -123,8 +123,8 @@ darwinDescribe("a hook's stdin is data, never a script (the real fenced door)", 
     try {
       const root = join(w.home, "plugins", "native");
       mkdirSync(root, { recursive: true });
-      writeFileSync(join(root, "clover.json"), JSON.stringify({
-        manifest: 1, id: "native", name: "Native", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+      writeFileSync(join(root, "moss.json"), JSON.stringify({
+        manifest: 1, id: "native", name: "Native", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
         settings: { label: { type: "string", title: "Label", default: NASTY } },
         contributes: { hooks: [
           { id: "log", on: ["tool.after"], tools: ["WebFetch"], command: "${plugin}/log.sh", args: ["${setting:label}", "${data}"] },
@@ -159,8 +159,8 @@ darwinDescribe("a hook's stdin is data, never a script (the real fenced door)", 
       const root = join(w.home, "plugins", "bare");
       mkdirSync(root, { recursive: true });
       // Written past validation (as an older core might have kept it): the door still refuses it.
-      writeFileSync(join(root, "clover.json"), JSON.stringify({
-        manifest: 1, id: "bare", name: "Bare", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+      writeFileSync(join(root, "moss.json"), JSON.stringify({
+        manifest: 1, id: "bare", name: "Bare", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
         contributes: { hooks: [{ id: "sh", on: ["tool.after"], command: "sh" }] },
       }));
       await w.opened.folders.scan();
@@ -179,14 +179,14 @@ darwinDescribe("a hook's stdin is data, never a script (the real fenced door)", 
 
 darwinDescribe("a plugin folder with spaces and a `*` (a development folder can be anywhere)", () => {
   test("an unquoted ${plugin} and ${setting:…} in a shell line each stay one word", async () => {
-    const base = temp("clover-hookspace-");
-    const home = join(base, "clover");
+    const base = temp("moss-hookspace-");
+    const home = join(base, "moss");
     const root = join(base, "my plugins *", "dev kit");
     mkdirSync(root, { recursive: true });
     mkdirSync(join(home, "run"), { recursive: true });
-    writeFileSync(join(root, "count.sh"), "#!/bin/sh\nprintf '%s|%s|%s' \"$#\" \"$1\" \"$2\" > \"$CLOVER_PLUGIN_DATA/count\"\n");
+    writeFileSync(join(root, "count.sh"), "#!/bin/sh\nprintf '%s|%s|%s' \"$#\" \"$1\" \"$2\" > \"$MOSS_PLUGIN_DATA/count\"\n");
     chmodSync(join(root, "count.sh"), 0o755);
-    const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], fence: { userHome: join(base, "user") } };
+    const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { mossHome: home }), shared: [], fence: { userHome: join(base, "user") } };
     mkdirSync(join(base, "user"), { recursive: true });
     const settings = { fields: () => [["label", { type: "string" }]] as never, get: () => "a  b * c" } as never;
     const door = pluginHookSpawner({ guard, pluginRoot: () => root, settings });
@@ -203,10 +203,10 @@ describe("placeholders", () => {
   });
   test("a shell line's placeholder becomes a quoted reference for where it sits: none, double or single quotes", () => {
     const fill = { plugin: "/p q", data: "/d", setting: (k: string) => (k === "x" ? "v" : undefined) };
-    expect(hookArgv({ command: "${plugin}/a.sh ${setting:x}" }, fill, "sh")).toEqual({ line: '"${CLOVER_PLUGIN_ROOT}"/a.sh "${CLOVER_SETTING_x}"', env: { CLOVER_PLUGIN_ROOT: "/p q", CLOVER_SETTING_x: "v" } });
-    expect(hookArgv({ command: "\"${plugin}/a.sh\" '${data}' 'it''s ${data}'" }, fill, "sh").line).toBe(`"\${CLOVER_PLUGIN_ROOT}/a.sh" ''"\${CLOVER_PLUGIN_DATA}"'' 'it''s '"\${CLOVER_PLUGIN_DATA}"''`);
-    expect(hookArgv({ command: "echo \\\" ${data}" }, fill, "sh").line).toBe('echo \\" "${CLOVER_PLUGIN_DATA}"');
-    expect(hookArgv({ command: "${plugin}\\x.cmd" }, fill, "cmd").line).toBe("%CLOVER_PLUGIN_ROOT%\\x.cmd");
+    expect(hookArgv({ command: "${plugin}/a.sh ${setting:x}" }, fill, "sh")).toEqual({ line: '"${MOSS_PLUGIN_ROOT}"/a.sh "${MOSS_SETTING_x}"', env: { MOSS_PLUGIN_ROOT: "/p q", MOSS_SETTING_x: "v" } });
+    expect(hookArgv({ command: "\"${plugin}/a.sh\" '${data}' 'it''s ${data}'" }, fill, "sh").line).toBe(`"\${MOSS_PLUGIN_ROOT}/a.sh" ''"\${MOSS_PLUGIN_DATA}"'' 'it''s '"\${MOSS_PLUGIN_DATA}"''`);
+    expect(hookArgv({ command: "echo \\\" ${data}" }, fill, "sh").line).toBe('echo \\" "${MOSS_PLUGIN_DATA}"');
+    expect(hookArgv({ command: "${plugin}\\x.cmd" }, fill, "cmd").line).toBe("%MOSS_PLUGIN_ROOT%\\x.cmd");
     expect(hookArgv({ command: "${plugin}/a", args: ["${setting:x}"] }, fill, "sh")).toEqual({ argv: ["/p q/a", "v"], env: {} });
     expect(() => hookArgv({ command: "sh" }, fill, "sh")).toThrow("never a script");
   });

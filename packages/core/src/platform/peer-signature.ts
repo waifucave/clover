@@ -1,5 +1,5 @@
 // The `app` role's peer-image check (the caller check, spec §3.1): an `app` hello counts only from a process whose
-// code signature is the Clover app's for this profile. The token alone isn't enough: any unfenced process of the
+// code signature is the MOSS app's for this profile. The token alone isn't enough: any unfenced process of the
 // user's can read `<home>/run/app.token`, and #418's known gap (an unfenced child that disclaims itself) passes the
 // floor and the lineage checks. With this check such a process must also BE the signed app.
 //
@@ -7,10 +7,10 @@
 //            process by pid and pid version, so a pid reused since names nothing and the check fails. The code
 //            object comes from `SecCodeCopyGuestWithAttributes` with `kSecGuestAttributeAudit`, and
 //            `SecCodeCheckValidity` checks it DYNAMICALLY (the running process's own signing state) against
-//              dist  identifier "com.waifucave.clover", Apple's chain, a Developer ID Application leaf, Clover's team
+//              dist  identifier "com.waifucave.moss.code", Apple's chain, a Developer ID Application leaf, MOSS's team
 //                    (without the Developer ID clauses only when this daemon is not itself Developer ID signed: the
 //                    owner's --sign-dev alpha, or a daemon run from a checkout)
-//              dev   identifier "com.waifucave.clover.dev", Apple's chain and the team (`bun run dev:app` signs its
+//              dev   identifier "com.waifucave.moss.code.dev", Apple's chain and the team (`bun run dev:app` signs its
 //                    Electron copy with the dev identity, `scripts/dev-app.ts`)
 //            and then the signing information (`SecCodeCopySigningInformation`, dynamic): the hardened runtime in the
 //            signature and in the running process, never get-task-allow or a debugged process, and none of the
@@ -31,12 +31,12 @@
 //
 // Never throws: any failure (a symbol missing, a non-zero OSStatus) is "not the app".
 import { dlopen, FFIType, ptr, read, type Pointer } from "bun:ffi";
-import { appRequirement, CLOVER_TEAM_ID, DEVELOPER_ID_CLAUSES } from "../bundled-identities";
-import type { CloverProfile } from "../profile";
+import { appRequirement, MOSS_TEAM_ID, DEVELOPER_ID_CLAUSES } from "../bundled-identities";
+import type { MossProfile } from "../profile";
 import type { PeerFacts } from "./caller-probe";
 import type { DaemonPlatform } from "./transport";
 
-/** Whether the peer of an `app` hello is the Clover app. Injected in tests. */
+/** Whether the peer of an `app` hello is the MOSS app. Injected in tests. */
 export type AppPeerCheck = (peer: PeerFacts) => boolean;
 /** The caller check's `app` image check: a check, or `"none"` where the OS has none to make (named, never omitted). */
 export type AppPeerPolicy = AppPeerCheck | "none";
@@ -221,17 +221,17 @@ export function appPeerByRequirement(requirement: string): AppPeerCheck {
 /** The requirement this daemon holds an `app` peer to on macOS: `appRequirement(profile)`, whose dist form names a
  *  Developer ID leaf unless this daemon itself has none (`selfDeveloperId`: the owner's dev-signed alpha, a daemon
  *  run from a checkout), which would otherwise refuse its own app. */
-export function appPeerRequirement(profile: CloverProfile, selfDeveloperId: () => boolean = () => selfSatisfies(appRequirementSelf())): string {
+export function appPeerRequirement(profile: MossProfile, selfDeveloperId: () => boolean = () => selfSatisfies(appRequirementSelf())): string {
   return profile === "dist" ? appRequirement("dist", undefined, selfDeveloperId()) : appRequirement("dev");
 }
 
-/** Any Developer ID Application signature of Clover's team (the daemon's own, whatever its identifier). */
+/** Any Developer ID Application signature of MOSS's team (the daemon's own, whatever its identifier). */
 function appRequirementSelf(): string {
-  return `anchor apple generic and ${DEVELOPER_ID_CLAUSES} and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`;
+  return `anchor apple generic and ${DEVELOPER_ID_CLAUSES} and certificate leaf[subject.OU] = "${MOSS_TEAM_ID}"`;
 }
 
 /** The daemon's `app` peer check on `os` for `profile`: macOS checks the signature; Linux and Windows have none to
  *  make (`"none"`; see the head of this file). */
-export function defaultAppPeerCheck(os: DaemonPlatform, profile: CloverProfile): AppPeerPolicy {
+export function defaultAppPeerCheck(os: DaemonPlatform, profile: MossProfile): AppPeerPolicy {
   return os === "darwin" ? appPeerByRequirement(appPeerRequirement(profile)) : "none";
 }

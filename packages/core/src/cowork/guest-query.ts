@@ -36,7 +36,7 @@ export function buildCoworkGuestQueryOptions(
     sessionId: runtime.sessionId, model: runtime.model, cwd: runtime.cwd,
     persistSession: runtime.persistSession, permissionMode: runtime.permissionMode,
     ...(runtime.resume === undefined ? {} : { resume: runtime.resume }),
-    pathToClaudeCodeExecutable: "clover-confined-guest",
+    pathToClaudeCodeExecutable: "moss-confined-guest",
     spawnClaudeCodeProcess: () => {
       if (abortController.signal.aborted) throw new CoworkError("authority_denied");
       return prepared.spawn();

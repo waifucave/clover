@@ -1,6 +1,6 @@
 // The core's own pages, drawn in a window's root over whatever fills it (spec §5.8): the welcome setup guide (§3.3)
 // and safe mode's plugin manager. Core code only, as the rest of the root: plain DOM, no plugin's, no inline styles
-// (the root's CSP), and the daemon only through the main process's checked calls (`cloverRoot.call`). A key the user
+// (the root's CSP), and the daemon only through the main process's checked calls (`mossRoot.call`). A key the user
 // pastes goes from its field to that call and nowhere else: never stored here, never shown again, never logged.
 
 import { orderProviders, SEARCH_FROM } from "./provider-order";
@@ -54,12 +54,12 @@ function message(err: unknown): string {
 function frame(host: HTMLElement, title: string, onClose: (() => void) | undefined, t: Translate): { body: HTMLElement; actions: HTMLElement; status: HTMLElement } {
   host.replaceChildren();
   host.hidden = false;
-  const body = el("div", { class: "clover-page__body" });
-  const actions = el("div", { class: "clover-page__actions" });
-  const status = el("p", { class: "clover-page__status", role: "status", "aria-live": "polite" });
-  const head = el("header", { class: "clover-page__head" }, el("h1", {}, title));
-  if (onClose !== undefined) head.append(button(t("safe.close"), onClose, { class: "clover-page__close" }));
-  host.append(el("section", { class: "clover-page", role: "dialog", "aria-modal": "true", "aria-label": title }, head, body, status, actions));
+  const body = el("div", { class: "moss-page__body" });
+  const actions = el("div", { class: "moss-page__actions" });
+  const status = el("p", { class: "moss-page__status", role: "status", "aria-live": "polite" });
+  const head = el("header", { class: "moss-page__head" }, el("h1", {}, title));
+  if (onClose !== undefined) head.append(button(t("safe.close"), onClose, { class: "moss-page__close" }));
+  host.append(el("section", { class: "moss-page", role: "dialog", "aria-modal": "true", "aria-label": title }, head, body, status, actions));
   return { body, actions, status };
 }
 
@@ -69,10 +69,10 @@ function frame(host: HTMLElement, title: string, onClose: (() => void) | undefin
 
 export async function showWelcome(host: HTMLElement, t: Translate, call: Call, done: () => void): Promise<void> {
   const page = frame(host, t("welcome.title"), undefined, t);
-  page.body.append(el("p", {}, t("welcome.intro")), el("p", { class: "clover-page__note" }, t("welcome.no-claude")));
-  const search = el("input", { type: "search", class: "clover-page__search", autocomplete: "off", spellcheck: "false", "aria-label": t("welcome.search"), placeholder: t("welcome.search"), "data-clover-search": "" });
+  page.body.append(el("p", {}, t("welcome.intro")), el("p", { class: "moss-page__note" }, t("welcome.no-claude")));
+  const search = el("input", { type: "search", class: "moss-page__search", autocomplete: "off", spellcheck: "false", "aria-label": t("welcome.search"), placeholder: t("welcome.search"), "data-moss-search": "" });
   search.hidden = true;
-  const list = el("div", { class: "clover-page__list" }, el("p", {}, t("welcome.loading")));
+  const list = el("div", { class: "moss-page__list" }, el("p", {}, t("welcome.loading")));
   page.body.append(search, list);
   let all: ProviderView[] = [];
   const show = () => {
@@ -84,8 +84,8 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
     await call("welcome.done");
     done();
   };
-  const start = button(t("welcome.done"), finish, { class: "clover-page__primary", "data-clover-welcome": "start" });
-  page.actions.append(button(t("welcome.skip"), finish, { "data-clover-welcome": "skip" }), start);
+  const start = button(t("welcome.done"), finish, { class: "moss-page__primary", "data-moss-welcome": "start" });
+  page.actions.append(button(t("welcome.skip"), finish, { "data-moss-welcome": "skip" }), start);
   const draw = async () => {
     let providers: ProviderView[];
     try {
@@ -106,29 +106,29 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
     show();
   };
   const provider = (p: ProviderView): HTMLElement => {
-    const box = el("article", { class: "clover-page__item", "data-clover-provider": p.id }, el("h2", {}, p.name));
+    const box = el("article", { class: "moss-page__item", "data-moss-provider": p.id }, el("h2", {}, p.name));
     // The terms come first (§5.7): each sign-in waits until they are accepted.
     let accepted = p.terms === undefined;
     const signIns: HTMLElement[] = [];
     if (p.terms !== undefined) {
-      const tick = el("input", { type: "checkbox", id: `terms-${p.id}`, "data-clover-terms": p.id });
+      const tick = el("input", { type: "checkbox", id: `terms-${p.id}`, "data-moss-terms": p.id });
       tick.addEventListener("change", () => {
         accepted = tick.checked;
         for (const s of signIns) s.toggleAttribute("data-disabled", !accepted);
         for (const c of box.querySelectorAll<HTMLButtonElement | HTMLInputElement>("[data-needs-terms]")) c.disabled = !accepted;
       });
       const terms = "url" in p.terms
-        ? button(t("welcome.terms", { provider: p.name }), () => call("welcome.openTerms", { id: p.id }).then(() => undefined, (err) => void (page.status.textContent = t("welcome.failed", { error: message(err) }))), { class: "clover-page__link" })
-        : el("blockquote", { class: "clover-page__terms" }, p.terms.text);
-      box.append(terms, el("label", { class: "clover-page__check", for: `terms-${p.id}` }, tick, t("welcome.terms-accept", { provider: p.name })));
+        ? button(t("welcome.terms", { provider: p.name }), () => call("welcome.openTerms", { id: p.id }).then(() => undefined, (err) => void (page.status.textContent = t("welcome.failed", { error: message(err) }))), { class: "moss-page__link" })
+        : el("blockquote", { class: "moss-page__terms" }, p.terms.text);
+      box.append(terms, el("label", { class: "moss-page__check", for: `terms-${p.id}` }, tick, t("welcome.terms-accept", { provider: p.name })));
     }
     for (const a of p.auth) {
-      const row = el("div", { class: "clover-page__auth", "data-clover-auth": `${p.id}#${a.index}` });
+      const row = el("div", { class: "moss-page__auth", "data-moss-auth": `${p.id}#${a.index}` });
       signIns.push(row);
       if (a.state === "signed-in" || a.state === "refreshing") {
-        row.append(el("p", { class: "clover-page__ok" }, `${t("welcome.signed-in")}${a.account !== undefined ? ` (${a.account})` : ""}`));
+        row.append(el("p", { class: "moss-page__ok" }, `${t("welcome.signed-in")}${a.account !== undefined ? ` (${a.account})` : ""}`));
       } else if (a.method === "api-key") {
-        const field = el("input", { type: "password", autocomplete: "off", spellcheck: "false", "aria-label": t("welcome.key-label", { provider: p.name }), placeholder: t("welcome.paste-key"), "data-needs-terms": "", "data-clover-key": `${p.id}#${a.index}` });
+        const field = el("input", { type: "password", autocomplete: "off", spellcheck: "false", "aria-label": t("welcome.key-label", { provider: p.name }), placeholder: t("welcome.paste-key"), "data-needs-terms": "", "data-moss-key": `${p.id}#${a.index}` });
         field.disabled = !accepted;
         const save = button(t("welcome.save-key"), async () => {
           const key = field.value;
@@ -143,10 +143,10 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
             field.value = "";
             page.status.textContent = t("welcome.failed", { error: message(err) });
           }
-        }, { "data-needs-terms": "", "data-clover-save": `${p.id}#${a.index}` });
+        }, { "data-needs-terms": "", "data-moss-save": `${p.id}#${a.index}` });
         save.disabled = !accepted;
-        if (a.help !== undefined) row.append(el("p", { class: "clover-page__note" }, a.help));
-        row.append(el("label", { class: "clover-page__field" }, t("welcome.key-label", { provider: p.name }), field), save);
+        if (a.help !== undefined) row.append(el("p", { class: "moss-page__note" }, a.help));
+        row.append(el("label", { class: "moss-page__field" }, t("welcome.key-label", { provider: p.name }), field), save);
       } else {
         const go = button(t("welcome.sign-in"), async () => {
           try {
@@ -156,7 +156,7 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
           } catch (err) {
             page.status.textContent = t("welcome.failed", { error: message(err) });
           }
-        }, { "data-needs-terms": "", "data-clover-signin": `${p.id}#${a.index}` });
+        }, { "data-needs-terms": "", "data-moss-signin": `${p.id}#${a.index}` });
         go.disabled = !accepted;
         row.append(go);
       }
@@ -174,7 +174,7 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
 export async function showPlugins(host: HTMLElement, t: Translate, call: Call, close: () => void): Promise<void> {
   const page = frame(host, t("safe.title"), () => void call("page.close").finally(close), t);
   page.body.append(el("p", {}, t("safe.intro")));
-  const list = el("div", { class: "clover-page__list" }, el("p", {}, t("safe.loading")));
+  const list = el("div", { class: "moss-page__list" }, el("p", {}, t("safe.loading")));
   page.body.append(list);
   const draw = async () => {
     let plugins: ManagedPlugin[];
@@ -190,10 +190,10 @@ export async function showPlugins(host: HTMLElement, t: Translate, call: Call, c
     }
     list.replaceChildren(...plugins.map((p) => {
       const state = p.state === "found" ? t("safe.state.found") : p.state === "invalid" ? t("safe.state.invalid") : p.enabled ? t("safe.on") : t("safe.off");
-      const row = el("article", { class: "clover-page__item", "data-clover-plugin": p.id },
+      const row = el("article", { class: "moss-page__item", "data-moss-plugin": p.id },
         el("h2", {}, p.name),
-        el("p", { class: "clover-page__note" }, `${p.id} · ${state}${p.reason !== undefined ? ` · ${p.reason}` : ""}`));
-      const acts = el("div", { class: "clover-page__row" });
+        el("p", { class: "moss-page__note" }, `${p.id} · ${state}${p.reason !== undefined ? ` · ${p.reason}` : ""}`));
+      const acts = el("div", { class: "moss-page__row" });
       const act = async (name: string) => {
         try {
           await call(name, { id: p.id });
@@ -203,8 +203,8 @@ export async function showPlugins(host: HTMLElement, t: Translate, call: Call, c
           page.status.textContent = t("safe.failed", { error: message(err) });
         }
       };
-      if (p.enabled) acts.append(button(t("safe.turn-off"), () => act("plugins.turnOff"), { "data-clover-turn-off": p.id }));
-      if (!p.child) acts.append(button(t("safe.remove"), () => act("plugins.remove"), { "data-clover-remove": p.id }));
+      if (p.enabled) acts.append(button(t("safe.turn-off"), () => act("plugins.turnOff"), { "data-moss-turn-off": p.id }));
+      if (!p.child) acts.append(button(t("safe.remove"), () => act("plugins.remove"), { "data-moss-remove": p.id }));
       row.append(acts);
       return row;
     }));
@@ -282,10 +282,10 @@ export async function showKey(host: HTMLElement, t: Translate, call: Call, close
   }
   const onVisibility = () => guard.seen(document.visibilityState === "visible");
   document.addEventListener("visibilitychange", onVisibility);
-  const state = el("p", { class: "clover-page__note", "data-clover-key-state": view.set ? "set" : "unset" });
-  const field = el("input", { type: "password", autocomplete: "off", spellcheck: "false", "aria-label": view.label, placeholder: t("key.paste"), "data-clover-key-field": "" });
+  const state = el("p", { class: "moss-page__note", "data-moss-key-state": view.set ? "set" : "unset" });
+  const field = el("input", { type: "password", autocomplete: "off", spellcheck: "false", "aria-label": view.label, placeholder: t("key.paste"), "data-moss-key-field": "" });
   // The removal's second step: its own row above the field, never where Remove was.
-  const confirmRow = el("div", { class: "clover-page__row", role: "group", "data-clover-key-confirm": "" });
+  const confirmRow = el("div", { class: "moss-page__row", role: "group", "data-moss-key-confirm": "" });
   confirmRow.hidden = true;
   const act = async (name: "key.save" | "key.remove", params: Record<string, unknown>, done: string) => {
     try {
@@ -300,22 +300,22 @@ export async function showKey(host: HTMLElement, t: Translate, call: Call, close
     const value = field.value;
     field.value = "";
     await act("key.save", { value }, "key.saved");
-  }, { class: "clover-page__primary", "data-clover-key-save": "" });
+  }, { class: "moss-page__primary", "data-moss-key-save": "" });
   const remove = guarded(t("key.remove"), guard, () => {
     confirmRow.hidden = false;
     remove.hidden = true;
     save.hidden = true;
     guard.rearm();
     keep.focus();
-  }, { "data-clover-key-remove": "" });
-  const keep = guarded(t("key.keep"), guard, () => draw(view), { "data-clover-key-keep": "" });
-  const really = guarded(t("key.remove"), guard, () => act("key.remove", {}, "key.removed"), { class: "clover-page__danger", "data-clover-key-remove-confirm": "" });
+  }, { "data-moss-key-remove": "" });
+  const keep = guarded(t("key.keep"), guard, () => draw(view), { "data-moss-key-keep": "" });
+  const really = guarded(t("key.remove"), guard, () => act("key.remove", {}, "key.removed"), { class: "moss-page__danger", "data-moss-key-remove-confirm": "" });
   // Keep comes first in the row; it is where focus goes, so a stray Enter keeps the key.
   confirmRow.append(el("span", {}, t("key.remove-ask")), keep, really);
   function draw(v: KeyView): void {
     view = v;
     state.textContent = v.set ? t("key.is-set", { label: v.label }) : t("key.not-set", { label: v.label });
-    state.setAttribute("data-clover-key-state", v.set ? "set" : "unset");
+    state.setAttribute("data-moss-key-state", v.set ? "set" : "unset");
     confirmRow.hidden = true;
     remove.hidden = !v.set;
     save.hidden = false;
@@ -323,7 +323,7 @@ export async function showKey(host: HTMLElement, t: Translate, call: Call, close
     guard.rearm();
     field.focus();
   }
-  page.body.append(el("p", {}, t("key.intro", { plugin: view.plugin })), state, confirmRow, el("label", { class: "clover-page__field" }, view.label, field));
+  page.body.append(el("p", {}, t("key.intro", { plugin: view.plugin })), state, confirmRow, el("label", { class: "moss-page__field" }, view.label, field));
   page.actions.append(remove, save);
   draw(view);
 }

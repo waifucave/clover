@@ -6,7 +6,7 @@ import { ipcMain, WebContentsView, type BaseWindow, type IpcMainEvent, type Keyb
 import { BROWSER_WEBRTC_POLICY, prepareViewportSession, VIEWPORT_PARTITION } from "./session";
 import type { OffscreenTab } from "./tab";
 
-export const VIEWPORT_CHANNEL = "clover-browser-viewport";
+export const VIEWPORT_CHANNEL = "moss-browser-viewport";
 
 export interface ViewportAssets {
   /** The viewport page's sandboxed preload, bundled to one CommonJS file. */

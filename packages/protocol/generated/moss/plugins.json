@@ -1,0 +1,6209 @@
+{
+  "area": "plugins",
+  "owner": "B",
+  "methods": {
+    "plugin.list": {
+      "doc": "Every plugin and child plugin on this computer, with its state and reason, and whether the user confirmed they are 18 or older.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "parent": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "icon": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "version": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "found",
+                    "refused",
+                    "invalid",
+                    "off",
+                    "waiting",
+                    "running",
+                    "stopped"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "waitingFor": {
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "bundled",
+                    "index",
+                    "npm",
+                    "local",
+                    "wrapped",
+                    "dev"
+                  ]
+                },
+                "class": {
+                  "type": "string",
+                  "enum": [
+                    "data",
+                    "web",
+                    "code"
+                  ]
+                },
+                "treeHash": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "namespace": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "scope": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "bots",
+                        "agents",
+                        "both"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "const": "own-bot"
+                    }
+                  ]
+                },
+                "adult": {
+                  "type": "boolean"
+                },
+                "children": {
+                  "maxItems": 1024,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "labels": {
+                  "maxItems": 40,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 40
+                  }
+                },
+                "dev": {
+                  "type": "boolean"
+                },
+                "parts": {
+                  "type": "object",
+                  "properties": {
+                    "app": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "has": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 256
+                          }
+                        },
+                        "bot": {
+                          "type": "string",
+                          "maxLength": 200
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "has"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "app"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "version",
+                "state",
+                "enabled",
+                "source",
+                "class",
+                "namespace",
+                "scope",
+                "adult",
+                "children",
+                "dev"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "adultConfirmed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "plugins"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.get": {
+      "doc": "One plugin: its manifest, provenance, capabilities, hosts, findings and last log lines.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "plugin": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 81,
+                "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+              },
+              "parent": {
+                "type": "string",
+                "maxLength": 40,
+                "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                "minLength": 2
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "icon": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "version": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "found",
+                  "refused",
+                  "invalid",
+                  "off",
+                  "waiting",
+                  "running",
+                  "stopped"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "waitingFor": {
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 256
+                }
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "bundled",
+                  "index",
+                  "npm",
+                  "local",
+                  "wrapped",
+                  "dev"
+                ]
+              },
+              "class": {
+                "type": "string",
+                "enum": [
+                  "data",
+                  "web",
+                  "code"
+                ]
+              },
+              "treeHash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "namespace": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "scope": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "bots",
+                      "agents",
+                      "both"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "const": "own-bot"
+                  }
+                ]
+              },
+              "adult": {
+                "type": "boolean"
+              },
+              "children": {
+                "maxItems": 1024,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              },
+              "labels": {
+                "maxItems": 40,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "dev": {
+                "type": "boolean"
+              },
+              "parts": {
+                "type": "object",
+                "properties": {
+                  "app": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "has": {
+                        "maxItems": 64,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 256
+                        }
+                      },
+                      "bot": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "has"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "app"
+                ],
+                "additionalProperties": false
+              },
+              "manifest": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "provenance": {
+                "type": "object",
+                "properties": {
+                  "by": {
+                    "type": "string",
+                    "enum": [
+                      "user-app",
+                      "user-terminal",
+                      "bot",
+                      "migration",
+                      "found",
+                      "bundled",
+                      "plugin"
+                    ]
+                  },
+                  "at": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "plugin": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "wrapped": {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "enum": [
+                          "mcp-config",
+                          "mcp-url",
+                          "skill-folder",
+                          "agent-file",
+                          "claude-plugin"
+                        ]
+                      },
+                      "unused": {
+                        "maxItems": 64,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "network": {
+                        "type": "string",
+                        "const": "any"
+                      },
+                      "reads": {
+                        "maxItems": 32,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        }
+                      },
+                      "unreadable": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        }
+                      }
+                    },
+                    "required": [
+                      "from"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "index": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "version": {
+                        "type": "string",
+                        "maxLength": 256,
+                        "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "version"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "npm": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 214
+                      },
+                      "version": {
+                        "type": "string",
+                        "maxLength": 256,
+                        "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "version"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "by",
+                  "at"
+                ],
+                "additionalProperties": false
+              },
+              "capabilities": {
+                "maxItems": 256,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 256
+                }
+              },
+              "networkHosts": {
+                "maxItems": 256,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 256
+                }
+              },
+              "helperPermissions": {
+                "maxItems": 16,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              },
+              "issues": {
+                "maxItems": 500,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "severity": {
+                      "type": "string",
+                      "enum": [
+                        "error",
+                        "warning"
+                      ]
+                    },
+                    "refuses": {
+                      "type": "string",
+                      "enum": [
+                        "plugin",
+                        "contribution",
+                        "entry",
+                        "none"
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    "file": {
+                      "type": "string",
+                      "maxLength": 1024
+                    },
+                    "path": {
+                      "type": "string",
+                      "maxLength": 1024
+                    }
+                  },
+                  "required": [
+                    "severity",
+                    "refuses",
+                    "code",
+                    "message",
+                    "file",
+                    "path"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "logTail": {
+                "maxItems": 200,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 4000
+                }
+              },
+              "computers": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                  }
+                }
+              },
+              "pinned": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "version",
+              "state",
+              "enabled",
+              "source",
+              "class",
+              "namespace",
+              "scope",
+              "adult",
+              "children",
+              "dev",
+              "manifest",
+              "provenance",
+              "capabilities",
+              "networkHosts",
+              "helperPermissions",
+              "issues",
+              "logTail",
+              "pinned"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "plugin"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.setEnabled": {
+      "doc": "Switches a plugin or child on or off, or with `part: \"app\"` only its parts beside its bot; switching a parent off switches its children off (§5.1); a found plugin's switch is its OK card.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "userOnly": true,
+      "change": "core",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "bots": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "all"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              }
+            ]
+          },
+          "part": {
+            "type": "string",
+            "const": "app"
+          }
+        },
+        "required": [
+          "id",
+          "enabled"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.setScope": {
+      "doc": "The user's override of a plugin's scope; null goes back to the manifest's (§5.1).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "userOnly": true,
+      "change": "core",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bots",
+                  "agents",
+                  "both"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "scope"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.setComputers": {
+      "doc": "Ticks the computers a local server or a `chosen` host half runs on; Mirror ticks every computer (§9.1).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "userOnly": true,
+      "change": "core",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "computers": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 63,
+              "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "target",
+          "computers"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.restart": {
+      "doc": "Restarts a plugin that stopped after crashes (§5.1).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.logs": {
+      "doc": "A plugin's log (`logs/plugins/<id>.log`), newest last.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "capability": "logs.read",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "lines": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            }
+          }
+        },
+        "required": [
+          "lines"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.settings.get": {
+      "doc": "A plugin's settings with their values (a bot's, for `bot` settings); secret fields say only whether they are set.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "settings": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "number",
+                    "boolean",
+                    "enum",
+                    "color",
+                    "secret"
+                  ]
+                },
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "account",
+                    "device",
+                    "bot"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "options": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en"
+                                ],
+                                "additionalProperties": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "title"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "min": {
+                  "type": "number"
+                },
+                "max": {
+                  "type": "number"
+                },
+                "value": {},
+                "set": {
+                  "type": "boolean"
+                },
+                "defaultPending": {
+                  "type": "boolean"
+                },
+                "asks": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "required": [
+                "key",
+                "type",
+                "title",
+                "scope",
+                "required",
+                "set"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "settings"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.settings.set": {
+      "doc": "Sets one of a plugin's settings as the user; bots can't (§9.1), and from a layer it is a sealed card (§5.5). A plugin's own page changes its own plain settings with no card through `plugin.layer.call`'s `settings.set` instead (§5.4).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "userOnly": true,
+      "change": "core",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "noSecret": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "value"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.grant.add": {
+      "doc": "The app's main process registers a file or folder the user picked in a plugin's page (lane G's pickers), before the page gets its token: that plugin alone then reaches exactly it (§5.4). Refused, with a sentence to show, for the whole disk or home folder, MOSS's own folder, a secret place, a fenced place, or a folder holding one.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "token": {
+            "type": "string",
+            "pattern": "^grant:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "file",
+              "folder"
+            ]
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write"
+            ]
+          }
+        },
+        "required": [
+          "pluginId",
+          "token",
+          "path",
+          "kind",
+          "access"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "grant": {
+            "type": "object",
+            "properties": {
+              "token": {
+                "type": "string",
+                "pattern": "^grant:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "folder"
+                ]
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "write"
+                ]
+              },
+              "addedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "token",
+              "path",
+              "kind",
+              "access",
+              "addedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "grant"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.grant.remove": {
+      "doc": "The user removes a picked file or folder from a plugin (its page in Settings): the plugin no longer reaches it.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "token": {
+            "type": "string",
+            "pattern": "^grant:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "pluginId",
+          "token"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.grant.list": {
+      "doc": "The files and folders the user picked for a plugin, for its page in Settings. Kept until the user removes them or the plugin.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "pluginId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "grants": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "pattern": "^grant:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "file",
+                    "folder"
+                  ]
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
+                },
+                "addedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "token",
+                "path",
+                "kind",
+                "access",
+                "addedAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "grants"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tool.permissions": {
+      "doc": "Settings' Tools tab: every installed plugin that gives bots tools, each with its tools, this computer's value for each (Always allow, Ask, Always block) and the card rules saved for single bots. The user's own view: a plugin, a bot or an agent never reads it.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "plugins": {
+            "maxItems": 512,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pluginId": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "server": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "tools": {
+                  "maxItems": 1024,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "permission": {
+                        "type": "string",
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "isNew": {
+                        "type": "boolean"
+                      },
+                      "cardRules": {
+                        "maxItems": 256,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "bot": {
+                              "type": "string",
+                              "maxLength": 81,
+                              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                            },
+                            "computers": {
+                              "maxItems": 64,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 63,
+                                "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                              }
+                            }
+                          },
+                          "required": [
+                            "bot",
+                            "computers"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "permission",
+                      "cardRules"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "pluginId",
+                "name",
+                "server",
+                "tools"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "plugins"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tool.setPermission": {
+      "doc": "Always allow (no card, whatever the call is given), Ask (what the approval level decides) or Always block (refused, with no card, and the bot is told the user blocked it in Settings), for every bot on this computer. Takes effect on the next call. Only the user sets it.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "server": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "tool": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "ask",
+              "deny"
+            ]
+          }
+        },
+        "required": [
+          "server",
+          "permission"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tool.takeBackRule": {
+      "doc": "Takes back what a card's \"Always allow\" saved for one bot's use of one tool.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "server": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "tool": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "server",
+          "tool",
+          "bot"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "removed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "removed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.auth.list": {
+      "doc": "A plugin's sign-ins and their state, for Settings and the welcome guide (§3.3, §5.1).",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "auth": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 31
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "api-key",
+                    "oauth-pkce",
+                    "custom",
+                    "core"
+                  ]
+                },
+                "secret": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "signed-out",
+                    "signed-in",
+                    "expired",
+                    "refreshing",
+                    "failed"
+                  ]
+                },
+                "account": {
+                  "type": "string",
+                  "maxLength": 320
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "index",
+                "method",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "auth"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.auth.signIn": {
+      "doc": "Signs in with one `auth` entry: a key is stored; `oauth-pkce` returns the URL to open and the core finishes on the redirect; `custom` runs its handler on the refresher (§8.5).",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 31
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          }
+        },
+        "required": [
+          "id",
+          "index"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "signed-out",
+              "signed-in",
+              "expired",
+              "refreshing",
+              "failed"
+            ]
+          },
+          "authorizeUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.auth.signOut": {
+      "doc": "Signs out of one `auth` entry and deletes its secret everywhere. With `card`, only after the user's yes on a sealed card.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 31
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "index"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.install": {
+      "doc": "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, whoever installed it.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "capability": "plugins.install",
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "source": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "const": "index"
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 40,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                    "minLength": 2
+                  },
+                  "version": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                  },
+                  "index": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "from",
+                  "id"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "const": "npm"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 214
+                  },
+                  "version": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "from",
+                  "name"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "const": "folder"
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "from",
+                  "path"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "const": "wrap"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "mcp-config",
+                      "mcp-url",
+                      "skill-folder",
+                      "agent-file",
+                      "claude-plugin"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000000
+                  }
+                },
+                "required": [
+                  "from",
+                  "kind",
+                  "value"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "source"
+        ]
+      },
+      "roleParams": {
+        "layer": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "source": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "const": "index"
+                    },
+                    "id": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                      "minLength": 2
+                    },
+                    "version": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                    },
+                    "index": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "const": "npm"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 214
+                    },
+                    "version": {
+                      "type": "string",
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "name"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ]
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+            "minLength": 2
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "found",
+              "refused",
+              "invalid",
+              "off",
+              "waiting",
+              "running",
+              "stopped"
+            ]
+          },
+          "treeHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          },
+          "more": {
+            "maxItems": 31,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "found",
+                    "refused",
+                    "invalid",
+                    "off",
+                    "waiting",
+                    "running",
+                    "stopped"
+                  ]
+                },
+                "treeHash": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "card": {
+                  "type": "string",
+                  "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+                }
+              },
+              "required": [
+                "id",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "state"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.remove": {
+      "doc": "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside, or deleted with `deleteData` (§5.1). With `card`, only after the user's yes on a sealed card, which says which.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+            "minLength": 2
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
+          },
+          "deleteData": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.review": {
+      "doc": "Reviews the plugin a waiting OK card or update card is about (the owner's ruling, 2026-11-13): an internal job (the `reviewer.model` role) reads its tree and writes a short report for the user's side of the card. Advice only: it never answers, pre-selects or delays the card. One review per card and tree; asking again gives its state or report.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          },
+          "peek": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "card"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running",
+              "done",
+              "failed",
+              "unavailable",
+              "changed"
+            ]
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "report": {
+            "type": "string",
+            "maxLength": 6000
+          },
+          "why": {
+            "type": "string",
+            "maxLength": 400
+          }
+        },
+        "required": [
+          "state",
+          "pluginId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.update": {
+      "doc": "Checks the indexes now and lists the newer versions of plugins that aren't pinned, forward only, applying none (§5.1; the owner's ruling, 2026-11-13: nothing updates on its own). With an id, the user's click on that plugin's update applies it; one that adds to its OK card asks for the OK again.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+            "minLength": 2
+          },
+          "list": {
+            "type": "boolean",
+            "const": true
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
+          }
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "updated": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "offered": {
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string",
+                  "maxLength": 400
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "to",
+                "why"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "failed": {
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string",
+                  "maxLength": 400
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "to",
+                "why"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "updated"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.pin": {
+      "doc": "Pins an index or npm plugin to its version on this computer (never synced): it isn't offered updates. Unpinned, it is offered them again.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "userOnly": true,
+      "change": "core",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+            "minLength": 2
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "pinned"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.renameFolder": {
+      "doc": "The one-click rename of a folder whose name isn't its manifest's id (§5.1).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "folder"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.confirmAdult": {
+      "doc": "The user confirms they are 18 or older, so adult plugins may be switched on (§5.7). With `card`, only their yes on a sealed card confirms it.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "card": {
+            "type": "boolean",
+            "const": true
+          }
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.dev.list": {
+      "doc": "This computer's development folders (§5.6).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "pluginId": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "addedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "expiresAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "lastReloadAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "path",
+                "addedAt",
+                "expiresAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "folders"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.dev.add": {
+      "doc": "Adds a development folder: a sealed card unless the user adds it in their own terminal (§5.6).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "change": "sensitive",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.dev.remove": {
+      "doc": "Removes a development folder.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.dev.renew": {
+      "doc": "Keeps a development folder on for another 24 hours (§5.6). With `card`, only after the user's yes on a sealed card.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "expiresAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "expiresAt"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.index.list": {
+      "doc": "The indexes the user added, in the order added.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "indexes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "lastCheckedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "error": {
+                  "type": "string",
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "indexes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.index.add": {
+      "doc": "Adds an index by its https URL (§5.1). It runs nothing, so it asks nothing: each plugin installed from it asks for its OK.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "change": "core",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.index.remove": {
+      "doc": "Removes an index the user added. Plugins installed from it stay, and get no more updates from it.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "plugin.index.search": {
+      "doc": "Searches the indexes, for the plugin index browser.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "index": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "versions": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "string",
+                        "maxLength": 256,
+                        "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                      },
+                      "hash": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "hash"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "installed": {
+                  "type": "string",
+                  "maxLength": 256,
+                  "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                },
+                "adult": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "index",
+                "versions"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.iconSource": {
+      "doc": "Where a top plugin's manifest icon is: its folder and the icon's path inside it (nothing when it has none), for the app's main process alone to read and check as a picture (the Plugins page's lists).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "plugin.ui": {
+      "doc": "Every running plugin's UI, for the app's plugin runtime to mount in layers (§5.5).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pluginId": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "treeHash": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "bundled",
+                    "index",
+                    "npm",
+                    "local",
+                    "wrapped",
+                    "dev"
+                  ]
+                },
+                "enabledAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "capabilities": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  }
+                },
+                "css": {
+                  "maxItems": 32,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "networkHosts": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  }
+                },
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en"
+                          ],
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "theme": {
+                      "type": "string",
+                      "maxLength": 4096
+                    },
+                    "layout": {
+                      "type": "string",
+                      "maxLength": 4096
+                    },
+                    "userLayout": {
+                      "type": "string",
+                      "maxLength": 4096
+                    },
+                    "avatar": {
+                      "type": "object",
+                      "properties": {
+                        "file": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "format": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32
+                        }
+                      },
+                      "required": [
+                        "file",
+                        "format"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "avatarFormats": {
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "format": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32
+                      },
+                      "extensions": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 32,
+                          "minLength": 2
+                        }
+                      },
+                      "kinds": {
+                        "maxItems": 16,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "ext": {
+                              "maxItems": 16,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 32,
+                                "minLength": 2
+                              }
+                            },
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "json",
+                                "binary",
+                                "image",
+                                "audio",
+                                "text"
+                              ]
+                            },
+                            "maxBytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 134217728
+                            }
+                          },
+                          "required": [
+                            "ext",
+                            "type",
+                            "maxBytes"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "find": {
+                        "type": "string",
+                        "enum": [
+                          "folder",
+                          "cubism-model3"
+                        ]
+                      },
+                      "maxFiles": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 512
+                      }
+                    },
+                    "required": [
+                      "format",
+                      "extensions",
+                      "kinds",
+                      "find"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "layer": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "icon": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "assetBase": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "clientEntry": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "isolated": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "clientBuild": {
+                  "type": "object",
+                  "properties": {
+                    "base": {
+                      "type": "string",
+                      "maxLength": 4096
+                    },
+                    "file": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "base",
+                    "file",
+                    "sha256"
+                  ],
+                  "additionalProperties": false
+                },
+                "ui": {
+                  "maxItems": 500,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "themes": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "file": {
+                        "type": "string",
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "file"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "locales": {
+                  "maxItems": 200,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "lang": {
+                        "type": "string",
+                        "maxLength": 35
+                      },
+                      "file": {
+                        "type": "string",
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": [
+                      "lang",
+                      "file"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "bots": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "all"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "pluginId",
+                "name",
+                "treeHash",
+                "layer",
+                "assetBase",
+                "ui",
+                "themes",
+                "locales",
+                "bots"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "plugins"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.layer.api": {
+      "doc": "A plugin component's plugin API call, which the app makes for it: as the user, through the core's capability gate.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "call": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "args": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {}
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "pluginId",
+          "call",
+          "args"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.layer.call": {
+      "doc": "A plugin component's plugin API call on its own layer connection: its host half's handler, its synced store and settings, or any member the catalog gives components, through the core's capability gate as the plugin, never as the user.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "layer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "call": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "args": {
+            "maxItems": 8,
+            "type": "array",
+            "items": {}
+          }
+        },
+        "required": [
+          "call",
+          "args"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.layer.watch": {
+      "doc": "A plugin component's watch: each value comes back as `plugin_api_event` to this layer connection alone, until `plugin.layer.unwatch`, the connection closes, or the plugin stops, is turned off or removed, or loses the capability (`ended`).",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "layer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "call": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "args": {
+            "maxItems": 8,
+            "type": "array",
+            "items": {}
+          }
+        },
+        "required": [
+          "call",
+          "args"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "watch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "watch"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.layer.unwatch": {
+      "doc": "Ends one of this layer connection's own watches (`plugin.layer.watch`); an unknown or another connection's id is a no-op.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "layer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "watch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "watch"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "point.list": {
+      "doc": "Every extension point, the core's and those plugins declare, with occupants and waiting entries.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "shape": {
+                  "type": "string",
+                  "enum": [
+                    "single",
+                    "list",
+                    "keyed"
+                  ]
+                },
+                "declaredBy": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "core"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "pluginId": {
+                          "type": "string",
+                          "maxLength": 81,
+                          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                        },
+                        "entry": {
+                          "type": "string",
+                          "maxLength": 256
+                        }
+                      },
+                      "required": [
+                        "pluginId",
+                        "entry"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "spot": {
+                  "type": "boolean"
+                },
+                "fields": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "props": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "occupants": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "pluginId": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      },
+                      "entry": {
+                        "type": "string",
+                        "maxLength": 256
+                      }
+                    },
+                    "required": [
+                      "pluginId",
+                      "entry"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "waiting": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "pluginId": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      },
+                      "entry": {
+                        "type": "string",
+                        "maxLength": 256
+                      }
+                    },
+                    "required": [
+                      "pluginId",
+                      "entry"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "replacesShipped": {
+                  "type": "boolean"
+                },
+                "private": {
+                  "type": "boolean"
+                },
+                "deprecated": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "doc": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "shape",
+                "declaredBy",
+                "spot",
+                "occupants",
+                "waiting",
+                "replacesShipped",
+                "private"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "point.active.list": {
+      "doc": "Every point that takes one filler at a time (§5.4 \"One at a time\"), with its fillers, the active one and the user's choice: Settings draws a picker for each with two or more fillers, titled by the point's own title. The user's own view.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "points": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "point": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "declaredBy": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "core"
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    }
+                  ]
+                },
+                "fillers": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "pluginId": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      },
+                      "entryId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "name": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    },
+                    "required": [
+                      "pluginId",
+                      "entryId",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "active": {
+                  "type": "object",
+                  "properties": {
+                    "pluginId": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "entryId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "pluginId",
+                    "entryId"
+                  ],
+                  "additionalProperties": false
+                },
+                "chosen": {
+                  "type": "object",
+                  "properties": {
+                    "pluginId": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "entryId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "pluginId",
+                    "entryId"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "point",
+                "title",
+                "declaredBy",
+                "fillers"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "point.active.set": {
+      "doc": "The user picks which filler of a one-at-a-time point is active (Settings' picker): one of its fillers running now. Kept with the registry's records; when it stops, the default stands in until it runs again. Only the user sets it: no plugin's call or setting does.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "point": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "pluginId": {
+                "type": "string",
+                "maxLength": 81,
+                "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+              },
+              "entryId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "pluginId",
+              "entryId"
+            ]
+          }
+        },
+        "required": [
+          "point",
+          "entry"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "command.list": {
+      "doc": "Every plugin command, for the palette (§5.4).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "minLength": 3
+                },
+                "pluginId": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "args": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "key": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "keyState": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "bound"
+                        },
+                        "chord": {
+                          "type": "string",
+                          "maxLength": 64
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "chord"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "app"
+                        },
+                        "what": {
+                          "type": "string",
+                          "maxLength": 64
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "what"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "bare"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "clash"
+                        },
+                        "with": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 128
+                          }
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "with"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "hold": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "runsOn": {
+                  "type": "string",
+                  "enum": [
+                    "each",
+                    "main",
+                    "chosen"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "pluginId",
+                "description"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "commands"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "command.run": {
+      "doc": "Runs `<namespace>.<name>` at once, with no model turn; the handler is told who called (§5.4).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "layer"
+      ],
+      "capability": "call:*",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3
+          },
+          "args": {},
+          "held": {
+            "type": "string",
+            "enum": [
+              "down",
+              "up",
+              "cancel"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "glossary.query": {
+      "doc": "`Glossary` for an ACP agent through its bridge (§6.8, §9.3); bots call the tool in-process.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "bridge"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "maxItems": 16,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              }
+            ]
+          },
+          "load": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 256
+                }
+              }
+            ]
+          }
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "tool",
+                    "skill",
+                    "agent",
+                    "plugin",
+                    "point"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "pluginId": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              },
+              "required": [
+                "name",
+                "kind",
+                "description"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "loaded": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "tool"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "inputSchema": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "name",
+                    "inputSchema"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "skill"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "instructions": {
+                      "type": "string",
+                      "maxLength": 200000
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "name",
+                    "instructions"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "agent"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "missing"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "results",
+          "loaded"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.start": {
+      "doc": "Starts a plugin's host half: a worker in a shared process, or a process of its own.",
+      "owner": "B",
+      "direction": "from-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "folder": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "entry": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "bun",
+              "node"
+            ]
+          },
+          "dataFolder": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "process": {
+            "type": "string",
+            "enum": [
+              "moss",
+              "shared",
+              "own"
+            ]
+          }
+        },
+        "required": [
+          "pluginId",
+          "folder",
+          "entry",
+          "runtime",
+          "dataFolder",
+          "process"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.stop": {
+      "doc": "Stops a host half; calls in flight get the grace period, then are recorded as interrupted (§5.1).",
+      "owner": "B",
+      "direction": "from-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "graceMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 60000
+          }
+        },
+        "required": [
+          "pluginId",
+          "reason",
+          "graceMs"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.invoke": {
+      "doc": "Calls a handler in the plugin's worker, telling it who called (§5.4).",
+      "owner": "B",
+      "direction": "from-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "args": {},
+          "caller": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "user"
+                  },
+                  "client": {
+                    "type": "string",
+                    "enum": [
+                      "app",
+                      "cli",
+                      "ios",
+                      "web"
+                    ]
+                  },
+                  "device": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "client"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "session"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "sessionKind": {
+                    "type": "string",
+                    "enum": [
+                      "bot",
+                      "side-thread",
+                      "agent",
+                      "coding"
+                    ]
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "sessionId",
+                  "sessionKind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "plugin"
+                  },
+                  "pluginId": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "pluginId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "core"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "peer"
+                  },
+                  "device": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "asKind": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "session",
+                      "plugin",
+                      "core",
+                      "peer"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "device"
+                ]
+              }
+            ]
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600000
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "input": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "callId",
+          "pluginId",
+          "handler",
+          "args",
+          "caller",
+          "timeoutMs"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.cancel": {
+      "doc": "Cancels an invocation (an interrupt, a timeout, a stop).",
+      "owner": "B",
+      "direction": "from-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "callId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.feed": {
+      "doc": "The next piece of a streamed call's input, for the handler's input iterable.",
+      "owner": "B",
+      "direction": "from-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "value": {},
+          "end": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "callId",
+          "seq"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.deliver": {
+      "doc": "A value for one of a host half's watches (`points.watch`, `approvals.watch`, …); the host hands it only to that plugin's worker.",
+      "owner": "B",
+      "direction": "from-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "subscription": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "value": {}
+        },
+        "required": [
+          "pluginId",
+          "subscription",
+          "value"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.api": {
+      "doc": "A plugin's host half calls the plugin API (§5.4). A watch's result is `{ subscription }`.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "call": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "args": {},
+          "stream": {
+            "type": "boolean"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600000
+          },
+          "invocation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "pluginId",
+          "callId",
+          "call",
+          "args"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.chunk": {
+      "doc": "The next piece of a stream: a streamed handler's output, or a streamed argument of an API call.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "value": {},
+          "end": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "callId",
+          "seq"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.fetch": {
+      "doc": "A plugin's net.fetch: the request's head; answers the response's head (§5.4).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "fetchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "headers": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "maxLength": 16384
+                },
+                {
+                  "type": "string",
+                  "maxLength": 65536
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "body": {},
+          "upload": {
+            "type": "boolean"
+          },
+          "options": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "invocation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "pluginId",
+          "fetchId",
+          "url",
+          "method",
+          "headers"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 599
+          },
+          "statusText": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "maxLength": 16384
+                },
+                {
+                  "type": "string",
+                  "maxLength": 65536
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "body": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "statusText",
+          "headers",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.fetchSend": {
+      "doc": "The next piece of a fetch's streamed request body, or its end.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "fetchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "bytes": {},
+          "end": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pluginId",
+          "fetchId",
+          "seq"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.fetchSendCredit": {
+      "doc": "More of a fetch's streamed request body the daemon takes.",
+      "owner": "B",
+      "direction": "from-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "fetchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "fetchId",
+          "bytes"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.fetchBody": {
+      "doc": "The next piece of a fetch's response body, its end, or its failure: the last message of a fetch.",
+      "owner": "B",
+      "direction": "from-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "fetchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "bytes": {},
+          "end": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "detail": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "fetchId",
+          "seq"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.fetchCredit": {
+      "doc": "More of a fetch's response body the worker takes.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "fetchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "pluginId",
+          "fetchId",
+          "bytes"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.fetchCancel": {
+      "doc": "The plugin let go of a fetch (an abort, a cancelled body): the daemon aborts it upstream.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "fetchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "pluginId",
+          "fetchId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.unwatch": {
+      "doc": "Ends one of a host half's watches; a worker's watches also end when it stops.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "subscription": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "pluginId",
+          "subscription"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.state": {
+      "doc": "The plugin host reports a worker's state; the registry applies the crash rules (§5.1).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "starting",
+              "running",
+              "crashed",
+              "stopped",
+              "heartbeat-missed"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "pluginId",
+          "state"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.log": {
+      "doc": "A worker's log lines, for `logs/plugins/<id>.log`.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "lines": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            }
+          }
+        },
+        "required": [
+          "pluginId",
+          "lines"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "events": {
+    "plugin_changed": {
+      "doc": "A plugin's state, switch or reason changed.",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "capability": "plugins.watch",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "found",
+              "refused",
+              "invalid",
+              "off",
+              "waiting",
+              "running",
+              "stopped"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "waitingFor": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "id",
+          "state",
+          "enabled"
+        ]
+      }
+    },
+    "plugin_removed": {
+      "doc": "A plugin's folder was removed.",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "capability": "plugins.watch",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_removed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "id"
+        ]
+      }
+    },
+    "plugin_found": {
+      "doc": "A new folder in the plugins directory waits for the user's OK.",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "capability": "plugins.watch",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_found"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+            "minLength": 2
+          },
+          "folder": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "id",
+          "folder",
+          "card"
+        ]
+      }
+    },
+    "plugin_auth_changed": {
+      "doc": "One of a plugin's sign-ins changed state.",
+      "owner": "A",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_auth_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "auth": {
+            "type": "object",
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 31
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "api-key",
+                  "oauth-pkce",
+                  "custom",
+                  "core"
+                ]
+              },
+              "secret": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "signed-out",
+                  "signed-in",
+                  "expired",
+                  "refreshing",
+                  "failed"
+                ]
+              },
+              "account": {
+                "type": "string",
+                "maxLength": 320
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "index",
+              "method",
+              "state"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "id",
+          "auth"
+        ]
+      }
+    },
+    "plugin_ui_changed": {
+      "doc": "These plugins' UI changed; the app re-reads `plugin.ui` and remounts them.",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "app"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_ui_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginIds": {
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 81,
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginIds"
+        ]
+      }
+    },
+    "plugin_log": {
+      "doc": "A plugin's new log line, for Settings while it is open.",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "app"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_log"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "line": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "id",
+          "line"
+        ]
+      }
+    },
+    "plugin_ui_message": {
+      "doc": "A plugin's host half sent its components a message (`ui.send`): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), and the app hands it to that plugin's parts' `host.on`.",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_ui_message"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "event": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "value": {}
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "event",
+          "value"
+        ]
+      }
+    },
+    "plugin_api_event": {
+      "doc": "A value of one of a component's watches (`plugin.layer.watch`): only the layer connection that opened it gets it, and `ended` once when the watch is over.",
+      "owner": "A",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_api_event"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "watch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "value": {},
+          "ended": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "watch"
+        ]
+      }
+    },
+    "plugin_settings_changed": {
+      "doc": "One of a plugin's settings changed (its key, never its value): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`.",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_settings_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "key"
+        ]
+      }
+    },
+    "plugin_store_changed": {
+      "doc": "A key of a plugin's synced store changed (its name only): only that plugin's own layer connection gets it, for its parts' `storage.synced.watch`; at most one per key every 100 ms.",
+      "owner": "D",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_store_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "key"
+        ]
+      }
+    },
+    "plugin_point_changed": {
+      "doc": "The entries of a point the plugin's own tree declares changed (the point's name only): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `points.watch`, which reads the entries again; at most one per point every 100 ms.",
+      "owner": "A",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_point_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "point": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "point"
+        ]
+      }
+    },
+    "plugin_card_note": {
+      "doc": "A yes on a plugin change card (a removal, an update, an index, a development folder) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "capability": "plugins.watch",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_card_note"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          },
+          "change": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "card",
+          "change",
+          "note"
+        ]
+      }
+    }
+  }
+}

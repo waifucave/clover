@@ -1,14 +1,14 @@
 // Every method a plugin's layer may call that changes what is the user's (`userOnly` and a layer role in the
-// protocol's table): the gate lets a layer's `change` method through for its handler to decide (clover-caller.ts), so
+// protocol's table): the gate lets a layer's `change` method through for its handler to decide (moss-caller.ts), so
 // each handler must refuse a plugin caller or answer with a pending sealed card, never apply it. A method added to the
 // table without an entry here fails the walk, so none is missed.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import { CLOVER_METHODS } from "@waifucave/clover-protocol";
-import { gateCloverRequest } from "../../auth/clover-caller";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import { MOSS_METHODS } from "@waifucave/moss-protocol";
+import { gateMossRequest } from "../../auth/moss-caller";
 import { sessionsMethods } from "../../bots/rpc";
 import { boot, botManifest, pluginFromFolder, removeTemps, tempDir, writePlugin } from "../../bots/tests/fixtures";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
@@ -40,13 +40,13 @@ const PARAMS: Record<string, unknown> = {
 
 describe("a layer's change methods, called by a plugin", () => {
   test("each is refused or answers with a pending sealed card, never applied", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-layer-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-layer-")));
     temps.push(home);
     mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
-    writeFileSync(join(home, "plugins", "tarot", "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    writeFileSync(join(home, "plugins", "tarot", "moss.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` } }));
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
     const settingsCalls: unknown[] = [];
-    const bots = await boot({ home: tempDir(), plugins: (await pluginFromFolder(writePlugin(tempDir(), "luna", { "clover.json": botManifest("luna", "Luna"), "bot/instructions.md": "Hi." }))).inputs });
+    const bots = await boot({ home: tempDir(), plugins: (await pluginFromFolder(writePlugin(tempDir(), "luna", { "moss.json": botManifest("luna", "Luna"), "bot/instructions.md": "Hi." }))).inputs });
     try {
       await opened.registry.approve("tarot", opened.registry.get("tarot")!.treeHash!);
       const handlers: Record<string, MethodHandler> = {
@@ -55,14 +55,14 @@ describe("a layer's change methods, called by a plugin", () => {
         ...uiSettingsMethods({ home }),
         ...sessionsMethods({ home: tempDir(), bots: bots.bots, host: bots.host, clock: new FakeClock(), localDevice: "d", computer: "Studio" } as never),
       };
-      const layerChanges = [...CLOVER_METHODS].filter(([, s]) => s.roles.includes("layer") && (s.userOnly || s.change !== undefined)).map(([n]) => n);
+      const layerChanges = [...MOSS_METHODS].filter(([, s]) => s.roles.includes("layer") && (s.userOnly || s.change !== undefined)).map(([n]) => n);
       expect(layerChanges.filter((n) => !(n in PARAMS))).toEqual([]);
       const caller = { kind: "plugin", pluginId: "tarot" } as const;
       const outcomes: Record<string, string> = {};
       for (const name of layerChanges) {
-        const spec = CLOVER_METHODS.get(name)!;
+        const spec = MOSS_METHODS.get(name)!;
         // The gate: a userOnly method without `change` is refused there; one with it reaches its handler.
-        const gate = gateCloverRequest("layer", caller, name);
+        const gate = gateMossRequest("layer", caller, name);
         if (gate !== null) {
           expect([name, spec.change]).toEqual([name, undefined]);
           outcomes[name] = "refused at the gate";

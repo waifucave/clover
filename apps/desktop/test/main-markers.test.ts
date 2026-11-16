@@ -7,7 +7,7 @@ import { TEST_BUILD_LABEL, TEST_BUILD_SENTINEL, TEST_ONLY_APP_STRINGS, acceptanc
 /** A real compile of the main process, as scripts/build.ts does it: the define folds the test-only code out of a real
  *  build (neither the label nor the sentinel remains), and a test build has both. */
 async function compile(test: boolean, acceptance = false): Promise<string> {
-  const out = mkdtempSync(join(tmpdir(), "clover-main-"));
+  const out = mkdtempSync(join(tmpdir(), "moss-main-"));
   try {
     // In a process of its own, so no other test's module mocks reach the compile.
     const define = Object.entries({ ...testBuildDefine(test), ...acceptanceBuildDefine(acceptance) }).flatMap(([k, v]) => ["--define", `${k}=${v}`]);
@@ -29,7 +29,7 @@ describe("the app's main bundle and the test-build markers", () => {
     expect(test.includes(TEST_BUILD_SENTINEL)).toBe(true);
   }, 120_000);
 
-  test("a real build reads neither CLOVER_TEST_ANSWER_KEY nor CLOVER_TEST_SEALED_PRESS; the test build and the source acceptance's build read both", async () => {
+  test("a real build reads neither MOSS_TEST_ANSWER_KEY nor MOSS_TEST_SEALED_PRESS; the test build and the source acceptance's build read both", async () => {
     const real = await compile(false);
     for (const t of TEST_ONLY_APP_STRINGS) expect([t, real.includes(t)]).toEqual([t, false]);
     const test = await compile(true);

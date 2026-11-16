@@ -12,7 +12,7 @@ bun install                      # from the repo root, once
 bun run scripts/browser-live-gate.ts [--section <name>] [--out <folder>] [--all]
 ```
 
-It builds a small app that shows one window, serves a fixture page on loopback, and walks you through the steps for that OS. For some steps it measures by itself (the page's token across show and hide, composition events, wheel and pinch events, the frame rate, the display's scale, whether a new tab went to the screen-reader host) and then asks you. Answer `p` (pass), `f` (fail) or `s` (skip), and add a note. Your answers go to `browser-live-gate.json` in the run folder (printed when it starts; `--out` chooses it). Nothing else is written: no Clover home, no Keychain, no account.
+It builds a small app that shows one window, serves a fixture page on loopback, and walks you through the steps for that OS. For some steps it measures by itself (the page's token across show and hide, composition events, wheel and pinch events, the frame rate, the display's scale, whether a new tab went to the screen-reader host) and then asks you. Answer `p` (pass), `f` (fail) or `s` (skip), and add a note. Your answers go to `browser-live-gate.json` in the run folder (printed when it starts; `--out` chooses it). Nothing else is written: no MOSS home, no Keychain, no account.
 
 It refuses to run in CI, under an agent, or without a terminal.
 

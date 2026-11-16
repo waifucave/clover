@@ -1,5 +1,5 @@
 #!/bin/bash
-# One packaged acceptance run (scripts/acceptance/run.ts --app) of a test-marked Clover.app, under a keychain-prompt
+# One packaged acceptance run (scripts/acceptance/run.ts --app) of a test-marked MOSS Code.app, under a keychain-prompt
 # watchdog. The app is copied (ditto) into the run's folder and run from there, headless, never through `open`. If a
 # SecurityAgent process starts after the run began (the process list only; nothing is read from it), the run and
 # everything it started are stopped at once and the script says so. It stops only what this run started, by pid: the
@@ -7,16 +7,16 @@
 # taken before the run is told to stop), never another run's on the same Mac. Then the copy is unregistered from Launch
 # Services and deleted. The user's keychain search list is compared before and after (a hash; nothing printed).
 #
-# Usage: scripts/try/watch.sh <test-marked Clover.app> <checkout> <run folder> [run.ts args, e.g. --cold-start 5]
+# Usage: scripts/try/watch.sh <test-marked MOSS Code.app> <checkout> <run folder> [run.ts args, e.g. --cold-start 5]
 # The run folder gets run.out (the script's output), logs/ (its kept logs) and the copy while it runs.
 set -u
-[ $# -ge 3 ] || { echo "usage: scripts/try/watch.sh <test Clover.app> <checkout> <run folder> [run.ts args]"; exit 2; }
+[ $# -ge 3 ] || { echo "usage: scripts/try/watch.sh <test MOSS Code.app> <checkout> <run folder> [run.ts args]"; exit 2; }
 # One acceptance or try run on this machine at a time: a packaged run holds scripts/heavy's exclusive lock (inside a
 # try's, it runs under that one).
-[ -n "${CLOVER_HEAVY_EXCLUSIVE:-}" ] || exec "$(cd "$(dirname "$0")/.." && pwd -P)/heavy" --exclusive --packaged "$0" "$@"
+[ -n "${MOSS_HEAVY_EXCLUSIVE:-}" ] || exec "$(cd "$(dirname "$0")/.." && pwd -P)/heavy" --exclusive --packaged "$0" "$@"
 APP="$1"; W="$(cd "$2" && pwd -P)" || exit 2; OUT="$3"; shift 3; EXTRA=("$@")
 LSR=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-mkdir -p "$OUT/logs"; OUT="$(cd "$OUT" && pwd -P)"; COPY="$OUT/Clover.app"; rm -rf "$COPY"; ditto "$APP" "$COPY"
+mkdir -p "$OUT/logs"; OUT="$(cd "$OUT" && pwd -P)"; COPY="$OUT/MOSS Code.app"; rm -rf "$COPY"; ditto "$APP" "$COPY"
 agents() { pgrep -x SecurityAgent | sort; }
 # A running SecurityAgent would be reused by a new prompt (no new process to see): start only when none runs.
 for _ in $(seq 1 120); do [ -z "$(agents)" ] && break; sleep 5; done

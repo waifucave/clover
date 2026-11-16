@@ -1,7 +1,7 @@
-# Clover native sandbox spike
+# MOSS native sandbox spike
 
 `windows-probe.cs` is a C#/.NET Framework P/Invoke compatibility experiment, loaded by
-PowerShell `Add-Type`. It is not wired into Winter, Clover, or the read-only SDK clone.
+PowerShell `Add-Type`. It is not wired into Winter, MOSS, or the read-only SDK clone.
 
 One command, on the disposable Windows VM from a checkout with the S2 prerequisites:
 

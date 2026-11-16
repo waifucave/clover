@@ -1,4 +1,4 @@
-// The Clover server's `browser.*` methods (`BROWSER_METHODS`), for a live view: a component is a plugin's layer, which
+// The MOSS server's `browser.*` methods (`BROWSER_METHODS`), for a live view: a component is a plugin's layer, which
 // calls the core on its plugin's own connection (role `layer`, `caller: { kind: "plugin", pluginId }`), and the
 // capability gate has already checked that the plugin holds `browser`. This door adds the rest:
 //
@@ -8,8 +8,8 @@
 //   through; the tool's own door (`api-handlers.ts`) keeps a bot to its own tab.
 // * what a live view hears: the tab changes arrive as core events (`daemon.ts` sends `tab_changed` and `tab_closed` to
 //   the app and to the layers of plugins holding `browser`, never to another plugin).
-import { BROWSER_METHODS, CLOVER_ERR, ERR } from "@waifucave/clover-protocol";
-import { CloverRpcError, type CloverConn, type CloverHandler } from "../ipc/clover";
+import { BROWSER_METHODS, MOSS_ERR, ERR } from "@waifucave/moss-protocol";
+import { MossRpcError, type MossConn, type MossHandler } from "../ipc/moss";
 import { BrowserError } from "./policy";
 import type { BrowserCaller, BrowserService } from "./service";
 import { TOOL_CDP_METHODS } from "./api-handlers";
@@ -18,29 +18,29 @@ import { TOOL_CDP_METHODS } from "./api-handlers";
 export type HoldsBrowser = (pluginId: string) => boolean;
 
 /** Whom a connection's calls act for: the person's app, or the layer of a plugin holding `browser` (a live view). */
-export function panelCaller(conn: Pick<CloverConn, "role" | "caller">, holds: HoldsBrowser): BrowserCaller {
+export function panelCaller(conn: Pick<MossConn, "role" | "caller">, holds: HoldsBrowser): BrowserCaller {
   if (conn.role === "app" && conn.caller.kind === "user") return { kind: "user" };
   if (conn.role === "layer" && conn.caller.kind === "plugin" && holds(conn.caller.pluginId)) return { kind: "user" };
-  throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "the Clover Browser's tabs are the person's: only the app and a plugin holding the browser capability reach them");
+  throw new MossRpcError(MOSS_ERR.ROLE_REFUSED, "the MOSS Browser's tabs are the person's: only the app and a plugin holding the browser capability reach them");
 }
 
 /** The connections a tab change goes to: the app, and the layers of plugins holding `browser`. No other plugin hears a tab. */
-export const hearsTabsOf = (holds: HoldsBrowser) => (conn: Pick<CloverConn, "role" | "caller">): boolean =>
+export const hearsTabsOf = (holds: HoldsBrowser) => (conn: Pick<MossConn, "role" | "caller">): boolean =>
   conn.role === "app" || (conn.role === "layer" && conn.caller.kind === "plugin" && holds(conn.caller.pluginId));
 
 const M = BROWSER_METHODS;
 
-export function browserRpcHandlers(getService: () => BrowserService | undefined, bundled: HoldsBrowser): Record<string, CloverHandler> {
+export function browserRpcHandlers(getService: () => BrowserService | undefined, bundled: HoldsBrowser): Record<string, MossHandler> {
   const svc = (): BrowserService => {
     const s = getService();
-    if (s === undefined) throw new CloverRpcError(ERR.RETRY, "the browser isn't up yet");
+    if (s === undefined) throw new MossRpcError(ERR.RETRY, "the browser isn't up yet");
     return s;
   };
   const guard = async <T>(work: () => Promise<T>): Promise<T> => {
     try {
       return await work();
     } catch (e) {
-      if (e instanceof BrowserError) throw new CloverRpcError(ERR.INVALID_PARAMS, e.message, { code: e.code });
+      if (e instanceof BrowserError) throw new MossRpcError(ERR.INVALID_PARAMS, e.message, { code: e.code });
       throw e;
     }
   };
@@ -48,7 +48,7 @@ export function browserRpcHandlers(getService: () => BrowserService | undefined,
     try {
       return schema.parse(raw) as ReturnType<S["parse"]>;
     } catch {
-      throw new CloverRpcError(ERR.INVALID_PARAMS, "the browser call's parameters aren't what it takes");
+      throw new MossRpcError(ERR.INVALID_PARAMS, "the browser call's parameters aren't what it takes");
     }
   };
   return {
@@ -90,7 +90,7 @@ export function browserRpcHandlers(getService: () => BrowserService | undefined,
     [M.browserCdp.name]: (conn, raw) => {
       const caller = panelCaller(conn, bundled);
       const p = parse(M.browserCdp.params, raw) as { id: string; method: string; params?: Record<string, unknown>; viewport?: { width: number; height: number } };
-      if (!TOOL_CDP_METHODS.includes(p.method)) throw new CloverRpcError(ERR.INVALID_PARAMS, `${p.method} isn't one the Browser uses`, { code: "method_refused" });
+      if (!TOOL_CDP_METHODS.includes(p.method)) throw new MossRpcError(ERR.INVALID_PARAMS, `${p.method} isn't one the Browser uses`, { code: "method_refused" });
       return guard(async () => ({ result: await svc().cdp(caller, p.id, p.method, p.params, p.viewport !== undefined ? { viewport: p.viewport } : {}) }));
     },
   };

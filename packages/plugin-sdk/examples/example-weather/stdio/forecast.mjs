@@ -1,6 +1,6 @@
 // The Weather plugin's forecast server: an MCP server on stdio (a JSON-RPC message per line), plain JavaScript that Bun
-// runs with no dependency. Clover starts it fenced: it reads and writes only its own data folder (its first argument),
-// and reaches the network only through the proxy Clover hands it (HTTP_PROXY), which lets through the one host the
+// runs with no dependency. MOSS starts it fenced: it reads and writes only its own data folder (its first argument),
+// and reaches the network only through the proxy MOSS hands it (HTTP_PROXY), which lets through the one host the
 // manifest names. Its key is read from the file WEATHER_KEY_FILE names (`${secretFile:…}`: mode 0600, readable only by
 // this plugin's processes, where an environment variable could be read by other processes of the user); it never goes
 // into an answer.

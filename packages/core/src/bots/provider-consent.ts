@@ -7,8 +7,8 @@
 //
 // * **The user's choice asks nothing:** a model the user set for the bot (its user layer), or the user's default model
 //   the bot falls back to (with `hasKeyFor`, a plugin's tag the user holds no key for falls back to the default too).
-// * **Nor does Clover's own bundled plugin's** (the owner's ruling, revising #298's and #311's): a model tag from a
-//   bot whose plugin is Clover's own bundled one, as staging verified it (`EffectiveBot.modelBundled`, decided once per
+// * **Nor does MOSS's own bundled plugin's** (the owner's ruling, revising #298's and #311's): a model tag from a
+//   bot whose plugin is MOSS's own bundled one, as staging verified it (`EffectiveBot.modelBundled`, decided once per
 //   load from the bot side's `bundledChoice`: the record's source is `bundled`, its
 //   folder is the staged copy under `run/`, which no runner can write, its manifest's bytes are the staged digest, and
 //   the tag loaded is the tag those verified bytes name). Not the bot's id or name, nor anything a manifest says: a development folder or an installed plugin named `alpha` is refused at load
@@ -19,20 +19,20 @@
 //   (the shared `SessionGrants`, lane C's card path): its side threads and its next turns use it, and a plugin that
 //   moves its tag to a new provider asks again. Only the user's answer on the card counts (`SessionGrants`, review B1).
 // * **The same rule for what else a bot picks:** an agent it starts with a model on another provider than the bot's own
-//   user-chosen (or bundled) one (#311 S1). (A bot's voice isn't checked here: it is Clover Voice's, the user's choice
-//   in the bot's Voice section, else a default the plugin bringing the bot gives on Clover Voice's point
-//   `clover.voice.defaults`, which that plugin's OK card says (the point's `fills` line) and which speaks only through a
+//   user-chosen (or bundled) one (#311 S1). (A bot's voice isn't checked here: it is MOSS Voice's, the user's choice
+//   in the bot's Voice section, else a default the plugin bringing the bot gives on MOSS Voice's point
+//   `moss.voice.defaults`, which that plugin's OK card says (the point's `fills` line) and which speaks only through a
 //   provider the user set up.)
 // * **A no holds** until the user's next message of their own: until then nothing asks again, not a wake, a routine or
 //   an agent's report (#311 S2); the turn fails with a clear reason, and nothing reaches the provider. The hold is kept
 //   with the grants (`SessionGrants.hold`), in the bot's main conversation's log, so it survives a restart. Only the
 //   user's own no on the card holds: a card nobody answered in time, or one withdrawn or cancelled with its turn, says
 //   so in the reason and asks again next time. With no broker to ask, a plugin's provider is refused.
-// * **The card is Clover's own words** (#267's house rule, #311 B2): a fixed title and sentence; the bot, the provider
+// * **The card is MOSS's own words** (#267's house rule, #311 B2): a fixed title and sentence; the bot, the provider
 //   and the model, which a plugin wrote, only as code values with every hiding character removed (`plainOf`). Its
 //   origin is the asking session's turn (a side thread's own), never the main conversation's.
-import type { TurnOrigin } from "@waifucave/clover-protocol";
-import { CardFieldName, type SealedValue } from "@waifucave/clover-protocol";
+import type { TurnOrigin } from "@waifucave/moss-protocol";
+import { CardFieldName, type SealedValue } from "@waifucave/moss-protocol";
 import { plainOf } from "../approvals/strings";
 import { testProviderNameFor } from "../runtime-sdk/provider-selection";
 import type { SessionGrants } from "../sessions/grants";
@@ -107,7 +107,7 @@ export class BotProviderConsent {
     const grants = this.#o.grants;
     const what = describe(subject);
     if (grants === undefined) {
-      return { ok: false, reason: `This bot's plugin chose ${what}, and Clover can't ask you here whether it may use your stored key. Pick it in the bot's settings.` };
+      return { ok: false, reason: `This bot's plugin chose ${what}, and MOSS can't ask you here whether it may use your stored key. Pick it in the bot's settings.` };
     }
     if (grants.has(mainSession, key)) return { ok: true };
     if (grants.held(mainSession, key)) {
@@ -151,7 +151,7 @@ function declined(what: string): string {
   return `You didn't let this bot use ${what} with your stored key, so it didn't go ahead. Pick it in the bot's settings, or say yes when it asks again after your next message.`;
 }
 
-/** The card: Clover's own title and sentence, and what the plugin wrote only as code values (#267's house rule). */
+/** The card: MOSS's own title and sentence, and what the plugin wrote only as code values (#267's house rule). */
 function cardFields(bot: EffectiveBot, subject: Subject): Partial<Record<CardFieldName, SealedValue>> {
   const chosen = subject.model;
   return {

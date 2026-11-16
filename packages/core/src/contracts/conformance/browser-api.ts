@@ -4,7 +4,7 @@
 // partitions, the three places, the allow list, viewport-checked
 // Points, the user's hold, scratch-only paths, resting tabs and stalled hosts.
 import { describe, expect, test } from "bun:test";
-import { AGENT_VIEWPORT, type Caller } from "@waifucave/clover-protocol";
+import { AGENT_VIEWPORT, type Caller } from "@waifucave/moss-protocol";
 import type { BrowserChange } from "../browser-api";
 import { isContractError } from "../common";
 import { FAKE_REST_AFTER_MS, type FakeBrowser } from "../fakes/browser-api";
@@ -18,14 +18,14 @@ export type BrowserApiFactory = (...args: ConstructorParameters<typeof FakeBrows
 
 export function runBrowserApiConformance(make: BrowserApiFactory): void {
   const BOT: Caller = { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" };
-  const PLUGIN: Caller = { kind: "plugin", pluginId: "clover/browser-tool" };
+  const PLUGIN: Caller = { kind: "plugin", pluginId: "moss/browser-tool" };
   const USER: Caller = { kind: "user", client: "app" };
   const VIEW = { width: 900, height: 700 };
   const rejection = async (p: Promise<unknown>) => p.then(() => undefined, (e: unknown) => e);
 
   function setup() {
     const clock = new FakeClock();
-    const browser = make({ clock, computer: "Studio", scratchOf: (bot) => `/Users/me/.clover/scratch/${bot}` });
+    const browser = make({ clock, computer: "Studio", scratchOf: (bot) => `/Users/me/.moss/scratch/${bot}` });
     const changes: BrowserChange[] = [];
     browser.watch((c) => changes.push(c));
     return { clock, browser, changes };
@@ -46,7 +46,7 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
       const CODE: Caller = { kind: "session", sessionId: "s_code", sessionKind: "coding" };
       const refused = async (owner: Parameters<typeof browser.open>[0]["owner"], as: Caller) => isContractError(await rejection(browser.open({ owner }, as)), "refused");
       // A plugin acting as itself: its own partition only, never a bot's, a session's or the person's.
-      expect(await browser.open({ owner: { kind: "plugin", plugin: "clover/browser-tool" } }, PLUGIN)).toMatchObject({ partition: "persist:plugin-clover--browser-tool" });
+      expect(await browser.open({ owner: { kind: "plugin", plugin: "moss/browser-tool" } }, PLUGIN)).toMatchObject({ partition: "persist:plugin-moss--browser-tool" });
       expect(await refused({ kind: "plugin", plugin: "other" }, PLUGIN)).toBe(true);
       expect(await refused({ kind: "bot", bot: "alpha" }, PLUGIN)).toBe(true);
       expect(await refused({ kind: "session", session: "s_alpha" }, PLUGIN)).toBe(true);
@@ -73,11 +73,11 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
       expect(await browser.hide(tab.id)).toMatchObject({ place: "headless", viewport: AGENT_VIEWPORT, url: "https://a.example" });
     });
 
-    test("no partition loads a local file, the browser's own pages or Clover's schemes, however the load starts (review S17)", async () => {
+    test("no partition loads a local file, the browser's own pages or MOSS's schemes, however the load starts (review S17)", async () => {
       const { browser } = setup();
       const refused = [
-        "file:///Users/me/.clover/secrets.key", "FILE:///etc/passwd", "chrome://settings", "devtools://devtools/bundled/x.html",
-        "view-source:https://example.com", "chrome-extension://abc/x.html", "clover-plugin://luna/x.js", "clover://app", "about:settings", "not a url",
+        "file:///Users/me/.moss/secrets.key", "FILE:///etc/passwd", "chrome://settings", "devtools://devtools/bundled/x.html",
+        "view-source:https://example.com", "chrome-extension://abc/x.html", "moss-plugin://luna/x.js", "moss://app", "about:settings", "not a url",
       ];
       for (const url of refused) {
         expect([url, isContractError(await rejection(browser.open({ owner: { kind: "bot", bot: "alpha" }, url }, BOT)), "refused")]).toEqual([url, true]);
@@ -87,7 +87,7 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
       // The page's own links and redirects, and DevTools' navigation, meet the same session.
       expect(browser.pageNavigates(tab.id, "file:///etc/passwd")).toBe(false);
       expect(browser.pageNavigates(tab.id, "https://example.org/next")).toBe(true);
-      expect(await browser.cdp(tab.id, "Page.navigate", { url: "file:///Users/me/.clover/secrets.key" }, BOT)).toMatchObject({ errorText: "net::ERR_BLOCKED_BY_CLIENT" });
+      expect(await browser.cdp(tab.id, "Page.navigate", { url: "file:///Users/me/.moss/secrets.key" }, BOT)).toMatchObject({ errorText: "net::ERR_BLOCKED_BY_CLIENT" });
       expect(browser.tabs()[0]!.url).toBe("https://example.org/next");
       for (const url of ["https://example.com", "http://localhost:3000/", "about:blank", "data:text/plain,hi"]) {
         expect((await browser.navigate(tab.id, url, BOT)).url).toBe(url);
@@ -134,9 +134,9 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
     test("a path in a DevTools call must sit in the bot's scratch folder", async () => {
       const { browser } = setup();
       const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, BOT);
-      expect(await browser.cdp(tab.id, "DOM.setFileInputFiles", { files: ["/Users/me/.clover/scratch/alpha/cv.pdf"], nodeId: 1 }, PLUGIN)).toEqual({});
+      expect(await browser.cdp(tab.id, "DOM.setFileInputFiles", { files: ["/Users/me/.moss/scratch/alpha/cv.pdf"], nodeId: 1 }, PLUGIN)).toEqual({});
       expect(isContractError(await rejection(browser.cdp(tab.id, "DOM.setFileInputFiles", { files: ["/Users/me/.ssh/id_ed25519"], nodeId: 1 }, PLUGIN)), "refused")).toBe(true);
-      expect(isContractError(await rejection(browser.cdp(tab.id, "Page.setDownloadBehavior", { behavior: "allow", downloadPath: "/Users/me/.clover/scratch/alpha/../../settings" }, PLUGIN)), "refused")).toBe(true);
+      expect(isContractError(await rejection(browser.cdp(tab.id, "Page.setDownloadBehavior", { behavior: "allow", downloadPath: "/Users/me/.moss/scratch/alpha/../../settings" }, PLUGIN)), "refused")).toBe(true);
     });
 
     test("a tab no one uses rests, and goes back to the host before the next command", async () => {

@@ -12,7 +12,7 @@ describe("ci-changes", () => {
     expect(matches("appsx/a.ts", "apps/")).toBe(false);
     expect(matches("scripts/verify-runtimes-compiled.ts", "scripts/verify-")).toBe(true);
     expect(matches("scripts/verify-x/y.ts", "scripts/verify-")).toBe(false);
-    expect(matches("plugins/clover/plugins/shell/package.json", "**/package.json")).toBe(true);
+    expect(matches("plugins/moss/plugins/shell/package.json", "**/package.json")).toBe(true);
     expect(matches("package.json", "**/package.json")).toBe(true);
     expect(matches("services/hello/tsconfig.test.json", "**/tsconfig*.json")).toBe(true);
     expect(matches("VERSION", "VERSION")).toBe(true);
@@ -20,12 +20,12 @@ describe("ci-changes", () => {
   });
 
   test("docs and reports run no area (only the names-and-layout checks and the gate)", () => {
-    expect(on(["docs/clover-plan.md", "docs/research/2026-11-05-x.md", "README.md"])).toEqual([]);
+    expect(on(["docs/moss-plan.md", "docs/research/2026-11-05-x.md", "README.md"])).toEqual([]);
   });
 
-  test("a change to Clover's own plugins: their tests, the app that loads them, the gallery and the typecheck", () => {
-    expect(on(["plugins/clover/plugins/shell/src/a.tsx", "plugins/clover/plugins/shell/test/a.test.ts"])).toEqual(["workspaces", "app", "gallery", "typecheck"]);
-    expect(on(["plugins/clover/plugins/shell/package.json"])).toEqual(["workspaces", "app", "gallery", "typecheck", "lockfiles"]);
+  test("a change to MOSS's own plugins: their tests, the app that loads them, the gallery and the typecheck", () => {
+    expect(on(["plugins/moss/plugins/shell/src/a.tsx", "plugins/moss/plugins/shell/test/a.test.ts"])).toEqual(["workspaces", "app", "gallery", "typecheck"]);
+    expect(on(["plugins/moss/plugins/shell/package.json"])).toEqual(["workspaces", "app", "gallery", "typecheck", "lockfiles"]);
     // Another top-level plugin (a bot's) is not loaded by the app's own build.
     expect(on(["plugins/alpha/tab/theme.json"])).toEqual(["workspaces", "gallery", "typecheck"]);
   });
@@ -90,10 +90,10 @@ describe("ci-changes", () => {
     expect(on(["apple/ComputerUse/WinterBrowserHost/Sources/Host.swift"])).not.toContain("scriptsmac");
     expect(macJobs(["scripts/embed-runtimes.sh"])).toEqual(["macos"]);
     expect(on(["scripts/embed-runtimes.sh"])).toEqual(expect.arrayContaining(["scripts", "scriptsmac"]));
-    expect(macJobs(["plugins/clover/plugins/shell/src/a.tsx"])).toEqual(["machine"]);
-    expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
+    expect(macJobs(["plugins/moss/plugins/shell/src/a.tsx"])).toEqual(["machine"]);
+    expect(macJobs(["docs/moss-plan.md"])).toEqual([]);
     // A pull request takes no hosted macOS runner, whatever it changes.
-    for (const change of ["packages/core/src/daemon.ts", ".github/workflows/ci.yml", "apple/ComputerUse/WinterBrowserHost/Sources/Host.swift", "scripts/embed-runtimes.sh", "plugins/clover/plugins/shell/src/a.tsx"]) {
+    for (const change of ["packages/core/src/daemon.ts", ".github/workflows/ci.yml", "apple/ComputerUse/WinterBrowserHost/Sources/Host.swift", "scripts/embed-runtimes.sh", "plugins/moss/plugins/shell/src/a.tsx"]) {
       expect(macJobs([change], "pull_request")).toEqual([]);
     }
   });
@@ -148,20 +148,20 @@ describe("ci-changes", () => {
   });
 
   test("a model plugin alone runs the core's suite (lane A's catalog and generator check), and other plugins don't", () => {
-    expect(on(["plugins/clover/plugins/model-openai/clover.json"])).toContain("core");
-    expect(on(["plugins/clover/plugins/model-anthropic/src/catalog.ts"])).toContain("core");
-    expect(on(["plugins/clover/plugins/shell/src/a.tsx"])).not.toContain("core");
+    expect(on(["plugins/moss/plugins/model-openai/moss.json"])).toContain("core");
+    expect(on(["plugins/moss/plugins/model-anthropic/src/catalog.ts"])).toContain("core");
+    expect(on(["plugins/moss/plugins/shell/src/a.tsx"])).not.toContain("core");
   });
 
   test("the tree job (Linux and Windows) runs for the tree's and the computers' code and tests, and their conformance suites", () => {
     for (const f of ["packages/core/src/tree/index.ts", "packages/core/src/computers/registry.ts", "packages/core/test/tree/x.test.ts",
       "packages/core/test/computers/x.test.ts", "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts",
       "packages/core/src/agents/backend.ts", "packages/core/src/agents/process/launch.ts", "packages/core/src/agents/tests/windows-path.test.ts",
-      "plugins/clover/plugins/agent-cursor/clover.json", "plugins/clover/plugins/agent-gemini/clover.json"]) {
+      "plugins/moss/plugins/agent-cursor/moss.json", "plugins/moss/plugins/agent-gemini/moss.json"]) {
       expect(on([f]), f).toContain("tree");
     }
     expect(on(["packages/core/src/daemon.ts"])).not.toContain("tree");
-    expect(on(["plugins/clover/plugins/agent-cursor/quirks.json"])).not.toContain("tree");
+    expect(on(["plugins/moss/plugins/agent-cursor/quirks.json"])).not.toContain("tree");
     expect(on(["packages/core/src/contracts/tests/secret-store.test.ts"])).not.toContain("tree");
   });
 
@@ -177,7 +177,7 @@ describe("ci-changes", () => {
     const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, { steps?: Array<{ run?: string; env?: Record<string, string> }> }> }).jobs;
     const steps = Object.values(jobs).flatMap((j) => j.steps ?? []).filter((s) => /bun test\b.*\bsrc\/links\b/.test(s.run ?? ""));
     expect(steps.length).toBe(2);
-    for (const s of steps) expect(s.env?.CLOVER_LINK_REQUIRE_BINARY).toBe("1");
+    for (const s of steps) expect(s.env?.MOSS_LINK_REQUIRE_BINARY).toBe("1");
   });
 
   test("the services' shared source and the sign-in stub run the core's suite (its account tests import them)", () => {

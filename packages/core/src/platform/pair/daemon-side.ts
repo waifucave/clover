@@ -3,7 +3,7 @@
 // creates it once it listens, and feeds it the `app` connections (hello with its features, close),
 // `pair.exiting`, `pair.quit` and SIGTERM; `status()` is the policy's half of `pair.status`.
 import { bunRunner, windowsUserSid, type Runner } from "../login/live";
-import type { CloverProfile } from "../../profile";
+import type { MossProfile } from "../../profile";
 import type { DaemonPlatform } from "../transport";
 import { appStarter, resolveAppLauncher, type AppLauncher } from "./launch";
 import { DaemonPair, type DaemonPairOptions, type PairStopReason } from "./policy";
@@ -12,7 +12,7 @@ import { lockRunDir, mintAppToken, removeAppToken } from "./run-files";
 export interface DaemonPairSideInput {
   readonly runDir: string;
   readonly os: DaemonPlatform;
-  readonly profile: CloverProfile;
+  readonly profile: MossProfile;
   readonly execPath: string;
   readonly env: Record<string, string | undefined>;
   /** Send `app.quit{reason}` to these app connections. */
@@ -39,7 +39,7 @@ export interface DaemonPairSide {
 }
 
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
-declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+declare const __MOSS_TEST_BUILD__: string | false | undefined;
 
 const realAfter = (ms: number, fn: () => void): (() => void) => {
   const t = setTimeout(fn, ms);
@@ -54,7 +54,7 @@ export async function startDaemonPairSide(input: DaemonPairSideInput): Promise<D
   await lockRunDir(input.runDir, files);
   const appToken = await mintAppToken(input.runDir, files);
   // A test-marked build never starts the app (it would open a window): the daemon runs alone, whoever connects.
-  const launcher = typeof __CLOVER_TEST_BUILD__ === "string" ? null : input.launcher !== undefined
+  const launcher = typeof __MOSS_TEST_BUILD__ === "string" ? null : input.launcher !== undefined
     ? input.launcher
     : await resolveAppLauncher({ os: input.os, profile: input.profile, execPath: input.execPath, env: input.env }, run);
   const now = input.now ?? Date.now;
@@ -70,7 +70,7 @@ export async function startDaemonPairSide(input: DaemonPairSideInput): Promise<D
     stopDaemon: input.stopDaemon,
     ...(input.log ? { log: input.log } : {}),
   }, { ...input.options, desktop: launcher !== null });
-  input.log?.(`[pair] ${typeof __CLOVER_TEST_BUILD__ === "string" ? "a test-marked build: the daemon never starts the app" : launcher === null ? "no app installed: the daemon runs alone" : `the app starts with: ${launcher.how}`}`);
+  input.log?.(`[pair] ${typeof __MOSS_TEST_BUILD__ === "string" ? "a test-marked build: the daemon never starts the app" : launcher === null ? "no app installed: the daemon runs alone" : `the app starts with: ${launcher.how}`}`);
   pair.start();
   return {
     pair,

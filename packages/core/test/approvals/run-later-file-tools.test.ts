@@ -1,5 +1,5 @@
 // The coordinator's ruling (stage 2 on agent SDK 0.0.77): a bot's file tools never write a run-later place. With 0.0.77
-// the session's sandbox `denyWrite` binds Write and Edit too, so a card's yes there would fail in the runtime: Clover
+// the session's sandbox `denyWrite` binds Write and Edit too, so a card's yes there would fail in the runtime: MOSS
 // refuses the call up front, with no card, and tells the bot what it can do instead. Every entry of the shell's
 // run-later deny list, under a project at every level a write runs at, with Write and Edit: refused, and the broker
 // never asked. An ordinary file in the same project still goes on to the broker.
@@ -7,10 +7,10 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Level, Os } from "@waifucave/clover-protocol";
+import type { Level, Os } from "@waifucave/moss-protocol";
 import { botApprovalCheck, runsLaterPlace } from "../../src/approvals/bot-check";
 import { pathsClassOnDisk } from "../../src/approvals/ordinary-paths";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { botSandboxSettings, runLaterByName } from "../../src/fence/sandbox-settings";
 import { PROJECT_DENIES, PROJECT_WHOLE_DENIES } from "../../src/registry/plugin-fence";
 import type { BotSessionContext } from "../../src/bots/service";
@@ -23,25 +23,25 @@ const os: Os = process.platform === "darwin" ? "macos" : process.platform === "w
 function world(level: Level) {
   const user = realpathSync(mkdtempSync(join(tmpdir(), "run-later-files-")));
   temps.push(user);
-  const clover = join(user, ".clover");
-  const scratch = join(clover, "scratch", "luna");
+  const moss = join(user, ".moss");
+  const scratch = join(moss, "scratch", "luna");
   mkdirSync(scratch, { recursive: true });
   const project = join(user, "Projects", "app");
   mkdirSync(project, { recursive: true });
   writeFileSync(join(project, "notes.md"), "ordinary");
   const ctx = {
-    botId: "luna", sessionId: "s1", computer: "Studio", level, paths: { scratch, root: join(clover, "bots", "luna") },
+    botId: "luna", sessionId: "s1", computer: "Studio", level, paths: { scratch, root: join(moss, "bots", "luna") },
     caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
   } as unknown as BotSessionContext;
-  const fence = new CloverFence({ home: user, cloverHome: clover, temp: join(user, "tmp") });
+  const fence = new MossFence({ home: user, mossHome: moss, temp: join(user, "tmp") });
   const pathFolders = [join(user, ".local", "bin")];
-  const sandboxOf = () => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { cloverHome: clover, userHome: user, level, ownFolders: [scratch], pathFolders });
-  const classOf = (paths: readonly string[]) => pathsClassOnDisk(paths, { home: user, os, cloverHome: clover, pathFolders });
+  const sandboxOf = () => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { mossHome: moss, userHome: user, level, ownFolders: [scratch], pathFolders });
+  const classOf = (paths: readonly string[]) => pathsClassOnDisk(paths, { home: user, os, mossHome: moss, pathFolders });
   const asked: string[] = [];
   const broker = { request: async (req: { paths?: string[] }) => { asked.push(...(req.paths ?? [])); return { allowed: true, by: "card" }; } };
   const check = botApprovalCheck(broker as never, {
     localComputer: "Studio",
-    runsLater: (_c, path) => runsLaterPlace(path, sandboxOf().filesystem?.denyWrite ?? [], { os, userHome: user, cloverHome: clover }, classOf),
+    runsLater: (_c, path) => runsLaterPlace(path, sandboxOf().filesystem?.denyWrite ?? [], { os, userHome: user, mossHome: moss }, classOf),
   })(ctx, () => "user");
   const call = (tool: string, input: Record<string, unknown>) => check(tool, input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" } as never);
   return { user, project, call, asked };
@@ -86,34 +86,34 @@ describe("a bot's file tools never write a run-later place: refused before any c
     expect(d?.behavior).toBe("allow");
   });
 
-  test("the bot's own scratch, under the Clover home, is never a run-later place by name", async () => {
+  test("the bot's own scratch, under the MOSS home, is never a run-later place by name", async () => {
     const w = world("ask-risky");
-    const d = await w.call("Write", { file_path: join(w.user, ".clover", "scratch", "luna", "draft.md"), content: "x" });
+    const d = await w.call("Write", { file_path: join(w.user, ".moss", "scratch", "luna", "draft.md"), content: "x" });
     expect(d?.behavior).toBe("allow");
   });
 
-  // The daemon's homes are given as CLOVER_HOME and HOME spell them, which may run through a link (macOS's temp folders
+  // The daemon's homes are given as MOSS_HOME and HOME spell them, which may run through a link (macOS's temp folders
   // are /var → /private/var; a home on a linked volume): a bot's Write names its scratch in that spelling, and the
-  // home's `.clover` must not read as a project's `.clover` (the acceptance's `<user>/.clover` home, 2026-11-13: every
-  // Write into Alpha's scratch was refused). A project's `.clover` is still held in either spelling.
+  // home's `.moss` must not read as a project's `.moss` (the acceptance's `<user>/.moss` home, 2026-11-13: every
+  // Write into Alpha's scratch was refused). A project's `.moss` is still held in either spelling.
   test("the bot's own scratch is never a run-later place in either spelling of a home reached through a link", async () => {
     const real = realpathSync(mkdtempSync(join(tmpdir(), "run-later-link-")));
     temps.push(real);
     const target = join(real, "user");
     const plain = join(real, "via");
-    mkdirSync(join(target, ".clover", "scratch", "luna"), { recursive: true });
+    mkdirSync(join(target, ".moss", "scratch", "luna"), { recursive: true });
     mkdirSync(join(target, "Projects", "app"), { recursive: true });
     symlinkSync(target, plain);
     const ctx = {
-      botId: "luna", sessionId: "s1", computer: "Studio", level: "ask-risky", paths: { scratch: join(plain, ".clover", "scratch", "luna"), root: join(plain, ".clover", "bots", "luna") },
+      botId: "luna", sessionId: "s1", computer: "Studio", level: "ask-risky", paths: { scratch: join(plain, ".moss", "scratch", "luna"), root: join(plain, ".moss", "bots", "luna") },
       caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
     } as unknown as BotSessionContext;
     // As the daemon draws it: the fence made from the homes as given (it keeps their real paths), the session's scratch
-    // as given, and the run-later check given the Clover home as given (CLOVER_HOME), the user home real.
-    const fence = new CloverFence({ home: plain, cloverHome: join(plain, ".clover"), temp: join(plain, "tmp") });
-    const sandboxOf = () => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { cloverHome: fence.cloverHome, userHome: fence.home, level: "ask-risky", ownFolders: [ctx.paths.scratch, ctx.paths.root], pathFolders: [] });
-    const classOf = (paths: readonly string[]) => pathsClassOnDisk(paths, { home: fence.home, os, cloverHome: fence.cloverHome, pathFolders: [] });
-    const homes = { os, userHome: fence.home, cloverHome: join(plain, ".clover") };
+    // as given, and the run-later check given the MOSS home as given (MOSS_HOME), the user home real.
+    const fence = new MossFence({ home: plain, mossHome: join(plain, ".moss"), temp: join(plain, "tmp") });
+    const sandboxOf = () => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { mossHome: fence.mossHome, userHome: fence.home, level: "ask-risky", ownFolders: [ctx.paths.scratch, ctx.paths.root], pathFolders: [] });
+    const classOf = (paths: readonly string[]) => pathsClassOnDisk(paths, { home: fence.home, os, mossHome: fence.mossHome, pathFolders: [] });
+    const homes = { os, userHome: fence.home, mossHome: join(plain, ".moss") };
     const broker = { request: async () => ({ allowed: true, by: "card" }) };
     const check = botApprovalCheck(broker as never, {
       localComputer: "Studio",
@@ -121,20 +121,20 @@ describe("a bot's file tools never write a run-later place: refused before any c
     })(ctx, () => "user");
     const call = (input: Record<string, unknown>) => check("Write", input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" } as never);
     for (const user of [plain, target]) {
-      const d = await call({ file_path: join(user, ".clover", "scratch", "luna", "ws-greeter", "clover.json"), content: "x" });
+      const d = await call({ file_path: join(user, ".moss", "scratch", "luna", "ws-greeter", "moss.json"), content: "x" });
       expect(`${user}: ${d?.behavior}`).toBe(`${user}: allow`);
-      const p = await call({ file_path: join(user, "Projects", "app", ".clover", "settings.json"), content: "x" });
+      const p = await call({ file_path: join(user, "Projects", "app", ".moss", "settings.json"), content: "x" });
       expect(`${user}: ${p?.behavior}`).toBe(`${user}: deny`);
     }
-    expect(runLaterByName(join(plain, ".clover", "scratch", "luna", "a.md"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(false);
-    expect(runLaterByName(join(target, ".clover", "scratch", "luna", "a.md"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(false);
-    expect(runLaterByName(join(target, "Projects", "app", ".clover", "a.json"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(true);
-    // A sibling whose name starts with the home's is not the home, in either spelling: a `.clover` inside it is held.
+    expect(runLaterByName(join(plain, ".moss", "scratch", "luna", "a.md"), { os, userHome: target, mossHome: join(plain, ".moss") })).toBe(false);
+    expect(runLaterByName(join(target, ".moss", "scratch", "luna", "a.md"), { os, userHome: target, mossHome: join(plain, ".moss") })).toBe(false);
+    expect(runLaterByName(join(target, "Projects", "app", ".moss", "a.json"), { os, userHome: target, mossHome: join(plain, ".moss") })).toBe(true);
+    // A sibling whose name starts with the home's is not the home, in either spelling: a `.moss` inside it is held.
     for (const user of [plain, target]) {
-      mkdirSync(join(target, ".clover-other"), { recursive: true });
-      expect(runLaterByName(join(user, ".clover-other", ".clover", "settings.json"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(true);
-      expect(runLaterByName(join(user, ".clover-other", "x.md"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(false);
-      const p = await call({ file_path: join(user, ".clover-other", ".clover", "settings.json"), content: "x" });
+      mkdirSync(join(target, ".moss-other"), { recursive: true });
+      expect(runLaterByName(join(user, ".moss-other", ".moss", "settings.json"), { os, userHome: target, mossHome: join(plain, ".moss") })).toBe(true);
+      expect(runLaterByName(join(user, ".moss-other", "x.md"), { os, userHome: target, mossHome: join(plain, ".moss") })).toBe(false);
+      const p = await call({ file_path: join(user, ".moss-other", ".moss", "settings.json"), content: "x" });
       expect(`${user}: ${p?.behavior}`).toBe(`${user}: deny`);
     }
   });
@@ -146,18 +146,18 @@ describe("a session on another computer: paths not resolved here, the name rule 
     const asked: { paths?: string[]; pathsUnresolved?: boolean }[] = [];
     const broker = { request: async (req: { paths?: string[]; pathsUnresolved?: boolean }) => { asked.push(req); return { allowed: true, by: "card" }; } };
     const ctx = {
-      botId: "luna", sessionId: "s1", computer: "Laptop", level: "ask-risky", paths: { scratch: "/Users/remote/.clover/scratch/luna", root: "/Users/remote/.clover/bots/luna" },
+      botId: "luna", sessionId: "s1", computer: "Laptop", level: "ask-risky", paths: { scratch: "/Users/remote/.moss/scratch/luna", root: "/Users/remote/.moss/bots/luna" },
       caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
     } as unknown as BotSessionContext;
     let fullChecks = 0;
     const check = botApprovalCheck(broker as never, {
       localComputer: "Studio",
       runsLater: () => { fullChecks++; return true; },
-      runsLaterByName: (_c, path) => runLaterByName(path, { os, userHome: "/Users/local", cloverHome: "/Users/local/.clover" }),
+      runsLaterByName: (_c, path) => runLaterByName(path, { os, userHome: "/Users/local", mossHome: "/Users/local/.moss" }),
     })(ctx, () => "user");
     const call = (tool: string, input: Record<string, unknown>) => check(tool, input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" } as never);
     const named = [
-      `${user}/Projects/app/.git/config`, `${user}/Projects/app/.vscode/tasks.json`, `${user}/Projects/app/.clover/settings.json`,
+      `${user}/Projects/app/.git/config`, `${user}/Projects/app/.vscode/tasks.json`, `${user}/Projects/app/.moss/settings.json`,
       `${user}/Projects/app/.envrc`, `${user}/.zshrc`, `${user}/Projects/mirror.git/HEAD`, `${user}/Projects/Tool.app/Contents/Info.plist`,
       "/usr/local/bin/tool", "relative/.husky/pre-commit",
     ];
@@ -182,16 +182,16 @@ describe("a session on another computer: paths not resolved here, the name rule 
 
 describe("runLaterByName: held wherever it sits, whatever the roots", () => {
   const user = "/home/u";
-  const clover = "/home/u/.clover";
+  const moss = "/home/u/.moss";
   for (const os of ["linux", "macos", "windows"] as const) {
     test(`on ${os}`, () => {
       const form = (p: string) => (os === "windows" ? `C:${p.replace(/\//g, "\\")}` : p);
-      const at = (p: string) => runLaterByName(form(p), { userHome: form(user), cloverHome: form(clover), os });
+      const at = (p: string) => runLaterByName(form(p), { userHome: form(user), mossHome: form(moss), os });
       expect(at("/srv/x/app/.git/config")).toBe(true);
       expect(at("/srv/x/app/.GIT/hooks/pre-commit")).toBe(true);
       expect(at("/srv/x/mirror.git/HEAD")).toBe(true);
-      expect(at("/srv/x/app/.clover/settings.json")).toBe(true);
-      expect(at("/srv/x/app/.Clover/settings.json")).toBe(true);
+      expect(at("/srv/x/app/.moss/settings.json")).toBe(true);
+      expect(at("/srv/x/app/.MOSS/settings.json")).toBe(true);
       expect(at("/srv/x/app/.vscode/tasks.json")).toBe(true);
       expect(at("/srv/x/app/.envrc")).toBe(true);
       expect(at("/srv/x/app/.zshrc")).toBe(true);
@@ -200,7 +200,7 @@ describe("runLaterByName: held wherever it sits, whatever the roots", () => {
       if (os !== "windows") expect(at("/usr/local/bin/tool")).toBe(true);
       expect(at("/srv/x/app/src/main.ts")).toBe(false);
       expect(at("/srv/x/app/gitignore.md")).toBe(false);
-      expect(at("/home/u/.clover/scratch/luna/notes.md")).toBe(false);
+      expect(at("/home/u/.moss/scratch/luna/notes.md")).toBe(false);
     });
   }
 });

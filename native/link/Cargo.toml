@@ -1,13 +1,13 @@
 [package]
-name = "clover-link"
+name = "moss-link"
 version = "0.0.0"
 edition = "2021"
 publish = false
 license = "Apache-2.0"
-description = "clover-core's link sidecar: one iroh endpoint per device, driven over stdin and stdout (spec §8.2)"
+description = "moss-core's link sidecar: one iroh endpoint per device, driven over stdin and stdout (spec §8.2)"
 
 [[bin]]
-name = "clover-link"
+name = "moss-link"
 path = "src/main.rs"
 
 [dependencies]

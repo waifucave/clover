@@ -255,7 +255,7 @@ describe("backfillNativeSessions", () => {
     });
   });
 
-  test("a session with no cwd keys off the clover home rather than inventing a path", async () => {
+  test("a session with no cwd keys off the moss home rather than inventing a path", async () => {
     await withTempHome(async (home) => {
       _clearRepoRootCacheForTests();
       const store = new SessionStore(home);

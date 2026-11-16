@@ -7,7 +7,7 @@ import { join } from "node:path";
 import {
   callBindingInput, cardAnswerSigningInput, cardHashInput,
   type Card, type CardOption, type SignedCardAnswer,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import type { CallCardRenderer } from "../../src/contracts/approval-broker";
 import { isContractError } from "../../src/contracts/common";
 import { MemoryAnswerLedger } from "../../src/contracts/fakes/approval-broker";
@@ -61,11 +61,11 @@ describe("files.* for plugins: the Files panel's data", () => {
     mkdirSync(join(laptop.home, "proj", "src"), { recursive: true });
     writeFileSync(join(laptop.home, "proj", "src", "a.ts"), "export const a = 1;\n");
     const files = filesApiRoutes(studio.node.tree);
-    const ctx = { pluginId: "clover/panel-files", caller: { kind: "plugin" as const, pluginId: "clover/panel-files" } };
+    const ctx = { pluginId: "moss/panel-files", caller: { kind: "plugin" as const, pluginId: "moss/panel-files" } };
     expect(((await files["files.list"]!(["home/Laptop1/proj"], ctx)) as { path: string; type: string }[]).map((e) => [e.path, e.type])).toEqual([["home/Laptop1/proj/src", "dir"]]);
     expect(await files["files.readText"]!(["home/Laptop1/proj/src/a.ts"], ctx)).toBe("export const a = 1;\n");
     expect(await files["files.readText"]!(["home/Laptop1/proj/src/a.ts", { offset: 7, length: 5 }], ctx)).toBe("const");
-    expect(isContractError(await rejection(files["files.readText"]!(["home/Laptop1/.clover/run/x"], ctx)), "fenced")).toBe(true);
+    expect(isContractError(await rejection(files["files.readText"]!(["home/Laptop1/.moss/run/x"], ctx)), "fenced")).toBe(true);
     // noFollow reaches the tree, which honours it (lane J's #225; the planted-link case is below), and a value other
     // than true or false is refused, never read as false (#234's check 2).
     for (const v of ["yes", 1, null]) {
@@ -91,7 +91,7 @@ describe("files.* for plugins: the Files panel's data", () => {
     writeFileSync(join(laptop.home, "elsewhere.md"), "elsewhere");
     symlinkSync(join(laptop.home, "elsewhere.md"), join(laptop.home, "out", "notes.md"), "file");
     const files = filesApiRoutes(studio.node.tree);
-    const ctx = { pluginId: "clover/shell", caller: { kind: "plugin" as const, pluginId: "clover/shell" } };
+    const ctx = { pluginId: "moss/shell", caller: { kind: "plugin" as const, pluginId: "moss/shell" } };
     const nf = { noFollow: true };
     expect(await files["files.readText"]!(["home/Laptop1/out/plain.md", nf], ctx)).toBe("plain");
     expect(await files["files.readBytes"]!(["home/Laptop1/out/plain.md", nf], ctx)).toEqual(new Uint8Array(Buffer.from("plain")));

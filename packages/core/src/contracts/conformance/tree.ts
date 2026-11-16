@@ -9,7 +9,7 @@ import { describe, expect, test } from "bun:test";
 import {
   TREE_TRANSFER, callBindingInput, cardAnswerSigningInput, cardHashInput, type Caller, type Card, type CardOption, type SignedCardAnswer,
   type TreeTransferParams,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import type { CallCardRenderer } from "../approval-broker";
 import { isContractError } from "../common";
 import { MemoryAnswerLedger } from "../fakes/approval-broker";
@@ -41,8 +41,8 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
     const tree = make({
       clock: new FakeClock(),
       computers: {
-        Studio: { home: "/Users/me", botsRoot: "/Users/me/.clover/bots", fence: new FakeFence({ home: "/Users/me", cloverHome: "/Users/me/.clover" }) },
-        Laptop1: { home: "/home/me", botsRoot: "/home/me/.clover/bots", aliases: ["OldLaptop"], fence: new FakeFence({ os: "linux", home: "/home/me", cloverHome: "/home/me/.clover" }) },
+        Studio: { home: "/Users/me", botsRoot: "/Users/me/.moss/bots", fence: new FakeFence({ home: "/Users/me", mossHome: "/Users/me/.moss" }) },
+        Laptop1: { home: "/home/me", botsRoot: "/home/me/.moss/bots", aliases: ["OldLaptop"], fence: new FakeFence({ os: "linux", home: "/home/me", mossHome: "/home/me/.moss" }) },
       },
       botComputer: (bot) => (bot === "alpha" || bot === "pack/luna" ? runsAlpha : undefined),
     });
@@ -72,8 +72,8 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
     const tree = make({
       clock,
       computers: {
-        Studio: { home: "/Users/me", fence: new FakeFence({ home: "/Users/me", cloverHome: "/Users/me/.clover" }), level: "ask-risky" },
-        Laptop1: { home: "/home/me", fence: new FakeFence({ os: "linux", home: "/home/me", cloverHome: "/home/me/.clover" }), level: "automatic" },
+        Studio: { home: "/Users/me", fence: new FakeFence({ home: "/Users/me", mossHome: "/Users/me/.moss" }), level: "ask-risky" },
+        Laptop1: { home: "/home/me", fence: new FakeFence({ os: "linux", home: "/home/me", mossHome: "/home/me/.moss" }), level: "automatic" },
       },
       botComputer: () => undefined,
       devices: registry,
@@ -116,10 +116,10 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       const { tree, moveAlpha } = setup();
       expect(tree.resolve("home/Laptop1/project/run.py")).toEqual({ computer: "Laptop1", path: "/home/me/project/run.py", area: "home" });
       expect(tree.resolve("home/OldLaptop")).toMatchObject({ computer: "Laptop1", path: "/home/me" });
-      expect(tree.resolve("bots/alpha/memory/MEMORY.md")).toEqual({ computer: "Studio", path: "/Users/me/.clover/bots/alpha/memory/MEMORY.md", area: "bot", bot: "alpha" });
-      expect(tree.resolve("bots/pack--luna/memory")).toMatchObject({ bot: "pack/luna", path: "/Users/me/.clover/bots/pack--luna/memory" });
+      expect(tree.resolve("bots/alpha/memory/MEMORY.md")).toEqual({ computer: "Studio", path: "/Users/me/.moss/bots/alpha/memory/MEMORY.md", area: "bot", bot: "alpha" });
+      expect(tree.resolve("bots/pack--luna/memory")).toMatchObject({ bot: "pack/luna", path: "/Users/me/.moss/bots/pack--luna/memory" });
       moveAlpha("Laptop1");
-      expect(tree.resolve("bots/alpha/memory")).toMatchObject({ computer: "Laptop1", path: "/home/me/.clover/bots/alpha/memory" });
+      expect(tree.resolve("bots/alpha/memory")).toMatchObject({ computer: "Laptop1", path: "/home/me/.moss/bots/alpha/memory" });
       expect(isContractError((() => { try { tree.resolve("home/Nowhere/x"); } catch (e) { return e; } })(), "not_found")).toBe(true);
       expect(isContractError((() => { try { tree.resolve("/etc/passwd"); } catch (e) { return e; } })(), "invalid")).toBe(true);
       expect(tree.toTreePath("Studio", "/Users/me/project/a.ts")).toBe("home/Studio/project/a.ts");
@@ -135,7 +135,7 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       }
       expect(splitTreePath("home/Studio/../x")).toBeNull();
       // A call that doesn't say whom it is for is refused, never run unfenced.
-      expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/settings/settings.json", utf8("{}"), {} as never)), "invalid")).toBe(true);
+      expect(isContractError(await rejection(tree.write("home/Laptop1/.moss/settings/settings.json", utf8("{}"), {} as never)), "invalid")).toBe(true);
       expect(isContractError(await rejection(tree.write("bots/alpha/../../settings/x.json", utf8("{}"), { as: BOT })), "invalid")).toBe(true);
     });
 
@@ -182,16 +182,16 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
 
     test("a bot's call meets the fence of the computer that holds the files; the user's doesn't", async () => {
       const { tree } = setup();
-      const err = await rejection(tree.write("home/Laptop1/.clover/settings/settings.json", utf8("{}"), { as: BOT }));
+      const err = await rejection(tree.write("home/Laptop1/.moss/settings/settings.json", utf8("{}"), { as: BOT }));
       expect(isContractError(err, "fenced")).toBe(true);
       expect((err as { detail: unknown }).detail).toEqual({ computer: "Laptop1", reason: "settings" });
-      expect(isContractError(await rejection(tree.read("home/Laptop1/.clover/secrets.enc", { as: BOT })), "fenced")).toBe(true);
-      await tree.write("home/Laptop1/.clover/settings/settings.json", utf8("{}"), { as: USER });
-      // The installed plugins folder is fenced too (#197's check 2), and the rest of the Clover home with it (the home
+      expect(isContractError(await rejection(tree.read("home/Laptop1/.moss/secrets.enc", { as: BOT })), "fenced")).toBe(true);
+      await tree.write("home/Laptop1/.moss/settings/settings.json", utf8("{}"), { as: USER });
+      // The installed plugins folder is fenced too (#197's check 2), and the rest of the MOSS home with it (the home
       // default-deny), but for the bot's own ways in: its own routines are its to write, another bot's aren't.
-      expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/plugins/luna/clover.json", utf8("{}"), { as: BOT })), "fenced")).toBe(true);
-      await tree.write("home/Laptop1/.clover/routines/alpha/morning.md", utf8("# Morning\n"), { as: BOT });
-      expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/routines/luna/morning.md", utf8("# Morning\n"), { as: BOT })), "fenced")).toBe(true);
+      expect(isContractError(await rejection(tree.write("home/Laptop1/.moss/plugins/luna/moss.json", utf8("{}"), { as: BOT })), "fenced")).toBe(true);
+      await tree.write("home/Laptop1/.moss/routines/alpha/morning.md", utf8("# Morning\n"), { as: BOT });
+      expect(isContractError(await rejection(tree.write("home/Laptop1/.moss/routines/luna/morning.md", utf8("# Morning\n"), { as: BOT })), "fenced")).toBe(true);
       await tree.write("bots/alpha/memory/MEMORY.md", utf8("# Memory\n"), { as: BOT });
     });
 
@@ -206,7 +206,7 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       await tree.move("home/Studio/b.txt", "home/Studio/c.txt", { as: USER });
       await tree.write("home/Studio/d.txt", utf8("d"), { as: USER });
       expect(isContractError(await rejection(tree.move("home/Studio/d.txt", "home/Studio/c.txt", { as: USER })), "conflict")).toBe(true);
-      expect(isContractError(await rejection(tree.move("home/Studio/c.txt", "home/Laptop1/.clover/levels/c.txt", { as: BOT })), "fenced")).toBe(true);
+      expect(isContractError(await rejection(tree.move("home/Studio/c.txt", "home/Laptop1/.moss/levels/c.txt", { as: BOT })), "fenced")).toBe(true);
     });
 
     test("glob and grep run where the files are and return tree paths", async () => {
@@ -227,8 +227,8 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       const { tree, PEER, answer, code } = await peerSetup();
 
       // Always fenced: a peer never passes as the user, whatever its level.
-      expect(await code(tree.write("home/Laptop1/.clover/settings/settings.json", utf8("{}"), { as: PEER, level: "automatic" }))).toBe("fenced");
-      expect(await code(tree.read("home/Laptop1/.clover/secrets.enc", { as: PEER }))).toBe("fenced");
+      expect(await code(tree.write("home/Laptop1/.moss/settings/settings.json", utf8("{}"), { as: PEER, level: "automatic" }))).toBe("fenced");
+      expect(await code(tree.read("home/Laptop1/.moss/secrets.enc", { as: PEER }))).toBe("fenced");
       // Reads are never asked about; a change says its level.
       expect(await code(tree.stat("home/Studio/a.txt", { as: PEER }))).toBe("ok");
       expect(await code(tree.write("home/Laptop1/a.txt", utf8("a"), { as: PEER }))).toBe("invalid");
@@ -293,7 +293,7 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       const judged: string[] = [];
       const tree = make({
         clock,
-        computers: { Studio: { home: "/Users/me", fence: new FakeFence({ home: "/Users/me", cloverHome: "/Users/me/.clover" }), level: "ask-risky" } },
+        computers: { Studio: { home: "/Users/me", fence: new FakeFence({ home: "/Users/me", mossHome: "/Users/me/.moss" }), level: "ask-risky" } },
         botComputer: () => undefined,
         reviewer: async (change) => {
           judged.push(`${change.method} ${change.computer} ${change.as.kind}`);
@@ -332,7 +332,7 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       await tree.write("home/Laptop1/p/c.txt", utf8("c"), { as: USER });
       await settle(() => false, 200);
       expect(seen.length).toBe(before);
-      expect(isContractError(await rejection(tree.watch("home/Laptop1/.clover/run", { as: BOT }, () => {})), "fenced")).toBe(true);
+      expect(isContractError(await rejection(tree.watch("home/Laptop1/.moss/run", { as: BOT }, () => {})), "fenced")).toBe(true);
       expect(isContractError(await rejection(tree.watch("home/Laptop1/nowhere", { as: BOT }, () => {})), "not_found")).toBe(true);
       // Never a whole home, for anyone (#179's review).
       for (const whole of ["home/Laptop1", "home/Laptop1/", "home/OldLaptop"]) {
@@ -344,13 +344,13 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       const { tree } = setup();
       // Studio runs macOS and Laptop1 Linux; the fence folds on both (a Linux home can be case-folding ext4 or APFS).
       for (const computer of ["Studio", "Laptop1"]) {
-        for (const rel of [".clover/RULES/allow.json", ".clover/Settings/settings.json", ".clover/LEVELS/computer.json",
-          ".clover/\u017Fettings/settings.json", ".clover/tru\u017Ft/x.json", ".clover/plugins-state/o\u212As/x.json", ".clover/\u00DFettings/x.json"]) {
+        for (const rel of [".moss/RULES/allow.json", ".moss/Settings/settings.json", ".moss/LEVELS/computer.json",
+          ".moss/\u017Fettings/settings.json", ".moss/tru\u017Ft/x.json", ".moss/plugins-state/o\u212As/x.json", ".moss/\u00DFettings/x.json"]) {
           const path = `home/${computer}/${rel}`;
           expect([path, isContractError(await rejection(tree.write(path, utf8("{}"), { as: BOT })), "fenced")]).toEqual([path, true]);
         }
       }
-      await tree.write("home/Studio/.clover/bots/alpha/memory/\u65E5\u8A18.md", utf8("x"), { as: BOT });
+      await tree.write("home/Studio/.moss/bots/alpha/memory/\u65E5\u8A18.md", utf8("x"), { as: BOT });
     });
 
     test("computersFor lists the computers an action touches", () => {

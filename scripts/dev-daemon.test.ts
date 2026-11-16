@@ -28,46 +28,46 @@ describe("the dev daemon's signing identity", () => {
 
   test("none for the team is a clear error; the override wins without a lookup", () => {
     expect(() => resolveDevSigningIdentity({ identitiesOutput: IDENTITIES, teamId: "NOSUCHTEAM", subjectOf: (n) => SUBJECTS[n] })).toThrow("no code-signing identity for team NOSUCHTEAM");
-    expect(resolveDevSigningIdentity({ identitiesOutput: "", teamId: TEAM, subjectOf: () => undefined, override: " D1 " })).toEqual({ hash: "D1", name: "(CLOVER_DEV_SIGN_IDENTITY)" });
+    expect(resolveDevSigningIdentity({ identitiesOutput: "", teamId: TEAM, subjectOf: () => undefined, override: " D1 " })).toEqual({ hash: "D1", name: "(MOSS_DEV_SIGN_IDENTITY)" });
   });
 });
 
 describe("the dev daemon's build and home", () => {
   test("the build is compile:core itself with only the output moved (the pairing cannot drift)", () => {
     const script = (JSON.parse(readFileSync(join(import.meta.dir, "..", "packages", "cli", "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts["compile:core"]!;
-    const dev = devCompileCommand(script, "/x/dist/dev/clover-core.1.tmp");
-    expect(dev).toBe(script.replace("--outfile ../../dist/clover-core", '--outfile "/x/dist/dev/clover-core.1.tmp"'));
+    const dev = devCompileCommand(script, "/x/dist/dev/moss-core.1.tmp");
+    expect(dev).toBe(script.replace("--outfile ../../dist/moss-core", '--outfile "/x/dist/dev/moss-core.1.tmp"'));
     expect(dev).toContain("src/embedded-worker.ts");
     expect(() => devCompileCommand("bun build --compile src/main.ts --outfile elsewhere", "/x")).toThrow("update scripts/dev-daemon-lib.ts");
   });
 
-  test("home: CLOVER_HOME or ~/.clover-dev, never the dist home", () => {
-    expect(devDaemonHome({}, "/Users/u")).toBe("/Users/u/.clover-dev");
-    expect(devDaemonHome({ CLOVER_HOME: "/tmp/h" }, "/Users/u")).toBe("/tmp/h");
-    expect(() => devDaemonHome({ CLOVER_HOME: "/Users/u/.clover/" }, "/Users/u")).toThrow("dist home");
+  test("home: MOSS_HOME or ~/.moss-dev, never the dist home", () => {
+    expect(devDaemonHome({}, "/Users/u")).toBe("/Users/u/.moss-dev");
+    expect(devDaemonHome({ MOSS_HOME: "/tmp/h" }, "/Users/u")).toBe("/tmp/h");
+    expect(() => devDaemonHome({ MOSS_HOME: "/Users/u/.moss/" }, "/Users/u")).toThrow("dist home");
   });
 
   // C0 review B1: never another install's home either (`other-installs.ts`, whose own test pins the list), by real
   // path. A stand-in user home; the real one is never named.
   test("home: never another install's home, nor anything inside one, nor a link to one", () => {
-    const user = mkdtempSync(join(tmpdir(), "clover-fake-user-"));
+    const user = mkdtempSync(join(tmpdir(), "moss-fake-user-"));
     for (const { dir, what } of OTHER_INSTALL_HOMES) {
       mkdirSync(join(user, dir));
-      expect(() => devDaemonHome({ CLOVER_HOME: join(user, dir) }, user)).toThrow(`that is ${what}, which Clover never touches`);
-      expect(() => devDaemonHome({ CLOVER_HOME: join(user, dir, "inner") }, user)).toThrow("which Clover never touches");
+      expect(() => devDaemonHome({ MOSS_HOME: join(user, dir) }, user)).toThrow(`that is ${what}, which MOSS never touches`);
+      expect(() => devDaemonHome({ MOSS_HOME: join(user, dir, "inner") }, user)).toThrow("which MOSS never touches");
     }
     const first = OTHER_INSTALL_HOMES[0]!;
-    const link = join(mkdtempSync(join(tmpdir(), "clover-link-")), "dev-home");
+    const link = join(mkdtempSync(join(tmpdir(), "moss-link-")), "dev-home");
     symlinkSync(join(user, first.dir), link);
-    expect(() => devDaemonHome({ CLOVER_HOME: link }, user)).toThrow(first.what);
-    mkdirSync(join(user, ".clover"));
-    const distLink = join(mkdtempSync(join(tmpdir(), "clover-link-")), "dist");
-    symlinkSync(join(user, ".clover"), distLink);
-    expect(() => devDaemonHome({ CLOVER_HOME: distLink }, user)).toThrow("dist home");
+    expect(() => devDaemonHome({ MOSS_HOME: link }, user)).toThrow(first.what);
+    mkdirSync(join(user, ".moss"));
+    const distLink = join(mkdtempSync(join(tmpdir(), "moss-link-")), "dist");
+    symlinkSync(join(user, ".moss"), distLink);
+    expect(() => devDaemonHome({ MOSS_HOME: distLink }, user)).toThrow("dist home");
   });
 
-  test("the stated designated requirement: identifier + Clover's team under Apple's anchor, never a certificate's name; and how codesign prints it back", () => {
-    expect(devDaemonRequirement(TEAM)).toBe(`identifier "com.waifucave.clover.core.dev" and anchor apple generic and certificate leaf[subject.OU] = "${TEAM}"`);
+  test("the stated designated requirement: identifier + MOSS's team under Apple's anchor, never a certificate's name; and how codesign prints it back", () => {
+    expect(devDaemonRequirement(TEAM)).toBe(`identifier "com.waifucave.moss.core.dev" and anchor apple generic and certificate leaf[subject.OU] = "${TEAM}"`);
     expect(designatedRequirementOf(`Executable=/x\ndesignated => ${devDaemonRequirement(TEAM)}\n`)).toBe(devDaemonRequirement(TEAM));
     expect(designatedRequirementOf("# no requirement\n")).toBeUndefined();
   });
@@ -88,21 +88,21 @@ describe("the dev daemon's plan on each OS", () => {
     expect([devOs("darwin"), devOs("linux"), devOs("win32")]).toEqual(["macos", "linux", "windows"]);
   });
 
-  test("every OS builds compile:core beside the binary and runs `daemon run` on ~/.clover-dev; only macOS signs", () => {
+  test("every OS builds compile:core beside the binary and runs `daemon run` on ~/.moss-dev; only macOS signs", () => {
     for (const [platform, os, binary, tmp] of [
-      ["darwin", "macos", "dist/dev/clover-core", "../../dist/dev/clover-core.7.tmp"],
-      ["linux", "linux", "dist/dev/clover-core", "../../dist/dev/clover-core.7.tmp"],
-      ["win32", "windows", "dist/dev/clover-core.exe", "../../dist/dev/clover-core.7.tmp.exe"],
+      ["darwin", "macos", "dist/dev/moss-core", "../../dist/dev/moss-core.7.tmp"],
+      ["linux", "linux", "dist/dev/moss-core", "../../dist/dev/moss-core.7.tmp"],
+      ["win32", "windows", "dist/dev/moss-core.exe", "../../dist/dev/moss-core.7.tmp.exe"],
     ] as const) {
       const p = plan([], platform);
       expect(p).toEqual({
         os,
-        home: "/home/u/.clover-dev",
+        home: "/home/u/.moss-dev",
         binary,
         build: { command: devCompileCommand(compileCoreScript, tmp), tmp, sign: os === "macos" },
         transition: false,
         args: ["daemon", "run"],
-        env: { CLOVER_HOME: "/home/u/.clover-dev", CLOVER_PROFILE: "dev" },
+        env: { MOSS_HOME: "/home/u/.moss-dev", MOSS_PROFILE: "dev" },
         dryRun: false,
       });
     }
@@ -126,52 +126,52 @@ describe("the dev daemon's plan on each OS", () => {
 
   test("the home is refused before anything else, on every OS", () => {
     for (const platform of ["darwin", "linux", "win32"] as const) {
-      expect(() => plan(["--dry-run"], platform, { CLOVER_HOME: "/home/u/.clover" })).toThrow("dist home");
+      expect(() => plan(["--dry-run"], platform, { MOSS_HOME: "/home/u/.moss" })).toThrow("dist home");
     }
-    expect(plan(["--dry-run"], "linux", { CLOVER_HOME: "/tmp/elsewhere" }).home).toBe("/tmp/elsewhere");
+    expect(plan(["--dry-run"], "linux", { MOSS_HOME: "/tmp/elsewhere" }).home).toBe("/tmp/elsewhere");
   });
 
   test("--dry-run says what would be built, signed and run", () => {
     const linux = describeDevDaemonPlan(plan(["--dry-run"], "linux"));
     expect(linux[0]).toBe("dev:daemon: the plan on linux (dry run: nothing is built, signed or started)");
-    expect(linux).toContain("  sign     none (the dev binary is unsigned on linux); rename to dist/dev/clover-core");
+    expect(linux).toContain("  sign     none (the dev binary is unsigned on linux); rename to dist/dev/moss-core");
     expect(linux.some((l) => l.startsWith("  seal     scripts/seal-bun-doors.ts"))).toBe(true);
     expect(linux.some((l) => l.startsWith("  beside "))).toBe(false);
-    expect(linux).toContain("  run      dist/dev/clover-core daemon run");
+    expect(linux).toContain("  run      dist/dev/moss-core daemon run");
     const mac = describeDevDaemonPlan(plan(["--dry-run", "--transition"], "darwin"));
     expect(mac.some((l) => l.startsWith(`  sign     codesign as ${DEV_DAEMON_IDENTIFIER}`))).toBe(true);
     expect(mac).toContain("  then     the one-time dev Keychain transition, and exit");
-    expect(mac.some((l) => l.startsWith("  beside   dist/dev/clover-process-holder, signed under its own .dev identifier"))).toBe(true);
-    expect(describeDevDaemonPlan(plan(["--dry-run", "--no-build"], "win32"))).toContain("  build    none (--no-build): dist/dev/clover-core.exe as it is");
+    expect(mac.some((l) => l.startsWith("  beside   dist/dev/moss-process-holder, signed under its own .dev identifier"))).toBe(true);
+    expect(describeDevDaemonPlan(plan(["--dry-run", "--no-build"], "win32"))).toContain("  build    none (--no-build): dist/dev/moss-core.exe as it is");
   });
 });
 
 describe("the dev daemon's link sidecar", () => {
   test("built as the packages build it and staged beside the dev core, where the daemon looks for it; signed under its own .dev identifier on macOS", () => {
     const root = "/repo";
-    const mac = devLinkSidecarPlan({ repoRoot: root, binary: "/repo/dist/dev/clover-core", platform: "darwin", linkBuild: LINK_BUILD, linkOutput: LINK_OUTPUT });
+    const mac = devLinkSidecarPlan({ repoRoot: root, binary: "/repo/dist/dev/moss-core", platform: "darwin", linkBuild: LINK_BUILD, linkOutput: LINK_OUTPUT });
     expect(mac.build).toEqual([...LINK_BUILD]);
     expect(mac.cargoArgs).toEqual(LINK_BUILD.slice(1));
     // The dev script runs the arguments on the cargo it finds: a command that isn't cargo's is refused, never half-run.
-    expect(() => devLinkSidecarPlan({ repoRoot: root, binary: "/repo/dist/dev/clover-core", platform: "darwin", linkBuild: ["make", "link"], linkOutput: LINK_OUTPUT })).toThrow(/isn't cargo's/);
-    expect(mac.from).toBe("/repo/native/link/target/release/clover-link");
+    expect(() => devLinkSidecarPlan({ repoRoot: root, binary: "/repo/dist/dev/moss-core", platform: "darwin", linkBuild: ["make", "link"], linkOutput: LINK_OUTPUT })).toThrow(/isn't cargo's/);
+    expect(mac.from).toBe("/repo/native/link/target/release/moss-link");
     // Exactly where the daemon's own lookup finds it.
-    expect(mac.to).toBe(bundledLinkBinary("/repo/dist/dev/clover-core", "darwin", (p) => p));
+    expect(mac.to).toBe(bundledLinkBinary("/repo/dist/dev/moss-core", "darwin", (p) => p));
     expect(mac.sign).toBe(true);
     expect(DEV_LINK_IDENTIFIER).not.toBe(DEV_DAEMON_IDENTIFIER);
     expect(DEV_LINK_IDENTIFIER.endsWith(".dev")).toBe(true);
-    const win = devLinkSidecarPlan({ repoRoot: root, binary: "/repo/dist/dev/clover-core.exe", platform: "win32", linkBuild: LINK_BUILD, linkOutput: LINK_OUTPUT });
-    expect(win.to.endsWith("clover-link.exe")).toBe(true);
-    expect(win.from.endsWith("clover-link.exe")).toBe(true);
+    const win = devLinkSidecarPlan({ repoRoot: root, binary: "/repo/dist/dev/moss-core.exe", platform: "win32", linkBuild: LINK_BUILD, linkOutput: LINK_OUTPUT });
+    expect(win.to.endsWith("moss-link.exe")).toBe(true);
+    expect(win.from.endsWith("moss-link.exe")).toBe(true);
     expect(win.sign).toBe(false);
   });
 });
 
 describe("the dev plugin Bun (#234's check 5)", () => {
-  test("it sits in the dev Clover home's bin under its own name, signed under its own identifier, never the core's", () => {
-    expect(devPluginBunPath("/u/.clover-dev", "darwin")).toBe("/u/.clover-dev/bin/clover-plugin-bun");
-    expect(devPluginBunPath("/u/.clover-dev", "win32")).toBe(join("/u/.clover-dev", "bin", "clover-plugin-bun.exe"));
-    expect(DEV_PLUGIN_BUN_IDENTIFIER).toBe("com.waifucave.clover.plugin-bun.dev");
+  test("it sits in the dev MOSS home's bin under its own name, signed under its own identifier, never the core's", () => {
+    expect(devPluginBunPath("/u/.moss-dev", "darwin")).toBe("/u/.moss-dev/bin/moss-plugin-bun");
+    expect(devPluginBunPath("/u/.moss-dev", "win32")).toBe(join("/u/.moss-dev", "bin", "moss-plugin-bun.exe"));
+    expect(DEV_PLUGIN_BUN_IDENTIFIER).toBe("com.waifucave.moss.core.plugin-bun.dev");
     expect(DEV_PLUGIN_BUN_IDENTIFIER).not.toBe(DEV_DAEMON_IDENTIFIER);
     const args = devPluginBunSignArgs("/tmp/b", "/repo/scripts/bun-jit.entitlements");
     expect(args).toEqual(["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", "runtime,restrict", "--timestamp=none", "--entitlements", "/repo/scripts/bun-jit.entitlements", "/tmp/b"]);

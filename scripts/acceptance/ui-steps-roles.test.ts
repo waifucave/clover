@@ -4,7 +4,7 @@
 // must be one the CLI may make, or a best-effort one listed here, caught, whose refusal changes nothing the step checks.
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { CLOVER_METHODS, allowedMethods } from "../../packages/protocol/src/index";
+import { MOSS_METHODS, allowedMethods } from "../../packages/protocol/src/index";
 
 /** Best-effort calls: refused on a packaged core, and the step goes on without them. */
 const BEST_EFFORT: Readonly<Record<string, string>> = {
@@ -33,7 +33,7 @@ describe("the window steps' calls on a packaged core", () => {
         if (cli.has(method)) continue;
         if (APP_ONLY[method] !== undefined) continue;
         if (BEST_EFFORT[method] !== undefined && line.includes(".catch(")) continue;
-        wrong.push(`ui-steps.ts:${i + 1} ${method} (${CLOVER_METHODS.get(method)?.roles.join(", ") ?? "no such method"})`);
+        wrong.push(`ui-steps.ts:${i + 1} ${method} (${MOSS_METHODS.get(method)?.roles.join(", ") ?? "no such method"})`);
       }
     });
     expect(wrong).toEqual([]);

@@ -24,7 +24,7 @@ import type { OAuthRenewal } from "./oauth-renewal";
 export interface StartModelPluginsOptions {
   registry: PluginRegistry;
   host: PluginHost;
-  /** The Clover home (the catalog file goes in `<home>/run/models/`). */
+  /** The MOSS home (the catalog file goes in `<home>/run/models/`). */
   home: string;
   /** The daemon's own secret store: the provider keychain slots. */
   secrets: DaemonSecretStore;

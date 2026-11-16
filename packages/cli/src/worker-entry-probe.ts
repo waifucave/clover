@@ -1,4 +1,4 @@
-// `clover-core __worker-entry-probe`: whether a compiled Worker entry resolves inside the built binary, on every OS
+// `moss-core __worker-entry-probe`: whether a compiled Worker entry resolves inside the built binary, on every OS
 // (build:daemon runs it on each core it builds for its own machine). The core starts its Workers by plain relative
 // names (`./fd-receiver-worker.ts`, `./embedded-worker.ts`), which resolve only while every compile entrypoint keeps
 // its name (compile:core's `--root src`). This loads the fd receiver's entry, whose top level only sets its message

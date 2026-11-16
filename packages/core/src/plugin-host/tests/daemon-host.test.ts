@@ -6,8 +6,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -38,10 +38,10 @@ const USER: Caller = { kind: "user", client: "app" };
 
 describe("startPluginHost", () => {
   test("a plugin's handler runs in the host process, its API calls are served, its console is its log, and switching it off drops it", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b2-daemon-host-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b2-daemon-host-"));
     const folder = join(home, "plugins", "tarot");
     mkdirSync(join(folder, "host"), { recursive: true });
-    writeFileSync(join(folder, "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" }, capabilities: ["notify"] }));
+    writeFileSync(join(folder, "moss.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" }, capabilities: ["notify"] }));
     writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
     writeFileSync(join(folder, "host", "index.js"), [
       "export const remember = async (args, ctx) => {",
@@ -78,7 +78,7 @@ describe("startPluginHost", () => {
       "export const probe = async (args, ctx) => {",
       "  const tried = (f) => { try { return String(f()); } catch (e) { return e.message; } };",
       "  return {",
-      "    env: tried(() => ctx.api.env?.CLOVER_HOOKS_ORIGIN),",
+      "    env: tried(() => ctx.api.env?.MOSS_HOOKS_ORIGIN),",
       "    log: tried(() => ctx.api.log.warn),",
       "    method: tried(() => ctx.api.settings.nope),",
       "    then: String(ctx.api.then), sym: String(ctx.api[Symbol.toStringTag]), json: String(ctx.api.toJSON),",
@@ -93,7 +93,7 @@ describe("startPluginHost", () => {
     ].join("\n"));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets });
     try {
       // Before its OK the plugin isn't startable: no record, so no process starts for it.
@@ -107,9 +107,9 @@ describe("startPluginHost", () => {
 
       expect(await ph.host.invoke({ pluginId: "tarot", handler: "remember", args: { card: "The Fool" }, caller: USER })).toEqual({ last: "The Fool", computer: "Studio" });
       expect(await ph.host.invoke({ pluginId: "tarot", handler: "probe", args: null, caller: USER })).toEqual({
-        env: "api.env doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
-        log: "api.log doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
-        method: "api.settings.nope doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
+        env: "api.env doesn't exist in the plugin API (see API_CALLS in @waifucave/moss-plugin-sdk)",
+        log: "api.log doesn't exist in the plugin API (see API_CALLS in @waifucave/moss-plugin-sdk)",
+        method: "api.settings.nope doesn't exist in the plugin API (see API_CALLS in @waifucave/moss-plugin-sdk)",
         then: "undefined", sym: "undefined", json: "undefined", awaited: "other", bound: "The Fool",
         // Feature-tests answer without throwing; serialising the API gives nothing and inspecting it doesn't throw.
         has: "true,true,false,true,false,true,true", stringified: "undefined", inspected: "string", keys: 0,
@@ -172,14 +172,14 @@ describe("startPluginHost", () => {
   }, 60_000);
 
   test("a launch that can't be made fails each plugin's start with why, and the host still answers", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b2-daemon-host-nolaunch-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b2-daemon-host-nolaunch-"));
     const folder = join(home, "plugins", "tarot");
     mkdirSync(join(folder, "host"), { recursive: true });
-    writeFileSync(join(folder, "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }));
+    writeFileSync(join(folder, "moss.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }));
     writeFileSync(join(folder, "host", "index.js"), "export const hi = () => \"hi\";\n");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker, secrets, settleMs: 50 });
     const lines: string[] = [];
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, log: (l) => lines.push(l), launch: async () => { throw new Error("no host bundles in this build"); } });
     try {
@@ -200,7 +200,7 @@ describe("startPluginHost", () => {
 
 describe("a plugin's log file", () => {
   test("is rate-limited per plugin (the rest counted, then noted once) and rotated at its cap", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-b2-logs-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-b2-logs-"));
     let now = 1_000_000;
     const write = pluginLogWriter({ dir, log: () => {}, now: () => now, maxBytes: 2_000, perWindow: 5, windowMs: 1_000 });
     write("noisy", Array.from({ length: 12 }, (_, i) => `line ${i}`));
@@ -210,7 +210,7 @@ describe("a plugin's log file", () => {
     expect(readFileSync(join(dir, "quiet.log"), "utf8")).toContain("hello");
     now += 1_000;
     write("noisy", ["next window"]);
-    expect(noisy().slice(-2).map((l) => l.split(" ").slice(1).join(" "))).toEqual(["[clover] 7 more lines dropped (over 5 in 1 s)", "next window"]);
+    expect(noisy().slice(-2).map((l) => l.split(" ").slice(1).join(" "))).toEqual(["[moss] 7 more lines dropped (over 5 in 1 s)", "next window"]);
     // Past the cap the file moves aside (one generation kept) and a new one starts.
     for (let i = 0; i < 40; i++) {
       now += 1_000;

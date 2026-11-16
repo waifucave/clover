@@ -6,7 +6,7 @@
 // content-identity chain for `ant` — `verifyAntEmbed` against the STAGED pre-sign hash (never the
 // vendor source alone, and never a re-hash of the post-sign embedded file) PLUS a real
 // `codesign --verify --strict` + `Identifier=com.winter.ant` check on the embedded copy itself —
-// in the same place and the same way the pre-existing clover embedded-runtime check runs.
+// in the same place and the same way the pre-existing moss embedded-runtime check runs.
 // A future edit that silently drops, weakens, or reorders the wiring fails a test instead of only
 // ever being caught by a human re-reading a 1300+ line script during a real release.
 import { describe, expect, test } from "bun:test";
@@ -24,7 +24,7 @@ describe("release.ts wires the full ant content-identity chain into the embedded
     expect(source).toMatch(/import\s*\{[^}]*\bparseAntPin\b[^}]*\}\s*from\s*"\.\/fetch-ant"/);
   });
 
-  test("asserts the embedded ant binary's TeamIdentifier/timestamp via the SAME generic assertSigned() clover uses", () => {
+  test("asserts the embedded ant binary's TeamIdentifier/timestamp via the SAME generic assertSigned() moss uses", () => {
     expect(source).toContain("assertSigned(embeddedAntPath");
   });
 
@@ -81,20 +81,20 @@ describe("release.ts wires the full ant content-identity chain into the embedded
     expect(source.toLowerCase()).toContain("different file");
   });
 
-  test("the ant gate (vendor check -> staged-hash check -> embedded codesign check) sits AFTER the clover embedded-runtime check and BEFORE the Row 16 clover-source section — the same sequence position as the clover check it mirrors", () => {
-    const cloverGateIdx = source.indexOf("Embedded runtimes verified: clover re-signed");
+  test("the ant gate (vendor check -> staged-hash check -> embedded codesign check) sits AFTER the moss embedded-runtime check and BEFORE the Row 16 moss-source section — the same sequence position as the moss check it mirrors", () => {
+    const mossGateIdx = source.indexOf("Embedded runtimes verified: moss re-signed");
     const antAssertSignedIdx = source.indexOf("assertSigned(embeddedAntPath");
     const antStagedCheckIdx = source.indexOf("verifyAntEmbed({");
     const antCodesignVerifyIdx = source.indexOf('codesign --verify --strict "${embeddedAntPath}"');
     const row16Idx = source.indexOf("Row 16 STRONG (P9a-8)");
-    for (const idx of [cloverGateIdx, antAssertSignedIdx, antStagedCheckIdx, antCodesignVerifyIdx, row16Idx]) expect(idx).toBeGreaterThan(-1);
-    expect(antAssertSignedIdx).toBeGreaterThan(cloverGateIdx);
+    for (const idx of [mossGateIdx, antAssertSignedIdx, antStagedCheckIdx, antCodesignVerifyIdx, row16Idx]) expect(idx).toBeGreaterThan(-1);
+    expect(antAssertSignedIdx).toBeGreaterThan(mossGateIdx);
     expect(antStagedCheckIdx).toBeGreaterThan(antAssertSignedIdx);
     expect(antCodesignVerifyIdx).toBeGreaterThan(antStagedCheckIdx);
     expect(antCodesignVerifyIdx).toBeLessThan(row16Idx);
   });
 
-  test("ant is RE-SIGNED like clover — HARDENING_PINS enrolls it in the same no-entitlements-relaxation posture", () => {
+  test("ant is RE-SIGNED like moss — HARDENING_PINS enrolls it in the same no-entitlements-relaxation posture", () => {
     expect(source).toContain('{ path: embeddedAntPath, label: "ant (embedded runtime)", expect: [] }');
   });
 
@@ -132,13 +132,13 @@ if (!antDvv.includes("Identifier=com.winter.ant")) {
   });
 });
 
-// A2 (2026-09-22): the bun-compiled binaries Clover signs itself carry EXACTLY the JIT entitlement.
+// A2 (2026-09-22): the bun-compiled binaries MOSS signs itself carry EXACTLY the JIT entitlement.
 // Under the hardened runtime without `com.apple.security.cs.allow-jit`, JavaScriptCore runs JIT-less:
 // `SharedArrayBuffer` does not exist (the retired official peer's top-level `new SharedArrayBuffer(4)`
 // threw `ReferenceError` in every shipped daemon on exactly that) and everything else runs ~5x slower (measured: 228 ms -> 1179 ms on one loop+JSON bench;
 // 206 ms with the entitlement). The signing sites and the release gate's expectation must agree, so
 // all of them are pinned here against the ONE entitlements file.
-describe("A2: clover-core and clover are signed with their bun entitlements, and the release gate expects exactly those", () => {
+describe("A2: moss-core and moss are signed with their bun entitlements, and the release gate expects exactly those", () => {
   const REPO_ROOT = join(import.meta.dir, "..");
   const entitlementsPath = join(REPO_ROOT, "scripts", "bun-jit.entitlements");
   const projectYml = readFileSync(join(REPO_ROOT, "apple", "Winter", "project.yml"), "utf8");
@@ -150,11 +150,11 @@ describe("A2: clover-core and clover are signed with their bun entitlements, and
     expect(text).toMatch(/<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/);
   });
 
-  // 0.120.1: clover-core runs `bun:ffi` (the app-token access lists), which the hardened runtime kills
+  // 0.120.1: moss-core runs `bun:ffi` (the app-token access lists), which the hardened runtime kills
   // without `allow-unsigned-executable-memory` — 0.120.0's daemon crash-looped at boot on exactly that. So
-  // clover-core has its OWN file with that one more key; the embedded `winter` runtime keeps bun-jit.
-  test("scripts/clover-core.entitlements grants exactly allow-jit + allow-unsigned-executable-memory", () => {
-    const text = readFileSync(join(REPO_ROOT, "scripts", "clover-core.entitlements"), "utf8");
+  // moss-core has its OWN file with that one more key; the embedded `winter` runtime keeps bun-jit.
+  test("scripts/moss-core.entitlements grants exactly allow-jit + allow-unsigned-executable-memory", () => {
+    const text = readFileSync(join(REPO_ROOT, "scripts", "moss-core.entitlements"), "utf8");
     const keys = [...text.matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1]);
     expect(keys).toEqual(["com.apple.security.cs.allow-jit", "com.apple.security.cs.allow-unsigned-executable-memory"]);
   });
@@ -162,18 +162,18 @@ describe("A2: clover-core and clover are signed with their bun entitlements, and
   // Until C7: the retired Mac app's project.yml (`apple/`, which the rename leaves byte for byte) still embeds
   // the daemon under its old name with the old entitlements file name, which the rename moved; release.ts
   // refuses to run (`held-scripts.ts`), and C7 rebuilds the pipeline and this check with it.
-  test.skip("project.yml's Embed clover-core re-sign passes clover-core's own entitlements file", () => {
-    const line = projectYml.split("\n").find((l) => l.includes("codesign --force") && l.includes('"${DEST_RES}/clover-core"'));
+  test.skip("project.yml's Embed moss-core re-sign passes moss-core's own entitlements file", () => {
+    const line = projectYml.split("\n").find((l) => l.includes("codesign --force") && l.includes('"${DEST_RES}/moss-core"'));
     expect(line).toBeDefined();
     expect(line).toContain("--options runtime");
-    expect(line).toContain('--entitlements "${SRCROOT}/../../scripts/clover-core.entitlements"');
+    expect(line).toContain('--entitlements "${SRCROOT}/../../scripts/moss-core.entitlements"');
   });
 
-  test("release.ts's HARDENING_PINS expects exactly allow-jit + allow-unsigned-executable-memory on clover-core", () => {
-    expect(source).toContain('{ path: join(app, "Contents", "Resources", "clover-core"), label: "clover-core", expect: [JIT, UNSIGNED_EXEC_MEMORY] }');
+  test("release.ts's HARDENING_PINS expects exactly allow-jit + allow-unsigned-executable-memory on moss-core", () => {
+    expect(source).toContain('{ path: join(app, "Contents", "Resources", "moss-core"), label: "moss-core", expect: [JIT, UNSIGNED_EXEC_MEMORY] }');
   });
 
-  test("release.ts runs the signed clover-core's __keychain-ffi-probe and fails the release when it does not print ok", () => {
+  test("release.ts runs the signed moss-core's __keychain-ffi-probe and fails the release when it does not print ok", () => {
     expect(source).toContain('__keychain-ffi-probe 2>&1`');
     expect(source).toContain("if (!probed.ok || !keychainFfiProbeOk(probed.stdout)) {");
   });
@@ -203,14 +203,14 @@ describe("A2: clover-core and clover are signed with their bun entitlements, and
     expect(antSign).not.toContain("--entitlements");
   });
 
-  test("release.ts's HARDENING_PINS expects exactly allow-jit on the embedded clover runtime, and none on ant", () => {
-    expect(source).toContain('{ path: embeddedCloverPath, label: "clover (embedded runtime)", expect: [JIT] }');
+  test("release.ts's HARDENING_PINS expects exactly allow-jit on the embedded moss runtime, and none on ant", () => {
+    expect(source).toContain('{ path: embeddedMossPath, label: "moss (embedded runtime)", expect: [JIT] }');
     expect(source).toContain('{ path: embeddedAntPath, label: "ant (embedded runtime)", expect: [] }');
   });
 });
 
 // ComputerV2: Winter Computer Use, the helper app with its own TCC grants, is embedded, signed and checked like
-// every other component Clover signs — plus the facts TCC and the daemon key on (scripts/computer-helper-lib.ts).
+// every other component MOSS signs — plus the facts TCC and the daemon key on (scripts/computer-helper-lib.ts).
 describe("ComputerV2: release.ts signs, verifies and scans the Winter Computer Use helper", () => {
   const REPO_ROOT = join(import.meta.dir, "..");
   const projectYml = readFileSync(join(REPO_ROOT, "apple", "Winter", "project.yml"), "utf8");

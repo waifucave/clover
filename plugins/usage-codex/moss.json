@@ -1,0 +1,18 @@
+{
+  "manifest": 1,
+  "id": "usage-codex",
+  "name": "Codex usage",
+  "description": "Your Codex plan windows and token counts for the Usage tab: it runs `codex app-server` as you to ask Codex for its own plan windows, and reads the numbers in Codex's session files. It reads nothing of Codex's sign-in.",
+  "engines": { "moss": "^1.0.0" },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun",
+    "process": "own",
+    "outside": { "programs": ["codex"], "read": ["~/.codex/sessions", "~/.codex/archived_sessions"] }
+  },
+  "contributes": {
+    "usage.sources": [
+      { "id": "codex", "name": "Codex", "handler": "source", "provides": ["plan", "usage"], "planEveryMs": 60000 }
+    ]
+  }
+}

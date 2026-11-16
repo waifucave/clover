@@ -1,5 +1,5 @@
 // Strict Ed25519 encodings (RFC 8032 §5.1.3 and §5.1.7, with the small-order rule of libsodium's
-// `crypto_sign_verify_detached`): what a public key or a signature's R must be before Clover takes it, beyond what
+// `crypto_sign_verify_detached`): what a public key or a signature's R must be before MOSS takes it, beyond what
 // node:crypto's verify checks. A point must be a canonical encoding (y below p, and never x = 0 with the sign bit set),
 // lie on the curve, and not be of small order (8·P ≠ the identity); a signature's S must be below the group order L.
 // Every place a peer's, a link's or an answer key enters (identity/keys.ts) and every Ed25519 verify go through these.

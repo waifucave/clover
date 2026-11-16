@@ -14,7 +14,7 @@
 // lane C's per-principal patch) with a static CRT and posts their digests: the pins below are lane M's
 // CI digests (#207 910b7711e, both build pairs byte-identical, no dynamic CRT).
 // Every launch checks the digest and fails closed with exit 3 on a mismatch; once Windows signing exists, the launch
-// also checks that the signature is Clover's (a native check, still to be built).
+// also checks that the signature is MOSS's (a native check, still to be built).
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { win32 } from "node:path";
@@ -37,10 +37,10 @@ export function srtWinArch(arch: string = process.arch): SrtWinArch {
   return arch === "arm64" ? "arm64" : "x64";
 }
 
-/** Where the launcher lives: beside the running `clover-core` binary (lane M's installer puts it there), or
- *  `CLOVER_SRT_WIN` in dev and tests. */
+/** Where the launcher lives: beside the running `moss-core` binary (lane M's installer puts it there), or
+ *  `MOSS_SRT_WIN` in dev and tests. */
 export function srtWinPath(execPath: string = process.execPath, env: NodeJS.ProcessEnv = process.env): string {
-  const override = env.CLOVER_SRT_WIN;
+  const override = env.MOSS_SRT_WIN;
   if (override) return override;
   // Always a Windows path, whatever OS renders it (tests on macOS included).
   return win32.join(win32.dirname(execPath), "srt-win.exe");

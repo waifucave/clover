@@ -7,8 +7,8 @@
 //   process exited, the app quit), or its plugin stops. A take still waiting leaves the queue the same ways.
 // * Every grant, end and loss is one line in the daemon's log; so is a waiting take that leaves.
 // * Who may take which name is the API's (`./api.ts`); this file only keeps the queues.
-import { TURN_LIMIT_DEFAULT_MS, TURN_LIMIT_MAX_MS, type TurnEvent, type TurnLoss, type TurnState } from "@waifucave/clover-plugin-sdk";
-import type { HostProcess } from "@waifucave/clover-protocol";
+import { TURN_LIMIT_DEFAULT_MS, TURN_LIMIT_MAX_MS, type TurnEvent, type TurnLoss, type TurnState } from "@waifucave/moss-plugin-sdk";
+import type { HostProcess } from "@waifucave/moss-protocol";
 import { randomUUID } from "node:crypto";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { Clock, TimerHandle } from "../contracts/clock";
@@ -248,7 +248,7 @@ function endText(end: TurnEnd, t: Take): string {
     case "plugin":
       return end.why;
     case "closed":
-      return "Clover's plugins closed";
+      return "MOSS's plugins closed";
     case "done":
       return "done";
   }

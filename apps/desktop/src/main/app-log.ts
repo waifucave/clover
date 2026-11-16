@@ -1,4 +1,4 @@
-// The app's own log: the main process's lines (`[clover-app] …`: the pair, the layers' refusals and part crashes, the
+// The app's own log: the main process's lines (`[moss-app] …`: the pair, the layers' refusals and part crashes, the
 // sealed path) also go to `<home>/logs/app.log`, so a packaged app that shows a dead button leaves a trace beside the
 // daemon's `daemon.log`. Size-capped (it keeps the last file and the one before it), appended a line at a time, and
 // holding only what the app wrote about itself: no key, and no message content (the lines name methods and reasons,

@@ -1,8 +1,8 @@
-// `clover.json`, format 1 (spec §5.9): the one source for the manifest's TypeScript types (`types.ts`), its JSON Schema
-// (`generated/clover.schema.json`) and its validation (`validate.ts`). Every shape below follows §5.9's reference; the
+// `moss.json`, format 1 (spec §5.9): the one source for the manifest's TypeScript types (`types.ts`), its JSON Schema
+// (`generated/moss.schema.json`) and its validation (`validate.ts`). Every shape below follows §5.9's reference; the
 // details §5.9 leaves open are noted where they are chosen.
 import { z } from "zod";
-import { Os, Platform, RunsOn, Scope, SemverVersion, SessionKind, TopPluginId, COMPUTER_NAME_RE, utf16 } from "@waifucave/clover-protocol";
+import { Os, Platform, RunsOn, Scope, SemverVersion, SessionKind, TopPluginId, COMPUTER_NAME_RE, utf16 } from "@waifucave/moss-protocol";
 import { AUTH_SCHEME_RE } from "../api/keyed-fetch";
 import { avatarFileProblem } from "../catalogs/avatars";
 import { TURN_LOCAL_NAME } from "../catalogs/turns";
@@ -72,7 +72,7 @@ export const AuthSchema = z.discriminatedUnion("method", [
     placement: KeyPlacementSchema.optional(),
   }),
   z.strictObject({ method: z.literal("custom"), handler: HandlerName, placement: KeyPlacementSchema.optional() }),
-  /** A sign-in the core runs by a flow of its own (lane A's ask), for the bundled `clover` tree only: the Console's
+  /** A sign-in the core runs by a flow of its own (lane A's ask), for the bundled `moss` tree only: the Console's
    *  sign-ins through their official brokers, xAI's device flow. */
   z.strictObject({ method: z.literal("core"), flow: z.enum(CORE_SIGN_IN_FLOWS), placement: KeyPlacementSchema.optional() }),
 ]);
@@ -116,7 +116,7 @@ export const BotSchema = z.strictObject({
   /** Starter memories, copied once into the bot's memory folder. */
   memory: Path.optional(),
   /** Retired: a bot's voice is no longer set here (the validator warns, and nothing reads it). A plugin gives its bot
-   *  a default voice on Clover Voice's point `clover.voice.defaults`. Accepted so an older bot still loads. */
+   *  a default voice on MOSS Voice's point `moss.voice.defaults`. Accepted so an older bot still loads. */
   voice: z.unknown().optional(),
   ...declares,
 });
@@ -158,7 +158,7 @@ export const McpServerSchema = z.strictObject({
   /** The tools of this server whose only effect is the plugin's own display (an avatar's expression, a stage's scene,
    *  a pinned card): named on the OK card, and only as that card shows them, a call to one counts as a contained call
    *  (effect `other`), which runs without a card at the default level, asks at "ask" and is refused at read-only. They
-   *  hold only where the tree can't reach the network and holds no capability beyond reading Clover's own state
+   *  hold only where the tree can't reach the network and holds no capability beyond reading MOSS's own state
    *  (`containedToolsHold`). Never a tool also listed in `readOnly`; a change to the list asks for the OK again. */
   contained: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(256).optional(),
   /** The tools of this server that search the web (R1: what the core once knew only of its own web plugin): named on the
@@ -171,7 +171,7 @@ export const McpServerSchema = z.strictObject({
    *  budget; any other asks, and "Always allow" holds for its site). The plugin must hold `network:public`. Never a tool
    *  on another of these lists; a change to the list asks for the OK again. */
   webFetch: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(16).optional(),
-  /** The tools of this server that drive the calling bot's own tab of the Clover Browser with the Browser tool's verbs
+  /** The tools of this server that drive the calling bot's own tab of the MOSS Browser with the Browser tool's verbs
    *  (`input.verb`; F5: what the core once knew only of its own Browser tool's plugin): named on the OK card with a
    *  warning, a call to one is judged as the Browser tool's (looking verbs run without a card; click, type, key and
    *  select ask for the site, "Always allow" kept per bot and site). The plugin must hold `browser`. Never a tool on
@@ -224,9 +224,9 @@ export const AgentBackendSchema = z.strictObject({
  *  plugin's react is never bundled into its client (it can't bring another React version to a layer). A file only the
  *  plugin's client entries reach may import these without shipping them; a file a host, hook, server or command also
  *  reaches must ship what it imports. */
-export const CLIENT_BARE_IMPORTS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"] as const;
+export const CLIENT_BARE_IMPORTS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/moss-plugin-sdk/ui"] as const;
 /** The reason a plugin marked `availability: { status: "not-yet" }` shows, as the registry gives it (state `off`). */
-export { NOT_AVAILABLE_YET } from "@waifucave/clover-protocol";
+export { NOT_AVAILABLE_YET } from "@waifucave/moss-protocol";
 /** The React major the layers provide. */
 export const CLIENT_REACT_MAJOR = 19;
 
@@ -450,20 +450,20 @@ export const ManifestSchema = z.strictObject({
   author: z.strictObject({ name: utf16(200, 1), url: LinkUrl.optional() }).optional(),
   license: utf16(100, 1).optional(),
   homepage: LinkUrl.optional(),
-  /** Tool prefix (top level only); default = id; children share it; "clover" reserved. */
+  /** Tool prefix (top level only); default = id; children share it; "moss" reserved. */
   namespace: utf16(40, 1).regex(NAMESPACE_RE).optional(),
   /** Plugin-API semver range; required when the plugin has code. */
-  engines: z.strictObject({ clover: utf16(256, 1) }).optional(),
+  engines: z.strictObject({ moss: utf16(256, 1) }).optional(),
   /** Code runs only on these; default all. */
   platforms: z.array(Platform).min(1).max(4).optional(),
   /** Whole tree; off until the user confirms they are 18+. */
   adult: z.boolean().optional(),
   /** Children only; default true. */
   enabledByDefault: z.boolean().optional(),
-  /** Clover's own plugins only (the bundled `clover` tree): a plugin this build lists but can't run yet (`not-yet`),
+  /** MOSS's own plugins only (the bundled `moss` tree): a plugin this build lists but can't run yet (`not-yet`),
    *  with a short reason key (what it waits for is in the owner's PARKED list). The registry never starts it (no host,
    *  no server, no hooks, no part, no tool, no capability in force) and refuses to switch it; its OK, switch and
-   *  settings stay as they were. A plugin outside Clover's tree carrying it is refused at validation. */
+   *  settings stay as they were. A plugin outside MOSS's tree carrying it is refused at validation. */
   availability: z.strictObject({ status: z.literal("not-yet"), reason: utf16(40, 1).regex(/^[a-z0-9][a-z0-9-]*$/) }).optional(),
   /** Default "both"; covers mcpServers, skills, agents, hooks. `own-bot`: a bot plugin's own parts, only the sessions of
    *  the bots its tree contributes and the agents they delegate to (a server or hook may still say otherwise). */
@@ -525,10 +525,10 @@ export const ManifestSchema = z.strictObject({
   /** Runs add-ons of its own, in a format it chooses (§5.4). */
   addons: z.strictObject({ description: Text }).optional(),
   contributes: ContributionsSchema.optional(),
-  /** Written by Clover's release build (`buildPluginForShipping`, core `registry/ship.ts`), never by hand: `host.entry`,
+  /** Written by MOSS's release build (`buildPluginForShipping`, core `registry/ship.ts`), never by hand: `host.entry`,
    *  `client.entry` and each program a `stdio` server or agent backend runs with `bun` or `node` name built ES modules
    *  of JavaScript, with their dependencies bundled in and a client's CSS listed in `client.css`. Honoured only in a
-   *  bundled tree (`clover`, `alpha`), whose bytes the signed core's manifest pins; any other plugin that says it is
+   *  bundled tree (`moss`, `alpha`), whose bytes the signed core's manifest pins; any other plugin that says it is
    *  refused (`built_not_bundled`). It spares the registry a rebuild, never a check: the registry scans every client
    *  entry at load, built or not. */
   built: z.literal(true).optional(),

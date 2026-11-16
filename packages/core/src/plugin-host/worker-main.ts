@@ -13,7 +13,7 @@ import { API_CALL_OF, HostRuntime } from "./runtime";
 declare const self: { postMessage(m: unknown): void; addEventListener(type: "message", fn: (e: { data: unknown }) => void): void };
 
 const peer = portPeer(self);
-const computer = String((globalThis as { workerData?: { computer?: string } }).workerData?.computer ?? process.env.CLOVER_COMPUTER ?? "");
+const computer = String((globalThis as { workerData?: { computer?: string } }).workerData?.computer ?? process.env.MOSS_COMPUTER ?? "");
 peer.handle("ping", () => "pong");
 
 // The console goes to the plugin's log (`pluginHost.log`), one line per call.
@@ -77,7 +77,7 @@ function verifyTree(pluginId: string, entry: string, file: string, v: { root: st
     } catch (err) {
       return refuse(path, `can't be read (${(err as Error).message})`);
     }
-    if (sha256(bytes) !== expected) refuse(path, "isn't the bundled code Clover verified (its SHA-256 changed after staging)");
+    if (sha256(bytes) !== expected) refuse(path, "isn't the bundled code MOSS verified (its SHA-256 changed after staging)");
     return bytes;
   };
   let real: string;
@@ -119,7 +119,7 @@ function verifyTree(pluginId: string, entry: string, file: string, v: { root: st
   const esc = (p: string) => p.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
   const exact = served.length === 0 ? /^$^/ : new RegExp(`^(?:${served.map(esc).join("|")})$`);
   Bun.plugin({
-    name: `clover-verified-${pluginId}`,
+    name: `moss-verified-${pluginId}`,
     setup(build) {
       build.onLoad({ filter: exact }, (args) => ({ contents: checked(args.path).toString("utf8"), loader: LOADERS[extname(args.path).toLowerCase()] ?? "text" }));
       build.onResolve({ filter: /.*/ }, (args) => {
@@ -145,7 +145,7 @@ function verifyTree(pluginId: string, entry: string, file: string, v: { root: st
     }
     if (r.startsWith(prefix)) checked(r);
   };
-  Object.defineProperty(globalThis, Symbol.for("clover.verifiedFile"), { value: check, writable: false, configurable: false, enumerable: false });
+  Object.defineProperty(globalThis, Symbol.for("moss.verifiedFile"), { value: check, writable: false, configurable: false, enumerable: false });
   checked(real);
   return real;
 }

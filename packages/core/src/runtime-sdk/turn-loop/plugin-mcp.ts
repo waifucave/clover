@@ -1,6 +1,6 @@
 // Plugins' own code served as MCP servers (`mcpServers` entries of `type: "host"`, spec §5.4, §6.7, §9.1), for a
 // bot's session: their tools listed, placed and called through lane B's plugin host (`PluginHost.openMcp`). Owner:
-// lane A. The web plugin's `mcp__clover__WebSearch` and `WebFetch` are the first such server.
+// lane A. The web plugin's `mcp__moss__WebSearch` and `WebFetch` are the first such server.
 //
 // * **One channel per (plugin, server),** shared by every session: the caller is per request. Each `tools/call` goes
 //   `as` the session's caller, so the plugin API calls the server makes while serving it act as that caller (R7); the
@@ -17,15 +17,15 @@
 //   are otherwise the same as host ones: listing, keys, scope, deferral and the prompt's `<mcp-server>` block. A
 //   stopped plugin's server (crashed too often) keeps its last listing, and its calls answer why.
 // * **Scope:** a server's own `scope`, else its plugin's, says whether bots get it (`both` by default).
-// * **Names:** a bundled plugin's server (registry source `bundled`, top plugin `clover`) is keyed by its plain name
+// * **Names:** a bundled plugin's server (registry source `bundled`, top plugin `moss`) is keyed by its plain name
 //   (`web`), so channels, ticks and listings stay apart by plugin and server, and today a session sees it under that
-//   name: `mcp__web__WebSearch`. §5.3's `mcp__clover__…` waits on the agent runtime, which reserves `clover` for its
+//   name: `mcp__web__WebSearch`. §5.3's `mcp__moss__…` waits on the agent runtime, which reserves `moss` for its
 //   standing server (docs/research/2026-11-10-agent-sdk-host-tools-in-standing-server.md); `bundledServer` turns it
 //   on. Then every bundled server is offered as that one name, a call to it finds its server by the tool's name, and a
 //   tool name two bundled servers both give is refused for both, logged with both named, never first wins. Any other
 //   plugin's server is served under the key `pluginMcpServerKey`: `<plugin id, its "/" as "-">-<server>`, a namespace
 //   that round-trips through a tool name, so it can't take another's tools. A non-bundled server named like a reserved
-//   name (`clover`, `clover_core`) or like any bundled plugin's server is refused and logged. Two servers that come to
+//   name (`moss`, `moss_core`) or like any bundled plugin's server is refused and logged. Two servers that come to
 //   the same key are refused and logged (never first wins): both of them, unless exactly one is bundled, which keeps
 //   the key.
 // * **http servers** (a remote server the plugin names by url, a pasted MCP URL's included) open through the core's
@@ -33,13 +33,13 @@
 //   session does (remote), like a `host` server that isn't `perComputer`.
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
-import { topPluginIdOf, type Caller } from "@waifucave/clover-protocol";
+import { topPluginIdOf, type Caller } from "@waifucave/moss-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { McpChannel, PluginHost } from "../../contracts/plugin-host";
 import type { Contribution, PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
-import { NAMESPACE_RE, parseInterpolation } from "@waifucave/clover-plugin-sdk";
+import { NAMESPACE_RE, parseInterpolation } from "@waifucave/moss-plugin-sdk";
 import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type McpFields, type McpResult, type McpServerPlacement, type McpToolDef } from "../../computers/mcp";
-import { isBundledClover } from "../model-plugins/load";
+import { isBundledMoss } from "../model-plugins/load";
 import { toolDisplayTitle } from "../tool-display";
 import type { BotMcpServer, BotMcpTool, McpRunner } from "./servers";
 import { scopeOf, servesBackend, servesScope, type PluginScope } from "./only-backends";
@@ -56,11 +56,11 @@ const CLOSED_POLL_MS = 1_000;
 const INSTRUCTIONS_MAX_CHARS = 4_096;
 /** The most a tool call's result may hold, as JSON text; past it the content is cut and a marker added. */
 export const RESULT_MAX_CHARS = 1_048_576;
-/** The server every bundled plugin's tools are to be offered under (§5.3): `mcp__clover__WebSearch`, once the agent
- *  runtime lets a host add tools to its standing `clover` server (`PluginMcpOptions.bundledServer`). */
-export const BUNDLED_SERVER = "clover";
+/** The server every bundled plugin's tools are to be offered under (§5.3): `mcp__moss__WebSearch`, once the agent
+ *  runtime lets a host add tools to its standing `moss` server (`PluginMcpOptions.bundledServer`). */
+export const BUNDLED_SERVER = "moss";
 /** Server names only the core owns, which no non-bundled plugin may serve under. */
-const RESERVED_NAMES: readonly string[] = [BUNDLED_SERVER, "clover_core"];
+const RESERVED_NAMES: readonly string[] = [BUNDLED_SERVER, "moss_core"];
 
 /** How long a plugin whose tree changed in place waits for its host half to run the new code before its servers are
  *  listed again anyway. */
@@ -149,7 +149,7 @@ class ChannelClient {
       this.#off = channel.onMessage((m) => this.#answer(m));
       this.#channel = channel;
       try {
-        await this.#send(channel, "initialize", { protocolVersion: PLUGIN_MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "clover", version: "1" } }, undefined, undefined, this.handshakeMs);
+        await this.#send(channel, "initialize", { protocolVersion: PLUGIN_MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "moss", version: "1" } }, undefined, undefined, this.handshakeMs);
         channel.send({ jsonrpc: "2.0", method: "notifications/initialized" });
       } catch (err) {
         this.#drop(err);
@@ -262,9 +262,9 @@ export interface PluginMcpOptions {
    *  the reason is logged once, here and in its plugin's own log (`pluginLog`, shown on its Settings page). */
   notServed?(server: { pluginId: string; name: string; type: string }): string | undefined;
   pluginLog?(pluginId: string, line: string): void;
-  /** The one server name every bundled plugin's tools are offered under (§5.3's `clover`, `BUNDLED_SERVER`), each call
+  /** The one server name every bundled plugin's tools are offered under (§5.3's `moss`, `BUNDLED_SERVER`), each call
    *  finding its server by the tool's name. Left out (today), each bundled server is offered under its own key: the
-   *  agent runtime 0.0.76 reserves `clover` for its standing server and exits before init when a host server takes it. */
+   *  agent runtime 0.0.76 reserves `moss` for its standing server and exits before init when a host server takes it. */
   bundledServer?: string;
 }
 
@@ -445,7 +445,7 @@ export class PluginMcp {
   #keys(): { served: { key: string; c: Contribution }[]; refused: { c: Contribution; why: string }[] } {
     const bundled = (c: Contribution): boolean => {
       const record = this.#o.registry.get(c.pluginId);
-      return record !== undefined && isBundledClover(record);
+      return record !== undefined && isBundledMoss(record);
     };
     const bundledNames = new Set<string>();
     for (const c of this.#o.registry.entries("mcpServers")) if (bundled(c)) bundledNames.add(this.#nameOf(c));
@@ -527,7 +527,7 @@ export class PluginMcp {
       });
       const instructions = this.#instructions(c);
       const record = this.#o.registry.get(c.pluginId);
-      return { plugin: c.pluginId, bundled: record !== undefined && isBundledClover(record), name, entry: c.value as HostServerEntry, tools, ...(instructions === undefined ? {} : { instructions }) };
+      return { plugin: c.pluginId, bundled: record !== undefined && isBundledMoss(record), name, entry: c.value as HostServerEntry, tools, ...(instructions === undefined ? {} : { instructions }) };
     } finally {
       clearTimeout(timer);
     }
@@ -677,7 +677,7 @@ export class PluginMcp {
   }
 
   /** The bundled tools by name, each with its server's key, and the names two or more bundled servers give (refused
-   *  for all of them: `mcp__clover__<name>` must be one server's). */
+   *  for all of them: `mcp__moss__<name>` must be one server's). */
   #bundledTools(): { byName: Map<string, string>; clashes: Map<string, string[]> } {
     const claims = new Map<string, string[]>();
     if (this.#o.bundledServer === undefined) return { byName: new Map(), clashes: new Map() };
@@ -744,7 +744,7 @@ export class PluginMcp {
     }).map(({ key, c }) => {
       const record = this.#o.registry.get(c.pluginId);
       // A bundled plugin's server: the node ticks it here by rule, unless the user unticked it (lane J's ticks).
-      return { server: key, plugin: c.pluginId, bundled: record !== undefined && isBundledClover(record) };
+      return { server: key, plugin: c.pluginId, bundled: record !== undefined && isBundledMoss(record) };
     });
   }
 
@@ -796,7 +796,7 @@ export class PluginMcp {
   }
 
   /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`); an agent's or a
-   *  coding session's only from plugins whose `onlyBackends` name its `backend` (default Clover's own). */
+   *  coding session's only from plugins whose `onlyBackends` name its `backend` (default MOSS's own). */
   servers(kind: "bot" | "side-thread" | "agent" | "coding", backend?: string, bot?: string): BotMcpServer[] {
     const out: BotMcpServer[] = [];
     const { clashes } = this.#bundledTools();
@@ -828,7 +828,7 @@ export class PluginMcp {
     for (const r of this.#o.remoteServers?.(kind, bot) ?? []) {
       if (this.#o.bundledServer !== undefined && r.server === this.#o.bundledServer) {
         const record = this.#o.registry.get(r.plugin);
-        if (record === undefined || !isBundledClover(record)) continue;
+        if (record === undefined || !isBundledMoss(record)) continue;
         const tools = r.tools.filter((t) => !ownBundled.has(t.name) && !clashes.has(t.name));
         if (tools.length > 0) out.push({ ...r, tools });
         continue;
@@ -857,13 +857,13 @@ export class PluginMcp {
     // A server scoped to its own bot isn't another computer's to serve: a listing can't carry whose bot it is.
     const scope = this.#scopeOf(plugin, hit.c.value as HostServerEntry);
     if (scope === "own-bot") return undefined;
-    return { server: hit.key, exposed: this.#exposed(hit.key, isBundledClover(record)), scope };
+    return { server: hit.key, exposed: this.#exposed(hit.key, isBundledMoss(record)), scope };
   }
 
   /** Whether the user's OK covers the plugin's folder as it is now: a bundled one is the core's own; a child carries
    *  no OK of its own when its tree's covers it, so a child without one is judged by its tree's top-level plugin. */
   #okd(record: PluginRecord): boolean {
-    if (isBundledClover(record)) return true;
+    if (isBundledMoss(record)) return true;
     const own = record.okHash !== undefined ? record : this.#o.registry.get(topPluginIdOf(record.id));
     return own !== undefined && own.okHash !== undefined && own.okHash === own.treeHash;
   }

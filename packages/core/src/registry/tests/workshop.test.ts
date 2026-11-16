@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/moss-plugin-sdk";
 import { botPaths } from "../../bots/paths";
 import { codeFieldsFrom, updateAddsTrigger, workshopAdds } from "../changes";
 import { RegistryCore, type OkCardRaiser } from "../core";
@@ -17,7 +17,7 @@ const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 
 const manifest = (id: string, over: Record<string, unknown> = {}) => JSON.stringify({
-  manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
   contributes: { mcpServers: { srv: { type: "stdio", command: "bin/srv" } } }, ...over,
 });
 
@@ -33,7 +33,7 @@ function write(dir: string, files: Record<string, string>): void {
 interface Raised { id: string; treeHash: string; card: string; answered: (a: { approved: boolean }) => void; signal?: AbortSignal }
 
 function world(o: { cards?: OkCardRaiser } = {}) {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-workshop-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-b-workshop-")));
   temps.push(home);
   const pluginsDir = join(home, "plugins");
   mkdirSync(pluginsDir, { recursive: true });
@@ -57,9 +57,9 @@ const ALPHA = { bot: "alpha", sessionId: "s_alpha" };
 
 describe("workshopAdds", () => {
   async function snap(m: string, files: Record<string, string> = {}) {
-    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-b-ws-snap-"))), "tarot");
+    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "moss-b-ws-snap-"))), "tarot");
     temps.push(dirname(dir));
-    write(dir, { "bin/srv": "#!/bin/sh\necho 1\n", "bin/other": "#!/bin/sh\necho 2\n", ...files, "clover.json": m });
+    write(dir, { "bin/srv": "#!/bin/sh\necho 1\n", "bin/other": "#!/bin/sh\necho 2\n", ...files, "moss.json": m });
     const r = await readPluginFolder(dir, { source: "local", provenance: { by: "bot", bot: "luna", at: 0 } });
     expect(r.snapshot).toBeDefined();
     return r.snapshot!;
@@ -100,7 +100,7 @@ describe("the workshop rule in the registry", () => {
   test("after the OK, the builder's code edit applies; a host added asks; dropped then re-added asks again", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");
-    write(tarot, { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
+    write(tarot, { "moss.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
     await w.folders.installed("tarot", "bot", { bot: "luna" });
     expect(w.core.get("tarot")).toMatchObject({ state: "found", provenance: { by: "bot", bot: "luna" } });
     expect(w.folders.okText("tarot", "macos").source).toBe(builtByText("Luna"));
@@ -113,16 +113,16 @@ describe("the workshop rule in the registry", () => {
     expect(w.core.get("tarot")).toMatchObject({ state: "running" });
     expect(w.core.get("tarot")!.okHash).toBe(w.core.get("tarot")!.treeHash);
     // A host the card didn't list: asks again.
-    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["network:api.example.com"] }) });
+    write(tarot, { "moss.json": manifest("tarot", { capabilities: ["network:api.example.com"] }) });
     await w.folders.refresh(tarot);
     expect(w.core.get("tarot")?.state).toBe("found");
     await w.approve("tarot");
     // Dropped: applies (the ceiling goes down) …
-    write(tarot, { "clover.json": manifest("tarot") });
+    write(tarot, { "moss.json": manifest("tarot") });
     await w.folders.refresh(tarot);
     expect(w.core.get("tarot")?.state).toBe("running");
     // … and asked for again: a card, since the last OK no longer lists it.
-    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["network:api.example.com"] }) });
+    write(tarot, { "moss.json": manifest("tarot", { capabilities: ["network:api.example.com"] }) });
     await w.folders.refresh(tarot);
     expect(w.core.get("tarot")?.state).toBe("found");
   });
@@ -130,7 +130,7 @@ describe("the workshop rule in the registry", () => {
   test("a workshop tree the user OK'd with approvals: a code change is held as card styling, never applied", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");
-    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["approvals"] }), "bin/srv": "#!/bin/sh\necho 1\n" });
+    write(tarot, { "moss.json": manifest("tarot", { capabilities: ["approvals"] }), "bin/srv": "#!/bin/sh\necho 1\n" });
     await w.folders.installed("tarot", "bot", { bot: "luna" });
     await w.approve("tarot");
     const okd = w.core.get("tarot")!.okHash;
@@ -145,7 +145,7 @@ describe("the workshop rule in the registry", () => {
   test("a plugin the user installed keeps asking on every code change", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");
-    write(tarot, { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
+    write(tarot, { "moss.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
     await w.folders.installed("tarot", "user-app");
     await w.approve("tarot");
     write(tarot, { "bin/srv": "#!/bin/sh\necho 2\n" });
@@ -158,40 +158,40 @@ describe("the workshop's tools", () => {
   test("PluginInstall from the bot's scratch: found, built by the bot; refused from anywhere else and over another's plugin", async () => {
     const w = world();
     const src = join(w.scratch("luna"), "tarot");
-    write(src, { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
+    write(src, { "moss.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
     const r = await w.workshop.install(LUNA, "tarot");
     expect(r).toMatchObject({ id: "tarot", state: "found", updated: false });
     expect(w.core.get("tarot")?.provenance).toMatchObject({ by: "bot", bot: "luna" });
     expect(existsSync(join(w.pluginsDir, "tarot", "bin", "srv"))).toBe(true);
     // Outside its scratch and outputs.
     const elsewhere = join(w.home, "elsewhere", "dice");
-    write(elsewhere, { "clover.json": manifest("dice"), "bin/srv": "#!/bin/sh\n" });
+    write(elsewhere, { "moss.json": manifest("dice"), "bin/srv": "#!/bin/sh\n" });
     await expect(w.workshop.install(LUNA, elsewhere)).rejects.toThrow(/own scratch folder/);
     // Another bot's scratch isn't its own either.
     await expect(w.workshop.install(ALPHA, src)).rejects.toThrow(/own scratch folder/);
     // Over a plugin it didn't build.
     const alphaTarot = join(w.scratch("alpha"), "tarot");
-    write(alphaTarot, { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\n" });
+    write(alphaTarot, { "moss.json": manifest("tarot"), "bin/srv": "#!/bin/sh\n" });
     await expect(w.workshop.install(ALPHA, "tarot")).rejects.toThrow(/isn't a plugin you built/);
   });
 
   test("an update from scratch of its own plugin applies within the last OK, and asks when it adds a host", async () => {
     const w = world();
     const src = join(w.scratch("luna"), "tarot");
-    write(src, { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
+    write(src, { "moss.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
     await w.workshop.install(LUNA, "tarot");
     await w.approve("tarot");
     write(src, { "bin/srv": "#!/bin/sh\necho 2\n" });
     expect(await w.workshop.validate(LUNA, "tarot")).toContain("updates your plugin tarot at once, with no card");
     expect(await w.workshop.install(LUNA, "tarot")).toMatchObject({ id: "tarot", state: "running", updated: true });
-    write(src, { "clover.json": manifest("tarot", { capabilities: ["network:api.example.com"] }) });
+    write(src, { "moss.json": manifest("tarot", { capabilities: ["network:api.example.com"] }) });
     expect(await w.workshop.validate(LUNA, "tarot")).toContain("the user is asked again first: it asks for more capabilities");
     expect(await w.workshop.install(LUNA, "tarot")).toMatchObject({ id: "tarot", state: "found", updated: true, asks: "it asks for more capabilities" });
   });
 
   test("PluginStatus reads only the bot's own plugins, with its log's last lines", async () => {
     const w = world();
-    write(join(w.scratch("luna"), "tarot"), { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\n" });
+    write(join(w.scratch("luna"), "tarot"), { "moss.json": manifest("tarot"), "bin/srv": "#!/bin/sh\n" });
     await w.workshop.install(LUNA, "tarot");
     mkdirSync(join(w.home, "logs", "plugins"), { recursive: true });
     writeFileSync(join(w.home, "logs", "plugins", "tarot.log"), "line one\nline two\n");
@@ -208,7 +208,7 @@ describe("the workshop's tools", () => {
 
   test("PluginValidate prints what the OK card will say, and installs nothing", async () => {
     const w = world();
-    write(join(w.scratch("luna"), "tarot"), { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\n" });
+    write(join(w.scratch("luna"), "tarot"), { "moss.json": manifest("tarot"), "bin/srv": "#!/bin/sh\n" });
     const out = await workshopToolDefs(w.workshop, LUNA).find((t) => t.name === "PluginValidate")!.run({ folder: "tarot" });
     expect(out.isError).toBe(false);
     expect(out.text).toContain("The OK will say:");
@@ -234,7 +234,7 @@ describe("a workshop change that asks for more (the controller's ruling)", () =>
   }
   async function okd(w: ReturnType<typeof cardsWorld>) {
     const tarot = join(w.pluginsDir, "tarot");
-    write(tarot, { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
+    write(tarot, { "moss.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
     await w.folders.installed("tarot", "bot", { bot: "luna" });
     await w.core.installed("tarot", "bot");
     w.raised.at(-1)!.answered({ approved: true });
@@ -247,7 +247,7 @@ describe("a workshop change that asks for more (the controller's ruling)", () =>
     const w = cardsWorld();
     const tarot = await okd(w);
     const before = w.raised.length;
-    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["notify"] }) });
+    write(tarot, { "moss.json": manifest("tarot", { capabilities: ["notify"] }) });
     await w.folders.refresh(tarot);
     await tick();
     expect(w.core.get("tarot")?.state).toBe("found");
@@ -260,7 +260,7 @@ describe("a workshop change that asks for more (the controller's ruling)", () =>
   test("OK: it runs with the new grant, and the snapshot moves", async () => {
     const w = cardsWorld();
     const tarot = await okd(w);
-    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["notify"] }) });
+    write(tarot, { "moss.json": manifest("tarot", { capabilities: ["notify"] }) });
     await w.folders.refresh(tarot);
     await tick();
     w.raised.at(-1)!.answered({ approved: true });
@@ -277,7 +277,7 @@ describe("a workshop change that asks for more (the controller's ruling)", () =>
   test("No: it stays off; a later edit that takes the request back out runs again with no card", async () => {
     const w = cardsWorld();
     const tarot = await okd(w);
-    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["notify"] }) });
+    write(tarot, { "moss.json": manifest("tarot", { capabilities: ["notify"] }) });
     await w.folders.refresh(tarot);
     await tick();
     w.raised.at(-1)!.answered({ approved: false });
@@ -286,7 +286,7 @@ describe("a workshop change that asks for more (the controller's ruling)", () =>
     const status = await workshopToolDefs(w.workshop, LUNA).find((t) => t.name === "PluginStatus")!.run({ id: "tarot" });
     expect(status.text).toContain("The user said no to your change (it asks for more capabilities). Take that request back out and it runs again with no card.");
     const before = w.raised.length;
-    write(tarot, { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 4\n" });
+    write(tarot, { "moss.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 4\n" });
     await w.folders.refresh(tarot);
     await tick();
     expect([w.core.get("tarot")?.state, w.raised.length]).toEqual(["running", before]);
@@ -295,11 +295,11 @@ describe("a workshop change that asks for more (the controller's ruling)", () =>
   test("one card per pending change: a further edit while it waits replaces the card, and taking the request out withdraws it", async () => {
     const w = cardsWorld();
     const tarot = await okd(w);
-    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["notify"] }) });
+    write(tarot, { "moss.json": manifest("tarot", { capabilities: ["notify"] }) });
     await w.folders.refresh(tarot);
     await tick();
     const first = w.raised.at(-1)!;
-    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["notify"] }), "bin/srv": "#!/bin/sh\necho 5\n" });
+    write(tarot, { "moss.json": manifest("tarot", { capabilities: ["notify"] }), "bin/srv": "#!/bin/sh\necho 5\n" });
     await w.folders.refresh(tarot);
     await tick();
     const second = w.raised.at(-1)!;
@@ -311,7 +311,7 @@ describe("a workshop change that asks for more (the controller's ruling)", () =>
     await tick();
     expect(w.core.get("tarot")?.state).toBe("found");
     // The request taken back out: it runs under the last OK, and the waiting card goes.
-    write(tarot, { "clover.json": manifest("tarot") });
+    write(tarot, { "moss.json": manifest("tarot") });
     await w.folders.refresh(tarot);
     await tick();
     expect(w.core.get("tarot")?.state).toBe("running");
@@ -323,7 +323,7 @@ describe("a workshop change that asks for more (the controller's ruling)", () =>
 describe("a bot's edit to its own plugin that declares its own points (the owner's reel, 14f)", () => {
   /** The registry as `openPluginRegistry` wires it: point declarations from the catalog, else the registry's. */
   function reelWorld() {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-reel-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-b-reel-")));
     temps.push(home);
     const pluginsDir = join(home, "plugins");
     mkdirSync(pluginsDir, { recursive: true });
@@ -338,7 +338,7 @@ describe("a bot's edit to its own plugin that declares its own points (the owner
     return { home, pluginsDir, store, core, folders, lines, approve: async (id: string) => expect(await core.approve(id, core.get(id)!.treeHash!)).toBe("approved") };
   }
   const REEL = (over: Record<string, unknown> = {}) => JSON.stringify({
-    manifest: 1, id: "reel", name: "Reel", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, capabilities: ["files"],
+    manifest: 1, id: "reel", name: "Reel", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, capabilities: ["files"],
     host: { entry: "host/index.ts", runtime: "bun", process: "own", declares: {
       "reel.tools": { shape: "list", fields: { type: "object", properties: { id: { type: "string" }, name: { type: "string" } } } },
     } },
@@ -347,11 +347,11 @@ describe("a bot's edit to its own plugin that declares its own points (the owner
     ...over,
   });
   const reelFiles = () => ({
-    "clover.json": REEL(),
+    "moss.json": REEL(),
     "host/index.ts": "function resolvePath(p: string): string { return p; }\nexport const a = resolvePath(\"x\");\n",
     "client/index.tsx": "export function ReelPage() { return null; }\nexport function ReelBadge() { return null; }\n",
     "client/style.css": ".reel { color: black; }\n",
-    "plugins/captions/clover.json": JSON.stringify({ manifest: 1, name: "Captions", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { "reel.tools": [{ id: "captions", name: "Captions" }] } }),
+    "plugins/captions/moss.json": JSON.stringify({ manifest: 1, name: "Captions", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { "reel.tools": [{ id: "captions", name: "Captions" }] } }),
     "plugins/captions/host/index.ts": "export const b = 1;\n",
   });
   async function built() {
@@ -386,7 +386,7 @@ describe("a bot's edit to its own plugin that declares its own points (the owner
 
   test("a capability or a network host added still asks, says why in the log, and the next code edit after the OK applies", async () => {
     const { w, reel } = await built();
-    write(reel, { "clover.json": REEL({ capabilities: ["files", "notify"] }) });
+    write(reel, { "moss.json": REEL({ capabilities: ["files", "notify"] }) });
     await w.folders.refresh(reel);
     expect(w.core.get("reel")?.state).toBe("found");
     expect(w.lines).toContain("reel: asks again: it asks for more capabilities");
@@ -396,14 +396,14 @@ describe("a bot's edit to its own plugin that declares its own points (the owner
     write(reel, { "host/index.ts": "export const a = 2;\n" });
     await w.folders.refresh(reel);
     expect(w.core.get("reel")?.state).toBe("running");
-    write(reel, { "clover.json": REEL({ capabilities: ["files", "notify", "network:api.example.com"] }) });
+    write(reel, { "moss.json": REEL({ capabilities: ["files", "notify", "network:api.example.com"] }) });
     await w.folders.refresh(reel);
     expect(w.core.get("reel")?.state).toBe("found");
     expect(w.lines.filter((l) => l.startsWith("reel: asks again:"))).toEqual(["reel: asks again: it asks for more capabilities", "reel: asks again: it asks for more capabilities"]);
   });
 
   test("an OK kept before (its own point's entries counted as code whole) doesn't make the next edit ask; a code field changed does", async () => {
-    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-b-reel-old-"))), "reel");
+    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "moss-b-reel-old-"))), "reel");
     temps.push(dirname(dir));
     write(dir, reelFiles());
     // As the registry read it while the plugin wasn't on: no declaration known, each entry whole.
@@ -414,7 +414,7 @@ describe("a bot's edit to its own plugin that declares its own points (the owner
     // A point declared elsewhere with a code field: the entry's code changes, it asks.
     const codeDecl = () => ["run"];
     const p1 = (await readPluginFolder(dir, { source: "local", codeFieldsOf: codeDecl })).snapshot!;
-    write(dir, { "plugins/captions/clover.json": JSON.stringify({ manifest: 1, name: "Captions", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { "acme.runs": [{ id: "captions", run: "bin/x" }] } }) });
+    write(dir, { "plugins/captions/moss.json": JSON.stringify({ manifest: 1, name: "Captions", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { "acme.runs": [{ id: "captions", run: "bin/x" }] } }) });
     const p2 = (await readPluginFolder(dir, { source: "local", codeFieldsOf: codeDecl })).snapshot!;
     expect(workshopAdds(p1, p2)).toBe("its child captions runs a program it didn't");
   });
@@ -423,25 +423,25 @@ describe("a bot's edit to its own plugin that declares its own points (the owner
     const w = reelWorld();
     const tarot = join(w.pluginsDir, "tarot");
     const decl = (program: boolean) => ({ shape: "list", fields: { type: "object", properties: { id: { type: "string" }, run: { type: "string", ...(program ? { format: "program" } : {}) } } } });
-    const m = (program: boolean, entries: unknown[]) => JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    const m = (program: boolean, entries: unknown[]) => JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
       host: { entry: "host/index.ts", runtime: "bun", declares: { "tarot.runs": decl(program) } }, contributes: { "tarot.runs": entries } });
-    write(tarot, { "clover.json": m(true, [{ id: "a", run: "bin/a" }]), "host/index.ts": "export const p = 1;\n", "bin/a": "#!/bin/sh\necho a\n", "bin/b": "#!/bin/sh\necho b\n" });
+    write(tarot, { "moss.json": m(true, [{ id: "a", run: "bin/a" }]), "host/index.ts": "export const p = 1;\n", "bin/a": "#!/bin/sh\necho a\n", "bin/b": "#!/bin/sh\necho b\n" });
     await w.folders.installed("tarot", "bot", { bot: "alpha" });
     await w.approve("tarot");
     expect(w.core.points().find((p) => p.name === "tarot.runs")?.declaredBy).toMatchObject({ pluginId: "tarot" });
     // The tree now says `run` is no program, and adds an entry with one: the registry still runs it by the declaration
     // it holds, so the edit asks again rather than reading the new entry as data.
-    write(tarot, { "clover.json": m(false, [{ id: "a", run: "bin/a" }, { id: "b", run: "bin/b" }]) });
+    write(tarot, { "moss.json": m(false, [{ id: "a", run: "bin/a" }, { id: "b", run: "bin/b" }]) });
     await w.folders.refresh(tarot);
     expect(w.core.get("tarot")?.state).toBe("found");
     expect(w.lines).toContain("tarot: asks again: it runs a program it didn't");
   });
 
   test("where its keys and calls go: repeats and order add nothing, for any update; a new web page URL asks", async () => {
-    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-b-reel-reach-"))), "reel");
+    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "moss-b-reel-reach-"))), "reel");
     temps.push(dirname(dir));
     const snapWith = async (ui: unknown[]) => {
-      write(dir, { ...reelFiles(), "clover.json": REEL({ contributes: { ui } }) });
+      write(dir, { ...reelFiles(), "moss.json": REEL({ contributes: { ui } }) });
       return (await readPluginFolder(dir, { source: "local" })).snapshot!;
     };
     const one = await snapWith([{ spot: "app.surface", id: "reel", component: "ReelPage" }]);

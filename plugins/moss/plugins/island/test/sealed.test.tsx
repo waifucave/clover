@@ -1,0 +1,366 @@
+// Spec §5.5: a sealed approval frame counts as hidden under a filter, an opacity below 1, a mask, a clip or a
+// transform other than a move or an enlargement, on itself or anything around it; and as covered when anything
+// is painted over it, even a transparent box that ignores the pointer. A button must show whole at 24 × 24 or
+// more. These hold everywhere the island puts sealed parts, at rest, checked on the real surfaces against the
+// island's own stylesheet (`sealedProblems`, the SDK's theme lint).
+
+import { afterEach, describe, expect, test } from "bun:test";
+import { act, fireEvent, render } from "@testing-library/react";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import type { CSSProperties, ReactElement } from "react";
+import { resolveTokens } from "@waifucave/moss-plugin-sdk";
+import { sealedProblems } from "@waifucave/moss-plugin-sdk/ui/testing";
+import * as client from "../client/index";
+import { cardGeometry } from "../src/model/geometry";
+import { NEEDS_YOU, tabState } from "../src/model/tabs";
+import { Island, type IslandTimers } from "../src/ui/Island";
+import { LiquidCard } from "../src/ui/Liquid";
+import { NeedsYou, OpenIsland } from "../src/ui/OpenIsland";
+import { SealedCardContent } from "../src/ui/CardContent";
+import { ISLAND_CSS } from "../src/ui/styles";
+import { ISLAND_CARD_SOURCES, MIN_SEALED_BUTTON, resolveCardTokens, SealedKitContext, tokenProperty, type SealedCardKit } from "../src/ui/sealed";
+import { mockSealedKit } from "../src/mock-kit";
+import { ISLAND_STORIES as STORIES } from "../src/gallery";
+import { APPROVAL, APPROVAL_2, APPROVAL_ALWAYS, LINK, NO_NOTCH, NOTCH, QUESTION, SEALED } from "../src/fixtures";
+import type { IslandCard } from "../src/model/cards";
+
+const kit = mockSealedKit(SEALED);
+const withKit = (ui: ReactElement, k: SealedCardKit = kit) => <SealedKitContext.Provider value={k}>{ui}</SealedKitContext.Provider>;
+
+function assertVisible(container: HTMLElement): void {
+  const parts = container.querySelectorAll("[data-sealed]");
+  expect(parts.length).toBeGreaterThan(0);
+  expect(sealedProblems(container, ISLAND_CSS)).toEqual([]);
+  for (const button of container.querySelectorAll('[data-sealed="approve"], [data-sealed="deny"]')) {
+    const style = (button as HTMLElement).style;
+    // A glyph button is a square; one carrying its own label is at least that wide.
+    expect(parseFloat(style.width || style.minWidth)).toBeGreaterThanOrEqual(MIN_SEALED_BUTTON);
+    expect(parseFloat(style.height)).toBeGreaterThanOrEqual(MIN_SEALED_BUTTON);
+  }
+}
+
+function clock() {
+  let now = 0;
+  let seq = 0;
+  const timeouts = new Map<number, { at: number; fn: () => void }>();
+  const frames = new Map<number, () => void>();
+  const timers: IslandTimers = {
+    now: () => now,
+    setTimeout: (fn, ms) => {
+      timeouts.set(++seq, { at: now + ms, fn });
+      return seq;
+    },
+    clearTimeout: (h) => void timeouts.delete(h as number),
+    requestFrame: (fn) => {
+      frames.set(++seq, fn);
+      return seq;
+    },
+    cancelFrame: (h) => void frames.delete(h as number),
+  };
+  const advance = (ms: number) =>
+    act(() => {
+      for (let step = 0; step < ms; step += 16) {
+        now += 16;
+        for (const [id, t] of [...timeouts]) if (t.at <= now) (timeouts.delete(id), t.fn());
+        for (const [id, fn] of [...frames]) (frames.delete(id), fn());
+      }
+    });
+  return { timers, advance };
+}
+
+function mountIsland(cards: IslandCard[], shape = NOTCH) {
+  const c = clock();
+  const ui = (list: IslandCard[]) => withKit(<Island shape={shape} cards={list} timers={c.timers} />);
+  const view = render(ui(cards));
+  return { ...c, view, update: (list: IslandCard[]) => view.rerender(ui(list)) };
+}
+
+
+/** What may not happen to a container of a sealed frame while the user can press: no transform, opacity below 1 or filter on it, whether inline or from a
+ *  hover / focus / press rule, and no transition of those. A sealed button read (IntersectionObserver v2) while its container moves, fades or filters
+ *  says "not visible", and the press is refused. Paint-only cues (a rim, a shadow, a background) are fine. */
+function motionProblems(container: HTMLElement, css: string): string[] {
+  const problems: string[] = [];
+  const ancestors = new Set<HTMLElement>();
+  for (const part of container.querySelectorAll("[data-sealed]")) {
+    for (let el = part.parentElement; el !== null && el !== container.parentElement; el = el.parentElement) ancestors.add(el);
+  }
+  const classes = new Set<string>();
+  for (const el of ancestors) {
+    for (const c of Array.from(el.classList)) classes.add(c);
+    const st = el.style;
+    if (st.transform !== "" && st.transform !== "none") problems.push(`an ancestor (${el.className}) has an inline transform ${st.transform}`);
+    if (st.filter !== "" && st.filter !== "none") problems.push(`an ancestor (${el.className}) has an inline filter ${st.filter}`);
+    if (st.opacity !== "" && Number(st.opacity) < 1) problems.push(`an ancestor (${el.className}) has an inline opacity ${st.opacity}`);
+    if (/transform|opacity|filter|all/.test(st.transition)) problems.push(`an ancestor (${el.className}) has an inline transition of ${st.transition}`);
+  }
+  const subjectOf = (selector: string): string[] => {
+    const last = selector.trim().split(/\s+|>|\+|~/).filter(Boolean).pop() ?? "";
+    return [...last.matchAll(/\.([A-Za-z0-9_-]+)/g)].map((m) => m[1]!);
+  };
+  for (const rule of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const [, selectors, body] = rule;
+    for (const selector of selectors!.split(",")) {
+      if (!subjectOf(selector).some((c) => classes.has(c))) continue;
+      const state = /:hover|:focus|:active|\[data-hovered|\[data-pressed/.test(selector);
+      if (state && /(^|[;\s])(transform|translate|scale|rotate|filter|opacity)\s*:/.test(body!)) problems.push(`${selector.trim()} sets a transform, filter or opacity on a state of a sealed frame's container`);
+      if (/(^|[;\s])transition(-property)?\s*:[^;]*(transform|opacity|filter|\ball\b)/.test(body!)) problems.push(`${selector.trim()} transitions a transform, filter or opacity on a sealed frame's container`);
+    }
+  }
+  return problems;
+}
+
+describe("sealed parts stay visible at rest", () => {
+  const g = cardGeometry(NOTCH, { width: 400, height: 120 }, { rounded: true });
+
+  test("on a card on top, resting and hovered", () => {
+    for (const hovered of [false, true]) {
+      const { container, unmount } = render(
+        withKit(
+          <LiquidCard geometry={g} hovered={hovered}>
+            <SealedCardContent card={APPROVAL} hover={hovered ? "accept" : undefined} />
+          </LiquidCard>,
+        ),
+      );
+      assertVisible(container);
+      unmount();
+    }
+  });
+
+  test("an approval with an \"always\" answer: one sealed button per option, each its own, all visible", () => {
+    const { container } = render(
+      withKit(
+        <LiquidCard geometry={g}>
+          <SealedCardContent card={APPROVAL_ALWAYS} hover="accept" />
+        </LiquidCard>,
+      ),
+    );
+    assertVisible(container);
+    const buttons = [...container.querySelectorAll('[data-sealed="approve"], [data-sealed="deny"]')];
+    expect(buttons.map((b) => [b.getAttribute("data-option"), b.getAttribute("data-look")])).toEqual([
+      ["always", "label"],
+      ["deny", "cross"],
+      ["once", "check"],
+    ]);
+    expect(buttons[0]!.textContent).toBe("Always allow");
+  });
+
+  test("but not while the card is still being born (its clicks do not count yet)", () => {
+    const { container } = render(
+      withKit(
+        <LiquidCard geometry={g} seconds={0.7}>
+          <SealedCardContent card={LINK} />
+        </LiquidCard>,
+      ),
+    );
+    expect(sealedProblems(container, ISLAND_CSS).length).toBeGreaterThan(0);
+  });
+
+  test("in the open island's Needs you, with and without a housing", () => {
+    for (const shape of [NOTCH, NO_NOTCH]) {
+      const { container, unmount } = render(
+        withKit(
+          <OpenIsland shape={shape} tabs={tabState([NEEDS_YOU])} count={3}>
+            <NeedsYou cards={[APPROVAL, LINK, QUESTION, APPROVAL_2]} />
+          </OpenIsland>,
+        ),
+      );
+      assertVisible(container);
+      unmount();
+    }
+  });
+
+  test("on the real island: a card on top at rest, hovered, with a newcomer waiting below", () => {
+    const island = mountIsland([APPROVAL]);
+    island.advance(2000);
+    assertVisible(island.view.container);
+    fireEvent.mouseEnter(island.view.container.querySelector(".clv-card-shell")!.parentElement!.parentElement!);
+    island.update([APPROVAL, LINK]);
+    island.advance(400);
+    expect(island.view.container.querySelector(".clv-waiting")).not.toBeNull();
+    assertVisible(island.view.container);
+  });
+
+  test("a hovered card is not moved, scaled, faded or filtered (a reading taken while it moves says \"not visible\" and the press is refused)", () => {
+    for (const hovered of [false, true]) {
+      const { container, unmount } = render(withKit(<LiquidCard geometry={g} hovered={hovered}><SealedCardContent card={APPROVAL} hover={hovered ? "accept" : undefined} /></LiquidCard>));
+      expect(motionProblems(container, ISLAND_CSS)).toEqual([]);
+      unmount();
+    }
+    const island = mountIsland([APPROVAL]);
+    island.advance(2000);
+    fireEvent.mouseEnter(island.view.container.querySelector(".clv-card-shell")!.parentElement!.parentElement!);
+    island.advance(600);
+    expect(island.view.container.querySelector('.clv-card-shell[data-hovered]')).not.toBeNull();
+    expect(motionProblems(island.view.container, ISLAND_CSS)).toEqual([]);
+  });
+
+  test("the check itself catches a hover scale on the shell and a transition of a transform", () => {
+    const { container } = render(withKit(<LiquidCard geometry={g} hovered><SealedCardContent card={APPROVAL} /></LiquidCard>));
+    expect(motionProblems(container, ".clv-card-shell[data-hovered] { transform: scale(1.03) }")).toHaveLength(1);
+    expect(motionProblems(container, ".clv-card-shell { transition: transform 300ms ease }")).toHaveLength(1);
+    expect(motionProblems(container, ".clv-card-shell:hover { opacity: 0.9 }")).toHaveLength(1);
+    expect(motionProblems(container, ".clv-card-shell[data-hovered] { box-shadow: inset 0 0 0 1px #fff; } .clv-card-shell { transition: box-shadow 150ms }")).toEqual([]);
+  });
+
+  test("on the real island: opened on Needs you, once the morph rests", () => {
+    for (const shape of [NOTCH, NO_NOTCH]) {
+      const island = mountIsland([APPROVAL, LINK, APPROVAL_2], shape);
+      island.advance(2000);
+      fireEvent.click(island.view.container.querySelector('.clv-strip [data-part="waiting"]') ?? island.view.container.querySelector(".clv-strip")!);
+      island.advance(1500);
+      expect(island.view.container.querySelector(".clv-open")).not.toBeNull();
+      assertVisible(island.view.container);
+      island.view.unmount();
+    }
+  });
+
+  test("after a card goes back up into the housing, nothing of it is left over the next one", () => {
+    const island = mountIsland([APPROVAL]);
+    island.advance(2000);
+    island.update([APPROVAL, APPROVAL_2]);
+    expect(island.view.container.querySelector(".clv-returning")).not.toBeNull();
+    island.advance(2000);
+    expect(island.view.container.querySelector(".clv-returning")).toBeNull();
+    assertVisible(island.view.container);
+  });
+});
+
+describe("the check itself catches what would cover a part", () => {
+  const part = '<span data-sealed="approve" style="width: 30px; height: 30px"></span>';
+  const cases: [string, string][] = [
+    [`<div class="shell">${part}</div>`, `.shell::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 1px #FFF; pointer-events: none }`],
+    [`<div class="list">${part}</div><div class="fade"></div>`, `.fade { position: absolute; left: 0; right: 0; bottom: 0; height: 22px; pointer-events: none }`],
+    [`<div class="row">${part}<span class="next"></span></div>`, `.next:hover { box-shadow: 0 0 20px #FFF }`],
+    [`<div class="box" style="position: relative"><span class="badge"></span>${part}</div>`, `.badge { position: absolute; top: 0; right: 0 }`],
+    [`<div class="row">${part}</div>`, `.row { opacity: 0.99 }`],
+    [`<div class="row" style="filter: blur(1px)">${part}</div>`, ``],
+    [`<div class="row">${part}</div>`, `.row { visibility: hidden }`],
+    [`<div class="row">${part}</div><div class="top"></div>`, `.top { position: relative; z-index: 3 }`],
+    // In flow, a negative margin pulls a later box back over the part (the review's pull-over).
+    [`<div class="row">${part}</div><div class="next"></div>`, `.next { margin-top: -40px }`],
+    [`<div class="row">${part}</div><div class="next" style="margin: -8px 0 0"></div>`, ``],
+    // A row of its own (a stacking context) paints after the card's flow: its glow, "beneath" in the row, lands on
+    // the field below it. What Chromium caught in the gallery.
+    [
+      `<div data-sealed-card="c"><div class="row"><span class="slot"></span></div><span data-sealed="field" data-field="risk"></span></div>`,
+      `.row { isolation: isolate } .slot { position: relative } .slot::before { content: ""; position: absolute; inset: 0; z-index: -1; box-shadow: 0 0 20px #FFF }`,
+    ],
+  ];
+  for (const [html, css] of cases) {
+    test(css || html, () => {
+      const root = document.createElement("div");
+      root.innerHTML = html;
+      document.body.appendChild(root);
+      expect(sealedProblems(root, css).length).toBeGreaterThan(0);
+      root.remove();
+    });
+  }
+
+  test("and lets through a glow beneath the card's own content, and a rim of the box's own", () => {
+    const root = document.createElement("div");
+    root.innerHTML = `<div class="card" data-sealed-card="c"><div class="row"><span class="slot">${part}</span><span class="slot after"></span></div><span data-sealed="field" data-field="risk"></span></div>`;
+    document.body.appendChild(root);
+    const css = `.card { isolation: isolate } .slot { position: relative; box-shadow: inset 0 0 0 1px #FFF } .slot::before { content: ""; position: absolute; inset: 0; z-index: -1; box-shadow: 0 0 20px #FFF }`;
+    expect(sealedProblems(root, css)).toEqual([]);
+    root.remove();
+  });
+});
+
+describe("the frames take the island's own tokens", () => {
+  const realGetComputedStyle = globalThis.getComputedStyle;
+  afterEach(() => {
+    globalThis.getComputedStyle = realGetComputedStyle;
+  });
+
+  test("every card value comes from an island token, the base theme's value when nothing sets it", () => {
+    const base = resolveTokens("light", []);
+    for (const [name, source] of Object.entries(ISLAND_CARD_SOURCES)) {
+      expect(name.startsWith("card.")).toBe(true);
+      if ("token" in source) expect(source.fallback, name).toBe(String(base[source.token]));
+    }
+  });
+
+  test("card styling (G-M3): the frames get every card token, the theme's face, the ✓'s own ink, and never a keyword", () => {
+    const { CARD_TOKENS } = require("../../../../../packages/plugin-sdk/src/catalogs/tokens") as { CARD_TOKENS: readonly { name: string }[] };
+    expect(Object.keys(ISLAND_CARD_SOURCES).sort()).toEqual(CARD_TOKENS.map((x) => x.name).sort());
+    const src = ISLAND_CARD_SOURCES["card.approve.text"]!;
+    expect("token" in src && src.token).toBe("island.accept.text");
+    const font = ISLAND_CARD_SOURCES["card.font.family"]!;
+    expect("token" in font && font.token).toBe("card.font.family");
+    const unresolved = resolveCardTokens(ISLAND_CARD_SOURCES, () => "system");
+    for (const [key, source] of Object.entries(ISLAND_CARD_SOURCES)) if ("token" in source) expect(unresolved[key], key).toBe(source.fallback);
+  });
+
+  test("a theme's ✓ reaches the approval's frames as it reaches the question's circle", () => {
+    // happy-dom resolves no custom property: read them as Chromium would, from the nearest inline style.
+    globalThis.getComputedStyle = ((el: Element) => ({
+      getPropertyValue: (property: string) => {
+        for (let node: Element | null = el; node; node = node.parentElement) {
+          const value = (node as HTMLElement).style?.getPropertyValue(property);
+          if (value) return value;
+        }
+        return "";
+      },
+    })) as unknown as typeof getComputedStyle;
+    const seen: Readonly<Record<string, string>>[] = [];
+    const capturing: SealedCardKit = { ...kit, Card: (props) => (seen.push(props.tokens ?? {}), kit.Card(props)) };
+    render(
+      withKit(
+        <div style={{ [tokenProperty("island.accept")]: "#1E7F47", [tokenProperty("island.accept.text")]: "#000000", [tokenProperty("island.text")]: "red; } x {" } as CSSProperties}>
+          <SealedCardContent card={APPROVAL} />
+        </div>,
+        capturing,
+      ),
+    );
+    const last = seen[seen.length - 1]!;
+    expect(last["card.approve.background"]).toBe("#1E7F47");
+    expect(last["card.approve.text"]).toBe("#000000");
+    // A value that could break out of its property never reaches a frame.
+    expect(last["card.text"]).toBe("#FFFFFF");
+    // The question's ✓ and the approval's slot read the same token.
+    expect(ISLAND_CSS).toMatch(/\.clv-circle\[data-role="accept"\],\s*\.clv-sealed-slot\[data-role="accept"\] \{\s*background: var\(--moss-island-accept,/);
+  });
+
+  test("no fixed blue anywhere in the island", () => {
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (/\.(tsx?|css)$/.test(name)) files.push(path);
+      }
+    };
+    walk(join(import.meta.dir, "..", "src"));
+    walk(join(import.meta.dir, "..", "client"));
+    for (const file of files) expect(readFileSync(file, "utf8"), file).not.toMatch(/#0A85FF/i);
+  });
+});
+
+describe("the client entry", () => {
+  test("ships no stand-in kit", () => {
+    expect("mockSealedKit" in client).toBe(false);
+  });
+});
+
+describe("Needs you", () => {
+  test("puts the answer line, buttons and all, before the risk and the command", () => {
+    const { container } = render(withKit(<NeedsYou cards={[APPROVAL]} />));
+    const card = container.querySelector("[data-sealed-card]")!;
+    const order = [...card.querySelectorAll("[data-sealed]")].map((el) => el.getAttribute("data-field") ?? el.getAttribute("data-sealed"));
+    expect(order).toEqual(["source", "what", "deny", "approve", "risk", "command"]);
+  });
+});
+
+describe("the gallery's stories", () => {
+  test("each records every sealed part it draws, so the Chromium check counts them all (none skipped)", () => {
+    for (const story of STORIES) {
+      const view = render(<>{story.render()}</>);
+      const drawn = view.container.querySelectorAll("[data-sealed]").length;
+      const recorded = (story.sealed?.visible ?? 0) + (story.sealed?.moving ?? 0) + (story.sealed?.scrolled ?? 0);
+      expect(recorded, story.id).toBe(drawn);
+      view.unmount();
+    }
+  });
+});

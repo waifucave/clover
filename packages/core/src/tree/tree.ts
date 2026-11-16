@@ -12,12 +12,12 @@
 // * A move between two computers, and any copy, takes the direct path (`transfer.ts`; edit J8, review S1): the
 //   destination's holder takes the files straight from the source's, each judging the whole operation once, and for a
 //   move the source lets go of what it sent only once the files are in place.
-import type { Caller, FileStat, Level, Os } from "@waifucave/clover-protocol";
-import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment } from "@waifucave/clover-protocol";
+import type { Caller, FileStat, Level, Os } from "@waifucave/moss-protocol";
+import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment } from "@waifucave/moss-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import { checkNoFollow, splitTreePath, type Tree, type TreeCallOptions, type TreeData, type TreeLocation } from "../contracts/tree";
-import { CLOVER_HOME_NAME, MEMORY_FOLDER, memoryBotOf, type Holder, type HolderCall } from "./holder";
+import { MOSS_HOME_NAME, MEMORY_FOLDER, memoryBotOf, type Holder, type HolderCall } from "./holder";
 import type { TransferResult } from "./transfer";
 import { foldName } from "./names";
 import type { TreeWatchEvent } from "./watch";
@@ -31,7 +31,7 @@ export interface TreeComputer {
   /** Its home folder's real path and its OS; unknown until its first hello over the link. */
   home?: string;
   os?: Os;
-  /** Where the bots it runs keep their folders (`<Clover home>/bots`). */
+  /** Where the bots it runs keep their folders (`<MOSS home>/bots`). */
   botsRoot?: string;
 }
 
@@ -53,10 +53,10 @@ export interface CoreTreeOptions {
   transfer?: (o: { from: string; to: string; move: boolean; source: string; destination: string; call: HolderCall }) => Promise<TransferResult>;
 }
 
-/** A computer's Clover home: where its bots' folders are, less `bots`, or `<home>/.clover` until it says. */
-function cloverHomeOf(c: TreeComputer): string | undefined {
+/** A computer's MOSS home: where its bots' folders are, less `bots`, or `<home>/.moss` until it says. */
+function mossHomeOf(c: TreeComputer): string | undefined {
   if (c.botsRoot !== undefined) return c.botsRoot.replace(/[\\/]+bots[\\/]*$/, "");
-  return c.home === undefined ? undefined : joinReal(c.os, c.home, CLOVER_HOME_NAME);
+  return c.home === undefined ? undefined : joinReal(c.os, c.home, MOSS_HOME_NAME);
 }
 
 /** A real path inside `home`, joined the way that computer's OS writes paths. */
@@ -81,7 +81,7 @@ export class CoreTree implements Tree {
       const bot = as ? memoryBotOf(as) : undefined;
       const c = this.#o.directory.get(this.#o.directory.self());
       if (bot === undefined || !c?.home) throw new ContractError("not_found", `no computer ${MEMORY_FOLDER}`);
-      const root = c.botsRoot ?? joinReal(c.os, c.home, ".clover/bots");
+      const root = c.botsRoot ?? joinReal(c.os, c.home, ".moss/bots");
       const inside = `${pluginIdToSegment(bot)}/${MEMORY_FOLDER}${parts.rest === "" ? "" : `/${parts.rest}`}`;
       return { computer: c.name, path: joinReal(c.os, root, inside), area: "bot", bot };
     }
@@ -89,11 +89,11 @@ export class CoreTree implements Tree {
       const c = this.#o.directory.get(parts.name);
       if (!c) throw new ContractError("not_found", `no computer ${parts.name}`);
       if (c.home === undefined) throw new ContractError("computer_offline", `${c.name} hasn't said where its home folder is yet`, { computer: c.name });
-      // `home/<Computer>/.clover/` is that computer's Clover home, wherever it is on its disk.
+      // `home/<Computer>/.moss/` is that computer's MOSS home, wherever it is on its disk.
       const [first, ...below] = parts.rest.split("/");
-      const cloverHome = cloverHomeOf(c);
-      if (first !== undefined && cloverHome !== undefined && foldName(first, c.os ?? "macos") === CLOVER_HOME_NAME) {
-        return { computer: c.name, path: joinReal(c.os, cloverHome, below.join("/")), area: "home" };
+      const mossHome = mossHomeOf(c);
+      if (first !== undefined && mossHome !== undefined && foldName(first, c.os ?? "macos") === MOSS_HOME_NAME) {
+        return { computer: c.name, path: joinReal(c.os, mossHome, below.join("/")), area: "home" };
       }
       return { computer: c.name, path: joinReal(c.os, c.home, parts.rest), area: "home" };
     }
@@ -102,7 +102,7 @@ export class CoreTree implements Tree {
     const c = name === undefined ? undefined : this.#o.directory.get(name);
     if (!c) throw new ContractError("not_found", `no computer runs ${bot}`);
     if (c.home === undefined) throw new ContractError("computer_offline", `${c.name} hasn't said where its home folder is yet`, { computer: c.name });
-    const root = c.botsRoot ?? joinReal(c.os, c.home, ".clover/bots");
+    const root = c.botsRoot ?? joinReal(c.os, c.home, ".moss/bots");
     return { computer: c.name, path: joinReal(c.os, root, parts.rest === "" ? pluginIdToSegment(bot) : `${pluginIdToSegment(bot)}/${parts.rest}`), area: "bot", bot };
   }
 
@@ -115,14 +115,14 @@ export class CoreTree implements Tree {
     const real = norm(realPath);
     const same = (a: string, b: string) => (c.os === "linux" ? a === b : foldName(a, c.os ?? "macos") === foldName(b, c.os ?? "macos"));
     const s = win ? "\\" : "/";
-    // The Clover home first: it is `home/<Computer>/.clover/` wherever it is.
-    const ch = cloverHomeOf(c);
+    // The MOSS home first: it is `home/<Computer>/.moss/` wherever it is.
+    const ch = mossHomeOf(c);
     if (ch !== undefined) {
-      const clover = norm(ch);
-      if (same(real, clover)) return `home/${c.name}/${CLOVER_HOME_NAME}`;
-      if (real.length > clover.length + 1 && same(real.slice(0, clover.length + 1), clover + s)) {
-        const rest = real.slice(clover.length + 1).split(s);
-        if (!rest.some((x) => x === "" || x === "." || x === "..")) return `home/${c.name}/${CLOVER_HOME_NAME}/${rest.join("/")}`;
+      const moss = norm(ch);
+      if (same(real, moss)) return `home/${c.name}/${MOSS_HOME_NAME}`;
+      if (real.length > moss.length + 1 && same(real.slice(0, moss.length + 1), moss + s)) {
+        const rest = real.slice(moss.length + 1).split(s);
+        if (!rest.some((x) => x === "" || x === "." || x === "..")) return `home/${c.name}/${MOSS_HOME_NAME}/${rest.join("/")}`;
       }
     }
     if (same(real, home)) return `home/${c.name}`;

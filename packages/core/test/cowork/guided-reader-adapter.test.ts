@@ -52,7 +52,7 @@ function fakeEvidence() {
 
 /** Real canonical DB, repository and runtime rows; launches from the REAL supervisor with a port that is never opened. */
 function fixture() {
-  const home = mkdtempSync(join(tmpdir(), "clover-guided-reader-")); roots.push(home);
+  const home = mkdtempSync(join(tmpdir(), "moss-guided-reader-")); roots.push(home);
   const db = openRuntimeStateDb(home); databases.push(db);
   let mint = 0, currentBoot = boot, held = true;
   const records = new CoworkRepository(db, () => "2026-10-16T00:00:00.000Z", prefix => `${prefix}_${++mint}`);

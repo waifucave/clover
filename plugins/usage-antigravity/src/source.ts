@@ -1,5 +1,5 @@
-import type { HandlerContext } from "@waifucave/clover-plugin-sdk";
-import { runOutside, type Outside, type UsagePlanArgs, type UsagePlanReply } from "@waifucave/clover-plugin-sdk/usage-source";
+import type { HandlerContext } from "@waifucave/moss-plugin-sdk";
+import { runOutside, type Outside, type UsagePlanArgs, type UsagePlanReply } from "@waifucave/moss-plugin-sdk/usage-source";
 import { AGY_TIMEOUT_BACKOFF_MS, antigravityPlanFromCli } from "./antigravity";
 
 // The Antigravity source's `plan` (spec §12 "Usage sources"): `agy`'s own `/usage`, no other rung. What it remembers

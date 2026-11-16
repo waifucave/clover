@@ -20,13 +20,13 @@
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path. A part's OWN plugin's
 // settings are not here: every part reads and writes them through the plugin API (`settings.get`/`set`, the core's
 // `plugin.layer.call`), at every scope, as its host half does.
-import { TopPluginId, allowedMethods } from "@waifucave/clover-protocol";
-import { withImplied } from "@waifucave/clover-plugin-sdk";
-import { displayText } from "@waifucave/clover-plugin-sdk/plain";
+import { TopPluginId, allowedMethods } from "@waifucave/moss-protocol";
+import { withImplied } from "@waifucave/moss-plugin-sdk";
+import { displayText } from "@waifucave/moss-plugin-sdk/plain";
 import { resend } from "./resend";
 import { messageAction } from "./message-action";
 /** The bundled tree whose notices are the app's own: never muted. */
-const CLOVER_TREE = "clover";
+const MOSS_TREE = "moss";
 
 export type Disposition = "read" | "gesture" | "card" | "unserved";
 
@@ -93,7 +93,7 @@ const PLUGINS_ACTS = [
 const PAGE_METHODS: ReadonlySet<string> = new Set<string>([...PLUGINS_READS, ...PLUGINS_ACTS, "plugin.settings.get", "plugin.settings.set"]);
 
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
-  // Clover's own settings: the look, the theme, the language; the layout lists, read (by `bots.edit` too: a bot's tab
+  // MOSS's own settings: the look, the theme, the language; the layout lists, read (by `bots.edit` too: a bot's tab
   // lists are merged into them); which filler of each one-at-a-time point is active (§5.4: only the user's press in a
   // picker changes it).
   "ui.settings": read([APP_SETTINGS, BOTS_EDIT]),
@@ -126,7 +126,7 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "session.connectors": read("conversation.read"),
   "archive.history": read("conversation.read"),
   "archive.list": read("conversation.read"),
-  // The account Clover is signed in with: its name and email.
+  // The account MOSS is signed in with: its name and email.
   "account.status": read(ACCOUNT_READ),
   // The models a bot can be set to, with whether each provider is signed in.
   "models.list": read("bots.read"),
@@ -346,18 +346,18 @@ export function pageParams(method: string, params: unknown, part: string, tokens
     if (p.list === true) return { params: { ...(typeof p.id === "string" ? { id: p.id } : {}), list: true } };
     return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "an update is applied one plugin at a time, the one the user picked" };
   }
-  // A plugin's notifications muted or not: a top-level plugin, any but Clover's own tree (the app's notices; its parts
+  // A plugin's notifications muted or not: a top-level plugin, any but MOSS's own tree (the app's notices; its parts
   // aren't top-level, so they're refused too). A bundled bot (`alpha`) is muted like any plugin. A boolean; nothing else.
   if (method === "notify.setMuted") {
     const id = p.pluginId;
     if (typeof id !== "string" || !TopPluginId.safeParse(id).success) return { why: "which plugin?" };
-    if (id === CLOVER_TREE) return { why: "Clover's own notices aren't muted here" };
+    if (id === MOSS_TREE) return { why: "MOSS's own notices aren't muted here" };
     if (typeof p.muted !== "boolean") return { why: "mute it or not?" };
     return { params: { pluginId: id, muted: p.muted } };
   }
-  // A sign-in's key never comes from the page: an `api-key` entry is signed into in Clover's own key dialog (`ui.secret`).
+  // A sign-in's key never comes from the page: an `api-key` entry is signed into in MOSS's own key dialog (`ui.secret`).
   if (method === "plugin.auth.signIn") {
-    if (p.key !== undefined) return { why: "a key is entered only in Clover's own key dialog" };
+    if (p.key !== undefined) return { why: "a key is entered only in MOSS's own key dialog" };
     return typeof p.id === "string" && typeof p.index === "number" ? { params: { id: p.id, index: p.index } } : { why: "which sign-in?" };
   }
   if (method === "plugin.auth.signOut") return typeof p.id === "string" && typeof p.index === "number" ? { params: { id: p.id, index: p.index, card: true } } : { why: "which sign-in?" };
@@ -396,7 +396,7 @@ export function pageParams(method: string, params: unknown, part: string, tokens
         const path = tokens.redeem(src.value, part, "plugin.install");
         return path === undefined ? { why: "a folder comes from the folder picker (ui.pick), not from the page" } : { params: { source: { from: "wrap", kind: src.kind, value: path } } };
       }
-      return { why: "not a kind of item Clover wraps" };
+      return { why: "not a kind of item MOSS wraps" };
     }
     default:
       return { why: "a plugin installs from an index, npm, a picked folder or a pasted MCP config" };
@@ -566,7 +566,7 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
       const field = await settingField(r, s.id, s.key);
       if (field?.type === "secret") {
         r.log(`tree: ${part}: plugin.settings.set refused (a key, from a page)`);
-        throw r.refuse(`${s.key} is a key: it is entered, replaced or removed only in Clover's own key dialog`);
+        throw r.refuse(`${s.key} is a key: it is entered, replaced or removed only in MOSS's own key dialog`);
       }
       const why = field === undefined ? `${s.key} isn't one of that plugin's settings` : pageSettingWhy(s.key, field, s.value);
       if (why !== undefined) {
@@ -616,7 +616,7 @@ async function editorSetting(r: TreeRoute, part: string): Promise<unknown> {
   const field = await settingField(r, bot, s.key);
   if (field?.type === "secret") {
     r.log(`tree: ${part}: plugin.settings.set refused (a key, from a page)`);
-    throw r.refuse(`${s.key} is a key: it is entered, replaced or removed only in Clover's own key dialog`);
+    throw r.refuse(`${s.key} is a key: it is entered, replaced or removed only in MOSS's own key dialog`);
   }
   const why = field === undefined ? `${s.key} isn't one of that plugin's settings` : pageSettingWhy(s.key, field, s.value, true);
   if (why !== undefined) {
@@ -664,7 +664,7 @@ async function secret(r: TreeRoute, part: string, anyPlugin: boolean): Promise<{
   // what it saves are always the same plugin's.
   if (!(await r.openKey(target))) {
     r.log(`tree: ${part}: ui.secret refused (a key dialog is open)`);
-    throw r.refuse("Clover's key dialog is open already: close it first");
+    throw r.refuse("MOSS's key dialog is open already: close it first");
   }
   return { opened: true };
 }
@@ -706,7 +706,7 @@ async function pick(r: TreeRoute, part: string, c: TreeCaller): Promise<{ token:
   return { token: r.tokens.issue(part, path, use), name: pickedName(path) };
 }
 
-/** Text a page shows that a file, a model or the core wrote: the shared cleaner (`@waifucave/clover-plugin-sdk/plain`),
+/** Text a page shows that a file, a model or the core wrote: the shared cleaner (`@waifucave/moss-plugin-sdk/plain`),
  *  capped; empty when nothing is left. */
 export const neutralised = (text: string, max: number): string => displayText(text, max) ?? "";
 

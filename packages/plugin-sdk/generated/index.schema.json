@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Clover plugin index",
+  "title": "MOSS plugin index",
   "description": "Index format 1: a plain list of plugins, each version with its tree hash and download URL (spec §5.1).",
   "type": "object",
   "properties": {

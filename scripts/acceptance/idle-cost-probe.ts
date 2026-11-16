@@ -1,15 +1,15 @@
-// What an idle Clover costs, measured as the owner's app is drawn: the main window, the island and the pill really shown and
+// What an idle MOSS costs, measured as the owner's app is drawn: the main window, the island and the pill really shown and
 // composited, throttled as a hidden or covered window is, yet invisible (opacity 0, deaf to the mouse: `showInvisible`,
 // apps/desktop/src/main/index.ts) so nothing shows on the screen and nothing takes a click. Not part of the acceptance run.
 //
 //   PROBE_NO_CAPTURE=1 \
-//   PROBE_APP_ENV='{"CLOVER_TEST_INVISIBLE":"1","CLOVER_IPC_STATS":"1"}' \
+//   PROBE_APP_ENV='{"MOSS_TEST_INVISIBLE":"1","MOSS_IPC_STATS":"1"}' \
 //   IDLE_CASES=alpha,plain IDLE_SECONDS=60 IDLE_HISTORY=88 \
 //   scripts/heavy scripts/pinned-bun scripts/acceptance/ui-probe.ts scripts/acceptance/idle-cost-probe.ts
 //
 // and again with the main window away (the pill and the island still shown):
 //
-//   PROBE_NO_CAPTURE=1 PROBE_APP_ENV='{"CLOVER_TEST_INVISIBLE":"hidden","CLOVER_IPC_STATS":"1"}' IDLE_CASES=none scripts/heavy …
+//   PROBE_NO_CAPTURE=1 PROBE_APP_ENV='{"MOSS_TEST_INVISIBLE":"hidden","MOSS_IPC_STATS":"1"}' IDLE_CASES=none scripts/heavy …
 //
 // Cases (IDLE_CASES, comma list, run in order): `alpha` opens Alpha's tab, `plain` the first other bot's tab, `none` leaves the
 // window as it opened. Each waits 8 s (what opening a tab starts is not idle), then IDLE_SECONDS of nothing, and prints the app's
@@ -19,7 +19,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
-import type { CloverClient } from "./client";
+import type { MossClient } from "./client";
 import { shellDoc, treeDocs } from "./ui-steps";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -42,7 +42,7 @@ async function openTab(cdp: Cdp, name: string): Promise<void> {
   }
 }
 
-async function seed(rpc: CloverClient, turns: number): Promise<number> {
+async function seed(rpc: MossClient, turns: number): Promise<number> {
   const bots = (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots;
   const alpha = bots.find((b) => b.id === "alpha");
   if (alpha === undefined) throw new Error("no Alpha to give a history");
@@ -57,7 +57,7 @@ async function seed(rpc: CloverClient, turns: number): Promise<number> {
   return have;
 }
 
-export async function run(ctx: { cdp: Cdp; rpc: CloverClient; home: string; root: string; logs: string; dummyKey: string }): Promise<void> {
+export async function run(ctx: { cdp: Cdp; rpc: MossClient; home: string; root: string; logs: string; dummyKey: string }): Promise<void> {
   const { cdp, rpc } = ctx;
   const cases = (process.env.IDLE_CASES ?? "alpha").split(",").map((s) => s.trim()).filter((s) => s !== "");
   const seconds = Number(process.env.IDLE_SECONDS ?? "60");
@@ -74,10 +74,10 @@ export async function run(ctx: { cdp: Cdp; rpc: CloverClient; home: string; root
   }
   if (history > 0) {
     // The fake provider needs a key signed in, as the acceptance run's step 2 does (the run's own dummy, never a real one).
-    const auth = await rpc.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: "clover/model-anthropic" });
+    const auth = await rpc.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: "moss/model-anthropic" });
     const entry = auth.auth.find((a) => a.method === "api-key");
-    if (entry === undefined) throw new Error("no api-key sign-in on clover/model-anthropic");
-    await rpc.request("plugin.auth.signIn", { id: "clover/model-anthropic", index: entry.index, key: ctx.dummyKey });
+    if (entry === undefined) throw new Error("no api-key sign-in on moss/model-anthropic");
+    await rpc.request("plugin.auth.signIn", { id: "moss/model-anthropic", index: entry.index, key: ctx.dummyKey });
   }
   if (history > 0) out(`history: Alpha's conversation now has ${await seed(rpc, history)} replies`);
   for (const c of cases) {
@@ -95,7 +95,7 @@ export async function run(ctx: { cdp: Cdp; rpc: CloverClient; home: string; root
     out(`case ${c}: ${seconds} s idle, ${lines.length} ipc lines`);
     for (const l of lines) out(`  ${l.slice(l.indexOf("ipc: "))}`);
     const parsed = lines.flatMap((l) => { const p = parseIpcLine(l); return p === undefined ? [] : [p]; });
-    if (parsed.length === 0) { out("  (no ipc lines: CLOVER_IPC_STATS=1 missing from PROBE_APP_ENV?)"); continue; }
+    if (parsed.length === 0) { out("  (no ipc lines: MOSS_IPC_STATS=1 missing from PROBE_APP_ENV?)"); continue; }
     const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
     const by = (type: string) => mean(parsed.map((p) => p.cpu.filter((x) => x.type === type).reduce((a, x) => a + x.percent, 0)));
     out(`  mean: main ${by("Browser").toFixed(1)}%, windows ${by("Tab").toFixed(1)}% together, GPU ${by("GPU").toFixed(1)}%, ${mean(parsed.map((p) => p.inPerSecond)).toFixed(1)} msgs/s in, ${mean(parsed.map((p) => p.outPerSecond)).toFixed(1)}/s out`);

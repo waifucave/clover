@@ -1,5 +1,5 @@
 // Try 14c, acceptance row 48 clause 4: after Alpha's plugin was installed on its OK card, her Edit of
-// `<home>/plugins/ws-greeter/host/index.ts` passed Clover's approvals (the workshop, `insideWorkshop`) and came back
+// `<home>/plugins/ws-greeter/host/index.ts` passed MOSS's approvals (the workshop, `insideWorkshop`) and came back
 // "Edit failed: Error: protected host path access refused". The runtime's file tools check two lists: the session's
 // sandbox (`botSandbox`), which opened the plugin, and the Worker's host protection (`embeddedHostPathProtection`),
 // which write-denies `<home>/plugins` whole for every Worker (`selfGrantDenyWrite`) and so refused it.
@@ -12,9 +12,9 @@ import { afterAll, afterEach, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import type { EmbeddedWorkerProcess, SpawnEmbeddedWorkerOptions } from "@waifucave/clover-agent-runtime/embedded-host";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { botSandboxSettings } from "../../src/fence/sandbox-settings";
 import { createEmbeddedSessionHost } from "../../src/runtime-sdk/embedded";
 import { embeddedHostPathProtection, withWorkshopOpen, type EmbeddedHostPathProtection, type EmbeddedProtectionCapability } from "../../src/runtime-sdk/embedded-path-protection";
@@ -59,31 +59,31 @@ afterAll(() => {
   }
 });
 
-/** A user's home on this disk (its Mail closed to this process, as on a Mac without Full Disk Access), a Clover home
+/** A user's home on this disk (its Mail closed to this process, as on a Mac without Full Disk Access), a MOSS home
  *  with Alpha's installed plugin and two others, and the registry's records. */
 function world() {
   const user = realpathSync(mkdtempSync(join(tmpdir(), "workshop-host-")));
   const t = { dir: user, locked: [] as string[] };
   temps.push(t);
-  const clover = join(user, ".clover");
+  const moss = join(user, ".moss");
   for (const d of ["plugins/ws-greeter/host", "plugins/fish-audio", "plugins/sol-tool", "scratch/alpha", "scratch/luna", "bots/alpha/memory", "Desktop", "Library/Mail"]) {
-    mkdirSync(join(d.startsWith("Desktop") || d.startsWith("Library") ? user : clover, d), { recursive: true });
+    mkdirSync(join(d.startsWith("Desktop") || d.startsWith("Library") ? user : moss, d), { recursive: true });
   }
-  writeFileSync(join(clover, "plugins/ws-greeter/host/index.ts"), "export {}");
+  writeFileSync(join(moss, "plugins/ws-greeter/host/index.ts"), "export {}");
   chmodSync(join(user, "Library/Mail"), 0o000);
   t.locked.push(join(user, "Library/Mail"));
   let records = [
-    { id: "ws-greeter", folder: join(clover, "plugins/ws-greeter"), provenance: { by: "bot", bot: "alpha" } },
-    { id: "fish-audio", folder: join(clover, "plugins/fish-audio"), provenance: { by: "found" } },
-    { id: "sol-tool", folder: join(clover, "plugins/sol-tool"), provenance: { by: "bot", bot: "sol" } },
+    { id: "ws-greeter", folder: join(moss, "plugins/ws-greeter"), provenance: { by: "bot", bot: "alpha" } },
+    { id: "fish-audio", folder: join(moss, "plugins/fish-audio"), provenance: { by: "found" } },
+    { id: "sol-tool", folder: join(moss, "plugins/sol-tool"), provenance: { by: "bot", bot: "sol" } },
   ];
   const fns = new Set<() => void>();
   const registry = { list: () => records, watch: (fn: () => void) => { fns.add(fn); return () => fns.delete(fn); } };
-  const fence = new CloverFence({ home: user, cloverHome: clover, temp: join(user, "tmp") });
+  const fence = new MossFence({ home: user, mossHome: moss, temp: join(user, "tmp") });
   fence.followWorkshop(registry);
   const workshopFolders = () => records.filter((r) => r.provenance.by === "bot").map((r) => r.folder);
   const takeBack = (id: string) => { records = records.filter((r) => r.id !== id); for (const fn of fns) fn(); };
-  return { user, clover, fence, workshopFolders, takeBack };
+  return { user, moss, fence, workshopFolders, takeBack };
 }
 
 /** A session's sandbox as the daemon draws it (`sandboxOf`, then the driver's `botSandbox`), and the host protection its
@@ -91,7 +91,7 @@ function world() {
 function drawn(w: ReturnType<typeof world>, caller: Caller & { kind: "session" }) {
   const bot = caller.bot!;
   const sandbox = botSandbox(botSandboxSettings(w.fence.forCaller(caller).policy(), {
-    cloverHome: w.clover, userHome: w.user, level: undefined, ownFolders: [join(w.clover, "scratch", bot), join(w.clover, "bots", bot)], pathFolders: [],
+    mossHome: w.moss, userHome: w.user, level: undefined, ownFolders: [join(w.moss, "scratch", bot), join(w.moss, "bots", bot)], pathFolders: [],
   }), { userHome: w.user, os: process.platform === "darwin" ? "macos" : "linux" });
   const prepared: Array<SpawnEmbeddedWorkerOptions & { hostCodeProtection?: EmbeddedHostPathProtection }> = [];
   let close!: (exit: { code: number; signal: null }) => void;
@@ -99,9 +99,9 @@ function drawn(w: ReturnType<typeof world>, caller: Caller & { kind: "session" }
   const proc = { stdin: { write() {}, end() {} }, stdout: (async function* () {})(), exited, pid: null, state: "running",
     updateHostCodeProtection: async (p: EmbeddedHostPathProtection) => p.revision,
     kill() { close({ code: 0, signal: null }); }, terminate() { close({ code: 0, signal: null }); } } as unknown as EmbeddedWorkerProcess;
-  const host = createEmbeddedSessionHost({ home: w.clover, hostPathProtectionCapability: capability, acceptedContextCoverageVersion: 1, workshopFolders: w.workshopFolders,
+  const host = createEmbeddedSessionHost({ home: w.moss, hostPathProtectionCapability: capability, acceptedContextCoverageVersion: 1, workshopFolders: w.workshopFolders,
     spawnWorker: (o) => { prepared.push(o); return proc; } });
-  host.spawn({ command: "clover-embedded", args: ["--run", "--config-json", JSON.stringify({ sessionId: caller.sessionId, sandbox })], cwd: w.clover, env: {} });
+  host.spawn({ command: "moss-embedded", args: ["--run", "--config-json", JSON.stringify({ sessionId: caller.sessionId, sandbox })], cwd: w.moss, env: {} });
   hosts.push(host);
   return { sandbox: sandbox as Settings, protection: prepared[0]!.hostCodeProtection! };
 }
@@ -109,27 +109,27 @@ function drawn(w: ReturnType<typeof world>, caller: Caller & { kind: "session" }
 test("Alpha's Edit of her installed plugin: allowed by both lists; a neighbour, another bot's plugin and the plugins folder stay refused", async () => {
   const rt = await runtime();
   const w = world();
-  const file = join(w.clover, "plugins/ws-greeter/host/index.ts");
+  const file = join(w.moss, "plugins/ws-greeter/host/index.ts");
   // As it was: the host protection drawn without the workshop refuses it, whatever the session's sandbox says.
   const { sandbox, protection } = drawn(w, ALPHA as never);
-  expect(sandbox.filesystem!.allowWrite).toContain(join(w.clover, "plugins/ws-greeter"));
-  leases.push(rt.installHostCodeProtection({ ...embeddedHostPathProtection(w.clover, 1) }));
-  expect(rt.hostCodePathAllowed(file, "write", sandbox, w.clover)).toBe(false);
+  expect(sandbox.filesystem!.allowWrite).toContain(join(w.moss, "plugins/ws-greeter"));
+  leases.push(rt.installHostCodeProtection({ ...embeddedHostPathProtection(w.moss, 1) }));
+  expect(rt.hostCodePathAllowed(file, "write", sandbox, w.moss)).toBe(false);
   leases.splice(0).forEach((l) => l.close());
   // Now: the Worker's own protection opens it.
   leases.push(rt.installHostCodeProtection(protection));
-  expect(rt.hostCodePathAllowed(file, "write", sandbox, w.clover)).toBe(true);
-  expect(rt.hostCodePathAllowed(file, "read", sandbox, w.clover)).toBe(true);
-  expect(rt.hostCodePathAllowed(join(w.clover, "plugins/ws-greeter/host/new.ts"), "write", sandbox, w.clover)).toBe(true);
-  expect(rt.hostCodePathAllowed(join(w.user, "Desktop/a.md"), "write", sandbox, w.clover)).toBe(true);
+  expect(rt.hostCodePathAllowed(file, "write", sandbox, w.moss)).toBe(true);
+  expect(rt.hostCodePathAllowed(file, "read", sandbox, w.moss)).toBe(true);
+  expect(rt.hostCodePathAllowed(join(w.moss, "plugins/ws-greeter/host/new.ts"), "write", sandbox, w.moss)).toBe(true);
+  expect(rt.hostCodePathAllowed(join(w.user, "Desktop/a.md"), "write", sandbox, w.moss)).toBe(true);
   for (const p of [
-    join(w.clover, "plugins/fish-audio/index.ts"), join(w.clover, "plugins/sol-tool/index.ts"),
-    join(w.clover, "plugins/ws-greeter/.git/config"), join(w.clover, "plugins/node_modules/x/index.js"), join(w.user, "Library/Mail/x"),
-  ]) expect([p, rt.hostCodePathAllowed(p, "write", sandbox, w.clover)]).toEqual([p, false]);
+    join(w.moss, "plugins/fish-audio/index.ts"), join(w.moss, "plugins/sol-tool/index.ts"),
+    join(w.moss, "plugins/ws-greeter/.git/config"), join(w.moss, "plugins/node_modules/x/index.js"), join(w.user, "Library/Mail/x"),
+  ]) expect([p, rt.hostCodePathAllowed(p, "write", sandbox, w.moss)]).toEqual([p, false]);
   // A new name in the plugins folder is the drop (the owner's ask on 14c): the bot may make it, and the registry indexes
   // it and asks the OK (plugin-drop tests).
-  const fresh = join(w.clover, "plugins/new-plugin/index.ts");
-  expect(rt.hostCodePathAllowed(fresh, "write", sandbox, w.clover)).toBe(true);
+  const fresh = join(w.moss, "plugins/new-plugin/index.ts");
+  expect(rt.hostCodePathAllowed(fresh, "write", sandbox, w.moss)).toBe(true);
   expect(w.fence.forCaller(ALPHA).check({ op: "write", path: fresh })).toEqual({ allowed: true });
   expect(w.fence.forCaller(ALPHA).check({ op: "write", path: file })).toEqual({ allowed: true });
 });
@@ -139,21 +139,21 @@ test("another bot's session: its Worker opens nothing in the plugins folder", as
   const w = world();
   const { sandbox, protection } = drawn(w, LUNA as never);
   leases.push(rt.installHostCodeProtection(protection));
-  expect(rt.hostCodePathAllowed(join(w.clover, "plugins/ws-greeter/host/index.ts"), "write", sandbox, w.clover)).toBe(false);
+  expect(rt.hostCodePathAllowed(join(w.moss, "plugins/ws-greeter/host/index.ts"), "write", sandbox, w.moss)).toBe(false);
   // Every folder there is denied to it by name (the drop opens only new names), Alpha's included.
-  for (const name of ["ws-greeter", "fish-audio", "sol-tool"]) expect(protection.denyWritePaths).toContain(join(w.clover, "plugins", name));
+  for (const name of ["ws-greeter", "fish-audio", "sol-tool"]) expect(protection.denyWritePaths).toContain(join(w.moss, "plugins", name));
 });
 
 test("taken back or uninstalled: the next draw (the driver reopens on the changed sandbox) refuses it again", async () => {
   const rt = await runtime();
   const w = world();
-  const file = join(w.clover, "plugins/ws-greeter/host/index.ts");
+  const file = join(w.moss, "plugins/ws-greeter/host/index.ts");
   w.takeBack("ws-greeter");
   const { sandbox, protection } = drawn(w, ALPHA as never);
-  expect(sandbox.filesystem!.allowWrite).not.toContain(join(w.clover, "plugins/ws-greeter"));
+  expect(sandbox.filesystem!.allowWrite).not.toContain(join(w.moss, "plugins/ws-greeter"));
   leases.push(rt.installHostCodeProtection(protection));
-  expect(rt.hostCodePathAllowed(file, "write", sandbox, w.clover)).toBe(false);
+  expect(rt.hostCodePathAllowed(file, "write", sandbox, w.moss)).toBe(false);
   // A sandbox that still named it (a session drawn before the take-back) opens nothing either: the records decide.
-  const stale = withWorkshopOpen(embeddedHostPathProtection(w.clover, 0), w.clover, [join(w.clover, "plugins/ws-greeter")], w.workshopFolders());
-  expect(stale.denyWritePaths).toEqual(embeddedHostPathProtection(w.clover, 0).denyWritePaths);
+  const stale = withWorkshopOpen(embeddedHostPathProtection(w.moss, 0), w.moss, [join(w.moss, "plugins/ws-greeter")], w.workshopFolders());
+  expect(stale.denyWritePaths).toEqual(embeddedHostPathProtection(w.moss, 0).denyWritePaths);
 });

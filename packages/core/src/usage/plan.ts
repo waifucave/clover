@@ -1,11 +1,11 @@
-import type { PlanStatusWindow, PlanWindow, UsagePlanReading } from "@waifucave/clover-plugin-sdk/usage-source";
+import type { PlanStatusWindow, PlanWindow, UsagePlanReading } from "@waifucave/moss-plugin-sdk/usage-source";
 
 // Plan readings for the Usage tab (spec §12 "Usage sources"): how full the user's own apps' plan windows are, as a
 // `usage.sources` entry's handler read them, with its age and a staleness verdict. The windows' own rules (the key, the
 // staleness) are the source kit's, so a source and the core judge a window alike.
 
-export { planScopeKey, planWindowKey, staleness } from "@waifucave/clover-plugin-sdk/usage-source";
-export type { PlanStatusWindow, PlanWindow, PlanWindowKind } from "@waifucave/clover-plugin-sdk/usage-source";
+export { planScopeKey, planWindowKey, staleness } from "@waifucave/moss-plugin-sdk/usage-source";
+export type { PlanStatusWindow, PlanWindow, PlanWindowKind } from "@waifucave/moss-plugin-sdk/usage-source";
 
 /** What a reading's `source` says when no source answered. */
 export type PlanNoSource = "none" | "disabled" | "not-installed";

@@ -13,8 +13,8 @@ import type { ResultFrame } from "./conversation";
  *
  *  1. **The five provider codes keep their EXISTING spellings** — `auth`, `rate_limit`, `server`,
  *     `network`, `bad_request` (`providers/types.ts:11`, the enum today's `agent_error` producers
- *     draw from). Renaming `rate_limit` on the Clover leg would silently break the routines
- *     runner's quota detection, which is the one live consumer. Clover-specific classes get NEW
+ *     draw from). Renaming `rate_limit` on the MOSS leg would silently break the routines
+ *     runner's quota detection, which is the one live consumer. MOSS-specific classes get NEW
  *     codes; the shared ones are reused verbatim.
  *  2. **`message` is never raw error text that could carry opaque provider state.** A
  *     `redacted_thinking.data`, an `encrypted_content`, a `reasoning_item.itemJson` — the session
@@ -36,7 +36,7 @@ export type AgentErrorCode =
   | "billing" | "model_not_found" | "max_output_tokens" | "context_overflow"
   // turn-shaped terminals
   | "max_turns" | "max_budget" | "structured_output_exhausted" | "tool_failure"
-  // the runtime's own named verdicts (WS-23): a model refusal, and a paused turn Clover stopped resuming
+  // the runtime's own named verdicts (WS-23): a model refusal, and a paused turn MOSS stopped resuming
   | "refusal" | "pause_turn_limit"
   // transport / lifecycle
   | "aborted" | "process_death" | "protocol_decode" | "connection_closed"
@@ -66,7 +66,7 @@ const CLASS_MESSAGE: Record<AgentErrorCode, string> = {
   structured_output_exhausted: "the model could not produce valid structured output",
   tool_failure: "a tool failed while the turn was running",
   refusal: "the model declined to respond to this request",
-  pause_turn_limit: "the model kept pausing its turn, and Clover stopped resuming it",
+  pause_turn_limit: "the model kept pausing its turn, and MOSS stopped resuming it",
   aborted: "the turn was stopped before it finished",
   process_death: "the runtime process exited unexpectedly",
   protocol_decode: "the runtime sent a frame this daemon could not decode",
@@ -258,10 +258,10 @@ const CREDENTIAL_RESOLUTION_MARKERS = [
 ];
 
 /** The child's OWN pre-flight refusal (`provider-runtime` `capabilityRefusal`, e.g. "a bare model id
- *  needs a provider", "declares no reasoning effort vocabulary"): Clover refused before any request
+ *  needs a provider", "declares no reasoning effort vocabulary"): MOSS refused before any request
  *  left the machine, so "unavailable or overloaded" (a retry hint) is the wrong class. */
 const CAPABILITY_REFUSAL_MARKER = "provider request failed (capability)";
-const CAPABILITY_REFUSAL_MESSAGE = "Clover refused the request before sending it";
+const CAPABILITY_REFUSAL_MESSAGE = "MOSS refused the request before sending it";
 function isCapabilityRefusal(raw: unknown): boolean {
   return typeof raw === "string" && raw.includes(CAPABILITY_REFUSAL_MARKER);
 }

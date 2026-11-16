@@ -7,8 +7,8 @@ import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -54,7 +54,7 @@ async function until(cond: () => boolean, what: string): Promise<void> {
 function plugin(home: string, id: string, host: Record<string, unknown>): void {
   const root = join(home, "plugins", id);
   mkdirSync(join(root, "host"), { recursive: true });
-  writeFileSync(join(root, "clover.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", ...host } }));
+  writeFileSync(join(root, "moss.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", ...host } }));
   writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
   writeFileSync(join(root, "host", "index.js"), `
 export const cat = async (args) => {
@@ -91,8 +91,8 @@ darwinDescribe("a host of its own that runs programs", () => {
     plugin(home, "plain", { process: "own" });
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
-    const grants = new PluginGrants({ cloverHome: home, userHome });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const grants = new PluginGrants({ mossHome: home, userHome });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome, picked: (id) => grants.fencePaths(id) });
     // The daemon's wiring (daemon.ts): a grant's change reaches the host.
     const changed: Promise<void>[] = [];
@@ -152,25 +152,25 @@ darwinDescribe("a host of its own that runs programs", () => {
 
       // A host of its own without the declaration runs only its Bun: no program starts, not even on its own manifest,
       // which its process reads (the control: the declared host's program reads its own the same way).
-      expect(await cat("vid", join(home, "plugins", "vid", "clover.json"))).toMatchObject({ code: 0 });
-      const refused = await cat("plain", join(home, "plugins", "plain", "clover.json"));
+      expect(await cat("vid", join(home, "plugins", "vid", "moss.json"))).toMatchObject({ code: 0 });
+      const refused = await cat("plain", join(home, "plugins", "plain", "moss.json"));
       expect(refused.code).not.toBe(0);
       expect(refused.out).toBe("");
 
       // The same plugin gains the declaration (an edit of its tree) and the user OKs it: it runs in a new process with
       // the programs fence, never in the one it had.
       const plainPid = await pid("plain");
-      writeFileSync(join(home, "plugins", "plain", "clover.json"), JSON.stringify({ manifest: 1, id: "plain", name: "plain", version: "1.0.1", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own", programs: true } }));
+      writeFileSync(join(home, "plugins", "plain", "moss.json"), JSON.stringify({ manifest: 1, id: "plain", name: "plain", version: "1.0.1", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own", programs: true } }));
       await until(() => opened.registry.get("plain")?.state === "found", "plain's change asks again");
       await approve("plain");
-      expect(await cat("plain", join(home, "plugins", "plain", "clover.json"))).toMatchObject({ code: 0 });
+      expect(await cat("plain", join(home, "plugins", "plain", "moss.json"))).toMatchObject({ code: 0 });
       expect(await pid("plain")).not.toBe(plainPid);
       // And back: dropping it (OK'd again) leaves no process that runs programs behind.
-      writeFileSync(join(home, "plugins", "plain", "clover.json"), JSON.stringify({ manifest: 1, id: "plain", name: "plain", version: "1.0.2", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own" } }));
+      writeFileSync(join(home, "plugins", "plain", "moss.json"), JSON.stringify({ manifest: 1, id: "plain", name: "plain", version: "1.0.2", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own" } }));
       await until(() => opened.registry.get("plain")?.manifest?.version === "1.0.2", "plain's tree read again");
       if (opened.registry.get("plain")?.state === "found") await approve("plain");
       await until(() => ph.host.status("plain").state === "running" || ph.host.status("plain").state === "idle", "plain settled");
-      expect((await cat("plain", join(home, "plugins", "plain", "clover.json"))).code).not.toBe(0);
+      expect((await cat("plain", join(home, "plugins", "plain", "moss.json"))).code).not.toBe(0);
     } finally {
       off();
       await ph.close();
@@ -190,8 +190,8 @@ darwinDescribe("a host of its own that runs programs", () => {
     plugin(home, "vid", { process: "own", programs: true });
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
-    const grants = new PluginGrants({ cloverHome: home, userHome });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const grants = new PluginGrants({ mossHome: home, userHome });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome, picked: (id) => grants.fencePaths(id), pickWaitMs: 3_000 });
     const changed: Promise<void>[] = [];
     const off = grants.watch((id) => void changed.push(ph.picksChanged(id)));
@@ -229,7 +229,7 @@ darwinDescribe("a host of its own that runs programs", () => {
       expect(await call<number>("pid", null)).not.toBe(pid2);
       expect((await call<{ out: string }>("cat", { path: second })).out).toBe("");
 
-      // A pick added while a call runs past the wait (3 s here, 10 minutes in Clover): replaced anyway, after the grace.
+      // A pick added while a call runs past the wait (3 s here, 10 minutes in MOSS): replaced anyway, after the grace.
       const pid3 = await call<number>("pid", null);
       const long = call<{ code: number }>("slow", { s: 40 }).then(() => "finished", (e: Error) => e.message);
       await Bun.sleep(200);

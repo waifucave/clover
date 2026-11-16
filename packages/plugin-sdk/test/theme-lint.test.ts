@@ -172,7 +172,7 @@ describe("checkThemeCss: nothing is drawn over a sealed frame", () => {
       `.card { margin: 0 0 -1px }`,
       `.card { margin-inline-start: -.5em }`,
       `.card { margin-block: calc(0px - 40px) }`,
-      `.card { margin-top: var(--clover-space-4) }`,
+      `.card { margin-top: var(--moss-space-4) }`,
       `.card::after { content: "·"; margin-left: -8px }`,
     ]) {
       expect(checkThemeCss(css).length, css).toBeGreaterThan(0);

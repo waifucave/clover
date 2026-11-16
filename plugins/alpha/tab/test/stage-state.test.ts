@@ -33,7 +33,7 @@ describe("the stage document her components read", () => {
 describe("the backdrop", () => {
   test("it has no private channel to the figure: the stage reaches it through the public avatar calls, from her server", () => {
     const src = readFileSync(join(import.meta.dir, "../../client/backdrop.tsx"), "utf8");
-    expect(src).not.toContain("clover.avatar");
+    expect(src).not.toContain("moss.avatar");
     expect(src).not.toContain("postMessage");
     expect(src).not.toContain("ancestorOrigins");
     expect(src).not.toContain('"*"');

@@ -4,24 +4,24 @@ import { DIST_BUILD, DIST_BUILD_DEFINE, isCompiledBinary, noteIgnoredEnvOverride
 
 test("a core run from source is not a dist build (only build-daemon's define makes one)", () => {
   expect(DIST_BUILD).toBe(false);
-  expect(DIST_BUILD_DEFINE).toBe("__CLOVER_DIST__=true");
+  expect(DIST_BUILD_DEFINE).toBe("__MOSS_DIST__=true");
 });
 
 test("compiled-binary paths on every OS, and a checkout's", () => {
-  expect(isCompiledBinary("/$bunfs/root/clover-core")).toBe(true);
-  expect(isCompiledBinary("B:/~BUN/root/clover-core.exe")).toBe(true);
-  expect(isCompiledBinary("B:\\~BUN\\root\\clover-core.exe")).toBe(true);
-  expect(isCompiledBinary("/Users/x/clover/packages/cli/src/main.ts")).toBe(false);
-  expect(isCompiledBinary("C:\\src\\clover\\packages\\cli\\src\\main.ts")).toBe(false);
+  expect(isCompiledBinary("/$bunfs/root/moss-core")).toBe(true);
+  expect(isCompiledBinary("B:/~BUN/root/moss-core.exe")).toBe(true);
+  expect(isCompiledBinary("B:\\~BUN\\root\\moss-core.exe")).toBe(true);
+  expect(isCompiledBinary("/Users/x/moss/packages/cli/src/main.ts")).toBe(false);
+  expect(isCompiledBinary("C:\\src\\moss\\packages\\cli\\src\\main.ts")).toBe(false);
 });
 
 test("an ignored override is said once per variable", () => {
   const lines: string[] = [];
-  noteIgnoredEnvOverride("CLOVER_TEST_ONCE_A", (l) => lines.push(l));
-  noteIgnoredEnvOverride("CLOVER_TEST_ONCE_A", (l) => lines.push(l));
-  noteIgnoredEnvOverride("CLOVER_TEST_ONCE_B", (l) => lines.push(l));
+  noteIgnoredEnvOverride("MOSS_TEST_ONCE_A", (l) => lines.push(l));
+  noteIgnoredEnvOverride("MOSS_TEST_ONCE_A", (l) => lines.push(l));
+  noteIgnoredEnvOverride("MOSS_TEST_ONCE_B", (l) => lines.push(l));
   expect(lines).toHaveLength(2);
-  expect(lines[0]).toContain("ignoring CLOVER_TEST_ONCE_A");
+  expect(lines[0]).toContain("ignoring MOSS_TEST_ONCE_A");
 });
 
 test("a dist build refuses TLS trust from the environment; a proxy and a dev build are fine", async () => {
@@ -90,11 +90,11 @@ test("a macOS release refuses any DYLD_ entry (SIP is off if one reached it); ot
 test("a release refuses to start with any test-keychain variable set, naming it; a dev build doesn't", async () => {
   const { testKeychainRefusal } = await import("../src/startup-guard");
   expect(testKeychainRefusal({}, [], true)).toBeUndefined();
-  expect(testKeychainRefusal({ CLOVER_TEST_KEYCHAIN: "/tmp/t.keychain-db" }, [], true)).toContain("CLOVER_TEST_KEYCHAIN is set");
-  expect(testKeychainRefusal({ CLOVER_KEYCHAIN_SERVICE: "x", WINTER_TEST_KEYCHAIN: "memory" }, [], true)).toContain("CLOVER_KEYCHAIN_SERVICE, WINTER_TEST_KEYCHAIN are set");
-  expect(testKeychainRefusal({}, ["CLOVER_TEST_KEYCHAIN="], true)).toContain("CLOVER_TEST_KEYCHAIN is set");
-  expect(testKeychainRefusal({}, ["NOT_CLOVER_TEST_KEYCHAIN=1"], true)).toBeUndefined();
-  expect(testKeychainRefusal({ CLOVER_TEST_KEYCHAIN: "/tmp/t" }, [], false)).toBeUndefined();
+  expect(testKeychainRefusal({ MOSS_TEST_KEYCHAIN: "/tmp/t.keychain-db" }, [], true)).toContain("MOSS_TEST_KEYCHAIN is set");
+  expect(testKeychainRefusal({ MOSS_KEYCHAIN_SERVICE: "x", WINTER_TEST_KEYCHAIN: "memory" }, [], true)).toContain("MOSS_KEYCHAIN_SERVICE, WINTER_TEST_KEYCHAIN are set");
+  expect(testKeychainRefusal({}, ["MOSS_TEST_KEYCHAIN="], true)).toContain("MOSS_TEST_KEYCHAIN is set");
+  expect(testKeychainRefusal({}, ["NOT_MOSS_TEST_KEYCHAIN=1"], true)).toBeUndefined();
+  expect(testKeychainRefusal({ MOSS_TEST_KEYCHAIN: "/tmp/t" }, [], false)).toBeUndefined();
 });
 
 darwinTest("the account's home comes from the password database, not HOME", async () => {
@@ -113,15 +113,15 @@ test("the raw environment is readable (macOS _NSGetEnviron, Linux /proc/self/env
 
 test("a compiled macOS core without the process holder beside it names the missing path; anything else says nothing", async () => {
   const { missingProcessHolder } = await import("../src/build-kind");
-  const at = "/Applications/Clover.app/Contents/Resources/daemon/clover-core";
-  expect(missingProcessHolder({ platform: "darwin", compiled: true, execPath: at, exists: () => false })).toBe("/Applications/Clover.app/Contents/Resources/daemon/clover-process-holder");
+  const at = "/Applications/MOSS Code.app/Contents/Resources/daemon/moss-core";
+  expect(missingProcessHolder({ platform: "darwin", compiled: true, execPath: at, exists: () => false })).toBe("/Applications/MOSS Code.app/Contents/Resources/daemon/moss-process-holder");
   expect(missingProcessHolder({ platform: "darwin", compiled: true, execPath: at, exists: () => true })).toBeUndefined();
   expect(missingProcessHolder({ platform: "darwin", compiled: false, execPath: at, exists: () => false })).toBeUndefined();
-  expect(missingProcessHolder({ platform: "linux", compiled: true, execPath: "/opt/Clover/resources/daemon/clover-core", exists: () => false })).toBeUndefined();
+  expect(missingProcessHolder({ platform: "linux", compiled: true, execPath: "/opt/moss-code/resources/daemon/moss-core", exists: () => false })).toBeUndefined();
 });
 
 // A test-marked release build's start (scripts/test-build.ts): a test's keychain file and a temp home, or no start.
-test("a test-marked build starts only with a throwaway keychain file and a HOME and CLOVER_HOME outside this account's home", async () => {
+test("a test-marked build starts only with a throwaway keychain file and a HOME and MOSS_HOME outside this account's home", async () => {
   const { testBuildStartRefusal } = await import("../src/startup-guard");
   const { join, sep } = await import("node:path");
   // Paths in this OS's own form, so the cases hold wherever the suite runs (a test build itself is macOS's).
@@ -129,25 +129,25 @@ test("a test-marked build starts only with a throwaway keychain file and a HOME 
   const account = join(root, "Users", "someone");
   const run = join(root, "tmp", "run");
   const o = { account: () => account, real: (p: string) => p.replace(/[\\/]+$/, "") };
-  const ok = { CLOVER_TEST_KEYCHAIN: join(run, "t.keychain-db"), HOME: join(run, "home") };
+  const ok = { MOSS_TEST_KEYCHAIN: join(run, "t.keychain-db"), HOME: join(run, "home") };
   expect(testBuildStartRefusal(ok, [], o)).toBeUndefined();
-  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: join(run, "clover") }, [], o)).toBeUndefined();
+  expect(testBuildStartRefusal({ ...ok, MOSS_HOME: join(run, "moss") }, [], o)).toBeUndefined();
   // No keychain file, or an empty one, in the environment or in any raw entry.
-  expect(testBuildStartRefusal({ HOME: join(run, "home") }, [], o)).toContain("CLOVER_TEST_KEYCHAIN is not set");
-  expect(testBuildStartRefusal({ ...ok, CLOVER_TEST_KEYCHAIN: "" }, [], o)).toContain("CLOVER_TEST_KEYCHAIN is empty");
-  expect(testBuildStartRefusal(ok, ["CLOVER_TEST_KEYCHAIN="], o)).toContain("CLOVER_TEST_KEYCHAIN is empty");
+  expect(testBuildStartRefusal({ HOME: join(run, "home") }, [], o)).toContain("MOSS_TEST_KEYCHAIN is not set");
+  expect(testBuildStartRefusal({ ...ok, MOSS_TEST_KEYCHAIN: "" }, [], o)).toContain("MOSS_TEST_KEYCHAIN is empty");
+  expect(testBuildStartRefusal(ok, ["MOSS_TEST_KEYCHAIN="], o)).toContain("MOSS_TEST_KEYCHAIN is empty");
   // HOME: unset, this account's (with a trailing separator too), or a duplicate entry naming it.
-  expect(testBuildStartRefusal({ CLOVER_TEST_KEYCHAIN: join(run, "k") }, [], o)).toContain("HOME is not set");
+  expect(testBuildStartRefusal({ MOSS_TEST_KEYCHAIN: join(run, "k") }, [], o)).toContain("HOME is not set");
   expect(testBuildStartRefusal({ ...ok, HOME: account }, [], o)).toContain("HOME is this account's home");
   expect(testBuildStartRefusal({ ...ok, HOME: `${account}${sep}` }, [], o)).toContain("HOME is this account's home");
   expect(testBuildStartRefusal(ok, [`HOME=${account}`], o)).toContain("HOME is this account's home");
   expect(testBuildStartRefusal({ ...ok, HOME: "" }, [], o)).toContain("HOME is this account's home");
-  // CLOVER_HOME inside this account's home (the live .clover, or any folder there) or empty; a look-alike prefix is fine.
-  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: join(account, ".clover") }, [], o)).toContain("CLOVER_HOME is inside this account's home");
-  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: account }, [], o)).toContain("CLOVER_HOME is inside");
-  expect(testBuildStartRefusal(ok, [`CLOVER_HOME=${join(account, "x")}`], o)).toContain("CLOVER_HOME is inside");
-  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: "" }, [], o)).toContain("CLOVER_HOME is inside");
-  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: join(root, "Users", "someone-other", ".clover") }, [], o)).toBeUndefined();
+  // MOSS_HOME inside this account's home (the live .moss, or any folder there) or empty; a look-alike prefix is fine.
+  expect(testBuildStartRefusal({ ...ok, MOSS_HOME: join(account, ".moss") }, [], o)).toContain("MOSS_HOME is inside this account's home");
+  expect(testBuildStartRefusal({ ...ok, MOSS_HOME: account }, [], o)).toContain("MOSS_HOME is inside");
+  expect(testBuildStartRefusal(ok, [`MOSS_HOME=${join(account, "x")}`], o)).toContain("MOSS_HOME is inside");
+  expect(testBuildStartRefusal({ ...ok, MOSS_HOME: "" }, [], o)).toContain("MOSS_HOME is inside");
+  expect(testBuildStartRefusal({ ...ok, MOSS_HOME: join(root, "Users", "someone-other", ".moss") }, [], o)).toBeUndefined();
   // An account home that can't be read refuses (it can't tell a temp HOME from the real one).
   expect(testBuildStartRefusal(ok, [], { ...o, account: () => undefined })).toContain("could not be read");
   // Every refusal names the build and never the login keychain as a fallback.
@@ -164,8 +164,8 @@ darwinTest("a test-marked build's HOME check follows links: a link to this accou
   const dir = mkdtempSync(join(tmpdir(), "lane-int-home-link-"));
   try {
     symlinkSync(own, join(dir, "home"));
-    expect(testBuildStartRefusal({ CLOVER_TEST_KEYCHAIN: join(dir, "k"), HOME: join(dir, "home") }, [])).toContain("HOME is this account's home");
-    expect(testBuildStartRefusal({ CLOVER_TEST_KEYCHAIN: join(dir, "k"), HOME: dir }, [])).toBeUndefined();
+    expect(testBuildStartRefusal({ MOSS_TEST_KEYCHAIN: join(dir, "k"), HOME: join(dir, "home") }, [])).toContain("HOME is this account's home");
+    expect(testBuildStartRefusal({ MOSS_TEST_KEYCHAIN: join(dir, "k"), HOME: dir }, [])).toBeUndefined();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -49,7 +49,7 @@ function world() {
   const router = createApiRouter({ registry, handlers: [model], allowNetwork: pluginNetworkAllowed, userEndpoint });
   const fetch = async (pluginId: string, url: string): Promise<{ status: number; text: string } | { error: string }> => {
     try {
-      const r = (await router({ pluginId, process: "clover", path: "net.fetch", args: [url, {}, {}], caller: { kind: "plugin", pluginId } as never })) as Response;
+      const r = (await router({ pluginId, process: "moss", path: "net.fetch", args: [url, {}, {}], caller: { kind: "plugin", pluginId } as never })) as Response;
       return { status: r.status, text: await r.text() };
     } catch (err) {
       return { error: `${(err as { code?: string }).code ?? ""}: ${(err as Error).message}` };

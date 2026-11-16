@@ -1,7 +1,7 @@
-# `vendor/srt-win`: Clover's Windows launcher (lane C, C-M2 part 2)
+# `vendor/srt-win`: MOSS's Windows launcher (lane C, C-M2 part 2)
 
 The Bash fence on Windows runs bots' commands as a dedicated per-user sandbox principal
-(`clover-sb-` + 8 hex chars of the owner's SID) through the `srt-win` launcher, vendored from
+(`moss-sb-` + 8 hex chars of the owner's SID) through the `srt-win` launcher, vendored from
 `anthropics/sandbox-runtime` (Apache-2.0) at the pinned tag/commit in
 `packages/core/src/fence/win-sandbox.ts` (`SRT_WIN_TAG`, `SRT_WIN_COMMIT`).
 
@@ -9,7 +9,7 @@ The Bash fence on Windows runs bots' commands as a dedicated per-user sandbox pr
   committed**: `scripts/build-srt-win.ps1` clones it at the pinned commit,
   applies `vendor/srt-win/patches/*.patch`, and verifies `HEAD` before building.
   (Same pattern as `.clover-sdk/`.)
-- `vendor/srt-win/patches/` is Clover's patch set on the vendored launcher.
+- `vendor/srt-win/patches/` is MOSS's patch set on the vendored launcher.
   `0001-per-principal-setup-records.patch` keys the install record and credential
   per principal (`HKLM\SOFTWARE\sandbox-runtime\Users\<name>`, `Cred\<name>`)
   and adds a `--user` selector to `exec`, `user status` and `uninstall`, so one

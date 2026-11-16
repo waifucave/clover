@@ -19,11 +19,11 @@ import { isAbsolute, join } from "node:path";
 import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { DIST_BUILD, isCompiledBinary, missingProcessHolder } from "./build-kind";
 import { randomBytes } from "node:crypto";
-import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
+import { bootstrapMossDir, resolveMossHome, isDefaultMossHome } from "./moss-dir";
 import { assertNotOtherInstallHome } from "./other-installs";
-import { installCloverProcessIdentity } from "./runtime-sdk/process-identity";
+import { installMossProcessIdentity } from "./runtime-sdk/process-identity";
 import { acquireLock, type Lock } from "./lock";
-import { keychainService, resolveCloverProfile } from "./profile";
+import { keychainService, resolveMossProfile } from "./profile";
 import { describeHomePristineness, planMigrationB, runMigrationB, MigrationRefused } from "./migration/migrate-b";
 import { inspectCoworkSource } from "./migration/cowork-exclusion";
 import { manifestFileState, manifestPath } from "./migration/manifest";
@@ -45,10 +45,10 @@ import { ensureOutdir } from "./sessions/outdir";
 import { writeDiff, type DiffHeader } from "./diffs/store";
 import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity";
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
-import { CloverFence } from "./fence/fence";
+import { MossFence } from "./fence/fence";
 import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
 import { dropPluginServers, pruneDroppedTools, toolPermissionMethods, toolSettingFor } from "./approvals/tool-permissions";
-import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
+import { createMossServer, laneMethodHandlers, type MossHandler, type MossServer } from "./ipc/moss";
 import { APP_RENDER_FEATURE, APP_RENDER_TIMEOUT_MS, appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
 import type { AppPeerPolicy } from "./platform/peer-signature";
 import { archiveMethods } from "./sessions/archive-rpc";
@@ -57,16 +57,16 @@ import { cardMethods } from "./approvals/card-methods";
 import { lateAgentMethods } from "./agents/rpc";
 import { commandMethods } from "./registry/commands";
 import { grantsInForce, RUNNING_STATES } from "./contracts/plugin-registry";
-import { CloverTokens } from "./auth/clover-tokens";
-import { SessionProcesses } from "./auth/clover-caller";
+import { MossTokens } from "./auth/moss-tokens";
+import { SessionProcesses } from "./auth/moss-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
 import { writeHarnessTokenFile } from "./platform/pair/run-files";
 import { bunRunner } from "./platform/login/live";
 
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
-declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+declare const __MOSS_TEST_BUILD__: string | false | undefined;
 import { claimDaemonChildren } from "./platform/daemon-children";
-import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
+import { MossSecretStore, KeychainValues, memoryVault, openMossSecretStore, secretStoreWarning } from "./secrets/moss-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { botApprovalCheck, runsLaterPlace, type BundledToolKind } from "./approvals/bot-check";
 import { builtCopy } from "./approvals/bundled-tools";
@@ -121,7 +121,7 @@ import { homedir, hostname } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
-import { loadSettings, saveSettings, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
+import { loadSettings, saveSettings, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, mossOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
 import { ProjectSettingsResolver } from "./project-settings";
 import { memoryDirFor, globalMemoryDirFor, assistantMemoryDirFor, memoryProjectKeyFor } from "./agent/memory-dir";
 import { migrateMemoryStore } from "./agent/memory-migrate";
@@ -224,7 +224,7 @@ import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-
 import { evictSessionsForCredential, evictSessionsForModelCatalog } from "./runtime-sdk/credentials";
 import { activeCatalog, installedModelPlugins, modelProviderKey, onModelCatalogChange } from "./runtime-sdk/model-plugins";
 import { contributedProviders, modelOffer, modelsMethods } from "./runtime-sdk/models-list";
-import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
+import { coldResumeRunHomeFor, createMossSessionDrivers, sessionPermissionClassFor, type MossLegDeps, type MossSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
 import { splitSettingsToSdk } from "./migration/settings-split";
@@ -234,7 +234,7 @@ import { MigrationCRefused, finishMigrationC, markCurrentLayout, migrationCManif
 import { convertLegacyPluginsForMigration } from "./plugins/convert-legacy";
 import { localScopeKeyFor, projectScopeRootFor, projectScopeTrust, projectScopeTrusted, runHomeInputFor } from "./runtime-sdk/run-home-input";
 import { reservedMcpServerNames } from "./capabilities/names";
-import { projectScopeAllowRulesFor, cloverGateRulesFromSdk } from "./runtime-sdk/mode-options";
+import { projectScopeAllowRulesFor, mossGateRulesFromSdk } from "./runtime-sdk/mode-options";
 import { configuredMcpServersFor, pluginMcpServersFor } from "./runtime-sdk/external-mcp";
 import { planBridgeFor, type PlanBridge } from "./runtime-sdk/plan-bridge";
 import { importEngineEraSession } from "./runtime-sdk/import-legacy";
@@ -245,7 +245,7 @@ import { buildCapabilitiesFor, type CapabilityDeps, type CapabilityServerRecord,
 import { createComputerUseRuntime, type ComputerUseInjection } from "./computer-use/wiring";
 import { PlanWindowReports } from "./usage/codex-windows";
 import { createUsageService, type UsageInjection, type UsageSources } from "./usage/wiring";
-import type { CloverApprovalBroker } from "./approvals/broker";
+import type { MossApprovalBroker } from "./approvals/broker";
 import { rowForTag } from "./runtime-sdk/provider-selection";
 import { botKeyPresence, type BotKeyPresence } from "./bots/key-presence";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
@@ -262,8 +262,8 @@ export interface BrowserHostInjection {
 }
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
-import type { Level, NewSessionEvent, PluginProvenance } from "@waifucave/clover-protocol";
-import { AppRenderResult, BUNDLED_ROOT_PLUGIN, topPluginIdOf } from "@waifucave/clover-protocol";
+import type { Level, NewSessionEvent, PluginProvenance } from "@waifucave/moss-protocol";
+import { AppRenderResult, BUNDLED_ROOT_PLUGIN, topPluginIdOf } from "@waifucave/moss-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, loginShellPathRetrier, type LoginShellPathDeps } from "./login-shell-path";
 import { describeDeadLegacyFiles, findDeadLegacyFiles } from "./migration/dead-legacy-files";
@@ -275,8 +275,8 @@ export { CORE_VERSION } from "./version";
  * tier (`sdk/settings.json`) plus, when its project is trusted, the project's committed and local tiers.
  *
  * WS-24: the project tiers are read at the project SCOPE root (`projectScopeRootFor`: the cwd's own git
- * top, a linked worktree's own — where `clover plugin|mcp --scope project|local` write them and a run home
- * reads them), trusted when the REPOSITORY is (`projectScopeTrusted`). It used to be `<primary>/.clover/…`
+ * top, a linked worktree's own — where `moss plugin|mcp --scope project|local` write them and a run home
+ * reads them), trusted when the REPOSITORY is (`projectScopeTrusted`). It used to be `<primary>/.moss/…`
  * gated on the primary's own path, which a worktree of a trusted repo (not itself in `trust.json`), or a
  * session in a subdirectory, never matched. The widening to the git top is the router's own: a run home
  * builds the project settings tiers from `RunHomeInput.trustedProjectRoot` (`projectScopeRootFor(cwd)`,
@@ -322,7 +322,7 @@ export interface RunningDaemon {
   /** C-M1: resolves when the pair stops on purpose (a Quit, an update, the app leaving for good): the
    *  caller then stops the daemon and exits 0. */
   pairStopped: Promise<string>;
-  /** C-M1: stop the pair (`clover quit`): tell the app, wait for it, then `pairStopped`. */
+  /** C-M1: stop the pair (`moss quit`): tell the app, wait for it, then `pairStopped`. */
   quitPair(reason?: "quit" | "update"): void;
   // `remote` (SP2a Task 1): ensureTokens() already mints/returns it (auth/tokens.ts's
   // TOKEN_NAMES table, Remote Gateway SP1 Task 1) and the `tokens` object below is that SAME
@@ -333,7 +333,7 @@ export interface RunningDaemon {
   // R-T3 whole-branch review FIX 1: the SAME ToolRegistry instance every `register*Tool(s)` call
   // inside the `if (agentProvider)` gate above populates (mirrored into `sharedRegistry`, then
   // threaded to ipc/server.ts's `registry` option) — exposed here too so a test that boots a REAL
-  // daemon (temp CLOVER_HOME + injected FakeProvider, same precedent as server.test.ts/
+  // daemon (temp MOSS_HOME + injected FakeProvider, same precedent as server.test.ts/
   // remote-allowlist-parity.test.ts) can walk `registry.namesForMode(mode, ...)` against daemon.ts's
   // ACTUAL registration path instead of a hand-picked mirror of it (see
   // test/agent/mode-toolset-census.test.ts). `null` on a no-agentProvider daemon (opts.agentProvider
@@ -348,8 +348,8 @@ export interface RunningDaemon {
   /** N2 S7: the inert native worker host wiring (`undefined` without the runtime spine). Nothing reaches it from an RPC. */
   coworkNative?: CoworkNativeWiring;
   /**
-   * P8b Task 5: THE ONE Clover runtime handle — the router `createRuntimeSdk` built, the spawn
-   * hook every Clover session's `Options` takes its executable from, and the tracked-query registry
+   * P8b Task 5: THE ONE MOSS runtime handle — the router `createRuntimeSdk` built, the spawn
+   * hook every MOSS session's `Options` takes its executable from, and the tracked-query registry
    * shutdown drains. `undefined` when the router could not construct (a packaging fault: a peer
    * version mismatch, an invalid brand, a malformed capability declaration), in which case EVERY
    * `session.create`/`session.dispatch` refuses typed (`winter_leg_unavailable`) — there is no
@@ -361,7 +361,7 @@ export interface RunningDaemon {
   runtimeSdk: WinterRuntimeSdk | undefined;
   /**
    * WS-23: the embedded-session host — chat and dispatch Workers. Exposed for the same reason
-   * `clover` is: a test that boots a REAL daemon observes which sessions have a live Worker here (an
+   * `moss` is: a test that boots a REAL daemon observes which sessions have a live Worker here (an
    * embedded session has no pid to `kill -0`), rather than off a mirror it built itself.
    */
   embedded: EmbeddedSessionHost;
@@ -369,7 +369,7 @@ export interface RunningDaemon {
    * P8b Task 5: THE SessionStore this daemon opened — the same instance `stop()` closes.
    *
    * Exposed for the same reason `registry` is: `store.close()` moved onto `stop()`'s ASYNC tail
-   * (behind `runtimeSdk.dispose()`, because a draining Clover child appends its final events
+   * (behind `runtimeSdk.dispose()`, because a draining MOSS child appends its final events
    * through it), and the only honest way to prove that ordering is to use the daemon's OWN handle
    * from inside a tracked session's teardown — a second `SessionStore` over the same home would
    * answer whether or not this one had been closed, which is a test that passes for the wrong
@@ -386,19 +386,19 @@ export interface RunningDaemon {
    */
   buildSessionCapabilities(session: CapabilitySession): CapabilityServerRecord;
   /**
-   * P8b Task 16: the Clover leg's driver table — the SAME instance `ipc/server.ts` routes through.
+   * P8b Task 16: the MOSS leg's driver table — the SAME instance `ipc/server.ts` routes through.
    * A test that boots a REAL daemon reads a session's live driver (its `init` facts, its state, its
    * child) off this rather than off a mirror it built itself.
    */
-  clover: CloverSessionDrivers;
+  moss: MossSessionDrivers;
   /** The daemon integration: this device's links, computer node and bot side (daemon-parts.ts), started in the
    *  background after the socket is bound. `ready` settles once they are up (local-only with no sidecar), or failed
    *  (logged); each getter is undefined before then and without one. */
-  cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined; agents(): DaemonAgents | undefined; broker(): CloverApprovalBroker | undefined };
+  mossParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined; agents(): DaemonAgents | undefined; broker(): MossApprovalBroker | undefined };
   /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
    *  run just before an update's restart (`beforeRestart`: lane H's lease renew). */
   updateGate: UpdateGate;
-  /** M-M2: a server install's own update (`clover-core daemon run` sets it), which `update.status` and `update.apply`
+  /** M-M2: a server install's own update (`moss-core daemon run` sets it), which `update.status` and `update.apply`
    *  then serve. */
   setSelfUpdate(self: SelfUpdate): void;
   /** Dispatch's children tracker (`agent/dispatch-children.ts`) — the SAME instance the `sessions`
@@ -421,17 +421,17 @@ export interface RunningDaemon {
    *   1. synchronous kills — the socket server, MCP, LSP, plugins, background agents, the settings
    *      watcher, the routine scheduler/store, the dreamer. All of this has happened when `stop()`
    *      RETURNS, exactly as it always has.
-   *   2. `runtimeSdk.dispose()` — every live Clover session ends (bounded by
+   *   2. `runtimeSdk.dispose()` — every live MOSS session ends (bounded by
    *      `SHUTDOWN_QUERY_GRACE_MS`), then the router's own dispose; then (WS-23) the embedded host's
    *      Workers drain (bounded by `EMBEDDED_SHUTDOWN_BUDGET_MS`, then `terminate()`). ASYNC.
-   *   3. `store.close()` — the session store. NO LONGER SYNCHRONOUS when a Clover handle exists: a
+   *   3. `store.close()` — the session store. NO LONGER SYNCHRONOUS when a MOSS handle exists: a
    *      draining child appends its last events through it, so it must outlive step 2.
    *   4. `runtime.close()` — the §16 deletion drain (bounded) and `runtime-state.db`, which step 2's
    *      delivery receipts likewise write into.
-   *   5. `lock.release()` — unlinks the socket file, and `clover doctor`'s repairs check for its
+   *   5. `lock.release()` — unlinks the socket file, and `moss doctor`'s repairs check for its
    *      absence before touching it.
    *
-   * The returned promise is present whenever EITHER the Clover handle or the runtime spine exists —
+   * The returned promise is present whenever EITHER the MOSS handle or the runtime spine exists —
    * i.e. on essentially every real daemon. A caller that then exits the process MUST await it, or
    * the process dies mid-drain with the lock still on disk.
    */
@@ -570,7 +570,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  installed it runs alone anyway. */
   pair?: false;
   /** The `app` role's peer-image check (`platform/peer-signature.ts`). Default: this OS's (macOS checks the peer's
-   *  code signature by audit token against the profile's Clover app). Tests whose own process says hello as the app
+   *  code signature by audit token against the profile's MOSS app). Tests whose own process says hello as the app
    *  inject one, or `"none"`. */
   appPeer?: AppPeerPolicy;
   /** A test-only seam under the plugins' keyed `net.fetch` (`plugin-host/pinned-fetch.ts`): an address the rule refuses
@@ -586,7 +586,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
   parts?: {
     node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string;
-    /** The Clover Browser: `false` starts none; an object is a test's seams (the app's port, the headless shell's options). */
+    /** The MOSS Browser: `false` starts none; an object is a test's seams (the app's port, the headless shell's options). */
     browser?: DaemonPartsInput["browser"];
     agents?: false | Pick<DaemonAgentsInput, "defaultModel" | "backends" | "fillProvider">;
     /** TEST SEAMS: the computer node's safety reviewer (default: the daemon's own `BashReviewer`) and an approval
@@ -638,14 +638,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   migration?: {
     legacyHome?: string;
     legacySecrets?: SecretStore;
-    /** TEST ONLY (P9c-15) — overrides `isDefaultCloverHome`'s `homedir()` call, so a test can prove
+    /** TEST ONLY (P9c-15) — overrides `isDefaultMossHome`'s `homedir()` call, so a test can prove
      *  the "home resolves to the default" branch actually runs its migration WITHOUT the test home
-     *  ever literally being the developer's real `~/.clover[-dev]`. A production caller never sets
+     *  ever literally being the developer's real `~/.moss[-dev]`. A production caller never sets
      *  this; the real boot hook always checks against the real home directory. */
     homedirOverride?: () => string;
   };
   /** The login-shell PATH resolution at boot (`login-shell-path.ts`). Absent: the real login shell,
-   *  unless `CLOVER_LOGIN_SHELL_PATH=off` (both test preloads set it). `false`: skipped. An object:
+   *  unless `MOSS_LOGIN_SHELL_PATH=off` (both test preloads set it). `false`: skipped. An object:
    *  the test seam (a fake runner and/or env to update). */
   loginShellPath?: LoginShellPathDeps | false;
   /** Test seam: how `settings.json` is watched (default `fs.watch`). A test passes a stream that never fires to
@@ -680,7 +680,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  Security.framework check of the host's pid (the opt-in extension e2e runs a test-build host). Production sets none. */
   browserHost?: BrowserHostInjection;
   /** Usage tracking TEST SEAM (`docs/claude/usage.md`): which `usage.sources` entries may be called, or a port to call
-   *  instead. Absent: `$CLOVER_USAGE_SOURCES` (both test preloads set `off`), else every entry on the user's own home. */
+   *  instead. Absent: `$MOSS_USAGE_SOURCES` (both test preloads set `off`), else every entry on the user's own home. */
   usage?: UsageInjection;
   /** TEST ONLY: the user's home the other-install guard below measures against (default `homedir()`), so a test
    *  proves the refusal on a stand-in home and never names the real one. */
@@ -688,24 +688,24 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 } = {}): Promise<RunningDaemon> {
   const startedAt = Date.now();
   // C0 (review S1): the daemon's own provider calls (titles, the reviewer, the dreamer, the cleaner) present as
-  // Clover, not as the SDK's default (`runtime-sdk/process-identity.ts`; already installed when core loaded).
-  installCloverProcessIdentity();
-  const home = opts.home ?? resolveCloverHome();
-  const profile = resolveCloverProfile();
+  // MOSS, not as the SDK's default (`runtime-sdk/process-identity.ts`; already installed when core loaded).
+  installMossProcessIdentity();
+  const home = opts.home ?? resolveMossHome();
+  const profile = resolveMossProfile();
 
   // Before anything reads or writes `home`: never another install's home (`other-installs.ts` names them), by real
-  // path, whatever `CLOVER_HOME` or `opts.home` says.
+  // path, whatever `MOSS_HOME` or `opts.home` says.
   assertNotOtherInstallHome(home, opts.userHomeForTests);
 
   // ── Migration B boot hook (P9c, WS-16 §18) ──────────────────────────────────────────────────
-  // Runs BEFORE `bootstrapCloverDir` creates a single directory and before the lock is taken: a
+  // Runs BEFORE `bootstrapMossDir` creates a single directory and before the lock is taken: a
   // refusal here must leave nothing on disk to clean up, and a successful migration must land its
   // files before anything else touches `home`.
   //
   // A manifest that is in-progress (a previous run was interrupted) OR simply unreadable/corrupt
   // (fail-closed: a torn manifest is evidence of an interruption too, never evidence nothing
   // happened) refuses typed — the daemon NEVER auto-resumes, because the operator may be mid
-  // `clover migrate --rollback`.
+  // `moss migrate --rollback`.
   //
   // Fix wave M1 (review Minor): the two flavours get DIFFERENT operator advice, because `--resume`
   // is only useful when there is a manifest to resume FROM — an unreadable manifest has nothing
@@ -718,27 +718,27 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   if (manifestState.kind === "unreadable") {
     throw new MigrationRefused(
       "home_half_migrated",
-      `migration: move ${manifestPath(home)} aside (e.g. to manifest.json.bad), then restart — the migration re-runs from scratch on a pristine home, or run \`clover migrate --rollback\` if files were already copied`,
+      `migration: move ${manifestPath(home)} aside (e.g. to manifest.json.bad), then restart — the migration re-runs from scratch on a pristine home, or run \`moss migrate --rollback\` if files were already copied`,
     );
   }
   if (manifestState.kind === "parsed" && manifestState.manifest.status === "in-progress") {
-    throw new MigrationRefused("home_half_migrated", "migration: half-migrated home — run `clover migrate --resume` or `clover migrate --rollback`");
+    throw new MigrationRefused("home_half_migrated", "migration: half-migrated home — run `moss migrate --resume` or `moss migrate --rollback`");
   }
   // WS-21 (spec §8): the same rule for Migration C — a phase 1 caught half-way (or a manifest that will not
-  // parse) refuses boot on every build until `clover migrate --sdk-home --resume` or `--rollback` runs.
+  // parse) refuses boot on every build until `moss migrate --sdk-home --resume` or `--rollback` runs.
   // `phase1-complete` is NOT half-migrated: phase 2 finishes at this boot's late site.
   const migrationC = migrationCState(home);
   if (migrationC.kind === "unreadable" || (migrationC.kind === "parsed" && migrationC.manifest.status === "in-progress")) {
-    throw new MigrationCRefused("sdk_home_half_migrated", `migration C: half-migrated home (${migrationCManifestPath(home)}) — run \`clover migrate --sdk-home --resume\` or \`clover migrate --sdk-home --rollback\``);
+    throw new MigrationCRefused("sdk_home_half_migrated", `migration C: half-migrated home (${migrationCManifestPath(home)}) — run \`moss migrate --sdk-home --resume\` or \`moss migrate --sdk-home --rollback\``);
   }
   // R.3 I-5: a rollback caught half-way (`rolling-back`, written before its first file moves) — the same
   // door; booting would split transcripts between sdk/projects and a half-restored <home>/projects.
   if (migrationC.kind === "parsed" && migrationC.manifest.status === "rolling-back") {
-    throw new MigrationCRefused("sdk_home_half_migrated", `migration C: a rollback of this home was interrupted (${migrationCManifestPath(home)}) — run \`clover migrate --sdk-home --rollback\` to finish it`);
+    throw new MigrationCRefused("sdk_home_half_migrated", `migration C: a rollback of this home was interrupted (${migrationCManifestPath(home)}) — run \`moss migrate --sdk-home --rollback\` to finish it`);
   }
 
   // The service is THIS daemon's home's (`keychainService(profile, home)`): on a custom home a
-  // `CLOVER_KEYCHAIN_SERVICE` is honoured, so an experiment or e2e daemon never reads the profile's real items.
+  // `MOSS_KEYCHAIN_SERVICE` is honoured, so an experiment or e2e daemon never reads the profile's real items.
   const secrets = opts.secrets ?? new KeychainSecretStore(defaultSecretsBackend(), keychainService(profile, home));
 
   // WS-27: the credential items' access lists (`auth/credential-acl.ts`) — same guards as the app-token
@@ -754,7 +754,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let keychainPass: KeychainPass | undefined;
   if (opts.keychainPassForTests !== undefined) {
     keychainPass = await opts.keychainPassForTests(home);
-  } else if (opts.secrets === undefined && process.platform === "darwin" && isDefaultCloverHome(home, profile)) {
+  } else if (opts.secrets === undefined && process.platform === "darwin" && isDefaultMossHome(home, profile)) {
     try {
       keychainPass = await beginKeychainPass({ home, service: keychainService(), log: (line) => console.error(line) });
     } catch (err) {
@@ -777,22 +777,22 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   );
 
   // C0 (review S2): a boot never looks for a legacy home. Spec §12 retires the legacy migrations, and the one
-  // door left is the operator's explicit `clover migrate --from <legacy home>`. Only a test's seam
+  // door left is the operator's explicit `moss migrate --from <legacy home>`. Only a test's seam
   // (`opts.migration`), naming its own throwaway legacy home and store, still drives the hook below — so a
   // production boot never builds a legacy Keychain store, never reads a legacy home and writes no manifest.
   const legacyHome = opts.migration?.legacyHome;
   const legacySecrets = opts.migration?.legacySecrets;
   if (legacyHome !== undefined && legacySecrets !== undefined && existsSync(join(legacyHome, "settings.json"))) {
     // P9c-15: auto-migration fires ONLY when `home` resolves to the PROFILE'S OWN DEFAULT home
-    // (`~/.clover` dist, `~/.clover-dev` dev) — regardless of how `home` got here (`opts.home`,
-    // `CLOVER_HOME`, or the default). A real (compiled or `bun`-run) daemon spawned against a temp
-    // or custom `CLOVER_HOME` with no injected `secrets` — a binary-backed e2e test, `verify:
+    // (`~/.moss` dist, `~/.moss-dev` dev) — regardless of how `home` got here (`opts.home`,
+    // `MOSS_HOME`, or the default). A real (compiled or `bun`-run) daemon spawned against a temp
+    // or custom `MOSS_HOME` with no injected `secrets` — a binary-backed e2e test, `verify:
     // workflow`/`verify:runtime-state`/`verify:runtimes`, a live-gate script, a developer's ad-hoc
-    // `CLOVER_HOME=/tmp/x clover daemon run` — would otherwise find the REAL legacy home pristine
+    // `MOSS_HOME=/tmp/x moss daemon run` — would otherwise find the REAL legacy home pristine
     // and migrate the user's REAL data (and REAL Keychain items) into a throwaway directory. This
     // check is IN ADDITION TO `isPristineHome` below, never a replacement for it.
-    if (!isDefaultCloverHome(home, profile, opts.migration?.homedirOverride)) {
-      console.error(`migration: ${home} is not the default home for the ${profile} profile — auto-migration skipped; run \`clover migrate --from ${legacyHome}\` to migrate it by hand`);
+    if (!isDefaultMossHome(home, profile, opts.migration?.homedirOverride)) {
+      console.error(`migration: ${home} is not the default home for the ${profile} profile — auto-migration skipped; run \`moss migrate --from ${legacyHome}\` to migrate it by hand`);
     } else {
       const check = describeHomePristineness(home);
       // Cowork storage in the legacy source is never auto-copied (`migration/cowork-exclusion.ts`): skip
@@ -809,7 +809,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // `migrateOneSecret`), but this catches whatever residual throw still gets through (a
         // thrown SecretStore on the unwrapped destination existence-check, an fs error mid-copy,
         // …). The manifest is written to disk after EVERY step, so whatever ran before the throw is
-        // already durably "in-progress" on disk — `clover migrate --resume`/`--rollback` stays the
+        // already durably "in-progress" on disk — `moss migrate --resume`/`--rollback` stays the
         // door. Converting to ONE typed refusal here is what stops the daemon from crash-looping on
         // an uncaught exception (the CLI's `daemon run` prints `MigrationRefused.message` and exits
         // cleanly; see `packages/cli/src/main.ts`'s `case "daemon run"`).
@@ -821,7 +821,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           const detail = err instanceof Error ? err.message : String(err);
           throw new MigrationRefused(
             "migration_failed",
-            `migration: failed (${detail}) — the home is left half-migrated; run \`clover migrate --resume\` or \`clover migrate --rollback\``,
+            `migration: failed (${detail}) — the home is left half-migrated; run \`moss migrate --resume\` or \`moss migrate --rollback\``,
           );
         }
         const filesMoved = manifest.entries.filter((e) => e.status === "copied" || e.status === "rekeyed").length;
@@ -838,18 +838,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
   }
 
-  const dirs = bootstrapCloverDir(home);
+  const dirs = bootstrapMossDir(home);
   const lock: Lock = await acquireLock(dirs.lockPath, dirs.socketPath);
 
   // A3: legacy top-level files an earlier Migration B copied but nothing reads (`mcp.json`,
-  // `tools.json`, …). One line when any exist — never touched, only named (`clover doctor` repeats it).
+  // `tools.json`, …). One line when any exist — never touched, only named (`moss doctor` repeats it).
   const deadLegacyLine = describeDeadLegacyFiles(findDeadLegacyFiles(home), home);
   if (deadLegacyLine !== undefined) console.error(deadLegacyLine);
   // Lane A's F8 process holder ships beside a compiled macOS core (scripts/bundled-binaries.ts); without it a bot's
   // commands fall back to process-group tracking, which a packaged build never does (its package gate). Said loudly.
   {
     const holder = missingProcessHolder();
-    if (holder !== undefined) console.error(`error: ${holder} is missing beside this clover-core: a bot's commands fall back to process-group tracking, and what they leave running (setsid, double forks) can outlive a pause. Reinstall Clover.`);
+    if (holder !== undefined) console.error(`error: ${holder} is missing beside this moss-core: a bot's commands fall back to process-group tracking, and what they leave running (setsid, double forks) can outlive a pause. Reinstall MOSS.`);
   }
 
 
@@ -900,7 +900,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // The user's login-shell PATH, merged into THIS process's environment before anything below can
   // spawn — an app/Sparkle/launchd-launched daemon otherwise inherits LaunchServices' bare
-  // `/usr/bin:/bin:/usr/sbin:/sbin`, and every child (the Clover child and its Bash tool, stdio MCP
+  // `/usr/bin:/bin:/usr/sbin:/sbin`, and every child (the MOSS child and its Bash tool, stdio MCP
   // servers, plugins) would get that. After the lock, so a second daemon that loses the race never
   // pays for a shell; after `ensureTokens`, so a slow or broken rc file (up to the 5 s bound) never
   // delays the tokens a first-boot client is waiting for (P9c-20). Nothing between the lock and
@@ -932,11 +932,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // both live, at call time.
   let sessionCreator: InternalSessionCreator | undefined;
   let dispatchChildren: DispatchChildren | undefined;
-  /** SendMessage between Clover sessions (`agent/session-messaging.ts`): built right after
+  /** SendMessage between MOSS sessions (`agent/session-messaging.ts`): built right after
    *  `dispatchChildren`; every session's `Options.hostMessaging` reads it live. */
   let sessionMessaging: SessionMessaging | undefined;
 
-  const cloverHome = dirs.home;
+  const mossHome = dirs.home;
 
   // Settings surface (role-health, 2026-09-18): quiet per-role failure notes for the Mac app's
   // Roles pane — see `providers/role-health.ts` for the full design. Constructed unconditionally
@@ -944,7 +944,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // no `agentProvider` at all, and every other consumer (titler/reviewer/dreamer/cleaner/research,
   // plus the two `settings.modelRoles`/`settings.setModelRole` RPC handlers) shares this ONE
   // instance rather than each holding its own view of the same on-disk file.
-  const roleHealth = new RoleHealthRegistry(cloverHome);
+  const roleHealth = new RoleHealthRegistry(mossHome);
 
   // Loaded once, up front, so the settings-derived plugin consent (below) is available before
   // the SkillStore and PluginStore are built. A malformed settings.json degrades to `null` here
@@ -969,7 +969,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // `handoff.crossRuntime`) still load and are reported here, once — same "accepted, logged,
     // ignored" posture as winterLeg above (settings-apply reports a hot edit).
     const retired = retiredRuntimeSettingKeys(settings);
-    if (retired.length > 0) console.error(`settings: ${retired.join(", ")} — the official claude runtime was retired (every model runs on the Clover runtime); ignored`);
+    if (retired.length > 0) console.error(`settings: ${retired.join(", ")} — the official claude runtime was retired (every model runs on the MOSS runtime); ignored`);
   } catch (err) {
     console.error(`settings unavailable, agent disabled: ${(err as Error).message}`);
     settings = null;
@@ -982,7 +982,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // the split reads); before the boot split below (so preflight's backups capture the pre-split state
   // and the migration's own split step is the one that copies); before the runtime spine (backfill and
   // recovery read the store and `backend_root`). The profile's default home migrates by itself; any
-  // other home in the old layout refuses boot until `clover migrate --sdk-home --home <dir>` runs. A
+  // other home in the old layout refuses boot until `moss migrate --sdk-home --home <dir>` runs. A
   // preflight refusal refuses BOOT — the supported build must never start writing `sdk/projects` while
   // `<home>/projects` still holds the store. Phase 2 runs at the late site, once the router exists.
   // A home that is not the old layout and holds no Migration C manifest is marked current here, before anything of
@@ -999,8 +999,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   if (oldLayout.length > 0) {
     try {
       console.error(`migration C: ${home} reads as the old layout: ${oldLayout.join("; ")}`);
-      if (!isDefaultCloverHome(home, profile, opts.migration?.homedirOverride)) {
-        throw new MigrationCRefused("sdk_home_migration_required", `migration C: ${home} is in the old layout (${oldLayout.join("; ")}) and is not the profile's default home — stop, then run \`clover migrate --sdk-home --home ${home}\``);
+      if (!isDefaultMossHome(home, profile, opts.migration?.homedirOverride)) {
+        throw new MigrationCRefused("sdk_home_migration_required", `migration C: ${home} is in the old layout (${oldLayout.join("; ")}) and is not the profile's default home — stop, then run \`moss migrate --sdk-home --home ${home}\``);
       }
       await runMigrationC(home, { log: (line) => console.error(line), reconcileAvailable: true, convertLegacyPlugins: convertLegacyPluginsForMigration });
     } catch (err) {
@@ -1023,7 +1023,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // (the table of rows in migration/settings-moved-to-plugins.ts).
   moveSettingsToPlugins(home, { log: (line) => console.error(line) });
 
-  // The skills Clover ships that a child must be able to LOAD (`computer-use`): a managed copy in the user's
+  // The skills MOSS ships that a child must be able to LOAD (`computer-use`): a managed copy in the user's
   // skill tier, `sdk/skills/` — the builtin tier is staged into no run folder. Every boot, every home, after the
   // sdk home exists and Migration C has had its turn; only where a session loads that tier at all (a build whose
   // router applies run homes — on the old layout `sdk/` is not the skill store, and a copy there would only
@@ -1039,7 +1039,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // carries `{ unavailable }`, the failure is logged, and boot continues (nothing else in the
   // daemon depends on the spine in 8a). See `runtime-state/wiring.ts` for the whole sequence.
   const runtimeState = await startRuntimeState({
-    home: cloverHome,
+    home: mossHome,
     store,
     settings: () => settings, // LIVE holder, re-read per sweep — never a boot snapshot
     log: (line) => console.error(`runtime-state: ${line}`),
@@ -1072,7 +1072,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   }
 
   // `trustRecordFile`: the same path the write fences name (`controlPlaneDenyRules`/`sandboxConfigFor`).
-  const trustStore = new TrustStore(trustRecordFile(cloverHome));
+  const trustStore = new TrustStore(trustRecordFile(mossHome));
   // Task 7 (CC project-folder-mechanics): the ONE cwd-keyed "effective settings" resolver for the
   // whole daemon — `base` reads the reassignable `settings` holder above LIVE (same hot-settings
   // shape as memoryEnabledHot/hooksEnabledHot below: a watcher-driven reload swaps in a NEW object
@@ -1085,13 +1085,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const projectSettings = new ProjectSettingsResolver({ base: () => settings, trust: projectScopeTrust(trustStore) });
   // Review I2 (lane B): the daemon's own record of rules the user approved "in this project" from a
   // card (`<home>/permissions/projects.json`). WS-21: RETIRED as a store — nothing writes it any more (a
-  // card's "in this project" answer goes to the trusted project's `.clover/settings.local.json`,
+  // card's "in this project" answer goes to the trusted project's `.moss/settings.local.json`,
   // `agent/saved-answers.ts`); what an older build recorded is still READ (on a build whose router does
-  // not apply run homes), reported by `clover doctor` and moved by `clover migrate-project`.
-  const approvedProjectRules = new ApprovedProjectRules({ cloverHome });
+  // not apply run homes), reported by `moss doctor` and moved by `moss migrate-project`.
+  const approvedProjectRules = new ApprovedProjectRules({ mossHome });
   // fix-wave B (I1): every per-project getter below resolves at the REPO ROOT, matching
   // `globalAllow`'s own `projectRoot` (engine.ts's `repoRootFor(cwd)`) — NOT the raw session cwd.
-  // Before this, a SUBDIRECTORY session read a DIFFERENT `.clover/settings.json` than
+  // Before this, a SUBDIRECTORY session read a DIFFERENT `.moss/settings.json` than
   // `globalAllow`/`editPathRules` did for the identical repo, so a repo-root settings.json was only
   // half-honored: `permissions.allow` picked it up, but `dangerousDomains.added` (and
   // reviewer/toolSearch/hooks/lsp) silently didn't — same-file keys diverging on which cwd they're
@@ -1100,7 +1100,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // spawn only on first sight of a dir) and falls back to the dir itself outside a git repo, so
   // this is perf-neutral and a non-repo cwd behaves exactly as before.
   // R.3 residual (controller ruling): the PROJECT scope's root is the cwd's own git top — a linked
-  // worktree's own `.clover/`, where the run home reads the project tier and `--scope project` writes
+  // worktree's own `.moss/`, where the run home reads the project tier and `--scope project` writes
   // (`projectScopeRootFor`, `localScopeKeyFor`'s sibling) — and the resolver above trusts it per
   // `projectScopeTrust` (keyed on the repository, so a worktree of a trusted repo is trusted).
   const projectRootOf = (cwd?: string | null): string | null => (cwd ? projectScopeRootFor(cwd) : null);
@@ -1127,24 +1127,24 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     emit: (event) => { hub.broadcastTransient(event.sessionId, event); },
   });
   // Output styles (CC-parity phase 2, Task 4): per-project effective outputStyle, repo-root-keyed
-  // via the SAME projectRootOf as every other getter here — a trusted project's `.clover/settings.json`
+  // via the SAME projectRootOf as every other getter here — a trusted project's `.moss/settings.json`
   // outputStyle applies; an untrusted project's is ignored (ProjectSettingsResolver.effective()'s own
   // trust gate). Resolution itself (name -> ResolvedStyle, incl. the slug-guard against a
   // project-supplied name escaping the output-styles dir) lives in OutputStyleStore.resolve — this is
   // just the name lookup.
-  const outputStyleStore = new OutputStyleStore({ cloverHome, trust: trustStore, legacySettings: () => settings });
+  const outputStyleStore = new OutputStyleStore({ mossHome, trust: trustStore, legacySettings: () => settings });
   // WS-24 (router 0.0.15): a repository never picks the output style -- the run-home builder drops a
   // project or local tier's `outputStyle` (and never lets a project style redefine a user/built-in
   // name), so the daemon reads the user tier alone (`sdk/settings.json`, `sdkOutputStyle`) and what it
   // reports can't disagree with what the child runs. (WS-21 had let a trusted project's overlay win.)
-  const outputStyleFor = (_cwd?: string | null): string | undefined => sdkOutputStyle(cloverHome);
+  const outputStyleFor = (_cwd?: string | null): string | undefined => sdkOutputStyle(mossHome);
   // CC-parity phase 3 (Workflows, Track C Task C2): built unconditionally, same "no engine
   // dependency" precedent as `outputStyleStore` just above — workflow.list's "saved" section and
   // workflow.run's by-name resolution work even on a no-agentProvider daemon (only launching a
   // resolved/inline script needs the WorkflowRuntime below, which DOES require an engine).
-  const workflowStore = new WorkflowStore({ cloverHome, trust: trustStore });
+  const workflowStore = new WorkflowStore({ mossHome, trust: trustStore });
   const pluginStore = new PluginStore({
-    cloverHome, consents: settings?.plugins?.consents, log: (m) => console.error(m),
+    mossHome, consents: settings?.plugins?.consents, log: (m) => console.error(m),
   });
   // Built unconditionally (Phase 4b Task 4): shortcut.register/tile.update/provider.register are
   // plain latest-per-plugin storage, independent of whether an LLM provider (and thus a
@@ -1163,7 +1163,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const projectWriteRegistry: { current?: OpenedRegistry } = {};
   // WS-21 (L4 request 2): the store lists the user, self, project and builtin tiers; a plugin's skills are
   // claude-native content now (the runtimes load them, and `skills.list`'s plugin half is lane L4's).
-  const skillStore = new SkillStore({ cloverHome, trust: trustStore });
+  const skillStore = new SkillStore({ mossHome, trust: trustStore });
   // File-based memory (MEMDIR, T1 — design doc `2026-07-15-file-based-memory-design.md`): a live
   // getter over the `settings` holder (assigned above; reassigned in place by the hot-settings
   // watcher below), read fresh by BOTH the write-root join (`sessionDirs`, just below) and the
@@ -1172,8 +1172,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // WS-21: `memory.enabled`/`memory.directory` moved to `sdk/settings.json` as claude's
   // `autoMemoryEnabled`/`autoMemoryDirectory` (`sdkAutoMemory`, read live — an edit applies on the next
   // read, no restart). Same default: ON unless explicitly false.
-  const memoryEnabledHot = (): boolean => sdkAutoMemory(cloverHome).enabled;
-  const memoryDirectoryHot = (): string | undefined => sdkAutoMemory(cloverHome).directory;
+  const memoryEnabledHot = (): boolean => sdkAutoMemory(mossHome).enabled;
+  const memoryDirectoryHot = (): string | undefined => sdkAutoMemory(mossHome).directory;
   // session-activity-hygiene T7 (spec §3): the session cleaner's own switch, on exactly the
   // `memoryEnabledHot` terms one line up — a live getter over the reassignable `settings` holder
   // (the settings watcher swaps a NEW object into that same binding), so a `cleaner.enabled` edit
@@ -1187,10 +1187,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // moves the trees, and the next memory read has to follow them. Absent (no runtime store, or
   // nothing relocated) leaves the derivation exactly as it was.
   const memoryDirOf = (cwd: string): string =>
-    memoryDirFor(cwd, { cloverHome, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
-  const memoryGlobalDirOf = (): string => globalMemoryDirFor({ cloverHome, directory: memoryDirectoryHot() });
+    memoryDirFor(cwd, { mossHome, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
+  const memoryGlobalDirOf = (): string => globalMemoryDirFor({ mossHome, directory: memoryDirectoryHot() });
   const assembler = new ContextAssembler({
-    cloverHome, trust: trustStore, skills: skillStore,
+    mossHome, trust: trustStore, skills: skillStore,
     memory: {
       enabled: memoryEnabledHot,
       dirFor: memoryDirOf,
@@ -1198,7 +1198,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // `settings?.memory?.directory` (unlike `memoryDirOf`/`memoryGlobalDirOf` above): honoring
       // the relocation override would collapse this bucket into the project bucket and leak dream
       // memories into code sessions (see assistantMemoryDirFor's own doc comment).
-      assistantDir: () => assistantMemoryDirFor({ cloverHome }),
+      assistantDir: () => assistantMemoryDirFor({ mossHome }),
     },
     // Output styles (CC-parity phase 2, Task 4): main-conversation only — assemble() itself skips
     // this resolver under a basePromptOverride (dispatch coordinators/subagents keep their own base;
@@ -1232,26 +1232,26 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // — so a mid-session `memory.enabled` false→true flip no longer waits for a restart either.
   if (memoryEnabledHot()) {
     try {
-      migrateMemoryStore({ cloverHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
+      migrateMemoryStore({ mossHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
     } catch (err) {
       console.error(`memory migration skipped: ${(err as Error).message}`);
     }
   }
   // Phase 5b Task 2: ONE MemoryStore for the whole daemon (fact-file CRUD is the single-writer
   // contract §4.8 requires — daemon RPCs (ipc/server.ts's memory.*) must share this exact
-  // instance, never open a second one). Built unconditionally, same "needs only cloverHome/trust,
+  // instance, never open a second one). Built unconditionally, same "needs only mossHome/trust,
   // no provider" precedent as skillStore/assembler just above — a provider-disabled daemon (or a
   // future read-only RPC) can still serve memory state.
   //
   // T1 (file-based memory) supersedes this store's TOOL surface (memory_read/write/delete are
   // deleted — see agent/tools/memory.ts's removal) and, whenever `memory.enabled` (above) is on,
   // the assembler's OWN injection of this store's data (context.ts's legacy branch, which reads
-  // these exact `<cloverHome>/memory/MEMORY.md` / `<cwd>/.clover/memory/MEMORY.md` paths, is skipped
+  // these exact `<mossHome>/memory/MEMORY.md` / `<cwd>/.moss/memory/MEMORY.md` paths, is skipped
   // in favor of the new per-project MEMDIR). T2 rewires the memory.* RPCs (below, `memoryFiles`)
   // to read/write MEMDIR files whenever `memory.enabled` is on, falling back to THIS store
   // unchanged when it's off — the store instance itself and its on-disk data stay untouched
   // either way (the escape hatch, and the migration importer's source, both need it intact).
-  const memoryStore = new MemoryStore({ cloverHome, trust: trustStore });
+  const memoryStore = new MemoryStore({ mossHome, trust: trustStore });
   // Built unconditionally (needs only store, no provider) so the server's session.addDir /
   // setCwd handlers always have live roots to work with, even when the agent is disabled.
   const sessionDirs = new SessionDirectories((sid) => {
@@ -1296,15 +1296,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // workdir-less relative fs-tool path resolves there — engine.test.ts's own "never the daemon's
     // cwd" pin) BEFORE this MEMDIR fold existed, and that pin must survive memory being enabled.
     if (!primary) {
-      roots.push(ensureOutdir(cloverHome, sid));
+      roots.push(ensureOutdir(mossHome, sid));
       if (memoryEnabledHot()) {
-        const memDir = assistantMemoryDirFor({ cloverHome });
+        const memDir = assistantMemoryDirFor({ mossHome });
         mkdirSync(memDir, { recursive: true });
         roots.push(memDir);
       }
       return roots;
     }
-    roots.push(...sessionPermissionDirs(cloverHome, primary, trustStore));
+    roots.push(...sessionPermissionDirs(mossHome, primary, trustStore));
     // T1 write-root join (design doc: "the tmpDir pattern" — a plain, ungated, auto-provisioned
     // root, mirroring how `sessionTmpDir` needs no user approval either): whenever file-based
     // memory is enabled, the session's MEMDIR joins the SAME write-fence `roots` the `write`/`edit`
@@ -1328,14 +1328,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       mkdirSync(memDir, { recursive: true });
       roots.push(memDir);
     }
-    // working-directories T4: the session's own delivery folder — `<cloverHome>/outputs/<sid>` —
+    // working-directories T4: the session's own delivery folder — `<mossHome>/outputs/<sid>` —
     // joins the SAME write-fence roots the MEMDIR just above does, and by the identical mechanism:
     // one more entry in this session-scoped list, no new fencing/grant machinery. Unlike the MEMDIR
     // this is NOT gated on a settings flag — the outputs dir is a core primitive, always available.
-    // Keyed by `sid` (this closure's own parameter, never a bare `~/.clover/outputs/` prefix), which
+    // Keyed by `sid` (this closure's own parameter, never a bare `~/.moss/outputs/` prefix), which
     // is exactly what keeps ANOTHER session's outputs dir OUT of this list — `grantDeniedPrefixes:
-    // [cloverHome]` (below) still refuses it for every session but this one.
-    roots.push(ensureOutdir(cloverHome, sid));
+    // [mossHome]` (below) still refuses it for every session but this one.
+    roots.push(ensureOutdir(mossHome, sid));
     return roots;
   });
 
@@ -1368,7 +1368,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // Hotfix (credential material, P8b): boot-time, idempotent, one-way — promotes the legacy raw
   // openai-api-key / codex-access-token(+4) records into the JSON material records the spawned
-  // Clover child actually reads (auth/credential-material.ts). Unconditional and BEFORE
+  // MOSS child actually reads (auth/credential-material.ts). Unconditional and BEFORE
   // createProvider below (even when `settings` is absent, and regardless of whether
   // `opts.agentProvider` was injected) — this `secrets` store is the daemon's own real one
   // (`KeychainSecretStore` in production, whatever a test injected) every time this function
@@ -1407,7 +1407,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
     internalRouter = createInternalRouter({ view: internalView, secrets });
     // THE boot line, replacing the every-boot "the daemon's internal provider only builds for
-    // codex-oauth/openai … are inert" one. Accurate in both directions: which providers Clover's own
+    // codex-oauth/openai … are inert" one. Accurate in both directions: which providers MOSS's own
     // jobs can run on, or — when none — exactly why and what would fix it. The SAME sentence
     // `view.refresh()` prints on a later change (`InternalProviderView.summary`), never a second
     // spelling of the same fact, and never a credential value.
@@ -1420,7 +1420,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    * credentialed provider, resolved per role. Keeping the builder alive here cost three things that
    * are all now wrong:
    *
-   *  - a spurious `agent disabled: no API key stored — run: clover login --api-key` line on any
+   *  - a spurious `agent disabled: no API key stored — run: moss login --api-key` line on any
    *    openai-default home without an OpenAI key, describing a handle nothing reads;
    *  - a second Keychain read of material `internalView.refresh()` has already probed;
    *  - the `providerInfo`/`liveSelection`/`liveProvider` reads below were GATED on it being non-null,
@@ -1445,7 +1445,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // SP-approvals Task 5: hoisted alongside `engine` — same "declared null/undefined above, assigned
   // inside the gate" shape as `dreamer`/`mcp`/etc below. PermissionRules itself needs no provider
-  // (only settings + cloverHome), but has always been constructed inside the `if (agentProvider)`
+  // (only settings + mossHome), but has always been constructed inside the `if (agentProvider)`
   // gate next to the engine that consumes it (see the assignment site's own doc comment); declared
   // here so it's reachable AFTER the gate closes, where startIpcServer's opts (below) share this
   // SAME instance with the engine's own ask-policy rule-consult path — one mtime cache, not two
@@ -1473,7 +1473,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `settings.json`, for the one reaction a moved key still drives here (the memory importer).
   const sdkWatchers: Array<SettingsWatcher<Record<string, unknown>>> = [];
   // P8b Task 16 HOISTED this out of the `if (agentProvider)` gate (it used to be built beside
-  // `taskStore` inside it): the Clover leg's question bridge (`AskUserQuestion` → `question_asked`)
+  // `taskStore` inside it): the MOSS leg's question bridge (`AskUserQuestion` → `question_asked`)
   // needs a broker whether or not an engine exists, and `ask_user.respond` must resolve into the
   // SAME instance. Wire-identical on a no-provider daemon: `respond()` on a broker with nothing
   // pending answers `{ ok: true, alreadyResolved: true }`, which is exactly the handler's old
@@ -1504,7 +1504,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `registry` const, which isn't in scope here) so it keeps behaving correctly either way — a safe
   // no-op via optional chaining while `sharedRegistry` is still null (no provider).
   const allPlugins = pluginStore.list();
-  // #234, F2: Clover's bunfig and load guard for every plugin process (supervised hosts and hooks), in the run folder.
+  // #234, F2: MOSS's bunfig and load guard for every plugin process (supervised hosts and hooks), in the run folder.
   // On a failure each runner falls back to its own (the supervisor refuses to spawn; a hook uses a private temp one).
   // The plugin host starts later (`startPlugins`); until then a plugin's hook or MCP server gets no network.
   let pluginHostForProxy: () => DaemonPluginHost | undefined = () => undefined;
@@ -1514,11 +1514,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let wrapperOpen: (id: string) => boolean = () => false;
   // A pasted stdio server's own folders in the user's home (its install record's `wrapped.reads`), read-only.
   let wrapperRead: (id: string) => readonly string[] = () => [];
-  // The files and folders the user picked in a plugin's page (lane G's pickers; `plugin.grant.*`): kept in the Clover
+  // The files and folders the user picked in a plugin's page (lane G's pickers; `plugin.grant.*`): kept in the MOSS
   // home until the user or the plugin's removal drops them, opened to that plugin's host half and its processes alone.
   const pluginGrants = new PluginGrants({
-    cloverHome, userHome: opts.parts?.userHome ?? homedir(),
-    fenced: () => new CloverFence({ home: opts.parts?.userHome ?? homedir(), cloverHome }).fencedSet(),
+    mossHome, userHome: opts.parts?.userHome ?? homedir(),
+    fenced: () => new MossFence({ home: opts.parts?.userHome ?? homedir(), mossHome }).fencedSet(),
     // A pick is only for a plugin installed here; before the registry opens, none is known yet.
     installed: (id) => {
       if (grantRegistry === undefined) throw new ContractError("refused", "the plugin registry is still opening; try again in a moment");
@@ -1530,7 +1530,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   try {
     // 2g: a hook or MCP server of a plugin reaches the network only through its tree's proxy (none before the host starts).
     pluginRun = {
-      files: ensurePluginRunFiles(dirs.runDir, { cloverHome }), proxyFor: (id) => pluginHostForProxy()?.proxyFor(id),
+      files: ensurePluginRunFiles(dirs.runDir, { mossHome }), proxyFor: (id) => pluginHostForProxy()?.proxyFor(id),
       openNetwork: (id) => wrapperOpen(id),
       reads: (id) => wrapperRead(id),
       picked: (id) => pluginGrants.fencePaths(id),
@@ -1578,9 +1578,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // Hoisted above the `if (agentProvider)` gate (4g Task 5) — the web tools that used to be registered
   // below needed it, and
   // tool registration happens inside that gate. Built unconditionally regardless (same precedent as
-  // `peripheral`/`hardware` further down, which share this SAME instance): cloverHome is ready at
+  // `peripheral`/`hardware` further down, which share this SAME instance): mossHome is ready at
   // line 135, and AuditLog's own constructor is cheap (mkdir is lazy, on first write — see audit.ts).
-  const audit = new AuditLog(join(cloverHome, "audit.jsonl"));
+  const audit = new AuditLog(join(mossHome, "audit.jsonl"));
 
   // The plan windows Codex sessions report while they run (`usage/codex-windows.ts`): the Codex plan's fallback reading.
   /** The provider a session's model tag names (the plan windows are tagged with it). */
@@ -1588,39 +1588,39 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     try { const m = store.meta(sid).model; return m === undefined || !m.includes("/") ? undefined : splitTag(m).providerId; } catch { return undefined; }
   };
   const codexWindows = new PlanWindowReports();
-  // Usage and cost tracking (`usage.*`, `docs/claude/usage.md`): Clover's own turns as they end, the user's Codex and
+  // Usage and cost tracking (`usage.*`, `docs/claude/usage.md`): MOSS's own turns as they end, the user's Codex and
   // Claude Code usage ingested ON DEMAND. Its own SQLite file (`<home>/usage/usage.db`), never runtime-state.db.
   const usage = createUsageService({
-    home: cloverHome, settings: () => settings, codexWindows,
+    home: mossHome, settings: () => settings, codexWindows,
     // Whose apps it reads: the user's, only for the daemon on its default home (as the tree root and the app launch
     // are); a temp-home or test daemon reads no app outside its home (J's audit), unless a test names one.
-    userHome: opts.parts?.userHome ?? (isDefaultCloverHome(home, profile) ? homedir() : undefined),
+    userHome: opts.parts?.userHome ?? (isDefaultMossHome(home, profile) ? homedir() : undefined),
     ...(opts.usage === undefined ? {} : { injection: opts.usage }),
   });
 
   // ComputerV2 (2026-10-08): the daemon's computer-use runtime — the helper connection, the per-app policy and
   // the script service behind the `computer_v2` capability (`computer-use/wiring.ts`). Built unconditionally
   // (cheap: nothing connects or spawns until a script runs); the capability is built per session only while
-  // computer use is on. `interrupt` reaches `cloverDrivers` late (the helper's Esc), as the capability
+  // computer use is on. `interrupt` reaches `mossDrivers` late (the helper's Esc), as the capability
   // closures below do.
   const computerUseRuntime = createComputerUseRuntime({
-    home: cloverHome,
+    home: mossHome,
     profile,
     settings: () => settings,
-    settingsPath: join(cloverHome, "settings.json"),
+    settingsPath: join(mossHome, "settings.json"),
     approvals: approvalBroker,
     hub,
     store,
     audit: (line) => audit.append(line),
     // ComputerV2's Esc (the helper's `escPressed`) is the user's stop: a Dispatch child's report says so.
-    interrupt: (sid) => { dispatchChildren?.noteStop(sid, { kind: "user" }); void cloverDrivers.get(sid)?.interrupt(); },
-    launchAllowed: opts.secrets === undefined && process.platform === "darwin" && isDefaultCloverHome(home, profile),
+    interrupt: (sid) => { dispatchChildren?.noteStop(sid, { kind: "user" }); void mossDrivers.get(sid)?.interrupt(); },
+    launchAllowed: opts.secrets === undefined && process.platform === "darwin" && isDefaultMossHome(home, profile),
     // Phase 2, the browsers' dangerous-domain floor: the SAME user-added list `Search`, the old `Browser` and the
     // child's `WebFetch` read, and the user's saved allow rules (the "everywhere" tier in claude's grammar plus the
     // project tiers) — a standing `WebFetch(domain:…)` rule approves a listed host where a card could ask.
     dangerousDomainsAdded,
     savedAllowRules: (cwd) => {
-      const user = sdkAllowRules(cloverHome) ?? [];
+      const user = sdkAllowRules(mossHome) ?? [];
       if (cwd === undefined) return user;
       return [...user, ...projectScopeAllowRulesFor(cwd, {
         effectiveSettings: (root) => projectSettings.effective(root),
@@ -1629,10 +1629,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         trust: trustStore,
       })];
     },
-    turnRunning: (sid) => cloverDrivers.get(sid)?.turnRunning ?? false,
+    turnRunning: (sid) => mossDrivers.get(sid)?.turnRunning ?? false,
     // Wake triggers (2026-10-12): a wake goes in through the session's own driver (late-bound, like `interrupt`), and a
     // Dispatch child's wake turn is followed when its trigger was armed in a followed turn.
-    sessions: () => ({ get: (sid) => cloverDrivers.get(sid), ensure: (sid) => cloverDrivers.ensure(sid) }),
+    sessions: () => ({ get: (sid) => mossDrivers.get(sid), ensure: (sid) => mossDrivers.ensure(sid) }),
     followedNow: (sid) => dispatchChildren?.followingTurn(sid) ?? false,
     followWake: (sid, text) => dispatchChildren?.expectWake(sid, text),
     ...(opts.computerUse === undefined ? {} : { inject: opts.computerUse }),
@@ -1672,7 +1672,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     expiryMs: settings?.peripheral?.expiryMs,
     policy: buildLeasePolicy({ store, approvals: approvalBroker, hub }),
     // lease_granted/lease_lost are emitted on the REQUESTER's session (broadcastTransient scopes
-    // fan-out to that session's attached harnesses), but the provider connection (Clover.app) is
+    // fan-out to that session's attached harnesses), but the provider connection (MOSS Code.app) is
     // rarely attached to the requesting session — it needs its own copy of these two event types
     // to track its active-lease set regardless of what it's attached to. peripheral_call_requested
     // already reaches the provider via pushToProvider; lease_granted/lease_lost did not, which
@@ -1692,9 +1692,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // instance for the whole daemon (no risk of the tool and the scheduler racing on two separate
   // sqlite handles to the same file) — see the "Scheduled routines" block below, which reuses this
   // SAME `routineStore` rather than calling `openRoutineStore` a second time.
-  const routineStore = openRoutineStore(join(cloverHome, "routines.db"));
+  const routineStore = openRoutineStore(join(mossHome, "routines.db"));
 
-  // ── The Clover runtime handle (P8b Task 5) ────────────────────────────────────────────────────
+  // ── The MOSS runtime handle (P8b Task 5) ────────────────────────────────────────────────────
   // THE ONE `createRuntimeSdk` for this daemon. It slots here because it needs everything above it
   // — the settings holder (its retention and advisor options are settings-derived), the secrets
   // store (the keychain seam) and the runtime spine's directory store — and because the capability
@@ -1703,7 +1703,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // A ROUTER THAT CANNOT CONSTRUCT NEVER STOPS THE DAEMON. `createRuntimeSdk` throws typed refusals
   // for a peer-version mismatch, an invalid brand and a malformed capability declaration (surface
   // map §1.10) — every one of them a packaging fault, not a user fault. In this task the engine
-  // still serves every mode, so the cost of an undefined handle is the Clover leg alone: a session
+  // still serves every mode, so the cost of an undefined handle is the MOSS leg alone: a session
   // created on it refuses with a typed error at create. Only the error's CODE/class is logged; the
   // message can carry paths and option contents.
   //
@@ -1717,14 +1717,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // HALF of that wiring — the instances, stores and closures the tools need, built once and shared —
   // and `buildCapabilitiesFor(session, …)` turns it into ONE SESSION'S six servers. Each server
   // holds the SAME `ToolDefinition` objects the shared `ToolRegistry` below registers (one
-  // implementation, two doors), so a Clover child and an engine turn run identical code with
+  // implementation, two doors), so a MOSS child and an engine turn run identical code with
   // identical schemas and identical refusals.
   //
   // PER SESSION, NOT PER DAEMON (P8b-36). `callTool(name, args)` carries no session identity, so an
   // instance shared across the handle would have to look one up — and a daemon-wide "currently
-  // bound session" slot cross-attributes the moment two Clover sessions run turns concurrently.
+  // bound session" slot cross-attributes the moment two MOSS sessions run turns concurrently.
   // Because `ctx.mode` comes from the same place and resolves `browser`'s read-only chat subset,
-  // that is a SECURITY bug, not only an identity one. 8b is Clover-leg-only (P8b-1) and the router
+  // that is a SECURITY bug, not only an identity one. 8b is MOSS-leg-only (P8b-1) and the router
   // forwards a caller's own `Options.mcpServers` straight through, so the session driver (Task 16)
   // builds this session's servers and puts them on that session's own `Options` —
   // `RuntimeSdkOptions.capabilities` stays `[]`.
@@ -1744,7 +1744,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // own small bare-id list) and `deriveModelAliases` (a bare-id short-name hack this catalog-driven
   // list has no more use for: `facingName` on each picker row already carries the curated slot
   // name). A daemon with no credentials at all gets an empty list, the honest answer.
-  const spawnModelIds = pickerModels({ credentials: spawnModelsCredentials, home: cloverHome }).map((m) => m.id);
+  const spawnModelIds = pickerModels({ credentials: spawnModelsCredentials, home: mossHome }).map((m) => m.id);
   const capabilityDeps: CapabilityDeps = {
     sessions: {
       models: spawnModelIds,
@@ -1763,8 +1763,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           return sessionMessaging.mayList(callerId, targetId);
         },
         derive: (row, sessionId, nowMs) => activityDeriver?.(row, sessionId, nowMs),
-        turnStartedAt: (sid) => cloverDrivers.get(sid)?.turnStartedAt,
-        working: (sid) => signalsDeriver?.(sid).working ?? (cloverDrivers.get(sid)?.turnRunning ?? false),
+        turnStartedAt: (sid) => mossDrivers.get(sid)?.turnStartedAt,
+        working: (sid) => signalsDeriver?.(sid).working ?? (mossDrivers.get(sid)?.turnRunning ?? false),
       },
     },
     computer: {
@@ -1804,20 +1804,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // on what "this session's working directories" means.
     office: {
       office: {
-        home: cloverHome,
+        home: mossHome,
         dispatch: (cmd) => panelCommands.dispatch(cmd),
         harnesses: (sid) => hub.attachedHarnesses(sid),
         dirsOf: (sid) => store.dirs(sid),
       },
     },
-    // The `research` server (Clover's own Exa-answer `Search` for chat/dispatch) is GONE (2026-10-01
+    // The `research` server (MOSS's own Exa-answer `Search` for chat/dispatch) is GONE (2026-10-01
     // ruling): `Search` is the agent SDK's built-in now, reading the same key through
     // `Options.web.search.authRef` (resolved over `credential_resolve`) and the same floor through
     // `Options.web.blockedDomains` (`runtime-sdk/mode-options.ts`'s `webOptionsFor`). `readPage` and
     // the `web` server left earlier, with the 2026-09-18 ruling.
     // Fix wave (review F7): the `lsp` tool over the SAME `let lspManager` holder the registry
     // door and `settings-apply.ts`'s hot `lsp.enabled` flip reassign — read per call.
-    lsp: { home: cloverHome, lsp: () => lspManager ?? undefined },
+    lsp: { home: mossHome, lsp: () => lspManager ?? undefined },
     // P8c integration round 2: the `external` capability server's real source
     // (`capabilities/external.ts`'s own header names the design). `sharedRegistry` is the SAME
     // `ToolRegistry` `tool.register` (ipc/server.ts) writes `plugin__<pluginId>__<name>` rows into
@@ -1860,7 +1860,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // capability-server names and the relocation-aware MEMDIR are re-read for every incarnation.
   const runHomeBuilder = linkedRunHomeBuilder();
   // The run home itself is returned untouched — the router refuses one `buildRunHome` did not build.
-  const runHomeDeps: CloverLegDeps["runHome"] = runHomeBuilder === undefined ? undefined : {
+  const runHomeDeps: MossLegDeps["runHome"] = runHomeBuilder === undefined ? undefined : {
     build: async (input) => {
       const built = await runHomeBuilder(input);
       // Spec §8: what the builder did NOT do (skipped links, dropped MCP servers and imports,
@@ -1870,7 +1870,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       return built;
     },
     inputFor: (facts) => runHomeInputFor({
-      home: cloverHome,
+      home: mossHome,
       trust: trustStore,
       settings: () => settings,
       reservedMcpServerNames: [...reservedMcpServerNames()],
@@ -1885,7 +1885,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // The plugins bots built (their install records' `provenance {by: "bot"}`), once the registry opens: a bot session whose
   // sandbox names one as a write root gets it opened in its Worker's host protection (`withWorkshopOpen`).
   let workshopFolders: () => readonly string[] = () => [];
-  const embeddedSessions = createEmbeddedSessionHost({ ...(opts.embeddedHost ?? {}), home: cloverHome, log: (line) => console.error(`runtime-sdk: ${line}`), workshopFolders: () => workshopFolders() });
+  const embeddedSessions = createEmbeddedSessionHost({ ...(opts.embeddedHost ?? {}), home: mossHome, log: (line) => console.error(`runtime-sdk: ${line}`), workshopFolders: () => workshopFolders() });
   onEmbeddedHost(embeddedSessions);
   // The version lock, said ONCE at boot: every embedded session re-checks it at `spawnHookFor` and
   // refuses typed (`embedded_runtime_unavailable`); this line is where an operator finds out why.
@@ -1896,19 +1896,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   try {
     runtimeSdk = await createWinterRuntimeSdk({
-      home: cloverHome,
+      home: mossHome,
       embedded: embeddedSessions,
       settings: () => settings, // LIVE holder, never a boot snapshot
       // WS-21 (spec §3.1): a run-home router is created with `requireRunHome: true` and this builder
       // for its OWN cold-resume path. Absent (router 0.0.11) — the router is created as before.
       ...(runHomeDeps === undefined ? {} : {
         // Round 4, minor 3: the cwd canonicalized and the lazy transcript re-key run, as at every `resume()`.
-        runHomeFor: coldResumeRunHomeFor({ home: cloverHome, store, records: runtime?.records, runHome: runHomeDeps, log: (line) => console.error(`runtime-sdk: ${line}`) }),
+        runHomeFor: coldResumeRunHomeFor({ home: mossHome, store, records: runtime?.records, runHome: runHomeDeps, log: (line) => console.error(`runtime-sdk: ${line}`) }),
       }),
       secrets,
       directoryStore: runtime?.directory,
       // Task 12's seam, filled by Task 16: the inbound class of a session this process holds no
-      // live facet for — a parked (`resumable`) Clover session answers `unavailable` instead of
+      // live facet for — a parked (`resumable`) MOSS session answers `unavailable` instead of
       // holding its mail forever, and is never cold-resumed behind the daemon's back.
       sessionPermissionClass: sessionPermissionClassFor({ records: () => runtime?.records, store }),
       log: (line) => console.error(`runtime-sdk: ${line}`),
@@ -1917,21 +1917,21 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const code = (err as { code?: string })?.code ?? (err as Error)?.constructor?.name ?? "unknown";
     // A2: the message too (one line, bounded) — `RuntimeSdkVersionError` alone does not say WHICH
     // peer's version failed, which is the whole diagnosis.
-    console.error(`runtime-sdk: clover runtime sdk unavailable (${code}: ${describeLoadError(err)}) — every session.create/session.dispatch will refuse typed (winter_leg_unavailable); there is no engine leg`);
+    console.error(`runtime-sdk: moss runtime sdk unavailable (${code}: ${describeLoadError(err)}) — every session.create/session.dispatch will refuse typed (winter_leg_unavailable); there is no engine leg`);
     runtimeSdk = undefined;
   }
 
   // Winter Phase 10a (O6, P10a-2/4/6): the daemon's ONE console-profile broker. Fix wave 3 (M-A):
   // `claudeExecutable` is GONE — the single login/logout door is `ant`-driven, never `claude`'s own
   // `auth login`. `antExecutable` is a closure over `resolveAntExecutable` (Lane L,
-  // `bundle-layout.ts`), fed `cloverOptionsFromSettings(settings).antExecutable` LIVE (re-read per
+  // `bundle-layout.ts`), fed `mossOptionsFromSettings(settings).antExecutable` LIVE (re-read per
   // call, never a boot snapshot) exactly the way `create.ts`'s own `winterExecutable`/
   // `claudeExecutable` rungs read their settings — so `runtimes.antExecutable` takes effect with no
   // daemon restart.
   const consoleBroker = createConsoleProfileBroker({
-    home: cloverHome,
+    home: mossHome,
     antExecutable: () => resolveAntExecutable({
-      setting: cloverOptionsFromSettings(settings).antExecutable,
+      setting: mossOptionsFromSettings(settings).antExecutable,
       env: process.env,
       execPath: process.execPath,
     })?.path,
@@ -1946,9 +1946,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   if (consoleBroker.profileExists()) consoleBroker.startRefresher();
   // Winter Phase 10a fix wave (F2): starts UNCONDITIONALLY, regardless of the boot-time check
   // above — its whole job is to notice the profile appearing/disappearing AFTER boot, from a
-  // separate process (a CLI `clover login`/`logout --anthropic-console`, which is deliberately NOT
+  // separate process (a CLI `moss login`/`logout --anthropic-console`, which is deliberately NOT
   // an RPC and so cannot tell a running daemon directly, or a human running `ant auth
-  // login`/`logout --profile clover` by hand). See `ConsoleProfileBroker.startWatcher`'s own doc.
+  // login`/`logout --profile moss` by hand). See `ConsoleProfileBroker.startWatcher`'s own doc.
   // Fix wave 3 (Minor 1): guarded — a synchronous throw here (e.g. a permissions error hardening
   // `anthropic-config`) must never fail daemon boot; log one line and continue without the watcher
   // rather than crash. `startRefresher()` above already has the identical guarantee internally.
@@ -1978,7 +1978,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // `backendSessionId`, and the router's only refusal before a cold resume is `archived` — so
       // every session from the last boot would still be resumable from inside a delivery, by a
       // spawn this daemon never tracked. Nothing is attached at this point in boot by construction,
-      // so the sweep parks them all. A Clover session is resumed by its DRIVER from the 8a record
+      // so the sweep parks them all. A MOSS session is resumed by its DRIVER from the 8a record
       // (which keeps its own backend id), never by the messaging layer.
       const parked = await parkRecoveredSessions(runtimeSdk, (line) => console.error(`runtime-sdk: ${line}`));
       opts.bootOrderForTests?.("directory-parked");
@@ -1988,7 +1988,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       );
       // P8d-11 (ruling: 8b task-12 option (b)): step 10 ran LATE by design — the router handle is
       // built after §13 — so the boot-time attempt row says `skipped`; re-stamp it with the real
-      // outcome so `clover doctor` reads one honest step 10.
+      // outcome so `moss doctor` reads one honest step 10.
       if (runtime?.lastRecovery.step10AttemptId !== undefined) {
         restampStep(runtime.db.db, runtime.lastRecovery.step10AttemptId, 10, "ok", { entriesLoaded: recovered.entriesLoaded, staleMarked: recovered.staleMarked });
       }
@@ -2020,14 +2020,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   if (routerRecovery !== undefined && runtime !== undefined) {
     try {
       const recovered = await recoverRunRoots({
-        home: cloverHome,
+        home: mossHome,
         rs: runtime.db,
         reconcile: (root) => routerRecovery.reconcileRootForRecovery(root),
-        claudeResumeScanRoot: process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT?.trim() || undefined,
+        claudeResumeScanRoot: process.env.MOSS_CLAUDE_RESUME_SCAN_ROOT?.trim() || undefined,
         log: (line) => console.error(`runtime-sdk: ${line}`),
       });
       const quarantined = recovered.quarantinedRoots.length;
-      if (quarantined > 0) console.error(`runtime-sdk: run-root recovery kept ${quarantined} quarantined root(s) — see \`clover doctor\``);
+      if (quarantined > 0) console.error(`runtime-sdk: run-root recovery kept ${quarantined} quarantined root(s) — see \`moss doctor\``);
       if (runtime.lastRecovery.step6AttemptId !== undefined) {
         const failed = recovered.recorded.failed + recovered.runFolders.failed + recovered.staging.failed;
         restampStep(runtime.db.db, runtime.lastRecovery.step6AttemptId, 6, failed === 0 ? "ok" : "partial", rootRecoveryDetail(recovered));
@@ -2064,14 +2064,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
   }
 
-  // ── The Clover leg's driver table (P8b Task 16) ───────────────────────────────────────────────
+  // ── The MOSS leg's driver table (P8b Task 16) ───────────────────────────────────────────────
   // Built HERE, after §13's recovery (`startRuntimeState` above) and the router's own directory
   // recovery + `parkRecoveredSessions` (just above): a projector is never constructed before that
   // sweep has run, and nothing below can construct one before `startIpcServer` hands a client a
   // socket. `ipc/server.ts` routes every `session.*` method through this table — every mode is
-  // the Clover leg since Task 17. The drivers it starts are tracked on `runtimeSdk`
+  // the MOSS leg since Task 17. The drivers it starts are tracked on `runtimeSdk`
   // (`trackQuery`), so `stop()`'s `dispose()` ends them inside the shutdown budget.
-  // P8b Task 17: HOISTED above the `if (agentProvider)` gate — the Clover leg's drivers (below)
+  // P8b Task 17: HOISTED above the `if (agentProvider)` gate — the MOSS leg's drivers (below)
   // persist their children through this roster too, on a daemon with or without an engine.
   // Async spawn (4h-ii-a): tracks DETACHED (`run_in_background:true`) child threads — see
   // bg-agent-registry.ts's own doc comment for why this is separate from `bgRegistry` above
@@ -2099,11 +2099,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // second KILLER, not a second safety net. Worse, while nothing in production reset it, it was a
   // 600 s WALL CLOCK, which is exactly what CLAUDE.md's tool surface and the standing "subagents:
   // no timeout" rule forbid. The registry's window is opt-in (see `stallTimeoutMs`'s own note) and
-  // Task 17 turns it on for Clover children when `SubagentManager` retires with the engine. The
+  // Task 17 turns it on for MOSS children when `SubagentManager` retires with the engine. The
   // engine DOES feed `progress()` here and now (engine.ts's three child sites), so the window is a
   // progress window the moment it is armed rather than an API nobody calls.
   // Task 17: the roster's progress watchdog is ARMED here — `SubagentManager` retired with the
-  // engine, so this is the only window over a Clover child (progress-fed by the driver, no wall
+  // engine, so this is the only window over a MOSS child (progress-fed by the driver, no wall
   // clock; `settings.subagents.stallTimeoutMs` hot, undefined = 600 s, null/0 = off).
   const bgAgents: AgentRegistry | undefined =
     runtime === undefined
@@ -2118,10 +2118,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             if (model === undefined) return "unstated";
             try { return splitTag(model).providerId; } catch { return "unstated"; }
           },
-          // The owning session's live facet — Task 16 attaches Clover sessions, and until then a
+          // The owning session's live facet — Task 16 attaches MOSS sessions, and until then a
           // stop with no local `AbortController` is recorded and nothing is asked of the child.
           facetFor: (sessionId) => {
-            // A child's `parentWinterSessionId` is CLOVER's session id; the router addresses a
+            // A child's `parentWinterSessionId` is MOSS's session id; the router addresses a
             // session by its BACKEND id (P8b Task 12), so the 8a record is the hop between them.
             // Nothing attaches until Task 16, so this answers `undefined` today and a stop with
             // no local controller is recorded without anything being asked of the child.
@@ -2130,7 +2130,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           },
           log: (line) => console.error(`children: ${line}`),
         });
-  // Fix wave (review row 4): session titles on the Clover leg. The titler stays on Clover's OWN
+  // Fix wave (review row 4): session titles on the MOSS leg. The titler stays on MOSS's OWN
   // provider layer (P8b-10 — never `sdk.query()`), so it needs `agentProvider`; a no-provider
   // daemon simply titles nothing, as before. `titles.enabled` is read LIVE at every fire (the
   // engine-era wiring was a boot snapshot; no setting may need a restart).
@@ -2194,19 +2194,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     maybeTitle: (sid: string): Promise<void> => (settings?.titles?.enabled === false ? Promise.resolve() : sessionTitler.maybeTitle(sid)),
   };
   // ── P8c integration Wiring 1: the ExitPlanMode bridge (lane 2's `plan-bridge.ts`, P8c-14) ──────
-  // `cloverDriversForPlanBridge` breaks the construction cycle: `planBridge` is a `CloverLegDeps`
-  // field `createCloverSessionDrivers` below needs at construction, but an APPROVAL's `setPolicy`
-  // reaches a LIVE child through that same `cloverDrivers` table (mirrors `ipc/server.ts`'s own
-  // `session.setPolicy` composition: `store.setApprovalPolicy` + `clover.get(sessionId)?.setPolicy`)
-  // — so the reference is filled in right after `cloverDrivers` itself is assigned, below.
-  let cloverDriversForPlanBridge: CloverSessionDrivers | undefined;
+  // `mossDriversForPlanBridge` breaks the construction cycle: `planBridge` is a `MossLegDeps`
+  // field `createMossSessionDrivers` below needs at construction, but an APPROVAL's `setPolicy`
+  // reaches a LIVE child through that same `mossDrivers` table (mirrors `ipc/server.ts`'s own
+  // `session.setPolicy` composition: `store.setApprovalPolicy` + `moss.get(sessionId)?.setPolicy`)
+  // — so the reference is filled in right after `mossDrivers` itself is assigned, below.
+  let mossDriversForPlanBridge: MossSessionDrivers | undefined;
   const planBridgeLog = { info: (m: string) => console.error(`plan-bridge: ${m}`), error: (m: string) => console.error(`plan-bridge: ${m}`) };
   const planBridge: PlanBridge = planBridgeFor({
     emit: (event) => { hub.append(event.sessionId, event); },
     setPolicy: async (sessionId, policy) => {
       store.setApprovalPolicy(sessionId, policy);
       try {
-        await cloverDriversForPlanBridge?.get(sessionId)?.setPolicy(policy);
+        await mossDriversForPlanBridge?.get(sessionId)?.setPolicy(policy);
       } catch (err) {
         console.error(`plan-bridge: setPolicy for ${sessionId} failed: ${err instanceof Error ? err.name : "unknown"}`);
       }
@@ -2219,11 +2219,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `BashReviewer` were never constructed anywhere in this file post-engine-deletion (8b) — this is
   // their first live wiring since the retired AgentEngine's own `cfg.hooks`/`reviewer`. Read LIVE
   // per call (settings hot-reload), matching every other getter in this block.
-  const cloverHooksEnabled = (cwd?: string | null): boolean => {
+  const mossHooksEnabled = (cwd?: string | null): boolean => {
     const s = projectSettings.effective(projectRootOf(cwd));
     return s ? hooksEnabledFrom(s) : true;
   };
-  const cloverLspAutoDiagnosticsEnabled = (cwd?: string | null): boolean => {
+  const mossLspAutoDiagnosticsEnabled = (cwd?: string | null): boolean => {
     const s = projectSettings.effective(projectRootOf(cwd));
     return s ? lspAutoDiagnosticsEnabledFrom(s) : true;
   };
@@ -2239,7 +2239,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         return { dirs, write: record?.granted.includes("project.write") === true };
       },
     }),
-    hooksEnabled: cloverHooksEnabled,
+    hooksEnabled: mossHooksEnabled,
     cwdForSession: (sid) => { try { return store.meta(sid).cwd ?? undefined; } catch { return undefined; } },
   });
   // The retired engine's own BashReviewer gate (engine.ts:4547-4548): `provider`/`model` are the
@@ -2273,14 +2273,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // WS-26: the connector permissions' live facts — the stored table from the daemon's in-memory settings and
   // the scope-aware read-only answers (`agent/mcp/connector-source.ts` has the rules: which listing, the
   // background kick, and why nothing on a call path ever spawns a server).
-  const connectorPermissions = daemonConnectorSource({ home: cloverHome, trust: trustStore, settings: () => settings, manager: () => mcp });
+  const connectorPermissions = daemonConnectorSource({ home: mossHome, trust: trustStore, settings: () => settings, manager: () => mcp });
   // The reviewing pill (2026-10-08): which thread each live tool call is on, for the reviewer's transient.
   const callThreads = new CallThreads();
   hub.addObserver((event) => callThreads.observe(event));
   const hooksFor = (session: CapabilitySession) =>
     sessionHooksFor({
       sessionId: session.sessionId,
-      home: cloverHome,
+      home: mossHome,
       roots: session.roots,
       tmpDir: session.tmpDir,
       hookFacade,
@@ -2296,10 +2296,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
       policy: () => { try { return store.meta(session.sessionId).approvalPolicy; } catch { return undefined; } },
       lsp: () => lspManager ?? undefined,
-      autoDiagnosticsEnabled: () => cloverLspAutoDiagnosticsEnabled(session.cwd),
+      autoDiagnosticsEnabled: () => mossLspAutoDiagnosticsEnabled(session.cwd),
       // 2026-09-18 (the web-tools floor, both legs): the SAME project-overlay-aware getter every
       // other consumer of the dangerous-domain list is wired to, with THIS session's cwd bound —
-      // so the host-side floor hook, a Clover child's `Options.web.blockedDomains` and the daemon's
+      // so the host-side floor hook, a MOSS child's `Options.web.blockedDomains` and the daemon's
       // own `Search` are provably reading one list. `hooks.ts` unions the shipped half itself.
       dangerousDomainsAdded: () => dangerousDomainsAdded(session.cwd),
       // WS-21 (spec §7.1/§7.2): the path fence — the mode decides card vs typed deny, and the project
@@ -2371,9 +2371,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // this closure's only job is the filter above and resolving `tag`.
     recordDispatchOutcome(event, tag, roleHealth);
   });
-  // Daemon settings surface (2026-09-17 plan, item 3): hoisted alongside `cloverDrivers` below (the
+  // Daemon settings surface (2026-09-17 plan, item 3): hoisted alongside `mossDrivers` below (the
   // ONE producer) for the identical reason — the RPC that reads it must work on a daemon with or
-  // without `agentProvider`, since `Query.supportedAgents()` is entirely a Clover-runtime-SDK fact,
+  // without `agentProvider`, since `Query.supportedAgents()` is entirely a MOSS-runtime-SDK fact,
   // unrelated to the daemon's own internal Provider.
   const supportedAgentsCache = new SupportedAgentsCache();
   // WS-25: the daemon's ONE MCP OAuth store for this home, chosen once so the session credential answers,
@@ -2382,10 +2382,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `opts.mcpOAuthStore` is that one instance everywhere. A daemon handed its own `secrets` (every test
   // daemon, and the Swift suites' `RealDaemon` fixture) gets a per-daemon MEMORY store instead: a test that
   // configures an http/sse server and signs in must never reach the Keychain, not even the throwaway
-  // service `CLOVER_KEYCHAIN_SERVICE` names (a fixture that forgets that variable would otherwise land on the
-  // real `com.waifucave.clover.core`).
+  // service `MOSS_KEYCHAIN_SERVICE` names (a fixture that forgets that variable would otherwise land on the
+  // real `com.waifucave.moss.core`).
   const oauthStoreForThisDaemon: McpOAuthStore = opts.mcpOAuthStore
-    ?? (opts.secrets !== undefined ? createMemoryMcpOAuthStore() : daemonMcpOAuthStore(keychainService(profile, cloverHome)));
+    ?? (opts.secrets !== undefined ? createMemoryMcpOAuthStore() : daemonMcpOAuthStore(keychainService(profile, mossHome)));
   const daemonOAuthStore = (): McpOAuthStore => oauthStoreForThisDaemon;
   const sessionMcpOAuthStore: McpOAuthStore = oauthStoreForThisDaemon;
   // Per provider account, its renewal: the sessions' credential broker and the model plugins' keys share them.
@@ -2406,21 +2406,21 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // renewal. Built as the session table built it before (the same service, store, refreshers and log).
   const hostCredentials = createHostCredentialBroker({
     secrets,
-    keychainService: keychainService(undefined, cloverHome),
+    keychainService: keychainService(undefined, mossHome),
     mcpOAuthStore: sessionMcpOAuthStore,
     refreshers: credentialRefreshers,
-    log: (line) => console.error(`clover-leg: ${line}`),
+    log: (line) => console.error(`moss-leg: ${line}`),
   });
-  const cloverDrivers: CloverSessionDrivers = createCloverSessionDrivers({
+  const mossDrivers: MossSessionDrivers = createMossSessionDrivers({
     // M-M2: no new turn while the update gate closes for a restart (`updateGate` is set further down, before any turn).
     updateClosing: () => updateGate.closed,
-    home: cloverHome,
+    home: mossHome,
     // WS-21: every incarnation's run home, when the linked router applies them (see `runHomeDeps`).
     ...(runHomeDeps === undefined ? {} : { runHome: runHomeDeps }),
     // WS-21 (spec §4.3): a card offers "in this project" only for a trusted project.
     isTrusted: (dir) => trustStore.isTrusted(dir),
-    hostAuthorityRevision: () => [trustStore.authorityRevision(), authorityRevision(cloverHome)],
-    profile: process.env.CLOVER_PROFILE,
+    hostAuthorityRevision: () => [trustStore.authorityRevision(), authorityRevision(mossHome)],
+    profile: process.env.MOSS_PROFILE,
     settings: () => settings, // LIVE holder
     runtime: runtimeSdk,
     records: runtime?.records,
@@ -2435,13 +2435,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     gate: new PermissionGate(),
     rootsOf: (sid) => sessionDirs.roots(sid),
     tmpDirOf: (sid) => sessionTmpDir(sid),
-    outDirOf: (sid) => ensureOutdir(cloverHome, sid),
+    outDirOf: (sid) => ensureOutdir(mossHome, sid),
     // The SAME relocation-aware derivation the live memory path uses (`memoryDirOf` above), so the
     // record names the directory the session actually reads.
-    memoryKeyOf: (cwd) => memoryProjectKeyFor(cwd, { cloverHome, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) }),
+    memoryKeyOf: (cwd) => memoryProjectKeyFor(cwd, { mossHome, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) }),
     // Task 17 Step 0(a): the SAME assembler the engine's `turn()` composes its instructions with —
-    // Clover's persona per mode, the `_assistant` bucket, the output style — so a Clover-leg session
-    // speaks as Clover.
+    // MOSS's persona per mode, the `_assistant` bucket, the output style — so a MOSS-leg session
+    // speaks as MOSS.
     assembler,
     // Lane B: the user's SAVED allow rules reach both legs' children — `settings.json`, a TRUSTED
     // project's overlay (the SAME `projectSettings` resolver, at the SAME repo root) and its
@@ -2453,7 +2453,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(permissionRules === undefined ? {} : { projectRules: (root: string) => permissionRules!.rulesFor(root).project }),
       trust: trustStore,
     }),
-    // Task 17 (P8b-15): Clover children land in the persisted roster (absent when the spine is offline).
+    // Task 17 (P8b-15): MOSS children land in the persisted roster (absent when the spine is offline).
     ...(bgAgents === undefined ? {} : { children: bgAgents }),
     onTurnSettled: (sid) => { signals.onTurnSettled?.(sid); dispatchChildren?.onTurnSettled(sid); },
     onSupportedAgents: (sid, agents) => supportedAgentsCache.observe(sid, agents),
@@ -2461,22 +2461,22 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     onTurnUsage: (sid, u) => {
       let mode: string | undefined;
       try { mode = store.meta(sid).mode; } catch { mode = undefined; }
-      usage?.service.recordCloverTurn(sid, mode, u.sourceId, u.rows);
+      usage?.service.recordMossTurn(sid, mode, u.sourceId, u.rows);
     },
     ...(titler === undefined ? {} : { titler }),
     // Fix wave (review row 7): the user's servers and a TRUSTED project's MCP file (WS-21: its
-    // `.clover/mcp.json`; the repo-root `.mcp.json` is no longer read) reach the child under the
+    // `.moss/mcp.json`; the repo-root `.mcp.json` is no longer read) reach the child under the
     // registry's own keys (`mcp__<key>__<tool>`), any transport
     // (stdio/http/sse). Read LIVE per incarnation from the same holder and the same `TrustStore`
     // the McpManager consults. `log`: the SAME one-stderr-line-per-name convention `McpManager`'s
     // own `log` dep already uses (below), for a project-scope entry that didn't validate.
-    // WS-21: the user and local scopes live in `sdk/.clover.json` (`sdkUserMcpServers`/`sdkLocalMcpServers`,
+    // WS-21: the user and local scopes live in `sdk/.moss.json` (`sdkUserMcpServers`/`sdkLocalMcpServers`,
     // the local one keyed by `localScopeKeyFor`), read live; precedence local > project > user.
     extraMcpServers: (session) => configuredMcpServersFor({
       settings,
-      userMcpServers: sdkUserMcpServers(cloverHome),
+      userMcpServers: sdkUserMcpServers(mossHome),
       // WS-21 (spec §4.4): the local scope, keyed by the session's canonical project root.
-      localMcpServers: session.cwd ? sdkLocalMcpServers(cloverHome, localScopeKeyFor(session.cwd)) : {},
+      localMcpServers: session.cwd ? sdkLocalMcpServers(mossHome, localScopeKeyFor(session.cwd)) : {},
       cwd: session.cwd, trusted: (dir) => trustStore.isTrusted(dir), log: (m) => console.error(m),
     }),
     // Daemon settings surface batch 3 (item 1): the SAME trust gate `extraMcpServers` above and
@@ -2485,13 +2485,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     projectAgentDefinitions: (cwd) => (trustStore.isTrusted(cwd) ? loadProjectAgentDefinitions(cwd) : { definitions: {}, sources: [], rejected: [] }),
     // 2026-09-18 (agent SDK 0.0.17): the SAME `dangerousDomainsAdded` getter the daemon's own
     // `Search` and the `browser` tool are wired to, a few hundred lines
-    // below — so the floor a Clover CHILD honours through `Options.web.blockedDomains` is provably the
+    // below — so the floor a MOSS CHILD honours through `Options.web.blockedDomains` is provably the
     // identical list, project overlay included, rather than a second derivation of it.
     dangerousDomainsAdded,
-    log: (line) => console.error(`clover-leg: ${line}`),
+    log: (line) => console.error(`moss-leg: ${line}`),
     // P8c integration Wirings 1 & 3 (P8c-14): lane 2's plan bridge and lane 3's hooks facade,
-    // built above. `hooksFor(...).clover` becomes the child's `Options.hooks` (`optionsFor` →
-    // `buildCloverOptions`); `planBridge` answers `ExitPlanMode` through the approval-bridge deps.
+    // built above. `hooksFor(...).moss` becomes the child's `Options.hooks` (`optionsFor` →
+    // `buildMossOptions`); `planBridge` answers `ExitPlanMode` through the approval-bridge deps.
     planBridge,
     // WS-26: the bridge's half of the connector permissions (the hook above is the floor's).
     connectors: connectorPermissions,
@@ -2515,24 +2515,24 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let modelPlugins: StartedModelPlugins | undefined;
   if (opts.modelPluginHost !== undefined) {
     try {
-      modelPlugins = await startModelPlugins({ ...opts.modelPluginHost, home: cloverHome, secrets, refreshers: credentialRefreshers, log: (line) => console.error(line) });
+      modelPlugins = await startModelPlugins({ ...opts.modelPluginHost, home: mossHome, secrets, refreshers: credentialRefreshers, log: (line) => console.error(line) });
     } catch (err) {
       console.error(`[model-plugins] not started: ${err instanceof Error ? err.name : typeof err}; sessions use the SDK's compiled catalog`);
     }
   }
   // Wiring 1: fills the forward reference `planBridge`'s `setPolicy` closes over (declared above,
-  // before `cloverDrivers` existed) — see that block's own comment for why the cycle is broken here.
-  cloverDriversForPlanBridge = cloverDrivers;
+  // before `mossDrivers` existed) — see that block's own comment for why the cycle is broken here.
+  mossDriversForPlanBridge = mossDrivers;
   // A-M2: a coding session's child whose own provider changed since it opened (the model plugins coming up after it
   // opened on the SDK's compiled catalog, its provider's plugin updated or turned off) is replaced, so its next turn
   // resumes on what they give now; another plugin's change leaves it alone (credentials.ts
   // `evictSessionsForModelCatalog`). Let go at stop.
   const offModelCatalog = onModelCatalogChange((change) => {
     void evictSessionsForModelCatalog({
-      list: () => cloverDrivers.list(),
-      modelProviderKeyOf: (sessionId) => cloverDrivers.modelProviderKeyOf?.(sessionId),
+      list: () => mossDrivers.list(),
+      modelProviderKeyOf: (sessionId) => mossDrivers.modelProviderKeyOf?.(sessionId),
       currentKey: (provider) => modelProviderKey(provider),
-      evict: (sessionId) => cloverDrivers.evict(sessionId),
+      evict: (sessionId) => mossDrivers.evict(sessionId),
       log: (line) => console.error(line),
     }, change.plugins).catch((err: unknown) => { console.error(`[model-plugins] replacing sessions on the new catalog failed (${err instanceof Error ? err.name : typeof err})`); });
   });
@@ -2549,9 +2549,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       try { store.deleteSession(sid); } catch { /* already gone */ }
       onSessionDeleted(sid);
     },
-    sessions: { get: (sid) => cloverDrivers.get(sid), ensure: (sid) => cloverDrivers.ensure(sid) },
+    sessions: { get: (sid) => mossDrivers.get(sid), ensure: (sid) => mossDrivers.ensure(sid) },
     // LIVE, per call — the schema's enum is a boot snapshot (`spawnModelIds` above).
-    models: async () => pickerModels({ credentials: await credentialPresenceFrom(secrets), home: cloverHome }).map((m) => m.id),
+    models: async () => pickerModels({ credentials: await credentialPresenceFrom(secrets), home: mossHome }).map((m) => m.id),
     announceActivity: (sid) => { try { hub.emitActivity(sid, activityDeriver?.(store.meta(sid), sid, Date.now())); } catch { /* best effort */ } },
     notifyFallback: (title, message) => notifyHeadless(title, message),
     log: (line) => console.error(`dispatch-children: ${line}`),
@@ -2571,33 +2571,33 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     cowork: runtime ? new CoworkRepository(runtime.db) : undefined,
     derive: (row, sid, nowMs) => activityDeriver?.(row, sid, nowMs),
     working: (sid) => signalsDeriver?.(sid).working ?? false,
-    sessions: { get: (sid) => cloverDrivers.get(sid), ensure: (sid) => cloverDrivers.ensure(sid) },
+    sessions: { get: (sid) => mossDrivers.get(sid), ensure: (sid) => mossDrivers.ensure(sid) },
     followUp: () => dispatchChildren,
     log: (line) => console.error(`session-messaging: ${line}`),
   });
-  /** A deleted session takes its Clover child (bounded `end()`, out of the table) AND its runtime
+  /** A deleted session takes its MOSS child (bounded `end()`, out of the table) AND its runtime
    *  rows with it — the reaper's 600 s grace is shorter than the 900 s idle timer, so without the
    *  first half a live child would outlive its session. The boot sweep above ran before any driver
    *  could exist, so it keeps the bare records hook. */
   const onSessionDeleted = (sessionId: string): void => {
-    void cloverDrivers.evict(sessionId);
+    void mossDrivers.evict(sessionId);
     onStoredSessionDeleted(sessionId);
     // ComputerV2: the session's automation worker ends with it, and the helper releases its targets.
     computerUseRuntime.service.endSession(sessionId);
   };
   /** Task 17: what the engine used to answer, over the driver table + the child roster. */
-  const grantDeniedPrefixes = [cloverHome];
+  const grantDeniedPrefixes = [mossHome];
   const signals: EngineSignals = {
-    isRunning: (sid) => cloverDrivers.get(sid)?.turnRunning ?? false,
+    isRunning: (sid) => mossDrivers.get(sid)?.turnRunning ?? false,
     hasBackgroundWork: (sid) => (bgAgents?.list(sid) ?? []).some((a) => a.status === "running"),
-    interrupt: (sid) => { const d = cloverDrivers.get(sid); if (d === undefined || !d.turnRunning) return { wasRunning: false }; void d.interrupt(); return { wasRunning: true }; },
-    activeTurnCount: () => cloverDrivers.list().filter((d) => d.turnRunning).length,
+    interrupt: (sid) => { const d = mossDrivers.get(sid); if (d === undefined || !d.turnRunning) return { wasRunning: false }; void d.interrupt(); return { wasRunning: true }; },
+    activeTurnCount: () => mossDrivers.list().filter((d) => d.turnRunning).length,
     // Always empty: the internal `Provider`s are adapter-backed and report no model list of their own
     // (`runtimeBackedProvider`'s `models: () => []`). `pickerModels()` (ipc/picker-models.ts) is the
     // real model listing — see `runtime-provider.ts`'s WS-20 L3.6 note.
     knownModels: () => [],
     // engine.ts's `grantDenied`, verbatim: at/under a prefix, or an ANCESTOR of one (fence
-    // containment is subtree-based; granting an ancestor of ~/.clover/run would open the control plane).
+    // containment is subtree-based; granting an ancestor of ~/.moss/run would open the control plane).
     isGrantDenied: (dir) => {
       for (const p of grantDeniedPrefixes) {
         let cp: string;
@@ -2607,7 +2607,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       return false;
     },
     threadsFor: (sid) => [
-      { threadId: "main", status: cloverDrivers.get(sid)?.turnRunning ? "running" : "completed" },
+      { threadId: "main", status: mossDrivers.get(sid)?.turnRunning ? "running" : "completed" },
       ...(bgAgents?.list(sid) ?? []).map((a) => ({ threadId: a.threadId, parentThreadId: "main", status: a.status === "running" ? "running" as const : "completed" as const, ...(a.status === "running" ? {} : { stopReason: a.status }) })),
     ],
   };
@@ -2619,7 +2619,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     name: "agents",
     // Every session's, not only the live drivers': a background agent outlives its parent's turn and driver.
     count: () => bgAgents?.runningCount?.()
-      ?? cloverDrivers.list().reduce((n, d) => n + (bgAgents?.list(d.sessionId) ?? []).filter((a) => a.status === "running").length, 0),
+      ?? mossDrivers.list().reduce((n, d) => n + (bgAgents?.list(d.sessionId) ?? []).filter((a) => a.status === "running").length, 0),
   });
   updateGate.register({ name: "approvals", count: () => approvalBroker.pendingCount() });
   updateGate.register({ name: "questions", count: () => questions.pendingCount() });
@@ -2630,7 +2630,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     facetFor: (sid) => { const backend = runtime?.records.get(sid)?.backendSessionId; return backend === undefined || runtimeSdk === undefined ? undefined : attachedFacetFor(runtimeSdk, backend); },
   });
 
-  // 2026-09-19: the gate now asks "does this daemon run Clover's own jobs at all" — `internalRouter`
+  // 2026-09-19: the gate now asks "does this daemon run MOSS's own jobs at all" — `internalRouter`
   // — instead of "was a single internal `Provider` built for `settings.provider.model`". The two used
   // to be the same question, and that is the bug: a DeepSeek-default home got `agentProvider = null`
   // and therefore no ToolRegistry, no plugins, no dreamer/cleaner AND — the part nobody noticed — NO
@@ -2642,14 +2642,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const registry = new ToolRegistry();
     sharedRegistry = registry;
     // Reads-unrestricted (user rule, memory/reads-unrestricted.md, task-10): read/ls/glob/grep get
-    // NO path fence — the ONE carve-out is denying `dirs.runDir` (~/.clover/run), the sole directory
-    // bootstrapCloverDir (clover-dir.ts) locks down to 0700; every other cloverHome subdir (sessions,
+    // NO path fence — the ONE carve-out is denying `dirs.runDir` (~/.moss/run), the sole directory
+    // bootstrapMossDir (moss-dir.ts) locks down to 0700; every other mossHome subdir (sessions,
     // memory, skills, agents, plugins, hooks, logs, settings.json) stays fully readable by design.
-    // Boot-constant: cloverHome can't change within a daemon lifetime, and `run` already exists by
-    // this point (bootstrapCloverDir mkdir'd it above). This is belt-and-suspenders — today every
+    // Boot-constant: mossHome can't change within a daemon lifetime, and `run` already exists by
+    // this point (bootstrapMossDir mkdir'd it above). This is belt-and-suspenders — today every
     // actual secret (harness/admin tokens, Codex OAuth tokens, web-search/OpenAI API keys) lives in
-    // the OS Keychain via `secrets` (KeychainSecretStore), never on disk under cloverHome — but it's
-    // the real, deliberately-hardened boundary Clover draws around its own runtime material (the IPC
+    // the OS Keychain via `secrets` (KeychainSecretStore), never on disk under mossHome — but it's
+    // the real, deliberately-hardened boundary MOSS draws around its own runtime material (the IPC
     // socket, the daemon lock file, plugin-supervisor PID files), so a prompt-injected turn can't
     // read the daemon's own control-plane files through the tool the daemon itself hosts.
     // P8a (WS-16 §10, whole-branch review M1): `runtimes/` joins `run/`. It holds the authoritative
@@ -2657,7 +2657,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // spool and the resume-staging roots — i.e. router metadata today and MESSAGE BODIES the moment
     // 8b lands (`global_messages`/`held_messages` carry whole envelopes), plus 8c's staged
     // credentials. A model that could `read` the db file could read all of it around every seam this
-    // branch built. `clover doctor` is a separate CLI process and is unaffected by this denial.
+    // branch built. `moss doctor` is a separate CLI process and is unaffected by this denial.
     // hot-settings T2: getter over the live `settings` holder (was a boot-captured value) — a
     // later task's watcher reassigns `settings` in place; this closure re-reads it on the NEXT
     // enter_worktree/spawn isolation call, no WorktreeManager reconstruction needed.
@@ -2734,30 +2734,30 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             break;
         }
         // Task 17: the engine's `notifyWorkflowCompletion` pinned a notice into the parent's next
-        // turn; the `Workflow` tool is not served to a Clover child yet (carry), so there is no
+        // turn; the `Workflow` tool is not served to a MOSS child yet (carry), so there is no
         // parent turn to notify — the completion event above is the record.
       },
-      // Task 17: a workflow's `agent()` is a Clover CODE child session with a fixed prompt, run to
+      // Task 17: a workflow's `agent()` is a MOSS CODE child session with a fixed prompt, run to
       // its first idle through the driver table; the result is its last assistant text.
       spawnAgent: async (sid, prompt, o, signal) => {
         const parent = store.meta(sid);
         const childId = store.createSession("global", { cwd: parent.cwd ?? undefined, approvalPolicy: parent.approvalPolicy, origin: "workflow-child", mode: "code", parentSessionId: sid, ...(o?.model === undefined ? {} : { model: o.model }) });
-        const onAbort = (): void => { void cloverDrivers.get(childId)?.end(); };
+        const onAbort = (): void => { void mossDrivers.get(childId)?.end(); };
         signal.addEventListener("abort", onAbort, { once: true });
         try {
-          await cloverDrivers.runTurn(childId, prompt, "workflow");
+          await mossDrivers.runTurn(childId, prompt, "workflow");
         } catch (err) {
           return { ok: false, result: err instanceof Error ? err.message : String(err) };
         } finally {
           signal.removeEventListener("abort", onAbort);
-          void cloverDrivers.get(childId)?.end();
+          void mossDrivers.get(childId)?.end();
         }
         const log = store.read(childId);
         const last = [...log].reverse().find((e) => e.type === "assistant_message" && (e as { threadId?: string }).threadId === "main") as { text: string } | undefined;
         const failed = log.some((e) => e.type === "agent_error") || signal.aborted;
         return { ok: !failed, result: last?.text ?? "" };
       },
-      runsDir: join(cloverHome, "workflows-runs"),
+      runsDir: join(mossHome, "workflows-runs"),
     });
     // Deferred (rides ToolSearch like worktree/notebook/plan/schedule above) — a specialized
     // orchestration primitive, not needed in every turn. Session-type/settings gating (Task B3/B4,
@@ -2809,7 +2809,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // FIX 3): the user's request was "deferred on dispatch" (narrowing bash/task_stop/computer/
     // AskQuestion/send_message's EXISTING toolset into dispatch), never "make task_stop immediate in
     // code", and CC parity (this repo's tool surface deliberately tracks Claude Code's shape — see
-    // clover-vs-cc-tools.md) has TaskStop deferred: one generic stop tool, no separate bash_kill
+    // moss-vs-cc-tools.md) has TaskStop deferred: one generic stop tool, no separate bash_kill
     // (removed; task_stop's bash-unify path is now the only way to kill a bg bash task) — that is
     // the ORIGINAL CC-parity clause this comment used to (mis)attribute to "stays immediate in
     // code" instead. Restored to `deferred: ["code", "dispatch"]` — deferred in BOTH modes it's
@@ -2842,8 +2842,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // Computer use (Phase 5 CU): on unless settings.computerUse.enabled is explicitly false (default
     // ON since 2026-10-07, user ruling; it was opt-in before — absent now means on).
     // The service holds leases on the SAME `peripheral` broker (hoisted above this gate) that
-    // Clover.app serves screenshot/ax-read/input-drive behind. reuses settings.peripheral.heartbeatMs.
-    // P8b Task 6: the `let` itself is HOISTED above the Clover runtime block (it is the holder the
+    // MOSS Code.app serves screenshot/ax-read/input-drive behind. reuses settings.peripheral.heartbeatMs.
+    // P8b Task 6: the `let` itself is HOISTED above the MOSS runtime block (it is the holder the
     // `computer` capability server's getter reads — one service, one lease set, two doors); only
     // the construction stays here, unchanged.
     // Minor 5e (fix wave): `computerUseEnabledFrom` — the ONE reader, see this const's own doc.
@@ -2881,11 +2881,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // working-directories T4: engine.ts's `EngineConfig.outDirOf` — read fresh per tool call
     // alongside `tmpDir` (executeCall), independent of `sessionDirs`/`rootsOverride` (see that
     // field's own doc comment for why: mirrors `tmpDir`'s own rootsOverride-independence).
-    const outDirOf = (sid: string) => ensureOutdir(cloverHome, sid);
-    // diff-tabs Task 6: engine.ts's `EngineConfig.persistDiff` — same cloverHome-closure shape as
+    const outDirOf = (sid: string) => ensureOutdir(mossHome, sid);
+    // diff-tabs Task 6: engine.ts's `EngineConfig.persistDiff` — same mossHome-closure shape as
     // outDirOf just above, action- rather than value-shaped (see persistDiff's own doc comment).
     const persistDiff = (sid: string, diffId: string, header: Omit<DiffHeader, "truncated">, patch: string) =>
-      writeDiff(cloverHome, sid, diffId, header, patch);
+      writeDiff(mossHome, sid, diffId, header, patch);
     // Minor 5e (fix wave): `lspEnabledFrom` — the ONE reader, see this const's own doc comment.
     if (settings ? lspEnabledFrom(settings) : true) {
       lspManager = new LspManager({ idleShutdownMs: lspCfg?.idleShutdownMs });
@@ -2911,7 +2911,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // network) and must not start anything the user has disabled
     // (`settings.mcp.disabled`) — `stdioMcpServersFor` is the one filter both facts go through
     // (settings.ts).
-    await mcp.startAll(stdioMcpServersFor(sdkUserMcpServers(cloverHome), settings?.mcp?.disabled));
+    await mcp.startAll(stdioMcpServersFor(sdkUserMcpServers(mossHome), settings?.mcp?.disabled));
     // WS-21 (L4 request 2): a plugin's MCP servers are claude-native content now (its `.mcp.json`, or a
     // claude manifest's own `mcpServers`), loaded by both runtimes themselves (spec §5.3) — the daemon no
     // longer starts one.
@@ -2993,24 +2993,24 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // referenced by its old inline comment, now a shorthand) for what this class actually does.
     // Task 7: `globalAllow` now takes the `projectRoot` PermissionRules' own decision()/rulesFor()/
     // editPathRules() already have in scope, and resolves it through the SAME `projectSettings`
-    // instance above — a trusted project's OWN `.clover/settings.json` `permissions.allow` UNIONS
+    // instance above — a trusted project's OWN `.moss/settings.json` `permissions.allow` UNIONS
     // into this project's effective rules (mergeSettings, Task 5) on top of the global settings.json
     // value; `effective(null)` degrades to `settings` verbatim, so a null projectRoot (or an
     // untrusted/overlay-less one) reads byte-identically to the pre-Task-7 global-only getter.
     permissionRules = new PermissionRules({
       // WS-21: the "everywhere" rules moved to `sdk/settings.json` in claude's grammar; the gate reads
-      // them back in its own (`cloverGateRulesFromSdk`, never wider), plus a trusted project's overlay.
+      // them back in its own (`mossGateRulesFromSdk`, never wider), plus a trusted project's overlay.
       // The `["Computer"]` default still applies only when NEITHER tier states `allow` at all.
       globalAllow: (projectRoot) => {
-        const user = sdkAllowRules(cloverHome);
+        const user = sdkAllowRules(mossHome);
         const overlay = projectSettings.effective(projectRoot)?.permissions?.allow;
         if (user === undefined && overlay === undefined) return ["Computer"];
-        return [...new Set([...cloverGateRulesFromSdk(user ?? []), ...(overlay ?? [])])];
+        return [...new Set([...mossGateRulesFromSdk(user ?? []), ...(overlay ?? [])])];
       },
-      cloverHome,
+      mossHome,
     });
     // P8b Task 5, deliberately: `runtimeSdk` is NOT on this config. The engine never consumes the
-    // Clover handle — P8b-13 decides the leg at `session.create` (`ipc/server.ts`, which has it) and
+    // MOSS handle — P8b-13 decides the leg at `session.create` (`ipc/server.ts`, which has it) and
     // Task 16's driver owns every session that runs on it — and this whole class is deleted in
     // Task 17, so a field here would be churn on a dying config. See the report's F7.
     // Dispatch (Phase 7) Task 4: constructed AFTER `engine` exists — its `runTurn`/`isRunning`
@@ -3034,15 +3034,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       resolve: () => internalRouter!.resolve("pins.dream", settings),
       refreshCredentials: () => internalRouter!.view.refreshSoon(),
       store,
-      dir: () => assistantMemoryDirFor({ cloverHome }),
+      dir: () => assistantMemoryDirFor({ mossHome }),
       enabled: memoryEnabledHot,
-      // P8b Task 17: a Clover-leg turn in flight is activity too (the drivers' host-side count).
+      // P8b Task 17: a MOSS-leg turn in flight is activity too (the drivers' host-side count).
       activeTurnCount: () => signals.activeTurnCount(),
       // WS-20: hot settings read — `pinsFor(deps.settings()).dream` is what actually decides the
       // model now, never a boot snapshot (see Dreamer's own DreamerDeps.settings doc comment).
       settings: () => settings,
       // 2026-09-18: quiet per-role failure notes — the ONE registry instance every consumer shares
-      // (constructed unconditionally near `cloverHome` above).
+      // (constructed unconditionally near `mossHome` above).
       roleHealth,
       // session-activity-hygiene T7 (spec §3): the cleaner rides THIS scheduler slot. Constructed
       // here (not at the top of the file) for the same reason the Dreamer is: it needs a provider,
@@ -3065,14 +3065,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         attachedCount: (sid) => hub.attachedCount(sid),
         turnRunning: (sid) => signals.isRunning(sid),
         bgWork: (sid) => signals.hasBackgroundWork(sid),
-        home: cloverHome,
+        home: mossHome,
         enabled: cleanerEnabledHot,
         // WS-20: hot settings read — `pinsFor(deps.settings()).cleaner` is what actually decides
         // the model now, never a boot snapshot (see SessionCleaner's own CleanerDeps.settings doc
         // comment, which defaults to the SAME value as Dreamer's own `pinsFor(...).dream`).
         settings: () => settings,
         // P8a Task 12: the second sanctioned deletion path takes runtime state with it too, exactly
-        // as the reaper's does (WS-16 §16) — and, since Task 16, the session's Clover child.
+        // as the reaper's does (WS-16 §16) — and, since Task 16, the session's MOSS child.
         onDelete: onSessionDeleted,
         roleHealth,
       }),
@@ -3088,7 +3088,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // engine to hot-apply against (same "agent disabled" boundary the rest of this gate follows).
     const apply = makeApply({
       // THE atomic swap — a single synchronous assignment, first thing every apply does (T4).
-      setLiveSettings: (s) => { settings = liveSettingsView(s); advanceAuthorityRevision(cloverHome); },
+      setLiveSettings: (s) => { settings = liveSettingsView(s); advanceAuthorityRevision(mossHome); },
       registry,
       buildComputerService: (s) => new ComputerUseService({ broker: peripheral, heartbeatMs: s?.peripheral?.heartbeatMs }),
       registerComputer: (svc, s) => {
@@ -3109,7 +3109,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       registerLsp: (mgr) => {
         // Fix wave (review F7): the `lsp` CAPABILITY server reads this holder per call, so
         // reassigning it IS the hot re-enable — the next `lsp` call on any session finds the new
-        // manager. (Task 17 had retired the registry-door tool on the false premise that Clover's
+        // manager. (Task 17 had retired the registry-door tool on the false premise that MOSS's
         // own LSP serves the child; the 0.0.4 child advertises none.)
         lspManager = mgr;
       },
@@ -3120,7 +3120,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         await m?.stopAll();
       },
       // File-based memory hot-toggle (T3, design doc follow-up / task-23): the SAME boot-time call
-      // above (`migrateMemoryStore({ cloverHome, trust: trustStore, directory, relocatedKey })`),
+      // above (`migrateMemoryStore({ mossHome, trust: trustStore, directory, relocatedKey })`),
       // re-run whenever `memory.enabled` flips false→true on THIS running daemon — closes T2's
       // "boot-time only" gap. `settings` here is read at the moment this closure actually RUNS
       // (fire-and-forget, deferred a tick past `apply()`'s synchronous `setLiveSettings` swap), so
@@ -3131,7 +3131,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // WS-21: inert here — the live holder no longer carries `memory.enabled` (`withoutMovedKeys`), so
       // `makeApply` never sees a flip. The live trigger is the `sdk/settings.json` watcher below, on
       // claude's `autoMemoryEnabled`.
-      migrateMemory: () => { migrateMemoryStore({ cloverHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) }); },
+      migrateMemory: () => { migrateMemoryStore({ mossHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) }); },
       // P8a Task 12: `runtimes.migrations.memoryKeys` flipped on a RUNNING daemon must migrate
       // without a restart (the project's standing no-restart-for-settings rule). The wiring's own
       // `schema_meta` marker is what keeps it a ONE-TIME relocation, so this is handed the new
@@ -3146,7 +3146,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     settingsWatcher = new SettingsWatcher({
       path: dirs.settingsPath,
-      onChangeObserved: () => advanceAuthorityRevision(cloverHome),
+      onChangeObserved: () => advanceAuthorityRevision(mossHome),
       load: loadSettings,
       apply,
       ...(opts.settingsWatch ? { watch: opts.settingsWatch } : {}),
@@ -3155,20 +3155,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     settingsWatcher.start(settings);
   }
 
-  // WS-21: `sdk/settings.json` and `sdk/.clover.json` — debounced, single-flight, keep-last-good, like
+  // WS-21: `sdk/settings.json` and `sdk/.moss.json` — debounced, single-flight, keep-last-good, like
   // `settings.json` above. Built unconditionally: a no-provider daemon still serves the `sdk/`-backed
   // RPCs, and the reaction below needs no engine. `load` drops the cached parse first (so an in-place
   // same-size edit within one mtime tick is still seen) and THROWS on an unparseable file, which the
   // watcher turns into "keep the last good version" — the live readers already do the same on their own.
   const loadSdkFileStrict = (path: string): Record<string, unknown> => {
     forgetSdkFile(path);
-    const read = path === sdkSettingsPath(cloverHome) ? readSdkSettingsDetailed(cloverHome) : readSdkGlobalConfigDetailed(cloverHome);
+    const read = path === sdkSettingsPath(mossHome) ? readSdkSettingsDetailed(mossHome) : readSdkGlobalConfigDetailed(mossHome);
     if (read.state === "invalid") throw new Error(`${path} is not a readable JSON object (${read.reason})`);
     return read.state === "ok" ? read.value : {};
   };
   const sdkSettingsWatcher = new SettingsWatcher<Record<string, unknown>>({
-    path: sdkSettingsPath(cloverHome),
-    onChangeObserved: () => advanceAuthorityRevision(cloverHome),
+    path: sdkSettingsPath(mossHome),
+    onChangeObserved: () => advanceAuthorityRevision(mossHome),
     load: loadSdkFileStrict,
     // The memory importer's hot trigger moved with `memory.enabled`: it re-runs on exactly an
     // `autoMemoryEnabled` false→true flip (claude's default is ON, so only an explicit `false` is off).
@@ -3181,7 +3181,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       const is = next.autoMemoryEnabled !== false;
       if (!was && is) {
         try {
-          migrateMemoryStore({ cloverHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
+          migrateMemoryStore({ mossHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
         } catch (err) {
           console.error(`memory migration on hot-toggle failed (best-effort, will retry next boot): ${(err as Error).message}`);
         }
@@ -3191,16 +3191,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (msg) => console.error(`settings-watcher (sdk/settings.json): ${msg}`),
   });
   const sdkGlobalConfigWatcher = new SettingsWatcher<Record<string, unknown>>({
-    path: sdkGlobalConfigPath(cloverHome),
-    onChangeObserved: () => advanceAuthorityRevision(cloverHome),
+    path: sdkGlobalConfigPath(mossHome),
+    onChangeObserved: () => advanceAuthorityRevision(mossHome),
     load: loadSdkFileStrict,
     apply: () => {},
     watch: watchViaParentDir,
-    log: (msg) => console.error(`settings-watcher (sdk/.clover.json): ${msg}`),
+    log: (msg) => console.error(`settings-watcher (sdk/.moss.json): ${msg}`),
   });
   const sdkWatcherStarts: Array<[SettingsWatcher<Record<string, unknown>>, () => Record<string, unknown>]> = [
-    [sdkSettingsWatcher, () => liveSdkSettings(cloverHome)],
-    [sdkGlobalConfigWatcher, () => liveSdkGlobalConfig(cloverHome)],
+    [sdkSettingsWatcher, () => liveSdkSettings(mossHome)],
+    [sdkGlobalConfigWatcher, () => liveSdkGlobalConfig(mossHome)],
   ];
   for (const [w, current] of sdkWatcherStarts) {
     try {
@@ -3209,7 +3209,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     } catch (err) {
       // A missing `sdk/` (it is created by the bootstrap, so this is a torn home) degrades to the live
       // readers alone — every read still goes to the file; only the debounced reaction is lost.
-      console.error(`settings-watcher: could not watch ${sdkHomeFor(cloverHome)} (${(err as Error).message}) — sdk/ files are still read live`);
+      console.error(`settings-watcher: could not watch ${sdkHomeFor(mossHome)} (${(err as Error).message}) — sdk/ files are still read live`);
     }
   }
 
@@ -3223,10 +3223,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `routines.maxConcurrent` below is ALREADY a getter over the live `settings` holder (hot-settings
   // T2 leaves it exactly as it already was — same shape `subagents.maxConcurrent`/`worktrees.baseRef`
   // above were just converted TO).
-  const routinesAudit = new RoutineAuditLog(join(cloverHome, "routines-audit.jsonl"));
+  const routinesAudit = new RoutineAuditLog(join(mossHome, "routines-audit.jsonl"));
   // P8b Task 17: a routine fires as a NEW code session through the driver table (fix wave F9: the
   // runner's engine branch is gone with the engine).
-  const routineRunner = makeDaemonRoutineRunner({ store, hub, clover: cloverDrivers });
+  const routineRunner = makeDaemonRoutineRunner({ store, hub, moss: mossDrivers });
   let coworkService: CoworkWorkspaceService | undefined;
   const routineScheduler = makeRoutineScheduler({
     store: routineStore,
@@ -3242,7 +3242,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // Hardware helper (Phase 4c Task 2, spec §5).  // Hardware helper (Phase 4c Task 2, spec §5). Built unconditionally, same precedent as
   // `peripheral` above — hardware access has nothing to do with whether an LLM provider is
-  // configured. Shares the SAME `providerLink`/`audit` instances as `peripheral`: Clover.app's one
+  // configured. Shares the SAME `providerLink`/`audit` instances as `peripheral`: MOSS Code.app's one
   // provider connection doubles as the hardware provider, and `hardware.respond` (ipc/server.ts)
   // reuses `peripheral.isProvider()` to gate on that SAME connection identity rather than tracking
   // its own.
@@ -3339,16 +3339,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // first start a caller asks for, from an injected environment that production never has). The Cowork service gets it as its
   // `native` port only when a caller injected an environment, so the production service refuses exactly as before.
   // The production environment comes ONLY through the activation seam (cowork/native-activation.ts), which answers undefined until the owner flips it.
-  const nativeEnvironment = opts.coworkNative?.environment ?? (runtime ? coworkNativeProductionEnvironment(() => ({ home: cloverHome, db: runtime.db, records: coworkRecords!, env: process.env })) : undefined);
+  const nativeEnvironment = opts.coworkNative?.environment ?? (runtime ? coworkNativeProductionEnvironment(() => ({ home: mossHome, db: runtime.db, records: coworkRecords!, env: process.env })) : undefined);
   const coworkNative: CoworkNativeWiring | undefined = runtime
-    ? createCoworkNativeWiring({ db: runtime.db, records: coworkRecords!, home: cloverHome, secrets, ...opts.coworkNative, ...(nativeEnvironment ? { environment: nativeEnvironment } : {}) }) : undefined;
+    ? createCoworkNativeWiring({ db: runtime.db, records: coworkRecords!, home: mossHome, secrets, ...opts.coworkNative, ...(nativeEnvironment ? { environment: nativeEnvironment } : {}) }) : undefined;
   const coworkNativePort = nativeEnvironment ? coworkNative : undefined;
-  const baseCoworkHost = runtime ? (opts.coworkHost ?? createMacCoworkHost(cloverHome, undefined, runtime.db, coworkNativePort)) : undefined;
+  const baseCoworkHost = runtime ? (opts.coworkHost ?? createMacCoworkHost(mossHome, undefined, runtime.db, coworkNativePort)) : undefined;
   const withNative = baseCoworkHost && coworkNativePort && !baseCoworkHost.native ? { ...baseCoworkHost, native: coworkNativePort } : baseCoworkHost;
   // The provisioning port exists only where an environment was injected (production has none: the activation seam answers undefined), and only when the host has not got one.
   const coworkProvisioning = withNative && coworkNativePort && !withNative.provisioning ? coworkNativePort.provisioningPort() : undefined;
   const coworkHostPorts = coworkProvisioning ? { ...withNative!, provisioning: coworkProvisioning } : withNative;
-  coworkService = runtime ? new CoworkWorkspaceService(coworkRecords!, coworkHostPorts!, opts.coworkScheduleNow, cloverHome, { broker: approvalBroker, emit: (sessionId, event) => { hub.append(sessionId, event); } }) : undefined;
+  coworkService = runtime ? new CoworkWorkspaceService(coworkRecords!, coworkHostPorts!, opts.coworkScheduleNow, mossHome, { broker: approvalBroker, emit: (sessionId, event) => { hub.append(sessionId, event); } }) : undefined;
   // Boot steps are best effort: a throw here (a locked or damaged Cowork table) must neither abort startup nor, later, kill the process.
   // The host that supplies the provisioning port drives the creations still pending (a crash between COMMIT and `provision`) once at boot. It never rejects.
   if (coworkProvisioning) void coworkService?.resumeProvisioning();
@@ -3366,19 +3366,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const coworkEvents = coworkService ? new CoworkWorkspaceEvents(coworkService.records, store, hub) : undefined;
   // The outbox timer exists only when a Cowork host was injected (never in production) or events are still pending.
   coworkEvents?.start({ keepAlive: opts.coworkHost !== undefined || opts.coworkNative?.environment !== undefined });
-  // C-M1: Clover's connections (roles, tokens, the caller check) and the daemon's side of the pair.
+  // C-M1: MOSS's connections (roles, tokens, the caller check) and the daemon's side of the pair.
   // The device id is a stand-in, stable per home, until lane H's device key (H-M1).
   let resolvePairStopped!: (why: string) => void;
   const pairStopped = new Promise<string>((r) => { resolvePairStopped = r; });
   let stopping = false;
-  let cloverServer: CloverServer | undefined;
+  let mossServer: MossServer | undefined;
   const pairSide: DaemonPairSide | undefined = opts.pair === false ? undefined : await startDaemonPairSide({
     runDir: dirs.runDir,
     os: process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux",
-    profile: resolveCloverProfile(),
+    profile: resolveMossProfile(),
     execPath: process.execPath,
     env: process.env,
-    tellAppQuit: (reason, ids) => cloverServer?.tellAppQuit(reason, ids),
+    tellAppQuit: (reason, ids) => mossServer?.tellAppQuit(reason, ids),
     // Deferred a moment, so the answer to the `pair.quit` that stopped the pair reaches its caller;
     // nothing when `stop()` itself stopped the pair.
     // The listener goes at once (no new connection reaches a daemon that is going away: an app reopened now finds nothing
@@ -3388,26 +3388,26 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
   // A test-marked build (scripts/test-build.ts; a real build compiles this out): the harness token in run/ as well, for
   // the acceptance script, which never reads the signed test core's keychain items itself (it would be prompted).
-  if (typeof __CLOVER_TEST_BUILD__ === "string" && pairSide !== undefined && process.platform !== "win32") {
+  if (typeof __MOSS_TEST_BUILD__ === "string" && pairSide !== undefined && process.platform !== "win32") {
     await writeHarnessTokenFile(dirs.runDir, tokens.harness, { os: process.platform === "darwin" ? "darwin" : "linux", run: bunRunner })
       .then(() => console.error("[pair] a test-marked build: the harness token is in run/harness.token too"))
       .catch((err: unknown) => console.error(`[pair] a test-marked build: run/harness.token not written (${err instanceof Error ? err.message : String(err)})`));
   }
   const sessionProcesses = SessionProcesses.shared;
-  // The Clover `computer.acting` seam reads the live service through a getter, never a captured copy: after a live
+  // The MOSS `computer.acting` seam reads the live service through a getter, never a captured copy: after a live
   // toggle the check reads the service as it is now (check 3). With no service, nothing is acting.
-  // C-M2: the contract secret store (the Keychain on macOS, the encrypted file elsewhere), and other lanes' Clover
+  // C-M2: the contract secret store (the Keychain on macOS, the encrypted file elsewhere), and other lanes' MOSS
   // methods, filled in as their parts come up (H's devices methods once the links are). A test daemon (its own
   // `secrets`) keeps the store in memory, so no test touches the real Keychain.
   const contractSecrets: ContractSecretStore = opts.contractSecrets ?? (opts.secrets !== undefined
-    ? new CloverSecretStore({ home: dirs.home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } })
-    : await openCloverSecretStore({ home: dirs.home, service: keychainService(profile, home) }));
+    ? new MossSecretStore({ home: dirs.home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } })
+    : await openMossSecretStore({ home: dirs.home, service: keychainService(profile, home) }));
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
-  const cloverLaneHandlers: Record<string, CloverHandler> = {};
-  // The late doors (the plugin registry's and the parts' methods, which join `cloverLaneHandlers` after the socket
+  const mossLaneHandlers: Record<string, MossHandler> = {};
+  // The late doors (the plugin registry's and the parts' methods, which join `mossLaneHandlers` after the socket
   // listens): each part says when its first start is done, or that it waits on the user (a locked store); a call for a
-  // method not in yet waits for both (`CloverServerDeps.lateDoors`), at most LATE_DOORS_MAX_MS.
+  // method not in yet waits for both (`MossServerDeps.lateDoors`), at most LATE_DOORS_MAX_MS.
   let pluginsDoorsIn!: () => void;
   let partsDoorsIn!: () => void;
   const lateDoorsIn = Promise.all([
@@ -3416,14 +3416,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   ]).then(() => {});
   const lateDoors = (): Promise<void> => Promise.race([lateDoorsIn, new Promise<void>((r) => { setTimeout(r, LATE_DOORS_MAX_MS).unref?.(); })]);
   // Lane K's agents start with the bot side, after the server: the server reaches them through these doors.
-  const agentDoors = lateAgentDoors(cloverLaneHandlers);
+  const agentDoors = lateAgentDoors(mossLaneHandlers);
   // `plugin.auth.*`, once the plugin registry is open (`startPlugins`); `models.list` asks it about third parties' keys.
   let pluginAuth: PluginAuth | undefined;
   // Lane D's bots' `hasKeyFor` (`daemonBots`): read again at a plugin's sign-in or out and at each registry change.
   let botKeys: BotKeyPresence | undefined;
   let offBotKeysWatch: (() => void) | undefined;
   // A: the app's model picker (`models.list`), from the model plugins' catalog; signed in = a credential is stored.
-  Object.assign(cloverLaneHandlers, laneMethodHandlers(modelsMethods({
+  Object.assign(mossLaneHandlers, laneMethodHandlers(modelsMethods({
     // The providers' keychain slots, and a third party's model plugin signed in through its own secret (or taking none).
     signedIn: async () => new Set([
       ...Object.keys((await credentialPresenceFrom(secrets)).byProvider),
@@ -3435,34 +3435,34 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // are empty and anything else is refused while it opens; then the registry's handlers serve them.
   let pluginMethods: Record<string, MethodHandler> = {};
   // The user's UI choices, which need no registry (B, on K's audit).
-  Object.assign(cloverLaneHandlers, laneMethodHandlers(uiSettingsMethods({ home: cloverHome, emit: (event) => void cloverServer?.coreEvent(event) })));
+  Object.assign(mossLaneHandlers, laneMethodHandlers(uiSettingsMethods({ home: mossHome, emit: (event) => void mossServer?.coreEvent(event) })));
   // D: which plugins may notify the user (Settings), the user's own choice, read at each `notify.send`.
-  Object.assign(cloverLaneHandlers, laneMethodHandlers(notifyMuteMethods({ home: cloverHome })));
-  // The user's look at what this computer's app draws (`clover-core app screenshot`): the app's own capture of its windows.
+  Object.assign(mossLaneHandlers, laneMethodHandlers(notifyMuteMethods({ home: mossHome })));
+  // The user's look at what this computer's app draws (`moss-core app screenshot`): the app's own capture of its windows.
   const appDoors = {
-    connections: () => cloverServer?.connections() ?? [],
-    ask: (conn: Parameters<CloverServer["ask"]>[0], method: string, params: unknown, ms: number) => cloverServer === undefined ? Promise.reject(new Error("the daemon's endpoint isn't open")) : cloverServer.ask(conn, method, params, ms),
+    connections: () => mossServer?.connections() ?? [],
+    ask: (conn: Parameters<MossServer["ask"]>[0], method: string, params: unknown, ms: number) => mossServer === undefined ? Promise.reject(new Error("the daemon's endpoint isn't open")) : mossServer.ask(conn, method, params, ms),
   };
-  cloverLaneHandlers["app.capture"] = appCaptureHandler(appDoors);
-  // ...and moves it to a place by the route its own sidebar uses (`clover-core app open`, `app where`).
-  Object.assign(cloverLaneHandlers, appOpenHandlers(appDoors));
+  mossLaneHandlers["app.capture"] = appCaptureHandler(appDoors);
+  // ...and moves it to a place by the route its own sidebar uses (`moss-core app open`, `app where`).
+  Object.assign(mossLaneHandlers, appOpenHandlers(appDoors));
   // This computer's app, for the desktop notifier's door (`app.notify`): every app connection here, none remote.
   const desktopPort: DesktopPort = {
     notify: (params) => {
-      const apps = (cloverServer?.connections() ?? []).filter((c) => c.role === "app");
+      const apps = (mossServer?.connections() ?? []).filter((c) => c.role === "app");
       for (const c of apps) c.send("app.notify", params);
       return apps.length > 0;
     },
     close: (id) => {
-      for (const c of (cloverServer?.connections() ?? []).filter((x) => x.role === "app")) c.send("app.notify.close", id === undefined ? {} : { id });
+      for (const c of (mossServer?.connections() ?? []).filter((x) => x.role === "app")) c.send("app.notify.close", id === undefined ? {} : { id });
     },
   };
   let notifyService: NotifyService | undefined;
   // Picked files (`plugin.grant.*`, lane G's pickers): served from the start, not through the registry's late-bound
   // names (`PLUGIN_METHOD_NAMES`), which these were missing from in 14c (main read the -32601 as "the core keeps no
   // grants yet"). A pick before the registry opens is refused as "still opening" (`installed` above).
-  Object.assign(cloverLaneHandlers, laneMethodHandlers(pluginGrantMethods(pluginGrants)));
-  Object.assign(cloverLaneHandlers, laneMethodHandlers(Object.fromEntries(PLUGIN_METHOD_NAMES.map((name) => [name,
+  Object.assign(mossLaneHandlers, laneMethodHandlers(pluginGrantMethods(pluginGrants)));
+  Object.assign(mossLaneHandlers, laneMethodHandlers(Object.fromEntries(PLUGIN_METHOD_NAMES.map((name) => [name,
     async (params: unknown, ctx: MethodContext) => {
       const h = pluginMethods[name];
       if (h === undefined && opts.pluginsOpenAnswerDelayMs !== undefined && opts.pluginsOpenAnswerDelayMs > 0) await new Promise((r) => setTimeout(r, opts.pluginsOpenAnswerDelayMs));
@@ -3470,12 +3470,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }]))));
   // B: `command.run` once the daemon has lane B's registry and host; each call's args are checked first.
   if (opts.modelPluginHost !== undefined) {
-    Object.assign(cloverLaneHandlers, laneMethodHandlers(commandMethods({ registry: opts.modelPluginHost.registry, host: opts.modelPluginHost.host })));
+    Object.assign(mossLaneHandlers, laneMethodHandlers(commandMethods({ registry: opts.modelPluginHost.registry, host: opts.modelPluginHost.host })));
   }
   // This device's id is its link key's (H-M1): the one the links below load from the same store. A store that is
   // still locked (a keyring locked at the login screen) can't give it yet: the hello carries a stand-in id, stable per
   // home, and the links wait for the store to unlock (below). The boot never waits on it.
-  let liveDeviceId = createDeviceHash("sha256").update(`clover-local-device\0${dirs.home}`).digest("hex").slice(0, 32);
+  let liveDeviceId = createDeviceHash("sha256").update(`moss-local-device\0${dirs.home}`).digest("hex").slice(0, 32);
   const loadDeviceId = async (): Promise<boolean> => {
     try {
       liveDeviceId = (await DeviceKey.loadOrCreate(contractSecrets)).id;
@@ -3495,18 +3495,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const okTicks = pluginOkTicks(() => daemonParts?.node, (line) => console.error(line));
   // The daemon's one broker, for what starts before it: the plugin registry opens first, and its OK cards (a found
   // plugin's, an install's) ask on the broker once the parts are up, or are refused if they started without one.
-  let partsBrokerSettled: (b: CloverApprovalBroker | undefined) => void = () => {};
-  const partsBroker = new Promise<CloverApprovalBroker | undefined>((resolve) => { partsBrokerSettled = resolve; });
+  let partsBrokerSettled: (b: MossApprovalBroker | undefined) => void = () => {};
+  const partsBroker = new Promise<MossApprovalBroker | undefined>((resolve) => { partsBrokerSettled = resolve; });
   const pluginsBroker = lateApprovalBroker(partsBroker);
   let selfUpdate: SelfUpdate | undefined;
   // Lane D's app methods: the archive of the previous app's sessions (this home's own store, read-only), and the user's
   // own apps' plan readings (the usage service's readers), named for this computer as the tree names it.
-  Object.assign(cloverLaneHandlers, laneMethodHandlers({
+  Object.assign(mossLaneHandlers, laneMethodHandlers({
     ...archiveMethods({ store }),
     ...(usage === undefined ? {} : usagePlansMethods({ readers: usage.service, computer: () => daemonParts?.node?.registry.self().name ?? (computerNameFor(defaultDeviceName(hostname())) || "this-computer") })),
   }));
   // M-M2: `update.status` and `update.apply` join the lanes' handlers (one map: the links, node and bot side add theirs).
-  Object.assign(cloverLaneHandlers, updateHandlers({
+  Object.assign(mossLaneHandlers, updateHandlers({
     gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
     channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
   }));
@@ -3514,7 +3514,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // them, so each call reads them then; until they are up, and after they stop, a call is told to try again.
   // Settings' Tools tab: always allow / ask / always block per plugin tool (one store with the connector permissions, read live by
   // the same floor), and the card rules saved for single bots, which the user takes back there.
-  Object.assign(cloverLaneHandlers, laneMethodHandlers(toolPermissionMethods({
+  Object.assign(mossLaneHandlers, laneMethodHandlers(toolPermissionMethods({
     listing: () => pluginMcp?.toolListing() ?? [],
     pluginName: (id) => { const n = partsRegistry?.registry.get(id)?.name; return typeof n === "string" ? n : undefined; },
     loadSettings: () => loadSettings(dirs.settingsPath),
@@ -3522,18 +3522,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     savedFor: (hash) => daemonParts?.broker?.savedFor(hash) ?? [],
     forgetSaved: (hash, bot) => daemonParts?.broker?.forgetSaved(hash, bot) ?? 0,
   })));
-  Object.assign(cloverLaneHandlers, cardMethods(() => daemonParts?.broker, (pluginId) => grantsInForce(partsRegistry?.registry.get(pluginId))), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents, {
+  Object.assign(mossLaneHandlers, cardMethods(() => daemonParts?.broker, (pluginId) => grantsInForce(partsRegistry?.registry.get(pluginId))), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents, {
     // A user's call made on this computer (the app or the terminal here) is this computer's device.
     localDevice: () => liveDeviceId,
     definitions: () => daemonParts?.agentDefinitions?.() ?? [],
   })));
-  const cloverTokens = new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
-  cloverServer = createCloverServer({
-    handlers: cloverLaneHandlers,
+  const mossTokens = new MossTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
+  mossServer = createMossServer({
+    handlers: mossLaneHandlers,
     lateDoors,
     codeAgent: agentDoors.codeAgent,
     bridge: agentDoors.bridge,
-    tokens: cloverTokens,
+    tokens: mossTokens,
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
     get deviceId() { return liveDeviceId; },
@@ -3556,7 +3556,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const server: IpcServer = startIpcServer({
     // The bots' view of the stored keys, refreshed at once on `credential.set` and the sign-in doors.
     credentialChanged: () => botKeys?.refresh(),
-    cloverConnections: cloverServer,
+    mossConnections: mossServer,
     socketPath: dirs.socketPath,
     serverVersion: CORE_VERSION,
     cowork: coworkService,
@@ -3594,7 +3594,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // remove/setConsent) read+write settings.json and the plugins directory directly, and re-read
     // both fresh on every call (`livePlugins`, ipc/server.ts) instead of trusting `pluginStore`
     // above's boot-time snapshot.
-    cloverHome,
+    mossHome,
     // BYOK T1: the SAME SecretStore instance `authority`/`createProvider` above already use (one
     // Keychain, no separate store to keep in sync) — lets `provider.configure` write the BYO
     // OpenAI API key server-side. Chat Slice D task 3: also `sync.config`'s ONLY route to the Exa
@@ -3620,7 +3620,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // the internal roles' `permitted` set and their derived `problem`, and `credential.set`/
     // `credential.remove` await its view's refresh before returning.
     ...(internalRouter === null ? {} : { internalRouter }),
-    // 2026-09-18: the shared role-health registry (constructed near `cloverHome` above) — read by
+    // 2026-09-18: the shared role-health registry (constructed near `mossHome` above) — read by
     // `settings.modelRoles`/`settings.setModelRole`'s handlers to merge a `problem` onto each role.
     roleHealth,
     // Fix wave (finding 4b): the SAME retry lever `settings-apply.ts`'s hot-reload path calls on
@@ -3672,9 +3672,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     panelCommands,
     quota,
     // Daemon settings surface (2026-09-17 plan, item 3): `agents.list`'s `builtins` field — the
-    // SAME instance `cloverDrivers`'s `onSupportedAgents` callback (above) writes into, hoisted
-    // above the `if (agentProvider)` gate for the identical reason `cloverDrivers` itself is: a
-    // Clover-leg session (and therefore this cache) exists independently of the daemon's own
+    // SAME instance `mossDrivers`'s `onSupportedAgents` callback (above) writes into, hoisted
+    // above the `if (agentProvider)` gate for the identical reason `mossDrivers` itself is: a
+    // MOSS-leg session (and therefore this cache) exists independently of the daemon's own
     // internal Provider.
     supportedAgents: supportedAgentsCache,
     providerInfo,
@@ -3702,16 +3702,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     workflows: workflowRuntime ?? undefined,
     workflowStore,
     // P8a Task 12: the mint-time reaper inside this server deletes sessions too — same hook, same
-    // reach as the boot sweep above (WS-16 §16), plus the Clover child (Task 16).
+    // reach as the boot sweep above (WS-16 §16), plus the MOSS child (Task 16).
     onSessionDeleted,
-    // P8b Task 5: the Clover handle, on the deps object the IPC layer receives — this is the door
-    // Task 16 opens a Chat session on the Clover leg through (`session.create`'s handler). Undefined
-    // means the router never constructed; a Clover-leg create must then refuse with a typed error.
+    // P8b Task 5: the MOSS handle, on the deps object the IPC layer receives — this is the door
+    // Task 16 opens a Chat session on the MOSS leg through (`session.create`'s handler). Undefined
+    // means the router never constructed; a MOSS-leg create must then refuse with a typed error.
     runtimeSdk,
     // P8b-36: the per-session capability door, on the same deps object as the handle above.
     buildSessionCapabilities,
-    // P8b Task 16: the driver table — the Clover leg's door for every `session.*` handler.
-    clover: cloverDrivers,
+    // P8b Task 16: the driver table — the MOSS leg's door for every `session.*` handler.
+    moss: mossDrivers,
     // Winter Phase 8d (P8d-7, lane 4): a read-only door onto the 8a record — ipc/server.ts's
     // session.list reads `record.providerId` off it (`opts.records?.get`, narrowed to Pick<…,"get">).
     records: runtime?.records,
@@ -3722,7 +3722,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // precedent as every other optional field in this object. `runtime` here is the 8a spine
     // (`.records`); `runtimeSdk` is the router handle `HandoffDeps.runtime` names.
     ...(runtime === undefined ? {} : {
-      importLegacy: { importSession: (sessionId: string) => importEngineEraSession({ home: cloverHome, store, records: runtime.records }, sessionId) },
+      importLegacy: { importSession: (sessionId: string) => importEngineEraSession({ home: mossHome, store, records: runtime.records }, sessionId) },
     }),
     // `sdk` is captured into its own `const` before the closure below: `runtimeSdk` (outer scope)
     // is a `let` reassigned inside a try/catch above, so a narrowing on it does not persist into a
@@ -3739,21 +3739,21 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // the record's `authRef` column could persist a DIFFERENT account name than `create()` (which
           // HAS the home) writes for the very same provider. Record hygiene only — every spawn
           // recomputes the ref with the home — but the two writers must not disagree.
-          planAndApplySwitch({ runtime: sdk, clover: cloverDrivers, records: runtime.records, store, settings: () => settings, home: cloverHome }, sessionId, model, confirmLossy),
+          planAndApplySwitch({ runtime: sdk, moss: mossDrivers, records: runtime.records, store, settings: () => settings, home: mossHome }, sessionId, model, confirmLossy),
       },
     }))(runtimeSdk)),
     ...opts.server,
   });
   opts.bootOrderForTests?.("socket-bound");
 
-  console.error(`clover-core ${CORE_VERSION} listening on ${dirs.socketPath}`);
+  console.error(`moss-core ${CORE_VERSION} listening on ${dirs.socketPath}`);
   try {
     browserHostServer.start();
   } catch (err) {
     console.error(`[browser-host] could not listen on ${join(dirs.runDir, BROWSER_HOST_SOCKET_NAME)}: ${err instanceof Error ? err.message : String(err)}`);
   }
   // C-M2 and the daemon integration: H's links, then J's computer node and D's bot side over them (daemon-parts.ts),
-  // started in the background so a slow sidecar never holds the daemon's start; their methods join the Clover server's
+  // started in the background so a slow sidecar never holds the daemon's start; their methods join the MOSS server's
   // handlers when they're up. A daemon with no sidecar (run from source, a build without it) runs them local-only,
   // with no other device on its links, and says so: one Mac on its own is the main case. The stop
   // closes them in reverse: the bot side, the node, the plugin registry, then the links (and with them the sidecar).
@@ -3764,7 +3764,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // starts with the parts, after the links), so a key registered on the app's first tries is in place before any card.
   // A replacement (a hand-over from the current key) shows its change card on the parts' broker once it is up.
   let ownDevices: FileDeviceRegistry | undefined;
-  Object.assign(cloverLaneHandlers, laneMethodHandlers(answerKeyMethods({
+  Object.assign(mossLaneHandlers, laneMethodHandlers(answerKeyMethods({
     registry: () => ownDevices, clock: partsClock,
     answerKeyRotation: () => {
       const broker = daemonParts?.broker;
@@ -3798,9 +3798,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let clientBuilds: ClientBuilds | undefined;
   let stopRegistryEvents: (() => void) | undefined;
   let partsStopping = false;
-  // A-M3's provider fill, one for the bots and the agents (clover-code, the in-process subagents): which provider a
+  // A-M3's provider fill, one for the bots and the agents (moss-code, the in-process subagents): which provider a
   // model runs on and how its credentials reach the runtime, from the user's settings, through the daemon's one broker.
-  const partsProviderFill = botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings });
+  const partsProviderFill = botProviderFill({ home: mossHome, broker: hostCredentials, secrets, settings: () => settings });
   /** The plugins' host MCP servers as J's computer node's MCP host. */
   const mcpHostFor = (mcp: PluginMcp) => ({
     placement: (server: string, tool?: string) => mcp.placement(server, tool),
@@ -3827,20 +3827,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const log = (line: string) => console.error(`[plugins] ${line}`);
     let source: { root: string; manifest: BundledManifest } | undefined;
     if (DIST_BUILD) {
-      const root = bundledPluginsDir(process.execPath, { cloverHome });
+      const root = bundledPluginsDir(process.execPath, { mossHome });
       source = root === undefined ? undefined : { root, manifest: bundledManifest() };
     } else {
       // From source (not a test daemon, which has its own store): the dev stage from this checkout's plugins/.
       const sources = join(import.meta.dir, "..", "..", "..", "plugins");
-      if (opts.secrets === undefined && !isTestKeychainService(process.env.CLOVER_KEYCHAIN_SERVICE) && !isCompiledBinary() && existsSync(sources)) {
-        const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "clover.json"))).sort();
-        const built = await buildDevBundledPlugins({ sources, ids, cloverHome });
+      if (opts.secrets === undefined && !isTestKeychainService(process.env.MOSS_KEYCHAIN_SERVICE) && !isCompiledBinary() && existsSync(sources)) {
+        const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "moss.json"))).sort();
+        const built = await buildDevBundledPlugins({ sources, ids, mossHome });
         log(`built the dev bundled plugins (${built.built.join(", ")}) in ${built.ms} ms`);
       }
-      source = devBundledSource(cloverHome);
+      source = devBundledSource(mossHome);
     }
     if (source === undefined) return undefined;
-    const staged = stageBundledPlugins({ ...source, out: stagedBundledDir(cloverHome), log });
+    const staged = stageBundledPlugins({ ...source, out: stagedBundledDir(mossHome), log });
     if (staged.dir === undefined) return undefined;
     log(`bundled: ${staged.staged.join(", ") || "none"}${staged.refused.length > 0 ? ` (refused ${staged.refused.length})` : ""}`);
     return { dir: staged.dir, digests: staged.digests };
@@ -3859,24 +3859,24 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       return undefined;
     });
     bundledStaged = bundled;
-    mkdirSync(join(cloverHome, "plugins"), { recursive: true, mode: 0o700 });
+    mkdirSync(join(mossHome, "plugins"), { recursive: true, mode: 0o700 });
     // An install a run before left half done (a crash mid-copy): its staging folder goes (#394's review).
-    sweepInstallStages(installStagingDir(cloverHome), join(cloverHome, "plugins"));
+    sweepInstallStages(installStagingDir(mossHome), join(mossHome, "plugins"));
     if (opts.pluginsOpenDelayMs !== undefined && opts.pluginsOpenDelayMs > 0) await new Promise((r) => setTimeout(r, opts.pluginsOpenDelayMs));
     // No plugin server runs yet: no secret file of a run before is left (`${secretFile:…}`, a crash's included).
-    new PluginSecretFiles(cloverHome).sweep();
+    new PluginSecretFiles(mossHome).sweep();
     const opened = await openPluginRegistry({
-      cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled.dir] } : {}),
+      mossHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled.dir] } : {}),
       broker: pluginsBroker,
       log: (line) => console.error(`[plugins] ${line}`),
       onOkApproved: (id) => okTicks.approved(id),
       indexes: {
-        cacheDir: join(cloverHome, "plugins-state", "index-cache"),
+        cacheDir: join(mossHome, "plugins-state", "index-cache"),
         // A test build only (compiled out of a real one), or a test's own seam: the indexes and npm reach the acceptance
         // run's fake index and fake registry by name, through the same pinned fetch with every rule; a real build fetches
         // as it always does (`httpsFetch`'s default).
         ...(() => {
-          const seam = opts.pluginFetch ?? (typeof __CLOVER_TEST_BUILD__ === "string" ? mappedNamesSeam(process.env.CLOVER_TEST_OUTSIDE_WORLD) : undefined);
+          const seam = opts.pluginFetch ?? (typeof __MOSS_TEST_BUILD__ === "string" ? mappedNamesSeam(process.env.MOSS_TEST_OUTSIDE_WORLD) : undefined);
           return seam === undefined ? {} : { fetch: httpsFetch(INDEX_FETCH_TIMEOUT_MS, pinnedFetch(seam)), download: httpsFetch(DOWNLOAD_LIMITS, pinnedFetch(seam)) };
         })(),
       },
@@ -3897,24 +3897,24 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     workshopFolders = () => [
       ...opened.registry.list().filter((r) => r.provenance.by === "bot" && r.provenance.bot !== undefined).map((r) => r.folder),
       // The folders bots dropped that the registry hasn't recorded yet.
-      ...opened.folders.pendingDrops().map((name) => join(cloverHome, "plugins", name)),
+      ...opened.folders.pendingDrops().map((name) => join(mossHome, "plugins", name)),
     ];
-    wrapperRead = (id) => wrapperReads(opened.registry, id, { user: homedir(), clover: cloverHome, os: process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos" });
+    wrapperRead = (id) => wrapperReads(opened.registry, id, { user: homedir(), moss: mossHome, os: process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos" });
     projectWriteRegistry.current = opened;
     // D: a plugin's notifications (`notify.send`) and the bundled notifier's desktop door, among the router's own
     // handlers from the host's start (never `addApiHandlers`, which is the model plugins').
     const hostComputer = computerNameFor(defaultDeviceName(hostname())) || "Computer";
     const notify = new NotifyService({
-      home: cloverHome, computer: hostComputer, clock: { now: () => Date.now() }, registry: opened.registry, host: () => pluginHost?.host,
+      home: mossHome, computer: hostComputer, clock: { now: () => Date.now() }, registry: opened.registry, host: () => pluginHost?.host,
       approvals: { pending: () => daemonParts?.broker?.pending() ?? [], watch: (fn) => pluginsBroker.watch(fn) },
       desktop: desktopPort, log: (line) => console.error(line),
     });
     notifyService = notify;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
-      home: cloverHome, computer: hostComputer, registry, secrets: contractSecrets,
+      home: mossHome, computer: hostComputer, registry, secrets: contractSecrets,
       // The daemon's own notion of the user's home: the real one only on its default home (as usage's, `wiring.ts`); any
       // other (a test's) runs programs and judges folders against an empty stand-in, never the developer's.
-      ...(opts.parts?.userHome !== undefined ? { userHome: opts.parts.userHome } : isDefaultCloverHome(home, profile) ? { userHome: homedir() } : {}),
+      ...(opts.parts?.userHome !== undefined ? { userHome: opts.parts.userHome } : isDefaultMossHome(home, profile) ? { userHome: homedir() } : {}),
       // A component's `plugins.install`: the user's install door, once the registry's methods hand it out (below).
       handlers: [notify.apiHandlers(), pluginsInstallApi(() => componentInstall)],
       openCard: brokerCardOpener(pluginsBroker), main: pluginMain,
@@ -3922,11 +3922,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // host half's confirm answered "not served on this computer" (the acceptance's add-ons row, 2026-11-13).
       approvals: pluginsBroker,
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
-      log: (line) => console.error(line), emit: (event) => void cloverServer?.coreEvent(event),
+      log: (line) => console.error(line), emit: (event) => void mossServer?.coreEvent(event),
       // The API's areas on the other lanes' services, which come up with the links after this: read at each call.
       areas: {
         bots: () => daemonParts?.bots, node: () => daemonParts?.node, links: () => daemonLinks?.links ?? undefined, browser: () => daemonParts?.browser?.service,
-        emitToApp: (event) => void cloverServer?.coreEvent(event, { to: (conn) => conn.role === "app" }),
+        emitToApp: (event) => void mossServer?.coreEvent(event, { to: (conn) => conn.role === "app" }),
         grants: () => pickedFiles,
         // `usage.*`: lane D's ledger (with the bot side) and this computer's plan readings.
         usage: () => ({
@@ -3942,7 +3942,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
     // The registry's load-time build of a TypeScript client entry (a plugin with the user's OK for its tree): the view
     // names the module once it lands.
-    clientBuilds = new ClientBuilds({ cloverHome, registry: opened.registry, log: (line) => console.error(`[plugins] ${line}`) });
+    clientBuilds = new ClientBuilds({ mossHome, registry: opened.registry, log: (line) => console.error(`[plugins] ${line}`) });
     // The `usage.sources` entries (a plugin's tool readers): the usage service asks them through the host, only now it is up.
     const usageHost = pluginHost;
     usage?.attach({
@@ -3960,9 +3960,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     const hostSettings = pluginHost.settings;
     pluginUiParts = pluginUi({
-      registry: opened.registry, router: pluginHost.gate, settings: { layerView: (id, key, bot) => hostSettings.layerView(id, key, bot), layerSet: (id, key, value, bot) => hostSettings.layerSet(id, key, value, bot) }, emit: (event) => void cloverServer?.coreEvent(event), builds: clientBuilds,
+      registry: opened.registry, router: pluginHost.gate, settings: { layerView: (id, key, bot) => hostSettings.layerView(id, key, bot), layerSet: (id, key, value, bot) => hostSettings.layerSet(id, key, value, bot) }, emit: (event) => void mossServer?.coreEvent(event), builds: clientBuilds,
       // A component's watch values: to the one layer connection that opened it (its follows), never any other.
-      emitTo: (follows, event) => void cloverServer?.coreEvent(event, { to: (conn) => conn.follows === follows }),
+      emitTo: (follows, event) => void mossServer?.coreEvent(event, { to: (conn) => conn.follows === follows }),
       log: (line) => console.error(`[plugins] ${line}`),
       // The user's own layout for a bot (its user layer), drawn over the bot's; read from the bot side once it runs.
       userLayout: (botId) => {
@@ -3974,7 +3974,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
     });
     // B: the registry's transitions as plugin_changed / plugin_removed / plugin_found (ids and states only).
-    const stopEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void cloverServer?.coreEvent(event) });
+    const stopEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void mossServer?.coreEvent(event) });
     // A removed plugin's picked files go with it.
     grantRegistry = opened.registry;
     const stopGrantDrops = opened.registry.watch((change) => {
@@ -3996,7 +3996,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       void stdioMcp?.picksChanged(id).catch((err: unknown) => console.error(`[plugins] ${id}: ${(err as Error).message}`));
     });
     // One at a time (§5.4): when a one-at-a-time point's active entry stops (off, removed, stopped), the next takes over
-    // and the user is told once, under the point's declarer (Clover for a core point), as a voice that stops is.
+    // and the user is told once, under the point's declarer (MOSS for a core point), as a voice that stops is.
     const activeNotices = new ActiveNotices({
       registry: opened.registry,
       tell: (point, title, text) => {
@@ -4021,7 +4021,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...glossaryMethods(glossary),
       // Its sealed cards (a development folder from the app, a removal or an update from the Plugins page) ask on the
       // daemon's one broker once the parts are up (`pluginsBroker`); before, they wait for it, bounded.
-      ...pluginRegistryMethods({ componentInstalls: (door) => { componentInstall = door; }, onRestart: (id) => notices.userRestarted(id), opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.updater ? { updater: opened.updater } : {}), ...(pluginReviews ? { reviews: pluginReviews } : {}) }),
+      ...pluginRegistryMethods({ componentInstalls: (door) => { componentInstall = door; }, onRestart: (id) => notices.userRestarted(id), opened, host: pluginHost.host, home: mossHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void mossServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.updater ? { updater: opened.updater } : {}), ...(pluginReviews ? { reviews: pluginReviews } : {}) }),
       ...pluginUiParts.methods,
     };
     const host = pluginHost;
@@ -4042,11 +4042,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     if (opts.modelPluginHost === undefined && modelPlugins === undefined) {
       // The model plugins' keyed fetch and secrets ride B's router as handlers (`addApiHandlers`), behind B's gate.
       void startModelPlugins({
-        registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers, oauth: oauthRenewal,
+        registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: mossHome, secrets, refreshers: credentialRefreshers, oauth: oauthRenewal,
         addApiHandlers: (h) => host.addApiHandlers(h),
         // A test build only (compiled out of a real one): the acceptance run's own outside world, its fake search
         // backend and public site on loopback, by name; every other name keeps every rule (pinned-fetch.ts).
-        fetch: pinnedFetch(opts.pluginFetch ?? (typeof __CLOVER_TEST_BUILD__ === "string" ? mappedNamesSeam(process.env.CLOVER_TEST_OUTSIDE_WORLD) : undefined)),
+        fetch: pinnedFetch(opts.pluginFetch ?? (typeof __MOSS_TEST_BUILD__ === "string" ? mappedNamesSeam(process.env.MOSS_TEST_OUTSIDE_WORLD) : undefined)),
         // A `network:public` fetch (the web plugin's WebFetch): one audit line each, the user's dangerous domains.
         audit: (line) => audit.append(line),
         dangerousAdded: () => dangerousDomainsAdded() ?? [],
@@ -4064,43 +4064,43 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // A: a plugin's sign-ins (`plugin.auth.*`), for Settings and the welcome guide: a bundled model plugin's in its
     // provider's slot, another plugin's as its own secret. A change replaces the live sessions on that provider and
     // re-reads the internal jobs' view, as `credential.set` does.
-    Object.assign(cloverLaneHandlers, laneMethodHandlers(pluginAuthMethods(pluginAuth = createPluginAuth({
+    Object.assign(mossLaneHandlers, laneMethodHandlers(pluginAuthMethods(pluginAuth = createPluginAuth({
       registry: opened.registry, host: host.host, secrets, pluginSecrets: contractSecrets, oauthRenewal,
       changed: async (id, auth) => {
         // The bots' view first, as `credentialChanged` does: a turn started on the event, or once the sign-in's call
         // returns, already sees it.
         await botKeys?.refresh();
-        cloverServer?.coreEvent({ type: "plugin_auth_changed", id, auth });
+        mossServer?.coreEvent({ type: "plugin_auth_changed", id, auth });
       },
       credentialChanged: async (provider) => {
         // The bots' view of the stored keys first, so the next bot turn runs on the key just added or removed.
         await botKeys?.refresh();
         await evictSessionsForCredential({
-          list: () => cloverDrivers.list(),
+          list: () => mossDrivers.list(),
           providerOf: (sessionId) => runtime?.records.get(sessionId)?.providerId,
-          legOf: (sessionId) => cloverDrivers.legOf(sessionId),
-          advisorProviderOf: (sessionId) => cloverDrivers.advisorProviderOf?.(sessionId),
-          evict: (sessionId) => cloverDrivers.evict(sessionId),
+          legOf: (sessionId) => mossDrivers.legOf(sessionId),
+          advisorProviderOf: (sessionId) => mossDrivers.advisorProviderOf?.(sessionId),
+          evict: (sessionId) => mossDrivers.evict(sessionId),
           log: (line) => console.error(line),
         }, provider).catch((err: unknown) => { console.error(`[plugin-auth] replacing sessions on ${provider} failed (${err instanceof Error ? err.name : typeof err})`); });
         await internalRouter?.view.refresh().catch((err: unknown) => { console.error(`[plugin-auth] the internal jobs' view kept its set (${err instanceof Error ? err.name : typeof err})`); });
       },
       log: (line) => console.error(line),
-    }), { openCard: brokerCardOpener(pluginsBroker), nameOf: (id) => { const n = opened.registry.get(id)?.name; return typeof n === "string" ? n : undefined; }, emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line) })));
+    }), { openCard: brokerCardOpener(pluginsBroker), nameOf: (id) => { const n = opened.registry.get(id)?.name; return typeof n === "string" ? n : undefined; }, emit: (event) => void mossServer?.coreEvent(event), log: (line) => console.error(line) })));
     // Lane J: the plugins' stdio MCP servers. What a daemon before this one left running is reaped by its marks first
     // (this daemon holds the home's lock, so no other daemon of this home runs one). Without the plugin run files (no
     // guard, no fence), none is served.
     if (pluginRun !== undefined) {
-      await reapStdioMcpLeftovers({ dir: stdioMcpRecordsDir(cloverHome), log: (line) => console.error(`[plugins] ${line}`) });
-      const settingsFile = filePluginSettings(cloverHome);
+      await reapStdioMcpLeftovers({ dir: stdioMcpRecordsDir(mossHome), log: (line) => console.error(`[plugins] ${line}`) });
+      const settingsFile = filePluginSettings(mossHome);
       stdioMcp = new StdioMcpLauncher({
         prepare: pluginStdioPrepare({
-          registry: host.registry, guard: pluginRun, dataDir: (id) => pluginDataFolder(cloverHome, id),
+          registry: host.registry, guard: pluginRun, dataDir: (id) => pluginDataFolder(mossHome, id),
           settings: (id) => settingsFile.read(id), secrets: (id) => host.pluginSecrets.forPlugin(id),
-          secretFiles: new PluginSecretFiles(cloverHome),
+          secretFiles: new PluginSecretFiles(mossHome),
         }),
-        stderr: stdioStderrLog({ cloverHome, log: (line) => console.error(`[plugins] ${line}`) }),
-        records: stdioMcpRecordsDir(cloverHome),
+        stderr: stdioStderrLog({ mossHome, log: (line) => console.error(`[plugins] ${line}`) }),
+        records: stdioMcpRecordsDir(mossHome),
         picked: (id) => pluginGrants.fencePaths(id),
         onRestart: () => { void pluginMcp?.refresh(); },
         log: (line) => console.error(`[plugins] ${line}`),
@@ -4108,8 +4108,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
     // B: the plugins' remote `http` MCP servers (a pasted MCP URL's included): the core is their MCP client, through its
     // pinned fetch to the url their OK named only (computers/http-mcp.ts). The test seam is the keyed fetch's own.
-    const httpSeam = opts.pluginFetch ?? (typeof __CLOVER_TEST_BUILD__ === "string" ? mappedNamesSeam(process.env.CLOVER_TEST_OUTSIDE_WORLD) : undefined);
-    const httpSettings = filePluginSettings(cloverHome);
+    const httpSeam = opts.pluginFetch ?? (typeof __MOSS_TEST_BUILD__ === "string" ? mappedNamesSeam(process.env.MOSS_TEST_OUTSIDE_WORLD) : undefined);
+    const httpSettings = filePluginSettings(mossHome);
     const httpMcp = new HttpMcpOpener({
       registry: host.registry, settings: (id) => httpSettings.read(id), secrets: (id) => host.pluginSecrets.forPlugin(id),
       // A local URL (this computer's own loopback, `localNames`) is never the outside world the test seam stands in for:
@@ -4188,7 +4188,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const workshopFor = (opened: OpenedRegistry): PluginWorkshop => {
     const leftovers = opened.leftovers;
     return new PluginWorkshop({
-      home: cloverHome, os: hostOs(), registry: opened.registry, folders: opened.folders,
+      home: mossHome, os: hostOs(), registry: opened.registry, folders: opened.folders,
       userHome: opts.parts?.userHome ?? homedir(), computer: thisComputer(),
       ...(leftovers !== undefined ? { leftovers: (id: string, treeHash: string | undefined, from: Partial<PluginProvenance>) => leftovers.settle(id, { ...(treeHash !== undefined ? { treeHash } : {}), provenance: { by: "bot", at: 0, ...from } }) } : {}),
     });
@@ -4229,11 +4229,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(partsRegistry !== undefined ? { workshop: workshopFor(partsRegistry) } : {}),
       // A bot's look at this computer's app (`AppScreenshot`): the app here draws the place (`app.window.render`).
       appScreenshot: {
-        home: cloverHome,
+        home: mossHome,
         render: async (params) => {
-          const app = (cloverServer?.connections() ?? []).find((c) => c.role === "app" && c.features.includes(APP_RENDER_FEATURE));
-          if (app === undefined || cloverServer === undefined) throw new Error((cloverServer?.connections() ?? []).some((c) => c.role === "app") ? "the app on this computer is older than AppScreenshot" : "the app isn't running on this computer");
-          const answer = AppRenderResult.safeParse(await cloverServer.ask(app, "app.window.render", params, APP_RENDER_TIMEOUT_MS));
+          const app = (mossServer?.connections() ?? []).find((c) => c.role === "app" && c.features.includes(APP_RENDER_FEATURE));
+          if (app === undefined || mossServer === undefined) throw new Error((mossServer?.connections() ?? []).some((c) => c.role === "app") ? "the app on this computer is older than AppScreenshot" : "the app isn't running on this computer");
+          const answer = AppRenderResult.safeParse(await mossServer.ask(app, "app.window.render", params, APP_RENDER_TIMEOUT_MS));
           if (!answer.success) throw new Error("the app's answer to app.window.render isn't one");
           return answer.data;
         },
@@ -4270,7 +4270,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // app's URL for a plugin's file.
       hasKeyFor: await (async () => {
         // A third party's model plugin provider is keyed only when signed in through it, or taking no sign-in (#328).
-        const keys = await botKeyPresence(secrets, cloverHome, {
+        const keys = await botKeyPresence(secrets, mossHome, {
           pluginSignedIn: async () => (await pluginAuth?.signedInProviders()) ?? new Set<string>(),
           log: (line) => console.error(line),
         });
@@ -4281,7 +4281,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         botKeys = keys;
         return keys;
       })(),
-      // The owner's ruling: a model or voice Clover's own bundled plugin chose asks nothing. Bundled is the registry's
+      // The owner's ruling: a model or voice MOSS's own bundled plugin chose asks nothing. Bundled is the registry's
       // record source (a folder under the staged copy, never a manifest's claim), its folder inside this run's staged
       // copy, and its manifest still the bytes staging verified. A dev-folder or installed plugin of a bundled id is
       // refused at load (its id is reserved), and any record that isn't the staged one asks.
@@ -4300,7 +4300,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       drivers: ({ side, node, main, broker, fence, agents }) => {
         sessionsOf = () => side()?.host;
         // The bots' Agent tool (the controller's ruling): lane K's manager, its starts judged by `agentStartPolicy`
-        // (Clover's own sandboxed agents with no card, any other on a card at each start, a side thread's only the
+        // (MOSS's own sandboxed agents with no card, any other on a card at each start, a side thread's only the
         // former), at most AGENT_STARTS_PER_TURN a turn. A plugin's definition brings its words only.
         // One budget per root conversation, reset only by a turn the user's message starts (as `seenUrls`).
         const agentStarts = new AgentStarts({ rootOf: (id) => { const h = sessionsOf?.(); return h === undefined ? undefined : budgetRootOf(id, (s) => h.get(s)); } });
@@ -4323,16 +4323,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // folder on this computer, as the broker judges an edit's.
         const userHome = opts.parts?.userHome ?? homedir();
         const folderClass = (paths: readonly string[]) => pathsClassOnDisk(paths, {
-          home: realOrSelfPath(userHome), os: hostOs(), cloverHome: realOrSelfPath(cloverHome),
+          home: realOrSelfPath(userHome), os: hostOs(), mossHome: realOrSelfPath(mossHome),
           pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
         });
-        const grants = new SandboxGrants({ home: cloverHome, isOrdinary: (f) => folderClass([f]) === "ordinary", log: (line) => console.error(line) });
+        const grants = new SandboxGrants({ home: mossHome, isOrdinary: (f) => folderClass([f]) === "ordinary", log: (line) => console.error(line) });
         shellGrants = grants;
         const levelOfSession = (ctx: BotSessionContext) => ctx.level ?? node?.registry.get(ctx.computer)?.level;
         const sandboxOf = (ctx: BotSessionContext) => {
           void loginPathRetry?.poke();
           return botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
-            cloverHome: fence.cloverHome, userHome: fence.home, level: levelOfSession(ctx),
+            mossHome: fence.mossHome, userHome: fence.home, level: levelOfSession(ctx),
             ...(process.platform === "win32" ? { windows: true } : {}),
             grantedWrite: grants.folders(ctx.sessionId, ctx.botId), ownFolders: [ctx.paths.scratch, ctx.paths.root],
             pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
@@ -4340,10 +4340,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         };
         botShellRoots = (conversation, bot, level) => {
           const session = conversation ?? "";
-          const paths = botPaths(cloverHome, bot);
+          const paths = botPaths(mossHome, bot);
           void loginPathRetry?.poke();
           return botShellWriteRoots(fence.forCaller({ kind: "session", sessionId: session, sessionKind: "bot", bot } as BotSessionContext["caller"]).policy(), {
-            cloverHome: fence.cloverHome, userHome: fence.home, os: hostOs(), level, grants: grants.folders(session, bot), ownFolders: [paths.scratch, paths.root],
+            mossHome: fence.mossHome, userHome: fence.home, os: hostOs(), level, grants: grants.folders(session, bot), ownFolders: [paths.scratch, paths.root],
             pathFolders: () => pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
           });
         };
@@ -4353,7 +4353,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // The core's Agent and TaskStop too, once lane K's agents are up (`botCoreTools`): never taken for the runtime's own;
           // and lane C's RequestAccess.
           hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME, REQUEST_ACCESS_TOOL, ...(agents() === undefined ? [] : ["Agent", "TaskStop"])],
-          home: opts.parts?.userHome ?? homedir(), localComputer: main.self, fence, cloverHome,
+          home: opts.parts?.userHome ?? homedir(), localComputer: main.self, fence, mossHome,
           levelOf: (c) => node?.registry.get(c)?.level,
           // The drop: a bot's file-tool write into a folder it makes new in the plugins folder names it as the builder.
           dropped: (name: string, bot: string) => void partsRegistry?.folders.dropped(name, bot),
@@ -4384,7 +4384,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             return host;
           },
           // A plugin's display-only tool (`contained` on the tree the user OK'd, which can't reach the network and only
-          // reads Clover's state): bound by the router to the plugin, server and tool it really reaches on this
+          // reads MOSS's state): bound by the router to the plugin, server and tool it really reaches on this
           // computer, and judged at each call.
           containedTool: (ctx, tool) => {
             const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId);
@@ -4412,13 +4412,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // A run-later place (the coordinator's ruling): what the session's sandbox write-denies (the runtime refuses it to
           // the file tools too), or, at every level and wherever it is, a run-later name, a `.git`, a git directory or a PATH
           // folder. Fails closed: a sandbox that can't be drawn refuses.
-          runsLaterByName: (_ctx, path) => runLaterByName(path, { os: hostOs(), userHome: realOrSelfPath(fence.home), cloverHome }),
+          runsLaterByName: (_ctx, path) => runLaterByName(path, { os: hostOs(), userHome: realOrSelfPath(fence.home), mossHome }),
           runsLater: (ctx, path) => {
             const at = isAbsolute(path) ? path : resolveForGrant(ctx.paths.scratch, path);
             try {
-              // The Clover home as CLOVER_HOME gives it (the fence's is its real path): a bot names its scratch in that
+              // The MOSS home as MOSS_HOME gives it (the fence's is its real path): a bot names its scratch in that
               // spelling (its prompt does), and runLaterByName matches the home in it and in its real one.
-              const homes = { os: hostOs(), userHome: realOrSelfPath(fence.home), cloverHome };
+              const homes = { os: hostOs(), userHome: realOrSelfPath(fence.home), mossHome };
               return runsLaterPlace(at, sandboxOf(ctx).filesystem?.denyWrite ?? [], homes, folderClass);
             } catch { return true; }
           },
@@ -4444,7 +4444,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           log: (line) => console.error(`[agents] ${line}`),
         };
         return botDriverFactory({
-        home: cloverHome,
+        home: mossHome,
         spawn: (options) => embeddedSessions.spawn(options),
         canUseTool: (ctx, origin) => {
           const own = check ? check(ctx, origin) : refuseUntilApprovals;
@@ -4466,7 +4466,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         coreTools: (ctx, origin) => [
           ...baseTools(ctx, origin),
           ...(broker === undefined ? [] : [requestAccessTool({
-            broker, grants, pathClass: folderClass, home: userHome, levelOf: levelOfSession, writable: writableAlready, cloverHome,
+            broker, grants, pathClass: folderClass, home: userHome, levelOf: levelOfSession, writable: writableAlready, mossHome,
             pathFolders: () => pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
           }, ctx, origin)]),
         ],
@@ -4476,7 +4476,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // through the daemon's one broker (as a session's).
         // Its credential allowlist: its own model's provider and the ones the user approved for it (#350's ruling).
         provider: botProviderFill({
-          home: cloverHome, broker: hostCredentials, secrets, settings: () => settings,
+          home: mossHome, broker: hostCredentials, secrets, settings: () => settings,
           approved: botApprovalsFrom(side),
         }),
         // A-M3 on B-M2's host: the plugins' hooks, and their host MCP servers, run where J's router places them (this
@@ -4484,17 +4484,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         hooks: (agentTurnHooks = pluginHooks({
           registry, host: host.host, onSkipped: (s) => console.error(`[bots] hook ${s.pluginId}/${s.hook} on ${s.event} skipped: ${s.reason}`),
           // A plugin's `command` hooks run through its own fence (#415, `pluginHookSpawner`, every OS: the fence where
-          // the OS has one, macOS's sandbox-exec, refused there without it): its tree and Clover's run files to read,
+          // the OS has one, macOS's sandbox-exec, refused there without it): its tree and MOSS's run files to read,
           // its data and temp folders to write, the network only through its tree's proxy (B's 2g). With no run files
           // (an unusable run folder) they're skipped and reported, and a hook that can deny denies: never unfenced.
           ...(pluginRun !== undefined ? { commandSpawner: pluginHookSpawner({ guard: pluginRun, pluginRoot: (id) => registry.get(id)?.folder, settings: host.settings }) } : {}),
         })),
         mcp: { servers: (ctx) => mcp.servers(ctx.kind, undefined, ctx.botId), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer), settled: () => mcp.settled(MCP_FIRST_LISTING_WAIT_MS) },
-        // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.
+        // A's file fence over this computer's ONE MossFence (the parts', with the parts' user home), never a second one.
         // The user's secret places (`SECRET_READ_PLACES`) too: never read, and skipped by a search from above.
-        fileFence: botFileFence(fence, cloverHome, hostOs(), opts.parts?.userHome ?? homedir()),
+        fileFence: botFileFence(fence, mossHome, hostOs(), opts.parts?.userHome ?? homedir()),
         // The drop: a bot session's shell call that makes a new folder in the plugins folder names it as the builder.
-        pluginDrops: { folder: join(cloverHome, "plugins"), dropped: (name: string, bot: string) => void partsRegistry?.folders.dropped(name, bot) },
+        pluginDrops: { folder: join(mossHome, "plugins"), dropped: (name: string, bot: string) => void partsRegistry?.folders.dropped(name, bot) },
         // Bots' Bash sandbox from the same fence (lane C's #356), read at each turn start (A's #362: a change reopens the
         // runtime; one that can't be built fails the turn), at the session's level: a routine's own, else its computer's.
         // With what RequestAccess granted the conversation: a grant changes it, so the runtime reopens on it.
@@ -4620,12 +4620,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       if (partsStopping) return;
     }
     const started = await startDaemonLinks({
-      home: dirs.home, store: contractSecrets, clock: partsClock, handlers: cloverLaneHandlers,
-      dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
+      home: dirs.home, store: contractSecrets, clock: partsClock, handlers: mossLaneHandlers,
+      dispatch: (method, params, caller, role) => mossServer!.dispatch(method, params, { caller, role }),
       // The lease renews just before an update's restart (H-M3's `beforeRestart`, on lane M's gate).
       updateGate,
-      // A paired phone's or browser's Clover connection over its link (C-M3 item 3).
-      clients: { server: cloverServer, tokens: cloverTokens },
+      // A paired phone's or browser's MOSS connection over its link (C-M3 item 3).
+      clients: { server: mossServer, tokens: mossTokens },
       // A sensitive device change asks on the daemon's one broker once the parts are up (C-M3); before, it's refused.
       openCard: (req) => (daemonParts?.broker ? brokerCardOpener(daemonParts.broker)(req) : refuseUntilBroker(req)),
       onRegistry: (r) => { ownDevices = r; },
@@ -4648,9 +4648,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       const bots = p.bots === false ? false : p.bots ?? (pluginRegistry !== undefined ? await daemonBots(pluginRegistry) : false);
       if (partsStopping) return void (await closeStarted());
       // The tree folder only for the default home: a dev or test daemon never makes the shared one.
-      const treeRoot = opts.secrets === undefined && isDefaultCloverHome(home, profile) ? (() => { try { return defaultTreeRoot(); } catch { return undefined; } })() : undefined;
+      const treeRoot = opts.secrets === undefined && isDefaultMossHome(home, profile) ? (() => { try { return defaultTreeRoot(); } catch { return undefined; } })() : undefined;
       daemonParts = await startDaemonParts({
-        cloverHome, userHome: p.userHome ?? homedir(), clock: partsClock, links, handlers: cloverLaneHandlers,
+        mossHome, userHome: p.userHome ?? homedir(), clock: partsClock, links, handlers: mossLaneHandlers,
         node: p.node === false ? false : {
           ...(treeRoot ? { treeRoot } : {}),
           // A-M3: the plugins' host MCP servers as this computer's MCP host, for J's router (calls here, files saved in
@@ -4659,14 +4659,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           ...(p.node ?? {}),
         },
         bots,
-        // The Clover Browser: its tabs live in this computer's app (asked over the Clover server's connections); the
+        // The MOSS Browser: its tabs live in this computer's app (asked over the MOSS server's connections); the
         // bundled Browser tool reaches it through the plugin host's router. `browser: false` starts none (a test's seam).
         browser: p.browser === false ? false : {
           app: appTabPort(appDoors),
           computer: computerNameFor(defaultDeviceName(hostname())) || "Computer",
           // The tabs' changes go to the app and to the layers of plugins holding `browser` (F5: by capability): the events
           // are a live view's way to hear them (a listener can't cross a layer's call), and no other plugin hears a tab.
-          emit: (e) => void cloverServer?.coreEvent(
+          emit: (e) => void mossServer?.coreEvent(
             e.type === "tab_changed" ? { type: "tab_changed", tab: e.tab } : { type: "tab_closed", id: e.id, computer: e.computer },
             { to: hearsTabsOf((id) => grantsInForce(bots === false ? undefined : bots?.registry.get(id)).includes("browser")) },
           ),
@@ -4696,9 +4696,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // side's drivers are made (and so the approval check that judges each call).
           plugins: lateAgentPlugins(() => agentReach, pluginRegistry === undefined ? undefined : (fn) => pluginRegistry.watch(() => fn())),
         },
-        // The Clover server's core events: the terminal panel's output (owner-scoped: the opener only), and the broker's
+        // The MOSS server's core events: the terminal panel's output (owner-scoped: the opener only), and the broker's
         // cards to the app, remote clients and plugins with `approvals` (C-M3 item 2), from before the bot side starts.
-        coreEvent: (event, o) => cloverServer?.coreEvent(event, o) ?? 0,
+        coreEvent: (event, o) => mossServer?.coreEvent(event, o) ?? 0,
         log: (line) => console.error(line),
       });
       okTicks.flush();
@@ -4756,8 +4756,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     embedded: embeddedSessions,
     sessions: store,
     buildSessionCapabilities,
-    clover: cloverDrivers,
-    cloverParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots, agents: () => daemonParts?.agents, broker: () => daemonParts?.broker },
+    moss: mossDrivers,
+    mossParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots, agents: () => daemonParts?.agents, broker: () => daemonParts?.broker },
     updateGate,
     setSelfUpdate(self) { selfUpdate = self; },
     dispatchChildren,
@@ -4787,8 +4787,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       stopping = true;
       pairSide?.pair.quit("quit");
       pairSide?.dispose();
-      cloverServer?.dispose();
-      mark("the pair and the Clover server");
+      mossServer?.dispose();
+      mark("the pair and the MOSS server");
       // The first thing in the bounded tail: every bot conversation and side thread lets its driver go, each running
       // turn's end recorded as its release starts (`endTurnsForStop`), so a stop cut off at its bound (`stopWithin`)
       // leaves no turn open in the log. The bot side's own close below waits for the same releases.
@@ -4818,7 +4818,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // otherwise bounded by the contract's host wait, and settled below BEFORE the store and the runtime close.
       const guestsDrained = coworkNative?.beginShutdown();
       const guestsTracked = guestsDrained === undefined ? undefined : tracked("cowork's native guests", guestsDrained);
-      cloverDrivers.beginShutdown?.();
+      mossDrivers.beginShutdown?.();
       dispatchChildren?.beginShutdown();
       sessionMessaging?.beginShutdown(); // no SendMessage resumes a session into a daemon that is going away
       computerUseRuntime.wakes.beginShutdown(); // no wake resumes a session either: its trigger stays in wakes.json for the next boot
@@ -4847,14 +4847,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // shutdown has only reached the microtask queue, and dropping it strands a runtime record
       // whose session is gone), and closes `runtime-state.db`. That drain was the FIRST part of
       // teardown that could not be synchronous, which is why `stop()` hands back a promise (P8b
-      // Task 5 added a second, below: ending the live Clover sessions — so `store.close()` is on
+      // Task 5 added a second, below: ending the live MOSS sessions — so `store.close()` is on
       // the async tail now too; see `RunningDaemon.stop`'s doc for the whole order), and
       // `lock.release()` — which unlinks
-      // the socket, and whose absence is what `clover doctor`'s repairs check before touching this
+      // the socket, and whose absence is what `moss doctor`'s repairs check before touching this
       // file — happens strictly after the handle is closed. AWAIT IT in any path that then calls
       // `process.exit` (daemon.ts's own SIGTERM handler below, and cli/src/main.ts's `daemon run`),
       // or the process dies mid-drain with the lock still on disk.
-      // P8b Task 5 (G-14) — AND IT IS PART OF THE SAME ORDER. Every live Clover session ends BEFORE
+      // P8b Task 5 (G-14) — AND IT IS PART OF THE SAME ORDER. Every live MOSS session ends BEFORE
       // the router disposes (that ordering is inside `runtimeSdk.dispose()`), and the whole of it
       // happens BEFORE `store.close()` and `runtime.close()` below: a child draining its last turn
       // appends its final events into the session store and writes delivery receipts into
@@ -4871,7 +4871,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // A daemon with no runtime SDK still built the embedded host, and the host's storage-policy consumer is process-global: its
       // shutdown() unregisters it synchronously (nothing is live without a runtime), so call it here too and keep stop() synchronous.
       if (runtimeSdk === undefined) void embeddedSessions.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS).catch(() => {});
-      const cloverDone = runtimeSdk === undefined
+      const mossDone = runtimeSdk === undefined
         ? undefined
         : tracked("the runtime's sessions (runtimeSdk.dispose)", runtimeSdk.dispose())
           .catch((err: unknown) => { console.error(`runtime-sdk: dispose failed: ${(err as Error)?.name ?? "unknown"}`); })
@@ -4888,9 +4888,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         if (!runtime) { lock.release(); return; }
         return tracked("runtime-state.db's close", runtime.close()).then(() => lock.release(), () => lock.release());
       };
-      // Synchronous when there is no Clover handle — `stop()`'s existing contract for every pre-8b
+      // Synchronous when there is no MOSS handle — `stop()`'s existing contract for every pre-8b
       // caller is unchanged (everything but the runtime drain has already happened on return).
-      const drains = [botsReleased, cloverDone, guestsTracked, partsClosed].filter((p): p is Promise<void> => p !== undefined);
+      const drains = [botsReleased, mossDone, guestsTracked, partsClosed].filter((p): p is Promise<void> => p !== undefined);
       const settled = drains.length === 0 ? undefined : drains.length === 1 ? drains[0] : Promise.all(drains).then(() => undefined);
       return settled === undefined ? closeRest() : settled.then(closeRest);
     },

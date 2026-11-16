@@ -1,4 +1,4 @@
-// `clover migrate` (P9c Task M step 8) — thin on purpose, same precedent as `agents-cli.ts`'s own
+// `moss migrate` (P9c Task M step 8) — thin on purpose, same precedent as `agents-cli.ts`'s own
 // header: `main.ts`'s argv switch can't be driven by a unit test, so everything provable lives here
 // and `main.ts`'s `case "migrate"` stays a thin wrapper over real deps.
 import { existsSync } from "node:fs";
@@ -30,13 +30,13 @@ import {
   LEGACY_IMPORTS_OFF,
   legacyImportOn,
   type LegacyImport,
-} from "@waifucave/clover-core";
-import type { CloverProfile } from "@waifucave/clover-core";
+} from "@waifucave/moss-core";
+import type { MossProfile } from "@waifucave/moss-core";
 
 export interface MigrateCommandDeps {
   home: string;
-  profile: CloverProfile;
-  /** `process.argv.slice(3)` — everything after `clover migrate`. */
+  profile: MossProfile;
+  /** `process.argv.slice(3)` — everything after `moss migrate`. */
   argv: string[];
   /** The CURRENT (destination) Keychain store — real `KeychainSecretStore` in production. */
   secretsTo: SecretStore;
@@ -85,11 +85,11 @@ function printMigrationCSummary(m: MigrationCManifest, log: (line: string) => vo
   if (m.reconciled.length > 0) log(`  reconciled: ${m.reconciled.map((r) => `${r.root} (${r.outcome})`).join(", ")}`);
   if (m.archived.length > 0) log(`  archived under ${m.archiveDir}: ${m.archived.length} item(s)`);
   if (m.status === "phase1-complete") log("  the legacy official working copies are reconciled — and the migration finished — at the next daemon boot");
-  if (m.status === "rolling-back") log("  a rollback was interrupted — run `clover migrate --sdk-home --rollback` to finish it");
+  if (m.status === "rolling-back") log("  a rollback was interrupted — run `moss migrate --sdk-home --rollback` to finish it");
 }
 
 /**
- * WS-21 (spec §8): `clover migrate --sdk-home [--home <dir>] [--resume | --rollback | --status]`.
+ * WS-21 (spec §8): `moss migrate --sdk-home [--home <dir>] [--resume | --rollback | --status]`.
  *
  * The CLI has no router, so it runs Migration C's PHASE 1 (and phase 2 when there is no official
  * working copy to reconcile); a home left `phase1-complete` finishes at the next daemon boot on a build
@@ -100,7 +100,7 @@ async function runMigrateSdkHome(deps: MigrateCommandDeps, yes: boolean): Promis
   const homeIdx = deps.argv.indexOf("--home");
   const home = homeIdx === -1 ? deps.home : deps.argv[homeIdx + 1];
   if (!home) {
-    deps.error("clover migrate --sdk-home: --home requires a path");
+    deps.error("moss migrate --sdk-home: --home requires a path");
     return 1;
   }
   if (deps.argv.includes("--status")) {
@@ -111,14 +111,14 @@ async function runMigrateSdkHome(deps: MigrateCommandDeps, yes: boolean): Promis
     return 0;
   }
   if (deps.isDaemonLockHeld(home)) {
-    deps.error("clover migrate --sdk-home: the daemon is running; stop it first");
+    deps.error("moss migrate --sdk-home: the daemon is running; stop it first");
     return 1;
   }
   const supported = (deps.routerSupportsRunHome ?? linkedRouterSupportsRunHome)();
   // Review I8: only a build that can RUN a migrated home may make one — the boot hook's own condition.
   // `--status` (above) and `--rollback` (the way back to an older build) are always allowed.
   if (!supported && !deps.argv.includes("--rollback")) {
-    deps.error("clover migrate --sdk-home: this build cannot run a migrated home (its router applies no run homes) — nothing was changed; use a build that does");
+    deps.error("moss migrate --sdk-home: this build cannot run a migrated home (its router applies no run homes) — nothing was changed; use a build that does");
     return 1;
   }
   const migrationDeps = { log: deps.log, reconcileAvailable: supported, convertLegacyPlugins: convertLegacyPluginsForMigration };
@@ -129,8 +129,8 @@ async function runMigrateSdkHome(deps: MigrateCommandDeps, yes: boolean): Promis
         // older build refuses — step it back so a downgrade works.
         const schema = downgradeRuntimeStateToV6(home);
         deps.log(schema === "not-needed"
-          ? `clover migrate --sdk-home --rollback: nothing to roll back in ${home}`
-          : `clover migrate --sdk-home --rollback: no Migration C in ${home}; runtime-state.db stepped back to schema v6 for an older build`);
+          ? `moss migrate --sdk-home --rollback: nothing to roll back in ${home}`
+          : `moss migrate --sdk-home --rollback: no Migration C in ${home}; runtime-state.db stepped back to schema v6 for an older build`);
         return 0;
       }
       if (!yes && !(await deps.confirm(`Roll back Migration C in ${home}? The reconcile appends stay in the transcripts. [y/N] `))) {
@@ -144,11 +144,11 @@ async function runMigrateSdkHome(deps: MigrateCommandDeps, yes: boolean): Promis
       const state = migrationCState(home);
       if (state.kind === "parsed" && state.manifest.status === "rolling-back") {
         // R.3 I-5: only the rollback goes on from a half-rolled-back home.
-        deps.error(`clover migrate --sdk-home --resume: a Migration C rollback of ${home} was interrupted — run \`clover migrate --sdk-home --rollback\` to finish it`);
+        deps.error(`moss migrate --sdk-home --resume: a Migration C rollback of ${home} was interrupted — run \`moss migrate --sdk-home --rollback\` to finish it`);
         return 1;
       }
       if (state.kind !== "parsed" || (state.manifest.status !== "in-progress" && state.manifest.status !== "phase1-complete")) {
-        deps.error(`clover migrate --sdk-home --resume: nothing to resume in ${home}`);
+        deps.error(`moss migrate --sdk-home --resume: nothing to resume in ${home}`);
         return 1;
       }
       if (!yes && !(await deps.confirm(`Resume Migration C in ${home}? [y/N] `))) {
@@ -160,11 +160,11 @@ async function runMigrateSdkHome(deps: MigrateCommandDeps, yes: boolean): Promis
     }
     const plan = await planMigrationC(home, migrationDeps);
     if (!plan.needed) {
-      deps.log(`clover migrate --sdk-home: nothing to migrate (${home} is not in the old layout)`);
+      deps.log(`moss migrate --sdk-home: nothing to migrate (${home} is not in the old layout)`);
       return 0;
     }
     if (plan.refusal !== undefined) {
-      deps.error(`clover migrate --sdk-home: refused — ${plan.refusal}`);
+      deps.error(`moss migrate --sdk-home: refused — ${plan.refusal}`);
       return 1;
     }
     if (!yes && !(await deps.confirm(`Move ${home}'s runtime store, skills and agents into ${join(home, "sdk")}? [y/N] `))) {
@@ -175,7 +175,7 @@ async function runMigrateSdkHome(deps: MigrateCommandDeps, yes: boolean): Promis
     return 0;
   } catch (err) {
     if (err instanceof MigrationCRefused || err instanceof CoworkDowngradeRefused) {
-      deps.error(`clover migrate --sdk-home: ${err.message}`);
+      deps.error(`moss migrate --sdk-home: ${err.message}`);
       return 1;
     }
     throw err;
@@ -187,17 +187,17 @@ export async function runMigrateCommand(deps: MigrateCommandDeps): Promise<numbe
   const yes = deps.argv.includes("--yes");
   if (deps.argv.includes("--cowork-schema")) {
     if (!deps.argv.includes("--rollback") || deps.argv.includes("--sdk-home") || deps.argv.includes("--resume") || deps.argv.includes("--status")) {
-      deps.error("usage: clover migrate --cowork-schema --rollback [--home <dir>] [--yes]"); return 1;
+      deps.error("usage: moss migrate --cowork-schema --rollback [--home <dir>] [--yes]"); return 1;
     }
     const index = deps.argv.indexOf("--home"), home = index < 0 ? deps.home : deps.argv[index + 1];
-    if (!home || home.startsWith("--")) { deps.error("clover migrate --cowork-schema: --home requires a path"); return 1; }
-    if (deps.isDaemonLockHeld(home)) { deps.error("clover migrate --cowork-schema: the daemon is running; stop it first"); return 1; }
+    if (!home || home.startsWith("--")) { deps.error("moss migrate --cowork-schema: --home requires a path"); return 1; }
+    if (deps.isDaemonLockHeld(home)) { deps.error("moss migrate --cowork-schema: the daemon is running; stop it first"); return 1; }
     if (!yes && !(await deps.confirm(`Roll back unused Cowork schema in ${home} to v7, keeping the SDK layout? [y/N] `))) { deps.log("aborted"); return 1; }
     try {
       const result = downgradeCoworkRuntimeStateToV7(home);
       deps.log(result === "not-needed" ? "Cowork schema rollback: nothing to change" : "Cowork schema rolled back to v7; SDK layout and runtime state retained"); return 0;
     } catch (error) {
-      if (error instanceof CoworkDowngradeRefused) { deps.error(`clover migrate --cowork-schema: ${error.code}: ${error.message}`); return 1; }
+      if (error instanceof CoworkDowngradeRefused) { deps.error(`moss migrate --cowork-schema: ${error.code}: ${error.message}`); return 1; }
       throw error;
     }
   }
@@ -226,13 +226,13 @@ export async function runMigrateCommand(deps: MigrateCommandDeps): Promise<numbe
   // own hook) is the normal door for an automatic migration; this command's job is resume/rollback/
   // an explicit re-run, none of which are safe beside a live daemon holding the SAME home open.
   if (deps.isDaemonLockHeld(deps.home)) {
-    deps.error("clover migrate: the daemon is running; stop it first");
+    deps.error("moss migrate: the daemon is running; stop it first");
     return 1;
   }
 
   if (deps.argv.includes("--resume")) {
     if (!homeImportOn(deps)) {
-      deps.error(`clover migrate --resume: ${LEGACY_IMPORTS_OFF}; \`clover migrate --rollback\` still removes what an earlier run copied`);
+      deps.error(`moss migrate --resume: ${LEGACY_IMPORTS_OFF}; \`moss migrate --rollback\` still removes what an earlier run copied`);
       return 1;
     }
     if (!yes && !(await deps.confirm("Resume the in-progress migration? [y/N] "))) {
@@ -244,7 +244,7 @@ export async function runMigrateCommand(deps: MigrateCommandDeps): Promise<numbe
       printManifestSummary(manifest, deps.log);
       return 0;
     } catch (err) {
-      deps.error(`clover migrate: ${err instanceof Error ? err.message : String(err)}`);
+      deps.error(`moss migrate: ${err instanceof Error ? err.message : String(err)}`);
       return 1;
     }
   }
@@ -259,34 +259,34 @@ export async function runMigrateCommand(deps: MigrateCommandDeps): Promise<numbe
       printManifestSummary(manifest, deps.log);
       return 0;
     } catch (err) {
-      deps.error(`clover migrate: ${err instanceof Error ? err.message : String(err)}`);
+      deps.error(`moss migrate: ${err instanceof Error ? err.message : String(err)}`);
       return 1;
     }
   }
 
   // `--from <legacyHome>`: a fresh migration into the current home. C0 (review S2): the operator names the legacy
-  // home; Clover never looks for one by itself (spec §12 retires the legacy migrations), so there is no default.
+  // home; MOSS never looks for one by itself (spec §12 retires the legacy migrations), so there is no default.
   const fromIdx = deps.argv.indexOf("--from");
   if (fromIdx === -1) {
-    deps.error("clover migrate: name the legacy home with --from <path> — Clover never looks for one by itself");
+    deps.error("moss migrate: name the legacy home with --from <path> — MOSS never looks for one by itself");
     return 1;
   }
   const legacyHome = deps.argv[fromIdx + 1];
   if (!legacyHome) {
-    deps.error("clover migrate: --from requires a path");
+    deps.error("moss migrate: --from requires a path");
     return 1;
   }
   // M-M0: and only while `migration/legacy-imports.ts` turns the home import on (off until a later lane).
   if (!homeImportOn(deps)) {
-    deps.error(`clover migrate: ${LEGACY_IMPORTS_OFF}`);
+    deps.error(`moss migrate: ${LEGACY_IMPORTS_OFF}`);
     return 1;
   }
   if (!existsSync(join(legacyHome, "settings.json"))) {
-    deps.error(`clover migrate: no legacy home found at ${legacyHome} (no settings.json there)`);
+    deps.error(`moss migrate: no legacy home found at ${legacyHome} (no settings.json there)`);
     return 1;
   }
   if (!isPristineHome(deps.home)) {
-    deps.error(`clover migrate: ${deps.home} is not a pristine Clover home — move it aside, e.g. \`mv ${deps.home} ${deps.home}.bak\`, then retry`);
+    deps.error(`moss migrate: ${deps.home} is not a pristine MOSS home — move it aside, e.g. \`mv ${deps.home} ${deps.home}.bak\`, then retry`);
     return 1;
   }
   if (!yes && !(await deps.confirm(`Migrate ${legacyHome} into ${deps.home}? [y/N] `))) {
@@ -300,7 +300,7 @@ export async function runMigrateCommand(deps: MigrateCommandDeps): Promise<numbe
     return 0;
   } catch (err) {
     if (err instanceof MigrationRefused) {
-      deps.error(`clover migrate: ${err.message}`);
+      deps.error(`moss migrate: ${err.message}`);
       return 1;
     }
     throw err;

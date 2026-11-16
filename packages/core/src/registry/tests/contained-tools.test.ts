@@ -2,14 +2,14 @@
 // OK card in a sentence of their own, true only for the tree the user OK'd; a change to the list asks for the OK
 // again. The same conditions as read-only tools (never a dev folder, a child's list, a server or tree that can reach
 // the network, or where the plugin fence doesn't hold), and besides, a tree holding no capability beyond reading
-// Clover's own state. One tool is on one list at most.
+// MOSS's own state. One tool is on one list at most.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CAPABILITIES, CONTAINED_TOOL_CAPABILITIES, containedOkLines, containedToolsHold, OK_LINE_MAX, PLUGIN_API_VERSION, READ_ONLY_OK_MAX_LINES, validateManifest,
-} from "@waifucave/clover-plugin-sdk";
+} from "@waifucave/moss-plugin-sdk";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -19,7 +19,7 @@ import { pluginToolContained, pluginToolReadOnly } from "../read-only-tools";
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 const tempHome = () => {
-  const d = realpathSync(mkdtempSync(join(tmpdir(), "clover-ct-")));
+  const d = realpathSync(mkdtempSync(join(tmpdir(), "moss-ct-")));
   temps.push(d);
   return d;
 };
@@ -27,16 +27,16 @@ const tempHome = () => {
 type Server = Record<string, unknown>;
 const STDIO: Server = { type: "stdio", command: "bin/stage" };
 const manifest = (contained?: string[], o: { id?: string; server?: Server; capabilities?: string[]; readOnly?: string[] } = {}) => JSON.stringify({
-  manifest: 1, id: o.id ?? "stage", name: "Stage", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  manifest: 1, id: o.id ?? "stage", name: "Stage", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
   ...(o.capabilities ? { capabilities: o.capabilities } : {}),
   contributes: { mcpServers: { stage: { ...(o.server ?? STDIO), ...(contained ? { contained } : {}), ...(o.readOnly ? { readOnly: o.readOnly } : {}) } } },
 });
 const write = (dir: string, text: string) => {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "clover.json"), text);
+  writeFileSync(join(dir, "moss.json"), text);
 };
 const open = (home: string, extra: { bundledDirs?: string[] } = {}) =>
-  openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50, sandboxed: true, ...extra });
+  openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50, sandboxed: true, ...extra });
 const FENCED = { fenced: true };
 const HELD = "Its server stage says these tools only change its own display, so at the default level they run without asking: celebrate, set_mood.";
 
@@ -58,7 +58,7 @@ describe("display-only MCP tools", () => {
       expect(pluginToolContained(reg, "stage", "other", "set_mood", FENCED)).toBe(false);
       expect(pluginToolContained(reg, "stage", "stage", "set_mood", { fenced: false })).toBe(false);
       // A wider list asks again: until the new OK, nothing is contained.
-      writeFileSync(join(dir, "clover.json"), manifest(["set_mood", "celebrate", "wipe"], { capabilities: ["bots.read", "conversation.read"] }));
+      writeFileSync(join(dir, "moss.json"), manifest(["set_mood", "celebrate", "wipe"], { capabilities: ["bots.read", "conversation.read"] }));
       await opened.folders.refresh(dir);
       expect(reg.get("stage")!.state).toBe("found");
       expect(pluginToolContained(reg, "stage", "stage", "set_mood", FENCED)).toBe(false);
@@ -94,7 +94,7 @@ describe("display-only MCP tools", () => {
     }
   });
 
-  test("a tree that can reach the network, or do more than read Clover's state, keeps the card, and its OK says so", async () => {
+  test("a tree that can reach the network, or do more than read MOSS's state, keeps the card, and its OK says so", async () => {
     const home = tempHome();
     const cases: [string, string][] = [
       ["web-stage", manifest(["set_mood"], { id: "web-stage", server: { type: "http", url: "https://stage.example.com/mcp" } })],
@@ -115,7 +115,7 @@ describe("display-only MCP tools", () => {
       for (const id of [...cases.map(([i]) => i), "pack"]) {
         const lines = opened.folders.okText(id, "macos", false, true).lines;
         expect([id, lines.some((l) => l.includes("run without asking"))]).toEqual([id, false]);
-        expect([id, lines]).toEqual([id, expect.arrayContaining(["Its server stage says one tool only changes its own display, but it can reach the network or do more than read Clover's state, so it still asks before running."])]);
+        expect([id, lines]).toEqual([id, expect.arrayContaining(["Its server stage says one tool only changes its own display, but it can reach the network or do more than read MOSS's state, so it still asks before running."])]);
         await reg.approve(id, reg.get(id)!.treeHash!);
         expect([id, pluginToolContained(reg, id, "stage", "set_mood", FENCED)]).toEqual([id, false]);
       }
@@ -134,16 +134,16 @@ describe("display-only MCP tools", () => {
       const line = "This update lets it reach the network, which it couldn't when you OK'd the tools it runs without asking, so it could then send what its tools were given earlier.";
       expect(opened.folders.okText("stage", "macos", false, true).lines).not.toContain(line);
       await reg.approve("stage", reg.get("stage")!.treeHash!);
-      writeFileSync(join(dir, "clover.json"), manifest(["set_mood"], { capabilities: ["network:api.example.com"] }));
+      writeFileSync(join(dir, "moss.json"), manifest(["set_mood"], { capabilities: ["network:api.example.com"] }));
       await opened.folders.refresh(dir);
       expect(reg.get("stage")!.state).toBe("found");
       expect(opened.folders.okText("stage", "macos", false, true).lines).toContain(line);
       // A tree with no such tools, gaining the network, gets no such line.
       const plain = join(home, "plugins", "plain");
-      write(plain, JSON.stringify({ manifest: 1, id: "plain", name: "Plain", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, contributes: { mcpServers: { s: STDIO } } }));
+      write(plain, JSON.stringify({ manifest: 1, id: "plain", name: "Plain", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, contributes: { mcpServers: { s: STDIO } } }));
       await opened.folders.refresh(plain);
       await reg.approve("plain", reg.get("plain")!.treeHash!);
-      write(plain, JSON.stringify({ manifest: 1, id: "plain", name: "Plain", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, capabilities: ["network:api.example.com"], contributes: { mcpServers: { s: STDIO } } }));
+      write(plain, JSON.stringify({ manifest: 1, id: "plain", name: "Plain", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, capabilities: ["network:api.example.com"], contributes: { mcpServers: { s: STDIO } } }));
       await opened.folders.refresh(plain);
       expect(opened.folders.okText("plain", "macos", false, true).lines).not.toContain(line);
     } finally {
@@ -151,7 +151,7 @@ describe("display-only MCP tools", () => {
     }
   });
 
-  test("the capabilities a contained tree may hold are reads of Clover's own state or display-only writes, and every other one keeps the card", () => {
+  test("the capabilities a contained tree may hold are reads of MOSS's own state or display-only writes, and every other one keeps the card", () => {
     const tree = (capabilities: string[]) => ({ capabilities, wrappedNetwork: false, fenced: true });
     const server = { type: "host" };
     // The display-only writes a contained tree may hold: the window's own parts, by the user's press, and the plugin's own

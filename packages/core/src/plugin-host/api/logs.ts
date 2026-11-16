@@ -1,17 +1,17 @@
 // `logs.read` and `logs.follow` (spec §5.4, capability `logs.read`), the plugin API's reads of a plugin's log: what its
-// host half's console, its stdio servers' stderr and Clover's notes about it wrote (`<home>/logs/plugins/<id>.log`,
+// host half's console, its stdio servers' stderr and MOSS's notes about it wrote (`<home>/logs/plugins/<id>.log`,
 // `pluginLogWriter`, the same file its Settings page shows). Owner: lane A.
 //
 // * **Whose** (the coordinator's ruling: the OK card is the gate): a plugin reads its own tree's logs (its own and its
-//   children's, by id) with no capability. With `logs.read`, whose OK line says "It reads Clover's logs and every
-//   plugin's logs", it also reads Clover's own log (`source: "core"`, `<home>/logs/daemon.log`) and any other plugin's.
+//   children's, by id) with no capability. With `logs.read`, whose OK line says "It reads MOSS's logs and every
+//   plugin's logs", it also reads MOSS's own log (`source: "core"`, `<home>/logs/daemon.log`) and any other plugin's.
 // * **`read(source, { lines })`:** the last `lines` lines (default LOG_READ_DEFAULT, at most LOG_READ_MAX), from the
 //   file and, when it holds fewer, the one it rotated to (`<id>.log.1`); at most LOG_READ_BYTES of each is read.
 // * **`follow(source, listener)`:** each line written from now on, read as the file grows (a rotation starts it again
 //   from its top); at most LOG_FOLLOWS_PER_PLUGIN open per plugin, closed when the plugin stops (`forget`).
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { topPluginIdOf } from "@waifucave/clover-protocol";
+import { topPluginIdOf } from "@waifucave/moss-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import { DAEMON_LOG_FILE } from "../../daemon-log-file";
 import { pluginPath } from "../paths";
@@ -32,12 +32,12 @@ export function pluginLogFile(home: string, pluginId: string): string {
   return `${pluginPath(join(home, "logs", "plugins"), pluginId)}.log`;
 }
 
-/** The log file `source` names, if the caller may read it: its own tree's always, Clover's own and any other plugin's
+/** The log file `source` names, if the caller may read it: its own tree's always, MOSS's own and any other plugin's
  *  with `logs.read` on its OK. */
 function fileOf(home: string, ctx: ApiCallContext, raw: unknown): string {
   const granted = ctx.record.granted.includes("logs.read");
   if (raw === "core") {
-    if (!granted) throw new ContractError("refused", "Clover's own log needs the capability logs.read, which this plugin's OK doesn't list");
+    if (!granted) throw new ContractError("refused", "MOSS's own log needs the capability logs.read, which this plugin's OK doesn't list");
     return join(home, "logs", DAEMON_LOG_FILE);
   }
   const id = typeof raw === "object" && raw !== null ? (raw as { plugin?: unknown }).plugin : undefined;

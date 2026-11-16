@@ -5,7 +5,7 @@
 // the user's origin. Plain http reaches it only on this computer; an endpoint on the local network needs https.
 // Owner: lane A.
 //
-// * Only a bundled model plugin (`clover/model-<provider>`) and only its own provider's setting: nothing in the
+// * Only a bundled model plugin (`moss/model-<provider>`) and only its own provider's setting: nothing in the
 //   plugin's request, its manifest or a tool result names the endpoint. A third party's plugin has none.
 // * Read from the settings at each call, so a change needs no restart.
 // * B's gate lets the plugin's `net.fetch` reach that origin (`userEndpoint` on the router), and the model plugins'

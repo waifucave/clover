@@ -35,7 +35,7 @@ export function tokenFallbackProblems(css: string, options: TokenFallbackOptions
   const out: string[] = [];
   for (const [property, fallback] of tokenUses(css)) {
     if (local.has(property)) continue;
-    if (options.pluginTokens === true && property.startsWith("--clover-plugin-")) continue;
+    if (options.pluginTokens === true && property.startsWith("--moss-plugin-")) continue;
     const token = byProperty.get(property);
     if (token === undefined) out.push(`${property} is not a catalog token`);
     else if (fallback === undefined) out.push(`${property} has no fallback`);

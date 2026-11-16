@@ -1,8 +1,8 @@
-// How Clover's plugins reach an agent session (spec §9.3 "How plugins reach an ACP agent", [D]): a coding session the
+// How MOSS's plugins reach an agent session (spec §9.3 "How plugins reach an ACP agent", [D]): a coding session the
 // user started, or a bot's delegation, on any backend.
 //
 // * **Tools.** The bridge serves the plugins' MCP tools in the session's scope: a plugin whose `scope` covers the
-//   session's kind (`agents` or `both`) and whose `onlyBackends` names its backend (`clover` for Clover's own runtime),
+//   session's kind (`agents` or `both`) and whose `onlyBackends` names its backend (`moss` for MOSS's own runtime),
 //   listed by this computer's PluginMcp as a bot's are. Each is named `<server>__<tool>` on the bridge (so two servers'
 //   tools never share a name); one past `BRIDGE_TOOL_NAME_MAX` takes a short form (`bridgeShortName`) whose
 //   description starts with its plugin's and tool's real names, and a name that would be ambiguous or has characters
@@ -18,11 +18,11 @@
 //   plugin, claude-code/placement.ts); `Glossary` on the bridge serves them to every agent. Command hooks are never
 //   given: an outside agent can't run one under its plugin's fence.
 import { createHash } from "node:crypto";
-import { skillItem } from "@waifucave/clover-plugin-sdk";
+import { skillItem } from "@waifucave/moss-plugin-sdk";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
-import type { Caller, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Caller, TurnOrigin } from "@waifucave/moss-protocol";
 import type { BotSessionContext } from "../bots/service";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { glossaryIndex, parseFrontmatter, searchGlossary, SKILL_BODY_MAX_CHARS, type GlossaryItem } from "../runtime-sdk/turn-loop/glossary";
@@ -33,7 +33,7 @@ import type { AgentSessionFacts, BridgeCallContext, BridgeToolDef, BridgeToolSou
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 
 /** The longest bridge tool name: the agent sees `mcp__<bridge server>__<name>`, many clients refuse a full name past
- *  64 characters, and the bridge server's name is `clover_` and 16 hex digits (`BRIDGE_SERVER_PREFIX`): 64 − 30. */
+ *  64 characters, and the bridge server's name is `moss_` and 16 hex digits (`BRIDGE_SERVER_PREFIX`): 64 − 30. */
 export const BRIDGE_TOOL_NAME_MAX = 34;
 /** The largest agent file placed (a definition's words are cut at 20,000 characters anyway). */
 const AGENT_FILE_MAX = 256 * 1024;
@@ -203,7 +203,7 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
       // The plugins' tool hooks, as a bot's call meets them, under the tool's own name, on every backend (the in-process
       // one leaves its bridge's plugin tools to this; the manager doesn't run them at the permission request either).
       const hooks = d.hooks?.() ?? (d.hooks === undefined ? "none" : undefined);
-      if (hooks === undefined) return text(`${c.tool} was refused: Clover's plugin hooks aren't running yet, so plugin tools are refused until they are; try again in a moment.`);
+      if (hooks === undefined) return text(`${c.tool} was refused: MOSS's plugin hooks aren't running yet, so plugin tools are refused until they are; try again in a moment.`);
       if (hooks !== "none") {
         const before = await hooks.toolBefore(hookSession, { name: served, callId: c.callId }, input, ctx.signal);
         if (before.deny !== undefined) return text(`${c.tool} was refused by a plugin's hook: ${before.deny}`);
@@ -354,7 +354,7 @@ export function lateAgentPlugins(deps: () => AgentPluginReachDeps | undefined, w
       instructions: async (id, s) => { const d = deps(); return d === undefined ? "" : agentPluginTools(d).instructions!(id, s); },
       call: async (id, c, ctx) => {
         const d = deps();
-        return d === undefined ? text(`${c.tool} was refused: Clover's plugins aren't running for agents yet; try again in a moment.`) : agentPluginTools(d).call(id, c, ctx);
+        return d === undefined ? text(`${c.tool} was refused: MOSS's plugins aren't running for agents yet; try again in a moment.`) : agentPluginTools(d).call(id, c, ctx);
       },
     },
     pluginParts: {

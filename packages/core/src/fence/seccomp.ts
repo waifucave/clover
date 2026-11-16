@@ -1,11 +1,11 @@
-// The seccomp filter Clover's Linux fences load into bubblewrap (`--seccomp <fd>`), one copy for all of them: the
+// The seccomp filter MOSS's Linux fences load into bubblewrap (`--seccomp <fd>`), one copy for all of them: the
 // command fence (`linux-bwrap.ts`, through `fenced-process.ts`) and, with C-M3 item 4 (#282), the link sidecar, which
 // keeps the host network for QUIC and so can't take `--unshare-net`.
 
 /** The seccomp filter (classic BPF, `struct sock_filter[]`): `socket(AF_UNIX, …)` and `io_uring_setup` fail with EPERM,
  *  and so does every call of another architecture (a 32-bit binary's) or with the x32 bit (>= 0x40000000, which
  *  would otherwise reuse another number under the same audit), so no Unix socket on the disk can be reached.
- *  Null where the architecture isn't one Clover ships for. */
+ *  Null where the architecture isn't one MOSS ships for. */
 export function unixSocketFilter(arch: string = process.arch): Buffer | null {
   const t = arch === "x64" ? { audit: 0xc000003e, socket: 41 } : arch === "arm64" ? { audit: 0xc00000b7, socket: 198 } : null;
   if (t === null) return null;

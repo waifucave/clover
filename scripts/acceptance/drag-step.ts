@@ -34,7 +34,7 @@ export async function dragStep(ctx: ExampleCtx, _session: string): Promise<strin
   // The press must land on her handle itself, in her layer's document: a native drag region of the stock bar can't be the
   // cause, since a DevTools press never starts an OS-level drag, so the window can only move through `shell.dragWindow`.
   const hit = await cdp.evaluate(handle.session, `(() => { const e = document.elementFromPoint(${handle.c.x}, ${handle.c.y}); return e && e.closest('.ac__drag') ? location.origin : null; })()`);
-  if (typeof hit !== "string" || !hit.startsWith("clover-plugin://alpha")) fail(`the point (${Math.round(handle.c.x)},${Math.round(handle.c.y)}) isn't Alpha's drag handle in her own layer (${String(hit)})`);
+  if (typeof hit !== "string" || !hit.startsWith("moss-plugin://alpha")) fail(`the point (${Math.round(handle.c.x)},${Math.round(handle.c.y)}) isn't Alpha's drag handle in her own layer (${String(hit)})`);
   const log = () => ctx.appLog().split("\n");
   const was = log().filter((l) => l.includes("window: moved by its title area")).length;
   const refusedBefore = log().filter((l) => l.includes("window: a drag was refused")).length;

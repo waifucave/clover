@@ -38,7 +38,7 @@ export interface CardSummary {
   asked?: string;
   /** A fact the line carries after the place ("replaces every match"). */
   note?: string;
-  /** What "Always allow" would save, in Clover's words, from the rule the core sealed with the card. */
+  /** What "Always allow" would save, in MOSS's words, from the rule the core sealed with the card. */
   always?: string;
   /** What the call does, short, as the core's title says it ("Change files"). */
   title?: string;

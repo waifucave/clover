@@ -1,4 +1,4 @@
-import { noteSpawned } from "../../auth/clover-caller";
+import { noteSpawned } from "../../auth/moss-caller";
 import { spawn, type ChildProcess } from "node:child_process";
 
 // Minimal LSP stdio client: JSON-RPC over child-process stdio, Content-Length framed (LSP's
@@ -19,15 +19,15 @@ function envNum(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-const DEFAULT_START_TIMEOUT_MS = envNum("CLOVER_LSP_START_TIMEOUT_MS", 10000);
-const DEFAULT_REQUEST_TIMEOUT_MS = envNum("CLOVER_LSP_REQUEST_TIMEOUT_MS", 10000);
-const DEFAULT_DIAG_TIMEOUT_MS = envNum("CLOVER_LSP_DIAG_TIMEOUT_MS", 5000);
+const DEFAULT_START_TIMEOUT_MS = envNum("MOSS_LSP_START_TIMEOUT_MS", 10000);
+const DEFAULT_REQUEST_TIMEOUT_MS = envNum("MOSS_LSP_REQUEST_TIMEOUT_MS", 10000);
+const DEFAULT_DIAG_TIMEOUT_MS = envNum("MOSS_LSP_DIAG_TIMEOUT_MS", 5000);
 // Diagnostics settle window: real servers publish MORE THAN ONCE per didOpen (tsserver runs a fast
 // syntactic pass first and the semantic pass later, as separate publishes — the first is often
 // empty even when the file has a type error). diagnostics() therefore resolves with the LATEST
 // publish once no further publish has arrived for this long — never with the first one blindly.
-const DEFAULT_DIAG_SETTLE_MS = envNum("CLOVER_LSP_DIAG_SETTLE_MS", 400);
-const STOP_TIMEOUT_MS = envNum("CLOVER_LSP_STOP_TIMEOUT_MS", 5000);
+const DEFAULT_DIAG_SETTLE_MS = envNum("MOSS_LSP_DIAG_SETTLE_MS", 400);
+const STOP_TIMEOUT_MS = envNum("MOSS_LSP_STOP_TIMEOUT_MS", 5000);
 const STDERR_TAIL_MAX = 2000; // cap so a chatty server can't grow this unbounded across a long session
 
 /** A request/diagnostics-wait didn't settle within its bound. Distinguishes "still waiting" from

@@ -78,10 +78,10 @@ export function startFakeOAuth(o: { reply: string }): FakeOAuth {
 export function placeOAuthFixture(src: string, dest: string, port: number): void {
   cpSync(src, dest, { recursive: true });
   const base = `http://127.0.0.1:${port}`;
-  const m = JSON.parse(readFileSync(join(dest, "clover.json"), "utf8")) as { capabilities: string[]; contributes: { models: { auth: { authorizeUrl: string; tokenUrl: string }[] }[] } };
+  const m = JSON.parse(readFileSync(join(dest, "moss.json"), "utf8")) as { capabilities: string[]; contributes: { models: { auth: { authorizeUrl: string; tokenUrl: string }[] }[] } };
   m.capabilities = [`network:127.0.0.1:${port}`];
   m.contributes.models[0]!.auth[0]!.authorizeUrl = `${base}/authorize`;
   m.contributes.models[0]!.auth[0]!.tokenUrl = `${base}/token`;
-  writeFileSync(join(dest, "clover.json"), `${JSON.stringify(m, null, 2)}\n`);
+  writeFileSync(join(dest, "moss.json"), `${JSON.stringify(m, null, 2)}\n`);
   writeFileSync(join(dest, "host", "endpoint.json"), `${JSON.stringify({ url: `${base}/v1/turn` }, null, 2)}\n`);
 }

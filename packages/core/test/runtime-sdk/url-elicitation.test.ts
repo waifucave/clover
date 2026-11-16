@@ -1,7 +1,7 @@
 // WS-27: MCP URL-mode elicitation — the handler the daemon sets as `Options.onElicitation`, and its broker.
 import { describe, expect, test } from "bun:test";
-import { SessionEvent, type NewSessionEvent } from "@waifucave/clover-protocol";
-import { ELICITATION_MESSAGE_MAX_LENGTH, ELICITATION_URL_MAX_LENGTH } from "@waifucave/clover-protocol";
+import { SessionEvent, type NewSessionEvent } from "@waifucave/moss-protocol";
+import { ELICITATION_MESSAGE_MAX_LENGTH, ELICITATION_URL_MAX_LENGTH } from "@waifucave/moss-protocol";
 import { checkElicitationUrl, elicitationHandlerFor, elicitationTurnTracker, ElicitationBroker, type UrlElicitationDeps } from "../../src/runtime-sdk/url-elicitation";
 
 /** A distinctive one-time code: every url below carries it, so "not in the log" is never vacuous. */

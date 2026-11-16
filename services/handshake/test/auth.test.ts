@@ -16,14 +16,14 @@ async function realKey() {
 
 describe("verifySignature", () => {
   test("the all-zero key with the all-zero signature is refused, for any statement", async () => {
-    for (const text of ["clover-pair-v1 register\nx", "clover/answer-key/1\ndev\nkey\nnone", "anything"]) {
+    for (const text of ["moss-pair-v1 register\nx", "moss/answer-key/1\ndev\nkey\nnone", "anything"]) {
       expect(await verifySignature(b64u(new Uint8Array(32)), b64u(new Uint8Array(64)), text)).toBe(false);
     }
   });
 
   test("a real signature verifies; with a small-order R, or S at or above L, it doesn't", async () => {
     const k = await realKey();
-    const text = "clover-group-v1 admit\ng\nk\n1";
+    const text = "moss-group-v1 admit\ng\nk\n1";
     const sig = await k.sign(text);
     expect(await verifySignature(k.key, b64u(sig), text)).toBe(true);
     const smallR = new Uint8Array(sig);

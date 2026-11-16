@@ -15,7 +15,7 @@ import { acpRecordEvent, projectRecords } from "../wire";
 
 const homes: string[] = [];
 function tempHome(): string {
-  const home = mkdtempSync(join(tmpdir(), "clover-d-life-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-d-life-"));
   homes.push(home);
   return home;
 }

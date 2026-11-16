@@ -32,8 +32,8 @@ export function startFakeModels(o: { key: string; reply: string }): FakeModels {
  *  adapter posts there (`host/endpoint.json`). */
 export function placeModelsFixture(src: string, dest: string, port: number): void {
   cpSync(src, dest, { recursive: true });
-  const manifest = JSON.parse(readFileSync(join(dest, "clover.json"), "utf8")) as { capabilities: string[] };
+  const manifest = JSON.parse(readFileSync(join(dest, "moss.json"), "utf8")) as { capabilities: string[] };
   manifest.capabilities = [`network:127.0.0.1:${port}`];
-  writeFileSync(join(dest, "clover.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  writeFileSync(join(dest, "moss.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   writeFileSync(join(dest, "host", "endpoint.json"), `${JSON.stringify({ url: `http://127.0.0.1:${port}/v1/turn` }, null, 2)}\n`);
 }

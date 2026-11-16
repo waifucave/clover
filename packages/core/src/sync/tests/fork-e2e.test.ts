@@ -25,7 +25,7 @@ afterEach(async () => {
   stops = [];
 });
 const temp = () => {
-  const h = mkdtempSync(join(tmpdir(), "clover-int-fork-"));
+  const h = mkdtempSync(join(tmpdir(), "moss-int-fork-"));
   stops.push(() => rmSync(h, { recursive: true, force: true }));
   return h;
 };

@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { generateFeedKey, publicKeyOf, UPDATE_FEED_PUBLIC_KEY } from "../../packages/update-feed/src/index";
 
 /** Where the private half is kept: the login Keychain, through Bun.secrets. */
-export const FEED_KEY_ITEM = { service: "com.waifucave.clover.release", name: "update-feed-ed25519" } as const;
+export const FEED_KEY_ITEM = { service: "com.waifucave.moss.core.release", name: "update-feed-ed25519" } as const;
 
 /** The Keychain, narrowed to what's used (tests pass a fake: they never touch the real one). */
 export interface KeyStore {

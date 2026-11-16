@@ -1,8 +1,8 @@
 // The acceptance run's second speaking plugin (spec §6.6, F1's proof): everything it says, its own background part plays
 // (client/index.tsx), in the device's speech turn. Its host half only tells the part what to say: a reply handed to it
-// as the voice Clover Voice's user chose (`clover.voice.modes`' `reply`), or its own `chime`; push-to-talk's recording
+// as the voice MOSS Voice's user chose (`moss.voice.modes`' `reply`), or its own `chime`; push-to-talk's recording
 // comes to its `hear`, which answers with words that say how many bytes reached it. The part reports each
-// span it held the turn (`record`), which `report` answers with, so the run can prove it never overlapped Clover Voice.
+// span it held the turn (`record`), which `report` answers with, so the run can prove it never overlapped MOSS Voice.
 // It tells its part through a stream with only its meta (`say`), once the part has said it accepts them (`ready`): a
 // background part's frame loads after its plugin starts, and a stream opened before that finds no one to accept it.
 
@@ -32,7 +32,7 @@ async function say(what: string, seconds: number): Promise<void> {
   await w.close();
 }
 
-/** Its entry on Clover Voice's voice modes: a reply to say, its own way (a 0.6 s tone). */
+/** Its entry on MOSS Voice's voice modes: a reply to say, its own way (a 0.6 s tone). */
 export async function reply(args: { bot: string; session: string; text: string }): Promise<{ ok: true }> {
   said.replies.push(args.bot);
   await say(`reply:${args.bot}`, 0.6);

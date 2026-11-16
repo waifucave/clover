@@ -197,12 +197,12 @@ export class HostMux {
 /** A Bun worker for one plugin, running `worker-main.ts`. */
 export function bunWorker(computer: string, entry = new URL("./worker-main.ts", import.meta.url).href, checks: readonly RunFileCheck[] = []): (x: StartParams) => WorkerHandle {
   return (x) => {
-    // The worker bundle, the guard it preloads and the bunfig hold what Clover wrote, checked before EACH worker: a
+    // The worker bundle, the guard it preloads and the bunfig hold what MOSS wrote, checked before EACH worker: a
     // plugin's worker could have rewritten them since the last (#312's review, S1). A refusal fails this start only.
     checkRunFiles(checks, `plugin ${x.pluginId}'s worker`);
-    // `cloverPluginRoot`: the folder the load guard pins this worker to (a host thread's guard requires it, and drops
+    // `mossPluginRoot`: the folder the load guard pins this worker to (a host thread's guard requires it, and drops
     // it before the worker starts); never another plugin's.
-    const worker = new Worker(entry, { workerData: { computer }, cloverPluginRoot: x.root ?? x.folder } as WorkerOptions);
+    const worker = new Worker(entry, { workerData: { computer }, mossPluginRoot: x.root ?? x.folder } as WorkerOptions);
     const exits: ((reason: string) => void)[] = [];
     worker.addEventListener("error", (e) => {
       for (const fn of exits) fn(`the worker failed: ${(e as ErrorEvent).message ?? "an error"}`);

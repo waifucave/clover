@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { generateSigner } from "@waifucave/clover-service-handshake/client";
+import { generateSigner } from "@waifucave/moss-service-handshake/client";
 import { Companion, MemoryStore, PairingError, type PairRecord } from "../src/app";
 import type { Invite, RtcEnvironment } from "../protocol";
 

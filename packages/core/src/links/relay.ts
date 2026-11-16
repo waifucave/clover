@@ -7,7 +7,7 @@
 // on a desktop's app). The relaying computer passes the message on as it came; the receiver checks it with
 // `verifyUserMessage` against its own registry, and a message without a good signature still arrives, as a `peer`
 // turn (lane D's host decides that).
-import { DEVICES_METHODS } from "@waifucave/clover-protocol";
+import { DEVICES_METHODS } from "@waifucave/moss-protocol";
 import type { z } from "zod";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";

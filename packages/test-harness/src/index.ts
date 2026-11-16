@@ -1,6 +1,6 @@
-// Clover's test harness (plan §3, lane M): what a test needs to run Clover's pieces for real without touching
-// the machine it runs on. docs/clover-layout.md says how a package uses it. This index loads the daemon (core);
-// a test that needs only one piece imports its subpath (`@waifucave/clover-test-harness/workers`, `/signin-stub`,
+// MOSS's test harness (plan §3, lane M): what a test needs to run MOSS's pieces for real without touching
+// the machine it runs on. docs/moss-layout.md says how a package uses it. This index loads the daemon (core);
+// a test that needs only one piece imports its subpath (`@waifucave/moss-test-harness/workers`, `/signin-stub`,
 // `/homes`, `/secrets`, `/app-client`), which does not.
 export { DAEMON_PLATFORMS, daemonSupported } from "./platform";
 export { assertSafeTestHome, makeTempHome, PROTECTED_HOME_PREFIXES, UnsafeHomeError, type TempHome } from "./homes";

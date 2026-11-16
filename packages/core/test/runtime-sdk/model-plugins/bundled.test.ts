@@ -1,6 +1,6 @@
-// A-M2: every provider a plugin. The bundled `clover` tree holds one model plugin per provider of the SDK's catalog,
+// A-M2: every provider a plugin. The bundled `moss` tree holds one model plugin per provider of the SDK's catalog,
 // generated and committed; this is the check that they match (CI fails while they don't), and that each one is a
-// valid child of `clover` that the plugin SDK classifies as it should: data for an endpoint, code for an adapter.
+// valid child of `moss` that the plugin SDK classifies as it should: data for an endpoint, code for an adapter.
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -27,7 +27,7 @@ describe("the bundled model plugins", () => {
     }
   });
 
-  test("each is a valid child of `clover`: data with its endpoint and key placement, or code with its adapter", async () => {
+  test("each is a valid child of `moss`: data with its endpoint and key placement, or code with its adapter", async () => {
     const { report } = await pluginFromFolder(join(BUNDLED_CHILDREN_DIR, ".."), { bundled: true });
     const models = report.children.filter((c) => c.folder.startsWith("model-"));
     expect(models.length).toBe(218);

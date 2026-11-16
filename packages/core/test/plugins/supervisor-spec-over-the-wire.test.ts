@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/moss-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -55,7 +55,7 @@ const ENTRY = { command: "bun", args: ["index.ts"] };
 describe("two marketplaces' same-named Tier-2 plugins over the wire (WS-24)", () => {
   let home: string;
   let stop: (() => void) | undefined;
-  beforeEach(() => { home = mkdtempSync(join(tmpdir(), "clover-ws24-spec-")); });
+  beforeEach(() => { home = mkdtempSync(join(tmpdir(), "moss-ws24-spec-")); });
   afterEach(() => { stop?.(); stop = undefined; rmSync(home, { recursive: true, force: true }); });
 
   async function boot() {
@@ -66,7 +66,7 @@ describe("two marketplaces' same-named Tier-2 plugins over the wire (WS-24)", ()
       mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
       writeFileSync(join(dir, ".claude-plugin", "marketplace.json"), JSON.stringify({ name: mkt, owner: { name: "t" }, plugins: [{ name: "p", source: "./plugins/p" }] }));
       mkdirSync(join(dir, "plugins", "p"), { recursive: true });
-      writeFileSync(join(dir, "plugins", "p", "clover-plugin.json"), JSON.stringify({ id: "p", tier: "platform", permissions: { exec: true }, contributes: { tools: true }, entry: ENTRY }));
+      writeFileSync(join(dir, "plugins", "p", "moss-plugin.json"), JSON.stringify({ id: "p", tier: "platform", permissions: { exec: true }, contributes: { tools: true }, entry: ENTRY }));
       await addMarketplace(options, dir);
       const installed = await installPlugin(options, `p@${mkt}`, "user");
       consents[`p@${mkt}`] = { classes: ["exec"], fingerprint: pluginConsentFingerprint(installed.installPath, { entry: ENTRY, requiredConsents: ["exec"] }) };
@@ -77,7 +77,7 @@ describe("two marketplaces' same-named Tier-2 plugins over the wire (WS-24)", ()
     let pid = 7000;
     const spawn: SpawnFn = (_cmd, opts) => {
       // Under the fence the spawn goes through the trampoline, which carries the command's env and folder.
-      spawned.push({ id: commandEnvOf(opts.env).CLOVER_PLUGIN_ID!, cwd: opts.env.CLOVER_SPAWN_CWD ?? opts.cwd });
+      spawned.push({ id: commandEnvOf(opts.env).MOSS_PLUGIN_ID!, cwd: opts.env.MOSS_SPAWN_CWD ?? opts.cwd });
       const proc: SupervisedProcess = { pid: pid++, exited: new Promise<number>(() => {}), kill: () => {} };
       return proc;
     };
@@ -90,8 +90,8 @@ describe("two marketplaces' same-named Tier-2 plugins over the wire (WS-24)", ()
     const tokens = await authority.ensureTokens();
     const socketPath = join(home, "core.sock");
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets: new FileSecretStore(join(home, "s2")),
-      supervisor, registry: new ToolRegistry(), plugins: new PluginStore({ cloverHome: home, consents }),
+      socketPath, serverVersion: "test", tokens: authority, store, mossHome: home, secrets: new FileSecretStore(join(home, "s2")),
+      supervisor, registry: new ToolRegistry(), plugins: new PluginStore({ mossHome: home, consents }),
     });
     const c = await TestClient.connect(socketPath);
     await c.request(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: tokens.harness, clientName: "cli" });
@@ -101,7 +101,7 @@ describe("two marketplaces' same-named Tier-2 plugins over the wire (WS-24)", ()
 
   test("PluginStore names each install by its own spec", async () => {
     await boot();
-    const specs = new PluginStore({ cloverHome: home }).list().map((p) => [p.name, p.spec]).sort();
+    const specs = new PluginStore({ mossHome: home }).list().map((p) => [p.name, p.spec]).sort();
     expect(specs).toEqual([["p", "p@m1"], ["p", "p@m2"]]);
   });
 
@@ -122,7 +122,7 @@ describe("two marketplaces' same-named Tier-2 plugins over the wire (WS-24)", ()
   test("plugin.restart takes the spec; a bare name resolves only when it names one plugin", async () => {
     const { c, supervisor } = await boot();
     await c.request(METHODS.pluginEnable, { spec: "p@m1", scope: "user" });
-    // One tracked `p`: the bare name (older clients, `clover plugin restart p`) still works.
+    // One tracked `p`: the bare name (older clients, `moss plugin restart p`) still works.
     expect((await c.request(METHODS.pluginRestart, { pluginId: "p" })).result).toEqual({ ok: true });
     await c.request(METHODS.pluginEnable, { spec: "p@m2", scope: "user" });
     const ambiguous = await c.request(METHODS.pluginRestart, { pluginId: "p" });
@@ -135,14 +135,14 @@ describe("two marketplaces' same-named Tier-2 plugins over the wire (WS-24)", ()
 
 describe("plugin.list says plainly that a project/local install's background process does not run (WS-24)", () => {
   test("a project-scope row with an entry carries extras.entryNote; the user-scope row does not", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-ws24-note-"));
-    const project = mkdtempSync(join(tmpdir(), "clover-ws24-note-proj-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-ws24-note-"));
+    const project = mkdtempSync(join(tmpdir(), "moss-ws24-note-proj-"));
     const store = new SessionStore(home);
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets")));
     const tokens = await authority.ensureTokens();
     const socketPath = join(home, "core.sock");
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets: new FileSecretStore(join(home, "s2")) });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, mossHome: home, secrets: new FileSecretStore(join(home, "s2")) });
     const c = await TestClient.connect(socketPath);
     try {
       await c.request(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: tokens.harness, clientName: "cli" });
@@ -151,7 +151,7 @@ describe("plugin.list says plainly that a project/local install's background pro
         mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
         writeFileSync(join(dir, ".claude-plugin", "marketplace.json"), JSON.stringify({ name: mkt, owner: { name: "t" }, plugins: [{ name: "p", source: "./plugins/p" }] }));
         mkdirSync(join(dir, "plugins", "p"), { recursive: true });
-        writeFileSync(join(dir, "plugins", "p", "clover-plugin.json"), JSON.stringify({ id: "p", tier: "platform", permissions: { exec: true }, entry: ENTRY }));
+        writeFileSync(join(dir, "plugins", "p", "moss-plugin.json"), JSON.stringify({ id: "p", tier: "platform", permissions: { exec: true }, entry: ENTRY }));
         expect((await c.request(METHODS.pluginMarketplaceAdd, { source: dir })).result?.ok).toBe(true);
       }
       expect((await c.request(METHODS.pluginInstall, { spec: "p@m1", scope: "user" })).result?.ok).toBe(true);
@@ -174,7 +174,7 @@ describe("plugin.list says plainly that a project/local install's background pro
 describe("boot: a bare-name plugin token from the old key is revoked (WS-24)", () => {
   test("a token a pre-WS-24 core minted under the bare name no longer verifies; the spec's own mint still works", async () => {
     const { startDaemon } = await import("../../src/daemon");
-    const home = mkdtempSync(join(tmpdir(), "clover-ws24-token-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-ws24-token-"));
     try {
       const options: PluginManagerOptions = { pluginsRoot: join(home, "sdk", "plugins"), settingsPathFor: () => join(home, "sdk", "settings.json") };
       const dir = join(home, "mkt");

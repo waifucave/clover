@@ -1,4 +1,4 @@
-// The supervisor (`clover-core supervise`) waits on its daemon through `spawnDisclaimed` (macOS). While the child runs,
+// The supervisor (`moss-core supervise`) waits on its daemon through `spawnDisclaimed` (macOS). While the child runs,
 // the waiting process must sleep: try 14's supervisor spun at ~80% of a core for the daemon's whole life, because only
 // libdispatch's threadsafe callback held Bun's event loop open and the loop polled without sleeping. A process that does
 // nothing but wait on a disclaimed child for 3 s here uses almost no CPU, and the exit still comes at once.

@@ -9,14 +9,14 @@
 //   `mcp-<server>`, whose namespace is the server's name (`mcp-blender` gives `mcp__blender__Render`). Every `env` and
 //   `headers` value goes into the plugin's own secrets, a `${secret:<name>}` in its place, with a secret setting so the
 //   user can see and change it. An MCP server's address gives one `http` server.
-// * A Claude Code plugin folder (`.claude-plugin/plugin.json`, or no `clover.json` but `skills/`, `commands/`, `agents/`
+// * A Claude Code plugin folder (`.claude-plugin/plugin.json`, or no `moss.json` but `skills/`, `commands/`, `agents/`
 //   or `hooks/hooks.json`) is copied whole into `claude-<name>`, and its manifest written around it: its skills and its
 //   commands (each a generated skill folder) as `skills`, its agents as `agents`, its MCP servers as `mcpServers` and
 //   its hooks as Claude-style `hooks`; `${CLAUDE_PLUGIN_ROOT}` becomes `${plugin}`, `${CLAUDE_PLUGIN_DATA}` `${data}`,
 //   `${user_config.K}` `${setting:K}` (or `${secret:K}` for a `sensitive` option), and `userConfig` its settings. Its
 //   hooks keep their command lines, run by the core under `sh -c` with their input on stdin as data and
 //   `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA` and `CLAUDE_PLUGIN_OPTION_<KEY>` in their environment (`claudeHooks`); its
-//   stdio servers get the two paths. What has no Clover point yet stays in the folder unused, and the OK names it.
+//   stdio servers get the two paths. What has no MOSS point yet stays in the folder unused, and the OK names it.
 // * Ids: `skill-`, `agent-`, `mcp-`, `claude-<name>`, the name cleaned (`wrapperId`), a number added on a clash.
 // * Recorded: the manifest's `generated` (a hint, which the user may edit) and the core's own record, the install's
 //   provenance (`wrapped`: what it was made from, and the parts left unused), which the OK shows.
@@ -27,8 +27,8 @@
 //   OK says so. Once its manifest declares `network:` hosts it is held to them (`wrapperNetworkOpen`).
 import { mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, isAbsolute, join, resolve, sep } from "node:path";
-import { CLAUDE_HOOK_DEFAULT_TIMEOUT_MS, CLAUDE_HOOK_EVENTS, cleanName, hookReadsStdinAsScript, KEY_RE, MANIFEST_FILE, parseJsonc, PLUGIN_API_VERSION, wrapperId, type WrapperKind } from "@waifucave/clover-plugin-sdk";
-import { SemverVersion, topPluginIdOf, type PluginProvenance, type WrapKind } from "@waifucave/clover-protocol";
+import { CLAUDE_HOOK_DEFAULT_TIMEOUT_MS, CLAUDE_HOOK_EVENTS, cleanName, hookReadsStdinAsScript, KEY_RE, MANIFEST_FILE, parseJsonc, PLUGIN_API_VERSION, wrapperId, type WrapperKind } from "@waifucave/moss-plugin-sdk";
+import { SemverVersion, topPluginIdOf, type PluginProvenance, type WrapKind } from "@waifucave/moss-protocol";
 import type { PluginRecord } from "../contracts/plugin-registry";
 import type { SecretStore } from "../contracts/secret-store";
 import { ContractError } from "../contracts/common";
@@ -60,7 +60,7 @@ export interface WrapResult {
   id: string;
   folder: string;
   treeHash: string;
-  /** The parts of the item Clover has no point for yet, which stay in the folder unused (the OK names them). */
+  /** The parts of the item MOSS has no point for yet, which stay in the folder unused (the OK names them). */
   unused: string[];
   /** The network grant for the install record (`wrapperNetworkOpen`): set when the plugin runs a local server or a
    *  hook, which the fence holds. An http server's address is reached by the runtime, not a plugin process. */
@@ -80,7 +80,7 @@ export function wrapperNetworkOpen(wrapped: PluginProvenance["wrapped"] | undefi
   return wrapped?.network === "any" && !declared.some((c) => c.startsWith("network:"));
 }
 
-/** `wrapperNetworkOpen` for a running plugin: only the generated top plugin's own processes (a Clover child plugin
+/** `wrapperNetworkOpen` for a running plugin: only the generated top plugin's own processes (a MOSS child plugin
  *  shipped inside a wrapped folder never gets it), from its install record, while nothing in its tree declares a host. */
 export function wrapperOpensNetwork(registry: { get(id: string): PluginRecord | undefined; list(): readonly PluginRecord[] }, pluginId: string): boolean {
   const top = topPluginIdOf(pluginId);
@@ -97,7 +97,7 @@ export interface WrapOptions extends InstallTarget {
   now?: () => number;
   /** Where a pasted config's `env` and `headers` values go: the plugin's own secrets. */
   secrets?: Pick<SecretStore, "set" | "delete">;
-  /** The user's and Clover's homes, for a pasted server's own files (`wrap-reads.ts`). Absent: none are opened. */
+  /** The user's and MOSS's homes, for a pasted server's own files (`wrap-reads.ts`). Absent: none are opened. */
   homes?: WrapHomes;
 }
 
@@ -270,7 +270,7 @@ function secretName(raw: string, prefix: string, used: Set<string>): string {
   return name;
 }
 
-/** One server of a pasted config as a Clover `mcpServers` entry, its `env` and `headers` values moved into secrets. */
+/** One server of a pasted config as a MOSS `mcpServers` entry, its `env` and `headers` values moved into secrets. */
 function pastedServer(raw: RawServer, secrets: Record<string, string>, settings: Record<string, unknown>): Record<string, unknown> {
   const used = new Set(Object.keys(secrets));
   const move = (values: Record<string, string> | undefined, prefix: string, label: string): Record<string, string> | undefined => {
@@ -330,7 +330,7 @@ async function installMcpPlugin(ctx: WrapCtx, name: string, server: Record<strin
       id, name,
       extra: {
         namespace,
-        ...(stdio ? { engines: { clover: `^${PLUGIN_API_VERSION}` } } : {}),
+        ...(stdio ? { engines: { moss: `^${PLUGIN_API_VERSION}` } } : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
       },
       generated: { from, by: ctx.o.by, at: ctx.at },
@@ -393,12 +393,12 @@ async function wrapMcpUrl(ctx: WrapCtx): Promise<WrapResult> {
 
 // ---- Claude Code plugin folders -----------------------------------------------------------------------------------
 
-/** The `plugin.json` fields with no Clover point yet: they stay in the folder unused, and the OK names them. */
+/** The `plugin.json` fields with no MOSS point yet: they stay in the folder unused, and the OK names them. */
 const CLAUDE_UNUSED_FIELDS: Readonly<Record<string, string>> = {
   outputStyles: "output styles", lspServers: "LSP servers", monitors: "monitors", workflows: "workflows", themes: "themes",
   dependencies: "dependencies", mods: "mods",
 };
-/** Folders with no Clover point yet. */
+/** Folders with no MOSS point yet. */
 const CLAUDE_UNUSED_FOLDERS: Readonly<Record<string, string>> = { "output-styles": "output styles", bin: "bin/", monitors: "monitors", workflows: "workflows", themes: "themes" };
 
 interface ClaudeOption {
@@ -411,7 +411,7 @@ interface ClaudeOption {
   multiple?: unknown;
 }
 
-/** Whether a folder is a Claude Code plugin (§5.1): `.claude-plugin/plugin.json`, or no `clover.json` but a part where
+/** Whether a folder is a Claude Code plugin (§5.1): `.claude-plugin/plugin.json`, or no `moss.json` but a part where
  *  Claude Code looks for one. */
 export function isClaudePluginFolder(root: string): boolean {
   if (existsFile(join(root, ".claude-plugin", "plugin.json"))) return true;
@@ -419,7 +419,7 @@ export function isClaudePluginFolder(root: string): boolean {
   return ["skills", "commands", "agents"].some((d) => existsDir(join(root, d))) || existsFile(join(root, "hooks", "hooks.json"));
 }
 
-/** `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}` and `${user_config.K}` in a server's fields, as Clover writes them.
+/** `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}` and `${user_config.K}` in a server's fields, as MOSS writes them.
  *  A sensitive option is a secret, which only `env` and `headers` may hold: elsewhere it can't be written, and is
  *  recorded as unused. */
 function claudeFields(text: string, where: "secret-ok" | "plain", options: Readonly<Record<string, ClaudeOption>>, unused: string[]): string {
@@ -438,14 +438,14 @@ function claudeFields(text: string, where: "secret-ok" | "plain", options: Reado
   });
 }
 
-/** A `${…}` Clover can't fill: Claude Code reads it from the user's environment, which a plugin's process doesn't get. */
+/** A `${…}` MOSS can't fill: Claude Code reads it from the user's environment, which a plugin's process doesn't get. */
 class Unsupported extends Error {}
 
-/** A Claude hook's command line as a Clover hook's `command` (no `args`: the core runs it as `sh -c <command>`, its
- *  stdin the hook's input as data). Claude Code's own variables become Clover's placeholders, which the core never
+/** A Claude hook's command line as a MOSS hook's `command` (no `args`: the core runs it as `sh -c <command>`, its
+ *  stdin the hook's input as data). Claude Code's own variables become MOSS's placeholders, which the core never
  *  splices into the line: it passes each value in the environment and writes a reference to it (`hook-command.ts`).
  *  A shell variable's braces (`${HOME}`) become `$HOME` (with `""` when a name character follows), since a manifest's
- *  `${` is Clover's. A sensitive option (a secret: a hook gets none) or a shell expansion with more than a name
+ *  `${` is MOSS's. A sensitive option (a secret: a hook gets none) or a shell expansion with more than a name
  *  (`${X:-y}`) can't be written: `Unsupported`. */
 function claudeHookCommand(command: string, options: Readonly<Record<string, ClaudeOption>>): string {
   return command.replace(/\$\{([^}]*)\}/g, (m, body: string, at: number) => {
@@ -597,7 +597,7 @@ async function wrapClaudePlugin(ctx: WrapCtx): Promise<WrapResult> {
       extra: {
         namespace,
         ...(typeof pj.version === "string" && SemverVersion.safeParse(pj.version).success ? { version: pj.version } : {}),
-        ...(code ? { engines: { clover: `^${PLUGIN_API_VERSION}` } } : {}),
+        ...(code ? { engines: { moss: `^${PLUGIN_API_VERSION}` } } : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
       },
       generated: { from: "claude-plugin", by: ctx.o.by, at: ctx.at },
@@ -610,12 +610,12 @@ async function wrapClaudePlugin(ctx: WrapCtx): Promise<WrapResult> {
   }
 }
 
-/** Claude-style hooks (`{ hooks: { <Event>: [{ matcher?, hooks: [{ type, command, timeout? }] }] } }`) as Clover's:
+/** Claude-style hooks (`{ hooks: { <Event>: [{ matcher?, hooks: [{ type, command, timeout? }] }] } }`) as MOSS's:
  *  each `command` hook's line as the hook's `command` (`claudeHookCommand`), which the core runs under `sh -c` with
  *  its input on stdin as data and Claude Code's variables in its environment (`CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`,
  *  and each plain setting as `CLAUDE_PLUGIN_OPTION_<KEY>`, set by the hook's door from the plugin's record), its own
- *  timeout kept (600 s when unset). Left unused: an event with no Clover counterpart, a hook that isn't a `command`, a
- *  matcher that's a regular expression rather than tool names, a line that reads a secret or a shell expansion Clover
+ *  timeout kept (600 s when unset). Left unused: an event with no MOSS counterpart, a hook that isn't a `command`, a
+ *  matcher that's a regular expression rather than tool names, a line that reads a secret or a shell expansion MOSS
  *  can't write, and a line that would run its stdin as a script (`hookReadsStdinAsScript`). */
 export function claudeHooks(raw: unknown, options: Readonly<Record<string, ClaudeOption>>, unused: string[]): Record<string, unknown>[] {
   const map = isObject(raw) && isObject(raw.hooks) ? raw.hooks : raw;
@@ -635,7 +635,7 @@ export function claudeHooks(raw: unknown, options: Readonly<Record<string, Claud
       const matcher = typeof g.matcher === "string" ? g.matcher.trim() : "";
       let tools: string[] | undefined;
       if (matcher !== "" && matcher !== "*") {
-        // Tool names alone (`Write|Edit`); anything else is a regular expression, which a Clover pattern isn't.
+        // Tool names alone (`Write|Edit`); anything else is a regular expression, which a MOSS pattern isn't.
         if (!/^[A-Za-z0-9_-]+(\|[A-Za-z0-9_-]+)*$/.test(matcher)) {
           unused.push(`a ${event} hook whose matcher is a regular expression (${matcher.slice(0, 80)})`);
           continue;

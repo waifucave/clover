@@ -1,12 +1,12 @@
 import { join } from "node:path";
-import type { HandlerContext } from "@waifucave/clover-plugin-sdk";
+import type { HandlerContext } from "@waifucave/moss-plugin-sdk";
 import {
   fileKey, readFiles, type FileCursor, type UsageIngestArgs, type UsageIngestReply, type UsagePlanArgs, type UsagePlanReading, type UsagePlanReply,
-} from "@waifucave/clover-plugin-sdk/usage-source";
+} from "@waifucave/moss-plugin-sdk/usage-source";
 import { codexPlanFromAppServer, codexPlanFromRollouts, codexRecordOf, codexRollouts, codexStateOf } from "./codex";
 
 // The Codex source (spec §12 "Usage sources"): its plan windows through its own `codex app-server`, then the newest
-// rollout's `rate_limits`, then what Clover's own Codex sessions reported; and its token counts from its session
+// rollout's `rate_limits`, then what MOSS's own Codex sessions reported; and its token counts from its session
 // rollouts, `~/.codex/sessions` and `~/.codex/archived_sessions` (the two folders the manifest names).
 
 /** Where Codex keeps its files: the user's home is the host process's `HOME`. */

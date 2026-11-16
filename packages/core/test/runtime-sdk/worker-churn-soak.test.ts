@@ -1,5 +1,5 @@
 // A-M1 review S3: Worker churn inside a daemon, what a live code session costs in memory, and the crash trigger.
-// OPT-IN (`CLOVER_WORKER_SOAK=1`). Each soak runs in a CHILD process under this package's test preload, so a Bun
+// OPT-IN (`MOSS_WORKER_SOAK=1`). Each soak runs in a CHILD process under this package's test preload, so a Bun
 // crash is that child's exit status, never the test runner's death. The children print their readings, and these
 // tests print them too. They are long: run one at a time (`-t churn`, `-t "mid-turn"`, `-t dispatch`).
 //
@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 
 const PRELOAD = fileURLToPath(new URL("../preload.ts", import.meta.url));
 const CORE = fileURLToPath(new URL("../..", import.meta.url));
-const SOAK = process.env["CLOVER_WORKER_SOAK"] !== "1";
+const SOAK = process.env["MOSS_WORKER_SOAK"] !== "1";
 
 async function runChild(argv: string[], env: Record<string, string>, limitMs: number): Promise<{ code: number | null; signal: string | null; stdout: string; stderr: string }> {
   const proc = Bun.spawn([process.execPath, ...argv], { cwd: CORE, env: { ...process.env, ...env }, stdout: "pipe", stderr: "pipe" });

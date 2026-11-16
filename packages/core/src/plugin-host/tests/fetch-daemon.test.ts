@@ -19,7 +19,7 @@ function harness(answer: (url: string, init: RequestInit) => Promise<Response> |
     inits.push(init);
     return answer(url, init);
   };
-  const ch = fetchChannel({ process: "clover", router, invocations: new InvocationTable(), send: (m, p) => sent.push({ m, p: p as Record<string, unknown> }), ...(limits !== undefined ? { limits } : {}), ...(owns !== undefined ? { owns } : {}) });
+  const ch = fetchChannel({ process: "moss", router, invocations: new InvocationTable(), send: (m, p) => sent.push({ m, p: p as Record<string, unknown> }), ...(limits !== undefined ? { limits } : {}), ...(owns !== undefined ? { owns } : {}) });
   const call = (m: string, p: Record<string, unknown>) => ch.methods[m]!(p, CORE);
   const head = (pluginId: string, fetchId: string, extra: Record<string, unknown> = {}) => call("pluginHost.fetch", { pluginId, fetchId, url: "https://api.example.com/x", method: "GET", headers: [], ...extra });
   return { ch, sent, inits, call, head };
@@ -39,27 +39,27 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
   test("a body given whole past 16 MiB, headers past 256 pairs or 64 KiB, and a URL past 16 K characters are refused before any request", async () => {
     const h = harness(() => new Response("never"));
     const big = new Uint8Array(FETCH_LIMITS.bodyBytes + 1);
-    expect((await rejection(h.head("clover/aa", "f1", { method: "POST", body: big })))?.message).toContain("at most 16777216 bytes");
+    expect((await rejection(h.head("moss/aa", "f1", { method: "POST", body: big })))?.message).toContain("at most 16777216 bytes");
     const pairs = Array.from({ length: 257 }, (_, i) => [`x-h${i}`, "v"]);
-    expect(await rejection(h.head("clover/aa", "f2", { headers: pairs }))).toBeDefined();
-    expect((await rejection(h.head("clover/aa", "f3", { headers: [["x-big", "v".repeat(40_000)], ["x-big2", "v".repeat(30_000)]] })))?.message).toContain("at most 65536 bytes");
-    expect(await rejection(h.head("clover/aa", "f4", { url: `https://api.example.com/${"a".repeat(17_000)}` }))).toBeDefined();
-    expect(await rejection(h.head("clover/aa", "f5", { body: new Uint8Array(1), upload: true }))).toBeDefined();
+    expect(await rejection(h.head("moss/aa", "f2", { headers: pairs }))).toBeDefined();
+    expect((await rejection(h.head("moss/aa", "f3", { headers: [["x-big", "v".repeat(40_000)], ["x-big2", "v".repeat(30_000)]] })))?.message).toContain("at most 65536 bytes");
+    expect(await rejection(h.head("moss/aa", "f4", { url: `https://api.example.com/${"a".repeat(17_000)}` }))).toBeDefined();
+    expect(await rejection(h.head("moss/aa", "f5", { body: new Uint8Array(1), upload: true }))).toBeDefined();
     expect(h.inits).toEqual([]);
     expect(h.ch.open).toBe(0);
     // Exactly 16 MiB is taken.
-    await h.head("clover/aa", "f6", { method: "POST", body: new Uint8Array(FETCH_LIMITS.bodyBytes) });
+    await h.head("moss/aa", "f6", { method: "POST", body: new Uint8Array(FETCH_LIMITS.bodyBytes) });
     expect(h.inits).toHaveLength(1);
   });
 
   test("a fetch claimed for a plugin this process doesn't host is refused before it's counted: the per-plugin cap counts by the core's ids", async () => {
-    const h = harness(hanging, undefined, (id) => id === "clover/aa");
-    const err = await rejection(h.head("clover/elsewhere", "x1"));
-    expect(err?.message).toContain("clover/elsewhere doesn't run in this plugin host");
+    const h = harness(hanging, undefined, (id) => id === "moss/aa");
+    const err = await rejection(h.head("moss/elsewhere", "x1"));
+    expect(err?.message).toContain("moss/elsewhere doesn't run in this plugin host");
     expect((err as unknown as { code?: string }).code).toBe("refused");
     expect(h.inits).toEqual([]);
     expect(h.ch.open).toBe(0);
-    void h.head("clover/aa", "x2").catch(() => undefined);
+    void h.head("moss/aa", "x2").catch(() => undefined);
     await tick();
     expect(h.ch.open).toBe(1);
     h.ch.closeAll();
@@ -68,13 +68,13 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
   test("32 fetches per plugin and 128 per process: the next is refused; another plugin still fits until the process is full", async () => {
     const h = harness(hanging);
     const opened: Promise<unknown>[] = [];
-    for (let i = 0; i < 32; i++) opened.push(rejection(h.head("clover/aa", `a${i}`)));
+    for (let i = 0; i < 32; i++) opened.push(rejection(h.head("moss/aa", `a${i}`)));
     await tick();
-    expect((await rejection(h.head("clover/aa", "a32")))?.message).toContain("32 fetches open");
-    for (const p of ["clover/bb", "clover/cc", "clover/dd"]) for (let i = 0; i < 32; i++) opened.push(rejection(h.head(p, `${p}-${i}`)));
+    expect((await rejection(h.head("moss/aa", "a32")))?.message).toContain("32 fetches open");
+    for (const p of ["moss/bb", "moss/cc", "moss/dd"]) for (let i = 0; i < 32; i++) opened.push(rejection(h.head(p, `${p}-${i}`)));
     await tick();
     expect(h.ch.open).toBe(128);
-    expect((await rejection(h.head("clover/ee", "e0")))?.message).toContain("128 fetches open");
+    expect((await rejection(h.head("moss/ee", "e0")))?.message).toContain("128 fetches open");
     h.ch.closeAll();
     await Promise.all(opened);
     expect(h.ch.open).toBe(0);
@@ -100,23 +100,23 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
       for (let i = 0; i < 6; i++) {
         const id = `${m}-${n++}`;
         if (m === "cancel") {
-          const p = rejection(h.head("clover/aa", id));
+          const p = rejection(h.head("moss/aa", id));
           await tick();
-          await h.call("pluginHost.fetchCancel", { pluginId: "clover/aa", fetchId: id });
+          await h.call("pluginHost.fetchCancel", { pluginId: "moss/aa", fetchId: id });
           await p;
         } else if (m === "upload-cut") {
-          const p = rejection(h.head("clover/aa", id, { method: "POST", upload: true }));
+          const p = rejection(h.head("moss/aa", id, { method: "POST", upload: true }));
           await tick();
           // Past the credit: no credit was given yet for this piece's size.
-          await h.call("pluginHost.fetchSend", { pluginId: "clover/aa", fetchId: id, seq: 0, bytes: new Uint8Array(FETCH_LIMITS.window + 1) });
+          await h.call("pluginHost.fetchSend", { pluginId: "moss/aa", fetchId: id, seq: 0, bytes: new Uint8Array(FETCH_LIMITS.window + 1) });
           await p;
         } else if (m === "close") {
-          const p = rejection(h.head("clover/aa", id));
+          const p = rejection(h.head("moss/aa", id));
           await tick();
           h.ch.closeAll();
           await p;
         } else {
-          const head = await rejection(h.head("clover/aa", id)).catch(() => undefined);
+          const head = await rejection(h.head("moss/aa", id)).catch(() => undefined);
           void head;
           await tick();
           await tick();
@@ -127,7 +127,7 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
     expect(h.ch.open).toBe(0);
     // A fresh fetch still fits: nothing leaked.
     mode = "end";
-    for (let i = 0; i < 32; i++) await h.head("clover/aa", `fresh-${i}`).catch(() => undefined);
+    for (let i = 0; i < 32; i++) await h.head("moss/aa", `fresh-${i}`).catch(() => undefined);
   });
 
   test("an upload past its credit, a piece past 64 KiB, one out of order, or one after its end cuts the fetch off; never buffered", async () => {
@@ -137,11 +137,11 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
         await (init.body as ReadableStream<Uint8Array>).getReader().read();
         return hanging(url, init);
       });
-      const p = rejection(h.head("clover/aa", "up", { method: "POST", upload: true }));
+      const p = rejection(h.head("moss/aa", "up", { method: "POST", upload: true }));
       // The platform fetch pulls: the daemon gives the first window.
       for (let i = 0; i < 20 && !h.sent.some((s) => s.m === "pluginHost.fetchSendCredit"); i++) await tick();
       expect(h.sent.find((s) => s.m === "pluginHost.fetchSendCredit")?.p.bytes).toBe(FETCH_LIMITS.window);
-      const send = (seq: number, bytes?: Uint8Array, end?: boolean) => h.call("pluginHost.fetchSend", { pluginId: "clover/aa", fetchId: "up", seq, ...(bytes ? { bytes } : {}), ...(end ? { end } : {}) });
+      const send = (seq: number, bytes?: Uint8Array, end?: boolean) => h.call("pluginHost.fetchSend", { pluginId: "moss/aa", fetchId: "up", seq, ...(bytes ? { bytes } : {}), ...(end ? { end } : {}) });
       if (misstep === "credit") {
         for (let i = 0; i < 4; i++) await send(i, new Uint8Array(FETCH_LIMITS.chunkBytes));
         await send(4, new Uint8Array(1)); // the window is used up
@@ -169,14 +169,14 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
         if (pulled >= 4 * 1024 * 1024) c.close();
       },
     }, { highWaterMark: 0 })));
-    const head = (await h.head("clover/aa", "dl")) as { body: boolean };
+    const head = (await h.head("moss/aa", "dl")) as { body: boolean };
     expect(head.body).toBe(true);
     for (let i = 0; i < 50; i++) await tick();
     const bodyBytes = () => h.sent.filter((s) => s.m === "pluginHost.fetchBody").reduce((n, s) => n + ((s.p.bytes as Uint8Array | undefined)?.length ?? 0), 0);
     expect(bodyBytes()).toBe(FETCH_LIMITS.window);
     expect(pulled).toBeLessThanOrEqual(FETCH_LIMITS.window + 2 * 16_384);
     // A worker that grants a huge credit: still one window more at most.
-    await h.call("pluginHost.fetchCredit", { pluginId: "clover/aa", fetchId: "dl", bytes: 1_000_000_000 });
+    await h.call("pluginHost.fetchCredit", { pluginId: "moss/aa", fetchId: "dl", bytes: 1_000_000_000 });
     for (let i = 0; i < 50; i++) await tick();
     expect(bodyBytes()).toBe(2 * FETCH_LIMITS.window);
     // Every piece is at most 64 KiB, in order.
@@ -191,15 +191,15 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
       const text = await new Response(init.body as ReadableStream).text();
       return new Response(text);
     });
-    const p = h.head("clover/aa", "mine", { method: "POST", upload: true });
+    const p = h.head("moss/aa", "mine", { method: "POST", upload: true });
     for (let i = 0; i < 20 && !h.sent.some((s) => s.m === "pluginHost.fetchSendCredit"); i++) await tick();
-    expect((await rejection(h.head("clover/bb", "mine")))?.message).toContain("is open");
-    // clover/b sends into it, cancels it, grants credit: nothing.
-    await h.call("pluginHost.fetchSend", { pluginId: "clover/bb", fetchId: "mine", seq: 0, bytes: new TextEncoder().encode("evil"), end: true });
-    await h.call("pluginHost.fetchCancel", { pluginId: "clover/bb", fetchId: "mine" });
-    await h.call("pluginHost.fetchCredit", { pluginId: "clover/bb", fetchId: "mine", bytes: 5 });
+    expect((await rejection(h.head("moss/bb", "mine")))?.message).toContain("is open");
+    // moss/b sends into it, cancels it, grants credit: nothing.
+    await h.call("pluginHost.fetchSend", { pluginId: "moss/bb", fetchId: "mine", seq: 0, bytes: new TextEncoder().encode("evil"), end: true });
+    await h.call("pluginHost.fetchCancel", { pluginId: "moss/bb", fetchId: "mine" });
+    await h.call("pluginHost.fetchCredit", { pluginId: "moss/bb", fetchId: "mine", bytes: 5 });
     expect(h.ch.open).toBe(1);
-    await h.call("pluginHost.fetchSend", { pluginId: "clover/aa", fetchId: "mine", seq: 0, bytes: new TextEncoder().encode("good"), end: true });
+    await h.call("pluginHost.fetchSend", { pluginId: "moss/aa", fetchId: "mine", seq: 0, bytes: new TextEncoder().encode("good"), end: true });
     expect(((await p) as { status: number }).status).toBe(200);
     for (let i = 0; i < 20; i++) await tick();
     const body = h.sent.filter((s) => s.m === "pluginHost.fetchBody" && s.p.fetchId === "mine");
@@ -212,25 +212,25 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
       if (url.endsWith("/refused")) throw Object.assign(new Error("api.evil.com is not one of this plugin's network hosts"), { name: "KeyedFetchError", code: "host_not_declared" });
       return hanging(url, init);
     });
-    const err = await rejection(h.call("pluginHost.fetch", { pluginId: "clover/aa", fetchId: "r", url: "https://api.evil.com/refused", method: "GET", headers: [] }));
+    const err = await rejection(h.call("pluginHost.fetch", { pluginId: "moss/aa", fetchId: "r", url: "https://api.evil.com/refused", method: "GET", headers: [] }));
     expect((err as { detail?: { fetch?: string } })?.detail?.fetch).toBe("host_not_declared");
-    const p = rejection(h.head("clover/aa", "c"));
+    const p = rejection(h.head("moss/aa", "c"));
     await tick();
-    await h.call("pluginHost.fetchCancel", { pluginId: "clover/aa", fetchId: "c" });
+    await h.call("pluginHost.fetchCancel", { pluginId: "moss/aa", fetchId: "c" });
     expect(await p).toBeDefined();
     expect(h.inits.at(-1)?.signal?.aborted).toBe(true);
   });
 
   test("a body nobody reads (no credit back) is held at most the credit wait: then it ends, its slot freed, the worker told why", async () => {
     const h = harness(() => new Response(new Uint8Array(1024 * 1024), { status: 429 }), { creditWaitMs: 100 });
-    for (let i = 0; i < 32; i++) expect(((await h.head("clover/aa", `u${i}`)) as { status: number }).status).toBe(429);
+    for (let i = 0; i < 32; i++) expect(((await h.head("moss/aa", `u${i}`)) as { status: number }).status).toBe(429);
     for (let i = 0; i < 20; i++) await tick();
     // 32 open, each waiting for credit after its first window: the 33rd is refused now...
-    expect((await rejection(h.head("clover/aa", "u32")))?.message).toContain("32 fetches open");
+    expect((await rejection(h.head("moss/aa", "u32")))?.message).toContain("32 fetches open");
     await new Promise((r) => setTimeout(r, 250));
     // ...and goes out once the wait has ended them.
     expect(h.ch.open).toBe(0);
-    expect(((await h.head("clover/aa", "u33")) as { status: number }).status).toBe(429);
+    expect(((await h.head("moss/aa", "u33")) as { status: number }).status).toBe(429);
     const errors = h.sent.filter((s) => s.m === "pluginHost.fetchBody" && s.p.error !== undefined);
     expect(errors).toHaveLength(32);
     expect((errors[0]!.p.error as { code: string; message: string })).toMatchObject({ code: "timeout", message: expect.stringContaining("nobody read the response body") });

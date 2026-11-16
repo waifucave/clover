@@ -1,11 +1,11 @@
-# Clover's desktop app, packaged by electron-builder (lane M owns this file). `bun run dist` builds the unsigned,
+# MOSS's desktop app, packaged by electron-builder (lane M owns this file). `bun run dist` builds the unsigned,
 # unpacked app on each OS (CI's app job; `--dir` overrides the targets below). The releases: the Linux packages (deb,
 # rpm, AppImage) from `scripts/build-packages.ts`, the dmg and its update zip, and the Windows installer from
 # `scripts/release/build.ts`, each with the daemon and its link sidecar inside. Signing, notarization and the update
 # channel come from the release scripts' flags (scripts/release/lib.ts); nothing here holds a secret, and nothing is
 # ever published from a build (`--publish never`): publishing is the owner's step (scripts/release/publish.ts).
-appId: com.waifucave.clover
-productName: Clover
+appId: com.waifucave.moss.code
+productName: MOSS
 copyright: Copyright © 2026 waifucave
 directories:
   output: out/dist
@@ -23,7 +23,7 @@ asar: true
 asarUnpack:
   - out/main/native/*.node
 # Electron's fuses, flipped in the packaged binary before it is signed (lane C, #419; the caller check, spec §3.1): the
-# daemon takes an `app` hello only from the signed Clover app, which is worth something only while that binary runs
+# daemon takes an `app` hello only from the signed MOSS app, which is worth something only while that binary runs
 # nothing but its own sealed code. So: no ELECTRON_RUN_AS_NODE, no NODE_OPTIONS (or NODE_EXTRA_CA_CERTS), no
 # --inspect flags or SIGUSR1 inspector, and only the app.asar beside it, checked against the hash in Info.plist (on
 # Windows, in the executable's resources). The main process never forks Electron as Node (no fork, utilityProcess or
@@ -37,28 +37,28 @@ electronFuses:
   # file:// pages get a browser's rights only (no file:// fetch, service workers or universal access for child
   # frames): the app's only file:// page is the browser viewport's, one file its session lets nothing else load beside.
   grantFileProtocolExtraPrivileges: false
-# The daemon, clover-core, in the app's resources/daemon/, where E-M1's app starts it, and its link sidecar,
-# clover-link (native/link), beside it, where the daemon starts that, and the binaries that run code not the core's own
-# (scripts/bundled-binaries.ts): clover-plugin-bun, plain Bun for plugins, and on macOS lane A's clover-process-holder.
+# The daemon, moss-core, in the app's resources/daemon/, where E-M1's app starts it, and its link sidecar,
+# moss-link (native/link), beside it, where the daemon starts that, and the binaries that run code not the core's own
+# (scripts/bundled-binaries.ts): moss-plugin-bun, plain Bun for plugins, and on macOS lane A's moss-process-holder.
 # scripts/build-packages.ts and scripts/release/build.ts stage them in out/daemon first. A plain `bun run dist` has
 # none, and packages the app alone.
 extraResources:
   - from: out/daemon
     to: daemon
     filter:
-      - clover-core
-      - clover-core.exe
-      - clover-link
-      - clover-link.exe
-      - clover-plugin-bun
-      - clover-plugin-bun.exe
-      - clover-process-holder
+      - moss-core
+      - moss-core.exe
+      - moss-link
+      - moss-link.exe
+      - moss-plugin-bun
+      - moss-plugin-bun.exe
+      - moss-process-holder
   # The bundled plugins (the registry's `bundledDirs`, packages/core/src/registry): the repository's plugins/ as the
-  # app's read-only resources/plugins, each subfolder one top-level plugin (`clover`, `alpha`). Only TRACKED files:
+  # app's read-only resources/plugins, each subfolder one top-level plugin (`moss`, `alpha`). Only TRACKED files:
   # the release scripts stage `git ls-files plugins` in out/plugins first (scripts/release/bundled-plugins.ts), so
   # nothing else a working tree holds comes along, and no symlink. The core finds it beside its own daemon folder
-  # (packages/core/src/bundled-plugins-dir.ts): Clover.app/Contents/Resources/plugins on macOS,
-  # <install>\resources\plugins on Windows, /opt/Clover/resources/plugins in the Linux packages. A plain `bun run dist`
+  # (packages/core/src/bundled-plugins-dir.ts): MOSS Code.app/Contents/Resources/plugins on macOS,
+  # <install>\resources\plugins on Windows, /opt/moss-code/resources/plugins in the Linux packages. A plain `bun run dist`
   # stages none, and packages the app without them.
   - from: out/plugins
     to: plugins
@@ -80,7 +80,7 @@ buildDependenciesFromSource: false
 publish:
   provider: github
   owner: waifucave
-  repo: clover
+  repo: moss
 mac:
   # The dmg to install, and the zip electron-updater updates from. Apple silicon only (spec §3.1).
   target:
@@ -89,8 +89,8 @@ mac:
     - target: zip
       arch: arm64
   category: public.app-category.productivity
-  artifactName: Clover-${version}-mac.${ext}
-  # The app icon, white on green on Apple's icon grid (lane G; drawn by scripts/brand-icons.ts, docs/clover-brand.md).
+  artifactName: MOSS-Code-${version}-mac.${ext}
+  # The app icon, white on green on Apple's icon grid (lane G; drawn by scripts/brand-icons.ts, docs/moss-brand.md).
   icon: build/icon.icns
   # Unsigned unless the release signs it: `scripts/release/build.ts --sign` names the Developer ID identity and turns
   # notarization on (with notarytool's stored profile, APPLE_KEYCHAIN_PROFILE). The hardened runtime is on for both.
@@ -124,29 +124,29 @@ linux:
   category: Utility
   # The PNG set, 16 to 512 px, named <n>x<n>.png, for the deb, the rpm and the AppImage (lane G; scripts/brand-icons.ts).
   icon: build/icons
-  # The app's own executable, /opt/Clover/clover; `clover` on the PATH is the daemon's command line
+  # The app's own executable, /opt/moss-code/moss-code; `moss` on the PATH is the daemon's command line
   # (packaging/linux/after-install.sh), as on macOS.
-  executableName: clover
+  executableName: moss
   synopsis: A bot-first, endlessly moddable desktop agent platform
   # The deb's Maintainer field and the rpm's Packager, the owner's contact: a name and an email, as Debian wants.
-  maintainer: Clover <w@waifucave.com>
+  maintainer: MOSS <w@waifucave.com>
 # The deb and the rpm are the main Linux packages: they install the AppArmor profile Electron's sandbox needs on
 # Ubuntu (spec §4). Their scripts and the profile live in packaging/linux/. Besides electron-builder's own
 # dependencies, the daemon's Bash tool needs bubblewrap (spec §4) and its secrets need libsecret.
-# Both are named `clover`: electron-builder would otherwise name the file after the package.json name, whose
+# Both are named `moss`: electron-builder would otherwise name the file after the package.json name, whose
 # `@waifucave/` scope puts a folder in the path (the first packages run failed on it).
 deb:
-  packageName: clover
-  artifactName: clover_${version}_${arch}.${ext}
+  packageName: moss
+  artifactName: moss_${version}_${arch}.${ext}
   # GNOME without the AppIndicator extension shows no tray, so the launcher entry carries Quit (spec §4): the app's
-  # own executable with --quit (E-M1's app quits the pair). `clover` on the PATH is the daemon's command line.
+  # own executable with --quit (E-M1's app quits the pair). `moss` on the PATH is the daemon's command line.
   desktop:
     entry:
       Actions: Quit;
     desktopActions:
       Quit:
-        Name: Quit Clover
-        Exec: /opt/Clover/clover --quit
+        Name: Quit MOSS
+        Exec: /opt/moss-code/moss-code --quit
   afterInstall: ../../packaging/linux/after-install.sh
   afterRemove: ../../packaging/linux/after-remove.sh
   appArmorProfile: ../../packaging/linux/apparmor-profile
@@ -165,16 +165,16 @@ deb:
     - libappindicator3-1
     - gnome-keyring
 rpm:
-  packageName: clover
-  artifactName: clover-${version}.${arch}.${ext}
+  packageName: moss
+  artifactName: moss-${version}.${arch}.${ext}
   # The same Quit action as the deb's.
   desktop:
     entry:
       Actions: Quit;
     desktopActions:
       Quit:
-        Name: Quit Clover
-        Exec: /opt/Clover/clover --quit
+        Name: Quit MOSS
+        Exec: /opt/moss-code/moss-code --quit
   afterInstall: ../../packaging/linux/after-install.sh
   afterRemove: ../../packaging/linux/after-remove.sh
   appArmorProfile: ../../packaging/linux/apparmor-profile
@@ -192,15 +192,15 @@ rpm:
 # The AppImage is the fallback: it can't install the AppArmor profile, and the app copies the daemon out of it
 # (spec §3.1, §4).
 appImage:
-  artifactName: Clover-${version}-${arch}.AppImage
-# The release's names, which the Homebrew cask and winget point at (packaging/clover.rb.tmpl, packaging/winget/).
+  artifactName: MOSS-Code-${version}-${arch}.AppImage
+# The release's names, which the Homebrew cask and winget point at (packaging/moss.rb.tmpl, packaging/winget/).
 # (The zip takes the mac section's artifactName.)
 dmg:
-  artifactName: Clover-${version}.${ext}
+  artifactName: MOSS-Code-${version}.${ext}
 # The Windows installer, once E-M1's app is there to package: per user, so its uninstall hook
 # (packaging/windows/installer.nsh) runs as the user.
 nsis:
-  artifactName: Clover-Setup-${version}.${ext}
+  artifactName: MOSS-Code-Setup-${version}.${ext}
   oneClick: true
   perMachine: false
   include: ../../packaging/windows/installer.nsh

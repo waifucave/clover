@@ -76,7 +76,7 @@ export type CanonicalSessionStoreConstructor = new (opts: { winterHome: string }
 export class SharedStoreOptionsError extends RuntimeSdkError {
   readonly option: "persistSession" | "enableFileCheckpointing" | "sessionStore";
   constructor(args: { option: "persistSession" | "enableFileCheckpointing" | "sessionStore"; reason: string }) {
-    super(`clover runtime host: ${args.option} is incompatible with the shared session store — ${args.reason}`);
+    super(`moss runtime host: ${args.option} is incompatible with the shared session store — ${args.reason}`);
     this.option = args.option;
   }
 }
@@ -93,7 +93,7 @@ export class BlindStoreImportError extends RuntimeSdkError {
   readonly key: Readonly<SessionKey>;
   constructor(key: SessionKey, detail: string) {
     super(
-      `clover runtime host: a blind session import into ${key.projectKey}/${key.sessionId} is forbidden while the mirror is unhealthy (WS-14 §5) — ${detail}. Reconcile the canonical tail against the recorded local-write root first (transcript-only, suffix-only).`,
+      `moss runtime host: a blind session import into ${key.projectKey}/${key.sessionId} is forbidden while the mirror is unhealthy (WS-14 §5) — ${detail}. Reconcile the canonical tail against the recorded local-write root first (transcript-only, suffix-only).`,
     );
     this.key = Object.freeze({ ...key });
   }
@@ -103,7 +103,7 @@ export class BlindStoreImportError extends RuntimeSdkError {
 export class SharedStoreUnavailableError extends RuntimeSdkError {
   constructor() {
     super(
-      "clover runtime host: the injected Winter peer exports no `WinterCompatibilitySessionStore`, so there is no store for the two branches to share (WS-05 §6 requires the identical package/version on both legs)",
+      "moss runtime host: the injected Winter peer exports no `WinterCompatibilitySessionStore`, so there is no store for the two branches to share (WS-05 §6 requires the identical package/version on both legs)",
     );
   }
 }

@@ -2,7 +2,7 @@
 // `open({ show })` and `TabView.view` (R8), lane D's grants behind the person's browser (R10), and the `computer`
 // field across computers, two daemons joined by the fake link.
 import { describe, expect, test } from "bun:test";
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import {
   BrowserError, BrowserService, browserCallerOf, startBrowser, personsBrowserGrants, serveBrowserPeers, USER_BROWSER_PARTITION_GRANT, type BrowserEvent,

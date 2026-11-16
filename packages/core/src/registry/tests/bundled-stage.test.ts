@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { NOT_AVAILABLE_YET, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { NOT_AVAILABLE_YET, PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { measureBundledTree } from "../../bundled-plugins-dir";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { grantsInForce } from "../../contracts/plugin-registry";
@@ -20,11 +20,11 @@ const REPO_PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugin
 
 describe("stageBundledPlugins", () => {
   test("copies each plugin whose files all verify; one with a changed or extra file is left out whole", () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b2-stage-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b2-stage-"));
     const root = join(home, "resources", "plugins");
     for (const id of ["good", "edited", "extra"]) {
       mkdirSync(join(root, id, "data"), { recursive: true });
-      writeFileSync(join(root, id, "clover.json"), JSON.stringify({ id }));
+      writeFileSync(join(root, id, "moss.json"), JSON.stringify({ id }));
       writeFileSync(join(root, id, "data", "a.txt"), `${id}'s data`);
     }
     const manifest = measureBundledTree(root);
@@ -45,11 +45,11 @@ describe("stageBundledPlugins", () => {
 
 describe("a bundled plugin runs only verified bytes", () => {
   test("every module of its tree is checked at load: a lib rewritten, or a file planted, after staging is refused, and its code never runs (#322's review, S2)", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b2-verified-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b2-verified-"));
     const root = join(home, "resources", "plugins");
     const tree = join(root, "ledger");
     mkdirSync(join(tree, "host"), { recursive: true });
-    writeFileSync(join(tree, "clover.json"), JSON.stringify({ manifest: 1, id: "ledger", name: "Ledger", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }));
+    writeFileSync(join(tree, "moss.json"), JSON.stringify({ manifest: 1, id: "ledger", name: "Ledger", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }));
     writeFileSync(join(tree, "package.json"), JSON.stringify({ type: "module" }));
     writeFileSync(join(tree, "host", "index.js"), `export const total = async () => (await import("./lib.js")).total();\nexport const extra = async () => (await import("./extra.js")).x;\n`);
     writeFileSync(join(tree, "host", "lib.js"), "export const total = () => 42;\n");
@@ -58,7 +58,7 @@ describe("a bundled plugin runs only verified bytes", () => {
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     mkdirSync(join(home, "plugins"), { recursive: true });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests });
     const mark = join(home, "tampered-ran");
     const USER = { kind: "user", client: "app" } as const;
@@ -73,7 +73,7 @@ describe("a bundled plugin runs only verified bytes", () => {
       writeFileSync(join(stagedBundledDir(home), "ledger", "host", "lib.js"), `require("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\nexport const total = () => 0;\n`);
       await Promise.race([ph.host.restart("ledger").catch(() => {}), Bun.sleep(10_000)]);
       const rewritten = await ph.host.invoke({ pluginId: "ledger", handler: "total", args: null, caller: USER }).then(() => "ran", (e: Error) => e.message);
-      expect(rewritten).toContain("isn't the bundled code Clover verified");
+      expect(rewritten).toContain("isn't the bundled code MOSS verified");
       expect(existsSync(mark)).toBe(false);
     } finally {
       await ph.close();
@@ -84,28 +84,28 @@ describe("a bundled plugin runs only verified bytes", () => {
 
 describe("the dev stage from the repository's plugins/", () => {
   test("every bundled plugin loads, and each one with Bun host code starts through the plugin host", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b2-devstage-"));
-    const built = await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["alpha", "clover"], cloverHome: home });
-    expect(built.built).toEqual(["alpha", "clover"]);
+    const home = mkdtempSync(join(tmpdir(), "moss-b2-devstage-"));
+    const built = await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["alpha", "moss"], mossHome: home });
+    expect(built.built).toEqual(["alpha", "moss"]);
     const source = devBundledSource(home)!;
     const staged = stageBundledPlugins({ ...source, out: stagedBundledDir(home) });
-    expect([staged.staged, staged.refused]).toEqual([["alpha", "clover"], []]);
+    expect([staged.staged, staged.refused]).toEqual([["alpha", "moss"], []]);
 
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     mkdirSync(join(home, "plugins"), { recursive: true });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests });
     try {
       const all = opened.registry.list();
       // Bundled plugins need no OK: none is waiting on a card, refused or invalid. One its manifest has off by default
       // (`enabledByDefault: false`, Alpha's extras) is off until the user turns it on.
-      // Clover's plugins this build can't run yet (`availability: not-yet`, the owner's PARKED list) are listed and off.
+      // MOSS's plugins this build can't run yet (`availability: not-yet`, the owner's PARKED list) are listed and off.
       const notYet = (p: { manifest?: unknown }) => (p.manifest as { availability?: { status?: string } } | undefined)?.availability?.status === "not-yet";
       expect(all.filter(notYet).map((p) => `${p.id}: ${p.state} (${p.reason ?? ""})`)).toEqual(
         [
-          "clover/companion-ios", "clover/companion-web", "clover/forwarder", "clover/provider-gcp",
-          "clover/provider-hetzner", "clover/push", "clover/relay-cloudflare", "clover/trigger-webhook",
+          "moss/companion-ios", "moss/companion-web", "moss/forwarder", "moss/provider-gcp",
+          "moss/provider-hetzner", "moss/push", "moss/relay-cloudflare", "moss/trigger-webhook",
         ].map((id) => `${id}: off (${NOT_AVAILABLE_YET})`),
       );
       const parked = (e: { pluginId: string }) => all.some((p) => p.id === e.pluginId && notYet(p));
@@ -116,7 +116,7 @@ describe("the dev stage from the repository's plugins/", () => {
         expect([point, opened.registry.entries(point).filter(parked)]).toEqual([point, []]);
       }
       // The browser is composed now: its panel is offered like any other.
-      expect(opened.registry.entries("ui").some((e) => e.pluginId === "clover/browser-view")).toBe(true);
+      expect(opened.registry.entries("ui").some((e) => e.pluginId === "moss/browser-view")).toBe(true);
       for (const p of all.filter(notYet)) expect([p.id, grantsInForce(p)]).toEqual([p.id, []]);
       const notLoaded = all.filter((p) => !["running", "waiting"].includes(p.state) && !(p.state === "off" && p.manifest?.enabledByDefault === false) && !notYet(p))
         .map((p) => `${p.id}: ${p.state}${p.reason ? ` (${p.reason})` : ""}`);
@@ -127,7 +127,7 @@ describe("the dev stage from the repository's plugins/", () => {
         expect([p.id, await ph.host.ensureStarted(p.id).then(() => "started", () => "not started")]).toEqual([p.id, "not started"]);
       }
       const hosted = all.filter((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun" && !notYet(p));
-      // (Nine of Clover's hosts are parked in this build; the rest start.)
+      // (Nine of MOSS's hosts are parked in this build; the rest start.)
       expect(hosted.length).toBeGreaterThan(5);
       const failed: string[] = [];
       for (const p of hosted) {
@@ -141,24 +141,24 @@ describe("the dev stage from the repository's plugins/", () => {
       // is one of the not-yet plugins above).
       expect(failed).toEqual([]);
 
-      // What the app mounts from (plugin.ui): every clover child with UI in the `clover` layer, its files the verified
+      // What the app mounts from (plugin.ui): every moss child with UI in the `moss` layer, its files the verified
       // copy's, its module a built .js, its tree hash real.
       const views = uiPluginViews(opened.registry);
       expect(views.length).toBeGreaterThan(10);
       const off = views.filter((v) => !v.assetBase.startsWith(staged.dir!) || (v.clientEntry !== undefined && !v.clientEntry.endsWith(".js"))
-        || (v.pluginId.startsWith("clover/") && v.layer !== "clover") || !/^sha256:[0-9a-f]{64}$/.test(v.treeHash)).map((v) => v.pluginId);
+        || (v.pluginId.startsWith("moss/") && v.layer !== "moss") || !/^sha256:[0-9a-f]{64}$/.test(v.treeHash)).map((v) => v.pluginId);
       expect(off).toEqual([]);
       expect(views.map((v) => v.pluginId)).toContain("alpha");
 
-      // #322's review, S2: a bundled entry rewritten after staging (run/bundled-plugins/clover/...) is refused at load,
+      // #322's review, S2: a bundled entry rewritten after staging (run/bundled-plugins/moss/...) is refused at load,
       // and its new code never runs.
-      const target = hosted.find((p) => p.id.startsWith("clover/"))!;
+      const target = hosted.find((p) => p.id.startsWith("moss/"))!;
       await ph.host.stop(target.id, "test");
       const entry = join(target.folder, target.manifest!.host!.entry);
       const mark = join(home, "tampered-ran");
       writeFileSync(entry, `${readFileSync(entry, "utf8")}\nrequire("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\n`);
       const refused = await Promise.race([ph.host.restart(target.id).then(() => "started", (err: unknown) => (err as Error).message), Bun.sleep(20_000).then(() => "timed out")]);
-      expect(`${refused} / ${ph.host.status(target.id).reason ?? ""}`).toContain("isn't the bundled code Clover verified");
+      expect(`${refused} / ${ph.host.status(target.id).reason ?? ""}`).toContain("isn't the bundled code MOSS verified");
       expect(existsSync(mark)).toBe(false);
     } finally {
       await ph.close();
@@ -167,16 +167,16 @@ describe("the dev stage from the repository's plugins/", () => {
   }, 180_000);
 
   test("a bundled plugin with no verified digest recorded doesn't run", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b2-devstage-"));
-    await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["clover"], cloverHome: home });
+    const home = mkdtempSync(join(tmpdir(), "moss-b2-devstage-"));
+    await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["moss"], mossHome: home });
     const staged = stageBundledPlugins({ ...devBundledSource(home)!, out: stagedBundledDir(home) });
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     mkdirSync(join(home, "plugins"), { recursive: true });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets });
     try {
-      // One that runs in this build (not one of Clover's not-yet plugins, which never start at all).
+      // One that runs in this build (not one of MOSS's not-yet plugins, which never start at all).
       const hosted = opened.registry.list().find((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun"
         && (p.manifest as { availability?: unknown }).availability === undefined)!;
       const refused = await Promise.race([ph.host.ensureStarted(hosted.id).then(() => "started", (err: unknown) => (err as Error).message), Bun.sleep(20_000).then(() => "timed out")]);

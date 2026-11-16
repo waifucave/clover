@@ -14,12 +14,12 @@ import { generateRepoKey, metadata, refreshTree, RELEASE_VALID_DAYS, signRelease
 
 const ok = (cmd: string[]): boolean => (spawnSync(cmd[0]!, cmd.slice(1), { stdio: "inherit" }).status ?? 1) === 0;
 
-const dir = mkdtempSync(join(tmpdir(), "clover-repo-verify-"));
+const dir = mkdtempSync(join(tmpdir(), "moss-repo-verify-"));
 const k = await generateRepoKey();
 const key = await openpgp.readPrivateKey({ armoredKey: k.privateKey });
 writeFileSync(join(dir, "key.asc"), k.publicKey);
 writeFileSync(join(dir, "key.gpg"), (await openpgp.readKey({ armoredKey: k.publicKey })).write());
-const release = new TextEncoder().encode("Origin: Clover\nLabel: Clover\nSuite: stable\nCodename: stable\nValid-Until: Sat, 21 Nov 2026 00:00:00 UTC\nSHA256:\n e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 main/binary-amd64/Packages\n");
+const release = new TextEncoder().encode("Origin: MOSS\nLabel: MOSS\nSuite: stable\nCodename: stable\nValid-Until: Sat, 21 Nov 2026 00:00:00 UTC\nSHA256:\n e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 main/binary-amd64/Packages\n");
 const s = await signRelease(release, key);
 writeFileSync(join(dir, "Release"), release);
 writeFileSync(join(dir, "InRelease"), s.inRelease);
@@ -34,7 +34,7 @@ expectOk("gpgv InRelease", ["gpgv", "--keyring", join(dir, "key.gpg"), join(dir,
 expectOk("gpgv repomd.xml.asc", ["gpgv", "--keyring", join(dir, "key.gpg"), join(dir, "repomd.xml.asc"), join(dir, "repomd.xml")]);
 expectOk("sqv Release.gpg", ["sqv", "--keyring", join(dir, "key.asc"), join(dir, "Release.gpg"), join(dir, "Release")]);
 expectOk("sqv repomd.xml.asc", ["sqv", "--keyring", join(dir, "key.asc"), join(dir, "repomd.xml.asc"), join(dir, "repomd.xml")]);
-writeFileSync(join(dir, "Release"), new TextEncoder().encode("Origin: Clover\nSuite: changed\n"));
+writeFileSync(join(dir, "Release"), new TextEncoder().encode("Origin: MOSS\nSuite: changed\n"));
 if (ok(["gpgv", "--keyring", join(dir, "key.gpg"), join(dir, "Release.gpg"), join(dir, "Release")])) failures.push("gpgv accepted a changed Release");
 if (ok(["sqv", "--keyring", join(dir, "key.asc"), join(dir, "Release.gpg"), join(dir, "Release")])) failures.push("sqv accepted a changed Release");
 
@@ -42,12 +42,12 @@ if (ok(["sqv", "--keyring", join(dir, "key.asc"), join(dir, "Release.gpg"), join
 const repo = join(dir, "repo");
 const pkg = join(dir, "pkg");
 mkdirSync(join(pkg, "DEBIAN"), { recursive: true });
-mkdirSync(join(pkg, "usr", "share", "doc", "clover-fixture"), { recursive: true });
-writeFileSync(join(pkg, "DEBIAN", "control"), "Package: clover-fixture\nVersion: 0.0.1\nArchitecture: amd64\nMaintainer: Clover <w@waifucave.com>\nDescription: a fixture for the repository check\n");
-writeFileSync(join(pkg, "usr", "share", "doc", "clover-fixture", "README"), "fixture\n");
+mkdirSync(join(pkg, "usr", "share", "doc", "moss-fixture"), { recursive: true });
+writeFileSync(join(pkg, "DEBIAN", "control"), "Package: moss-fixture\nVersion: 0.0.1\nArchitecture: amd64\nMaintainer: MOSS <w@waifucave.com>\nDescription: a fixture for the repository check\n");
+writeFileSync(join(pkg, "usr", "share", "doc", "moss-fixture", "README"), "fixture\n");
 const debs = join(dir, "debs");
 mkdirSync(debs);
-if (!ok(["dpkg-deb", "--root-owner-group", "--build", pkg, join(debs, "clover_0.0.1_amd64.deb")])) failures.push("dpkg-deb couldn't build the fixture");
+if (!ok(["dpkg-deb", "--root-owner-group", "--build", pkg, join(debs, "moss_0.0.1_amd64.deb")])) failures.push("dpkg-deb couldn't build the fixture");
 // Made 40 days ago: past its Valid-Until.
 const DAY = 86_400_000;
 metadata([debs], "latest", repo, new Date(Date.now() - (RELEASE_VALID_DAYS + 10) * DAY));
@@ -55,7 +55,7 @@ await signTree(repo, key, k.publicKey);
 const apt = join(dir, "apt-state");
 for (const d of ["lists/partial", "cache/archives/partial", "trusted.d", "parts.d"]) mkdirSync(join(apt, d), { recursive: true });
 writeFileSync(join(apt, "status"), "");
-writeFileSync(join(apt, "sources.list"), `deb [arch=amd64 signed-by=${join(repo, "clover-archive-keyring.asc")}] file:${join(repo, "apt")} stable main\n`);
+writeFileSync(join(apt, "sources.list"), `deb [arch=amd64 signed-by=${join(repo, "moss-archive-keyring.asc")}] file:${join(repo, "apt")} stable main\n`);
 const aptOptions = [
   "-o", `Dir::Etc::sourcelist=${join(apt, "sources.list")}`, "-o", `Dir::Etc::sourceparts=${join(apt, "parts.d")}`,
   "-o", `Dir::Etc::trusted=${join(apt, "trusted.gpg")}`, "-o", `Dir::Etc::trustedparts=${join(apt, "trusted.d")}`,
@@ -76,7 +76,7 @@ refreshTree(repo);
 await signTree(repo, key, k.publicKey);
 const fresh = aptGet();
 if (!fresh.ok) failures.push(`apt-get update refused the refreshed, signed repository:\n${fresh.out}`);
-const shown = spawnSync("apt-cache", [...aptOptions, "show", "clover-fixture"], { encoding: "utf8" });
+const shown = spawnSync("apt-cache", [...aptOptions, "show", "moss-fixture"], { encoding: "utf8" });
 if ((shown.status ?? 1) !== 0 || !shown.stdout.includes("Version: 0.0.1")) failures.push(`apt-cache doesn't know the repository's package:\n${shown.stdout}${shown.stderr}`);
 const inReleasePath = join(repo, "apt", "dists", "stable", "InRelease");
 writeFileSync(inReleasePath, readFileSync(inReleasePath, "utf8").replace("Suite: stable", "Suite: stablx"));

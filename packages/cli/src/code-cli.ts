@@ -1,17 +1,17 @@
-// `clover code` (spec §9.3 "The user can also start a coding agent directly from the app or the CLI"): starts a coding
+// `moss code` (spec §9.3 "The user can also start a coding agent directly from the app or the CLI"): starts a coding
 // session the user drives, with no bot, through the daemon's `agent.start` (lane K's method, packages/core/src/agents/
 // rpc.ts). Owner: lane K, which the controller cleared for this one command in packages/cli.
 //
-//   clover code [folder] --backend <id> [--model <m>] [--effort <e>] [--computer <Name>] [-p <prompt>]
+//   moss code [folder] --backend <id> [--model <m>] [--effort <e>] [--computer <Name>] [-p <prompt>]
 //
 // The folder is a folder-tree path (`home/<Computer>/…`) or a local folder inside the user's home, the current one by
 // default; a local folder becomes `home/<Computer>/<path under the home>`, so the CLI needs this computer's name in
-// the tree (`--computer`, or `CLOVER_COMPUTER`). The daemon checks the rest: the backend, the root's fence, and the
-// user's OK for an agent with no sandbox Clover counts on.
+// the tree (`--computer`, or `MOSS_COMPUTER`). The daemon checks the rest: the backend, the root's fence, and the
+// user's OK for an agent with no sandbox MOSS counts on.
 import { homedir } from "node:os";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-export const CODE_USAGE = "usage: clover code [folder] --backend <id> [--model <m>] [--effort <e>] [--computer <Name>] [-p <prompt>]";
+export const CODE_USAGE = "usage: moss code [folder] --backend <id> [--model <m>] [--effort <e>] [--computer <Name>] [-p <prompt>]";
 
 export interface CodeArgs {
   folder?: string;
@@ -43,7 +43,7 @@ export function parseCodeArgs(argv: readonly string[]): { kind: "ok"; args: Code
       return { kind: "usage", message: `one folder only\n${CODE_USAGE}` };
     }
   }
-  if (!out.backend) return { kind: "usage", message: `name the agent with --backend (clover agents backends lists them)\n${CODE_USAGE}` };
+  if (!out.backend) return { kind: "usage", message: `name the agent with --backend (moss agents backends lists them)\n${CODE_USAGE}` };
   return { kind: "ok", args: out as CodeArgs };
 }
 
@@ -53,7 +53,7 @@ export function treeRootOf(folder: string | undefined, o: { cwd: string; home: s
     const name = /^home\/([^/]+)/.exec(folder)?.[1];
     return { ok: true, root: folder.replace(/\/+$/, ""), ...(name ? { computer: name } : {}) };
   }
-  if (!o.computer) return { ok: false, message: "name this computer as the folder tree does, with --computer <Name> (or CLOVER_COMPUTER)" };
+  if (!o.computer) return { ok: false, message: "name this computer as the folder tree does, with --computer <Name> (or MOSS_COMPUTER)" };
   if (!COMPUTER_NAME_RE.test(o.computer)) return { ok: false, message: `${o.computer} isn't a computer name (letters, digits and hyphens)` };
   const abs = resolve(o.cwd, folder ?? ".");
   const rel = relative(o.home, abs);
@@ -71,7 +71,7 @@ export interface CodeDeps {
   env?: Record<string, string | undefined>;
 }
 
-/** Runs `clover code`; resolves with the exit code. */
+/** Runs `moss code`; resolves with the exit code. */
 export async function runCodeCommand(argv: readonly string[], deps: CodeDeps): Promise<number> {
   const parsed = parseCodeArgs(argv);
   if (parsed.kind === "usage") {
@@ -79,7 +79,7 @@ export async function runCodeCommand(argv: readonly string[], deps: CodeDeps): P
     return 1;
   }
   const a = parsed.args;
-  const computer = a.computer ?? (deps.env ?? process.env)["CLOVER_COMPUTER"];
+  const computer = a.computer ?? (deps.env ?? process.env)["MOSS_COMPUTER"];
   const root = treeRootOf(a.folder, { cwd: deps.cwd ?? process.cwd(), home: deps.home ?? homedir(), ...(computer ? { computer } : {}) });
   if (!root.ok) {
     deps.error(root.message);
@@ -99,7 +99,7 @@ export async function runCodeCommand(argv: readonly string[], deps: CodeDeps): P
     deps.log(`Started coding session ${r.session ?? "?"} (${a.backend}) in ${root.root}.`);
     return 0;
   } catch (err) {
-    deps.error(`clover code: ${err instanceof Error ? err.message : String(err)}`);
+    deps.error(`moss code: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   } finally {
     c.close();

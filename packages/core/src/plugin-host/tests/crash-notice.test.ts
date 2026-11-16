@@ -8,8 +8,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -35,7 +35,7 @@ function write(dir: string, files: Record<string, string>): void {
     writeFileSync(join(dir, path), body);
   }
 }
-const manifest = (id: string, name: string, host = true) => JSON.stringify({ manifest: 1, id, name, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, ...(host ? { host: { entry: "host/index.js" } } : {}) });
+const manifest = (id: string, name: string, host = true) => JSON.stringify({ manifest: 1, id, name, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, ...(host ? { host: { entry: "host/index.js" } } : {}) });
 
 async function until<T>(what: string, ms: number, f: () => T | undefined): Promise<T> {
   const end = Date.now() + ms;
@@ -54,7 +54,7 @@ async function world(prefix: string) {
   temps.push(home);
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const secrets = new MemorySecretStore();
-  const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 60_000 });
+  const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 60_000 });
   const clock = new FakeClock({ start: Date.now() });
   const lines: string[] = [];
   const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, clock, log: (l) => lines.push(l) });
@@ -113,11 +113,11 @@ async function world(prefix: string) {
 
 describe("a bot's plugin stopped by the crash rules", () => {
   test("its builder is told once per stop, in its conversation, and the message starts a turn; the user's plugins and stops tell no one", async () => {
-    const w = await world("clover-b-crash-notice-");
+    const w = await world("moss-b-crash-notice-");
     try {
-      await w.install("reel", { "clover.json": manifest("reel", "Reel"), "package.json": "{\"type\":\"module\"}", "host/index.js": THROWS("the timeline file is missing") }, "bot");
-      await w.install("users-reel", { "clover.json": manifest("users-reel", "User's reel"), "package.json": "{\"type\":\"module\"}", "host/index.js": THROWS("the timeline file is missing") }, "app");
-      await w.install("steady", { "clover.json": manifest("steady", "Steady"), "package.json": "{\"type\":\"module\"}", "host/index.js": WORKS("pong") }, "bot");
+      await w.install("reel", { "moss.json": manifest("reel", "Reel"), "package.json": "{\"type\":\"module\"}", "host/index.js": THROWS("the timeline file is missing") }, "bot");
+      await w.install("users-reel", { "moss.json": manifest("users-reel", "User's reel"), "package.json": "{\"type\":\"module\"}", "host/index.js": THROWS("the timeline file is missing") }, "app");
+      await w.install("steady", { "moss.json": manifest("steady", "Steady"), "package.json": "{\"type\":\"module\"}", "host/index.js": WORKS("pong") }, "bot");
 
       // The bot's plugin crashes at start three times and stops: its builder hears of it once, starting a turn.
       await w.crashToStop("reel");
@@ -157,9 +157,9 @@ describe("a bot's plugin stopped by the crash rules", () => {
   }, 180_000);
 
   test("the builder's fixing edit starts it again; a still-broken edit is told again; the third stop in an hour is the last notice until the user restarts it; the user's stop stays", async () => {
-    const w = await world("clover-b-crash-fix-");
+    const w = await world("moss-b-crash-fix-");
     try {
-      await w.install("reel", { "clover.json": manifest("reel", "Reel"), "package.json": "{\"type\":\"module\"}", "host/index.js": THROWS("bug one") }, "bot");
+      await w.install("reel", { "moss.json": manifest("reel", "Reel"), "package.json": "{\"type\":\"module\"}", "host/index.js": THROWS("bug one") }, "bot");
       await w.crashToStop("reel");
       await until("the first notice", 20_000, () => (w.delivered.length === 1 ? true : undefined));
       const cards = w.broker.cards().length;
@@ -212,14 +212,14 @@ describe("a bot's plugin stopped by the crash rules", () => {
   }, 240_000);
 
   test("a child of a bot's plugin (a tree shaped like reel: a top and two children) is named by its own id, whose log PluginStatus shows its builder", async () => {
-    const w = await world("clover-b-crash-child-");
+    const w = await world("moss-b-crash-child-");
     try {
       await w.install("reel", {
-        "clover.json": manifest("reel", "Reel"), "package.json": "{\"type\":\"module\"}", "host/index.js": WORKS("reel"),
-        "plugins/fx/clover.json": JSON.stringify({ manifest: 1, name: "Reel effects", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }),
+        "moss.json": manifest("reel", "Reel"), "package.json": "{\"type\":\"module\"}", "host/index.js": WORKS("reel"),
+        "plugins/fx/moss.json": JSON.stringify({ manifest: 1, name: "Reel effects", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }),
         "plugins/fx/package.json": "{\"type\":\"module\"}",
         "plugins/fx/host/index.js": THROWS("the effects folder is missing"),
-        "plugins/export/clover.json": JSON.stringify({ manifest: 1, name: "Reel export", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }),
+        "plugins/export/moss.json": JSON.stringify({ manifest: 1, name: "Reel export", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }),
         "plugins/export/package.json": "{\"type\":\"module\"}",
         "plugins/export/host/index.js": WORKS("export"),
       }, "bot");

@@ -1,5 +1,5 @@
-// The Clover Browser where no app runs (spec §12.1, "[P] Where no app runs"; plan §4 L, M2): Chrome for Testing's
-// headless shell, pinned (`plugins/clover/plugins/browser/headless-shell.pins.json`, with `integrity.json`), installed failing closed (`install.ts`), one process per profile, driven over
+// The MOSS Browser where no app runs (spec §12.1, "[P] Where no app runs"; plan §4 L, M2): Chrome for Testing's
+// headless shell, pinned (`plugins/moss/plugins/browser/headless-shell.pins.json`, with `integrity.json`), installed failing closed (`install.ts`), one process per profile, driven over
 // the DevTools pipe. `HeadlessBrowser` is an `AppTabPort`, so the core's `BrowserService` drives it exactly as it
 // drives the app's Electron, and it reports back the same way (`changed`, `closed`, `cdp`, `stalled`).
 //

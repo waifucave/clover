@@ -11,9 +11,9 @@ import { chmodSync, closeSync, existsSync, fchmodSync, fstatSync, lstatSync, mkd
 import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import { fenceContextFor } from "../contracts/fence";
-import type { CloverFence } from "./fence";
+import type { MossFence } from "./fence";
 import { bwrapPlan, heldFolderNote } from "./linux-bwrap";
 import { unixSocketFilter } from "./seccomp";
 import { PROCESS_HOLDER_FILE } from "../build-kind";
@@ -26,10 +26,10 @@ import { callerPlaces } from "./per-caller";
 import { runCommand, type FencedRun, type FencedRunResult, type FencedSpawner } from "./spawn";
 
 export interface FencedProcessOptions {
-  readonly fence: CloverFence;
+  readonly fence: MossFence;
   readonly os?: Os;
   /** macOS: the process holder every command runs under (`DescendantEnd`), so all it starts ends with the run.
-   *  Default: `clover-process-holder` beside the daemon's executable when it is there (lane M ships it); `null`, or
+   *  Default: `moss-process-holder` beside the daemon's executable when it is there (lane M ships it); `null`, or
    *  none there, records the process tree while the run lasts instead. */
   readonly processHolder?: string | null;
   /** macOS's per-user temp folder; default from `getconf DARWIN_USER_TEMP_DIR`. */
@@ -118,11 +118,11 @@ class SessionConfigs {
     }
     this.#through.set(sessionId, t);
     const reverted = revertPlantedGitKeys(m);
-    const linked = links.length === 0 ? null : `clover: a git config was a link to risky git keys; ${links.join("; ")}\n`;
+    const linked = links.length === 0 ? null : `moss: a git config was a link to risky git keys; ${links.join("; ")}\n`;
     // The walk's stop is said once a turn (`turn`; without one, once a session): a repo past it isn't watched.
     const turn = opts.turn ?? "";
     const budget = stopped && this.#told.get(sessionId) !== turn
-      ? `clover: the repo watch stopped after ${WATCH_REPO_BUDGET} folders in this session's writable folders; a repo past them isn't checked for risky git keys\n`
+      ? `moss: the repo watch stopped after ${WATCH_REPO_BUDGET} folders in this session's writable folders; a repo past them isn't checked for risky git keys\n`
       : null;
     if (budget !== null) this.#told.set(sessionId, turn);
     const note = reverted === null && linked === null && budget === null ? null : `${reverted ?? ""}${linked ?? ""}${budget ?? ""}`;
@@ -134,10 +134,10 @@ class SessionConfigs {
 
 /** The holder folders a run's sandbox holds, made first where missing (`makeHolderFolders`): an agent's settings by
  *  their folder's parent. */
-function makeHolders(fence: CloverFence, policy: ReturnType<CloverFence["policy"]>): void {
+function makeHolders(fence: MossFence, policy: ReturnType<MossFence["policy"]>): void {
   const agent = fence.fencedSet().filter((i) => i.kind === "agent-installs").map((i) => i.path);
   const others = [...policy.denyWrite.filter((d) => !agent.includes(d)), ...(policy.holdLinks ?? [])];
-  try { makeHolderFolders(others, policy.allowWrite, fence.cloverHome, agent); } catch { /* best effort: the deny stands */ }
+  try { makeHolderFolders(others, policy.allowWrite, fence.mossHome, agent); } catch { /* best effort: the deny stands */ }
 }
 
 const sessionOf = (r: FencedRun): string | undefined => (r.who.caller.kind === "session" ? r.who.caller.sessionId : undefined);
@@ -159,13 +159,13 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
       recheck: (sessionId, opts) => configs.recheck(sessionId, opts),
       watch: (sessionId, cwd, writable = []) => configs.watch(sessionId, o.fence.home, cwd, writable),
       run: async (r) => {
-        const template = ensureGitTemplate(o.fence.cloverHome);
+        const template = ensureGitTemplate(o.fence.mossHome);
         if (typeof template !== "string") return template;
         const ctx = o.fence.contextFor?.(r.who.caller) ?? fenceContextFor(r.who.caller);
         const policy = o.fence.policy(ctx);
         // The holder folders the profile holds against renaming, made first where missing (#392's review).
         makeHolders(o.fence, policy);
-        const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, home: o.fence.home, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
+        const profile = macFenceProfile({ policy, mossHome: o.fence.mossHome, home: o.fence.home, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.mossHome, os, ctx) });
         // A key set since the session's last run ended is reverted first, so it never becomes this run's baseline
         // (#321's check 2).
         const between = recheckBefore(configs, r);
@@ -205,24 +205,24 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         if (why !== null) return { kind: "refused", reason: `a fenced process can't be started here: ${why}` };
         // The home the view is built from is a plain folder: nothing else gets a tmpfs view.
         try {
-          if (!lstatSync(o.fence.cloverHome).isDirectory()) {
-            return { kind: "refused", reason: `a fenced process can't be started here: ${o.fence.cloverHome} isn't a plain folder` };
+          if (!lstatSync(o.fence.mossHome).isDirectory()) {
+            return { kind: "refused", reason: `a fenced process can't be started here: ${o.fence.mossHome} isn't a plain folder` };
           }
         } catch {
-          return { kind: "refused", reason: `a fenced process can't be started here: no Clover home at ${o.fence.cloverHome}` };
+          return { kind: "refused", reason: `a fenced process can't be started here: no MOSS home at ${o.fence.mossHome}` };
         }
         const filter = unixSocketFilter();
         if (filter === null) return { kind: "refused", reason: `a fenced process can't be started here: no seccomp filter for ${process.arch}` };
         // The filter reaches bwrap as the child's fd 3, read from a file only this run uses.
-        const dir = mkdtempSync(join(tmpdir(), "clover-seccomp-"));
+        const dir = mkdtempSync(join(tmpdir(), "moss-seccomp-"));
         const file = join(dir, "filter.bpf");
         writeFileSync(file, filter, { mode: 0o600 });
         const fd = openSync(file, "r");
         try {
           const ctx = o.fence.contextFor?.(r.who.caller) ?? fenceContextFor(r.who.caller);
-          const template = ensureGitTemplate(o.fence.cloverHome);
+          const template = ensureGitTemplate(o.fence.mossHome);
           if (typeof template !== "string") return template;
-          const caller = callerPlaces(o.fence.cloverHome, os, ctx);
+          const caller = callerPlaces(o.fence.mossHome, os, ctx);
           // The runner's own folders exist before the sandbox hides everything else: a first write lands on the
           // disk, the way the macOS profile's allows do. Parents included, each 0700, as `makeBotFolders` makes
           // them; a folder that can't be made refuses the run rather than silently staying unbound.
@@ -239,25 +239,25 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           if (repoHooks !== null) { try { mkdirNoLinks(repoHooks); } catch { /* stays unbound: the belt still watches it */ } }
           // Missing fenced login-start folders and safe files are made now, empty and link-free (ruling 1 and 2):
           // the sandbox then binds them read-only instead of holding their parents, so ordinary new names stay
-          // writable. Clover's own browser partitions count too. A folder or file that can't be made refuses the
+          // writable. MOSS's own browser partitions count too. A folder or file that can't be made refuses the
           // run rather than silently staying unbound (an existing link is the user's own: left alone).
-          const loginDirs = loginStartDirs(o.fence.home, o.fence.cloverHome, "linux");
+          const loginDirs = loginStartDirs(o.fence.home, o.fence.mossHome, "linux");
           const loginSafe = loginStartSafeFiles(o.fence.home, "linux");
           const browserProfiles = o.fence.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path);
           // The user's configured global hooks folder, when under the home and missing: made empty and read-only
           // like the login-start folders, so it never holds its parent (outside the home it is fenced without a
           // mount, and the fence still judges it).
           const hooksDirs = globalHooksPathDirs(o.fence.home).filter((p) => p === o.fence.home || p.startsWith(`${o.fence.home}/`));
-          // Lane M's self-update files live under the Clover home, which the default-deny view already hides:
+          // Lane M's self-update files live under the MOSS home, which the default-deny view already hides:
           // nothing is created for them, and they never hold anything. The supervisor still refuses plants by
           // identity, with the post-command belt behind it.
           // …and B's #234 plugin-load denies (`node_modules` above every folder plugin code loads from, `~/node_modules`
           // first): one that isn't there is supervised, never made and never held, so a missing `~/node_modules`
           // doesn't hold the home and ordinary new top-level names stay writable (the controller's ruling).
-          const loadDenies = o.fence.policy(ctx).denyWrite.filter((d) => basename(d) === "node_modules" && d !== o.fence.cloverHome && !d.startsWith(`${o.fence.cloverHome}/`));
+          const loadDenies = o.fence.policy(ctx).denyWrite.filter((d) => basename(d) === "node_modules" && d !== o.fence.mossHome && !d.startsWith(`${o.fence.mossHome}/`));
           // The coding agents' settings (#308): folders made empty like the login-start ones, files supervised, so a
           // missing `~/.claude.json` never holds the home either.
-          const supervisedFiles = [...loginStartUnsafeFiles(o.fence.home, "linux"), ...selfUpdateFiles(o.fence.cloverHome, "linux"), ...loadDenies,
+          const supervisedFiles = [...loginStartUnsafeFiles(o.fence.home, "linux"), ...selfUpdateFiles(o.fence.mossHome, "linux"), ...loadDenies,
             ...agentConfigFiles(o.fence.home, "linux")];
           try {
             for (const d of [...loginDirs, ...browserProfiles, ...hooksDirs, ...agentConfigDirs(o.fence.home, "linux")]) mkdirNoLinks(d);
@@ -275,10 +275,10 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           }
           const policy = o.fence.policy(ctx);
           makeHolders(o.fence, policy); // #392's review
-          const plan = bwrapPlan({ policy, cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks, supervised: supervisedFiles });
+          const plan = bwrapPlan({ policy, mossHome: o.fence.mossHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks, supervised: supervisedFiles });
           // The supervisor watches the fenced files that don't exist yet (spec item 1116, #198 B1): it refuses
           // plants with EACCES. Its file list reaches the shim as JSON; the template dir rides GIT_TEMPLATE_DIR.
-          const shimEnv = { ...r.env, GIT_TEMPLATE_DIR: template, CLOVER_SUPERVISED_FILES: JSON.stringify(supervisedFiles) };
+          const shimEnv = { ...r.env, GIT_TEMPLATE_DIR: template, MOSS_SUPERVISED_FILES: JSON.stringify(supervisedFiles) };
           const result = await runCommand({ ...r, env: shimEnv }, { shell: "sh", argv: [process.execPath, join(import.meta.dir, "linux-sandbox-shim.ts"), bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
           if (result.kind === "refused") return result;
           if (result.kind === "exited" && result.code === 127 && result.stderr.includes("(closed)")) {
@@ -289,7 +289,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           const notes = [
             between,
             heldFolderNote(result.stderr, plan.held),
-            quarantinePlanted(beltBefore, o.fence.cloverHome),
+            quarantinePlanted(beltBefore, o.fence.mossHome),
             revertPlantedGitKeys(configBefore),
           ].filter((n): n is string => n !== null);
           configs.settled(sessionOf(r), configBefore.keys());
@@ -306,27 +306,27 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
 
 const BWRAP = "/usr/bin/bwrap";
 
-/** Clover's empty git template for the sandbox: made here if missing, read-only to runners, so `git init` and
+/** MOSS's empty git template for the sandbox: made here if missing, read-only to runners, so `git init` and
  *  `git clone` install no hooks. A user's own `init.templateDir` in their git config is overridden by the env var
  *  inside the sandbox only. */
-function ensureGitTemplate(cloverHome: string): string | FencedRunResult {
-  const template = gitTemplateDir(cloverHome);
+function ensureGitTemplate(mossHome: string): string | FencedRunResult {
+  const template = gitTemplateDir(mossHome);
   try {
     mkdirSync(template, { recursive: true, mode: 0o700 });
     return template;
   } catch (e) {
-    return { kind: "refused", reason: `a fenced process can't be started here: Clover's git template ${template} can't be made (${e instanceof Error ? e.message : String(e)})` };
+    return { kind: "refused", reason: `a fenced process can't be started here: MOSS's git template ${template} can't be made (${e instanceof Error ? e.message : String(e)})` };
   }
 }
 
-/** The run with `GIT_TEMPLATE_DIR` pointed at Clover's empty template. */
+/** The run with `GIT_TEMPLATE_DIR` pointed at MOSS's empty template. */
 function withGitTemplate(r: FencedRun, template: string): FencedRun {
   return { ...r, env: { ...r.env, GIT_TEMPLATE_DIR: template } };
 }
 
 /** The most of a git config (or a `.git` file) read: past it the file is "too big" (#366's review). */
 export const CONFIG_READ_CAP = 1024 * 1024;
-const TOO_BIG = "\u0000clover:too-big:";
+const TOO_BIG = "\u0000moss:too-big:";
 /** A file past `CONFIG_READ_CAP`, as a stamp that changes when it does (never a config's text: it starts with NUL). */
 export const isTooBig = (text: string | null): boolean => text !== null && text.startsWith(TOO_BIG);
 
@@ -394,15 +394,15 @@ function existsNoFollow(path: string): boolean {
 }
 
 /** Quarantines files that appeared since the snapshot (spec item 1116's belt while the supervisor is new): moves
- *  each aside under the Clover home (outside every runner view) and locks it down, without following links.
+ *  each aside under the MOSS home (outside every runner view) and locks it down, without following links.
  *  Returns the report line, or null when nothing appeared. */
-export function quarantinePlanted(before: Map<string, boolean>, cloverHome: string): string | null {
+export function quarantinePlanted(before: Map<string, boolean>, mossHome: string): string | null {
   const planted: string[] = [];
   for (const [p, wasThere] of before) {
     if (wasThere) continue;
     try { lstatSync(p); } catch { continue; } // still missing
     try {
-      const qdir = join(cloverHome, "quarantine");
+      const qdir = join(mossHome, "quarantine");
       mkdirSync(qdir, { recursive: true, mode: 0o700 });
       const q = join(qdir, `${basename(p)}.quarantined-${randomBytes(4).toString("hex")}`);
       renameSync(p, q);
@@ -410,7 +410,7 @@ export function quarantinePlanted(before: Map<string, boolean>, cloverHome: stri
       planted.push(p);
     } catch { /* stays: the fence still judges every tool call that reaches it */ }
   }
-  return planted.length === 0 ? null : `clover: the run planted ${planted.join(", ")}; quarantined\n`;
+  return planted.length === 0 ? null : `moss: the run planted ${planted.join(", ")}; quarantined\n`;
 }
 
 /** Whether every folder holding `path` is a plain folder, without following links. */
@@ -481,7 +481,7 @@ export function revertPlantedGitKeys(before: Map<string, string | null>): string
       notes.push(`${p}: kept risky git keys (${changed.map((c) => c.dotted).join(", ")}): could not revert`);
     }
   }
-  return notes.length === 0 ? null : `clover: the run set risky git keys; ${notes.join("; ")}\n`;
+  return notes.length === 0 ? null : `moss: the run set risky git keys; ${notes.join("; ")}\n`;
 }
 
 /** Writes `content` over `p` with git's lockfile protocol: `p.lock` is created exclusively (git's own

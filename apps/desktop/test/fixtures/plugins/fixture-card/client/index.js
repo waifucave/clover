@@ -2,7 +2,7 @@
 // its own display; a clean UI shows the two buttons and nothing else, §5.5), at fixed places on screen so the test's
 // clicks land. The SDK's sealed frames come as URLs the runtime minted; the iframe's html is the app's own.
 import { useRef, useState, createElement as h } from "react";
-import { Card, useApprovals } from "@waifucave/clover-plugin-sdk/ui";
+import { Card, useApprovals } from "@waifucave/moss-plugin-sdk/ui";
 
 export function CardEntry({ props, tokens, entry }) {
   void props;

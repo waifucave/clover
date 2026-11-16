@@ -1,24 +1,24 @@
 // The card methods over lane C's broker as the daemon mounts them (a getter read at each call), and lane K's agent.*
 // methods the same way: refused until the parts are up, answered from the one broker and the one set of agents.
 import { describe, expect, test } from "bun:test";
-import { APPROVALS_METHODS, CLOVER_ERR, ERR, peerCallVerdict, type Caller, type Card, type CloverRole } from "@waifucave/clover-protocol";
-import { gateCloverRequest } from "../../src/auth/clover-caller";
+import { APPROVALS_METHODS, MOSS_ERR, ERR, peerCallVerdict, type Caller, type Card, type MossRole } from "@waifucave/moss-protocol";
+import { gateMossRequest } from "../../src/auth/moss-caller";
 import { isContractError } from "../../src/contracts/common";
 import { peerCall, type PeerCallDeps } from "../../src/links/peer-call";
 import type { AgentManager } from "../../src/agents/manager";
 import { lateAgentMethods, type RunningAgents } from "../../src/agents/rpc";
 import { cardMethods } from "../../src/approvals/card-methods";
-import { CloverApprovalBroker } from "../../src/approvals/broker";
+import { MossApprovalBroker } from "../../src/approvals/broker";
 import type { ApprovalRequest } from "../../src/contracts/approval-broker";
 import { FakeClock } from "../../src/contracts/fakes/clock";
-import type { CloverConn } from "../../src/ipc/clover";
+import type { MossConn } from "../../src/ipc/moss";
 
 const bash = (): ApprovalRequest => ({
   kind: "tool", session: "s1", bot: "luna", origin: "user", computers: ["Studio"], effect: "execute", ruleKey: "Bash(git push)",
   fields: { title: { type: "text", text: "Run a command" }, command: { type: "code", code: "git push", language: "sh" } },
 });
 
-const conn = (role: CloverRole, caller: Caller): CloverConn => ({ role, caller }) as unknown as CloverConn;
+const conn = (role: MossRole, caller: Caller): MossConn => ({ role, caller }) as unknown as MossConn;
 const APP = conn("app", { kind: "user", client: "app" });
 const REMOTE = conn("remote", { kind: "user", client: "ios", device: "phone-device-0001" });
 
@@ -32,7 +32,7 @@ async function errorOf(p: unknown): Promise<{ code: number; message: string }> {
 }
 
 /** Raises one card and hands it back with the decision's promise. */
-async function raise(broker: CloverApprovalBroker): Promise<{ card: Card; decided: Promise<unknown> }> {
+async function raise(broker: MossApprovalBroker): Promise<{ card: Card; decided: Promise<unknown> }> {
   const shown = new Promise<Card>((resolve) => {
     const off = broker.watch((e) => {
       if (e.type === "requested") {
@@ -47,13 +47,13 @@ async function raise(broker: CloverApprovalBroker): Promise<{ card: Card; decide
 
 describe("the card methods", () => {
   test("are refused while the broker isn't up, and answer from it once it is, through the getter", async () => {
-    let broker: CloverApprovalBroker | undefined;
+    let broker: MossApprovalBroker | undefined;
     const m = cardMethods(() => broker);
     for (const [name, params] of [["card.list", {}], ["card.get", { id: "c1" }], ["card.frame", { id: "c1" }]] as const) {
       expect(await errorOf(m[name]!(APP, params))).toMatchObject({ code: ERR.RETRY, message: expect.stringContaining("isn't running on this computer") });
     }
 
-    broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    broker = new MossApprovalBroker({ clock: new FakeClock() });
     const { card, decided } = await raise(broker);
     expect(await m["card.list"]!(APP, {})).toEqual({ cards: [card] });
     expect(await m["card.get"]!(APP, { id: card.id })).toEqual({ card });
@@ -81,7 +81,7 @@ describe("the card methods", () => {
   test("a user's own device answers only for itself; a paired computer relays another device's signed answer", async () => {
     const seen: { role: string; device?: string }[] = [];
     const clock = new FakeClock();
-    const broker = new CloverApprovalBroker({ clock, verify: (_card, _a, from) => (seen.push(from), false) });
+    const broker = new MossApprovalBroker({ clock, verify: (_card, _a, from) => (seen.push(from), false) });
     const m = cardMethods(() => broker);
     const { card } = await raise(broker);
     const proof = (device: string) => ({ via: "device", device, at: clock.now(), signature: "AAAA" });
@@ -103,7 +103,7 @@ describe("the card methods", () => {
   test("card.list and card.get are read for the user alone: the spec, the gate, peer.call and the handler", async () => {
     expect(APPROVALS_METHODS.cardList.noSessions).toBe(true);
     expect(APPROVALS_METHODS.cardGet.noSessions).toBe(true);
-    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    const broker = new MossApprovalBroker({ clock: new FakeClock() });
     const m = cardMethods(() => broker);
     const { card } = await raise(broker);
     const phone: Caller = { kind: "user", client: "ios", device: "phone-device-0001" };
@@ -116,17 +116,17 @@ describe("the card methods", () => {
     ];
     const bot: Caller = { kind: "session", sessionId: "s_bot", sessionKind: "bot", bot: "luna" };
     for (const method of ["card.list", "card.get"]) {
-      expect(gateCloverRequest("remote", phone, method)).toBeNull();
-      expect(gateCloverRequest("remote", laptopForUser, method)).toBeNull();
-      for (const c of refusedCallers) expect(gateCloverRequest("remote", c, method)).toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
-      expect(gateCloverRequest("app", bot, method)).toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
+      expect(gateMossRequest("remote", phone, method)).toBeNull();
+      expect(gateMossRequest("remote", laptopForUser, method)).toBeNull();
+      for (const c of refusedCallers) expect(gateMossRequest("remote", c, method)).toMatchObject({ code: MOSS_ERR.NOT_THE_USER });
+      expect(gateMossRequest("app", bot, method)).toMatchObject({ code: MOSS_ERR.NOT_THE_USER });
       for (const kind of ["session", "plugin", "core", "peer"]) expect(peerCallVerdict(method, "remote", { kind })).toBe("refused");
       expect(peerCallVerdict(method, "remote", { kind: "user" })).toBe("allowed");
     }
     // The handler checks too.
     for (const c of refusedCallers) {
-      expect(await errorOf(m["card.list"]!(conn("remote", c), {}))).toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
-      expect(await errorOf(m["card.get"]!(conn("remote", c), { id: card.id }))).toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
+      expect(await errorOf(m["card.list"]!(conn("remote", c), {}))).toMatchObject({ code: MOSS_ERR.NOT_THE_USER });
+      expect(await errorOf(m["card.get"]!(conn("remote", c), { id: card.id }))).toMatchObject({ code: MOSS_ERR.NOT_THE_USER });
     }
 
     // Over the link's door: a paired computer's session, plugin or core is refused before dispatch; its user lists.
@@ -145,14 +145,14 @@ describe("the card methods", () => {
 });
 
 /** The link's door over these card methods, with the server's gate in front, as the daemon mounts it. */
-function peerDeps(m: Record<string, (conn: CloverConn, params: unknown) => unknown>): PeerCallDeps & { dispatched: Caller[] } {
+function peerDeps(m: Record<string, (conn: MossConn, params: unknown) => unknown>): PeerCallDeps & { dispatched: Caller[] } {
   const dispatched: Caller[] = [];
   return {
     dispatched,
     computer: () => "Studio", devices: {} as never, ledger: {} as never, render: {} as never, clock: { now: () => Date.now() },
     dispatch: async (method: string, params: unknown, caller: Extract<Caller, { kind: "peer" }>, role: "remote" | "web") => {
       dispatched.push(caller);
-      const refused = gateCloverRequest(role, caller, method);
+      const refused = gateMossRequest(role, caller, method);
       if (refused) throw new Error(refused.message);
       return m[method]!(conn(role, caller), params);
     },
@@ -183,20 +183,20 @@ describe("the agent methods, mounted late", () => {
 describe("card.pending, the layer's own list of what waits", () => {
   const layer = (pluginId: string) => conn("layer", { kind: "plugin", pluginId });
   test("a plugin sees its own bot's cards as meta only, the bundled tree sees all, another plugin none", async () => {
-    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
-    const m = cardMethods(() => broker, (id) => (id === "clover/island" || id === "mirror-island" ? ["approvals", "approvals.all"] : ["approvals"]));
+    const broker = new MossApprovalBroker({ clock: new FakeClock() });
+    const m = cardMethods(() => broker, (id) => (id === "moss/island" || id === "mirror-island" ? ["approvals", "approvals.all"] : ["approvals"]));
     const { card } = await raise(broker); // bot "luna"
     const mine = await m["card.pending"]!(layer("luna"), {}) as { cards: { id: string; fields?: unknown }[] };
     expect(mine.cards.map((c) => c.id)).toEqual([card.id]);
     expect(mine.cards[0]!.fields).toBeUndefined();
     expect((await m["card.pending"]!(layer("luna/extra"), {}) as { cards: unknown[] }).cards).toHaveLength(1);
-    expect((await m["card.pending"]!(layer("clover/island"), {}) as { cards: unknown[] }).cards).toHaveLength(1);
+    expect((await m["card.pending"]!(layer("moss/island"), {}) as { cards: unknown[] }).cards).toHaveLength(1);
     // approvals.all without approvals sees nothing of another bot's.
     const alone = cardMethods(() => broker, () => ["approvals.all"]);
     expect(await alone["card.pending"]!(layer("sol"), {})).toEqual({ cards: [] });
     // Any plugin with approvals.all sees them all, whatever its id; the tree's name without it sees none of another bot's.
     expect((await m["card.pending"]!(layer("mirror-island"), {}) as { cards: unknown[] }).cards).toHaveLength(1);
-    expect(await m["card.pending"]!(layer("clover/other"), {})).toEqual({ cards: [] });
+    expect(await m["card.pending"]!(layer("moss/other"), {})).toEqual({ cards: [] });
     expect(await m["card.pending"]!(layer("sol"), {})).toEqual({ cards: [] });
     expect(await m["card.pending"]!(APP, {})).toEqual({ cards: [] });
   });

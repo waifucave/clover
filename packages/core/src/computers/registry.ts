@@ -1,6 +1,6 @@
 // The computer registry (spec §9.1, §9.2, §5.4 `computers.read` and `computers.control`, §5.5; plan §4 J, M1): every
 // computer the user connected, its name, OS, display, agents, level and state, and, for computer use, its holds, the
-// user-working mark, whether an action is running and where Clover's own windows are. Holds, the mark and
+// user-working mark, whether an action is running and where MOSS's own windows are. Holds, the mark and
 // `computers.control` are kept for opensky (§4, §9.2), with the rules of the inherited computer-use code (helper
 // 1.22.0).
 //
@@ -11,8 +11,8 @@
 import { createHash } from "node:crypto";
 import {
   COMPUTER_NAME_RE, DEFAULT_LEVEL, callBindingInput, levelAbove,
-  type CloverWindow, type ComputerView, type HoldView, type Level, type SignedCardAnswer,
-} from "@waifucave/clover-protocol";
+  type MossWindow, type ComputerView, type HoldView, type Level, type SignedCardAnswer,
+} from "@waifucave/moss-protocol";
 import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, type CardRecord, verifySignedAnswer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -94,7 +94,7 @@ export class CoreComputerRegistry implements ComputerRegistry {
   readonly #holds = new Map<string, HoldView>();
   readonly #working = new Map<string, Set<string>>();
   readonly #running = new Set<string>();
-  readonly #windows = new Map<string, CloverWindow[]>();
+  readonly #windows = new Map<string, MossWindow[]>();
   readonly #listeners = new Listeners<ComputerChange>();
   readonly #devices: AnswerDevices | undefined;
   readonly #ledger: AnswerLedger;
@@ -344,11 +344,11 @@ export class CoreComputerRegistry implements ComputerRegistry {
     return c ? this.#running.has(c.name) : false;
   }
 
-  setCloverWindows(computer: string, windows: CloverWindow[]): void {
+  setMossWindows(computer: string, windows: MossWindow[]): void {
     this.#windows.set(this.#must(computer).name, structuredClone(windows));
   }
 
-  cloverWindows(computer: string): CloverWindow[] {
+  mossWindows(computer: string): MossWindow[] {
     const c = this.#find(computer);
     return c ? structuredClone(this.#windows.get(c.name) ?? []) : [];
   }

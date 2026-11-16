@@ -7,26 +7,26 @@
 //   terminals close with it.
 // * A paste of several lines goes through the node's paste card (`nodeParts`'s `confirmPaste`); without a card path it
 //   is refused with the reason, which the method's error carries to the panel: never dropped silently.
-import { COMPUTERS_METHODS, type Caller } from "@waifucave/clover-protocol";
-import type { CloverConn, CloverHandler } from "../ipc/clover";
+import { COMPUTERS_METHODS, type Caller } from "@waifucave/moss-protocol";
+import type { MossConn, MossHandler } from "../ipc/moss";
 import type { CoreEventInput, CoreEventOptions } from "../ipc/core-events";
 import { MethodError, toMethodError } from "../rpc/handler";
-import { ERR } from "@waifucave/clover-protocol";
+import { ERR } from "@waifucave/moss-protocol";
 import type { TerminalRouter } from "../tree/terminals";
 
 const M = COMPUTERS_METHODS;
 
 export interface AppTerminalsOptions {
   terminals: Pick<TerminalRouter, "open" | "write" | "resize" | "close" | "onOutput">;
-  /** The Clover server's `core.event` sender (`CloverServer.coreEvent`), which routes each event by its rules. */
+  /** The MOSS server's `core.event` sender (`MossServer.coreEvent`), which routes each event by its rules. */
   coreEvent: (event: CoreEventInput, opts?: CoreEventOptions) => number;
   log?: (line: string) => void;
 }
 
 /** The handlers, and their teardown (every terminal they opened closes). */
-export function appTerminals(o: AppTerminalsOptions): { handlers: Record<string, CloverHandler>; close(): Promise<void> } {
+export function appTerminals(o: AppTerminalsOptions): { handlers: Record<string, MossHandler>; close(): Promise<void> } {
   /** Each open terminal's owner: the connection that opened it. */
-  const owners = new Map<string, CloverConn>();
+  const owners = new Map<string, MossConn>();
   const offOutput = o.terminals.onOutput((out) => {
     const conn = owners.get(out.terminalId);
     if (!conn) return;
@@ -43,10 +43,10 @@ export function appTerminals(o: AppTerminalsOptions): { handlers: Record<string,
     return r.data;
   };
   /** The terminal, when this connection opened it; not found otherwise (another connection's terminal isn't there). */
-  const mine = (conn: CloverConn, id: string): void => {
+  const mine = (conn: MossConn, id: string): void => {
     if (owners.get(id) !== conn) throw new MethodError(ERR.NOT_FOUND, `no terminal ${id}`);
   };
-  const wrap = (fn: (conn: CloverConn, params: unknown) => Promise<unknown>): CloverHandler => async (conn, params) => {
+  const wrap = (fn: (conn: MossConn, params: unknown) => Promise<unknown>): MossHandler => async (conn, params) => {
     try {
       return await fn(conn, params);
     } catch (err) {
@@ -60,7 +60,7 @@ export function appTerminals(o: AppTerminalsOptions): { handlers: Record<string,
     await o.terminals.close(id).catch((e: Error) => o.log?.(`terminal ${id} didn't close: ${e.message}`));
   };
 
-  const handlers: Record<string, CloverHandler> = {
+  const handlers: Record<string, MossHandler> = {
     [M.terminalOpen.name]: wrap(async (conn, raw) => {
       const p = parse(M.terminalOpen, raw);
       // The app's shape names a computer; the other one is a peer's, which comes over the link, never here.

@@ -22,7 +22,7 @@ test("the three folder plugins validate, Surf's card names it as a Browser tool,
     read: { text: "surf read: Browser fixture home | Browser fixture home", cards: [] },
     click: { text: "surf clicked: hello was clicked", cards: ["a tool card, approved"] },
     view: { list: 'ok [{"id":"tab_1","place":"headless","url":"http://a.test/"}]', show: "ok shown", hide: "ok headless", navNoPress: "refused browser.navigate goes only right after your own key press or click in this part", navPressed: "ok http://b.test/", otherUrl: "http://b.test/" },
-    bg: "refused a part kept in the background has no Clover Browser: a live view needs a part the user can see",
+    bg: "refused a part kept in the background has no MOSS Browser: a live view needs a part the user can see",
     term: { output: true, inputRefused: "a terminal takes only the user's own key presses and pastes, which the app hands over itself" },
   };
   expect(f5Wrong(good)).toEqual([]);

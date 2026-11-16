@@ -8,9 +8,9 @@
 import { shownCode } from "../approvals/strings";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { MANIFEST_FILE, PLUGIN_API_VERSION, backgroundOkLines, catalogPointDecl, describeOk, fillsOkLines, hookOkLines, parseJsonc, treeHash, validateTree, type FillsDecl, type FillsOf, type TreeReport } from "@waifucave/clover-plugin-sdk";
-import { canonicalJson, topPluginIdOf } from "@waifucave/clover-protocol";
-import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
+import { MANIFEST_FILE, PLUGIN_API_VERSION, backgroundOkLines, catalogPointDecl, describeOk, fillsOkLines, hookOkLines, parseJsonc, treeHash, validateTree, type FillsDecl, type FillsOf, type TreeReport } from "@waifucave/moss-plugin-sdk";
+import { canonicalJson, topPluginIdOf } from "@waifucave/moss-protocol";
+import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import type { Manifest } from "../contracts/sdk-types";
@@ -65,16 +65,16 @@ export const WRAPPED_FROM_TEXT: Readonly<Record<NonNullable<PluginProvenance["wr
   "claude-plugin": "a Claude Code plugin folder",
 };
 
-/** The OK's lines for a wrapped plugin: what Clover made it around, and the parts that stay in its folder unused. */
+/** The OK's lines for a wrapped plugin: what MOSS made it around, and the parts that stay in its folder unused. */
 export function wrappedLines(wrapped: PluginProvenance["wrapped"]): string[] {
   if (wrapped === undefined) return [];
-  const out = [`Clover made this plugin around ${WRAPPED_FROM_TEXT[wrapped.from]}; you can open and edit it in the plugins folder.`];
-  if ((wrapped.unused ?? []).length > 0) out.push(`Left in its folder unused, since Clover has no place for them yet: ${wrapped.unused!.join(", ")}.`);
+  const out = [`MOSS made this plugin around ${WRAPPED_FROM_TEXT[wrapped.from]}; you can open and edit it in the plugins folder.`];
+  if ((wrapped.unused ?? []).length > 0) out.push(`Left in its folder unused, since MOSS has no place for them yet: ${wrapped.unused!.join(", ")}.`);
   // Paths as a card shows a name it didn't write: every character that hides or reorders text as a visible escape.
   const shown = (p: string) => shownCode(p).replace(/[\n\t]/g, (c) => (c === "\n" ? "\\n" : "\\t"));
   if ((wrapped.reads ?? []).length > 0) out.push(`It will read: ${wrapped.reads!.map(shown).join(", ")} (never a .git folder or an .env file in them). Its config runs a program there; it reads it, never writes it.`);
   if ((wrapped.unreadable ?? []).length > 0) {
-    out.push(`It can't read ${wrapped.unreadable!.map(shown).join(", ")}, so its server may not start: Clover never opens your whole home folder, its Documents, Desktop or Downloads folders whole, a place that keeps keys, a .git folder or an .env file. Move the program into a folder of its own and paste the config again. If its server needs a folder beside its own, its log says which.`);
+    out.push(`It can't read ${wrapped.unreadable!.map(shown).join(", ")}, so its server may not start: MOSS never opens your whole home folder, its Documents, Desktop or Downloads folders whole, a place that keeps keys, a .git folder or an .env file. Move the program into a folder of its own and paste the config again. If its server needs a folder beside its own, its log says which.`);
   }
   return out;
 }
@@ -100,7 +100,7 @@ export const PROVENANCE_TEXT: Readonly<Record<PluginProvenance["by"], string>> =
   bot: "A bot added it with its tools.",
   migration: "It came over in the migration from the old app.",
   found: "It was found on disk.",
-  bundled: "It ships with Clover.",
+  bundled: "It ships with MOSS.",
   plugin: "A plugin asked to add it.",
 };
 
@@ -124,9 +124,9 @@ export const DEV_FOLDER_MS = 24 * 60 * 60 * 1000;
 export interface PluginFoldersOptions {
   core: RegistryCore;
   store: RegistryStore;
-  /** `<cloverHome>/plugins`. */
+  /** `<mossHome>/plugins`. */
   pluginsDir: string;
-  /** The app's read-only plugin folders (each subfolder a plugin: `clover`, `alpha`). */
+  /** The app's read-only plugin folders (each subfolder a plugin: `moss`, `alpha`). */
   bundledDirs?: readonly string[];
   /** The plugin API the app has (`PLUGIN_API_VERSION`). */
   apiVersion?: string;
@@ -157,7 +157,7 @@ const firstError = (issues: readonly ValidationIssue[]) => issues.find((i) => i.
 /** Reads a top-level plugin folder. */
 export async function readPluginFolder(
   folder: string,
-  opts: { source: PluginSource; dev?: boolean; bundled?: boolean; apiVersion?: string; codeFieldsOf?: CodeFieldsOf; fillsOf?: FillsOf; provenance?: PluginProvenance; homes?: { userHome: string; cloverHome: string } },
+  opts: { source: PluginSource; dev?: boolean; bundled?: boolean; apiVersion?: string; codeFieldsOf?: CodeFieldsOf; fillsOf?: FillsOf; provenance?: PluginProvenance; homes?: { userHome: string; mossHome: string } },
 ): Promise<ReadFolder> {
   const name = basename(folder);
   const base = { source: opts.source, folder, ...(opts.dev ? { dev: true } : {}), ...(opts.provenance ? { provenance: opts.provenance } : {}) };
@@ -295,7 +295,7 @@ export class PluginFolders {
   readonly #timers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Who installed a folder just copied in (`plugin.install`), until its record keeps it. */
   readonly #installedBy = new Map<string, PluginProvenance>();
-  /** The drop (the owner's ask on 14c: a bot moves or copies a plugin it built into the plugins folder, and Clover
+  /** The drop (the owner's ask on 14c: a bot moves or copies a plugin it built into the plugins folder, and MOSS
    *  indexes it and asks the OK): each top-level name a bot's session made there, by name, until the registry's first
    *  read records it. A name two bots claimed is nobody's (`#dropConflicts`). */
   readonly #droppedBy = new Map<string, string>();
@@ -303,7 +303,7 @@ export class PluginFolders {
   /** The plugins-folder names a bundled plugin holds that were logged as ignored (once each). */
   readonly #bundledNamesLogged = new Set<string>();
   /** The top-level names in the plugins folder when the watch started: a folder already there at start keeps its card
-   *  on the user's switch; one that appears while Clover runs gets its OK card at once (the coordinator's ruling). */
+   *  on the user's switch; one that appears while MOSS runs gets its OK card at once (the coordinator's ruling). */
   #bootNames: Set<string> | undefined;
   /** An update being applied (`updated`): the tree it brings and its new provenance, until its record keeps them. */
   readonly #updating = new Map<string, { treeHash: string; provenance: PluginProvenance }>();
@@ -416,7 +416,7 @@ export class PluginFolders {
     return true;
   }
 
-  /** A path Clover's own tools just wrote (a bot's Write or Edit the fence let through): the plugins-folder folder it is
+  /** A path MOSS's own tools just wrote (a bot's Write or Edit the fence let through): the plugins-folder folder it is
    *  in is read once it settles, without waiting for the watch or the catch-up look. Any other path is ignored. */
   touched(path: string): void {
     // As written, or by real paths (the fence hands real ones; the plugins folder may sit under a link, as /var does).
@@ -630,7 +630,7 @@ export class PluginFolders {
     if (held !== undefined && held.state === "found" && held.okHash !== undefined && held.provenance.by === "bot" && held.source === "local") {
       void this.#o.core.installed(r.id, "bot").catch((err: unknown) => this.#o.log?.(`plugins: ${r.id}'s OK card for its change wasn't raised: ${(err as Error)?.message ?? String(err)}`));
     }
-    // The drop: a folder that appeared in the plugins folder while Clover runs (a bot's `mv` or `cp -R`, its file tools'
+    // The drop: a folder that appeared in the plugins folder while MOSS runs (a bot's `mv` or `cp -R`, its file tools'
     // writes, or the user's own copy) is asked about at once, with the same sealed OK card as an install, once its tree
     // has settled and its manifest is valid. Its card shows the tree as last read: a folder that changes while its card
     // waits gets a new card for the new tree (the core withdraws the old one), so no OK covers a tree the user didn't see.
@@ -664,7 +664,7 @@ export class PluginFolders {
         }),
         // What the points it fills give it, in their declarers' words (a point's `fills`).
         ...fillsOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)], this.#o.fillsOf),
-        // What its hooks see of the conversation (the plugin's and its children's), in Clover's words.
+        // What its hooks see of the conversation (the plugin's and its children's), in MOSS's words.
         ...hookOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
         // What it runs without being asked: its routine triggers, and where its host code runs in the background.
         ...backgroundOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
@@ -778,7 +778,7 @@ export class PluginFolders {
     for (const dir of this.#o.bundledDirs ?? []) for (const name of listDirs(dir)) out.push({ folder: join(dir, name), source: "bundled", bundled: true });
     for (const name of listDirs(this.#o.pluginsDir)) {
       if (name.startsWith(".")) continue;
-      // A folder named like a plugin Clover ships (`alpha`, `clover`) is not a plugin, whoever put it there (a bot's
+      // A folder named like a plugin MOSS ships (`alpha`, `moss`) is not a plugin, whoever put it there (a bot's
       // `mv`, the user's copy): read, it would take the bundled plugin's place in the registry. Ignored, with a log line
       // once, no card; the bundled plugin stays as it is.
       if (bundled.has(name)) {
@@ -880,7 +880,7 @@ export class PluginFolders {
     return r;
   }
 
-  /** The ids of the plugins Clover ships (the bundled folders' names). */
+  /** The ids of the plugins MOSS ships (the bundled folders' names). */
   #bundledNames(): Set<string> {
     return new Set((this.#o.bundledDirs ?? []).flatMap((dir) => listDirs(dir)));
   }

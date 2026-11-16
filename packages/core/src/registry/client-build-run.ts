@@ -17,7 +17,7 @@
 // * bounds: the inputs' count and bytes, and the output's bytes;
 // * messages with the plugin's folder cut to relative paths and the user's home to `~`, never an absolute path.
 // The child itself (the caller's side) adds the rest: a fresh empty working folder, no environment of the daemon's,
-// Clover's own bunfig, the fence (macOS), a time limit and a memory watchdog.
+// MOSS's own bunfig, the fence (macOS), a time limit and a memory watchdog.
 import { createHash } from "node:crypto";
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";

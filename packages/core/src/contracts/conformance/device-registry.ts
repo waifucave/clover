@@ -4,7 +4,7 @@
 // real Ed25519 keys in memory, adding and revoking,
 // and signatures that stop counting once a device is revoked.
 import { describe, expect, test } from "bun:test";
-import { DeviceId } from "@waifucave/clover-protocol";
+import { DeviceId } from "@waifucave/moss-protocol";
 import { isContractError } from "../common";
 import { deviceIdFor, holderFitsAlg, verifyKeySignature, type DeviceChange } from "../device-registry";
 import { FakeClock } from "../fakes/clock";
@@ -22,7 +22,7 @@ export type DeviceRegistryPendingCase = "answer-alg";
 
 export function runDeviceRegistryConformance(make: DeviceRegistryFactory, opts: { pending?: readonly DeviceRegistryPendingCase[] } = {}): void {
   const pendingOr = (key: DeviceRegistryPendingCase) => (opts.pending?.includes(key) ? test.todo : test);
-  const data = new TextEncoder().encode("clover/card-answer/1\ncard_abcdef\n00\napprove\n5");
+  const data = new TextEncoder().encode("moss/card-answer/1\ncard_abcdef\n00\napprove\n5");
 
   describe("DeviceRegistry", () => {
     test("this device has its own key, and its id is derived from it", async () => {

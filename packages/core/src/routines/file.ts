@@ -1,7 +1,7 @@
 // A routine is a file (spec §7 "A routine is a file"): Markdown with frontmatter, whose body is the instructions.
 // Owner: lane D.
 //
-// It lives at `home/<Computer>/.clover/routines/<bot>/<name>.md` in the folder tree, which before C5 is
+// It lives at `home/<Computer>/.moss/routines/<bot>/<name>.md` in the folder tree, which before C5 is
 // `<home>/routines/<bot>/<name>.md` on the computer that holds it; that computer runs it. The folder names the bot.
 //
 // ```markdown
@@ -22,7 +22,7 @@
 // * **Secrets stay out:** a webhook's key lives in the credential store, never in the file.
 // * A trigger of a plugin's type (`triggers` point) is `{ type: <its type>, …its fields }`.
 import { createHash, randomBytes } from "node:crypto";
-import { LEVELS, type Level } from "@waifucave/clover-protocol";
+import { LEVELS, type Level } from "@waifucave/moss-protocol";
 import { joinFrontmatter, splitFrontmatter } from "../runtime-sdk/host/run-home/frontmatter";
 import { isTimeZone } from "./zone";
 import { parseSpec, type RoutineSpec } from "./spec";
@@ -156,7 +156,7 @@ export function serializeRoutine(r: Omit<RoutineFile, "triggers"> & { triggers: 
 }
 
 /** The file with its minted id written in, its other lines as they were (§7 "a file without one gets one"). */
-/** The text with `paused: true` in its frontmatter (Clover pausing it; the user resumes by taking it out). */
+/** The text with `paused: true` in its frontmatter (MOSS pausing it; the user resumes by taking it out). */
 export function withPaused(text: string): string {
   const doc = splitFrontmatter(text);
   if (!doc) return text;

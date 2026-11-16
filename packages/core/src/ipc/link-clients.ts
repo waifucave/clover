@@ -1,5 +1,5 @@
-// Remote clients over links on the Clover server (C-M3 item 3; lane H's `mountRemoteClients`, links/remote-clients.ts).
-// A paired phone (`remote`) or browser (`web`) speaks the Clover protocol on a stream of its link. The link proved
+// Remote clients over links on the MOSS server (C-M3 item 3; lane H's `mountRemoteClients`, links/remote-clients.ts).
+// A paired phone (`remote`) or browser (`web`) speaks the MOSS protocol on a stream of its link. The link proved
 // the device, so there is no local process to probe: the hello goes to the server's `linkHello`, which takes only
 // the token the core minted for that device and role, and makes the caller the user on that device. Every request
 // after it runs through the role's allow list and `userOnly` as on the socket, and its core events are routed by
@@ -10,10 +10,10 @@
 // closes its connections.
 import { mountRemoteClients, type RemoteClientsOptions, type RemoteRpcServer, type RemoteTokens } from "../links/remote-clients";
 import type { Unsubscribe } from "../contracts/common";
-import { CloverRpcError, type CloverConn, type CloverServer } from "./clover";
-import type { CloverBinding, CloverTokens } from "../auth/clover-tokens";
+import { MossRpcError, type MossConn, type MossServer } from "./moss";
+import type { MossBinding, MossTokens } from "../auth/moss-tokens";
 import type { DeviceChange, DeviceRecord } from "../contracts/device-registry";
-import { CLOVER_ERR } from "@waifucave/clover-protocol";
+import { MOSS_ERR } from "@waifucave/moss-protocol";
 
 /** Link connections are numbered far above the socket's, so the two never meet in the server's table. */
 export const LINK_CONN_ID_BASE = 2 ** 40;
@@ -24,10 +24,10 @@ export function linkRoleOf(d: Pick<DeviceRecord, "kind" | "revokedAt"> | undefin
   return d.kind === "phone" ? "remote" : d.kind === "browser" ? "web" : undefined;
 }
 
-type LinkServer = Pick<CloverServer, "linkHello" | "handle" | "closed" | "response">;
+type LinkServer = Pick<MossServer, "linkHello" | "handle" | "closed" | "response">;
 type Devices = { get(id: string): Pick<DeviceRecord, "kind" | "revokedAt"> | undefined };
 
-/** The door's server over the Clover server: the device from the socket object the door made, its role from the
+/** The door's server over the MOSS server: the device from the socket object the door made, its role from the
  *  registry. */
 export function linkClientServer(server: LinkServer, registry: Devices, spend?: (token: string) => void): RemoteRpcServer {
   return {
@@ -38,28 +38,28 @@ export function linkClientServer(server: LinkServer, registry: Devices, spend?: 
         // Refused before `linkHello` spends it: the token the door minted for this hello is spent here.
         const token = (params as { token?: unknown } | null | undefined)?.token;
         if (typeof token === "string") spend?.(token);
-        throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "not a client's link");
+        throw new MossRpcError(MOSS_ERR.ROLE_REFUSED, "not a client's link");
       }
       return server.linkHello(connId, params, { device, role, stillLinked: () => linkRoleOf(registry.get(device)) === role }, write, end);
     },
-    handle: (conn, method, params) => server.handle(conn as CloverConn, method, params),
-    closed: (conn, socket) => server.closed(conn as CloverConn | null, socket),
-    response: (conn, msg) => server.response(conn as CloverConn, msg),
+    handle: (conn, method, params) => server.handle(conn as MossConn, method, params),
+    closed: (conn, socket) => server.closed(conn as MossConn | null, socket),
+    response: (conn, msg) => server.response(conn as MossConn, msg),
   };
 }
 
-export type CloverRemoteClientsOptions = Omit<RemoteClientsOptions, "server" | "coreEvents" | "nextConnId" | "registry" | "tokens"> & {
-  server: LinkServer & Pick<CloverServer, "endConnections">;
+export type MossRemoteClientsOptions = Omit<RemoteClientsOptions, "server" | "coreEvents" | "nextConnId" | "registry" | "tokens"> & {
+  server: LinkServer & Pick<MossServer, "endConnections">;
   registry: RemoteClientsOptions["registry"] & { watch(fn: (change: DeviceChange) => void): Unsubscribe };
-  tokens: RemoteTokens & Pick<CloverTokens, "revokeWhere" | "revoke">;
+  tokens: RemoteTokens & Pick<MossTokens, "revokeWhere" | "revoke">;
 };
 
-/** Mounts the client door on the daemon's Clover server. */
-export function mountCloverRemoteClients(o: CloverRemoteClientsOptions): Unsubscribe {
+/** Mounts the client door on the daemon's MOSS server. */
+export function mountMossRemoteClients(o: MossRemoteClientsOptions): Unsubscribe {
   let next = LINK_CONN_ID_BASE;
   const offRevoked = o.registry.watch((change) => {
     if (change.type !== "revoked") return;
-    o.tokens.revokeWhere((b: CloverBinding) => "device" in b && b.device === change.id);
+    o.tokens.revokeWhere((b: MossBinding) => "device" in b && b.device === change.id);
     o.server.endConnections((c) => c.caller.kind === "user" && c.caller.device === change.id);
   });
   const offDoor = mountRemoteClients({ ...o, server: linkClientServer(o.server, o.registry, (t) => o.tokens.revoke(t)), nextConnId: () => ++next });

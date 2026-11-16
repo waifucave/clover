@@ -7,7 +7,7 @@
 //
 // Every contract that waits takes a Clock, so a test drives the 10-minute card rule, crash backoff, lease expiry and
 // timeouts with `FakeClock.advance` instead of waiting.
-import type { ClockView } from "@waifucave/clover-protocol";
+import type { ClockView } from "@waifucave/moss-protocol";
 
 /** This device's view of the shared clock: `reference` is the device it follows, `public` on the main itself. Before
  *  the first measurement `synced` is false and the offset is 0. */

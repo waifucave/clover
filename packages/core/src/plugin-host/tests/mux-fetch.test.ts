@@ -20,12 +20,12 @@ test("an oversized fetch head from a worker is refused by the mux and never reac
     },
   });
   try {
-    await daemonEnd.request("pluginHost.start", { pluginId: "clover/rogue", folder: "/x", entry: "e.js", runtime: "bun", dataFolder: "/x/d", process: "clover" });
-    const err = (await worker!.request("pluginHost.fetch", { pluginId: "clover/rogue", fetchId: "f1", url: "https://api.example.com/", method: "POST", headers: [], body: new Uint8Array(20 * 1024 * 1024) }).catch((e: unknown) => e)) as { code?: string; message?: string };
+    await daemonEnd.request("pluginHost.start", { pluginId: "moss/rogue", folder: "/x", entry: "e.js", runtime: "bun", dataFolder: "/x/d", process: "moss" });
+    const err = (await worker!.request("pluginHost.fetch", { pluginId: "moss/rogue", fetchId: "f1", url: "https://api.example.com/", method: "POST", headers: [], body: new Uint8Array(20 * 1024 * 1024) }).catch((e: unknown) => e)) as { code?: string; message?: string };
     expect(err.code).toBe("invalid");
     expect(err.message).toContain("16777216 bytes");
     const pairs = Array.from({ length: 300 }, (_, i) => [`x-${i}`, "v"]);
-    expect(((await worker!.request("pluginHost.fetch", { pluginId: "clover/rogue", fetchId: "f2", url: "https://api.example.com/", method: "GET", headers: pairs }).catch((e: unknown) => e)) as { code?: string }).code).toBe("invalid");
+    expect(((await worker!.request("pluginHost.fetch", { pluginId: "moss/rogue", fetchId: "f2", url: "https://api.example.com/", method: "GET", headers: pairs }).catch((e: unknown) => e)) as { code?: string }).code).toBe("invalid");
     expect(toDaemon).toEqual([]);
     expect(daemonEnd.closed).toBe(false);
   } finally {

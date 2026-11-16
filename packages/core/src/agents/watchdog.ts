@@ -5,7 +5,7 @@
 // while a tool call of kind `execute` is in progress, a live process under the agent that **started after the call
 // began** also counts, up to the command limit. Processes from before the call never count: the agent's MCP servers,
 // the bridge included, live under it for the whole session. Neither agent puts a limit for the command on the wire,
-// so the limit is Clover's own: a per-computer maximum for one agent command, by default the same 10 minutes as a
+// so the limit is MOSS's own: a per-computer maximum for one agent command, by default the same 10 minutes as a
 // bot's own `Bash` (the inherited maximum).
 //
 // It checks once a minute on the session's clock, only while a turn runs, and never while a permission request waits

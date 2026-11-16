@@ -17,10 +17,10 @@ function fakeOs() {
 }
 
 function spec(os: "darwin" | "linux" | "win32", app = false): LoginSpec {
-  const home = mkdtempSync(join(tmpdir(), "clover-login-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-login-"));
   return {
-    os, bin: "/opt/clover/clover-core", home: join(home, ".clover"), logsDir: join(home, ".clover/logs"), profile: "dist", homedir: home,
-    ...(app ? { app: { bin: os === "darwin" ? "/Applications/Clover.app" : "/opt/Clover/clover" } } : {}),
+    os, bin: "/opt/moss/moss-core", home: join(home, ".moss"), logsDir: join(home, ".moss/logs"), profile: "dist", homedir: home,
+    ...(app ? { app: { bin: os === "darwin" ? "/Applications/MOSS Code.app" : "/opt/moss-code/moss-code" } } : {}),
   };
 }
 
@@ -50,7 +50,7 @@ describe("login manager", () => {
     const f = fakeOs();
     await loginEnable(s, f.os);
     expect(existsSync(loginUnitPath(s)!)).toBe(true);
-    expect(readFileSync(appUnitPath(s)!, "utf8")).toContain('ExecStart="/opt/Clover/clover"');
+    expect(readFileSync(appUnitPath(s)!, "utf8")).toContain('ExecStart="/opt/moss-code/moss-code"');
     expect(existsSync(xdgAutostartPath(s)!)).toBe(true);
     expect((await loginStatus(s, f.os)).state).toBe("enabled");
 
@@ -67,7 +67,7 @@ describe("login manager", () => {
     expect((await loginStatus(s, f.os)).state).toBe("not-installed");
     await loginEnable(s, f.os);
     const on = f.calls.at(-1)!.tasks!;
-    expect(on.map((t) => t.name)).toEqual(["\\Clover\\clover-core", "\\Clover\\clover-app"]);
+    expect(on.map((t) => t.name)).toEqual(["\\MOSS\\moss-core", "\\MOSS\\moss-app"]);
     expect(on[0]!.xml).toContain("<LogonTrigger><Enabled>true</Enabled>");
     expect((await loginStatus(s, f.os)).state).toBe("enabled");
     await loginDisable(s, f.os);

@@ -1,12 +1,12 @@
 # Picture-swap avatar, a character renderer
 
 The smallest useful character renderer: it draws a bot as three pictures swapped in turn (rest, talking, blink), with no engine
-and no network. It shows what a plugin declares to teach Clover a new avatar format, so that a bot using it shows its character,
+and no network. It shows what a plugin declares to teach MOSS a new avatar format, so that a bot using it shows its character,
 the avatar picker can import it, and its mouth moves with the bot's voice.
 
 | Part | Where | What it shows |
 |---|---|---|
-| The format | `contributes["avatar.formats"]` in `clover.json` | its name (`pngtuber`), the extension that picks it (`.pngtuber.json`), the file kinds the app may serve to the bot's stage (`json`, `image`; each with a size cap), how the model is found (`folder`), how it is imported (`folder`) and what it can do (`lipsync`, `expressions`) |
+| The format | `contributes["avatar.formats"]` in `moss.json` | its name (`pngtuber`), the extension that picks it (`.pngtuber.json`), the file kinds the app may serve to the bot's stage (`json`, `image`; each with a size cap), how the model is found (`folder`), how it is imported (`folder`) and what it can do (`lipsync`, `expressions`) |
 | The renderer | `contributes.ui` (`spot: "avatar"`, `key: "pngtuber"`) and `client/index.tsx` | the entry the app draws when a bot's avatar format is `pngtuber`: it reads the model's JSON, swaps pictures, blinks, and opens the mouth on the speech feed |
 | A sample model | `sample-model/` | `sunny.pngtuber.json` and three plain-shape pictures made for this example; copy the folder into a bot plugin to try it |
 
@@ -27,7 +27,7 @@ Picture paths are relative to the JSON file.
 
 ## The speech feed
 
-`useAvatarSpeech()` (from `@waifucave/clover-plugin-sdk/ui`) gives the renderer the bot's speech: `feed.subscribe(listener)` hands
+`useAvatarSpeech()` (from `@waifucave/moss-plugin-sdk/ui`) gives the renderer the bot's speech: `feed.subscribe(listener)` hands
 batches of `{ t, rms, centroid }` frames (loudness and brightness on the audio clock, a little ahead of when they play),
 `feed.now()` is that clock, and `speaking` says whether the bot speaks. In a plugin's own frame the app sends those numbers on
 from the stage every 40 ms or so while the bot speaks and the frame can be seen, and nothing while it is quiet. This renderer
@@ -36,7 +36,7 @@ opens the mouth for a frame louder than 0.04, and looks only while speech is due
 ## The stage's framing
 
 The stage fills the renderer's frame and says how the theme frames the figure in the `framing` prop (`{ mode?, crop?, headroom? }`:
-the theme's `--clover-avatar-framing`, `--clover-avatar-crop` and `--clover-avatar-headroom`, read live; CSS variables do not cross
+the theme's `--moss-avatar-framing`, `--moss-avatar-crop` and `--moss-avatar-headroom`, read live; CSS variables do not cross
 into a plugin's frame, so they come as data). This renderer shows `crop` of the picture's height from the top, with `headroom` of
 it empty above (`framePicture`); with no `framing` it fits the whole picture. A renderer that ignores `framing` still fills its frame.
 
@@ -54,4 +54,4 @@ frames come from the cue API: a plugin (a voice) sends `api.avatar.cue({ type: "
 milliseconds, batches ahead of the clock, for its own bot (`avatar.control`) or for any bot with `{ bot }` (`avatar.control.all`);
 the stage hands each level to the renderer a moment before it is due. The renderer needs nothing else.
 
-Check it with `clover plugin validate`, try it with `clover plugin dev .`.
+Check it with `moss plugin validate`, try it with `moss plugin dev .`.

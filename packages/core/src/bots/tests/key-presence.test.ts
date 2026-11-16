@@ -4,13 +4,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { FileSecretStore } from "../../auth/secret-store";
 import { flush } from "../../contracts/fakes/clock";
-import { CLOVER_CREDENTIAL_INVENTORY } from "../../runtime-sdk/keychain";
+import { MOSS_CREDENTIAL_INVENTORY } from "../../runtime-sdk/keychain";
 import { BOT_KEY_PRESENCE_MS, botKeyPresence } from "../key-presence";
 import { boot, botManifest, pluginFromFolder, removeTemps, tempDir, writePlugin } from "./fixtures";
 
 afterEach(() => removeTemps());
 
-const slotOf = (provider: string) => CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === provider)!.secretName;
+const slotOf = (provider: string) => MOSS_CREDENTIAL_INVENTORY.find((s) => s.provider === provider)!.secretName;
 
 describe("the daemon's hasKeyFor", () => {
   test("a bot whose plugin's model has a stored key gets that model from its very first look after a boot", async () => {
@@ -19,7 +19,7 @@ describe("the daemon's hasKeyFor", () => {
     await store.set(slotOf("anthropic"), JSON.stringify({ kind: "api-key", key: "sk-ant-test" }));
     const hasKeyFor = await botKeyPresence(store, home);
     const root = tempDir();
-    const luna = writePlugin(root, "luna", { "clover.json": botManifest("luna", "Luna", { model: { default: "anthropic/claude-sonnet-5-5" } }), "bot/instructions.md": "You are Luna." });
+    const luna = writePlugin(root, "luna", { "moss.json": botManifest("luna", "Luna", { model: { default: "anthropic/claude-sonnet-5-5" } }), "bot/instructions.md": "You are Luna." });
     const b = await boot({ home, plugins: (await pluginFromFolder(luna)).inputs, hasKeyFor });
     expect(b.bots.effective("luna")).toMatchObject({ model: "anthropic/claude-sonnet-5-5" });
     expect(b.drivers.made[0]!.ctx.current().model).toBe("anthropic/claude-sonnet-5-5");
@@ -104,7 +104,7 @@ describe("the daemon's hasKeyFor", () => {
     const signedIn = new Set<string>();
     const hasKeyFor = await botKeyPresence(store, home, { pluginServes: (p) => p === "acme-llm", pluginSignedIn: async () => new Set(signedIn) });
     const root = tempDir();
-    const luna = writePlugin(root, "luna", { "clover.json": botManifest("luna", "Luna", { model: { default: "acme-llm/acme-1" } }), "bot/instructions.md": "You are Luna." });
+    const luna = writePlugin(root, "luna", { "moss.json": botManifest("luna", "Luna", { model: { default: "acme-llm/acme-1" } }), "bot/instructions.md": "You are Luna." });
     const b = await boot({ home, plugins: (await pluginFromFolder(luna)).inputs, hasKeyFor });
     expect(b.bots.effective("luna")).toMatchObject({ model: "fireworks/kimi-k3", modelFrom: "default" });
     signedIn.add("acme-llm");

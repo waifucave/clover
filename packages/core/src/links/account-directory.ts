@@ -76,7 +76,7 @@ export class AccountDirectory implements PeerDirectory {
   async target(device: string): Promise<DialTarget | undefined> {
     const d = this.#o.registry.get(device);
     if (!d || d.revokedAt !== undefined) return undefined;
-    // A link key Clover dials is a strict Ed25519 point (identity/ed25519-strict.ts).
+    // A link key MOSS dials is a strict Ed25519 point (identity/ed25519-strict.ts).
     const key = publicKeyFromBase64(d.publicKey);
     if (!key) return undefined;
     // "Dial now", so the peer dials back at once (S1): both directions race, and the first through wins.

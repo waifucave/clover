@@ -1,6 +1,6 @@
 // Daemon settings surface (2026-09-17 plan, item 3): the daemon-wide "last observed built-in agent
-// list" cache. `Query.supportedAgents()` is Clover-leg-only and answers per LIVE session
-// (`session-driver.ts`'s `CloverLegDeps.onSupportedAgents` is the one producer, fired
+// list" cache. `Query.supportedAgents()` is MOSS-leg-only and answers per LIVE session
+// (`session-driver.ts`'s `MossLegDeps.onSupportedAgents` is the one producer, fired
 // fire-and-forget right after each incarnation's query is created) — a Mac Settings panel asking
 // "what agent types exist" needs an answer even when nothing is live RIGHT NOW, so this is a single
 // slot holding the MOST RECENT successful answer from ANY session, never a per-session map (a
@@ -9,7 +9,7 @@ import type { AgentInfo } from "@waifucave/clover-agent-sdk";
 
 export interface SupportedAgentsSnapshot {
   agents: AgentInfo[];
-  /** Clover's own session id the answer came from — attribution, not a lookup key. */
+  /** MOSS's own session id the answer came from — attribution, not a lookup key. */
   sessionId: string;
   observedAt: number;
 }
@@ -24,7 +24,7 @@ export class SupportedAgentsCache {
     this.snapshot = { agents, sessionId, observedAt: Date.now() };
   }
 
-  /** `null` when nothing has EVER been observed (no Clover-leg session has ever reached the point
+  /** `null` when nothing has EVER been observed (no MOSS-leg session has ever reached the point
    *  of answering `supportedAgents()`) — the RPC reports this typed, rather than inventing a list. */
   get(): SupportedAgentsSnapshot | null {
     return this.snapshot;

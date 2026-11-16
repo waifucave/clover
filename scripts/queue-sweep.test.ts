@@ -15,7 +15,7 @@ const OWN = "gh-readonly-queue/main/pr-230-aaaa";
 
 /** Runs the step with these runs (`id branch`, per status) and these live branches; what it cancelled, and its log. */
 function sweep(opts: { runs: Record<string, string[]>; refs: string[] | null; failList?: boolean }) {
-  const dir = mkdtempSync(join(tmpdir(), "clover-queue-sweep-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-queue-sweep-"));
   const log = join(dir, "cancelled");
   writeFileSync(join(dir, "runs.json"), JSON.stringify(opts.runs));
   writeFileSync(join(dir, "gh"), `#!/bin/bash
@@ -29,7 +29,7 @@ bun -e "for (const r of (JSON.parse(require('fs').readFileSync('${join(dir, "run
   chmodSync(join(dir, "git"), 0o755);
   const r = spawnSync("bash", ["-c", step.run], {
     encoding: "utf8",
-    env: { PATH: `${dir}:${process.env.PATH}`, REPO: "waifucave/clover", RUN_ID: "999", OWN_BRANCH: OWN, GH_TOKEN: "x" },
+    env: { PATH: `${dir}:${process.env.PATH}`, REPO: "waifucave/moss", RUN_ID: "999", OWN_BRANCH: OWN, GH_TOKEN: "x" },
   });
   const cancelled = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((l) => /runs\/(\d+)\/cancel/.exec(l)?.[1]) : [];
   return { status: r.status, out: r.stdout + r.stderr, cancelled };

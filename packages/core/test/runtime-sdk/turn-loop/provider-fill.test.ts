@@ -11,7 +11,7 @@ import { writeCredentialMaterial, writeOpenAiApiKey } from "../../../src/auth/cr
 import type { BotSessionContext } from "../../../src/bots/service";
 import type { Settings } from "../../../src/settings";
 import type { HostCredentialBroker, SessionCredentialAllowlist } from "../../../src/runtime-sdk/host-credentials";
-import { CLOVER_CREDENTIAL_INVENTORY, credentialRefFor } from "../../../src/runtime-sdk/keychain";
+import { MOSS_CREDENTIAL_INVENTORY, credentialRefFor } from "../../../src/runtime-sdk/keychain";
 import type { ModelPlugins } from "../../../src/runtime-sdk/model-plugins/service";
 import { fillProvider } from "../../../src/runtime-sdk/turn-loop/embedded-session";
 import { botProviderFill } from "../../../src/runtime-sdk/turn-loop/provider-fill";
@@ -35,15 +35,15 @@ function recordingBroker(): { broker: HostCredentialBroker; allowlists: SessionC
 }
 
 test("a bot's model tag fills the model, its provider and locator, the shared broker's resolver and the model plugins, and nothing else", async () => {
-  const home = temp("clover-a3-fill-home-");
-  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  const home = temp("moss-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("moss-a3-fill-secrets-"));
   await writeOpenAiApiKey(secrets, "sk-test-not-real");
   const { broker, allowlists, resolver } = recordingBroker();
   const pluginsAsked: unknown[] = [];
   const modelProviders = { adapters: [] } as unknown as NonNullable<Options["modelProviders"]>;
   const modelPlugins = { sessionOption: (o: unknown) => { pluginsAsked.push(o); return modelProviders; } } as unknown as ModelPlugins;
   const fill = botProviderFill({ home, broker, secrets, modelPlugins: () => modelPlugins });
-  const options: Options = { model: "openai/gpt-test-model", cwd: home, env: { CLOVER_HOME: home } };
+  const options: Options = { model: "openai/gpt-test-model", cwd: home, env: { MOSS_HOME: home } };
   // Through the driver's guard: a fill that set anything but the model's own keys would throw here.
   await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, options);
   expect(options.model).toBe("gpt-test-model");
@@ -52,8 +52,8 @@ test("a bot's model tag fills the model, its provider and locator, the shared br
   expect(options.modelProviders).toBe(modelProviders);
   expect(pluginsAsked).toEqual([{ caller: { kind: "core" }, session: "b_alpha", providers: expect.any(Function) }]);
   // The broker answers the bot's provider's item and the slots of providers with a credential stored, nothing else.
-  const openaiAccount = CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === "openai")!.secretName;
-  const anthropicAccount = CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === "anthropic")!.secretName;
+  const openaiAccount = MOSS_CREDENTIAL_INVENTORY.find((s) => s.provider === "openai")!.secretName;
+  const anthropicAccount = MOSS_CREDENTIAL_INVENTORY.find((s) => s.provider === "anthropic")!.secretName;
   expect(allowlists).toHaveLength(1);
   expect(allowlists[0]!.accounts.has(openaiAccount)).toBe(true);
   expect(allowlists[0]!.accounts.has(anthropicAccount)).toBe(false);
@@ -63,19 +63,19 @@ test("a bot's model tag fills the model, its provider and locator, the shared br
 });
 
 test("a model whose own id has a slash (groq/qwen/…) is passed whole, so the runtime doesn't read its first segment as the provider", async () => {
-  const home = temp("clover-a3-fill-home-");
-  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  const home = temp("moss-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("moss-a3-fill-secrets-"));
   const { broker } = recordingBroker();
   const fill = botProviderFill({ home, broker, secrets, modelPlugins: () => undefined });
-  const options: Options = { model: "groq/qwen/qwen3.8-27b", cwd: home, env: { CLOVER_HOME: home } };
+  const options: Options = { model: "groq/qwen/qwen3.8-27b", cwd: home, env: { MOSS_HOME: home } };
   await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, options);
   expect(options.model).toBe("groq/qwen/qwen3.8-27b");
   expect(options.provider).toMatchObject({ providerId: "groq" });
 });
 
 test("the user's own endpoint for the provider travels as its connection, read at each fill", async () => {
-  const home = temp("clover-a3-fill-home-");
-  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  const home = temp("moss-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("moss-a3-fill-secrets-"));
   let settings: Settings | null = null;
   const fill = botProviderFill({ home, broker: recordingBroker().broker, secrets, settings: () => settings, modelPlugins: () => undefined });
   const first: Options = { model: "openai/gpt-test-model" };
@@ -90,9 +90,9 @@ test("the user's own endpoint for the provider travels as its connection, read a
 });
 
 test("a test model and the unstated sentinel get nothing", async () => {
-  const home = temp("clover-a3-fill-home-");
+  const home = temp("moss-a3-fill-home-");
   const { broker, allowlists } = recordingBroker();
-  const fill = botProviderFill({ home, broker, secrets: new FileSecretStore(temp("clover-a3-fill-secrets-")), modelPlugins: () => undefined });
+  const fill = botProviderFill({ home, broker, secrets: new FileSecretStore(temp("moss-a3-fill-secrets-")), modelPlugins: () => undefined });
   const test: Options = { model: "winter-test/echo" };
   await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, test);
   expect(test).toEqual({ model: "winter-test/echo" });
@@ -103,9 +103,9 @@ test("a test model and the unstated sentinel get nothing", async () => {
 });
 
 test("a bot's allowlist is its own model's provider and the ones approved for it: never the default's on its own, never every key the user holds", async () => {
-  const home = temp("clover-a3-fill-home-");
-  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
-  const slot = (provider: string) => CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === provider)!.secretName;
+  const home = temp("moss-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("moss-a3-fill-secrets-"));
+  const slot = (provider: string) => MOSS_CREDENTIAL_INVENTORY.find((s) => s.provider === provider)!.secretName;
   // The user keeps keys for four providers; their default model is anthropic's.
   for (const p of ["openai", "anthropic", "groq", "mistral"]) await writeCredentialMaterial(secrets, slot(p), { kind: "api-key", key: `key-${p}-not-real` });
   const asked: [string, string][] = [];
@@ -115,7 +115,7 @@ test("a bot's allowlist is its own model's provider and the ones approved for it
     home, broker, secrets, modelPlugins: () => undefined,
     approved: (c, provider) => { asked.push([c.botId, provider]); return approved.has(provider); },
   });
-  const slots = (i: number) => [...allowlists[i]!.accounts].filter((a) => CLOVER_CREDENTIAL_INVENTORY.some((s) => s.secretName === a)).sort();
+  const slots = (i: number) => [...allowlists[i]!.accounts].filter((a) => MOSS_CREDENTIAL_INVENTORY.some((s) => s.secretName === a)).sort();
   await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, { model: "openai/gpt-test-model" });
   expect(slots(0)).toEqual([slot("groq"), slot("openai")].sort()); // its own, and the approved one; never the default's
   expect(asked.every(([bot]) => bot === "alpha")).toBe(true);
@@ -140,7 +140,7 @@ test("a bot's allowlist is its own model's provider and the ones approved for it
 test("the consent grants this allowlist reads live in the bot's conversation log, never where bots may write (scratch, memory)", async () => {
   const { sessionLogPath } = await import("../../../src/sessions/ids");
   const { botPaths } = await import("../../../src/bots/paths");
-  const home = temp("clover-a3-fill-home-");
+  const home = temp("moss-a3-fill-home-");
   // A grant is recorded in the bot's main conversation's log (`SessionGrants`, `recordCore`).
   const log = sessionLogPath(home, "alpha", "b_alpha");
   const inside = (dir: string) => { const r = relative(dir, log); return r !== "" && !r.startsWith("..") && !isAbsolute(r); };
@@ -213,10 +213,10 @@ test("the daemon's approval check over real SessionGrants: only the user's yes i
 });
 
 test("the model plugins' code adapters are narrowed to the providers the bot is allowed; a third party's or a declarative plugin's model maps to its own provider", async () => {
-  const home = temp("clover-a3-fill-home-");
-  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  const home = temp("moss-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("moss-a3-fill-secrets-"));
   // The user holds keys elsewhere: none of them reaches a plugin model's bot.
-  for (const p of ["openai", "anthropic"]) await writeCredentialMaterial(secrets, CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === p)!.secretName, { kind: "api-key", key: `key-${p}-not-real` });
+  for (const p of ["openai", "anthropic"]) await writeCredentialMaterial(secrets, MOSS_CREDENTIAL_INVENTORY.find((s) => s.provider === p)!.secretName, { kind: "api-key", key: `key-${p}-not-real` });
   const asked: { providers?: (p: string) => boolean }[] = [];
   const modelPlugins = { sessionOption: (o: { providers?: (p: string) => boolean }) => { asked.push(o); return { catalog: { path: "x", sha256: "y" } }; } } as unknown as ModelPlugins;
   const { broker, allowlists } = recordingBroker();
@@ -234,14 +234,14 @@ test("the model plugins' code adapters are narrowed to the providers the bot is 
     expect(a(provider)).toBe(true);
     expect(a("groq")).toBe(true); // still approved for this bot
     for (const p of ["google", "anthropic", "openai", provider === "acme" ? "acme-local" : "acme"]) expect(a(p)).toBe(false);
-    const inventory = [...allowlists.at(-1)!.accounts].filter((x) => CLOVER_CREDENTIAL_INVENTORY.some((s) => s.secretName === x));
+    const inventory = [...allowlists.at(-1)!.accounts].filter((x) => MOSS_CREDENTIAL_INVENTORY.some((s) => s.secretName === x));
     expect(inventory).toEqual([]); // no slot of the user's: the plugin keeps its own key
   }
 });
 
 test("a provider the user pointed at an endpoint of their own is still its plugin adapter's (the plugin reaches that endpoint)", async () => {
-  const home = temp("clover-a3-fill-home-");
-  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  const home = temp("moss-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("moss-a3-fill-secrets-"));
   const asked: { providers?: (p: string) => boolean }[] = [];
   const modelPlugins = { sessionOption: (o: { providers?: (p: string) => boolean }) => { asked.push(o); return { catalog: { path: "x", sha256: "y" } }; } } as unknown as ModelPlugins;
   const settings = { providers: { google: { baseUrl: "http://127.0.0.1:9/v1beta" } } } as unknown as Settings;

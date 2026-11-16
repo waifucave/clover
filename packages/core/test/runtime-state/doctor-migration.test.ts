@@ -1,4 +1,4 @@
-// Phase 9c (Task M Step 10) — the `clover doctor` migration rows.
+// Phase 9c (Task M Step 10) — the `moss doctor` migration rows.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,7 +9,7 @@ import { runMigrationB, planMigrationB } from "../../src/migration/migrate-b";
 
 const dirs: string[] = [];
 function tempDir(): string {
-  const d = mkdtempSync(join(tmpdir(), "clover-doctor-migration-"));
+  const d = mkdtempSync(join(tmpdir(), "moss-doctor-migration-"));
   dirs.push(d);
   return d;
 }
@@ -125,7 +125,7 @@ describe("diagnoseMigration / formatMigrationDoctorLines", () => {
     expect(reasonLine).toContain(join(home, "sessions", "index.db"));
     // C0 (review S2): no boot migrates, so no advice to restart; the explicit door and its rule instead.
     expect(reasonLine).not.toContain("restart");
-    expect(reasonLine).toContain(`clover migrate --from ${legacyHome}`);
+    expect(reasonLine).toContain(`moss migrate --from ${legacyHome}`);
     expect(reasonLine).toContain("pristine home");
   });
 
@@ -187,7 +187,7 @@ describe("diagnoseMigration / formatMigrationDoctorLines", () => {
     expect(report.status).toBe("in-progress");
     const lines = formatMigrationDoctorLines(report);
     expect(lines[0]).toContain("IN PROGRESS");
-    expect(lines[0]).toContain("clover migrate --resume");
-    expect(lines[0]).toContain("clover migrate --rollback");
+    expect(lines[0]).toContain("moss migrate --resume");
+    expect(lines[0]).toContain("moss migrate --rollback");
   });
 });

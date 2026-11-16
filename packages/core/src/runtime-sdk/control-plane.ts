@@ -15,11 +15,11 @@ export const CONTROL_PLANE_FILENAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * WS-21 (spec §7.1): the project-scope files a runtime reads from a TRUSTED project's `.clover/` that are
+ * WS-21 (spec §7.1): the project-scope files a runtime reads from a TRUSTED project's `.moss/` that are
  * as much a self-grant as the three above — `mcp.json` (the project's MCP servers: a command the next
  * child runs) and any `settings*.json` (claude reads `settings.json` and `settings.local.json`; the glob
  * is the spec's, so a future tier is covered before it exists). Fenced for the write TOOLS by name under
- * a `.clover` parent, exactly like `CONTROL_PLANE_FILENAMES` — but NOT added to that set, which also
+ * a `.moss` parent, exactly like `CONTROL_PLANE_FILENAMES` — but NOT added to that set, which also
  * feeds the escape floor's ANY-mention list (`ESCAPE_FENCED_FILENAMES`), where §7.1 asks for a
  * write-shaped match only (`hooks.ts`'s `PROJECT_WRITE_FENCED`).
  */
@@ -34,16 +34,16 @@ export function isProjectControlFilename(lowercasedName: string): boolean {
  * narrow host-storage read denial: runtime authority, Cowork control records/volumes and global
  * coordination. Ordinary project content and Cowork shared content retain their read access.
  *
- * `MultiEdit` has no Clover counterpart (Clover's `edit` is single-file) but is a Clover built-in that
- * writes, so it is fenced under its Clover name alone.
+ * `MultiEdit` has no MOSS counterpart (MOSS's `edit` is single-file) but is a MOSS built-in that
+ * writes, so it is fenced under its MOSS name alone.
  */
 export const WRITE_CLASS_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "write", "edit", "notebook_edit",                 // Clover
-  "Write", "Edit", "MultiEdit", "NotebookEdit",     // Clover
+  "write", "edit", "notebook_edit",                 // MOSS
+  "Write", "Edit", "MultiEdit", "NotebookEdit",     // MOSS
 ]);
 
-/** Every field a write-class tool might name its target in, across both vocabularies: Clover's
- *  `path`/`notebook_path` and Clover/CC's `file_path`/`notebook_path`. `MultiEdit` additionally
+/** Every field a write-class tool might name its target in, across both vocabularies: MOSS's
+ *  `path`/`notebook_path` and MOSS/CC's `file_path`/`notebook_path`. `MultiEdit` additionally
  *  carries `edits: [{ file_path }]`, drained below. */
 const PATH_FIELDS = ["file_path", "path", "notebook_path", "filePath", "notebookPath"] as const;
 
@@ -75,17 +75,17 @@ export function writeTargetPathsIn(input: unknown): string[] {
  * for both vocabularies). Every subtlety in the original is preserved deliberately — see that
  * function's own doc comment for the full history; the short version:
  *
- *  - **project-INDEPENDENT.** The agent must never write ANY `<any>/.clover/permissions.local.json`,
+ *  - **project-INDEPENDENT.** The agent must never write ANY `<any>/.moss/permissions.local.json`,
  *    whichever project owns it: a broad `Edit(<parent>)` grant folds a SIBLING project's tree into
  *    the writable set, and a check anchored to this session's own project returned "not my store".
  *  - **case-folded on both spellings.** macOS's default volume is case-insensitive but
- *    case-preserving, so `.clover/Permissions.Local.json` and `.CLOVER/...` reach the same file the
+ *    case-preserving, so `.moss/Permissions.Local.json` and `.MOSS/...` reach the same file the
  *    reader opens. The PRE-resolution parent is tested first (catches a write through a symlink
- *    NAMED `.clover`, which canonicalization would resolve away), then the canonicalized one
- *    (catches a real `.../.clover/...` reached through a differently-named link or `..` games).
- *  - **matches by FILENAME, never by directory** — `.clover/` itself stays writable, which is what
+ *    NAMED `.moss`, which canonicalization would resolve away), then the canonicalized one
+ *    (catches a real `.../.moss/...` reached through a differently-named link or `..` games).
+ *  - **matches by FILENAME, never by directory** — `.moss/` itself stays writable, which is what
  *    keeps the MEMDIR (`<home>/projects/<key>/memory/*.md`) and `$OUTDIR` (`<home>/outputs/<sid>`)
- *    agent-writable. Both are deliberate, shipped, agent-writable exceptions under CLOVER_HOME.
+ *    agent-writable. Both are deliberate, shipped, agent-writable exceptions under MOSS_HOME.
  *
  * `null` for a malformed/unresolvable path — the caller decides from there.
  */
@@ -95,13 +95,13 @@ export function controlPlaneFileTarget(path: string, cwd: string): { path: strin
   // Cheap, syscall-free early-out: a target whose filename isn't SOME casing of a control-plane
   // filename can never be one, whatever its parent resolves to.
   if (!isProjectControlFilename(basename(raw0).toLowerCase())) return null;
-  if (basename(dirname(raw0)).toLowerCase() === ".clover") {
+  if (basename(dirname(raw0)).toLowerCase() === ".moss") {
     try { return { path, canonical: canonicalizeForWrite(resolveLeafSymlinks(raw0)) }; }
     catch { return { path, canonical: raw0 }; }   // still a confirmed match; report the raw target
   }
   try {
     const canonical = canonicalizeForWrite(resolveLeafSymlinks(raw0));
-    return basename(dirname(canonical)).toLowerCase() === ".clover" ? { path, canonical } : null;
+    return basename(dirname(canonical)).toLowerCase() === ".moss" ? { path, canonical } : null;
   } catch { return null; }
 }
 
@@ -110,17 +110,17 @@ export function controlPlaneFileTarget(path: string, cwd: string): { path: strin
  * names, or `null`.
  *
  * Applied in `canUseToolFor` BEFORE the gate and under EVERY policy — `bypass` included, and
- * `auto`/`acceptEdits` especially, since those are the modes where a Clover child's write never
+ * `auto`/`acceptEdits` especially, since those are the modes where a MOSS child's write never
  * reaches a human at all.
  *
- * **Why a host-side fence at all, when `buildCloverOptions` also passes deny rules?** Not because a
+ * **Why a host-side fence at all, when `buildMossOptions` also passes deny rules?** Not because a
  * deny rule is weak — the opposite. A matched stage-2 deny returns `decision: "deny"` outright
  * (`permissions/evaluator.ts:1350-1364` at `v0.0.3`) and runs BEFORE the mode stage (`:1008`), so it
  * binds under `bypassPermissions` too and **never reaches `canUseTool`**. (An earlier revision of
  * this comment claimed the reverse; it was wrong.) The host fence exists because a deny rule only
- * covers what its pattern covers: it is Clover's own invariant, enforced in Clover's own vocabulary,
+ * covers what its pattern covers: it is MOSS's own invariant, enforced in MOSS's own vocabulary,
  * on both tool-name spellings, over every path-bearing field including `MultiEdit`'s nested
- * `edits[]` — and it does not depend on Clover's rule grammar continuing to mean what it means
+ * `edits[]` — and it does not depend on MOSS's rule grammar continuing to mean what it means
  * today. Two independent layers over one invariant, which is the right number for a self-grant.
  *
  * `cwd` resolves a relative target the way the call itself would.
@@ -162,7 +162,7 @@ export interface HomeFence {
   dirs: readonly string[];
   /** Absolute files, matched exactly. */
   files: readonly string[];
-  /** Path segments fenced wherever they appear (`.clover/agents/`). */
+  /** Path segments fenced wherever they appear (`.moss/agents/`). */
   segments: readonly string[];
   /** Cowork is write-fenced wholesale; only its shared content is directly readable. */
   coworkRoots?: readonly string[];
@@ -250,10 +250,10 @@ export function homeFenceTarget(path: string, cwd: string, fence: HomeFence): { 
 export function controlPlaneDenialMessage(toolName: string, path: string, home?: boolean): string {
   if (home === true) {
     if (["read", "glob", "grep", "ls"].includes(toolName.toLowerCase())) return `cannot ${toolName} ${path}: Cowork control records, volumes and host coordination are available only through approved metadata and export services`;
-    return `cannot ${toolName} ${path}: Clover's own state (its runtimes, plugins, approved rules, cache, agent definitions and directory trust) is never written by a tool — only by Clover itself or by you`;
+    return `cannot ${toolName} ${path}: MOSS's own state (its runtimes, plugins, approved rules, cache, agent definitions and directory trust) is never written by a tool — only by MOSS itself or by you`;
   }
   if (basename(path).toLowerCase() === "mcp.json") {
-    return `cannot ${toolName} ${path}: a project's MCP server list is changed with \`clover mcp add --scope project\` (or by editing it yourself), never by a tool`;
+    return `cannot ${toolName} ${path}: a project's MCP server list is changed with \`moss mcp add --scope project\` (or by editing it yourself), never by a tool`;
   }
   return `cannot ${toolName} ${path}: the permission rules store can only be changed by answering an approval card (or editing it yourself)`;
 }

@@ -9,7 +9,7 @@
 // * Another computer's level changes on that computer (§8.5): the registry sends a lowering there, and refuses a raise
 //   that carries no answer signed for that computer's own card.
 // * A peer's own `computer.setLevel` (its level, with no name) rides the link (peers.ts), never this door.
-import { COMPUTERS_METHODS, ERR, levelAbove, type ChangeResult } from "@waifucave/clover-protocol";
+import { COMPUTERS_METHODS, ERR, levelAbove, type ChangeResult } from "@waifucave/moss-protocol";
 import type { ComputerRegistry } from "../contracts/computer-registry";
 import { MethodError, handler, requireUser, type MethodContext, type MethodHandler } from "../rpc/handler";
 

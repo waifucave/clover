@@ -8,7 +8,7 @@
 // home and a temp folder (TMPDIR: a bot's own scratch folder for its own runs, the fence's temp folder for the rest),
 // nothing inherited from the daemon (no keys, no tokens).
 import { lstatSync } from "node:fs";
-import type { Caller, Os } from "@waifucave/clover-protocol";
+import type { Caller, Os } from "@waifucave/moss-protocol";
 import { fenceContextFor, ownFoldersOf } from "../contracts/fence";
 import { mkdirNoLinks } from "../fence/fenced-process";
 import type { FencedRunResult, FencedSpawner } from "../fence/spawn";
@@ -24,13 +24,13 @@ export interface FencedExecutorOptions {
   spawner: FencedSpawner;
   /** The user's home folder: `HOME` in the child's environment. */
   home: string;
-  /** The fence's temp folder (`CloverFence`'s `temp`, which every caller may write): `TMPDIR` in the child's
+  /** The fence's temp folder (`MossFence`'s `temp`, which every caller may write): `TMPDIR` in the child's
    *  environment, so tools that make temp files don't fall back to a folder the sandbox refuses. A bot's own run gets
-   *  its own scratch folder instead (with `cloverHome`; the owner's ruling). */
+   *  its own scratch folder instead (with `mossHome`; the owner's ruling). */
   temp?: string;
-  /** The Clover home, for a bot's own scratch folder (`<home>/scratch/<bot>`, `ownFoldersOf`): a bot's session or
+  /** The MOSS home, for a bot's own scratch folder (`<home>/scratch/<bot>`, `ownFoldersOf`): a bot's session or
    *  side thread runs with it as `TMPDIR`. */
-  cloverHome?: string;
+  mossHome?: string;
   os: Os;
 }
 
@@ -44,7 +44,7 @@ export function fencedExecutor(o: FencedExecutorOptions): ToolExecutor {
   const base: Record<string, string> = { PATH: fencedPath(o.os), HOME: o.home, LANG: "en_US.UTF-8", TERM: "dumb" };
   /** The caller's TMPDIR: a bot's own scratch folder (made when missing, never through a link), else the fence's. */
   const tempFor = (as: Caller): string | undefined => {
-    const scratch = o.cloverHome === undefined ? undefined : ownFoldersOf(fenceContextFor(as), o.cloverHome).ownScratch;
+    const scratch = o.mossHome === undefined ? undefined : ownFoldersOf(fenceContextFor(as), o.mossHome).ownScratch;
     if (scratch !== undefined) {
       try {
         // Never through a link, at any level on the way down (lane C's `mkdirNoLinks`, as the fenced paths make theirs).

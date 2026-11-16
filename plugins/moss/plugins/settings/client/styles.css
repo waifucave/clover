@@ -1,0 +1,578 @@
+/* The settings window and the language chooser. Every colour, face and size is a theme token from lane
+   B's catalog (`--moss-*`, listed in tokens.ts). Both are dialogs the shell's dialog layer centres over
+   the window, which never shows one while a card waits. Sizes follow the reference app's
+   (as measured for lane G's base theme): at most 1024 by 800, a 44 px header, a 212 px section list with
+   32 px items, rows 69 px apart, 28 px controls and 36 by 20 switches. */
+
+.cl-settings,
+.cl-languages {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 1024px);
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--moss-color-hairline-raised);
+  border-radius: var(--moss-radius-large);
+  background: var(--moss-color-float);
+  box-shadow: var(--moss-shadow-float);
+  color: var(--moss-color-text);
+  font-family: var(--moss-font-sans);
+  font-size: var(--moss-font-size-control);
+  line-height: var(--moss-font-line-tight);
+}
+
+.cl-settings {
+  height: min(100%, 800px);
+}
+
+.cl-languages {
+  width: min(100%, 720px);
+  height: min(100%, 500px);
+}
+
+.cl-settings button,
+.cl-languages button,
+.cl-settings input,
+.cl-settings select,
+.cl-languages input {
+  font: inherit;
+}
+
+.cl-settings :focus-visible,
+.cl-languages :focus-visible {
+  outline: 2px solid var(--moss-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-settings__head {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 var(--moss-space-s) 0 var(--moss-space-l);
+  border-bottom: 1px solid var(--moss-color-hairline);
+}
+
+.cl-settings__title {
+  margin: 0;
+  font-size: var(--moss-font-size-body);
+  font-weight: var(--moss-font-weight-regular);
+}
+
+.cl-settings__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--moss-radius-medium);
+  background: transparent;
+  color: var(--moss-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-settings__close:hover {
+  background: var(--moss-color-hover);
+  color: var(--moss-color-text);
+}
+
+.cl-settings__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The sections: a searchable list on the surface, 32 px items 33 apart, groups split by a rule. */
+.cl-settings__nav {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--moss-space-m);
+  width: 212px;
+  padding: var(--moss-space-l) var(--moss-space-l) var(--moss-space-m);
+  overflow-y: auto;
+  border-right: 1px solid var(--moss-color-hairline);
+  background: var(--moss-color-surface);
+}
+
+.cl-settings__search {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--moss-space-s);
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--moss-radius-medium);
+  background: var(--moss-color-raised);
+  color: var(--moss-color-text-muted);
+}
+
+.cl-settings__search:focus-within {
+  outline: 2px solid var(--moss-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-settings__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--moss-color-text);
+}
+
+.cl-settings__search-input::placeholder {
+  color: var(--moss-color-text-placeholder);
+}
+
+.cl-settings__search-input:focus-visible {
+  outline: none;
+}
+
+.cl-settings__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-settings__sections > li[data-group-end] {
+  margin-bottom: var(--moss-space-s);
+  padding-bottom: var(--moss-space-s);
+  border-bottom: 1px solid var(--moss-color-hairline);
+}
+
+.cl-settings__section {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--moss-space-m);
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--moss-radius-medium);
+  background: transparent;
+  color: var(--moss-color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-settings__section:hover {
+  background: var(--moss-color-hover);
+}
+
+.cl-settings__section[aria-current="page"] {
+  background: var(--moss-color-selected);
+}
+
+/* The page: its title, then rows of a label and its detail with the control at the end. */
+.cl-settings__page {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--moss-space-l) var(--moss-space-l) var(--moss-space-xl);
+  overflow-y: auto;
+}
+
+.cl-settings__page-title {
+  margin: 0 0 var(--moss-space-s);
+  font-size: var(--moss-font-size-body);
+  font-weight: var(--moss-font-weight-regular);
+  line-height: var(--moss-font-line-body);
+}
+
+.cl-settings__subhead {
+  margin: var(--moss-space-l) 0 var(--moss-space-xs);
+  font-size: var(--moss-font-size-control);
+  font-weight: var(--moss-font-weight-medium);
+}
+
+.cl-settings__note {
+  margin: 0 0 var(--moss-space-xs);
+  color: var(--moss-color-text-muted);
+  font-size: var(--moss-font-size-control);
+  line-height: var(--moss-font-line-body);
+}
+
+.cl-settings__row {
+  display: flex;
+  align-items: center;
+  gap: var(--moss-space-l);
+  min-height: 68px;
+  box-sizing: border-box;
+  padding: var(--moss-space-m) 0;
+  border-bottom: 1px solid var(--moss-color-hairline);
+}
+
+/* The row a place opened Settings at (lane E's useOpen; the island's Devices tab opens it at a device): tinted with
+   the accent while it stays the item, with a ring that fades as it comes into view. */
+.cl-settings__row[data-marked] {
+  margin-inline: calc(-1 * var(--moss-space-m));
+  padding-inline: var(--moss-space-m);
+  border-radius: var(--moss-radius-medium);
+  border-bottom-color: transparent;
+  background: var(--moss-color-accent-soft);
+  animation: cl-settings-mark 1.6s ease-out;
+}
+
+@keyframes cl-settings-mark {
+  from {
+    box-shadow: inset 0 0 0 2px var(--moss-color-focus);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+
+.cl-settings__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--moss-space-xs);
+  min-width: 0;
+  line-height: var(--moss-font-line-body);
+}
+
+.cl-settings__label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--moss-space-s);
+  color: var(--moss-color-text);
+}
+
+.cl-settings__detail {
+  color: var(--moss-color-text-muted);
+}
+
+/* A plugin's state, as a small capsule after its name. */
+.cl-settings__state {
+  padding: 0 var(--moss-space-s);
+  border: 1px solid var(--moss-color-hairline-raised);
+  border-radius: var(--moss-radius-round);
+  color: var(--moss-color-text-muted);
+  font-size: var(--moss-font-size-caption);
+  line-height: 18px;
+}
+
+.cl-settings__state[data-state="found"],
+.cl-settings__state[data-state="waiting"] {
+  color: var(--moss-color-attention-text);
+}
+
+.cl-settings__state[data-state="refused"],
+.cl-settings__state[data-state="invalid"],
+.cl-settings__state[data-state="stopped"] {
+  color: var(--moss-color-danger);
+}
+
+.cl-settings__failure {
+  color: var(--moss-color-danger);
+}
+
+.cl-settings__oks {
+  font-size: var(--moss-font-size-label);
+}
+
+.cl-settings__control {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--moss-space-s);
+}
+
+.cl-settings__value {
+  color: var(--moss-color-text-secondary);
+}
+
+.cl-settings__input,
+.cl-settings__select {
+  box-sizing: border-box;
+  width: 220px;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--moss-radius-medium);
+  background: var(--moss-color-control);
+  color: var(--moss-color-text);
+}
+
+.cl-settings__select:disabled {
+  color: var(--moss-color-text-muted);
+}
+
+.cl-settings__button {
+  height: 28px;
+  padding: 0 var(--moss-space-m);
+  border: none;
+  border-radius: var(--moss-radius-small);
+  background: var(--moss-color-selected);
+  color: var(--moss-color-text);
+  cursor: pointer;
+}
+
+.cl-settings__button:hover {
+  background: var(--moss-color-hover);
+}
+
+.cl-settings__button--wide {
+  margin-top: var(--moss-space-l);
+}
+
+/* A switch: the OS accent when on. The knob is the track's own background, so nothing leaves the flow. */
+.cl-settings__switch {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-start;
+  width: 36px;
+  height: 20px;
+  padding: 2px;
+  border: none;
+  border-radius: var(--moss-radius-round);
+  background: var(--moss-color-hairline-raised);
+  cursor: pointer;
+}
+
+.cl-settings__switch[aria-checked="true"] {
+  justify-content: flex-end;
+  background: var(--moss-color-accent-fill);
+}
+
+.cl-settings__knob {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--moss-radius-round);
+  background: var(--moss-color-accent-contrast);
+}
+
+.cl-settings__segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--moss-radius-medium);
+  background: var(--moss-color-control);
+}
+
+.cl-settings__segment {
+  min-height: 24px;
+  padding: 0 var(--moss-space-m);
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--moss-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-settings__segment[aria-checked="true"] {
+  background: var(--moss-color-selected);
+  color: var(--moss-color-text);
+}
+
+.cl-settings__later {
+  padding: var(--moss-space-xl) 0;
+}
+
+.cl-settings__later-title {
+  margin: 0 0 var(--moss-space-xs);
+  color: var(--moss-color-text);
+}
+
+/* The language chooser: a search box, then three columns of languages, each named in itself and in the
+   app's language. */
+.cl-languages__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--moss-space-m);
+  min-height: 0;
+  padding: var(--moss-space-l);
+}
+
+.cl-languages__search {
+  background: var(--moss-color-control);
+}
+
+.cl-languages__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
+  gap: 9px var(--moss-space-l);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.cl-languages__option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--moss-space-s);
+  min-height: 52px;
+  padding: 6px var(--moss-space-m);
+  border: none;
+  border-radius: var(--moss-radius-medium);
+  background: transparent;
+  color: var(--moss-color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-languages__option:hover {
+  background: var(--moss-color-hover);
+}
+
+.cl-languages__option[aria-checked="true"] {
+  background: var(--moss-color-accent-soft);
+}
+
+.cl-languages__native {
+  grid-column: 1;
+  font-size: var(--moss-font-size-control);
+}
+
+.cl-languages__name {
+  grid-column: 1;
+  color: var(--moss-color-text-muted);
+  font-size: var(--moss-font-size-caption);
+}
+
+.cl-languages__check {
+  display: inline-flex;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: var(--moss-color-accent-text);
+}
+
+.cl-settings-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-settings *,
+  .cl-languages * {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* A plugin's log, on the Plugins page in place of the list. */
+.cl-settings__logs-head {
+  display: flex;
+  align-items: center;
+  gap: var(--moss-space-m);
+}
+
+.cl-settings__logs-head .cl-settings__subhead {
+  margin: 0;
+}
+
+.cl-settings__log {
+  max-height: 480px;
+  margin: var(--moss-space-m) 0 0;
+  padding: var(--moss-space-m);
+  overflow: auto;
+  border-radius: var(--moss-radius-medium);
+  background: var(--moss-color-raised);
+  color: var(--moss-color-text);
+  font-family: var(--moss-font-mono);
+  font-size: var(--moss-font-size-label);
+  line-height: var(--moss-plugin-moss-line-code);
+  white-space: pre-wrap;
+}
+
+.cl-settings__reason {
+  color: var(--moss-color-attention-text);
+}
+
+/* Pairing a device: a code to enter on the other device, then the four words both show. */
+.cl-settings__pairing {
+  margin-top: var(--moss-space-l);
+}
+
+.cl-settings__pair-row {
+  flex-wrap: wrap;
+  margin-top: var(--moss-space-s);
+}
+
+.cl-settings__pair {
+  padding: var(--moss-space-m);
+  border: 1px solid var(--moss-color-hairline-raised);
+  border-radius: var(--moss-radius-large);
+  background: var(--moss-color-surface);
+}
+
+.cl-settings__pair-code,
+.cl-settings__pair-words {
+  margin: 0 0 var(--moss-space-m);
+  color: var(--moss-color-text);
+  font-family: var(--moss-font-mono);
+  font-size: var(--moss-font-size-title);
+  letter-spacing: 0.04em;
+}
+
+/* One at a time (spec §5.4): a point's picker, its fillers in the three-way control's look, wrapping when there are many. */
+.cl-settings__one-options {
+  flex-wrap: wrap;
+  max-inline-size: 100%;
+}
+
+/* Tools: a plugin's group, each tool with its three-way control and, under it, a card's saved rule for one bot. */
+.cl-settings__tool-group {
+  margin-block-end: var(--moss-space-l);
+}
+
+.cl-settings__three {
+  display: inline-flex;
+  border: 1px solid var(--moss-color-hairline);
+  border-radius: var(--moss-radius-small);
+  overflow: hidden;
+}
+
+.cl-settings__three-option {
+  all: unset;
+  box-sizing: border-box;
+  padding: var(--moss-space-xs) var(--moss-space-m);
+  color: var(--moss-color-text-secondary);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.cl-settings__three-option + .cl-settings__three-option {
+  border-inline-start: 1px solid var(--moss-color-hairline);
+}
+
+.cl-settings__three-option[aria-checked="true"] {
+  background: var(--moss-color-selected);
+  color: var(--moss-color-text);
+  font-weight: 600;
+}
+
+.cl-settings__three-option[data-value="deny"][aria-checked="true"] {
+  color: var(--moss-color-danger);
+}
+
+.cl-settings__three-option:focus-visible {
+  outline: 2px solid var(--moss-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-settings__tool-rule {
+  display: flex;
+  align-items: center;
+  gap: var(--moss-space-s);
+  margin-block-start: var(--moss-space-xs);
+  color: var(--moss-color-text-secondary);
+  font-size: 0.85em;
+}

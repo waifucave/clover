@@ -1,4 +1,4 @@
-// Tests never reach the user's own secret store (the hard rule). Lane K's find: `openCloverSecretStore`'s default vault
+// Tests never reach the user's own secret store (the hard rule). Lane K's find: `openMossSecretStore`'s default vault
 // called `Bun.secrets` directly, so a daemon booted in a test without `secrets` wrote its items into the account's
 // LOGIN keychain under the test service. Every default path now goes through `defaultSecretsBackend`, which under a
 // test reaches only an isolated store, and `Bun.secrets` itself throws for an un-isolated call
@@ -14,7 +14,7 @@ import {
   isolatedTestBackend, osStoreIsolated, PRIVATE_SECRET_SERVICE_ENV, THROWAWAY_SERVICE_PREFIX, underTest, unisolatedSecretsMessage, type SecretsCalls,
 } from "../../src/auth/test-isolation";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { bunVault, openCloverSecretStore } from "../../src/secrets/clover-secret-store";
+import { bunVault, openMossSecretStore } from "../../src/secrets/moss-secret-store";
 import { onDarwin } from "../helpers/darwin-only"; // the macOS-only checks are its branches, and the file runs on both jobs
 
 type Call = { op: string; service: string; name: string };
@@ -31,7 +31,7 @@ function recorder(): SecretsCalls & { calls: Call[] } {
   };
 }
 
-const SERVICE = process.env.CLOVER_KEYCHAIN_SERVICE!;
+const SERVICE = process.env.MOSS_KEYCHAIN_SERVICE!;
 let restore: (() => void) | undefined;
 afterEach(() => { restore?.(); restore = undefined; });
 
@@ -50,7 +50,7 @@ describe("which stores a test may reach", () => {
     expect(underTest()).toBe(true);
     expect(underTest({ NODE_ENV: "test" }, false)).toBe(true);
     expect(underTest({ NODE_ENV: "test" }, true)).toBe(false);
-    expect(underTest({ CLOVER_TEST_KEYCHAIN: "/x" }, true)).toBe(true);
+    expect(underTest({ MOSS_TEST_KEYCHAIN: "/x" }, true)).toBe(true);
     expect(underTest({}, false)).toBe(false);
   });
 
@@ -93,7 +93,7 @@ describe("Bun.secrets itself, in this test process", () => {
     if (osStoreIsolated(SERVICE)) return; // Linux on the private bus: the OS store there is the test's own
     await expect(Bun.secrets.get({ service: SERVICE, name: "probe" })).rejects.toThrow(unisolatedSecretsMessage(SERVICE));
     await expect(Bun.secrets.set({ service: `${SERVICE}.items`, name: "probe", value: "x" })).rejects.toThrow("no isolated store");
-    await expect(Bun.secrets.delete({ service: "com.waifucave.clover.core", name: "probe" })).rejects.toThrow("no isolated store");
+    await expect(Bun.secrets.delete({ service: "com.waifucave.moss.core", name: "probe" })).rejects.toThrow("no isolated store");
   });
 });
 
@@ -111,11 +111,11 @@ describe("every default path lands in an isolated store", () => {
     return seen;
   }
 
-  test("openCloverSecretStore with no vault, KeychainValues and bunVault: never Bun.secrets, never the login keychain", async () => {
+  test("openMossSecretStore with no vault, KeychainValues and bunVault: never Bun.secrets, never the login keychain", async () => {
     const calls = recordBunSecrets();
     const keychains = recordKeychains();
-    const home = mkdtempSync(join(tmpdir(), "clover-test-vault-"));
-    const store = await openCloverSecretStore({ home, service: SERVICE });
+    const home = mkdtempSync(join(tmpdir(), "moss-test-vault-"));
+    const store = await openMossSecretStore({ home, service: SERVICE });
     const ref = { kind: "core", name: "lane-c-vault-probe" } as unknown as Parameters<typeof store.set>[0];
     await store.set(ref, "a value").catch(() => undefined); // whatever the store's refs, its vault is the point
     await bunVault(`${SERVICE}.items`).set("lane-c-probe", "x");
@@ -127,14 +127,14 @@ describe("every default path lands in an isolated store", () => {
       expect(calls.calls).toEqual([]);
       expect(keychains.login).toBe(0);
       expect(keychains.files.length).toBeGreaterThan(0);
-      expect(keychains.files.every((f) => f === process.env.CLOVER_TEST_KEYCHAIN || f.endsWith("test.keychain-db"))).toBe(true);
+      expect(keychains.files.every((f) => f === process.env.MOSS_TEST_KEYCHAIN || f.endsWith("test.keychain-db"))).toBe(true);
     }
   });
 
   test("startDaemon with no `secrets` in a temp home: nothing reaches Bun.secrets un-isolated, nor the login keychain", async () => {
     const calls = recordBunSecrets();
     const keychains = recordKeychains();
-    const home = mkdtempSync(join(tmpdir(), "clover-test-vault-daemon-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-test-vault-daemon-"));
     let daemon: RunningDaemon | undefined;
     try {
       daemon = await startDaemon({ home, agentProvider: null });

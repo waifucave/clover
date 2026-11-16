@@ -9,7 +9,7 @@
 // * A listener can't cross the pipe: the host sends `{ "$listener": true }` in its place, the daemon puts a function
 //   there that sends each value back as `pluginHost.deliver` on a new subscription, and the call's result is
 //   `{ subscription }`. `pluginHost.unwatch` ends it, and so does the connection's close (`closeAll`).
-import { PLUGINS_METHODS, type HostProcess } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS, type HostProcess } from "@waifucave/moss-protocol";
 import { randomUUID } from "node:crypto";
 import { ContractError } from "../contracts/common";
 import type { ApiRouter } from "../contracts/plugin-host";

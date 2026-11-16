@@ -8,17 +8,17 @@
 //   `args` go to it as given. Its output comes back as text, each stream cut at `OUTSIDE_OUTPUT_MAX` bytes; its time is
 //   60 s unless asked, at most 10 minutes, and it is killed when that runs out. Every run is one line in the daemon's
 //   log (the plugin, the program and how it ended; never its arguments or its output).
-// * "Of yours" holds (the reviewer's read 44): a program inside the Clover home, the plugin's own folder or a folder
+// * "Of yours" holds (the reviewer's read 44): a program inside the MOSS home, the plugin's own folder or a folder
 //   it can write (its picks with write access) is refused, whether named by its path or found on the PATH (a PATH
-//   folder in one of those is skipped); the folder it runs in is the user's home unless asked, never in the Clover home.
+//   folder in one of those is skipped); the folder it runs in is the user's home unless asked, never in the MOSS home.
 // * The folders (`host.outside.read`): `outsideReadFolders` turns them into real paths for the plugin's host process's
-//   fence, read only, never inside the Clover home (the fence's last denies, the Keychain's files and the tools'
+//   fence, read only, never inside the MOSS home (the fence's last denies, the Keychain's files and the tools'
 //   credential files, still hold).
 // * Everything else the plugin does stays fenced as before.
 import { existsSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
-import { OUTSIDE_OUTPUT_MAX, OUTSIDE_TIMEOUT_MAX_MS, OUTSIDE_TIMEOUT_MS } from "@waifucave/clover-plugin-sdk/api-calls";
+import { OUTSIDE_OUTPUT_MAX, OUTSIDE_TIMEOUT_MAX_MS, OUTSIDE_TIMEOUT_MS } from "@waifucave/moss-plugin-sdk/api-calls";
 import { ContractError } from "../../contracts/common";
 import type { PluginRecord } from "../../contracts/plugin-registry";
 import type { ApiHandlers } from "./router";
@@ -45,16 +45,16 @@ const real = (p: string): string => {
 const inside = (p: string, root: string) => p === root || p.startsWith(root.endsWith(sep) ? root : root + sep);
 
 /** The folders a plugin's host process reads outside its sandbox: its manifest's `host.outside.read`, in the user's home,
- *  as real paths; never the Clover home or anything in it, and never the whole home. */
-export function outsideReadFolders(record: Pick<PluginRecord, "manifest"> | undefined, o: { userHome: string; cloverHome: string }): string[] {
+ *  as real paths; never the MOSS home or anything in it, and never the whole home. */
+export function outsideReadFolders(record: Pick<PluginRecord, "manifest"> | undefined, o: { userHome: string; mossHome: string }): string[] {
   const home = real(o.userHome);
-  const clover = real(o.cloverHome);
+  const moss = real(o.mossHome);
   const out: string[] = [];
   for (const p of outsideOf(record).read) {
     const at = expandUserPath(p, o.userHome);
     const r = real(at);
-    // Never the whole home or a folder that holds it (`/Users`), never Clover's home, in it or holding it.
-    if (r === "/" || inside(home, r) || inside(r, clover) || inside(clover, r)) continue;
+    // Never the whole home or a folder that holds it (`/Users`), never MOSS's home, in it or holding it.
+    if (r === "/" || inside(home, r) || inside(r, moss) || inside(moss, r)) continue;
     out.push(r);
     if (r !== at) out.push(at);
   }
@@ -62,7 +62,7 @@ export function outsideReadFolders(record: Pick<PluginRecord, "manifest"> | unde
 }
 
 /** Where a named program is: an absolute path as it is; a bare name, the first executable file of that name on `PATH`,
- *  skipping any PATH folder inside one of `skip` (the Clover home, the plugin's own folder and what it can write). */
+ *  skipping any PATH folder inside one of `skip` (the MOSS home, the plugin's own folder and what it can write). */
 export function findProgram(name: string, path: string | undefined, skip: readonly string[] = []): string | undefined {
   if (isAbsolute(name)) return name;
   const roots = skip.map(real);
@@ -96,31 +96,31 @@ async function capped(stream: ReadableStream<Uint8Array> | null | undefined, max
 }
 
 /** The environment a program outside the sandbox gets: the daemon's, which is the user's (their login PATH merged in),
- *  without Clover's own variables. */
+ *  without MOSS's own variables. */
 function userEnv(): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(CLOVER|WAIFUCAVE)_/.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(MOSS|WAIFUCAVE)_/.test(k)) env[k] = v;
   return env;
 }
 
-/** The folders a plugin's program may never be in, for "of yours" to hold: the Clover home, the plugin's own folder,
+/** The folders a plugin's program may never be in, for "of yours" to hold: the MOSS home, the plugin's own folder,
  *  and the folders it can write (its picks with write access), as real paths. */
-export function notTheUsers(o: { cloverHome: string; folder?: string; writable?: readonly string[] }): string[] {
-  return [...new Set([o.cloverHome, ...(o.folder !== undefined ? [o.folder] : []), ...(o.writable ?? [])].map(real))];
+export function notTheUsers(o: { mossHome: string; folder?: string; writable?: readonly string[] }): string[] {
+  return [...new Set([o.mossHome, ...(o.folder !== undefined ? [o.folder] : []), ...(o.writable ?? [])].map(real))];
 }
 
 /** Where a program runs, and what a plugin's folders are judged against, when the daemon names no user home (a test's,
- *  or a daemon not on its default home): an empty folder in the temp area (never Clover's own, which a program may not run
+ *  or a daemon not on its default home): an empty folder in the temp area (never MOSS's own, which a program may not run
  *  in), not the real one. The daemon passes the user's home for the one on its default home (`daemon.ts`). */
 export function noUserHome(): string {
-  const dir = join(tmpdir(), "clover-no-user-home");
+  const dir = join(tmpdir(), "moss-no-user-home");
   try { mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch { /* the folder check below says so */ }
   return dir;
 }
 
-export function outsideApi(o: { userHome?: string; cloverHome: string; log?: (line: string) => void; path?: () => string | undefined; writable?: (pluginId: string) => readonly string[] }): ApiHandlers {
+export function outsideApi(o: { userHome?: string; mossHome: string; log?: (line: string) => void; path?: () => string | undefined; writable?: (pluginId: string) => readonly string[] }): ApiHandlers {
   const userHome = o.userHome ?? noUserHome();
-  const clover = real(o.cloverHome);
+  const moss = real(o.mossHome);
   return {
     "outside.run": async (ctx, args) => {
       const program = args[0];
@@ -134,15 +134,15 @@ export function outsideApi(o: { userHome?: string; cloverHome: string; log?: (li
       const opts = (args[2] ?? {}) as { cwd?: unknown; input?: unknown; timeoutMs?: unknown };
       const cwd = typeof opts.cwd === "string" && opts.cwd !== "" ? expandUserPath(opts.cwd, userHome) : userHome;
       if (!existsSync(cwd)) throw new ContractError("invalid", `outside.run's folder ${opts.cwd as string} isn't there`);
-      if (inside(real(cwd), clover)) throw new ContractError("refused", `outside.run doesn't run a program in Clover's own folder (${opts.cwd as string})`);
+      if (inside(real(cwd), moss)) throw new ContractError("refused", `outside.run doesn't run a program in MOSS's own folder (${opts.cwd as string})`);
       const timeoutMs = typeof opts.timeoutMs === "number" && Number.isFinite(opts.timeoutMs) ? Math.min(OUTSIDE_TIMEOUT_MAX_MS, Math.max(1_000, Math.floor(opts.timeoutMs))) : OUTSIDE_TIMEOUT_MS;
       const env = userEnv();
-      const roots = notTheUsers({ cloverHome: o.cloverHome, ...(ctx.record?.folder !== undefined ? { folder: ctx.record.folder } : {}), writable: o.writable?.(ctx.pluginId) ?? [] });
+      const roots = notTheUsers({ mossHome: o.mossHome, ...(ctx.record?.folder !== undefined ? { folder: ctx.record.folder } : {}), writable: o.writable?.(ctx.pluginId) ?? [] });
       const at = findProgram(program, o.path?.() ?? env.PATH, roots);
       if (at === undefined) throw new ContractError("failed", `${program} isn't on your PATH`);
-      // "Of yours": never a program in Clover's folder, the plugin's own or one it can write, however it is reached.
+      // "Of yours": never a program in MOSS's folder, the plugin's own or one it can write, however it is reached.
       if (roots.some((r) => inside(real(at), r))) {
-        throw new ContractError("refused", `${program} is in Clover's folder, ${ctx.pluginId}'s own or one it can write, so it isn't a program of yours; it doesn't run`);
+        throw new ContractError("refused", `${program} is in MOSS's folder, ${ctx.pluginId}'s own or one it can write, so it isn't a program of yours; it doesn't run`);
       }
       let timedOut = false;
       const child = Bun.spawn([at, ...(argv as string[])], {

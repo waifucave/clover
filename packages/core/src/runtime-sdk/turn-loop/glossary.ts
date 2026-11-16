@@ -20,7 +20,7 @@
 //   local embedding model) is not here yet; keyword search is its stated fallback.
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
-import { skillItem } from "@waifucave/clover-plugin-sdk";
+import { skillItem } from "@waifucave/moss-plugin-sdk";
 import type { PluginRegistry } from "../../contracts/plugin-registry";
 import type { BotMcpServer, CoreToolDef } from "./servers";
 

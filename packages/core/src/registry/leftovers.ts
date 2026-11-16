@@ -11,7 +11,7 @@
 // for whatever tree next comes under its id (it asks for its OK as any new tree does).
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { PluginProvenance } from "@waifucave/clover-protocol";
+import type { PluginProvenance } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginRecord } from "../contracts/plugin-registry";
 import type { SecretStore } from "../contracts/secret-store";
@@ -46,7 +46,7 @@ export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<Secr
   const kept = join(o.home, "plugin-data", ".removed", ...o.record.id.split("/"), `${new Date(o.now?.() ?? Date.now()).toISOString().replace(/[:.]/g, "-")}-${hash}`);
   mkdirSync(join(kept, ".."), { recursive: true, mode: 0o700 });
   renameSync(data, kept);
-  writeFileSync(join(kept, ".clover-removed.json"), JSON.stringify({ id: o.record.id, source: o.record.source, treeHash: o.record.treeHash, okHash: o.record.okHash, provenance: o.record.provenance, removedAt: o.now?.() ?? Date.now() }), { mode: 0o600 });
+  writeFileSync(join(kept, ".moss-removed.json"), JSON.stringify({ id: o.record.id, source: o.record.source, treeHash: o.record.treeHash, okHash: o.record.okHash, provenance: o.record.provenance, removedAt: o.now?.() ?? Date.now() }), { mode: 0o600 });
   return { dataKeptAt: kept };
 }
 
@@ -82,7 +82,7 @@ export class Leftovers {
     this.#settled.delete(r.id);
     if (this.#o.client.updating()[r.id] !== undefined) return;
     if (this.#o.trusted?.() === false) {
-      if (!this.#untrustedSaid) this.#o.log?.("plugins: the records weren't trusted at start (changed outside Clover, or an older copy put back), so no plugin's leftovers are recorded this run; nothing is deleted");
+      if (!this.#untrustedSaid) this.#o.log?.("plugins: the records weren't trusted at start (changed outside MOSS, or an older copy put back), so no plugin's leftovers are recorded this run; nothing is deleted");
       this.#untrustedSaid = true;
       return;
     }

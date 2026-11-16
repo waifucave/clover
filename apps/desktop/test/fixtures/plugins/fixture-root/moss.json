@@ -1,0 +1,11 @@
+{
+  "manifest": 1,
+  "id": "fixture-root",
+  "name": "Fixture root",
+  "description": "A third-party UI plugin for the app's tests: it fills the window's app.root, from a layer of its own.",
+  "engines": { "moss": "^1.0.0" },
+  "client": { "entry": "client/index.js" },
+  "contributes": {
+    "ui": [{ "spot": "app.root", "component": "FixtureRoot" }]
+  }
+}

@@ -33,12 +33,12 @@ function ownRoots(caller: CallerFence, write: boolean): string[] {
 /** Refuses when any component of `path` is a link, without following any of them. Callers pass absolute, canonical
  *  paths, as the fence judges them. */
 function refuseLinkComponents(path: string): void {
-  if (!isAbsolute(path)) throw new FenceRefused({ allowed: false, reason: "clover-home", path }, path);
+  if (!isAbsolute(path)) throw new FenceRefused({ allowed: false, reason: "moss-home", path }, path);
   // Every prefix from the path itself up to (not including) the root.
   for (let at = path; ; ) {
     let isLink = false;
     try { isLink = lstatSync(at).isSymbolicLink(); } catch { isLink = false; } // missing: the open below refuses it
-    if (isLink) throw new FenceRefused({ allowed: false, reason: "clover-home", path: at }, at);
+    if (isLink) throw new FenceRefused({ allowed: false, reason: "moss-home", path: at }, at);
     const parent = dirname(at);
     if (parent === at) break;
     at = parent;
@@ -55,7 +55,7 @@ function normalForm(path: string, os: CallerFence["os"]): string {
 function handleRealPath(caller: CallerFence, fd: number, path: string, o: OwnFileOpts): string {
   const platform = caller.os === "macos" ? "darwin" : caller.os === "windows" ? "win32" : "linux";
   const real = o.realPath !== undefined ? o.realPath(fd) : fdRealPath(fd, platform, path);
-  if (real === null) throw new FenceRefused({ allowed: false, reason: "clover-home", path }, path);
+  if (real === null) throw new FenceRefused({ allowed: false, reason: "moss-home", path }, path);
   return real;
 }
 
@@ -63,10 +63,10 @@ function handleRealPath(caller: CallerFence, fd: number, path: string, o: OwnFil
  *  inside the caller's own folders for this access. */
 function refuseOutside(caller: CallerFence, real: string, path: string, write: boolean): void {
   if (normalForm(real, caller.os) !== normalForm(path, caller.os)) {
-    throw new FenceRefused({ allowed: false, reason: "clover-home", path: real }, real);
+    throw new FenceRefused({ allowed: false, reason: "moss-home", path: real }, real);
   }
   if (!ownRoots(caller, write).some((r) => isInsideFolded(real, r, caller.os))) {
-    throw new FenceRefused({ allowed: false, reason: "clover-home", path: real }, real);
+    throw new FenceRefused({ allowed: false, reason: "moss-home", path: real }, real);
   }
 }
 
@@ -90,7 +90,7 @@ export function writeOwnFile(caller: CallerFence, path: string, data: string | U
   const first = caller.check(write);
   if (!first.allowed) throw new FenceRefused(first, path);
   if (!ownRoots(caller, true).some((r) => isInsideFolded(normalForm(path, caller.os), r, caller.os))) {
-    throw new FenceRefused({ allowed: false, reason: "clover-home", path }, path);
+    throw new FenceRefused({ allowed: false, reason: "moss-home", path }, path);
   }
   // A temp file next to the target, created exclusively through `openChecked` (a fresh random suffix each try: a
   // planted name fails with EEXIST instead of being reused).
@@ -101,7 +101,7 @@ export function writeOwnFile(caller: CallerFence, path: string, data: string | U
     try { fd = openChecked(caller, tmp, { write: true, exclusive: true }); }
     catch (e) { if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e; }
   }
-  if (fd === -1) throw new FenceRefused({ allowed: false, reason: "clover-home", path }, path);
+  if (fd === -1) throw new FenceRefused({ allowed: false, reason: "moss-home", path }, path);
   try {
     const b = typeof data === "string" ? Buffer.from(data) : data;
     for (let off = 0; off < b.length;) off += writeSync(fd, b, off, b.length - off);
@@ -166,7 +166,7 @@ export function sweepOwnTempFiles(roots: readonly string[]): void {
         } catch { /* unreadable mid-walk */ }
         finally { try { closeSync(fd); } catch { /* gone */ } }
       }
-      if (!same()) throw new FenceRefused({ allowed: false, reason: "clover-home", path: root }, root);
+      if (!same()) throw new FenceRefused({ allowed: false, reason: "moss-home", path: root }, root);
     } finally { try { closeSync(dfd); } catch { /* gone */ } }
   }
 }
@@ -176,7 +176,7 @@ export function sweepOwnTempFiles(roots: readonly string[]): void {
  *  naming the link. */
 export function refuseLinksIn(ownFolder: string): void {
   try {
-    if (lstatSync(ownFolder).isSymbolicLink()) throw new FenceRefused({ allowed: false, reason: "clover-home", path: ownFolder }, ownFolder);
+    if (lstatSync(ownFolder).isSymbolicLink()) throw new FenceRefused({ allowed: false, reason: "moss-home", path: ownFolder }, ownFolder);
   } catch (e) {
     if (e instanceof FenceRefused) throw e;
     return; // missing or unreadable: the open below refuses it
@@ -190,7 +190,7 @@ export function refuseLinksIn(ownFolder: string): void {
       const p = join(at, name);
       let st: ReturnType<typeof lstatSync> | undefined;
       try { st = lstatSync(p); } catch { continue; } // gone: the open below refuses it
-      if (st.isSymbolicLink()) throw new FenceRefused({ allowed: false, reason: "clover-home", path: p }, p);
+      if (st.isSymbolicLink()) throw new FenceRefused({ allowed: false, reason: "moss-home", path: p }, p);
       if (st.isDirectory()) stack.push(p);
     }
   }

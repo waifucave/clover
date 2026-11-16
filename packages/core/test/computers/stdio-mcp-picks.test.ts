@@ -81,9 +81,9 @@ darwinTest("a stdio server follows the picks: replaced at once when idle, after 
   writeFileSync(join(root, "server.js"), SERVER);
   const entries = [{ point: "mcpServers", pluginId: "vid", ref: "mcpServers/cut", entryId: "cut", value: { type: "stdio", name: "cut", command: process.execPath, args: [join(root, "server.js")] }, state: "active" as const }];
   const registry = { entries: () => entries, get: (id: string) => (id === "vid" ? ({ folder: root } as never) : undefined) };
-  const grants = new PluginGrants({ cloverHome: home, userHome });
+  const grants = new PluginGrants({ mossHome: home, userHome });
   // The daemon's guard and launcher: the fence on, the picks read from the grants store at each start.
-  const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], fence: { userHome }, picked: (id: string) => grants.fencePaths(id) };
+  const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { mossHome: home }), shared: [], fence: { userHome }, picked: (id: string) => grants.fencePaths(id) };
   const prepare = pluginStdioPrepare({
     registry, guard, secretFiles: new PluginSecretFiles(home), dataDir: (id) => join(home, "plugin-data", id),
     settings: () => ({ account: {}, device: {} }), secrets: () => ({ get: async () => null }),
@@ -133,7 +133,7 @@ darwinTest("a stdio server follows the picks: replaced at once when idle, after 
     expect(await read(ch4, second)).toBe("denied");
     expect(await read(ch4, clip)).toBe("the first clip");
 
-    // Picked while a call runs past the wait (3 s here, 10 minutes in Clover): replaced anyway, after the grace.
+    // Picked while a call runs past the wait (3 s here, 10 minutes in MOSS): replaced anyway, after the grace.
     const long = sleep(ch4, 30_000);
     await Bun.sleep(100);
     grants.add({ pluginId: "vid", token: "grant:c1111111-2222-4333-8444-555555555555", path: second, kind: "file", access: "read" });

@@ -4,9 +4,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Level, RoutineRunView } from "@waifucave/clover-protocol";
+import type { Level, RoutineRunView } from "@waifucave/moss-protocol";
 import type { ApprovalDecision, ApprovalRequest } from "../../contracts/approval-broker";
-import { CLOVER_ERR } from "@waifucave/clover-protocol";
+import { MOSS_ERR } from "@waifucave/moss-protocol";
 import { MethodError } from "../../bots/rpc";
 import { routineMethods } from "../rpc";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
@@ -19,7 +19,7 @@ import { firesBetween, instantOf, nextRunInZone, wallOf } from "../zone";
 
 const homes: string[] = [];
 function tempHome(): string {
-  const h = mkdtempSync(join(tmpdir(), "clover-d-routines-"));
+  const h = mkdtempSync(join(tmpdir(), "moss-d-routines-"));
   homes.push(h);
   return h;
 }
@@ -121,7 +121,7 @@ describe("the routine engine", () => {
     const id = readFileSync(path, "utf8").match(/^id: (r_[a-z0-9]+)$/m)?.[1];
     expect(id).toBeDefined();
     const view = engine.list()[0]!;
-    expect(view).toMatchObject({ id, name: "Brief", bot: "alpha", computer: "Studio", state: "active", level: "ask-risky", file: "home/Studio/.clover/routines/alpha/brief.md" });
+    expect(view).toMatchObject({ id, name: "Brief", bot: "alpha", computer: "Studio", state: "active", level: "ask-risky", file: "home/Studio/.moss/routines/alpha/brief.md" });
     expect(view.nextRunAt).toBe(iso("2026-11-06T08:00:00Z"));
     clock.advance(60_000);
     await flush();
@@ -292,7 +292,7 @@ describe("the routine engine", () => {
     const again = await methods["routine.webhookKey"]!({ id: "r_hook0001" }, user).catch((e: unknown) => e);
     expect(String((again as Error).message)).toContain("shown once already");
     const plugin = await methods["routine.webhookKey"]!({ id: "r_hook0001", rotate: true }, { caller: { kind: "plugin", pluginId: "weather" } }).catch((e: unknown) => e);
-    expect(plugin instanceof MethodError && plugin.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect(plugin instanceof MethodError && plugin.code).toBe(MOSS_ERR.NOT_THE_USER);
     const rotated = (await methods["routine.webhookKey"]!({ id: "r_hook0001", rotate: true }, user)) as { key: string };
     expect(rotated.key).not.toBe(first.key);
     expect(await engine.receiveWebhook({ routine: "r_hook0001", key: first.key, body: "{}" })).toBe("refused");
@@ -307,7 +307,7 @@ describe("the routine engine", () => {
     const first = engineOn(home, clock);
     await first.engine.start();
     await flush();
-    const d = { ingress: "clover/forwarder", id: "d1", routine: "r_hook0002", receivedAt: clock.now(), body: "{}" };
+    const d = { ingress: "moss/forwarder", id: "d1", routine: "r_hook0002", receivedAt: clock.now(), body: "{}" };
     expect(await first.engine.deliverWebhook(d)).toBe("accepted");
     expect(await first.engine.deliverWebhook(d)).toBe("duplicate");
     // The same id from another ingress is another delivery.

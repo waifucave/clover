@@ -3,9 +3,9 @@
 // after a crash:
 //   macOS:   launchctl kickstart gui/<uid>/<label>; if the job isn't loaded (login start off, or after
 //            a bootout), launchctl bootstrap from the login item or the parked plist
-//   Linux:   systemctl --user start clover-core.service
-//   Windows: schtasks /Run /TN \Clover\clover-core
-// The app's side calls this as `clover-core daemon start` when no daemon answers, and so does the CLI.
+//   Linux:   systemctl --user start moss-core.service
+//   Windows: schtasks /Run /TN \MOSS\moss-core
+// The app's side calls this as `moss-core daemon start` when no daemon answers, and so does the CLI.
 import { existsSync } from "node:fs";
 import { launchdPlistToLoad } from "./manager";
 import { launchdDomain, type Runner } from "./live";

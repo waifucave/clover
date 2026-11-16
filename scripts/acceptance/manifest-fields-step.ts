@@ -4,16 +4,16 @@
 // settings by scope (account, device, bot) as its host reads them; a `custom` sign-in whose handler the core runs and
 // holds to its rules; a `platforms` list that leaves this computer out; a child off by default; `mcpServers` placed per
 // computer and by `when.os`; an `agents`-scoped and an `onlyBackends` plugin, read from what Alpha's turn and a coding
-// session on Clover's own agent are offered; a Claude Code plugin folder wrapped. Kept apart from run.ts (which starts
+// session on MOSS's own agent are offered; a Claude Code plugin folder wrapped. Kept apart from run.ts (which starts
 // a run when loaded) so the fixtures and the verdicts can be unit-tested.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { bridgeShortName } from "../../packages/core/src/agents/plugin-reach";
 import { resolveShell } from "../../packages/plugin-sdk/src/formats/shell";
 
-export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary; a plugin with a bot: its OK card's lines and checkbox for its parts beyond the bot's tab, a tool inside the bot offered to that bot and not to Alpha, its app parts switched off with the bot kept, and a bot's entry on the sidebar refused with its words; the rest of Bots' offer list refused, each with its words (a panel key besides Browser and agent, another bot's tab, a spot not offered, each same-on-every-tab spot tied to a bot), and a theme's old sidebar names loaded with a warning and ignored; per-entry own-bot: her skill and agent definition in her Glossary and not Alpha's, her command refused to Alpha's session; a folder plugin that asks for the six capabilities that were Clover's own (browser, terminal, plugins.install, plugins.watch, avatar.report, network:public): its OK card warns of each, OK'd each is granted, and its terminal, its figure report, its install from npm and its public page answer; a folder plugin naming a program and a folder of the user's outside its sandbox: its OK card names each with a warning, its program runs outside the sandbox and its folder is read, and a plugin naming neither is refused both";
+export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary; a plugin with a bot: its OK card's lines and checkbox for its parts beyond the bot's tab, a tool inside the bot offered to that bot and not to Alpha, its app parts switched off with the bot kept, and a bot's entry on the sidebar refused with its words; the rest of Bots' offer list refused, each with its words (a panel key besides Browser and agent, another bot's tab, a spot not offered, each same-on-every-tab spot tied to a bot), and a theme's old sidebar names loaded with a warning and ignored; per-entry own-bot: her skill and agent definition in her Glossary and not Alpha's, her command refused to Alpha's session; a folder plugin that asks for the six capabilities that were MOSS's own (browser, terminal, plugins.install, plugins.watch, avatar.report, network:public): its OK card warns of each, OK'd each is granted, and its terminal, its figure report, its install from npm and its public page answer; a folder plugin naming a program and a folder of the user's outside its sandbox: its OK card names each with a warning, its program runs outside the sandbox and its folder is read, and a plugin naming neither is refused both";
 
-export const ENGINES = { clover: "^1.0.0" } as const;
+export const ENGINES = { moss: "^1.0.0" } as const;
 
 /** The ids the row installs (each removed at its end, whatever failed). */
 export const FIELDS_IDS = {
@@ -31,8 +31,8 @@ export const FIELDS_IDS = {
   asksAll: "acc-asks-all",
 } as const;
 
-/** R1 (the owner, 2026-11-15: "Yes, all with a warning"): the six capabilities that were Clover's own. */
-export const ONCE_CLOVERS_OWN = ["browser", "terminal", "plugins.install", "plugins.watch", "avatar.report", "network:public"] as const;
+/** R1 (the owner, 2026-11-15: "Yes, all with a warning"): the six capabilities that were MOSS's own. */
+export const ONCE_MOSS_OWN = ["browser", "terminal", "plugins.install", "plugins.watch", "avatar.report", "network:public"] as const;
 
 /** The public page its host fetches through `network:public` (the run's outside world serves it: fake-exa.ts). */
 export const ASKS_ALL_PAGE = "https://news.acceptance-site.com/article";
@@ -40,7 +40,7 @@ export const ASKS_ALL_PAGE = "https://news.acceptance-site.com/article";
 /** A folder plugin that asks for the six, with a host half whose `fetchPublic` command reads a public page keyless. */
 export function writeAsksAll(root: string): string {
   const host = [
-    "// The acceptance run's R1 fixture (written by the run): a plugin that asks for the six capabilities that were Clover's own.",
+    "// The acceptance run's R1 fixture (written by the run): a plugin that asks for the six capabilities that were MOSS's own.",
     "let api;",
     "export async function start(a) { api = a; }",
     "export async function stop() {}",
@@ -50,7 +50,7 @@ export function writeAsksAll(root: string): string {
   return writePlugin(join(root, FIELDS_IDS.asksAll), {
     manifest: 1, id: FIELDS_IDS.asksAll, name: "Asks for all", version: "1.0.0", engines: ENGINES,
     host: { entry: "host/index.js", runtime: "bun" },
-    capabilities: [...ONCE_CLOVERS_OWN],
+    capabilities: [...ONCE_MOSS_OWN],
     contributes: { commands: [{ name: "fetch-public", description: "Reads a public page keyless", handler: "fetchPublic", args: { type: "object", properties: {}, additionalProperties: false } }] },
   }, host);
 }
@@ -62,7 +62,7 @@ export function writeAsksAll(root: string): string {
  *  and a folder live view), the second is events only. */
 export function asksAllWrong(o: { card: string; granted: readonly string[]; okLines: Readonly<Record<string, string>>; terminal?: string; avatar?: string; install?: string; fetched?: string }): string[] {
   const wrong: string[] = [];
-  for (const cap of ONCE_CLOVERS_OWN) {
+  for (const cap of ONCE_MOSS_OWN) {
     if (!o.card.includes(`It ${o.okLines[cap]}.`)) wrong.push(`its OK card doesn't carry ${cap}'s warning line ("It ${o.okLines[cap]}.")`);
     if (!o.granted.includes(cap)) wrong.push(`${cap} isn't granted after its OK (${JSON.stringify(o.granted)})`);
   }
@@ -117,7 +117,7 @@ function writeTree(dir: string, files: Record<string, string>): void {
 /** A plugin folder with one manifest and a host half (`host/index.js`). */
 export function writePlugin(dir: string, manifest: Record<string, unknown>, host?: string, extra: Record<string, string> = {}): string {
   writeTree(dir, {
-    "clover.json": `${JSON.stringify(manifest, null, 2)}\n`,
+    "moss.json": `${JSON.stringify(manifest, null, 2)}\n`,
     ...(host === undefined ? {} : { "host/index.js": host, "package.json": "{\"type\":\"module\"}\n" }),
     ...extra,
   });
@@ -163,7 +163,7 @@ export function writeFields(root: string): string {
     signInCore: "return { flow: \"core\", id: \"xai-device\" };",
     signInNothing: "return { flow: \"mine\", url: \"https://example.com/login\" };",
   }), {
-    "plugins/extra/clover.json": `${JSON.stringify({ manifest: 1, name: "Acceptance fields extra", engines: ENGINES, enabledByDefault: false, contributes: { commands: [{ name: "extra-ping", description: "A command of the child", handler: "ping", args: { type: "object", additionalProperties: false } }] }, host: { entry: "host/index.js", runtime: "bun" } }, null, 2)}\n`,
+    "plugins/extra/moss.json": `${JSON.stringify({ manifest: 1, name: "Acceptance fields extra", engines: ENGINES, enabledByDefault: false, contributes: { commands: [{ name: "extra-ping", description: "A command of the child", handler: "ping", args: { type: "object", additionalProperties: false } }] }, host: { entry: "host/index.js", runtime: "bun" } }, null, 2)}\n`,
     "plugins/extra/host/index.js": "export async function start() {}\nexport async function ping() { return { text: \"extra-pong\" }; }\n",
   });
 }
@@ -225,7 +225,7 @@ export function writeBotParts(root: string, model: string, o: { client?: string;
       },
       // Inside her, entry by entry (`scope: "own-bot"`), and one skill beside her for every bot.
       skills: [{ path: "skills/mine/SKILL.md", scope: "own-bot" }, "skills/shared/SKILL.md"],
-      agents: [{ id: "helper", name: "Juniper's helper", backend: "clover-code", instructions: "agents/helper.md", scope: "own-bot" }],
+      agents: [{ id: "helper", name: "Juniper's helper", backend: "moss-code", instructions: "agents/helper.md", scope: "own-bot" }],
       commands: [{ name: "scene", description: "Sets Juniper's scene", handler: "scene", scope: "own-bot", args: { type: "object", additionalProperties: false } }],
       ui: [
         { spot: "island.tab", id: "day", title: "Juniper's day", component: "Day", app: true },
@@ -273,9 +273,9 @@ export function ownBotWrong(o: { juniperGlossary: string; alphaGlossary: string;
 /** What the window run needs of the plugin with a bot: a Browser panel that draws a marker (`drawing`), or one that never
  *  mounts (a module that waits forever: the frame reports no size, so the shell shows the stock panel in its stead). */
 export const BOT_PARTS_CLIENT = {
-  drawing: "import { createElement } from \"@waifucave/clover-plugin-sdk/ui\";\nexport const Day = () => null;\nexport const Browser = () => createElement(\"div\", { \"data-juniper-browser\": \"\" }, \"Juniper's own browser panel\");\n",
+  drawing: "import { createElement } from \"@waifucave/moss-plugin-sdk/ui\";\nexport const Day = () => null;\nexport const Browser = () => createElement(\"div\", { \"data-juniper-browser\": \"\" }, \"Juniper's own browser panel\");\n",
   /** Her tab's panels of her own: Scene draws a marker, Desk has a button whose press asks the window to open Scene (`shell.openPanel`). */
-  own: "import { createElement, usePluginApi } from \"@waifucave/clover-plugin-sdk/ui\";\nexport const Day = () => null;\nexport const Browser = () => createElement(\"div\", { \"data-juniper-browser\": \"\" }, \"Juniper's own browser panel\");\nexport const Scene = () => createElement(\"div\", { \"data-juniper-scene\": \"\" }, \"Juniper's scene panel\");\nexport const Desk = () => { const api = usePluginApi(); return createElement(\"div\", { \"data-juniper-desk\": \"\", style: { padding: 16 } }, createElement(\"button\", { type: \"button\", \"data-open-scene\": \"\", style: { padding: \"12px 20px\" }, onClick: () => { void api.shell?.openPanel(\"scene\").catch(() => undefined); } }, \"Open Scene\")); };\n",
+  own: "import { createElement, usePluginApi } from \"@waifucave/moss-plugin-sdk/ui\";\nexport const Day = () => null;\nexport const Browser = () => createElement(\"div\", { \"data-juniper-browser\": \"\" }, \"Juniper's own browser panel\");\nexport const Scene = () => createElement(\"div\", { \"data-juniper-scene\": \"\" }, \"Juniper's scene panel\");\nexport const Desk = () => { const api = usePluginApi(); return createElement(\"div\", { \"data-juniper-desk\": \"\", style: { padding: 16 } }, createElement(\"button\", { type: \"button\", \"data-open-scene\": \"\", style: { padding: \"12px 20px\" }, onClick: () => { void api.shell?.openPanel(\"scene\").catch(() => undefined); } }, \"Open Scene\")); };\n",
   never: "await new Promise(() => {});\nexport const Day = () => null;\nexport const Browser = () => null;\n",
 } as const;
 /** Settings the plugin carries for the bot's Edit page: one for the bot (the section's switch) and one for the account. */
@@ -380,7 +380,7 @@ export function offerWrong(o: { bot: readonly string[]; coding: readonly string[
   if (offered(o.bot, "AgentsOnly")) wrong.push("Alpha was offered AgentsOnly (scope: agents)");
   if (!offered(o.bot, "CcOnly")) wrong.push("Alpha wasn't offered CcOnly (onlyBackends never narrows a bot)");
   if (!offered(o.coding, AGENTS_ONLY_SHORT)) wrong.push(`the coding session wasn't offered AgentsOnly under its short name ${AGENTS_ONLY_SHORT} (scope: agents; its full bridge name is too long)`);
-  if (offered(o.coding, "CcOnly")) wrong.push("the coding session on Clover's own agent was offered CcOnly (onlyBackends: claude-code)");
+  if (offered(o.coding, "CcOnly")) wrong.push("the coding session on MOSS's own agent was offered CcOnly (onlyBackends: claude-code)");
   return wrong;
 }
 
@@ -397,7 +397,7 @@ export function writeOfficePanels(root: string, o: { titleless?: boolean } = {})
       ],
     },
   }, undefined, {
-    "client/index.js": "import { createElement } from \"@waifucave/clover-plugin-sdk/ui\";\nexport const Sheets = () => createElement(\"div\", { \"data-office-sheets\": \"\" }, \"Sheets panel\");\nexport const Slides = () => createElement(\"div\", { \"data-office-slides\": \"\" }, \"Slides panel\");\n",
+    "client/index.js": "import { createElement } from \"@waifucave/moss-plugin-sdk/ui\";\nexport const Sheets = () => createElement(\"div\", { \"data-office-sheets\": \"\" }, \"Sheets panel\");\nexport const Slides = () => createElement(\"div\", { \"data-office-slides\": \"\" }, \"Slides panel\");\n",
   });
 }
 /** The background part's plugins (window row 28): `acc-background` holds `audio`, `acc-background-quiet` doesn't. Each keeps one

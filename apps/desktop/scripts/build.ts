@@ -3,14 +3,14 @@
 //   out/main/index.js            the main process, one ESM file for Electron's Node (electron stays external)
 //   out/main/preload.cjs         the one preload (sandboxed preloads are CommonJS)
 //   out/main/browser-viewport-preload.cjs, out/renderer/browser-viewport.html
-//                                the Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`)
-//   out/main/icons/              the tray's and Clover Dev's icons (resources/icons, drawn by scripts/brand-icons.ts)
+//                                the MOSS Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`)
+//   out/main/icons/              the tray's and MOSS Code Dev's icons (resources/icons, drawn by scripts/brand-icons.ts)
 //   out/main/native/screen.node  macOS: the screen add-on (native/input/macos/screen.mm), built with clang alone
 //   out/renderer/core/           the window's core root: index.html, root.css, root.js
-//   out/renderer/layer/          what every plugin layer serves under /_clover/: React (vendor/), the UI API
-//                                (sdk-ui.js), the boot, the base styles, and the `clover` tree's bundle and styles
+//   out/renderer/layer/          what every plugin layer serves under /_moss/: React (vendor/), the UI API
+//                                (sdk-ui.js), the boot, the base styles, and the `moss` tree's bundle and styles
 //
-// The `clover` tree's children are found by their manifests under plugins/clover (wherever lane M's layout puts them),
+// The `moss` tree's children are found by their manifests under plugins/moss (wherever lane M's layout puts them),
 // so no script names a child's path. `bun run dev:app` runs the result unpackaged.
 //
 // `--test-build` (scripts/release/build.ts --test-build only): the main process is compiled with the test-build label
@@ -70,7 +70,7 @@ const LAYER_EXTERNALS: string[] = [...CLIENT_BARE_IMPORTS];
 await build({ entrypoints: [join(root, "src", "main", "index.ts")], outdir: join(out, "main"), target: "node", format: "esm", external: ["electron"], sourcemap: "linked", define: { ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild), ...releaseBuildDefine(releaseBuild) }, ...(releaseBuild ? { banner: RELEASE_BUILD_BANNER } : {}) }, "the main process");
 await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: join(out, "main"), target: "node", format: "cjs", external: ["electron"], naming: "[name].cjs" }, "the preload");
 
-// ---- The Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`) ----
+// ---- The MOSS Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`) ----
 {
   const { BROWSER_ASSETS } = await import("../src/main/browser/assets");
   const preloadOut = join(root, BROWSER_ASSETS.preload.out);
@@ -87,8 +87,8 @@ await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: jo
   cpSync(join(root, BROWSER_ASSETS.html.from), htmlOut);
 }
 
-// ---- The app's own icons: the tray's (macOS's template, the Windows and Linux themes') and Clover Dev's ----
-// Drawn from assets/brand/clover/ by scripts/brand-icons.ts and committed; copied as they are.
+// ---- The app's own icons: the tray's (macOS's template, the Windows and Linux themes') and MOSS Code Dev's ----
+// Drawn from assets/brand/moss/ by scripts/brand-icons.ts and committed; copied as they are.
 cpSync(join(root, "resources", "icons"), join(out, "main", "icons"), { recursive: true });
 
 // ---- The core root ----
@@ -127,11 +127,11 @@ rmSync(vendorTmp, { recursive: true, force: true });
 
 // ---- The UI API, the boot and the base styles ----
 const sdkUi = join(repo, "packages", "plugin-sdk", "src", "ui", "index.tsx");
-await build({ ...browser, entrypoints: [sdkUi], outdir: layerOut, naming: "sdk-ui.[ext]", external: LAYER_EXTERNALS.filter((n) => n !== "@waifucave/clover-plugin-sdk/ui") }, "the UI API");
+await build({ ...browser, entrypoints: [sdkUi], outdir: layerOut, naming: "sdk-ui.[ext]", external: LAYER_EXTERNALS.filter((n) => n !== "@waifucave/moss-plugin-sdk/ui") }, "the UI API");
 await build({ ...browser, entrypoints: [join(root, "src", "layer", "boot.tsx")], outdir: layerOut, external: LAYER_EXTERNALS }, "the layer boot");
 cpSync(join(root, "src", "layer", "layer.css"), join(layerOut, "layer.css"));
 
-// ---- The `clover` tree: every child's client entry, found by its manifest ----
+// ---- The `moss` tree: every child's client entry, found by its manifest ----
 interface Child {
   name: string;
   dir: string;
@@ -145,7 +145,7 @@ function findChildren(dir: string, depth = 0): Child[] {
     if (name === "node_modules" || name.startsWith(".")) continue;
     const sub = join(dir, name);
     if (!statSync(sub).isDirectory()) continue;
-    const manifest = join(sub, "clover.json");
+    const manifest = join(sub, "moss.json");
     if (existsSync(manifest)) {
       const m = JSON.parse(readFileSync(manifest, "utf8")) as { client?: { entry?: string; css?: string[] } };
       if (m.client?.entry !== undefined) found.push({ name, dir: sub, entry: join(sub, m.client.entry), css: (m.client.css ?? []).map((c) => join(sub, c)) });
@@ -154,18 +154,18 @@ function findChildren(dir: string, depth = 0): Child[] {
   }
   return found;
 }
-const children = findChildren(join(repo, "plugins", "clover"));
+const children = findChildren(join(repo, "plugins", "moss"));
 const byName = new Map(children.map((c) => [c.name, c]));
-// The tree carries the build marks too (compile-time only, `false` in a real build): Clover Voice's player shows its counters in a test or acceptance build.
-await build({ ...browser, define: { ...browser.define, ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild) }, entrypoints: [join(root, "src", "layer", "clover", "index.ts")], outdir: layerOut, naming: "clover.[ext]", external: LAYER_EXTERNALS }, "the clover tree");
+// The tree carries the build marks too (compile-time only, `false` in a real build): MOSS Voice's player shows its counters in a test or acceptance build.
+await build({ ...browser, define: { ...browser.define, ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild) }, entrypoints: [join(root, "src", "layer", "moss", "index.ts")], outdir: layerOut, naming: "moss.[ext]", external: LAYER_EXTERNALS }, "the moss tree");
 // Its styles: each child's `client.css`, in the bindings' order (lane E-M2's cleaner wraps them in @scope).
-const { modules } = (await import(join(root, "src", "layer", "clover", "ids.ts"))) as { modules: readonly string[] };
+const { modules } = (await import(join(root, "src", "layer", "moss", "ids.ts"))) as { modules: readonly string[] };
 const css: string[] = [];
 for (const id of modules) {
-  const child = byName.get(id.slice("clover/".length));
+  const child = byName.get(id.slice("moss/".length));
   for (const file of child?.css ?? []) css.push(`/* ${relative(repo, file)} */\n${readFileSync(file, "utf8")}`);
 }
-writeFileSync(join(layerOut, "clover.css"), css.join("\n"));
+writeFileSync(join(layerOut, "moss.css"), css.join("\n"));
 
 // ---- The screen add-on (macOS; native/input) ----
 // Built with clang alone: the few Node-API calls it makes are declared in its own source. Where it can't be built (no
@@ -190,4 +190,4 @@ if (process.platform === "darwin") {
   if (r.status !== 0) console.warn(`build: the touch add-on wasn't built (${(r.stderr || r.error?.message || "clang failed").trim().split("\n")[0]}); the app runs without the four-finger tap`);
 }
 
-console.log(`built ${relative(root, join(out, "main"))} and ${relative(root, join(out, "renderer"))}: ${children.length} clover children found, ${modules.length} bound`);
+console.log(`built ${relative(root, join(out, "main"))} and ${relative(root, join(out, "renderer"))}: ${children.length} moss children found, ${modules.length} bound`);

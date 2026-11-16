@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AppRenderResult, AppWindowRenderParams } from "@waifucave/clover-protocol";
+import type { AppRenderResult, AppWindowRenderParams } from "@waifucave/moss-protocol";
 import type { WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { CORE_TOOL_RULES } from "../../approvals/bot-check";
 import { coreToolsServer } from "../../runtime-sdk/turn-loop/servers";
@@ -19,7 +19,7 @@ const homes: string[] = [];
 afterEach(() => { for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true }); });
 
 function setup(answer: (p: AppWindowRenderParams) => AppRenderResult | Promise<AppRenderResult>) {
-  const home = mkdtempSync(join(tmpdir(), "clover-shot-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-shot-"));
   homes.push(home);
   const asked: AppWindowRenderParams[] = [];
   const deps: AppScreenshotDeps = {
@@ -34,8 +34,8 @@ function setup(answer: (p: AppWindowRenderParams) => AppRenderResult | Promise<A
 const drawn = (p: AppWindowRenderParams, extra: Partial<AppRenderResult> = {}): AppRenderResult => ({
   target: p.target, size: p.size, shown: true, drawn: true, png: PNG, pixels: p.size,
   where: { tab: { kind: "app", id: "reel" }, side: "bots" },
-  frames: [{ origin: "clover-core://app", width: p.size.width, height: p.size.height, visibility: "visible" }, { origin: "clover-plugin://reel", mount: "m1", width: 1000, height: 820, visibility: "visible" }],
-  console: [{ plugin: "reel", level: "error", message: "TypeError: track is undefined" }, { plugin: "clover", level: "warning", message: "the shell's own" }],
+  frames: [{ origin: "moss-core://app", width: p.size.width, height: p.size.height, visibility: "visible" }, { origin: "moss-plugin://reel", mount: "m1", width: 1000, height: 820, visibility: "visible" }],
+  console: [{ plugin: "reel", level: "error", message: "TypeError: track is undefined" }, { plugin: "moss", level: "warning", message: "the shell's own" }],
   ...extra,
 });
 
@@ -51,7 +51,7 @@ describe("AppScreenshot", () => {
     expect(r.images).toEqual([{ data: PNG, mimeType: "image/png" }]);
     expect(r.text).toContain("app:reel drawn at 1280x820 (wide), showing app reel: 1280x820 pixels.");
     expect(r.text).toContain(`Saved: ${file}`);
-    expect(r.text).toContain("- clover-plugin://reel mount m1 1000x820");
+    expect(r.text).toContain("- moss-plugin://reel mount m1 1000x820");
     expect(r.text).toContain("error: [reel] TypeError: track is undefined");
     expect(r.text).not.toContain("the shell's own");
     expect(r.text).toContain("(1 console line(s) from plugins you didn't build left out.)");
@@ -102,7 +102,7 @@ describe("AppScreenshot", () => {
   });
 
   test("a card waiting in the place: its frames are counted as placeholders", async () => {
-    const s = setup((p) => drawn(p, { frames: [{ origin: "clover-plugin://clover", width: 900, height: 820 }, { origin: "null", width: 80, height: 30, sealed: "placeholder" }, { origin: "null", width: 300, height: 40, sealed: "placeholder" }] }));
+    const s = setup((p) => drawn(p, { frames: [{ origin: "moss-plugin://moss", width: 900, height: 820 }, { origin: "null", width: 80, height: 30, sealed: "placeholder" }, { origin: "null", width: 300, height: 40, sealed: "placeholder" }] }));
     const r = await s.tool.run({ target: "bot:alpha" });
     expect(r.text).toContain("Card frames: 2 placeholder(s) (a card waiting here is drawn as a plain box, not its buttons).");
     expect(r.text).toContain("- card placeholder 80x30");

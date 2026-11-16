@@ -43,8 +43,8 @@ function contentOf(m: unknown): Array<Record<string, unknown>> | undefined {
 async function driveWithHooks(spawn: SpawnClaudeCodeProcess, hooks: Options["hooks"]): Promise<{
   messages: Array<Record<string, unknown>>;
 }> {
-  const home = mkdtempSync(join(tmpdir(), "clover-hooks-measure-home-"));
-  const cwd = mkdtempSync(join(tmpdir(), "clover-hooks-measure-cwd-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-hooks-measure-home-"));
+  const cwd = mkdtempSync(join(tmpdir(), "moss-hooks-measure-cwd-"));
   const queue = createHostPromptQueue();
   const messages: Array<Record<string, unknown>> = [];
 
@@ -61,10 +61,10 @@ async function driveWithHooks(spawn: SpawnClaudeCodeProcess, hooks: Options["hoo
       hooks,
       env: {
         PATH: process.env.PATH ?? "/usr/bin:/bin",
-        // Pre-rename this set two distinct env keys — the daemon's own home var, and CLOVER_HOME (the SDK's
+        // Pre-rename this set two distinct env keys — the daemon's own home var, and MOSS_HOME (the SDK's
         // brand-derived home); the rename makes them the same key, so it is written once now.
-        HOME: home, TMPDIR: home, CLOVER_HOME: home,
-        CLOVER_PROFILE: "test",
+        HOME: home, TMPDIR: home, MOSS_HOME: home,
+        MOSS_PROFILE: "test",
         WINTER_TEST_PROVIDER: "lanec",
       },
     },

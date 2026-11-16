@@ -1,6 +1,6 @@
 import { takeFileDiff } from "../runtime-sdk/diff-attach";
 import { siteIconsForResult } from "../runtime-sdk/site-icons";
-import type { ToolDisplay } from "@waifucave/clover-protocol";
+import type { ToolDisplay } from "@waifucave/moss-protocol";
 import type { ProjectedEvent, ProtocolSdkMessage } from "./types";
 
 /**
@@ -71,7 +71,7 @@ export function asStreamEventFrame(m: ProtocolSdkMessage): StreamEventFrame | un
 }
 
 /** `{type:"system", subtype:"api_retry", attempt, max_retries, retry_delay_ms, error_status, error}` — the
- *  Claude Agent SDK's own frame, mirrored field-for-field by the Clover runtime (frames.ts:405). */
+ *  Claude Agent SDK's own frame, mirrored field-for-field by the MOSS runtime (frames.ts:405). */
 export interface ApiRetryFrame extends Rec { type: "system"; subtype: "api_retry"; attempt: number; max_retries: number; retry_delay_ms: number; error_status: number | null; error: unknown }
 export function asApiRetryFrame(m: ProtocolSdkMessage): ApiRetryFrame | undefined {
   const r = m as Rec;
@@ -97,7 +97,7 @@ export function asInitFrame(m: ProtocolSdkMessage): InitFrame | undefined {
  * never reuses a tool_use id), and it is the same id the child's completing `tool_result` carries,
  * so both ends of the thread come off the wire with no registry lookup.
  *
- * **CROSS-LANE CONTRACT (n9, review r2):** that id is also how Task 13's `PersistedCloverChild` and
+ * **CROSS-LANE CONTRACT (n9, review r2):** that id is also how Task 13's `PersistedMossChild` and
  * Task 16's `Query.messaging.steerChild`/`resumeChild` must address the same child. The projector
  * opens a thread with the spawning `tool_use.id`; anything addressing that child by another id is
  * talking about a different thread as far as the session log is concerned.
@@ -134,11 +134,11 @@ export function assistantText(frame: AssistantFrame): string {
  * vocabulary because the Mac and iOS renderers key their tool rows on it and every past session in
  * `session.history` spells it that way. `renameTool` is the one translation point and it reads the
  * SHARED table, `runtime-sdk/tool-names.ts` — the same one the approval bridge gates by, so the
- * name on a card and the name in the transcript cannot drift. An unmapped Clover name falls through
+ * name on a card and the name in the transcript cannot drift. An unmapped MOSS name falls through
  * unchanged rather than being dropped.
  */
 export function toolCalls(
-  frame: AssistantFrame, sessionId: string, threadId: string, renameTool: (cloverName: string) => string,
+  frame: AssistantFrame, sessionId: string, threadId: string, renameTool: (mossName: string) => string,
   displayTitle?: (runtimeName: string) => string | undefined,
 ): ProjectedEvent[] {
   const out: ProjectedEvent[] = [];
@@ -171,7 +171,7 @@ export function toolResultOutput(block: ContentBlock): string {
 /**
  * Whether a `tool_result` block is a failure, reading EVERY spelling the two runtimes use:
  * `is_error` (the declared field, and the official leg's), `denied` (a permission refusal),
- * `interrupted` (an in-flight call an interrupt cancelled) and `error` — the Clover engine's OWN
+ * `interrupted` (an in-flight call an interrupt cancelled) and `error` — the MOSS engine's OWN
  * marker for a thrown tool, a structured-output failure and a not-executed call
  * (`clover-sdk/packages/runtime/src/engine.ts` 5558/5569/6020/6033), which this predicate
  * used to miss, recording every thrown tool as a success.

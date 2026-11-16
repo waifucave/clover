@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { apiCallAllowed, withImplied, SPEECH_AHEAD_MAX_MS, SPEECH_CUES_PER_SECOND, SPEECH_FRAMES_MAX, SPEECH_FRAMES_PER_SECOND } from "@waifucave/clover-plugin-sdk";
+import { apiCallAllowed, withImplied, SPEECH_AHEAD_MAX_MS, SPEECH_CUES_PER_SECOND, SPEECH_FRAMES_MAX, SPEECH_FRAMES_PER_SECOND } from "@waifucave/moss-plugin-sdk";
 import { AvatarService, AVATAR_CHANGED_EVENT, AVATAR_CUE_EVENT, AVATAR_CUES_PER_SECOND } from "../api/avatar";
 
-const report = (over: object = {}) => ({ format: "live2d", renderer: "clover/live2d", capabilities: ["expressions", "outfits", "lipsync"], names: { expressions: ["happy", "sad"], motions: [], outfits: [{ name: "hat", on: false }] }, box: { canvas: { width: 400, height: 600 } }, ...over });
+const report = (over: object = {}) => ({ format: "live2d", renderer: "moss/live2d", capabilities: ["expressions", "outfits", "lipsync"], names: { expressions: ["happy", "sad"], motions: [], outfits: [{ name: "hat", on: false }] }, box: { canvas: { width: 400, height: 600 } }, ...over });
 const make = (now: () => number = Date.now) => {
   const events: { type: string; [k: string]: unknown }[] = [];
   const svc = new AvatarService((e) => events.push(e), now);
@@ -20,22 +20,22 @@ describe("avatar cues in the core", () => {
 
   test("the stage's report is read, the catalogue and the box answer for the plugin's own bot only", () => {
     const { h } = make();
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", report()]);
     expect(h["avatar.catalogue"]!(ctx("alpha"), [])).toMatchObject({ format: "live2d", expressions: ["happy", "sad"], outfits: [{ name: "hat", on: false }], capabilities: ["lipsync", "expressions", "outfits"] });
     expect(h["avatar.catalogue"]!(ctx("luna"), [])).toBeUndefined();
     expect(h["avatar.box"]!(ctx("alpha"), [])).toMatchObject({ estimated: true, canvas: { width: 400, height: 600 } });
     // A child plugin acts for its top-level plugin's bot.
     expect(h["avatar.catalogue"]!(ctx("alpha/tab"), [])).toBeDefined();
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", undefined]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", undefined]);
     expect(h["avatar.catalogue"]!(ctx("alpha"), [])).toBeUndefined();
   });
 
   test("a cue the renderer can play goes to the stage that reported, for its bot; the rest are answered, unsupported or unknown", () => {
     const { h, events } = make();
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", report()]);
     events.length = 0;
     expect(h["avatar.cue"]!(ctx("alpha"), [{ type: "expression", name: "happy" }])).toEqual({ ok: true });
-    expect(events).toEqual([{ type: "plugin_ui_message", pluginId: "clover/character", event: AVATAR_CUE_EVENT, value: { bot: "alpha", cue: { type: "expression", name: "happy" } } }]);
+    expect(events).toEqual([{ type: "plugin_ui_message", pluginId: "moss/character", event: AVATAR_CUE_EVENT, value: { bot: "alpha", cue: { type: "expression", name: "happy" } } }]);
     expect(h["avatar.cue"]!(ctx("alpha"), [{ type: "motion", name: "wave" }])).toMatchObject({ ok: false, reason: "unsupported" });
     expect(h["avatar.cue"]!(ctx("alpha"), [{ type: "expression", name: "furious" }])).toMatchObject({ ok: false, reason: "unknown-name" });
     expect(h["avatar.cue"]!(ctx("alpha"), [{ type: "dance" }])).toMatchObject({ ok: false, reason: "invalid" });
@@ -44,7 +44,7 @@ describe("avatar cues in the core", () => {
 
   test("a plugin's cues are capped a second", () => {
     const { h } = make();
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", report()]);
     for (let i = 0; i < AVATAR_CUES_PER_SECOND; i++) h["avatar.cue"]!(ctx("alpha"), [{ type: "expression", name: "happy" }]);
     expect(() => h["avatar.cue"]!(ctx("alpha"), [{ type: "expression", name: "happy" }])).toThrow("cues this second");
   });
@@ -53,23 +53,23 @@ describe("avatar cues in the core", () => {
     const { h, events } = make();
     const seen: unknown[] = [];
     const off = h["avatar.watch"]!(ctx("alpha"), [(c: unknown) => seen.push(c)]) as () => void;
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", report()]);
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", report()]);
-    h["avatar.report"]!(ctx("clover/character"), ["luna", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["luna", report()]);
     expect(seen.map((c) => (c as { kind: string }).kind)).toEqual(["catalogue", "box"]);
     expect(events.filter((e) => e.event === AVATAR_CHANGED_EVENT && e.pluginId === "alpha")).toHaveLength(2);
     off();
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", report({ box: { canvas: { width: 500, height: 600 } } })]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", report({ box: { canvas: { width: 500, height: 600 } } })]);
     expect(seen).toHaveLength(2);
   });
 
   test("a bad report is refused, and the catalog gates who may call what", () => {
     const { h } = make();
-    expect(() => h["avatar.report"]!(ctx("clover/character"), ["alpha", { nope: 1 }])).toThrow("report");
-    expect(() => h["avatar.report"]!(ctx("clover/character"), [3, undefined])).toThrow("bot's id");
+    expect(() => h["avatar.report"]!(ctx("moss/character"), ["alpha", { nope: 1 }])).toThrow("report");
+    expect(() => h["avatar.report"]!(ctx("moss/character"), [3, undefined])).toThrow("bot's id");
     expect(apiCallAllowed("avatar.cue", "ui", ["avatar.control"])).toBe(true);
     expect(apiCallAllowed("avatar.cue", "ui", ["avatar.read"])).toBe(false);
-    expect(apiCallAllowed("avatar.cue", "clover", ["avatar.control"])).toBe(true);
+    expect(apiCallAllowed("avatar.cue", "moss", ["avatar.control"])).toBe(true);
     expect(apiCallAllowed("avatar.catalogue", "own", ["avatar.read"])).toBe(true);
     expect(apiCallAllowed("avatar.report", "ui", ["avatar.report"])).toBe(true);
     expect(apiCallAllowed("avatar.report", "own", ["avatar.report"])).toBe(false);
@@ -81,8 +81,8 @@ describe("who may move which bot's figure", () => {
 
   test("a plugin cues its own bot; another bot is refused, saying why, unless the plugin holds avatar.control.all", () => {
     const { h, events } = make();
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", report()]);
-    h["avatar.report"]!(ctx("clover/character"), ["luna", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["luna", report()]);
     events.length = 0;
     // Its own bot, or a child of the plugin: with avatar.control alone. Naming its own bot is the default spelled out.
     expect(h["avatar.cue"]!(ctx("luna"), [{ type: "expression", name: "happy" }])).toEqual({ ok: true });
@@ -95,7 +95,7 @@ describe("who may move which bot's figure", () => {
     const all = ["avatar.control", "avatar.control.all"];
     expect(h["avatar.cue"]!(ctx("voice", all), [{ type: "expression", name: "happy" }, { bot: "alpha" }])).toEqual({ ok: true });
     expect(h["avatar.cue"]!(ctx("voice", all), [speech(Date.now()), { bot: "alpha" }])).toEqual({ ok: true });
-    expect(events.at(-1)).toMatchObject({ pluginId: "clover/character", event: AVATAR_CUE_EVENT, value: { bot: "alpha", cue: { type: "speech" } } });
+    expect(events.at(-1)).toMatchObject({ pluginId: "moss/character", event: AVATAR_CUE_EVENT, value: { bot: "alpha", cue: { type: "speech" } } });
     // A bot nothing draws is answered, not refused.
     expect(h["avatar.cue"]!(ctx("voice", all), [speech(Date.now()), { bot: "nobody" }])).toMatchObject({ ok: false, reason: "no-renderer" });
     // A bad second argument.
@@ -118,12 +118,12 @@ describe("speech: the mouth's levels", () => {
 
   test("a batch stamped ahead of the clock goes whole to the stage, rounded and clamped; the renderer must declare lipsync", () => {
     const { h, events } = make(() => now);
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", report()]);
     events.length = 0;
     expect(h["avatar.cue"]!(ctx("alpha"), [{ type: "speech", frames: [{ t: now + 500.4, rms: 7, centroid: -5 }, { t: now + 520, rms: -1 }] }])).toEqual({ ok: true });
-    expect(events).toEqual([{ type: "plugin_ui_message", pluginId: "clover/character", event: AVATAR_CUE_EVENT, value: { bot: "alpha", cue: { type: "speech", frames: [{ t: now + 500, rms: 1, centroid: 0 }, { t: now + 520, rms: 0 }] }, from: "alpha" } }]);
+    expect(events).toEqual([{ type: "plugin_ui_message", pluginId: "moss/character", event: AVATAR_CUE_EVENT, value: { bot: "alpha", cue: { type: "speech", frames: [{ t: now + 500, rms: 1, centroid: 0 }, { t: now + 520, rms: 0 }] }, from: "alpha" } }]);
     // A renderer without lipsync is told so, plainly; a bot nothing draws likewise.
-    h["avatar.report"]!(ctx("clover/character"), ["luna", report({ capabilities: ["expressions"] })]);
+    h["avatar.report"]!(ctx("moss/character"), ["luna", report({ capabilities: ["expressions"] })]);
     expect(h["avatar.cue"]!(ctx("luna"), [{ type: "speech", frames: levels(2) }])).toMatchObject({ ok: false, reason: "unsupported", message: expect.stringContaining("lip-sync") });
     expect(h["avatar.cue"]!(ctx("ghost"), [{ type: "speech", frames: levels(2) }])).toMatchObject({ ok: false, reason: "no-renderer" });
     expect(events.filter((e) => e.event === AVATAR_CUE_EVENT)).toHaveLength(1);
@@ -131,7 +131,7 @@ describe("speech: the mouth's levels", () => {
 
   test("a batch is bounded: at most SPEECH_FRAMES_MAX levels, strictly rising stamps, finite numbers, none further ahead than SPEECH_AHEAD_MAX_MS", () => {
     const { h, events } = make(() => now);
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", report()]);
     events.length = 0;
     const cue = (frames: unknown, extra: object = {}) => h["avatar.cue"]!(ctx("alpha"), [{ type: "speech", frames, ...extra }]);
     expect(cue(levels(SPEECH_FRAMES_MAX))).toEqual({ ok: true });
@@ -156,7 +156,7 @@ describe("speech: the mouth's levels", () => {
   test("speech has a window of its own: SPEECH_CUES_PER_SECOND cues and SPEECH_FRAMES_PER_SECOND levels a second, and it never uses the expressions' 20", () => {
     let t = now;
     const { h } = make(() => t);
-    h["avatar.report"]!(ctx("clover/character"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("moss/character"), ["alpha", report()]);
     for (let i = 0; i < SPEECH_CUES_PER_SECOND; i++) expect(h["avatar.cue"]!(ctx("alpha"), [{ type: "speech", frames: levels(3) }])).toEqual({ ok: true });
     expect(() => h["avatar.cue"]!(ctx("alpha"), [{ type: "speech", frames: levels(3) }])).toThrow("speech cues");
     // The mouth being full leaves the figure's other cues untouched.
@@ -173,7 +173,7 @@ describe("speech: the mouth's levels", () => {
 });
 
 describe("more than one stage (the stage is a plugin like any other)", () => {
-  const ours = "clover/character";
+  const ours = "moss/character";
   const theirs = "mystage";
 
   test("any plugin id may report: the door asks the grant, never the id", () => {

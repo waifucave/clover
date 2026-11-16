@@ -31,38 +31,38 @@ function repo(files: Record<string, string>): string {
 }
 
 describe("staging: only committed files", () => {
-  const committed = { "plugins/clover/clover.json": `{"id":"clover"}`, "plugins/clover/host.js": "export {};\n", "plugins/alpha/clover.json": `{"id":"alpha"}`, "plugins/alpha/tab/test/tab.test.ts": "x", "plugins/alpha/tab/tsconfig.json": "{}" };
+  const committed = { "plugins/moss/moss.json": `{"id":"moss"}`, "plugins/moss/host.js": "export {};\n", "plugins/alpha/moss.json": `{"id":"alpha"}`, "plugins/alpha/tab/test/tab.test.ts": "x", "plugins/alpha/tab/tsconfig.json": "{}" };
 
   test("writes HEAD's blobs under plugins/, less what a release leaves out", () => {
     const dir = repo(committed);
     const dest = join(dir, "out", "plugins");
-    expect(stageBundledPlugins(dir, dest).sort()).toEqual(["alpha/clover.json", "clover/clover.json", "clover/host.js"]);
-    expect(readFileSync(join(dest, "clover", "clover.json"), "utf8")).toBe(`{"id":"clover"}`);
+    expect(stageBundledPlugins(dir, dest).sort()).toEqual(["alpha/moss.json", "moss/moss.json", "moss/host.js"]);
+    expect(readFileSync(join(dest, "moss", "moss.json"), "utf8")).toBe(`{"id":"moss"}`);
     expect(existsSync(join(dest, "alpha", "tab", "tsconfig.json"))).toBe(false);
   });
 
   test.skipIf(process.platform === "win32")("a 100755 file stays executable (0755), a 100644 one doesn't (0644)", () => {
-    const dir = repo({ ...committed, "plugins/clover/bin/run.sh": "#!/bin/sh\n" });
+    const dir = repo({ ...committed, "plugins/moss/bin/run.sh": "#!/bin/sh\n" });
     const dest = join(dir, "out", "plugins");
     stageBundledPlugins(dir, dest);
-    expect(statSync(join(dest, "clover", "bin", "run.sh")).mode & 0o777).toBe(0o755);
-    expect(statSync(join(dest, "clover", "host.js")).mode & 0o777).toBe(0o644);
+    expect(statSync(join(dest, "moss", "bin", "run.sh")).mode & 0o777).toBe(0o755);
+    expect(statSync(join(dest, "moss", "host.js")).mode & 0o777).toBe(0o644);
   });
 
   test("a committed file swapped locally for a symlink to an outside file never ships: the build is refused", () => {
     const dir = repo(committed);
     const secret = join(dir, "..", `${dir.split("/").pop()}-secret.txt`);
     writeFileSync(secret, "TOP SECRET");
-    rmSync(join(dir, "plugins", "clover", "host.js"));
-    symlinkSync(secret, join(dir, "plugins", "clover", "host.js"));
+    rmSync(join(dir, "plugins", "moss", "host.js"));
+    symlinkSync(secret, join(dir, "plugins", "moss", "host.js"));
     const dest = join(dir, "out", "plugins");
     expect(() => stageBundledPlugins(dir, dest)).toThrow("uncommitted changes");
     expect(existsSync(dest)).toBe(false);
   });
 
-  test("a locally edited clover.json, or an untracked file, never ships: the build is refused", () => {
+  test("a locally edited moss.json, or an untracked file, never ships: the build is refused", () => {
     const edited = repo(committed);
-    writeFileSync(join(edited, "plugins", "clover", "clover.json"), `{"id":"clover","evil":true}`);
+    writeFileSync(join(edited, "plugins", "moss", "moss.json"), `{"id":"moss","evil":true}`);
     expect(() => stageBundledPlugins(edited, join(edited, "out", "plugins"))).toThrow("uncommitted changes");
     const untracked = repo(committed);
     writeFileSync(join(untracked, "plugins", "alpha", ".env"), "KEY=x");
@@ -83,11 +83,11 @@ describe("staging: only committed files", () => {
   test("the real tree stages: both top-level manifests, nothing left out, and the packaged check passes", () => {
     const dest = join(mkdtempSync(join(tmpdir(), "lane-m-stage-real-")), "plugins");
     const staged = stageBundledPlugins(ROOT, dest);
-    expect(staged).toContain("clover/clover.json");
-    expect(staged).toContain("alpha/clover.json");
+    expect(staged).toContain("moss/moss.json");
+    expect(staged).toContain("alpha/moss.json");
     expect(staged.filter((f) => leftOut(f) !== undefined)).toEqual([]);
     // The manifest built from HEAD's stage is the one the core embeds, and the packaged check holds the tree to it.
-    const file = join(dest, "..", "clover-bundled-plugins.manifest");
+    const file = join(dest, "..", "moss-bundled-plugins.manifest");
     const manifest = writeStagedManifest(dest, file);
     expect(parseBundledManifest(readFileSync(file, "utf8"))).toEqual(manifest);
     expect(Object.keys(manifest.files).sort()).toEqual([...staged].sort());
@@ -98,7 +98,7 @@ describe("staging: only committed files", () => {
 describe("what ships is exactly the manifest's tree", () => {
   const build = () => {
     const res = mkdtempSync(join(tmpdir(), "lane-m-res-manifest-"));
-    for (const f of ["clover/clover.json", "alpha/clover.json", "alpha/host.js"]) { mkdirSync(join(res, "plugins", f, ".."), { recursive: true }); writeFileSync(join(res, "plugins", f), `${f}\n`); }
+    for (const f of ["moss/moss.json", "alpha/moss.json", "alpha/host.js"]) { mkdirSync(join(res, "plugins", f, ".."), { recursive: true }); writeFileSync(join(res, "plugins", f), `${f}\n`); }
     return { res, manifest: measureBundledTree(join(res, "plugins")) };
   };
 
@@ -129,27 +129,27 @@ describe("the packaged app's bundled plugins", () => {
   test("each manifest there; nothing left out; no symlink, never followed (a cycle ends)", () => {
     const res = mkdtempSync(join(tmpdir(), "lane-m-res-"));
     const dir = join(res, "plugins");
-    for (const f of ["clover/clover.json", "alpha/clover.json", "alpha/tab/theme.css"]) { mkdirSync(join(dir, f, ".."), { recursive: true }); writeFileSync(join(dir, f), "{}"); }
+    for (const f of ["moss/moss.json", "alpha/moss.json", "alpha/tab/theme.css"]) { mkdirSync(join(dir, f, ".."), { recursive: true }); writeFileSync(join(dir, f), "{}"); }
     const manifest = measureBundledTree(dir);
     expect(bundledPluginsProblems(res, manifest, existsSync, walkTree)).toEqual([]);
     // A symlink loop: walked with lstat, reported, never followed.
     symlinkSync(dir, join(dir, "alpha", "loop"));
-    symlinkSync("/etc", join(dir, "clover", "outside"));
+    symlinkSync("/etc", join(dir, "moss", "outside"));
     const problems = bundledPluginsProblems(res, manifest, existsSync, walkTree);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("holds symlinks");
     expect(problems[0]).toContain("alpha/loop");
-    expect(problems[0]).toContain("clover/outside");
+    expect(problems[0]).toContain("moss/outside");
   });
 
   test("a missing manifest, and an environment file or OS artifact anywhere (a built tree's node_modules is fine), is a problem", () => {
-    const ok = [{ rel: "clover/clover.json", link: false }, { rel: "alpha/clover.json", link: false }];
-    const files = new Set(["/r/plugins/clover/clover.json", "/r/plugins/alpha/clover.json"]);
+    const ok = [{ rel: "moss/moss.json", link: false }, { rel: "alpha/moss.json", link: false }];
+    const files = new Set(["/r/plugins/moss/moss.json", "/r/plugins/alpha/moss.json"]);
     const manifest: BundledManifest = { files: {} };
     const measure = (): BundledManifest => manifest;
-    expect(bundledPluginsProblems("/r", manifest, (p) => p !== "/r/plugins/alpha/clover.json", () => ok, measure)).toEqual(["/r/plugins/alpha/clover.json is missing: the alpha plugin isn't bundled"]);
-    expect(bundledPluginsProblems("/r", manifest, (p) => files.has(p), () => [...ok, { rel: "clover/node_modules/node-datachannel/build/Release/node_datachannel.node", link: false }], measure)).toEqual([]);
-    for (const stray of ["alpha/.env", "alpha/.env.local", "clover/.DS_Store", "clover/node_modules/x/.env"]) {
+    expect(bundledPluginsProblems("/r", manifest, (p) => p !== "/r/plugins/alpha/moss.json", () => ok, measure)).toEqual(["/r/plugins/alpha/moss.json is missing: the alpha plugin isn't bundled"]);
+    expect(bundledPluginsProblems("/r", manifest, (p) => files.has(p), () => [...ok, { rel: "moss/node_modules/node-datachannel/build/Release/node_datachannel.node", link: false }], measure)).toEqual([]);
+    for (const stray of ["alpha/.env", "alpha/.env.local", "moss/.DS_Store", "moss/node_modules/x/.env"]) {
       expect(bundledPluginsProblems("/r", manifest, (p) => files.has(p), () => [...ok, { rel: stray, link: false }], measure)[0]).toContain(stray);
     }
   });
@@ -159,16 +159,16 @@ describe("a bundled plugin's runtime dependencies", () => {
   test("must ship with it (in its node_modules or one above it in the tree); React and React DOM come from the layer, the SDK doesn't", () => {
     expect([...LAYER_PROVIDED_PACKAGES].sort()).toEqual(["react", "react-dom"]);
     const pkgs: Record<string, string> = {
-      "clover/plugins/ui/package.json": JSON.stringify({ dependencies: { react: "19.3.1", "lucide-react": "1.61.0", "@waifucave/clover-plugin-sdk": "workspace:*" }, peerDependencies: { "react-dom": "^19" }, devDependencies: { typescript: "5" } }),
-      "clover/plugins/host/package.json": JSON.stringify({ dependencies: { "@waifucave/clover-provider-runtime": "0.0.71" }, optionalDependencies: { fflate: "0.8.3" }, peerDependencies: { three: "*" } }),
-      "clover/plugins/host/node_modules/fflate/package.json": "{}",
+      "moss/plugins/ui/package.json": JSON.stringify({ dependencies: { react: "19.3.1", "lucide-react": "1.61.0", "@waifucave/moss-plugin-sdk": "workspace:*" }, peerDependencies: { "react-dom": "^19" }, devDependencies: { typescript: "5" } }),
+      "moss/plugins/host/package.json": JSON.stringify({ dependencies: { "@waifucave/clover-provider-runtime": "0.0.71" }, optionalDependencies: { fflate: "0.8.3" }, peerDependencies: { three: "*" } }),
+      "moss/plugins/host/node_modules/fflate/package.json": "{}",
       // Above it in the tree: found by Node's lookup.
-      "clover/node_modules/three/package.json": "{}",
-      "clover/plugins/none/package.json": JSON.stringify({ devDependencies: { typescript: "5" } }),
+      "moss/node_modules/three/package.json": "{}",
+      "moss/plugins/none/package.json": JSON.stringify({ devDependencies: { typescript: "5" } }),
     };
     expect(unshippedPluginDependencies(Object.keys(pkgs), (rel) => pkgs[rel]!)).toEqual([
-      "clover/plugins/host: @waifucave/clover-provider-runtime",
-      "clover/plugins/ui: @waifucave/clover-plugin-sdk", "clover/plugins/ui: lucide-react",
+      "moss/plugins/host: @waifucave/clover-provider-runtime",
+      "moss/plugins/ui: @waifucave/moss-plugin-sdk", "moss/plugins/ui: lucide-react",
     ]);
   });
 });
@@ -192,7 +192,7 @@ describe("the exact import check on a built tree", () => {
 
   test("a correct tree passes: client bare imports within the layer's, host ones builtin or shipped (at or above), natives for the target", () => {
     const ok = [
-      { file: "ui/entry.js", kind: "client" as const, source: `import { jsx } from "react/jsx-runtime"; import { useUi } from "@waifucave/clover-plugin-sdk/ui"; import "./chunk.js";` },
+      { file: "ui/entry.js", kind: "client" as const, source: `import { jsx } from "react/jsx-runtime"; import { useUi } from "@waifucave/moss-plugin-sdk/ui"; import "./chunk.js";` },
       { file: "host/index.js", kind: "host" as const, source: `import { run } from "@waifucave/clover-provider-runtime"; import fs from "node:fs"; import path from "path"; import { $ } from "bun"; var __require = import.meta.require; __require("ws"); __require("node-datachannel");` },
     ];
     expect(builtPluginImportProblems(ok, tree, { target: "linux-x64", natives: [{ file: "host/natives/node_datachannel.node", package: "node-datachannel", target: "linux-x64" }] })).toEqual([]);
@@ -201,7 +201,7 @@ describe("the exact import check on a built tree", () => {
   test("everything else is refused", () => {
     const one = (kind: "client" | "host", source: string, o = {}) => builtPluginImportProblems([{ file: kind === "client" ? "ui/entry.js" : "host/index.js", kind, source }], tree, o);
     expect(one("client", `import { X } from "lucide-react";`)[0]).toContain("a client module imports lucide-react");
-    expect(one("client", `import "@waifucave/clover-plugin-sdk";`)[0]).toContain("a client module imports @waifucave/clover-plugin-sdk");
+    expect(one("client", `import "@waifucave/moss-plugin-sdk";`)[0]).toContain("a client module imports @waifucave/moss-plugin-sdk");
     expect(one("host", `var __require = import.meta.require; __require("left-pad");`)).toEqual(["host/index.js: host code imports left-pad, which nothing in the shipped tree provides"]);
     expect(one("host", `const m = await import(name);`)[0]).toContain("computed specifier");
     for (const spec of ["/etc/passwd", "file:///etc/passwd", "data:text/javascript,x", "https://example.com/x.js", "http://example.com/x.js"]) {
@@ -245,41 +245,41 @@ describe("the bundled plugins, built for shipping (lane B's buildPluginForShippi
     };
 
   test("each top-level plugin is built from its committed files only, for the target, and the paths come back as <id>/…", async () => {
-    const dir = repo({ "plugins/clover/clover.json": "{}", "plugins/clover/host.js": "import x from \"node-datachannel\";\nexport default x;\n", "plugins/alpha/clover.json": "{}", "plugins/alpha/tab/tsconfig.json": "{}" });
+    const dir = repo({ "plugins/moss/moss.json": "{}", "plugins/moss/host.js": "import x from \"node-datachannel\";\nexport default x;\n", "plugins/alpha/moss.json": "{}", "plugins/alpha/tab/tsconfig.json": "{}" });
     writeFileSync(join(dir, ".gitignore"), "");
     const calls: Array<{ folder: string; target: string; out: string; seen: string[] }> = [];
     const dest = join(dir, "out", "plugins");
-    const built = await buildBundledPlugins(dir, dest, "linux-x64", { build: fakeBuild(calls, { clover: "node_modules/node-datachannel/package.json" }) });
-    expect(calls.map((c) => [c.folder.split("/").slice(-2).join("/"), c.target, c.out === join(dest, c.folder.split("/").at(-1)!)])).toEqual([["plugins/alpha", "linux-x64", true], ["plugins/clover", "linux-x64", true]]);
+    const built = await buildBundledPlugins(dir, dest, "linux-x64", { build: fakeBuild(calls, { moss: "node_modules/node-datachannel/package.json" }) });
+    expect(calls.map((c) => [c.folder.split("/").slice(-2).join("/"), c.target, c.out === join(dest, c.folder.split("/").at(-1)!)])).toEqual([["plugins/alpha", "linux-x64", true], ["plugins/moss", "linux-x64", true]]);
     // The staging filter applies to the source: the committed tsconfig is never handed to the build.
-    expect(calls[0]!.seen).toEqual(["clover.json"]);
-    expect(built.files).toEqual(["alpha/clover.json", "clover/clover.json", "clover/host.js", "clover/node_modules/node-datachannel/package.json"]);
-    expect(built.modules.map((m) => m.file)).toEqual(["clover/host.js"]);
-    expect(built.natives).toEqual([{ file: "clover/node_modules/node-datachannel/package.json", package: "node-datachannel", target: "linux-x64" }]);
+    expect(calls[0]!.seen).toEqual(["moss.json"]);
+    expect(built.files).toEqual(["alpha/moss.json", "moss/moss.json", "moss/host.js", "moss/node_modules/node-datachannel/package.json"]);
+    expect(built.modules.map((m) => m.file)).toEqual(["moss/host.js"]);
+    expect(built.natives).toEqual([{ file: "moss/node_modules/node-datachannel/package.json", package: "node-datachannel", target: "linux-x64" }]);
   });
 
   test("an uncommitted file is never handed to the build: a dirty plugins/ is refused before any build", async () => {
-    const dir = repo({ "plugins/clover/clover.json": "{}" });
-    writeFileSync(join(dir, "plugins", "clover", "extra.js"), "untracked");
+    const dir = repo({ "plugins/moss/moss.json": "{}" });
+    writeFileSync(join(dir, "plugins", "moss", "extra.js"), "untracked");
     const calls: Array<{ folder: string; target: string; out: string; seen: string[] }> = [];
     await expect(buildBundledPlugins(dir, join(dir, "out", "plugins"), "darwin-arm64", { build: fakeBuild(calls) })).rejects.toThrow("uncommitted changes");
     expect(calls).toEqual([]);
   });
 
   test("the release's checks run on the built tree: an import nothing ships fails the build, and the stage is removed", async () => {
-    const dir = repo({ "plugins/clover/clover.json": "{}", "plugins/clover/host.js": "import x from \"left-pad\";\nexport default x;\n" });
+    const dir = repo({ "plugins/moss/moss.json": "{}", "plugins/moss/host.js": "import x from \"left-pad\";\nexport default x;\n" });
     const dest = join(dir, "out", "plugins");
     await expect(buildBundledPlugins(dir, dest, "darwin-arm64", { build: fakeBuild([]) })).rejects.toThrow("host code imports left-pad, which nothing in the shipped tree provides");
     expect(existsSync(dest)).toBe(false);
     // A native shipped for another target than the one built for is refused too.
-    const other: PluginBuilder = async (folder, o) => ({ ...(await fakeBuild([], { clover: "node_modules/n/x.node" })(folder, o)), natives: [{ file: "node_modules/n/x.node", package: "n", target: "windows-x64" }] });
-    const dir2 = repo({ "plugins/clover/clover.json": "{}" });
+    const other: PluginBuilder = async (folder, o) => ({ ...(await fakeBuild([], { moss: "node_modules/n/x.node" })(folder, o)), natives: [{ file: "node_modules/n/x.node", package: "n", target: "windows-x64" }] });
+    const dir2 = repo({ "plugins/moss/moss.json": "{}" });
     await expect(buildBundledPlugins(dir2, join(dir2, "out", "plugins"), "darwin-arm64", { build: other })).rejects.toThrow("a native addon for windows-x64, not darwin-arm64");
   });
 
   test("a package.json naming a dependency nothing ships fails the build", async () => {
-    const dir = repo({ "plugins/clover/clover.json": "{}", "plugins/clover/package.json": "{\"dependencies\":{\"left-pad\":\"1\"}}" });
-    await expect(buildBundledPlugins(dir, join(dir, "out", "plugins"), "darwin-arm64", { build: fakeBuild([]) })).rejects.toThrow("clover: left-pad: a dependency nothing ships");
+    const dir = repo({ "plugins/moss/moss.json": "{}", "plugins/moss/package.json": "{\"dependencies\":{\"left-pad\":\"1\"}}" });
+    await expect(buildBundledPlugins(dir, join(dir, "out", "plugins"), "darwin-arm64", { build: fakeBuild([]) })).rejects.toThrow("moss: left-pad: a dependency nothing ships");
   });
 });
 
@@ -328,15 +328,15 @@ describe("what the bundler read: every input tracked at HEAD or in a package bun
   test("the reviewer's probe: an entry importing an ignored file outside its plugin gets it inlined, and the inputs check refuses it by name", async () => {
     const dir = repo({
       ".gitignore": "ignored/\n",
-      "plugins/clover/host.ts": "import { gen } from \"../../ignored/gen.ts\";\nexport const x = gen;\n",
+      "plugins/moss/host.ts": "import { gen } from \"../../ignored/gen.ts\";\nexport const x = gen;\n",
     });
     mkdirSync(join(dir, "ignored"));
     writeFileSync(join(dir, "ignored", "gen.ts"), "export const gen = \"generated, never committed\";\n");
     const out = mkdtempSync(join(tmpdir(), "lane-m-inputs-out-"));
-    const built = await buildPluginModule({ entry: join(dir, "plugins", "clover", "host.ts"), outFile: join(out, "host.js"), side: "bun" });
+    const built = await buildPluginModule({ entry: join(dir, "plugins", "moss", "host.ts"), outFile: join(out, "host.js"), side: "bun" });
     // Inlined: the copy filter never saw it.
     expect(built.source).toContain("generated, never committed");
-    expect(built.inputs.map((p) => p.split("/").slice(-2).join("/")).sort()).toEqual(["clover/host.ts", "ignored/gen.ts"]);
+    expect(built.inputs.map((p) => p.split("/").slice(-2).join("/")).sort()).toEqual(["moss/host.ts", "ignored/gen.ts"]);
     expect(await repoInputVetter(dir)(built.inputs)).toEqual(["ignored/gen.ts: the build read a file that isn't tracked at HEAD"]);
     // Through the release's build: the build fails, naming it, and the stage is removed.
     const dest = join(dir, "out", "plugins");
@@ -353,7 +353,7 @@ describe("what the bundler read: every input tracked at HEAD or in a package bun
     const leftPad = { "package.json": JSON.stringify({ name: "left-pad", version: "1.3.0" }), "index.js": "module.exports = 1;" };
     const react = { "package.json": JSON.stringify({ name: "react", version: "19.0.0" }), "index.js": "export const r = 1;" };
     const tarballs: Record<string, Uint8Array> = { "left-pad@1.3.0": tgz(leftPad), "react@19.0.0": tgz(react) };
-    const dir = repo({ "bun.lock": lockFor(tarballs), "plugins/clover/host.ts": "x" });
+    const dir = repo({ "bun.lock": lockFor(tarballs), "plugins/moss/host.ts": "x" });
     install(dir, "left-pad", leftPad);
     install(dir, "react", react);
     const fetched: string[] = [];
@@ -364,7 +364,7 @@ describe("what the bundler read: every input tracked at HEAD or in a package bun
     };
     const vet = repoInputVetter(dir, { download });
     const nm = (p: string): string => join(dir, "node_modules", ...p.split("/"));
-    expect(await vet([nm("left-pad/index.js"), nm("react/index.js"), join(dir, "plugins", "clover", "host.ts")])).toEqual([]);
+    expect(await vet([nm("left-pad/index.js"), nm("react/index.js"), join(dir, "plugins", "moss", "host.ts")])).toEqual([]);
     // Each package's tarball is fetched once, from npm's registry.
     expect(fetched.sort()).toEqual(["https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz", "https://registry.npmjs.org/react/-/react-19.0.0.tgz"]);
     // The reviewer's probes: a file added to an installed, locked package ...

@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type * as Proto from "@waifucave/clover-protocol";
+import type * as Proto from "@waifucave/moss-protocol";
 import type * as Views from "../src/views";
 import { viewsSource } from "../scripts/views";
 

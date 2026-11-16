@@ -21,20 +21,20 @@ describe("build:daemon", () => {
   });
 
   test("each target's output, with .exe on Windows only", () => {
-    expect(daemonFileName("windows-x64")).toBe("clover-core.exe");
-    expect(daemonOutput("windows-x64")).toBe("dist/daemon/windows-x64/clover-core.exe");
-    for (const t of ["darwin-arm64", "linux-x64", "linux-arm64"] as const) expect(daemonOutput(t)).toBe(`dist/daemon/${t}/clover-core`);
+    expect(daemonFileName("windows-x64")).toBe("moss-core.exe");
+    expect(daemonOutput("windows-x64")).toBe("dist/daemon/windows-x64/moss-core.exe");
+    for (const t of ["darwin-arm64", "linux-x64", "linux-arm64"] as const) expect(daemonOutput(t)).toBe(`dist/daemon/${t}/moss-core`);
   });
 
   test("a test-marked core's command differs only in the test-build define, which carries the label", () => {
     const real = daemonCompileCommand(compileCore, "darwin-arm64");
     const test = daemonCompileCommand(compileCore, "darwin-arm64", false, true);
-    expect(test).toBe(real.replaceAll("--define __CLOVER_TEST_BUILD__=false ", `--define '__CLOVER_TEST_BUILD__="${TEST_BUILD_LABEL}"' `));
-    expect(test.split(`'__CLOVER_TEST_BUILD__="${TEST_BUILD_LABEL}"'`).length).toBe(7);
-    expect(test).not.toContain("__CLOVER_TEST_BUILD__=false");
+    expect(test).toBe(real.replaceAll("--define __MOSS_TEST_BUILD__=false ", `--define '__MOSS_TEST_BUILD__="${TEST_BUILD_LABEL}"' `));
+    expect(test.split(`'__MOSS_TEST_BUILD__="${TEST_BUILD_LABEL}"'`).length).toBe(7);
+    expect(test).not.toContain("__MOSS_TEST_BUILD__=false");
     expect(() => daemonCompileCommand(compileCore, "linux-x64", false, true)).toThrow("macOS's");
-    expect(versionLine("1.2.3")).toBe("clover 1.2.3");
-    expect(versionLine("1.2.3", true)).toBe(`clover 1.2.3 test build (${TEST_BUILD_LABEL}: a test-marked build, never for release)`);
+    expect(versionLine("1.2.3")).toBe("moss 1.2.3");
+    expect(versionLine("1.2.3", true)).toBe(`moss 1.2.3 test build (${TEST_BUILD_LABEL}: a test-marked build, never for release)`);
   });
 
   test("the command is compile:core itself, with only the target and the output changed", () => {
@@ -42,23 +42,23 @@ describe("build:daemon", () => {
       const command = daemonCompileCommand(compileCore, target);
       expect(command).toBe(compileCore
         .replace("bun build --compile", `bun build --compile --target=${DAEMON_TARGETS[target]} --compile-exec-argv=--use-system-ca`)
-        .replace("--outfile ../../dist/clover-core", `--outfile ../../${daemonOutput(target)}`)
-        .replaceAll("bun build ", "bun build --define __CLOVER_DIST__=true --define __CLOVER_TEST_BUILD__=false "));
+        .replace("--outfile ../../dist/moss-core", `--outfile ../../${daemonOutput(target)}`)
+        .replaceAll("bun build ", "bun build --define __MOSS_DIST__=true --define __MOSS_TEST_BUILD__=false "));
       // The pre-bundles (the two workers, the plugin host's two bundles, the client builder's) stay as they are but for
       // the dist define and the test-build define's `false` (scripts/test-build.ts), and the compile keeps all six entrypoints.
       const steps = command.split("&&").map((s) => s.trim());
       expect(steps.length).toBe(6);
-      for (const step of steps) expect(step.startsWith("bun build --define __CLOVER_DIST__=true --define __CLOVER_TEST_BUILD__=false ")).toBe(true);
-      expect(steps.slice(0, 5)).toEqual(compileCore.split("&&").map((s) => s.trim().replace("bun build ", "bun build --define __CLOVER_DIST__=true --define __CLOVER_TEST_BUILD__=false ")).slice(0, 5));
-      expect(steps[5]).toContain("src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/clover-plugin-host.bundle .build/clover-plugin-worker.bundle .build/clover-plugin-builder.bundle");
+      for (const step of steps) expect(step.startsWith("bun build --define __MOSS_DIST__=true --define __MOSS_TEST_BUILD__=false ")).toBe(true);
+      expect(steps.slice(0, 5)).toEqual(compileCore.split("&&").map((s) => s.trim().replace("bun build ", "bun build --define __MOSS_DIST__=true --define __MOSS_TEST_BUILD__=false ")).slice(0, 5));
+      expect(steps[5]).toContain("src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/moss-plugin-host.bundle .build/moss-plugin-worker.bundle .build/moss-plugin-builder.bundle");
     }
   });
 
   test("--plugins-manifest: the compile step embeds the manifest file (a fourth input, beside the worker bundles)", () => {
     const command = daemonCompileCommand(compileCore, "darwin-arm64", true);
     const steps = command.split("&&").map((s) => s.trim());
-    expect(steps[5]).toContain(`src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/clover-plugin-host.bundle .build/clover-plugin-worker.bundle .build/clover-plugin-builder.bundle ${MANIFEST_EMBED} --outfile ../../dist/daemon/darwin-arm64/clover-core`);
-    expect(MANIFEST_EMBED).toBe(".build/clover-bundled-plugins.manifest");
+    expect(steps[5]).toContain(`src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/moss-plugin-host.bundle .build/moss-plugin-worker.bundle .build/moss-plugin-builder.bundle ${MANIFEST_EMBED} --outfile ../../dist/daemon/darwin-arm64/moss-core`);
+    expect(MANIFEST_EMBED).toBe(".build/moss-bundled-plugins.manifest");
     expect(steps.slice(0, 5).join(" ")).not.toContain(MANIFEST_EMBED);
     expect(daemonCompileCommand(compileCore, "darwin-arm64")).not.toContain(MANIFEST_EMBED);
     expect(parseBuildDaemonArgs(["--plugins-manifest", "/x/m.manifest"], "darwin-arm64")).toEqual({ targets: ["darwin-arm64"], smoke: false, dryRun: false, pluginsManifest: "/x/m.manifest" });
@@ -83,7 +83,7 @@ describe("build:daemon", () => {
 
   test("a compile:core of another shape is refused, not guessed at", () => {
     expect(() => daemonCompileCommand("bun build --compile src/main.ts --outfile elsewhere", "linux-x64")).toThrow("update scripts/build-daemon.ts");
-    expect(() => daemonCompileCommand("bun build src/main.ts --outfile ../../dist/clover-core", "linux-x64")).toThrow("update scripts/build-daemon.ts");
+    expect(() => daemonCompileCommand("bun build src/main.ts --outfile ../../dist/moss-core", "linux-x64")).toThrow("update scripts/build-daemon.ts");
   });
 
   test("arguments: the host by default, a list or --all, and --smoke only with the host's own target", () => {

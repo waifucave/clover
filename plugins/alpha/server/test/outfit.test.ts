@@ -7,8 +7,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AvatarCatalogue, AvatarCue, AvatarCueResult } from "../../../../packages/plugin-sdk/src/catalogs/avatar-cues";
 import * as tab from "../../client/outfits";
-import { glbJson } from "../../../clover/plugins/vrm/src/vrm/glb";
-import { OUTFITS as MODEL_OUTFITS } from "../../../clover/plugins/vrm/src/placeholder/model";
+import { glbJson } from "../../../moss/plugins/vrm/src/vrm/glb";
+import { OUTFITS as MODEL_OUTFITS } from "../../../moss/plugins/vrm/src/placeholder/model";
 import { outfit as outfitCommand } from "../index";
 import { DEFAULT_OUTFIT, OUTFIT_VALUES, OUTFITS, outfitCues, pickOutfit, wearsHerOutfits } from "../outfits";
 import { STAGE_KEY } from "../stage";
@@ -17,7 +17,7 @@ import { runStageTool } from "../tools";
 import { ALPHA, fakeApi, fakeAvatar, MODEL } from "./fakes";
 
 const HERS: AvatarCatalogue = {
-  format: "vrm", renderer: "clover/vrm", capabilities: ["lipsync", "expressions", "lookat", "pace", "outfits"],
+  format: "vrm", renderer: "moss/vrm", capabilities: ["lipsync", "expressions", "lookat", "pace", "outfits"],
   expressions: ["happy"], motions: [], outfits: OUTFIT_VALUES.map((name, i) => ({ name, on: i === 0 })),
 };
 
@@ -104,7 +104,7 @@ describe("another avatar picked for her", () => {
 
 describe("one list of her outfits", () => {
   test("her tab, her server, her manifest's options and her model's marks name the same three, the lilac dress first and the default", () => {
-    const manifest = JSON.parse(readFileSync(join(ALPHA, "clover.json"), "utf8")) as { settings: Record<string, { type: string; default: unknown; options: { value: string; title: { en: string } }[]; scope?: string }> };
+    const manifest = JSON.parse(readFileSync(join(ALPHA, "moss.json"), "utf8")) as { settings: Record<string, { type: string; default: unknown; options: { value: string; title: { en: string } }[]; scope?: string }> };
     const setting = manifest.settings.outfit!;
     expect(setting.type).toBe("enum");
     expect(setting.options.map((o) => ({ value: o.value, title: o.title.en }))).toEqual(OUTFITS.map((o) => ({ ...o })));
@@ -112,11 +112,11 @@ describe("one list of her outfits", () => {
     expect(tab.OUTFITS.map((o) => ({ ...o }))).toEqual(OUTFITS.map((o) => ({ ...o })));
     expect(tab.DEFAULT_OUTFIT).toBe(DEFAULT_OUTFIT);
     expect([...MODEL_OUTFITS]).toEqual([...OUTFIT_VALUES]);
-    const json = glbJson(new Uint8Array(readFileSync(join(ALPHA, "assets", "alpha.vrm")))) as { nodes: { extras?: { clover?: { outfit?: string; on?: boolean } } }[] };
-    const marked = [...new Set(json.nodes.flatMap((n) => (n.extras?.clover?.outfit !== undefined ? [n.extras.clover.outfit] : [])))];
+    const json = glbJson(new Uint8Array(readFileSync(join(ALPHA, "assets", "alpha.vrm")))) as { nodes: { extras?: { moss?: { outfit?: string; on?: boolean } } }[] };
+    const marked = [...new Set(json.nodes.flatMap((n) => (n.extras?.moss?.outfit !== undefined ? [n.extras.moss.outfit] : [])))];
     expect(marked).toEqual([...OUTFIT_VALUES]);
     // Shown at load: the default only, so her look with nothing set is the one she always had.
-    expect(json.nodes.filter((n) => n.extras?.clover?.outfit !== undefined && n.extras.clover.on !== false).every((n) => n.extras!.clover!.outfit === DEFAULT_OUTFIT)).toBe(true);
+    expect(json.nodes.filter((n) => n.extras?.moss?.outfit !== undefined && n.extras.moss.on !== false).every((n) => n.extras!.moss!.outfit === DEFAULT_OUTFIT)).toBe(true);
   });
 });
 

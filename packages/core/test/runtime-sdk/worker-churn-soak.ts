@@ -7,7 +7,7 @@
 //   2. CONCURRENCY: `concurrent` code sessions live at once, each through one turn, to measure what one live
 //      code session's Worker costs the daemon in resident memory.
 // Prints one JSON line: the rounds completed, the RSS readings, and the per-session estimate.
-import { METHODS } from "@waifucave/clover-protocol";
+import { METHODS } from "@waifucave/moss-protocol";
 import { memory, perMeter, startSoakDaemon } from "./soak-support";
 
 const rounds = Number(process.env["SOAK_ROUNDS"] ?? "80");
@@ -31,7 +31,7 @@ try {
   let completed = 0;
   for (let i = 0; i < rounds; i++) {
     const sid = await oneTurn();
-    await daemon.clover.get(sid)?.end();
+    await daemon.moss.get(sid)?.end();
     completed++;
   }
   out["churnRounds"] = completed;
@@ -42,7 +42,7 @@ try {
   for (let i = 0; i < concurrent; i++) ids.push(await oneTurn());
   const withLive = memory();
   out["liveDuring"] = daemon.embedded.live().length;
-  for (const sid of ids) await daemon.clover.get(sid)?.end();
+  for (const sid of ids) await daemon.moss.get(sid)?.end();
   await Bun.sleep(500);
   const afterEnd = memory();
   out["memoryMb"] = {

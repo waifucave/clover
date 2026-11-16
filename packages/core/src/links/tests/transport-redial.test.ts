@@ -8,7 +8,7 @@ import { SystemClock } from "../../clock/system-clock";
 import { FileDeviceRegistry } from "../../devices/registry";
 import { MemoryNetwork } from "../memory-wire";
 import { makeDeviceKey, makeLinkCluster, recordFor } from "../testing";
-import { CloverLinkTransport } from "../transport";
+import { MossLinkTransport } from "../transport";
 import { WireOffline, type DialOptions, type DialTarget, type WireConn, type WireEndpoint } from "../wire";
 
 const clock = new SystemClock();
@@ -41,7 +41,7 @@ async function pairOf(hangA: number) {
   const net = new MemoryNetwork();
   const ka = await makeDeviceKey();
   const kb = await makeDeviceKey();
-  const reg = async (k: typeof ka, name: string) => FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-redial-")), key: k, clock, self: { name } });
+  const reg = async (k: typeof ka, name: string) => FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "moss-h-redial-")), key: k, clock, self: { name } });
   const ra = await reg(ka, "a");
   const rb = await reg(kb, "b");
   await ra.add(recordFor(kb, "b"), { via: "terminal" });
@@ -49,8 +49,8 @@ async function pairOf(hangA: number) {
   const wa = hanging(net.endpoint(ka.publicKey), hangA);
   const keyOf = new Map([[ka.id, ka.publicKey], [kb.id, kb.publicKey]]);
   const directory = { target: (id: string) => ({ key: keyOf.get(id)!, relay: "https://relay.test/" }) };
-  const ta = new CloverLinkTransport({ self: ka.id, wire: wa, registry: ra, directory, clock, dialTimeoutMs: 20_000 });
-  const tb = new CloverLinkTransport({ self: kb.id, wire: net.endpoint(kb.publicKey), registry: rb, directory, clock });
+  const ta = new MossLinkTransport({ self: ka.id, wire: wa, registry: ra, directory, clock, dialTimeoutMs: 20_000 });
+  const tb = new MossLinkTransport({ self: kb.id, wire: net.endpoint(kb.publicKey), registry: rb, directory, clock });
   stops.push(() => ta.close(), () => tb.close());
   tb.handle("who", () => "b");
   return { ka, kb, ta, tb, wa };

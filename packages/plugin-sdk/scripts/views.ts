@@ -2,7 +2,7 @@
 // TypeScript into `src/views.ts` from the core's own schemas, so the SDK's published types stand alone (the protocol
 // package is not published). `bun run generate` writes it; a test checks it is current.
 import { z } from "zod";
-import * as Proto from "@waifucave/clover-protocol";
+import * as Proto from "@waifucave/moss-protocol";
 
 /** The views, by the name the SDK exports them under. */
 export const VIEWS: Readonly<Record<string, z.ZodType>> = {

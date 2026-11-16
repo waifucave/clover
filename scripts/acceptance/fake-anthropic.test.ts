@@ -122,7 +122,7 @@ describe("what the fake acts on: the newest directive in the user text", () => {
 });
 
 describe("the outside-the-sandbox step's scripted calls", () => {
-  const url = "http://127.0.0.1:4321/clover-outside-probe";
+  const url = "http://127.0.0.1:4321/moss-outside-probe";
   test("a command that needs the network, in the sandbox and flagged to leave it", () => {
     expect(netCommandCall(`ACCEPTANCE-NETCMD ${url}`)).toEqual({ tool: "Bash", input: { command: netCommand(url), description: "Fetch the probe page" } });
     expect(netCommandCall(`ACCEPTANCE-NETCMD-OUTSIDE ${url}`)).toEqual({ tool: "Bash", input: { command: netCommand(url), description: "Fetch the probe page", dangerouslyDisableSandbox: true } });
@@ -132,7 +132,7 @@ describe("the outside-the-sandbox step's scripted calls", () => {
     expect(routine.tool).toBe("Routine");
     expect(netCommandCall(`<routine name="Outside probe" id="r_1">\n${String(routine.input.instructions)}\n</routine>`)?.input.dangerouslyDisableSandbox).toBe(true);
     const agent = netCommandCall(`ACCEPTANCE-AGENT-NETCMD home/mac/agent-notes ${url}`)!;
-    expect(agent).toMatchObject({ tool: "Agent", input: { backend: "clover-code", root: "home/mac/agent-notes" } });
+    expect(agent).toMatchObject({ tool: "Agent", input: { backend: "moss-code", root: "home/mac/agent-notes" } });
     expect(netCommandCall(String(agent.input.prompt))?.input.dangerouslyDisableSandbox).toBe(true);
   });
   test("each is the newest directive in its text, and other text calls nothing", () => {
@@ -150,10 +150,10 @@ describe("the agent row's echo probe (row 1.93): an agent calls the echo plugin'
         body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 10, tools: tools.map((name) => ({ name, input_schema: { type: "object" } })), messages: [{ role: "user", content: [{ type: "text", text }] }] }),
       })).json()) as { content: { type: string; name?: string; input?: Record<string, unknown>; text?: string }[] };
       const agent = await send("ACCEPTANCE-AGENT-ECHO home/mac/agent-echo", ["Agent", "Glossary"]);
-      expect(agent.content[0]).toMatchObject({ type: "tool_use", name: "Agent", input: { backend: "clover-code", root: "home/mac/agent-echo" } });
+      expect(agent.content[0]).toMatchObject({ type: "tool_use", name: "Agent", input: { backend: "moss-code", root: "home/mac/agent-echo" } });
       const brief = String(agent.content[0]!.input!.prompt);
       expect(brief).toStartWith("ACCEPTANCE-CHILD-ECHO");
-      const bridged = "mcp__clover_0123456789abcdef__acceptance-echo-echo__Echo";
+      const bridged = "mcp__moss_0123456789abcdef__acceptance-echo-echo__Echo";
       const child = await send(brief, ["mcp__acceptance-echo-echo__Echo", bridged]);
       expect(child.content[0]).toMatchObject({ type: "tool_use", name: bridged, input: { text: "acceptance-child-ping" } });
       // Only a bot's own Echo offered: no call, and the tools it was offered are said.

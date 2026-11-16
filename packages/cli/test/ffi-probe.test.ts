@@ -1,4 +1,4 @@
-// `clover-core __ffi-probe` (src/ffi-probe.ts): bun:ffi reaches the C library and gets this process's pid. The compiled
+// `moss-core __ffi-probe` (src/ffi-probe.ts): bun:ffi reaches the C library and gets this process's pid. The compiled
 // binary's own run is `build:daemon --smoke`'s, on each CI machine.
 import { expect, test } from "bun:test";
 import { ffiPidCall, runFfiProbe, runPeerPidProbe } from "../src/ffi-probe";

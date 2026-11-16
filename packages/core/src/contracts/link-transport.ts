@@ -2,7 +2,7 @@
 // with" item 2). Owner: lane H.
 //
 // Each pair of devices keeps one long-lived, encrypted link, and everything travels over it: RPC, live event streams,
-// sync, screenshots and files. Between devices it is iroh (QUIC) through Clover's own addon; the browser uses WebRTC
+// sync, screenshots and files. Between devices it is iroh (QUIC) through MOSS's own addon; the browser uses WebRTC
 // data channels. Nothing outside lane H sees iroh.
 //
 // What the contract promises:
@@ -20,7 +20,7 @@
 //   confirmation, a replaced provider credential) without its own card answered here or a signed answer bound to that
 //   change (`verifySignedAnswer`): the entry waits as a request. The
 //   same holds for what a peer's `peer.call`, `tool.run` or `tree.*` asks for (`peerCallVerdict`, `peerTreeDecision`).
-import type { LinkView } from "@waifucave/clover-protocol";
+import type { LinkView } from "@waifucave/moss-protocol";
 import type { Unsubscribe } from "./common";
 
 export const LINK_PRIORITIES = ["control", "tokens", "screenshots", "files"] as const;

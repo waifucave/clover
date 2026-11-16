@@ -16,7 +16,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# A-M1: the `@waifucave` scope (the agent SDK's packages, `@waifucave/clover-*`, `@waifucave/mochi2d` and the owner's
+# A-M1: the `@waifucave` scope (the agent SDK's packages, `@waifucave/moss-*`, `@waifucave/mochi2d` and the owner's
 # other packages) comes from GitHub Packages, which wants a token even to read. Every job may read it with this
 # workflow's own token (`packages: read`); the repo's `.npmrc` takes it from NODE_AUTH_TOKEN, which only the install
 # steps are given, so no test or build step sees it. A job with its own `permissions:` block sets `packages: read`
@@ -128,17 +128,17 @@ jobs:
       - name: The rename's rules, the layout, the workspaces and the CI areas
         run: bun test scripts/rename/ scripts/layout.test.ts scripts/workspaces.test.ts scripts/ci-changes.test.ts
 
-      # The headless shell's pin (lane L's, plugins/clover/plugins/browser/headless-shell.pins.json) follows the app's
+      # The headless shell's pin (lane L's, plugins/moss/plugins/browser/headless-shell.pins.json) follows the app's
       # Electron: the same Chromium milestone (spec §12.1). It warns while the file doesn't exist yet.
       - name: The headless shell's pin follows Electron
         run: bun scripts/check-headless-pin.ts
 
   # One job per machine (macOS arm64, Linux x64 and arm64, Windows x64), each step run only when this change needs it:
-  #  - every workspace package's `test` (docs/clover-layout.md): `scripts/workspaces.ts` runs each one that has the
-  #    script, where its `cloverCi.os` allows, and skips core and cli (`cloverCi.ownJob`). On Linux the tests run under
+  #  - every workspace package's `test` (docs/moss-layout.md): `scripts/workspaces.ts` runs each one that has the
+  #    script, where its `mossCi.os` allows, and skips core and cli (`mossCi.ownJob`). On Linux the tests run under
   #    a private D-Bus session with a gnome-keyring of their own, so the harness's throwaway Secret Service store never
   #    meets a real keyring.
-  #  - the daemon binary, `clover-core`, built for the machine's own target (`scripts/build-daemon.ts`: packages/cli's
+  #  - the daemon binary, `moss-core`, built for the machine's own target (`scripts/build-daemon.ts`: packages/cli's
   #    compile:core with the target set, the dist define and the seal), then run once with `--version` on a temp home:
   #    it prints and exits, so no daemon starts. Then verify:sealed-core runs it with every door to foreign code set.
   #    Unsigned on every OS but for the gate's own ad hoc hardened-runtime copy on macOS; signing is the release's.
@@ -199,7 +199,7 @@ jobs:
         working-directory: packages/cli
         run: bun test test/durable.test.ts test/self-update.test.ts test/plugins-install.test.ts test/server-install.test.ts test/plugin-bun-install.test.ts
 
-      - name: Daemon · build clover-core for ${{ matrix.target }}, and run its --version
+      - name: Daemon · build moss-core for ${{ matrix.target }}, and run its --version
         id: daemon-build
         if: ${{ !cancelled() && env.DAEMON == 'true' }}
         run: bun scripts/build-daemon.ts --target ${{ matrix.target }} --smoke
@@ -211,14 +211,14 @@ jobs:
       # it is signed first as a release signs it (hardened runtime, ad hoc here) and DYLD_INSERT_LIBRARIES is tried.
       - name: Daemon · verify:sealed-core
         if: ${{ !cancelled() && steps.daemon-build.outcome == 'success' }}
-        run: bun scripts/verify-sealed-core.ts --binary dist/daemon/${{ matrix.target }}/clover-core${{ matrix.target == 'windows-x64' && '.exe' || '' }}
+        run: bun scripts/verify-sealed-core.ts --binary dist/daemon/${{ matrix.target }}/moss-core${{ matrix.target == 'windows-x64' && '.exe' || '' }}
 
       # The built daemon and app are kept only from a manual run (CI no longer runs on a push to main): nothing in a pull request or a
       # merge group downloads them, and the upload costs a runner about 40 s (a macOS one is the queue's bottleneck).
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() && env.DAEMON == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         with:
-          name: clover-core-${{ matrix.target }}
+          name: moss-core-${{ matrix.target }}
           path: dist/daemon/${{ matrix.target }}/
           retention-days: 5
           if-no-files-found: error
@@ -229,7 +229,7 @@ jobs:
         if: ${{ !cancelled() && runner.os == 'Linux' && (env.DAEMON == 'true' || env.APP == 'true') }}
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      # The Clover Browser where no app runs (lane L, plan §4 L M2): the pinned headless shell installed into a temp
+      # The MOSS Browser where no app runs (lane L, plan §4 L M2): the pinned headless shell installed into a temp
       # folder, then a bot's tab, its pictures, the URL rule, the refused DevTools domains, R13 through the real network
       # filter, a stream and a page's window (`packages/core/test/browser/headless-real.test.ts`). The headless shell
       # opens no window.
@@ -237,7 +237,7 @@ jobs:
         if: ${{ !cancelled() && env.DAEMON == 'true' }}
         working-directory: packages/core
         env:
-          CLOVER_HEADLESS_TESTS: "1"
+          MOSS_HEADLESS_TESTS: "1"
         run: bun test test/browser/headless
 
       - name: App · build the unsigned app
@@ -250,17 +250,17 @@ jobs:
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
         working-directory: apps/desktop
         env:
-          CLOVER_UI_TESTS: "1"
+          MOSS_UI_TESTS: "1"
         run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/ui-smoke.test.ts test/sealed-ui.test.ts
 
-      # The Clover Browser in a real Electron (lane L, plan §4 L M1 and M2): offscreen bot tabs, the viewport, the
+      # The MOSS Browser in a real Electron (lane L, plan §4 L M1 and M2): offscreen bot tabs, the viewport, the
       # person's selecting and copying through it, the screen-reader hybrid, and the streamed view. CI only, like the
       # UI test.
       - name: App · Browser tests
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
         working-directory: apps/desktop
         env:
-          CLOVER_UI_TESTS: "1"
+          MOSS_UI_TESTS: "1"
         run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/browser.test.ts test/browser-stream.test.ts
 
       # Lane L-M3: the same fixtures where the display changes. Windows at 150 % and 200 % (a viewport that draws at
@@ -270,39 +270,39 @@ jobs:
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Windows' }}
         working-directory: apps/desktop
         env:
-          CLOVER_UI_TESTS: "1"
-          CLOVER_BROWSER_TEST_SCALE: "1.5"
+          MOSS_UI_TESTS: "1"
+          MOSS_BROWSER_TEST_SCALE: "1.5"
         run: bun test test/browser.test.ts
 
       - name: App · Browser test (display scale 2, Windows)
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Windows' }}
         working-directory: apps/desktop
         env:
-          CLOVER_UI_TESTS: "1"
-          CLOVER_BROWSER_TEST_SCALE: "2"
+          MOSS_UI_TESTS: "1"
+          MOSS_BROWSER_TEST_SCALE: "2"
         run: bun test test/browser.test.ts
 
       - name: App · Browser test (Wayland, headless Weston)
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
         working-directory: apps/desktop
         env:
-          CLOVER_UI_TESTS: "1"
-          CLOVER_BROWSER_TEST_ARGS: "--ozone-platform=wayland"
-          CLOVER_BROWSER_TEST_WAYLAND: "1"
+          MOSS_UI_TESTS: "1"
+          MOSS_BROWSER_TEST_ARGS: "--ozone-platform=wayland"
+          MOSS_BROWSER_TEST_WAYLAND: "1"
         run: ../../scripts/ci/weston.sh bun test test/browser.test.ts
 
       - name: App · Browser stream test (Wayland, headless Weston)
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
         working-directory: apps/desktop
         env:
-          CLOVER_UI_TESTS: "1"
-          CLOVER_BROWSER_TEST_ARGS: "--ozone-platform=wayland"
+          MOSS_UI_TESTS: "1"
+          MOSS_BROWSER_TEST_ARGS: "--ozone-platform=wayland"
         run: ../../scripts/ci/weston.sh bun test test/browser-stream.test.ts
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         with:
-          name: clover-app-${{ matrix.target }}
+          name: moss-app-${{ matrix.target }}
           path: apps/desktop/out/dist/
           retention-days: 5
           if-no-files-found: error
@@ -335,8 +335,8 @@ jobs:
         run: scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test
 
   # The galleries: every workspace package with a `gallery` script (a plugin's parts, the base theme) builds its
-  # gallery and renders each story to PNGs under $CLOVER_GALLERY_OUT/<its folder name>, light and dark, with a renderer
-  # it brings itself (docs/clover-layout.md). They replace the lanes' own gallery workflows. Linux, so every gallery
+  # gallery and renders each story to PNGs under $MOSS_GALLERY_OUT/<its folder name>, light and dark, with a renderer
+  # it brings itself (docs/moss-layout.md). They replace the lanes' own gallery workflows. Linux, so every gallery
   # renders with the same fonts; the PNGs are kept as one artifact for review.
   gallery:
     name: gallery
@@ -359,7 +359,7 @@ jobs:
 
       - name: Build and render every gallery
         env:
-          CLOVER_GALLERY_OUT: ${{ runner.temp }}/gallery
+          MOSS_GALLERY_OUT: ${{ runner.temp }}/gallery
         run: bun scripts/workspaces.ts run gallery
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -371,7 +371,7 @@ jobs:
 
   # The Linux packages (plan §4 M1): the deb, the rpm and the AppImage of the app with the daemon inside, for x64 and
   # arm64, built on one x64 machine and opened to check what they hold (scripts/build-packages.ts --check). Then the
-  # x64 deb is installed on this runner, checked (`clover` is the daemon's command line, the AppArmor profile is in)
+  # x64 deb is installed on this runner, checked (`moss` is the daemon's command line, the AppArmor profile is in)
   # and removed (both are gone). Nothing is uploaded: the packages are unsigned skeletons until M2.
   packages:
     name: packages · linux-${{ matrix.arch }} (deb, rpm, AppImage)
@@ -380,7 +380,7 @@ jobs:
     if: github.event_name != 'pull_request' && needs.changes.outputs.packages == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
-    # One job per architecture, on that architecture's machine: the link sidecar, clover-link, is Rust (with ring's C),
+    # One job per architecture, on that architecture's machine: the link sidecar, moss-link, is Rust (with ring's C),
     # and builds for the machine it is on (scripts/build-packages.ts).
     strategy:
       fail-fast: false
@@ -423,26 +423,26 @@ jobs:
       - name: The bundled plugins' tarball is the tree the daemon's manifest names
         run: |
           version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
-          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/clover-core-"$version"-linux-*)" "$(ls apps/desktop/out/dist/clover-plugins-"$version"-linux-*.tar.gz)"
+          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/moss-core-"$version"-linux-*)" "$(ls apps/desktop/out/dist/moss-plugins-"$version"-linux-*.tar.gz)"
 
       - name: Install the deb, check it, and remove it
         run: |
           deb=$(ls apps/desktop/out/dist/*_${{ matrix.deb }}.deb)
           name=$(dpkg-deb -f "$deb" Package)
           sudo apt-get install -y -qq "./$deb"
-          test "$(readlink -f /usr/bin/clover)" = /opt/Clover/resources/daemon/clover-core
-          CLOVER_HOME="$(mktemp -d)" clover --version
-          test -x /opt/Clover/resources/daemon/clover-link
-          test -f /etc/apparmor.d/clover
-          test "$(cat /opt/Clover/resources/daemon/install.json)" = '{"kind":"package"}'
+          test "$(readlink -f /usr/bin/moss)" = /opt/moss-code/resources/daemon/moss-core
+          MOSS_HOME="$(mktemp -d)" moss --version
+          test -x /opt/moss-code/resources/daemon/moss-link
+          test -f /etc/apparmor.d/moss
+          test "$(cat /opt/moss-code/resources/daemon/install.json)" = '{"kind":"package"}'
           sudo apt-get remove -y -qq "$name"
-          test ! -e /opt/Clover/resources/daemon/install.json
-          test ! -e /usr/bin/clover
-          test ! -e /etc/apparmor.d/clover
+          test ! -e /opt/moss-code/resources/daemon/install.json
+          test ! -e /usr/bin/moss
+          test ! -e /etc/apparmor.d/moss
 
   # The macOS and Windows installers (plan §4 M-M2): the release build itself, unsigned (scripts/release/build.ts), so
   # each PR that touches them shows they still build: the dmg and its update zip on Apple silicon, the NSIS installer
-  # on Windows, each with its update files and the daemon's own (clover-core-<version>-<target> and its update file),
+  # on Windows, each with its update files and the daemon's own (moss-core-<version>-<target> and its update file),
   # every one checked against the files it names. Nothing is signed, uploaded or published.
   installers:
     name: installers · ${{ matrix.os }} (${{ matrix.what }})
@@ -494,12 +494,12 @@ jobs:
         shell: bash
         run: |
           version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
-          bin=$(ls apps/desktop/out/dist/clover-core-"$version"-*)
+          bin=$(ls apps/desktop/out/dist/moss-core-"$version"-*)
           extra=()
           if [ "$RUNNER_OS" = Windows ]; then extra=(SystemRoot="${SYSTEMROOT:-$SystemRoot}" windir="${WINDIR:-$windir}"); fi
           said=$(env -i PATH="$PATH" "${extra[@]}" "$bin" --version)
           echo "$bin --version: $said"
-          test "$said" = "clover $version"
+          test "$said" = "moss $version"
 
       # The bundled plugins' tarball for a server is the tree that daemon embeds the manifest of (#244), as the daemon
       # itself reports it, run as a server's self-update runs it.
@@ -507,7 +507,7 @@ jobs:
         shell: bash
         run: |
           version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
-          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/clover-core-"$version"-*)" "$(ls apps/desktop/out/dist/clover-plugins-"$version"-*.tar.gz)"
+          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/moss-core-"$version"-*)" "$(ls apps/desktop/out/dist/moss-plugins-"$version"-*.tar.gz)"
 
   # The tree and the computers (J-M1) on Linux and Windows: the core's tree and computers tests, with lane B's
   # conformance suites run against the real code, and several computers on the fake link. macOS runs them in the core
@@ -548,7 +548,7 @@ jobs:
         working-directory: packages/core
         run: bun test --timeout 30000 src/agents/tests/windows-path.test.ts
 
-  # The link sidecar (native/link, lane H's clover-link, iroh) on Windows and Linux, x64 and arm64: it is built, and
+  # The link sidecar (native/link, lane H's moss-link, iroh) on Windows and Linux, x64 and arm64: it is built, and
   # the core's link tests run over it on loopback (src/links/tests/sidecar.test.ts: pairing, a request, a 3 MiB
   # stream, a revoke, a key the core didn't allow). Nothing leaves the runner: the relay is off and the endpoints bind
   # 127.0.0.1. macOS runs the same in the macos job, which keeps the macOS jobs a change takes to three. It was
@@ -584,7 +584,7 @@ jobs:
         with:
           workspaces: native/link -> target
 
-      - name: Build clover-link
+      - name: Build moss-link
         run: cargo build --release --locked --manifest-path native/link/Cargo.toml
 
       - name: Install dependencies
@@ -595,8 +595,8 @@ jobs:
       - name: The link tests over the sidecar
         working-directory: packages/core
         env:
-          CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link${{ runner.os == 'Windows' && '.exe' || '' }}
-          CLOVER_LINK_REQUIRE_BINARY: "1"
+          MOSS_LINK_BIN: ${{ github.workspace }}/native/link/target/release/moss-link${{ runner.os == 'Windows' && '.exe' || '' }}
+          MOSS_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
 
   # The Linux repositories' signatures against the verifiers users run: a throwaway key signs a fixture Release and
@@ -733,8 +733,8 @@ jobs:
   # change needs it, and each still run after an earlier one fails, so one run reports them all:
   #  - core's suite and cli's non-TUI tests (`test/*.ts` only — `test/tui/**` renders the Ink transcript through
   #    ink-testing-library and has ~30 pre-existing failures on main; widen back to a bare `bun test` the moment that
-  #    suite is fixed). Their package.json says `cloverCi.ownJob`, so the other packages' tests stay independent of
-  #    the `winter` binary: a broken platform package must not hold them up. CLOVER_RUNTIME_REQUIRE_BINARY=1 is the
+  #    suite is fixed). Their package.json says `mossCi.ownJob`, so the other packages' tests stay independent of
+  #    the `winter` binary: a broken platform package must not hold them up. MOSS_RUNTIME_REQUIRE_BINARY=1 is the
   #    point of the binary: without it, every test that needs a real `winter` child SKIPS (core's real-child projector
   #    test, cli's session tests in client.test.ts), and CI would go green by proving nothing. Since A-M1 core's session
   #    tests run on the embedded runtime; those two still spawn the binary.
@@ -765,7 +765,7 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      # The link job's macOS leg (link: clover-link built, the core's link tests over it).
+      # The link job's macOS leg (link: moss-link built, the core's link tests over it).
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
         if: env.LINK == 'true'
         with:
@@ -776,7 +776,7 @@ jobs:
         with:
           workspaces: native/link -> target
 
-      - name: Build clover-link
+      - name: Build moss-link
         if: env.LINK == 'true'
         run: cargo build --release --locked --manifest-path native/link/Cargo.toml
 
@@ -788,7 +788,7 @@ jobs:
       # P9a-8: `bun install` above must have brought the winter platform package (the same
       # dual-hop resolver the daemon's ladder uses); absent = a loud failure, never a fallback.
       - name: Check for the installed winter platform package (P9a-8)
-        id: clover-package
+        id: moss-package
         working-directory: packages/core
         run: |
           BIN=$(bun -e '
@@ -801,7 +801,7 @@ jobs:
       - name: Use the installed platform package's winter binary (P9a-8 — the strong row-16 path)
         run: |
           mkdir -p dist
-          cp "${{ steps.clover-package.outputs.bin }}" dist/winter
+          cp "${{ steps.moss-package.outputs.bin }}" dist/winter
           chmod +x dist/winter
 
       # Only the core's macOS tests: the files named *.darwin.test.ts and the mixed ones that mark theirs with
@@ -815,16 +815,16 @@ jobs:
       - name: Core · the macOS tests
         if: env.CORE == 'true'
         env:
-          CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
-          CLOVER_RUNTIME_REQUIRE_BINARY: "1"
+          MOSS_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
+          MOSS_RUNTIME_REQUIRE_BINARY: "1"
         run: bun scripts/platform-tests.ts --root packages/core --cwd packages/core --darwin --timeout 20000 --slowest 10
 
       - name: CLI · test
         if: ${{ !cancelled() && env.CLI == 'true' }}
         working-directory: packages/cli
         env:
-          CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
-          CLOVER_RUNTIME_REQUIRE_BINARY: "1"
+          MOSS_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
+          MOSS_RUNTIME_REQUIRE_BINARY: "1"
         # 20 s per test, as the core's shards (see "Core · the macOS tests").
         run: bun test --timeout 20000 test/*.ts
 
@@ -834,15 +834,15 @@ jobs:
         if: ${{ !cancelled() && env.SCRIPTS == 'true' }}
         # embed-runtimes stages dist/winter (copied above): required here, skipped only in a plain local run.
         env:
-          CLOVER_RUNTIME_REQUIRE_BINARY: "1"
+          MOSS_RUNTIME_REQUIRE_BINARY: "1"
         run: bun scripts/platform-tests.ts --root scripts --darwin
 
       - name: Link · the link tests over the sidecar
         if: ${{ !cancelled() && env.LINK == 'true' }}
         working-directory: packages/core
         env:
-          CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link
-          CLOVER_LINK_REQUIRE_BINARY: "1"
+          MOSS_LINK_BIN: ${{ github.workspace }}/native/link/target/release/moss-link
+          MOSS_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
 
       - name: verify:workflow
@@ -867,7 +867,7 @@ jobs:
         if: ${{ !cancelled() && env.VERIFY == 'true' && github.event_name == 'workflow_dispatch' }}
         run: bun run verify:cowork-native
 
-      # N2 S7B: the Cowork channel's receiver thread must start in the COMPILED daemon (a third compile:core entrypoint). Compiles clover-core and runs a temp copy's
+      # N2 S7B: the Cowork channel's receiver thread must start in the COMPILED daemon (a third compile:core entrypoint). Compiles moss-core and runs a temp copy's
       # probe on a socketpair; touches no home, Keychain, daemon or launcher.
       - name: verify:fd-receiver
         if: ${{ !cancelled() && env.VERIFY == 'true' }}
@@ -900,10 +900,10 @@ jobs:
       matrix:
         shard: [1, 2, 3]
     env:
-      GIT_AUTHOR_NAME: Clover CI
-      GIT_AUTHOR_EMAIL: ci@clover.invalid
-      GIT_COMMITTER_NAME: Clover CI
-      GIT_COMMITTER_EMAIL: ci@clover.invalid
+      GIT_AUTHOR_NAME: MOSS CI
+      GIT_AUTHOR_EMAIL: ci@moss.invalid
+      GIT_COMMITTER_NAME: MOSS CI
+      GIT_COMMITTER_EMAIL: ci@moss.invalid
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -1012,7 +1012,7 @@ jobs:
   # The Cowork launcher (apple/Cowork/WinterCoworkLauncher) is its own Swift package and the `swift` job above never built it, so its tests ran only on a developer's machine.
   # Tests only, both configurations: the normal build, and the one with the compile-time test condition (it adds the tests that need the cdhash-pinned parent, which spawn the
   # package's own just-built launcher and FakeWorker as children of the test host: plain non-hypervisor processes, no VM, no libkrun, no sandbox call). Everything that signs
-  # signs ad-hoc (`codesign --sign -`) in a temp directory; nothing touches a Keychain or `~/.clover*`. No bun, no workspace install: the package imports nothing but the system.
+  # signs ad-hoc (`codesign --sign -`) in a temp directory; nothing touches a Keychain or `~/.moss*`. No bun, no workspace install: the package imports nothing but the system.
   swift-cowork-launcher:
     name: swift (WinterCoworkLauncher)
     # Cowork is paused (spec §12): this runs on demand only (workflow_dispatch).

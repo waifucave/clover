@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SessionEvent } from "@waifucave/clover-protocol";
+import { SessionEvent } from "@waifucave/moss-protocol";
 import type { ProtocolSdkMessage } from "../../src/projector";
 import { tasksFromEvents } from "../../src/runtime-sdk/tasks-reader";
 import { FakeCheckpoints, accept, assistantToolUse, init, makeProjector, result, run, toolResult } from "./harness";
@@ -8,7 +8,7 @@ import { FakeCheckpoints, accept, assistantToolUse, init, makeProjector, result,
  * Background (`run_in_background`) subagents and failed spawns — the thread lifecycle the Mac's live
  * subagent list folds (`thread_started` → working, `thread_completed` → done).
  *
- * Shapes mirror what was measured in `~/.clover-dev/sessions/global/s_98250c036992.jsonl` (Clover
+ * Shapes mirror what was measured in `~/.moss-dev/sessions/global/s_98250c036992.jsonl` (MOSS
  * leg, SDK 0.0.14) and `clover-sdk/packages/runtime/src/tools/impl/agent.ts`: an async spawn's
  * `tool_result` is `{"status":"async_launched","agentId","taskId",…}` and the real finish arrives
  * later as `system/task_notification` carrying `tool_use_id` = the spawning call's id. A failed

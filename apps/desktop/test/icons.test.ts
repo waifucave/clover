@@ -1,4 +1,4 @@
-// The tray's and Clover Dev's icons (src/main/icons.ts; drawn into resources/icons by scripts/brand-icons.ts, and
+// The tray's and MOSS Code Dev's icons (src/main/icons.ts; drawn into resources/icons by scripts/brand-icons.ts, and
 // copied to out/main/icons by the build): which file each platform and theme wears, and that each is there.
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
@@ -28,7 +28,7 @@ describe("the tray's icon", () => {
   });
 });
 
-describe("Clover Dev's icon", () => {
+describe("MOSS Code Dev's icon", () => {
   test("only the dev app run unpackaged wears it: in the Dock on macOS, on its windows elsewhere", () => {
     expect(devAppIcon({ profile: "dev", packaged: false, platform: "darwin" })).toEqual({ dock: "dev-dock.png" });
     expect(devAppIcon({ profile: "dev", packaged: false, platform: "win32" })).toEqual({ window: "dev-window.png" });

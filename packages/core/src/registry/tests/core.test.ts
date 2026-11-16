@@ -1,7 +1,7 @@
 // The registry's state machine against the PluginRegistry conformance suite, and what its records keep across a
 // restart: OKs, refusals, switches and the synced list's order.
 import { describe, expect, test } from "bun:test";
-import { catalogPointDecl } from "@waifucave/clover-plugin-sdk";
+import { catalogPointDecl } from "@waifucave/moss-plugin-sdk";
 import { runPluginRegistryConformance } from "../../contracts/conformance/plugin-registry";
 import type { Manifest } from "../../contracts/sdk-types";
 import { RegistryCore, type OkCardRaiser } from "../core";

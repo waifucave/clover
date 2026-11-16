@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
+import { CLIENT_BARE_IMPORTS } from "@waifucave/moss-plugin-sdk";
 import { buildPluginModule } from "../build";
 
 const write = (root: string, files: Record<string, string>) => {
@@ -17,7 +17,7 @@ const write = (root: string, files: Record<string, string>) => {
 
 describe("a client's build and the layer's import map", () => {
   test("every name the map serves stays a bare import, and nothing else does", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-client-build-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-client-build-"));
     write(dir, {
       "client/index.tsx": [
         ...CLIENT_BARE_IMPORTS.map((n, i) => `import * as m${i} from "${n}";`),
@@ -30,7 +30,7 @@ describe("a client's build and the layer's import map", () => {
   });
 
   test("a plugin that ships its own react still imports the layer's: its copy is never bundled", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-client-build-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-client-build-"));
     write(dir, {
       "node_modules/react/package.json": JSON.stringify({ name: "react", version: "18.0.0", main: "index.js" }),
       "node_modules/react/index.js": `export const useState = () => "THE-PLUGINS-OWN-REACT";\n`,

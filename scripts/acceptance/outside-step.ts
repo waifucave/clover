@@ -71,8 +71,8 @@ export function writeOutside(src: string, bin: string, userHome: string): Outsid
   const plugin = (id: string, outside: Record<string, unknown> | undefined) => {
     const dir = join(src, id);
     mkdirSync(join(dir, "host"), { recursive: true });
-    writeFileSync(join(dir, "clover.json"), `${JSON.stringify({
-      manifest: 1, id, name: id === OUTSIDE_IDS.named ? "Outside reader" : "Inside only", version: "1.0.0", engines: { clover: "^1.0.0" },
+    writeFileSync(join(dir, "moss.json"), `${JSON.stringify({
+      manifest: 1, id, name: id === OUTSIDE_IDS.named ? "Outside reader" : "Inside only", version: "1.0.0", engines: { moss: "^1.0.0" },
       host: { entry: "host/index.js", runtime: "bun", process: "own", ...(outside === undefined ? {} : { outside }) },
       contributes: {
         commands: [{ name: "probe", description: "Runs the program, reads the folder, says what each gave", handler: "probe", args: { type: "object", properties: { program: { type: "string", maxLength: 1024 }, private: { type: "string", maxLength: 1024 }, note: { type: "string", maxLength: 1024 } }, additionalProperties: false } }],
@@ -92,7 +92,7 @@ export interface ProbeAnswer { ran?: string; folder?: string; direct?: string }
  *  sandbox and its folder was read (the private file refused to it directly), and the plain plugin was refused both. */
 export function outsideWrong(o: { card: string; plainCard: string; program: string; named: ProbeAnswer; plain: ProbeAnswer; tool?: { cards: string[]; answered: boolean } }): string[] {
   const wrong: string[] = [];
-  if (!o.card.includes(`It runs this program of yours outside Clover's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network): ${o.program}.`)) wrong.push("its OK card doesn't name its program with the warning");
+  if (!o.card.includes(`It runs this program of yours outside MOSS's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network): ${o.program}.`)) wrong.push("its OK card doesn't name its program with the warning");
   if (!o.card.includes(OUTSIDE_TOOLS_LINE) || o.card.includes(`without asking: ${OUTSIDE_TOOL}`)) wrong.push(`its OK card doesn't say its read-only ${OUTSIDE_TOOL} still asks`);
   if (o.tool !== undefined) {
     if (!o.tool.cards.some((c) => c.startsWith("a tool card"))) wrong.push(`the bot's call to ${OUTSIDE_TOOL} raised no tool card at the default level (${o.tool.cards.join(", ") || "no card"})`);

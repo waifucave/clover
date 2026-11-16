@@ -1,4 +1,4 @@
-// The Clover Browser where no app runs (spec §12.1): Chrome for Testing's headless shell, pinned and installed failing
+// The MOSS Browser where no app runs (spec §12.1): Chrome for Testing's headless shell, pinned and installed failing
 // closed, driven over the DevTools pipe as an `AppTabPort`, so the core's `BrowserService` drives it as it drives the
 // app. The daemon makes one when no app runs on this computer (lane L's lead wires it):
 //

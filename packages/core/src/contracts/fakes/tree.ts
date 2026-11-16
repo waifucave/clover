@@ -2,7 +2,7 @@
 // and an on/off switch. It never touches the real disk. A peer's change is judged as the computer holding the files
 // would judge it (review N2), with signed answers checked by `verifySignedAnswer`.
 import { createHash } from "node:crypto";
-import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment, type Caller, type FileStat, type Level } from "@waifucave/clover-protocol";
+import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment, type Caller, type FileStat, type Level } from "@waifucave/moss-protocol";
 import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../approval-broker";
 import type { Clock } from "../clock";
 import { ContractError, isInside, normalizePosix, type Unsubscribe } from "../common";
@@ -23,7 +23,7 @@ interface Node {
 export interface FakeTreeComputer {
   /** The computer's home folder, a real POSIX path: `home/<Computer>/` is it. */
   home: string;
-  /** Where `bots/<bot>/` lives on this computer when it runs that bot (`<Clover home>/bots`). */
+  /** Where `bots/<bot>/` lives on this computer when it runs that bot (`<MOSS home>/bots`). */
   botsRoot?: string;
   online?: boolean;
   aliases?: string[];
@@ -114,7 +114,7 @@ export class FakeTree implements Tree {
     const name = this.#botComputer(bot);
     if (!name || !this.#computers.has(name)) throw new ContractError("not_found", `no computer runs ${bot}`);
     const c = this.#computers.get(name)!;
-    const root = c.botsRoot ?? `${c.home}/.clover/bots`;
+    const root = c.botsRoot ?? `${c.home}/.moss/bots`;
     return { computer: name, path: normalizePosix(`${root}/${pluginIdToSegment(bot)}${parts.rest ? `/${parts.rest}` : ""}`), area: "bot", bot };
   }
 

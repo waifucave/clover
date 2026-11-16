@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION, settingHost, settingHostTemplates, settingTemplated } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION, settingHost, settingHostTemplates, settingTemplated } from "@waifucave/moss-plugin-sdk";
 import type { ApprovalRequest } from "../../contracts/approval-broker";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -35,14 +35,14 @@ const flush = () => new Promise((r) => setTimeout(r, 30));
 
 describe("removing a plugin on a sealed card", () => {
   test("with card, nothing is removed until the yes; a no keeps it; without card (the CLI's, safe mode's) it goes at once", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-door-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-door-")));
     temps.push(home);
     for (const id of ["tarot", "nova"]) {
       mkdirSync(join(home, "plugins", id), { recursive: true });
-      writeFileSync(join(home, "plugins", id, "clover.json"), JSON.stringify({ manifest: 1, id, name: id === "tarot" ? "Tarot" : "Nova", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+      writeFileSync(join(home, "plugins", id, "moss.json"), JSON.stringify({ manifest: 1, id, name: id === "tarot" ? "Tarot" : "Nova", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` } }));
     }
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
     const c = cards();
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, secrets, openCard: c.open as never });
     try {
@@ -131,7 +131,7 @@ describe("a saved key never through the Plugins page", () => {
     const ref = { owner: { kind: "plugin" as const, pluginId: "fish" }, name: "FISH_KEY" };
     await secrets.set(ref, "mine");
     for (const value of ["attacker", null]) {
-      await expect(s.setByUser("fish", "FISH_KEY", value, undefined, { noSecret: true })).rejects.toThrow("only in Clover's own key dialog");
+      await expect(s.setByUser("fish", "FISH_KEY", value, undefined, { noSecret: true })).rejects.toThrow("only in MOSS's own key dialog");
     }
     expect((await secrets.get(ref))?.value.reveal()).toBe("mine");
     expect(await s.setByUser("fish", "voice", "warm", undefined, { noSecret: true })).toEqual({ applied: true });
@@ -244,15 +244,15 @@ describe("signing out from the Plugins page", () => {
 
 describe("a plugin's logs", () => {
   test("only its own file, with key-looking runs and a URL's secret parts cut to …", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-logs-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-logs-")));
     temps.push(home);
     mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
-    writeFileSync(join(home, "plugins", "tarot", "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+    writeFileSync(join(home, "plugins", "tarot", "moss.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` } }));
     mkdirSync(join(home, "logs", "plugins"), { recursive: true });
     const key = "sk-proj-" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6";
     writeFileSync(join(home, "logs", "plugins", "tarot.log"), [`calling with Authorization: Bearer ${key}`, "https://api.example.com/v1?api_key=abcdef0123456789abcdef&q=1", "plain line"].join("\n") + "\n");
     writeFileSync(join(home, "logs", "plugins", "nova.log"), "nova's own line\n");
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       const { lines } = await m["plugin.logs"]!({ id: "tarot" }, APP) as { lines: string[] };
@@ -270,13 +270,13 @@ describe("a plugin's logs", () => {
 
 describe("renewing a development folder from the Plugins page", () => {
   test("with card, the development-folder card first and 24 more hours only on the yes; the terminal renews at once", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-renew-")));
-    const devRoot = realpathSync(mkdtempSync(join(tmpdir(), "clover-renew-dev-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-renew-")));
+    const devRoot = realpathSync(mkdtempSync(join(tmpdir(), "moss-renew-dev-")));
     temps.push(home, devRoot);
     const dev = join(devRoot, "luna");
     mkdirSync(dev, { recursive: true });
-    writeFileSync(join(dev, "clover.json"), JSON.stringify({ manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    writeFileSync(join(dev, "moss.json"), JSON.stringify({ manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` } }));
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
     const c = cards();
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, openCard: c.open as never });
     try {

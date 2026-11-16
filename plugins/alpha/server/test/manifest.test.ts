@@ -1,5 +1,5 @@
 // Alpha as the reference plugin: her whole tree validates as the bundled tree it ships in; her tools qualify for
-// running without a card by the generic rule (no network, no capability beyond reading Clover's state, anywhere in
+// running without a card by the generic rule (no network, no capability beyond reading MOSS's state, anywhere in
 // her tree, extras included); every handler her manifest names is exported; her locales match; her child is off by
 // default.
 import { expect, test } from "bun:test";
@@ -11,17 +11,17 @@ import { OWN_SCENES } from "../stage";
 import { CONTAINED_TOOLS, READ_ONLY_TOOLS, STAGE_TOOLS } from "../tools";
 import { ALPHA, diskReader } from "./fakes";
 
-const manifest = JSON.parse(readFileSync(join(ALPHA, "clover.json"), "utf8"));
+const manifest = JSON.parse(readFileSync(join(ALPHA, "moss.json"), "utf8"));
 
 test("her tree validates as the bundled tree, with her extras as an off-by-default child", async () => {
   const tree = await validateTree(diskReader(ALPHA), { folderName: "alpha", bundled: true });
   const errors = [...tree.top.issues, ...tree.issues, ...tree.children.flatMap((c) => c.report.issues)].filter((i) => i.severity === "error");
   expect(errors).toEqual([]);
   expect(tree.children.map((c) => [c.folder, c.ok])).toEqual([["extras", true]]);
-  expect(JSON.parse(readFileSync(join(ALPHA, "plugins", "extras", "clover.json"), "utf8")).enabledByDefault).toBe(false);
+  expect(JSON.parse(readFileSync(join(ALPHA, "plugins", "extras", "moss.json"), "utf8")).enabledByDefault).toBe(false);
 });
 
-test("her tools qualify by the generic rule: the whole tree reaches no network and only reads Clover's state", async () => {
+test("her tools qualify by the generic rule: the whole tree reaches no network and only reads MOSS's state", async () => {
   const tree = await validateTree(diskReader(ALPHA), { folderName: "alpha", bundled: true });
   const capabilities = [tree.top, ...tree.children.map((c) => c.report)].flatMap((r) => r.capabilities);
   for (const c of capabilities) expect([c, CONTAINED_TOOL_CAPABILITIES.includes(c)]).toEqual([c, true]);
@@ -36,7 +36,7 @@ test("her tools qualify by the generic rule: the whole tree reaches no network a
 /** Every manifest in her tree: hers and her extras'. */
 const treeManifests = (): { where: string; m: Record<string, any> }[] => [
   { where: "alpha", m: manifest },
-  { where: "alpha/extras", m: JSON.parse(readFileSync(join(ALPHA, "plugins", "extras", "clover.json"), "utf8")) },
+  { where: "alpha/extras", m: JSON.parse(readFileSync(join(ALPHA, "plugins", "extras", "moss.json"), "utf8")) },
 ];
 
 test("the guard: no http server, no hook that can steer, every hook her own bot's, and every tool on a list by name", () => {

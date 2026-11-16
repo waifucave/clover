@@ -1,7 +1,7 @@
 // A bot's shell style (a theme's optional `shell` block): what Bots offers a bot of the window's own chrome while that bot's
 // tab is the one showing (spec §5.5, "Whoever owns a plug sets the rules"): its top bar and the right panels, never the left
 // sidebar, which looks the same on every tab. Bounded to a handful of colours and paints: no layout, no content, no CSS; the
-// shell reads them as `--clover-shell-*` variables and falls back to its own colours for a group whose pairs miss their
+// shell reads them as `--moss-shell-*` variables and falls back to its own colours for a group whose pairs miss their
 // contrast floors. Pure: the theme lint, the main process and the tests all call these.
 
 /** The names a `shell` block may set, by group. A group is applied whole or not at all. */
@@ -120,7 +120,7 @@ export function shellProblems(group: ShellColourGroup, values: Readonly<Record<s
   return out;
 }
 
-/** Clover's own marks, which no skin can change: waiting (attention), failed (danger), the running dot's stock accent and
+/** MOSS's own marks, which no skin can change: waiting (attention), failed (danger), the running dot's stock accent and
  *  the focus ring. Each must reach 3:1 on every ground the skin supplies where it is drawn, or that group is dropped. The
  *  values are the catalog's for the appearance. */
 const MARK_TOKENS = ["color.attention", "color.attention.text", "color.danger", "color.accent", "color.focus"] as const;
@@ -134,7 +134,7 @@ function marksProblems(values: Readonly<Record<string, string>>, appearance: "li
     for (const [where, colours] of grounds) {
       for (const c of colours) {
         const got = shellContrast(over(mark, c), c);
-        if (got < 3) return [`Clover's ${name.replace("color.", "")} mark on ${where} is ${got.toFixed(2)}:1; it needs 3:1`];
+        if (got < 3) return [`MOSS's ${name.replace("color.", "")} mark on ${where} is ${got.toFixed(2)}:1; it needs 3:1`];
       }
     }
   }

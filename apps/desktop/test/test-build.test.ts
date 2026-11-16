@@ -9,13 +9,13 @@ describe("a test-marked app's start", () => {
   const account = join(root, "Users", "someone");
   const real = (p: string) => p.replace(/[\\/]+$/, "");
   test("starts with the mock keychain and a temp home", () => {
-    expect(testBuildAppRefusal({ mockKeychain: true, home: join(root, "tmp", "run", ".clover"), account, real })).toBeUndefined();
+    expect(testBuildAppRefusal({ mockKeychain: true, home: join(root, "tmp", "run", ".moss"), account, real })).toBeUndefined();
     // A sibling whose name only starts with the account's is outside it.
-    expect(testBuildAppRefusal({ mockKeychain: true, home: join(root, "Users", "someone-else", ".clover"), account, real })).toBeUndefined();
+    expect(testBuildAppRefusal({ mockKeychain: true, home: join(root, "Users", "someone-else", ".moss"), account, real })).toBeUndefined();
   });
   test("refuses where it would reach the login keychain or the live home", () => {
-    expect(testBuildAppRefusal({ mockKeychain: false, home: join(root, "tmp", "run", ".clover"), account, real })).toContain("mock keychain is off");
-    for (const home of [join(account, ".clover"), account, `${account}${sep}`, join(account, "x", "y"), ""]) {
+    expect(testBuildAppRefusal({ mockKeychain: false, home: join(root, "tmp", "run", ".moss"), account, real })).toContain("mock keychain is off");
+    for (const home of [join(account, ".moss"), account, `${account}${sep}`, join(account, "x", "y"), ""]) {
       expect(testBuildAppRefusal({ mockKeychain: true, home, account, real })).toContain("inside this account's home");
     }
     expect(testBuildAppRefusal({ mockKeychain: false, home: "", account, real })).toContain("test-marked build");

@@ -1,6 +1,6 @@
 // Names derived from a plugin (spec §5.1 "wrapped automatically", §6.7 "Where the names come from"): tool names as the
 // model sees them, and the ids and namespaces of the plugins the core generates around bare items.
-import { BUNDLED_ROOT_PLUGIN, PLUGIN_ID_MAX } from "@waifucave/clover-protocol";
+import { BUNDLED_ROOT_PLUGIN, PLUGIN_ID_MAX } from "@waifucave/moss-protocol";
 
 /** Model APIs allow only letters, digits, `_` and `-` in tool names, and at most 64 characters (§6.7). */
 export const TOOL_WIRE_NAME_MAX = 64;
@@ -52,7 +52,7 @@ export function cleanName(name: string, max: number): string {
 }
 
 /** The id and namespace of a plugin the core generates around a bare item (§5.1): `mcp-<server>`, `skill-<name>`,
- *  `agent-<name>`, `claude-<name>`, with a number added on a clash or for `clover`. A wrapped server's tools use the
+ *  `agent-<name>`, `claude-<name>`, with a number added on a clash or for `moss`. A wrapped server's tools use the
  *  server's name (`mcp-blender` gives `mcp__blender__Render`); a Claude Code plugin's name is also its namespace. */
 export function wrapperId(kind: WrapperKind, name: string, taken: ReadonlySet<string>): { id: string; namespace: string } {
   const prefix = WRAPPER_PREFIX[kind];

@@ -3,7 +3,7 @@
 // This file wires the REAL `OutputStyleStore` and `ProjectSettingsResolver` — the same classes
 // `daemon.ts` constructs — into a `ContextAssembler`, exactly the way `daemon.ts` wires them
 // (`styleResolver`, `legacySettingsOverlayPathsFor`), and proves each reader's legacy fallback
-// actually reaches the ONE combined per-turn notice, end to end. Never the live `~/.clover`.
+// actually reaches the ONE combined per-turn notice, end to end. Never the live `~/.moss`.
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +17,7 @@ import { LEGACY_INSTRUCTIONS_FILE, LEGACY_PROJECT_DIR } from "../../src/legacy-n
 import { Settings } from "../../src/settings";
 
 function realDir(): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), "clover-ctx-legacy-all-")));
+  return realpathSync(mkdtempSync(join(tmpdir(), "moss-ctx-legacy-all-")));
 }
 function minimalSettings(readLegacyProjectFiles: boolean): Settings {
   return Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/x" }, legacy: { readLegacyProjectFiles } });
@@ -26,12 +26,12 @@ function minimalSettings(readLegacyProjectFiles: boolean): Settings {
 function build(cwd: string, home: string, settings: Settings) {
   const trust = new TrustStore(join(home, "trust.json"));
   trust.trust(cwd);
-  const outputStyleStore = new OutputStyleStore({ cloverHome: home, trust, legacySettings: () => settings });
+  const outputStyleStore = new OutputStyleStore({ mossHome: home, trust, legacySettings: () => settings });
   const projectSettings = new ProjectSettingsResolver({ base: () => settings, trust });
   const assembler = new ContextAssembler({
-    cloverHome: home,
+    mossHome: home,
     trust,
-    skills: new SkillStore({ cloverHome: home, trust }),
+    skills: new SkillStore({ mossHome: home, trust }),
     legacySettings: () => settings,
     styleResolver: (c) => outputStyleStore.resolve("mine", c),
     legacySettingsOverlayPathsFor: (c) => projectSettings.legacyOverlayPathsUsed(c),
@@ -52,9 +52,9 @@ describe("ContextAssembler — the combined notice covers all four legacy reader
     const out = assembler.assemble({ cwd });
 
     expect(out).toContain("LEGACY_STYLE_BODY"); // the style itself was actually applied
-    expect(out).toContain("Clover is reading legacy project files read-only");
+    expect(out).toContain("MOSS is reading legacy project files read-only");
     expect(out).toContain(legacyStylePath);
-    expect(out).toContain("clover migrate-project");
+    expect(out).toContain("moss migrate-project");
   });
 
   test("a legacy settings.json overlay registers its path, and the assembled system context names it", () => {
@@ -68,7 +68,7 @@ describe("ContextAssembler — the combined notice covers all four legacy reader
     const assembler = build(cwd, home, minimalSettings(true));
     const out = assembler.assemble({ cwd });
 
-    expect(out).toContain("Clover is reading legacy project files read-only");
+    expect(out).toContain("MOSS is reading legacy project files read-only");
     expect(out).toContain(legacySettingsPath);
   });
 
@@ -86,7 +86,7 @@ describe("ContextAssembler — the combined notice covers all four legacy reader
     const assembler = build(cwd, home, minimalSettings(true));
     const out = assembler.assemble({ cwd });
 
-    const occurrences = out.split("Clover is reading legacy project files read-only").length - 1;
+    const occurrences = out.split("MOSS is reading legacy project files read-only").length - 1;
     expect(occurrences).toBe(1); // ONE combined line, not one per reader
     expect(out).toContain(join(cwd, LEGACY_INSTRUCTIONS_FILE));
     expect(out).toContain(join(cwd, LEGACY_PROJECT_DIR, "rules"));
@@ -106,6 +106,6 @@ describe("ContextAssembler — the combined notice covers all four legacy reader
     const out = assembler.assemble({ cwd });
 
     expect(out).not.toContain("LEGACY_STYLE_BODY");
-    expect(out).not.toContain("Clover is reading legacy project files");
+    expect(out).not.toContain("MOSS is reading legacy project files");
   });
 });

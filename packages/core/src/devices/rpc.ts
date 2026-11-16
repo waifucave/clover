@@ -9,9 +9,9 @@
 // computer, which shows its own card (`mountMainChoiceRequests`), since its main choice is its own to take. The peer
 // methods (`peer.*`, `sync.*`) ride the link and aren't here.
 import {
-  CLOVER_ERR, DEVICES_METHODS, ERR,
+  MOSS_ERR, DEVICES_METHODS, ERR,
   type AccountView, type Caller, type ChangeResult, type DeviceView, type LinkView, type MethodSpec,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import type { z } from "zod";
 import type { ApprovalBroker, ApprovalRequest } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
@@ -63,7 +63,7 @@ function handler<S extends MethodSpec>(spec: S, impl: (params: z.output<S["param
 }
 
 function requireUser(ctx: MethodContext, what: string): void {
-  if (ctx.caller.kind !== "user") throw new MethodError(CLOVER_ERR.NOT_THE_USER, `only the user can ${what}`);
+  if (ctx.caller.kind !== "user") throw new MethodError(MOSS_ERR.NOT_THE_USER, `only the user can ${what}`);
 }
 
 /** The user in their own terminal (§5.1): a sensitive change there needs no card. */
@@ -175,7 +175,7 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
         try {
           await renameRemote(deps.transport, p.id, p.name);
         } catch (err) {
-          if (isContractError(err, "offline")) throw new MethodError(CLOVER_ERR.COMPUTER_OFFLINE, `${d.name} is offline: rename it while it's on`);
+          if (isContractError(err, "offline")) throw new MethodError(MOSS_ERR.COMPUTER_OFFLINE, `${d.name} is offline: rename it while it's on`);
           throw err;
         }
         return { applied: true };
@@ -266,14 +266,14 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
       const main = mustMain(deps);
       const d = registry.get(p.device);
       if (!d || d.revokedAt !== undefined) throw new MethodError(ERR.NOT_FOUND, `no device ${p.device}`);
-      if (!d.runsCore) throw new MethodError(ERR.INVALID_PARAMS, `${d.name} doesn't run Clover's core, so it can't be the main computer`);
+      if (!d.runsCore) throw new MethodError(ERR.INVALID_PARAMS, `${d.name} doesn't run MOSS's core, so it can't be the main computer`);
       if (p.device !== registry.self().id) {
         // That computer's choice is its own: it shows its own card (any of the user's devices may answer it).
         try {
           const link = await deps.transport.connect(p.device);
           return await link.request<ChangeResult>(MAIN_CHOOSE, {});
         } catch (err) {
-          if (isContractError(err, "offline")) throw new MethodError(CLOVER_ERR.COMPUTER_OFFLINE, `${d.name} is offline: choose it while it's on`);
+          if (isContractError(err, "offline")) throw new MethodError(MOSS_ERR.COMPUTER_OFFLINE, `${d.name} is offline: choose it while it's on`);
           throw err;
         }
       }
@@ -326,7 +326,7 @@ export function answerKeyMethods(deps: AnswerKeyMethodsDeps): Record<string, Met
     // new one stored.
     [M.deviceAnswerKeySet.name]: handler(M.deviceAnswerKeySet, async (p, ctx): Promise<ChangeResult> => {
       requireUser(ctx, "set this desktop's answer key");
-      if (ctx.caller.kind === "user" && ctx.caller.client !== "app") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only this desktop's app holds its answer key");
+      if (ctx.caller.kind === "user" && ctx.caller.client !== "app") throw new MethodError(MOSS_ERR.NOT_THE_USER, "only this desktop's app holds its answer key");
       const signature = fromBase64(p.signature);
       if (signature === null) throw new MethodError(ERR.INVALID_PARAMS, "device.answerKey.set: the signature isn't base64");
       const registry = live();

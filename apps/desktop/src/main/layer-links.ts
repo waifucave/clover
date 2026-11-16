@@ -5,7 +5,7 @@
 // plugin's connection and nowhere else, so the daemon checks every call against that plugin's role and capabilities;
 // the main process passes only the methods the `layer` role may call, and the events each connection receives go to
 // the documents that hold that plugin's parts. Pure apart from the client it dials, so the tests drive it under Bun.
-import { allowedMethods, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, type CloverHelloParams } from "@waifucave/clover-protocol";
+import { allowedMethods, MOSS_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, type MossHelloParams } from "@waifucave/moss-protocol";
 import { proveServer } from "./pair/pair";
 import type { DaemonClient } from "./protocol/client";
 
@@ -31,8 +31,8 @@ const OWN_EVENTS = new Set(["plugin_ui_message", "plugin_store_changed"]);
 /** The core's figure events (packages/core/src/plugin-host/api/avatar.ts). A cue is an order, not a state: every one goes
  *  on, in order (an outfit's "this one off" never gives way to "that one on"; the core holds a plugin to 20 cues a
  *  second). A figure's change is two states, its catalogue and its box: the last of each goes on. */
-export const AVATAR_CUE_EVENT = "clover.avatar.cue";
-export const AVATAR_CHANGED_EVENT = "clover.avatar.changed";
+export const AVATAR_CUE_EVENT = "moss.avatar.cue";
+export const AVATAR_CHANGED_EVENT = "moss.avatar.changed";
 let cueSeq = 0;
 function topicOf(e: { type: string; event?: unknown; key?: unknown; value?: unknown }): string {
   if (e.type !== "plugin_ui_message") return `${e.type}\u0000${String(e.key)}`;
@@ -140,10 +140,10 @@ export class LayerLinks {
   private async open(pluginId: string): Promise<DaemonClient> {
     const app = this.deps.appClient();
     const appToken = this.deps.appToken();
-    if (app === undefined || appToken === undefined) throw new Error("Clover isn't running");
+    if (app === undefined || appToken === undefined) throw new Error("MOSS isn't running");
     const { token } = await app.request<{ token: string }>("layer.token", { pluginId });
     const client = await this.deps.dial();
-    if (client === undefined) throw new Error("Clover isn't running");
+    if (client === undefined) throw new Error("MOSS isn't running");
     const why = await proveServer(client, appToken, this.deps.pid, 5_000);
     if (why !== undefined) {
       client.close();
@@ -153,7 +153,7 @@ export class LayerLinks {
       if (method === CORE_EVENT_NOTIFICATION && this.mailbox.offer(pluginId, params)) return;
       this.deps.onEvent(pluginId, method, params);
     });
-    const hello: CloverHelloParams = { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "layer", token, clientName: `clover-app/${this.deps.appVersion} layer`, pluginId };
+    const hello: MossHelloParams = { protocolVersion: MOSS_PROTOCOL_VERSION, role: "layer", token, clientName: `moss-app/${this.deps.appVersion} layer`, pluginId };
     try {
       await client.request("protocol.hello", hello, 5_000);
     } catch (err) {

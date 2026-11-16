@@ -1,11 +1,11 @@
 // A pasted MCP config's own files (wrap-reads.ts, the controller's ruling on acceptance step 31's finding B): the
 // folders its stdio server's script lives in are opened to it read-only, on its install record, named on its OK; never
-// the home, a big folder whole, a secret place or the Clover home; re-checked at each start; real under the fence.
+// the home, a big folder whole, a secret place or the MOSS home; re-checked at each start; real under the fence.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PluginDetail } from "@waifucave/clover-protocol";
+import { PluginDetail } from "@waifucave/moss-protocol";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -30,18 +30,18 @@ afterAll(() => {
 });
 const APP = { caller: { kind: "user", client: "app" } } as never;
 
-/** A temp user home with a few of a real one's places, and a Clover home inside it. */
+/** A temp user home with a few of a real one's places, and a MOSS home inside it. */
 function homes(): WrapHomes & { file(rel: string, text?: string): string } {
-  const user = temp("clover-wrapr-user-");
-  const clover = join(user, ".clover");
-  mkdirSync(clover, { recursive: true });
+  const user = temp("moss-wrapr-user-");
+  const moss = join(user, ".moss");
+  mkdirSync(moss, { recursive: true });
   const file = (rel: string, text = "x") => {
     const p = join(user, rel);
     mkdirSync(join(p, ".."), { recursive: true });
     writeFileSync(p, text);
     return p;
   };
-  return { user, clover, os: "macos", file };
+  return { user, moss, os: "macos", file };
 }
 
 describe("which folders a pasted server's files open", () => {
@@ -79,22 +79,22 @@ describe("which folders a pasted server's files open", () => {
     expect(wrapReads({ command: "node", args: [env, git] }, h).unreadable.map((u) => u.why)).toEqual(["it is a .git folder or an .env file, which no plugin reads", "it is a .git folder or an .env file, which no plugin reads"]);
   });
 
-  test("never the home, a big folder whole, a secret place, Clover's home; a walk up stops below the first it may not open", () => {
+  test("never the home, a big folder whole, a secret place, MOSS's home; a walk up stops below the first it may not open", () => {
     const h = homes();
     const atHome = h.file("server.js");
     const inDocs = h.file("Documents/server.js");
     const inSsh = h.file(".ssh/agent.js");
-    const inClover = h.file(".clover/plugins/x/run.js");
+    const inMoss = h.file(".moss/plugins/x/run.js");
     const deep = h.file("Documents/proj/src/index.js");
     // A marker at the home itself must not pull the walk up to it.
     h.file("package.json", "{}");
-    const got = wrapReads({ command: "node", args: [atHome, inDocs, inSsh, inClover, deep] }, h);
+    const got = wrapReads({ command: "node", args: [atHome, inDocs, inSsh, inMoss, deep] }, h);
     expect(got.reads).toEqual([join(h.user, "Documents/proj/src")]);
     expect(got.unreadable).toEqual([
       { path: atHome, why: "it is your home folder or holds it" },
       { path: inDocs, why: "it is your whole Documents folder" },
       { path: inSsh, why: "it is inside a place that keeps keys or sign-ins" },
-      { path: inClover, why: "it is Clover's own folder or holds it" },
+      { path: inMoss, why: "it is MOSS's own folder or holds it" },
     ]);
     // A folder holding a secret place (the Library's Application Support, which holds the browsers' profiles).
     expect(wrapReadRefused(join(h.user, "Library/Application Support"), h)).toBe("it holds a place that keeps keys or sign-ins");
@@ -140,11 +140,11 @@ describe("which folders a pasted server's files open", () => {
 describe("pasting a config", () => {
   test("its install record holds what it reads and what it can't; an argument up to MCP_ARG_MAX characters is kept", async () => {
     const h = homes();
-    const clover = temp("clover-wrapr-");
+    const moss = temp("moss-wrapr-");
     const tool = h.file("tools/server.js");
     const atHome = h.file("loose.js");
-    const opened = await openPluginRegistry({ cloverHome: clover, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
-    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home: clover, userHome: h.user });
+    const opened = await openPluginRegistry({ mossHome: moss, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home: moss, userHome: h.user });
     try {
       const long = "x".repeat(MCP_ARG_MAX);
       const config = JSON.stringify({ mcpServers: { tools: { command: "node", args: [tool, atHome, "--inline", long] } } });
@@ -165,10 +165,10 @@ describe("pasting a config", () => {
 describe("a long command on its OK card", () => {
   test("an npx server with a 5,000-character argument: the card shows it whole, split across lines with a count, none over the card's limit", async () => {
     const h = homes();
-    const clover = temp("clover-wrapr-npx-");
+    const moss = temp("moss-wrapr-npx-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: clover, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
-    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home: clover, userHome: h.user });
+    const opened = await openPluginRegistry({ mossHome: moss, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home: moss, userHome: h.user });
     try {
       const arg = `--prompt=${"word ".repeat(1_000)}end`;
       const config = JSON.stringify({ mcpServers: { thing: { command: "npx", args: ["-y", "@example/mcp-thing", arg] } } });
@@ -196,11 +196,11 @@ describe("a long command on its OK card", () => {
 darwinDescribe("under the fence", () => {
   test("the opened folder is read and never written; a folder next to it stays closed", () => {
     const h = homes();
-    const clover = temp("clover-wrapr-c-");
-    const files = ensurePluginRunFiles(join(clover, "run", "plugin-host"), { cloverHome: clover });
+    const moss = temp("moss-wrapr-c-");
+    const files = ensurePluginRunFiles(join(moss, "run", "plugin-host"), { mossHome: moss });
     const tool = h.file("tools/server.js", "console.log('hi')");
     const other = h.file("private/notes.txt", "mine");
-    const root = join(clover, "plugins", "mcp-tools");
+    const root = join(moss, "plugins", "mcp-tools");
     mkdirSync(root, { recursive: true });
     const run = (reads: string[], script: string) => {
       const { fence } = toolFence({ files, shared: [], pluginRoot: root, pluginId: "mcp-tools", userHome: h.user, name: "test-mcp-tools", reads });

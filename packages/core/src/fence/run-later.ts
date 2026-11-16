@@ -7,7 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, readSync, statSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import type { RunLaterExtras } from "../contracts/fence";
 
 export interface RunLaterSources {

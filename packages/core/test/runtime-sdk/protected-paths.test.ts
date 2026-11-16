@@ -1,7 +1,7 @@
 // WS-21 L3.6 (spec §7.2): the protected paths, and the §7.1 hook rows that sit beside them.
 //
-//   protected  the trusted project's `.clover/{skills,commands,rules,output-styles}/**`,
-//              `sdk/{skills,commands,rules,output-styles}/**` and `sdk/CLOVER.md`
+//   protected  the trusted project's `.moss/{skills,commands,rules,output-styles}/**`,
+//              `sdk/{skills,commands,rules,output-styles}/**` and `sdk/MOSS.md`
 //   a write    code → a card under every policy; chat and dispatch → a typed deny
 //
 // The set is pinned against the LITERAL list spec §7.2 names, spelled the way L2's
@@ -22,53 +22,53 @@ const RUN_LATER = (userHome: string = homedir()): string[] => persistencePaths(u
 
 describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute spelling", () => {
   test("no trusted project: the sdk tier alone", () => {
-    expect(protectedPathsFor("/Users/x/.clover", null)).toEqual([
-      "//Users/x/.clover/sdk/skills/**",
-      "//Users/x/.clover/sdk/commands/**",
-      "//Users/x/.clover/sdk/rules/**",
-      "//Users/x/.clover/sdk/output-styles/**",
-      "//Users/x/.clover/sdk/CLOVER.md",
+    expect(protectedPathsFor("/Users/x/.moss", null)).toEqual([
+      "//Users/x/.moss/sdk/skills/**",
+      "//Users/x/.moss/sdk/commands/**",
+      "//Users/x/.moss/sdk/rules/**",
+      "//Users/x/.moss/sdk/output-styles/**",
+      "//Users/x/.moss/sdk/MOSS.md",
       ...RUN_LATER(),
     ]);
   });
 
-  test("a trusted project adds its .clover/{skills,commands,rules,output-styles}; <root>/CLOVER.md stays ordinary", () => {
-    const set = protectedPathsFor("/Users/x/.clover", "/Users/x/code/app");
+  test("a trusted project adds its .moss/{skills,commands,rules,output-styles}; <root>/MOSS.md stays ordinary", () => {
+    const set = protectedPathsFor("/Users/x/.moss", "/Users/x/code/app");
     expect(set).toEqual([
-      "//Users/x/.clover/sdk/skills/**",
-      "//Users/x/.clover/sdk/commands/**",
-      "//Users/x/.clover/sdk/rules/**",
-      "//Users/x/.clover/sdk/output-styles/**",
-      "//Users/x/.clover/sdk/CLOVER.md",
+      "//Users/x/.moss/sdk/skills/**",
+      "//Users/x/.moss/sdk/commands/**",
+      "//Users/x/.moss/sdk/rules/**",
+      "//Users/x/.moss/sdk/output-styles/**",
+      "//Users/x/.moss/sdk/MOSS.md",
       ...RUN_LATER(),
-      "//Users/x/code/app/.clover/skills/**",
-      "//Users/x/code/app/.clover/commands/**",
-      "//Users/x/code/app/.clover/rules/**",
-      "//Users/x/code/app/.clover/output-styles/**",
+      "//Users/x/code/app/.moss/skills/**",
+      "//Users/x/code/app/.moss/commands/**",
+      "//Users/x/code/app/.moss/rules/**",
+      "//Users/x/code/app/.moss/output-styles/**",
     ]);
-    expect(set).not.toContain("//Users/x/code/app/CLOVER.md");
+    expect(set).not.toContain("//Users/x/code/app/MOSS.md");
   });
 
   test("with a walk: every directory from the cwd up to the trusted root, nearest first (L2 fix round 1, I2)", () => {
-    expect(protectedPathsFor("/Users/x/.clover", "/Users/x/code/app", { cwd: "/Users/x/code/app/packages/web", userHome: "/Users/x" })).toEqual([
-      "//Users/x/.clover/sdk/skills/**",
-      "//Users/x/.clover/sdk/commands/**",
-      "//Users/x/.clover/sdk/rules/**",
-      "//Users/x/.clover/sdk/output-styles/**",
-      "//Users/x/.clover/sdk/CLOVER.md",
+    expect(protectedPathsFor("/Users/x/.moss", "/Users/x/code/app", { cwd: "/Users/x/code/app/packages/web", userHome: "/Users/x" })).toEqual([
+      "//Users/x/.moss/sdk/skills/**",
+      "//Users/x/.moss/sdk/commands/**",
+      "//Users/x/.moss/sdk/rules/**",
+      "//Users/x/.moss/sdk/output-styles/**",
+      "//Users/x/.moss/sdk/MOSS.md",
       ...RUN_LATER("/Users/x"),
-      "//Users/x/code/app/packages/web/.clover/skills/**",
-      "//Users/x/code/app/packages/web/.clover/commands/**",
-      "//Users/x/code/app/packages/web/.clover/rules/**",
-      "//Users/x/code/app/packages/web/.clover/output-styles/**",
-      "//Users/x/code/app/packages/.clover/skills/**",
-      "//Users/x/code/app/packages/.clover/commands/**",
-      "//Users/x/code/app/packages/.clover/rules/**",
-      "//Users/x/code/app/packages/.clover/output-styles/**",
-      "//Users/x/code/app/.clover/skills/**",
-      "//Users/x/code/app/.clover/commands/**",
-      "//Users/x/code/app/.clover/rules/**",
-      "//Users/x/code/app/.clover/output-styles/**",
+      "//Users/x/code/app/packages/web/.moss/skills/**",
+      "//Users/x/code/app/packages/web/.moss/commands/**",
+      "//Users/x/code/app/packages/web/.moss/rules/**",
+      "//Users/x/code/app/packages/web/.moss/output-styles/**",
+      "//Users/x/code/app/packages/.moss/skills/**",
+      "//Users/x/code/app/packages/.moss/commands/**",
+      "//Users/x/code/app/packages/.moss/rules/**",
+      "//Users/x/code/app/packages/.moss/output-styles/**",
+      "//Users/x/code/app/.moss/skills/**",
+      "//Users/x/code/app/.moss/commands/**",
+      "//Users/x/code/app/.moss/rules/**",
+      "//Users/x/code/app/.moss/output-styles/**",
     ]);
   });
 
@@ -83,96 +83,96 @@ describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute s
   });
 
   test("as Edit/Write rules it is exactly the router's protectedPathRules output (hand mirror at aa5201e, no walk)", () => {
-    // The router's list, and Clover's own persistence places (the #301 review) on top of it.
-    const clovers = new Set(RUN_LATER());
-    const rules = ["Edit", "Write"].flatMap((t) => protectedPathsFor("/h", "/r").filter((p) => !clovers.has(p)).map((p) => `${t}(${p})`));
-    expect(protectedPathsFor("/h", "/r").filter((p) => clovers.has(p))).toEqual([...clovers]);
+    // The router's list, and MOSS's own persistence places (the #301 review) on top of it.
+    const moss = new Set(RUN_LATER());
+    const rules = ["Edit", "Write"].flatMap((t) => protectedPathsFor("/h", "/r").filter((p) => !moss.has(p)).map((p) => `${t}(${p})`));
+    expect(protectedPathsFor("/h", "/r").filter((p) => moss.has(p))).toEqual([...moss]);
     const routerMirror = ["Edit", "Write"].flatMap((t) => [
-      "//h/sdk/skills/**", "//h/sdk/commands/**", "//h/sdk/rules/**", "//h/sdk/output-styles/**", "//h/sdk/CLOVER.md",
-      "//r/.clover/skills/**", "//r/.clover/commands/**", "//r/.clover/rules/**", "//r/.clover/output-styles/**",
+      "//h/sdk/skills/**", "//h/sdk/commands/**", "//h/sdk/rules/**", "//h/sdk/output-styles/**", "//h/sdk/MOSS.md",
+      "//r/.moss/skills/**", "//r/.moss/commands/**", "//r/.moss/rules/**", "//r/.moss/output-styles/**",
     ].map((p) => `${t}(${p})`));
     expect(rules).toEqual(routerMirror);
   });
 });
 
 describe("protectedWriteDecision", () => {
-  const home = "/Users/x/.clover";
+  const home = "/Users/x/.moss";
   const root = "/Users/x/code/app";
   const set = protectedPathsFor(home, root);
 
   test("code → ask, whatever the policy (the hook knows no policy: accept-edits and bypass reach it the same)", () => {
     for (const [tool, input] of [
-      ["Write", { file_path: `${root}/.clover/skills/deploy/SKILL.md`, content: "x" }],
-      ["Edit", { file_path: `${home}/sdk/CLOVER.md`, old_string: "a", new_string: "b" }],
+      ["Write", { file_path: `${root}/.moss/skills/deploy/SKILL.md`, content: "x" }],
+      ["Edit", { file_path: `${home}/sdk/MOSS.md`, old_string: "a", new_string: "b" }],
       ["MultiEdit", { file_path: "/tmp/ok.txt", edits: [{ file_path: `${home}/sdk/rules/style.md` }] }],
-      ["NotebookEdit", { notebook_path: `${root}/.clover/commands/n.ipynb` }],
-      ["write", { path: `${root}/.clover/output-styles/terse.md` }],
+      ["NotebookEdit", { notebook_path: `${root}/.moss/commands/n.ipynb` }],
+      ["write", { path: `${root}/.moss/output-styles/terse.md` }],
     ] as const) {
       expect(protectedWriteDecision(tool, input, { mode: "code", protected: set, cwd: root })).toEqual({ decision: "ask" });
     }
   });
 
   test("chat → a typed deny naming the path; dispatch → ask, like code (user ruling 2026-10-17)", () => {
-    const d = protectedWriteDecision("Write", { file_path: `${root}/.clover/rules/a.md` }, { mode: "chat", protected: set, cwd: root });
+    const d = protectedWriteDecision("Write", { file_path: `${root}/.moss/rules/a.md` }, { mode: "chat", protected: set, cwd: root });
     expect(d?.decision).toBe("deny");
-    expect((d as { reason: string }).reason).toContain(".clover/rules/a.md");
-    expect(protectedWriteDecision("Write", { file_path: `${root}/.clover/rules/a.md` }, { mode: "dispatch", protected: set, cwd: root })).toEqual({ decision: "ask" });
+    expect((d as { reason: string }).reason).toContain(".moss/rules/a.md");
+    expect(protectedWriteDecision("Write", { file_path: `${root}/.moss/rules/a.md` }, { mode: "dispatch", protected: set, cwd: root })).toEqual({ decision: "ask" });
   });
 
   test("an .envrc-named protected file is still an ask (claude's own sensitive-file check must not swallow it — F16)", () => {
-    expect(protectedWriteDecision("Write", { file_path: `${root}/.clover/skills/x/.envrc` }, { mode: "code", protected: set, cwd: root })).toEqual({ decision: "ask" });
+    expect(protectedWriteDecision("Write", { file_path: `${root}/.moss/skills/x/.envrc` }, { mode: "code", protected: set, cwd: root })).toEqual({ decision: "ask" });
   });
 
   test("a nested project dir on the walk is protected like the root's", () => {
     const walkSet = protectedPathsFor(home, root, { cwd: `${root}/packages/web`, userHome: "/Users/x" });
-    expect(protectedWriteDecision("Write", { file_path: `${root}/packages/web/.clover/skills/a/SKILL.md` }, { mode: "code", protected: walkSet, cwd: root })).toEqual({ decision: "ask" });
+    expect(protectedWriteDecision("Write", { file_path: `${root}/packages/web/.moss/skills/a/SKILL.md` }, { mode: "code", protected: walkSet, cwd: root })).toEqual({ decision: "ask" });
     // Review C1: a sibling subtree off the walk is protected too — a later session there loads it.
-    expect(protectedWriteDecision("Write", { file_path: `${root}/packages/api/.clover/skills/a/SKILL.md` }, { mode: "code", protected: walkSet, cwd: root })).toEqual({ decision: "ask" });
+    expect(protectedWriteDecision("Write", { file_path: `${root}/packages/api/.moss/skills/a/SKILL.md` }, { mode: "code", protected: walkSet, cwd: root })).toEqual({ decision: "ask" });
   });
 
   test("a relative target resolves against the cwd", () => {
-    expect(protectedWriteDecision("Write", { file_path: ".clover/skills/a/SKILL.md" }, { mode: "code", protected: set, cwd: root })).toEqual({ decision: "ask" });
+    expect(protectedWriteDecision("Write", { file_path: ".moss/skills/a/SKILL.md" }, { mode: "code", protected: set, cwd: root })).toEqual({ decision: "ask" });
   });
 
   test("case-folded (a default macOS volume is case-insensitive)", () => {
-    expect(protectedWriteDecision("Write", { file_path: `${root}/.CLOVER/Skills/a.md` }, { mode: "code", protected: set, cwd: root })).toEqual({ decision: "ask" });
+    expect(protectedWriteDecision("Write", { file_path: `${root}/.MOSS/Skills/a.md` }, { mode: "code", protected: set, cwd: root })).toEqual({ decision: "ask" });
   });
 
-  test("review C1: ANY .clover/{skills,commands,rules,output-styles} at any depth, trusted or not", () => {
+  test("review C1: ANY .moss/{skills,commands,rules,output-styles} at any depth, trusted or not", () => {
     const untrusted = protectedPathsFor(home, null);
     for (const p of [
-      `${root}/.clover/skills/a.md`,                               // an untrusted project: it loads once trusted
-      `${root}/packages/app/.clover/commands/deploy.md`,           // below the cwd
-      `/elsewhere/other/.clover/rules/r.md`,                       // another project entirely
-      `${root}/a/b/c/.clover/output-styles/terse.md`,
-      `${root}/packages/app/.clover/skills`,                       // the directory itself
+      `${root}/.moss/skills/a.md`,                               // an untrusted project: it loads once trusted
+      `${root}/packages/app/.moss/commands/deploy.md`,           // below the cwd
+      `/elsewhere/other/.moss/rules/r.md`,                       // another project entirely
+      `${root}/a/b/c/.moss/output-styles/terse.md`,
+      `${root}/packages/app/.moss/skills`,                       // the directory itself
     ]) {
       expect({ p, d: protectedWriteDecision("Write", { file_path: p }, { mode: "code", protected: untrusted, cwd: root }) }).toEqual({ p, d: { decision: "ask" } });
     }
-    expect(protectedWriteDecision("Write", { file_path: `${root}/.clover/skillset/a.md` }, { mode: "code", protected: untrusted, cwd: root })).toBeNull();
-    expect(protectedWriteDecision("Write", { file_path: `${root}/.clover/agents-notes.md` }, { mode: "code", protected: untrusted, cwd: root })).toBeNull();
+    expect(protectedWriteDecision("Write", { file_path: `${root}/.moss/skillset/a.md` }, { mode: "code", protected: untrusted, cwd: root })).toBeNull();
+    expect(protectedWriteDecision("Write", { file_path: `${root}/.moss/agents-notes.md` }, { mode: "code", protected: untrusted, cwd: root })).toBeNull();
   });
 
-  test("not protected: <root>/CLOVER.md, reads, the memory dir", () => {
-    expect(protectedWriteDecision("Write", { file_path: `${root}/CLOVER.md` }, { mode: "code", protected: set, cwd: root })).toBeNull();
-    expect(protectedWriteDecision("Read", { file_path: `${root}/.clover/skills/a.md` }, { mode: "code", protected: set, cwd: root })).toBeNull();
+  test("not protected: <root>/MOSS.md, reads, the memory dir", () => {
+    expect(protectedWriteDecision("Write", { file_path: `${root}/MOSS.md` }, { mode: "code", protected: set, cwd: root })).toBeNull();
+    expect(protectedWriteDecision("Read", { file_path: `${root}/.moss/skills/a.md` }, { mode: "code", protected: set, cwd: root })).toBeNull();
     expect(protectedWriteDecision("Write", { file_path: `${home}/sdk/projects/k/memory/MEMORY.md` }, { mode: "code", protected: set, cwd: root })).toBeNull();
     expect(protectedWriteDecision("Write", { file_path: `${home}/sdk/skillset/a.md` }, { mode: "code", protected: set, cwd: root })).toBeNull();
   });
 
   test("a write through a link INTO a protected directory is caught on its canonical spelling", () => {
-    const h = real("clover-prot-home-");
-    const r = real("clover-prot-root-");
-    mkdirSync(join(r, ".clover", "skills"), { recursive: true });
-    const alias = join(real("clover-prot-alias-"), "sneaky");
-    symlinkSync(join(r, ".clover", "skills"), alias);
+    const h = real("moss-prot-home-");
+    const r = real("moss-prot-root-");
+    mkdirSync(join(r, ".moss", "skills"), { recursive: true });
+    const alias = join(real("moss-prot-alias-"), "sneaky");
+    symlinkSync(join(r, ".moss", "skills"), alias);
     const d = protectedWriteDecision("Write", { file_path: join(alias, "evil", "SKILL.md") }, { mode: "code", protected: protectedPathsFor(h, r), cwd: "/" });
     expect(d).toEqual({ decision: "ask" });
   });
 });
 
 describe("storeWriteDenial — spec §7.1: sdk/projects/** is written by the runtimes, never by a tool, except */memory/**", () => {
-  const home = "/Users/x/.clover";
+  const home = "/Users/x/.moss";
   test("a transcript or anything else under sdk/projects is denied, in every mode", () => {
     for (const p of [`${home}/sdk/projects/-Users-x-app/abc.jsonl`, `${home}/sdk/projects/k/subagents/a.jsonl`, `${home}/sdk/projects`]) {
       const d = storeWriteDenial("Write", { file_path: p }, { home, cwd: "/" });
@@ -191,12 +191,12 @@ describe("storeWriteDenial — spec §7.1: sdk/projects/** is written by the run
 });
 
 describe("protectedReadDenial — spec §7.1's read row (hook half)", () => {
-  const home = "/Users/x/.clover";
+  const home = "/Users/x/.moss";
   const tmp = tmpdir();
-  test("sdk/.clover.json and the three config files in any run folder or staging root", () => {
+  test("sdk/.moss.json and the three config files in any run folder or staging root", () => {
     for (const p of [
-      `${home}/sdk/.clover.json`,
-      `${home}/cache/runs/2b1c/.clover.json`,
+      `${home}/sdk/.moss.json`,
+      `${home}/cache/runs/2b1c/.moss.json`,
       `${home}/cache/runs/2b1c/.claude.json`,
       `${home}/cache/runs/2b1c/.credentials.json`,
       join(tmp, "claude-resume-8f2a", ".claude.json"),
@@ -215,8 +215,8 @@ describe("protectedReadDenial — spec §7.1's read row (hook half)", () => {
   test("ordinary reads stay free", () => {
     expect(protectedReadDenial("Read", { file_path: `${home}/sdk/settings.json` }, { home, cwd: "/" })).toBeUndefined();
     expect(protectedReadDenial("Read", { file_path: `${home}/cache/runs/2b1c/skills/a/SKILL.md` }, { home, cwd: "/" })).toBeUndefined();
-    expect(protectedReadDenial("Read", { file_path: "/Users/x/code/app/.clover.json" }, { home, cwd: "/" })).toBeUndefined();
+    expect(protectedReadDenial("Read", { file_path: "/Users/x/code/app/.moss.json" }, { home, cwd: "/" })).toBeUndefined();
     expect(protectedReadDenial("Grep", { path: "/Users/x/code/app", pattern: "x" }, { home, cwd: "/" })).toBeUndefined();
-    expect(protectedReadDenial("Write", { file_path: `${home}/sdk/.clover.json` }, { home, cwd: "/" })).toBeUndefined();
+    expect(protectedReadDenial("Write", { file_path: `${home}/sdk/.moss.json` }, { home, cwd: "/" })).toBeUndefined();
   });
 });

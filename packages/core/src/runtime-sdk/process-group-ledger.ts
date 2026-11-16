@@ -4,7 +4,7 @@
 // run as a process group of their own (`setsid`), started from the session's Worker. While the daemon lives,
 // `embedded.ts` reaps whatever a closed Worker left running. A spawned `winter` child used to have a second
 // line of defence (it watched its parent and killed its groups when the daemon vanished); a Worker has none,
-// because it IS the daemon. So when clover-core is SIGKILLed, runs out of memory or crashes natively, those
+// because it IS the daemon. So when moss-core is SIGKILLed, runs out of memory or crashes natively, those
 // groups keep running with no owner, and nothing at the next boot knew they existed.
 //
 // THE LEDGER. While any Worker is live, the embedded host writes the live groups to

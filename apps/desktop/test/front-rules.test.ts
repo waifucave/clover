@@ -7,7 +7,7 @@ const ISLAND: FrontRule = { stepsAside: false };
 
 const FRONT: MainWindowState = { exists: true, visible: true, minimized: false, focused: true };
 
-describe("the pill steps aside while Clover's own window is in front", () => {
+describe("the pill steps aside while MOSS's own window is in front", () => {
   test("window focused and visible: the pill is hidden, the island stays", () => {
     expect(mainWindowFront(FRONT)).toBe(true);
     expect(surfaceShown(PILL, true, FRONT)).toBe(false);
@@ -46,7 +46,7 @@ describe("the pill: put away, summoned, stepping aside", () => {
     expect(shown("summoned", BEHIND)).toBe(true);
     expect(shown("summoned", IN_FRONT, false)).toBe(false);
   });
-  test("a tap with Clover's window in front summons the pill over it; the next tap puts it away", () => {
+  test("a tap with MOSS's window in front summons the pill over it; the next tap puts it away", () => {
     const first = afterTap("auto", PILL, true, IN_FRONT);
     expect(first).toBe("summoned");
     expect(shown(first, IN_FRONT)).toBe(true);

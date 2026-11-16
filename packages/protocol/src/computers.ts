@@ -1,8 +1,8 @@
-// Clover protocol area: computers and the folder tree (spec §9.1, §9.2). Owner: lane J (the computer registry, the
+// MOSS protocol area: computers and the folder tree (spec §9.1, §9.2). Owner: lane J (the computer registry, the
 // tree, MCP tools across computers, cloud computers). Pinned by lane B at M0; spike S6 (mounts) is still running,
 // so the tree's peer methods are the operations the `Tree` contract names, nothing about mounts.
 //
-// A computer is a device running clover-core. The bot sees one folder tree, `home/<Computer>/` per computer and
+// A computer is a device running moss-core. The bot sees one folder tree, `home/<Computer>/` per computer and
 // `bots/<bot>/` for each bot; a call runs on the computer that holds its files, and a computer that is off answers
 // "computer offline" at once. Holds, the user-working mark and `computers.control` are kept for opensky (§4, §9.2).
 import { z } from "zod";
@@ -60,13 +60,13 @@ export const HoldView = z.object({
 });
 export type HoldView = z.infer<typeof HoldView>;
 
-/** One of Clover's own windows on a computer, which a computer-use plugin must not act on (§5.5). */
-export const CloverWindow = z.object({
+/** One of MOSS's own windows on a computer, which a computer-use plugin must not act on (§5.5). */
+export const MossWindow = z.object({
   id: utf16(128),
   x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative(),
   display: utf16(128).optional(),
 });
-export type CloverWindow = z.infer<typeof CloverWindow>;
+export type MossWindow = z.infer<typeof MossWindow>;
 
 export const FileStat = z.object({
   path: TreePath,
@@ -183,10 +183,10 @@ export const COMPUTERS_METHODS = {
     doc: "A computer's holds and its user-working mark.",
   }),
   // A computer-use plugin's own calls (taking and releasing holds, the user-working mark, a running action, where
-  // Clover's windows are) are plugin-API calls (`computers.takeHold`, `computers.releaseHold`,
-  // `computers.setUserWorking`, `computers.setActionRunning`, `computers.cloverWindows`), made through
+  // MOSS's windows are) are plugin-API calls (`computers.takeHold`, `computers.releaseHold`,
+  // `computers.setUserWorking`, `computers.setActionRunning`, `computers.mossWindows`), made through
   // `pluginHost.api` with the plugin id the host stamps (review S3). Their shapes are `HoldTarget`, `HoldView` and
-  // `CloverWindow` above.
+  // `MossWindow` above.
 
   // The folder tree. Between computers (`peer`), and for plugins with `files`, inside the fence (§5.4, §9.1). The owner
   // decided there are no OS mounts: the holder's daemon serves the tree over the link, so this is the main path. A
@@ -347,7 +347,7 @@ export const COMPUTERS_METHODS = {
 
   // Terminals (lane F's request; lane J's PTY): the user's own terminals in the panel. A layer needs `terminal`, which
   // any plugin may ask for (the owner, 2026-11-15), and whose OK warns that it runs commands as the user outside
-  // Clover's sandbox. What a `write` carries is what lane E's runtime derived from trusted input events in the
+  // MOSS's sandbox. What a `write` carries is what lane E's runtime derived from trusted input events in the
   // terminal panel (a key press's bytes; a paste through the paste door, which brackets it and asks before one of more
   // than one line) for the bundled panel; the daemon can't check that, which is why the card's line says it plainly.
   terminalOpen: defineMethod({
@@ -480,7 +480,7 @@ export const COMPUTERS_EVENTS = {
   }),
   computerHello: defineEvent({
     type: "computer_hello", owner: "J", roles: ["peer"], schema: ComputerHelloEvent,
-    fixture: { type: "computer_hello", ts: 1781270000000, name: "Studio", os: "macos", hasDisplay: true, agents: ["claude-code"], level: "ask-risky", tree: { home: "/Users/me", botsRoot: "/Users/me/.clover/bots", os: "macos", bots: ["alpha"] } },
+    fixture: { type: "computer_hello", ts: 1781270000000, name: "Studio", os: "macos", hasDisplay: true, agents: ["claude-code"], level: "ask-risky", tree: { home: "/Users/me", botsRoot: "/Users/me/.moss/bots", os: "macos", bots: ["alpha"] } },
     doc: "A computer introduces itself to a peer when a link opens and when it changes: its name, level, agents and where its part of the tree lives.",
   }),
   terminalOutput: defineEvent({

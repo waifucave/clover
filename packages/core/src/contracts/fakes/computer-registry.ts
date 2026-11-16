@@ -3,8 +3,8 @@
 import { createHash } from "node:crypto";
 import {
   COMPUTER_NAME_RE, DEFAULT_LEVEL, callBindingInput, levelAbove,
-  type CloverWindow, type ComputerView, type HoldView, type Level,
-} from "@waifucave/clover-protocol";
+  type MossWindow, type ComputerView, type HoldView, type Level,
+} from "@waifucave/moss-protocol";
 import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, type CardRecord, verifySignedAnswer } from "../approval-broker";
 import { MemoryAnswerLedger } from "./approval-broker";
 import type { Clock } from "../clock";
@@ -24,7 +24,7 @@ export class FakeComputerRegistry implements ComputerRegistry {
   readonly #holds = new Map<string, HoldView>();
   readonly #working = new Map<string, Set<string>>();
   readonly #running = new Set<string>();
-  readonly #windows = new Map<string, CloverWindow[]>();
+  readonly #windows = new Map<string, MossWindow[]>();
   readonly #listeners = new Listeners<ComputerChange>();
   #holdSeq = 0;
 
@@ -209,11 +209,11 @@ export class FakeComputerRegistry implements ComputerRegistry {
     return c ? this.#running.has(c.name) : false;
   }
 
-  setCloverWindows(computer: string, windows: CloverWindow[]): void {
+  setMossWindows(computer: string, windows: MossWindow[]): void {
     this.#windows.set(this.#must(computer).name, structuredClone(windows));
   }
 
-  cloverWindows(computer: string): CloverWindow[] {
+  mossWindows(computer: string): MossWindow[] {
     const c = this.#find(computer);
     return c ? structuredClone(this.#windows.get(c.name) ?? []) : [];
   }

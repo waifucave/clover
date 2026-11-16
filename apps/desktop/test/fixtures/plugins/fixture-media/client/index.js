@@ -4,7 +4,7 @@
 // holds a path: the picker hands it tokens.
 import { jsx } from "react/jsx-runtime";
 import { useEffect, useRef, useState } from "react";
-import { usePluginApi, useSurface } from "@waifucave/clover-plugin-sdk/ui";
+import { usePluginApi, useSurface } from "@waifucave/moss-plugin-sdk/ui";
 
 const note = (text) => text.replace(/[\n\r]+/g, " ");
 

@@ -1,11 +1,11 @@
-// The user's OK for an agent with no sandbox Clover counts as holding the fence (spec §9.3: it "starts only after the
-// user's OK, which says it could read Clover's logins and approve its own cards; like Devin, Clover never quietly
+// The user's OK for an agent with no sandbox MOSS counts as holding the fence (spec §9.3: it "starts only after the
+// user's OK, which says it could read MOSS's logins and approve its own cards; like Devin, MOSS never quietly
 // runs one unsandboxed").
 //
 // The OK is asked once per backend, version, computer, the program's real path and the SHA-256 of its file, as a
 // change card (`agent-unsandboxed`, which the broker always shows and never offers "always" for), and kept here; a
 // new version, another program earlier on PATH, or an edited copy asks again (K-M2 review 5). The record is
-// Clover's own, in `<home>/trust/agent-oks.json`, inside the fenced set's `trust` folder, so no bot or agent can
+// MOSS's own, in `<home>/trust/agent-oks.json`, inside the fenced set's `trust` folder, so no bot or agent can
 // write itself an OK (lane C confirms the path in its fenced set).
 import { createHash } from "node:crypto";
 import { createReadStream, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";

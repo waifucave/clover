@@ -27,7 +27,7 @@
 //
 // With no scope at all (no account and no account-less pair, so no handshake to ask), only the user's own takeover
 // acquires (`byUser`), a lease held here alone; the daemon gives a lone computer that.
-import type { LeaseView } from "@waifucave/clover-protocol";
+import type { LeaseView } from "@waifucave/moss-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { Lease, LeaseState } from "../contracts/lease";

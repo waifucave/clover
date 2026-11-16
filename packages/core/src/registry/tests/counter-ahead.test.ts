@@ -1,5 +1,5 @@
 // A record whose write counter didn't reach the secret store before the core stopped (the counter is kept after the
-// file): the next start takes Clover's own newer file and adopts its counter; an older copy put back is still refused.
+// file): the next start takes MOSS's own newer file and adopts its counter; an older copy put back is still refused.
 // The upgrade pair's step 11 found it: a plugin's removal wrote indexes.json three times right before a quit.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -10,7 +10,7 @@ import { IndexClient } from "../indexes/client";
 import { emptyIndexesState, fileRegistryStore, memoryRegistryStore } from "../state";
 
 const dirs: string[] = [];
-const temp = () => { const d = mkdtempSync(join(tmpdir(), "clover-gen-ahead-")); dirs.push(d); return d; };
+const temp = () => { const d = mkdtempSync(join(tmpdir(), "moss-gen-ahead-")); dirs.push(d); return d; };
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 
 describe("a registry record ahead of its kept counter", () => {
@@ -36,7 +36,7 @@ describe("a registry record ahead of its kept counter", () => {
     expect(tampered).toEqual([]);
   });
 
-  test("an older copy put back is still refused, for every kind of record, and so is a copy ahead whose MAC isn't Clover's", () => {
+  test("an older copy put back is still refused, for every kind of record, and so is a copy ahead whose MAC isn't MOSS's", () => {
     const dir = temp();
     const macKey = new Uint8Array(randomBytes(32));
     let kept: Record<string, number> = {};

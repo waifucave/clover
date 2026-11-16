@@ -2,7 +2,7 @@
 // reach the service as the caller the server gives them, refusals keep the browser's code, and `hold`, `stream` and
 // `report` check who calls.
 import { describe, expect, test } from "bun:test";
-import { BROWSER_METHODS, ERR, CLOVER_ERR, type Caller } from "@waifucave/clover-protocol";
+import { BROWSER_METHODS, ERR, MOSS_ERR, type Caller } from "@waifucave/moss-protocol";
 import type { MethodContext } from "../../src/rpc/handler";
 import { browserMethodHandlers, BrowserService } from "../../src/browser";
 import { FakeApp } from "./fakes";
@@ -72,12 +72,12 @@ describe("the browser's methods, served", () => {
   test("hold is the person's alone; report takes the app's events", async () => {
     const { h, service } = setup();
     await h["browser.open"]!({ owner: { kind: "bot", bot: "alpha" } }, user);
-    expect(await failure(h["browser.hold"]!({ id: "tab_1", held: true }, session))).toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
+    expect(await failure(h["browser.hold"]!({ id: "tab_1", held: true }, session))).toMatchObject({ code: MOSS_ERR.NOT_THE_USER });
     expect(await h["browser.hold"]!({ id: "tab_1", held: true }, user)).toEqual({ ok: true });
     expect(service.tabs({ kind: "user" })[0]!.heldByUser).toBe(true);
     const events = { events: [{ kind: "closed", id: "tab_1", by: "user" }] };
-    expect(await failure(h["browser.report"]!(events, session))).toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
-    expect(await failure(h["browser.report"]!(events, as({ kind: "user", client: "web" })))).toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
+    expect(await failure(h["browser.report"]!(events, session))).toMatchObject({ code: MOSS_ERR.ROLE_REFUSED });
+    expect(await failure(h["browser.report"]!(events, as({ kind: "user", client: "web" })))).toMatchObject({ code: MOSS_ERR.ROLE_REFUSED });
     expect(service.tabs({ kind: "user" })).toHaveLength(1);
     expect(await h["browser.report"]!(events, user)).toEqual({ ok: true });
     expect(service.tabs({ kind: "user" })).toEqual([]);
@@ -86,7 +86,7 @@ describe("the browser's methods, served", () => {
   test("a stream goes to the device its call came on: none, no stream", async () => {
     const { h } = setup();
     await h["browser.open"]!({ owner: { kind: "bot", bot: "alpha" } }, user);
-    expect(await failure(h["browser.stream"]!({ id: "tab_1", on: true }, user))).toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
+    expect(await failure(h["browser.stream"]!({ id: "tab_1", on: true }, user))).toMatchObject({ code: MOSS_ERR.ROLE_REFUSED });
   });
 });
 

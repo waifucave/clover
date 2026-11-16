@@ -1,8 +1,8 @@
-import { createPlugin } from "@waifucave/clover-plugin-sdk";
+import { createPlugin } from "@waifucave/moss-plugin-sdk";
 
 /**
  * sample-echo — the reference Tier-2 (`platform`) plugin (Phase 4b Task 6, design spec §3/§4).
- * `createPlugin({tools, tile, onShortcut, onTileAction}).serve()` (from `@waifucave/clover-plugin-sdk`) owns
+ * `createPlugin({tools, tile, onShortcut, onTileAction}).serve()` (from `@waifucave/moss-plugin-sdk`) owns
  * the ENTIRE lifecycle contract — connect, hello, register, dispatch, reconnect-with-backoff,
  * clean SIGTERM/SIGINT shutdown — so everything below is purely this plugin's own behavior,
  * nothing wire-level.

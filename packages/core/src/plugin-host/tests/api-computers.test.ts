@@ -7,8 +7,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { Cluster } from "../../../test/tree/cluster-support";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -42,7 +42,7 @@ export const unwatch = async () => { off?.(); return true; };
 function plugin(home: string, id: string, capabilities: string[]): void {
   const folder = join(home, "plugins", id);
   mkdirSync(join(folder, "host"), { recursive: true });
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" }, capabilities }));
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" }, capabilities }));
   writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
   writeFileSync(join(folder, "host", "index.js"), HOST_JS);
 }
@@ -52,14 +52,14 @@ describe("computers.* in a real plugin host (row 2.25)", () => {
     cluster = new Cluster();
     const studio = await cluster.add("Studio");
     await cluster.join();
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-computers-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-computers-")));
     temps.push(home);
     plugin(home, "ctl", ["computers.read", "computers.control"]);
     plugin(home, "reader", ["computers.read"]);
     plugin(home, "plain", []);
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false, areas: { bots: () => undefined, node: () => studio.node, links: () => undefined } });
     try {
       for (const id of ["ctl", "reader", "plain"]) {
@@ -85,7 +85,7 @@ describe("computers.* in a real plugin host (row 2.25)", () => {
       expect(await call("ctl", "setUserWorking", "Studio", false)).toEqual({ error: expect.stringMatching(/^refused: the user's message or their answer to a card lifts the mark/) });
       expect(await call("ctl", "setActionRunning", "Studio", true)).toEqual({ value: "undefined" });
       expect(await call("ctl", "setActionRunning", "Studio", false)).toEqual({ value: "undefined" });
-      expect(await call("ctl", "cloverWindows", "Studio")).toEqual({ value: expect.any(Array) });
+      expect(await call("ctl", "mossWindows", "Studio")).toEqual({ value: expect.any(Array) });
       expect(await call("ctl", "releaseHold", taken.value.hold.id)).toEqual({ value: "undefined" });
       expect(await call("ctl", "holds", "Studio")).toEqual({ value: expect.objectContaining({ holds: [] }) });
       expect(await ph.host.invoke({ pluginId: "ctl", handler: "watch", args: {}, caller: USER })).toBe("function");
@@ -94,12 +94,12 @@ describe("computers.* in a real plugin host (row 2.25)", () => {
       // With only computers.read: the reads; every control member refused (absent from its API, or refused at the gate).
       expect(await call("reader", "list")).toEqual({ value: [expect.objectContaining({ name: "Studio" })] });
       expect(await call("reader", "get", "Studio")).toEqual({ value: expect.objectContaining({ name: "Studio" }) });
-      for (const m of ["holds", "takeHold", "releaseHold", "setUserWorking", "setActionRunning", "cloverWindows"]) {
+      for (const m of ["holds", "takeHold", "releaseHold", "setUserWorking", "setActionRunning", "mossWindows"]) {
         const out = await call<{ absent?: true; error?: string }>("reader", m, "Studio", { kind: "app", app: "Figma" });
         expect(out.absent === true || /computers\.control/.test(out.error ?? "")).toBe(true);
       }
       // With neither: nothing.
-      for (const m of ["list", "get", "watch", "holds", "takeHold", "releaseHold", "setUserWorking", "setActionRunning", "cloverWindows"]) {
+      for (const m of ["list", "get", "watch", "holds", "takeHold", "releaseHold", "setUserWorking", "setActionRunning", "mossWindows"]) {
         const out = await call<{ absent?: true; error?: string }>("plain", m, "Studio");
         expect(out.absent === true || /computers\.(read|control)/.test(out.error ?? "")).toBe(true);
       }
@@ -114,7 +114,7 @@ describe("computers.* in a real plugin host (row 2.25)", () => {
     const granted = ["computers.read", "computers.control"];
     const router = createApiRouter({ registry: { get: (id: string) => (id === "ctl" ? ({ id, enabled: true, state: "running", granted, capabilities: granted }) as never : undefined) }, handlers: [parts.handlers] });
     const fromUi = (path: string, args: unknown[]) => router({ pluginId: "ctl", process: "ui", path, args, caller: { kind: "plugin", pluginId: "ctl" } }).then((v) => ({ value: v }), (e: Error) => ({ error: e.message }));
-    for (const m of ["takeHold", "releaseHold", "setUserWorking", "setActionRunning", "cloverWindows"]) {
+    for (const m of ["takeHold", "releaseHold", "setUserWorking", "setActionRunning", "mossWindows"]) {
       expect(await fromUi(`computers.${m}`, ["Studio"])).toEqual({ error: `computers.${m} exists only in a plugin's host code` });
     }
     expect(await fromUi("computers.holds", ["Studio"])).toEqual({ value: expect.objectContaining({ holds: [] }) });

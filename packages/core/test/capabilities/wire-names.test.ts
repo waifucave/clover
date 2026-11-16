@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { isWinterMcpServerInstance, type Options, type WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import {
-  CAPABILITY_SERVER_KEYS, CLOVER_CAPABILITY_TOOLS,
+  CAPABILITY_SERVER_KEYS, MOSS_CAPABILITY_TOOLS,
   assertNoCapabilityCollision, buildCapabilitiesFor, capabilityServerName, capabilityToolName,
   CapabilityNameCollisionError,
   type CapabilityDeps, type CapabilityServerRecord, type CapabilitySession,
@@ -18,7 +18,7 @@ import {
  * string agree perfectly. The first cut of this batch declared its servers `name: "sessions"`, which
  * a child reaches as `mcp__sessions__list_sessions` — one segment short of every literal in the
  * table — and nothing failed anywhere, because Task 9's planned tripwire diffs
- * `CAPABILITY_TOOL_MODES` against `CLOVER_CAPABILITY_TOOLS`, i.e. copy against copy.
+ * `CAPABILITY_TOOL_MODES` against `MOSS_CAPABILITY_TOOLS`, i.e. copy against copy.
  *
  * So this file derives the name from THE SERVER OBJECT THE ROUTER RECEIVES, through the router's own
  * naming path, and asserts the derived name is the one the table carries. It fails on the old code
@@ -74,7 +74,7 @@ function wireNamesFromOptions(options: Pick<Options, "mcpServers">): string[] {
 }
 
 describe("P8b-35: the wire name a child sees is the name the table carries", () => {
-  test("every server/tool pair derives to exactly its CLOVER_CAPABILITY_TOOLS key", () => {
+  test("every server/tool pair derives to exactly its MOSS_CAPABILITY_TOOLS key", () => {
     const derived = new Set<string>();
     // Across ALL THREE MODES, because P8b-37 now filters each server's tools by the session's mode —
     // no single session sees every tool, and the table describes the union.
@@ -89,14 +89,14 @@ describe("P8b-35: the wire name a child sees is the name the table carries", () 
           // not on the server's name.
           const wire = `mcp__${server!.name}__${tool.name}`;
           expect(wire).toBe(capabilityToolName(key, tool.name));
-          expect(CLOVER_CAPABILITY_TOOLS, `${wire} is not in the table`).toHaveProperty(wire);
+          expect(MOSS_CAPABILITY_TOOLS, `${wire} is not in the table`).toHaveProperty(wire);
           derived.add(wire);
         }
       }
     }
     // And nothing in the table names a tool no session ever serves — a stale row would be a
     // `disallowedTools` entry that denies nothing, which is the same silent failure in reverse.
-    expect([...derived].sort()).toEqual(Object.keys(CLOVER_CAPABILITY_TOOLS).sort());
+    expect([...derived].sort()).toEqual(Object.keys(MOSS_CAPABILITY_TOOLS).sort());
   });
 
   test("N1: the same names come out of the `Options.mcpServers` path, walked as the SDK walks it", () => {
@@ -105,11 +105,11 @@ describe("P8b-35: the wire name a child sees is the name the table carries", () 
       // The record IS `Options.mcpServers` — spread, not re-keyed, which is the point of returning
       // a record at all. A driver that re-keyed it would show up right here.
       for (const wire of wireNamesFromOptions({ mcpServers: { ...serversFor(mode) } })) {
-        expect(CLOVER_CAPABILITY_TOOLS, `${wire} is not in the table`).toHaveProperty(wire);
+        expect(MOSS_CAPABILITY_TOOLS, `${wire} is not in the table`).toHaveProperty(wire);
         derived.add(wire);
       }
     }
-    expect([...derived].sort()).toEqual(Object.keys(CLOVER_CAPABILITY_TOOLS).sort());
+    expect([...derived].sort()).toEqual(Object.keys(MOSS_CAPABILITY_TOOLS).sort());
   });
 
   test("A-M1 review M9: every advertised inputSchema is a JSON-Schema object (the check the router ran at construction)", () => {
@@ -151,13 +151,13 @@ describe("P8b-35: the wire name a child sees is the name the table carries", () 
   test("the server name carries the brand, and can never shadow the standing messaging server", () => {
     for (const key of CAPABILITY_SERVER_KEYS) {
       const name = capabilityServerName(key);
-      expect(name.startsWith("clover__")).toBe(true);
+      expect(name.startsWith("moss__")).toBe(true);
       // The one name the router REFUSES for a capability server (it would shadow the brand's own).
-      expect(name).not.toBe("clover");
+      expect(name).not.toBe("moss");
     }
   });
 
-  test("a `clover`-less server name would produce the WRONG wire name — the defect this pins", () => {
+  test("a `moss`-less server name would produce the WRONG wire name — the defect this pins", () => {
     // The shape of the regression, stated as an assertion rather than a comment: had the server
     // been declared with the bare key, the derived name would be one segment short of the table's.
     for (const key of CAPABILITY_SERVER_KEYS) {
@@ -169,31 +169,31 @@ describe("P8b-35: the wire name a child sees is the name the table carries", () 
 describe("N2: assertNoCapabilityCollision — the guard the router no longer runs for us", () => {
   test("a caller's server colliding with a daemon-owned name is REFUSED, naming it", () => {
     const owned = serversFor("code");
-    const plugin = { "clover__browser": { type: "sdk" as const, name: "clover__browser", instance: {} } };
+    const plugin = { "moss__browser": { type: "sdk" as const, name: "moss__browser", instance: {} } };
     expect(() => assertNoCapabilityCollision(plugin, owned)).toThrow(CapabilityNameCollisionError);
     try {
       assertNoCapabilityCollision(plugin, owned);
     } catch (err) {
-      expect((err as CapabilityNameCollisionError).server).toBe("clover__browser");
+      expect((err as CapabilityNameCollisionError).server).toBe("moss__browser");
       expect((err as { code?: string }).code).toBe("capability_name_collision");
     }
   });
 
-  test("fix-wave N-1: a configured server keyed exactly the BRAND NAME (`clover`) is refused — its tools would mint mcp__clover__<x> names Clover maps onto its own gate classes", () => {
+  test("fix-wave N-1: a configured server keyed exactly the BRAND NAME (`moss`) is refused — its tools would mint mcp__moss__<x> names MOSS maps onto its own gate classes", () => {
     const owned = serversFor("code");
-    // `clover` + a tool named `web__web_fetch` → `mcp__clover__web__web_fetch`, the very string the
-    // bridge strips to Clover's `web_fetch` (NETWORK, silent under every policy incl. `plan`)
+    // `moss` + a tool named `web__web_fetch` → `mcp__moss__web__web_fetch`, the very string the
+    // bridge strips to MOSS's `web_fetch` (NETWORK, silent under every policy incl. `plan`)
     expect(capabilityToolName("web", "web_fetch")).toBe(`mcp__${CORE_BRAND.mcpServerName}__web__web_fetch`);
     const spoof = { [CORE_BRAND.mcpServerName]: { type: "stdio" as const, command: "evil" } };
     expect(() => assertNoCapabilityCollision(spoof, owned)).toThrow(CapabilityNameCollisionError);
     try { assertNoCapabilityCollision(spoof, owned); } catch (err) {
-      expect((err as CapabilityNameCollisionError).server).toBe("clover");
+      expect((err as CapabilityNameCollisionError).server).toBe("moss");
       expect((err as Error).message).toContain("the host's own MCP namespace");
     }
     // refused with an EMPTY owned set too (the brand rule does not depend on which servers this
     // session carries), and a merely similar key is not
     expect(() => assertNoCapabilityCollision(spoof, [])).toThrow(CapabilityNameCollisionError);
-    expect(() => assertNoCapabilityCollision({ "clover-tools": {}, "normal": {} }, owned)).not.toThrow();
+    expect(() => assertNoCapabilityCollision({ "moss-tools": {}, "normal": {} }, owned)).not.toThrow();
   });
 
   test("non-colliding servers, an empty record and `undefined` all pass", () => {
@@ -204,8 +204,8 @@ describe("N2: assertNoCapabilityCollision — the guard the router no longer run
   });
 
   test("it accepts a bare name list as well as the record", () => {
-    expect(() => assertNoCapabilityCollision({ "clover__web": {} }, ["clover__web"])).toThrow(CapabilityNameCollisionError);
-    expect(() => assertNoCapabilityCollision({ "clover__web": {} }, ["clover__browser"])).not.toThrow();
+    expect(() => assertNoCapabilityCollision({ "moss__web": {} }, ["moss__web"])).toThrow(CapabilityNameCollisionError);
+    expect(() => assertNoCapabilityCollision({ "moss__web": {} }, ["moss__browser"])).not.toThrow();
   });
 });
 

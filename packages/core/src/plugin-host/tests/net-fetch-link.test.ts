@@ -9,8 +9,8 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Caller, HostProcess } from "@waifucave/clover-protocol";
-import { networkAllows } from "@waifucave/clover-plugin-sdk";
+import type { Caller, HostProcess } from "@waifucave/moss-protocol";
+import { networkAllows } from "@waifucave/moss-plugin-sdk";
 import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
 import { SystemClock } from "../../clock/system-clock";
 import { FakePluginRegistry } from "../../contracts/fakes/plugin-registry";
@@ -135,7 +135,7 @@ afterAll(() => backend.server?.stop(true));
 
 /** The plugin's folder, its registry record (bundled, `network:127.0.0.1:<port>`, an api-key entry) and B's gate. */
 function world() {
-  const folder = mkdtempSync(join(tmpdir(), "clover-netfetch-"));
+  const folder = mkdtempSync(join(tmpdir(), "moss-netfetch-"));
   temps.push(folder);
   mkdirSync(join(folder, "host"));
   writeFileSync(join(folder, "host", "index.js"), HOST_JS);
@@ -148,9 +148,9 @@ function world() {
   const registry = new FakePluginRegistry({
     catalog: catalogPointDecl,
     plugins: [
-      { id: "clover", manifest: { manifest: 1, id: "clover", name: "Clover" } as never, source: "bundled" },
-      { id: "clover/netprobe", manifest: child as never, source: "bundled" },
-      { id: "clover/netprobe-two", manifest: { ...child, name: "Net probe two" } as never, source: "bundled" },
+      { id: "moss", manifest: { manifest: 1, id: "moss", name: "MOSS" } as never, source: "bundled" },
+      { id: "moss/netprobe", manifest: child as never, source: "bundled" },
+      { id: "moss/netprobe-two", manifest: { ...child, name: "Net probe two" } as never, source: "bundled" },
       // A third-party plugin with the same granted `network:` entry and auth entry.
       { id: "acme-net", manifest: { ...child, id: "acme-net", name: "Acme net" } as never, source: "local" },
     ],
@@ -169,8 +169,8 @@ function world() {
     return r === undefined ? undefined : { id: r.id, source: r.source };
   });
   const records = new Map<string, HostedRecord>([
-    ["clover/netprobe", { id: "clover/netprobe", source: "bundled", folder, entry: "host/index.js", dataFolder: join(folder, "data") }],
-    ["clover/netprobe-two", { id: "clover/netprobe-two", source: "bundled", folder, entry: "host/index.js", dataFolder: join(folder, "data-two") }],
+    ["moss/netprobe", { id: "moss/netprobe", source: "bundled", folder, entry: "host/index.js", dataFolder: join(folder, "data") }],
+    ["moss/netprobe-two", { id: "moss/netprobe-two", source: "bundled", folder, entry: "host/index.js", dataFolder: join(folder, "data-two") }],
     ["acme-net", { id: "acme-net", source: "local", folder, entry: "host/index.js", dataFolder: join(folder, "data-acme") }],
   ]);
   return { router, records };
@@ -210,7 +210,7 @@ function tap(peer: RpcPeer, log: unknown[], leg: string): RpcPeer {
 const dump = (v: unknown): string => JSON.stringify(v, (_k, x) => (x instanceof Uint8Array ? Buffer.from(x).toString("latin1") : x));
 
 async function scenario(host: CorePluginHost, base: string) {
-  const call = <T>(handler: string, args: unknown) => host.invoke<T>({ pluginId: "clover/netprobe", handler, args, caller: USER, timeoutMs: 120_000 });
+  const call = <T>(handler: string, args: unknown) => host.invoke<T>({ pluginId: "moss/netprobe", handler, args, caller: USER, timeoutMs: 120_000 });
   type Seen = { status: number; headers: [string, string][]; text: string; error?: { name: string; code: string; message: string } };
   const echo = await call<Seen>("get", { url: `${base}/echo` });
   expect(echo.status).toBe(200);
@@ -264,7 +264,7 @@ describe("net.fetch over a real plugin-host link", () => {
         connect: (process: HostProcess) => {
           let peer = links.get(process);
           if (peer === undefined || peer.closed) {
-            const p = spawnHostProcess({ cmd: [globalThis.process.execPath, HOST_PROCESS_ENTRY], env: { ...(globalThis.process.env as Record<string, string>), CLOVER_COMPUTER: "Studio" }, onOutput: (l) => void out.push(l) });
+            const p = spawnHostProcess({ cmd: [globalThis.process.execPath, HOST_PROCESS_ENTRY], env: { ...(globalThis.process.env as Record<string, string>), MOSS_COMPUTER: "Studio" }, onOutput: (l) => void out.push(l) });
             processes.push(p);
             links.set(process, (peer = tap(p.peer, wire, "daemon-link")));
           }
@@ -330,7 +330,7 @@ describe("net.fetch over a real plugin-host link", () => {
       connect: (process: HostProcess) => {
         let peer = links.get(process);
         if (peer === undefined || peer.closed) {
-          const p = spawnHostProcess({ cmd: [globalThis.process.execPath, HOST_PROCESS_ENTRY], env: { ...(globalThis.process.env as Record<string, string>), CLOVER_COMPUTER: "Studio" } });
+          const p = spawnHostProcess({ cmd: [globalThis.process.execPath, HOST_PROCESS_ENTRY], env: { ...(globalThis.process.env as Record<string, string>), MOSS_COMPUTER: "Studio" } });
           processes.push(p);
           links.set(process, (peer = p.peer));
         }
@@ -343,16 +343,16 @@ describe("net.fetch over a real plugin-host link", () => {
     const base = `http://127.0.0.1:${backend.port}`;
     const call = <T>(pluginId: string, handler: string, args: unknown) => host.invoke<T>({ pluginId, handler, args, caller: USER, timeoutMs: 120_000 });
     try {
-      // Both bundled plugins run in the one clover process.
-      expect((await call<{ status: number }>("clover/netprobe-two", "get", { url: `${base}/echo` })).status).toBe(200);
+      // Both bundled plugins run in the one moss process.
+      expect((await call<{ status: number }>("moss/netprobe-two", "get", { url: `${base}/echo` })).status).toBe(200);
       // 20 MiB given whole would be a line past the link's limit as base64: the worker refuses it, naming the cap.
-      expect(await call("clover/netprobe", "whole", { url: `${base}/upload`, n: 20 * MiB })).toMatchObject({ name: "ContractError", code: "invalid", message: expect.stringContaining("16777216 bytes") });
-      expect(links.get("clover")?.closed).toBe(false);
-      expect(host.status("clover/netprobe")).toMatchObject({ state: "running", crashes: 0 });
-      expect(host.status("clover/netprobe-two")).toMatchObject({ state: "running", crashes: 0 });
-      expect((await call<{ status: number }>("clover/netprobe-two", "get", { url: `${base}/echo` })).status).toBe(200);
+      expect(await call("moss/netprobe", "whole", { url: `${base}/upload`, n: 20 * MiB })).toMatchObject({ name: "ContractError", code: "invalid", message: expect.stringContaining("16777216 bytes") });
+      expect(links.get("moss")?.closed).toBe(false);
+      expect(host.status("moss/netprobe")).toMatchObject({ state: "running", crashes: 0 });
+      expect(host.status("moss/netprobe-two")).toMatchObject({ state: "running", crashes: 0 });
+      expect((await call<{ status: number }>("moss/netprobe-two", "get", { url: `${base}/echo` })).status).toBe(200);
       // 32 non-ok responses dropped unread hold every slot; past the credit wait the 33rd still goes out.
-      const statuses = await call<(number | string)[]>("clover/netprobe", "unread", { url: `${base}/busy`, waitMs: 600 });
+      const statuses = await call<(number | string)[]>("moss/netprobe", "unread", { url: `${base}/busy`, waitMs: 600 });
       expect(statuses).toHaveLength(33);
       expect(statuses.every((s) => s === 429)).toBe(true);
       // A third-party plugin with a granted network: entry: its keyed fetch reaches it from its own process (row 1.91),

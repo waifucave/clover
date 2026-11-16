@@ -7,7 +7,7 @@
 //   * A folder: an ordinary folder of the user's (R1's class: `pathClass`) gets a card "<bot> wants write access to
 //     <folder> for shell commands", at every level below automatic and never the reviewer (it is judged as a delete is:
 //     a card, its "always" a rule of that bot's), and the fence's rule 3 asks first for what it fences. Anything else
-//     (a dot-folder, ~/Library, a `.git`, a folder on the PATH, outside the home, the Clover home) is refused with no
+//     (a dot-folder, ~/Library, a `.git`, a folder on the PATH, outside the home, the MOSS home) is refused with no
 //     card: the file tools reach those, and ask.
 //   * Hosts: refused, with no card, while the runtime can't filter by host (agent SDK 0.0.76 refuses a domain list,
 //     and the whole network is never given): the SDK request is in docs/research/. Every unix socket stays out of
@@ -15,12 +15,12 @@
 //     `socket(AF_UNIX)` refused by seccomp), whatever folder is granted.
 import { lstatSync, readdirSync, realpathSync, type Dirent } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Level, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Level, TurnOrigin } from "@waifucave/moss-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { BotSessionContext } from "../bots/service";
 import type { CoreToolDef } from "../runtime-sdk/turn-loop/servers";
 import { resolveSessionPath } from "./bot-check";
-import type { CloverApprovalRequest } from "./broker";
+import type { MossApprovalRequest } from "./broker";
 import type { PathClass } from "./ordinary-paths";
 import type { SandboxGrants } from "./sandbox-grants";
 import { plainOf, shownCode } from "./strings";
@@ -81,9 +81,9 @@ export function holdsLine(h: ReturnType<typeof folderHolds>): string | undefined
   if (!h.complete) {
     // Only what is held by name wherever it sits is promised: past the bound, a repository kept under another name and
     // the hooks folder a repository's config names aren't looked for, so they aren't held (`shellRunLaterDenies`).
-    return `It holds more than Clover looked through (${LOOK_DIRS_MAX.toLocaleString("en-US")} folders${parts.length > 0 ? `; ${parts.join(", ")} so far` : ""}). `
+    return `It holds more than MOSS looked through (${LOOK_DIRS_MAX.toLocaleString("en-US")} folders${parts.length > 0 ? `; ${parts.join(", ")} so far` : ""}). `
       + "Shell commands still can't change any .git, any folder named *.git or *.app, the folders of commands on your PATH, or editor or tool settings in it. "
-      + "Past what Clover looked through, a git repository kept under another name, or a hooks folder a repository's settings point to, isn't protected.";
+      + "Past what MOSS looked through, a git repository kept under another name, or a hooks folder a repository's settings point to, isn't protected.";
   }
   if (parts.length === 0) return undefined;
   return `It holds ${parts.join(", ")}: shell commands can't change their .git, the apps or those folders, or any editor or tool settings in it.`;
@@ -118,8 +118,8 @@ export interface RequestAccessDeps {
   writable?: (ctx: BotSessionContext, folder: string) => boolean;
   /** The folders on the user's PATH now (`pathFolders`): one, or a folder holding one at its top, is never granted. */
   pathFolders?: () => readonly string[];
-  /** The Clover home: a folder holding it is never granted. */
-  cloverHome?: string;
+  /** The MOSS home: a folder holding it is never granted. */
+  mossHome?: string;
   /** The OS (default: this one's). Linux grants are refused (its sandbox holds only what exists when a command starts). */
   os?: "macos" | "linux" | "windows";
 }
@@ -138,7 +138,7 @@ function neverGiven(real: string, deps: RequestAccessDeps): string | undefined {
   const inside = (a: string, root: string) => same(a, root) || a.toLowerCase().startsWith(root.toLowerCase().replace(/\/$/, "") + "/");
   const homes = [...new Set([deps.home, realOrSelf(deps.home)])];
   if (homes.flatMap((h) => [h, join(h, "Applications"), join(h, "Library")]).some((f) => same(real, f))) return `${real} is your home, your apps or your Library: shell commands never get write access to it.`;
-  if (deps.cloverHome !== undefined && inside(deps.cloverHome, real)) return `${real} holds Clover's own folder: shell commands never get write access to it.`;
+  if (deps.mossHome !== undefined && inside(deps.mossHome, real)) return `${real} holds MOSS's own folder: shell commands never get write access to it.`;
   for (const f of deps.pathFolders?.() ?? []) {
     if (same(f, real) || same(dirname(f), real)) return `${real} is, or holds at its top, a folder of commands on your PATH: shell commands never get write access to it.`;
   }
@@ -197,7 +197,7 @@ export function requestAccessTool(deps: RequestAccessDeps, ctx: BotSessionContex
       const said: string[] = [];
       if (folder !== undefined) {
         const real = resolveSessionPath(folder, ctx.paths.scratch, deps.home);
-        // A folder, or one not made yet: never a socket, a device or a file (`run/core.sock` is refused as Clover's own
+        // A folder, or one not made yet: never a socket, a device or a file (`run/core.sock` is refused as MOSS's own
         // anyway; a socket is never connected to from the sandbox, whose network is denied).
         if (!folderOrNothing(real)) return fail(`${real} isn't a folder: RequestAccess gives shell commands write access to a folder.`);
         const never = neverGiven(real, deps);
@@ -205,12 +205,12 @@ export function requestAccessTool(deps: RequestAccessDeps, ctx: BotSessionContex
         if (deps.writable?.(ctx, real) === true || deps.grants.has(ctx.sessionId, ctx.botId, real)) {
           said.push(`Your shell commands can already write to ${real}.`);
         } else if (deps.pathClass([real]) !== "ordinary") {
-          return fail(`${real} is a sensitive place (a dot-folder, ~/Library, an app, a .git, a folder on the PATH, outside your home, or Clover's own): shell commands never get write access there. Use Write or Edit, which ask when they need to; for a repository, ${GIT_IN_SANDBOX}.`);
+          return fail(`${real} is a sensitive place (a dot-folder, ~/Library, an app, a .git, a folder on the PATH, outside your home, or MOSS's own): shell commands never get write access there. Use Write or Edit, which ask when they need to; for a repository, ${GIT_IN_SANDBOX}.`);
         } else {
           const level = deps.levelOf(ctx);
           // What it holds, looked down for before the card, so the user is told no less than the truth.
           const holds = holdsLine(folderHolds(real, deps.pathFolders?.() ?? []));
-          const req: CloverApprovalRequest = {
+          const req: MossApprovalRequest = {
             kind: "tool", session: ctx.sessionId, bot: ctx.botId, origin: origin() ?? "bot", computers: [ctx.computer],
             ...(level === undefined ? {} : { level }),
             // Judged as a delete is: a card at every level below automatic, never the reviewer; "always" is this bot's.
@@ -236,7 +236,7 @@ export function requestAccessTool(deps: RequestAccessDeps, ctx: BotSessionContex
       return {
         text: [`Granted: ${what}, for your shell commands in this conversation.`, ...said].join(" "),
         isError: false,
-        endTurn: { note: `Clover granted your shell commands ${what}. Go on from where you were: run the command that needed it again. Inside it they still never change a .git: ${GIT_IN_SANDBOX}.` },
+        endTurn: { note: `MOSS granted your shell commands ${what}. Go on from where you were: run the command that needed it again. Inside it they still never change a .git: ${GIT_IN_SANDBOX}.` },
       };
     },
   };

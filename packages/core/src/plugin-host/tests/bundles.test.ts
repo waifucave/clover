@@ -14,7 +14,7 @@ const file = (name: string, text: string | Uint8Array): EmbeddedBundleFile => ({
 
 const dirs: string[] = [];
 const scratch = (): string => {
-  const d = mkdtempSync(join(tmpdir(), "clover-host-bundles-"));
+  const d = mkdtempSync(join(tmpdir(), "moss-host-bundles-"));
   dirs.push(d);
   return d;
 };
@@ -25,9 +25,9 @@ afterEach(() => {
 describe("the embedded plugin-host bundles", () => {
   test("found by Bun's hashed names, beside other embedded files", async () => {
     const got = await loadEmbeddedHostBundles([
-      file("clover-bundled-plugins-abc123.manifest", "{}"),
-      file("clover-plugin-host-nn3p2648.bundle", "host();"),
-      file("clover-plugin-worker-x9.bundle", "worker();"),
+      file("moss-bundled-plugins-abc123.manifest", "{}"),
+      file("moss-plugin-host-nn3p2648.bundle", "host();"),
+      file("moss-plugin-worker-x9.bundle", "worker();"),
     ]);
     expect(got).toEqual({ host: "host();", worker: "worker();" });
     // The unhashed names too (the build's own file names).
@@ -36,15 +36,15 @@ describe("the embedded plugin-host bundles", () => {
 
   test("none embedded is undefined (from source, or a core built without them)", async () => {
     expect(await loadEmbeddedHostBundles([])).toBeUndefined();
-    expect(await loadEmbeddedHostBundles([file("clover-bundled-plugins.manifest", "{}"), file("clover-plugin-host.bundle.js", "x")])).toBeUndefined();
+    expect(await loadEmbeddedHostBundles([file("moss-bundled-plugins.manifest", "{}"), file("moss-plugin-host.bundle.js", "x")])).toBeUndefined();
   });
 
   test("one without the other, two of either, an empty one or one that isn't UTF-8 throws", async () => {
-    await expect(loadEmbeddedHostBundles([file("clover-plugin-host-a.bundle", "h")])).rejects.toThrow("0 clover-plugin-worker.bundle files, not one");
-    await expect(loadEmbeddedHostBundles([file("clover-plugin-worker-a.bundle", "w")])).rejects.toThrow("0 clover-plugin-host.bundle files, not one");
-    await expect(loadEmbeddedHostBundles([file("clover-plugin-host-a.bundle", "h"), file("clover-plugin-host-b.bundle", "h"), file("clover-plugin-worker-a.bundle", "w")])).rejects.toThrow("2 clover-plugin-host.bundle files");
-    await expect(loadEmbeddedHostBundles([file("clover-plugin-host-a.bundle", ""), file("clover-plugin-worker-a.bundle", "w")])).rejects.toThrow("is empty");
-    await expect(loadEmbeddedHostBundles([file("clover-plugin-host-a.bundle", new Uint8Array([0xff, 0xfe])), file("clover-plugin-worker-a.bundle", "w")])).rejects.toThrow();
+    await expect(loadEmbeddedHostBundles([file("moss-plugin-host-a.bundle", "h")])).rejects.toThrow("0 moss-plugin-worker.bundle files, not one");
+    await expect(loadEmbeddedHostBundles([file("moss-plugin-worker-a.bundle", "w")])).rejects.toThrow("0 moss-plugin-host.bundle files, not one");
+    await expect(loadEmbeddedHostBundles([file("moss-plugin-host-a.bundle", "h"), file("moss-plugin-host-b.bundle", "h"), file("moss-plugin-worker-a.bundle", "w")])).rejects.toThrow("2 moss-plugin-host.bundle files");
+    await expect(loadEmbeddedHostBundles([file("moss-plugin-host-a.bundle", ""), file("moss-plugin-worker-a.bundle", "w")])).rejects.toThrow("is empty");
+    await expect(loadEmbeddedHostBundles([file("moss-plugin-host-a.bundle", new Uint8Array([0xff, 0xfe])), file("moss-plugin-worker-a.bundle", "w")])).rejects.toThrow();
   });
 
   test("from source nothing is prebuilt", () => {

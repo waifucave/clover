@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { NewSessionEvent } from "@waifucave/clover-protocol";
-import { OFFICE_COMMAND_ACTIONS } from "@waifucave/clover-protocol";
+import type { NewSessionEvent } from "@waifucave/moss-protocol";
+import { OFFICE_COMMAND_ACTIONS } from "@waifucave/moss-protocol";
 import { PanelCommandRegistry } from "../../src/panel/commands";
 import {
   OFFICE_COMMAND_ACTIONS as REEXPORTED_OFFICE_COMMAND_ACTIONS,

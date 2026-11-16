@@ -5,8 +5,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { CLIENT_BARE_IMPORTS, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import { PLUGIN_TEMPLATES, templateFiles } from "@waifucave/clover-plugin-sdk/templates";
+import { CLIENT_BARE_IMPORTS, PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import { PLUGIN_TEMPLATES, templateFiles } from "@waifucave/moss-plugin-sdk/templates";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -31,16 +31,16 @@ const write = (root: string, files: Record<string, string>) => {
     writeFileSync(join(root, path), body);
   }
 };
-const TSX = 'import { useState } from "react";\nimport { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";\nexport function Page() { const api = usePluginApi(); const [x] = useState(0); return <p data-x={String(!!api)}>{x}</p>; }\n';
+const TSX = 'import { useState } from "react";\nimport { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";\nexport function Page() { const api = usePluginApi(); const [x] = useState(0); return <p data-x={String(!!api)}>{x}</p>; }\n';
 const job = (root: string, o: Partial<ClientBuildJob> = {}): ClientBuildJob => {
-  const outDir = temp("clover-cb-out-");
+  const outDir = temp("moss-cb-out-");
   return { root, entry: "client/index.tsx", outDir, home: homedir(), user: userInfo().username, ...o };
 };
-const manifest = (id: string, o: Record<string, unknown> = {}) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, client: { entry: "client/index.tsx" }, contributes: { ui: [{ spot: "main", key: id, component: "Page" }] }, ...o });
+const manifest = (id: string, o: Record<string, unknown> = {}) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, client: { entry: "client/index.tsx" }, contributes: { ui: [{ spot: "main", key: id, component: "Page" }] }, ...o });
 
 describe("one build: what it reads and writes (client-build-run.ts)", () => {
   test("a TSX client importing React and the UI SDK builds to one module whose only bare imports are the layer's", async () => {
-    const root = temp("clover-cb-");
+    const root = temp("moss-cb-");
     write(root, { "client/index.tsx": TSX, "client/part.ts": "export const n = 1;\n" });
     const j = job(root);
     const r = await runClientBuild(j);
@@ -57,21 +57,21 @@ describe("one build: what it reads and writes (client-build-run.ts)", () => {
   test("a folder avatar renderer using the SDK's mouth levels and figure box builds against the layer's one UI SDK", async () => {
     // A third party's renderer gets the same helpers the bundled VRM and Live2D renderers use, from `…/ui` (served by
     // every layer), never a subpath the layer doesn't serve.
-    const root = temp("clover-cb-");
+    const root = temp("moss-cb-");
     write(root, {
-      "client/index.tsx": 'import { LipSync, SpeechRing, frameSource, SHUT, avatarBoxFromRect, useAvatarControl } from "@waifucave/clover-plugin-sdk/ui";\nexport function Avatar() { const c = useAvatarControl(); const ring = new SpeechRing(48000, 0); const lips = new LipSync(frameSource(ring, () => 0)); const w = lips.sample(1 / 60) ?? SHUT; c.setBox(avatarBoxFromRect({ width: 10, height: 10 }, { x: 0, y: 0, width: 10, height: 10 })); return <i data-aa={String(w.aa)} />; }\n',
+      "client/index.tsx": 'import { LipSync, SpeechRing, frameSource, SHUT, avatarBoxFromRect, useAvatarControl } from "@waifucave/moss-plugin-sdk/ui";\nexport function Avatar() { const c = useAvatarControl(); const ring = new SpeechRing(48000, 0); const lips = new LipSync(frameSource(ring, () => 0)); const w = lips.sample(1 / 60) ?? SHUT; c.setBox(avatarBoxFromRect({ width: 10, height: 10 }, { x: 0, y: 0, width: 10, height: 10 })); return <i data-aa={String(w.aa)} />; }\n',
     });
     const j = job(root);
     const r = await runClientBuild(j);
     if (!r.ok) throw new Error(r.message);
     expect(r.imports.every((i) => (CLIENT_BARE_IMPORTS as readonly string[]).includes(i))).toBe(true);
-    expect(r.imports).toContain("@waifucave/clover-plugin-sdk/ui");
+    expect(r.imports).toContain("@waifucave/moss-plugin-sdk/ui");
     // The helpers come from the layer's copy, not bundled into the plugin's module.
     expect(readFileSync(join(j.outDir, "index.js"), "utf8")).not.toContain("class LipSync");
   });
 
   test("a macro import fails the build, closed, and nothing of the plugin's runs", async () => {
-    const root = temp("clover-cb-");
+    const root = temp("moss-cb-");
     const ran = join(root, "ran.txt");
     write(root, {
       "client/mac.ts": `import { writeFileSync } from "node:fs";\nexport function m() { writeFileSync(${JSON.stringify(ran)}, "x"); return 1; }\n`,
@@ -83,14 +83,14 @@ describe("one build: what it reads and writes (client-build-run.ts)", () => {
   });
 
   test("a file from outside the plugin (a relative path, a link, a tsconfig path) fails the build; the message has no absolute path", async () => {
-    const outside = temp("clover-cb-outside-");
+    const outside = temp("moss-cb-outside-");
     write(outside, { "lib.ts": "export const secret = 1;\n" });
     for (const files of [
       { "client/index.tsx": `import { secret } from "${join(outside, "lib.ts")}";\nexport const v = secret;\n` },
       { "client/index.tsx": 'import { secret } from "./lib.ts";\nexport const v = secret;\n', link: "" },
       { "client/index.tsx": 'import { secret } from "@x/lib";\nexport const v = secret;\n', "tsconfig.json": JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@x/*": [`${outside}/*`] } } }) },
     ] as Record<string, string>[]) {
-      const root = temp("clover-cb-");
+      const root = temp("moss-cb-");
       const { link, ...rest } = files;
       write(root, rest);
       if (link !== undefined) symlinkSync(join(outside, "lib.ts"), join(root, "client", "lib.ts"));
@@ -101,21 +101,21 @@ describe("one build: what it reads and writes (client-build-run.ts)", () => {
   });
 
   test("a bare import the layer's map doesn't serve fails with the builder's message; a stylesheet import fails too", async () => {
-    const root = temp("clover-cb-");
+    const root = temp("moss-cb-");
     write(root, { "client/index.tsx": 'import x from "lodash";\nexport const v = x;\n', "node_modules/lodash/package.json": JSON.stringify({ name: "lodash", main: "index.js" }), "node_modules/lodash/index.js": "module.exports = 1;\n" });
     // lodash is bundled in (the plugin ships it): that is allowed.
     expect((await runClientBuild(job(root))).ok).toBe(true);
-    const css = temp("clover-cb-");
+    const css = temp("moss-cb-");
     write(css, { "client/index.tsx": 'import "./a.css";\nexport const v = 1;\n', "client/a.css": "p { color: red }\n" });
     const r = await runClientBuild(job(css));
     expect(r.ok ? "" : r.message).toContain("imports code only");
-    const missing = temp("clover-cb-");
+    const missing = temp("moss-cb-");
     write(missing, { "client/index.tsx": 'import x from "left-pad";\nexport const v = x;\n' });
     expect((await runClientBuild(job(missing))).ok).toBe(false);
   });
 
   test("the bounds: the files read, their bytes, the module's bytes; an entry outside the folder", async () => {
-    const root = temp("clover-cb-");
+    const root = temp("moss-cb-");
     write(root, { "client/index.tsx": 'import { n } from "./part";\nexport const v = n;\n', "client/part.ts": `export const n = ${JSON.stringify("x".repeat(5000))};\n` });
     expect(await runClientBuild(job(root, { maxInputs: 1 }))).toMatchObject({ ok: false, message: expect.stringContaining("reads at most 1") });
     expect(await runClientBuild(job(root, { maxInputBytes: 100 }))).toMatchObject({ ok: false, message: expect.stringContaining("reads at most 100") });
@@ -126,26 +126,26 @@ describe("one build: what it reads and writes (client-build-run.ts)", () => {
 
 describe("a failed build's reason holds no text from outside the plugin (any OS: the fence off)", () => {
   test("an error in a file outside the plugin is a fixed sentence, never the bundler's words or the file's tokens", async () => {
-    const outside = temp("clover-cb-outside-");
+    const outside = temp("moss-cb-outside-");
     write(outside, { "secret.ts": "export const x = SECRET_TOKEN_4f9a ===;\n" });
-    const root = temp("clover-cb-");
+    const root = temp("moss-cb-");
     write(root, { "client/index.tsx": `import { x } from "${join(outside, "secret.ts")}";\nexport const v = x;\n` });
     // In this process, unfenced (the non-macOS path), and in an unfenced child.
     const inProcess = await runClientBuild(job(root));
-    const child = await childRunner({ cloverHome: temp("clover-cb-home-"), bun: process.execPath, fence: false })(job(root), new AbortController().signal);
+    const child = await childRunner({ mossHome: temp("moss-cb-home-"), bun: process.execPath, fence: false })(job(root), new AbortController().signal);
     for (const r of [inProcess, child]) {
       expect(r).toEqual({ ok: false, message: OUTSIDE_REASON });
     }
     // A bare import that came in from an outside file names nothing either.
     write(outside, { "lib.ts": 'import t from "SECRET_SPEC_77b1";\nexport const y = t;\n' });
-    const root2 = temp("clover-cb-");
+    const root2 = temp("moss-cb-");
     write(root2, { "client/index.tsx": `import { y } from "${join(outside, "lib.ts")}";\nexport const v = y;\n` });
     const r2 = await runClientBuild(job(root2));
     expect([r2.ok, r2.ok ? "" : r2.message.includes("SECRET")]).toEqual([false, false]);
   });
 
   test("an error in the plugin's own file keeps the bundler's words, with a relative path; one naming no file is fixed", async () => {
-    const root = temp("clover-cb-");
+    const root = temp("moss-cb-");
     write(root, { "client/index.tsx": "export const v = OWN_TOKEN ===;\n" });
     const r = await runClientBuild(job(root));
     if (r.ok) throw new Error("built");
@@ -157,20 +157,20 @@ describe("a failed build's reason holds no text from outside the plugin (any OS:
 
 describe("the child that runs it (childRunner)", () => {
   test("builds in a child of its own (fenced on macOS); killed past its time or its memory, or when the plugin changes", async () => {
-    const home = temp("clover-cb-home-");
-    const root = temp("clover-cb-");
+    const home = temp("moss-cb-home-");
+    const root = temp("moss-cb-");
     write(root, { "client/index.tsx": TSX });
-    const ok = await childRunner({ cloverHome: home, bun: process.execPath })(job(root), new AbortController().signal);
+    const ok = await childRunner({ mossHome: home, bun: process.execPath })(job(root), new AbortController().signal);
     if (!ok.ok) throw new Error(ok.message);
     expect(ok.imports).toContain("react");
-    const slow = await childRunner({ cloverHome: home, bun: process.execPath, timeoutMs: 1 })(job(root), new AbortController().signal);
+    const slow = await childRunner({ mossHome: home, bun: process.execPath, timeoutMs: 1 })(job(root), new AbortController().signal);
     expect(slow).toMatchObject({ ok: false, message: expect.stringContaining("took longer than") });
-    const heavy = temp("clover-cb-");
+    const heavy = temp("moss-cb-");
     write(heavy, { "client/index.tsx": `${TSX}export const blob = ${JSON.stringify("y".repeat(8 * 1024 * 1024))};\n` });
-    const big = await childRunner({ cloverHome: home, bun: process.execPath, maxRssBytes: 1024, watchEveryMs: 5 })(job(heavy), new AbortController().signal);
+    const big = await childRunner({ mossHome: home, bun: process.execPath, maxRssBytes: 1024, watchEveryMs: 5 })(job(heavy), new AbortController().signal);
     expect(big).toMatchObject({ ok: false, message: expect.stringContaining("more than") });
     const abort = new AbortController();
-    const stopped = childRunner({ cloverHome: home, bun: process.execPath })(job(root), abort.signal);
+    const stopped = childRunner({ mossHome: home, bun: process.execPath })(job(root), abort.signal);
     abort.abort();
     expect(await stopped).toMatchObject({ ok: false, message: expect.stringContaining("stopped") });
   }, 60_000);
@@ -178,19 +178,19 @@ describe("the child that runs it (childRunner)", () => {
 
 describe("when the registry builds (ClientBuilds over a real registry)", () => {
   const open = async () => {
-    const home = temp("clover-cb-reg-");
+    const home = temp("moss-cb-reg-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     const runs: string[] = [];
-    const real = childRunner({ cloverHome: home, bun: process.execPath });
+    const real = childRunner({ mossHome: home, bun: process.execPath });
     const run: ClientBuildRunner = (j, s) => {
       runs.push(j.root);
       return real(j, s);
     };
-    const builds = new ClientBuilds({ cloverHome: home, registry: opened.registry, run, quietMs: 0, minGapMs: 0 });
+    const builds = new ClientBuilds({ mossHome: home, registry: opened.registry, run, quietMs: 0, minGapMs: 0 });
     const install = async (id: string, files: Record<string, string>) => {
-      const src = join(temp("clover-cb-src-"), id);
+      const src = join(temp("moss-cb-src-"), id);
       write(src, files);
       return (await m["plugin.install"]!({ source: { from: "folder", path: src } }, { caller: { kind: "user", client: "app" } } as never)) as { id: string; treeHash: string };
     };
@@ -200,7 +200,7 @@ describe("when the registry builds (ClientBuilds over a real registry)", () => {
   test("nothing for a found plugin; built once its OK lands, and the view names the module by its hash", async () => {
     const t = await open();
     try {
-      const r = await t.install("tarot", { "clover.json": manifest("tarot"), "client/index.tsx": TSX });
+      const r = await t.install("tarot", { "moss.json": manifest("tarot"), "client/index.tsx": TSX });
       await t.builds.settled();
       expect(t.runs).toEqual([]);
       expect(uiPluginViews(t.opened.registry, t.builds).find((v) => v.pluginId === "tarot")).toBeUndefined();
@@ -227,7 +227,7 @@ describe("when the registry builds (ClientBuilds over a real registry)", () => {
   test("a build that fails leaves the plugin invalid with the reason, for that tree only; a folder read again doesn't retry it", async () => {
     const t = await open();
     try {
-      const r = await t.install("luna", { "clover.json": manifest("luna"), "client/index.tsx": 'import { m } from "./mac.ts" with { type: "macro" };\nexport const Page = () => m();\n', "client/mac.ts": "export const m = () => 1;\n" });
+      const r = await t.install("luna", { "moss.json": manifest("luna"), "client/index.tsx": 'import { m } from "./mac.ts" with { type: "macro" };\nexport const Page = () => m();\n', "client/mac.ts": "export const m = () => 1;\n" });
       await t.opened.registry.approve("luna", r.treeHash);
       await t.builds.settled();
       const rec = t.opened.registry.get("luna")!;
@@ -246,8 +246,8 @@ describe("when the registry builds (ClientBuilds over a real registry)", () => {
   test("a development folder rebuilds with each new tree; the older tree's build goes", async () => {
     const t = await open();
     try {
-      const folder = temp("clover-cb-dev-");
-      write(folder, { "clover.json": manifest("devp"), "client/index.tsx": TSX });
+      const folder = temp("moss-cb-dev-");
+      write(folder, { "moss.json": manifest("devp"), "client/index.tsx": TSX });
       const m = JSON.parse(manifest("devp"));
       t.opened.registry.put({ id: "devp", manifest: m, approved: true, dev: true, folder, treeHash: `sha256:${"a".repeat(64)}` });
       await t.builds.settled();
@@ -281,13 +281,13 @@ describe("when the registry builds (ClientBuilds over a real registry)", () => {
     opened.registry.put({ id, manifest: JSON.parse(manifest(id)), approved: true, dev: true, folder, treeHash: `sha256:${n.toString(16).padStart(64, "0")}` });
 
   test("a development folder saved over and over builds its last tree once it is quiet, and starts at most one build per gap", async () => {
-    const home = temp("clover-cb-rate-");
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    const home = temp("moss-cb-rate-");
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
     const rec = recorder();
-    const builds = new ClientBuilds({ cloverHome: home, registry: opened.registry, run: rec.run, quietMs: 150, minGapMs: 400 });
+    const builds = new ClientBuilds({ mossHome: home, registry: opened.registry, run: rec.run, quietMs: 150, minGapMs: 400 });
     try {
-      const folder = join(temp("clover-cb-dev-"), "churn");
-      write(folder, { "clover.json": manifest("churn"), "client/index.tsx": TSX });
+      const folder = join(temp("moss-cb-dev-"), "churn");
+      write(folder, { "moss.json": manifest("churn"), "client/index.tsx": TSX });
       for (let n = 1; n <= 6; n++) {
         devPut(opened, "churn", folder, n);
         await Bun.sleep(20);
@@ -308,15 +308,15 @@ describe("when the registry builds (ClientBuilds over a real registry)", () => {
   }, 30_000);
 
   test("one plugin's churn doesn't hold the slot: another plugin's build goes ahead of its next tree", async () => {
-    const home = temp("clover-cb-fair-");
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    const home = temp("moss-cb-fair-");
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
     const rec = recorder();
-    const builds = new ClientBuilds({ cloverHome: home, registry: opened.registry, run: rec.run, concurrency: 1, quietMs: 0, minGapMs: 300 });
+    const builds = new ClientBuilds({ mossHome: home, registry: opened.registry, run: rec.run, concurrency: 1, quietMs: 0, minGapMs: 300 });
     try {
-      const a = join(temp("clover-cb-dev-"), "busy");
-      const b = join(temp("clover-cb-dev-"), "calm");
-      write(a, { "clover.json": manifest("busy"), "client/index.tsx": TSX });
-      write(b, { "clover.json": manifest("calm"), "client/index.tsx": TSX });
+      const a = join(temp("moss-cb-dev-"), "busy");
+      const b = join(temp("moss-cb-dev-"), "calm");
+      write(a, { "moss.json": manifest("busy"), "client/index.tsx": TSX });
+      write(b, { "moss.json": manifest("calm"), "client/index.tsx": TSX });
       devPut(opened, "busy", a, 1);
       await Bun.sleep(30);
       devPut(opened, "calm", b, 1);
@@ -338,7 +338,7 @@ describe("when the registry builds (ClientBuilds over a real registry)", () => {
   test("a failed build leaves nothing of the plugin's in the cache", async () => {
     const t = await open();
     try {
-      const r = await t.install("broken", { "clover.json": manifest("broken"), "client/index.tsx": "export const v = ===;\n" });
+      const r = await t.install("broken", { "moss.json": manifest("broken"), "client/index.tsx": "export const v = ===;\n" });
       await t.opened.registry.approve("broken", r.treeHash);
       await t.builds.settled();
       expect(t.opened.registry.get("broken")!.state).toBe("invalid");
@@ -349,10 +349,10 @@ describe("when the registry builds (ClientBuilds over a real registry)", () => {
   }, 60_000);
 
   test("what an earlier run left in the cache is never trusted: it goes when the builds start", async () => {
-    const home = temp("clover-cb-left-");
+    const home = temp("moss-cb-left-");
     write(clientBuildsRoot(home), { "tarot/abc-v1/index.js": "export const evil = 1;\n" });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
-    const builds = new ClientBuilds({ cloverHome: home, registry: opened.registry, run: async () => ({ ok: false, message: "unused" }) });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    const builds = new ClientBuilds({ mossHome: home, registry: opened.registry, run: async () => ({ ok: false, message: "unused" }) });
     try {
       expect(existsSync(clientBuildsRoot(home))).toBe(false);
     } finally {

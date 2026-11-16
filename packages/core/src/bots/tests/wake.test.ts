@@ -2,7 +2,7 @@
 // its notification to the host (`ctx.wake`) instead of starting a turn itself. The host logs it, starts or folds the
 // turn through the pause and the update gate, and records the turn's end and usage like any other.
 import { afterEach, describe, expect, test } from "bun:test";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { flush } from "../../contracts/fakes/clock";
 import { projectRecords } from "../../sessions/wire";
 import { ALPHA_FOLDER, boot, pluginFromFolder, removeTemps, tempDir } from "./fixtures";

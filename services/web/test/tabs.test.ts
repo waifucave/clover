@@ -156,7 +156,7 @@ describe("the tab list", () => {
     expect(ownerLabel({ kind: "bot", bot: "alpha" }, new Map([["alpha", "Alpha"]]))).toBe("Alpha");
     expect(ownerLabel({ kind: "bot", bot: "beta" })).toBe("beta");
     expect(ownerLabel({ kind: "session", session: "s" })).toBe("A coding session");
-    expect(ownerLabel({ kind: "plugin", plugin: "clover/x" })).toBe("Plugin clover/x");
+    expect(ownerLabel({ kind: "plugin", plugin: "moss/x" })).toBe("Plugin moss/x");
     expect(ownerLabel({ kind: "user" })).toBe("You");
   });
 });

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CloverSessionEvent, SessionEvent } from "@waifucave/clover-protocol";
+import { MossSessionEvent, SessionEvent } from "@waifucave/moss-protocol";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { FakeSessionDriver } from "../../contracts/fakes/session-host";
 import { isContractError } from "../../contracts/common";
@@ -22,7 +22,7 @@ afterEach(() => {
   for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true });
 });
 const tempHome = () => {
-  const h = mkdtempSync(join(tmpdir(), "clover-d-fork-"));
+  const h = mkdtempSync(join(tmpdir(), "moss-d-fork-"));
   homes.push(h);
   return h;
 };
@@ -151,7 +151,7 @@ describe("a fork: the main's log wins, and the other computer's records go after
     expect(lateWire.map((e) => e.type)).toContain("user_message");
     expect(wire.filter((e) => e.type === "user_message" && e.text !== "two").every((e) => e.late === undefined)).toBe(true);
     expect(SessionEvent.parse(lateWire.find((e) => e.type === "user_message")).late).toBe(true);
-    expect(CloverSessionEvent.parse(lateWire.find((e) => e.type === "note")).late).toBe(true);
+    expect(MossSessionEvent.parse(lateWire.find((e) => e.type === "note")).late).toBe(true);
     // History only: nothing runs, the status stays.
     studio.resume();
     await flush();

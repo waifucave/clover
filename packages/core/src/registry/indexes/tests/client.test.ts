@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { IndexSchema } from "@waifucave/clover-plugin-sdk";
+import { IndexSchema } from "@waifucave/moss-plugin-sdk";
 import { MemorySecretStore } from "../../../contracts/fakes/secret-store";
 import { FakeApprovalBroker } from "../../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../../contracts/fakes/clock";
@@ -54,7 +54,7 @@ function web(): { fetch: IndexFetch; put(url: string, bytes: Uint8Array | string
 describe("the index client", () => {
   const client = (o: { w: ReturnType<typeof web>; store?: ReturnType<typeof memoryRegistryStore>; cacheDir?: string; add?: boolean }) => {
     const store = o.store ?? memoryRegistryStore();
-    const c = new IndexClient({ store, cacheDir: o.cacheDir ?? temp("clover-idx-cache-"), fetch: o.w.fetch });
+    const c = new IndexClient({ store, cacheDir: o.cacheDir ?? temp("moss-idx-cache-"), fetch: o.w.fetch });
     if (o.add !== false && !c.urls().includes(INDEX_URL)) c.add(INDEX_URL);
     return { c, store };
   };
@@ -80,8 +80,8 @@ describe("the index client", () => {
     await c.refresh();
     for (const [why, bytes] of [
       ["it isn't JSON", "{nope"],
-      ["it isn't a plugin index Clover reads", JSON.stringify({ index: 2, name: "Next", plugins: [] })],
-      ["it isn't a plugin index Clover reads", JSON.stringify({ index: 1, seq: 4, issued: "2026-11-10T00:00:00Z", name: "Old", plugins: [] })],
+      ["it isn't a plugin index MOSS reads", JSON.stringify({ index: 2, name: "Next", plugins: [] })],
+      ["it isn't a plugin index MOSS reads", JSON.stringify({ index: 1, seq: 4, issued: "2026-11-10T00:00:00Z", name: "Old", plugins: [] })],
     ] as const) {
       w.put(INDEX_URL, bytes);
       await c.refresh();
@@ -98,7 +98,7 @@ describe("the index client", () => {
     const w = web();
     w.put(INDEX_URL, indexBytes());
     const store = memoryRegistryStore();
-    const cacheDir = temp("clover-idx-cache-");
+    const cacheDir = temp("moss-idx-cache-");
     await client({ w, store, cacheDir }).c.refresh();
     const offline = web();
     const again = client({ w: offline, store, cacheDir }).c;
@@ -145,8 +145,8 @@ describe("the index client", () => {
     expect(store.loadIndexes!().added.map((a) => a.url)).toEqual([url]);
   });
 
-  test("the records are MAC'd: an indexes.json edited outside Clover reads as empty; one an earlier build wrote reads, its signing records dropped", () => {
-    const dir = temp("clover-idx-state-");
+  test("the records are MAC'd: an indexes.json edited outside MOSS reads as empty; one an earlier build wrote reads, its signing records dropped", () => {
+    const dir = temp("moss-idx-state-");
     const macKey = new Uint8Array(32).fill(3);
     let counters: Record<string, number> = {};
     const s1 = fileRegistryStore(dir, { macKey, counters, onCounters: (c) => void (counters = c) });
@@ -207,9 +207,9 @@ describe("the https fetch: pinned, redirects by hand", () => {
 
 describe("the index methods", () => {
   test("list, search (adult hidden until confirmed), add by URL from the app or the terminal with no card, remove", async () => {
-    const home = temp("clover-idx-methods-");
+    const home = temp("moss-idx-methods-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
     try {
       const w = web();
       const url = "https://community.example.test/index.json";

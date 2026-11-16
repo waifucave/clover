@@ -8,7 +8,7 @@
 //   {v:1, at, session, type:"end"}               either way: give up on this session
 
 import { b64u } from "../../shared/encoding";
-import type { ChannelEvent, PairChannel } from "@waifucave/clover-service-handshake/client";
+import type { ChannelEvent, PairChannel } from "@waifucave/moss-service-handshake/client";
 import { type ChannelLike, holdMessages, LinkError, RtcLink } from "./rtc-link";
 
 export interface SignalMessage {

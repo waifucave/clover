@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test";
 import { API_CALLS, containedToolsHold, describeOk, outsideFolderOk, outsideOkLines, outsideProgramOk, readOnlyReachesNetwork, validateManifest } from "../src/index";
 
-const manifest = (host: Record<string, unknown>) => ({ manifest: 1, id: "reader", name: "Reader", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", ...host } });
+const manifest = (host: Record<string, unknown>) => ({ manifest: 1, id: "reader", name: "Reader", engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts", ...host } });
 const codes = (host: Record<string, unknown>, opts: Parameters<typeof validateManifest>[1] = { folderName: "reader" }) => validateManifest(manifest(host), opts).issues.filter((i) => i.severity === "error").map((i) => i.code);
 
 test("a program is a name on the PATH or an absolute path; a folder is ~/… or an absolute path, never the whole home or disk", () => {
@@ -25,7 +25,7 @@ test("the validator: valid lists pass and are reported; a bad entry, a child, or
   expect(codes({ process: "own", outside: { programs: ["a b"] } })).toEqual(["outside_program_invalid"]);
   expect(codes({ process: "own", outside: { read: ["~"] } })).toEqual(["outside_folder_invalid"]);
   expect(codes({ outside: { programs: ["codex"] } })).toEqual(["outside_own_process"]);
-  const child = validateManifest({ manifest: 1, name: "Kid", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", process: "own", outside: { programs: ["codex"] } } }, { parent: { id: "acme", namespace: "acme" }, folderName: "kid" });
+  const child = validateManifest({ manifest: 1, name: "Kid", engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts", process: "own", outside: { programs: ["codex"] } } }, { parent: { id: "acme", namespace: "acme" }, folderName: "kid" });
   expect(child.issues.filter((i) => i.severity === "error").map((i) => i.code)).toContain("outside_top_only");
   expect(validateManifest(manifest({ process: "own" }), { folderName: "reader" }).outside).toEqual({ programs: [], read: [] });
 });
@@ -33,9 +33,9 @@ test("the validator: valid lists pass and are reported; a bad entry, a child, or
 test("the OK card names every program and folder with its warning; none when it names none", () => {
   const ok = describeOk(validateManifest(manifest({ process: "own", outside: { programs: ["codex", "claude"], read: ["~/.codex", "~/.claude"] } }), { folderName: "reader" }));
   // One line a program, saying the plugin chooses its arguments and it runs with the user's own access.
-  for (const p of ["codex", "claude"]) expect(ok).toContain(`It runs this program of yours outside Clover's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network): ${p}.`);
+  for (const p of ["codex", "claude"]) expect(ok).toContain(`It runs this program of yours outside MOSS's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network): ${p}.`);
   expect(ok).toContain("It reads these folders of yours outside its sandbox: ~/.codex, ~/.claude.");
-  expect(outsideOkLines({ programs: ["git"], read: [] })).toEqual(["It runs this program of yours outside Clover's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network): git."]);
+  expect(outsideOkLines({ programs: ["git"], read: [] })).toEqual(["It runs this program of yours outside MOSS's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network): git."]);
   expect(outsideOkLines({ programs: [], read: [] })).toEqual([]);
   expect(describeOk(validateManifest(manifest({ process: "own" }), { folderName: "reader" })).some((l) => l.includes("outside"))).toBe(false);
 });
@@ -46,7 +46,7 @@ test("outside.run is a host half's call, granted by the manifest's list (no capa
 
 test("a plugin that runs programs outside its sandbox has no tool that skips the card, and its card says they still ask", () => {
   const tools = { type: "host", tools: { status: "preload", show: "preload" }, readOnly: ["status"], contained: ["show"] };
-  const m = (outside?: unknown) => ({ manifest: 1, id: "gitter", name: "Gitter", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", process: "own", ...(outside === undefined ? {} : { outside }) }, contributes: { mcpServers: { git: tools } } });
+  const m = (outside?: unknown) => ({ manifest: 1, id: "gitter", name: "Gitter", engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts", process: "own", ...(outside === undefined ? {} : { outside }) }, contributes: { mcpServers: { git: tools } } });
   const plain = describeOk(validateManifest(m(), { folderName: "gitter" }));
   expect(plain.some((l) => l.includes("run without asking") || l.includes("runs without asking"))).toBe(true);
   const r = validateManifest(m({ programs: ["git"] }), { folderName: "gitter" });

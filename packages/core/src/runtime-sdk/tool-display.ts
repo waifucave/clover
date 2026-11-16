@@ -16,9 +16,9 @@
 import {
   TOOL_DISPLAY_KIND_SHAPE, TOOL_DISPLAY_LABEL_MAX, TOOL_DISPLAY_SWATCH_SHAPE, TOOL_DISPLAY_TITLE_MAX, TOOL_DISPLAY_VALUE_MAX,
   type ToolDisplay,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 
-import { displayText, MARKS_MAX } from "@waifucave/clover-plugin-sdk/plain";
+import { displayText, MARKS_MAX } from "@waifucave/moss-plugin-sdk/plain";
 export { displayText, MARKS_MAX };
 
 /** A plugin tool's listing `title`, for display: plain, one line, at most 60 characters. */

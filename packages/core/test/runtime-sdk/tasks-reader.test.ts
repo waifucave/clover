@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { SessionEvent } from "@waifucave/clover-protocol";
-import { readCloverTasks, tasksFromEvents, type TaskEventSource } from "../../src/runtime-sdk/tasks-reader";
+import type { SessionEvent } from "@waifucave/moss-protocol";
+import { readMossTasks, tasksFromEvents, type TaskEventSource } from "../../src/runtime-sdk/tasks-reader";
 
 const SESSION = "s_tasks_test";
 
@@ -53,7 +53,7 @@ test("insertion order is preserved by first-seen id — an unrelated later updat
   expect(tasksFromEvents(events).map((t) => t.id)).toEqual(["2", "1"]);
 });
 
-test("readCloverTasks reads the store's full log (fromSeq 0) and folds it", () => {
+test("readMossTasks reads the store's full log (fromSeq 0) and folds it", () => {
   const store: TaskEventSource = {
     read: (sessionId, fromSeq) => {
       expect(sessionId).toBe(SESSION);
@@ -61,5 +61,5 @@ test("readCloverTasks reads the store's full log (fromSeq 0) and folds it", () =
       return [taskUpdated(1, { id: "1", subject: "write the plan", status: "pending" })];
     },
   };
-  expect(readCloverTasks(store, SESSION)).toEqual([{ id: "1", subject: "write the plan", status: "pending" }]);
+  expect(readMossTasks(store, SESSION)).toEqual([{ id: "1", subject: "write the plan", status: "pending" }]);
 });

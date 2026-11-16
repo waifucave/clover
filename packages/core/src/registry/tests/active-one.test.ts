@@ -4,8 +4,8 @@
 // removal; when the active one stops, the next takes over and the user is told once. Plugins read it (the declarer's
 // tree and the fillers, never another), and only the user's own door changes it.
 import { describe, expect, test } from "bun:test";
-import { CORE_POINTS, catalogPointDecl, validateManifest } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { CORE_POINTS, catalogPointDecl, validateManifest } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { commandListMethods } from "../../commands/views";
 import { ContractError } from "../../contracts/common";
 import type { Manifest } from "../../contracts/sdk-types";
@@ -29,7 +29,7 @@ const activeRef = (reg: RegistryCore) => ref(activeOne(reg, "deck.mode")?.active
 
 describe("the active one", () => {
   test("the manifest: oneAtATime needs a title and a list or keyed point", () => {
-    const codes = (decl: Record<string, unknown>) => validateManifest({ manifest: 1, id: "deck", name: "Deck", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", declares: { "deck.mode": { shape: "list", fields: { type: "object", properties: { id: { type: "string" } } }, ...decl } } } }, { folderName: "deck" }).issues.filter((i) => i.severity === "error").map((i) => i.code);
+    const codes = (decl: Record<string, unknown>) => validateManifest({ manifest: 1, id: "deck", name: "Deck", engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts", declares: { "deck.mode": { shape: "list", fields: { type: "object", properties: { id: { type: "string" } } }, ...decl } } } }, { folderName: "deck" }).issues.filter((i) => i.severity === "error").map((i) => i.code);
     expect(codes({ oneAtATime: true, title: "Deck mode" })).toEqual([]);
     expect(codes({ oneAtATime: true })).toEqual(["point_one_title"]);
     expect(codes({ oneAtATime: true, title: "Deck mode", shape: "single" })).toEqual(["point_one_single"]);
@@ -45,11 +45,11 @@ describe("the active one", () => {
     expect(oneAtATimePoints(reg, catalog).map((o) => o.point.name)).toEqual(["computerProviders"]);
     expect(mayReadActive(reg, "computerProviders", "theirs", catalog).name).toBe("computerProviders");
     expect(() => mayReadActive(reg, "computerProviders", "other", catalog)).toThrow(/only the plugin that declares/);
-    // As shipped, no core point is one at a time: the one-at-a-time points are plugins' own (Clover Voice's voices).
+    // As shipped, no core point is one at a time: the one-at-a-time points are plugins' own (MOSS Voice's voices).
     expect(oneAtATimePoints(reg).map((o) => o.point.name)).toEqual([]);
   });
 
-  test("a declarer that fills its own point is one of its fillers, and the default when it is bundled (Clover Voice's way)", () => {
+  test("a declarer that fills its own point is one of its fillers, and the default when it is bundled (MOSS Voice's way)", () => {
     const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
     const self: RegistryInput = { ...DECK, source: "bundled", manifest: m({ ...DECK.manifest, contributes: { "deck.mode": [{ id: "own", name: "Its own" }] } as Manifest["contributes"] }) };
     reg.putAll([filler("one", "First"), self, filler("two", "Second")]);

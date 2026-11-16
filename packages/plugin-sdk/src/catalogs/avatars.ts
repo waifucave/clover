@@ -23,7 +23,7 @@ export const AVATAR_FORMATS: readonly AvatarFormatInfo[] = [
 
 /** What's wrong with an avatar's `file` for its format, or undefined, by the format's declaration (`avatar.formats`):
  *  the file ends with one of its `entry.extensions`. A format none of `formats` declares isn't checked here (its
- *  renderer, when one is installed, knows its files). `formats` defaults to the ones Clover ships, for a check made
+ *  renderer, when one is installed, knows its files). `formats` defaults to the ones MOSS ships, for a check made
  *  without the installed list (an offline `validate`, a manifest's own schema). */
 export function avatarFileProblem(format: string, file: string, formats: readonly AvatarFormatDecl[] = BUNDLED_AVATAR_FORMATS): string | undefined {
   // Whatever the format, `file` names a file: not a folder, `.` or `..` (the path's own checks refuse a `..` inside, an absolute path or an empty one).
@@ -130,7 +130,7 @@ export function clampAvatarCap(type: AvatarFileType, declared: number | undefine
 /** What the checks read of an `avatar.formats` declaration (`AvatarFormatEntry`, as parsed: `files.find` filled in). */
 export type AvatarFormatDecl = Pick<AvatarFormatEntry, "format" | "name" | "entry" | "files" | "import">;
 
-/** The formats Clover ships, as their renderers declare them (clover/vrm's and clover/live2d's `avatar.formats` entries;
+/** The formats MOSS ships, as their renderers declare them (moss/vrm's and moss/live2d's `avatar.formats` entries;
  *  a core test holds the two equal): what a check falls back on when it isn't handed the installed formats. */
 export const BUNDLED_AVATAR_FORMATS: readonly AvatarFormatDecl[] = [
   {

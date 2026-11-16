@@ -122,7 +122,7 @@ async function home(): Promise<void> {
         "div",
         { className: "card" },
         el("h2", { text: "Pair this browser" }),
-        el("p", { text: "On your computer, open Clover's Devices and choose Add a browser. Then open the link it shows here, or scan its code." }),
+        el("p", { text: "On your computer, open MOSS's Devices and choose Add a browser. Then open the link it shows here, or scan its code." }),
       ),
     );
     return;

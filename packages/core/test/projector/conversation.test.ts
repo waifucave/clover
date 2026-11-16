@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { TRANSIENT_EVENT_TYPES } from "@waifucave/clover-protocol";
+import { TRANSIENT_EVENT_TYPES } from "@waifucave/moss-protocol";
 import { MAIN_THREAD } from "../../src/projector";
 import {
   accept, assistantText, assistantToolUse, init, makeProjector, result, run, textDelta, toolResult, userTextFrame,
 } from "./harness";
 
-describe("projector: conversation fold (Clover 8b Task 10)", () => {
+describe("projector: conversation fold (MOSS 8b Task 10)", () => {
   test("system/init persists nothing and starts no turn", () => {
     const { projector } = makeProjector();
     expect(accept(projector, init())).toEqual([]);
@@ -48,28 +48,28 @@ describe("projector: conversation fold (Clover 8b Task 10)", () => {
     expect(JSON.stringify(out)).not.toContain("private chain of thought");
   });
 
-  test("a tool_use block becomes a tool_call carrying callId, the CLOVER name, and argsJson", () => {
+  test("a tool_use block becomes a tool_call carrying callId, the MOSS name, and argsJson", () => {
     const { projector } = makeProjector();
     const out = accept(projector, assistantToolUse("toolu_01", "Read", { file_path: "note.txt" }));
     expect(out.map((e) => e.type)).toEqual(["tool_call"]);
-    // `Read` → `read` (ruling P8b-25): the SessionEvent surface keeps Clover's tool vocabulary.
+    // `Read` → `read` (ruling P8b-25): the SessionEvent surface keeps MOSS's tool vocabulary.
     expect(out[0]).toMatchObject({ type: "tool_call", callId: "toolu_01", name: "read", threadId: MAIN_THREAD });
     expect(JSON.parse((out[0] as { argsJson: string }).argsJson)).toEqual({ file_path: "note.txt" });
   });
 
-  test("tool NAMES are translated Clover → Clover, and an unknown name passes through unchanged", () => {
+  test("tool NAMES are translated MOSS → MOSS, and an unknown name passes through unchanged", () => {
     const { projector } = makeProjector();
-    const seen = (clover: string) => (accept(projector, assistantToolUse(`c-${clover}`, clover, {}))[0] as { name: string }).name;
+    const seen = (moss: string) => (accept(projector, assistantToolUse(`c-${moss}`, moss, {}))[0] as { name: string }).name;
     expect(seen("Read")).toBe("read");
     expect(seen("Write")).toBe("write");
     expect(seen("Edit")).toBe("edit");
     expect(seen("Bash")).toBe("bash");
     expect(seen("Agent")).toBe("spawn_agent");
-    expect(seen("mcp__clover__browser__browser")).toBe("browser");
-    expect(seen("mcp__clover__office__docs")).toBe("docs");
+    expect(seen("mcp__moss__browser__browser")).toBe("browser");
+    expect(seen("mcp__moss__office__docs")).toBe("docs");
     // fail-OPEN: an unfamiliar label is cosmetic; dropping the call would break the callId linkage
     expect(seen("mcp__someone_else__thing")).toBe("mcp__someone_else__thing");
-    expect(seen("BrandNewCloverTool")).toBe("BrandNewCloverTool");
+    expect(seen("BrandNewMossTool")).toBe("BrandNewMossTool");
   });
 
   test("the SHARED table is the one source — where it differed from the projector's private copy, it wins", () => {
@@ -78,11 +78,11 @@ describe("projector: conversation fold (Clover 8b Task 10)", () => {
     // permission card and the name in the transcript cannot drift apart. Two of the private table's
     // rows differed, and neither appears in any fixture or golden:
     //   `Monitor`          private `bash_output` → shared has NO pair, so it falls through unchanged
-    //                      (it IS in CLOVER_TOOL_GATE_CLASS as `bash`, which is a gating decision,
+    //                      (it IS in MOSS_TOOL_GATE_CLASS as `bash`, which is a gating decision,
     //                      not a display name).
     //   `AskUserQuestion`  private `AskQuestion` → shared `ask_user`.
     const { projector } = makeProjector();
-    const seen = (clover: string) => (accept(projector, assistantToolUse(`c-${clover}`, clover, {}))[0] as { name: string }).name;
+    const seen = (moss: string) => (accept(projector, assistantToolUse(`c-${moss}`, moss, {}))[0] as { name: string }).name;
     expect(seen("Monitor")).toBe("Monitor");
     expect(seen("AskUserQuestion")).toBe("ask_user");
     // and the rows the two tables always agreed on are unchanged
@@ -92,7 +92,7 @@ describe("projector: conversation fold (Clover 8b Task 10)", () => {
   });
 
   test("the two web built-ins project IDENTICALLY on both legs, with every input key intact (0.0.17)", () => {
-    // SDK 0.0.17 gives the Clover runtime its own `WebSearch`/`WebFetch`, copied from claude's — and
+    // SDK 0.0.17 gives the MOSS runtime its own `WebSearch`/`WebFetch`, copied from claude's — and
     // the OFFICIAL leg keeps claude's native pair. Both legs put the SAME tool names on the wire, so
     // both land on the same `web_search`/`web_fetch` rows through the one pair table: a transcript
     // cannot tell which leg produced it, which is the whole point of the per-leg exposure rule.
@@ -100,18 +100,18 @@ describe("projector: conversation fold (Clover 8b Task 10)", () => {
     // can render `query`/`allowed_domains`/`blocked_domains` and `url`/`prompt`.
     const { projector } = makeProjector();
     const search = accept(projector, assistantToolUse("toolu_s", "WebSearch", {
-      query: "clover agent sdk", allowed_domains: ["example.com"], blocked_domains: [],
+      query: "moss agent sdk", allowed_domains: ["example.com"], blocked_domains: [],
     }));
     expect(search[0]).toMatchObject({ type: "tool_call", callId: "toolu_s", name: "web_search" });
     expect(JSON.parse((search[0] as { argsJson: string }).argsJson)).toEqual({
-      query: "clover agent sdk", allowed_domains: ["example.com"], blocked_domains: [],
+      query: "moss agent sdk", allowed_domains: ["example.com"], blocked_domains: [],
     });
     const fetched = accept(projector, assistantToolUse("toolu_f", "WebFetch", {
-      url: "https://example.com/doc", prompt: "what does it say about clover",
+      url: "https://example.com/doc", prompt: "what does it say about moss",
     }));
     expect(fetched[0]).toMatchObject({ type: "tool_call", callId: "toolu_f", name: "web_fetch" });
     expect(JSON.parse((fetched[0] as { argsJson: string }).argsJson)).toEqual({
-      url: "https://example.com/doc", prompt: "what does it say about clover",
+      url: "https://example.com/doc", prompt: "what does it say about moss",
     });
   });
 
@@ -236,7 +236,7 @@ describe("projector: conversation fold (Clover 8b Task 10)", () => {
     expect(out.map((e) => (e as { callId?: string }).callId)).toEqual(["t3"]);
   });
 
-  test("unknown wire types (rate_limit_event, auth_status, hook rows, Clover extensions) persist nothing", () => {
+  test("unknown wire types (rate_limit_event, auth_status, hook rows, MOSS extensions) persist nothing", () => {
     const { projector } = makeProjector();
     const unknowns = [
       { type: "rate_limit_event", rate_limit_info: { status: "allowed" } },

@@ -2,7 +2,7 @@
 // draft goes up. Git hooks see only what enters the repo; a build can still carry an absolute builder path or a name
 // in a binary (the predecessor app's 0.2.001 leak), so the gate reads the built files themselves. The patterns live
 // OUTSIDE this repo, in the owner's local-only guard (~/norma-private/git-hooks/name-guard.sh `artifacts`, or
-// CLOVER_NAME_GUARD): a tracked
+// MOSS_NAME_GUARD): a tracked
 // copy would publish the strings it keeps out. So the gate fails closed on a machine without the guard, or without a
 // tool it needs to open an asset, and only the owner's Mac cuts a release.
 //
@@ -13,7 +13,7 @@
 // read and what is excluded, the partition is asserted against the filesystem (every regular file under exactly one of
 // the two, so a bug in it can't under-scan a release), and the read part goes through `nameScan`, opened to the
 // bottom like everything else. A signed release's build FAILS CLOSED without the guard; an unsigned build (CI's) scans
-// when the guard is there and says it skipped when it isn't. Build-time exclusions: none yet (CLOVER_NAME_SCAN_EXCLUSIONS
+// when the guard is there and says it skipped when it isn't. Build-time exclusions: none yet (MOSS_NAME_SCAN_EXCLUSIONS
 // below); widening them is a security decision, not a build fix (release-lib.ts's NAME_SCAN_EXCLUSIONS says why the
 // predecessor app has its one), and a Chromium locale pack colliding here is investigated and named, never appended to
 // blind.
@@ -35,7 +35,7 @@
 // file in a format the scan knows but can't open here (a tool missing, or the bytes don't open) fails the scan
 // rather than being read raw. Beside the contents it reads every path inside each asset and every link's target (a
 // list it hands the guard as a file), and fails on a link to an absolute path. It fails when an asset yields no file
-// to read. The unpacked apps (the signed Clover.app, CI's win-unpacked) are read whole.
+// to read. The unpacked apps (the signed MOSS Code.app, CI's win-unpacked) are read whole.
 // Every file is also read raw, as it is, opened or not: .pak files, and anything with no format above.
 //
 // Bytes after a format's end: a file known by its format must be that format to its last byte, or the scan fails
@@ -81,9 +81,9 @@ export function guardPath(home: string | undefined): string {
   return join(home ?? "", "norma-private", "git-hooks", "name-guard.sh");
 }
 
-/** The owner's local-only guard: CLOVER_NAME_GUARD, or the one in their home folder. */
+/** The owner's local-only guard: MOSS_NAME_GUARD, or the one in their home folder. */
 export function nameGuardPath(env: Record<string, string | undefined> = process.env): string {
-  return env.CLOVER_NAME_GUARD ?? guardPath(env.HOME ?? homedir());
+  return env.MOSS_NAME_GUARD ?? guardPath(env.HOME ?? homedir());
 }
 
 /** How nameScan finds its guard: a home folder (its norma-private guard), or the guard itself; `quiet` hides its output. */
@@ -98,7 +98,7 @@ export function openerFor(name: string): Opener {
   if (name.endsWith(".dmg")) return "dmg";
   if (name.endsWith(".zip") || name.endsWith(".jar")) return "zip";
   if (name.endsWith(".7z")) return "7z";
-  if (/^Clover-Setup-.+\.exe$/.test(name)) return "nsis";
+  if (/^MOSS-Code-Setup-.+\.exe$/.test(name)) return "nsis";
   if (name.endsWith(".deb")) return "deb";
   if (name.endsWith(".a")) return "ar";
   if (name.endsWith(".rpm")) return "rpm";
@@ -614,7 +614,7 @@ export function nameScan(assets: readonly string[], apps: readonly string[], opt
   const needed = new Set(assets.map((a) => TOOLS[formatOf(a)]).filter((t): t is string => t !== undefined));
   const missing = [...needed].filter((t) => tool(t) === undefined);
   if (missing.length > 0) return { problems: [`the name scan needs ${missing.join(", ")} to open the release's assets`], read: 0, accepted: [] };
-  const work = mkdtempSync(join(tmpdir(), "clover-name-scan-"));
+  const work = mkdtempSync(join(tmpdir(), "moss-name-scan-"));
   const problems: string[] = [];
   const accepted: string[] = [];
   let read = 0;
@@ -788,7 +788,7 @@ export function nameScan(assets: readonly string[], apps: readonly string[], opt
 // -------------------------------------------------------------------------------------------------------------------
 
 /** Subtrees of the built output the build-time scan leaves out: empty, see the header. */
-export const CLOVER_NAME_SCAN_EXCLUSIONS: readonly RegExp[] = [];
+export const MOSS_NAME_SCAN_EXCLUSIONS: readonly RegExp[] = [];
 
 /** Every regular file under `paths` (lstat: a symlink is neither counted nor followed, like `find -type f`). */
 export function countFiles(paths: readonly string[]): number {
@@ -813,10 +813,10 @@ export type NameScanResult = { ran: true; targets: string[]; scanned: number; to
 export function runNameScan(outDir: string, opts: { required: boolean; guard?: string; exclusions?: readonly RegExp[]; quiet?: boolean } = { required: false }): NameScanResult {
   const guard = opts.guard ?? nameGuardPath();
   if (!existsSync(guard)) {
-    if (opts.required) throw new Error(`the identity scan can't run: ${guard} is missing, and a signed release never ships unscanned (CLOVER_NAME_GUARD names another)`);
+    if (opts.required) throw new Error(`the identity scan can't run: ${guard} is missing, and a signed release never ships unscanned (MOSS_NAME_GUARD names another)`);
     return { ran: false, reason: `no name guard at ${guard}` };
   }
-  const exclusions = opts.exclusions ?? CLOVER_NAME_SCAN_EXCLUSIONS;
+  const exclusions = opts.exclusions ?? MOSS_NAME_SCAN_EXCLUSIONS;
   const plan = nameScanPlan({
     root: outDir,
     listDir: (p) => readdirSync(p, { withFileTypes: true }).filter((e) => !e.isSymbolicLink()).map((e) => e.name),

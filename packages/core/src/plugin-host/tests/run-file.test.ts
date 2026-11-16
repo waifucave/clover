@@ -11,7 +11,7 @@ import { ensurePluginRunFiles, pluginRunFileChecks } from "../../registry/plugin
 
 const dirs: string[] = [];
 const scratch = (): string => {
-  const d = mkdtempSync(join(tmpdir(), "clover-run-file-"));
+  const d = mkdtempSync(join(tmpdir(), "moss-run-file-"));
   dirs.push(d);
   return d;
 };
@@ -48,50 +48,50 @@ describe("writeRunFile", () => {
 });
 
 describe("checkRunFiles", () => {
-  test("passes the text Clover wrote; refuses a changed file, a link to the same text, and a missing one", () => {
+  test("passes the text MOSS wrote; refuses a changed file, a link to the same text, and a missing one", () => {
     const d = scratch();
     const p = join(d, "plugin-worker.js");
     writeRunFile(p, "worker text");
     const check = [{ path: p, sha256: sha256Hex("worker text") }];
     expect(() => checkRunFiles(check, "w")).not.toThrow();
     writeFileSync(p, "worker text, changed");
-    expect(() => checkRunFiles(check, "w")).toThrow("changed since Clover wrote it");
+    expect(() => checkRunFiles(check, "w")).toThrow("changed since MOSS wrote it");
     rmSync(p);
     writeFileSync(join(d, "copy.js"), "worker text");
     symlinkSync(join(d, "copy.js"), p);
     expect(readRunFile(p)).toBeUndefined();
-    expect(() => checkRunFiles(check, "w")).toThrow("isn't a regular file Clover wrote");
+    expect(() => checkRunFiles(check, "w")).toThrow("isn't a regular file MOSS wrote");
     expect(() => checkRunFiles([{ path: join(d, "none"), sha256: sha256Hex("") }], "w")).toThrow("isn't a regular file");
   });
 
   test("the argv form round-trips, ignores other arguments and refuses a malformed one", () => {
     const checks = [{ path: "/run/plugin-worker.js", sha256: sha256Hex("a") }, { path: "/run/a b/guard.mjs", sha256: sha256Hex("b") }];
     expect(parseRunCheckArgs(["bun", "/run/plugin-host.js", ...runCheckArgs(checks), "--other"])).toEqual(checks);
-    expect(() => parseRunCheckArgs(["--clover-check=nothex:/x"])).toThrow("malformed");
+    expect(() => parseRunCheckArgs(["--moss-check=nothex:/x"])).toThrow("malformed");
   });
 });
 
 describe("the run files and the host's start", () => {
   test("ensurePluginRunFiles writes the bunfig, both guards and the spawn trampoline whole, and each check matches what it wrote", () => {
     const home = scratch();
-    const files = ensurePluginRunFiles(join(home, "run"), { cloverHome: home });
+    const files = ensurePluginRunFiles(join(home, "run"), { mossHome: home });
     expect(() => checkRunFiles(pluginRunFileChecks(files, { host: true }), "run files")).not.toThrow();
     writeFileSync(files.guard, `${readFileSync(files.guard, "utf8")}\n// a plugin was here\n`);
-    expect(() => checkRunFiles(pluginRunFileChecks(files), "run files")).toThrow("changed since Clover wrote it");
+    expect(() => checkRunFiles(pluginRunFileChecks(files), "run files")).toThrow("changed since MOSS wrote it");
     // The next ensure writes it back whole.
-    ensurePluginRunFiles(join(home, "run"), { cloverHome: home });
+    ensurePluginRunFiles(join(home, "run"), { mossHome: home });
     expect(() => checkRunFiles(pluginRunFileChecks(files, { host: true }), "run files")).not.toThrow();
     // The spawn trampoline a fenced start runs through (#357) is checked too.
     const trampoline = join(dirname(files.guard), "spawn.mjs");
     writeFileSync(trampoline, `${readFileSync(trampoline, "utf8")}\n// a plugin was here\n`);
-    expect(() => checkRunFiles(pluginRunFileChecks(files), "run files")).toThrow("changed since Clover wrote it");
+    expect(() => checkRunFiles(pluginRunFileChecks(files), "run files")).toThrow("changed since MOSS wrote it");
   });
 
   test("the host doesn't start from a bundle or guard that changed after the launch was made; its worker checks ride in argv", async () => {
     const home = scratch();
-    const launch = await hostProcessLaunch({ runDir: join(home, "run"), computer: "c", base: { PATH: process.env.PATH }, cloverHome: home });
+    const launch = await hostProcessLaunch({ runDir: join(home, "run"), computer: "c", base: { PATH: process.env.PATH }, mossHome: home });
     const host = launch.cmd.find((a) => a.endsWith("plugin-host.js"))!;
-    const worker = launch.env.CLOVER_PLUGIN_WORKER!;
+    const worker = launch.env.MOSS_PLUGIN_WORKER!;
     expect(parseRunCheckArgs(launch.cmd).map((c) => c.path).sort()).toEqual([worker, join(dirname(host), "bunfig.toml"), join(dirname(host), "guard.mjs"), join(dirname(host), "spawn.mjs")].sort());
     expect(Object.keys(launch.env).some((k) => /check/i.test(k))).toBe(false);
     expect(launch.checks!.map((c) => c.path).sort()).toEqual([host, join(dirname(host), "bunfig.toml"), join(dirname(host), "guard.mjs"), join(dirname(host), "spawn.mjs"), join(dirname(host), "host-guard.mjs")].sort());

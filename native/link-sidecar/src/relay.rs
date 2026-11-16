@@ -4,7 +4,7 @@
 //! SHA-256 the info file carries; the lab's endpoints pin it (`--relay-cert-sha256`).
 //!
 //! ```text
-//! clover-link-sidecar relay-server --bind-ip 203.0.113.50 [--https-port 3443] [--http-port 3340]
+//! moss-link-sidecar relay-server --bind-ip 203.0.113.50 [--https-port 3443] [--http-port 3340]
 //!     [--qad-port 7842 | --no-qad] --metrics-file m.json --info-file relay.json
 //! ```
 //!

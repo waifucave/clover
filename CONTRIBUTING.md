@@ -1,10 +1,10 @@
-# Contributing to Clover
+# Contributing to MOSS
 
 Thanks for wanting to help. This document is the practical stuff: how to get a working build, how to
 run the tests, and the handful of rules that will save you a wasted afternoon.
 
-**Before anything nontrivial, [open an issue](https://github.com/waifucave/clover/issues) or start a
-[discussion](https://github.com/waifucave/clover/discussions).** Clover has a lot of load-bearing
+**Before anything nontrivial, [open an issue](https://github.com/waifucave/moss/issues) or start a
+[discussion](https://github.com/waifucave/moss/discussions).** MOSS has a lot of load-bearing
 structure that isn't obvious from a diff, and it's much easier to point you at it before you write
 the code than after.
 
@@ -14,7 +14,7 @@ Found a security problem? Don't open an issue — see [SECURITY.md](SECURITY.md)
 
 - [What you need](#what-you-need)
 - [First build](#first-build)
-- [Running Clover in development](#running-clover-in-development)
+- [Running MOSS in development](#running-moss-in-development)
 - [The dev/dist split — read this one](#the-devdist-split--read-this-one)
 - [Tests](#tests)
 - [Changing the protocol](#changing-the-protocol)
@@ -28,7 +28,7 @@ Found a security problem? Don't open an issue — see [SECURITY.md](SECURITY.md)
 | **macOS 26+**, Apple silicon | The deployment target. There is no legacy compatibility path — see [rules](#rules-that-bite). |
 | **[Bun](https://bun.sh)**, the version in `.bun-version` | The runtime. TypeScript runs directly; there is no build step in dev. CI runs that version; `scripts/pinned-bun` fetches it beside any other Bun you have. |
 | **pnpm** | Orchestrates the workspaces. `bun install` is what you actually run. |
-| **A GitHub token with `read:packages`** | The `@waifucave` packages (the agent SDK's `@waifucave/clover-*` among them) are on GitHub Packages, which needs a token even to read. `bun install` takes it from `NODE_AUTH_TOKEN` (see [First build](#first-build)). |
+| **A GitHub token with `read:packages`** | The `@waifucave` packages (the agent SDK's `@waifucave/moss-*` among them) are on GitHub Packages, which needs a token even to read. `bun install` takes it from `NODE_AUTH_TOKEN` (see [First build](#first-build)). |
 | **Xcode 26+** | Only if you're touching the Swift packages the iPhone app uses (`apple/WinterKit`, `apple/WinterProtocol`). |
 
 TypeScript-only contributions (the daemon, the CLI, tools, providers) need nothing from the Xcode
@@ -37,8 +37,8 @@ column.
 ## First build
 
 ```sh
-git clone https://github.com/waifucave/clover.git
-cd clover
+git clone https://github.com/waifucave/moss.git
+cd moss
 NODE_AUTH_TOKEN=$(gh auth token) bun install   # gh's token needs read:packages: `gh auth refresh -s read:packages` once
 ```
 
@@ -53,9 +53,9 @@ rather than committing it:
 ```
 
 The Mac app under `apple/Winter` is retired: it stays in the repo for reference and is not built.
-Clover's own desktop app comes with the plan's app phase ([docs/clover-plan.md](docs/clover-plan.md)).
+MOSS's own desktop app comes with the plan's app phase ([docs/moss-plan.md](docs/moss-plan.md)).
 
-## Running Clover in development
+## Running MOSS in development
 
 ```sh
 cd packages/cli
@@ -64,19 +64,19 @@ bun src/main.ts -p "hello"        # one-shot prompt, another terminal
 bun src/main.ts                   # interactive TUI (Code mode)
 ```
 
-Useful CLI surface while developing: `clover status`, `clover ping`, `clover sessions`,
-`clover agents`, `clover watch <sessionId>`, `clover bg list <session>`, `clover plugin list`.
+Useful CLI surface while developing: `moss status`, `moss ping`, `moss sessions`,
+`moss agents`, `moss watch <sessionId>`, `moss bg list <session>`, `moss plugin list`.
 
 ## The dev/dist split — read this one
 
-Clover keeps two separate installs that must never be confused:
+MOSS keeps two separate installs that must never be confused:
 
 | | Distribution | Development |
 | --- | --- | --- |
-| Bundle id | `com.waifucave.clover` | `com.waifucave.clover.dev` |
-| Home | `~/.clover` | `~/.clover-dev` |
-| Keychain service | `com.waifucave.clover.core` | `com.waifucave.clover.core.dev` |
-| Command | `clover` | `clover-dev` |
+| Bundle id | `com.waifucave.moss.code` | `com.waifucave.moss.code.dev` |
+| Home | `~/.moss` | `~/.moss-dev` |
+| Keychain service | `com.waifucave.moss.core` | `com.waifucave.moss.core.dev` |
+| Command | `moss` | `moss-dev` |
 
 **Never launch a distribution install during development**, and never Winter's: `Winter.app`, with
 its `~/.winter` home and `com.winter.core` Keychain, is somebody's daily driver, updated by Sparkle. A
@@ -85,17 +85,17 @@ defeats the entire split. The same goes for local Release builds — build them,
 
 Two rules worth stating outright:
 
-1. **Plain `clover` is the distribution CLI** (and plain `winter` is Winter's). With a dead socket
+1. **Plain `moss` is the distribution CLI** (and plain `winter` is Winter's). With a dead socket
    it *auto-launches the dist app*.
-   Use `clover-dev` and `bun run dev:daemon` (the signed dev binary on `~/.clover-dev`), or a daemon
+   Use `moss-dev` and `bun run dev:daemon` (the signed dev binary on `~/.moss-dev`), or a daemon
    from the checkout on a throwaway home and a throwaway Keychain service:
 
    ```sh
    cd packages/cli
-   CLOVER_HOME="$(mktemp -d)" CLOVER_PROFILE=dev CLOVER_KEYCHAIN_SERVICE=com.waifucave.clover.core.scratch bun src/main.ts daemon run
+   MOSS_HOME="$(mktemp -d)" MOSS_PROFILE=dev MOSS_KEYCHAIN_SERVICE=com.waifucave.moss.core.scratch bun src/main.ts daemon run
    ```
 
-   Never run a daemon or the CLI from the checkout under plain `bun` on `~/.clover-dev`: after the
+   Never run a daemon or the CLI from the checkout under plain `bun` on `~/.moss-dev`: after the
    dev daemon's one-time `--transition`, the dev Keychain items trust only the signed dev binary,
    and plain `bun` is prompted for every one.
 
@@ -170,12 +170,12 @@ never pass either one; a security test pins that.
 
 ## Rules that bite
 
-- **Tests must never touch `~/.clover`, or Winter's `~/.winter`.** Always point at a temp `CLOVER_HOME`.
+- **Tests must never touch `~/.moss`, or Winter's `~/.winter`.** Always point at a temp `MOSS_HOME`.
   Never kill or restart a user's live daemon or app.
-- **No setting may ever require a daemon restart.** `~/.clover/settings.json` is watched and
+- **No setting may ever require a daemon restart.** `~/.moss/settings.json` is watched and
   hot-swapped atomically; feature code reads live getters. New settings follow that pattern — this
   is a product promise, not a preference.
-- **Secrets live in the Keychain.** `Bun.secrets`, service `com.waifucave.clover.core`. Never on disk, never in
+- **Secrets live in the Keychain.** `Bun.secrets`, service `com.waifucave.moss.core`. Never on disk, never in
   a fixture, never in a log line.
 - **Provider `encrypted_content` / `reasoning_item.itemJson` is opaque.** The session JSONL is its
   only sink. Never log it, never write it into a model-readable transcript.
@@ -183,7 +183,7 @@ never pass either one; a security test pins that.
   it only via `bun run version:bump` (patch) / `version:bump:feature` / `version:bump:major` /
   `version:sync`. Never hand-edit a version in a `package.json` or plist.
 - **Minimum OS targets track the latest major Apple OS.** No legacy compatibility shims.
-- **Codex's `originator` is `"clover"`.** That's a deliberate terms-of-service decision. Don't "fix" it
+- **Codex's `originator` is `"moss"`.** That's a deliberate terms-of-service decision. Don't "fix" it
   to a first-party value. The value sent is `codexOriginator` in `packages/core/src/runtime-sdk/brand.ts`
   (every session's brand, and the process-wide identity `runtime-sdk/process-identity.ts` installs).
 - The Sparkle public key in `apple/Winter/project.yml` is Winter's production key, which its live update
@@ -195,7 +195,7 @@ never pass either one; a security test pins that.
 - **Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) with a
   scope** — the repo's history is `feat(app):`, `fix(editor):`, `docs(brand):`, `perf(app):`,
   `chore(release):`. Match it.
-- **Explain *why* in the body.** Clover's code carries unusually heavy comments explaining why
+- **Explain *why* in the body.** MOSS's code carries unusually heavy comments explaining why
   something is the way it is, because the alternative is somebody helpfully undoing it in six
   months. Write your PR description the same way.
 - **Run the tests for what you touched**, and say which ones you ran. If your change crosses the

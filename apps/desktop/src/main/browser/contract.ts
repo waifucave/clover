@@ -1,5 +1,5 @@
-// The Clover Browser's contract (spec §12.1), a copy of lane B's `packages/protocol/src/browser.ts` (#157) until the
-// app depends on `@waifucave/clover-protocol`. The core re-exports B's own (`packages/core/src/browser/contract.ts`,
+// The MOSS Browser's contract (spec §12.1), a copy of lane B's `packages/protocol/src/browser.ts` (#157) until the
+// app depends on `@waifucave/moss-protocol`. The core re-exports B's own (`packages/core/src/browser/contract.ts`,
 // with R10's session owner), and `test/browser-unit.test.ts` checks this copy against it.
 //
 // Owner decisions since the pin (items 92–94): bot tabs are drawn offscreen and shown through a viewport, so
@@ -145,11 +145,11 @@ export function isCdpCallAllowed(method: string): boolean {
 export const BROWSER_REFUSED_SCHEMES = [
   "file:", "filesystem:", "chrome:", "chrome-extension:", "chrome-untrusted:", "devtools:", "view-source:",
 ] as const;
-/** The app's and core's own schemes all start with `clover`, so no scheme with this prefix serves a browser
+/** The app's and core's own schemes all start with `moss`, so no scheme with this prefix serves a browser
  *  partition. */
-export const CLOVER_SCHEME_PREFIX = "clover";
+export const MOSS_SCHEME_PREFIX = "moss";
 
-/** Whether a browser partition may load a URL: not a refused scheme, not one of Clover's own, and of `about:` only
+/** Whether a browser partition may load a URL: not a refused scheme, not one of MOSS's own, and of `about:` only
  *  `about:blank` and `about:srcdoc`. */
 export function isBrowserUrlAllowed(url: string): boolean {
   let u: URL;
@@ -159,7 +159,7 @@ export function isBrowserUrlAllowed(url: string): boolean {
     return false;
   }
   const scheme = u.protocol.toLowerCase();
-  if ((BROWSER_REFUSED_SCHEMES as readonly string[]).includes(scheme) || scheme.startsWith(CLOVER_SCHEME_PREFIX)) return false;
+  if ((BROWSER_REFUSED_SCHEMES as readonly string[]).includes(scheme) || scheme.startsWith(MOSS_SCHEME_PREFIX)) return false;
   if (scheme === "about:") return u.href === "about:blank" || u.href === "about:srcdoc";
   return true;
 }

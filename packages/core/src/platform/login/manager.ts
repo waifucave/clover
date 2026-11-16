@@ -1,4 +1,4 @@
-// `clover-core autostart enable|disable|status` (and `remove`, for an uninstaller), one mechanism
+// `moss-core autostart enable|disable|status` (and `remove`, for an uninstaller), one mechanism
 // across the three OSes. The OS registration is injected, so a test drives the whole flow against a
 // temp directory and a recording runner and never touches real launchd, systemd or Task Scheduler.
 //

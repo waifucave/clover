@@ -104,7 +104,7 @@ export function sidecarEnv(env: Record<string, string | undefined> = process.env
   const keep = process.platform === "win32" ? ["SystemRoot", "SYSTEMROOT", "windir", "WINDIR"] : [];
   const out: Record<string, string> = {};
   for (const k of keep) if (env[k] !== undefined) out[k] = env[k]!;
-  out.RUST_LOG = env.CLOVER_LINK_LOG ?? "warn";
+  out.RUST_LOG = env.MOSS_LINK_LOG ?? "warn";
   return out;
 }
 
@@ -201,7 +201,7 @@ export class SidecarWire implements WireEndpoint {
     return wire;
   }
 
-  /** The running sidecar's pid (the Clover server's `linkPid`: the one local process that says hello as `remote`, `web`
+  /** The running sidecar's pid (the MOSS server's `linkPid`: the one local process that says hello as `remote`, `web`
    *  or `peer`); undefined while it restarts or after `close`. */
   get pid(): number | undefined {
     return this.#closed ? undefined : this.#proc?.pid;

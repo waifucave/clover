@@ -1,7 +1,7 @@
 // The sandbox every bot-side session kind hands the runtime, measured from what it really passes (`Options.sandbox`
 // at the runtime's `query`), not read from the code: a bot's conversation, a side thread, a routine's run (a side
-// thread with its routine's level), and an in-process agent. (Clover's coding agent as a bot's Agent child: its own
-// test, `src/agents/tests/clover-code.test.ts`, holds the same three fields.) Each prints its row of the table.
+// thread with its routine's level), and an in-process agent. (MOSS's coding agent as a bot's Agent child: its own
+// test, `src/agents/tests/moss-code.test.ts`, holds the same three fields.) Each prints its row of the table.
 import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,7 +56,7 @@ describeWithEmbeddedRuntime("each bot-side session kind's sandbox, as the runtim
   ];
   for (const [kind, over] of driverCases) {
     test(kind, async () => {
-      const home = temp("clover-kinds-");
+      const home = temp("moss-kinds-");
       const seen: (SandboxSettingsConfig | undefined)[] = [];
       const deps: BotDriverDeps = {
         home, spawn, stopGraceMs: 5_000, log: () => {}, sandbox: hostSandbox,
@@ -77,19 +77,19 @@ describeWithEmbeddedRuntime("each bot-side session kind's sandbox, as the runtim
     }, 60_000);
   }
 
-  test("in-process agent (a bot's Agent child on Clover's sandboxed backend)", async () => {
-    const home = temp("clover-kinds-home-");
-    const root = temp("clover-kinds-root-");
+  test("in-process agent (a bot's Agent child on MOSS's sandboxed backend)", async () => {
+    const home = temp("moss-kinds-home-");
+    const root = temp("moss-kinds-root-");
     const seen: (SandboxSettingsConfig | undefined)[] = [];
     const backend = inProcessAgentBackend({
       home, spawn, defaultModel: () => "winter-test/echo", pauseGateFor: () => ({ mayAct: () => true, watch: () => () => {} }), sandboxReady: () => true,
       query: (args) => { seen.push(args.options?.sandbox); return sdkQuery(args); },
       // As `createAgents` hands it: a bot's child is drawn by its bot's builder.
-      botChild: botChildFor({ cloverHome: home, userHome: temp("clover-kinds-user-") }),
+      botChild: botChildFor({ mossHome: home, userHome: temp("moss-kinds-user-") }),
     });
     const spec: AgentStartSpec = {
       sessionId: "s_agent", bot: "alpha", root, model: "winter-test/echo", instructions: "Say hello.",
-      bridge: { name: "clover_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
+      bridge: { name: "moss_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
       fence: { allowWrite: [root], denyWrite: [], denyRead: [], closedDoors: [], blockedAddresses: ["169.254.169.254"], network: "none" },
     } as AgentStartSpec;
     const session = await backend.start(spec);

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
+import { CLIENT_BARE_IMPORTS } from "@waifucave/moss-plugin-sdk";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
 import { appShortcut, fallbackMayShow, fallbackOnVisibility, sealedInputAllowed } from "../src/main/shortcuts";
 import { builtClientFile, builtClientUrl, mediaType, pluginFile } from "../src/main/ui/files";
@@ -20,7 +20,7 @@ describe("documents and headers (S9, decision 94)", () => {
     const hash = `'sha256-${createHash("sha256").update(map).digest("base64")}'`;
     expect(layerCsp()).toContain(`script-src 'self' ${hash}`);
     expect(html).toContain('<link rel="stylesheet" href="/_p/x/a.css">');
-    expect(html).toContain('<script type="module" src="/_clover/boot.js"></script>');
+    expect(html).toContain('<script type="module" src="/_moss/boot.js"></script>');
   });
 
   test("a plugin can't add an import map of its own: the document carries exactly the core's, and CSP runs no other inline script", () => {
@@ -41,7 +41,7 @@ describe("documents and headers (S9, decision 94)", () => {
 
   test("the import map serves exactly CLIENT_BARE_IMPORTS: what a client's build keeps and the loader check exempts", () => {
     expect(new Set(Object.keys(IMPORT_MAP.imports))).toEqual(new Set(CLIENT_BARE_IMPORTS));
-    for (const n of ["react/jsx-runtime", "react/jsx-dev-runtime", "@waifucave/clover-plugin-sdk/ui"]) expect(Object.keys(IMPORT_MAP.imports)).toContain(n);
+    for (const n of ["react/jsx-runtime", "react/jsx-dev-runtime", "@waifucave/moss-plugin-sdk/ui"]) expect(Object.keys(IMPORT_MAP.imports)).toContain(n);
     // No prefix entry (a key ending in "/" would serve every subpath under it).
     expect(Object.keys(IMPORT_MAP.imports).filter((k) => k.endsWith("/"))).toEqual([]);
     // The layer's own builds keep the same list external (scripts/build.ts).
@@ -51,18 +51,18 @@ describe("documents and headers (S9, decision 94)", () => {
 
   test("layers reach only their own origin until hosts are declared; frames only from layer origins", () => {
     const csp = layerCsp();
-    for (const d of ["default-src 'none'", "connect-src 'self'", "frame-src clover-plugin:", "form-action 'none'", "object-src 'none'", "base-uri 'none'"]) expect(csp).toContain(d);
-    expect(connectionAllowlist()).toBe('("clover-sealed://card/*" response-origin)');
-    expect(connectionAllowlist(["https://api.example.com"])).toBe('("https://api.example.com/*" "clover-sealed://card/*" response-origin)');
+    for (const d of ["default-src 'none'", "connect-src 'self'", "frame-src moss-plugin:", "form-action 'none'", "object-src 'none'", "base-uri 'none'"]) expect(csp).toContain(d);
+    expect(connectionAllowlist()).toBe('("moss-sealed://card/*" response-origin)');
+    expect(connectionAllowlist(["https://api.example.com"])).toBe('("https://api.example.com/*" "moss-sealed://card/*" response-origin)');
     // A document names each installed layer by its label, never a `*` host: Chromium matches its DNS lookups against
     // the list by host alone (the E-M1 review's B1). The sealed frames' origin rides along always (E-M3).
-    expect(connectionAllowlist([], ["clover", "fixture-composer"])).toBe('("clover-plugin://clover/*" "clover-plugin://fixture-composer/*" "clover-sealed://card/*" response-origin)');
-    expect(connectionAllowlist([], ["*", "a/b", "x.example", "ok"])).toBe('("clover-plugin://ok/*" "clover-sealed://card/*" response-origin)');
-    const doc = layerHeaders("text/html; charset=utf-8", [], ["clover", "alpha"]);
-    expect(doc).toMatchObject({ "Connection-Allowlist": '("clover-plugin://clover/*" "clover-plugin://alpha/*" "clover-sealed://card/*" response-origin)', "X-Content-Type-Options": "nosniff", "X-DNS-Prefetch-Control": "off" });
+    expect(connectionAllowlist([], ["moss", "fixture-composer"])).toBe('("moss-plugin://moss/*" "moss-plugin://fixture-composer/*" "moss-sealed://card/*" response-origin)');
+    expect(connectionAllowlist([], ["*", "a/b", "x.example", "ok"])).toBe('("moss-plugin://ok/*" "moss-sealed://card/*" response-origin)');
+    const doc = layerHeaders("text/html; charset=utf-8", [], ["moss", "alpha"]);
+    expect(doc).toMatchObject({ "Connection-Allowlist": '("moss-plugin://moss/*" "moss-plugin://alpha/*" "moss-sealed://card/*" response-origin)', "X-Content-Type-Options": "nosniff", "X-DNS-Prefetch-Control": "off" });
     expect(doc["Connection-Allowlist"]).not.toContain("://*");
-    expect(layerHeaders("text/html; charset=utf-8")["Connection-Allowlist"]).toBe('("clover-sealed://card/*" response-origin)');
-    expect(layerHeaders("text/javascript; charset=utf-8", [], ["clover"])["Connection-Allowlist"]).toBe('("clover-sealed://card/*" response-origin)');
+    expect(layerHeaders("text/html; charset=utf-8")["Connection-Allowlist"]).toBe('("moss-sealed://card/*" response-origin)');
+    expect(layerHeaders("text/javascript; charset=utf-8", [], ["moss"])["Connection-Allowlist"]).toBe('("moss-sealed://card/*" response-origin)');
     expect(layerHeaders("image/png")["Connection-Allowlist"]).toBeUndefined();
     expect(CORE_CSP).toContain("connect-src 'none'");
     expect(CORE_CSP).toContain("frame-ancestors 'none'");
@@ -71,7 +71,7 @@ describe("documents and headers (S9, decision 94)", () => {
 
 describe("a plugin's own files", () => {
   test("only inside its folder, symlinks included; only known media types", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-files-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-files-"));
     const plugin = join(dir, "p");
     mkdirSync(join(plugin, "client"), { recursive: true });
     writeFileSync(join(plugin, "client", "index.js"), "export {}");
@@ -92,7 +92,7 @@ describe("a plugin's own files", () => {
   });
 
   test("a client the core built at load: served at /_b/ by its hash, only while the file is the one built, never through a link", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-built-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-built-"));
     const text = "export const Page = () => null;\n";
     writeFileSync(join(dir, "index.js"), text);
     const sha256 = createHash("sha256").update(text).digest("hex");
@@ -106,7 +106,7 @@ describe("a plugin's own files", () => {
     writeFileSync(join(dir, "index.js"), "export const evil = 1;\n");
     expect(builtClientFile(plugin, sha256.slice(0, 16), "index.js")).toBeUndefined();
     // A link in its place: not followed.
-    const other = mkdtempSync(join(tmpdir(), "clover-built-"));
+    const other = mkdtempSync(join(tmpdir(), "moss-built-"));
     writeFileSync(join(other, "real.js"), text);
     rmSync(join(dir, "index.js"));
     try {
@@ -119,32 +119,32 @@ describe("a plugin's own files", () => {
 });
 
 describe("the windows (decision 86)", () => {
-  const prefs = webPreferences({ preload: "/p.cjs", partition: "clover-ui", headless: true, offscreen: false });
+  const prefs = webPreferences({ preload: "/p.cjs", partition: "moss-ui", headless: true, offscreen: false });
 
   test("every page is sandboxed and isolated, with no Node and no webview; the preload reaches subframes", () => {
     expect(prefs).toMatchObject({ sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInWorker: false, nodeIntegrationInSubFrames: true, webSecurity: true, webviewTag: false, spellcheck: false, backgroundThrottling: false });
   });
 
   test("a background part's window is never slowed while hidden, and only a plugin holding audio gets sound with no press", () => {
-    const shown = webPreferences({ preload: "/p.cjs", partition: "clover-ui", headless: false, offscreen: false });
+    const shown = webPreferences({ preload: "/p.cjs", partition: "moss-ui", headless: false, offscreen: false });
     expect(shown).toMatchObject({ backgroundThrottling: true, autoplayPolicy: "user-gesture-required" });
-    const quiet = webPreferences({ preload: "/p.cjs", partition: "clover-ui", headless: false, offscreen: false, background: true });
+    const quiet = webPreferences({ preload: "/p.cjs", partition: "moss-ui", headless: false, offscreen: false, background: true });
     expect(quiet).toMatchObject({ backgroundThrottling: false, autoplayPolicy: "user-gesture-required", sandbox: true, nodeIntegration: false });
-    const loud = webPreferences({ preload: "/p.cjs", partition: "clover-ui", headless: false, offscreen: false, background: true, autoplay: true });
+    const loud = webPreferences({ preload: "/p.cjs", partition: "moss-ui", headless: false, offscreen: false, background: true, autoplay: true });
     expect(loud).toMatchObject({ backgroundThrottling: false, autoplayPolicy: "no-user-gesture-required", sandbox: true });
   });
 
   test("macOS: an inset title bar over the sidebar material", () => {
-    const p = mainWindowPlan({ platform: "darwin", acrylic: false, title: "Clover", dark: false, solid: "#F5F5F5", symbol: "#1F1F1F", webPreferences: prefs });
+    const p = mainWindowPlan({ platform: "darwin", acrylic: false, title: "MOSS", dark: false, solid: "#F5F5F5", symbol: "#1F1F1F", webPreferences: prefs });
     expect(p.material).toBe("vibrancy");
     expect(p.options).toMatchObject({ titleBarStyle: "hiddenInset", vibrancy: "sidebar", backgroundColor: "#00000000", show: false });
   });
 
   test("Windows 11: acrylic under a hidden title bar with the system's controls; older Windows: solid", () => {
-    const p = mainWindowPlan({ platform: "win32", acrylic: true, title: "Clover", dark: true, solid: "#202020", symbol: "#F2F2F2", webPreferences: prefs });
+    const p = mainWindowPlan({ platform: "win32", acrylic: true, title: "MOSS", dark: true, solid: "#202020", symbol: "#F2F2F2", webPreferences: prefs });
     expect(p.material).toBe("acrylic");
     expect(p.options).toMatchObject({ titleBarStyle: "hidden", backgroundMaterial: "acrylic", titleBarOverlay: { height: 45, symbolColor: "#F2F2F2" } });
-    const old = mainWindowPlan({ platform: "win32", acrylic: false, title: "Clover", dark: true, solid: "#202020", symbol: "#F2F2F2", webPreferences: prefs });
+    const old = mainWindowPlan({ platform: "win32", acrylic: false, title: "MOSS", dark: true, solid: "#202020", symbol: "#F2F2F2", webPreferences: prefs });
     expect(old.material).toBe("none");
     expect(old.options.backgroundMaterial).toBeUndefined();
     expect(windowsHasAcrylic("10.0.22621")).toBe(true);
@@ -152,7 +152,7 @@ describe("the windows (decision 86)", () => {
   });
 
   test("Linux: a solid colour", () => {
-    const p = mainWindowPlan({ platform: "linux", acrylic: false, title: "Clover", dark: false, solid: "#F5F5F5", symbol: "#1F1F1F", webPreferences: prefs });
+    const p = mainWindowPlan({ platform: "linux", acrylic: false, title: "MOSS", dark: false, solid: "#F5F5F5", symbol: "#1F1F1F", webPreferences: prefs });
     expect(p.material).toBe("none");
     expect(p.options).toMatchObject({ backgroundColor: "#F5F5F5", titleBarStyle: "hidden" });
   });
@@ -162,18 +162,18 @@ describe("the tray", () => {
   test("Open, safe mode one way or the other (with the plugin manager in it), and Quit", () => {
     const calls: string[] = [];
     const actions = { open: () => calls.push("open"), quit: () => calls.push("quit"), restart: (s: boolean) => calls.push(`restart ${s}`), managePlugins: () => calls.push("plugins") };
-    const menu = trayMenu({ safeMode: false, status: "Reconnecting to Clover…" }, actions);
-    expect(menu.map((m) => m.label ?? m.type)).toEqual(["Reconnecting to Clover…", "separator", "Open Clover", "Restart in Safe Mode", "separator", "Quit Clover"]);
+    const menu = trayMenu({ safeMode: false, status: "Reconnecting to MOSS…" }, actions);
+    expect(menu.map((m) => m.label ?? m.type)).toEqual(["Reconnecting to MOSS…", "separator", "Open MOSS", "Restart in Safe Mode", "separator", "Quit MOSS"]);
     for (const m of menu) (m.click as (() => void) | undefined)?.();
     expect(calls).toEqual(["open", "restart true", "quit"]);
     // A plugin's toggle line (the pill's) flips between Hide and Show with its state, and only where the app offers it; a command line just runs.
     const lineCalls: string[] = [];
     const withLine = { ...actions, line: (ref: string) => lineCalls.push(ref) };
-    const pill = { ref: "clover/pill#put-away", title: "Dispatch Pill", hidden: false };
+    const pill = { ref: "moss/pill#put-away", title: "Dispatch Pill", hidden: false };
     const shown = trayMenu({ safeMode: false, lines: [pill] }, withLine);
-    expect(shown.map((m) => m.label ?? m.type)).toEqual(["Open Clover", "Hide Dispatch Pill", "Restart in Safe Mode", "separator", "Quit Clover"]);
+    expect(shown.map((m) => m.label ?? m.type)).toEqual(["Open MOSS", "Hide Dispatch Pill", "Restart in Safe Mode", "separator", "Quit MOSS"]);
     (shown[1]!.click as () => void)();
-    expect(lineCalls).toEqual(["clover/pill#put-away"]);
+    expect(lineCalls).toEqual(["moss/pill#put-away"]);
     expect(trayMenu({ safeMode: false, lines: [{ ...pill, hidden: true }] }, withLine).map((m) => m.label ?? m.type)[1]).toBe("Show Dispatch Pill");
     expect(trayMenu({ safeMode: false, lines: [{ ref: "x#go", title: "Run the thing" }] }, withLine).map((m) => m.label ?? m.type)[1]).toBe("Run the thing");
     expect(trayMenu({ safeMode: false, lines: [pill] }, actions).map((m) => m.label ?? m.type)).not.toContain("Hide Dispatch Pill");
@@ -199,9 +199,9 @@ describe("the tray", () => {
     expect(trayMenu({ safeMode: false, fourFingerTap: true }, withTap).some((m) => m.type === "checkbox")).toBe(false);
     // In safe mode the core's plugin manager is there too (§5.8).
     const safe = trayMenu({ safeMode: true }, actions);
-    expect(safe.map((m) => m.label ?? m.type)).toEqual(["Open Clover", "Manage Plugins…", "Restart Normally", "separator", "Quit Clover"]);
+    expect(safe.map((m) => m.label ?? m.type)).toEqual(["Open MOSS", "Manage Plugins…", "Restart Normally", "separator", "Quit MOSS"]);
     // In the app's language.
-    expect(trayMenu({ safeMode: false }, actions, { lang: "fr", strings: { "clover.core.tray.quit": "Quitter Clover" } }).at(-1)?.label).toBe("Quitter Clover");
+    expect(trayMenu({ safeMode: false }, actions, { lang: "fr", strings: { "moss.core.tray.quit": "Quitter MOSS" } }).at(-1)?.label).toBe("Quitter MOSS");
   });
 });
 
@@ -250,14 +250,14 @@ describe("the app's shortcuts", () => {
 describe("surface windows", () => {
   const prefs = webPreferences({ preload: "/p.cjs", partition: "persist:ui", headless: true, offscreen: false });
   test("an overlay is frameless, unfocused and out of the task switcher; on Wayland every surface is a normal window", () => {
-    const overlay = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "Clover island", webPreferences: prefs, platform: "win32" });
+    const overlay = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "MOSS island", webPreferences: prefs, platform: "win32" });
     expect(overlay).toMatchObject({ show: false, frame: false, focusable: false, skipTaskbar: true, transparent: true, alwaysOnTop: true });
     // Nothing the OS draws behind it: fully clear, no shadow (computed from the opaque pixels, it reads as a dark halo),
     // no material of any kind.
     expect(overlay.backgroundColor).toBe("#00000000");
     expect(overlay.hasShadow).toBe(false);
     for (const key of ["vibrancy", "visualEffectState", "backgroundMaterial", "titleBarStyle", "thickFrame"] as const) expect((overlay as Record<string, unknown>)[key]).toBeUndefined();
-    const wayland = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "Clover island", webPreferences: prefs, wayland: true });
+    const wayland = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "MOSS island", webPreferences: prefs, wayland: true });
     expect(wayland).toMatchObject({ show: false, frame: true, focusable: true, skipTaskbar: false, transparent: false, alwaysOnTop: false });
   });
 
@@ -270,7 +270,7 @@ describe("surface windows", () => {
     expect(surfaceWindowPlan({ surface: { type: "window" }, title: "t", webPreferences: prefs, platform: "darwin" }).enableLargerThanScreen).toBeUndefined();
   });
 
-  test("a floating overlay on macOS is a non-activating panel, so a press on the island or the pill never activates Clover; the main window and every other kind is not", () => {
+  test("a floating overlay on macOS is a non-activating panel, so a press on the island or the pill never activates MOSS; the main window and every other kind is not", () => {
     const float = { type: "overlay" as const, alwaysOnTop: true, transparent: true };
     const plan = surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin" });
     expect(plan.type).toBe("panel");
@@ -284,7 +284,7 @@ describe("surface windows", () => {
     expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "linux" }).type).toBeUndefined();
     expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin", wayland: true }).type).toBeUndefined();
     expect(surfaceWindowPlan({ surface: { type: "window" }, title: "t", webPreferences: prefs, platform: "darwin" }).type).toBeUndefined();
-    const main = mainWindowPlan({ platform: "darwin", acrylic: false, title: "Clover", dark: true, solid: "#202020", symbol: "#fff", webPreferences: prefs });
+    const main = mainWindowPlan({ platform: "darwin", acrylic: false, title: "MOSS", dark: true, solid: "#202020", symbol: "#fff", webPreferences: prefs });
     expect((main.options as Record<string, unknown>).type).toBeUndefined();
   });
 

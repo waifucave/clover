@@ -1,7 +1,7 @@
 // The tray's menu, as data (tray.ts shows it). Pure, so the tests read it. Its words are the core's own strings
-// (`clover.core.tray.…`), in the app's language.
+// (`moss.core.tray.…`), in the app's language.
 import type { MenuItemConstructorOptions } from "electron";
-import { translate, type StringTable } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { translate, type StringTable } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { CORE_STRINGS_EN } from "./ui/core-strings";
 
 export interface TrayActions {
@@ -44,7 +44,7 @@ export interface TrayState {
 const ENGLISH: StringTable = { lang: "en", strings: CORE_STRINGS_EN };
 
 export function trayMenu(state: TrayState, actions: TrayActions, strings: StringTable = state.strings ?? ENGLISH): MenuItemConstructorOptions[] {
-  const t = (key: string, vars?: Record<string, string>) => translate(strings, `clover.core.${key}`, vars);
+  const t = (key: string, vars?: Record<string, string>) => translate(strings, `moss.core.${key}`, vars);
   return [
     ...(state.status !== undefined ? [{ label: state.status, enabled: false }, { type: "separator" as const }] : []),
     { label: t("tray.open"), click: () => actions.open() },

@@ -2,22 +2,22 @@
 # The deb's and the rpm's after-install script. electron-builder fills in the executable's and the product's names
 # (every dollar-brace macro here must be one it knows, or the build fails).
 # It does what electron-builder's own does (the Chromium sandbox helper, the MIME and desktop databases, and the
-# AppArmor profile Ubuntu needs for Electron's sandbox, spec §4), except for one thing: `clover` on the PATH is
-# the daemon's command line, `resources/daemon/clover-core`, as on macOS. The app itself starts from its desktop entry.
+# AppArmor profile Ubuntu needs for Electron's sandbox, spec §4), except for one thing: `moss` on the PATH is
+# the daemon's command line, `resources/daemon/moss-core`, as on macOS. The app itself starts from its desktop entry.
 #
 # It never turns on login start: it runs as root, outside every user's session. The app does that at its first
 # launch (spec §3.1, packaging/installer-hooks.ts).
 
-CLI='/opt/${sanitizedProductName}/resources/daemon/clover-core'
+CLI='/opt/${sanitizedProductName}/resources/daemon/moss-core'
 
 if type update-alternatives >/dev/null 2>&1; then
     # Remove a previous link that doesn't use update-alternatives
-    if [ -L '/usr/bin/clover' -a -e '/usr/bin/clover' -a "`readlink '/usr/bin/clover'`" != '/etc/alternatives/clover' ]; then
-        rm -f '/usr/bin/clover'
+    if [ -L '/usr/bin/moss' -a -e '/usr/bin/moss' -a "`readlink '/usr/bin/moss'`" != '/etc/alternatives/moss' ]; then
+        rm -f '/usr/bin/moss'
     fi
-    update-alternatives --install '/usr/bin/clover' 'clover' "$CLI" 100 || ln -sf "$CLI" '/usr/bin/clover'
+    update-alternatives --install '/usr/bin/moss' 'moss' "$CLI" 100 || ln -sf "$CLI" '/usr/bin/moss'
 else
-    ln -sf "$CLI" '/usr/bin/clover'
+    ln -sf "$CLI" '/usr/bin/moss'
 fi
 
 # The install marker (packages/core/src/update/install-marker.ts): this daemon updates through apt or dnf, never

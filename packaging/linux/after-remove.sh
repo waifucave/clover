@@ -1,10 +1,10 @@
 #!/bin/bash
-# The deb's and the rpm's after-remove script, electron-builder's own for the `clover` link after-install.sh makes and
+# The deb's and the rpm's after-remove script, electron-builder's own for the `moss` link after-install.sh makes and
 # the AppArmor profile. electron-builder fills in the executable's and the product's names.
 #
-# A user's login start (a systemd user unit running clover-core supervise, lane C's) is out of reach here: this runs
+# A user's login start (a systemd user unit running moss-core supervise, lane C's) is out of reach here: this runs
 # as root, outside every user's session. The unit has to stay inert once its binary is gone (packaging/installer-
-# hooks.ts), and `clover autostart remove` removes it for good.
+# hooks.ts), and `moss autostart remove` removes it for good.
 
 # Only on a real removal. An upgrade runs the old package's script too: the deb's postrm with `upgrade`, and the rpm's
 # %postun with 1 after the new package's %post, which would delete the link and the profile the new version just made.
@@ -13,12 +13,12 @@ case "${1:-}" in
   *) exit 0 ;;
 esac
 
-CLI='/opt/${sanitizedProductName}/resources/daemon/clover-core'
+CLI='/opt/${sanitizedProductName}/resources/daemon/moss-core'
 
 if type update-alternatives >/dev/null 2>&1; then
-    update-alternatives --remove 'clover' "$CLI"
+    update-alternatives --remove 'moss' "$CLI"
 else
-    rm -f '/usr/bin/clover'
+    rm -f '/usr/bin/moss'
 fi
 
 # The install marker after-install.sh wrote beside the binary (no package owns it).

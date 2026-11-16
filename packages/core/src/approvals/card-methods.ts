@@ -1,5 +1,5 @@
 // The protocol's card methods (`APPROVALS_METHODS`: card.list, card.get, card.frame, card.answer) over lane C's broker,
-// for the Clover server. The broker comes up with the daemon's parts (the bot side and the agents) and goes with them,
+// for the MOSS server. The broker comes up with the daemon's parts (the bot side and the agents) and goes with them,
 // so each call reads it through a getter; until it is up, and after it stops, a call is refused, never answered by a
 // second broker. The server has checked the role and the params against the method's spec before a handler runs.
 //
@@ -12,15 +12,15 @@
 // only: a device proof naming another device is refused there. A paired computer (a `peer` caller, which reaches this
 // through `peer.call` as `remote`) may relay another device's signed answer, which holds end to end (the broker's
 // `deviceProofVerifier`).
-import { APPROVALS_METHODS, CLOVER_ERR, ERR, type Card, type CardAnswerProof, type CloverRole } from "@waifucave/clover-protocol";
-import { isTheUsersOwn } from "../auth/clover-caller";
+import { APPROVALS_METHODS, MOSS_ERR, ERR, type Card, type CardAnswerProof, type MossRole } from "@waifucave/moss-protocol";
+import { isTheUsersOwn } from "../auth/moss-caller";
 import type { AnswerOrigin, AnswerResult, ApprovalBroker } from "../contracts/approval-broker";
-import { CloverRpcError, type CloverConn, type CloverHandler } from "../ipc/clover";
+import { MossRpcError, type MossConn, type MossHandler } from "../ipc/moss";
 import { cardMetaOf } from "../contracts/approval-broker";
 import { cardAudience } from "./core-events";
 
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
-declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+declare const __MOSS_TEST_BUILD__: string | false | undefined;
 
 type CardBroker = Pick<ApprovalBroker, "cards" | "get" | "frameChannel" | "answer">;
 
@@ -35,21 +35,21 @@ const REASONS: Record<Exclude<AnswerResult, "accepted">, string> = {
   "bad-time": "the answer's time is too far from this computer's",
 };
 
-function notRunning(): CloverRpcError {
-  return new CloverRpcError(ERR.RETRY, "Clover's approval broker isn't running on this computer yet: try again in a moment");
+function notRunning(): MossRpcError {
+  return new MossRpcError(ERR.RETRY, "MOSS's approval broker isn't running on this computer yet: try again in a moment");
 }
 
 /** The device a device link (`remote`, `peer`) authenticated; none for a connection on this computer. */
-function linkDevice(role: CloverRole, caller: { kind: string; device?: string }): string | undefined {
+function linkDevice(role: MossRole, caller: { kind: string; device?: string }): string | undefined {
   if (role !== "remote" && role !== "peer") return undefined;
   return caller.kind === "user" || caller.kind === "peer" ? caller.device : undefined;
 }
 
-function usersOwn(conn: CloverConn, method: string): void {
-  if (!isTheUsersOwn(conn.caller)) throw new CloverRpcError(CLOVER_ERR.NOT_THE_USER, `${method} is read for the user alone`);
+function usersOwn(conn: MossConn, method: string): void {
+  if (!isTheUsersOwn(conn.caller)) throw new MossRpcError(MOSS_ERR.NOT_THE_USER, `${method} is read for the user alone`);
 }
 
-export function cardMethods(broker: () => CardBroker | undefined, capabilitiesOf: (pluginId: string) => readonly string[] | undefined = () => undefined): Record<string, CloverHandler> {
+export function cardMethods(broker: () => CardBroker | undefined, capabilitiesOf: (pluginId: string) => readonly string[] | undefined = () => undefined): Record<string, MossHandler> {
   const up = (): CardBroker => {
     const b = broker();
     if (!b) throw notRunning();
@@ -64,7 +64,7 @@ export function cardMethods(broker: () => CardBroker | undefined, capabilitiesOf
       usersOwn(conn, APPROVALS_METHODS.cardGet.name);
       const { id } = params as { id: string };
       const r = up().get(id);
-      if (!r) throw new CloverRpcError(ERR.NOT_FOUND, `no card ${id}`);
+      if (!r) throw new MossRpcError(ERR.NOT_FOUND, `no card ${id}`);
       return {
         card: r.card,
         ...(r.outcome === undefined ? {} : { outcome: r.outcome }),
@@ -83,7 +83,7 @@ export function cardMethods(broker: () => CardBroker | undefined, capabilitiesOf
     [APPROVALS_METHODS.cardFrame.name]: async (_conn, params) => {
       const { id } = params as { id: string };
       const channel = up().frameChannel(id);
-      if (channel === undefined) throw new CloverRpcError(ERR.NOT_FOUND, `no pending card ${id}`);
+      if (channel === undefined) throw new MossRpcError(ERR.NOT_FOUND, `no pending card ${id}`);
       return { channel };
     },
     [APPROVALS_METHODS.cardAnswer.name]: async (conn, params) => {
@@ -93,7 +93,7 @@ export function cardMethods(broker: () => CardBroker | undefined, capabilitiesOf
       // broker may take its sealed-frame answer as the app's; a real build compiles this out.
       const from: AnswerOrigin = {
         role: conn.role, ...(device === undefined ? {} : { device }),
-        ...(typeof __CLOVER_TEST_BUILD__ === "string" && conn.role === "cli" && conn.caller.kind === "user" ? { testHarness: true as const } : {}),
+        ...(typeof __MOSS_TEST_BUILD__ === "string" && conn.role === "cli" && conn.caller.kind === "user" ? { testHarness: true as const } : {}),
       };
       // A user's own device link answers for itself: its device must be the one whose key signed. A paired computer
       // (a `peer` caller, through `peer.call`) may relay another device's signed answer, which binds that device end to end.

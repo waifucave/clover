@@ -1,4 +1,4 @@
-// What `clover-core __fetch-probe` (main.ts; scripts/verify-sealed-core.ts's probe) may be asked to fetch: a loopback
+// What `moss-core __fetch-probe` (main.ts; scripts/verify-sealed-core.ts's probe) may be asked to fetch: a loopback
 // URL (the gate's own servers) or the one fixed Apple URL its OS-store check uses, with a nonce key of exactly 32 hex
 // characters. Anything else is refused (exit 2) before a request is made, so a shipped binary can't be used to send an
 // arbitrary header to an arbitrary host (#243 check 2).

@@ -1,6 +1,6 @@
 // `command.run` checks args against the command's schema for every caller before the handler runs (F-M3's review N4).
 import { describe, expect, test } from "bun:test";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { isContractError } from "../../contracts/common";
 import type { InvokeRequest } from "../../contracts/plugin-host";
 import { toMethodError } from "../../rpc/handler";

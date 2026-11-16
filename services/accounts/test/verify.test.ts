@@ -11,7 +11,7 @@ const le = (n: bigint) => Uint8Array.from({ length: 32 }, (_, i) => Number((n >>
 
 describe("verifyEd25519", () => {
   test("the all-zero key and signature are refused, for any statement", async () => {
-    for (const text of ["clover/answer-key/1\nabc\nxyz\nnone", "clover-account-v2 register", "x"]) {
+    for (const text of ["moss/answer-key/1\nabc\nxyz\nnone", "moss-account-v2 register", "x"]) {
       expect(await verifyEd25519(new Uint8Array(32), new Uint8Array(64), utf8(text))).toBe(false);
     }
   });
@@ -19,7 +19,7 @@ describe("verifyEd25519", () => {
   test("a real signature verifies; with a small-order R, or S at or above L, it doesn't", async () => {
     const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
     const key = new Uint8Array((await crypto.subtle.exportKey("raw", pair.publicKey)) as ArrayBuffer);
-    const data = utf8("clover-account-v2 mint");
+    const data = utf8("moss-account-v2 mint");
     const sig = new Uint8Array((await crypto.subtle.sign({ name: "Ed25519" }, pair.privateKey, data)) as ArrayBuffer);
     expect(await verifyEd25519(key, sig, data)).toBe(true);
     const smallR = new Uint8Array(sig);

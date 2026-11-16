@@ -15,7 +15,7 @@
 //   the CSS stops at the edge of a smaller part (§5.5); the defining at-rules stay outside, since their names are
 //   global (and prefixed).
 // * A layout's CSS also has its classes prefixed, as the layout's nodes are (`class: "card"` is `clv-<id>__card`).
-import { cssFunctionName, cssUnescape, cssUrlArgumentsAreDynamic, isDroppedCssFunction, resolveCssUrl } from "@waifucave/clover-plugin-sdk";
+import { cssFunctionName, cssUnescape, cssUrlArgumentsAreDynamic, isDroppedCssFunction, resolveCssUrl } from "@waifucave/moss-plugin-sdk";
 
 // -------------------------------------------------------------------------------------------------
 // Tokens

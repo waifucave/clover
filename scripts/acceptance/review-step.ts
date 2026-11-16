@@ -25,7 +25,7 @@ export function reviewProblem(v: ReviewView, model: string): string | undefined 
   if (v.state !== "done") return `the card page's review is "${v.state}", not done`;
   if (v.headHidden || v.head.trim() !== HEAD_TEXT) return `the report's heading reads "${v.head.trim()}"${v.headHidden ? " (hidden)" : ""}, not "${HEAD_TEXT}"`;
   if (!v.report.includes(REPORT_MARK)) return `the report doesn't carry the fake model's reading of ${PLUGIN_ID}: "${v.report.slice(0, 120)}"`;
-  if (!v.report.includes("model's reading")) return "the report ends without Clover's own line that it is a model's reading";
+  if (!v.report.includes("model's reading")) return "the report ends without MOSS's own line that it is a model's reading";
   if (model === "" || !v.note.includes(model)) return `the note doesn't name the model ${model || "(none)"}: "${v.note.slice(0, 160)}"`;
   if (v.note.startsWith(NOTE_BEFORE)) return "the note still reads as before the model was known";
   return undefined;
@@ -47,7 +47,7 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
       return all.find((c) => c.kind === "plugin-ok" && c.pluginId === PLUGIN_ID);
     });
     cardId = card.id;
-    // Clover's own jobs run on the run's key (Anthropic, the fake) only with a model chosen for the role: it won't pick one
+    // MOSS's own jobs run on the run's key (Anthropic, the fake) only with a model chosen for the role: it won't pick one
     // on that provider by itself ("Settings > Roles"). The reviewer role is set to the model Alpha runs, as a user would.
     const tag = (await rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
     if (tag === undefined || !tag.startsWith("anthropic/")) fail(`Alpha runs ${tag ?? "no model"}, not an Anthropic one the run's key can drive`);
@@ -69,7 +69,7 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
       return undefined;
     }, async () => `plugin.review (peek) stayed unavailable after the reviewer role was set in settings.json: ${readFileSync(file, "utf8").replace(/\s+/g, " ").slice(0, 600)}`);
     // The card's own page: the fallback window the app draws when no part shows the card.
-    const url = `clover-sealed://card/${encodeURIComponent(card.id)}/own`;
+    const url = `moss-sealed://card/${encodeURIComponent(card.id)}/own`;
     const page = await until("the card's own page", 45_000, async () => (await cdp.documents()).find((d) => d.url.startsWith(url)));
     const s = page.session;
     const read = async (): Promise<ReviewView> => JSON.parse(String(await cdp.evaluate(s, `JSON.stringify((() => {
@@ -102,7 +102,7 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
       // A pressed button is disabled at once and the report shows "Reviewing…".
       const started = await until("the press to start a review", 4_000, async () => { const v = await read(); return v.buttonDisabled || v.state !== "idle" ? v : undefined; }).catch(() => undefined);
       if (started !== undefined) break;
-      if (attempt === 2) { const probe = await cdp.evaluate(s, "JSON.stringify({ review: typeof (window.cloverSealed || {}).review, scripts: document.scripts.length, url: location.pathname, seen: window.__c, at: (() => { const e = document.elementFromPoint(53, 300); return e ? e.tagName + '.' + e.className : null; })(), btn: JSON.stringify(document.querySelector('.review-button')?.getBoundingClientRect()), ready: document.body.dataset.ready, vis: document.visibilityState, focus: document.hasFocus() })").catch((e: Error) => e.message); const said = cdp.console.filter((c) => c.session === s).map((c) => `${c.level}: ${c.text}`).slice(-6).join(' | '); fail(`probe ${String(probe)}; console: ${said}; pressing the Review button at (${Math.round(btn.x)},${Math.round(btn.y)}) started nothing (viewport ${String(await cdp.evaluate(s, "innerWidth + 'x' + innerHeight"))}; ${JSON.stringify(await read())})`); }
+      if (attempt === 2) { const probe = await cdp.evaluate(s, "JSON.stringify({ review: typeof (window.mossSealed || {}).review, scripts: document.scripts.length, url: location.pathname, seen: window.__c, at: (() => { const e = document.elementFromPoint(53, 300); return e ? e.tagName + '.' + e.className : null; })(), btn: JSON.stringify(document.querySelector('.review-button')?.getBoundingClientRect()), ready: document.body.dataset.ready, vis: document.visibilityState, focus: document.hasFocus() })").catch((e: Error) => e.message); const said = cdp.console.filter((c) => c.session === s).map((c) => `${c.level}: ${c.text}`).slice(-6).join(' | '); fail(`probe ${String(probe)}; console: ${said}; pressing the Review button at (${Math.round(btn.x)},${Math.round(btn.y)}) started nothing (viewport ${String(await cdp.evaluate(s, "innerWidth + 'x' + innerHeight"))}; ${JSON.stringify(await read())})`); }
     }
     const done = await until("the report on the card's page", 120_000, async () => { const v = await read(); return v.state === "done" || v.state === "failed" || v.state === "unavailable" ? v : undefined; },
       async () => JSON.stringify(await read().catch(() => null)));

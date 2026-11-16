@@ -11,7 +11,7 @@ import { AvatarService } from "../api/avatar";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { API_CALLS, type ApiCallInfo, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
+import { API_CALLS, type ApiCallInfo, type ApiCallPath } from "@waifucave/moss-plugin-sdk";
 import { createApiRouter } from "../api/router";
 import { apiHas, apiMember, HARMLESS_KEYS } from "../runtime";
 import { commandsApi } from "../../commands/views";
@@ -46,7 +46,7 @@ function served(): Set<string> {
     confirmApi(f),
     logsApi({ home: "/nonexistent" }).handlers,
     keysApi(f),
-    outsideApi({ cloverHome: "/nonexistent" }),
+    outsideApi({ mossHome: "/nonexistent" }),
     new AvatarService(() => undefined).handlers(),
     new NotifyService({ registry: { entries: () => [] }, home: "/nonexistent" } as never).apiHandlers(),
     modelPluginApiHandlers(f),
@@ -75,7 +75,7 @@ describe("every call the catalog lists for host code is served", () => {
     const record = { id: "luna", enabled: true, state: "running", granted: ["memory.read", "usage.read", "logs.read", "audio", "approvals", "browser", "call:sol"] } as never;
     const router = createApiRouter({ registry: { get: () => record }, handlers: [] });
     for (const path of ["memory.list", "keys.open", "browser.watch", "browser.show", "browser.onCdpEvent", "browser.tabs", "browser.cdp", "commands.run"].filter((p) => (API_CALLS as Record<string, ApiCallInfo>)[p]!.notYet !== undefined)) {
-      const err = await router({ pluginId: "luna", process: path === "keys.open" || path === "browser.tabs" || path === "browser.cdp" ? "clover" : "shared", path, args: ["x"], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
+      const err = await router({ pluginId: "luna", process: path === "keys.open" || path === "browser.tabs" || path === "browser.cdp" ? "moss" : "shared", path, args: ["x"], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
       expect([path, (err as Error).message]).toEqual([path, `${path} isn't available yet: ${(API_CALLS as Record<string, ApiCallInfo>)[path]!.notYet}`]);
     }
   });

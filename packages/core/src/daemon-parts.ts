@@ -1,4 +1,4 @@
-// The Clover parts the daemon runs over this device's links (the daemon integration lane; plan §4 C, H, J and D): lane
+// The MOSS parts the daemon runs over this device's links (the daemon integration lane; plan §4 C, H, J and D): lane
 // J's computer node and lane D's bot side, started once the links are up and closed in reverse order before them.
 //
 // * **The computer node** (J, `startComputerNode`) takes its transport, devices, name, `memoryChanged` (H's memory
@@ -9,15 +9,15 @@
 //   cloud computers, §9.2) runs on one computer only. A lone computer with no lease is its own main.
 // * **The bot side** (D, `createBotSide`) runs over the same main computer, closes its own gate when this computer
 //   stops running the bots, and hands them back to a returning main (`MainComputerHandle.setHandBack`). Its methods
-//   join the Clover server's handlers.
+//   join the MOSS server's handlers.
 // * **The update gate** (lane M's `RunningDaemon.updateGate`): the links renew the lease just before an update's
 //   restart (`startDaemonLinks`), and the bot side takes the gate itself (lane D's #246): its running turns are the
 //   gate's `bot-turns` source, so an update never restarts the daemon in the middle of one, and no turn starts while
 //   an update closes the gate. Each turn is counted once, there.
-// * **The agents** (K, `createAgents`) run over the bot side's host, on this computer's node: K's manager, Clover's own
-//   coding agent (`clover-code`) and lane A's in-process subagents on the embedded runtime, held by the bot side's pause
+// * **The agents** (K, `createAgents`) run over the bot side's host, on this computer's node: K's manager, MOSS's own
+//   coding agent (`moss-code`) and lane A's in-process subagents on the embedded runtime, held by the bot side's pause
 //   switch. Their approvals go through lane C's broker (#267) and their folders through this computer's fence. The
-//   Clover server reaches them through `lateAgentDoors`: `clover-core code-agent` (`codeAgent.*`, K's #291) and the
+//   MOSS server reaches them through `lateAgentDoors`: `moss-core code-agent` (`codeAgent.*`, K's #291) and the
 //   bridge role, both refused until the agents are up and after they stop.
 // * **The sessions' records** (H's `SessionRecordSync` into D's host, #279): the sessions this computer runs are
 //   copied live to the user's other computers, and theirs land here, so a computer that takes the bots over finds their
@@ -26,7 +26,7 @@
 //   it: a record from an earlier lease is taken as late.
 import type { HookSource } from "./runtime-sdk/turn-loop/hooks";
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
-import type { AgentDefView } from "@waifucave/clover-protocol";
+import type { AgentDefView } from "@waifucave/moss-protocol";
 import { browserAppHandlers } from "./browser/app-port";
 import { browserRpcHandlers } from "./browser/rpc-handlers";
 import { startBrowser, type DaemonBrowser, type StartBrowserOptions } from "./browser/daemon";
@@ -34,7 +34,7 @@ import { DEFAULT_PROXY_SETTING } from "./browser/proxy";
 import type { AppTabPort, BrowserEvent } from "./browser/service";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
 import { pluginAgentDefinitions } from "./agents/rpc";
-import { CloverApprovalBroker } from "./approvals/broker";
+import { MossApprovalBroker } from "./approvals/broker";
 import { realpathSync } from "node:fs";
 import { pathFolders, pathsClassOnDisk } from "./approvals/ordinary-paths";
 import { requestReviewer } from "./approvals/request-reviewer";
@@ -42,12 +42,12 @@ import { hostOs } from "./tree/names";
 import { fileRuleStore } from "./approvals/rule-store";
 import { deviceProofVerifier } from "./contracts/approval-broker";
 import { ContractError, Listeners } from "./contracts/common";
-import { CloverFence } from "./fence/fence";
+import { MossFence } from "./fence/fence";
 import { approvalCoreEvents } from "./approvals/core-events";
 import type { CoreEventInput, CoreEventOptions } from "./ipc/core-events";
-import { CloverRpcError, type BridgeGate, type CodeAgentDoor } from "./ipc/clover";
+import { MossRpcError, type BridgeGate, type CodeAgentDoor } from "./ipc/moss";
 import { embeddedSessionOptions } from "./runtime-sdk/turn-loop/embedded-session";
-import { ERR } from "@waifucave/clover-protocol";
+import { ERR } from "@waifucave/moss-protocol";
 import type { BotSide, BotSideOptions } from "./bots/wiring";
 import { createBotSide } from "./bots/wiring";
 import { LeaseMainComputer, soleComputer, type MainComputer } from "./bots/main-computer";
@@ -60,9 +60,9 @@ import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import { appTerminals } from "./computers/app-terminals";
 import type { ApprovalBroker } from "./contracts/approval-broker";
 import type { FencedSpawner } from "./fence/spawn";
-import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
-import { CloverUsageCounter } from "./usage/counter";
-import { cloverUsageDbPath, UsageLedger } from "./usage/ledger";
+import { laneMethodHandlers, type MossHandler } from "./ipc/moss";
+import { MossUsageCounter } from "./usage/counter";
+import { mossUsageDbPath, UsageLedger } from "./usage/ledger";
 import { usageMethods } from "./usage/rpc";
 import { sessionPanelMethods, type SessionPanelDeps } from "./sessions/panel-reads";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
@@ -80,7 +80,7 @@ export interface DaemonBotsInput {
   /** Each session's driver, given the bot side (for its core tools, read at each build) and the computer node. */
   /** The bots' drivers, given the daemon's one approval broker (when the node runs): a bot's calls that ask raise a card
    *  on it (lane C's `botApprovalCheck`). */
-  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence; agents(): DaemonAgents | undefined }): DriverFactory;
+  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: MossApprovalBroker | undefined; fence: MossFence; agents(): DaemonAgents | undefined }): DriverFactory;
   /** The bot side is up: what the drivers keep per bot or session hears the bots' removals and the sessions' ends (lane
    *  C's shell grants). Its result is called when the side closes. */
   sideUp?(side: BotSide): () => void;
@@ -88,7 +88,7 @@ export interface DaemonBotsInput {
   hasKeyFor?: BotSideOptions["hasKeyFor"];
   /** Whether a model can be set as a bot's (`bot.setUserLayer`; models-list.ts `modelOffer`). */
   modelOffer?: BotSideOptions["modelOffer"];
-  /** What Clover's own bundled plugin chose for a bot, from its verified staged bytes (a loaded tag equal to it asks
+  /** What MOSS's own bundled plugin chose for a bot, from its verified staged bytes (a loaded tag equal to it asks
    *  nothing). */
   bundledChoice?: BotSideOptions["bundledChoice"];
   /** Lane B's plugin workshop: the bots' `PluginValidate`, `PluginInstall` and `PluginStatus`. */
@@ -131,8 +131,8 @@ export interface BotRelayMailbox {
 }
 
 export interface DaemonPartsInput {
-  /** The Clover home. */
-  cloverHome: string;
+  /** The MOSS home. */
+  mossHome: string;
   /** The user's home folder: `home/<this computer>/` in the tree. */
   userHome: string;
   clock: Clock;
@@ -140,8 +140,8 @@ export interface DaemonPartsInput {
    *  none (`links: false`): no computer node then, and the bot side runs as
    *  the only computer. */
   links: DeviceLinks | null;
-  /** The Clover server's lane handlers: the bot side's methods join them. */
-  handlers: Record<string, CloverHandler>;
+  /** The MOSS server's lane handlers: the bot side's methods join them. */
+  handlers: Record<string, MossHandler>;
   /** The computer node's options the daemon decides (its tree folder, Bash, the fence…); false for no node. */
   node?: false | Partial<Pick<ComputerNodeOptions, "treeRoot" | "executor" | "fence" | "reviewer" | "askUser" | "terminals" | "answers" | "mcp">>;
   /** The bot side; false for none. */
@@ -154,10 +154,10 @@ export interface DaemonPartsInput {
    *  exists (`lateBroker`, INT #353); without either, such a paste is refused with a reason, never dropped silently, and
    *  no card raises a level. The broker's cards go out through `coreEvent` too. */
   approvals?: Pick<ApprovalBroker, "request" | "get">;
-  /** The Clover server's `core.event` sender: the terminal panel's output (`terminal_output`) goes to the connection
+  /** The MOSS server's `core.event` sender: the terminal panel's output (`terminal_output`) goes to the connection
    *  that opened each terminal. Without it, the app's `terminal.*` methods aren't served. */
   coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
-  /** Lane C's fenced process on this computer (`fencedSpawner({ fence })` over the daemon's one CloverFence): the
+  /** Lane C's fenced process on this computer (`fencedSpawner({ fence })` over the daemon's one MossFence): the
    *  computer node's Bash runs through it (`fencedExecutor`, lane J). Without it the node has no executor and Bash on
    *  its tree is refused; it never runs unsandboxed. A test's own `node.executor` wins. */
   spawner?: FencedSpawner;
@@ -165,7 +165,7 @@ export interface DaemonPartsInput {
   updateGate?: BotSideOptions["updateGate"];
   /** Lane K's agents over the bot side's host; false for none. They need the node (the folder tree) and the bot side. */
   agents?: false | DaemonAgentsInput;
-  /** The Clover Browser on this computer (its tabs live in the app; the headless shell where no display is); false for none. */
+  /** The MOSS Browser on this computer (its tabs live in the app; the headless shell where no display is); false for none. */
   browser?: false | DaemonBrowserInput;
   log?(line: string): void;
 }
@@ -174,11 +174,11 @@ export interface DaemonPartsInput {
 export interface DaemonBrowserInput {
   /** This computer's name, as the tabs name it. */
   computer?: string;
-  /** The app's port while the app is connected (`appTabPort` over the Clover server's connections). */
+  /** The app's port while the app is connected (`appTabPort` over the MOSS server's connections). */
   app?: () => AppTabPort | undefined;
   /** No app runs on this computer at all; by default, never (a desktop's tabs live in its app). */
   headless?: boolean;
-  /** The browser's events (`tab_changed`, `tab_closed`), for the Clover server's core events. */
+  /** The browser's events (`tab_changed`, `tab_closed`), for the MOSS server's core events. */
   emit?: (event: BrowserEvent) => void;
   /** For tests: the headless shell's own options. */
   headlessOptions?: StartBrowserOptions["headlessOptions"];
@@ -186,7 +186,7 @@ export interface DaemonBrowserInput {
 
 export interface DaemonParts {
   node?: ComputerNode;
-  /** The Clover Browser, when it runs here. */
+  /** The MOSS Browser, when it runs here. */
   browser?: DaemonBrowser;
   bots?: BotSide;
   /** Lane K's agents, when they run here. */
@@ -194,7 +194,7 @@ export interface DaemonParts {
   /** The agent presets the bots' plugins contribute (`agents` point), for `agent.definitions`. */
   agentDefinitions?: () => AgentDefView[];
   /** Lane C's approval broker for the agents (#267). */
-  broker?: CloverApprovalBroker;
+  broker?: MossApprovalBroker;
   /** Who runs the bots (the lease's holder, or the main), as lane D reads it. */
   main?: MainComputer;
   /** Lane D's usage ledger, with the bot side: the plugin API's `usage.*` reads it. */
@@ -205,7 +205,7 @@ export interface DaemonParts {
 
 /** What the agents need that the daemon has. */
 export interface DaemonAgentsInput {
-  /** The daemon's own endpoint, where the bridge and `clover-core code-agent` say hello. */
+  /** The daemon's own endpoint, where the bridge and `moss-core code-agent` say hello. */
   socketPath: string;
   /** The embedded runtime's spawn hook (`createEmbeddedSessionHost().spawn`). */
   spawn: SpawnClaudeCodeProcess;
@@ -213,7 +213,7 @@ export interface DaemonAgentsInput {
   defaultModel(): string;
   /** The daemon's provider fill for a real model (lane A's `fillProvider`). */
   fillProvider?: (model: string, options: Options) => void | Promise<void>;
-  /** The Clover server's doors to the agents (`lateAgentDoors`), set once they're up. */
+  /** The MOSS server's doors to the agents (`lateAgentDoors`), set once they're up. */
   doors?: LateAgentDoors;
   /** Tests: the backends in place of the registry's and the core's. */
   backends?: AgentsOptions["backends"];
@@ -230,8 +230,8 @@ export interface DaemonAgentsInput {
 
 export type DaemonAgents = ReturnType<typeof createAgents>;
 
-/** The Clover server's doors to lane K's agents, made before them (the server starts at once; the agents with the
- *  bot side, once the links are up): `codeAgent` (`clover-core code-agent`) and the bridge role's gate and handlers.
+/** The MOSS server's doors to lane K's agents, made before them (the server starts at once; the agents with the
+ *  bot side, once the links are up): `codeAgent` (`moss-core code-agent`) and the bridge role's gate and handlers.
  *  Until `set`, and after it is cleared, a code-agent client is told to try again and a bridge hello is refused. */
 export interface LateAgentDoors {
   readonly codeAgent: CodeAgentDoor;
@@ -239,12 +239,12 @@ export interface LateAgentDoors {
   set(agents: DaemonAgents | undefined): void;
 }
 
-export function lateAgentDoors(handlers: Record<string, CloverHandler>): LateAgentDoors {
+export function lateAgentDoors(handlers: Record<string, MossHandler>): LateAgentDoors {
   let agents: DaemonAgents | undefined;
   let mounted: string[] = [];
   let offRevoke: (() => void) | undefined;
   const revoked = new Listeners<{ sessionId: string; connection?: number }>();
-  const notUp = () => new CloverRpcError(ERR.RETRY, "Clover's coding agent isn't running on this computer yet: try again in a moment");
+  const notUp = () => new MossRpcError(ERR.RETRY, "MOSS's coding agent isn't running on this computer yet: try again in a moment");
   return {
     codeAgent: {
       open: async (conn, p) => {
@@ -259,11 +259,11 @@ export function lateAgentDoors(handlers: Record<string, CloverHandler>): LateAge
     },
     bridge: {
       gate: {
-        accept: async (token, sessionId, pid) => (agents ? agents.clover.bridge.gate.accept(token, sessionId, pid) : { ok: false, reason: "no agents are running on this computer" }),
-        release: (sessionId, connection) => agents?.clover.bridge.gate.release(sessionId, connection),
+        accept: async (token, sessionId, pid) => (agents ? agents.moss.bridge.gate.accept(token, sessionId, pid) : { ok: false, reason: "no agents are running on this computer" }),
+        release: (sessionId, connection) => agents?.moss.bridge.gate.release(sessionId, connection),
         onRevoke: (fn) => revoked.add(fn),
       },
-      sessionInfo: (id) => agents?.clover.bridge.sessionInfo(id),
+      sessionInfo: (id) => agents?.moss.bridge.sessionInfo(id),
     },
     set(next) {
       for (const name of mounted) delete handlers[name];
@@ -273,9 +273,9 @@ export function lateAgentDoors(handlers: Record<string, CloverHandler>): LateAge
       // after the doors close): the old listener goes only when new agents take its place.
       if (!next) return;
       offRevoke?.();
-      offRevoke = next.clover.bridge.gate.onRevoke?.((e) => revoked.emit(e));
-      Object.assign(handlers, next.clover.handlers);
-      mounted = Object.keys(next.clover.handlers);
+      offRevoke = next.moss.bridge.gate.onRevoke?.((e) => revoked.emit(e));
+      Object.assign(handlers, next.moss.handlers);
+      mounted = Object.keys(next.moss.handlers);
     },
   };
 }
@@ -316,13 +316,13 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     const here = main?.self ?? computer ?? "this-computer";
 
     let node: ComputerNode | undefined;
-    // The one CloverFence and the one approval broker on this computer: the node (its folder tree, its terminals' paste
+    // The one MossFence and the one approval broker on this computer: the node (its folder tree, its terminals' paste
     // card), the agents and the bot side all go through these, never a copy of their own.
-    const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
+    const fence = new MossFence({ home: input.userHome, mossHome: input.mossHome });
     // A bot's workshop (the plugins it built: `provenance {by: "bot", bot}` in the registry's install records), followed
     // on each registry change, so its sessions' file tools and sandbox write inside them (`FenceContext.workshop`).
     if (input.bots) closers.push(fence.followWorkshop(input.bots.registry, input.bots.drops));
-    let broker: CloverApprovalBroker | undefined;
+    let broker: MossApprovalBroker | undefined;
     const lateApprovals = lateBroker(() => broker);
     if (links && nodeLinks && input.node !== false) {
       // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
@@ -337,10 +337,10 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         approvals: input.approvals ?? lateApprovals,
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
         // `temp`: the fence's temp folder, which the fence lets every runner write: TMPDIR for every Bash run here except
-        // a bot's own, which gets its scratch folder instead (`fencedExecutor`, from `cloverHome`). Read from a fence of
-        // this home until INT's one daemon-wide CloverFence lands here (#365); then it is that fence's `temp`.
-        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, cloverHome: input.cloverHome, temp: new CloverFence({ home: input.userHome, cloverHome: input.cloverHome }).temp } } : {}),
-        answers: { devices: nodeLinks.devices, cloverHome: input.cloverHome, clock: input.clock },
+        // a bot's own, which gets its scratch folder instead (`fencedExecutor`, from `mossHome`). Read from a fence of
+        // this home until INT's one daemon-wide MossFence lands here (#365); then it is that fence's `temp`.
+        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, mossHome: input.mossHome, temp: new MossFence({ home: input.userHome, mossHome: input.mossHome }).temp } } : {}),
+        answers: { devices: nodeLinks.devices, mossHome: input.mossHome, clock: input.clock },
         log: (line) => log(`[computers] ${line}`),
       });
       const n = startComputerNode({
@@ -352,7 +352,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         terminals: { ...own.terminals, ...(input.node ? input.node.terminals ?? {} : {}) },
         clock: input.clock,
         home: input.userHome,
-        cloverHome: input.cloverHome,
+        mossHome: input.mossHome,
         bots: () => side?.bots.botsRunHere() ?? [],
         botPlacement: (bot) => side?.bots.computerFor(bot),
         log: (line) => log(`[computers] ${line}`),
@@ -369,16 +369,16 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       if (main) closers.push(followMain(n, main, links));
       // Lane J's computers methods for the app (`computer.*`, `hold.list`), over the node's registry.
       Object.assign(input.handlers, laneMethodHandlers(computerMethods({ registry: n.registry })));
-      broker = new CloverApprovalBroker({
+      broker = new MossApprovalBroker({
         clock: input.clock,
         // A computer the registry doesn't know is judged at read-only, failing closed as the agents' manager does.
         levels: (c) => n.registry.get(c)?.level ?? "read-only", fence: (c) => (c === here ? fence : undefined),
-        verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
+        verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.mossHome), localComputer: here,
         // §9.1 at ask for risky actions: an edit of the user's ordinary files runs (the owner's ruling), and what is
         // left goes to the daemon's one safety reviewer (the node's), a card when it can't judge.
         // R1: the user's PATH is the login shell's, merged into the daemon's own at start (`login-shell-path.ts`).
         pathClass: (paths) => pathsClassOnDisk(paths, {
-          home: realOrSelf(input.userHome), os: hostOs(), cloverHome: realOrSelf(input.cloverHome),
+          home: realOrSelf(input.userHome), os: hostOs(), mossHome: realOrSelf(input.mossHome),
           pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
         }),
         reviewer: requestReviewer(input.reviewer, (line) => log(`[approvals] ${line}`)),
@@ -407,18 +407,18 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         const approvals = broker;
         agentsFactory = (d) => {
           const made = createAgents({
-            home: input.cloverHome, computer: here, socketPath: a.socketPath, host: d.host, approvals, tree: n.tree, fence, clock: input.clock,
+            home: input.mossHome, computer: here, socketPath: a.socketPath, host: d.host, approvals, tree: n.tree, fence, clock: input.clock,
             registry: b.registry, levelOf: d.levelOf, pause, userHome: input.userHome,
             // The plugins' tool.before hooks see an agent's permission requests (best effort, the manager's header).
             ...(a.hooks ? { hooks: a.hooks } : {}),
             // A computer's level changing (the user lowers it, or it goes off) reaches every running agent's mode floor.
             watchLevels: (fn) => n.registry.watch(() => fn()),
-            cloverCode: {
-              baseOptions: (s) => embeddedSessionOptions({ home: input.cloverHome, spawn: a.spawn }, s),
+            mossCode: {
+              baseOptions: (s) => embeddedSessionOptions({ home: input.mossHome, spawn: a.spawn }, s),
               defaultModel: a.defaultModel, ...(a.fillProvider ? { fillProvider: a.fillProvider } : {}),
             },
             inProcess: {
-              home: input.cloverHome, spawn: a.spawn, defaultModel: a.defaultModel, ...(a.fillProvider ? { provider: a.fillProvider } : {}),
+              home: input.mossHome, spawn: a.spawn, defaultModel: a.defaultModel, ...(a.fillProvider ? { provider: a.fillProvider } : {}),
               // The plugins' tool hooks cover a delegation's calls as a bot's: a guard a bot holds covers the agents it starts.
               ...(a.hooks ? { hooks: a.hooks } : {}), computer: () => here,
             },
@@ -436,7 +436,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         log("[agents] not started: they need this computer's node (its links), and the bot side");
       }
       const s = createBotSide({
-        home: input.cloverHome, computer: runner.self, clock: input.clock, registry: b.registry, main: runner,
+        home: input.mossHome, computer: runner.self, clock: input.clock, registry: b.registry, main: runner,
         drivers: b.drivers({ side: () => side, node, main: runner, broker, fence, agents: () => agents }),
         defaultModel: b.defaultModel,
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
@@ -515,7 +515,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       // tree), its outputs, its context use and its connectors (sessions/panel-reads.ts).
       const treeOf = node?.tree;
       Object.assign(input.handlers, laneMethodHandlers(sessionPanelMethods({
-        home: input.cloverHome,
+        home: input.mossHome,
         view: (id) => s.host.get(id),
         history: (id, o) => s.host.history(id, o),
         length: (id) => s.host.length(id),
@@ -531,8 +531,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         grantsOf: (pluginId) => grantsInForce(b.registry.get(pluginId)),
       })));
       // Lane D's usage rows (`usage.rows`, `usage.summary`): its ledger, counting the bot side's sessions as they run.
-      const ledger = new UsageLedger({ path: cloverUsageDbPath(input.cloverHome), computer: runner.self });
-      const counter = new CloverUsageCounter({ ledger, host: s.host, warn: (line) => log(`[usage] ${line}`) });
+      const ledger = new UsageLedger({ path: mossUsageDbPath(input.mossHome), computer: runner.self });
+      const counter = new MossUsageCounter({ ledger, host: s.host, warn: (line) => log(`[usage] ${line}`) });
       counter.start();
       closers.push(() => {
         counter.stop();
@@ -541,7 +541,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       Object.assign(input.handlers, laneMethodHandlers(usageMethods({ ledger })));
       usageLedger = ledger;
     }
-    // The Clover Browser (lane L), started after the bot side and stopped before it. Its tabs live in the app; the app
+    // The MOSS Browser (lane L), started after the bot side and stopped before it. Its tabs live in the app; the app
     // reports back with `browser.report` and `browser.hold` (its own connection only). The bundled tree's Browser tool
     // drives it through the plugin API's `browser.*` (`browserApiHandlers`, served by the plugin host's areas off `parts.browser`): the session whose tool call it serves, its own
     // tabs only, the tool's own nine DevTools methods only. Peers (other computers' browsers) are not served.
@@ -551,7 +551,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       const here = o.computer ?? computer ?? "this-computer";
       const br = startBrowser({
         computer: here,
-        home: input.cloverHome,
+        home: input.mossHome,
         headless: o.headless ?? false,
         ...(o.app ? { app: o.app } : {}),
         network: { proxy: DEFAULT_PROXY_SETTING, lanBots: [] },
@@ -698,7 +698,7 @@ export function pluginOkTicks(node: () => object | undefined, log: (line: string
 /** The broker, bound late (the node needs it before it exists: it is made from the node's own registry). Its `request`
  *  refuses until then, and its `get` finds nothing; once bound, both are the broker's own. A level raise's card is
  *  read back through `get` (J's #342, which fails closed without it), so both must always forward. */
-export function lateBroker(current: () => CloverApprovalBroker | undefined): Pick<CloverApprovalBroker, "request" | "get"> {
+export function lateBroker(current: () => MossApprovalBroker | undefined): Pick<MossApprovalBroker, "request" | "get"> {
   return {
     request: async (r, o) => {
       const b = current();
@@ -715,14 +715,14 @@ export const LATE_BROKER_WAIT_MS = 45_000;
 /** The daemon's broker for what starts before it (the plugin registry's OK cards, the app's development-folder card):
  *  a request waits until the parts have started and then asks on the broker, or is refused when they started without
  *  one (no links, or the node didn't start). `get` and `watch` see the broker once it's there. */
-export function lateApprovalBroker(ready: Promise<CloverApprovalBroker | undefined>, opts: { waitMs?: number } = {}): Pick<ApprovalBroker, "request" | "get" | "watch"> {
-  let current: CloverApprovalBroker | undefined;
+export function lateApprovalBroker(ready: Promise<MossApprovalBroker | undefined>, opts: { waitMs?: number } = {}): Pick<ApprovalBroker, "request" | "get" | "watch"> {
+  let current: MossApprovalBroker | undefined;
   let settled = false;
   void ready.then((b) => { current = b; settled = true; }, () => { settled = true; });
   const waitMs = opts.waitMs ?? LATE_BROKER_WAIT_MS;
   // The wait is bounded and follows the caller's signal (#397's review): the parts can take long, or never end on a
   // hung wire, and an RPC mustn't stay open meanwhile. The caller is told to try again.
-  const brokerSoon = (signal: AbortSignal | undefined): Promise<CloverApprovalBroker | undefined> => {
+  const brokerSoon = (signal: AbortSignal | undefined): Promise<MossApprovalBroker | undefined> => {
     if (current !== undefined || settled) return Promise.resolve(current);
     return new Promise((resolve, reject) => {
       const done = (f: () => void) => {

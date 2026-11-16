@@ -37,10 +37,10 @@ export interface AgentBackendHarness extends AgentBackend {
 export type AgentBackendFactory = (...args: ConstructorParameters<typeof FakeAgentBackend>) => AgentBackendHarness;
 
 export function runAgentBackendConformance(make: AgentBackendFactory): void {
-  const fence = new FakeFence({ home: "/Users/me", cloverHome: "/Users/me/.clover" }).policy();
+  const fence = new FakeFence({ home: "/Users/me", mossHome: "/Users/me/.moss" }).policy();
   const spec = (over: Partial<AgentStartSpec> = {}): AgentStartSpec => ({
     sessionId: "s_agent", root: "/Users/me/project1", fence,
-    bridge: { name: "clover-bridge", command: "/opt/clover/clover-core", args: ["bridge"], env: { CLOVER_BRIDGE_TOKEN: "placeholder" }, tools: ["SendMessage", "Glossary"] },
+    bridge: { name: "moss-bridge", command: "/opt/moss/moss-core", args: ["bridge"], env: { MOSS_BRIDGE_TOKEN: "placeholder" }, tools: ["SendMessage", "Glossary"] },
     ...over,
   });
   const runCmd: AgentStep = { tool: { kind: "execute", title: "npm test", rawInput: { command: "npm test" } } };
@@ -91,7 +91,7 @@ export function runAgentBackendConformance(make: AgentBackendFactory): void {
       expect(b.sessions[0]!.answers[0]!.answer).toEqual({ outcome: "cancelled" });
     });
 
-    test("a refusal ends the turn on Antigravity; Cursor reports the call completed and goes on, and Clover's record says refused", async () => {
+    test("a refusal ends the turn on Antigravity; Cursor reports the call completed and goes on, and MOSS's record says refused", async () => {
       const reject = async () => ({ outcome: "selected" as const, optionId: "reject_once" });
       const agy = await backend(S5_ANTIGRAVITY_QUIRKS, [[runCmd, { say: "after" }]]).backend.start(spec());
       agy.onPermission(reject);
@@ -108,7 +108,7 @@ export function runAgentBackendConformance(make: AgentBackendFactory): void {
       expect(cursorEvents).toContainEqual({ type: "tool_call_update", id: "call-1", status: "completed", refused: true });
     });
 
-    test("a cancel answers the pending request cancelled, and Clover closes the tool calls the agent leaves open", async () => {
+    test("a cancel answers the pending request cancelled, and MOSS closes the tool calls the agent leaves open", async () => {
       const { backend: b } = backend(S5_CURSOR_QUIRKS, [[{ say: "working" }, { tool: { id: "t2", kind: "execute", title: "deploy" } }]]);
       const s = await b.start(spec());
       s.onPermission(() => new Promise(() => {}));
@@ -120,7 +120,7 @@ export function runAgentBackendConformance(make: AgentBackendFactory): void {
       await s.cancel();
       expect((await turn).stopReason).toBe("cancelled");
       expect(b.sessions[0]!.answers).toEqual([{ toolCallId: "t2", answer: { outcome: "cancelled" } }]);
-      expect(events.at(-1)).toEqual({ type: "tool_call_update", id: "t2", status: "failed", closedByClover: true });
+      expect(events.at(-1)).toEqual({ type: "tool_call_update", id: "t2", status: "failed", closedByMoss: true });
       expect(s.state()).toBe("idle");
     });
 

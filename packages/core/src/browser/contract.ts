@@ -1,4 +1,4 @@
-// The Clover Browser's contract (spec §12.1): lane B's `packages/protocol/src/browser.ts` (#157, merged), the one
+// The MOSS Browser's contract (spec §12.1): lane B's `packages/protocol/src/browser.ts` (#157, merged), the one
 // source of the allow list, the URL rule and the shapes the app, the plugins and the core all check against. This
 // file re-exports it, with one addition that waits on lane B: a session's own tabs (ruling R10), so `TabOwner`, and
 // `TabView` with it, are B's plus `{ kind: "session" }`. The app's copy (`apps/desktop/src/main/browser/contract.ts`)
@@ -7,14 +7,14 @@
 // Owner decisions since the pin (items 92–94): bot tabs are drawn offscreen and shown through a viewport, so
 // `headless` means "offscreen, drawing at the bots' rate" rather than "in a host window"; while a screen reader is on,
 // new bot tabs start as real views in a hidden host window instead (the hybrid). Neither changes a name.
-import type { Screenshot as ProtocolScreenshot, TabPlace, Viewport } from "@waifucave/clover-protocol";
+import type { Screenshot as ProtocolScreenshot, TabPlace, Viewport } from "@waifucave/moss-protocol";
 import type { BrowserProxySetting } from "./proxy";
 
 export {
-  AGENT_VIEWPORT, BROWSER_REFUSED_SCHEMES, MAX_VIEWPORT_PIXELS, CDP_ALLOWED_DOMAINS, CDP_DENIED_DOMAINS, CLOVER_SCHEME_PREFIX, cdpDomainOf,
+  AGENT_VIEWPORT, BROWSER_REFUSED_SCHEMES, MAX_VIEWPORT_PIXELS, CDP_ALLOWED_DOMAINS, CDP_DENIED_DOMAINS, MOSS_SCHEME_PREFIX, cdpDomainOf,
   isBrowserUrlAllowed, isCdpMethodAllowed,
-} from "@waifucave/clover-protocol";
-export type { TabPlace, Viewport } from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
+export type { TabPlace, Viewport } from "@waifucave/moss-protocol";
 
 /** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). A session without a bot (a
  *  coding session) has a partition of its own too (ruling R10: the person's is never a session's by default), and so

@@ -11,7 +11,7 @@
 // rendered place is a plain placeholder there, never a live control (the render window's rule).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AppRenderResult, AppWindowRenderParams } from "@waifucave/clover-protocol";
+import type { AppRenderResult, AppWindowRenderParams } from "@waifucave/moss-protocol";
 import type { CoreToolDef, CoreToolResult } from "../runtime-sdk/turn-loop/servers";
 import { botPaths } from "./paths";
 
@@ -24,7 +24,7 @@ export const SCREENSHOT_MIN = { width: 320, height: 240 } as const;
 const FRAME_LINES = 40;
 
 export interface AppScreenshotDeps {
-  /** Clover's home: the bot's scratch is under it. */
+  /** MOSS's home: the bot's scratch is under it. */
   home: string;
   /** Asks this computer's app to draw the place (`app.window.render`). */
   render(params: AppWindowRenderParams): Promise<AppRenderResult>;
@@ -60,7 +60,7 @@ export function appScreenshotToolDef(deps: AppScreenshotDeps, caller: Screenshot
   return {
     name: APP_SCREENSHOT_TOOL,
     description: [
-      "See what a place in Clover's app looks like: a picture of it, drawn in a hidden window the user never sees, so",
+      "See what a place in MOSS's app looks like: a picture of it, drawn in a hidden window the user never sees, so",
       "their own window stays where it is. Use it after you build or change a plugin's page (look at it wide and narrow),",
       "and when the user says something looks wrong. Targets: `app:<plugin id or page key>` (a plugin's page), `bot:<id>`",
       "(a bot's tab), `plugins`, `archive`, `code` (the coding side), or `window` (the user's own window as it is now;",

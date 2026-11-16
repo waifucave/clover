@@ -4,7 +4,7 @@
 // one link per pair, calls that fail fast when the path is
 // gone, errors that keep their code, streams, and several daemons in one test.
 import { describe, expect, test } from "bun:test";
-import type { LinkView } from "@waifucave/clover-protocol";
+import type { LinkView } from "@waifucave/moss-protocol";
 import { ContractError, isContractError } from "../common";
 import { FakeClock, flush } from "../fakes/clock";
 import { type FakeLinkNetwork } from "../fakes/link-transport";

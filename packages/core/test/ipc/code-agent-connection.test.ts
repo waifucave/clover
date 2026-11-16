@@ -1,17 +1,17 @@
-// K-M3b: `codeAgent.*` on the daemon's endpoint (ipc/clover.ts's mount, the controller's ruling A): a `cli` connection
+// K-M3b: `codeAgent.*` on the daemon's endpoint (ipc/moss.ts's mount, the controller's ruling A): a `cli` connection
 // that counts as the user binds itself to one coding session; a relay started inside a sandbox or at the escape floor
 // gets none; a bound connection takes nothing else; its close ends the session.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, CODE_AGENT_MAX_LINE, encodeLine, ERR, LineDecoder, METHODS, SESSIONS_METHODS } from "@waifucave/clover-protocol";
+import { MOSS_ERR, MOSS_PROTOCOL_VERSION, CODE_AGENT_MAX_LINE, encodeLine, ERR, LineDecoder, METHODS, SESSIONS_METHODS } from "@waifucave/moss-protocol";
 import { startIpcServer } from "../../src/ipc/server";
-import { createCloverServer, laneMethodHandlers, type CodeAgentDoor } from "../../src/ipc/clover";
+import { createMossServer, laneMethodHandlers, type CodeAgentDoor } from "../../src/ipc/moss";
 import { handler } from "../../src/bots/rpc";
 import { runCodeAgentRelay } from "../../src/agents/code-agent/relay";
-import { CloverTokens } from "../../src/auth/clover-tokens";
-import { SessionProcesses } from "../../src/auth/clover-caller";
+import { MossTokens } from "../../src/auth/moss-tokens";
+import { SessionProcesses } from "../../src/auth/moss-caller";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
@@ -45,7 +45,7 @@ class Client {
     return new Promise((r) => this.pending.set(id, r));
   }
   hello(token: string): Promise<any> {
-    return this.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "cli", token, clientName: "clover-code-agent" });
+    return this.request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role: "cli", token, clientName: "moss-code-agent" });
   }
   close(): void { this.socket.end(); }
 }
@@ -89,14 +89,14 @@ describe("codeAgent.* on the daemon's endpoint (K-M3b)", () => {
   });
 
   async function boot() {
-    const home = mkdtempSync(join(tmpdir(), "clover-codeagent-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-codeagent-"));
     homes.push(home);
     const store = new SessionStore(home);
     const socketPath = resolveEndpoint(join(home, "run")).path;
     mkdirSync(join(home, "run"), { recursive: true });
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const legacy = await authority.ensureTokens();
-    const tokens = new CloverTokens({ verifyCli: (t) => authority.verify("harness", t) });
+    const tokens = new MossTokens({ verifyCli: (t) => authority.verify("harness", t) });
     const processes = new SessionProcesses();
     const logs: string[] = [];
     let peer = outside;
@@ -110,10 +110,10 @@ describe("codeAgent.* on the daemon's endpoint (K-M3b)", () => {
         return { lastSeq: 0 };
       }),
     });
-    const clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), probe: () => peer, codeAgent: door, handlers: lanes, log: (l) => void logs.push(l) });
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
-    stop = () => { clover.dispose(); server.stop(); store.close(); };
-    return { socketPath, token: legacy.harness, processes, door, logs, follow, clover, setPeer: (p: PeerFacts) => { peer = p; } };
+    const moss = createMossServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), probe: () => peer, codeAgent: door, handlers: lanes, log: (l) => void logs.push(l) });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, mossConnections: moss });
+    stop = () => { moss.dispose(); server.stop(); store.close(); };
+    return { socketPath, token: legacy.harness, processes, door, logs, follow, moss, setPeer: (p: PeerFacts) => { peer = p; } };
   }
 
   test("the user's relay binds its connection to one session; the lines cross; the connection takes nothing else", async () => {
@@ -130,9 +130,9 @@ describe("codeAgent.* on the daemon's endpoint (K-M3b)", () => {
     for (let i = 0; i < 50 && c.notes.length === 0; i++) await Bun.sleep(10);
     expect(c.notes).toEqual([{ jsonrpc: "2.0", method: "codeAgent.line", params: { line: "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}" } }]);
     // A bound connection takes nothing else: another method, or a second session.
-    expect((await c.request("pair.status", {})).error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
-    expect((await c.request("agent.backends", {})).error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
-    expect((await c.request("codeAgent.open", { cwd: "/Users/me/other" })).error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    expect((await c.request("pair.status", {})).error.code).toBe(MOSS_ERR.ROLE_REFUSED);
+    expect((await c.request("agent.backends", {})).error.code).toBe(MOSS_ERR.ROLE_REFUSED);
+    expect((await c.request("codeAgent.open", { cwd: "/Users/me/other" })).error.code).toBe(MOSS_ERR.ROLE_REFUSED);
     expect(b.door.opened).toHaveLength(1);
     // Its close ends the session.
     c.close();
@@ -147,14 +147,14 @@ describe("codeAgent.* on the daemon's endpoint (K-M3b)", () => {
     // At the escape floor (fenced): not the user, and no one's session either.
     b.setPeer(fenced);
     const floor = await Client.connect(b.socketPath);
-    expect((await floor.hello(b.token)).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await floor.hello(b.token)).error.code).toBe(MOSS_ERR.NOT_THE_USER);
     // Inside an agent's session: it acts as that session, which may not open one (userOnly).
     b.processes.add(6160, { sessionId: "agent_x", sessionKind: "agent", bot: "alpha" });
     b.setPeer(inAgent);
     const agent = await Client.connect(b.socketPath);
     expect((await agent.hello(b.token)).result.caller).toMatchObject({ kind: "session", sessionId: "agent_x" });
-    expect((await agent.request("codeAgent.open", { cwd: "/Users/me/project" })).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
-    expect((await agent.request("codeAgent.send", { line: "{}" })).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await agent.request("codeAgent.open", { cwd: "/Users/me/project" })).error.code).toBe(MOSS_ERR.NOT_THE_USER);
+    expect((await agent.request("codeAgent.send", { line: "{}" })).error.code).toBe(MOSS_ERR.NOT_THE_USER);
     expect(b.door.opened).toEqual([]);
     floor.close();
     agent.close();
@@ -174,7 +174,7 @@ describe("codeAgent.* on the daemon's endpoint (K-M3b)", () => {
     const second = await c.request("codeAgent.open", { cwd: "/Users/me/other" });
     await Bun.sleep(20);
     const send = await c.request("codeAgent.send", { line: "{}" });
-    expect([other.error?.code, second.error?.code, send.error?.code]).toEqual([CLOVER_ERR.ROLE_REFUSED, CLOVER_ERR.ROLE_REFUSED, CLOVER_ERR.ROLE_REFUSED]);
+    expect([other.error?.code, second.error?.code, send.error?.code]).toEqual([MOSS_ERR.ROLE_REFUSED, MOSS_ERR.ROLE_REFUSED, MOSS_ERR.ROLE_REFUSED]);
     expect(b.door.opened).toHaveLength(1);
     release();
     expect((await first).result).toEqual({ session: "agent_code1" });
@@ -201,7 +201,7 @@ describe("codeAgent.* on the daemon's endpoint (K-M3b)", () => {
     expect(c.notes.map((n) => n.method)).toEqual(["event"]);
     await c.request("codeAgent.open", { cwd: "/Users/me/project" });
     expect(b.follow.stopped).toBe(true);
-    const conn = b.clover.connections().find((x) => x.clientName === "clover-code-agent")!;
+    const conn = b.moss.connections().find((x) => x.clientName === "moss-code-agent")!;
     expect([conn.relayed, conn.follows.size, conn.areas.size]).toEqual([true, 0, 0]);
     // A sender that kept going anyway reaches nothing; the session's lines still do.
     b.follow.send!({ type: "text_delta", seq: 2, sessionId: "s_other", ts: 2, delta: "after" });

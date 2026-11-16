@@ -10,11 +10,11 @@
 // Electron-free: the Electron glue (ipc.ts) hands frames in as `FrameRef`s and delivers what `send` produces, so the
 // tests drive the whole runtime under Bun.
 import { randomBytes } from "node:crypto";
-import type { AvatarDown, AvatarUp, LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
-import { STOCK_KEYS, spotInfo } from "@waifucave/clover-plugin-sdk";
+import type { AvatarDown, AvatarUp, LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/moss-plugin-sdk/ui/bridge";
+import type { Appearance, TokenValue } from "@waifucave/moss-plugin-sdk";
+import { STOCK_KEYS, spotInfo } from "@waifucave/moss-plugin-sdk";
 import { SAFE_MODE_PLUGINS, patchScope, withTabPatches, type UiEntry, type UiPlugin } from "./model";
-import { displayText } from "@waifucave/clover-plugin-sdk/plain";
+import { displayText } from "@waifucave/moss-plugin-sdk/plain";
 import { NO_CHOICES, OWN_PANELS_KEY, SpotTree, addedCandidates, botScope, entryRef, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
@@ -23,7 +23,7 @@ import { builtClientUrl } from "./files";
 import { StringStore, stringTable } from "./strings";
 import { LayoutStore, type TabSpec } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
-import { isSealedLookAllowed } from "@waifucave/clover-plugin-sdk";
+import { isSealedLookAllowed } from "@waifucave/moss-plugin-sdk";
 import { fieldPage, buttonPage, ownCardPage, placeholderPage, summaryFieldPage, labelOf } from "../sealed-pages";
 import { alwaysSentence, summarize as summarizeCard } from "../card-summary";
 import { homedir } from "node:os";
@@ -50,7 +50,7 @@ const frameKey = (f: Pick<FrameRef, "processId" | "routingId">) => `${f.processI
 
 /** The spots keyed by bot: the cell's context is that bot's tab. */
 const KEYED_BY_BOT = new Set(["bot.tab", "sidebar.bot"]);
-/** The window's own spots that offer `when.bot` (and a bot's own plugin's panel for its tab): the `clover` shell says which bot's tab shows (`forBot`). */
+/** The window's own spots that offer `when.bot` (and a bot's own plugin's panel for its tab): the `moss` shell says which bot's tab shows (`forBot`). */
 const BOT_FROM_SHELL = new Set(["sidebar", "bar", "bot.side", "panel"]);
 
 interface Mount {
@@ -81,7 +81,7 @@ interface Mount {
   frame?: { key: string; processId: number; routingId: number; osPid?: number };
   /** Children by place: `<spot>|<key>|<entry ref>`. */
   children: Map<string, string>;
-  /** Placed by the clover layer with a session kind (`when.session`). */
+  /** Placed by the moss layer with a session kind (`when.session`). */
   session?: string;
   /** A frame's document: the layers its `Connection-Allowlist` names, as it was served (B1: each installed layer by
    *  name, never a `*` host, since Chromium matches a document's DNS lookups against the list by host only). */
@@ -380,7 +380,7 @@ export class UiRuntime {
           if (c.entry.style === undefined || (botScope(c.plugin, c.entry) !== "all") !== limited) continue;
           const t = this.themes.read(c.plugin, c.entry.style);
           if (t === null) continue;
-          const css = this.themes.themeSheet(c.plugin, t, { root: partSelector(m.id), limit: "[data-clover-styled]:not(:scope)" });
+          const css = this.themes.themeSheet(c.plugin, t, { root: partSelector(m.id), limit: "[data-moss-styled]:not(:scope)" });
           if (css !== "") out.push({ id: `style:${c.plugin.id}#${c.entry.id}:${m.id}`, css });
         }
       }
@@ -391,14 +391,14 @@ export class UiRuntime {
       if (bot === undefined) continue;
       const b = botTheme(this.themes, this.plugins, bot);
       if (b === undefined) continue;
-      const css = this.themes.themeSheet(b.plugin, b.theme, { root: partSelector(m.id), limit: "[data-clover-tab]:not(:scope)" });
+      const css = this.themes.themeSheet(b.plugin, b.theme, { root: partSelector(m.id), limit: "[data-moss-tab]:not(:scope)" });
       if (css !== "") out.push({ id: `bot:${bot}:${m.id}`, css });
     }
     for (const m of inDoc) {
       const file = this.entryOf(m)?.layout;
       if (file === undefined || m.plugin === undefined) continue;
       // The layout's own CSS dresses its own nodes: it stops at every part inside it.
-      const css = this.layouts.sheet(this.tabSpec(m.plugin, file), { root: partSelector(m.id), limit: "[data-clover-part]:not(:scope)" });
+      const css = this.layouts.sheet(this.tabSpec(m.plugin, file), { root: partSelector(m.id), limit: "[data-moss-part]:not(:scope)" });
       if (css !== "") out.push({ id: `layout:${m.plugin.id}:${m.id}`, css });
     }
     styleSheets(true);
@@ -417,9 +417,9 @@ export class UiRuntime {
     return this.choices.language ?? this.opts.systemLanguage ?? "en";
   }
 
-  /** A document's strings: its plugin's keys (the core root and the `clover` layer: `clover.…`). */
+  /** A document's strings: its plugin's keys (the core root and the `moss` layer: `moss.…`). */
   stringsFor(doc: Mount): StringTable {
-    return this.tableFor(doc.plugin?.topId ?? "clover");
+    return this.tableFor(doc.plugin?.topId ?? "moss");
   }
 
   private tableFor(owner: string): StringTable {
@@ -433,7 +433,7 @@ export class UiRuntime {
 
   /** The core's own strings in the app's language, for the main process's menus and dialogs. */
   coreStrings(): StringTable {
-    return this.tableFor("clover");
+    return this.tableFor("moss");
   }
 
   /** Sends a document its strings when they changed. */
@@ -516,7 +516,7 @@ export class UiRuntime {
 
   /** Binds a window's root document to its main frame, the first time it asks (its URL must be the core's). */
   private bindRoot(frame: FrameRef, windowId: number): Mount {
-    if (!frame.url.startsWith("clover-core://app/") || (frame.parent !== undefined && frame.parent !== null)) throw new LayerError("not the core's root document");
+    if (!frame.url.startsWith("moss-core://app/") || (frame.parent !== undefined && frame.parent !== null)) throw new LayerError("not the core's root document");
     const root = [...this.mounts.values()].find((m) => m.kind === "root" && m.windowId === windowId);
     if (root === undefined) throw new LayerError("this window has no root");
     if (root.frame !== undefined && root.frame.key !== frameKey(frame)) this.byFrame.delete(root.frame.key);
@@ -554,7 +554,7 @@ export class UiRuntime {
    *  plugin's document): its id and capabilities, or undefined for any other frame. What a drop on a page is judged by. */
   documentPlugin(frame: FrameRef): { pluginId: string; capabilities: ReadonlySet<string> } | undefined {
     const doc = this.docByFrame(frame);
-    if (doc === undefined || doc.kind !== "frame" || doc.plugin === undefined || doc.plugin.layer !== doc.layer || doc.layer === "clover") return undefined;
+    if (doc === undefined || doc.kind !== "frame" || doc.plugin === undefined || doc.plugin.layer !== doc.layer || doc.layer === "moss") return undefined;
     return { pluginId: doc.plugin.id, capabilities: doc.plugin.capabilities };
   }
 
@@ -601,7 +601,7 @@ export class UiRuntime {
 
   /** Every layer the registry has, by its origin label: what a document served now may frame. */
   layerLabels(): string[] {
-    return [...new Set(["clover", ...this.plugins.map((p) => p.layer)])].sort();
+    return [...new Set(["moss", ...this.plugins.map((p) => p.layer)])].sort();
   }
 
   /** A document served before a layer it now has to frame was installed: Chromium holds the frame's navigation to the
@@ -635,7 +635,7 @@ export class UiRuntime {
     } catch {
       throw new LayerError("not a layer document");
     }
-    if (url.protocol !== "clover-plugin:" || url.host !== m.layer || url.searchParams.get("mount") !== token) throw new LayerError("the token was loaded elsewhere");
+    if (url.protocol !== "moss-plugin:" || url.host !== m.layer || url.searchParams.get("mount") !== token) throw new LayerError("the token was loaded elsewhere");
     const parentDoc = m.parent === undefined ? undefined : this.docOf(this.mounts.get(m.parent)!);
     if (parentDoc?.frame === undefined || frame.parent === undefined || frame.parent === null || frameKey(frame.parent) !== parentDoc.frame.key) {
       throw new LayerError("the frame isn't where the token placed it");
@@ -671,7 +671,7 @@ export class UiRuntime {
   /** The module and stylesheets a plugin's document loads, served from its own origin. */
   assets(m: Mount): { module?: string; css: string[] } {
     if (m.plugin === undefined) return { css: [] };
-    if (m.plugin.topId === "clover") return { module: "/_clover/clover.js", css: ["/_clover/clover.css"] };
+    if (m.plugin.topId === "moss") return { module: "/_moss/moss.js", css: ["/_moss/moss.css"] };
     const base = `/_p/${encodeURIComponent(m.plugin.id)}/`;
     const entry = m.plugin.clientEntry;
     const built = m.plugin.clientBuild;
@@ -707,16 +707,16 @@ export class UiRuntime {
   // ----------------------------------------------------------------------------------------------
 
   /** Whether a part declares a spot: its entry's `declares` or the root's own. `bot.tab`, the app's core point, is
-   *  shown by the shell (it shows it in `main`, the panel an agent's), so the `clover` tree's parts may show it without
+   *  shown by the shell (it shows it in `main`, the panel an agent's), so the `moss` tree's parts may show it without
    *  declaring it; any other part must declare it. A bot's whole tab, composer included, in a frame whose size and
    *  covering a third party controls would be a clickjacking surface for the sends E-M3 counts as the user's. */
   private declares(m: Mount, spot: string): boolean {
     if (m.kind === "root") return m.rootSpots?.includes(spot) ?? false;
-    if (spot === "bot.tab" && m.plugin?.topId === "clover") return true;
+    if (spot === "bot.tab" && m.plugin?.topId === "moss") return true;
     // The slim column of a bot's stock tab is the shell's own (it draws it beside the tab, for the bot that shows), though the tab declares it.
-    if (spot === "bot.side" && m.plugin?.topId === "clover" && m.plugin.source === "bundled") return true;
+    if (spot === "bot.side" && m.plugin?.topId === "moss" && m.plugin.source === "bundled") return true;
     // Where a bot's layout places `chrome.panels`, the shell's own part draws the panels the user opens: it holds the `panel` spot as the shell does.
-    if (spot === "panel" && m.entryId === "chrome-panels" && m.plugin?.topId === "clover" && m.plugin.source === "bundled") return true;
+    if (spot === "panel" && m.entryId === "chrome-panels" && m.plugin?.topId === "moss" && m.plugin.source === "bundled") return true;
     const entry = m.plugin?.entries.find((e) => e.id === m.entryId);
     return entry?.declares[spot] !== undefined;
   }
@@ -725,10 +725,10 @@ export class UiRuntime {
   private cellOf(doc: Mount, part: Mount, spot: string, key: string | undefined, hints: { session?: string; bot?: string }) {
     const shape = spotInfo(spot)?.shape ?? part.plugin?.entries.find((e) => e.id === part.entryId)?.declares[spot]?.shape ?? "single";
     const cellKey = shape === "keyed" ? key : undefined;
-    const session = doc.layer === "clover" && hints.session !== undefined ? hints.session : part.session ?? part.ctx.session;
+    const session = doc.layer === "moss" && hints.session !== undefined ? hints.session : part.session ?? part.ctx.session;
     const ctx: CellContext = { ...part.ctx, safeMode: this.safeModeValue, ...(session !== undefined ? { session } : {}) };
     if (cellKey !== undefined && KEYED_BY_BOT.has(spot)) ctx.bot = cellKey;
-    else if (BOT_FROM_SHELL.has(spot) && doc.layer === "clover" && hints.bot !== undefined) ctx.bot = hints.bot;
+    else if (BOT_FROM_SHELL.has(spot) && doc.layer === "moss" && hints.bot !== undefined) ctx.bot = hints.bot;
     const prefer = ctx.bot === undefined ? undefined : this.preferFor(ctx.bot);
     if (prefer !== undefined) ctx.prefer = prefer;
     else delete ctx.prefer;
@@ -798,23 +798,23 @@ export class UiRuntime {
       this.logRefusedPart("resolve", doc, mountId, part);
       throw new LayerError("that part isn't in this document");
     }
-    // Only the trusted `clover` layer may say which kind of session a part shows (`when.session`).
+    // Only the trusted `moss` layer may say which kind of session a part shows (`when.session`).
     const { shape, cellKey, session, ctx } = this.cellOf(doc, part, spot, key, hints);
     const declared = this.declares(part, spot);
     // A part that won a cell, or declares its spot, may place the cell's runner-up inside itself (`<Spot entry>`): a bot's own Browser
-    // panel around Clover's stock one, or the shell's fallback to it. `entry="stock"` names the shipped (bundled `clover` tree's) one.
+    // panel around MOSS's stock one, or the shell's fallback to it. `entry="stock"` names the shipped (bundled `moss` tree's) one.
     const asksRunnerUp = hints.entry !== undefined;
     const peek = asksRunnerUp ? resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey) : undefined;
     const ownWinner = peek !== undefined && part.plugin !== undefined && peek.shown[0]?.plugin.id === part.plugin.id && peek.shown[0].entry.id === part.entryId;
     const runnerUp = peek !== undefined && (declared || ownWinner)
-      ? peek.runnersUp.find((c) => (hints.entry === "stock" ? c.plugin.topId === "clover" && c.plugin.source === "bundled" : entryRef(c.entry) === hints.entry))
+      ? peek.runnersUp.find((c) => (hints.entry === "stock" ? c.plugin.topId === "moss" && c.plugin.source === "bundled" : entryRef(c.entry) === hints.entry))
       : undefined;
     if (!declared && runnerUp === undefined) return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, items: [], hidden: false, conflict: false, undeclared: true };
     const cell = peek ?? resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
     // A data entry is the declaring part's to draw (`entries`): nothing is mounted for it.
     let shown = cell.shown.filter((c) => c.entry.kind !== "data");
     if (runnerUp !== undefined && !(hints.entry === "stock" ? false : shown.some((c) => entryRef(c.entry) === hints.entry))) shown = [runnerUp];
-    else if (hints.entry === "stock" && runnerUp === undefined) shown = shown.filter((c) => c.plugin.topId === "clover" && c.plugin.source === "bundled");
+    else if (hints.entry === "stock" && runnerUp === undefined) shown = shown.filter((c) => c.plugin.topId === "moss" && c.plugin.source === "bundled");
     if (part.surfaceRef !== undefined) shown = shown.filter((c) => entryRef(c.entry) === part.surfaceRef);
     if (hints.entry !== undefined) shown = shown.filter((c) => hints.entry === "stock" || entryRef(c.entry) === hints.entry);
     const places = new Set<string>();
@@ -920,7 +920,7 @@ export class UiRuntime {
 
   private frameUrl(m: Mount): string {
     // A frame already loaded keeps its URL (its iframe doesn't reload); a new one carries its fresh token.
-    return `clover-plugin://${m.layer}/?mount=${m.token ?? "spent"}`;
+    return `moss-plugin://${m.layer}/?mount=${m.token ?? "spent"}`;
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -1132,7 +1132,7 @@ export class UiRuntime {
     return out;
   }
 
-  /** Whether the plugin whose layer is `layer` (its origin's host, `clover-plugin://<layer>/`) holds a capability now. Main's permission
+  /** Whether the plugin whose layer is `layer` (its origin's host, `moss-plugin://<layer>/`) holds a capability now. Main's permission
    *  handlers judge a microphone request by it: the layer is read from the frame's own address, which only that plugin's files can have. */
   layerHolds(layer: string, capability: string): boolean {
     return this.plugins.some((p) => p.layer === layer && p.capabilities.has(capability));
@@ -1292,7 +1292,7 @@ export class UiRuntime {
   onCardPage?: (cardId: string) => Promise<boolean>;
 
   /** A part asks for the app's own page of a plugin's OK card it places (its Review): the same placing rule as its
-   *  frames (the `approvals` capability; a card with no bot is the clover tree's alone), and only a plugin's OK card. */
+   *  frames (the `approvals` capability; a card with no bot is the moss tree's alone), and only a plugin's OK card. */
   async cardPageOf(frame: FrameRef, mountId: string, cardId: string): Promise<boolean> {
     const part = this.actInThisLayer(frame, mountId);
     if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("opening a card's page takes the approvals capability");
@@ -1303,7 +1303,7 @@ export class UiRuntime {
     return (await this.onCardPage?.(cardId)) ?? false;
   }
 
-  /** Whether a surface that draws the cards (`window.cards`) may be given a card's frames now: not while Clover's own window is in
+  /** Whether a surface that draws the cards (`window.cards`) may be given a card's frames now: not while MOSS's own window is in
    *  front (the card is drawn there). */
   cardSurfaceMayDraw?: () => boolean;
 
@@ -1334,7 +1334,7 @@ export class UiRuntime {
   /** A render window's placeholder for one card element: the same rules as a frame (the `approvals` capability, the
    *  card's own bot's plugin, a field the card lacks is ""), the same page laid out with its words hidden under a plain
    *  "approval button" or "card field" box, so it takes the room the real frame would; no token is minted, no answer
-   *  bridge reaches it (preload.ts gives `cloverSealed` to `clover-sealed://card/` alone), and it says nothing back. */
+   *  bridge reaches it (preload.ts gives `mossSealed` to `moss-sealed://card/` alone), and it says nothing back. */
   #placeholderOf(part: Mount, cardId: string, element: string, look?: string): string | undefined {
     if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("placing a sealed frame takes the approvals capability");
     if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
@@ -1354,7 +1354,7 @@ export class UiRuntime {
     const id = randomBytes(12).toString("hex");
     if (this.#placeholders.size >= 200) this.#placeholders.delete(this.#placeholders.keys().next().value!);
     this.#placeholders.set(id, { html: placeholderPage(real, element.startsWith("button:") ? "button" : "field"), windowId: part.windowId });
-    return `clover-sealed://placeholder/${id}`;
+    return `moss-sealed://placeholder/${id}`;
   }
 
   /** A placeholder's page, served once (the sealed scheme's `placeholder` host). */
@@ -1397,7 +1397,7 @@ export class UiRuntime {
     const bind = doc?.frame !== undefined ? { parent: { processId: doc.frame.processId, routingId: doc.frame.routingId } } : undefined;
     const made = this.sealed.mint(cardId, element, bind, doc?.windowId, tokens, wears);
     if (made === undefined) return undefined;
-    const url = `clover-sealed://card/${encodeURIComponent(cardId)}/${encodeURIComponent(element)}?token=${encodeURIComponent(made.token)}`;
+    const url = `moss-sealed://card/${encodeURIComponent(cardId)}/${encodeURIComponent(element)}?token=${encodeURIComponent(made.token)}`;
     return url;
   }
 
@@ -1531,9 +1531,9 @@ export class UiRuntime {
   }
 
   private readsQuestions(doc: Mount): boolean {
-    // The `clover` layer's document is shared by the bundled parts drawn in it: it hears them when any plugin drawn in
+    // The `moss` layer's document is shared by the bundled parts drawn in it: it hears them when any plugin drawn in
     // that layer may read conversations. Any other document by its own plugin's capability.
-    if (doc.layer === "clover") return this.plugins.some((p) => p.layer === "clover" && p.capabilities.has("conversation.read"));
+    if (doc.layer === "moss") return this.plugins.some((p) => p.layer === "moss" && p.capabilities.has("conversation.read"));
     return doc.plugin?.capabilities.has("conversation.read") === true;
   }
 
@@ -1562,13 +1562,13 @@ export class UiRuntime {
     const part = this.actInThisLayer(frame, mountId);
     if (part.spot !== "composer" || part.plugin === undefined) return undefined;
     // The session and bot are the declaring document's say (props), so they count only when that document is the bundled
-    // clover tree's: a third-party bot tab that fills the spot (with the default composer, or any) could name any session.
+    // moss tree's: a third-party bot tab that fills the spot (with the default composer, or any) could name any session.
     // A bot's layout is data, drawn inline in the document that shows the tab: its spots' props are that document's say, so
     // a layout part is looked through to the document drawing it.
     let parent = part.parent === undefined ? undefined : this.mounts.get(part.parent);
     if (parent !== undefined && parent.kind === "inline" && this.entryOf(parent)?.layout !== undefined) parent = this.docOf(parent);
     const pp = parent?.plugin;
-    if (pp === undefined || pp.topId !== "clover" || pp.layer !== "clover" || pp.source !== "bundled") return undefined;
+    if (pp === undefined || pp.topId !== "moss" || pp.layer !== "moss" || pp.source !== "bundled") return undefined;
     const props = (part.props ?? {}) as { session?: unknown; bot?: unknown };
     const session = typeof props.session === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(props.session) ? props.session : undefined;
     if (session === undefined) return undefined;
@@ -1596,7 +1596,7 @@ export class UiRuntime {
       if (m.plugin?.id !== pluginId) continue;
       if (m.kind === "inline" && m.plugin.layer !== this.docOf(m)?.layer) continue;
       const doc = this.docOf(m);
-      // `visibleOnly` (the Clover Browser's events, browser-calls.ts): never a document kept in the background.
+      // `visibleOnly` (the MOSS Browser's events, browser-calls.ts): never a document kept in the background.
       if (o.visibleOnly === true && doc !== undefined && this.#underBackground(doc)) continue;
       if (doc?.frame !== undefined && doc.kind === "frame") docs.add(doc.id);
     }
@@ -1617,18 +1617,18 @@ export class UiRuntime {
     return [...out];
   }
 
-  /** The `clover` shell document of one window (not a surface's, never a plugin's): the only frame main gives a user
+  /** The `moss` shell document of one window (not a surface's, never a plugin's): the only frame main gives a user
    *  activation to, so its player's AudioContext may start without a click (a plugin's page keeps the gesture rule). */
   shellFrames(windowId: number): { mount: string; frame: { processId: number; routingId: number } }[] {
     const out: { mount: string; frame: { processId: number; routingId: number } }[] = [];
     for (const m of this.mounts.values()) {
       const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);
-      if (m.windowId === windowId && m.kind === "frame" && m.layer === "clover" && m.plugin?.topId === "clover" && m.frame !== undefined && parent?.kind === "root" && parent.surfaceRef === undefined) out.push({ mount: m.id, frame: { processId: m.frame.processId, routingId: m.frame.routingId } });
+      if (m.windowId === windowId && m.kind === "frame" && m.layer === "moss" && m.plugin?.topId === "moss" && m.frame !== undefined && parent?.kind === "root" && parent.surfaceRef === undefined) out.push({ mount: m.id, frame: { processId: m.frame.processId, routingId: m.frame.routingId } });
     }
     return out;
   }
 
-  /** A message to the `clover` shell document of one window (not a surface's), such as a piece of speech for its player. */
+  /** A message to the `moss` shell document of one window (not a surface's), such as a piece of speech for its player. */
   /** A message to the part that fills a window's `app.root` (the window's own shell, whichever plugin's it is: F2b, no
    *  layer or plugin id decides it): the window's acts a bot's plugin asked for (`shell-act`) and what it provides. */
   rootPartMessage(windowId: number, message: LayerMessage): void {
@@ -1641,15 +1641,15 @@ export class UiRuntime {
   shellMessage(windowId: number, message: LayerMessage): void {
     for (const m of this.mounts.values()) {
       const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);
-      if (m.windowId === windowId && m.kind === "frame" && m.layer === "clover" && m.frame !== undefined && parent?.kind === "root" && parent.surfaceRef === undefined) this.post(m.id, message);
+      if (m.windowId === windowId && m.kind === "frame" && m.layer === "moss" && m.frame !== undefined && parent?.kind === "root" && parent.surfaceRef === undefined) this.post(m.id, message);
     }
   }
 
-  /** A message to the frames of a window whose plugin (never the bundled `clover` tree) satisfies `want`: the plugins that hear where the window is. */
+  /** A message to the frames of a window whose plugin (never the bundled `moss` tree) satisfies `want`: the plugins that hear where the window is. */
   windowPluginMessage(windowId: number, want: (plugin: { id: string; capabilities: ReadonlySet<string> }) => boolean, message: LayerMessage): void {
     const docs = new Set<string>();
     for (const m of this.mounts.values()) {
-      if (m.windowId !== windowId || m.plugin === undefined || m.plugin.topId === "clover" || !want(m.plugin)) continue;
+      if (m.windowId !== windowId || m.plugin === undefined || m.plugin.topId === "moss" || !want(m.plugin)) continue;
       const doc = this.docOf(m);
       if (doc?.frame !== undefined && doc.kind === "frame" && doc.plugin?.id === m.plugin.id) docs.add(doc.id);
     }

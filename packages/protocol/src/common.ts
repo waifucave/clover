@@ -1,5 +1,5 @@
-// Clover's shared protocol vocabulary (spec revision 17): ids, text, platforms, levels, callers and turn origins.
-// Every Clover area file (plugins.ts, approvals.ts, sessions.ts, devices.ts, computers.ts, agents.ts, app.ts,
+// MOSS's shared protocol vocabulary (spec revision 17): ids, text, platforms, levels, callers and turn origins.
+// Every MOSS area file (plugins.ts, approvals.ts, sessions.ts, devices.ts, computers.ts, agents.ts, app.ts,
 // browser.ts, usage.ts) builds on these, and so do the plugin SDK and the core's contracts
 // (`packages/core/src/contracts/`). Owner: lane B for M0, then the controller, with the protocol's index (plan §7).
 //
@@ -8,10 +8,10 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 
-/** Clover's protocol version, sent in `protocol.hello` both ways (roles.ts). Today's daemon speaks `PROTOCOL_VERSION`
- *  (0). `CLOVER_PROTOCOL_MIN_VERSION` is the oldest a daemon still serves (`helloVersionServed`). */
-export const CLOVER_PROTOCOL_VERSION = 1;
-export const CLOVER_PROTOCOL_MIN_VERSION = 1;
+/** MOSS's protocol version, sent in `protocol.hello` both ways (roles.ts). Today's daemon speaks `PROTOCOL_VERSION`
+ *  (0). `MOSS_PROTOCOL_MIN_VERSION` is the oldest a daemon still serves (`helloVersionServed`). */
+export const MOSS_PROTOCOL_VERSION = 1;
+export const MOSS_PROTOCOL_MIN_VERSION = 1;
 
 /** The thirteen lanes of the plan (§4). Every method and event names the lane that implements it. */
 export const LANES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"] as const;
@@ -71,14 +71,14 @@ export const AppPartsId = utf16(PLUGIN_ID_MAX * 2 + 1 + APP_PARTS_SUFFIX.length)
 export const OkCheckboxId = z.union([AnyPluginId, AppPartsId]);
 
 /** The plugins we ship (§5.1). No core rule names any other plugin (§5.3). */
-export const BUNDLED_ROOT_PLUGIN = "clover";
+export const BUNDLED_ROOT_PLUGIN = "moss";
 
-/** The plugin-host process a host half runs in (§5.2, amended by the owner's answer to S4). `clover`: the bundled
- *  `clover` tree's own, which no third-party worker shares, so none can act as the forwarder, use the account token
+/** The plugin-host process a host half runs in (§5.2, amended by the owner's answer to S4). `moss`: the bundled
+ *  `moss` tree's own, which no third-party worker shares, so none can act as the forwarder, use the account token
  *  or open with the core's key pairs; `shared`: the one every other plugin's host halves share, whose workers aren't
  *  isolated from each other's memory; `own`: a process of the plugin's own (Node or native modules, an adapter that
  *  signs with its secret). The core decides it from the install record, never from what a plugin claims. */
-export const HOST_PROCESSES = ["clover", "shared", "own"] as const;
+export const HOST_PROCESSES = ["moss", "shared", "own"] as const;
 export const HostProcess = z.enum(HOST_PROCESSES);
 export type HostProcess = z.infer<typeof HostProcess>;
 export const BUNDLED_BOT_PLUGIN = "alpha";
@@ -255,7 +255,7 @@ export const UNATTENDED_CARD_TIMEOUT_MS = 10 * 60 * 1000;
 // -------------------------------------------------------------------------------------------------
 
 /** What a change returns. A sensitive change (§5.5) ends in a sealed card unless the user makes it in their own
- *  terminal; a change to the core's settings from a layer other than `clover`'s becomes a card too. The card's
+ *  terminal; a change to the core's settings from a layer other than `moss`'s becomes a card too. The card's
  *  answer arrives as `card_resolved` (approvals.ts). */
 export const ChangeResult = z.union([
   z.object({ applied: z.literal(true) }),
@@ -269,9 +269,9 @@ export const Empty = z.object({});
 /** A page cursor (opaque to clients). */
 export const Cursor = utf16(512, 1);
 
-/** Error codes Clover adds to JSON-RPC's (the inherited `ERR` keeps its own, jsonrpc.ts). */
-export const CLOVER_ERR = {
-  /** The role may not call this method (the allow lists, clover.ts). */
+/** Error codes MOSS adds to JSON-RPC's (the inherited `ERR` keeps its own, jsonrpc.ts). */
+export const MOSS_ERR = {
+  /** The role may not call this method (the allow lists, moss.ts). */
   ROLE_REFUSED: -32010,
   /** A plugin caller lacks the capability the method needs (§5.4). */
   CAPABILITY_REFUSED: -32011,
@@ -292,10 +292,10 @@ export const CLOVER_ERR = {
   /** `protocol.hello` named a protocol version older than the daemon serves; `data` is `{ min, max }`. */
   VERSION_REFUSED: -32019,
   /** A plugin-host connection named a plugin that doesn't run in its process (a third-party worker presenting a
-   *  `clover/*` id), or made a call only the `clover` process makes (the account token, `keys.*`; S4). */
+   *  `moss/*` id), or made a call only the `moss` process makes (the account token, `keys.*`; S4). */
   PROCESS_REFUSED: -32020,
 } as const;
 
 /** The most child plugins a tree has (§5.6): the plugin SDK refuses a tree with more, so every list of a plugin's children
- *  is bounded by it. Clover's own bundled tree has a few hundred (259 at the time of writing). */
+ *  is bounded by it. MOSS's own bundled tree has a few hundred (259 at the time of writing). */
 export const MAX_CHILD_PLUGINS = 1024;

@@ -12,7 +12,7 @@
 // without a readable seq there is skipped like a line that doesn't parse. The reader remembers each long line and
 // each newline-free stretch it has scanned, so the bisect's later probes never read them again.
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
-import { SessionEvent } from "@waifucave/clover-protocol";
+import { SessionEvent } from "@waifucave/moss-protocol";
 
 const CHUNK = 64 * 1024;
 const NL = 0x0a;

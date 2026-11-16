@@ -1,10 +1,10 @@
 // Winter for Chrome's facts, defined once per language and held together here: the two protocol numbers (daemon, host,
-// extension, PROTOCOL.md), the extension-id allowlists (daemon, host, Clover.app's manifest writer, and the id the dev
+// extension, PROTOCOL.md), the extension-id allowlists (daemon, host, MOSS Code.app's manifest writer, and the id the dev
 // key derives), the native-host names, the host's codesign identities, and the browsers' manifest directories.
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CLOVER_TEAM_ID } from "../../../src/auth/app-token-acl";
+import { MOSS_TEAM_ID } from "../../../src/auth/app-token-acl";
 import { BROWSER_HOST_IDENTIFIER, EXTENSION_IDS, extensionIdFromKey, NATIVE_HOST_NAME } from "../../../src/computer-use/browser/extension/extension-ids";
 import { BROWSER_FAMILIES } from "../../../src/computer-use/browser/families";
 import { BROWSER_HOST_PROTOCOL, EXTENSION_FEATURES, EXTENSION_PROTOCOL } from "../../../src/computer-use/browser/extension/protocol";
@@ -87,7 +87,7 @@ describe("names and identities", () => {
     expect(swiftString(identity, "testHostIdentifier")).toBe(lib.BROWSER_HOST.test!.identifier);
     expect(swiftString(identity, "distDaemonIdentifier")).toBe(lib.DAEMON_IDENTIFIER.dist);
     expect(swiftString(identity, "devDaemonIdentifier")).toBe(lib.DAEMON_IDENTIFIER.dev);
-    expect(swiftString(identity, "teamID")).toBe(CLOVER_TEAM_ID);
+    expect(swiftString(identity, "teamID")).toBe(MOSS_TEAM_ID);
   });
 
   test("PROTOCOL.md names every browser family's bundle ids", () => {

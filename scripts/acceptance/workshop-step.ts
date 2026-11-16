@@ -25,7 +25,7 @@
 //    is refused `PluginStatus` on the plugin, and its `Edit` of the plugin's file is refused with no card (the fence:
 //    only the bot that built a plugin writes in it); the file is unchanged.
 // 6b. While her tool's card waits in her conversation, the peer bot's AppScreenshot of her tab draws the card as
-//    placeholders (clover-sealed://placeholder), never a live card frame, and the app logs no sealed ask for a render
+//    placeholders (moss-sealed://placeholder), never a live card frame, and the app logs no sealed ask for a render
 //    window; her card is then pressed in the user's own window.
 // 7. Alpha edits a throw into the plugin's host code: it reloads, crashes until the crash rules stop it, and Alpha (its
 //    builder) is told in her conversation ("… stopped: … PluginStatus ws-greeter has the log."); she edits the throw
@@ -314,7 +314,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
       if (png === undefined || png.length < 1000 || png.readUInt32BE(0) !== 0x89504e47) fail(`${file} isn't a PNG (${png?.length ?? 0} bytes)`);
       const [pw, ph] = [png!.readUInt32BE(16), png!.readUInt32BE(20)];
       if (pw !== w || ph !== h) fail(`${file} is ${pw}x${ph}, not ${w}x${h}`);
-      if (!/^Frames \(\d+\):$/m.test(s.result.text) || !s.result.text.includes("clover-plugin://clover")) fail(`AppScreenshot ${size} listed no frames of the page ("${s.result.text.slice(0, 300)}")`);
+      if (!/^Frames \(\d+\):$/m.test(s.result.text) || !s.result.text.includes("moss-plugin://moss")) fail(`AppScreenshot ${size} listed no frames of the page ("${s.result.text.slice(0, 300)}")`);
       if (!ctx.requests().slice(seen).some((r) => (r.toolResult?.images ?? 0) >= 1)) fail(`AppScreenshot ${size}'s picture didn't reach the model as an image`);
       said.push(`${size} ${pw}x${ph} ${png!.length} bytes`);
     }
@@ -360,7 +360,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
 
   // 5. An edit that asks for more pauses the plugin behind its OK card at once; OK'd, it runs again with the grant.
   await own(() => stepOf("5. an edit that adds a capability pauses it behind its OK card; OK'd, it runs with the grant", async () => {
-    const manifest = join(installed, "clover.json");
+    const manifest = join(installed, "moss.json");
     await ok(ctx, session, "Read", { file_path: manifest });
     await ok(ctx, session, "Edit", { file_path: manifest, old_string: ADD_CAPABILITY.old, new_string: ADD_CAPABILITY.new });
     const card = await askedCard(ctx, "notify", NOTIFY_LINE);
@@ -380,7 +380,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
 
   // 5b. A second request answered No: it stays off; the bot takes the request back out and it runs again with no card.
   await own(() => stepOf("5b. a second request answered No keeps it off; edited back out, it runs again with no card", async () => {
-    const manifest = join(installed, "clover.json");
+    const manifest = join(installed, "moss.json");
     await ok(ctx, session, "Read", { file_path: manifest });
     await ok(ctx, session, "Edit", { file_path: manifest, old_string: SECOND_REQUEST.old, new_string: SECOND_REQUEST.new });
     const card = await askedCard(ctx, "devices.read", DEVICES_LINE);
@@ -431,8 +431,8 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   }));
 
   // 6b. The render window's rule, on the real app: while her tool's card waits in her conversation, the peer bot's look
-  // at her tab draws the card as placeholders: every card frame in the render window is clover-sealed://placeholder,
-  // none clover-sealed://card, and the app logs no sealed ask for a render window. Then her card is pressed in the
+  // at her tab draws the card as placeholders: every card frame in the render window is moss-sealed://placeholder,
+  // none moss-sealed://card, and the app logs no sealed ask for a render window. Then her card is pressed in the
   // user's own window as usual.
   await own(() => stepOf("6b. while her card waits, a look at her tab draws it as placeholders, never a live card frame", async () => {
     if (peerSession === undefined) fail("no peer session (step 6 didn't make one)");
@@ -508,7 +508,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     for (const [path, content] of Object.entries(dropFiles())) await ok(ctx, session, "Write", { file_path: join(from, path), content });
     const mv = await ok(ctx, session, "Bash", { command: dropCommand(from, join(home, "plugins")), description: "Install the plugin by moving it into the plugins folder" });
     if (/not permitted|denied/i.test(mv.result.text)) fail(`the move was refused: "${mv.result.text.slice(0, 200)}"`);
-    if (!existsSync(join(home, "plugins", DROP_ID, "clover.json"))) fail(`after the move there's no ${DROP_ID} in the plugins folder (Bash: "${mv.result.text.slice(0, 200)}")`);
+    if (!existsSync(join(home, "plugins", DROP_ID, "moss.json"))) fail(`after the move there's no ${DROP_ID} in the plugins folder (Bash: "${mv.result.text.slice(0, 200)}")`);
     const card = mv.raised.find((c) => c.kind === "plugin-ok" && c.pluginId === DROP_ID)
       ?? await until("its OK card", 30_000, async () => (await cardsOf(ctx)).find((c) => c.kind === "plugin-ok" && c.pluginId === DROP_ID), async () => `no OK card for ${DROP_ID}; it is ${(await pluginOf(ctx, DROP_ID))?.state ?? "not in the registry"}`);
     const state = (await pluginOf(ctx, DROP_ID))?.state;

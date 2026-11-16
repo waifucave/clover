@@ -18,7 +18,7 @@ function service(over: Partial<LegacyServiceDeps> & { home?: string; db?: UsageD
   const logs: string[] = [];
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-    claudeExecutable: () => undefined, cloverCodexWindows: () => [],  planWaitMs: 20_000, now: () => NOW,
+    claudeExecutable: () => undefined, mossCodexWindows: () => [],  planWaitMs: 20_000, now: () => NOW,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...over,
   });
@@ -89,7 +89,7 @@ describe("the Antigravity plan", () => {
     const m = marks(fake.markerPath);
     expect(m).toHaveLength(1);
     expect(m[0]!.argv).toEqual([...AGY_USAGE_ARGS]);
-    expect(m[0]!.env.filter((k) => k.startsWith("CLOVER_"))).toEqual([]);
+    expect(m[0]!.env.filter((k) => k.startsWith("MOSS_"))).toEqual([]);
     now += 4 * 60_000;
     await svc.sourcePlan("antigravity");
     expect(marks(fake.markerPath)).toHaveLength(1);
@@ -133,7 +133,7 @@ describe("the Antigravity plan", () => {
     });
   }
 
-  test("a hung agy (it ignored its own --print-timeout) is killed at Clover's deadline and not asked again for hours", async () => {
+  test("a hung agy (it ignored its own --print-timeout) is killed at MOSS's deadline and not asked again for hours", async () => {
     const fake = fakeAgy(tempDir("bin"), "hang");
     let now = NOW;
     const { svc, db } = service({ agyExecutable: () => fake.path, agyCliTimeoutMs: 2_000, now: () => now });

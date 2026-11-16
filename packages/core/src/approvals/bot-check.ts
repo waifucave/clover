@@ -3,7 +3,7 @@
 // computer and level: the broker answers at once where the level, a saved rule or the reviewer allows, and otherwise
 // raises a sealed card and the call waits for the person.
 //
-// What the card says (§5.5, #267's review item 5): its `text` fields hold only Clover's own table strings (a title, a
+// What the card says (§5.5, #267's review item 5): its `text` fields hold only MOSS's own table strings (a title, a
 // built-in tool's name); everything a model or a plugin chose (a non-built-in tool's name, the command, the input,
 // the paths, the device's name) goes in `code` fields, with the characters that hide or reorder text taken out
 // (`strings.ts`).
@@ -19,11 +19,11 @@ import { lstatSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
-import { LEVELS, canonicalJson, type Level, type Os, type SealedValue, type TurnOrigin } from "@waifucave/clover-protocol";
+import { LEVELS, canonicalJson, type Level, type Os, type SealedValue, type TurnOrigin } from "@waifucave/moss-protocol";
 import type { ActionEffect, ApprovalBroker } from "../contracts/approval-broker";
 import { WRITE_EFFECTS } from "../contracts/approval-broker";
 import { fenceContextFor, type Fence } from "../contracts/fence";
-import type { CloverApprovalRequest } from "./broker";
+import type { MossApprovalRequest } from "./broker";
 import type { BotSessionContext } from "../bots/service";
 import { FETCHES_PER_DOMAIN, FETCHES_PER_TURN, normalUrl, type FetchBudget } from "./seen-urls";
 import { browserActionWords, type ReadElement } from "./browser-words";
@@ -57,7 +57,7 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [...BUILTIN_EFFECTS.keys()]
 /** The built-ins whose command is the call (`command`), keyed on the exact command in a rule. */
 const COMMAND_TOOLS: ReadonlySet<string> = new Set(["Bash", "PowerShell", "Monitor"]);
 
-/** The card's title for each effect, from Clover's own table. */
+/** The card's title for each effect, from MOSS's own table. */
 const TITLES: Record<ActionEffect, string> = {
   read: "Read files", search: "Search", think: "Plan", fetch: "Fetch a web page", edit: "Change files", move: "Move files",
   delete: "Delete files", execute: "Run a command", screen: "Use the screen", purchase: "Make a purchase", other: "Use a tool",
@@ -65,7 +65,7 @@ const TITLES: Record<ActionEffect, string> = {
 
 /** The core's own tools a bot's host serves, beside the built-ins (§6.7), by what each does: listing is a read;
  *  stopping a task the bot started (`AgentManager.stop` refuses any session another bot or the user started) and
- *  starting an agent stay inside Clover (an agent Clover hasn't admitted still asks with its own card,
+ *  starting an agent stay inside MOSS (an agent MOSS hasn't admitted still asks with its own card,
  *  `AgentManager`), so at ask for risky actions they run without asking (the owner's ruling). A message runs without
  *  asking only to the bot's own sessions or to a session at a level no wider than the bot's (`messageTarget`; the
  *  controller's ruling on the confused deputy); to any other, a card that names it. Any other core tool is judged as
@@ -75,7 +75,7 @@ export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Ma
   // Asking itself costs nothing: the tool raises its own card for what it asks (`request-access.ts`).
   ["RequestAccess", "read"],
   // Lane B's plugin workshop (registry/workshop.ts): checking a folder and reading the bot's own plugin's state are
-  // reads; an install stays inside Clover and lands found, its sealed OK card the user's gate, nothing of it running
+  // reads; an install stays inside MOSS and lands found, its sealed OK card the user's gate, nothing of it running
   // before the yes (an update of the bot's own plugin is judged by the workshop rule, asking on a card when it adds).
   ["PluginValidate", "read"], ["PluginStatus", "read"], ["PluginInstall", "contained"],
   // A look at a place in this computer's app (bots/app-screenshot.ts): drawn in a window the user never sees, saved in
@@ -138,7 +138,7 @@ export function resolveSessionPath(path: string, cwd: string, home: string = hom
  *  (what the runtime refuses its file tools too); or, wherever it is and at every level, a run-later name or a fixed
  *  PATH folder (`runLaterByName`); or a `.git`, a git directory, what a repository's config names, or a folder on the
  *  user's PATH (`classOf` gives "card"). The daemon's `runsLater`, here so a test runs the same check. */
-export function runsLaterPlace(path: string, denyWrite: readonly string[], o: { os: Os; userHome: string; cloverHome: string }, classOf: (paths: readonly string[]) => string): boolean {
+export function runsLaterPlace(path: string, denyWrite: readonly string[], o: { os: Os; userHome: string; mossHome: string }, classOf: (paths: readonly string[]) => string): boolean {
   return rootCovered(path, denyWrite, o.os) || runLaterByName(path, o) || classOf([path]) === "card";
 }
 
@@ -148,7 +148,7 @@ export function runLaterFileRefusal(tool: string, path: string): string {
 }
 
 /** The folder this process may not look into on the way to `path` (macOS's privacy settings answer EPERM for a Desktop,
- *  Documents or Downloads folder Clover hasn't been let into; EACCES for a folder without search permission), or
+ *  Documents or Downloads folder MOSS hasn't been let into; EACCES for a folder without search permission), or
  *  undefined when every folder on the way opens (a missing file or folder is fine: it is about to be made). The runtime's
  *  file tools resolve each path before they act and, finding a folder they can't look into, refuse the call as a
  *  "protected host path" (agent SDK `hostCodePathAllowed` fails closed), which tells the bot nothing it can act on. */
@@ -171,10 +171,10 @@ export function unreachableFolder(path: string, stat: (p: string) => unknown = l
   }
 }
 
-/** Why a file tool can't reach a path this computer's privacy settings keep Clover out of, and what the bot does next. */
+/** Why a file tool can't reach a path this computer's privacy settings keep MOSS out of, and what the bot does next. */
 export function unreachableRefusal(tool: string, path: string, folder: string, os: Os): string {
-  const where = os === "macos" ? "System Settings › Privacy & Security › Files and Folders (Clover), or Full Disk Access" : "the folder's permissions";
-  return `${tool} was refused: this computer doesn't let Clover into ${folder}, so nothing in it can be read or written (${path}). Ask the user to allow Clover there (${where}), then try again; or save the file somewhere you can write, such as your scratch folder, and tell them where it is.`;
+  const where = os === "macos" ? "System Settings › Privacy & Security › Files and Folders (MOSS), or Full Disk Access" : "the folder's permissions";
+  return `${tool} was refused: this computer doesn't let MOSS into ${folder}, so nothing in it can be read or written (${path}). Ask the user to allow MOSS there (${where}), then try again; or save the file somewhere you can write, such as your scratch folder, and tell them where it is.`;
 }
 
 /** The runtime's file tools that write a path, and the input key each names it under. */
@@ -189,7 +189,7 @@ const FILE_WRITE_TOOL_PATH_KEY: ReadonlyMap<string, string> = new Map([["Write",
  * The model's own call keeps what it wrote; the tool's result names the real path. A session on another computer (paths
  * unresolved) and anything but the three built-in file writers keep their input as it is.
  */
-export function withRealPaths(tool: string, input: Record<string, unknown>, req: Pick<CloverApprovalRequest, "paths" | "pathsUnresolved">, hostTools?: ReadonlySet<string>): Record<string, unknown> {
+export function withRealPaths(tool: string, input: Record<string, unknown>, req: Pick<MossApprovalRequest, "paths" | "pathsUnresolved">, hostTools?: ReadonlySet<string>): Record<string, unknown> {
   const key = FILE_WRITE_TOOL_PATH_KEY.get(tool);
   if (key === undefined || !isBuiltinTool(tool, hostTools) || req.pathsUnresolved === true || req.paths === undefined) return input;
   const given = input[key];
@@ -199,7 +199,7 @@ export function withRealPaths(tool: string, input: Record<string, unknown>, req:
 }
 
 /**
- * For an agent backend (the in-process agent, Clover's coding agent): a file write's input with its path resolved
+ * For an agent backend (the in-process agent, MOSS's coding agent): a file write's input with its path resolved
  * (`resolveSessionPath` against the agent's working folder) BEFORE it is asked about, so the person and the manager
  * judge the real file and the runtime's write-root waiver can apply to exactly that. Resolved before the ask, never
  * after the answer: a link swapped in after the answer then meets the runtime's no-follow open instead of being
@@ -290,7 +290,7 @@ export const OUTSIDE_SANDBOX_ALLOWED_FIELDS: ReadonlySet<string> = new Set([
   "command", "description", "timeout", "run_in_background", "dangerouslyDisableSandbox",
 ]);
 
-/** The card's time-limit line for a flagged call's `timeout` (milliseconds): Clover's own words, so a `text` field. */
+/** The card's time-limit line for a flagged call's `timeout` (milliseconds): MOSS's own words, so a `text` field. */
 export function outsideSandboxTimeoutLine(timeout: number): string {
   return Number.isInteger(timeout) && timeout % 1000 === 0 ? `Time limit: ${timeout / 1000} s` : `Time limit: ${timeout} ms`;
 }
@@ -320,10 +320,10 @@ export function outsideSandboxInputError(tool: string, input: Record<string, unk
   return undefined;
 }
 
-/** The card's sentence for a command that leaves the sandbox: Clover's own words, so a `text` field. */
+/** The card's sentence for a command that leaves the sandbox: MOSS's own words, so a `text` field. */
 export const OUTSIDE_SANDBOX_SENTENCE = "It runs as you, with the network and everything your account can reach.";
 
-/** Clover's words after the bot's name on the card for a command that leaves the sandbox (`headlineByBot`). */
+/** MOSS's words after the bot's name on the card for a command that leaves the sandbox (`headlineByBot`). */
 export const OUTSIDE_SANDBOX_HEADLINE_WORDS = "wants to run a command outside the sandbox";
 
 /** The card's headline for a command that leaves the sandbox, for the bot's name as the user sees it (the broker
@@ -342,7 +342,7 @@ export interface BotToolRequestOptions {
   /** This computer's name: a session on another computer has its paths left unresolved. Unset: every session is
    *  taken as this computer's. */
   localComputer?: string;
-  /** What the call does when Clover knows better than its name (a core tool, a declared web tool), and whether it stays
+  /** What the call does when MOSS knows better than its name (a core tool, a declared web tool), and whether it stays
    *  inside what the fence and sandbox confine (`ApprovalRequest.contained`). */
   effect?: ActionEffect;
   contained?: boolean;
@@ -352,14 +352,14 @@ export interface BotToolRequestOptions {
 export function botToolRequest(
   ctx: Pick<BotSessionContext, "botId" | "sessionId" | "computer" | "level" | "paths">, origin: TurnOrigin, tool: string,
   input: Record<string, unknown>, opts: BotToolRequestOptions = {},
-): CloverApprovalRequest {
+): MossApprovalRequest {
   const builtin = isBuiltinTool(tool, opts.hostTools);
   const effect = opts.effect ?? effectOf(tool, opts.hostTools);
   const here = opts.localComputer === undefined || opts.localComputer === ctx.computer;
   const given = pathsOf(input);
   const paths = here ? given.map((p) => resolveSessionPath(p, ctx.paths.scratch, opts.home)) : given;
   const unresolved = !here && paths.length > 0;
-  const fields: CloverApprovalRequest["fields"] = {
+  const fields: MossApprovalRequest["fields"] = {
     title: { type: "text", text: TITLES[effect] },
     what: builtin ? { type: "text", text: tool } : { type: "code", code: plainOf(tool) },
   };
@@ -385,11 +385,11 @@ export function botApprovalCheck(
   broker: Pick<ApprovalBroker, "request">,
   opts: {
     hostTools?: (ctx: BotSessionContext) => Iterable<string>; home?: string; localComputer?: string;
-    /** This computer's fence and its Clover home: a path the fence refuses the bot (secrets, run/, writes to the
+    /** This computer's fence and its MOSS home: a path the fence refuses the bot (secrets, run/, writes to the
      *  permission, trust, settings and plugin files) is refused with no card, and a read or write inside the home the
      *  fence lets the bot make (the owner's ruling: reads anywhere in the home, writes to any bot's scratch, as lane C's
      *  `homeAllows` says) runs with no card either. */
-    fence?: Pick<Fence, "check">; cloverHome?: string;
+    fence?: Pick<Fence, "check">; mossHome?: string;
     /** Each computer's level now, for the writes the fence lets through inside the home: read-only stays absolute
      *  (#353's blocker), so they run with no card only at a level above it. Without it, those writes go to the broker. */
     levelOf?: (computer: string) => Level | undefined;
@@ -399,7 +399,7 @@ export function botApprovalCheck(
     /** A bot's commands run in a sandbox drawn from this computer's fence (#356, #362: no network, writes only to the
      *  level's roots, never outside it): each is contained, so at ask for risky actions it runs without asking. */
     commandsSandboxed?: boolean;
-    /** A plugin's tool whose class Clover holds to: a web search or a page fetch its manifest declares (`webSearch`,
+    /** A plugin's tool whose class MOSS holds to: a web search or a page fetch its manifest declares (`webSearch`,
      *  `webFetch`) on the tree the user OK'd or the build's copy, or the bundled Browser tool (its staged,
      *  digest-checked manifest). Anything else a plugin serves is judged as a tool, whatever it says of itself. */
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined;
@@ -454,11 +454,11 @@ export function botApprovalCheck(
     /** A write the fence let through into the plugins folder (a bot editing its plugin): the registry reads that folder
      *  once it settles, without waiting for the OS's file watch (`PluginFolders.touched`). */
     touched?: (path: string) => void;
-    /** The folder this computer's privacy settings keep Clover out of on the way to a path (`unreachableFolder`), or
+    /** The folder this computer's privacy settings keep MOSS out of on the way to a path (`unreachableFolder`), or
      *  undefined. Default: looked up on this computer's disk. */
     unreachable?: (path: string) => string | undefined;
     shellRoots?: (ctx: BotSessionContext) => readonly string[];
-    /** How a bot's `Agent` call starts (`agentStartPolicy`, the controller's ruling): Clover's own sandboxed backend runs
+    /** How a bot's `Agent` call starts (`agentStartPolicy`, the controller's ruling): MOSS's own sandboxed backend runs
      *  with no card at every level (the child holds to its bot's level and fence, never more); any other asks on a card
      *  at each start, at every level a card can answer, showing the backend and the whole task, with no "always"; or
      *  it is refused before any card (a side thread's, past the turn's cap, a task too long to show). Without it, the
@@ -478,7 +478,7 @@ export function botApprovalCheck(
       if (start.kind === "refused") return { behavior: "deny", message: start.message };
       // A contained start does nothing itself: each of the child's acts asks at the bot's level, as the bot's would.
       known = start.kind === "contained" ? { effect: "think" }
-        : { effect: "execute", cardAlways: true, what: `Start ${start.backend}: a coding agent outside Clover's sandbox` };
+        : { effect: "execute", cardAlways: true, what: `Start ${start.backend}: a coding agent outside MOSS's sandbox` };
       if (start.kind === "card") {
         const req = botToolRequest(ctx, turnOrigin ?? "bot", tool, {}, {
           hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
@@ -548,7 +548,7 @@ export function botApprovalCheck(
       }
     }
     // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the
-    // bot is refused outright and never becomes a card; a file read or write it allows inside the Clover home runs
+    // bot is refused outright and never becomes a card; a file read or write it allows inside the MOSS home runs
     // outright. Only a path outside the home can still ask.
     const racing = WRITE_EFFECTS.includes(req.effect) && req.paths !== undefined && req.paths.length > 0 && !req.pathsUnresolved && opts.liveShell?.(ctx) === true
       && req.paths.some((p) => (opts.shellRoots?.(ctx) ?? []).some((root) => insideFolder(p, realFolder(root))));
@@ -558,9 +558,9 @@ export function botApprovalCheck(
       const writes = WRITE_EFFECTS.includes(req.effect);
       for (const path of req.paths) {
         const v = opts.fence.check({ op: writes ? "write" : "read", path }, ctxFence);
-        if (!v.allowed) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: that place is fenced on this computer (Clover's own folder, or a file no bot ${writes ? "writes" : "reads"}).` };
+        if (!v.allowed) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: that place is fenced on this computer (MOSS's own folder, or a file no bot ${writes ? "writes" : "reads"}).` };
       }
-      const home = opts.cloverHome === undefined ? undefined : realFolder(opts.cloverHome);
+      const home = opts.mossHome === undefined ? undefined : realFolder(opts.mossHome);
       const inHome = home !== undefined && req.paths.every((p) => insideFolder(p, home));
       if (inHome && (req.effect === "read" || req.effect === "search")) return { behavior: "allow", updatedInput: input };
       if (inHome && writes && opts.levelOf && !racing) {
@@ -583,10 +583,10 @@ export function botApprovalCheck(
         return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
       }
     }
-    // A folder this computer's privacy settings keep Clover out of (macOS's Files and Folders): the runtime's file tools
+    // A folder this computer's privacy settings keep MOSS out of (macOS's Files and Folders): the runtime's file tools
     // would refuse the call as a "protected host path" after any card. Refused here, with no card, saying what to do.
     // After the secret places and the fence: a place no bot reaches is refused as that, never as one to ask the user
-    // to let Clover into.
+    // to let MOSS into.
     if (isBuiltinTool(tool, hostTools) && !req.pathsUnresolved && req.paths?.length && (WRITE_EFFECTS.includes(req.effect) || req.effect === "read" || req.effect === "search")) {
       for (const path of req.paths) {
         const folder = (opts.unreachable ?? unreachableFolder)(path);
@@ -636,7 +636,7 @@ export function botApprovalCheck(
       req.headlineByBot = OUTSIDE_SANDBOX_HEADLINE_WORDS;
       req.fields.command = { type: "code", code: shownCode(command), language: tool === "PowerShell" ? "powershell" : "sh" };
       req.fields.reason = { type: "text", text: OUTSIDE_SANDBOX_SENTENCE };
-      // The call's own time limit, when it carries one (validated above): one plain line Clover builds, sealed like
+      // The call's own time limit, when it carries one (validated above): one plain line MOSS builds, sealed like
       // the other card fields. When absent, no line. The bot's `description` is never shown as a fact: the bot wrote it.
       if (typeof input.timeout === "number") req.fields.detail = { type: "text", text: outsideSandboxTimeoutLine(input.timeout) };
     } else if (opts.commandsAlwaysCard && builtin && COMMAND_TOOLS.has(tool)) req.cardAlways = true;
@@ -697,7 +697,7 @@ export interface MessageTarget {
   label: string;
 }
 
-/** What Clover knows of a call beyond its name. */
+/** What MOSS knows of a call beyond its name. */
 interface Known {
   effect?: ActionEffect;
   contained?: boolean;
@@ -706,7 +706,7 @@ interface Known {
   /** The card's `what` and `host` lines, as code. */
   what?: string;
   host?: string;
-  /** A card every time, with no "always" (`CloverApprovalRequest.cardAlways`). */
+  /** A card every time, with no "always" (`MossApprovalRequest.cardAlways`). */
   cardAlways?: boolean;
   /** The card's `command` line, as code: a Browser acting card's act in plain language (`browser-words.ts`). */
   command?: string;
@@ -714,7 +714,7 @@ interface Known {
   budget?: FetchBudget;
 }
 
-/** What Clover knows of a call beyond its name: a core tool's rule (`CORE_TOOL_RULES`, and where a message goes), or
+/** What MOSS knows of a call beyond its name: a core tool's rule (`CORE_TOOL_RULES`, and where a message goes), or
  *  a declared web tool's (a search is a search; a fetch is contained when its address was already seen and the turn's
  *  budget holds, and its "always" holds for its site only). */
 function knownEffect(

@@ -4,7 +4,7 @@
 // plugin host reports after crashes. The catalog's declarations come in as `catalog` (the plugin SDK's
 // `catalogPointDecl`), since the contracts don't import the SDK at run time.
 import { createHash } from "node:crypto";
-import { APP_PARTS_SUFFIX, BUNDLED_ROOT_PLUGIN, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
+import { APP_PARTS_SUFFIX, BUNDLED_ROOT_PLUGIN, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/moss-protocol";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
   type ApproveResult, type Contribution, type InstallFrom, type PluginRecord, type PluginRegistry, type RegisteredPoint, type RegistryChange,
@@ -113,7 +113,7 @@ export class FakePluginRegistry implements PluginRegistry {
       this.#update();
       return { applied: true };
     }
-    if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled" && !enabled) throw new ContractError("refused", "Clover's own plugin holds Settings; it stays on");
+    if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled" && !enabled) throw new ContractError("refused", "MOSS's own plugin holds Settings; it stays on");
     if (state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
     // A found plugin's switch is its sealed OK card (S2): nothing loads until the user's yes on it.
     if (enabled && state === "found") return { applied: false, card: this.#raiseOk(parentOf(id) ?? id) };

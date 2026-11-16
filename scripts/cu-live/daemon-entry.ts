@@ -1,15 +1,15 @@
-// The live ComputerV2 suite's DAEMON: compiled into `out/cu-live/clover-core-live` and signed by
-// `scripts/cu-live/build.ts` with a TEST-ONLY identity (`com.winter.core.cutest`, Clover's team) — never a production
+// The live ComputerV2 suite's DAEMON: compiled into `out/cu-live/moss-core-live` and signed by
+// `scripts/cu-live/build.ts` with a TEST-ONLY identity (`com.winter.core.cutest`, MOSS's team) — never a production
 // identifier, which would satisfy the dev Keychain items' access lists. A dev helper accepts that identity only as a
-// live-test instance: launched for a home inside a `clover-cu-live-` temp dir (`HelperIdentity.isLiveTestHome`).
+// live-test instance: launched for a home inside a `moss-cu-live-` temp dir (`HelperIdentity.isLiveTestHome`).
 //
-// It is NOT the shipped `clover-core`: a separate compile entry that starts the real daemon (`startDaemon`) on a
+// It is NOT the shipped `moss-core`: a separate compile entry that starts the real daemon (`startDaemon`) on a
 // TEMP home with a FILE secret store, so a run never reads or writes the Keychain, and refuses anything else:
 //   - `WINTER_CU_LIVE_TESTS=1` must be set;
-//   - `CLOVER_HOME` must be absolute, exist, sit under the system temp dir, carry `clover-cu-live-` in its path,
-//     and be neither profile's default home (`~/.clover`, `~/.clover-dev`).
+//   - `MOSS_HOME` must be absolute, exist, sit under the system temp dir, carry `moss-cu-live-` in its path,
+//     and be neither profile's default home (`~/.moss`, `~/.moss-dev`).
 // It also serves the one self-spawn ComputerV2 needs: `<this binary> __automation-worker` (the sandboxed worker).
-// Code sessions run the external `winter` runtime (`CLOVER_RUNTIME_EXECUTABLE`, set by the runner).
+// Code sessions run the external `winter` runtime (`MOSS_RUNTIME_EXECUTABLE`, set by the runner).
 //
 // Every screenshot the helper returns is also written to `<home>/cu-live-shots/` (the test seam
 // `ComputerUseInjection.screenshotSink`) so the runner can judge its pixels.
@@ -19,7 +19,7 @@
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { AUTOMATION_WORKER_ARG, FileSecretStore, isDefaultCloverHome, runAutomationWorker, startDaemon } from "../../packages/core/src/index";
+import { AUTOMATION_WORKER_ARG, FileSecretStore, isDefaultMossHome, runAutomationWorker, startDaemon } from "../../packages/core/src/index";
 import { HELPER_PROTOCOL } from "../../packages/core/src/computer-use/protocol";
 import { runFreshSampler, type FreshSamplerParams } from "./fresh-sampler";
 import { FIXTURE_ADAPTER } from "./adapters";
@@ -31,7 +31,7 @@ if (process.argv[2] === AUTOMATION_WORKER_ARG) {
 }
 
 /**
- * `clover-core-live __peer-hello <socket> <home>`: one `hello` as a DAEMON client to a helper socket (and, for
+ * `moss-core-live __peer-hello <socket> <home>`: one `hello` as a DAEMON client to a helper socket (and, for
  * `__helper-call`, one method after it) —
  * how the dry run proves which helpers accept this test identity (a live-test instance) and which close it unanswered
  * (every other dev helper). Prints one JSON line: `{"accepted":true,"result":…}` or `{"accepted":false,…}`.
@@ -74,20 +74,20 @@ async function peerHello(socketPath: string, home: string, call?: { method: stri
 }
 
 function refuse(why: string): never {
-  process.stderr.write(`clover-core-live: refusing — ${why}\n`);
+  process.stderr.write(`moss-core-live: refusing — ${why}\n`);
   process.exit(64);
 }
 
 /** Why `home` may not host the live daemon, or undefined when it may. Exported shape for the runner's tests. */
 export function liveHomeRefusal(home: string | undefined, tempRoot: string): string | undefined {
-  if (home === undefined || home.length === 0) return "CLOVER_HOME is not set";
-  if (!isAbsolute(home)) return `CLOVER_HOME must be absolute (got ${home})`;
-  if (!existsSync(home)) return `CLOVER_HOME does not exist: ${home}`;
+  if (home === undefined || home.length === 0) return "MOSS_HOME is not set";
+  if (!isAbsolute(home)) return `MOSS_HOME must be absolute (got ${home})`;
+  if (!existsSync(home)) return `MOSS_HOME does not exist: ${home}`;
   const real = realpathSync(home);
   const temp = realpathSync(tempRoot);
-  if (!real.startsWith(`${temp}/`)) return `CLOVER_HOME must be under the system temp dir (${temp})`;
-  if (!real.includes("clover-cu-live-")) return "CLOVER_HOME must be a clover-cu-live- temp dir";
-  if (isDefaultCloverHome(real, "dist") || isDefaultCloverHome(real, "dev")) return "CLOVER_HOME is a profile's default home";
+  if (!real.startsWith(`${temp}/`)) return `MOSS_HOME must be under the system temp dir (${temp})`;
+  if (!real.includes("moss-cu-live-")) return "MOSS_HOME must be a moss-cu-live- temp dir";
+  if (isDefaultMossHome(real, "dist") || isDefaultMossHome(real, "dev")) return "MOSS_HOME is a profile's default home";
   return undefined;
 }
 
@@ -108,7 +108,7 @@ if (import.meta.main) {
       process.exit(1);
     }
   }
-  const home = process.env.CLOVER_HOME;
+  const home = process.env.MOSS_HOME;
   const refusal = liveHomeRefusal(home, tmpdir());
   if (refusal !== undefined) refuse(refusal);
   const shots = join(home!, "cu-live-shots");

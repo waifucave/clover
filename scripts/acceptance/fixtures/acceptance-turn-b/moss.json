@@ -1,0 +1,61 @@
+{
+  "manifest": 1,
+  "id": "acceptance-turn-b",
+  "name": "Acceptance turn B",
+  "description": "The acceptance run's turns fixture (\u00a75.4 \"Turns\"): it and its twin take one turn and write while they hold it.",
+  "version": "0.0.1",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun",
+    "process": "own"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "name": "span",
+        "description": "Takes the slot, writes its start and end while it holds it, then lets go.",
+        "handler": "span",
+        "args": {
+          "type": "object",
+          "properties": {
+            "ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "hold",
+        "description": "Takes the slot and keeps it: when it got it, its until, and this host process's pid.",
+        "handler": "hold",
+        "args": {
+          "type": "object",
+          "properties": {
+            "limitMs": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 600000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "spans",
+        "description": "What it wrote while it held the slot.",
+        "handler": "spans"
+      },
+      {
+        "name": "nosy",
+        "description": "Tries a turn the other plugin doesn't offer.",
+        "handler": "nosy"
+      }
+    ]
+  }
+}

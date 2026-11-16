@@ -10,7 +10,7 @@
 // development folder may hold them (a package manager's links), since it reloads on every change anyway.
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { isTreeHashExcluded, treeHash, treePathProblem, type PluginFolderReader, type TreeEntry } from "@waifucave/clover-plugin-sdk";
+import { isTreeHashExcluded, treeHash, treePathProblem, type PluginFolderReader, type TreeEntry } from "@waifucave/moss-plugin-sdk";
 import { createHash } from "node:crypto";
 
 /** Why a folder's files can't be hashed: a symlink out of it, a bad path. */

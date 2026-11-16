@@ -1,4 +1,4 @@
-// A fake clover-core for the app's tests, until lane C's daemon side of the pair (C-M1) lands. It speaks the pair's
+// A fake moss-core for the app's tests, until lane C's daemon side of the pair (C-M1) lands. It speaks the pair's
 // part of the protocol as agreed with lane C (src/main/pair/*.ts): `protocol.hello` with the `app` token from
 // `<home>/run/app.token`, `events.subscribe`, `pair.status`, `pair.quit`, `pair.exiting`, `plugin.ui`, `ui.settings`,
 // `layer.token`, and the daemon's own requests to the app (`app.quit`, `app.show`). As a program it is also lane C's
@@ -10,7 +10,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
-import { CardAnswerProof, Card } from "@waifucave/clover-protocol";
+import { CardAnswerProof, Card } from "@waifucave/moss-protocol";
 import { daemonEndpoint } from "../../src/main/protocol/client";
 
 export interface FakeOptions {
@@ -148,7 +148,7 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
       if (opts.prove === "refuse") return fail(-32601, "no protocol.prove");
       if (opts.prove === "peak") return fail(-32020, "the pid at this end of the pipe is ambiguous");
       const pid = typeof opts.prove === "number" ? opts.prove : process.pid;
-      const proof = createHmac("sha256", opts.prove === "wrong" ? "not-the-token" : token).update(`clover-daemon-proof\0${String(params.nonce)}\0${pid}`).digest("base64url");
+      const proof = createHmac("sha256", opts.prove === "wrong" ? "not-the-token" : token).update(`moss-daemon-proof\0${String(params.nonce)}\0${pid}`).digest("base64url");
       return reply({ proof, pid });
     }
     if (method === "protocol.hello") {
@@ -350,8 +350,8 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
 
 /** The fake as a program: `daemon` runs it; `autostart status|enable|start` is the login command. */
 async function main(argv: string[]): Promise<void> {
-  const home = process.env.CLOVER_HOME;
-  if (home === undefined || home === "") throw new Error("CLOVER_HOME must be set");
+  const home = process.env.MOSS_HOME;
+  if (home === undefined || home === "") throw new Error("MOSS_HOME must be set");
   const [cmd, sub] = argv;
   const registered = join(fakeDir(home), "registered");
   if (cmd === "autostart") {
@@ -370,7 +370,7 @@ async function main(argv: string[]): Promise<void> {
       // "Through the OS": a detached process of its own, never the caller's child for long.
       const self = process.argv[1] !== undefined && process.argv[1].endsWith(".ts") ? [process.argv[1]] : [];
       // The app that asked is the daemon's other end: the fake's `protocol.prove` names it, as the real one sees it.
-      const child = spawn(process.execPath, [...self, "daemon"], { detached: true, stdio: "ignore", env: { ...process.env, CLOVER_FAKE_APP_PID: String(process.ppid) }, windowsHide: true });
+      const child = spawn(process.execPath, [...self, "daemon"], { detached: true, stdio: "ignore", env: { ...process.env, MOSS_FAKE_APP_PID: String(process.ppid) }, windowsHide: true });
       child.unref();
       return;
     }
@@ -378,14 +378,14 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
   if (cmd === "daemon") {
-    const uiFile = process.env.CLOVER_FAKE_UI;
+    const uiFile = process.env.MOSS_FAKE_UI;
     const ui = uiFile !== undefined && existsSync(uiFile) ? (JSON.parse(readFileSync(uiFile, "utf8")) as { plugins?: unknown[]; status?: Record<string, unknown>; settings?: Record<string, unknown>; models?: FakeModel[]; listPlugins?: boolean }) : {};
     let fake: FakeDaemon;
     // The pid first, for the tests that stop it.
     mkdirSync(fakeDir(home), { recursive: true });
     writeFileSync(join(fakeDir(home), "daemon.pid"), String(process.pid));
     try {
-      fake = await startFakeDaemon({ home, ui: ui.plugins ?? [], ...(ui.status ? { status: ui.status } : {}), ...(ui.settings ? { settings: ui.settings } : {}), ...(ui.models ? { models: ui.models } : {}), ...(ui.listPlugins ? { listPlugins: true } : {}), prove: process.env.CLOVER_FAKE_PROVE === "refuse" || process.env.CLOVER_FAKE_PROVE === "wrong" ? process.env.CLOVER_FAKE_PROVE : Number(process.env.CLOVER_FAKE_APP_PID ?? process.pid) });
+      fake = await startFakeDaemon({ home, ui: ui.plugins ?? [], ...(ui.status ? { status: ui.status } : {}), ...(ui.settings ? { settings: ui.settings } : {}), ...(ui.models ? { models: ui.models } : {}), ...(ui.listPlugins ? { listPlugins: true } : {}), prove: process.env.MOSS_FAKE_PROVE === "refuse" || process.env.MOSS_FAKE_PROVE === "wrong" ? process.env.MOSS_FAKE_PROVE : Number(process.env.MOSS_FAKE_APP_PID ?? process.pid) });
     } catch (err) {
       record(home, "listen-failed", { error: String(err) });
       process.exit(0);

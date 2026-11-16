@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { cleanup } from "node-datachannel";
 import { RTCPeerConnection } from "node-datachannel/polyfill";
 
-import { generateSigner, signText, verifyText } from "@waifucave/clover-service-handshake/client";
+import { generateSigner, signText, verifyText } from "@waifucave/moss-service-handshake/client";
 import {
   deviceIdFor,
   EFF_SHORT_WORDLIST,
@@ -36,8 +36,8 @@ const invite = {
 
 describe("invites", () => {
   test("round-trip through the URL fragment; malformed ones are refused", () => {
-    const url = inviteUrl("https://clover.waifucave.com/", invite);
-    expect(url.startsWith("https://clover.waifucave.com/#pair=")).toBe(true);
+    const url = inviteUrl("https://moss.waifucave.com/", invite);
+    expect(url.startsWith("https://moss.waifucave.com/#pair=")).toBe(true);
     const back = readInvite(new URL(url).hash);
     expect(back).toEqual(invite);
     expect(readInvite("")).toBeNull();

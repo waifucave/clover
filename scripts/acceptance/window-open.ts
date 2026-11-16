@@ -1,7 +1,7 @@
 // Opening a plugin's part in the app's window the user's way, and seeing it drawn: a Settings section, a sidebar entry,
 // a part that is always there (the status bar), a part inside another's page. Shared by the rows that install plugins
 // with UI (the builder's examples, a bot's two plugins and their point); each part is a document of the plugin's own
-// layer (`clover-plugin://<id>/…`) that must hold the words its component draws.
+// layer (`moss-plugin://<id>/…`) that must hold the words its component draws.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SIDEBAR_ITEMS, escape, fail, frames, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
@@ -10,9 +10,9 @@ export interface Drawn { session: string; url: string; text: string }
 
 /** Whether a document's address is plugin `id`'s layer or a child's (`--` stands for `/` in a layer's name): never another
  *  plugin whose id merely starts with it (`ex-board` and `ex-board-widget`). */
-export const isLayerOf = (url: string, id: string): boolean => url.startsWith(`clover-plugin://${id}/`) || url.startsWith(`clover-plugin://${id}--`);
+export const isLayerOf = (url: string, id: string): boolean => url.startsWith(`moss-plugin://${id}/`) || url.startsWith(`moss-plugin://${id}--`);
 
-/** A document of plugin `id`'s layer (its id or a child's, `clover-plugin://<id>…`) whose own text holds `text`, once it is drawn
+/** A document of plugin `id`'s layer (its id or a child's, `moss-plugin://<id>…`) whose own text holds `text`, once it is drawn
  *  with a size: the words its component renders, in a document that has a place on the screen. */
 export async function drawn(ctx: ExampleCtx, id: string, text: string, what: string, ms = 40_000, expr?: string): Promise<Drawn> {
   const { cdp } = ctx;
@@ -27,9 +27,9 @@ export async function drawn(ctx: ExampleCtx, id: string, text: string, what: str
   }, async () => { await shot(ctx, `drawn-${id}`); return frames(cdp); });
 }
 
-/** A picture of the main window in the folder CLOVER_ACCEPT_SHOTS names (a failure's evidence); nothing when it names none. */
+/** A picture of the main window in the folder MOSS_ACCEPT_SHOTS names (a failure's evidence); nothing when it names none. */
 export async function shot(ctx: ExampleCtx, label: string): Promise<void> {
-  const shots = process.env.CLOVER_ACCEPT_SHOTS;
+  const shots = process.env.MOSS_ACCEPT_SHOTS;
   if (shots === undefined || shots === "") return;
   try {
     mkdirSync(shots, { recursive: true });
@@ -38,7 +38,7 @@ export async function shot(ctx: ExampleCtx, label: string): Promise<void> {
 }
 
 /** What the window is doing about the Settings button, for a failure: each tree document's button (its place, and the element
- *  at that place), the dialog's parts, the cards waiting, and a picture of the window when CLOVER_ACCEPT_SHOTS names a folder. */
+ *  at that place), the dialog's parts, the cards waiting, and a picture of the window when MOSS_ACCEPT_SHOTS names a folder. */
 export async function settingsDiagnosis(ctx: ExampleCtx, label: string): Promise<string> {
   const { cdp } = ctx;
   const out: string[] = [];
@@ -96,7 +96,7 @@ export async function openSettingsSection(ctx: ExampleCtx, title: string): Promi
     // A layer installed a moment ago loads the window's document again, which closes a dialog opened before it: pressed again.
     for (let attempt = 0; attempt < 3; attempt++) {
       // The gear where the tab's layout draws it on the screen; on a tab whose layout keeps it off its frame (a bot's own), the
-      // user's other way, `clover-core app open settings` in a terminal (the app's own route to the dialog, as the sidebar's).
+      // user's other way, `moss-core app open settings` in a terminal (the app's own route to the dialog, as the sidebar's).
       const pressed = await clickShown(ctx, "the Settings button", "button[aria-label=Settings]", undefined, 4_000).then(() => true, () => false);
       if (!pressed) {
         if (ctx.appCli === undefined) fail(`no Settings button is on the screen (${await settingsDiagnosis(ctx, `settings-${title}`)})`);

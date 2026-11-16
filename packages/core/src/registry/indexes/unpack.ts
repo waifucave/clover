@@ -1,5 +1,5 @@
 // The unpacker for a plugin download (spec §5.1: "A version downloads as a `.tar.gz` whose tree hash must match"; an
-// npm package the same). Clover's own reader, no `tar` program and no library: a downloaded archive is untrusted.
+// npm package the same). MOSS's own reader, no `tar` program and no library: a downloaded archive is untrusted.
 //
 // * gzip, inflated with a cap on what comes out (`maxOutputLength`), so a small archive can't fill the disk.
 // * tar (ustar, with pax `path` and GNU long names): regular files and directories only; a folder entry is checked
@@ -12,11 +12,11 @@
 //   and refuse it), its mode 0644, or 0755 when the archive marks it executable (the tree hash keeps that bit).
 // * Bounded: `INSTALL_MAX_FILES` files and `INSTALL_MAX_BYTES` bytes, as a folder install.
 // * Its root: the archive's files, or the one folder they all sit in (`package/` for npm), whichever holds
-//   `clover.json`. The tree hash, checked after, decides what's installed.
+//   `moss.json`. The tree hash, checked after, decides what's installed.
 import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { isTreeHashExcluded, MANIFEST_FILE } from "@waifucave/clover-plugin-sdk";
+import { isTreeHashExcluded, MANIFEST_FILE } from "@waifucave/moss-plugin-sdk";
 import { ContractError } from "../../contracts/common";
 import { INSTALL_MAX_BYTES, INSTALL_MAX_FILES } from "../install-folder";
 
@@ -25,7 +25,7 @@ export const PATH_MAX = 1024;
 export const DEPTH_MAX = 32;
 
 const bad = (why: string): never => {
-  throw new ContractError("invalid", `the download isn't a plugin archive Clover takes: ${why}`);
+  throw new ContractError("invalid", `the download isn't a plugin archive MOSS takes: ${why}`);
 };
 
 function field(h: Uint8Array, at: number, len: number): string {
@@ -100,7 +100,7 @@ export interface UnpackLimits {
   maxBytes?: number;
 }
 
-/** Unpacks a `.tar.gz` into `dest` (a fresh, empty folder) and gives back the folder that holds `clover.json`. Throws
+/** Unpacks a `.tar.gz` into `dest` (a fresh, empty folder) and gives back the folder that holds `moss.json`. Throws
  *  `ContractError` (`invalid`) with why. */
 export function unpackTarGz(gz: Uint8Array, dest: string, limits: UnpackLimits = {}): string {
   const maxBytes = limits.maxBytes ?? INSTALL_MAX_BYTES;

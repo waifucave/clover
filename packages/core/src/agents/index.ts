@@ -8,10 +8,10 @@
 // | `process/`          | launching an agent contained as a group, its environment allow-list, the process table |
 // | `quirks.ts`         | the quirks table: how each measured backend bends ACP (spike S5)                        |
 // | `backend.ts`        | `AcpAgentBackend`, the spine's `AgentBackend` for a local ACP agent                     |
-// | `bridge/`           | the bridge MCP server (its own process), its token, and its parts for C's Clover server |
+// | `bridge/`           | the bridge MCP server (its own process), its token, and its parts for C's MOSS server |
 // | `driver.ts`         | the session driver: the host runs an agent's turns through it                           |
 // | `manager.ts`        | `Agent`, `TaskStop`, lane D's hooks, the bridge's methods, reattaching after a restart |
-// | `transcript.ts`     | `bots/<bot>/agents/<session>/`: the wire minus replays, Clover's own record, stderr    |
+// | `transcript.ts`     | `bots/<bot>/agents/<session>/`: the wire minus replays, MOSS's own record, stderr    |
 // | `records.ts`        | the daemon's own record of each session, in the fenced run folder, for a reattach      |
 // | `paths.ts`          | a permission request's paths, resolved and real, for the fence                         |
 // | `watchdog.ts`       | the 10-minute stall watchdog                                                            |
@@ -25,7 +25,7 @@
 // coding agent.
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import type { AgentBackend } from "../contracts/agent-backend";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
@@ -34,7 +34,7 @@ import type { SessionHost } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import { UserSelections } from "./acp/selections";
 import { AcpAgentBackend, type AcpStartSpec } from "./backend";
-import { bridgeCloverParts, type BridgeCloverParts } from "./bridge/handlers";
+import { bridgeMossParts, type BridgeMossParts } from "./bridge/handlers";
 import { bridgeCommand } from "./bridge/main";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeToolSource } from "./bridge/tools";
@@ -47,9 +47,9 @@ import type { PluginPartsSource } from "./placement";
 import { ContributedBackendCache, type ContributedBackend } from "./plugin-backends";
 import { ADMISSIONS } from "./sandbox/admission";
 import type { PluginRegistry } from "../contracts/plugin-registry";
-import { CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
+import { MossCodeBackend, type MossCodeDeps } from "./moss-code/backend";
 import { codeAgentDoor, CodeAgentService } from "./code-agent/service";
-import type { CodeAgentDoor } from "../ipc/clover";
+import type { CodeAgentDoor } from "../ipc/moss";
 import { StallWatchdog } from "./watchdog";
 import { AgentPeers, type AgentPeersOptions } from "./remote";
 import { inProcessAgentBackend, type BotChildSandbox, type InProcessBackendDeps } from "../runtime-sdk/turn-loop/subagent-backend";
@@ -60,7 +60,7 @@ import { homedir } from "node:os";
 export { AcpAgentSession, onceOnly, type WireTap } from "./acp/session";
 export { RpcPeer, RpcError } from "@waifucave/clover-agent-sdk/acp";
 export { AcpAgentBackend, versionSatisfies, type AcpStartSpec, type AgentWire, type BackendCommand } from "./backend";
-export { bridgeCloverParts, type BridgeCloverParts, type BridgeHandlers } from "./bridge/handlers";
+export { bridgeMossParts, type BridgeMossParts, type BridgeHandlers } from "./bridge/handlers";
 export { bridgeCommand, BRIDGE_MAIN_PATH } from "./bridge/main";
 export { peerPidOf } from "./bridge/peer";
 export { BRIDGE_ENV, runBridge } from "./bridge/server";
@@ -72,7 +72,7 @@ export { agentPaths } from "./paths";
 export { agentRecordPath, readAgentRecord, type DaemonAgentRecord } from "./records";
 export { buildAgentEnv, launchContained } from "./process/launch";
 export { AgentQuirksSchema, QuirksFileSchema, bundledAgentPluginId, contributedBackends, quirksWithCommand, readQuirksFile, type ContributedBackend, type FileQuirks, type QuirksFile } from "./plugin-backends";
-export { CLOVER_CODE_ID, CLOVER_CODE_QUIRKS, CLOVER_CODE_TOOLS, CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
+export { MOSS_CODE_ID, MOSS_CODE_QUIRKS, MOSS_CODE_TOOLS, MossCodeBackend, type MossCodeDeps } from "./moss-code/backend";
 export { inProcessBridgeServer } from "./bridge/in-process";
 export { codeAgentDoor, CodeAgentService, type CodeAgentServiceOptions } from "./code-agent/service";
 export { codeAgentMain, runCodeAgentRelay, type CodeAgentRelayOptions } from "./code-agent/relay";
@@ -106,7 +106,7 @@ export interface AgentsOptions {
   tree: Pick<Tree, "resolve">;
   fence: Pick<Fence, "checkAgentRoot" | "policy" | "touches">;
   clock: Clock;
-  /** The plugins' `agentBackends` entries (the bundled `clover/agent-<id>` plugins and any other), read at each start. */
+  /** The plugins' `agentBackends` entries (the bundled `moss/agent-<id>` plugins and any other), read at each start. */
   registry?: Pick<PluginRegistry, "entries" | "get">;
   /** The backends to offer in place of the registry's (tests). */
   backends?: (wire: AgentManager["wire"]) => AgentBackend[];
@@ -120,18 +120,18 @@ export interface AgentsOptions {
   watchLevels?: (fn: () => void) => () => void;
   /** The pause switch (lane D's gate): paused, delegated agents are held. */
   pause?: AgentPauseGate;
-  /** Clover's own coding agent (`clover-code`) on the embedded runtime: lane A's embedded-session seam
+  /** MOSS's own coding agent (`moss-code`) on the embedded runtime: lane A's embedded-session seam
    *  (`embeddedSessionOptions`, `fillProvider`) and the user's default model. Without it the backend isn't offered. */
-  cloverCode?: Pick<CloverCodeDeps, "baseOptions" | "fillProvider" | "defaultModel" | "query">;
+  mossCode?: Pick<MossCodeDeps, "baseOptions" | "fillProvider" | "defaultModel" | "query">;
   /** Agents on other computers (K-M3, remote.ts), over lane J's link: the transport, the computers' devices, who may
    *  call, and this computer's lease fence (#237). Without it, an agent runs only here. */
   peers?: Pick<AgentPeersOptions, "transport" | "computer" | "mayCall" | "fence">;
-  /** Lane A's in-process subagents (`clover`, A-M3) on the embedded runtime: its embedded-session seam and the user's
+  /** Lane A's in-process subagents (`moss`, A-M3) on the embedded runtime: its embedded-session seam and the user's
    *  default model. The pause and the folders it may never reach are the core's (`inProcessBackend`). Without it the
    *  backend isn't offered. */
   inProcess?: Omit<InProcessBackendDeps, "pauseGateFor" | "privateFoldersFor">;
   /** The user's home folder, which `home/<Computer>/` names (the OS's by default): where an outside ACP client's folder
-   *  is placed in the tree (`clover-core code-agent`). */
+   *  is placed in the tree (`moss-core code-agent`). */
   userHome?: string;
   log?: (line: string) => void;
 }
@@ -139,7 +139,7 @@ export interface AgentsOptions {
 /** A gate that never holds, for a delegation no pause switch covers. */
 export const OPEN_PAUSE_GATE: AgentPauseGate = { mayAct: () => true };
 
-/** The Clover home as written and as it really is: the folders no agent may read or write (#208's default-deny). */
+/** The MOSS home as written and as it really is: the folders no agent may read or write (#208's default-deny). */
 function realOrSelf(path: string): string {
   try { return realpathSync(path); } catch { return path; }
 }
@@ -155,7 +155,7 @@ export function homeFoldersOf(home: string): string[] {
 }
 
 /** Lane A's in-process backend as the core registers it: every delegation gets the pause gate (an open one when there
- *  is no switch, so the required form of lane A's seam is met), and the whole Clover home is a private folder, which
+ *  is no switch, so the required form of lane A's seam is met), and the whole MOSS home is a private folder, which
  *  the backend denies to its file tools by rule and to its Bash sandbox, on top of the manager's fence. */
 export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor" | "privateFoldersFor">, o: { home: string; userHome?: string; pause?: AgentPauseGate; sandboxReady?: () => boolean }): AgentBackend {
   const gate = o.pause ?? OPEN_PAUSE_GATE;
@@ -166,21 +166,21 @@ export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor"
   const b = inProcessAgentBackend({
     ...deps, pauseGateFor: (spec) => (spec as AcpStartSpec).pause ?? gate, privateFoldersFor: () => homeFoldersOf(o.home),
     // A bot's child drawn by the bot's own builder, always: the one given, or this home's.
-    botChild: deps.botChild ?? botChildFor({ cloverHome: o.home, userHome: o.userHome ?? homedir() }),
+    botChild: deps.botChild ?? botChildFor({ mossHome: o.home, userHome: o.userHome ?? homedir() }),
     ...(o.sandboxReady !== undefined ? { sandboxReady: o.sandboxReady } : {}),
   });
   return { ...b, start: (spec) => b.start(spec) };
 }
 
-/** Wires the Agent tool for one daemon: the tokens, the bridge's parts for lane C's Clover server (`clover`: pass
- *  them to `createCloverServer` as its `bridge`, and its `handlers` among the server's), the watchdog,
+/** Wires the Agent tool for one daemon: the tokens, the bridge's parts for lane C's MOSS server (`moss`: pass
+ *  them to `createMossServer` as its `bridge`, and its `handlers` among the server's), the watchdog,
  *  the backends and the manager. `close` ends every agent's process (the sessions stay to be reattached), revokes
  *  every token. */
-export function createAgents(o: AgentsOptions): { manager: AgentManager; clover: BridgeCloverParts; tokens: BridgeTokens; backends: () => AgentBackend[]; codeAgent: CodeAgentDoor; computer: string; close(): Promise<void> } {
+export function createAgents(o: AgentsOptions): { manager: AgentManager; moss: BridgeMossParts; tokens: BridgeTokens; backends: () => AgentBackend[]; codeAgent: CodeAgentDoor; computer: string; close(): Promise<void> } {
   const tokens = new BridgeTokens();
-  // A bot's children are drawn by the bot's own builder (agents/bot-child.ts), by construction: both of Clover's own
+  // A bot's children are drawn by the bot's own builder (agents/bot-child.ts), by construction: both of MOSS's own
   // backends get it here, and refuse a bot's child without it.
-  const botChildHomes: BotChildHomes = { cloverHome: realOrSelf(o.home), userHome: realOrSelf(o.userHome ?? homedir()), os: hostOsOf() };
+  const botChildHomes: BotChildHomes = { mossHome: realOrSelf(o.home), userHome: realOrSelf(o.userHome ?? homedir()), os: hostOsOf() };
   const botChild: BotChildSandbox = botChildFor(botChildHomes);
   // The bridge connects to the daemon's own endpoint, where lane C serves the `bridge` role.
   const socketPath = o.socketPath;
@@ -216,7 +216,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   // One record of the user's own selections for every backend, in the daemon's fenced run folder.
   const selections = new UserSelections(join(o.home, "run", "agents", "selections"));
   // Every ACP backend is a plugin's entry; what the core grants by backend id (an admitted sandbox, Claude Code's
-  // placement) applies only to Clover's own `clover/agent-<id>`.
+  // placement) applies only to MOSS's own `moss/agent-<id>`.
   const build = (c: ContributedBackend) => new AcpAgentBackend({
     id: c.id, pluginId: c.pluginId, bundled: c.bundled, name: c.name, quirks: c.quirks, clock: o.clock, wire, selections,
     admissions: c.bundled ? ADMISSIONS : {},
@@ -224,9 +224,9 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     ...(c.file.readOnlyMode ? { readOnlyMode: c.file.readOnlyMode } : {}),
   });
   const cache = new ContributedBackendCache(build);
-  // Core backends: Clover's own coding agent and lane A's in-process subagents.
+  // Core backends: MOSS's own coding agent and lane A's in-process subagents.
   const core: AgentBackend[] = [
-    ...(o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, pause: o.pause ?? OPEN_PAUSE_GATE, botChild, ...(o.log ? { log: o.log } : {}) })] : []),
+    ...(o.mossCode ? [new MossCodeBackend({ ...o.mossCode, clock: o.clock, wire, selections, pause: o.pause ?? OPEN_PAUSE_GATE, botChild, ...(o.log ? { log: o.log } : {}) })] : []),
     ...(o.inProcess ? [inProcessBackend({ ...(o.log ? { log: o.log } : {}), ...o.inProcess, botChild }, { home: o.home, ...(o.pause ? { pause: o.pause } : {}) })] : []),
   ];
   if (o.backends) {
@@ -236,22 +236,22 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     const registry = o.registry;
     backends = () => [...(registry ? cache.backends(registry, o.log) : []), ...core];
   }
-  const clover = bridgeCloverParts(tokens, manager.bridgeHandlers());
+  const moss = bridgeMossParts(tokens, manager.bridgeHandlers());
   const peers = o.peers
     ? new AgentPeers(manager, { ...o.peers, home: o.home, clock: o.clock, ...(o.pause ? { pause: o.pause } : {}), ...(o.log ? { log: o.log } : {}) })
     : undefined;
-  // `clover-core code-agent` (K-M3b): Clover's coding agent for an outside ACP client, on the daemon's endpoint
-  // (`CloverServerDeps.codeAgent`).
+  // `moss-core code-agent` (K-M3b): MOSS's coding agent for an outside ACP client, on the daemon's endpoint
+  // (`MossServerDeps.codeAgent`).
   const codeAgents = new CodeAgentService({
     home: o.home, computer: o.computer, host: o.host, tree: o.tree, fence: o.fence, clock: o.clock,
-    backend: () => backends().find((b): b is CloverCodeBackend => b instanceof CloverCodeBackend),
+    backend: () => backends().find((b): b is MossCodeBackend => b instanceof MossCodeBackend),
     ...(o.userHome === undefined ? {} : { userHome: o.userHome }),
     ...(o.levelOf ? { levelOf: o.levelOf } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
   const codeAgent: CodeAgentDoor = codeAgentDoor(codeAgents);
   return {
-    manager, clover, tokens, backends: () => backends(), codeAgent, computer: o.computer,
+    manager, moss, tokens, backends: () => backends(), codeAgent, computer: o.computer,
     close: async () => {
       peers?.close();
       // The user's coding sessions end with the agents: their relays first, then every agent's process.

@@ -40,18 +40,18 @@ describe("the dialog", () => {
       return { session: "s1", plugin: "Tarot", label: "Deck key", set: true };
     };
     await showKey(host, (k) => k, call as never, () => undefined, () => 0);
-    const field = host.querySelector("[data-clover-key-field]");
+    const field = host.querySelector("[data-moss-key-field]");
     expect(document.activeElement).toBe(field);
-    const remove = host.querySelector<HTMLButtonElement>("[data-clover-key-remove]")!;
-    const save = host.querySelector<HTMLButtonElement>("[data-clover-key-save]")!;
+    const remove = host.querySelector<HTMLButtonElement>("[data-moss-key-remove]")!;
+    const save = host.querySelector<HTMLButtonElement>("[data-moss-key-save]")!;
     remove.click();
     save.click();
     await Promise.resolve();
     expect(calls).toEqual(["key.view"]);
-    expect(host.querySelector<HTMLElement>("[data-clover-key-confirm]")!.hidden).toBe(true);
+    expect(host.querySelector<HTMLElement>("[data-moss-key-confirm]")!.hidden).toBe(true);
     // The confirming button lives in the body, above the field, never in the actions row where Remove is.
-    const confirm = host.querySelector("[data-clover-key-remove-confirm]")!;
-    expect(confirm.closest(".clover-page__actions")).toBeNull();
-    expect(remove.closest(".clover-page__actions")).not.toBeNull();
+    const confirm = host.querySelector("[data-moss-key-remove-confirm]")!;
+    expect(confirm.closest(".moss-page__actions")).toBeNull();
+    expect(remove.closest(".moss-page__actions")).not.toBeNull();
   });
 });

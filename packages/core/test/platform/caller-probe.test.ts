@@ -10,7 +10,7 @@ import { onDarwin, darwinTest } from "../helpers/darwin-only";
 
 /** Listen on a fresh endpoint and resolve with the probe of the first connection's peer. */
 function listenOnce(): { path: string; peer: Promise<PeerFacts & { fd: number | null }>; stop(): void } {
-  const path = resolveEndpoint(mkdtempSync(join(tmpdir(), "clover-peer-"))).path;
+  const path = resolveEndpoint(mkdtempSync(join(tmpdir(), "moss-peer-"))).path;
   let resolve!: (f: PeerFacts & { fd: number | null }) => void;
   const peer = new Promise<PeerFacts & { fd: number | null }>((r) => { resolve = r; });
   const server = Bun.listen({ unix: path, socket: { open(s) { resolve({ ...probePeer(s), fd: socketFd(s) }); }, data() {} } });
@@ -43,7 +43,7 @@ describe("the caller check's OS probe", () => {
   });
 
   test.skipIf(process.platform !== "win32")("Windows: the pipe's peer from the daemon's own handles, then its token", async () => {
-    const path = resolveEndpoint(mkdtempSync(join(tmpdir(), "clover-peer-"))).path;
+    const path = resolveEndpoint(mkdtempSync(join(tmpdir(), "moss-peer-"))).path;
     const peers = new WindowsPipePeers();
     const seen: Array<number | null> = [];
     const server = Bun.listen({ unix: path, socket: {
@@ -68,8 +68,8 @@ describe("the caller check's OS probe", () => {
   });
 
   test.skipIf(process.platform !== "win32")("Windows: only this endpoint's ends count; another pipe the daemon serves never does (review S4)", async () => {
-    const pathA = resolveEndpoint(mkdtempSync(join(tmpdir(), "clover-peer-"))).path;
-    const pathB = resolveEndpoint(mkdtempSync(join(tmpdir(), "clover-peer-"))).path;
+    const pathA = resolveEndpoint(mkdtempSync(join(tmpdir(), "moss-peer-"))).path;
+    const pathB = resolveEndpoint(mkdtempSync(join(tmpdir(), "moss-peer-"))).path;
     const peers = new WindowsPipePeers(pathA);
     const seen: Array<number | null> = [];
     const other = Bun.listen({ unix: pathB, socket: { data() {} } }); // its ends are this process's too
@@ -154,7 +154,7 @@ describe("the caller check's OS probe", () => {
   }, 30_000);
 
   darwinTest("review B1 on macOS: under supervise's disclaimed start, a double-forked grandchild still names the daemon", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-resp-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-resp-"));
     const out = join(dir, "result.json");
     const probe = JSON.stringify(join(import.meta.dir, "..", "..", "src", "platform", "caller-probe.ts"));
     // The "daemon": started as supervise starts it, it double-forks a grandchild (its child exits at once, so
@@ -177,7 +177,7 @@ describe("the caller check's OS probe", () => {
 
   test.skipIf(process.platform !== "win32")("review B1 on Windows: an orphan whose parent isn't Bun and exits first stays in the daemon's job", async () => {
     expect(claimDaemonChildren().job).toBe(true);
-    const dir = mkdtempSync(join(tmpdir(), "clover-orphan-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-orphan-"));
     const pidFile = join(dir, "pid");
     const sleeper = `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 20000);`;
     // cmd's `start /b` starts the grandchild and cmd exits at once; libuv's job, which holds cmd, allows silent breakaway.

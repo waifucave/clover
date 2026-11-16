@@ -22,7 +22,7 @@ import type { RequestOptions } from "node:http";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GitHubProvider } from "electron-updater/out/providers/GitHubProvider";
-import { verifyFeed, SIGNATURE_SUFFIX, type FeedVerdict } from "@waifucave/clover-update-feed";
+import { verifyFeed, SIGNATURE_SUFFIX, type FeedVerdict } from "@waifucave/moss-update-feed";
 
 /** An update file's name, as the release holds it (packages/update-feed's FEED_NAME). */
 const FEED_FILE = /^(latest|beta)(-mac|-linux|-linux-arm64)?\.yml$/;

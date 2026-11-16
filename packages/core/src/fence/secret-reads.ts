@@ -10,7 +10,7 @@
 // refuses.
 import { lstatSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import { isInsideFolded, secretReadPlaces, type SecretClass } from "../contracts/fence";
 import { realPathOf } from "../agents/memory";
 

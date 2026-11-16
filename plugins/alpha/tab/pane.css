@@ -11,14 +11,14 @@
 /* ---- The pane: clear over the sheet, a lace scallop along its top ---- */
 .cl-conv {
   background: transparent;
-  color: var(--clover-color-text);
+  color: var(--moss-color-text);
   container-type: inline-size;
 }
 .cl-conv::before {
   content: "";
   flex: none;
   height: 14px;
-  background: radial-gradient(circle at 9px -3px, transparent 8px, var(--clover-plugin-alpha-pane-lace) 8.5px, var(--clover-plugin-alpha-pane-lace) 9.5px, transparent 10px) 0 0 / 18px 14px repeat-x;
+  background: radial-gradient(circle at 9px -3px, transparent 8px, var(--moss-plugin-alpha-pane-lace) 8.5px, var(--moss-plugin-alpha-pane-lace) 9.5px, transparent 10px) 0 0 / 18px 14px repeat-x;
 }
 .cl-conv__column {
   max-width: none;
@@ -36,30 +36,30 @@
   display: none;
 }
 .cl-conv-day__label {
-  font-family: var(--clover-font-serif);
+  font-family: var(--moss-font-serif);
   font-size: 14.5px;
   font-style: italic;
   font-weight: 400;
-  color: var(--clover-color-text-muted);
+  color: var(--moss-color-text-muted);
 }
 
 /* ---- Her replies: a book serif, about 75 characters a line, generous leading ---- */
 .cl-conv-md {
   max-width: 40em;
-  font-family: var(--clover-font-serif);
+  font-family: var(--moss-font-serif);
   font-size: 18.5px;
   line-height: 1.62;
-  color: var(--clover-bubble-bot-text);
+  color: var(--moss-bubble-bot-text);
 }
 .cl-conv-md :is(p, ul, ol, blockquote) + :is(p, ul, ol, blockquote) {
   margin-top: 0.7em;
 }
 .cl-conv-md :is(code, pre, kbd) {
-  font-family: var(--clover-font-mono);
+  font-family: var(--moss-font-mono);
   font-size: 0.8em;
 }
 .cl-conv-md a {
-  color: var(--clover-color-accent-text);
+  color: var(--moss-color-accent-text);
   text-underline-offset: 3px;
 }
 
@@ -75,29 +75,29 @@
   padding: 0;
   justify-content: center;
   border-radius: 8px;
-  color: var(--clover-color-text-muted);
+  color: var(--moss-color-text-muted);
 }
 .cl-conv-copy:hover,
 .cl-conv-speak:hover {
-  background: var(--clover-color-hover);
-  color: var(--clover-color-text);
+  background: var(--moss-color-hover);
+  color: var(--moss-color-text);
 }
 .cl-conv-speak[data-state="speaking"] {
-  background: var(--clover-color-accent-soft);
-  color: var(--clover-color-accent-text);
+  background: var(--moss-color-accent-soft);
+  color: var(--moss-color-accent-text);
 }
 .cl-conv__extra[data-inline] {
   gap: 4px;
 }
 .cl-conv-bot__note {
   margin-top: 6px;
-  font-family: var(--clover-font-serif);
+  font-family: var(--moss-font-serif);
   font-size: 14.5px;
   font-style: italic;
-  color: var(--clover-color-text-muted);
+  color: var(--moss-color-text-muted);
 }
 .cl-conv-bot__interrupted {
-  font-family: var(--clover-font-serif);
+  font-family: var(--moss-font-serif);
   font-style: italic;
 }
 
@@ -106,8 +106,8 @@
   max-width: 78%;
   padding: 12px 18px;
   border-radius: 20px 20px 6px 20px;
-  background: var(--clover-bubble-user-background);
-  color: var(--clover-bubble-user-text);
+  background: var(--moss-bubble-user-background);
+  color: var(--moss-bubble-user-text);
   font-size: 16px;
   line-height: 1.5;
 }
@@ -117,7 +117,7 @@
 
 /* ---- A tool run: a small card (its icon, the title in bold, one grey line, the result at the end) ---- */
 .cl-conv-tools {
-  color: var(--clover-color-text);
+  color: var(--moss-color-text);
   font-size: 14.5px;
 }
 .cl-conv-tools__summary {
@@ -131,14 +131,14 @@
   max-width: 520px;
   margin: 0;
   padding: 12px 14px;
-  border: 1px solid var(--clover-color-hairline-raised);
+  border: 1px solid var(--moss-color-hairline-raised);
   border-radius: 14px;
-  background: var(--clover-plugin-alpha-pane-card);
-  color: var(--clover-color-text);
+  background: var(--moss-plugin-alpha-pane-card);
+  color: var(--moss-color-text);
 }
 .cl-conv-tools__summary:hover {
-  background: var(--clover-color-hover);
-  color: var(--clover-color-text);
+  background: var(--moss-color-hover);
+  color: var(--moss-color-text);
 }
 .cl-conv-tools__icon {
   display: grid;
@@ -148,8 +148,8 @@
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: var(--clover-color-accent-soft);
-  color: var(--clover-color-accent-text);
+  background: var(--moss-color-accent-soft);
+  color: var(--moss-color-accent-text);
 }
 .cl-conv-tools__sentence,
 .cl-conv-tools__chips,
@@ -159,7 +159,7 @@
 }
 .cl-conv-tools__sentence {
   font-weight: 600;
-  color: var(--clover-color-text);
+  color: var(--moss-color-text);
 }
 .cl-conv-tools__detail {
   display: block;
@@ -169,14 +169,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  color: var(--clover-color-text-muted);
+  color: var(--moss-color-text-muted);
 }
 .cl-conv-tools__meta {
   display: block;
   grid-column: 3;
   grid-row: 1 / span 2;
   font-size: 13px;
-  color: var(--clover-color-text-muted);
+  color: var(--moss-color-text-muted);
 }
 .cl-conv-tools__summary > .cl-conv-status {
   grid-column: 4;
@@ -184,24 +184,24 @@
 }
 .cl-conv-tools[data-status="succeeded"] .cl-conv-tools__summary > .cl-conv-status {
   display: inline-flex;
-  color: var(--clover-color-success);
+  color: var(--moss-color-success);
 }
 .cl-conv-tools__summary > .cl-conv-chevron {
   display: none;
 }
 /* A failed run: the card's rim and its mark in the danger colour, and the failure line under it. */
 .cl-conv-tools[data-status="failed"] .cl-conv-tools__summary {
-  border-color: var(--clover-color-danger);
+  border-color: var(--moss-color-danger);
 }
 .cl-conv-tools[data-status="failed"] .cl-conv-tools__summary > .cl-conv-status,
 .cl-conv-tools[data-status="failed"] .cl-conv-tools__meta {
-  color: var(--clover-color-danger);
+  color: var(--moss-color-danger);
 }
 .cl-conv-tools__failure {
   max-width: 520px;
   margin: 6px 0 0 14px;
   font-size: 13px;
-  color: var(--clover-color-text-secondary);
+  color: var(--moss-color-text-secondary);
 }
 .cl-conv-tools__calls,
 .cl-conv-tools__diffs {
@@ -211,15 +211,15 @@
 /* Thinking and the turn's status line, in her italic. */
 .cl-conv-thinking__label,
 .cl-conv-working__text {
-  font-family: var(--clover-font-serif);
+  font-family: var(--moss-font-serif);
   font-style: italic;
 }
 
 /* The note row, and Try again on a failed turn, in the pane's own colours. */
 .cl-conv-note {
-  font-family: var(--clover-font-serif);
+  font-family: var(--moss-font-serif);
   font-style: italic;
-  color: var(--clover-color-text-secondary);
+  color: var(--moss-color-text-secondary);
 }
 
 /* ---- Narrow: a narrower pane ---- */
@@ -252,17 +252,17 @@
 .cl-composer__box {
   gap: 8px;
   padding: 14px 14px 10px 18px;
-  border: 1px solid var(--clover-composer-rim);
-  border-radius: var(--clover-composer-radius);
-  background: var(--clover-composer-background);
+  border: 1px solid var(--moss-composer-rim);
+  border-radius: var(--moss-composer-radius);
+  background: var(--moss-composer-background);
 }
 .cl-composer__box:focus-within {
-  border-color: var(--clover-color-hairline-raised);
+  border-color: var(--moss-color-hairline-raised);
 }
 .cl-composer__field {
   min-height: 30px;
   padding: 2px 0;
-  font-family: var(--clover-font-serif);
+  font-family: var(--moss-font-serif);
   font-size: 18px;
 }
 .cl-composer__under[data-inside] {
@@ -273,10 +273,10 @@
   padding: 0 11px;
   border-radius: 9px;
   font-size: 13px;
-  color: var(--clover-color-text-secondary);
+  color: var(--moss-color-text-secondary);
 }
 .cl-composer__pill-label {
-  color: var(--clover-color-text-secondary);
+  color: var(--moss-color-text-secondary);
 }
 .cl-composer__pill-detail::before {
   content: "· ";
@@ -285,13 +285,13 @@
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background: var(--clover-color-accent-fill);
-  color: var(--clover-color-accent-contrast);
-  box-shadow: 0 6px 16px -6px var(--clover-plugin-alpha-pane-glow);
+  background: var(--moss-color-accent-fill);
+  color: var(--moss-color-accent-contrast);
+  box-shadow: 0 6px 16px -6px var(--moss-plugin-alpha-pane-glow);
 }
 .cl-composer__send:disabled {
-  background: var(--clover-color-accent-fill);
-  color: var(--clover-color-accent-contrast);
+  background: var(--moss-color-accent-fill);
+  color: var(--moss-color-accent-contrast);
   box-shadow: none;
   cursor: default;
 }
@@ -302,11 +302,11 @@
 }
 /* ---- Her question card (an ordinary conversation cell, not a sealed one): her serif and the same card surface her approval cards wear ---- */
 .cl-conv-question {
-  background: var(--clover-card-background);
-  color: var(--clover-card-text);
-  border-color: var(--clover-card-rim);
-  border-radius: var(--clover-card-radius);
-  font-family: var(--clover-card-font-family);
+  background: var(--moss-card-background);
+  color: var(--moss-card-text);
+  border-color: var(--moss-card-rim);
+  border-radius: var(--moss-card-radius);
+  font-family: var(--moss-card-font-family);
 }
 .cl-conv-question:not([data-state="pending"]) {
   background: transparent;
@@ -314,12 +314,12 @@
 .cl-conv-question__head,
 .cl-conv-question__option-description,
 .cl-conv-question__other-label {
-  color: var(--clover-card-muted);
+  color: var(--moss-card-muted);
 }
 .cl-conv-question__legend,
 .cl-conv-question__option-label {
-  color: var(--clover-card-text);
-  font-family: var(--clover-card-font-family);
+  color: var(--moss-card-text);
+  font-family: var(--moss-card-font-family);
   font-size: 16px;
 }
 .cl-conv-question__legend {
@@ -327,27 +327,27 @@
 }
 .cl-conv-question__chip {
   background: transparent;
-  border: 1px solid var(--clover-card-rim);
-  color: var(--clover-card-muted);
+  border: 1px solid var(--moss-card-rim);
+  color: var(--moss-card-muted);
 }
 .cl-conv-question__option {
   background: transparent;
-  border-color: var(--clover-card-rim);
+  border-color: var(--moss-card-rim);
 }
 .cl-conv-question__option[data-selected] {
   background: transparent;
-  border-color: var(--clover-card-approve-background);
-  box-shadow: 0 0 0 1px var(--clover-card-approve-background);
+  border-color: var(--moss-card-approve-background);
+  box-shadow: 0 0 0 1px var(--moss-card-approve-background);
 }
 .cl-conv-question__input {
-  font-family: var(--clover-card-font-family);
-  color: var(--clover-card-text);
+  font-family: var(--moss-card-font-family);
+  color: var(--moss-card-text);
 }
 .cl-conv-question__send {
-  background: var(--clover-card-approve-background);
-  color: var(--clover-card-approve-text);
-  border-radius: var(--clover-card-button-radius, 999px);
-  font-family: var(--clover-card-font-family);
+  background: var(--moss-card-approve-background);
+  color: var(--moss-card-approve-text);
+  border-radius: var(--moss-card-button-radius, 999px);
+  font-family: var(--moss-card-font-family);
 }
 
 /* The controls row never breaks: one line each; the model name truncates, and at a narrow composer the computer name goes first. */

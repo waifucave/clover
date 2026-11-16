@@ -354,7 +354,7 @@ pub async fn serve(a: &Args) -> Result<()> {
 /// link out. Records when replies arrive, so the longest gap shows how long the link was gone,
 /// and whether replies came back at all. With `--rebind-trigger <file>`, the client calls
 /// `network_changed()` (quinn: rebind to a new socket; iroh: `network_change()`) as soon as that
-/// file appears, the way clover-core would on the OS's network-change event. With
+/// file appears, the way moss-core would on the OS's network-change event. With
 /// `--redial-trigger <file>`, it instead dials a second, fresh connection when that file appears
 /// and times its first echo (spec §8.3's "re-dial at once"); the old connection carries on, so
 /// the result shows both.

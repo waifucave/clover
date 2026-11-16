@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION, fillsLine, fillsOkLines, validateManifest } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION, fillsLine, fillsOkLines, validateManifest } from "@waifucave/moss-plugin-sdk";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -14,7 +14,7 @@ import { openPluginRegistry } from "../open";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
-const ENGINES = { clover: `^${PLUGIN_API_VERSION}` };
+const ENGINES = { moss: `^${PLUGIN_API_VERSION}` };
 
 const deck = (fills: unknown) => JSON.stringify({
   manifest: 1, id: "deck", name: "Deck Studio", version: "1.0.0", engines: ENGINES,
@@ -29,7 +29,7 @@ const fan = (points: string[]) => JSON.stringify({
 
 function write(dir: string, manifest: string, host = false): void {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "clover.json"), manifest);
+  writeFileSync(join(dir, "moss.json"), manifest);
   if (host) {
     mkdirSync(join(dir, "host"), { recursive: true });
     writeFileSync(join(dir, "host", "index.ts"), "export function start() {}\n");
@@ -38,13 +38,13 @@ function write(dir: string, manifest: string, host = false): void {
 
 describe("a point's fills line", () => {
   test("its fillers' cards say the declarer's words, by the declarer's name; a change of them asks the fillers again", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-fills-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-fills-")));
     temps.push(home);
     const deckDir = join(home, "plugins", "deck");
     const fanDir = join(home, "plugins", "fan");
     write(deckDir, deck({ ok: "it is given\nwhat you type‮" }), true);
     write(fanDir, fan(["deck.voices", "deck.plain"]));
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50, sandboxed: true });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50, sandboxed: true });
     const reg = opened.registry;
     const ok = async (id: string) => { await reg.approve(id, reg.get(id)!.treeHash!); };
     try {

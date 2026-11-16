@@ -1,5 +1,5 @@
 // A plugin's processes load only its own tree (#234's review, F2, the controller's ruling): the reviewer's probes,
-// each run once as a control without Clover's flags (the outside file runs) and once as Clover runs plugins (it
+// each run once as a control without MOSS's flags (the outside file runs) and once as MOSS runs plugins (it
 // doesn't). Real Bun processes in temp folders; nothing opens a window.
 import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
@@ -13,8 +13,8 @@ import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, checkPluginBun, pluginBun, pluginBu
 import { commandEnvOf, fenceFolders, pluginFenceAvailable } from "../plugin-fence";
 
 function world() {
-  const base = mkdtempSync(join(tmpdir(), "clover-b-plugin-run-"));
-  const files = ensurePluginRunFiles(join(base, "run"), { cloverHome: base });
+  const base = mkdtempSync(join(tmpdir(), "moss-b-plugin-run-"));
+  const files = ensurePluginRunFiles(join(base, "run"), { mossHome: base });
   const outside = join(base, "outside");
   mkdirSync(join(outside, "jsx"), { recursive: true });
   const mark = join(base, "mark");
@@ -72,7 +72,7 @@ describe("a plugin process loads only its own tree", () => {
       "host/index.ts": `import { Worker as W } from "node:worker_threads";\n${settle}await settle(new W("$OUTSIDE/evil.ts"));\nprocess.exit(0);\n`,
     }, "host/index.ts"],
     ["a Worker after the plugin points its folder elsewhere in process.env", {
-      "host/index.ts": `process.env.CLOVER_PLUGIN_ROOT = "/";\nprocess.env.CLOVER_PLUGIN_SHARED = "[\\"/\\"]";\n${settle}await settle(new Worker("$OUTSIDE/evil.ts", { env: { CLOVER_PLUGIN_ROOT: "/" } }));\nprocess.exit(0);\n`,
+      "host/index.ts": `process.env.MOSS_PLUGIN_ROOT = "/";\nprocess.env.MOSS_PLUGIN_SHARED = "[\\"/\\"]";\n${settle}await settle(new Worker("$OUTSIDE/evil.ts", { env: { MOSS_PLUGIN_ROOT: "/" } }));\nprocess.exit(0);\n`,
     }, "host/index.ts"],
     ["the original Worker reached through the wrapper", {
       "host/index.ts": `${settle}const C = Worker.prototype.constructor;\nawait settle(new C("$OUTSIDE/evil.ts"));\nprocess.exit(0);\n`,
@@ -108,7 +108,7 @@ describe("a plugin process loads only its own tree", () => {
     expect([guarded.stdout.trim(), guarded.ran]).toEqual(["none", false]);
   }, 30_000);
   for (const [name, tree, entry] of probes) {
-    test(`${name}: runs without Clover's flags, never with them`, () => {
+    test(`${name}: runs without MOSS's flags, never with them`, () => {
       const root = w.plugin(name.replace(/[^a-z]+/gi, "-"), tree);
       expect(w.run(root, entry, false).ran).toBe(true); // the probe is real
       const guarded = w.run(root, entry, true);
@@ -116,13 +116,13 @@ describe("a plugin process loads only its own tree", () => {
     }, 30_000);
   }
 
-  // A pasted config's "bun -e <code>" server starts in its data folder, `~/.clover/plugin-data/<id>`: Bun loads the code
+  // A pasted config's "bun -e <code>" server starts in its data folder, `~/.moss/plugin-data/<id>`: Bun loads the code
   // as `<cwd>/[eval]` through onLoad when a folder on the way has a dot in its name (Bun 1.4.4), and the guard refused
-  // it as outside the plugin's folder (the acceptance's `<user>/.clover` home, 2026-11-13: the server exited at every
+  // it as outside the plugin's folder (the acceptance's `<user>/.moss` home, 2026-11-13: the server exited at every
   // start). It runs; what it imports from outside is still refused.
   test("bun -e code runs in a working folder under a dot-folder; an outside import from it is still refused", () => {
     const root = w.plugin("evals", { "host/keep.txt": "" });
-    const cwd = join(w.base, "user", ".clover", "plugin-data", "evals");
+    const cwd = join(w.base, "user", ".moss", "plugin-data", "evals");
     mkdirSync(cwd, { recursive: true });
     const env = guardedPluginEnv({ ...process.env, NODE_ENV: undefined }, { pluginRoot: root, files: w.files, shared: [] });
     const ok = Bun.spawnSync([process.execPath, "-e", "console.log('eval ran')"], { cwd, env, stdout: "pipe", stderr: "pipe" });
@@ -176,7 +176,7 @@ describe("a plugin process loads only its own tree", () => {
     expect(w.run(root, "host/index.ts", true).ran).toBe(true);
   }, 30_000);
 
-  test("Clover's bunfig turns off auto-install: a dependency the plugin doesn't ship isn't fetched", () => {
+  test("MOSS's bunfig turns off auto-install: a dependency the plugin doesn't ship isn't fetched", () => {
     expect(PLUGIN_BUNFIG).toContain("[install]\nauto = \"disable\"");
     const root = w.plugin("no-auto-install", { "host/index.ts": "import pad from \"is-odd\";\nconsole.log(pad);\n" });
     const started = performance.now();
@@ -188,7 +188,7 @@ describe("a plugin process loads only its own tree", () => {
   test("a supervised host runs on the plugin Bun, never a bun the plugin ships (K1)", async () => {
     const ranOwn = join(w.base, "own-bun-ran");
     // Under the fence a host writes only its own folders (#345's review): its temp folder, which the test reads.
-    const hostRan = join(pluginFenceAvailable() ? fenceFolders(w.files.cloverHome, "ships@local", "host-ships@local").tmp : w.base, "host-ran");
+    const hostRan = join(pluginFenceAvailable() ? fenceFolders(w.files.mossHome, "ships@local", "host-ships@local").tmp : w.base, "host-ran");
     const root = w.plugin("ships-bun", {
       "bun": `#!/bin/sh\necho ran > ${JSON.stringify(ranOwn)}\n`,
       "host/index.ts": `require("node:fs").writeFileSync(${JSON.stringify(hostRan)}, process.execPath);\nsetTimeout(() => {}, 60_000);\n`,
@@ -209,28 +209,28 @@ describe("a plugin process loads only its own tree", () => {
     expect(realpathSync(join(w.files.bin, "bun"))).toBe(realpathSync(pluginBun()));
   }, 30_000);
 
-  describe("pluginBun: where plugin code runs, and only on a copy Clover made (K1, L1, L2)", () => {
+  describe("pluginBun: where plugin code runs, and only on a copy MOSS made (K1, L1, L2)", () => {
     const darwin = process.platform === "darwin";
     // A small signed binary to sign as the plugin Bun (and as a stand-in core); `true` runs anywhere.
     const tiny = Bun.which("true") ?? "/usr/bin/true";
     const sign = (path: string, identifier: string) => {
       if (darwin) expect(Bun.spawnSync(["/usr/bin/codesign", "--force", "--sign", "-", "--identifier", identifier, path]).exitCode).toBe(0);
     };
-    // Ad-hoc copies can't carry Clover's team: the test's requirement names the identifier alone.
+    // Ad-hoc copies can't carry MOSS's team: the test's requirement names the identifier alone.
     const requirement = `identifier "${PLUGIN_BUN_IDENTIFIER.dist}"`;
     const layout = () => {
-      const base = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-plugin-bun-")));
-      const daemon = join(base, "Clover.app", "Contents", "Resources", "daemon");
+      const base = realpathSync(mkdtempSync(join(tmpdir(), "moss-b-plugin-bun-")));
+      const daemon = join(base, "MOSS Code.app", "Contents", "Resources", "daemon");
       mkdirSync(daemon, { recursive: true });
-      const core = join(daemon, "clover-core");
+      const core = join(daemon, "moss-core");
       writeFileSync(core, readFileSync(tiny));
       chmodSync(core, 0o755);
-      sign(core, "com.waifucave.clover.core");
+      sign(core, "com.waifucave.moss.core");
       const home = join(base, "home");
       mkdirSync(join(home, "bin"), { recursive: true });
-      const shipped = { compiled: true, execPath: core, profile: "dist" as const, cloverHome: home, requirement };
-      const dev = { compiled: true, execPath: core, profile: "dev" as const, cloverHome: home, requirement };
-      return { base, daemon, core, home, shipped, dev, plugin: join(daemon, "clover-plugin-bun"), devPlugin: join(home, "bin", "clover-plugin-bun") };
+      const shipped = { compiled: true, execPath: core, profile: "dist" as const, mossHome: home, requirement };
+      const dev = { compiled: true, execPath: core, profile: "dev" as const, mossHome: home, requirement };
+      return { base, daemon, core, home, shipped, dev, plugin: join(daemon, "moss-plugin-bun"), devPlugin: join(home, "bin", "moss-plugin-bun") };
     };
     const good = (path: string) => {
       // Off macOS nothing signs it, so a trailing byte keeps it from being the stand-in core's very bytes.
@@ -253,7 +253,7 @@ describe("a plugin process loads only its own tree", () => {
         ["a hard link to the core", (l) => linkSync(l.core, l.plugin), /hard link/],
         ["a byte copy of the core", (l) => { writeFileSync(l.plugin, readFileSync(l.core)); chmodSync(l.plugin, 0o755); }, /copy of the core/],
         ["a folder in its place", (l) => mkdirSync(l.plugin), /isn't a plain file/],
-        ...(darwin ? [["signed under another identifier", (l: ReturnType<typeof layout>) => { writeFileSync(l.plugin, readFileSync(tiny)); chmodSync(l.plugin, 0o755); sign(l.plugin, "com.example.not-plugin-bun"); }, /isn't signed by Clover's team/] as [string, (l: ReturnType<typeof layout>) => void, RegExp]] : []),
+        ...(darwin ? [["signed under another identifier", (l: ReturnType<typeof layout>) => { writeFileSync(l.plugin, readFileSync(tiny)); chmodSync(l.plugin, 0o755); sign(l.plugin, "com.example.not-plugin-bun"); }, /isn't signed by MOSS's team/] as [string, (l: ReturnType<typeof layout>) => void, RegExp]] : []),
       ];
       for (const [name, plant, why] of rows) {
         const l = layout();
@@ -262,7 +262,7 @@ describe("a plugin process loads only its own tree", () => {
       }
     });
 
-    test("the dev copy in the Clover home is the one only with the digest dev:daemon recorded, and a swap is refused", () => {
+    test("the dev copy in the MOSS home is the one only with the digest dev:daemon recorded, and a swap is refused", () => {
       const l = layout();
       good(l.devPlugin);
       expect(() => pluginBunFor(l.dev)).toThrow(/no digest recorded/);
@@ -301,7 +301,7 @@ describe("a plugin process loads only its own tree", () => {
     });
 
     test("from source with a test Keychain service: the Bun it runs on", () => {
-      expect(pluginBunFor({ compiled: false, execPath: "/usr/local/bin/bun", profile: "dev", cloverHome: "/nowhere", keychainService: "com.waifucave.clover.core.test-isolated" })).toBe("/usr/local/bin/bun");
+      expect(pluginBunFor({ compiled: false, execPath: "/usr/local/bin/bun", profile: "dev", mossHome: "/nowhere", keychainService: "com.waifucave.moss.core.test-isolated" })).toBe("/usr/local/bin/bun");
       expect(pluginBun()).toBe(process.execPath); // this suite's preload sets the test service
     });
 
@@ -333,11 +333,11 @@ describe("a plugin process loads only its own tree", () => {
     // The load guard's own test: the fence (2f, plugin-fence.test.ts) wraps the command, so it's off here.
     const guard = { files: w.files, shared: [], fence: false as const };
     // A manifest's env that sets what loads code is refused outright (#322's review, B1).
-    expect(() => pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { TOKEN: "t", NODE_OPTIONS: "--require x" } }, root, guard)).toThrow("sets NODE_OPTIONS in its environment, which only Clover sets");
+    expect(() => pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { TOKEN: "t", NODE_OPTIONS: "--require x" } }, root, guard)).toThrow("sets NODE_OPTIONS in its environment, which only MOSS sets");
     const cfg = pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { TOKEN: "t" } }, root, guard);
     if (cfg.type !== "stdio") throw new Error("stdio expected");
     expect(cfg.command).toBe(pluginBun());
-    expect([cfg.env?.BUN_OPTIONS, cfg.env?.CLOVER_PLUGIN_ROOT, cfg.env?.TOKEN, cfg.env?.NODE_OPTIONS, cfg.env?.NODE_PATH]).toEqual([pluginBunFlags(w.files).join(" "), realpathSync(root), "t", "", ""]);
+    expect([cfg.env?.BUN_OPTIONS, cfg.env?.MOSS_PLUGIN_ROOT, cfg.env?.TOKEN, cfg.env?.NODE_OPTIONS, cfg.env?.NODE_PATH]).toEqual([pluginBunFlags(w.files).join(" "), realpathSync(root), "t", "", ""]);
     // The worst merge: the whole parent environment under the config's, the parent's BUN_OPTIONS and NODE_OPTIONS in it.
     const parent = { ...process.env, NODE_ENV: undefined, BUN_OPTIONS: "--preload=/elsewhere.ts", NODE_OPTIONS: "--require /elsewhere.js" };
     const r = Bun.spawnSync([cfg.command, ...(cfg.args ?? [])], { cwd: root, env: { ...parent, ...cfg.env }, stdout: "pipe", stderr: "pipe" });
@@ -354,8 +354,8 @@ describe("a plugin process loads only its own tree", () => {
   // where it would land, so no plugin process starts beside one: the core refuses, naming the folder, and the guard
   // refuses too for a process started some other way.
   test("the reviewer's plugin C: no plugin process starts with a node_modules above its folder", () => {
-    const base = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-plugin-c-")));
-    const files = ensurePluginRunFiles(join(base, "run"), { cloverHome: base });
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "moss-b-plugin-c-")));
+    const files = ensurePluginRunFiles(join(base, "run"), { mossHome: base });
     const mark = join(base, "mark");
     mkdirSync(join(base, "node_modules", "ghost"), { recursive: true });
     writeFileSync(join(base, "node_modules", "ghost", "index"), `require("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\n`);
@@ -365,10 +365,10 @@ describe("a plugin process loads only its own tree", () => {
     writeFileSync(join(root, "host", "index.ts"), "const name = [\"gh\", \"ost\"].join(\"\");\nawait import(name);\n");
     expect(() => guardedPluginEnv({ PATH: "/bin" }, { pluginRoot: root, files, shared: [] })).toThrow(new RegExp(`node_modules folder at ${join(base, "node_modules").replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")} is above`));
     // The guard on its own: the same environment, built without the core's check.
-    const env = { ...process.env, NODE_ENV: undefined, BUN_OPTIONS: pluginBunFlags(files).join(" "), CLOVER_PLUGIN_ROOT: root, CLOVER_PLUGIN_SHARED: "[]" };
+    const env = { ...process.env, NODE_ENV: undefined, BUN_OPTIONS: pluginBunFlags(files).join(" "), MOSS_PLUGIN_ROOT: root, MOSS_PLUGIN_SHARED: "[]" };
     const r = Bun.spawnSync([process.execPath, "host/index.ts"], { cwd: root, env, stdout: "pipe", stderr: "pipe" });
     expect([r.exitCode === 0, r.stderr.toString().includes("is above the plugin's folder"), existsSync(mark)]).toEqual([false, true, false]);
-    // A node_modules holding Clover's shared packages is the exception.
+    // A node_modules holding MOSS's shared packages is the exception.
     expect(() => guardedPluginEnv({ PATH: "/bin" }, { pluginRoot: root, files, shared: [join(base, "node_modules", "zod")] })).not.toThrow();
     // Gone, the plugin starts.
     rmSync(join(base, "node_modules"), { recursive: true });
@@ -399,7 +399,7 @@ describe("a plugin process loads only its own tree", () => {
     expect([r.status, existsSync(join(w.base, "mark"))]).toEqual(["error", false]);
   }, 30_000);
 
-  test("a supervised plugin process gets Clover's flags and its own root", () => {
+  test("a supervised plugin process gets MOSS's flags and its own root", () => {
     const seen: Record<string, string>[] = [];
     const sup = new PluginSupervisor({
       runDir: join(w.base, "sup-run"), socketPath: "/s", mintToken: () => "t",
@@ -409,7 +409,7 @@ describe("a plugin process loads only its own tree", () => {
     });
     const root = w.plugin("sup", { "host/index.ts": "" });
     sup.startAll([{ id: "sup@local", dir: root, entry: { command: "bun", args: ["host/index.ts"] } }]);
-    expect([seen[0]?.BUN_OPTIONS, seen[0]?.CLOVER_PLUGIN_ROOT, seen[0]?.CLOVER_PLUGIN_TOKEN]).toEqual([pluginBunFlags(w.files).join(" "), realpathSync(root), "t"]);
+    expect([seen[0]?.BUN_OPTIONS, seen[0]?.MOSS_PLUGIN_ROOT, seen[0]?.MOSS_PLUGIN_TOKEN]).toEqual([pluginBunFlags(w.files).join(" "), realpathSync(root), "t"]);
     sup.stopAll();
   });
 
@@ -429,7 +429,7 @@ describe("a plugin process loads only its own tree", () => {
     sup.stopAll();
   });
 
-  test("the env drops what changes loading, and the run files are Clover's own", () => {
+  test("the env drops what changes loading, and the run files are MOSS's own", () => {
     const env = guardedPluginEnv({ PATH: "/bin", NODE_OPTIONS: "--require x", BUN_OPTIONS: "--preload y", NODE_PATH: "/z", BUN_CONFIG_REGISTRY: "r" }, { pluginRoot: w.base, files: w.files, shared: [] });
     expect([env.NODE_OPTIONS, env.NODE_PATH, env.BUN_CONFIG_REGISTRY, env.PATH]).toEqual([undefined, undefined, undefined, "/bin"]);
     expect(env.BUN_OPTIONS).toBe(pluginBunFlags(w.files).join(" "));
@@ -437,51 +437,51 @@ describe("a plugin process loads only its own tree", () => {
     expect([readFileSync(w.files.bunfig, "utf8"), readFileSync(w.files.guard, "utf8")]).toEqual([PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE]);
     // A run folder with a space is refused (BUN_OPTIONS takes no quotes), never moved to the shared temp folder, where
     // another plugin's process could rewrite the guard (#345's review).
-    expect(() => ensurePluginRunFiles(join(w.base, "run dir"), { cloverHome: w.base })).toThrow("has a space in its path");
+    expect(() => ensurePluginRunFiles(join(w.base, "run dir"), { mossHome: w.base })).toThrow("has a space in its path");
   });
 });
 
 // #322's review, B1: host mode was an environment variable, which a plugin's MCP server could set in its manifest's env.
-// Now nothing a plugin's env says changes what its process is: Clover's names are refused in a manifest's env and
+// Now nothing a plugin's env says changes what its process is: MOSS's names are refused in a manifest's env and
 // dropped from every base, and the host's guard is a file of its own that only the daemon's launch names.
 describe("a plugin's environment never turns off its guard", () => {
   const w = world();
-  const CLOVER_NAMES = ["CLOVER_PLUGIN_HOST", "CLOVER_PLUGIN_ROOT", "CLOVER_PLUGIN_SHARED", "CLOVER_PLUGIN_WORKER"] as const;
+  const MOSS_NAMES = ["MOSS_PLUGIN_HOST", "MOSS_PLUGIN_ROOT", "MOSS_PLUGIN_SHARED", "MOSS_PLUGIN_WORKER"] as const;
   const attack = (outside: string): Record<string, string> => ({
-    CLOVER_PLUGIN_HOST: "1", CLOVER_PLUGIN_ROOT: "/", CLOVER_PLUGIN_SHARED: JSON.stringify(["/", outside]), CLOVER_PLUGIN_WORKER: join(outside, "evil.ts"),
+    MOSS_PLUGIN_HOST: "1", MOSS_PLUGIN_ROOT: "/", MOSS_PLUGIN_SHARED: JSON.stringify(["/", outside]), MOSS_PLUGIN_WORKER: join(outside, "evil.ts"),
   });
 
-  test("a manifest's MCP server env naming each of Clover's variables, or Bun's, Node's or the loader's, is refused by name", () => {
+  test("a manifest's MCP server env naming each of MOSS's variables, or Bun's, Node's or the loader's, is refused by name", () => {
     const root = w.plugin("mcp-env", { "server.ts": "console.log(\"server ran\");\n" });
     const guard = { files: w.files, shared: [] };
-    for (const name of [...CLOVER_NAMES, "CLOVER_ANYTHING", "BUN_INSTALL", "NODE_OPTIONS", "NODE_PATH", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES"]) {
-      expect(() => guardedMcpServer({ command: "bun", args: ["server.ts"], env: { [name]: "1" } }, root, guard)).toThrow(`sets ${name} in its environment, which only Clover sets`);
+    for (const name of [...MOSS_NAMES, "MOSS_ANYTHING", "BUN_INSTALL", "NODE_OPTIONS", "NODE_PATH", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES"]) {
+      expect(() => guardedMcpServer({ command: "bun", args: ["server.ts"], env: { [name]: "1" } }, root, guard)).toThrow(`sets ${name} in its environment, which only MOSS sets`);
       expect(() => guardedMcpServer({ command: "sh", args: ["-c", "bun server.ts"], env: { OK: "1", [name]: "1" } }, root, guard)).toThrow(name);
     }
     // Without case too: Windows' names are case-insensitive, and a manifest runs everywhere.
-    expect(() => guardedMcpServer({ command: "bun", args: ["server.ts"], env: { clover_plugin_host: "1" } }, root, guard)).toThrow("clover_plugin_host");
-    expect(envWithoutDropped({ Path: "a", PATH: "b", node_options: "x", Clover_Plugin_Host: "1", Home: "h" }, "win32")).toEqual({ PATH: "b", HOME: "h" });
+    expect(() => guardedMcpServer({ command: "bun", args: ["server.ts"], env: { moss_plugin_host: "1" } }, root, guard)).toThrow("moss_plugin_host");
+    expect(envWithoutDropped({ Path: "a", PATH: "b", node_options: "x", Moss_Plugin_Host: "1", Home: "h" }, "win32")).toEqual({ PATH: "b", HOME: "h" });
     expect(envWithoutDropped({ Path: "a", PATH: "b", node_options: "x" }, "darwin")).toEqual({ Path: "a", PATH: "b", node_options: "x" });
-    expect([droppedEnv("win32").test("node_options"), droppedEnv("win32").test("Clover_Plugin_Root"), droppedEnv("darwin").test("node_options"), droppedEnv("darwin").test("NODE_OPTIONS")]).toEqual([true, true, false, true]);
+    expect([droppedEnv("win32").test("node_options"), droppedEnv("win32").test("Moss_Plugin_Root"), droppedEnv("darwin").test("node_options"), droppedEnv("darwin").test("NODE_OPTIONS")]).toEqual([true, true, false, true]);
     // What loads nothing stays the plugin's.
     const ok = guardedMcpServer({ command: "bun", args: ["server.ts"], env: { NODE_ENV: "production", NODE_NO_WARNINGS: "1", MY_TOKEN: "t" } }, root, guard);
     const okEnv = commandEnvOf(ok.env);
     expect([okEnv.NODE_ENV, okEnv.NODE_NO_WARNINGS, okEnv.MY_TOKEN]).toEqual(["production", "1", "t"]);
   });
 
-  test("the reviewer's case: an MCP server with CLOVER_PLUGIN_HOST=1 importing a file outside its folder is refused, and still guarded if its env got through", () => {
+  test("the reviewer's case: an MCP server with MOSS_PLUGIN_HOST=1 importing a file outside its folder is refused, and still guarded if its env got through", () => {
     const outside = join(w.base, "outside");
     const root = w.plugin("mcp-host", { "server.ts": "import \"$OUTSIDE/evil.ts\";\nconsole.log(\"server ran\");\n" });
     const guard = { files: w.files, shared: [] };
-    expect(() => pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { CLOVER_PLUGIN_HOST: "1" } }, root, guard)).toThrow("CLOVER_PLUGIN_HOST");
+    expect(() => pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { MOSS_PLUGIN_HOST: "1" } }, root, guard)).toThrow("MOSS_PLUGIN_HOST");
     // Through every other door (a hook's or a supervised host's base, the daemon's own environment): dropped, then set by
-    // Clover alone.
+    // MOSS alone.
     const env = guardedPluginEnv({ ...process.env, NODE_ENV: undefined, ...attack(outside) }, { pluginRoot: root, files: w.files, shared: [] });
-    expect([env.CLOVER_PLUGIN_HOST, env.CLOVER_PLUGIN_WORKER, env.CLOVER_PLUGIN_ROOT, env.CLOVER_PLUGIN_SHARED]).toEqual([undefined, undefined, realpathSync(root), "[]"]);
+    expect([env.MOSS_PLUGIN_HOST, env.MOSS_PLUGIN_WORKER, env.MOSS_PLUGIN_ROOT, env.MOSS_PLUGIN_SHARED]).toEqual([undefined, undefined, realpathSync(root), "[]"]);
     expect(w.run(root, "server.ts", true)).toMatchObject({ ran: false });
-    // And were CLOVER_PLUGIN_HOST to reach a plugin process anyway, it's no host: the guard holds it to its folder.
+    // And were MOSS_PLUGIN_HOST to reach a plugin process anyway, it's no host: the guard holds it to its folder.
     rmSync(join(w.base, "mark"), { force: true });
-    const forced = Bun.spawnSync([process.execPath, "server.ts"], { cwd: root, env: { ...env, CLOVER_PLUGIN_HOST: "1" }, stdout: "pipe", stderr: "pipe" });
+    const forced = Bun.spawnSync([process.execPath, "server.ts"], { cwd: root, env: { ...env, MOSS_PLUGIN_HOST: "1" }, stdout: "pipe", stderr: "pipe" });
     expect([existsSync(join(w.base, "mark")), forced.stdout.toString().includes("server ran"), forced.stderr.toString()]).toEqual([false, false, expect.stringContaining("outside the plugin's own folder")]);
   }, 30_000);
 

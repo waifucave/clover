@@ -1,7 +1,7 @@
 // The streamed view for other devices in a real Electron (spec §12.1 "From another device", lane L-M2): a bot's
 // offscreen tab encoded with WebCodecs in the browser's own hidden page, decoded by a viewer with `VideoDecoder`; the
 // codec each OS picks, keyframes and bitrate on request, a still page, stop and close, and no window on screen. CI
-// ONLY, like the browser test: it needs both CI=true and CLOVER_UI_TESTS=1, which only the app job in
+// ONLY, like the browser test: it needs both CI=true and MOSS_UI_TESTS=1, which only the app job in
 // .github/workflows/ci.yml sets (under xvfb on Linux). `test/browser/stream-fixture-main.ts` does the driving; this
 // file builds it, runs it and reads its answers.
 import { describe, expect, test } from "bun:test";
@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { BROWSER_ASSETS } from "../src/main/browser/assets";
 
 const root = join(import.meta.dir, "..");
-const enabled = process.env.CI === "true" && process.env.CLOVER_UI_TESTS === "1";
+const enabled = process.env.CI === "true" && process.env.MOSS_UI_TESTS === "1";
 
 interface Step { name: string; ok: boolean; detail: unknown; ms: number }
 interface Result { platform: string; electron: string; steps: Step[]; summary: Record<string, unknown>; fatal?: string }
@@ -51,7 +51,7 @@ async function bundle(entry: string, dir: string, name: string, format: "esm" | 
 
 describe.if(enabled)("the streamed view in Electron (CI only)", () => {
   test("every step of the stream fixture passes", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-browser-stream-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-browser-stream-test-"));
     const main = await bundle(join(import.meta.dir, "browser", "stream-fixture-main.ts"), dir, "stream-fixture-main.mjs", "esm");
     const preload = await bundle(join(root, BROWSER_ASSETS.preload.entry), dir, "viewport-preload.cjs", "cjs");
     const streamPreload = await bundle(join(root, BROWSER_ASSETS.streamPreload.entry), dir, "browser-stream-preload.cjs", "cjs");
@@ -65,16 +65,16 @@ describe.if(enabled)("the streamed view in Electron (CI only)", () => {
     const electron = createRequire(join(root, "package.json"))("electron") as string;
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      CLOVER_BROWSER_TEST_OUT: out,
-      CLOVER_BROWSER_TEST_PRELOAD: preload,
-      CLOVER_BROWSER_TEST_HTML: html,
-      CLOVER_STREAM_TEST_PRELOAD: streamPreload,
-      CLOVER_STREAM_TEST_HTML: streamHtml,
-      CLOVER_STREAM_TEST_VIEWER: viewer,
+      MOSS_BROWSER_TEST_OUT: out,
+      MOSS_BROWSER_TEST_PRELOAD: preload,
+      MOSS_BROWSER_TEST_HTML: html,
+      MOSS_STREAM_TEST_PRELOAD: streamPreload,
+      MOSS_STREAM_TEST_HTML: streamHtml,
+      MOSS_STREAM_TEST_VIEWER: viewer,
       ELECTRON_ENABLE_LOGGING: "1",
     };
     delete env.ELECTRON_RUN_AS_NODE;
-    const r = spawnSync(electron, [`--user-data-dir=${join(dir, "user-data")}`, "--no-proxy-server", ...(process.env.CLOVER_BROWSER_TEST_ARGS ?? "").split(/\s+/).filter((a) => a !== ""), main], { env, encoding: "utf8", timeout: 300_000 });
+    const r = spawnSync(electron, [`--user-data-dir=${join(dir, "user-data")}`, "--no-proxy-server", ...(process.env.MOSS_BROWSER_TEST_ARGS ?? "").split(/\s+/).filter((a) => a !== ""), main], { env, encoding: "utf8", timeout: 300_000 });
     const output = `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`;
     expect(existsSync(out), output.slice(-4000)).toBe(true);
     const result = JSON.parse(readFileSync(out, "utf8")) as Result;

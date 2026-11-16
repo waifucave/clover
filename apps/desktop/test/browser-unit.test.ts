@@ -13,7 +13,7 @@ describe("the contract mirrors", () => {
     expect([...appContract.CDP_ALLOWED_DOMAINS]).toEqual([...coreContract.CDP_ALLOWED_DOMAINS]);
     expect([...appContract.CDP_DENIED_DOMAINS]).toEqual([...coreContract.CDP_DENIED_DOMAINS]);
     expect([...appContract.BROWSER_REFUSED_SCHEMES]).toEqual([...coreContract.BROWSER_REFUSED_SCHEMES]);
-    for (const url of ["https://a.b/", "file:///x", "about:blank", "about:config", "clover-ui://x", "chrome://gpu", "data:text/plain,x"]) {
+    for (const url of ["https://a.b/", "file:///x", "about:blank", "about:config", "moss-ui://x", "chrome://gpu", "data:text/plain,x"]) {
       expect(appContract.isBrowserUrlAllowed(url)).toBe(coreContract.isBrowserUrlAllowed(url));
     }
     for (const m of ["Page.reload", "Target.getTargets", "Runtime.evaluate", "Tracing.start", "Browser.close"]) {

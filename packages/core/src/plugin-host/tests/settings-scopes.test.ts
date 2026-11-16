@@ -6,8 +6,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -20,12 +20,12 @@ afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true
 
 describe("a plugin's settings by scope", () => {
   test("account, device and bot values are set by the user, read by its host half as set, and kept apart", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b-scopes-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b-scopes-"));
     temps.push(home);
     const folder = join(home, "plugins", "moods");
     mkdirSync(join(folder, "host"), { recursive: true });
-    writeFileSync(join(folder, "clover.json"), JSON.stringify({
-      manifest: 1, id: "moods", name: "Moods", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    writeFileSync(join(folder, "moss.json"), JSON.stringify({
+      manifest: 1, id: "moods", name: "Moods", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
       host: { entry: "host/index.js" },
       settings: {
         region: { type: "string", title: "Region", default: "eu" },
@@ -44,7 +44,7 @@ describe("a plugin's settings by scope", () => {
     ].join("\n"));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets });
     try {
       const { card } = await opened.registry.installed("moods", "app");

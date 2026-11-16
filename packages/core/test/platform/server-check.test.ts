@@ -8,7 +8,7 @@ import { checkDaemonServer } from "../../src/platform/server-check";
 // beside the socket's and its folder's owner and modes. A socket nobody listens on fails.
 describe.skipIf(process.platform === "win32")("the server check before a hello (macOS, Linux)", () => {
   test("ok only for this user's daemon binary, outside every floor, on a socket in a folder closed to others", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-check-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-check-"));
     const path = join(dir, "core.sock");
     const image = process.execPath; // the server below is this process
     expect(await checkDaemonServer(path, { image })).toEqual({ ok: false, reason: "no daemon answers" });

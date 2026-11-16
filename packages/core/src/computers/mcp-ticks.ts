@@ -32,9 +32,9 @@ export function mcpTicksMigratedPath(ticksPath: string): string {
   return join(dirname(ticksPath), "mcp-servers.migrated");
 }
 
-/** `<Clover home>/levels/mcp-servers.json`. */
-export function mcpTicksPath(cloverHome: string): string {
-  return join(cloverHome, "levels", "mcp-servers.json");
+/** `<MOSS home>/levels/mcp-servers.json`. */
+export function mcpTicksPath(mossHome: string): string {
+  return join(mossHome, "levels", "mcp-servers.json");
 }
 
 /** The most entries each list keeps. */

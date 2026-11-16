@@ -7,22 +7,22 @@
 // Fail closed: if the supervisor can't start (no library, no filter for this arch, no worker, the 10 s install
 // timeout, a refused install), the sandbox never runs the command. The shim exits 127 with a `(closed)` marker;
 // the fenced process maps that to a refusal. A command that prints the marker and exits 127 only refuses itself.
-// Usage: `shim <bwrap> <bwrap args...>`, with the supervised folders as JSON in `CLOVER_SUPERVISED_FILES` and
+// Usage: `shim <bwrap> <bwrap args...>`, with the supervised folders as JSON in `MOSS_SUPERVISED_FILES` and
 // bwrap's seccomp filter on fd 3.
 import { openSupervisorLib, supervise, supervisorSelfRefusal } from "./linux-supervisor";
 import { SupervisorState, type SupervisorRequest } from "./linux-supervisor-worker";
 
 /** The shim's closed marker (stderr) and exit code: the fenced process refuses the run on both together. */
-export const SUPERVISOR_CLOSED_MARKER = "clover: no user-notification supervisor here (closed)";
+export const SUPERVISOR_CLOSED_MARKER = "moss: no user-notification supervisor here (closed)";
 const CLOSED_CODE = 127;
 
 async function main(): Promise<number> {
   const [, , bwrap, ...args] = process.argv;
   if (bwrap === undefined) {
-    console.error("clover: the sandbox shim needs bwrap's path and arguments");
+    console.error("moss: the sandbox shim needs bwrap's path and arguments");
     return 127;
   }
-  const unsafe: string[] = JSON.parse(process.env.CLOVER_SUPERVISED_FILES ?? "[]") as string[];
+  const unsafe: string[] = JSON.parse(process.env.MOSS_SUPERVISED_FILES ?? "[]") as string[];
   const closed = (why: string): number => {
     console.error(`${SUPERVISOR_CLOSED_MARKER}: ${why}`);
     return CLOSED_CODE;

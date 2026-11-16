@@ -7,9 +7,9 @@ import {
   runAgentsCommand, selectedAgent, wheelToAgentsAction, AgentsStore,
   type AgentsState,
 } from "../src/agents-cli";
-import type { CloverClient } from "../src/client";
+import type { MossClient } from "../src/client";
 
-// session-activity-hygiene T9: `clover agents` — the human's window onto the lifecycle T1-T8 built.
+// session-activity-hygiene T9: `moss agents` — the human's window onto the lifecycle T1-T8 built.
 //
 // Everything asserted here is the roster's LOGIC, kept out of the Ink component and out of main.ts's
 // argv switch for the same reason cli-verb-gates.test.ts extracted the session-verb routes: main.ts's
@@ -154,9 +154,9 @@ describe("applyActivityEvent — the live half (no polling delay)", () => {
 describe("cwd — declared on SessionSummary by the T9 amendment, so the roster can finally show it", () => {
   test("applySessionList carries the row's cwd", () => {
     const s = applySessionList(emptyAgentsState(), [
-      row("s_bg", { activity: "background", title: "Fix the reaper", cwd: "/Users/x/code/clover" }),
+      row("s_bg", { activity: "background", title: "Fix the reaper", cwd: "/Users/x/code/moss" }),
     ], T0);
-    expect(s.rows[0]!.cwd).toBe("/Users/x/code/clover");
+    expect(s.rows[0]!.cwd).toBe("/Users/x/code/moss");
   });
 
   test("a session with no recorded cwd stays ABSENT — never a fabricated path", () => {
@@ -166,14 +166,14 @@ describe("cwd — declared on SessionSummary by the T9 amendment, so the roster 
 
   test("a live transient does not erase a cwd the poll already supplied", () => {
     let s = applySessionList(emptyAgentsState(), [
-      row("s_1", { activity: "active", title: "Work", cwd: "/Users/x/code/clover" }),
+      row("s_1", { activity: "active", title: "Work", cwd: "/Users/x/code/moss" }),
     ], T0);
     s = applyActivityEvent(s, { sessionId: "s_1", activity: "background", ts: T0 + 5_000 }, T0 + 5_000);
-    expect(s.rows[0]!.cwd).toBe("/Users/x/code/clover");
+    expect(s.rows[0]!.cwd).toBe("/Users/x/code/moss");
   });
 
   test("formatCwdColumn collapses the home directory to ~", () => {
-    expect(formatCwdColumn("/Users/x/code/clover", "/Users/x")).toBe("~/code/clover");
+    expect(formatCwdColumn("/Users/x/code/moss", "/Users/x")).toBe("~/code/moss");
     expect(formatCwdColumn("/Users/x", "/Users/x")).toBe("~");
     // A path merely PREFIXED by the home string is not under it — /Users/xavier is not ~/avier.
     expect(formatCwdColumn("/Users/xavier/code", "/Users/x")).toBe("/Users/xavier/code");
@@ -193,9 +193,9 @@ describe("cwd — declared on SessionSummary by the T9 amendment, so the roster 
 
   test("the snapshot line carries the cwd", () => {
     const s = applySessionList(emptyAgentsState(), [
-      row("s_bg", { activity: "background", title: "Fix the reaper", cwd: "/Users/x/code/clover" }),
+      row("s_bg", { activity: "background", title: "Fix the reaper", cwd: "/Users/x/code/moss" }),
     ], T0);
-    expect(formatAgentsSnapshot(s, T0, "/Users/x")[0]).toContain("~/code/clover");
+    expect(formatAgentsSnapshot(s, T0, "/Users/x")[0]).toContain("~/code/moss");
   });
 });
 
@@ -212,8 +212,8 @@ describe("formatForColumn — honest about what it knows", () => {
 });
 
 describe("agentResumeCommand — the exact string, verified against main.ts's own route", () => {
-  test("is `clover resume <id>` — the subcommand, NOT a --resume flag", () => {
-    expect(agentResumeCommand("s_1a2b3c4d5e6f")).toBe("clover resume s_1a2b3c4d5e6f");
+  test("is `moss resume <id>` — the subcommand, NOT a --resume flag", () => {
+    expect(agentResumeCommand("s_1a2b3c4d5e6f")).toBe("moss resume s_1a2b3c4d5e6f");
   });
 });
 
@@ -246,13 +246,13 @@ describe("formatAgentsSnapshot — the empty state is never a blank screen", () 
 // -------------------------------------------------------------------------------------------
 
 type Impl = Record<string, (...args: any[]) => unknown>;
-function makeClient(impl: Impl): { client: CloverClient; calls: { method: string; args: unknown[] }[] } {
+function makeClient(impl: Impl): { client: MossClient; calls: { method: string; args: unknown[] }[] } {
   const calls: { method: string; args: unknown[] }[] = [];
   const client: Record<string, unknown> = {};
   for (const [name, fn] of Object.entries(impl)) {
     client[name] = (...args: unknown[]) => { calls.push({ method: name, args }); return Promise.resolve(fn(...args)); };
   }
-  return { client: client as unknown as CloverClient, calls };
+  return { client: client as unknown as MossClient, calls };
 }
 
 const bgRow = { sessionId: "s_1", activity: "background" as const, sinceMs: T0, observedOnly: false };
@@ -315,7 +315,7 @@ describe("runAgentVerb", () => {
     const { client, calls } = makeClient({ interrupt: () => ({ wasRunning: false }), sessionSetActivity: () => ({ ok: true }) });
     const r = await runAgentVerb(client, "open", bgRow);
     expect(calls).toEqual([]);
-    expect(r.message).toBe("clover resume s_1");
+    expect(r.message).toBe("moss resume s_1");
   });
 
   test("a refused/failed RPC surfaces the daemon's own words — never a silent no-op", async () => {
@@ -381,7 +381,7 @@ describe("keyToAgentsAction — the keymap, pure so the Ink hook stays a one-lin
 });
 
 // -------------------------------------------------------------------------------------------
-// Bugfix pass B3 — the fullscreen viewport's pure layer. `clover agents` is now an alt-screen
+// Bugfix pass B3 — the fullscreen viewport's pure layer. `moss agents` is now an alt-screen
 // surface like the main TUI, so the roster must fit a frame: `planAgentsViewport` decides how many
 // list rows the frame can hold (and whether overflow markers are needed), `ensureRosterStart`
 // keeps the selected row inside that window with minimal movement (the ensure-visible idiom, not
@@ -621,7 +621,7 @@ describe("runAgentsCommand", () => {
     await Bun.sleep(5);
     h.quit();
     await done;
-    expect(h.logged).toEqual(["clover resume s_bg"]);
+    expect(h.logged).toEqual(["moss resume s_bg"]);
     expect(h.calls.at(-1)!.method).toBe("close");
   });
 

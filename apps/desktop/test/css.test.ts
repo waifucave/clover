@@ -24,8 +24,8 @@ describe("at-rules", () => {
   });
 
   test("@media, @supports, @container, @layer, @starting-style stay, their style rules in the scope", () => {
-    const r = clean(`@media (prefers-color-scheme: dark) { .a { color: white } } @supports (display: grid) { .b { display: grid } }`, { scope: { root: '[data-clover-part="m1"]', limit: "[data-clover-styled]:not(:scope)" } });
-    expect(r.css).toBe(`@media (prefers-color-scheme: dark){@scope ([data-clover-part="m1"]) to ([data-clover-styled]:not(:scope)){.a{color:white}}}\n@supports (display: grid){@scope ([data-clover-part="m1"]) to ([data-clover-styled]:not(:scope)){.b{display:grid}}}`);
+    const r = clean(`@media (prefers-color-scheme: dark) { .a { color: white } } @supports (display: grid) { .b { display: grid } }`, { scope: { root: '[data-moss-part="m1"]', limit: "[data-moss-styled]:not(:scope)" } });
+    expect(r.css).toBe(`@media (prefers-color-scheme: dark){@scope ([data-moss-part="m1"]) to ([data-moss-styled]:not(:scope)){.a{color:white}}}\n@supports (display: grid){@scope ([data-moss-part="m1"]) to ([data-moss-styled]:not(:scope)){.b{display:grid}}}`);
   });
 
   test("a plugin's own @scope stays inside the core's", () => {
@@ -61,7 +61,7 @@ describe("names it defines", () => {
   });
 
   test("two plugins' names never meet: a child's id is written with _, which no id has", () => {
-    expect(namePrefix("clover/base-theme")).toBe("clv-clover_base-theme__");
+    expect(namePrefix("moss/base-theme")).toBe("clv-moss_base-theme__");
     expect(prefixedClass("alpha", "card")).toBe("clv-alpha__card");
   });
 

@@ -1,11 +1,11 @@
-// Clover's desktop app, the main process (spec §3.1, §5.5, §5.8; plan §4 E, M1): the windows, the menu-bar or tray
+// MOSS's desktop app, the main process (spec §3.1, §5.5, §5.8; plan §4 E, M1): the windows, the menu-bar or tray
 // icon, the app's side of the always-on pair with the daemon, the protocol client, and the plugin runtime that loads
 // the shell's UI halves into layers.
 //
 // The app runs in the menu bar (the tray) with no window until the user opens one. A start by the user opens the main
 // window; a start by the daemon or at login doesn't. Closing a window only closes it; Quit stops both halves.
 //
-// A headless run (`--clover-headless`, the smoke run, the tests) never shows a window, a Dock icon or a tray icon and
+// A headless run (`--moss-headless`, the smoke run, the tests) never shows a window, a Dock icon or a tray icon and
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
 import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "node:fs";
@@ -17,11 +17,11 @@ import { themeSourceOf } from "./theme-source";
 import { captureOne, captureWindows, surfaceName as captureName, type CaptureDeps, type WindowLike } from "./capture";
 import { openWindow, OPEN_TARGETS } from "./open";
 import { RENDER_CONSOLE_MAX, RenderQueue, renderPlace, type RenderConsoleLine, type RenderHandle } from "./render";
-import type { ShellState } from "@waifucave/clover-plugin-sdk";
+import type { ShellState } from "@waifucave/moss-plugin-sdk";
 import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, ipcMain, Menu, webContents, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
-import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
+import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, MOSS_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/moss-protocol";
+import { systemAccentFromOs } from "@waifucave/moss-plugin-sdk";
 import { testBrowserNames } from "./browser/test-names";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
@@ -46,7 +46,7 @@ import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { BrowserAreaFrames, isBrowserEvent, ViewBindings } from "./ui/browser-calls";
 import { FRESH_LIMIT_MS, ownCardPage, pinVisible } from "./sealed-pages";
-import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { translate } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { gateAnswer } from "./registry-gate";
 import { appShortcut, fallbackMayShow, fallbackOnVisibility, sealedInputAllowed } from "./shortcuts";
@@ -58,7 +58,7 @@ import { FourFingerTap, loadTouches, type TouchAddon } from "./touch-tap";
 import type { TrayState } from "./tray-menu";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, surfaceBounds, surfacePlacement, surfaceSize, type Hold, type MenuItem, type Rect } from "./ui/brokers";
-import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { OpenTarget, SurfaceEnvironment } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { FrameWatches } from "./ui/frame-watches";
@@ -68,7 +68,7 @@ import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun, type HoldStep } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
-import { cloverFront, FrontWatcher, islandMayDraw, placeCard, pressMayBeTaken, placeLine, type CardPlace } from "./card-place";
+import { mossFront, FrontWatcher, islandMayDraw, placeCard, pressMayBeTaken, placeLine, type CardPlace } from "./card-place";
 import { afterTap, afterTray, appIsRegular, mainWindowFront, surfaceShown, type MainWindowState, type PutAway } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
@@ -76,10 +76,10 @@ import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webP
 // around the daemon's check of who connects (debug-guard.ts).
 {
   // A test-marked build (the define, folded out of a real one) may open its DevTools port on loopback for the UI run.
-  const refused = refusedLaunchSwitches({ argv: process.argv, hasSwitch: (n) => app.commandLine.hasSwitch(n), packaged: app.isPackaged, env: process.env, testBuild: app.isPackaged && existsSync(join(process.resourcesPath, TEST_BUILD_MARKER)), testDebug: typeof __CLOVER_TEST_BUILD__ === "string" && process.env.CLOVER_TEST_DEBUG === "1" });
-  if (typeof __CLOVER_TEST_BUILD__ === "string" && process.env.CLOVER_TEST_DEBUG === "1") process.stdout.write("[clover-app] test-marked build: the DevTools port is open on loopback for the UI run\n");
+  const refused = refusedLaunchSwitches({ argv: process.argv, hasSwitch: (n) => app.commandLine.hasSwitch(n), packaged: app.isPackaged, env: process.env, testBuild: app.isPackaged && existsSync(join(process.resourcesPath, TEST_BUILD_MARKER)), testDebug: typeof __MOSS_TEST_BUILD__ === "string" && process.env.MOSS_TEST_DEBUG === "1" });
+  if (typeof __MOSS_TEST_BUILD__ === "string" && process.env.MOSS_TEST_DEBUG === "1") process.stdout.write("[moss-app] test-marked build: the DevTools port is open on loopback for the UI run\n");
   if (refused.length > 0) {
-    process.stderr.write(`clover: refusing to start with ${refused.map((n) => `--${n}`).join(", ")} (a debugging or secret-logging switch)\n`);
+    process.stderr.write(`moss: refusing to start with ${refused.map((n) => `--${n}`).join(", ")} (a debugging or secret-logging switch)\n`);
     app.exit(2);
     process.exit(2);
   }
@@ -88,32 +88,32 @@ import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webP
 const identity = appIdentity(resolveAppProfile(process.env));
 const args = parseLaunchArgs(process.argv, process.env);
 const headless = args.headless;
-/** A measuring run (`CLOVER_TEST_INVISIBLE=1`, or `hidden` to leave the main window away; headless, no `--clover-capture`; unpackaged or
+/** A measuring run (`MOSS_TEST_INVISIBLE=1`, or `hidden` to leave the main window away; headless, no `--moss-capture`; unpackaged or
  *  test-marked only): the windows are real, composited and throttled as the owner's are, but shown at opacity 0 and deaf to the
  *  mouse (`showInvisible`), so nothing is seen or touched on the screen. An offscreen or unthrottled headless window hides what the
  *  owner's app does while it idles. */
-const invisible: "shown" | "hidden" | undefined = headless && args.capture === undefined && (!app.isPackaged || typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")
-  ? (process.env.CLOVER_TEST_INVISIBLE === "1" ? "shown" : process.env.CLOVER_TEST_INVISIBLE === "hidden" ? "hidden" : undefined)
+const invisible: "shown" | "hidden" | undefined = headless && args.capture === undefined && (!app.isPackaged || typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string")
+  ? (process.env.MOSS_TEST_INVISIBLE === "1" ? "shown" : process.env.MOSS_TEST_INVISIBLE === "hidden" ? "hidden" : undefined)
   : undefined;
 const home = daemonHome(process.env);
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
-declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+declare const __MOSS_TEST_BUILD__: string | false | undefined;
 // The source acceptance run's own build of the app (apps/desktop/scripts/build.ts --acceptance, which only
 // scripts/acceptance/run.ts passes): its label, `false` in every other build. Like the test mark it is tested inline in
 // each condition, so a release build has none of what it guards (scripts/test-build.ts's gate checks).
-declare const __CLOVER_ACCEPTANCE_BUILD__: string | false | undefined;
+declare const __MOSS_ACCEPTANCE_BUILD__: string | false | undefined;
 // The smoke run's test-only inputs: read only in a test build or the acceptance build, so a real build carries no trace of the names
 // (the marker gate in scripts/test-build.ts looks for them).
-const SMOKE_SEALED_CLICK: string | undefined = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? process.env.CLOVER_SMOKE_SEALED_CLICK : undefined;
-const SMOKE_SEALED_FALLBACK: boolean = (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
-const SMOKE_DROP_FRESH: boolean = (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && process.env.CLOVER_SMOKE_DROP_FRESH === "1";
+const SMOKE_SEALED_CLICK: string | undefined = typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string" ? process.env.MOSS_SMOKE_SEALED_CLICK : undefined;
+const SMOKE_SEALED_FALLBACK: boolean = (typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && process.env.MOSS_SMOKE_SEALED_FALLBACK === "1";
+const SMOKE_DROP_FRESH: boolean = (typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && process.env.MOSS_SMOKE_DROP_FRESH === "1";
 // A test-only pin of the sealed page's own periodic verdict to "visible" (so a press reaches the fresh-report check, never the page's old gate).
-const SMOKE_PIN_VISIBLE: boolean = (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && process.env.CLOVER_SMOKE_PIN_VISIBLE === "1";
+const SMOKE_PIN_VISIBLE: boolean = (typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && process.env.MOSS_SMOKE_PIN_VISIBLE === "1";
 pinVisible.on = SMOKE_PIN_VISIBLE;
 // A test-marked build (compile-time only; a real build compiles this out): Chromium's mock keychain from the start, and
 // a refusal to start where it would still reach the login keychain or the live home (test-build.ts).
-if (typeof __CLOVER_TEST_BUILD__ === "string") {
-  process.stdout.write(`[clover-app] ${__CLOVER_TEST_BUILD__}: a test-marked build, never for release\n`);
+if (typeof __MOSS_TEST_BUILD__ === "string") {
+  process.stdout.write(`[moss-app] ${__MOSS_TEST_BUILD__}: a test-marked build, never for release\n`);
   app.commandLine.appendSwitch("use-mock-keychain");
   const refused = testBuildAppRefusal({ mockKeychain: app.commandLine.hasSwitch("use-mock-keychain"), home, account: userInfo().homedir });
   if (refused !== undefined) {
@@ -132,13 +132,13 @@ if (process.platform === "darwin") app.setActivationPolicy("accessory");
 app.setName(identity.productName);
 if (process.platform === "win32") app.setAppUserModelId(identity.appId);
 // A headless run keeps everything it writes in its own (temporary) home; so does a test-marked build.
-if (headless || typeof __CLOVER_TEST_BUILD__ === "string") {
+if (headless || typeof __MOSS_TEST_BUILD__ === "string") {
   app.setPath("userData", join(home, "app-data", identity.profile));
   app.setPath("sessionData", join(home, "app-data", identity.profile, "session"));
 }
 // A headless run, a test-marked build and the acceptance run's build play no sound: the bots' voices still play through
 // the player (its clock and counters run), muted at Chromium's output.
-const silent = headless || typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string";
+const silent = headless || typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string";
 if (silent) app.commandLine.appendSwitch("mute-audio");
 // Every plugin origin in a process of its own (S9).
 app.commandLine.appendSwitch("site-per-process");
@@ -150,14 +150,14 @@ registerSchemes();
 
 const appLog = new AppLog(appLogPath(home));
 function log(line: string): void {
-  process.stdout.write(`[clover-app] ${line}\n`);
+  process.stdout.write(`[moss-app] ${line}\n`);
   appLog.write(line);
 }
 
 // A packaged app never shows Electron's "A JavaScript error occurred in the main process" box: an uncaught exception or
 // an unhandled rejection is one line and its stack in app.log, and the app goes on. A test-marked or acceptance build
 // keeps the default loud behaviour, so a run still fails on one.
-if (app.isPackaged && typeof __CLOVER_TEST_BUILD__ !== "string" && typeof __CLOVER_ACCEPTANCE_BUILD__ !== "string") {
+if (app.isPackaged && typeof __MOSS_TEST_BUILD__ !== "string" && typeof __MOSS_ACCEPTANCE_BUILD__ !== "string") {
   const note = (kind: string, err: unknown): void => {
     try {
       log(`main: ${kind}: ${err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ""}` : String(err)}`);
@@ -219,7 +219,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("window-all-closed", () => {
     // Closing a window only closes it: the app stays in the menu bar.
   });
-  // The app's guards on every webContents but the Clover Browser's (its tabs, the windows its pages open and its
+  // The app's guards on every webContents but the MOSS Browser's (its tabs, the windows its pages open and its
   // viewport pages), which lane L's own policy covers (ruling R11); `isBrowserContents` holds from creation on.
   app.on("web-contents-created", (_event, contents) => {
     // The app's one mute: a page made after it was turned on is muted from the start.
@@ -262,8 +262,8 @@ async function microphoneProblem(): Promise<string | undefined> {
   if (process.platform !== "darwin") return undefined;
   const status = systemPreferences.getMediaAccessStatus("microphone");
   if (status === "granted") return undefined;
-  if (status === "denied" || status === "restricted") return "Microphone access is off for Clover. Turn it on in System Settings, under Privacy & Security, Microphone.";
-  return (await systemPreferences.askForMediaAccess("microphone")) ? undefined : "Microphone access wasn't allowed for Clover.";
+  if (status === "denied" || status === "restricted") return "Microphone access is off for MOSS. Turn it on in System Settings, under Privacy & Security, Microphone.";
+  return (await systemPreferences.askForMediaAccess("microphone")) ? undefined : "Microphone access wasn't allowed for MOSS.";
 }
 
 async function ready(): Promise<void> {
@@ -272,7 +272,7 @@ async function ready(): Promise<void> {
   if (process.platform === "darwin") {
     app.setActivationPolicy("accessory");
     if (headless) app.dock?.hide();
-    // Clover Dev, unpackaged, would otherwise wear Electron's icon in the Dock (docs/clover-brand.md).
+    // MOSS Code Dev, unpackaged, would otherwise wear Electron's icon in the Dock (docs/moss-brand.md).
     else if (devIcon.dock !== undefined) app.dock?.setIcon(join(here, "icons", devIcon.dock));
   }
   powerMonitor.on("shutdown", () => {
@@ -291,7 +291,7 @@ async function ready(): Promise<void> {
   // every frame; these two handlers (the request and the check, Chromium asks both) are the only exception, for this session
   // alone. On a real build the system's own question comes first (the first time, on a Mac); a test or acceptance build
   // answers the check and the request but never asks the system (nothing in a test calls getUserMedia).
-  const testBuild = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string";
+  const testBuild = typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string";
   const mic = micHandlers({
     layerScheme: LAYER_SCHEME, holds: (layer) => runtime?.layerHolds(layer, "microphone") === true, testBuild,
     windowOf: (wc) => (wc === null ? undefined : BrowserWindow.fromWebContents(wc as Electron.WebContents)?.id),
@@ -319,13 +319,13 @@ async function ready(): Promise<void> {
     systemLanguage: app.getPreferredSystemLanguages()[0] ?? app.getLocale(),
     // The acceptance's tab-flash row (a headless test-marked or acceptance build only, compiled out of a release; the
     // marker gate's TEST_ONLY_APP_STRINGS checks it): frames out of sight sleep after this many ms, not a minute.
-    ...((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && /^\d+$/.test(process.env.CLOVER_TEST_SLEEP_AFTER_MS ?? "")
-      ? { sleepAfterMs: Math.min(60_000, Math.max(1_000, Number(process.env.CLOVER_TEST_SLEEP_AFTER_MS))) } : {}),
+    ...((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && /^\d+$/.test(process.env.MOSS_TEST_SLEEP_AFTER_MS ?? "")
+      ? { sleepAfterMs: Math.min(60_000, Math.max(1_000, Number(process.env.MOSS_TEST_SLEEP_AFTER_MS))) } : {}),
   });
   runtime.botName = (id) => botNames.get(id);
   // What came of each part's ask for a card's frames, before the first one was made (the narrow card's diagnosis).
   runtime.onSealedAsk = noteAsk;
-  // One place at a time: while Clover's window is in front the island is given no frame of a card (the window draws it).
+  // One place at a time: while MOSS's window is in front the island is given no frame of a card (the window draws it).
   runtime.cardSurfaceMayDraw = () => islandMayDraw(mainWindowFront(mainState()));
   // A part's Review on a plugin's card: the app's own page for that card, shown now (a fallback already up stays).
   runtime.onCardPage = async (cardId) => {
@@ -341,7 +341,7 @@ async function ready(): Promise<void> {
     return true;
   };
   // The UI test's positive control for the DNS probe: never in a packaged app.
-  const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
+  const unguarded = !app.isPackaged && headless ? (process.env.MOSS_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
   const iconsUnserved = new Set<string>();
   // What the user handed plugins' pages (`files.pick*`): tokens, served back at `/_g/` and told to the core.
   const fileGrants = new FileGrants();
@@ -351,7 +351,7 @@ async function ready(): Promise<void> {
     // A plugin's icon for the Plugins page's lists: where it is (`plugin.iconSource`, the app's alone), read here.
     pluginIcon: (id) => pluginIconFile(async (pid) => {
       const c = pair?.client;
-      if (c === undefined) throw new Error("Clover isn't connected");
+      if (c === undefined) throw new Error("MOSS isn't connected");
       const raw = await c.request("plugin.iconSource", { id: pid });
       const r = PLUGINS_METHODS.pluginIconSource.result.safeParse(raw);
       if (!r.success) throw new Error("the core's answer isn't plugin.iconSource's");
@@ -401,7 +401,7 @@ async function ready(): Promise<void> {
     treeRequest: async (method, params) => {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
       const client = pair.client;
-      if (client === undefined) throw new LayerError("Clover isn't running");
+      if (client === undefined) throw new LayerError("MOSS isn't running");
       // An install or an update downloads (up to 30 minutes for a large one); everything else answers within 30 s.
       return client.request(method, params ?? {}, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : method === "bot.importAvatar" ? 5 * 60_000 : 30_000);
     },
@@ -409,9 +409,9 @@ async function ready(): Promise<void> {
     // acceptance build takes the path the harness named instead (never in a release, which compiles both marks out; the
     // marker gate's TEST_ONLY_APP_STRINGS checks it).
     pick: async (windowId, kind, filters, use) => {
-      // An avatar's pick has its own answer (CLOVER_TEST_PICK_AVATAR), so one run can pick a plugin folder and a model.
-      if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless) {
-        const named = use === "bot.importAvatar" ? process.env.CLOVER_TEST_PICK_AVATAR : process.env.CLOVER_TEST_PICK;
+      // An avatar's pick has its own answer (MOSS_TEST_PICK_AVATAR), so one run can pick a plugin folder and a model.
+      if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless) {
+        const named = use === "bot.importAvatar" ? process.env.MOSS_TEST_PICK_AVATAR : process.env.MOSS_TEST_PICK;
         // A `.pick` file names the folder at each pick, so one run picks several in turn (the harness rewrites it).
         const answer = named !== undefined && named.endsWith(".pick") ? (() => { try { return readFileSync(named, "utf8").split("\n")[0]!.trim(); } catch { return ""; } })() : named;
         if (answer !== undefined) return answer === "" ? undefined : answer;
@@ -423,11 +423,11 @@ async function ready(): Promise<void> {
     },
     grants: fileGrants,
     // A plugin page's `files.pickOpen/pickFolder/pickSave` (file-grants.ts): main's own dialog over the window. A headless
-    // test-marked or acceptance build takes the paths the harness named (CLOVER_TEST_PICK_FILES, a file of one path per
+    // test-marked or acceptance build takes the paths the harness named (MOSS_TEST_PICK_FILES, a file of one path per
     // line, read at each pick; empty = cancel); a release compiles that out and always opens the real dialog.
     pickFiles: async (windowId, request) => {
-      if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless) {
-        const named = process.env.CLOVER_TEST_PICK_FILES;
+      if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless) {
+        const named = process.env.MOSS_TEST_PICK_FILES;
         if (named !== undefined) {
           try {
             return answersFor(readFileSync(named, "utf8"), request.kind);
@@ -437,9 +437,9 @@ async function ready(): Promise<void> {
         }
       }
       // The UI smoke's own answer (an unpackaged headless run only, as the DNS probe's control is): the paths in a file, one per line.
-      if (!app.isPackaged && headless && process.env.CLOVER_SMOKE_PICK_FILES !== undefined) {
+      if (!app.isPackaged && headless && process.env.MOSS_SMOKE_PICK_FILES !== undefined) {
         try {
-          return answersFor(readFileSync(process.env.CLOVER_SMOKE_PICK_FILES, "utf8"), request.kind);
+          return answersFor(readFileSync(process.env.MOSS_SMOKE_PICK_FILES, "utf8"), request.kind);
         } catch {
           return [];
         }
@@ -463,7 +463,7 @@ async function ready(): Promise<void> {
     // answers method-not-found and the pick still returns its token (the media URL needs only main's copy).
     registerGrant: async (grant) => {
       const client = pair.client;
-      if (client === undefined) throw new Error("Clover isn't running");
+      if (client === undefined) throw new Error("MOSS isn't running");
       try {
         await client.request("plugin.grant.add", { pluginId: grant.pluginId, token: grant.token, path: grant.path, kind: grant.kind, access: grant.access }, 10_000);
         return "ok";
@@ -494,17 +494,17 @@ async function ready(): Promise<void> {
         log(`sealed: answer refused (${fresh === "covered" ? "the button was covered or not shown at the press" : "no visibility report came with the press"})`);
         return { accepted: false, reason: fresh === "covered" ? "the button wasn't fully showing when it was pressed" : "the press wasn't checked just now" };
       }
-      // One place at a time: a press from the island's frame while Clover's window is in front is not taken (the card is drawn
+      // One place at a time: a press from the island's frame while MOSS's window is in front is not taken (the card is drawn
       // in the window now; the island's frame was a beat behind the move).
       const from = sealed.windowOf(token);
       if (!pressMayBeTaken({ fromIsland: [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.cards), front: mainWindowFront(mainState()) })) {
         log(`sealed: answer refused (the island's frame while the window is in front: the card is drawn in the window)`);
-        return { accepted: false, reason: "this card is in Clover's window now" };
+        return { accepted: false, reason: "this card is in MOSS's window now" };
       }
       const key = answerKeyValue;
       if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
       const client = pair.client;
-      if (client === undefined) { log(`sealed: answer refused (no client)`); return { accepted: false, reason: "Clover isn't running" }; }
+      if (client === undefined) { log(`sealed: answer refused (no client)`); return { accepted: false, reason: "MOSS isn't running" }; }
       // The gate first, before anything else moves: any computer use driving this desktop's computer, no.
       const acting = await client.request<{ running?: boolean }>("computer.acting", {}, 3_000).catch(() => undefined);
       if (acting === undefined) { log(`sealed: answer refused (computer-use check failed)`); return { accepted: false, reason: "the computer-use check couldn't run" }; }
@@ -520,9 +520,9 @@ async function ready(): Promise<void> {
         const why = ready === undefined ? "no connection registered it" : "refused" in ready ? ready.refused : ready.again;
         log(`sealed: answer held back (this desktop's answer key isn't registered: ${why.slice(0, 160)})`);
         // A fault that persisted (the core's answers told nothing, 5 in a row): reconnecting starts a fresh registration.
-        if (ready !== undefined && "refused" in ready && ready.fault === true) return { accepted: false, key: "fault", reason: `Clover couldn't take this desktop's answer key (${why.slice(0, 120)})` };
+        if (ready !== undefined && "refused" in ready && ready.fault === true) return { accepted: false, key: "fault", reason: `MOSS couldn't take this desktop's answer key (${why.slice(0, 120)})` };
         // A different key already held for this desktop: trying again can't help, and the card says so (`key`).
-        if (ready !== undefined && "refused" in ready) return { accepted: false, key: "changed", reason: `this desktop's answer key isn't the one Clover holds for it (${why.slice(0, 120)})` };
+        if (ready !== undefined && "refused" in ready) return { accepted: false, key: "changed", reason: `this desktop's answer key isn't the one MOSS holds for it (${why.slice(0, 120)})` };
         return { accepted: false, reason: "this desktop's answer key isn't registered yet" };
       }
       const out = sealed.buildAnswer(token, option_, children, senderKey, key, signedDevice ?? "");
@@ -581,7 +581,7 @@ async function ready(): Promise<void> {
       const cardId = sealed.cardOf(token);
       if (cardId === undefined || sealed.elementOf(token) !== "own") return { state: "failed", why: "This card can't be reviewed here." };
       const client = pair.client;
-      if (client === undefined) return { state: "failed", why: "Clover isn't running." };
+      if (client === undefined) return { state: "failed", why: "MOSS isn't running." };
       return client.request<{ state: string; report?: string; why?: string; model?: string }>("plugin.review", { card: cardId, ...(peek ? { peek: true } : {}) }, 15_000)
         .catch((err: unknown) => ({ state: "failed", why: err instanceof Error ? err.message.slice(0, 300) : "The review couldn't start." }));
     },
@@ -604,7 +604,7 @@ async function ready(): Promise<void> {
       const images = sendImages(message.images);
       if ("error" in images) return refuse(`images: ${images.error}`, images.error);
       const client = pair.client;
-      if (client === undefined) return refuse("Clover isn't running");
+      if (client === undefined) return refuse("MOSS isn't running");
       // One key press or click that came to THIS frame (its own activation) and that the main process saw come to the
       // window covers one send (§5.5).
       // A hold that ended (hold-to-talk) lets this frame send once within 30 s of the release, its activation long gone; any other
@@ -643,17 +643,17 @@ async function ready(): Promise<void> {
     },
   }, log, ipcStats);
   startCensus(runtime);
-  // Asked for (`CLOVER_IPC_STATS=1`, or an `ipc-stats` file in the home): every five seconds, in this log, what crossed and what each process cost (counts, no payloads).
+  // Asked for (`MOSS_IPC_STATS=1`, or an `ipc-stats` file in the home): every five seconds, in this log, what crossed and what each process cost (counts, no payloads).
   if (ipcStats !== undefined) log("ipc: counters on (every 5 s: messages by channel, CPU by process; no payloads)");
   if (ipcStats !== undefined) startIpcStats(ipcStats, cpuMeter(() => app.getAppMetrics().map((m) => ({ pid: m.pid, type: m.type, ...(m.cpu.cumulativeCPUUsage !== undefined ? { seconds: m.cpu.cumulativeCPUUsage } : {}) }))), log);
   // The source acceptance build's own run may fix the appearance for its renders (this process only; never the OS's).
-  if (typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" && headless && (process.env.CLOVER_ACCEPT_APPEARANCE === "light" || process.env.CLOVER_ACCEPT_APPEARANCE === "dark")) nativeTheme.themeSource = process.env.CLOVER_ACCEPT_APPEARANCE;
+  if (typeof __MOSS_ACCEPTANCE_BUILD__ === "string" && headless && (process.env.MOSS_ACCEPT_APPEARANCE === "light" || process.env.MOSS_ACCEPT_APPEARANCE === "dark")) nativeTheme.themeSource = process.env.MOSS_ACCEPT_APPEARANCE;
   // The acceptance run's pictures in dark and light (a headless test-marked or acceptance build only, compiled out of a
   // release; the marker gate's TEST_ONLY_APP_STRINGS checks it): the window's scheme from a file the harness writes.
   // While it says "dark" or "light" it wins over the core's Theme choice (applyThemeSource yields to it); anything else
   // ("system", empty, no file) lets go, and the core's choice applies again.
-  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_APPEARANCE_FILE) {
-    const file = process.env.CLOVER_TEST_APPEARANCE_FILE;
+  if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && process.env.MOSS_TEST_APPEARANCE_FILE) {
+    const file = process.env.MOSS_TEST_APPEARANCE_FILE;
     const follow = () => {
       let v = "";
       try {
@@ -672,8 +672,8 @@ async function ready(): Promise<void> {
   // in the main window with `sendInputEvent`, the one way a synthesized press reaches the window's before-input-event
   // (CDP key events don't). Each new `n` is one press: down and up, or with `type` only its `down`, a `repeat` (a held key's
   // auto-repeat) or its `up` (a held key binding's hold, its repeats and its release, one event each).
-  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_KEY_FILE) {
-    const file = process.env.CLOVER_TEST_KEY_FILE;
+  if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && process.env.MOSS_TEST_KEY_FILE) {
+    const file = process.env.MOSS_TEST_KEY_FILE;
     let last = 0;
     watchFile(file, { interval: 250 }, () => {
       try {
@@ -696,8 +696,8 @@ async function ready(): Promise<void> {
   // release; the marker gate's TEST_ONLY_APP_STRINGS checks it): the main window's real content size from a file the
   // harness writes, "<width>x<height>", the window itself resized as a person's drag would; anything else puts back the
   // size it had before the first one.
-  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_WINDOW_SIZE_FILE) {
-    const file = process.env.CLOVER_TEST_WINDOW_SIZE_FILE;
+  if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && process.env.MOSS_TEST_WINDOW_SIZE_FILE) {
+    const file = process.env.MOSS_TEST_WINDOW_SIZE_FILE;
     let before: [number, number] | undefined;
     const follow = () => {
       let v = "";
@@ -737,14 +737,14 @@ async function ready(): Promise<void> {
   // The install marker: this home's daemon is the app's (or a package's), so it never updates itself (updater.ts).
   if (app.isPackaged) writeInstallMarker(home, installKindOf(process.platform, process.env), log);
   // A test-marked build never updates itself: a real release in its place would reach the login keychain.
-  if (!headless && typeof __CLOVER_TEST_BUILD__ !== "string") {
+  if (!headless && typeof __MOSS_TEST_BUILD__ !== "string") {
     // The app's own updates (updater.ts): packaged builds only, never a headless or test run (no network from those).
     void startUpdater({
       packaged: app.isPackaged,
       resourcesPath: process.resourcesPath,
       log,
       onReady: (version) => {
-        const t = (key: string) => translate(runtime.coreStrings(), `clover.core.update.ready.${key}`, { version });
+        const t = (key: string) => translate(runtime.coreStrings(), `moss.core.update.ready.${key}`, { version });
         new Notification({ title: t("title"), body: t("body") }).show();
         void installs.downloaded(version);
       },
@@ -989,13 +989,13 @@ async function showFallbackCard(cardId: string): Promise<void> {
   const card = sealed.get(cardId);
   if (card === undefined) return;
   const smokeFallback = SMOKE_SEALED_FALLBACK;
-  // The acceptance run's real press (CLOVER_TEST_SEALED_PRESS=1, a headless test-marked or unpackaged run only): the
+  // The acceptance run's real press (MOSS_TEST_SEALED_PRESS=1, a headless test-marked or unpackaged run only): the
   // fallback card is drawn OFFSCREEN (never shown, never on any screen), so the run can press its button with a trusted
   // DevTools input event and the answer goes the whole real way: the page's own gates, the app's signature with its
   // registered answer key, the core broker's proof check. Nothing else about the card or its gates changes.
   // Compile-time first (the test mark, or the acceptance build's), so a release build carries no part of it.
-  const offscreenPress = (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_SEALED_PRESS === "1";
-  if (!offscreenPress && !fallbackMayShow({ headless, smokeFallback, testInput: (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }) })) {
+  const offscreenPress = (typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && process.env.MOSS_TEST_SEALED_PRESS === "1";
+  if (!offscreenPress && !fallbackMayShow({ headless, smokeFallback, testInput: (typeof __MOSS_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }) })) {
     log(`card: the fallback card for ${cardId} was not shown (headless)`);
     return;
   }
@@ -1007,7 +1007,7 @@ async function showFallbackCard(cardId: string): Promise<void> {
   if (held === undefined || (held.win !== undefined && !held.win.isDestroyed())) return;
   const mint = sealed.mint(cardId, "own");
   if (mint === undefined) return;
-  const url = `clover-sealed://card/${encodeURIComponent(cardId)}/own?token=${encodeURIComponent(mint.token)}`;
+  const url = `moss-sealed://card/${encodeURIComponent(cardId)}/own?token=${encodeURIComponent(mint.token)}`;
   const dark = nativeTheme.shouldUseDarkColors;
   // A plain window of its own size (never the main window's plan: that one's minimum size is a whole app's, which is
   // what made this card a giant at the corner of the screen). It is sized by its page, within a range, and shown
@@ -1027,7 +1027,7 @@ async function showFallbackCard(cardId: string): Promise<void> {
     if (own?.win === win) fallbacks.delete(cardId);
     followFront();
   });
-  // The card window counts as Clover's own: clicking from the main window onto it, or back, is not leaving Clover.
+  // The card window counts as MOSS's own: clicking from the main window onto it, or back, is not leaving MOSS.
   for (const ev of ["focus", "blur", "show", "hide"] as const) win.on(ev as "focus", followFront);
   // Keep the fallback away from the cursor so a plugin can't time a click onto it (S3, check 3): place it within the
   // cursor's display's work area, at the top on the side the cursor is not on (the top is where a notification stands, and
@@ -1077,11 +1077,11 @@ function makePair(): Pair {
     endpoint: daemonEndpoint(home),
     hello: () => {
       const token = readAppToken(home, env);
-      return token === undefined ? undefined : appHello(token, app.getVersion(), CLOVER_PROTOCOL_VERSION);
+      return token === undefined ? undefined : appHello(token, app.getVersion(), MOSS_PROTOCOL_VERSION);
     },
     // A test-marked build never registers a login item or starts the daemon through the OS (its core is started by
     // the test itself): no launcher.
-    ...(binary !== undefined && typeof __CLOVER_TEST_BUILD__ !== "string" ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
+    ...(binary !== undefined && typeof __MOSS_TEST_BUILD__ !== "string" ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
     // The token goes only to this user's own daemon, which proves it holds it (lane C's protocol.prove): on Windows a
     // pipe's name is in a namespace every user shares.
     prove: { pid: process.pid },
@@ -1107,7 +1107,7 @@ function makePair(): Pair {
       exitApp();
     },
   });
-  // The Clover Browser (lane L): the daemon drives its tabs over the pair. The protocol's tab owner names a plugin by
+  // The MOSS Browser (lane L): the daemon drives its tabs over the pair. The protocol's tab owner names a plugin by
   // its `plugin` field, as the browser host's own contract does (lane L's `contract.ts`), so it passes through as is.
   p.handle("app.tab.open", async (params) => {
     const a = BROWSER_METHODS.appTabOpen.params.parse(params);
@@ -1135,7 +1135,7 @@ function makePair(): Pair {
     log(`notify: closed (${typeof id === "string" ? id : "all"})`);
     return { ok: true };
   });
-  // The user's look at what a window draws (`clover-core app screenshot`, capture.ts): Electron's own capture of the
+  // The user's look at what a window draws (`moss-core app screenshot`, capture.ts): Electron's own capture of the
   // window's page and the views over it, never the screen; nothing is shown, raised, focused or resized for it.
   const captureDeps: CaptureDeps = {
     windows: () => [
@@ -1150,7 +1150,7 @@ function makePair(): Pair {
     if (!parsed.success) throw new Error("app.window.capture needs a window: main, a surface's name, or all");
     return captureWindows(captureDeps, parsed.data);
   });
-  // The user's navigation of the main window from a terminal (`clover-core app open`, `app where`, open.ts): the route its
+  // The user's navigation of the main window from a terminal (`moss-core app open`, `app where`, open.ts): the route its
   // own sidebar uses (the shell's act), then where it is; never a click or a key, never the window shown or moved.
   p.handle("app.window.open", async (params) => {
     const parsed = APP_METHODS.appWindowOpen.params.safeParse(params);
@@ -1247,9 +1247,9 @@ function answerKey(): AnswerKey {
     // The acceptance's kept key (a file beside its throwaway keychain FILE), so a test app that quits and opens again,
     // or an upgraded one, registers the same key: a test-marked build or the source acceptance's build (both
     // compile-time marks, inline: a release build has none of this branch), headless only, and only an absolute path.
-    if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && isAbsolute(process.env.CLOVER_TEST_ANSWER_KEY ?? "")) {
-      answerKeyValue = new AnswerKey(fileVault(process.env.CLOVER_TEST_ANSWER_KEY!), log);
-    } else if (typeof __CLOVER_TEST_BUILD__ === "string" || headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
+    if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && isAbsolute(process.env.MOSS_TEST_ANSWER_KEY ?? "")) {
+      answerKeyValue = new AnswerKey(fileVault(process.env.MOSS_TEST_ANSWER_KEY!), log);
+    } else if (typeof __MOSS_TEST_BUILD__ === "string" || headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
     else if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text") {
       log("answer key: this computer's secret store is plain text (no Secret Service); the key stays in memory");
       answerKeyValue = new AnswerKey(memoryVault("none"), log);
@@ -1421,10 +1421,10 @@ function stateChanged(s: PairState): void {
     openingRetryMs = 250;
   }
   log(`pair: ${s.kind}${s.kind === "unavailable" ? ` (${s.reason})` : ""}`);
-  // The root draws "Starting Clover…" until the shell comes; once the pair has gone a long time with no daemon (and
+  // The root draws "Starting MOSS…" until the shell comes; once the pair has gone a long time with no daemon (and
   // again when one comes), it is asked to draw again, so it says so instead.
   if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });
-  const status = s.kind === "reconnecting" ? "Reconnecting to Clover…" : s.kind === "unavailable" ? "Clover isn't running" : s.kind === "starting-daemon" ? "Starting Clover…" : s.kind === "unverified" ? "Can't verify the Clover daemon" : undefined;
+  const status = s.kind === "reconnecting" ? "Reconnecting to MOSS…" : s.kind === "unavailable" ? "MOSS isn't running" : s.kind === "starting-daemon" ? "Starting MOSS…" : s.kind === "unverified" ? "Can't verify the MOSS daemon" : undefined;
   tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(status !== undefined ? { status } : {}) });
 }
 
@@ -1463,7 +1463,7 @@ async function requestQuit(source: string): Promise<void> {
   let choice: QuitChoice = "quit";
   if (q.ask) {
     if (headless) {
-      const env = process.env.CLOVER_TEST_QUIT_CHOICE;
+      const env = process.env.MOSS_TEST_QUIT_CHOICE;
       choice = env === "handover" || env === "cancel" ? env : "quit";
     } else {
       const r = await dialog.showMessageBox({ type: "question", message: q.message, detail: q.detail, buttons: q.buttons.map((b) => b.label), defaultId: 0, cancelId: q.buttons.length - 1, noLink: true });
@@ -1481,7 +1481,7 @@ async function requestQuit(source: string): Promise<void> {
 /** Leaves on purpose for a restart (into safe mode or out of it), telling the daemon first (§3.1). */
 async function restart(safe: boolean): Promise<void> {
   await pair.exiting("restart");
-  const rest = process.argv.slice(1).filter((a) => a !== "--safe-mode" && !a.startsWith("--clover-started-by="));
+  const rest = process.argv.slice(1).filter((a) => a !== "--safe-mode" && !a.startsWith("--moss-started-by="));
   app.relaunch({ args: [...rest, ...(safe ? ["--safe-mode"] : [])] });
   exitApp();
 }
@@ -1524,13 +1524,13 @@ async function daemonGone(maxMs: number): Promise<void> {
 
 /** The core's last Theme choice (applied again when a render's override lets go). */
 let coreThemeSource: unknown;
-/** A marked headless build's render scheme (CLOVER_TEST_APPEARANCE_FILE), while it holds one; never set in a real build. */
+/** A marked headless build's render scheme (MOSS_TEST_APPEARANCE_FILE), while it holds one; never set in a real build. */
 let testThemeOverride: "dark" | "light" | undefined;
 
 /** The Theme choice, on every window at once (live). Setting the same value again is a no-op, and "system" keeps following the OS. */
 function applyThemeSource(value: unknown): void {
   coreThemeSource = value;
-  const override = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? testThemeOverride : undefined;
+  const override = typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string" ? testThemeOverride : undefined;
   const next = override ?? themeSourceOf(value);
   if (nativeTheme.themeSource !== next) nativeTheme.themeSource = next;
 }
@@ -1593,7 +1593,7 @@ async function openRenderWindow(size: { width: number; height: number }, deps: C
     const e = event as unknown as { level?: unknown; message?: unknown; frame?: { origin?: string; url?: string } | null };
     if ((e.level !== "error" && e.level !== "warning") || typeof e.message !== "string" || lines.length >= RENDER_CONSOLE_MAX) return;
     let plugin = "";
-    try { const u = new URL(e.frame?.url ?? e.frame?.origin ?? ""); if (u.protocol === "clover-plugin:") plugin = u.host; } catch { /* no frame */ }
+    try { const u = new URL(e.frame?.url ?? e.frame?.origin ?? ""); if (u.protocol === "moss-plugin:") plugin = u.host; } catch { /* no frame */ }
     if (plugin === "") return;
     lines.push({ plugin: plugin.slice(0, 256), level: e.level, message: e.message.replace(/\s+/g, " ").slice(0, 500) });
   });
@@ -1603,7 +1603,7 @@ async function openRenderWindow(size: { width: number; height: number }, deps: C
     renderWindows.delete(win);
   });
   try {
-    await win.loadURL("clover-core://app/");
+    await win.loadURL("moss-core://app/");
   } catch (err) {
     if (!win.isDestroyed()) win.destroy();
     throw err;
@@ -1657,7 +1657,7 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
   win.on("focus", () => runtime.focusReturned(id));
   win.webContents.on("before-input-event", (event, input) => shortcut(event, input, win));
   win.once("ready-to-show", () => showMainWindow(win));
-  await win.loadURL("clover-core://app/");
+  await win.loadURL("moss-core://app/");
   return win;
 }
 
@@ -1688,13 +1688,13 @@ interface Surface {
 }
 
 /** A test-marked headless build's stand-in for the window being in front (its windows are never the focused ones): the file named
- *  by CLOVER_TEST_MAIN_FRONT_FILE holds `front` or `back`, read every 100 ms. Compiled out of a release (the marker gate's TEST_ONLY_APP_STRINGS checks it). */
+ *  by MOSS_TEST_MAIN_FRONT_FILE holds `front` or `back`, read every 100 ms. Compiled out of a release (the marker gate's TEST_ONLY_APP_STRINGS checks it). */
 let frontSeam: boolean | undefined;
 function startFrontSeam(): void {
-  // The marks first and the whole seam inside them (as CLOVER_TEST_APPEARANCE_FILE's is): a release folds the test to
+  // The marks first and the whole seam inside them (as MOSS_TEST_APPEARANCE_FILE's is): a release folds the test to
   // false and drops the block, the variable's name with it. An early return on `!headless || …` left the name in.
-  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_MAIN_FRONT_FILE) {
-    const file = process.env.CLOVER_TEST_MAIN_FRONT_FILE;
+  if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && process.env.MOSS_TEST_MAIN_FRONT_FILE) {
+    const file = process.env.MOSS_TEST_MAIN_FRONT_FILE;
     const read = () => {
       let word = "";
       try { word = readFileSync(file, "utf8").trim(); } catch { return; }
@@ -1709,11 +1709,11 @@ function startFrontSeam(): void {
 }
 
 /** A test-marked build's stand-in for the user closing and reopening the main window (the background part's row): the file named
- *  by CLOVER_TEST_WINDOW_FILE holds `close <n>` or `open <n>`, read every 100 ms; a new line closes the main window or opens it
+ *  by MOSS_TEST_WINDOW_FILE holds `close <n>` or `open <n>`, read every 100 ms; a new line closes the main window or opens it
  *  again, as the tray's Open does. Compiled out of a release (the marker gate's TEST_ONLY_APP_STRINGS checks it). */
 function startWindowSeam(): void {
-  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_WINDOW_FILE) {
-    const file = process.env.CLOVER_TEST_WINDOW_FILE;
+  if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && process.env.MOSS_TEST_WINDOW_FILE) {
+    const file = process.env.MOSS_TEST_WINDOW_FILE;
     let last = "";
     setInterval(() => {
       let word = "";
@@ -1732,8 +1732,8 @@ function startWindowSeam(): void {
 
 function mainState(): MainWindowState {
   if (frontSeam !== undefined) return { exists: true, visible: true, minimized: false, focused: frontSeam };
-  // Clover is in front while its main window or one of its own card windows has the focus (a click on a card blurs the main window).
-  return cloverFront(mainWindow, [...fallbacks.values()].map((f) => f.win));
+  // MOSS is in front while its main window or one of its own card windows has the focus (a click on a card blurs the main window).
+  return mossFront(mainWindow, [...fallbacks.values()].map((f) => f.win));
 }
 
 /** The choices this computer keeps across restarts (the surfaces put away). */
@@ -1751,7 +1751,7 @@ const trayToggleOf = (ref: string) => runtime.trayEntries().find((t) => t.surfac
 function refreshTray(): void {
   if (trayState === undefined) return;
   const lines = runtime.trayEntries().map((t) => {
-    // A command's line says whose it is (a plugin's own words are not the menu's); a toggle's verb is Clover's.
+    // A command's line says whose it is (a plugin's own words are not the menu's); a toggle's verb is MOSS's.
     if (t.surface === undefined) return { ref: t.ref, title: `${t.title} (${t.pluginName})` };
     const s = [...surfaces.values()].find((x) => x.ref === t.surface);
     return { ref: t.ref, title: t.title, hidden: s !== undefined && modeOf(s) === "hidden" };
@@ -1786,7 +1786,7 @@ function runTrayLine(ref: string): void {
 /** Whether a surface's part has asked to be shown (it asks until it has nothing to show). */
 const surfaceWants = (s: Surface): boolean => s.wantsVisible === true;
 
-/** Puts a surface away, summons it (a tap shows it over Clover's own window too, until the next tap) or gives it its usual
+/** Puts a surface away, summons it (a tap shows it over MOSS's own window too, until the next tap) or gives it its usual
  *  behaviour back. The window follows at once, the tray line says what a press will do next, and the log says what happened on
  *  the screen. */
 function setSurfaceMode(s: Surface, mode: PutAway, how: string): void {
@@ -1823,7 +1823,7 @@ function syncFourFingerTap(): void {
   }
 }
 function syncFourFingerTapUnguarded(): void {
-  if (headless || typeof __CLOVER_TEST_BUILD__ === "string" || process.platform !== "darwin") return;
+  if (headless || typeof __MOSS_TEST_BUILD__ === "string" || process.platform !== "darwin") return;
   if (touches === null) touches = loadTouches(join(here, "native", "touches.node"), log);
   if (touches === undefined) return;
   if (fourFingerTap === undefined) {
@@ -1926,7 +1926,7 @@ function syncBackgrounds(): void {
       runtime.closeWindow(id);
       if (backgrounds.get(w.ref)?.win === win) backgrounds.delete(w.ref);
     });
-    void win.loadURL(`clover-core://app/?surface=${encodeURIComponent(w.ref)}`);
+    void win.loadURL(`moss-core://app/?surface=${encodeURIComponent(w.ref)}`);
     log(`background: ${w.ref} started${w.audio ? " (may play sound)" : ""}`);
   }
 }
@@ -1951,7 +1951,7 @@ function syncSurfaces(): void {
     const win = new BrowserWindow(surfaceWindowPlan({
       surface: { ...w.window, alwaysOnTop: floats && w.window.alwaysOnTop === true },
       title: `${identity.productName} ${w.id}`,
-      // A capture run (`--clover-capture`, headless) draws every window offscreen, the surfaces too: a hidden window gets no
+      // A capture run (`--moss-capture`, headless) draws every window offscreen, the surfaces too: a hidden window gets no
       // animation frames, so nothing that moves on frames (the island's morph, the pill's spring) would run under test.
       webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: headless && invisible === undefined, offscreen: headless && args.capture !== undefined }),
       wayland,
@@ -1985,7 +1985,7 @@ function syncSurfaces(): void {
     place(s, win.getSize());
     applyLegacyHidden(s);
     refreshTray();
-    void win.loadURL(`clover-core://app/?surface=${encodeURIComponent(w.id)}`);
+    void win.loadURL(`moss-core://app/?surface=${encodeURIComponent(w.id)}`);
   }
 }
 
@@ -2072,7 +2072,7 @@ const menus = new MenuGate();
 /** Each plugin layer's own connection to the core (its plugin API). */
 /** The watches each frame opened on its plugin's connection: a frame's going ends them (ui/frame-watches.ts). */
 const frameWatches = new FrameWatches();
-/** The watches open on a `browser.*` call (their values are the Clover Browser's events), and the visible parts that
+/** The watches open on a `browser.*` call (their values are the MOSS Browser's events), and the visible parts that
  *  subscribed to the `browser` area (browser-calls.ts). */
 const browserWatches = new Set<string>();
 const browserAreaFrames = new BrowserAreaFrames();
@@ -2093,7 +2093,7 @@ const layerLinks = new LayerLinks({
       const id = (params as { card?: { id?: unknown } }).card?.id;
       if (typeof id === "string") noteTold(id, pluginId);
     }
-    // The Clover Browser's events go only to the plugin's documents the user can see (browser-calls.ts).
+    // The MOSS Browser's events go only to the plugin's documents the user can see (browser-calls.ts).
     runtime.pluginMessage(pluginId, { type: "api-event", pluginId, method, params }, method === CORE_EVENT_NOTIFICATION && isBrowserEvent(params, browserWatches) ? { visibleOnly: true } : {});
   },
   log,
@@ -2129,10 +2129,10 @@ async function terminalInput(windowId: number, frameId: string, pluginId: string
   await layerLinks.hand(pluginId, "terminal.write", { terminalId, data: paste.data, paste: true });
 }
 
-/** Asks before a paste of more than one line goes to a terminal (a headless run answers with CLOVER_TEST_PASTE_OK). */
+/** Asks before a paste of more than one line goes to a terminal (a headless run answers with MOSS_TEST_PASTE_OK). */
 async function okToPaste(windowId: number, lines: number): Promise<boolean> {
-  if (headless) return process.env.CLOVER_TEST_PASTE_OK === "1";
-  const t = (key: string, params?: Record<string, string | number>) => translate(runtime.coreStrings(), `clover.core.${key}`, params);
+  if (headless) return process.env.MOSS_TEST_PASTE_OK === "1";
+  const t = (key: string, params?: Record<string, string | number>) => translate(runtime.coreStrings(), `moss.core.${key}`, params);
   const win = BrowserWindow.fromId(windowId);
   const options = { type: "question" as const, message: t("terminal.paste-title", { count: lines }), detail: t("terminal.paste-detail"), buttons: [t("terminal.paste"), t("terminal.cancel")], defaultId: 1, cancelId: 1, noLink: true };
   const r = win !== null && !win.isDestroyed() ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
@@ -2143,7 +2143,7 @@ async function okToPaste(windowId: number, lines: number): Promise<boolean> {
 const sends = new SendGate();
 // A frame's own document received a trusted pointerdown (the preload, every frame): it names where the window's latest mouse
 // press landed, bound to the frame the report came from (never a payload). First report wins; one with no recent press is dropped.
-ipcMain.on("clover:press-seen", (event) => {
+ipcMain.on("moss:press-seen", (event) => {
   const f = event.senderFrame;
   const win = BrowserWindow.fromWebContents(event.sender);
   if (f === null || f.detached || win === null) return;
@@ -2151,7 +2151,7 @@ ipcMain.on("clover:press-seen", (event) => {
 });
 // The preload's synchronous ask, from a frame's capture-phase keydown: whether that key-down is the window's held key binding's
 // (its down or a repeat), which the page must not get. Main's `before-input-event` already ran for that same event.
-ipcMain.on("clover:held-key", (event, a: { key?: unknown; code?: unknown }) => {
+ipcMain.on("moss:held-key", (event, a: { key?: unknown; code?: unknown }) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   event.returnValue = win !== null && typeof a?.key === "string" && pluginKeys.swallows(win.id, { key: a.key, ...(typeof a.code === "string" ? { code: a.code } : {}) });
 });
@@ -2188,7 +2188,7 @@ const pointers = new PointerLog();
  *  unresponsive while its documents answer, after a longer window (the smoke run's hang test may shorten it). */
 const hangs = new HangWatch((windowId) => {
   log(`window ${windowId} stayed unresponsive: restarting in safe mode`);
-  if (args.smoke && process.env.CLOVER_SMOKE_NO_RESTART === "1") {
+  if (args.smoke && process.env.MOSS_SMOKE_NO_RESTART === "1") {
     log("smoke: the restart is left out");
     return;
   }
@@ -2232,9 +2232,9 @@ async function diagnoseHang(win: BrowserWindow): Promise<void> {
 }
 
 /** The longer window; the smoke run's test of it shortens it (unpackaged runs only). */
-const compositorMs = args.smoke && !app.isPackaged && Number(process.env.CLOVER_SMOKE_COMPOSITOR_MS ?? "0") > 0 ? Number(process.env.CLOVER_SMOKE_COMPOSITOR_MS) : HANG_COMPOSITOR_MS;
+const compositorMs = args.smoke && !app.isPackaged && Number(process.env.MOSS_SMOKE_COMPOSITOR_MS ?? "0") > 0 ? Number(process.env.MOSS_SMOKE_COMPOSITOR_MS) : HANG_COMPOSITOR_MS;
 
-/** Where each native view goes (ruling R8: the place the person used last), as the Clover Browser's `setView`. */
+/** Where each native view goes (ruling R8: the place the person used last), as the MOSS Browser's `setView`. */
 const views = new ViewFrames((name, target) => {
   if (browser === undefined) return;
   const win = target === undefined ? null : BrowserWindow.fromId(target.windowId);
@@ -2273,7 +2273,7 @@ const webViews = new WebViews((windowId) => {
   return w === null || w.isDestroyed() ? undefined : w;
 }, log);
 
-/** The Clover Browser in this process (lane L, spec §12.1): made once the app is ready; what it reports goes to the
+/** The MOSS Browser in this process (lane L, spec §12.1): made once the app is ready; what it reports goes to the
  *  daemon over the pair. */
 function startBrowser(): void {
   const send = (method: string, params: unknown) => {
@@ -2281,7 +2281,7 @@ function startBrowser(): void {
     if (c !== undefined) void c.request(method, params).catch((err) => log(`browser: ${method} failed: ${why(err)}`));
   };
   // The acceptance run's fixture site, by name (a test or acceptance build only: a release build has none of this).
-  const testNames = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? testBrowserNames(process.env.CLOVER_TEST_BROWSER_NAMES) : undefined;
+  const testNames = typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string" ? testBrowserNames(process.env.MOSS_TEST_BROWSER_NAMES) : undefined;
   browser = createBrowserHost({
     computer: hostname().replace(/\.local$/, ""),
     headless,
@@ -2304,7 +2304,7 @@ function browserHost(): BrowserHost {
  *  placed in it. (The guards come from `web-contents-created`.) */
 function watchWindow(win: BrowserWindow): void {
   const id = win.id;
-  // Clover Dev wears its own icon on Windows and Linux (docs/clover-brand.md); macOS's is the Dock's, set at ready.
+  // MOSS Code Dev wears its own icon on Windows and Linux (docs/moss-brand.md); macOS's is the Dock's, set at ready.
   if (devIcon.window !== undefined) win.setIcon(join(here, "icons", devIcon.window));
   // A part that stopped says why in its layer's console (the SDK's boundary); the app's log keeps the line, so a part that "stopped"
   // is never a bare mystery (the sentence only, capped; nothing else a page logs is kept).
@@ -2355,7 +2355,7 @@ function watchWindow(win: BrowserWindow): void {
     menus.input(id);
     if (isBackgroundWindow(id)) sends.input(id);
     else {
-      // Which frame it landed in is that frame's own report a moment later (the preload's trusted pointerdown, `clover:press-seen`);
+      // Which frame it landed in is that frame's own report a moment later (the preload's trusted pointerdown, `moss:press-seen`);
       // the release waits for it if it comes first.
       sends.press(id, { kind: "mouse", key: mouse.button ?? "left" });
     }
@@ -2399,7 +2399,7 @@ function watchWindow(win: BrowserWindow): void {
 }
 
 /** The menu broker's last step: a native menu at the point, in the window the asking frame is in. A headless run
- *  never shows it: it answers with `CLOVER_TEST_MENU_PICK` (the tests), else nothing. */
+ *  never shows it: it answers with `MOSS_TEST_MENU_PICK` (the tests), else nothing. */
 async function popupMenu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null> {
   const win = BrowserWindow.fromId(windowId);
   if (win === null || win.isDestroyed()) return null;
@@ -2411,7 +2411,7 @@ async function popupMenu(windowId: number, items: MenuItem[], point: { x: number
   try {
     if (headless || !win.isVisible()) {
       log(`menu: ${items.length} item(s) at ${point.x},${point.y} (not shown: headless)`);
-      return process.env.CLOVER_TEST_MENU_PICK ?? null;
+      return process.env.MOSS_TEST_MENU_PICK ?? null;
     }
     return await nativeMenu(win, items, point);
   } finally {
@@ -2489,14 +2489,14 @@ function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void
       if (held.passOn !== true) return;
     }
     // A test-marked or acceptance build says which up passed a held binding by (the harness reads it).
-    if (input.type === "keyUp" && pluginKeys.holding(win.id) !== undefined && (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")) {
+    if (input.type === "keyUp" && pluginKeys.holding(win.id) !== undefined && (typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string")) {
       log(`keys: an up of ${JSON.stringify(input.key)} (${input.code}; ${[input.control && "ctrl", input.shift && "shift", input.alt && "alt", input.meta && "meta"].filter(Boolean).join("+") || "no modifier"}) is not ${pluginKeys.holding(win.id)}'s`);
     }
     const bound = mayRun ? pluginKeys.binding(press) : undefined;
     // A held binding's chord pressed while another is held is not a press of it.
     const command = bound?.hold === true ? undefined : bound?.name;
     // A test-marked or acceptance build says which chord an unbound press made (the harness reads it); a release never does.
-    if (command === undefined && (input.type === "keyDown" || input.type === "rawKeyDown") && (input.meta || input.control) && (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")) {
+    if (command === undefined && (input.type === "keyDown" || input.type === "rawKeyDown") && (input.meta || input.control) && (typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string")) {
       log(`keys: an unbound ${input.type} made ${pluginKeys.chordOf({ key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift }) ?? "no chord"}`);
     }
     if (command !== undefined) {
@@ -2544,7 +2544,7 @@ function setMenu(): void {
 
 function report(facts: Record<string, unknown>): void {
   const line = JSON.stringify(facts);
-  const out = process.env.CLOVER_SMOKE_OUT;
+  const out = process.env.MOSS_SMOKE_OUT;
   if (out !== undefined && out !== "") {
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, `${line}\n`);
@@ -2553,7 +2553,7 @@ function report(facts: Record<string, unknown>): void {
 }
 
 async function smoke(): Promise<void> {
-  const deadline = Date.now() + Number(process.env.CLOVER_SMOKE_DEADLINE_MS ?? "45000");
+  const deadline = Date.now() + Number(process.env.MOSS_SMOKE_DEADLINE_MS ?? "45000");
   const win = await openMainWindow();
   if (win === undefined) return report({ ok: false, reason: "no window" });
   // A sealed run delivers real input into out-of-process frames: CDP input routes through the browser's compositor
@@ -2562,7 +2562,7 @@ async function smoke(): Promise<void> {
   // starts every frame compositing long before the press, so the router can target the sealed frame. Test-only like
   // the presses themselves; headless otherwise stays hidden, and under CI's virtual display no human screen is
   // touched.
-  if ((SMOKE_SEALED_CLICK !== undefined || SMOKE_SEALED_FALLBACK) && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless })) && !win.isVisible()) {
+  if ((SMOKE_SEALED_CLICK !== undefined || SMOKE_SEALED_FALLBACK) && ((typeof __MOSS_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless })) && !win.isVisible()) {
     showInvisible(win);
     log(`window: shown invisible while headless (the sealed smoke's input routing: opacity 0, ignores the mouse)`);
     log(`sealed-click: main window shown invisible for input routing`);
@@ -2570,18 +2570,18 @@ async function smoke(): Promise<void> {
   const probe = `(() => ({
     origin: location.origin,
     node: typeof require !== "undefined" || typeof process !== "undefined",
-    bridge: typeof window.cloverLayer,
+    bridge: typeof window.mossLayer,
     shell: !!document.querySelector(".cl-window"),
     sidebar: !!document.querySelector(".cl-window__sidebar *"),
     conversation: !!document.querySelector(".cl-bot-tab__conversation *"),
     composer: !!document.querySelector(".cl-bot-tab__composer textarea, .cl-bot-tab__composer [contenteditable], .cl-bot-tab__composer iframe"),
     frames: document.querySelectorAll("iframe").length,
-    rendered: !!document.getElementById("clover-root")?.firstElementChild,
-    accent: getComputedStyle(document.documentElement).getPropertyValue("--clover-color-accent").trim(),
-    insetTop: getComputedStyle(document.documentElement).getPropertyValue("--clover-frame-inset-top").trim(),
-    sheets: document.querySelectorAll("style[data-clover-sheet]").length,
+    rendered: !!document.getElementById("moss-root")?.firstElementChild,
+    accent: getComputedStyle(document.documentElement).getPropertyValue("--moss-color-accent").trim(),
+    insetTop: getComputedStyle(document.documentElement).getPropertyValue("--moss-frame-inset-top").trim(),
+    sheets: document.querySelectorAll("style[data-moss-sheet]").length,
     themed: getComputedStyle(document.documentElement).textRendering,
-    text: (document.body.innerText || "").slice(0, location.protocol === "clover-core:" ? 2000 : 600),
+    text: (document.body.innerText || "").slice(0, location.protocol === "moss-core:" ? 2000 : 600),
   }))()`;
   type Probe = { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; rendered: boolean; accent: string; insetTop: string; sheets: number; themed: string; text: string };
   type Probed = Probe & { url: string; osPid: number };
@@ -2616,30 +2616,30 @@ async function smoke(): Promise<void> {
   }));
   // Texts the run waits for, all of them (`|` between), and mounts it waits for (per kind, "kind:n" each, `,` between):
   // a part's frames are placed a beat after its document draws, so a test that counts mounts waits for its own counts.
-  const waitTexts = (process.env.CLOVER_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
-  const waitMounts = Object.fromEntries((process.env.CLOVER_SMOKE_WAIT_MOUNTS ?? "").split(",").filter((t) => t.includes(":")).map((t) => [t.slice(0, t.indexOf(":")), Number(t.slice(t.indexOf(":") + 1))])) as Partial<Record<"root" | "frame" | "inline" | "web", number>>;
+  const waitTexts = (process.env.MOSS_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
+  const waitMounts = Object.fromEntries((process.env.MOSS_SMOKE_WAIT_MOUNTS ?? "").split(",").filter((t) => t.includes(":")).map((t) => [t.slice(0, t.indexOf(":")), Number(t.slice(t.indexOf(":") + 1))])) as Partial<Record<"root" | "frame" | "inline" | "web", number>>;
   let hung = false;
   let dropped = false;
   // The UI test's user on the core's own pages (unpackaged runs only): a page to open once everything has drawn, and
   // steps in the root, one a turn, each once its element is there (a click, a tick, text typed into a field).
-  const smokePage = process.env.CLOVER_SMOKE_PAGE;
+  const smokePage = process.env.MOSS_SMOKE_PAGE;
   let pageOpened = false;
   type Step = { click?: string; check?: string; fill?: string; value?: string };
-  const steps: Step[] = !app.isPackaged ? (JSON.parse(process.env.CLOVER_SMOKE_ROOT_STEPS ?? "[]") as Step[]) : [];
+  const steps: Step[] = !app.isPackaged ? (JSON.parse(process.env.MOSS_SMOKE_ROOT_STEPS ?? "[]") as Step[]) : [];
   while (Date.now() < deadline) {
     frames = await probeWindow(win);
     surfaceFacts = [];
     for (const s of surfaces.values()) if (!s.win.isDestroyed()) surfaceFacts.push({ id: s.id, visible: s.win.isVisible(), bounds: s.win.getBounds(), frames: await probeWindow(s.win) });
-    const shell = frames.find((f) => f.origin === "clover-plugin://clover");
-    const wanted = Number(process.env.CLOVER_SMOKE_LAYERS ?? "0");
-    const layers = frames.filter((f) => f.origin.startsWith("clover-plugin://"));
-    const others = new Set(layers.filter((f) => f.origin !== "clover-plugin://clover").map((f) => f.origin));
+    const shell = frames.find((f) => f.origin === "moss-plugin://moss");
+    const wanted = Number(process.env.MOSS_SMOKE_LAYERS ?? "0");
+    const layers = frames.filter((f) => f.origin.startsWith("moss-plugin://"));
+    const others = new Set(layers.filter((f) => f.origin !== "moss-plugin://moss").map((f) => f.origin));
     webFacts = await probeWeb();
     const texts = [...[...frames, ...surfaceFacts.flatMap((x) => x.frames)].map((f) => f.text), ...webFacts.map((w) => w.text)];
     const drawn = shell?.shell === true && shell.composer && others.size >= wanted && layers.every((f) => f.rendered);
-    // The compositor case (`CLOVER_SMOKE_UNRESPONSIVE=1`): the main window is said to be unresponsive while every
+    // The compositor case (`MOSS_SMOKE_UNRESPONSIVE=1`): the main window is said to be unresponsive while every
     // document in it answers.
-    if (drawn && !hung && process.env.CLOVER_SMOKE_UNRESPONSIVE === "1") {
+    if (drawn && !hung && process.env.MOSS_SMOKE_UNRESPONSIVE === "1") {
       hung = true;
       win.webContents.emit("unresponsive");
     }
@@ -2649,17 +2649,17 @@ async function smoke(): Promise<void> {
     const sealedWait = SMOKE_SEALED_CLICK !== undefined || SMOKE_SEALED_FALLBACK;
     if (sealedWait && sealedClicked) break;
     if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v) && (!sealedWait || sealedClicked)) break;
-    // The hang test (`CLOVER_SMOKE_HANG=<surface>`): once everything has drawn and the named surface's own layer has
+    // The hang test (`MOSS_SMOKE_HANG=<surface>`): once everything has drawn and the named surface's own layer has
     // rendered (its frames aren't in the main window's, so `drawn` doesn't wait for it), the surface's layer is made
     // to hang (its own mouse-down handler never returns), then the window is told it went unresponsive. Chromium says
     // so only after its hang timeout with input waiting for that frame, and input doesn't reach a hidden window's
     // out-of-process frames, so the test raises the event itself; everything after it is the app's own path.
-    const hangOn = process.env.CLOVER_SMOKE_HANG;
+    const hangOn = process.env.MOSS_SMOKE_HANG;
     const target = hangOn === undefined ? undefined : [...surfaces.values()].find((x) => x.id === hangOn)?.win;
     const targetFact = hangOn === undefined ? undefined : surfaceFacts.find((x) => x.id === hangOn);
-    const targetLayer = targetFact?.frames.find((f) => f.url.startsWith("clover-plugin://"));
+    const targetLayer = targetFact?.frames.find((f) => f.url.startsWith("moss-plugin://"));
     if (drawn && !hung && target !== undefined && !target.isDestroyed() && targetLayer !== undefined && targetLayer.rendered) {
-      const layer = target.webContents.mainFrame.framesInSubtree.find((f) => f.url.startsWith("clover-plugin://"));
+      const layer = target.webContents.mainFrame.framesInSubtree.find((f) => f.url.startsWith("moss-plugin://"));
       if (layer !== undefined) {
         hung = true;
         void layer.executeJavaScript("document.querySelector('[data-fixture=spin]')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))", true).catch(() => undefined);
@@ -2698,7 +2698,7 @@ async function smoke(): Promise<void> {
             cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number; pulse?: number;
           };
           const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
-            f.url.startsWith("clover-sealed://") &&
+            f.url.startsWith("moss-sealed://") &&
             (cardId === undefined || f.url.includes(cardId)) &&
             (element === undefined || f.url.includes(element) || (element !== undefined && f.url.includes(encodeURIComponent(element)))));
           if (frame !== undefined) {
@@ -2811,7 +2811,7 @@ async function smoke(): Promise<void> {
             if (!chainOk) log(`sealed-click: no offset chain for ${frame.url.split("?")[0]!.slice(0, 80)}`);
             // Report how the label renders, so the markup case proves text, not HTML (check 3).
             const labelRaw = await frame.executeJavaScript(
-              `(() => { const s = document.querySelector('.seal-button .label'); if (!s) return null; return { html: s.innerHTML.slice(0, 200), hasBold: s.querySelector('b') !== null, sealed: typeof window.cloverSealed, btn: typeof document.querySelector('.seal-button') }; })()`, true).catch(() => null) as { html: string; hasBold: boolean } | null;
+              `(() => { const s = document.querySelector('.seal-button .label'); if (!s) return null; return { html: s.innerHTML.slice(0, 200), hasBold: s.querySelector('b') !== null, sealed: typeof window.mossSealed, btn: typeof document.querySelector('.seal-button') }; })()`, true).catch(() => null) as { html: string; hasBold: boolean } | null;
             if (labelRaw !== null && typeof labelRaw === "object") log(`sealed-click: label html=${String((labelRaw as { html?: unknown }).html ?? "")} hasBold=${String((labelRaw as { hasBold?: unknown }).hasBold ?? "")} sealed=${String((labelRaw as { sealed?: unknown }).sealed ?? "")}`);
             if (buttonRect !== null && chainOk) {
               if (buttonRect.width <= 0 || buttonRect.height <= 0) {
@@ -2824,21 +2824,21 @@ async function smoke(): Promise<void> {
               const hit = await win.webContents.executeJavaScript(
                 `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 5).map((el) => { const tag = el.tagName; const src = el.tagName === "IFRAME" ? el.src.split("?")[0].slice(0, 60) : (el.className !== undefined ? String(el.className).slice(0, 40) : null); const r = el.getBoundingClientRect(); const pe = getComputedStyle(el).pointerEvents; return { tag, src, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), pe }; })); })()`, true).catch(() => null) as string | null;
               log(`sealed-click: root hit-test: ${String(hit ?? "failed").slice(0, 600)}`);
-              const cloverFrame = win.webContents.mainFrame.framesInSubtree.find((f) => f.url.startsWith("clover-plugin://clover/"));
-              if (cloverFrame !== undefined) {
-                const cloverHit = await cloverFrame.executeJavaScript(
+              const mossFrame = win.webContents.mainFrame.framesInSubtree.find((f) => f.url.startsWith("moss-plugin://moss/"));
+              if (mossFrame !== undefined) {
+                const mossHit = await mossFrame.executeJavaScript(
                   `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 4).map((el) => ({ tag: el.tagName, src: el.tagName === "IFRAME" ? el.src.split("?")[0].slice(0, 60) : null }))); })()`, true).catch(() => null) as string | null;
-                log(`sealed-click: clover hit-test: ${String(cloverHit ?? "failed").slice(0, 400)}`);
-                await cloverFrame.executeJavaScript(`(() => { window.__cloverPresses = []; document.addEventListener('pointerdown', (e) => window.__cloverPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
-                const cloverPe = await cloverFrame.executeJavaScript(`(() => { const f = document.querySelector('iframe'); return f ? getComputedStyle(f).pointerEvents : "no-iframe"; })()`, true).catch(() => null) as string | null;
-                log(`sealed-click: clover iframe pointer-events: ${String(cloverPe ?? "failed")}`);
+                log(`sealed-click: moss hit-test: ${String(mossHit ?? "failed").slice(0, 400)}`);
+                await mossFrame.executeJavaScript(`(() => { window.__mossPresses = []; document.addEventListener('pointerdown', (e) => window.__mossPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
+                const mossPe = await mossFrame.executeJavaScript(`(() => { const f = document.querySelector('iframe'); return f ? getComputedStyle(f).pointerEvents : "no-iframe"; })()`, true).catch(() => null) as string | null;
+                log(`sealed-click: moss iframe pointer-events: ${String(mossPe ?? "failed")}`);
               }
               await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               // Drive the press over CDP input (unpackaged smoke only): sendInputEvent's mouse path does not reach
               // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted. Test-only
               // on every axis (B1): a packaged app never attaches the debugger, whatever env vars it started with.
-              const inputAllowed = (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless });
+              const inputAllowed = (typeof __MOSS_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless });
               let cdp = false;
               if (inputAllowed) {
                 try {
@@ -2898,10 +2898,10 @@ async function smoke(): Promise<void> {
               const rootAfter = await win.webContents.executeJavaScript(
                 `(() => ({ presses: (window.__rootPresses ?? []).slice(0, 4) }))()`, true).catch(() => null) as { presses: unknown } | null;
               if (rootAfter !== null && typeof rootAfter === "object") log(`sealed-click: root presses=${JSON.stringify((rootAfter as { presses?: unknown }).presses ?? [])}`);
-              if (cloverFrame !== undefined) {
-                const cloverAfter = await cloverFrame.executeJavaScript(
-                  `(() => ({ presses: (window.__cloverPresses ?? []).slice(0, 4) }))()`, true).catch(() => null) as { presses: unknown } | null;
-                if (cloverAfter !== null && typeof cloverAfter === "object") log(`sealed-click: clover presses=${JSON.stringify((cloverAfter as { presses?: unknown }).presses ?? [])}`);
+              if (mossFrame !== undefined) {
+                const mossAfter = await mossFrame.executeJavaScript(
+                  `(() => ({ presses: (window.__mossPresses ?? []).slice(0, 4) }))()`, true).catch(() => null) as { presses: unknown } | null;
+                if (mossAfter !== null && typeof mossAfter === "object") log(`sealed-click: moss presses=${JSON.stringify((mossAfter as { presses?: unknown }).presses ?? [])}`);
               }
               }
             } else {
@@ -2919,7 +2919,7 @@ async function smoke(): Promise<void> {
     if (!sealedClicked && SMOKE_SEALED_FALLBACK) {
       for (const w of BrowserWindow.getAllWindows()) {
         if (w === win || w.isDestroyed()) continue;
-        if (!w.webContents.getURL().startsWith("clover-sealed://")) continue;
+        if (!w.webContents.getURL().startsWith("moss-sealed://")) continue;
         log(`sealed-click: fallback frame found ${w.webContents.getURL().split("?")[0]!.slice(0, 80)}`);
         const frame = w.webContents.mainFrame;
         const fallbackRaw = await frame.executeJavaScript(
@@ -2936,7 +2936,7 @@ async function smoke(): Promise<void> {
           // press covers a first one lost while the page still loaded. CDP input (like the part path): sendInputEvent
           // does not reach the page here. Test-only on every axis (B1): a packaged app never attaches the debugger,
           // whatever env vars it started with.
-          const fbInputAllowed = (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless });
+          const fbInputAllowed = (typeof __MOSS_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless });
           let fbCdp = false;
           if (fbInputAllowed) {
             try {
@@ -2975,7 +2975,7 @@ async function smoke(): Promise<void> {
     }
     // The UI test's user: once everything has drawn (so a part asking for a menu before has been refused), a Shift
     // press in each window, which the menu gate counts as the user's input.
-    if (drawn && process.env.CLOVER_SMOKE_INPUT === "1") {
+    if (drawn && process.env.MOSS_SMOKE_INPUT === "1") {
       for (const w of [win, ...[...surfaces.values()].map((x) => x.win)]) {
         if (w.isDestroyed()) continue;
         w.webContents.sendInputEvent({ type: "keyDown", keyCode: "Shift" });
@@ -2985,7 +2985,7 @@ async function smoke(): Promise<void> {
     // The UI test's user, for a page that needs the user's click (a file picker): a left click at the top left of each surface
     // window, every beat, until what the test waits for has drawn. The page decides what a click means.
     let clickSaid = false;
-    if (drawn && process.env.CLOVER_SMOKE_INPUT === "click") {
+    if (drawn && process.env.MOSS_SMOKE_INPUT === "click") {
       // A hidden window takes no input events of its own, so the click goes by the debugger (the sealed fallback's way), and
       // the main process counts it as the user's (the SendGate) as `before-mouse-event` would.
       for (const w of [...surfaces.values()].map((x) => x.win)) {
@@ -2999,15 +2999,15 @@ async function smoke(): Promise<void> {
         } catch (err) { if (!clickSaid) { clickSaid = true; log(`smoke click: ${String(err).slice(0, 120)}`); } }
       }
     }
-    // The UI test's drop (an unpackaged run only): the file at CLOVER_SMOKE_DROP dropped, once, at the top left of each surface window,
+    // The UI test's drop (an unpackaged run only): the file at MOSS_SMOKE_DROP dropped, once, at the top left of each surface window,
     // by the debugger's drag events (they carry real files, with paths, as a person's drop does).
-    if (drawn && !dropped && !app.isPackaged && process.env.CLOVER_SMOKE_DROP !== undefined) {
+    if (drawn && !dropped && !app.isPackaged && process.env.MOSS_SMOKE_DROP !== undefined) {
       dropped = true;
       for (const w of [...surfaces.values()].map((x) => x.win)) {
         if (w.isDestroyed()) continue;
         try {
           if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.3");
-          const data = { items: [], files: [process.env.CLOVER_SMOKE_DROP], dragOperationsMask: 1 };
+          const data = { items: [], files: [process.env.MOSS_SMOKE_DROP], dragOperationsMask: 1 };
           for (const type of ["dragEnter", "dragOver", "drop"]) void w.webContents.debugger.sendCommand("Input.dispatchDragEvent", { type, x: 24, y: 24, data }).catch(() => undefined);
           log("smoke drop: sent to a surface window");
         } catch (err) { log(`smoke drop: ${String(err).slice(0, 120)}`); }
@@ -3016,10 +3016,10 @@ async function smoke(): Promise<void> {
     await new Promise((r) => setTimeout(r, 250));
   }
   // Time for what the parts set going to happen (the DNS probe's lookups).
-  const settle = Number(process.env.CLOVER_SMOKE_SETTLE_MS ?? "0");
+  const settle = Number(process.env.MOSS_SMOKE_SETTLE_MS ?? "0");
   if (settle > 0) await new Promise((r) => setTimeout(r, Math.min(settle, 10_000)));
   const metrics = app.getAppMetrics();
-  const shellFrame = frames.find((f) => f.origin === "clover-plugin://clover");
+  const shellFrame = frames.find((f) => f.origin === "moss-plugin://moss");
   let captured: string | undefined;
   if (args.capture !== undefined) {
     try {
@@ -3059,6 +3059,6 @@ async function smoke(): Promise<void> {
     })(),
     captured,
   });
-  if (process.env.CLOVER_SMOKE_KEEP === "1") return;
+  if (process.env.MOSS_SMOKE_KEEP === "1") return;
   await requestQuit("smoke");
 }

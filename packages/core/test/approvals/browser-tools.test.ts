@@ -2,7 +2,7 @@
 // the core names. Its class holds on the tree the user OK'd (or the build's copy) while the grant is in force; the OK card
 // names it with its warning, and a plugin without `browser` can't declare one.
 import { expect, test } from "bun:test";
-import { describeOk, validateManifest } from "@waifucave/clover-plugin-sdk";
+import { describeOk, validateManifest } from "@waifucave/moss-plugin-sdk";
 import { pluginWebTool } from "../../src/registry/read-only-tools";
 
 const server = { type: "host", tools: { Browse: "preload", Other: "preload" }, browserTools: ["Browse"] };
@@ -22,9 +22,9 @@ test("a third party's browserTools tool is the Browser class while it holds brow
 });
 
 test("the validator: browserTools needs browser; its card line says what the tab gives the plugin", () => {
-  const m = (caps: string[]) => ({ manifest: 1, id: "surfer", name: "Surfer", engines: { clover: "^1.0.0" }, capabilities: caps, host: { entry: "host/index.ts" }, contributes: { mcpServers: { web: server } } });
+  const m = (caps: string[]) => ({ manifest: 1, id: "surfer", name: "Surfer", engines: { moss: "^1.0.0" }, capabilities: caps, host: { entry: "host/index.ts" }, contributes: { mcpServers: { web: server } } });
   const codes = (caps: string[]) => validateManifest(m(caps), { folderName: "surfer" }).issues.filter((i) => i.severity === "error").map((i) => i.code);
   expect(codes([])).toContain("browser_tool_no_capability");
   expect(codes(["browser"])).toEqual([]);
-  expect(describeOk(validateManifest(m(["browser"]), { folderName: "surfer" })).join("\n")).toContain("Its server web says Browse drives the calling bot's own tab of the Clover Browser. Looking and acting are told apart by the plugin's own word (its verbs)");
+  expect(describeOk(validateManifest(m(["browser"]), { folderName: "surfer" })).join("\n")).toContain("Its server web says Browse drives the calling bot's own tab of the MOSS Browser. Looking and acting are told apart by the plugin's own word (its verbs)");
 });

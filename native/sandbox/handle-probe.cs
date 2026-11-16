@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Security.Principal;
 using System.Reflection;
 using System.Runtime.InteropServices;
-public static class CloverHandleProbe {
+public static class MossHandleProbe {
  [StructLayout(LayoutKind.Sequential)] struct SA { public int length; public IntPtr descriptor; [MarshalAs(UnmanagedType.Bool)] public bool inherit; }
  [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct SI { public int cb; public string reserved,desktop,title; public int x,y,w,h,xc,yc,fill,flags; public short show,reserved2; public IntPtr extra,stdin,stdout,stderr; }
  [StructLayout(LayoutKind.Sequential)] struct PI { public IntPtr process,thread;public int pid,tid; }

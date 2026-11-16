@@ -27,7 +27,7 @@ describe("the plugin Alpha builds", () => {
     const made = templateFiles("tool", { id: WORKSHOP_ID, name: WORKSHOP_NAME });
     if ("error" in made) throw new Error(made.error);
     expect(Object.keys(files)).toEqual(Object.keys(made.files));
-    expect(files["clover.json"]).toContain(`"${WORKSHOP_TOOL}": "preload"`);
+    expect(files["moss.json"]).toContain(`"${WORKSHOP_TOOL}": "preload"`);
     expect(files["host/index.ts"]).toContain(`name: "${WORKSHOP_TOOL}"`);
     expect(files["host/index.ts"]).not.toContain('"hello"');
     const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-d-workshop-")));
@@ -44,13 +44,13 @@ describe("the plugin Alpha builds", () => {
     expect(count(files["host/index.ts"]!, GREETING.first)).toBe(1);
     const edited = files["host/index.ts"]!.replace(GREETING.first, GREETING.second);
     expect(count(edited, GREETING.second)).toBe(1);
-    expect(count(files["clover.json"]!, ADD_CAPABILITY.old)).toBe(1);
-    const asked = JSON.parse(files["clover.json"]!.replace(ADD_CAPABILITY.old, ADD_CAPABILITY.new)) as Record<string, unknown>;
+    expect(count(files["moss.json"]!, ADD_CAPABILITY.old)).toBe(1);
+    const asked = JSON.parse(files["moss.json"]!.replace(ADD_CAPABILITY.old, ADD_CAPABILITY.new)) as Record<string, unknown>;
     const r = validateManifest(asked);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.capabilities).toEqual(["notify"]);
     // 5b's request goes on the manifest as step 5 left it, once, and comes back out to exactly that.
-    const stepFive = files["clover.json"]!.replace(ADD_CAPABILITY.old, ADD_CAPABILITY.new);
+    const stepFive = files["moss.json"]!.replace(ADD_CAPABILITY.old, ADD_CAPABILITY.new);
     expect(count(stepFive, SECOND_REQUEST.old)).toBe(1);
     const second = stepFive.replace(SECOND_REQUEST.old, SECOND_REQUEST.new);
     expect(validateManifest(JSON.parse(second)).capabilities).toEqual(["notify", "devices.read"]);
@@ -62,7 +62,7 @@ describe("the plugin Alpha builds", () => {
 
 test("the plugin Alpha drops in is the tool template's under its own id and tool, valid, and the move names both folders", async () => {
   const files = dropFiles();
-  expect(files["clover.json"]).toContain(`"${DROP_TOOL}": "preload"`);
+  expect(files["moss.json"]).toContain(`"${DROP_TOOL}": "preload"`);
   expect(files["host/index.ts"]).toContain(GREETING.first);
   const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-a-drop-")));
   temps.push(root);
@@ -70,7 +70,7 @@ test("the plugin Alpha drops in is the tool template's under its own id and tool
   const v = await validatePluginFolder(join(root, DROP_ID), { os: "macos" });
   expect(v.issues.filter((i) => i.severity === "error")).toEqual([]);
   expect(v.plugin?.toolNames).toEqual([`mcp__${DROP_ID}__${DROP_TOOL}`]);
-  expect(JSON.parse(files["clover.json"]!).name).toBe(DROP_NAME);
+  expect(JSON.parse(files["moss.json"]!).name).toBe(DROP_NAME);
   expect(dropCommand("/h/scratch/alpha/ws-dropped", "/h/plugins")).toBe('mv "/h/scratch/alpha/ws-dropped" "/h/plugins"/');
 });
 
@@ -89,7 +89,7 @@ test("the bot Alpha makes is the bot template's with her own instructions, a val
   expect(v.issues.filter((i) => i.severity === "error")).toEqual([]);
   expect(v.plugin?.class).toBe("data");
   expect(v.plugin?.contributions.map((c) => c.point)).toEqual(["bot"]);
-  expect(JSON.parse(files["clover.json"]!).contributes.bot.name).toBe(BOT_NAME);
+  expect(JSON.parse(files["moss.json"]!).contributes.bot.name).toBe(BOT_NAME);
 });
 
 test("the peer bot's fixture is a valid plain bot with no code", async () => {
@@ -103,7 +103,7 @@ test("the scripted fake calls each of the row's tools with exactly the row's inp
   const fake = startFakeAnthropic({ key: "dummy-key", writePath: "/nonexistent/lane-d", writeContent: "x" });
   try {
     const tools = ["Glossary", "Read", "Write", "Edit", "Bash", "PluginValidate", "PluginInstall", "PluginStatus", "mcp__builder__PluginNew", `mcp__${WORKSHOP_ID}-tools__${WORKSHOP_TOOL}`, `mcp__${DROP_ID}-tools__${DROP_TOOL}`];
-    const home = "/Users/someone/.clover";
+    const home = "/Users/someone/.moss";
     const files = workshopFiles();
     const calls: [string, Record<string, unknown>, string][] = [
       ["PluginNew", { template: "tool", id: WORKSHOP_ID, name: WORKSHOP_NAME }, "mcp__builder__PluginNew"],
@@ -113,8 +113,8 @@ test("the scripted fake calls each of the row's tools with exactly the row's inp
       ["PluginStatus", { id: WORKSHOP_ID }, "PluginStatus"],
       [WORKSHOP_TOOL, { name: "Acceptance" }, `mcp__${WORKSHOP_ID}-tools__${WORKSHOP_TOOL}`],
       ["Edit", { file_path: `${home}/plugins/${WORKSHOP_ID}/host/index.ts`, old_string: GREETING.first, new_string: GREETING.second }, "Edit"],
-      ["Edit", { file_path: `${home}/plugins/${WORKSHOP_ID}/clover.json`, old_string: ADD_CAPABILITY.old, new_string: ADD_CAPABILITY.new }, "Edit"],
-      ["Edit", { file_path: `${home}/plugins/${WORKSHOP_ID}/clover.json`, old_string: SECOND_REQUEST.old, new_string: SECOND_REQUEST.new }, "Edit"],
+      ["Edit", { file_path: `${home}/plugins/${WORKSHOP_ID}/moss.json`, old_string: ADD_CAPABILITY.old, new_string: ADD_CAPABILITY.new }, "Edit"],
+      ["Edit", { file_path: `${home}/plugins/${WORKSHOP_ID}/moss.json`, old_string: SECOND_REQUEST.old, new_string: SECOND_REQUEST.new }, "Edit"],
       ...Object.entries(dropFiles()).map(([p, content]) => ["Write", { file_path: `${home}/scratch/alpha/${DROP_ID}/${p}`, content }, "Write"] as [string, Record<string, unknown>, string]),
       ["Bash", { command: dropCommand(`${home}/scratch/alpha/${DROP_ID}`, `${home}/plugins`), description: "Install the plugin by moving it into the plugins folder" }, "Bash"],
       [DROP_TOOL, { name: "Acceptance" }, `mcp__${DROP_ID}-tools__${DROP_TOOL}`],

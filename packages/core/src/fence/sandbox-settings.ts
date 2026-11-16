@@ -7,7 +7,7 @@
 // `allowRead` at all). So nothing here is an allow meant to re-open part of a deny:
 //
 // - Writes. The runtime's writes are an allow list (its write roots and `allowWrite`); nothing else is writable. So
-//   the Clover home is taken OUT of the allow list instead of denied and re-opened: a root that holds the home is
+//   the MOSS home is taken OUT of the allow list instead of denied and re-opened: a root that holds the home is
 //   written out as its entries minus the way to the home (the user's home: one level, its own entries), and the folders
 //   the runner keeps are added by name. The other sessions' `outputs/<id>` folders are never listed, so the settings
 //   stay the same size however many sessions there are (#356's review: one deny per session would pass sandbox-exec's
@@ -26,7 +26,7 @@
 import { lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
-import type { Level, Os } from "@waifucave/clover-protocol";
+import type { Level, Os } from "@waifucave/moss-protocol";
 import { BOT_READ_DENIED, secretReadPlaces, segmentMatches, type SandboxPolicy } from "../contracts/fence";
 import { gitRunLaterPlaces, pathClass } from "../approvals/ordinary-paths";
 import { PROJECT_DENIES, PROJECT_WHOLE_DENIES } from "../registry/plugin-fence";
@@ -55,16 +55,16 @@ export const realNonFolder = (path: string): boolean => {
   try { return !statSync(path).isDirectory(); } catch { return false; }
 };
 
-/** The environment a bot's Bash runs with beside these settings: `GIT_TEMPLATE_DIR` at Clover's empty template, so
+/** The environment a bot's Bash runs with beside these settings: `GIT_TEMPLATE_DIR` at MOSS's empty template, so
  *  `git init` and `git clone` in a scratch folder work with every `.git/hooks` write-denied (they copy no hooks). */
-export function sandboxEnvOf(cloverHome: string): Record<string, string> {
-  const template = gitTemplateDir(cloverHome);
+export function sandboxEnvOf(mossHome: string): Record<string, string> {
+  const template = gitTemplateDir(mossHome);
   try { mkdirSync(template, { recursive: true, mode: 0o700 }); } catch { /* git then finds no template: it copies nothing either */ }
   return { GIT_TEMPLATE_DIR: template };
 }
 
 /** The name written-denied inside each kept folder: the runtime's ancestor fence then holds the folder's own entry. */
-export const KEPT_FOLDER_PIN = ".clover-kept-folder";
+export const KEPT_FOLDER_PIN = ".moss-kept-folder";
 
 const realList = (dir: string): readonly string[] => {
   try { return readdirSync(dir); } catch { return []; }
@@ -145,7 +145,7 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
 
   // Writes: the allow list with the home taken out of every root that holds it; the kept folders by name.
   // A root written out entry by entry (the user's home): only plain entries, never a link or one whose real path is
-  // elsewhere (the runtime real-paths each root: a link to `/` would open the disk, one to the Clover home the home),
+  // elsewhere (the runtime real-paths each root: a link to `/` would open the disk, one to the MOSS home the home),
   // and each held like a kept folder, so a run can't swap it for a link that the next run's root would follow.
   const allowWrite: string[] = [];
   const listedRoots: string[] = [];
@@ -185,7 +185,7 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
  *  started with until it ends (the runtime takes its sandbox only when it opens), so a lowered level reaches the shell
  *  at the next turn (accepted by the coordinator's ruling of November 11; backlog: reopen mid-turn on a level drop). */
 export function botSandboxSettings(policy: SandboxPolicy, o: {
-  cloverHome: string; userHome: string; level: Level | undefined; windows?: boolean;
+  mossHome: string; userHome: string; level: Level | undefined; windows?: boolean;
   grantedWrite?: readonly string[];
   /** The session's own folders the runtime writes to whatever the settings say (its working folder, its bot's
    *  folder): they are roots like every other, and held the same. */
@@ -201,24 +201,24 @@ export function botSandboxSettings(policy: SandboxPolicy, o: {
   // A root whose path has a control character is never drawn (a newline would be written raw into the profile).
   const drawable = (r: string) => !CONTROL.test(r);
   // At accept edits the home is written out as its ordinary top-level folders (the coordinator's ruling on stage 2):
-  // never `~/Library`, a dot-folder, the home's own files or the folder holding the Clover home's way. Fully automatic
+  // never `~/Library`, a dot-folder, the home's own files or the folder holding the MOSS home's way. Fully automatic
   // keeps the whole home.
   const homeAt = (a: string) => fold(a) === fold(o.userHome);
   const levelWrite = (o.level === "automatic" ? policy.allowWrite
-    : wide ? policy.allowWrite.flatMap((a) => (homeAt(a) ? ordinaryTopFolders(o.userHome, { os, cloverHome: o.cloverHome, pathFolders: o.pathFolders ?? [], list: o.list }) : [a]))
+    : wide ? policy.allowWrite.flatMap((a) => (homeAt(a) ? ordinaryTopFolders(o.userHome, { os, mossHome: o.mossHome, pathFolders: o.pathFolders ?? [], list: o.list }) : [a]))
     : policy.allowWrite.filter((a) => !homeAt(a))).filter(drawable);
   const granted = (o.grantedWrite ?? []).filter(drawable);
   const allowWrite = [...levelWrite, ...granted.filter((g) => !levelWrite.some((a) => fold(a) === fold(g)))];
-  const { network: _never, ...out } = sandboxSettingsOf({ ...policy, allowWrite }, o.cloverHome, o.windows ? { windows: true } : {});
+  const { network: _never, ...out } = sandboxSettingsOf({ ...policy, allowWrite }, o.mossHome, o.windows ? { windows: true } : {});
   const own = (o.ownFolders ?? []).filter(drawable);
   const roots = [...new Set([...(out.filesystem?.allowWrite ?? []), ...granted, ...own])];
   // The secret places are never changed either (a Write or an Edit there is refused the same way), nor read.
   const secrets = secretReadPlaces(os, o.userHome).map((p) => p.path);
   // What's held under each root, under the folders only (a root that is a file holds nothing: `realNonFolder`).
-  const runLater = [...shellRunLaterDenies(roots.filter((r) => !realNonFolder(r)), { userHome: o.userHome, cloverHome: o.cloverHome, os, pathFolders: o.pathFolders ?? [] }), ...secrets];
+  const runLater = [...shellRunLaterDenies(roots.filter((r) => !realNonFolder(r)), { userHome: o.userHome, mossHome: o.mossHome, os, pathFolders: o.pathFolders ?? [] }), ...secrets];
   // Fail closed: a root a deny would cover is left out (a deny wins inside the runtime, so it would write nothing
-  // there anyway; leaving it out says so). None is, for the folders Clover draws (sandbox-settings.test's invariant).
-  const keptWrite = (out.filesystem?.allowWrite ?? []).filter((r) => !rootCovered(r, runLater, os) && !holdsFolded(r, o.cloverHome, os));
+  // there anyway; leaving it out says so). None is, for the folders MOSS draws (sandbox-settings.test's invariant).
+  const keptWrite = (out.filesystem?.allowWrite ?? []).filter((r) => !rootCovered(r, runLater, os) && !holdsFolded(r, o.mossHome, os));
   return {
     ...out,
     filesystem: {
@@ -244,9 +244,9 @@ export function anyCase(name: string, os: Os): string {
 /** The run-later names held under every root, from the fence's shared project lists (`PROJECT_WHOLE_DENIES`,
  *  `PROJECT_DENIES`, the plugin fence's for a project folder): denied whole wherever they sit, so none is made,
  *  written, renamed or removed. `.git` goes as `*.git` (a working tree's `.git` folder or file, and a bare repository
- *  by its name); `.clover` per root (`shellRunLaterDenies`), since the Clover home is one. */
+ *  by its name); `.moss` per root (`shellRunLaterDenies`), since the MOSS home is one. */
 function heldNames(): string[] {
-  const whole = PROJECT_WHOLE_DENIES.filter((n) => n !== ".git" && n !== ".clover");
+  const whole = PROJECT_WHOLE_DENIES.filter((n) => n !== ".git" && n !== ".moss");
   return [...new Set(["*.git", ...whole, ...PROJECT_DENIES, "*.app"])];
 }
 
@@ -258,10 +258,10 @@ const FIXED_HOME_PATH_FOLDERS = [".local/bin", "bin", ".cargo/bin", ".bun/bin", 
 /** The user's ordinary top-level folders: the shell's write roots at accept edits in place of the home (the
  *  coordinator's ruling on stage 2: Desktop, Documents, Downloads, Movies, Music, Pictures, Public, and any other plain
  *  top-level folder such as a Projects folder). Never a dot-folder, `~/Library`, `~/Applications`, Windows' `AppData`,
- *  a link, a file, a folder that holds the Clover home, or one the path classes don't call ordinary (a folder on the
+ *  a link, a file, a folder that holds the MOSS home, or one the path classes don't call ordinary (a folder on the
  *  PATH, such as `~/bin`). */
 export function ordinaryTopFolders(userHome: string, o: {
-  os: Os; cloverHome: string; pathFolders: readonly string[];
+  os: Os; mossHome: string; pathFolders: readonly string[];
   list?: (dir: string) => readonly { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }[];
 }): string[] {
   const p = o.os === "windows" ? win32 : posix;
@@ -272,8 +272,8 @@ export function ordinaryTopFolders(userHome: string, o: {
   for (const e of entries) {
     if (!e.isDirectory() || e.isSymbolicLink() || e.name.startsWith(".") || never.has(e.name.toLowerCase())) continue;
     const at = p.join(userHome, e.name);
-    if (CONTROL.test(at) || isInsideOrSame(o.cloverHome, at, o.os)) continue;
-    if (pathClass(p.join(at, "x"), { home: userHome, os: o.os, cloverHome: o.cloverHome, pathFolders: o.pathFolders }) !== "ordinary") continue;
+    if (CONTROL.test(at) || isInsideOrSame(o.mossHome, at, o.os)) continue;
+    if (pathClass(p.join(at, "x"), { home: userHome, os: o.os, mossHome: o.mossHome, pathFolders: o.pathFolders }) !== "ordinary") continue;
     out.push(at);
   }
   return out.sort();
@@ -281,18 +281,18 @@ export function ordinaryTopFolders(userHome: string, o: {
 
 /** Whether `path` (absolute) is one of the run-later places `shellRunLaterDenies` holds BY NAME, wherever it sits and
  *  whatever the session's roots are: a held name (`.git`, `*.git`, `.vscode`, `.mcp.json`, a shell's start file, a
- *  credential file, `*.app`…), or a `.clover` outside the Clover home, as a path segment (or run of segments) at any
+ *  credential file, `*.app`…), or a `.moss` outside the MOSS home, as a path segment (or run of segments) at any
  *  depth and in any letter case; or inside a fixed PATH folder. A bot's file write there is refused before
  *  any card (bot-check's `runsLater`): at the narrow levels a project outside the roots has none of these in the
- *  sandbox's `denyWrite` (on Linux none of the names; `.clover` nowhere), yet a card's yes would write a run-later file.
- *  Inside the Clover home it is false: the fence holds that. The home is matched in the spelling it is given in and
+ *  sandbox's `denyWrite` (on Linux none of the names; `.moss` nowhere), yet a card's yes would write a run-later file.
+ *  Inside the MOSS home it is false: the fence holds that. The home is matched in the spelling it is given in and
  *  in its real one (a home reached through a link: macOS's /var → /private/var, a linked volume), so a bot's write to
- *  its scratch named either way isn't read as a project's `.clover`; the path itself is only ever taken as given (a
- *  `.clover` that is a link into the home is still held). */
-export function runLaterByName(path: string, o: { userHome: string; cloverHome: string; os: Os }): boolean {
+ *  its scratch named either way isn't read as a project's `.moss`; the path itself is only ever taken as given (a
+ *  `.moss` that is a link into the home is still held). */
+export function runLaterByName(path: string, o: { userHome: string; mossHome: string; os: Os }): boolean {
   const p = o.os === "windows" ? win32 : posix;
-  if (isInsideOrSame(path, o.cloverHome, o.os)) return false;
-  const realHome = (() => { try { return realpathSync.native(o.cloverHome); } catch { return undefined; } })();
+  if (isInsideOrSame(path, o.mossHome, o.os)) return false;
+  const realHome = (() => { try { return realpathSync.native(o.mossHome); } catch { return undefined; } })();
   if (realHome !== undefined && isInsideOrSame(path, realHome, o.os)) return false;
   const segs = path.split(/[\\/]+/).filter((s) => s.length > 0);
   const runAt = (name: string) => {
@@ -300,7 +300,7 @@ export function runLaterByName(path: string, o: { userHome: string; cloverHome: 
     for (let i = 0; i + want.length <= segs.length; i++) if (want.every((w, j) => segmentMatches(segs[i + j]!, w, o.os))) return true;
     return false;
   };
-  if ([...heldNames(), ".clover"].some(runAt)) return true;
+  if ([...heldNames(), ".moss"].some(runAt)) return true;
   const fixed = [...FIXED_PATH_FOLDERS, ...FIXED_HOME_PATH_FOLDERS.map((f) => p.join(o.userHome, ...f.split("/")))];
   return fixed.some((f) => isInsideOrSame(path, f, o.os));
 }
@@ -311,8 +311,8 @@ export function runLaterByName(path: string, o: { userHome: string; cloverHome: 
  *    * every `.git` (folder or file) and `*.git` folder, whole, at any depth and in any letter case: a commit, or
  *      anything else that writes `.git`, is for the outside-the-sandbox card (stage 3);
  *    * the fence's project run-later names (`.vscode`, `.idea`, `.claude`, `.mcp.json`, `.envrc`, `.gitmodules`, the
- *      shells' start files, the credential files, `.ripgreprc`…), whole, at any depth; a project's `.clover` under
- *      each root but the Clover home itself;
+ *      shells' start files, the credential files, `.ripgreprc`…), whole, at any depth; a project's `.moss` under
+ *      each root but the MOSS home itself;
  *    * every `*.app` bundle, whole (its entry too, so it can't be renamed away and back);
  *    * the folders on the user's PATH and the fixed ones, by path;
  *    * what the repositories' configs under the roots name for hooks or include (`gitRunLaterPlaces`: `core.hooksPath`
@@ -322,7 +322,7 @@ export function runLaterByName(path: string, o: { userHome: string; cloverHome: 
  *  On Linux the runtime holds a glob's matches that exist when a command starts, and puts away after it what a command
  *  made at a held place: a `.git` made fresh there is only taken away after the run (a known residual; Linux grants
  *  are refused, so it can arise only under the home at the wider levels). */
-export function shellRunLaterDenies(roots: readonly string[], o: { userHome: string; cloverHome: string; os: Os; pathFolders: readonly string[] }): string[] {
+export function shellRunLaterDenies(roots: readonly string[], o: { userHome: string; mossHome: string; os: Os; pathFolders: readonly string[] }): string[] {
   const p = o.os === "windows" ? win32 : posix;
   const sep = p.sep;
   // From `/` on macOS (Seatbelt matches a regex as each path is opened). Linux's sandbox expands a glob against the disk
@@ -335,9 +335,9 @@ export function shellRunLaterDenies(roots: readonly string[], o: { userHome: str
   }
   for (const root of roots) {
     if (top === undefined) for (const n of names) out.push(`${root}${sep}**${sep}${n.split("/").map((seg) => anyCase(seg, o.os)).join(sep)}`);
-    // A project's `.clover`, whole under each root. No root holds the Clover home (the home is written out around it,
+    // A project's `.moss`, whole under each root. No root holds the MOSS home (the home is written out around it,
     // and RequestAccess never grants a folder that holds it); one that did would be left out (`botSandboxSettings`).
-    if (!isInsideOrSame(o.cloverHome, root, o.os)) out.push(`${root}${sep}**${sep}${anyCase(".clover", o.os)}`);
+    if (!isInsideOrSame(o.mossHome, root, o.os)) out.push(`${root}${sep}**${sep}${anyCase(".moss", o.os)}`);
   }
   const pathFolders = [...o.pathFolders, ...FIXED_PATH_FOLDERS, ...FIXED_HOME_PATH_FOLDERS.map((f) => p.join(o.userHome, ...f.split("/")))];
   for (const f of pathFolders) if (!CONTROL.test(f) && roots.some((r) => isInsideOrSame(f, r, o.os) || isInsideOrSame(r, f, o.os))) out.push(f);

@@ -2,14 +2,14 @@
 // those must change only by the user's own act. This pins the doors that change them:
 // * one writer of the column, `setDirsRaw`, called only by the domain setter (`sessions/set-dirs.ts`);
 // * that setter, `setSessionDirs`, called only by the RPCs `session.setDirs` (the app's picker, the phone) and
-//   `session.addDir` (the CLI's `clover add-dir`, the TUI's `/add-dir`), on the legacy connection whose app, CLI and
+//   `session.addDir` (the CLI's `moss add-dir`, the TUI's `/add-dir`), on the legacy connection whose app, CLI and
 //   remote tokens the fence keeps from every session's processes (the run folder);
-// * no Clover method sets them, so no Clover role (a session's CLI, a layer, a plugin host, a bridge) can;
+// * no MOSS method sets them, so no MOSS role (a session's CLI, a layer, a plugin host, a bridge) can;
 // * `lockDir`, the first-write lock, has no caller outside its module: no model write adds or locks a folder.
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { CLOVER_METHODS } from "@waifucave/clover-protocol";
+import { MOSS_METHODS } from "@waifucave/moss-protocol";
 
 const SRC = join(import.meta.dir, "..", "..");
 
@@ -44,8 +44,8 @@ describe("a session's working directories change only by the user's own act", ()
     expect(callers("lockDir")).toEqual([]);
   });
 
-  test("no Clover method sets them, so no session's CLI, layer, plugin host or bridge can", () => {
-    const names = [...CLOVER_METHODS.keys()];
+  test("no MOSS method sets them, so no session's CLI, layer, plugin host or bridge can", () => {
+    const names = [...MOSS_METHODS.keys()];
     expect(names.filter((n) => /dir/i.test(n) && /^session\./.test(n))).toEqual([]);
     expect(names).not.toContain("session.setDirs");
     expect(names).not.toContain("session.addDir");

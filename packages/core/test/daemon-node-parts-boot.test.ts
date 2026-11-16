@@ -8,7 +8,7 @@
 // built from the same assembly the daemon uses (`startDaemonLinks`, `startDaemonParts`).
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
-import { CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/clover-protocol";
+import { MOSS_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/moss-protocol";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileSecretStore } from "../src/auth/secret-store";
@@ -21,12 +21,12 @@ import { FakePluginRegistry } from "../src/contracts/fakes/plugin-registry";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { startDaemonParts, type DaemonBotsInput, type DaemonParts } from "../src/daemon-parts";
 import { startDaemonLinks, type DaemonLinks } from "../src/ipc/device-links";
-import { cloverCall } from "../src/ipc/clover-client";
+import { mossCall } from "../src/ipc/moss-client";
 import { HandshakeClient } from "../src/links/handshake";
 import { startFakeHandshake } from "../src/links/handshake-fake";
 import { MemoryNetwork } from "../src/links/memory-wire";
 import type { DeviceLinks } from "../src/links/node";
-import { CloverSecretStore, KeychainValues, memoryVault } from "../src/secrets/clover-secret-store";
+import { MossSecretStore, KeychainValues, memoryVault } from "../src/secrets/moss-secret-store";
 import { mainSessionIdFor } from "../src/sessions/ids";
 
 const clock = new SystemClock();
@@ -51,11 +51,11 @@ async function waitFor(what: string, cond: () => boolean, ms = 15_000): Promise<
 }
 
 async function fakeBots(): Promise<DaemonBotsInput & { fakes: Drivers }> {
-  const root = temp("clover-int-plugins-");
-  const luna = writePlugin(root, "luna", { "clover.json": botManifest("luna", "Luna"), "bot/instructions.md": "You are Luna." });
+  const root = temp("moss-int-plugins-");
+  const luna = writePlugin(root, "luna", { "moss.json": botManifest("luna", "Luna"), "bot/instructions.md": "You are Luna." });
   const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: (await pluginFromFolder(luna)).inputs });
   const fakes = new Drivers();
-  return { registry, drivers: () => fakes.factory, defaultModel: () => ({ model: "clover-test/calls" }), fakes };
+  return { registry, drivers: () => fakes.factory, defaultModel: () => ({ model: "moss-test/calls" }), fakes };
 }
 
 const mainComputer = { watchSleep: false, monotonic: () => performance.now() };
@@ -65,8 +65,8 @@ const echoShell = { launch: () => ({ cmd: ["/bin/sh", "-c", "printf 'ready\\n'; 
 
 async function boot(o: { pairApp?: boolean; approvals?: { request(r: ApprovalRequest): Promise<{ allowed: boolean }> }; review?: (i: ReviewInput) => Promise<{ verdict: "safe" | "unsafe"; reason: string }>; net?: MemoryNetwork; hs?: { url: string } } = {}) {
   const net = o.net ?? new MemoryNetwork();
-  const home = temp("clover-int-home-");
-  const userHome = temp("clover-int-user-");
+  const home = temp("moss-int-home-");
+  const userHome = temp("moss-int-user-");
   daemon = await startDaemon({
     home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, ...(o.pairApp ? { appPeer: "none" as const } : { pair: false as const }),
     links: {
@@ -79,8 +79,8 @@ async function boot(o: { pairApp?: boolean; approvals?: { request(r: ApprovalReq
       ...(o.approvals ? { approvals: o.approvals as never } : {}),
     },
   });
-  await daemon.cloverParts.ready;
-  return { node: daemon.cloverParts.node()!, links: daemon.cloverParts.links()!, userHome, net, home };
+  await daemon.mossParts.ready;
+  return { node: daemon.mossParts.node()!, links: daemon.mossParts.links()!, userHome, net, home };
 }
 
 const LUNA = { kind: "session", sessionId: mainSessionIdFor("luna"), sessionKind: "bot", bot: "luna" } as const;
@@ -89,7 +89,7 @@ describe("a bot's terminal on a real daemon", () => {
   test("opens and runs; a paste of several lines waits on the daemon's own broker's card, never dropped silently", async () => {
     if (!posix || typeof Bun.Terminal !== "function") return;
     const { node } = await boot();
-    const broker = daemon!.cloverParts.broker()!;
+    const broker = daemon!.mossParts.broker()!;
     let seen = "";
     node.terminals.onOutput((out) => { seen += out.data; });
     const t = await node.terminals.open({ computer: "Studio", cols: 80, rows: 24, session: LUNA.sessionId }, LUNA);
@@ -126,8 +126,8 @@ describe("a bot's terminal on a real daemon", () => {
 
 /** A second computer, from the same assembly the daemon runs. */
 async function peer(net: MemoryNetwork, hs: { url: string }, name: string): Promise<{ d: DaemonLinks; parts: DaemonParts; links: DeviceLinks }> {
-  const home = temp("clover-int-peer-");
-  const store = new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
+  const home = temp("moss-int-peer-");
+  const store = new MossSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
   const handlers = {};
   const d = await startDaemonLinks({
     home, store, clock, self: { name, os: "linux" }, handlers, binary: null, wire: (k) => net.endpoint(k.publicKey),
@@ -135,7 +135,7 @@ async function peer(net: MemoryNetwork, hs: { url: string }, name: string): Prom
     dispatch: async () => null,
   });
   stops.push(() => d.close());
-  const parts = await startDaemonParts({ cloverHome: home, userHome: temp("clover-int-user-"), clock, links: d.links, handlers, bots: await fakeBots() });
+  const parts = await startDaemonParts({ mossHome: home, userHome: temp("moss-int-user-"), clock, links: d.links, handlers, bots: await fakeBots() });
   stops.push(() => parts.close());
   return { d, parts, links: d.links! };
 }
@@ -167,7 +167,7 @@ describe("the daemon's safety reviewer for another computer's calls", () => {
     await pair(links, laptop.links);
     // The user makes Studio the main computer: the group's lease is held, so the computers act.
     const cli = { role: "cli" as const, token: daemon!.tokens.harness, clientName: "int-test" };
-    expect(await cloverCall(daemon!.socketPath, cli, "main.set", { device: links.key.id })).toEqual({ applied: true });
+    expect(await mossCall(daemon!.socketPath, cli, "main.set", { device: links.key.id })).toEqual({ applied: true });
     await waitFor("the laptop seeing the lease", () => laptop.links.main!.lease.state().holder === links.key.id);
     const tree = laptop.parts.node!.tree;
     await waitFor("the laptop's tree naming Studio", () => laptop.parts.node!.registry.get("Studio")?.state === "online");
@@ -178,7 +178,7 @@ describe("the daemon's safety reviewer for another computer's calls", () => {
     expect(seen.at(-1)).toMatchObject({ class: "fs", precis: expect.stringContaining("tree.write path: home/Studio/from-laptop.md, 5 characters") });
     expect(JSON.stringify(seen.at(-1))).not.toContain("hello\"");
     // Unsafe: the user's answer is needed. The laptop asks it (askUser, lane J's #373): Studio's own card, opening with
-    // Clover's line naming Studio, raised on the laptop's broker for the asking session. The call is cancelled (its
+    // MOSS's line naming Studio, raised on the laptop's broker for the asking session. The call is cancelled (its
     // signal, through the tree's router to the remote holder's askUser): the card is withdrawn, refused, nothing written.
     next = "unsafe";
     const broker = laptop.parts.broker!;
@@ -208,7 +208,7 @@ describe("the daemon's safety reviewer for another computer's calls", () => {
   }, 60_000);
 });
 
-/** A Clover connection that stays open: requests, and what the daemon sends it unasked (`core.event`). */
+/** A MOSS connection that stays open: requests, and what the daemon sends it unasked (`core.event`). */
 async function connection(path: string) {
   const decoder = new LineDecoder();
   const pending = new Map<number, (m: { result?: unknown; error?: { code: number; message: string } }) => void>();
@@ -241,7 +241,7 @@ describe("the app's terminal panel on a real daemon (K's audit)", () => {
     const { node, home } = await boot({ pairApp: true });
     const hello = async () => {
       const c = await connection(daemon!.socketPath);
-      const h = await c.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] });
+      const h = await c.request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] });
       expect(h.error).toBeUndefined();
       expect((await c.request("events.subscribe", { areas: ["computers"] })).result).toEqual({ ok: true });
       return c;
@@ -258,7 +258,7 @@ describe("the app's terminal panel on a real daemon (K's audit)", () => {
     expect((await app.request("terminal.resize", { terminalId: id, cols: 100, rows: 30 })).result).toEqual({ ok: true });
     // A paste of several lines asks on the daemon's one broker (INT, #292): a card shows, and nothing goes in until
     // it's answered.
-    const broker = daemon!.cloverParts.broker()!;
+    const broker = daemon!.mossParts.broker()!;
     let pasteSettled = false;
     void app.request("terminal.write", { terminalId: id, data: "one\ntwo\n", paste: true }).then(() => { pasteSettled = true; });
     await waitFor("the paste's card", () => broker.cards().length === 1);

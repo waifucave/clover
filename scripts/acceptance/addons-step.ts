@@ -1,6 +1,6 @@
 // A plugin's add-ons of its own, its own question card, and the Plugins page's Restart (checklist 1.19, 2.3 and its
 // work-list row 16, 3.26), with one fixture (scripts/acceptance/fixtures/acceptance-addons):
-// 1. Installed from its folder: its OK card says it loads add-ons of its own, which Clover doesn't check; pressed, it
+// 1. Installed from its folder: its OK card says it loads add-ons of its own, which MOSS doesn't check; pressed, it
 //    runs, and Alpha's Glossary load of it names what its add-ons are.
 // 2. A stamp (an add-on) put in its data folder, as the user would: Alpha's StampRun call makes the plugin's host half ask
 //    with `confirm`, a sealed card from the plugin, pressed Yes in the window: the stamp runs, and its hash is kept.
@@ -13,7 +13,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { callTurn, clickTree, fail, leave, openDetail, until, type ExampleCtx } from "./example-steps";
 
-export const ADDONS_STEP = "a plugin's add-ons of its own: its OK card says it loads add-ons Clover doesn't check and Glossary names them; a new add-on runs only after the plugin's own question card is pressed Yes in the window, again with no card, a changed one asks again and No runs nothing; Restart on its detail in the Plugins page starts its host half again and the user's yes survives; its component asks through confirmCard too, Yes pressed in the window, then No";
+export const ADDONS_STEP = "a plugin's add-ons of its own: its OK card says it loads add-ons MOSS doesn't check and Glossary names them; a new add-on runs only after the plugin's own question card is pressed Yes in the window, again with no card, a changed one asks again and No runs nothing; Restart on its detail in the Plugins page starts its host half again and the user's yes survives; its component asks through confirmCard too, Yes pressed in the window, then No";
 
 const FIXTURE = resolve(import.meta.dir, "fixtures", "acceptance-addons");
 export const ADDONS_ID = "acceptance-addons";
@@ -68,19 +68,19 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   const done: string[] = [];
 
   // The app up and told of cards before the first one comes (its island's layer connected).
-  await until("the app's island connected to the core", 30_000, () => (ctx.appLog().includes("layers: clover/island's layer connected to the core") ? true : undefined));
+  await until("the app's island connected to the core", 30_000, () => (ctx.appLog().includes("layers: moss/island's layer connected to the core") ? true : undefined));
   await new Promise((r) => setTimeout(r, 2_000));
   // 1. Installed; its OK card's add-ons line; pressed; Glossary names its add-ons.
   const installed = await rpc.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: FIXTURE } }, 60_000);
   if (installed.id !== ADDONS_ID) fail(`the fixture installed as ${installed.id}`);
   const ok = await until(`${ADDONS_ID}'s OK card`, 60_000, async () => (await cardsNow(ctx)).find((c) => c.kind === "plugin-ok" && c.pluginId === ADDONS_ID));
   const okText = JSON.stringify((await rpc.request<{ card: unknown }>("card.get", { id: ok.id })).card);
-  if (!okText.includes("It loads add-ons of its own, which Clover doesn't check.")) fail(`its OK card doesn't say it loads add-ons of its own: ${okText.slice(0, 500)}`);
+  if (!okText.includes("It loads add-ons of its own, which MOSS doesn't check.")) fail(`its OK card doesn't say it loads add-ons of its own: ${okText.slice(0, 500)}`);
   await ctx.pressCard(`${ADDONS_ID}'s OK card`, (c) => c.id === ok.id);
   await until(`${ADDONS_ID} running after its OK`, 60_000, async () => ((await stateOf(ctx, ADDONS_ID)) === "running" ? true : undefined));
   const g = await callTurn(ctx, session, "Glossary", { load: ADDONS_ID });
   if (!g.result.text.includes("It takes add-ons: Stamps")) fail(`Alpha's Glossary load of ${ADDONS_ID} doesn't name its add-ons: "${g.result.text.slice(0, 400)}"`);
-  done.push("1 its OK card says it loads add-ons Clover doesn't check, pressed; Glossary names them");
+  done.push("1 its OK card says it loads add-ons MOSS doesn't check, pressed; Glossary names them");
 
   // 2. A stamp in its data folder: asked, Yes pressed in the window, it runs.
   const data = join(home, "plugin-data", ADDONS_ID);
@@ -116,7 +116,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   const { cdp } = ctx;
   const buttonDoc = () => until("its status-bar button drawn", 30_000, async () => {
     for (const d of await cdp.documents()) {
-      if (!d.url.startsWith(`clover-plugin://${ADDONS_ID}/`)) continue;
+      if (!d.url.startsWith(`moss-plugin://${ADDONS_ID}/`)) continue;
       if ((await cdp.evaluate(d.session, "!!document.querySelector('[data-addons=ask]')").catch(() => false)) === true) return d.session;
     }
     return undefined;

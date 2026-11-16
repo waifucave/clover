@@ -1,6 +1,6 @@
-// Testing a plugin's parts (`@waifucave/clover-plugin-sdk/ui/testing`): the SDK's own UI runtime, set up on a fake layer
+// Testing a plugin's parts (`@waifucave/moss-plugin-sdk/ui/testing`): the SDK's own UI runtime, set up on a fake layer
 // bridge that answers from a description the test gives (which spots exist, which entries fill them, what the core and the
-// plugin API answer), so a part renders and behaves as it does in Clover: its `<Spot>`s resolve and mount their entries
+// plugin API answer), so a part renders and behaves as it does in MOSS: its `<Spot>`s resolve and mount their entries
 // inline, `useCore`, `usePluginApi`, `useUserSend`, `useComposerHost`, `useApprovals`, `useT` and `useTokens` are the
 // SDK's, and what reaches the bridge is what would reach the app. Any plugin's tests and galleries may use it; it names
 // no plugin. Rendering is the test's own (`@testing-library/react` or a gallery's root).
@@ -45,7 +45,7 @@ export interface TestEntry {
   pluginName?: string;
 }
 
-/** The user's picks and list orders (Clover's `ui.settings`), for the one-at-a-time and list spots. */
+/** The user's picks and list orders (MOSS's `ui.settings`), for the one-at-a-time and list spots. */
 export interface TestUiSettings {
   picks: readonly { spot: string; key?: string | null; bot?: string; entry: string | null }[];
   lists: readonly { spot: string; bot?: string; order?: readonly string[]; hidden?: readonly string[] }[];

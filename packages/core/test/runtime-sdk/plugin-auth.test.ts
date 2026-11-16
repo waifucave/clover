@@ -1,7 +1,7 @@
 // `plugin.auth.*` (runtime-sdk/plugin-auth.ts): a plugin's sign-ins, where each key lands, the OAuth and device flows
 // in the background, signing out, and the user-only gate. Every store here is in memory; no flow touches the network.
 import { describe, expect, test } from "bun:test";
-import type { PluginAuthView } from "@waifucave/clover-protocol";
+import type { PluginAuthView } from "@waifucave/moss-protocol";
 import type { SecretStore } from "../../src/auth/secret-store";
 import { readCredentialMaterial } from "../../src/auth/credential-material";
 import { MemorySecretStore } from "../../src/contracts/fakes/secret-store";
@@ -18,9 +18,9 @@ class DaemonStore implements SecretStore {
 }
 
 const rec = (id: string, source: string, manifest: unknown): PluginRecord => ({ id, source, manifest } as unknown as PluginRecord);
-const GROQ = rec("clover/model-groq", "bundled", { contributes: { models: [{ provider: "groq", auth: [{ method: "api-key", secret: "api-key" }] }] } });
-const CODEX = rec("clover/model-codex-oauth", "bundled", { contributes: { models: [{ provider: "codex-oauth", auth: [{ method: "oauth-pkce", authorizeUrl: "https://auth.example/authorize", tokenUrl: "https://auth.example/token", clientId: "c", scopes: ["a", "b"], secret: "chatgpt" }] }] } });
-const XAI = rec("clover/model-xai-oauth", "bundled", { contributes: { models: [{ provider: "xai-oauth", auth: [{ method: "custom", handler: "signIn" }] }] } });
+const GROQ = rec("moss/model-groq", "bundled", { contributes: { models: [{ provider: "groq", auth: [{ method: "api-key", secret: "api-key" }] }] } });
+const CODEX = rec("moss/model-codex-oauth", "bundled", { contributes: { models: [{ provider: "codex-oauth", auth: [{ method: "oauth-pkce", authorizeUrl: "https://auth.example/authorize", tokenUrl: "https://auth.example/token", clientId: "c", scopes: ["a", "b"], secret: "chatgpt" }] }] } });
+const XAI = rec("moss/model-xai-oauth", "bundled", { contributes: { models: [{ provider: "xai-oauth", auth: [{ method: "custom", handler: "signIn" }] }] } });
 const THIRD = rec("acme/models", "folder", { contributes: { models: [{ provider: "acme", auth: [{ method: "api-key", secret: "key" }] }] }, auth: [{ method: "api-key", secret: "extra" }] });
 
 const LOCAL = rec("acme/local", "folder", { contributes: { models: [{ provider: "acme-local" }] } });

@@ -7,14 +7,14 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatCoreFeed, generateFeedKey, pluginBunBinaryFile, pluginBunFeedFile, signFeed } from "@waifucave/clover-update-feed";
+import { formatCoreFeed, generateFeedKey, pluginBunBinaryFile, pluginBunFeedFile, signFeed } from "@waifucave/moss-update-feed";
 import { ensurePluginBun, serverPluginBun } from "../src/plugin-bun-install";
 import { runVersion, type Fetcher } from "../src/self-update";
 
 const posix = test.if(process.platform !== "win32");
 const enc = (s: string) => new TextEncoder().encode(s);
 const TARGET = "linux-x64" as const;
-const RELEASES = "https://api.github.com/repos/waifucave/clover/releases?per_page=30";
+const RELEASES = "https://api.github.com/repos/waifucave/moss/releases?per_page=30";
 /** Plain Bun as a shell script: `--version` prints its version. */
 const bunScript = (version: string, extra = "") => `#!/bin/sh\n${extra}echo "${version}"\n`;
 
@@ -23,7 +23,7 @@ interface Release { tag: string; bun: string; binary?: string; spoil?: "binary" 
 function github(key: { privateKey: string }, releases: Release[]) {
   const files = new Map<string, Uint8Array>();
   const list = releases.map((r) => {
-    const url = (name: string) => `https://github.com/waifucave/clover/releases/download/${r.tag}/${name}`;
+    const url = (name: string) => `https://github.com/waifucave/moss/releases/download/${r.tag}/${name}`;
     const binName = pluginBunBinaryFile(r.bun, TARGET);
     const signed = enc(r.binary ?? bunScript(r.bun));
     // Tampered at the same length, so only the signature (not the size cap) can catch it.
@@ -51,7 +51,7 @@ function github(key: { privateKey: string }, releases: Release[]) {
 }
 
 function server(releases: Release[]) {
-  const home = mkdtempSync(join(tmpdir(), "clover-plugin-bun-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-plugin-bun-"));
   mkdirSync(join(home, "bin"));
   const key = generateFeedKey();
   const gh = github(key, releases);
@@ -65,7 +65,7 @@ describe("plain Bun for plugins on a server", () => {
   posix("install: fetched, checked and put beside the daemon; then left in place", async () => {
     const s = server([{ tag: "v1.0.0", bun: "1.4.4" }]);
     expect(await s.ensure("1.4.4")).toEqual({ kind: "installed", version: "1.4.4", from: "release" });
-    expect(s.path).toBe(join(s.home, "bin", "daemon", "clover-plugin-bun"));
+    expect(s.path).toBe(join(s.home, "bin", "daemon", "moss-plugin-bun"));
     expect(await runVersion(s.path)).toBe("1.4.4");
     const asked = s.gh.asked.length;
     expect(await s.ensure("1.4.4")).toEqual({ kind: "in place" });
@@ -90,7 +90,7 @@ describe("plain Bun for plugins on a server", () => {
     const s = server([{ tag: "v1.0.0", bun: "1.4.4", spoil: "binary" }]);
     const r = await s.ensure("1.4.4");
     expect(r.kind).toBe("refused");
-    expect(r.kind === "refused" && r.why).toContain("clover-plugin-bun-1.4.4-linux-x64: bad signature");
+    expect(r.kind === "refused" && r.why).toContain("moss-plugin-bun-1.4.4-linux-x64: bad signature");
     expect(existsSync(s.path)).toBe(false);
     expect(existsSync(`${s.path}.new`)).toBe(false);
   });
@@ -99,13 +99,13 @@ describe("plain Bun for plugins on a server", () => {
     const s = server([{ tag: "v1.0.0", bun: "1.4.4", spoil: "feed signature" }]);
     const r = await s.ensure("1.4.4");
     expect(r.kind === "refused" && r.why).toBe("latest-plugin-bun-linux-x64.yml: bad signature");
-    expect(s.gh.asked.some((u) => u.endsWith("clover-plugin-bun-1.4.4-linux-x64"))).toBe(false);
+    expect(s.gh.asked.some((u) => u.endsWith("moss-plugin-bun-1.4.4-linux-x64"))).toBe(false);
   });
 
   posix("a release with another Bun, or none for this one, installs nothing", async () => {
     const s = server([{ tag: "v1.0.0", bun: "1.4.3" }]);
     const r = await s.ensure("1.4.4");
-    expect(r.kind === "refused" && r.why).toBe("no release carries clover-plugin-bun-1.4.4-linux-x64");
+    expect(r.kind === "refused" && r.why).toBe("no release carries moss-plugin-bun-1.4.4-linux-x64");
     expect(existsSync(s.path)).toBe(false);
   });
 
@@ -119,7 +119,7 @@ describe("plain Bun for plugins on a server", () => {
   });
 });
 
-test("the server's plugin Bun is <home>/bin/daemon/clover-plugin-bun, beside the daemon, .exe on Windows", () => {
-  expect(serverPluginBun("/srv/home", "darwin")).toBe(join("/srv/home", "bin", "daemon", "clover-plugin-bun"));
-  expect(serverPluginBun("C:/h", "win32")).toBe(join("C:/h", "bin", "daemon", "clover-plugin-bun.exe"));
+test("the server's plugin Bun is <home>/bin/daemon/moss-plugin-bun, beside the daemon, .exe on Windows", () => {
+  expect(serverPluginBun("/srv/home", "darwin")).toBe(join("/srv/home", "bin", "daemon", "moss-plugin-bun"));
+  expect(serverPluginBun("C:/h", "win32")).toBe(join("C:/h", "bin", "daemon", "moss-plugin-bun.exe"));
 });

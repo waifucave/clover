@@ -21,8 +21,8 @@ describe("electron-builder.yml", () => {
   });
 
   test("is the dist identity", () => {
-    expect(config.appId).toBe("com.waifucave.clover");
-    expect(config.productName).toBe("Clover");
+    expect(config.appId).toBe("com.waifucave.moss.code");
+    expect(config.productName).toBe("MOSS");
   });
 
   test("`dist` builds the unpacked app on every OS, and never signs or publishes", () => {
@@ -34,10 +34,10 @@ describe("electron-builder.yml", () => {
     expect(config.mac.identity).toBeNull();
     expect(config.mac.notarize).toBe(false);
     // The feed electron-updater reads; nothing uploads to it from a build.
-    expect(config.publish).toEqual({ provider: "github", owner: "waifucave", repo: "clover" });
+    expect(config.publish).toEqual({ provider: "github", owner: "waifucave", repo: "moss" });
   });
 
-  test("each package wears Clover's icon (lane G's, scripts/brand-icons.ts): the .icns, the .ico and Linux's PNG set", () => {
+  test("each package wears MOSS's icon (lane G's, scripts/brand-icons.ts): the .icns, the .ico and Linux's PNG set", () => {
     expect(config.mac.icon).toBe("build/icon.icns");
     expect(config.win.icon).toBe("build/icon.ico");
     expect(config.linux.icon).toBe("build/icons");

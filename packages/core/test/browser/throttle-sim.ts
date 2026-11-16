@@ -4,7 +4,7 @@
 // bytes (less `sndbufBytes`, the slack a real socket or QUIC stream has), as lane H confirmed it does, so the sender's
 // backpressure here is the backpressure it gets from a real link. Used by `stream-throttle.test.ts` and
 // `stream-measure.ts` (which sweeps the thresholds). Nothing here is part of the product.
-import type { LinkView } from "@waifucave/clover-protocol";
+import type { LinkView } from "@waifucave/moss-protocol";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import type { Link, LinkPriority, LinkStream } from "../../src/contracts/link-transport";
 import type { AppTabCommand, StreamChunk, TabView } from "../../src/browser/contract";

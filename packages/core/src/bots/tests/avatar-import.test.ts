@@ -1,6 +1,6 @@
 // `bot.importAvatar`'s core: a user's own model, folder or zip, lands in the fenced avatars folder under a `user:` path;
 // nothing outside a model's own data files comes along, and names written in GBK read back as they were written.
-import { AVATAR_FILE_CAPS } from "@waifucave/clover-plugin-sdk";
+import { AVATAR_FILE_CAPS } from "@waifucave/moss-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -233,7 +233,7 @@ describe("the credit note's own reader", () => {
 test("the serve ceiling of the kinds a model's big files are (binary, image) is never below what the import accepts per file", () => {
   expect(AVATAR_FILE_CAPS.binary).toBeGreaterThanOrEqual(AVATAR_IMPORT_CAPS.fileBytes);
   expect(AVATAR_FILE_CAPS.image).toBeGreaterThanOrEqual(AVATAR_IMPORT_CAPS.fileBytes);
-  const live2d = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "..", "..", "..", "plugins", "clover", "plugins", "live2d", "clover.json"), "utf8"));
+  const live2d = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "..", "..", "..", "plugins", "moss", "plugins", "live2d", "moss.json"), "utf8"));
   const declared = live2d.contributes["avatar.formats"][0].files.kinds as { type: string; maxBytes: number }[];
   for (const k of declared.filter((d) => d.type === "image" || d.type === "binary")) expect(k.maxBytes).toBeGreaterThanOrEqual(AVATAR_IMPORT_CAPS.fileBytes);
 });

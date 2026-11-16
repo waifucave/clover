@@ -1,9 +1,9 @@
-// What installed this Clover (M-M2): `<home>/install.json`, `{ "kind": "server" | "app" | "package" }`. It decides
-// which installs update the daemon themselves: only `server` (`clover-core server install`: no app, the daemon alone
+// What installed this MOSS (M-M2): `<home>/install.json`, `{ "kind": "server" | "app" | "package" }`. It decides
+// which installs update the daemon themselves: only `server` (`moss-core server install`: no app, the daemon alone
 // under the OS's login start) does. The app updates itself and the daemon inside it (electron-updater), and a deb or
 // rpm updates through apt or dnf. A missing, unreadable or unknown marker never self-updates.
 //
-// Who writes it: `clover-core server install` (`server`, with the channel it follows), the app at each start (`app`;
+// Who writes it: `moss-core server install` (`server`, with the channel it follows), the app at each start (`app`;
 // on Linux outside an AppImage, `package`). A deb's or rpm's script runs as root, outside every user's home, so it
 // writes the same marker beside the binary it installed (packaging/linux/after-install.sh); a marker there is read
 // first, and wins.

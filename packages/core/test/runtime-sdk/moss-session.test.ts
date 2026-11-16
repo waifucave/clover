@@ -1,0 +1,1908 @@
+// P8b Task 16 — the per-session driver over a FAKE `Query`.
+//
+// No child process anywhere in this file. The fake below is the wire the driver iterates: a test
+// pushes frames into it (`emit`), ends it (`end`), or makes it throw (`fail`), and records what the
+// driver pushed into its own prompt queue (`pushed`). The projector is the REAL one over the
+// projector suite's `FakeCheckpoints`; the store is an array. What is under test is the state
+// machine and the push/hold/resume discipline (P8b-5/24/32/38), not the fold.
+import { describe, expect, test } from "bun:test";
+import { WinterRpcError, type Options, type Query } from "@waifucave/clover-agent-sdk";
+import type { NewSessionEvent, SessionEvent } from "@waifucave/moss-protocol";
+import { SHUTDOWN_QUERY_GRACE_MS, type WinterRuntimeSdk } from "../../src/runtime-sdk/create";
+import { createProjector, type Projector } from "../../src/projector";
+import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
+import {
+  MOSS_SESSION_END_GRACE_MS, startMossSession, unconsumedUserMessages, withRuntimeVersion, type MossIncarnation, type MossSession, type MossSessionDeps, type MossTimers,
+} from "../../src/runtime-sdk/moss-session";
+import { PROJECTOR_PASSTHROUGH_CLIENT } from "../../src/projector/index";
+import type { MossSessionAttachment } from "../../src/runtime-sdk/messaging";
+import { FakeCheckpoints } from "../projector/harness";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createPersistedChildren } from "../../src/agent/bg-agent-registry";
+import { openRuntimeStateDb } from "../../src/runtime-state/db";
+import { ChildProfiles, RuntimeChildren } from "../../src/runtime-state/children";
+import { childrenSinkFor } from "../../src/runtime-sdk/session-driver";
+import { mainTurnOpenInLog, runningTurnOrigin } from "../../src/sessions/turn-origins";
+
+// ── the fake wire ────────────────────────────────────────────────────────────────────────────────
+
+type Frame = Record<string, unknown>;
+const init = (o: Options, tools: string[] = ["AskUserQuestion", "SendMessage"]): Frame =>
+  ({ type: "system", subtype: "init", session_id: o.resume ?? o.sessionId, model: o.model ?? "winter-test/echo", tools, cwd: o.cwd });
+const assistant = (text: string): Frame => ({ type: "assistant", message: { content: [{ type: "text", text }] } });
+const result = (extra: Frame = {}): Frame => ({ type: "result", subtype: "success", is_error: false, permission_denials: [], result: "", ...extra });
+const named = (name: string, message = name): Error => { const e = new Error(message); e.name = name; return e; };
+
+class FakeQuery {
+  readonly pushed: string[] = [];
+  readonly models: Array<string | undefined> = [];
+  readonly modes: string[] = [];
+  interrupts = 0;
+  promptClosed = false;
+  /** What `interrupt()` does: emit the interrupted terminal (the 0.0.4 behaviour) and, when asked,
+   *  ALSO end the iteration with an AbortError (the older behaviour the brief assumed). */
+  interruptEndsChild = false;
+  /** A child that ignores its closing stdin (mid-turn) — `end()` must abort it. */
+  ignoreClose = false;
+  /** A child that outlives its abort too (the tail `end()` must not wait for). */
+  ignoreAbort = false;
+  private readonly buffer: Array<{ value: Frame } | { done: true } | { error: unknown }> = [];
+  private readonly waiters: Array<(r: IteratorResult<Frame>) => void> = [];
+  private readonly rejecters: Array<(e: unknown) => void> = [];
+  private terminal: { done: true } | { error: unknown } | undefined;
+  readonly messaging = {
+    listReachable: async () => [], deliver: async () => { throw new Error("never"); },
+    steerChild: async () => { throw new Error("never"); }, resumeChild: async () => { throw new Error("never"); },
+    subscribeIdle: async () => { throw new Error("never"); }, senderClass: async () => "prompts" as const,
+    readNotifications: async () => ({ notifications: [], remaining: 0 }), onIdleNotice: () => () => {},
+  };
+
+  constructor(prompt: AsyncIterable<string>, readonly options: Options) {
+    options.abortController?.signal.addEventListener("abort", () => { if (!this.ignoreAbort) this.fail(named("AbortError", "query aborted: runtime process killed")); });
+    void (async () => {
+      for await (const t of prompt) this.pushed.push(t);
+      this.promptClosed = true;
+      if (!this.ignoreClose) this.end();
+    })();
+  }
+
+  emit(frame: Frame): void {
+    const w = this.waiters.shift();
+    if (w !== undefined) { this.rejecters.shift(); w({ value: frame, done: false }); return; }
+    this.buffer.push({ value: frame });
+  }
+  end(): void { if (this.terminal !== undefined) return; this.terminal = { done: true }; this.settle(); }
+  fail(error: unknown): void { if (this.terminal !== undefined) return; this.terminal = { error }; this.settle(); }
+  private settle(): void {
+    while (this.waiters.length > 0) {
+      const w = this.waiters.shift()!; const r = this.rejecters.shift()!;
+      if (this.terminal !== undefined && "error" in this.terminal) r(this.terminal.error); else w({ value: undefined as never, done: true });
+    }
+  }
+  next(): Promise<IteratorResult<Frame>> {
+    const b = this.buffer.shift();
+    if (b !== undefined && "value" in b) return Promise.resolve({ value: b.value, done: false });
+    if (this.terminal !== undefined) return "error" in this.terminal ? Promise.reject(this.terminal.error) : Promise.resolve({ value: undefined as never, done: true });
+    return new Promise((resolve, reject) => { this.waiters.push(resolve); this.rejecters.push(reject); });
+  }
+  return(): Promise<IteratorResult<Frame>> { this.end(); return Promise.resolve({ value: undefined as never, done: true }); }
+  throw(e: unknown): Promise<IteratorResult<Frame>> { this.fail(e); return Promise.reject(e); }
+  [Symbol.asyncIterator](): this { return this; }
+  async interrupt(): Promise<void> {
+    this.interrupts++;
+    this.emit(result({ interrupted: true }));
+    if (this.interruptEndsChild) this.fail(named("AbortError", "query aborted: runtime process killed"));
+  }
+  async setModel(model?: string): Promise<void> { this.models.push(model); }
+  /** WS-23 (reasoning-state): the SDK's `compact` control -- recorded, answering what a real compaction kept. */
+  readonly compactions: Array<{ customInstructions?: string } | undefined> = [];
+  async compact(opts?: { customInstructions?: string }): Promise<{ retainedCount: number }> { this.compactions.push(opts); return { retainedCount: 7 }; }
+  async setPermissionMode(mode: string): Promise<void> { this.modes.push(mode); }
+}
+
+/**
+ * Agent SDK 0.0.44's folding child (user ruling 2026-10-04): it announces a fold on the stream
+ * (`emitFold`) and answers `clearQueuedInput` with `clearAnswer` pushes dropped. `calls` records the
+ * order of the two TaskStop controls (clear BEFORE interrupt).
+ */
+class FoldingFakeQuery extends FakeQuery {
+  clearAnswer = 0;
+  readonly calls: string[] = [];
+  emitFold(count: number): void { this.emit({ type: "system", subtype: "host_input_folded", count, uuid: `fold-${count}`, session_id: "be-x" }); }
+  /** Runs inside the clear, before it answers (a race a test stages). */
+  duringClear: (() => void) | undefined;
+  /** Holds the clear's answer until it resolves. */
+  clearGate: Promise<void> | undefined;
+  async clearQueuedInput(): Promise<{ cleared: number }> {
+    this.calls.push("clear");
+    this.duringClear?.();
+    await Bun.sleep(1);
+    if (this.clearGate !== undefined) await this.clearGate;
+    return { cleared: this.clearAnswer };
+  }
+  override async interrupt(): Promise<void> { this.calls.push("interrupt"); return super.interrupt(); }
+}
+
+// ── the harness ──────────────────────────────────────────────────────────────────────────────────
+
+interface Harness {
+  session: MossSession;
+  queries: FakeQuery[];
+  incarnations: MossIncarnation[];
+  events: SessionEvent[];
+  broadcasts: SessionEvent[];
+  attachments: Array<{ session: MossSessionAttachment; detached: number; refreshed: number }>;
+  tracked: Array<{ abort: AbortController }>;
+  untracked: number;
+  records: { generation: number; state: string; transitions: string[]; ended: Array<{ generation: number; reason: string }> };
+  checkpoints: FakeCheckpoints;
+  transcriptExists: boolean;
+  /** The driver's idle clock, fired by hand: `armed` is what is scheduled right now. */
+  timers: { armed: Array<{ ms: number; fn: () => void }>; fire(): void };
+  /** The current fake (the last query opened). */
+  q(): FakeQuery;
+  /** Wait for the driver to reach its init handling. */
+  settled(): Promise<void>;
+  types(): string[];
+}
+
+function harness(overrides: Partial<Omit<MossSessionDeps, "idleTimeoutMs">> & { idleTimeoutMs?: number; transcript?: boolean; runtimeVersion?: string | null } = {}): Harness {
+  // The harness knobs are NOT driver deps — they must not be spread over the thunks below.
+  const { idleTimeoutMs: idleMs, transcript, runtimeVersion, ...over } = overrides;
+  const queries: FakeQuery[] = [];
+  const incarnations: MossIncarnation[] = [];
+  const events: SessionEvent[] = [];
+  const broadcasts: SessionEvent[] = [];
+  const attachments: Harness["attachments"] = [];
+  const tracked: Harness["tracked"] = [];
+  const checkpoints = new FakeCheckpoints();
+  let seq = 0;
+  const armed: Array<{ ms: number; fn: () => void }> = [];
+  const fakeTimers: MossTimers = {
+    set(fn, ms) { const entry = { ms, fn }; armed.push(entry); return entry; },
+    clear(handle) { const i = armed.indexOf(handle as { ms: number; fn: () => void }); if (i >= 0) armed.splice(i, 1); },
+  };
+  const h: Harness = {
+    session: undefined as unknown as MossSession,
+    queries, incarnations, events, broadcasts, attachments, tracked, untracked: 0,
+    records: { generation: 0, state: "ready", transitions: [], ended: [] },
+    checkpoints,
+    transcriptExists: transcript ?? false,
+    timers: { armed, fire: () => { for (const t of armed.splice(0)) t.fn(); } },
+    q: () => queries[queries.length - 1]!,
+    settled: () => Bun.sleep(5),
+    types: () => events.map((e) => e.type),
+  };
+  const runtime = {
+    sdk: { query: ({ prompt, options }: { prompt: AsyncIterable<string>; options: Options }) => { const q = new FoldingFakeQuery(prompt, options); queries.push(q); return q as unknown as Query; } },
+    trackQuery: (_sid: string, abort: AbortController) => { tracked.push({ abort }); },
+    untrack: () => { h.untracked++; },
+  } as unknown as WinterRuntimeSdk;
+  const idle = idleMs ?? 60_000;
+  h.session = startMossSession({
+    sessionId: "s_x", backendSessionId: "be-x", mode: "chat", runtime,
+    options: (inc) => { incarnations.push({ ...inc, generation: h.records.generation + 1 }); return withRuntimeVersion({ abortController: inc.abort, cwd: "/repo", model: "winter-test/echo", ...(inc.resume ? { resume: "be-x" } : { sessionId: "be-x" }) }, runtimeVersion === null ? undefined : (runtimeVersion ?? "0.0.44")); },
+    projector: (inc): Projector => createProjector({ sessionId: "s_x", mode: "chat", generation: inc.generation, winterSessionId: "s_x", nextSeq: () => seq + 1, checkpoint: checkpoints, now: () => new Date().toISOString(), log: {} }),
+    queue: createHostPromptQueue,
+    append: (e: NewSessionEvent) => { const stamped = { ...e, seq: ++seq, ts: Date.now() } as SessionEvent; events.push(stamped); return stamped; },
+    broadcast: (e) => { broadcasts.push({ ...e, seq, ts: Date.now() } as SessionEvent); },
+    messaging: {
+      attach: ((_runtime: unknown, session: MossSessionAttachment) => {
+        const rec = { session, detached: 0, refreshed: 0 };
+        attachments.push(rec);
+        return { address: `winter-agent:session:${session.backendSessionId}`, ready: Promise.resolve(), refresh: () => { rec.refreshed++; }, detach: () => { rec.detached++; } };
+      }) as unknown as NonNullable<MossSessionDeps["messaging"]>["attach"],
+    },
+    records: {
+      bumpGeneration: () => ({ generation: ++h.records.generation }),
+      endGeneration: (_id, generation, reason) => { h.records.ended.push({ generation, reason }); },
+      transition: (_id, to) => { h.records.transitions.push(to); h.records.state = to; },
+      get: () => ({ state: h.records.state as never, generation: h.records.generation }),
+    },
+    hasTranscript: () => h.transcriptExists,
+    // P8b-39: the harness's event array IS the session log — what a resume re-pushes is read from it.
+    unconsumed: () => unconsumedUserMessages(events),
+    idleTimeoutMs: () => idle,
+    endGraceMs: 25,
+    timers: fakeTimers,
+    ...over,
+  });
+  return h;
+}
+
+const seen = (h: Harness, type: string): SessionEvent[] => h.events.filter((e) => e.type === type);
+
+// ── tests ────────────────────────────────────────────────────────────────────────────────────────
+
+describe("shutdown never leaves a child: an end mid-open, and a spawn refused while the daemon stops", () => {
+  test("end() while the incarnation is still OPENING: that open spawns nothing, and a send that joined it is refused with nothing appended", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const h = harness({
+      options: async (inc) => {
+        await gate; // the open is parked here, before any spawn
+        return { abortController: inc.abort, cwd: "/repo", model: "winter-test/echo", sessionId: "be-x" };
+      },
+      endedWhileOpeningRefusal: () => Object.assign(new Error("replaced while it was starting"), { code: "session_replaced" }),
+    });
+    const opening = h.session.open();
+    await Bun.sleep(1);
+    expect(h.queries).toHaveLength(0);
+    const opened = opening.then(() => undefined, (e: Error) => e);
+    const ending = h.session.end(); // lands mid-open: before 0.0.40 this returned at once and the open spawned a child anyway
+    const sent = h.session.send("hello").then(() => undefined, (e: Error) => e); // joins the same open
+    release();
+    expect((await opened)?.message).toBe("replaced while it was starting");
+    expect((await sent)?.message).toBe("replaced while it was starting");
+    await ending;
+    expect(h.queries).toHaveLength(0); // no child, ever
+    expect(h.tracked).toHaveLength(0);
+    expect(h.types()).not.toContain("user_message"); // nothing appended for the refused send
+    expect(h.session.state).not.toBe("live");
+  });
+
+  test("an open parked on something slow does not hold end() past its budget, and still spawns nothing when it settles", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const h = harness({
+      options: async (inc) => {
+        await gate;
+        return { abortController: inc.abort, cwd: "/repo", model: "winter-test/echo", sessionId: "be-x" };
+      },
+    });
+    const opening = h.session.open();
+    const opened = opening.then(() => undefined, (e: Error) => e);
+    await Bun.sleep(1);
+    await h.session.end(); // the open is still parked: end() resolves after 2 x endGraceMs (25 ms here); the gate is only released below, so end() returning at all proves it did not wait for the open
+    release(); // the open settles late...
+    expect((await opened)?.message).toContain("ended while it was starting");
+    expect(h.queries).toHaveLength(0); // ...and spawns nothing
+    expect(h.session.state).not.toBe("live");
+  });
+
+  test("a later open of the same session is not refused: the flag belongs to the open end() interrupted", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let first = true;
+    const h = harness({
+      options: async (inc) => {
+        if (first) { first = false; await gate; }
+        return { abortController: inc.abort, cwd: "/repo", model: "winter-test/echo", sessionId: "be-x" };
+      },
+    });
+    const opened = h.session.open().then(() => undefined, (e: Error) => e);
+    await Bun.sleep(1);
+    const ending = h.session.end();
+    release();
+    expect(await opened).toBeInstanceOf(Error);
+    await ending;
+    await h.session.open();
+    expect(h.queries).toHaveLength(1);
+    expect(h.session.state).toBe("live");
+  });
+
+  test("a spawn refusal (the driver table's beginShutdown) refuses the open BEFORE any child spawns", async () => {
+    const h = harness({ spawnRefusal: () => Object.assign(new Error("MOSS is shutting down"), { code: "daemon_shutting_down" }) });
+    await expect(h.session.open()).rejects.toThrow("shutting down");
+    expect(h.queries).toHaveLength(0);
+    expect(h.tracked).toHaveLength(0);
+  });
+});
+
+describe("FAIL CLOSED (2026-10-01 review): a child that offers a built-in its `Options.tools` left out is refused", () => {
+  const ALLOWED = ["AskUserQuestion", "SendMessage", "ToolSearch", "WebFetch"];
+  const withTools = () => harness({
+    options: (inc) => ({ abortController: inc.abort, cwd: "/repo", model: "winter-test/echo", tools: [...ALLOWED], ...(inc.resume ? { resume: "be-x" } : { sessionId: "be-x" }) }),
+  });
+
+  test("an init inside the allowed list (plus capability plain names and MCP tools) runs as ever", async () => {
+    const h = withTools();
+    await h.session.open();
+    h.q().emit(init(h.q().options, [...ALLOWED, "Browser", "mcp__moss__send_message"]));
+    await h.settled();
+    expect(seen(h, "agent_error")).toEqual([]);
+    expect(h.session.state).toBe("live");
+  });
+
+  test("idle: an init offering `Bash`/`Edit` (a runtime that ignored `tools`) appends a typed agent_error and ends the incarnation", async () => {
+    const h = withTools();
+    await h.session.open();
+    h.q().emit(init(h.q().options, [...ALLOWED, "Bash", "Edit"]));
+    await h.settled();
+    const errors = seen(h, "agent_error") as Array<{ code?: string; message: string }>;
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.code).toBe("tool_surface_unenforced");
+    expect(errors[0]!.message).toContain("Bash, Edit");
+    await h.session.end();
+    expect(h.session.state).not.toBe("live");
+    expect(h.tracked[0]!.abort.signal.aborted || h.q().promptClosed).toBe(true);
+  });
+
+  test("mid-turn: the open turn is closed with the same typed error, and nothing the child says afterwards is projected", async () => {
+    const h = withTools();
+    await h.session.open();
+    await h.session.send("hello", "cli");
+    h.q().emit(init(h.q().options, [...ALLOWED, "Write"]));
+    h.q().emit(assistant("I wrote a file"));
+    await h.settled();
+    const errors = seen(h, "agent_error") as Array<{ code?: string }>;
+    expect(errors.map((e) => e.code)).toEqual(["tool_surface_unenforced"]);
+    expect(seen(h, "assistant_message")).toEqual([]);
+    expect(h.session.turnRunning).toBe(false);
+  });
+
+  test("an init that states NO tool list is a violation when the incarnation has an allowed list", async () => {
+    const h = withTools();
+    await h.session.open();
+    const frame = init(h.q().options);
+    delete frame["tools"];
+    h.q().emit(frame);
+    await h.settled();
+    const errors = seen(h, "agent_error") as Array<{ code?: string; message: string }>;
+    expect(errors.map((e) => e.code)).toEqual(["tool_surface_unenforced"]);
+    expect(errors[0]!.message).toContain("init.tools missing");
+  });
+
+  test("the refused child is ABORTED at once — no end-of-input grace for a child that ignores its closed input", async () => {
+    const h = withTools();
+    await h.session.open();
+    h.q().ignoreClose = true;
+    h.q().emit(init(h.q().options, [...ALLOWED, "Bash"]));
+    await h.settled();   // 5 ms — inside the harness's 25 ms end grace
+    expect(h.tracked[0]!.abort.signal.aborted).toBe(true);
+  });
+
+  test("code (no `tools` stated) is never checked", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options, ["Bash", "Edit", "Agent"]));
+    await h.settled();
+    expect(seen(h, "agent_error")).toEqual([]);
+  });
+});
+
+describe("startMossSession — one incarnation", () => {
+  test("open() spawns through runtime.sdk.query with the host queue as the prompt, a FRESH sessionId, and is tracked", async () => {
+    const h = harness();
+    expect(h.session.state).toBe("resumable");
+    await h.session.open();
+    expect(h.session.state).toBe("live");
+    expect(h.queries).toHaveLength(1);
+    expect(h.q().options.sessionId).toBe("be-x");
+    expect(h.q().options.resume).toBeUndefined();
+    expect(h.incarnations[0]).toMatchObject({ generation: 1, resume: false });
+    expect(h.tracked).toHaveLength(1);
+    expect(h.tracked[0]!.abort).toBe(h.incarnations[0]!.abort);
+    expect(h.session.generation).toBe(1);
+    // the first incarnation with no push is IDLE, not running
+    expect(h.records.transitions).toEqual(["idle"]);
+  });
+
+  test("system/init records the facts and attaches messaging with the backend id and generation", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options, ["AskUserQuestion", "SendMessage", "mcp__moss__browser__browser"]));
+    await h.settled();
+    expect(h.session.init).toEqual({ sessionId: "be-x", model: "winter-test/echo", tools: ["AskUserQuestion", "SendMessage", "mcp__moss__browser__browser"] });
+    expect(h.attachments).toHaveLength(1);
+    expect(h.attachments[0]!.session).toMatchObject({ sessionId: "s_x", backendSessionId: "be-x", mode: "chat", generation: 1 });
+    expect(h.attachments[0]!.session.query).toBe(h.q() as unknown as Query);
+    expect(h.attachments[0]!.session.status?.()).toBe("idle");
+  });
+
+  test("a Cowork session given the router's messaging still never attaches it: its system/init records the facts and attaches nothing", async () => {
+    const h = harness({ mode: "cowork" });
+    await h.session.open();
+    h.q().emit(init(h.q().options, ["Read"]));
+    await h.settled();
+    expect(h.session.init).toEqual({ sessionId: "be-x", model: "winter-test/echo", tools: ["Read"] });
+    expect(h.attachments).toHaveLength(0);
+  });
+
+  test("send: user_message (the client's name), then beginTurn's turn_started, then the push; the result closes the turn", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    const sent = await h.session.send("hello", "cli");
+    expect(sent).toEqual({ seq: 1, queued: false });
+    await h.settled();
+    expect(h.q().pushed).toEqual(["hello"]);
+    expect(h.session.turnRunning).toBe(true);
+    expect(h.attachments[0]!.session.status?.()).toBe("running");
+    expect(h.records.transitions).toEqual(["idle", "running"]);
+    expect(h.types()).toEqual(["user_message", "turn_started"]);
+    expect(h.events[0]).toMatchObject({ type: "user_message", clientName: "cli", text: "hello", threadId: "main" });
+    h.q().emit(assistant("echo: hello"));
+    h.q().emit(result());
+    await h.settled();
+    expect(h.types()).toEqual(["user_message", "turn_started", "assistant_message", "turn_completed"]);
+    expect(h.session.turnRunning).toBe(false);
+    expect(h.records.transitions).toEqual(["idle", "running", "idle"]);
+    expect(h.session.state).toBe("live");
+    expect(h.broadcasts).toEqual([]);
+  });
+
+  test("P8b-5: a send while a turn runs is HELD host-side and pushed when the current result arrives", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    const b = await h.session.send("B", "cli");
+    expect(b.queued).toBe(true);
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A"]);
+    expect(h.session.pendingSends).toEqual(["B"]);
+    // P8b-39: B's user_message is in the log and NOTHING else is — its turn begins when it is pushed.
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message"]);
+    expect(unconsumedUserMessages(h.events)).toEqual(["B"]);
+    h.q().emit(assistant("a")); h.q().emit(result());
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A", "B"]);
+    expect(h.session.pendingSends).toEqual([]);
+    expect(h.session.turnRunning).toBe(true);
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "assistant_message", "turn_completed", "turn_started"]);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+    h.q().emit(assistant("b")); h.q().emit(result());
+    await h.settled();
+    expect(seen(h, "turn_completed")).toHaveLength(2);
+    expect(seen(h, "turn_started")).toHaveLength(2);
+    expect(h.session.turnRunning).toBe(false);
+  });
+
+  test("P8b-38: a steer begins its OWN turn and pushes immediately; injected reports whether a turn was running", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    const s = await h.session.steer("S");
+    expect(s.injected).toBe(true);
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A", "S"]);
+    expect(h.events.filter((e) => e.type === "user_message").map((e) => (e as { clientName: string }).clientName)).toEqual(["cli", "steer"]);
+    // C2 (2026-09-22): S is pushed now, but its turn STARTS when A's ends — so its turn_started is
+    // announced right after A's turn_completed, never before it (s_5d314c81045e seq 24-30).
+    expect(seen(h, "turn_started")).toHaveLength(1);
+    h.q().emit(result()); h.q().emit(result());
+    await h.settled();
+    expect(seen(h, "turn_completed")).toHaveLength(2);
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "turn_completed", "turn_started", "turn_completed"]);
+    // a steer with nothing running is not "injected" — it started the turn
+    const s2 = await h.session.steer("T");
+    expect(s2.injected).toBe(false);
+  });
+
+  test("a delivery (the messaging push sink) is a steer under clientName `messaging`", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    h.attachments[0]!.session.push("<agent-message>hi</agent-message>");
+    await h.settled();
+    expect(h.q().pushed).toEqual(["<agent-message>hi</agent-message>"]);
+    expect(h.events[0]).toMatchObject({ type: "user_message", clientName: "messaging" });
+    expect(h.types()).toEqual(["user_message", "turn_started"]);
+  });
+
+  test("interrupt with no turn running is a no-op; with a turn running it ends THAT turn with the aborted terminal and the child stays live (the 0.0.4 measurement)", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    expect(await h.session.interrupt()).toEqual({ wasRunning: false });
+    expect(h.q().interrupts).toBe(0);
+    await h.session.send("hang", "cli");
+    expect(await h.session.interrupt()).toEqual({ wasRunning: true });
+    await h.settled();
+    expect(h.q().interrupts).toBe(1);
+    expect(seen(h, "turn_completed")).toHaveLength(1);
+    expect(seen(h, "turn_completed")[0]).toMatchObject({ stopReason: "aborted" });
+    expect(seen(h, "agent_error")).toEqual([]);
+    expect(h.session.state).toBe("live");
+    expect(h.session.turnRunning).toBe(false);
+    // and the same child takes the next send
+    await h.session.send("again", "cli");
+    expect(h.q().pushed).toEqual(["hang", "again"]);
+    expect(h.queries).toHaveLength(1);
+  });
+
+  test("P8b-39 (engine parity): a send held behind an interrupted turn is NOT auto-run — it stays in the log until the next send, which runs it FIRST and queues its own text", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    const b = await h.session.send("B", "cli");
+    expect(b.queued).toBe(true);
+    expect(await h.session.interrupt()).toEqual({ wasRunning: true });
+    await h.settled();
+    // the interrupted result did NOT push B
+    expect(h.q().pushed).toEqual(["A"]);
+    expect(h.session.pendingSends).toEqual(["B"]);
+    expect(h.session.turnRunning).toBe(false);
+    expect(h.records.transitions.at(-1)).toBe("idle");
+    expect(h.timers.armed).toHaveLength(1);               // idle: the timer is armed as usual
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "turn_completed"]);
+    expect(unconsumedUserMessages(h.events)).toEqual(["B"]);
+    // the next user action releases it: B runs now (its ONE turn_started appended now), C waits
+    const c = await h.session.send("C", "cli");
+    expect(c.queued).toBe(true);
+    expect(h.q().pushed).toEqual(["A", "B"]);
+    expect(h.session.pendingSends).toEqual(["C"]);
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "turn_completed", "turn_started", "user_message"]);
+    h.q().emit(result());
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A", "B", "C"]);        // a normal result drains again
+    expect(seen(h, "turn_started")).toHaveLength(3);
+  });
+
+  test("M-M2: a delivery while the update gate closes for a restart is held, starts no turn, and runs once the gate reopens", async () => {
+    let closing = false;
+    const h = harness({ updateClosing: () => closing });
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    closing = true;
+    h.session.deliver("held for the restart");
+    await h.settled();
+    expect(h.q().pushed).toEqual([]);
+    expect(seen(h, "user_message")).toHaveLength(0);
+    // The gate's recheck (every second; the idle timer and others are left alone). Still closed: held again.
+    const recheck = () => { const i = h.timers.armed.findIndex((t) => t.ms === 1_000); expect(i).toBeGreaterThanOrEqual(0); h.timers.armed.splice(i, 1)[0]!.fn(); };
+    recheck();
+    await h.settled();
+    expect(h.q().pushed).toEqual([]);
+    closing = false;
+    recheck();
+    await h.settled();
+    expect(h.q().pushed).toEqual(["held for the restart"]);
+    expect(h.types().slice(-2)).toEqual(["user_message", "turn_started"]);
+  });
+
+  test("the user's stop (a plain interrupt): a message delivered AFTER the stopped turn ended runs normally — nothing aborts it (the live gate)", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    expect(await h.session.interrupt()).toEqual({ wasRunning: true });
+    await h.settled();
+    expect(seen(h, "turn_completed").map((e) => (e as { stopReason?: string }).stopReason)).toEqual(["aborted"]);
+    // Later, Dispatch messages the stopped session (SendMessage's delivery).
+    h.session.deliver("Please continue");
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A", "Please continue"]);
+    expect(h.types().slice(-2)).toEqual(["user_message", "turn_started"]);
+    expect(h.q().interrupts).toBe(1);   // the one stop — nothing interrupts the new turn
+    h.q().emit(result());
+    await h.settled();
+    expect(seen(h, "turn_completed").map((e) => (e as { stopReason?: string }).stopReason)).toEqual(["aborted", "end_turn"]);
+    // A stop pressed again once nothing runs is a no-op on the wire.
+    expect(await h.session.interrupt()).toEqual({ wasRunning: false });
+    expect(h.q().interrupts).toBe(1);
+  });
+
+  test("TaskStop (discardQueued, user ruling 2026-10-04): the sends held behind the stopped turn are CLOSED in the log once it ends — never re-pushed on resume — and the next send runs at once", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.send("B", "cli");
+    await h.session.send("C", "cli");
+    expect(h.session.pendingSends).toEqual(["B", "C"]);
+    expect(await h.session.interrupt({ discardQueued: true })).toEqual({ wasRunning: true, discarded: 2 });
+    await h.settled();
+    expect(h.session.pendingSends).toEqual([]);
+    expect(h.q().pushed).toEqual(["A"]);
+    // A's own aborted terminal, then one stopped-before-it-ran pair per cleared message
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "user_message", "turn_completed",
+      "turn_started", "turn_completed", "turn_started", "turn_completed"]);
+    expect(seen(h, "turn_completed").map((e) => (e as { stopReason?: string }).stopReason)).toEqual(["aborted", "aborted", "aborted"]);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);   // a resume owes nothing
+    // the next message is not queued behind a stale one: it runs now
+    const d = await h.session.send("D", "cli");
+    expect(d.queued).toBe(false);
+    expect(h.q().pushed).toEqual(["A", "D"]);
+  });
+
+  test("TaskStop's clear: a send arriving before the stopped turn has ended waits for the clear, then runs at once — the cleared text never runs under it", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.send("B", "cli");
+    const q = h.q();
+    const realInterrupt = q.interrupt.bind(q);
+    // the stopped turn's terminal lands only after a newer message was sent
+    q.interrupt = async () => { q.interrupts++; };
+    expect(await h.session.interrupt({ discardQueued: true })).toEqual({ wasRunning: true, discarded: 1 });
+    const c = h.session.send("C", "cli");
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A"]);                  // C is waiting, B has not run
+    q.interrupt = realInterrupt;
+    q.emit(result({ interrupted: true }));
+    expect((await c).queued).toBe(false);
+    expect(h.q().pushed).toEqual(["A", "C"]);
+    expect(h.session.pendingSends).toEqual([]);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);   // C was pushed (its turn begun); B is closed
+  });
+
+  test("TaskStop's clear is bounded: if the stopped turn's terminal never comes, the clear runs after STOP_SETTLE_MAX_MS and a waiting send goes ahead", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.send("B", "cli");
+    const q = h.q();
+    q.interrupt = async () => { q.interrupts++; };
+    await h.session.interrupt({ discardQueued: true });
+    const c = h.session.send("C", "cli");
+    h.timers.armed.find((t) => t.ms === 2_000)!.fn();
+    await c;
+    expect(h.session.pendingSends).toEqual(["C"]);        // A never ended, so C waits behind it
+    expect(unconsumedUserMessages(h.events)).toEqual(["C"]);
+  });
+
+  test("M1: the stopped turn's terminal comes AFTER the settle bound (a slow-to-cancel tool): no aborted terminal is appended while it still runs; the waiting send is released at the bound and runs after it", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.send("B", "cli");                         // held behind A — the stop clears it
+    const q = h.q();
+    q.interrupt = async () => { q.interrupts++; };            // A keeps running (an unabortable act)
+    expect(await h.session.interrupt({ discardQueued: true })).toEqual({ wasRunning: true, discarded: 1 });
+    const c = h.session.send("C", "cli");
+    await h.settled();
+    expect(seen(h, "turn_completed")).toEqual([]);
+    h.timers.armed.find((t) => t.ms === 2_000)!.fn();         // the bound: 2 s, A still running
+    expect((await c).queued).toBe(true);                       // released — queued behind the running A
+    await h.settled();
+    expect(seen(h, "turn_completed")).toEqual([]);            // NOTHING closed mid-turn
+    expect(h.session.turnRunning).toBe(true);
+    // B left the daemon's queue with its turn_started (a continuation to every client), BEFORE C landed
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "turn_started", "user_message"]);
+    q.emit(result({ interrupted: true }));                     // A's terminal, at 3 s
+    await h.settled();
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "turn_started", "user_message",
+      "turn_completed", "turn_completed", "turn_started"]);    // A's, then B's aborted close, then C runs
+    expect(stopReasons(h)).toEqual(["aborted", "aborted"]);
+    expect(h.q().pushed).toEqual(["A", "C"]);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+  });
+
+  test("Task 17 Step 0(c): a messaging DELIVERY after an interrupt re-arms the drain too — its own text first, then the held one at its result", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.send("A", "cli");
+    await h.session.send("B", "cli");
+    await h.session.interrupt();
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A"]);
+    h.attachments[0]!.session.push("<agent-message>news</agent-message>");
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A", "<agent-message>news</agent-message>"]);
+    h.q().emit(result());
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A", "<agent-message>news</agent-message>", "B"]);
+    expect(h.session.pendingSends).toEqual([]);
+  });
+
+  test("Task 17 Step 0(b): setPolicy reaches a LIVE child as Query.setPermissionMode through the P8b-7 map; a no-op while resumable (the reopen re-reads the store)", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.setPolicy("plan");
+    await h.session.setPolicy("accept-edits");
+    await h.session.setPolicy("bypass");
+    await h.session.setPolicy("chat");
+    expect(h.q().modes).toEqual(["plan", "acceptEdits", "bypassPermissions", "default"]);
+    await h.session.end();
+    await h.session.setPolicy("auto");
+    expect(h.q().modes).toHaveLength(4);
+  });
+
+  test("P8b-39: a steer after an interrupt also re-arms the drain — its own text first, then the held one at its result", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.send("B", "cli");
+    await h.session.interrupt();
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A"]);
+    await h.session.steer("S", "cli");
+    expect(h.q().pushed).toEqual(["A", "S"]);
+    h.q().emit(result());
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A", "S", "B"]);
+    expect(h.session.pendingSends).toEqual([]);
+  });
+
+  test("an interrupt-class END of the iteration (the child exits with AbortError) is a turn boundary: the interrupted terminal, NO agent_error, and `resumable`", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().interruptEndsChild = true;
+    h.q().emit(init(h.q().options));
+    await h.session.send("hang", "cli");
+    await h.session.interrupt();
+    await h.session.done;
+    expect(seen(h, "turn_completed")).toHaveLength(1);
+    expect(seen(h, "turn_completed")[0]).toMatchObject({ stopReason: "aborted" });
+    expect(seen(h, "agent_error")).toEqual([]);
+    expect(h.session.state).toBe("resumable");
+    expect(h.session.query).toBeUndefined();
+    expect(h.attachments[0]!.detached).toBe(1);
+    expect(h.untracked).toBe(1);
+    expect(h.records.ended).toEqual([{ generation: 1, reason: "exited" }]);
+    expect(h.records.state).toBe("exited");
+  });
+
+  test("another error class mid-turn → ONE agent_error (Task 11's code) + turn_completed(error), then `resumable`", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("x", "cli");
+    h.q().fail(named("ProcessError", "unexpected process death"));
+    await h.session.done;
+    expect(h.types().slice(2)).toEqual(["agent_error", "turn_completed"]);
+    expect(seen(h, "agent_error")[0]).toMatchObject({ code: "process_death" });
+    expect(seen(h, "turn_completed")[0]).toMatchObject({ stopReason: "error" });
+    expect(h.session.state).toBe("resumable");
+  });
+
+  test("a store-corruption class ends the session for good: `ended`, and a later send is a typed refusal", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("x", "cli");
+    h.q().fail(named("WinterStoreError", "the transcript store is corrupt"));
+    await h.session.done;
+    expect(h.session.state).toBe("ended");
+    expect(h.records.state).toBe("failed");
+    await expect(h.session.send("y", "cli")).rejects.toMatchObject({ code: "winter_session_ended" });
+  });
+
+  test("a ProjectorRefusedError out of accept is caught: a typed agent_error, the incarnation ends, `resumable` — never a crash", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("x", "cli");
+    // the source the first text-only assistant frame will claim, marked pending by "somebody else"
+    h.checkpoints.marks.set("s_x/1/as:0:1", "pending");
+    h.q().emit(assistant("boom"));
+    await h.session.done;
+    expect(seen(h, "agent_error")).toHaveLength(1);
+    expect(seen(h, "agent_error")[0]).toMatchObject({ code: "projector_refused" });
+    expect(h.session.state).toBe("resumable");
+  });
+
+  test("Task 17 (P8b-15): a spawned child is relayed to the roster — started on thread_started, progress per child frame, completed from the spawning call's tool_result", async () => {
+    const calls: string[] = [];
+    const h = harness({ children: {
+      started: (c) => { calls.push(`started:${c.threadId}:${c.agentType}`); },
+      progress: (id) => { calls.push(`progress:${id}`); },
+      completed: (id, stop) => { calls.push(`completed:${id}:${stop}`); },
+    } });
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("spawn one", "cli");
+    h.q().emit({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu_kid_1", name: "Agent", input: { prompt: "do it", description: "worker" } }] } });
+    await h.settled();
+    expect(calls).toEqual(["started:toolu_kid_1:general-purpose"]);
+    // the child's own frame, stamped with the spawning id
+    h.q().emit({ type: "assistant", parent_tool_use_id: "toolu_kid_1", message: { content: [{ type: "text", text: "child says hi" }] } });
+    await h.settled();
+    expect(calls.filter((c) => c.startsWith("progress:toolu_kid_1")).length).toBeGreaterThan(0);
+    h.q().emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_kid_1", content: "child finished" }] } });
+    await h.settled();
+    expect(calls.at(-1)).toBe("completed:toolu_kid_1:end_turn");
+    expect(seen(h, "thread_started")).toHaveLength(1);
+    expect(seen(h, "thread_completed")).toHaveLength(1);
+  });
+
+  test("fix wave (review F10): a child's TRANSIENT frames (assistant_delta) feed the roster's progress too — a streaming child with no tool call is progress, not a stall", async () => {
+    const calls: string[] = [];
+    const h = harness({ children: {
+      started: (c) => { calls.push(`started:${c.threadId}`); },
+      progress: (id) => { calls.push(`progress:${id}`); },
+      completed: (id, stop) => { calls.push(`completed:${id}:${stop}`); },
+    } });
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("spawn one", "cli");
+    h.q().emit({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu_kid_2", name: "Agent", input: { prompt: "stream", description: "streamer" } }] } });
+    await h.settled();
+    expect(calls).toEqual(["started:toolu_kid_2"]);
+    // three text deltas on the CHILD's thread: broadcast (never persisted), each one progress
+    for (const text of ["a", "b", "c"]) {
+      h.q().emit({ type: "stream_event", parent_tool_use_id: "toolu_kid_2", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } }, uuid: `u-${text}`, session_id: "be-x" });
+    }
+    await h.settled();
+    expect(h.broadcasts.filter((e) => e.type === "assistant_delta" && (e as { threadId?: string }).threadId === "toolu_kid_2")).toHaveLength(3);
+    expect(seen(h, "assistant_delta")).toHaveLength(0);   // still transient
+    expect(calls.filter((c) => c === "progress:toolu_kid_2")).toHaveLength(3);
+    // a MAIN-thread delta is not a child's progress
+    h.q().emit({ type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "main" } }, uuid: "u-main", session_id: "be-x" });
+    await h.settled();
+    expect(calls.filter((c) => c.startsWith("progress:")).length).toBe(3);
+  });
+
+  test("fix wave (review F10), through the REAL persisted roster with fake timers: deltas re-arm the stall window, so a child streaming past ten windows is never stopped", async () => {
+    const home = mkdtempSync(join(tmpdir(), "moss-stall-"));
+    const rs = openRuntimeStateDb(home);
+    let next = 1;
+    const pending = new Map<number, { fn: () => void; ms: number }>();
+    const clock = {
+      timers: { set(fn: () => void, ms: number): unknown { const id = next++; pending.set(id, { fn, ms }); return id; }, clear(handle: unknown): void { pending.delete(handle as number); } },
+      ids: (): number[] => [...pending.keys()],
+      fireAll(): void { for (const [id, p] of [...pending]) { pending.delete(id); p.fn(); } },
+    };
+    try {
+      const registry = createPersistedChildren({ store: new RuntimeChildren(rs), profiles: new ChildProfiles(home), providerId: () => "openai", timers: clock.timers, stallTimeoutMs: () => 1000 });
+      const h = harness({ children: childrenSinkFor(registry, "s_x", () => {}) });
+      await h.session.open();
+      h.q().emit(init(h.q().options));
+      await h.session.send("spawn one", "cli");
+      h.q().emit({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu_kid_3", name: "Agent", input: { prompt: "stream", description: "streamer" } }] } });
+      await h.settled();
+      expect(registry.get("toolu_kid_3", "s_x")?.status).toBe("running");
+      expect(clock.ids()).toHaveLength(1);   // armed at registration
+      let previous = clock.ids()[0]!;
+      for (let window = 0; window < 10; window += 1) {
+        // the whole window elapses with NOTHING persisted for this child — only a delta arrives
+        h.q().emit({ type: "stream_event", parent_tool_use_id: "toolu_kid_3", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `chunk ${window}` } }, uuid: `u-${window}`, session_id: "be-x" });
+        await h.settled();
+        const armed = clock.ids();
+        expect(armed).toHaveLength(1);           // cleared and re-armed, never stacked
+        expect(armed[0]).not.toBe(previous);     // a NEW timer: the window genuinely restarted
+        previous = armed[0]!;
+      }
+      expect(registry.get("toolu_kid_3", "s_x")?.status).toBe("running");
+      // and when the stream really does go quiet, the window fires and the child is stopped
+      clock.fireAll();
+      expect(registry.get("toolu_kid_3", "s_x")?.status).toBe("timeout");
+      await h.session.end();
+    } finally {
+      rs.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("nested child progress keeps its waiting ancestors alive but not an unrelated child", async () => {
+    const home = mkdtempSync(join(tmpdir(), "moss-nested-stall-"));
+    const rs = openRuntimeStateDb(home);
+    let next = 1, now = 0;
+    const pending = new Map<number, { fn: () => void; at: number }>();
+    const timers = {
+      set(fn: () => void, ms: number): unknown { const id = next++; pending.set(id, { fn, at: now + ms }); return id; },
+      clear(handle: unknown): void { pending.delete(handle as number); },
+    };
+    const advance = (ms: number) => {
+      const target = now + ms;
+      while (true) {
+        const due = [...pending].filter(([, timer]) => timer.at <= target).sort((a, b) => a[1].at - b[1].at)[0];
+        if (due === undefined) break;
+        pending.delete(due[0]); now = due[1].at; due[1].fn();
+      }
+      now = target;
+    };
+    let h: Harness | undefined;
+    try {
+      const registry = createPersistedChildren({ store: new RuntimeChildren(rs), profiles: new ChildProfiles(home), providerId: () => "openai", timers, now: () => now, stallTimeoutMs: () => 1000 });
+      h = harness({ children: childrenSinkFor(registry, "s_x", () => {}) });
+      await h.session.open(); h.q().emit(init(h.q().options)); await h.session.send("nested work", "cli");
+      h.q().emit({ type: "assistant", message: { content: [
+        { type: "tool_use", id: "parent", name: "Agent", input: { prompt: "delegate" } },
+        { type: "tool_use", id: "unrelated", name: "Agent", input: { prompt: "go quiet" } },
+      ] } });
+      h.q().emit({ type: "assistant", parent_tool_use_id: "parent", message: { content: [
+        { type: "tool_use", id: "grandchild", name: "Agent", input: { prompt: "work" } },
+      ] } });
+      await h.settled();
+      expect(seen(h, "thread_started").find((e) => "threadId" in e && e.threadId === "grandchild")).toMatchObject({ parentThreadId: "parent" });
+      for (let window = 0; window < 10; window++) {
+        advance(900);
+        // Both persisted content and transient deltas carry the GRANDCHILD's immediate id.
+        h.q().emit(window % 2 === 0
+          ? { type: "assistant", parent_tool_use_id: "grandchild", message: { content: [{ type: "text", text: `work ${window}` }] } }
+          : { type: "stream_event", parent_tool_use_id: "grandchild", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `work ${window}` } }, uuid: `nested-${window}`, session_id: "be-x" });
+        await h.settled();
+        expect(registry.get("parent", "s_x")?.status).toBe("running");
+        expect(registry.get("grandchild", "s_x")?.status).toBe("running");
+      }
+      expect(now).toBe(9000);
+      expect(registry.get("unrelated", "s_x")?.status).toBe("timeout");
+      expect(pending.size).toBe(2);
+      h.q().emit({ type: "user", parent_tool_use_id: "parent", message: { content: [{ type: "tool_result", tool_use_id: "grandchild", content: "done" }] } });
+      await h.settled();
+      expect(registry.get("grandchild", "s_x")?.status).toBe("completed");
+      // A completed child's late frame cannot keep its former ancestor alive.
+      advance(900);
+      h.q().emit({ type: "assistant", parent_tool_use_id: "grandchild", message: { content: [{ type: "text", text: "late" }] } });
+      await h.settled();
+      advance(200);
+      expect(registry.get("parent", "s_x")?.status).toBe("timeout");
+      expect(pending.size).toBe(0);
+    } finally {
+      await h?.session.end(); rs.close(); rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("malformed child lineage cycles relay progress once per thread without hanging", async () => {
+    const progress: string[] = [];
+    const h = harness({ children: { started() {}, completed() {}, progress: (id) => { progress.push(id); } } });
+    try {
+      await h.session.open(); h.q().emit(init(h.q().options)); await h.session.send("cycle", "cli");
+      for (const [id, parent] of [["outer", "inner"], ["inner", "outer"]]) {
+        h.q().emit({ type: "assistant", parent_tool_use_id: parent, message: { content: [{ type: "tool_use", id, name: "Agent", input: { prompt: "malformed lineage" } }] } });
+      }
+      await h.settled(); progress.length = 0;
+      h.q().emit({ type: "stream_event", parent_tool_use_id: "inner", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "progress" } }, uuid: "cycle-delta", session_id: "be-x" });
+      await h.settled();
+      expect(progress).toEqual(["inner", "outer"]);
+    } finally { await h.session.end(); }
+  });
+
+  // WS-23 (reasoning-state, decision 5): `compact` reaches a LIVE child's `Query.compact` (the SDK's
+  // `compact` control) -- what the handoff calls before a provider switch the target cannot hold -- and
+  // stays a typed refusal with no live child to ask.
+  test("compact reaches a live child and is a typed refusal while resumable; setModel reaches a live child and is a no-op while resumable", async () => {
+    const h = harness();
+    await expect(h.session.compact()).rejects.toMatchObject({ code: "not_supported_on_winter_leg" });
+    await h.session.open();
+    await expect(h.session.compact()).resolves.toEqual({ retainedCount: 7 });
+    expect(h.q().compactions).toEqual([undefined]);
+    await h.session.end();
+    await h.session.setModel("gpt-5.6-terra");   // resumable: nothing to tell
+    await h.session.open();
+    await h.session.setModel("gpt-5.6-luna");
+    expect(h.q().models).toEqual(["gpt-5.6-luna"]);
+  });
+});
+
+describe("WS-23 review r1: the idle clock during a compaction (M-4), and the handoff hold (I-5)", () => {
+  test("M-4: the idle timer is cleared for a compaction's whole length and re-armed after it", async () => {
+    const h = harness({ idleTimeoutMs: 50 });
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    expect(h.timers.armed.map((t) => t.ms)).toEqual([50]);
+    let finish: (() => void) | undefined;
+    h.q().compact = () => new Promise((resolve) => { finish = () => resolve({ retainedCount: 2 }); });
+    const compaction = h.session.compact();
+    await h.settled();
+    expect(h.timers.armed).toEqual([]);              // nothing can end the child mid-compaction
+    h.timers.fire();
+    expect(h.session.state).toBe("live");
+    finish!();
+    await expect(compaction).resolves.toEqual({ retainedCount: 2 });
+    expect(h.timers.armed.map((t) => t.ms)).toEqual([50]);
+  });
+
+  test("I-3: a compaction's announcement is in the transcript before the compaction runs; only the SDK's own options reach the control", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.compact({ announce: { warning: "switch_compaction", text: "summarizing before the switch" } });
+    expect(seen(h, "continuity_warning")).toMatchObject([{ threadId: "main", warning: "switch_compaction", text: "summarizing before the switch" }]);
+    expect(h.q().compactions).toEqual([undefined]);
+  });
+
+  test("the thinking pill: deltas are broadcast, never appended; a block the child left open when its iteration ENDED CLEANLY is persisted", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    const rp = (phase: string, extra: Frame = {}): Frame =>
+      ({ type: "system", subtype: "reasoning_progress", block_id: "rb_1", phase, kind: "summary", provider: "openai", model: "m", parent_tool_use_id: null, uuid: `rp-${phase}`, session_id: "be-x", ...extra });
+    h.q().emit(rp("start"));
+    h.q().emit(rp("delta", { text: "**Reading**\n\nthe schema" }));
+    await h.settled();
+    expect(h.broadcasts.filter((e) => e.type === "thinking_delta").map((e) => (e as { phase: string }).phase)).toEqual(["start", "delta"]);
+    expect(seen(h, "thinking_delta")).toEqual([]);
+    expect(seen(h, "thinking_block")).toEqual([]);
+    h.q().end();                                       // no `end` frame, no result, no throw
+    await h.session.end();
+    expect(seen(h, "thinking_block")).toMatchObject([{ threadId: "main", blockId: "rb_1", title: "Reading", text: "**Reading**\n\nthe schema" }]);
+  });
+
+  test("I-5: a send during a pending handoff reaches the log, never the SOURCE child; the work's end reports it held", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    let finish: (() => void) | undefined;
+    const held = h.session.beginHandoff(() => new Promise<void>((resolve) => { finish = resolve; }));
+    expect(h.session.handoffPending).toBe(true);
+    await expect(h.session.send("for the new model", "cli")).resolves.toMatchObject({ queued: true });
+    await expect(h.session.steer("and this", "cli")).resolves.toMatchObject({ injected: false });
+    h.session.deliver("a delivery");
+    await h.settled();
+    expect(h.q().pushed).toEqual([]);
+    expect(seen(h, "turn_started")).toEqual([]);
+    expect(unconsumedUserMessages(h.events)).toEqual(["for the new model", "and this", "a delivery"]);
+    await h.session.end();                            // the work evicts the child, as the handoff does
+    finish!();
+    await expect(held).resolves.toEqual({ heldTurns: 3 });
+    expect(h.session.handoffPending).toBe(false);
+    // The next incarnation (the target's) pushes what was held, in order.
+    await h.session.open();
+    await h.settled();
+    expect(h.q().pushed).toEqual(["for the new model"]);
+  });
+
+  test("I-5: texts queued behind the running turn before the switch wait for the target too", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.send("running", "cli");
+    await h.session.send("queued before the switch", "cli");
+    const held = h.session.beginHandoff(async () => { await h.session.idle(); await h.session.end(); });
+    h.q().emit(result());
+    await expect(held).resolves.toEqual({ heldTurns: 1 });
+    expect(h.queries[0]!.pushed).toEqual(["running"]);
+    await h.session.open();
+    await h.settled();
+    expect(h.q().pushed).toEqual(["queued before the switch"]);
+  });
+});
+
+describe("startMossSession — end(), the idle timer, the shutdown budget", () => {
+  test("end() closes the queue; an idle child exits; `done` resolves; the session is `resumable` and untracked", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.end();
+    expect(h.q().promptClosed).toBe(true);
+    expect(h.session.state).toBe("resumable");
+    expect(h.tracked[0]!.abort.signal.aborted).toBe(false);   // it left politely — no abort needed
+    expect(h.untracked).toBe(1);
+    expect(h.attachments[0]!.detached).toBe(1);
+    expect(h.records.ended).toEqual([{ generation: 1, reason: "ended" }]);
+    await h.session.end();   // idempotent
+  });
+
+  test("end() on a child mid-turn that ignores its closing stdin ABORTS it inside the budget; the open turn gets its aborted terminal", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().ignoreClose = true;
+    h.q().emit(init(h.q().options));
+    await h.session.send("hang", "cli");
+    const t0 = Date.now();
+    await h.session.end();
+    const took = Date.now() - t0;
+    expect(h.tracked[0]!.abort.signal.aborted).toBe(true);
+    expect(took).toBeLessThan(SHUTDOWN_QUERY_GRACE_MS);
+    expect(seen(h, "turn_completed")[0]).toMatchObject({ stopReason: "aborted" });
+    expect(seen(h, "agent_error")).toEqual([]);
+    expect(h.session.state).toBe("resumable");
+  });
+
+  test("the pre-abort budget fits twice inside dispose()'s grace (P8b-32)", () => {
+    expect(MOSS_SESSION_END_GRACE_MS * 2).toBeLessThan(SHUTDOWN_QUERY_GRACE_MS);
+  });
+
+  test("the idle timer (a fake clock) is armed at init and after every result, cleared by a push, and ends the session when it fires", async () => {
+    const h = harness({ idleTimeoutMs: 50 });
+    await h.session.open();
+    expect(h.timers.armed).toEqual([]);                    // nothing before init
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    expect(h.timers.armed.map((t) => t.ms)).toEqual([50]); // idle since init
+    await h.session.send("slow", "cli");
+    expect(h.timers.armed).toEqual([]);                    // a turn is running: no clock
+    h.q().emit(result());
+    await h.settled();
+    expect(h.timers.armed.map((t) => t.ms)).toEqual([50]);
+    expect(h.session.state).toBe("live");
+    h.timers.fire();
+    await h.session.done;
+    expect(h.session.state).toBe("resumable");
+    expect(h.records.ended).toEqual([{ generation: 1, reason: "ended" }]);
+    expect(h.timers.armed).toEqual([]);
+  });
+
+  test("m1: a result that lands inside end()'s grace never pushes the held text into the CLOSED queue — no spurious agent_error, the text stays owed", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().ignoreClose = true;
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.send("B", "cli");   // held
+    const ending = h.session.end();     // closes the queue; waits 25 ms; then aborts
+    await Bun.sleep(5);
+    expect(h.q().promptClosed).toBe(true);
+    h.q().emit(result());               // A finishes on its own inside the grace
+    await ending;
+    expect(h.session.state).toBe("resumable");
+    expect(seen(h, "agent_error")).toEqual([]);
+    expect(seen(h, "turn_completed")).toHaveLength(1);
+    expect(h.q().pushed).toEqual(["A"]);
+    expect(unconsumedUserMessages(h.events)).toEqual(["B"]);
+    // and the next incarnation runs it from the log
+    await h.session.send("C", "cli");
+    expect(h.queries).toHaveLength(2);
+    expect(h.q().pushed).toEqual(["B"]);
+    expect(h.session.pendingSends).toEqual(["C"]);
+  });
+
+  test("m2: end() never resolves with the session still live — a child that outlives the abort leaves it `resumable`, and the next send waits for that iteration before it spawns", async () => {
+    const h = harness();
+    await h.session.open();
+    const first = h.q();
+    first.ignoreClose = true;
+    first.ignoreAbort = true;
+    first.emit(init(first.options));
+    await h.session.send("hang", "cli");
+    const t0 = Date.now();
+    await h.session.end();
+    expect(Date.now() - t0).toBeLessThan(200);
+    expect(h.session.state).toBe("resumable");
+    expect(h.session.query).toBeUndefined();
+    expect(first.options.abortController!.signal.aborted).toBe(true);
+    // a send now does not touch the closed queue: it awaits the old iteration's end
+    let opened = false;
+    const sending = h.session.send("next", "cli").then(() => { opened = true; });
+    await Bun.sleep(10);
+    expect(opened).toBe(false);
+    expect(h.queries).toHaveLength(1);
+    first.end();                        // the straggler finally exits
+    await sending;
+    expect(h.queries).toHaveLength(2);
+    expect(h.q().pushed).toEqual(["next"]);   // "hang" ran (it had its turn_started); only "next" was owed
+    expect(h.session.pendingSends).toEqual([]);
+    expect(h.session.state).toBe("live");
+  });
+
+  test("m3: a refused options thunk (the binary went away) bumps NO generation and ends none — the session stays resumable and a later open works", async () => {
+    let refuse = true;
+    const h = harness({
+      options: (inc) => { if (refuse) throw Object.assign(new Error("no winter binary"), { code: "winter_executable_unavailable" }); return { abortController: inc.abort, cwd: "/repo", sessionId: "be-x" }; },
+    });
+    await expect(h.session.open()).rejects.toMatchObject({ code: "winter_executable_unavailable" });
+    expect(h.records.generation).toBe(0);
+    expect(h.records.ended).toEqual([]);
+    expect(h.session.state).toBe("resumable");
+    refuse = false;
+    await h.session.open();
+    expect(h.records.generation).toBe(1);
+    expect(h.session.state).toBe("live");
+  });
+});
+
+describe("startMossSession — resume", () => {
+  test("a send from `resumable` opens a NEW query with options.resume = backendSessionId, a bumped generation, and re-attaches", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("first", "cli");
+    h.q().emit(result());
+    await h.settled();
+    await h.session.end();
+    h.transcriptExists = true;   // the first turn wrote it
+    const sent = await h.session.send("again", "cli");
+    expect(h.queries).toHaveLength(2);
+    expect(h.q().options.resume).toBe("be-x");
+    expect(h.q().options.sessionId).toBeUndefined();
+    expect(h.incarnations[1]).toMatchObject({ generation: 2, resume: true });
+    expect(h.session.resumed).toBe(true);
+    expect(h.session.generation).toBe(2);
+    expect(h.tracked).toHaveLength(2);
+    expect(sent.queued).toBe(false);
+    expect(h.q().pushed).toEqual(["again"]);
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    expect(h.attachments).toHaveLength(2);
+    expect(h.attachments[1]!.session.generation).toBe(2);
+    expect(h.records.transitions.at(-1)).toBe("running");
+  });
+
+  test("a resume with NO transcript on disk starts FRESH under the same uuid (the measured hang otherwise)", async () => {
+    const h = harness();
+    await h.session.open();
+    await h.session.end();   // idled out before any turn: nothing was written
+    await h.session.send("hello", "cli");
+    expect(h.q().options.sessionId).toBe("be-x");
+    expect(h.q().options.resume).toBeUndefined();
+    expect(h.incarnations[1]).toMatchObject({ generation: 2, resume: false });
+    expect(h.session.resumed).toBe(false);
+  });
+
+  test("deliveries that reach the sink while resumable are HELD and pushed first on resume, before the new text", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    const sink = h.attachments[0]!.session.push;
+    await h.session.end();
+    sink("<agent-message>late</agent-message>");
+    expect(h.session.heldDeliveries).toEqual(["<agent-message>late</agent-message>"]);
+    expect(h.events).toEqual([]);   // nothing appended yet — no live projector to begin a turn on
+    await h.session.send("now", "cli");
+    // The delivery was pushed FIRST and is now the running turn, so the new text is held behind it
+    // (P8b-5) and follows at its result — "held deliveries first, then the new text".
+    expect(h.q().pushed).toEqual(["<agent-message>late</agent-message>"]);
+    expect(h.session.pendingSends).toEqual(["now"]);
+    expect(h.session.heldDeliveries).toEqual([]);
+    expect(h.events.map((e) => (e as { clientName?: string }).clientName ?? e.type)).toEqual(["messaging", "turn_started", "cli"]);
+    h.q().emit(result());
+    await h.settled();
+    expect(h.q().pushed).toEqual(["<agent-message>late</agent-message>", "now"]);
+  });
+
+  test("P8b-39: a send held behind a turn survives the incarnation's end THROUGH THE LOG — re-pushed first on resume with exactly ONE turn_started, appended when it runs", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().ignoreClose = true;
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.send("B", "cli");   // held
+    await h.session.end();              // aborts A's hanging turn
+    expect(seen(h, "turn_completed")).toHaveLength(1);   // A's aborted terminal only
+    expect(seen(h, "turn_started")).toHaveLength(1);     // A's — B has none yet
+    expect(unconsumedUserMessages(h.events)).toEqual(["B"]);
+    // A RESTART: a fresh driver over the same log knows nothing but what the log says
+    const restarted = harness({ append: (e: NewSessionEvent) => { const stamped = { ...e, seq: h.events.length + 1, ts: Date.now() } as SessionEvent; h.events.push(stamped); return stamped; }, unconsumed: () => unconsumedUserMessages(h.events) });
+    await restarted.session.send("C", "cli");
+    // B was replayed first (from the log) and is the running turn on the new child; C is held (P8b-5).
+    expect(restarted.q().pushed).toEqual(["B"]);
+    expect(restarted.session.pendingSends).toEqual(["C"]);
+    expect(h.events.map((e) => e.type)).toEqual(["user_message", "turn_started", "user_message", "turn_completed", "turn_started", "user_message"]);
+    expect(seen(h, "turn_started")).toHaveLength(2);      // A, B — exactly one for B
+    restarted.q().emit(result());                         // B's result releases C
+    await restarted.settled();
+    expect(restarted.q().pushed).toEqual(["B", "C"]);
+    expect(restarted.session.pendingSends).toEqual([]);
+    expect(seen(h, "turn_started")).toHaveLength(3);
+    restarted.q().emit(result());
+    await restarted.settled();
+    expect(seen(h, "turn_completed")).toHaveLength(3);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+  });
+
+  test("P8b-40 (re-review N1): a steer's turn_started pairs with ITS OWN message — a resume after `send A (runs) → send B (held) → steer S → interrupt` re-pushes exactly B, never S", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.send("B", "cli");     // held
+    await h.session.steer("S", "cli");    // pushes now; its turn_started waits for A's terminal (C2)
+    expect(h.q().pushed).toEqual(["A", "S"]);
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "user_message"]);
+    // In THIS window S is pushed but has not started: a crash here kills it with the child, so it is
+    // owed too — and re-pushing it on resume is right (before C2 its early turn_started lost it).
+    expect(unconsumedUserMessages(h.events)).toEqual(["B", "S"]);
+    await h.session.interrupt();          // ends A's turn — S's turn_started is announced right after
+    await h.settled();
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "user_message", "turn_completed", "turn_started"]);
+    expect(unconsumedUserMessages(h.events)).toEqual(["B"]);
+    h.q().emit(result());                 // S's own result (P8b-38)
+    await h.settled();
+    await h.session.end();
+    // the restart: a fresh driver over the same log
+    const restarted = harness({ append: (e: NewSessionEvent) => { const st = { ...e, seq: h.events.length + 1, ts: Date.now() } as SessionEvent; h.events.push(st); return st; }, unconsumed: () => unconsumedUserMessages(h.events) });
+    await restarted.session.open();
+    restarted.q().emit(init(restarted.q().options));
+    await restarted.settled();
+    expect(restarted.q().pushed).toEqual(["B"]);
+    expect(restarted.session.pendingSends).toEqual([]);
+  });
+
+  test("P8b-40: a DELIVERY mid-hold pairs with its own message too, and the held send stays owed", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.send("A", "cli");
+    await h.session.send("B", "cli");
+    h.attachments[0]!.session.push("<agent-message>D</agent-message>");
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A", "<agent-message>D</agent-message>"]);
+    // C2: D is pushed but has not STARTED (A still runs), so a crash in this window re-pushes it too.
+    expect(unconsumedUserMessages(h.events)).toEqual(["B", "<agent-message>D</agent-message>"]);
+    // A's terminal starts D — its turn_started pairs with ITS OWN message, and B stays owed.
+    h.q().emit(result());
+    await h.settled();
+    expect(unconsumedUserMessages(h.events)).toEqual(["B"]);
+  });
+
+  test("C2: a message appended while a push is still unannounced first announces it — a turn_started is never separated from its own message", async () => {
+    // steer S, then send B while A runs: without the early announcement S's turn_started would land
+    // after B's user_message and the adjacency scan would pair it with B — re-pushing S and dropping B.
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.steer("S", "cli");
+    await h.session.send("B", "cli");     // held; S is announced BEFORE B's user_message lands
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "turn_started", "user_message"]);
+    expect(unconsumedUserMessages(h.events)).toEqual(["B"]);
+    h.q().emit(result());                 // A ends: S was already announced, nothing more
+    await h.settled();
+    expect(seen(h, "turn_started")).toHaveLength(2);
+    h.q().emit(result());                 // S ends: B (pushed at A's result) starts now
+    await h.settled();
+    expect(h.types().slice(-3)).toEqual(["turn_completed", "turn_completed", "turn_started"]);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+  });
+
+  test("P8b-40: the crash window — a message PUSHED whose turn_started never got appended is re-pushed on resume (the persisted contract is the pair)", () => {
+    const ev = (type: string, extra: Record<string, unknown> = {}): SessionEvent => ({ type, sessionId: "s", threadId: "main", seq: 0, ts: 0, ...extra } as unknown as SessionEvent);
+    // A ran to completion; B was appended and pushed, then the process died before `turn_started`
+    expect(unconsumedUserMessages([
+      ev("user_message", { text: "A", clientName: "cli" }), ev("turn_started"), ev("turn_completed", { stopReason: "end_turn" }),
+      ev("user_message", { text: "B", clientName: "cli" }),
+    ])).toEqual(["B"]);
+  });
+
+  test("re-review N2: a delivery inside end()'s window (the idle timeout) is HELD — no append, no push, no orphan turn — and runs on the next open", async () => {
+    const h = harness({ idleTimeoutMs: 50 });
+    await h.session.open();
+    h.q().ignoreClose = true;             // the child lingers through the grace: the window is real
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    const sink = h.attachments[0]!.session.push;
+    const before = h.events.length;
+    h.timers.fire();                      // idle → end(): the queue closes NOW, state is still live
+    expect(h.session.state).toBe("live");
+    expect(h.q().promptClosed).toBe(false);
+    await Bun.sleep(1);
+    expect(h.q().promptClosed).toBe(true);
+    expect(() => sink("<agent-message>late</agent-message>")).not.toThrow();
+    expect(h.session.heldDeliveries).toEqual(["<agent-message>late</agent-message>"]);
+    expect(h.events.length).toBe(before);
+    await h.session.done;
+    expect(h.session.state).toBe("resumable");
+    expect(h.q().pushed).toEqual([]);
+    await h.session.send("x", "cli");
+    expect(h.q().pushed).toEqual(["<agent-message>late</agent-message>"]);
+    expect(h.session.pendingSends).toEqual(["x"]);
+  });
+
+  test("unconsumedUserMessages: adjacency pairing over main-thread user_message/turn_started; the projector's pass-through and child threads are not debts", () => {
+    const ev = (type: string, extra: Record<string, unknown> = {}): SessionEvent => ({ type, sessionId: "s", threadId: "main", seq: 0, ts: 0, ...extra } as unknown as SessionEvent);
+    expect(unconsumedUserMessages([])).toEqual([]);
+    expect(unconsumedUserMessages([ev("user_message", { text: "A", clientName: "cli" }), ev("turn_started")])).toEqual([]);
+    expect(unconsumedUserMessages([
+      ev("user_message", { text: "A", clientName: "cli" }), ev("turn_started"),
+      ev("user_message", { text: "B", clientName: "cli" }),
+      ev("turn_completed", { stopReason: "aborted" }),
+      ev("user_message", { text: "C", clientName: "messaging" }),
+    ])).toEqual(["B", "C"]);
+    // the child's own text (a resume prompt the projector passed through) is not owed
+    expect(unconsumedUserMessages([ev("user_message", { text: "echo", clientName: PROJECTOR_PASSTHROUGH_CLIENT })])).toEqual([]);
+    // a child thread's user_message/turn_started (the engine's send_message drains) do not count
+    expect(unconsumedUserMessages([ev("user_message", { text: "kid", clientName: "cli", threadId: "toolu_1" }), ev("turn_started", { threadId: "toolu_1" })])).toEqual([]);
+    expect(unconsumedUserMessages([ev("user_message", { text: "A", clientName: "cli" }), ev("turn_started", { threadId: "toolu_1" })])).toEqual(["A"]);
+  });
+
+  test("two concurrent sends from resumable open ONE child (never a second winter process on one transcript)", async () => {
+    const h = harness();
+    await h.session.open();
+    await h.session.end();
+    await Promise.all([h.session.send("one", "cli"), h.session.send("two", "cli")]);
+    expect(h.queries).toHaveLength(2);
+    expect(h.q().pushed).toEqual(["one"]);
+    expect(h.session.pendingSends).toEqual(["two"]);
+  });
+});
+
+// Code-mode image input: the log keeps what the user wrote (`[Image #n]` + `images`); the CHILD is
+// pushed the text with each placeholder replaced by its path — live, held, steered, handed off and
+// replayed on resume alike — and the projector's echo window matches the pushed text, so no
+// pass-through `user_message` ever doubles the bubble.
+describe("startMossSession — code-mode image placeholders (only the model sees the paths)", () => {
+  const IMG = [{ n: 1, path: "/tmp/moss-session-s_x/images/image_1.png" }];
+  const IMG2 = [{ n: 1, path: "/tmp/moss-session-s_x/images/image_2.png" }];
+  const userMessages = (h: Harness) => h.events.filter((e) => e.type === "user_message") as Array<Extract<SessionEvent, { type: "user_message" }>>;
+
+  test("a live send: the log keeps the placeholder and images, the child gets the path, an echo of it is dropped", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.send("look at [Image #1] please", "cli", IMG);
+    await h.settled();
+    expect(h.q().pushed).toEqual(["look at /tmp/moss-session-s_x/images/image_1.png please"]);
+    expect(userMessages(h)).toMatchObject([{ text: "look at [Image #1] please", clientName: "cli", images: IMG }]);
+    // A child that echoes its input back is recognised by the pushed (path) text — no second bubble.
+    h.q().emit({ type: "user", message: { role: "user", content: [{ type: "text", text: "look at /tmp/moss-session-s_x/images/image_1.png please" }] } });
+    h.q().emit(result());
+    await h.settled();
+    expect(userMessages(h)).toHaveLength(1);
+  });
+
+  test("a send without images stores no images key (never an empty array)", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.send("plain", "cli", []);
+    expect("images" in userMessages(h)[0]!).toBe(false);
+    expect(h.q().pushed).toEqual(["plain"]);
+  });
+
+  test("a send held behind a running turn is pushed with its path at the turn's result", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.send("first", "cli");
+    await expect(h.session.send("then [Image #1]", "cli", IMG)).resolves.toMatchObject({ queued: true });
+    expect(h.session.pendingSends).toEqual(["then /tmp/moss-session-s_x/images/image_1.png"]);
+    h.q().emit(result());
+    await h.settled();
+    expect(h.q().pushed).toEqual(["first", "then /tmp/moss-session-s_x/images/image_1.png"]);
+    expect(userMessages(h).map((m) => m.text)).toEqual(["first", "then [Image #1]"]);
+  });
+
+  test("a steer carries the placeholder in the log and the path to the child", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.send("running", "cli");
+    await expect(h.session.steer("also [Image #1]", "orb", IMG)).resolves.toMatchObject({ injected: true });
+    await h.settled();
+    expect(h.q().pushed).toEqual(["running", "also /tmp/moss-session-s_x/images/image_1.png"]);
+    expect(userMessages(h)[1]).toMatchObject({ text: "also [Image #1]", clientName: "orb", images: IMG });
+  });
+
+  test("resume: the log's unconsumed messages are re-pushed with their paths (and a handoff's held ones)", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    let finish: (() => void) | undefined;
+    const held = h.session.beginHandoff(() => new Promise<void>((resolve) => { finish = resolve; }));
+    await h.session.send("see [Image #1]", "cli", IMG);
+    await h.session.steer("and [Image #1] too", "cli", IMG2);
+    await h.settled();
+    expect(h.q().pushed).toEqual([]);
+    expect(userMessages(h).map((m) => m.text)).toEqual(["see [Image #1]", "and [Image #1] too"]);
+    expect(unconsumedUserMessages(h.events)).toEqual([
+      "see /tmp/moss-session-s_x/images/image_1.png",
+      "and /tmp/moss-session-s_x/images/image_2.png too",
+    ]);
+    await h.session.end();
+    finish!();
+    await expect(held).resolves.toEqual({ heldTurns: 2 });
+    h.transcriptExists = true;
+    await h.session.open();
+    await h.settled();
+    expect(h.q().pushed).toEqual(["see /tmp/moss-session-s_x/images/image_1.png"]);
+    expect(h.session.pendingSends).toEqual(["and /tmp/moss-session-s_x/images/image_2.png too"]);
+  });
+
+  test("unconsumedUserMessages substitutes only the placeholders `images` names", () => {
+    const ev = (extra: Record<string, unknown>): SessionEvent => ({ type: "user_message", sessionId: "s", threadId: "main", seq: 0, ts: 0, clientName: "cli", ...extra } as unknown as SessionEvent);
+    expect(unconsumedUserMessages([
+      ev({ text: "[Image #1] vs [Image #2] vs [Image #01]", images: [{ n: 1, path: "/a.png" }] }),
+      ev({ text: "[Image #1] literal" }),
+    ])).toEqual(["/a.png vs [Image #2] vs /a.png", "[Image #1] literal"]);
+  });
+});
+
+describe("a turn the previous child never closed (the daemon died mid-turn) is closed at the next incarnation's open", () => {
+  test("crash-then-resume with two messages owed: the dead turn gets its aborted terminal FIRST, so the resumed turn is a new one and its origin is the OLDEST owed message, not the newest", async () => {
+    const h: Harness = harness({ transcript: true, danglingTurn: () => mainTurnOpenInLog(h.events) });
+    let seq = 0;
+    const ev = (e: Record<string, unknown>) => h.events.push({ sessionId: "s_x", threadId: "main", seq: ++seq, ts: seq, ...e } as unknown as SessionEvent);
+    ev({ type: "user_message", text: "M0", clientName: "cli" });
+    ev({ type: "turn_started" });
+    ev({ type: "tool_call", callId: "c1", name: "bash", argsJson: "{}" });
+    ev({ type: "user_message", text: "M1", clientName: "orb" });          // held behind M0
+    ev({ type: "user_message", text: "M2", clientName: "messaging" });    // held behind M1
+    // …the daemon dies here: no turn_completed for M0's turn.
+    await h.session.open();
+    await h.settled();
+    expect(h.q().pushed).toEqual(["M1"]);
+    expect(h.types().slice(-2)).toEqual(["turn_completed", "turn_started"]);
+    expect(seen(h, "turn_completed")[0]).toMatchObject({ stopReason: "aborted" });
+    expect(runningTurnOrigin(h.events)).toBe("orb");
+    expect(mainTurnOpenInLog(h.events)).toBe(true);           // M1's turn, now
+  });
+
+  test("L7: one open reads the log ONCE (logFacts) — what it owes and whether a turn was left open, from the same read", async () => {
+    let reads = 0;
+    const h: Harness = harness({
+      transcript: true,
+      logFacts: () => { reads++; return { unconsumed: unconsumedUserMessages(h.events), danglingTurn: mainTurnOpenInLog(h.events) }; },
+    });
+    h.events.push(
+      { type: "user_message", sessionId: "s_x", threadId: "main", seq: 1, ts: 1, text: "M0", clientName: "cli" } as unknown as SessionEvent,
+      { type: "turn_started", sessionId: "s_x", threadId: "main", seq: 2, ts: 2 } as unknown as SessionEvent,
+      { type: "user_message", sessionId: "s_x", threadId: "main", seq: 3, ts: 3, text: "M1", clientName: "cli" } as unknown as SessionEvent,
+    );
+    await h.session.open();
+    await h.settled();
+    expect(reads).toBe(1);
+    expect(h.q().pushed).toEqual(["M1"]);                      // owed, from that read
+    expect(seen(h, "turn_completed")).toHaveLength(1);         // the dangling turn, from that read
+  });
+
+  test("a log whose last turn closed appends nothing at open", async () => {
+    const h: Harness = harness({ transcript: true, danglingTurn: () => mainTurnOpenInLog(h.events) });
+    h.events.push(
+      { type: "user_message", sessionId: "s_x", threadId: "main", seq: 1, ts: 1, text: "M0", clientName: "cli" } as unknown as SessionEvent,
+      { type: "turn_started", sessionId: "s_x", threadId: "main", seq: 2, ts: 2 } as unknown as SessionEvent,
+      { type: "turn_completed", sessionId: "s_x", threadId: "main", seq: 3, ts: 3, stopReason: "end_turn", inputTokens: 0, outputTokens: 0 } as unknown as SessionEvent,
+    );
+    await h.session.open();
+    await h.settled();
+    expect(h.events).toHaveLength(3);
+  });
+});
+
+// ── the fold (agent SDK 0.0.44, user ruling 2026-10-04: "lets fold the message into the running turn") ──
+
+const fq = (h: Harness): FoldingFakeQuery => h.q() as FoldingFakeQuery;
+const stopReasons = (h: Harness): string[] => seen(h, "turn_completed").map((e) => (e as { stopReason: string }).stopReason);
+
+describe("a mid-turn push FOLDED into the running turn (agent SDK 0.0.44)", () => {
+  test("a steer folded at the next tool round: its turn_started lands at the fold, the running turn's ONE result closes both, and the session settles once", async () => {
+    let settles = 0;
+    const h = harness({ onTurnSettled: () => { settles++; } });
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    expect((await h.session.steer("also do B", "steer")).injected).toBe(true);
+    expect(h.q().pushed).toEqual(["A", "also do B"]);
+    fq(h).emitFold(1);
+    await h.settled();
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "turn_started"]);
+    expect(h.session.turnRunning).toBe(true);                // A still owes its result
+    h.q().emit(assistant("did A and B")); h.q().emit(result());
+    await h.settled();
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "turn_started", "assistant_message", "turn_completed"]);
+    expect(h.session.turnRunning).toBe(false);               // not waiting for a second result that never comes
+    expect(settles).toBe(1);
+    expect(h.records.transitions.at(-1)).toBe("idle");
+    expect(unconsumedUserMessages(h.events)).toEqual([]);    // the folded text was read: a resume owes nothing
+    // and the session takes the next message as a fresh turn at once
+    expect((await h.session.send("C", "cli")).queued).toBe(false);
+  });
+
+  test("Dispatch (2026-10-19): a steer with an image and a file folded into the running turn reaches the child with the PATHS; the log keeps the placeholders; nothing is owed after", async () => {
+    const h = harness({ mode: "dispatch" });
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "orb");
+    const images = [{ n: 1, path: "/tmp/moss-session-s_x/images/image_1.png" }];
+    const files = [{ n: 1, path: "/Users/me/Notes/plan.md" }];
+    expect((await h.session.steer("look at [Image #1] with [File #1]", "orb", images, files)).injected).toBe(true);
+    expect(h.q().pushed).toEqual(["A", "look at /tmp/moss-session-s_x/images/image_1.png with /Users/me/Notes/plan.md"]);
+    fq(h).emitFold(1);
+    await h.settled();
+    const steered = h.events.filter((e) => e.type === "user_message")[1] as Extract<SessionEvent, { type: "user_message" }>;
+    expect(steered).toMatchObject({ text: "look at [Image #1] with [File #1]", clientName: "orb", images, files });
+    h.q().emit(assistant("done")); h.q().emit(result());
+    await h.settled();
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+  });
+
+  test("a resume after a fold re-pushes nothing — even when the child died before the running turn's result", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.steer("B", "steer");
+    fq(h).emitFold(1);
+    await h.settled();
+    h.q().fail(named("ProcessError", "child crashed"));
+    await h.settled();
+    expect(h.session.state).toBe("resumable");
+    expect(seen(h, "turn_completed")).toHaveLength(1);       // the one open turn closed, nothing for B
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+    h.transcriptExists = true;
+    await h.session.open();
+    await h.settled();
+    expect(h.q().pushed).toEqual([]);
+  });
+
+  test("a fold of two, then a held SEND runs as its own turn after the running one (the daemon's queue is never folded early)", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.steer("S1", "steer");
+    await h.session.steer("S2", "steer");
+    expect((await h.session.send("H", "cli")).queued).toBe(true);
+    expect(h.q().pushed).toEqual(["A", "S1", "S2"]);          // H is held by the daemon, not pushed
+    fq(h).emitFold(2);
+    h.q().emit(result());
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A", "S1", "S2", "H"]);     // released at A's result, as its own turn
+    expect(seen(h, "turn_started")).toHaveLength(4);
+    expect(seen(h, "turn_completed")).toHaveLength(1);
+    expect(h.session.turnRunning).toBe(true);
+    h.q().emit(result());
+    await h.settled();
+    expect(h.session.turnRunning).toBe(false);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+  });
+
+  test("foldsQueuedInput is FALSE for a runtime reporting 0.0.43 (a configured older binary) and for an unknown version — never assumed", async () => {
+    const old = harness({ runtimeVersion: "0.0.43" });
+    await old.session.open();
+    expect(old.session.foldsQueuedInput).toBe(false);
+    const unknown = harness({ runtimeVersion: null });
+    await unknown.session.open();
+    expect(unknown.session.foldsQueuedInput).toBe(false);
+    const newer = harness({ runtimeVersion: "0.1.0" });
+    await newer.session.open();
+    expect(newer.session.foldsQueuedInput).toBe(true);
+  });
+
+  test("foldsQueuedInput: true for a live child, false when not live", async () => {
+    const h = harness();
+    expect(h.session.foldsQueuedInput).toBe(false);
+    await h.session.open();
+    expect(h.session.foldsQueuedInput).toBe(true);
+    await h.session.end();
+    expect(h.session.foldsQueuedInput).toBe(false);
+  });
+
+  test("foldsQueuedInput is false during a pending provider handoff (a steer then is held for the target, never in the running turn)", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    let finish!: () => void;
+    const pending = h.session.beginHandoff(() => new Promise<void>((r) => { finish = r; }));
+    expect(h.session.foldsQueuedInput).toBe(false);
+    await h.settled();
+    finish();
+    await pending;
+    expect(h.session.foldsQueuedInput).toBe(true);
+  });
+});
+
+describe("TaskStop on a folding child clears the CHILD's pending pushes too (agent SDK 0.0.44 clearQueuedInput)", () => {
+  test("cleared BEFORE the interrupt; each cleared push is closed in the log (its turn_started now, an aborted turn_completed after the stopped turn's); counted with the held sends", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.steer("S1", "steer");
+    await h.session.steer("S2", "steer");                    // S1's turn_started announced before S2 lands (C2)
+    await h.session.send("H", "cli");                         // held by the daemon (S2 announced before H lands)
+    fq(h).clearAnswer = 2;
+    expect(await h.session.interrupt({ discardQueued: true })).toEqual({ wasRunning: true, discarded: 3 });
+    expect(fq(h).calls).toEqual(["clear", "interrupt"]);
+    await h.settled();
+    expect(h.q().pushed).toEqual(["A", "S1", "S2"]);
+    expect(h.types()).toEqual([
+      "user_message", "turn_started",                           // A
+      "user_message", "turn_started", "user_message",           // S1 (announced as S2 landed), S2
+      "turn_started", "user_message",                           // S2 (announced as H landed), H
+      "turn_completed",                                         // A, stopped
+      "turn_completed", "turn_completed",                       // S1, S2: cleared before they ran
+      "turn_started", "turn_completed",                         // H: dropped by the daemon
+    ]);
+    expect(stopReasons(h)).toEqual(["aborted", "aborted", "aborted", "aborted"]);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+    expect(h.session.turnRunning).toBe(false);
+    // the next message runs at once — nothing stale ahead of it
+    expect((await h.session.send("D", "cli")).queued).toBe(false);
+    expect(h.q().pushed).toEqual(["A", "S1", "S2", "D"]);
+  });
+
+  test("a cleared push still unannounced gets its turn_started at the clear, while it is the youngest message", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.steer("S", "steer");
+    fq(h).clearAnswer = 1;
+    const q = fq(h);
+    q.interrupt = async () => { q.calls.push("interrupt"); };   // the stopped turn's terminal comes later
+    await h.session.interrupt({ discardQueued: true });
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "turn_started"]);
+    q.emit(result({ interrupted: true }));
+    await h.settled();
+    expect(h.types()).toEqual(["user_message", "turn_started", "user_message", "turn_started", "turn_completed", "turn_completed"]);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+    expect(h.session.turnRunning).toBe(false);
+  });
+
+  test("the race: the child drops its pending input and THEN ends the running turn by itself — the result lands before the clear's answer, and the session still comes to rest (nothing owed, idle, next send runs)", async () => {
+    let settles = 0;
+    const h = harness({ onTurnSettled: () => { settles++; } });
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.steer("S1", "steer");
+    await h.session.steer("S2", "steer");
+    const q = fq(h);
+    q.clearAnswer = 2;
+    q.duringClear = () => { q.emit(result()); };          // A ends on its own; the projector moves S1 up
+    expect(await h.session.interrupt({ discardQueued: true })).toEqual({ wasRunning: true, discarded: 2 });
+    await h.settled();
+    expect(q.calls).toEqual(["clear"]);                    // nothing left to interrupt
+    expect(h.session.turnRunning).toBe(false);
+    expect(settles).toBe(1);
+    expect(h.records.transitions.at(-1)).toBe("idle");
+    expect(seen(h, "turn_started")).toHaveLength(3);
+    expect(stopReasons(h)).toEqual(["end_turn", "aborted", "aborted"]);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+    expect((await h.session.send("D", "cli")).queued).toBe(false);
+  });
+
+  test("a steer and a messaging delivery landing WHILE the clear is in flight wait for it: the clear closes exactly the pushes held when it was sent, and the two new ones run afterwards", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.send("A", "cli");
+    await h.session.steer("S1", "steer");
+    const q = fq(h);
+    q.clearAnswer = 1;
+    let answer!: () => void;
+    q.clearGate = new Promise<void>((r) => { answer = r; });
+    const stop = h.session.interrupt({ discardQueued: true });
+    await h.settled();
+    const late = h.session.steer("late steer", "steer");
+    h.attachments[0]!.session.push("<agent-message>late delivery</agent-message>");
+    await h.settled();
+    expect(q.pushed).toEqual(["A", "S1"]);                   // nothing pushed under the clear
+    answer();
+    expect(await stop).toEqual({ wasRunning: true, discarded: 1 });
+    await late;
+    await h.settled();
+    // S1 cleared (its turn_started at the clear, its aborted terminal after A's); the late two are pushed after
+    // (the deferred delivery is released the moment the stop settles, ahead of the steer's await resuming)
+    expect(q.pushed.slice(0, 2)).toEqual(["A", "S1"]);
+    expect([...q.pushed.slice(2)].sort()).toEqual(["<agent-message>late delivery</agent-message>", "late steer"]);
+    // S1 is closed; only the late steer — pushed behind the delivery's running turn, its turn_started held
+    // (C2) until the child takes it up — reads as not started yet. Never S1.
+    expect(unconsumedUserMessages(h.events)).toEqual(["late steer"]);
+    expect(stopReasons(h)).toEqual(["aborted", "aborted"]);  // A, then S1 — none for the late ones
+    expect(h.session.turnRunning).toBe(true);                 // the late steer's turn runs
+  });
+
+  test("the settle timer firing before the clear answers appends NO aborted terminal while the stopped turn still runs — cleared pushes close only after its terminal", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.steer("S", "steer");
+    const q = fq(h);
+    q.clearAnswer = 1;
+    q.interrupt = async () => { q.calls.push("interrupt"); };   // the stopped turn's terminal comes later
+    let answer!: () => void;
+    q.clearGate = new Promise<void>((r) => { answer = r; });
+    const stop = h.session.interrupt({ discardQueued: true });
+    await h.settled();
+    h.timers.armed.find((t) => t.ms === 2_000)!.fn();          // the bound fires first
+    answer();
+    await stop;
+    await h.settled();
+    expect(stopReasons(h)).toEqual([]);                        // A still running: nothing closed yet
+    q.emit(result({ interrupted: true }));
+    await h.settled();
+    expect(stopReasons(h)).toEqual(["aborted", "aborted"]);    // A's own terminal, THEN S's
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+  });
+
+  test("the child dies while the clear is in flight: the cleared pushes are still closed in the log, and a resume re-runs none of them", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.steer("S", "steer");
+    const q = fq(h);
+    q.clearAnswer = 1;
+    q.duringClear = () => { q.fail(named("ProcessError", "child crashed")); };
+    await h.session.interrupt({ discardQueued: true });
+    await h.settled();
+    expect(h.session.state).toBe("resumable");
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+    h.transcriptExists = true;
+    await h.session.open();
+    await h.settled();
+    expect(h.q().pushed).toEqual([]);
+  });
+
+  test("a clear the child NEVER answers does not wedge the session: within STOP_SETTLE_MAX_MS the stop goes on — the interrupt is sent, TaskStop returns, a waiting send proceeds", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.send("A", "cli");
+    await h.session.steer("S", "steer");
+    const q = fq(h);
+    q.clearGate = new Promise<void>(() => { /* never answers */ });
+    const stop = h.session.interrupt({ discardQueued: true });
+    await h.settled();
+    const waiting = h.session.send("B", "cli");
+    await h.settled();
+    expect(q.calls).toEqual(["clear"]);                       // still waiting on the clear
+    for (const t of h.timers.armed.filter((x) => x.ms === 2_000)) t.fn();   // the bound elapses
+    expect(await stop).toEqual({ wasRunning: true });         // nothing counted as cleared
+    expect(q.calls).toEqual(["clear", "interrupt"]);          // …and the interrupt went out
+    await waiting;                                            // the waiting send went ahead
+    await h.settled();
+    expect(seen(h, "user_message").map((e) => (e as { text: string }).text)).toContain("B");
+  });
+
+  test("end() while a clear is in flight (never answered) releases every waiter: the stop returns, a waiting send and a deferred delivery go on", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.settled();
+    await h.session.send("A", "cli");
+    await h.session.steer("S", "steer");
+    const q = fq(h);
+    q.clearGate = new Promise<void>(() => { /* never answers */ });
+    const stop = h.session.interrupt({ discardQueued: true });
+    await h.settled();
+    const waiting = h.session.send("B", "cli");
+    h.attachments[0]!.session.push("<agent-message>during the clear</agent-message>");
+    await h.settled();
+    await h.session.end();
+    await h.settled();
+    expect(await stop).toEqual({ wasRunning: true });
+    await waiting;                                            // released: it reopened a child and went in
+    await h.settled();
+    expect(h.queries).toHaveLength(2);
+    // the deferred delivery was held for that next incarnation, which pushed it
+    expect(h.q().pushed).toContain("<agent-message>during the clear</agent-message>");
+    expect(seen(h, "user_message").map((e) => (e as { text: string }).text)).toContain("B");
+  });
+
+  test("the Mac's stop (no discardQueued) never clears: the pushed steer runs after the interrupted turn", async () => {
+    const h = harness();
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.steer("S", "steer");
+    fq(h).clearAnswer = 1;
+    expect(await h.session.interrupt()).toEqual({ wasRunning: true });
+    expect(fq(h).calls).toEqual(["interrupt"]);
+    await h.settled();
+    expect(h.session.turnRunning).toBe(true);                 // S is the next turn
+    expect(stopReasons(h)).toEqual(["aborted"]);
+    expect(seen(h, "turn_started")).toHaveLength(2);
+  });
+
+  test("a clear the runtime REJECTS (an older runtime's WinterRpcError unknown_subtype) is caught: TaskStop clears only the daemon's held sends, and the pushed steer runs after the stopped turn", async () => {
+    const logs: string[] = [];
+    const h = harness({ log: (line) => logs.push(line) });
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    await h.session.send("A", "cli");
+    await h.session.steer("S", "steer");
+    fq(h).clearQueuedInput = async () => { throw new WinterRpcError("unknown_subtype", "unknown control subtype clear_queued_input"); };
+    expect(await h.session.interrupt({ discardQueued: true })).toEqual({ wasRunning: true });
+    expect(logs.some((l) => l.includes("does not know clear_queued_input"))).toBe(true);
+    await h.settled();
+    expect(h.session.turnRunning).toBe(true);                 // S was pushed and cannot be taken back
+    h.q().emit(result());
+    await h.settled();
+    expect(h.session.turnRunning).toBe(false);
+    expect(unconsumedUserMessages(h.events)).toEqual([]);
+  });
+});
+
+test("unprotected Code receives no extra hook and never consults Cowork observation", async () => {
+  let q!: FakeQuery, observed = 0;
+  const runtime = {
+    sdk: { query: ({ prompt, options }: { prompt: AsyncIterable<string>; options: Options }) => (q = new FakeQuery(prompt, options)) as unknown as Query }, trackQuery() {}, untrack() {},
+    codeExecution: { enroll: ({ options }: { options: Options }) => ({ options, generationId: "ordinary", protectedStorage: false,
+      observe() { observed++; throw new Error("unprotected observer must be unreachable"); }, noteHook() {}, async completeHook() {}, dispose() {} }) },
+  } as unknown as WinterRuntimeSdk;
+  const h = harness({ runtime, mode: "code" }); await h.session.open(); expect(q.options.hooks).toBeUndefined();
+  q.emit(init(q.options, ["Bash"])); await h.settled(); await h.session.send("ordinary task", "fixture");
+  q.emit({ type: "assistant", uuid: "ordinary-batch", session_id: "be-x", message: { content: [
+    { type: "tool_use", id: "ordinary-call", name: "Bash", input: { command: "fixture" } }, { type: "text", text: "ordinary output" },
+  ] } });
+  await h.settled();
+  expect(observed).toBe(0);
+  expect(h.events.some(event => event.type === "tool_call" && event.callId === "ordinary-call")).toBe(true);
+  expect(h.events.some(event => event.type === "agent_error" && event.code === "host_execution_refused")).toBe(false);
+  q.end(); await h.session.done;
+});

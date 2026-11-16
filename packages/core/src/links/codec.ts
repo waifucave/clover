@@ -1,5 +1,5 @@
 // The link's payload encoding: a deterministic subset of CBOR (RFC 8949) for structured-clone data, since the
-// LinkTransport contract carries structured-clone payloads between devices that may run different Clover releases
+// LinkTransport contract carries structured-clone payloads between devices that may run different MOSS releases
 // (Bun's own serialization format isn't stable across versions). What travels:
 //   undefined, null, booleans, numbers (integers as CBOR integers, others as float64), bigints (tags 2 and 3),
 //   strings, Uint8Array (byte strings) and the other typed arrays (RFC 8746 little-endian tags), arrays, plain

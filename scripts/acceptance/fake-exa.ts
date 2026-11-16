@@ -119,12 +119,12 @@ export function searchOnlySeam(exa: FakeExa, refused: (host: string) => void, pl
 }
 
 /** The run's outside world for a packaged core, whose test build reaches it through its plugins' pinned fetch by name
- *  (`CLOVER_TEST_OUTSIDE_WORLD`, packages/core/src/plugin-host/pinned-fetch.ts mappedNamesSeam): the fake search
+ *  (`MOSS_TEST_OUTSIDE_WORLD`, packages/core/src/plugin-host/pinned-fetch.ts mappedNamesSeam): the fake search
  *  backend and the fake public site on one loopback port, answered by the Host the core sends, as the source daemon's
  *  seam answers them; the private site's name maps to its private address, which the core refuses as for any name. A
  *  name the fakes don't serve is refused and recorded. */
 export interface OutsideWorld {
-  /** The core's `CLOVER_TEST_OUTSIDE_WORLD` value. */
+  /** The core's `MOSS_TEST_OUTSIDE_WORLD` value. */
   readonly spec: string;
   /** The names asked for that the fakes don't serve. */
   readonly refused: string[];

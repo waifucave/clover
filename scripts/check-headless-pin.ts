@@ -1,7 +1,7 @@
 // The headless shell's pin follows the app's Electron (spec §12.1, plan §4 M-M2): where no app runs, the bots'
 // browser is Chrome for Testing's headless shell, pinned by SHA-256 to the Chromium of the app's Electron, or to the
 // nearest build of the same milestone when that exact build isn't published. Lane L keeps the pin in
-// plugins/clover/plugins/browser/headless-shell.pins.json; this check holds it to the Electron in
+// plugins/moss/plugins/browser/headless-shell.pins.json; this check holds it to the Electron in
 // apps/desktop/package.json on every change, so an Electron upgrade can't land without moving it.
 //
 //   bun scripts/check-headless-pin.ts [--metadata <releases.json>] [--known-good <known-good-versions-with-downloads.json>]
@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const PIN_FILE = "plugins/clover/plugins/browser/headless-shell.pins.json";
+export const PIN_FILE = "plugins/moss/plugins/browser/headless-shell.pins.json";
 /** Lane L's headless browser's integrity file: once it exists, so must the pin. */
 export const HEADLESS_MARKER = "packages/core/src/browser/headless/integrity.json";
 export const ELECTRON_RELEASES = "https://releases.electronjs.org/releases.json";

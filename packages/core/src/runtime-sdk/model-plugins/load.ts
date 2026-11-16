@@ -6,13 +6,13 @@
 //   took first, §5.1 "Entry ids") is not a provider the sessions have.
 // * A `catalog` path is read from inside the plugin's folder, never outside it (the manifest validator already
 //   refuses a path that leaves it; this re-checks the resolved path, as every folder read does).
-// * The bundled `clover` tree is TRUSTED: its code plugins' adapter ids are the ones their catalog files name, which
+// * The bundled `moss` tree is TRUSTED: its code plugins' adapter ids are the ones their catalog files name, which
 //   the core's own logic keys on (`TOOLS_GATED_ADAPTER_IDS`). Any other plugin's adapter is namespaced by its id.
 // * The model families (the curated slot lineups) stay the SDK's; the builder keeps the slots the plugins serve.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
-import { BUNDLED_ROOT_PLUGIN, topPluginIdOf } from "@waifucave/clover-protocol";
+import { BUNDLED_ROOT_PLUGIN, topPluginIdOf } from "@waifucave/moss-protocol";
 import { canonicalJson, catalogFromModelPlugins, loadCatalog, type CatalogFromModelPluginsResult, type ModelEntry, type ModelPluginInput, type ModelPluginRefusal } from "@waifucave/clover-provider-catalog";
 import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 
@@ -28,8 +28,8 @@ export interface ReadModelPlugins {
   unreadable: ModelPluginRefusal[];
 }
 
-/** Whether a plugin is of the bundled `clover` tree, by its install record (never by what it says of itself). */
-export function isBundledClover(record: Pick<PluginRecord, "id" | "source">): boolean {
+/** Whether a plugin is of the bundled `moss` tree, by its install record (never by what it says of itself). */
+export function isBundledMoss(record: Pick<PluginRecord, "id" | "source">): boolean {
   return record.source === "bundled" && topPluginIdOf(record.id) === BUNDLED_ROOT_PLUGIN;
 }
 
@@ -58,7 +58,7 @@ export function readModelPlugins(registry: PluginRegistry, readFile: (path: stri
         continue;
       }
     }
-    entries.push({ record, input: { pluginId: c.pluginId, ref: c.ref, entry, catalog, trusted: isBundledClover(record) } });
+    entries.push({ record, input: { pluginId: c.pluginId, ref: c.ref, entry, catalog, trusted: isBundledMoss(record) } });
   }
   return { entries, unreadable };
 }

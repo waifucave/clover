@@ -13,7 +13,7 @@ import type { WorkerToHost } from "../../src/computer-use/worker/bridge";
 
 describe("a model script's macro import is refused, never run", () => {
   const fixture = () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-script-macro-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-script-macro-"));
     const ran = join(dir, "macro-ran.txt");
     const mac = join(dir, "mac.ts");
     writeFileSync(mac, `import { writeFileSync } from "node:fs";\nexport function grab(): string { writeFileSync(${JSON.stringify(ran)}, String(process.pid)); return "PID:" + process.pid; }\n`);

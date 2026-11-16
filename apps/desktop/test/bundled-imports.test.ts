@@ -1,6 +1,6 @@
-// F2b: a bundled part is built as a third party's folder is. No file of any of Clover's bundled plugins (its client and
+// F2b: a bundled part is built as a third party's folder is. No file of any of MOSS's bundled plugins (its client and
 // host code, its tests and its gallery) imports anything outside its own folder but public packages: the UI SDK
-// (`@waifucave/clover-plugin-sdk` and its subpaths), React, and the npm packages its own package.json names. Never
+// (`@waifucave/moss-plugin-sdk` and its subpaths), React, and the npm packages its own package.json names. Never
 // another plugin's folder, the protocol package, the app's or the core's source; and the app's build swaps nothing in
 // (no build alias, no `./sdk` substitution), so the client entry it bundles is the one a folder copy builds.
 import { describe, expect, test } from "bun:test";
@@ -8,10 +8,10 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
-const BUNDLED = join(REPO, "plugins", "clover", "plugins");
+const BUNDLED = join(REPO, "plugins", "moss", "plugins");
 
 /** The npm packages a bundled plugin may import besides its own files. */
-const PUBLIC = /^(react|react-dom|@waifucave\/clover-plugin-sdk)(\/|$)/;
+const PUBLIC = /^(react|react-dom|@waifucave\/moss-plugin-sdk)(\/|$)/;
 const NODE = /^(node:|bun:|bun$)/;
 
 const SPEC = /^\s*(?:import|export)\b[^;]*?\bfrom\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)|^\s*import\s*["']([^"']+)["']/gm;
@@ -57,26 +57,26 @@ export function outsideImports(pluginDir: string): string[] {
       if (spec.startsWith("/")) { bad.push(at); continue; }
       if (NODE.test(spec) || PUBLIC.test(spec)) continue;
       const name = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0]!;
-      // Another of Clover's own packages (a plugin's, the protocol): never; a package of the org's that is published on
+      // Another of MOSS's own packages (a plugin's, the protocol): never; a package of the org's that is published on
       // its own (a runtime a plugin depends on) is any npm package.
-      if (name.startsWith("@waifucave/clover-") || name.startsWith("@clover-child")) { bad.push(at); continue; }
+      if (name.startsWith("@waifucave/moss-") || name.startsWith("@moss-child")) { bad.push(at); continue; }
       if (!own.has(name)) bad.push(`${at} (not in its package.json)`);
     }
   }
   return bad;
 }
 
-/** The bundled plugins with parts (a client entry): the ones the app's `clover` layer bundles. */
+/** The bundled plugins with parts (a client entry): the ones the app's `moss` layer bundles. */
 const withParts = readdirSync(BUNDLED).filter((n) => {
-  const m = join(BUNDLED, n, "clover.json");
+  const m = join(BUNDLED, n, "moss.json");
   return existsSync(m) && (JSON.parse(readFileSync(m, "utf8")) as { client?: { entry?: string } }).client?.entry !== undefined;
 });
 /** Those, and the base theme (a look the parts are drawn in, with a gallery of its own): every file of each is scanned,
  *  its tests and its galleries too. The host-only plugins (model providers, the browser's host half) are not UI parts. */
 const plugins = [...withParts, ...(withParts.includes("base-theme") ? [] : ["base-theme"])];
 
-/** Every package.json in a plugin's folder (its own, a gallery's): the Clover packages each depends on but the SDK. */
-export function cloverDependencies(pluginDir: string): string[] {
+/** Every package.json in a plugin's folder (its own, a gallery's): the MOSS packages each depends on but the SDK. */
+export function mossDependencies(pluginDir: string): string[] {
   const out: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
@@ -86,7 +86,7 @@ export function cloverDependencies(pluginDir: string): string[] {
       else if (name === "package.json") {
         const pkg = JSON.parse(readFileSync(p, "utf8")) as Record<string, Record<string, string> | undefined>;
         for (const dep of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies, ...pkg.optionalDependencies })) {
-          if ((dep.startsWith("@waifucave/clover-") && dep !== "@waifucave/clover-plugin-sdk") || dep.startsWith("@clover-child")) out.push(`${relative(BUNDLED, p)}: ${dep}`);
+          if ((dep.startsWith("@waifucave/moss-") && dep !== "@waifucave/moss-plugin-sdk") || dep.startsWith("@moss-child")) out.push(`${relative(BUNDLED, p)}: ${dep}`);
         }
       }
     }
@@ -120,9 +120,9 @@ describe("each bundled plugin is a folder of its own (F2b)", () => {
       for (const p of pending) expect([String(p), found.some((line) => p.test(line))]).toEqual([String(p), true]);
     });
 
-    test(`${name}'s package.json files depend on no other Clover package but the SDK`, () => {
+    test(`${name}'s package.json files depend on no other MOSS package but the SDK`, () => {
       const pending = PENDING_DEPENDENCY[name] ?? [];
-      const found = cloverDependencies(join(BUNDLED, name));
+      const found = mossDependencies(join(BUNDLED, name));
       expect(found.filter((line) => !pending.some((p) => p.test(line)))).toEqual([]);
       for (const p of pending) expect([String(p), found.some((line) => p.test(line))]).toEqual([String(p), true]);
     });
@@ -130,8 +130,8 @@ describe("each bundled plugin is a folder of its own (F2b)", () => {
 
   test("the app's build substitutes nothing for a part: no build alias, no ./sdk swap", () => {
     const build = readFileSync(join(import.meta.dir, "..", "scripts", "build.ts"), "utf8");
-    expect(build).not.toMatch(/@clover-child|onResolve|childAlias/);
-    expect(existsSync(join(import.meta.dir, "..", "src", "layer", "clover", "sdk.ts"))).toBe(false);
+    expect(build).not.toMatch(/@moss-child|onResolve|childAlias/);
+    expect(existsSync(join(import.meta.dir, "..", "src", "layer", "moss", "sdk.ts"))).toBe(false);
     for (const n of withParts) expect([n, existsSync(join(BUNDLED, n, "client", "sdk.ts")) || existsSync(join(BUNDLED, n, "client", "sdk.tsx"))]).toEqual([n, false]);
   });
 });

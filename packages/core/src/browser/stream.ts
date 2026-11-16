@@ -388,7 +388,7 @@ export class TabStreams {
     const existing = this.find(args.tab, args.device);
     if (existing !== undefined) return { stream: existing.id };
     const app = this.opts.app();
-    if (app === undefined) throw new BrowserError("no_app", "the Clover app isn't running on this computer, so it can't stream a tab");
+    if (app === undefined) throw new BrowserError("no_app", "the MOSS app isn't running on this computer, so it can't stream a tab");
     const codecs = args.codecs !== undefined && args.codecs.length > 0 ? [...new Set(args.codecs)] : undefined;
     const maxKbps = Math.max(this.tuning.minKbps, Math.round(args.maxKbps ?? this.tuning.defaultKbps));
     const link = await this.opts.transport.connect(args.device);
@@ -483,7 +483,7 @@ export class TabStreams {
   appGone(): void {
     for (const group of [...this.groups.values()]) {
       this.groups.delete(group.id);
-      for (const v of [...group.viewers]) this.finish(v, { kind: "ended", reason: "failed", message: "the Clover app stopped" });
+      for (const v of [...group.viewers]) this.finish(v, { kind: "ended", reason: "failed", message: "the MOSS app stopped" });
       group.viewers.clear();
     }
   }

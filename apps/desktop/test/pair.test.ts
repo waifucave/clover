@@ -7,7 +7,7 @@ import { createHash, createHmac } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CloverHelloParams } from "@waifucave/clover-protocol";
+import type { MossHelloParams } from "@waifucave/moss-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
 import { parseAutostartStatus, type DaemonLauncher } from "../src/main/pair/login";
 import { Pair, daemonProof, type PairState } from "../src/main/pair/pair";
@@ -19,7 +19,7 @@ const homes: string[] = [];
 const fakes: FakeDaemon[] = [];
 const pairs: Pair[] = [];
 function tempHome(): string {
-  const h = mkdtempSync(join(tmpdir(), "clover-pair-"));
+  const h = mkdtempSync(join(tmpdir(), "moss-pair-"));
   homes.push(h);
   return h;
 }
@@ -58,7 +58,7 @@ function pairFor(home: string, launcher: DaemonLauncher | undefined, extra: { on
   const states: PairState["kind"][] = [];
   const pair = new Pair({
     endpoint: daemonEndpoint(home),
-    hello: (): CloverHelloParams | undefined => {
+    hello: (): MossHelloParams | undefined => {
       const token = readAppToken(home, {});
       return token === undefined ? undefined : appHello(token, "0.0.0-test", 1);
     },
@@ -285,7 +285,7 @@ describe("the daemon's proof before the hello (lane C's protocol.prove, on the s
     // again a few times before it takes the verdict as settled.
     const end = Date.now() + 5000;
     while (pair.state.kind !== "unverified" && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
-    expect(pair.state, JSON.stringify(pair.state)).toMatchObject({ kind: "unverified", reason: "can't verify the Clover daemon" });
+    expect(pair.state, JSON.stringify(pair.state)).toMatchObject({ kind: "unverified", reason: "can't verify the MOSS daemon" });
     expect(readCalls(home).some((c) => c.method === "protocol.hello")).toBe(false);
     expect(readCalls(home).filter((c) => c.method === "protocol.prove").length).toBeGreaterThanOrEqual(Pair.PROVE_TRIES);
   });
@@ -311,7 +311,7 @@ describe("the daemon's proof before the hello (lane C's protocol.prove, on the s
   });
 
   test("the proof is lane C's: an HMAC under the app token over the nonce and the pid", () => {
-    expect(daemonProof("token", "nonce", 42)).toBe(createHmac("sha256", "token").update("clover-daemon-proof\u0000nonce\u000042").digest("base64url"));
+    expect(daemonProof("token", "nonce", 42)).toBe(createHmac("sha256", "token").update("moss-daemon-proof\u0000nonce\u000042").digest("base64url"));
   });
 });
 
@@ -399,35 +399,35 @@ describe("how the app was started, and its token", () => {
     expect(readStartInfo(home, [], 1_000_000 + 61_000)).toEqual({ by: "user", safeMode: false });
   });
 
-  test("the command line: --safe-mode and --clover-started-by", () => {
+  test("the command line: --safe-mode and --moss-started-by", () => {
     const home = tempHome();
-    expect(readStartInfo(home, ["--safe-mode", "--clover-started-by=login"])).toEqual({ by: "login", safeMode: true });
+    expect(readStartInfo(home, ["--safe-mode", "--moss-started-by=login"])).toEqual({ by: "login", safeMode: true });
   });
 
-  test("the token: CLOVER_APP_TOKEN, else the daemon's file, else none", () => {
+  test("the token: MOSS_APP_TOKEN, else the daemon's file, else none", () => {
     const home = tempHome();
     expect(readAppToken(home, {})).toBeUndefined();
     mkdirRun(home);
     writeFileSync(join(home, "run", "app.token"), "abc\n");
     expect(readAppToken(home, {})).toBe("abc");
-    expect(readAppToken(home, { CLOVER_APP_TOKEN: "env" })).toBe("env");
+    expect(readAppToken(home, { MOSS_APP_TOKEN: "env" })).toBe("env");
   });
 
   test("the dev overrides count only in a dev or unpackaged run", () => {
     expect(devOverridesAllowed({ packaged: false, profile: "dist" })).toBe(true);
     expect(devOverridesAllowed({ packaged: true, profile: "dev" })).toBe(true);
     expect(devOverridesAllowed({ packaged: true, profile: "dist" })).toBe(false);
-    const env = { CLOVER_DAEMON_BIN: "/tmp/x", CLOVER_APP_TOKEN: "t", CLOVER_HOME: "/h" };
-    expect(pairEnv(env, false)).toEqual({ CLOVER_HOME: "/h" });
+    const env = { MOSS_DAEMON_BIN: "/tmp/x", MOSS_APP_TOKEN: "t", MOSS_HOME: "/h" };
+    expect(pairEnv(env, false)).toEqual({ MOSS_HOME: "/h" });
     expect(pairEnv(env, true)).toBe(env);
   });
 
   test("the endpoint, as lane C resolves it: a socket in the run directory, or a pipe named after it on Windows", () => {
     expect(daemonEndpoint("/h", "darwin")).toBe("/h/run/core.sock");
-    const pipe = daemonEndpoint("C:\\Users\\me\\.clover", "win32");
-    const id = createHash("sha256").update("C:\\Users\\me\\.clover\\run").digest("hex").slice(0, 16);
-    expect(pipe).toBe(`\\\\.\\pipe\\clover-core-${id}`);
-    expect(daemonEndpoint("C:\\Users\\me\\.clover-dev", "win32")).not.toBe(pipe);
+    const pipe = daemonEndpoint("C:\\Users\\me\\.moss", "win32");
+    const id = createHash("sha256").update("C:\\Users\\me\\.moss\\run").digest("hex").slice(0, 16);
+    expect(pipe).toBe(`\\\\.\\pipe\\moss-core-${id}`);
+    expect(daemonEndpoint("C:\\Users\\me\\.moss-dev", "win32")).not.toBe(pipe);
   });
 
   test("lane C's `autostart status`, as text or JSON", () => {
@@ -499,7 +499,7 @@ describe("a daemon going away when the app opens (try 9's dead end)", () => {
     pair["timing"].stuckAfterMs = 200;
     await pair.start();
     await until(() => pair.stuck !== undefined);
-    expect(pair.state).toMatchObject({ kind: "unavailable", reason: expect.stringContaining("quit Clover and open it again") });
+    expect(pair.state).toMatchObject({ kind: "unavailable", reason: expect.stringContaining("quit MOSS and open it again") });
     fakes.push(await startFakeDaemon({ home }));
     await until(() => pair.state.kind === "connected");
     expect(pair.stuck).toBeUndefined();

@@ -13,7 +13,7 @@ import { toBase64 } from "../../identity/bytes";
 import { generateEd25519 } from "../../identity/keys";
 import { answerKeyRotateStatement, answerKeyStatement, computerNameFor, FileDeviceRegistry, peerUpdateStatement } from "../registry";
 
-const home = () => mkdtempSync(join(tmpdir(), "clover-h-registry-"));
+const home = () => mkdtempSync(join(tmpdir(), "moss-h-registry-"));
 
 runDeviceRegistryConformance(async (opts) => {
   const key = await DeviceKey.loadOrCreate(new MemorySecretStore());
@@ -95,7 +95,7 @@ describe("FileDeviceRegistry", () => {
     const { registry, key } = await open();
     const app = generateEd25519();
     const pub = toBase64(app.publicKey);
-    const data = new TextEncoder().encode("clover/card-answer/1\ncard_x");
+    const data = new TextEncoder().encode("moss/card-answer/1\ncard_x");
     expect(await registry.verifyAnswer(key.id, data, key.sign(data))).toBe(false);
     expect(isContractError(await registry.setOwnAnswerKey(pub, "app-keychain", key.sign(answerKeyStatement(key.id, pub, "app-keychain"))).catch((e: unknown) => e), "refused")).toBe(true);
     expect(isContractError(await registry.setOwnAnswerKey(pub, "nope" as "tpm", app.sign(answerKeyStatement(key.id, pub, "nope"))).catch((e: unknown) => e), "invalid")).toBe(true);

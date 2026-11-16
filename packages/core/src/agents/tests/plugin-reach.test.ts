@@ -9,7 +9,7 @@ import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { Listeners } from "../../contracts/common";
 import type { McpChannel } from "../../contracts/plugin-host";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
@@ -22,7 +22,7 @@ import { buildCoreBrand } from "../../runtime-sdk/brand";
 import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
 import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
 import { botChildFor } from "../bot-child";
-import { CLOVER_CODE_ID, CloverCodeBackend, type CloverCodeDeps } from "../clover-code/backend";
+import { MOSS_CODE_ID, MossCodeBackend, type MossCodeDeps } from "../moss-code/backend";
 import { thisPlatform } from "../../registry/core";
 import { openPluginRegistry } from "../../registry/open";
 import type { TurnHooks } from "../../runtime-sdk/turn-loop/hooks";
@@ -37,7 +37,7 @@ import type { PluginPartsSource } from "../placement";
 import { waitFor, World, type WorldOptions } from "./world";
 
 setDefaultTimeout(60_000);
-const ENGINES = { clover: `^${PLUGIN_API_VERSION}` };
+const ENGINES = { moss: `^${PLUGIN_API_VERSION}` };
 const TOOL = "toolbox-tools__toolbox";
 /** A platform that isn't this computer's, for a plugin not for this computer. */
 const ELSEWHERE = thisPlatform() === "windows-x64" ? "linux-x64" : "windows-x64";
@@ -77,41 +77,41 @@ const plugin = (id: string, extra: Record<string, unknown> = {}) => ({
   contributes: { mcpServers: { tools: { type: "host" } } }, ...extra,
 });
 
-/** The real registry with `toolbox` (agents), `botsonly` (bots, with a skill), `cconly` (Claude Code only), `cloveronly`
- *  (Clover's own runtime only) and `kit` (agents: a skill and an agent definition), each OK'd; PluginMcp over it; the
+/** The real registry with `toolbox` (agents), `botsonly` (bots, with a skill), `cconly` (Claude Code only), `mossonly`
+ *  (MOSS's own runtime only) and `kit` (agents: a skill and an agent definition), each OK'd; PluginMcp over it; the
  *  judge over the bots' approval check on `broker`. */
 /** Two plugins whose ids are long (`agents` scope): their tools' bridge names pass `BRIDGE_TOOL_NAME_MAX`, and both
  *  tools' names start with the same 27 letters. */
 const LONG_IDS = ["longnamedplugin-alphastudio-tool-a", "longnamedplugin-alphastudio-tool-b"];
 type ToolSetting = NonNullable<NonNullable<Parameters<typeof botApprovalCheck>[1]>["toolSetting"]>;
 async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSetting?: ToolSetting } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "clover-b-reach-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-b-reach-"));
   temps.push(home);
   const files: Record<string, unknown> = {
-    "toolbox/clover.json": plugin("toolbox", { scope: "agents" }), "toolbox/host/index.js": "export {};\n",
-    "botsonly/clover.json": plugin("botsonly", { scope: "bots", contributes: { mcpServers: { tools: { type: "host" } }, skills: ["skills/*/SKILL.md"] } }), "botsonly/host/index.js": "export {};\n",
+    "toolbox/moss.json": plugin("toolbox", { scope: "agents" }), "toolbox/host/index.js": "export {};\n",
+    "botsonly/moss.json": plugin("botsonly", { scope: "bots", contributes: { mcpServers: { tools: { type: "host" } }, skills: ["skills/*/SKILL.md"] } }), "botsonly/host/index.js": "export {};\n",
     "botsonly/skills/limerick/SKILL.md": "---\nname: limerick\ndescription: Write a limerick.\n---\nFive lines.\n",
-    "cconly/clover.json": plugin("cconly", { onlyBackends: ["claude-code"] }), "cconly/host/index.js": "export {};\n",
-    "cloveronly/clover.json": plugin("cloveronly", { onlyBackends: ["clover"] }), "cloveronly/host/index.js": "export {};\n",
-    "elsewhere/clover.json": plugin("elsewhere", { platforms: [ELSEWHERE] }), "elsewhere/host/index.js": "export {};\n",
-    "kit/clover.json": { manifest: 1, id: "kit", name: "Kit", version: "1.0.0", engines: ENGINES, scope: "agents", contributes: { skills: ["skills/*/SKILL.md"], agents: ["agents/review.md"] } },
+    "cconly/moss.json": plugin("cconly", { onlyBackends: ["claude-code"] }), "cconly/host/index.js": "export {};\n",
+    "mossonly/moss.json": plugin("mossonly", { onlyBackends: ["moss"] }), "mossonly/host/index.js": "export {};\n",
+    "elsewhere/moss.json": plugin("elsewhere", { platforms: [ELSEWHERE] }), "elsewhere/host/index.js": "export {};\n",
+    "kit/moss.json": { manifest: 1, id: "kit", name: "Kit", version: "1.0.0", engines: ENGINES, scope: "agents", contributes: { skills: ["skills/*/SKILL.md"], agents: ["agents/review.md"] } },
     "kit/skills/haiku/SKILL.md": "---\nname: haiku\ndescription: Write a haiku about the code.\n---\nCount five, seven, five.\n",
     "kit/agents/review.md": "---\nname: reviewer\ndescription: Reviews a diff.\n---\nRead the diff and list the bugs.\n",
     // Two bots' own plugins (`own-bot`: a bot's id is its plugin's), each with a server and a persona skill.
     ...Object.fromEntries(["luna", "nova"].flatMap((b) => [
-      [`${b}/clover.json`, plugin(b, { scope: "own-bot", contributes: { mcpServers: { tools: { type: "host" } }, skills: ["skills/*/SKILL.md"] } })],
+      [`${b}/moss.json`, plugin(b, { scope: "own-bot", contributes: { mcpServers: { tools: { type: "host" } }, skills: ["skills/*/SKILL.md"] } })],
       [`${b}/host/index.js`, "export {};\n"],
       [`${b}/skills/persona/SKILL.md`, `---\nname: persona\ndescription: How ${b} talks.\n---\nTalk like ${b}.\n`],
     ])),
-    ...(o.long ? Object.fromEntries(LONG_IDS.flatMap((id) => [[`${id}/clover.json`, plugin(id, { scope: "agents", contributes: { mcpServers: { tools: { type: "host", tools: { [id.replace(/[^a-z]/g, "")]: "preload" } } } } })], [`${id}/host/index.js`, "export {};\n"]])) : {}),
+    ...(o.long ? Object.fromEntries(LONG_IDS.flatMap((id) => [[`${id}/moss.json`, plugin(id, { scope: "agents", contributes: { mcpServers: { tools: { type: "host", tools: { [id.replace(/[^a-z]/g, "")]: "preload" } } } } })], [`${id}/host/index.js`, "export {};\n"]])) : {}),
   };
   for (const [path, value] of Object.entries(files)) {
     mkdirSync(dirname(join(home, "plugins", path)), { recursive: true });
     writeFileSync(join(home, "plugins", path), typeof value === "string" ? value : JSON.stringify(value));
   }
   const okBroker = new FakeApprovalBroker({ clock: new FakeClock() });
-  const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker: okBroker, secrets: new MemorySecretStore(), settleMs: 50 });
-  for (const id of ["toolbox", "botsonly", "cconly", "cloveronly", "elsewhere", "kit", "luna", "nova", ...(o.long ? LONG_IDS : [])]) {
+  const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker: okBroker, secrets: new MemorySecretStore(), settleMs: 50 });
+  for (const id of ["toolbox", "botsonly", "cconly", "mossonly", "elsewhere", "kit", "luna", "nova", ...(o.long ? LONG_IDS : [])]) {
     for (let i = 0; i < 250 && opened.registry.get(id) === undefined; i++) await Bun.sleep(20);
     const { card } = await opened.registry.installed(id, "app");
     if (card !== undefined) {
@@ -133,20 +133,20 @@ async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSett
 
 /** A world whose manager's bridge serves the plugins' tools and parts (the daemon's `lateAgentPlugins` shape: the
  *  sources read deps made after the world, over its own broker). */
-/** The bridge's name, fixed so a clover-code session's prompt can name its tools. */
-const CODE_BRIDGE = "clover_reachbridge";
+/** The bridge's name, fixed so a moss-code session's prompt can name its tools. */
+const CODE_BRIDGE = "moss_reachbridge";
 const CODE_MODEL = "winter-test/calls";
-/** Clover's coding agent (`clover-code`) on the embedded runtime, beside the scripted one, as clover-code.test.ts makes it. */
-const codeBackend = (spawn: SpawnClaudeCodeProcess, query?: CloverCodeDeps["query"]): WorldOptions => ({
+/** MOSS's coding agent (`moss-code`) on the embedded runtime, beside the scripted one, as moss-code.test.ts makes it. */
+const codeBackend = (spawn: SpawnClaudeCodeProcess, query?: MossCodeDeps["query"]): WorldOptions => ({
   bridgeServerName: CODE_BRIDGE,
-  extraBackends: (wire, self) => [new CloverCodeBackend({
+  extraBackends: (wire, self) => [new MossCodeBackend({
     clock: { now: () => Date.now() } as never, wire, defaultModel: () => CODE_MODEL, sandboxReady: () => true,
-    botChild: botChildFor({ cloverHome: self.cloverHome, userHome: self.userHome }),
+    botChild: botChildFor({ mossHome: self.mossHome, userHome: self.userHome }),
     baseOptions: (x): Options => {
-      const env: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", CLOVER_HOME: self.cloverHome };
+      const env: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", MOSS_HOME: self.mossHome };
       const provider = testProviderNameFor(x.model);
       if (provider !== undefined) env["WINTER_TEST_PROVIDER"] = provider;
-      return { brand: buildCoreBrand(undefined, self.cloverHome), model: x.model, cwd: x.cwd, env, spawnClaudeCodeProcess: spawn, settingSources: [] };
+      return { brand: buildCoreBrand(undefined, self.mossHome), model: x.model, cwd: x.cwd, env, spawnClaudeCodeProcess: spawn, settingSources: [] };
     },
     pause: { mayAct: () => true },
     ...(query === undefined ? {} : { query }),
@@ -163,7 +163,7 @@ const askingQuery = (script: (can: CanUseTool) => Promise<void>) => ((args: { pr
     }
   }
   return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
-}) as unknown as CloverCodeDeps["query"];
+}) as unknown as MossCodeDeps["query"];
 
 async function setup(o: WorldOptions & { parts?: boolean; long?: boolean; toolSetting?: ToolSetting } = {}) {
   let tools: BridgeToolSource | undefined;
@@ -198,21 +198,21 @@ describe("a plugin's tools on an agent's bridge", () => {
     expect(res).toMatchObject({ tool: TOOL, text: 'toolbox ran with {"n":1}', isError: false });
     expect(w.approvals.cards()).toEqual([]);
     // What `bridge.tools` answers the session: Glossary and toolbox's tool; not the bots-only plugin's, not the
-    // Claude-Code-only one's, not the Clover-only one's (the scripted agent's backend is `fake`).
+    // Claude-Code-only one's, not the MOSS-only one's (the scripted agent's backend is `fake`).
     const listed = await w.manager.bridgeHandlers().tools(r.sessionId);
     expect(listed.tools.map((t) => t.name)).toEqual(["Glossary", TOOL]);
     expect(listed.tools[1]!.description).toBe("The toolbox tool. (from the plugin toolbox)");
   });
 
-  test("by backend and kind: Claude Code gets the Claude-Code-only plugin, Clover's own runtime (clover-code, clover) the Clover-only one, a bot's agent the agents' and the bots' plugins; one not for this computer, none", async () => {
+  test("by backend and kind: Claude Code gets the Claude-Code-only plugin, MOSS's own runtime (moss-code, moss) the MOSS-only one, a bot's agent the agents' and the bots' plugins; one not for this computer, none", async () => {
     const { p } = await setup();
     expect(p.registry.get("elsewhere")?.state).toBe("off");
     const tools = agentPluginTools(p.deps);
     const names = async (f: Partial<AgentSessionFacts>) => (await tools.tools("s", facts(f))).map((t) => t.name).sort();
     expect(await names({})).toEqual([TOOL]);
     expect(await names({ backend: "claude-code" })).toEqual(["cconly-tools__cconly", TOOL]);
-    expect(await names({ backend: "clover-code" })).toEqual(["cloveronly-tools__cloveronly", TOOL]);
-    expect(await names({ backend: "clover" })).toEqual(["cloveronly-tools__cloveronly", TOOL]);
+    expect(await names({ backend: "moss-code" })).toEqual(["mossonly-tools__mossonly", TOOL]);
+    expect(await names({ backend: "moss" })).toEqual(["mossonly-tools__mossonly", TOOL]);
     expect(await names({ kind: "agent", bot: "alpha" })).toEqual(["botsonly-tools__botsonly", TOOL]);
   });
 
@@ -279,11 +279,11 @@ describe("a plugin's tools on an agent's bridge", () => {
       toolAfter: async (_s: unknown, _t: unknown, _i: unknown, result: unknown) => result,
     } as unknown as TurnHooks;
     const tools = agentPluginTools({ ...p.deps, hooks: () => hooks });
-    for (const backend of ["fake", "clover", "clover-code"]) {
+    for (const backend of ["fake", "moss", "moss-code"]) {
       const r = await tools.call("s_code", { callId: `c-${backend}`, tool: TOOL, input: {} }, { computer: "Studio", origin: "user", session: facts({ backend }) });
       expect(r.isError).toBe(false);
     }
-    expect(seen).toEqual([`fake:mcp__${TOOL}`, `clover:mcp__${TOOL}`, `clover-code:mcp__${TOOL}`]);
+    expect(seen).toEqual([`fake:mcp__${TOOL}`, `moss:mcp__${TOOL}`, `moss-code:mcp__${TOOL}`]);
     const denied = await tools.call("s_code", { callId: "c-deny", tool: TOOL, input: { stop: true } }, { computer: "Studio", origin: "user", session: facts() });
     expect(denied).toEqual({ content: [{ type: "text", text: `${TOOL} was refused by a plugin's hook: not today` }], isError: true });
   });
@@ -356,16 +356,16 @@ describe("a plugin's tools on an agent's bridge", () => {
   });
 });
 
-describeWithEmbeddedRuntime("a plugin's tool from a coding session on Clover's coding agent (clover-code): one card, the judge's", (spawn) => {
+describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's coding agent (moss-code): one card, the judge's", (spawn) => {
   const tool = LONG_IDS[0]!.replace(/[^a-z]/g, "");
   const real = `mcp__${LONG_IDS[0]}-tools__${tool}`;
   const short = bridgeShortName(`${LONG_IDS[0]}-tools`, tool);
-  /** The user's own coding session on clover-code, told to make one call. */
+  /** The user's own coding session on moss-code, told to make one call. */
   const code = (w: World, call: string) => w.manager.start({
     caller: { kind: "user", device: "d".repeat(16), clientMessageId: `m${Math.random()}`, sentAt: w.clock.now() },
-    backend: CLOVER_CODE_ID, root: "home/Studio/project1", model: CODE_MODEL, prompt: `CALL ${call}`,
+    backend: MOSS_CODE_ID, root: "home/Studio/project1", model: CODE_MODEL, prompt: `CALL ${call}`,
   });
-  const wire = (w: World, transcript: string) => { try { return readFileSync(join(w.cloverHome, transcript), "utf8"); } catch { return ""; } };
+  const wire = (w: World, transcript: string) => { try { return readFileSync(join(w.mossHome, transcript), "utf8"); } catch { return ""; } };
   const mine = (w: World, session: string) => w.approvals.cards().filter((c) => c.session === session);
   /** Every card raised for a session, answered or not, by kind. */
   const raised = (w: World) => {
@@ -381,7 +381,7 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on Clover's c
     const card = await waitFor(() => mine(w, r.sessionId).find((c) => c.kind === "tool"), "the judge's card");
     expect(card.fields["what"]).toEqual({ type: "code", code: real });
     expect(card.fields["reason"]).toBeUndefined();
-    expect(card.fields["source"]).toMatchObject({ type: "rows", rows: [{ label: "Agent", value: "clover-code" }, { label: "Started by", value: "You" }, { label: "Folder" }] });
+    expect(card.fields["source"]).toMatchObject({ type: "rows", rows: [{ label: "Agent", value: "moss-code" }, { label: "Started by", value: "You" }, { label: "Folder" }] });
     await approve(w, card.id, "approve");
     await waitFor(() => wire(w, r.transcript).includes(`${tool} ran with`), "the tool's answer");
     expect(kinds(r.sessionId)).toEqual(["tool"]);
@@ -407,13 +407,13 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on Clover's c
     const kinds = raised(w);
     const r = await w.manager.start({
       caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
-      backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Use it", model: CODE_MODEL, prompt: `CALL mcp__${CODE_BRIDGE}__${short} {"n":7}`,
+      backend: MOSS_CODE_ID, root: "home/Studio/project1", title: "Use it", model: CODE_MODEL, prompt: `CALL mcp__${CODE_BRIDGE}__${short} {"n":7}`,
     });
     const card = await waitFor(() => mine(w, r.sessionId).find((c) => c.kind === "tool"), "the judge's card");
     expect(card.bot).toBe("alpha");
     expect(card.fields["what"]).toEqual({ type: "code", code: real });
-    expect(card.fields["reason"]).toEqual({ type: "text", text: "alpha's agent (clover-code) is asking, not alpha itself." });
-    expect(card.fields["source"]).toMatchObject({ type: "rows", rows: [{ label: "Agent", value: "clover-code" }, { label: "Started by", value: "alpha" }, { label: "Folder" }] });
+    expect(card.fields["reason"]).toEqual({ type: "text", text: "alpha's agent (moss-code) is asking, not alpha itself." });
+    expect(card.fields["source"]).toMatchObject({ type: "rows", rows: [{ label: "Agent", value: "moss-code" }, { label: "Started by", value: "alpha" }, { label: "Folder" }] });
     expect(card.options.map((o) => o.remember)).toEqual([undefined, undefined]);
     await approve(w, card.id, "approve");
     await waitFor(() => wire(w, r.transcript).includes(`${tool} ran with`), "the tool's answer");
@@ -484,7 +484,7 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on Clover's c
     void code(w, "anything").then((r) => { id = r.sessionId; });
     const user = await denyUntil(w, () => id, () => finished === 1);
     let agentId: string | undefined;
-    void w.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Report", model: CODE_MODEL, prompt: "anything" }).then((r) => { agentId = r.sessionId; });
+    void w.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: MOSS_CODE_ID, root: "home/Studio/project1", title: "Report", model: CODE_MODEL, prompt: "anything" }).then((r) => { agentId = r.sessionId; });
     const agent = await denyUntil(w, () => agentId, () => finished === 2);
     expect(answers).toEqual(["plugin: deny", "plugin: deny"]);
     expect([user.length, agent.length]).toEqual([1, 1]);
@@ -620,12 +620,12 @@ describe("two bots on one computer: each one's own-bot parts are its own", () =>
 
 describe("Alpha's persona stays hers", () => {
   test("her skills and agent definitions (her own and her extras') reach her sessions and her delegated agents; never another bot, another bot's agent or a coding session", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b-alpha-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b-alpha-"));
     temps.push(home);
-    // Alpha as Clover ships her: from a bundled folder (a copy of the repository's), which asks for no OK.
+    // Alpha as MOSS ships her: from a bundled folder (a copy of the repository's), which asks for no OK.
     const bundled = join(home, "bundled");
     cpSync(join(import.meta.dir, "..", "..", "..", "..", "..", "plugins", "alpha"), join(bundled, "alpha"), { recursive: true, filter: (src) => !src.includes("node_modules") });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", bundledDirs: [bundled], broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "linux", bundledDirs: [bundled], broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
     closers.push(() => opened.close());
     for (let i = 0; i < 250 && !["running", "enabled"].includes(String(opened.registry.get("alpha")?.state)); i++) await Bun.sleep(20);
     await opened.registry.setEnabled("alpha/extras", true);
@@ -641,13 +641,13 @@ describe("Alpha's persona stays hers", () => {
     const other = glossaryIndex({ tools: () => [], registry: opened.registry, serves: (id) => partsServe(opened.registry, id, { kind: "bot", bot: "nova" }), bot: "nova" }).map((i) => i.name);
     expect(other.filter((n) => n.startsWith("alpha:") || n.startsWith("alpha/"))).toEqual([]);
     const deps = { registry: opened.registry, servers: () => [] };
-    // Her own delegated agent (on Clover's runtime): placed and in its Glossary.
-    const hers = facts({ kind: "agent", bot: "alpha", backend: "clover-code" });
+    // Her own delegated agent (on MOSS's runtime): placed and in its Glossary.
+    const hers = facts({ kind: "agent", bot: "alpha", backend: "moss-code" });
     const own = await agentPluginParts(deps).parts("s", hers);
     expect(own.skills.map((x) => x.name)).toEqual(expect.arrayContaining(["alpha-explain-like-a-friend", "alpha-plan-my-day"]));
     expect(own.agents.map((x) => x.name)).toContain("alpha-study-buddy");
     expect((await agentGlossary(deps)("s", { load: "alpha:study-buddy" }, hers)).loaded).toEqual([expect.objectContaining({ name: "alpha:study-buddy", kind: "agent" })]);
-    for (const f of [facts(), facts({ backend: "claude-code" }), facts({ kind: "agent", bot: "nova", backend: "clover-code" })]) {
+    for (const f of [facts(), facts({ backend: "claude-code" }), facts({ kind: "agent", bot: "nova", backend: "moss-code" })]) {
       const parts = await agentPluginParts(deps).parts("s", f);
       expect([parts.skills, parts.agents]).toEqual([[], []]);
       const g = await agentGlossary(deps)("s", { query: ["study", "morning"], load: "alpha:study-buddy" }, f);

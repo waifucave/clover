@@ -22,7 +22,7 @@
 // source revision and requesting agent"). `approval.list` reads the same broker, so it shows it unchanged.
 
 import { posix } from "node:path";
-import type { ApprovalPolicy } from "@waifucave/clover-protocol";
+import type { ApprovalPolicy } from "@waifucave/moss-protocol";
 import { connectorFactsFor, isConnectorToolName, statedServerFromCanUseTool, type ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
 import { coworkConnectorVerdict, coworkHostDecision, type CoworkHostReason } from "../cowork/host-policy";
 import type { CoworkTransitionSnapshot } from "../cowork/policy-transition";

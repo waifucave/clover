@@ -10,7 +10,7 @@
   // SIGNING_JWKS is never in this file: it comes from `wrangler secret put` (production) or a test harness.
   //
   // Observability stays off: nothing here should keep request lines.
-  "name": "clover-accounts-local",
+  "name": "moss-accounts-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
@@ -41,7 +41,7 @@
   ],
   "env": {
     "production": {
-      "name": "clover-accounts",
+      "name": "moss-accounts",
       "workers_dev": false,
       "observability": { "enabled": false },
       // Under waifucave.com/auth, where the services' production profiles look for its issuer and keys. A host of

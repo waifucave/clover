@@ -5,7 +5,7 @@
 // (`pluginRegistryMethods`' `plugin.install`), which lands the plugin found, waiting behind its sealed OK card. The card
 // says which plugin asked ("<plugin> wants to add <name>.", the provenance `{ by: "plugin" }`), and nothing it installs
 // runs before the user's OK. The router checks the capability and that the call comes from a component.
-import { InstallSource } from "@waifucave/clover-protocol";
+import { InstallSource } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import type { ComponentInstallDoor } from "../registry-methods";
 import type { ApiHandlers } from "./router";

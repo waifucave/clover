@@ -13,8 +13,8 @@
 // self-expires with a mint's own band (a reader takes their time), and the core's own `card.answer` decides the
 // card's fate, not a local guess (S5, S6).
 import { randomBytes } from "node:crypto";
-import { cardAnswerSigningInput } from "@waifucave/clover-protocol";
-import type { TokenValue } from "@waifucave/clover-plugin-sdk";
+import { cardAnswerSigningInput } from "@waifucave/moss-protocol";
+import type { TokenValue } from "@waifucave/moss-plugin-sdk";
 
 /** What the app hears of a card: the whole sealed one (`card_requested`, or `card.get`'s re-read for a resolved one a
  *  plugin still shows). The store keeps `hash` and the fields verbatim from the core; nothing else ships anywhere. */

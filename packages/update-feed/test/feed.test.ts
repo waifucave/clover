@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { coreBinaryFile, coreFeedFile, CORE_TARGETS, FEED_NAME, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyFromRaw, publicKeyOf, rawPublicKey, signedMessage, signFeed, UPDATE_FEED_PUBLIC_KEY, verifyFeed } from "../src/index";
 
-const feed = new TextEncoder().encode("version: 1.2.3\nfiles:\n  - url: Clover-1.2.3-mac.zip\n    sha512: abc\n");
+const feed = new TextEncoder().encode("version: 1.2.3\nfiles:\n  - url: MOSS-Code-1.2.3-mac.zip\n    sha512: abc\n");
 
 describe("the update feed's signature", () => {
   test("signs and checks an update file under its name", () => {
@@ -16,7 +16,7 @@ describe("the update feed's signature", () => {
     const sig = signFeed("latest-mac.yml", feed, key.privateKey);
     expect(verifyFeed("latest-mac.yml", feed, sig, key.publicKey)).toEqual({ ok: true });
     expect(verifyFeed("latest-mac.yml", feed, `${sig}\n`, key.publicKey)).toEqual({ ok: true });
-    expect(signedMessage("beta.yml", feed).toString("utf8")).toMatch(/^clover-update-feed-v1\0beta\.yml\0[0-9a-f]{128}\0$/);
+    expect(signedMessage("beta.yml", feed).toString("utf8")).toMatch(/^moss-update-feed-v1\0beta\.yml\0[0-9a-f]{128}\0$/);
   });
 
   test("a file signed under one name is refused under another: a beta file as latest, one OS's as another's", () => {
@@ -54,29 +54,29 @@ describe("the update feed's signature", () => {
     for (const ok of ["latest.yml", "beta-mac.yml", "latest-linux-arm64.yml", ...CORE_TARGETS.flatMap((t) => [coreFeedFile("latest", t), coreFeedFile("beta", t), coreBinaryFile("1.2.3", t), coreBinaryFile("1.3.0-beta.2", t)])]) {
       expect(`${ok} ${FEED_NAME.test(ok)}`).toBe(`${ok} true`);
     }
-    expect(coreBinaryFile("1.2.3", "windows-x64")).toBe("clover-core-1.2.3-windows-x64.exe");
-    expect(coreBinaryFile("1.2.3", "linux-x64")).toBe("clover-core-1.2.3-linux-x64");
-    for (const bad of ["latest-core-freebsd-x64.yml", "clover-core-1.2.3-linux-x64.exe", "clover-core-1.2.3-windows-x64", "clover-core-latest-linux-x64", "../clover-core-1.2.3-linux-x64", "clover-core-1.2.3-linux-x64.sig", "latest-core.yml"]) {
+    expect(coreBinaryFile("1.2.3", "windows-x64")).toBe("moss-core-1.2.3-windows-x64.exe");
+    expect(coreBinaryFile("1.2.3", "linux-x64")).toBe("moss-core-1.2.3-linux-x64");
+    for (const bad of ["latest-core-freebsd-x64.yml", "moss-core-1.2.3-linux-x64.exe", "moss-core-1.2.3-windows-x64", "moss-core-latest-linux-x64", "../moss-core-1.2.3-linux-x64", "moss-core-1.2.3-linux-x64.sig", "latest-core.yml"]) {
       expect(`${bad} ${FEED_NAME.test(bad)}`).toBe(`${bad} false`);
     }
     // A binary's signature holds for that binary under that name only.
     const key = generateFeedKey();
     const bin = new TextEncoder().encode("\x7fELF…");
-    const sig = signFeed("clover-core-1.2.3-linux-x64", bin, key.privateKey);
-    expect(verifyFeed("clover-core-1.2.3-linux-x64", bin, sig, key.publicKey)).toEqual({ ok: true });
-    expect(verifyFeed("clover-core-1.2.3-linux-arm64", bin, sig, key.publicKey)).toEqual({ ok: false, reason: "bad signature" });
-    expect(verifyFeed("clover-core-1.2.4-linux-x64", bin, sig, key.publicKey)).toEqual({ ok: false, reason: "bad signature" });
+    const sig = signFeed("moss-core-1.2.3-linux-x64", bin, key.privateKey);
+    expect(verifyFeed("moss-core-1.2.3-linux-x64", bin, sig, key.publicKey)).toEqual({ ok: true });
+    expect(verifyFeed("moss-core-1.2.3-linux-arm64", bin, sig, key.publicKey)).toEqual({ ok: false, reason: "bad signature" });
+    expect(verifyFeed("moss-core-1.2.4-linux-x64", bin, sig, key.publicKey)).toEqual({ ok: false, reason: "bad signature" });
   });
 
   test("the daemon's update file: written and read back, and anything else refused", () => {
     const sha512 = createHash("sha512").update("x").digest("base64");
-    const feed = { version: "1.2.3", file: "clover-core-1.2.3-linux-x64", sha512, size: 1234 };
+    const feed = { version: "1.2.3", file: "moss-core-1.2.3-linux-x64", sha512, size: 1234 };
     expect(parseCoreFeed(formatCoreFeed(feed))).toEqual(feed);
     const text = formatCoreFeed(feed);
     expect(() => parseCoreFeed(`${text}url: https://elsewhere\n`)).toThrow();
     expect(() => parseCoreFeed(text.replace("1.2.3\n", "latest\n"))).toThrow(/version/);
-    expect(() => parseCoreFeed(text.replace("clover-core-1.2.3-linux-x64", "../x"))).toThrow(/binary/);
-    expect(() => parseCoreFeed(text.replace("clover-core-1.2.3-linux-x64", "latest.yml"))).toThrow(/binary/);
+    expect(() => parseCoreFeed(text.replace("moss-core-1.2.3-linux-x64", "../x"))).toThrow(/binary/);
+    expect(() => parseCoreFeed(text.replace("moss-core-1.2.3-linux-x64", "latest.yml"))).toThrow(/binary/);
     expect(() => parseCoreFeed(text.replace(sha512, "abc"))).toThrow(/sha512/);
     expect(() => parseCoreFeed(text.replace("1234", "-1"))).toThrow(/size/);
     expect(() => parseCoreFeed(`${text}version: 9.9.9\n`)).toThrow();
@@ -86,27 +86,27 @@ describe("the update feed's signature", () => {
 test("plain Bun for plugins has its own signed update file and binary, named by its Bun version", async () => {
   const { pluginBunFeedFile, pluginBunBinaryFile, parsePluginBunFeed, parseCoreFeed, FEED_NAME } = await import("../src/index");
   expect(pluginBunFeedFile("latest", "linux-x64")).toBe("latest-plugin-bun-linux-x64.yml");
-  expect(pluginBunBinaryFile("1.4.4", "windows-x64")).toBe("clover-plugin-bun-1.4.4-windows-x64.exe");
-  expect(pluginBunBinaryFile("1.4.4", "darwin-arm64")).toBe("clover-plugin-bun-1.4.4-darwin-arm64");
-  for (const n of ["beta-plugin-bun-darwin-arm64.yml", "clover-plugin-bun-1.4.4-linux-arm64", "clover-plugin-bun-1.4.4-windows-x64.exe"]) expect(FEED_NAME.test(n)).toBe(true);
-  for (const n of ["clover-plugin-bun-1.4.4-windows-x64", "latest-plugin-bun.yml", "clover-plugin-bun-x-linux-x64"]) expect(FEED_NAME.test(n)).toBe(false);
+  expect(pluginBunBinaryFile("1.4.4", "windows-x64")).toBe("moss-plugin-bun-1.4.4-windows-x64.exe");
+  expect(pluginBunBinaryFile("1.4.4", "darwin-arm64")).toBe("moss-plugin-bun-1.4.4-darwin-arm64");
+  for (const n of ["beta-plugin-bun-darwin-arm64.yml", "moss-plugin-bun-1.4.4-linux-arm64", "moss-plugin-bun-1.4.4-windows-x64.exe"]) expect(FEED_NAME.test(n)).toBe(true);
+  for (const n of ["moss-plugin-bun-1.4.4-windows-x64", "latest-plugin-bun.yml", "moss-plugin-bun-x-linux-x64"]) expect(FEED_NAME.test(n)).toBe(false);
   const sha512 = Buffer.alloc(64, 1).toString("base64");
-  const feed = `version: 1.4.4\nfile: clover-plugin-bun-1.4.4-linux-x64\nsha512: ${sha512}\nsize: 100\n`;
-  expect(parsePluginBunFeed(feed)).toEqual({ version: "1.4.4", file: "clover-plugin-bun-1.4.4-linux-x64", sha512, size: 100 });
+  const feed = `version: 1.4.4\nfile: moss-plugin-bun-1.4.4-linux-x64\nsha512: ${sha512}\nsize: 100\n`;
+  expect(parsePluginBunFeed(feed)).toEqual({ version: "1.4.4", file: "moss-plugin-bun-1.4.4-linux-x64", sha512, size: 100 });
   // Neither file passes for the other: a plugin Bun feed never names a daemon, nor the other way round.
-  expect(() => parseCoreFeed(feed)).toThrow("names a clover-core binary");
-  expect(() => parsePluginBunFeed(feed.replace(/clover-plugin-bun/, "clover-core"))).toThrow("names a clover-plugin-bun binary");
+  expect(() => parseCoreFeed(feed)).toThrow("names a moss-core binary");
+  expect(() => parsePluginBunFeed(feed.replace(/moss-plugin-bun/, "moss-core"))).toThrow("names a moss-plugin-bun binary");
 });
 
 test("the bundled plugins' names: a per-target tarball and its update file, which a signature may cover", async () => {
   const { pluginsFeedFile, pluginsTarballFile, parsePluginsFeed, FEED_NAME } = await import("../src/index");
   expect(pluginsFeedFile("beta", "darwin-arm64")).toBe("beta-plugins-darwin-arm64.yml");
-  expect(pluginsTarballFile("1.2.3", "windows-x64")).toBe("clover-plugins-1.2.3-windows-x64.tar.gz");
-  for (const n of ["latest-plugins-linux-x64.yml", "clover-plugins-1.2.3-linux-arm64.tar.gz", "clover-plugins-1.3.0-beta.1-darwin-arm64.tar.gz"]) expect(FEED_NAME.test(n)).toBe(true);
-  for (const n of ["clover-plugins-1.2.3.tar.gz", "clover-plugins-1.2.3-linux-x64.tar", "latest-plugins.yml", "clover-plugins-x-linux-x64.tar.gz"]) expect(FEED_NAME.test(n)).toBe(false);
+  expect(pluginsTarballFile("1.2.3", "windows-x64")).toBe("moss-plugins-1.2.3-windows-x64.tar.gz");
+  for (const n of ["latest-plugins-linux-x64.yml", "moss-plugins-1.2.3-linux-arm64.tar.gz", "moss-plugins-1.3.0-beta.1-darwin-arm64.tar.gz"]) expect(FEED_NAME.test(n)).toBe(true);
+  for (const n of ["moss-plugins-1.2.3.tar.gz", "moss-plugins-1.2.3-linux-x64.tar", "latest-plugins.yml", "moss-plugins-x-linux-x64.tar.gz"]) expect(FEED_NAME.test(n)).toBe(false);
   const sha512 = Buffer.alloc(64, 1).toString("base64");
-  expect(parsePluginsFeed(`version: 1.2.3\nfile: clover-plugins-1.2.3-linux-x64.tar.gz\nsha512: ${sha512}\nsize: 10\n`).file).toBe("clover-plugins-1.2.3-linux-x64.tar.gz");
-  expect(() => parsePluginsFeed(`version: 1.2.3\nfile: clover-core-1.2.3-linux-x64\nsha512: ${sha512}\nsize: 10\n`)).toThrow("bundled plugins");
+  expect(parsePluginsFeed(`version: 1.2.3\nfile: moss-plugins-1.2.3-linux-x64.tar.gz\nsha512: ${sha512}\nsize: 10\n`).file).toBe("moss-plugins-1.2.3-linux-x64.tar.gz");
+  expect(() => parsePluginsFeed(`version: 1.2.3\nfile: moss-core-1.2.3-linux-x64\nsha512: ${sha512}\nsize: 10\n`)).toThrow("bundled plugins");
 });
 
 test("the tarball: packed the same way every time, read back strictly", async () => {
@@ -114,10 +114,10 @@ test("the tarball: packed the same way every time, read back strictly", async ()
   const { gzipSync } = await import("node:zlib");
   const enc = (s: string) => new TextEncoder().encode(s);
   const long = `a/${"x".repeat(120)}/b.js`;
-  const files = [{ path: "z/clover.json", bytes: enc("{}"), executable: false }, { path: long, bytes: new Uint8Array(1000).fill(7), executable: true }];
+  const files = [{ path: "z/moss.json", bytes: enc("{}"), executable: false }, { path: long, bytes: new Uint8Array(1000).fill(7), executable: true }];
   const gz = packTarball(files);
   expect(Buffer.from(packTarball([...files].reverse())).equals(Buffer.from(gz))).toBe(true);
-  expect(unpackTarball(gz).map((f) => [f.path, f.bytes.length, f.executable])).toEqual([[long, 1000, true], ["z/clover.json", 2, false]]);
+  expect(unpackTarball(gz).map((f) => [f.path, f.bytes.length, f.executable])).toEqual([[long, 1000, true], ["z/moss.json", 2, false]]);
   for (const bad of ["../x", "/etc/passwd", "a//b", "a\\b"]) expect(() => packTarball([{ path: bad, bytes: enc(""), executable: false }])).toThrow("plain relative path");
   expect(() => packTarball([files[0]!, files[0]!])).toThrow("twice");
   // A hand-made archive: a symlink entry, a traversal path, a bad checksum, a truncated body: each refused.
@@ -142,6 +142,6 @@ test("the tarball: packed the same way every time, read back strictly", async ()
 test("a tarball path every OS can hold: no Windows device name, no trailing dot or space", async () => {
   const { plainRelativePath, packTarball } = await import("../src/index");
   for (const p of ["a/CON", "a/nul.txt", "COM1/x", "a/lpt9.js", "a/x.", "a/x ", "a/com¹"]) expect(plainRelativePath(p)).toBe(false);
-  for (const p of ["a/console.js", "a/null.js", "a/com10", "a/.env.example", "clover/clover.json"]) expect(plainRelativePath(p)).toBe(true);
+  for (const p of ["a/console.js", "a/null.js", "a/com10", "a/.env.example", "moss/moss.json"]) expect(plainRelativePath(p)).toBe(true);
   expect(() => packTarball([{ path: "a/AUX.json", bytes: new Uint8Array(), executable: false }])).toThrow("plain relative path");
 });

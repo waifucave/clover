@@ -6,8 +6,8 @@
 import { readFileSync, statSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { join } from "node:path";
-import { CLIENT_BARE_IMPORTS, parseJsonc } from "@waifucave/clover-plugin-sdk";
-import type { ValidationIssue } from "@waifucave/clover-protocol";
+import { CLIENT_BARE_IMPORTS, parseJsonc } from "@waifucave/moss-plugin-sdk";
+import type { ValidationIssue } from "@waifucave/moss-protocol";
 
 /** The biggest loader config read when following `extends` and `paths`. */
 const LOADER_CONFIG_MAX_BYTES = 1024 * 1024;
@@ -28,7 +28,7 @@ export function folderLoaderReach(folder: string, files: readonly string[]): Loa
   return loaderReach(files, readConfig, read(CODE_MAX_BYTES), pluginEntries(files, readConfig));
 }
 
-const MANIFEST = /(^|\/)clover\.json$/i;
+const MANIFEST = /(^|\/)moss\.json$/i;
 /** Files no program runs as code: pictures, styles, fonts, models, documents and data. */
 const DATA_FILE = /\.(?:png|jpe?g|gif|webp|avif|svg|ico|bmp|css|json|jsonc|json5|md|markdown|txt|html?|woff2?|ttf|otf|moc3|vrm|glb|gltf|wav|mp3|ogg|m4a|mp4|webm|toml|ya?ml|lock|csv|pdf)$/i;
 
@@ -102,8 +102,8 @@ export interface LoaderReach {
   missing: { file: string; field: string; target: string }[];
 }
 
-/** What a plugin may import without shipping it: Clover's shared packages, which the load guard lets in. */
-export const SHARED_PLUGIN_PACKAGES: readonly string[] = ["@waifucave/clover-plugin-sdk", "@waifucave/clover-protocol", "zod"];
+/** What a plugin may import without shipping it: MOSS's shared packages, which the load guard lets in. */
+export const SHARED_PLUGIN_PACKAGES: readonly string[] = ["@waifucave/moss-plugin-sdk", "@waifucave/moss-protocol", "zod"];
 
 const CODE = /\.(?:[mc]?[jt]s|[jt]sx)$/i;
 const loaderOf = (path: string): "js" | "jsx" | "ts" | "tsx" =>
@@ -277,7 +277,7 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
     for (const { field, target, relative } of targets) {
       if (!relative && !target.startsWith(".") && !target.startsWith("/") && !/^[A-Za-z]:/.test(target) && !target.startsWith("\\")) {
         // A dependency's name. In `imports` it must be a built-in module or one in the plugin's own node_modules, so a
-        // program that isn't Bun (which Clover's load guard doesn't hold) can't be sent elsewhere by it (#234's check 3).
+        // program that isn't Bun (which MOSS's load guard doesn't hold) can't be sent elsewhere by it (#234's check 3).
         if (field.startsWith("imports") && !builtin(target) && dependencyFolder(dirOf(file), target) === undefined) outside.push({ file, field, target });
         continue;
       }

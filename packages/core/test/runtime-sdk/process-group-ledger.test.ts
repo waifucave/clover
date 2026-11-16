@@ -10,7 +10,7 @@ import type { EmbeddedWorkerProcess } from "@waifucave/clover-agent-runtime/embe
 import { createEmbeddedSessionHost, killProcessGroup } from "../../src/runtime-sdk/embedded";
 import { createProcessGroupLedger, processGroupLedgerPath, processStartedAt, sweepProcessGroupLedger } from "../../src/runtime-sdk/process-group-ledger";
 
-const tempHome = (): string => mkdtempSync(join(tmpdir(), "clover-pg-ledger-"));
+const tempHome = (): string => mkdtempSync(join(tmpdir(), "moss-pg-ledger-"));
 const readLedger = (home: string): { daemonPid: number; groups: Array<{ pgid: number; startedAt: string }> } => JSON.parse(readFileSync(processGroupLedgerPath(home), "utf8"));
 const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
@@ -94,7 +94,7 @@ describe("the embedded host keeps the ledger", () => {
     const proc = { stdin: { write() {}, end() {} }, stdout: (async function* () {})(), kill() {}, terminate() {}, exited, pid: null, state: "running", processGroups: groups } as unknown as EmbeddedWorkerProcess;
     return { proc, close: () => settle({ code: 0, signal: null }) };
   }
-  const spawnOptions = (sessionId: string) => ({ command: "clover-embedded", args: ["--run", "--config-json", JSON.stringify({ sessionId })], cwd: "/", env: {} });
+  const spawnOptions = (sessionId: string) => ({ command: "moss-embedded", args: ["--run", "--config-json", JSON.stringify({ sessionId })], cwd: "/", env: {} });
 
   test("a live Worker's groups are written under <home>/run/, a closed Worker's removed, and a new host on the same home sweeps a dead one's", async () => {
     const home = tempHome();

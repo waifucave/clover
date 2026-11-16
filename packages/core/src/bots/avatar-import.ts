@@ -9,7 +9,7 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { basename, extname, join, resolve } from "node:path";
-import { AvatarFormatEntry, avatarFileKind, BUNDLED_AVATAR_FORMATS, extensionOf, orList, type AvatarFormatDecl } from "@waifucave/clover-plugin-sdk";
+import { AvatarFormatEntry, avatarFileKind, BUNDLED_AVATAR_FORMATS, extensionOf, orList, type AvatarFormatDecl } from "@waifucave/moss-plugin-sdk";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { ContractError } from "../contracts/common";
 import { entryData, listEntries } from "../browser/headless/unzip";
@@ -26,7 +26,7 @@ export interface AvatarFormats {
   known: readonly AvatarFormatDecl[];
 }
 
-/** Clover's own two, as an import with no registry reads them (tests, a core built without one). */
+/** MOSS's own two, as an import with no registry reads them (tests, a core built without one). */
 export const SHIPPED_FORMATS: AvatarFormats = { active: BUNDLED_AVATAR_FORMATS, known: BUNDLED_AVATAR_FORMATS };
 
 type Source = "folder" | "zip" | "file";

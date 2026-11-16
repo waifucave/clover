@@ -1,10 +1,10 @@
-// Clover protocol area: sessions and bots (spec §6, §7, §9.3). Owner: lane D (bots, sessions, memory, routines),
+// MOSS protocol area: sessions and bots (spec §6, §7, §9.3). Owner: lane D (bots, sessions, memory, routines),
 // with lane A for the runtime underneath (plan §4). Pinned by lane B at M0.
 //
 // A session is any running conversation: a bot's main conversation, a side thread (a routine run), a background
 // agent, or a coding session the user started (§9.3). The user's message interrupts a bot's main conversation at
 // once (§6.4); messages from other bots, routines, agents and plugins fold into the running turn after its next
-// tool call. A session's log keeps the inherited `SessionEvent` stream (events.ts); the Clover kinds below join it when
+// tool call. A session's log keeps the inherited `SessionEvent` stream (events.ts); the MOSS kinds below join it when
 // lane D wires them through the inherited checklist (docs/claude/protocol-and-remote.md).
 import { z } from "zod";
 import { utf16 } from "./strings";
@@ -81,7 +81,7 @@ export type SessionStatus = z.infer<typeof SessionStatus>;
 export const SessionFailure = z.enum(["sign-in", "crashed", "stalled", "error"]);
 export type SessionFailure = z.infer<typeof SessionFailure>;
 
-/** A session from the app Clover replaces, in the archive view (§14.1 "Existing … installs", review S16): readable,
+/** A session from the app MOSS replaces, in the archive view (§14.1 "Existing … installs", review S16): readable,
  *  never a bot's history. */
 export const ArchivedSessionView = z.object({
   id: utf16(128, 1),
@@ -179,7 +179,7 @@ export function userMessageHashInput(m: Pick<UserMessageInput, "text" | "images"
 /** What the sending device signs for a message another computer may relay (review N3): the session, the client's
  *  message id, the message's hash and its send time, one per line. */
 export function userMessageSigningInput(a: { session: string; clientMessageId: string; hash: string; sentAt: number }): string {
-  return `clover/user-message/1\n${a.session}\n${a.clientMessageId}\n${a.hash}\n${a.sentAt}`;
+  return `moss/user-message/1\n${a.session}\n${a.clientMessageId}\n${a.hash}\n${a.sentAt}`;
 }
 
 /** A routine, as the synced list keeps it (§8.5): any device can show it, even while its computer is off. */
@@ -188,13 +188,13 @@ export const RoutineView = z.object({
   name: utf16(200),
   bot: BotId,
   computer: ComputerName,
-  /** Its file in the tree: `home/<Computer>/.clover/routines/<bot>/<name>.md` (§7). */
+  /** Its file in the tree: `home/<Computer>/.moss/routines/<bot>/<name>.md` (§7). */
   file: TreePath,
   triggers: z.array(z.object({ type: utf16(128), summary: utf16(500) })).max(32),
   level: utf16(32),
   /** A raised level waiting for its card, or a copy with the same id paused (§7). */
   state: z.enum(["active", "paused", "waiting-for-ok", "duplicate", "bot-removed"]),
-  /** Why Clover paused it, while it stays paused (a plugin's trigger started it too often, §7); the user's resume (the
+  /** Why MOSS paused it, while it stays paused (a plugin's trigger started it too often, §7); the user's resume (the
    *  file's `paused` taken out) clears it. */
   pausedWhy: utf16(300).optional(),
   lastRunAt: Timestamp.optional(),
@@ -508,7 +508,7 @@ export const BotsPausedEvent = coreEvent("bots_paused", { paused: z.boolean() })
 export const SessionChangedEvent = coreEvent("session_changed", { session: SessionView });
 export const RoutinesChangedEvent = coreEvent("routines_changed", { bot: BotId.optional() });
 
-/** The envelope of Clover's session events: the inherited one (`seq`, `sessionId`, `ts`, `late`), plus the lease epoch
+/** The envelope of MOSS's session events: the inherited one (`seq`, `sessionId`, `ts`, `late`), plus the lease epoch
  *  every log event carries once lane H's lease exists (§6.4 "Events carry their lease epoch"). `late`: the event
  *  reached this log after events that happened later (an earlier lease's, or another computer's set aside after a
  *  fork, §8.5); a client shows it apart, as history. */
@@ -564,10 +564,10 @@ export const PluginMessageEvent = sessionEvent("plugin_message", {
  *  clock. A message stamped before output the model already produced sits after that output, showing its time. */
 export const UserMessageStamp = z.object({ device: DeviceId, sentAt: Timestamp });
 
-export const CloverSessionEvent = z.discriminatedUnion("type", [
+export const MossSessionEvent = z.discriminatedUnion("type", [
   BotMessageEvent, AgentMessageEvent, AgentFinishedEvent, RoutineResultEvent, NoteEvent, PluginMessageEvent,
 ]);
-export type CloverSessionEvent = z.infer<typeof CloverSessionEvent>;
+export type MossSessionEvent = z.infer<typeof MossSessionEvent>;
 
 const READERS = ["app", "cli", "remote", "web", "layer"] as const;
 

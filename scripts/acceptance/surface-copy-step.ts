@@ -4,7 +4,7 @@
 //   * each OK card says what the copy does, in the plain lines the catalog gives (shows all your cards, on top of everything,
 //     sends messages as you), and both copies run after the press on their cards;
 //   * with the bundled two switched off, the copy island draws a pending plugin OK card's sealed frames (its words and buttons)
-//     in a document of its own plugin, lets go of them while Clover's window is in front (one place at a time) and draws them again
+//     in a document of its own plugin, lets go of them while MOSS's window is in front (one place at a time) and draws them again
 //     when it is not, and the card is answered by a real press on the copy's own sealed buttons;
 //   * the copy pill sends the user's words as the user on a real press of its Send circle (a click the page makes itself is no
 //     press), and the bot's conversation holds them;
@@ -22,7 +22,7 @@ import { islandDrawsOkCard } from "./usage-drawn";
 
 export const SURFACE_COPY_STEP = "a folder-installed copy of the island and of the pill, under other ids and behind their OK cards (shows all your cards, on top of everything, sends as you), takes the bundled ones' place: its island draws a plugin's OK card's sealed buttons and takes the press, lets go while the window is in front and draws it again after, and its pill sends the user's words as the user on a real press";
 
-const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins", "clover", "plugins");
+const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins", "moss", "plugins");
 const FIXTURE = resolve(import.meta.dir, "fixtures", "acceptance-island");
 const FIXTURE_ID = "acceptance-island";
 const HOLD = resolve(import.meta.dir, "fixtures", "acceptance-hold");
@@ -32,18 +32,18 @@ export type Mirror = "island" | "pill";
 export const MIRROR_ID: Readonly<Record<Mirror, string>> = { island: "mirror-island", pill: "mirror-pill" };
 const MIRROR_NAME: Readonly<Record<Mirror, string>> = { island: "Mirror island", pill: "Mirror pill" };
 /** The bundled plugins the copies stand in for (switched off while the copies run, on again after). */
-const BUNDLED: Readonly<Record<Mirror, string>> = { island: "clover/island", pill: "clover/pill" };
+const BUNDLED: Readonly<Record<Mirror, string>> = { island: "moss/island", pill: "moss/pill" };
 
 /** The OK card's plain lines for what the copies hold (the catalog's `ok` words). */
 export const MIRROR_OK_LINES: Readonly<Record<Mirror, readonly string[]>> = {
   island: ["shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them", "shows windows on top of everything else on your screen"],
-  pill: ["shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them", "shows windows on top of everything else on your screen", "sends messages to your bots and sessions as you, with text it chooses, when you click or press a key in its window, or press its own key anywhere in Clover's window, or up to 30 seconds after you let go", "adds items to Clover's menu in your menu bar"],
+  pill: ["shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them", "shows windows on top of everything else on your screen", "sends messages to your bots and sessions as you, with text it chooses, when you click or press a key in its window, or press its own key anywhere in MOSS's window, or up to 30 seconds after you let go", "adds items to MOSS's menu in your menu bar"],
 };
 
 /** A copy's manifest: the bundled one's, with an id and a name of its own and its client built to one module. Its capabilities, its
  *  surface's `window` fields and its tray line are the bundled plugin's own, so what it may do is what its OK card says. */
 export function mirrorManifest(kind: Mirror): Record<string, unknown> {
-  const src = JSON.parse(readFileSync(join(PLUGINS, kind, "clover.json"), "utf8")) as Record<string, unknown> & { contributes: Record<string, unknown>; client: Record<string, unknown> };
+  const src = JSON.parse(readFileSync(join(PLUGINS, kind, "moss.json"), "utf8")) as Record<string, unknown> & { contributes: Record<string, unknown>; client: Record<string, unknown> };
   // The strings: the part's own English is built in, so the copy needs no locale file of the bundled plugin's namespace.
   const { locales: _locales, ...contributes } = src.contributes;
   return { ...src, id: MIRROR_ID[kind], name: MIRROR_NAME[kind], client: { ...src.client, entry: "client/index.js" }, contributes };
@@ -55,7 +55,7 @@ export async function buildMirror(kind: Mirror, root: string): Promise<string> {
   const dir = join(root, MIRROR_ID[kind]);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(join(dir, "client"), { recursive: true });
-  writeFileSync(join(dir, "clover.json"), `${JSON.stringify(mirrorManifest(kind), null, 2)}\n`);
+  writeFileSync(join(dir, "moss.json"), `${JSON.stringify(mirrorManifest(kind), null, 2)}\n`);
   await buildPluginModule({ entry: join(PLUGINS, kind, "client", "index.tsx"), outFile: join(dir, "client", "index.js"), side: "client" });
   if (!existsSync(join(dir, "client", "index.js"))) throw new Error(`the ${kind} copy's client wasn't built`);
   return dir;
@@ -69,7 +69,7 @@ const okCardOf = (ctx: ExampleCtx, id: string) => async (): Promise<PluginCard |
 async function sealedFramesOf(ctx: ExampleCtx, plugin: string, cardId: string): Promise<number> {
   let most = 0;
   for (const d of await layerDocs(ctx.cdp, plugin)) {
-    const n = Number(await ctx.cdp.evaluate(d.session, `document.querySelectorAll('[data-clover-card="${cardId}"] iframe[data-clover-sealed]').length`).catch(() => 0));
+    const n = Number(await ctx.cdp.evaluate(d.session, `document.querySelectorAll('[data-moss-card="${cardId}"] iframe[data-moss-sealed]').length`).catch(() => 0));
     most = Math.max(most, n);
   }
   return most;
@@ -107,7 +107,7 @@ export async function surfaceCopyStep(ctx: ExampleCtx, session: string): Promise
     }
     await until("the copy island's surface document", 40_000, async () => ((await layerDocs(cdp, MIRROR_ID.island)).length > 0 ? true : undefined), async () => ctx.appLog().split("\n").filter((l) => /surface|mirror/.test(l)).slice(-6).join(" | "));
     await until("the copy pill's surface document", 40_000, async () => ((await layerDocs(cdp, MIRROR_ID.pill)).length > 0 ? true : undefined));
-    if ((await layerDocs(cdp, "clover")).some((d) => /[?&]surface=(island|pill)/.test(d.url))) fail("a bundled surface's document is still there with the bundled two switched off");
+    if ((await layerDocs(cdp, "moss")).some((d) => /[?&]surface=(island|pill)/.test(d.url))) fail("a bundled surface's document is still there with the bundled two switched off");
 
     // 3. A pending plugin OK card (no bot: only a plugin with approvals.all may place it) is drawn by the copy island.
     const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: FIXTURE } }, 60_000);

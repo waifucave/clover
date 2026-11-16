@@ -10,8 +10,8 @@ import { isContractError } from "../../contracts/common";
 import { DurableSessionHost } from "../durable-host";
 import { SessionGrants, USER_BROWSER_PARTITION_GRANT } from "../grants";
 import { projectRecords } from "../wire";
-import { CloverUsageCounter } from "../../usage/counter";
-import { cloverUsageDbPath, UsageLedger } from "../../usage/ledger";
+import { MossUsageCounter } from "../../usage/counter";
+import { mossUsageDbPath, UsageLedger } from "../../usage/ledger";
 import type { SessionRecord } from "../../contracts/session-host";
 
 const homes: string[] = [];
@@ -19,7 +19,7 @@ afterEach(() => {
   for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true });
 });
 const tempHome = () => {
-  const h = mkdtempSync(join(tmpdir(), "clover-d-ingest-"));
+  const h = mkdtempSync(join(tmpdir(), "moss-d-ingest-"));
   homes.push(h);
   return h;
 };
@@ -206,8 +206,8 @@ describe("ingest: a session's records copied from the computer running it", () =
     const laptop = new DurableSessionHost({ home: laptopHome, clock, computer: "Laptop" });
     laptop.ingest(view, studio.history("b_alpha"), { from: "studio-device", late: false });
     const ledgerOf = (home: string, host: DurableSessionHost) => {
-      const ledger = new UsageLedger({ path: cloverUsageDbPath(home), computer: "x" });
-      new CloverUsageCounter({ ledger, host }).start();
+      const ledger = new UsageLedger({ path: mossUsageDbPath(home), computer: "x" });
+      new MossUsageCounter({ ledger, host }).start();
       return ledger;
     };
     expect(ledgerOf(laptopHome, laptop).rows({ since: 0 }).rows).toHaveLength(0);

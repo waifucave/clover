@@ -10,7 +10,7 @@ import { FileDeviceRegistry } from "../devices/registry";
 import { DeviceKey } from "../identity/device-key";
 import { generateEd25519 } from "../identity/keys";
 import { MemoryNetwork, type MemoryEndpoint } from "./memory-wire";
-import { CloverLinkTransport, type DialPlanner, type LinkTransportOptions } from "./transport";
+import { MossLinkTransport, type DialPlanner, type LinkTransportOptions } from "./transport";
 import type { DialTarget } from "./wire";
 
 export interface ClusterDevice {
@@ -19,7 +19,7 @@ export interface ClusterDevice {
   id: string;
   endpoint: MemoryEndpoint;
   registry: FileDeviceRegistry;
-  transport: CloverLinkTransport;
+  transport: MossLinkTransport;
 }
 
 export async function makeDeviceKey(): Promise<DeviceKey> {
@@ -43,9 +43,9 @@ export async function makeLinkCluster(
   for (const k of keys.values()) byId.set(k.id, k);
   for (const name of names) {
     const key = keys.get(name)!;
-    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-cluster-")), key, clock: opts.clock, self: { name } });
+    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "moss-h-cluster-")), key, clock: opts.clock, self: { name } });
     const endpoint = net.endpoint(key.publicKey);
-    const transport = new CloverLinkTransport({
+    const transport = new MossLinkTransport({
       self: key.id,
       wire: endpoint,
       registry,

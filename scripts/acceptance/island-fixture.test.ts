@@ -8,7 +8,7 @@ import { validateManifest } from "../../packages/plugin-sdk/src/manifest/validat
 const dir = join(import.meta.dir, "fixtures", "acceptance-island");
 
 test("acceptance-island is a valid manifest with its own id, one command, no server and no hook", () => {
-  const manifest = JSON.parse(readFileSync(join(dir, "clover.json"), "utf8")) as { id: string; host: { entry: string }; contributes: Record<string, unknown[]> };
+  const manifest = JSON.parse(readFileSync(join(dir, "moss.json"), "utf8")) as { id: string; host: { entry: string }; contributes: Record<string, unknown[]> };
   expect(manifest.id).toBe("acceptance-island");
   expect(Object.keys(manifest.contributes)).toEqual(["commands"]);
   expect(existsSync(join(dir, manifest.host.entry))).toBe(true);
@@ -17,6 +17,6 @@ test("acceptance-island is a valid manifest with its own id, one command, no ser
 });
 
 test("it shares no id with the echo fixture the full table installs earlier", () => {
-  const echo = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "acceptance-echo", "clover.json"), "utf8")) as { id: string };
+  const echo = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "acceptance-echo", "moss.json"), "utf8")) as { id: string };
   expect(echo.id).not.toBe("acceptance-island");
 });

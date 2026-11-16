@@ -1,9 +1,9 @@
 // Index format 1 (spec §5.1 "Indexes and npm"): a plain JSON list of plugins, each id with its versions, each version
-// with its tree hash and download URL. A user adds an index by its https URL. It is not signed and Clover keeps no
+// with its tree hash and download URL. A user adds an index by its https URL. It is not signed and MOSS keeps no
 // official one (the owner's ruling, 2026-11-13): what keeps a user safe is each plugin's own OK card, and the tree hash,
 // which the download must match.
 import { z } from "zod";
-import { SemverVersion, TopPluginId, TreeHash, utf16 } from "@waifucave/clover-protocol";
+import { SemverVersion, TopPluginId, TreeHash, utf16 } from "@waifucave/moss-protocol";
 import { Text, Url } from "../manifest/fields";
 
 export const IndexSchema = z.strictObject({

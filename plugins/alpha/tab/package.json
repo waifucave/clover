@@ -1,10 +1,10 @@
 {
-  "name": "@waifucave/clover-plugin-alpha-tab",
+  "name": "@waifucave/moss-plugin-alpha-tab",
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
-  "description": "Alpha's tab look: its theme on top of Clover's base theme, its layout, its stage art. Data only; this package holds its tests.",
+  "description": "Alpha's tab look: its theme on top of MOSS's base theme, its layout, its stage art. Data only; this package holds its tests.",
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit -p ."

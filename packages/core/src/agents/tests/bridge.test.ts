@@ -1,13 +1,13 @@
 // The bridge as processes: the kernel's pid for a socket's caller, the real bridge process speaking MCP on stdio and
-// Clover's protocol to the endpoint, and a stolen token refused (spike S5 edit 4).
+// MOSS's protocol to the endpoint, and a stolen token refused (spike S5 edit 4).
 import { afterAll, describe, expect, test, setDefaultTimeout } from "bun:test";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RpcError, RpcPeer } from "@waifucave/clover-agent-sdk/acp";
-import { bridgeCloverParts, type BridgeHandlers } from "../bridge/handlers";
-import { serveClover } from "../testing/clover-endpoint";
+import { bridgeMossParts, type BridgeHandlers } from "../bridge/handlers";
+import { serveMoss } from "../testing/moss-endpoint";
 import { BRIDGE_MAIN_PATH } from "../bridge/main";
 import { peerPidOf } from "../bridge/peer";
 import { BRIDGE_ENV } from "../bridge/server";
@@ -18,7 +18,7 @@ import { waitFor } from "./world";
 // Real processes: generous on a loaded CI runner.
 setDefaultTimeout(60_000);
 
-const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-br-")));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-k-br-")));
 const children: ChildProcess[] = [];
 afterAll(() => {
   for (const c of children) c.kill("SIGKILL");
@@ -43,8 +43,8 @@ function endpointWith(handlers: Partial<BridgeHandlers>, tokens: BridgeTokens, n
     glossary: async () => ({ results: [{ name: "pdf", kind: "skill", description: "Read PDFs" }], loaded: [] }),
     ...handlers,
   };
-  // Lane C's Clover server, serving the bridge role as the daemon does.
-  const ep = serveClover(sockPath(name), bridgeCloverParts(tokens, full));
+  // Lane C's MOSS server, serving the bridge role as the daemon does.
+  const ep = serveMoss(sockPath(name), bridgeMossParts(tokens, full));
   return { ep, sent };
 }
 
@@ -87,7 +87,7 @@ describe.skipIf(!posix)("the bridge process", () => {
     expect((discover as RpcError).code).toBe(-32601);
     const init = (await mcp.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } })) as Record<string, unknown>;
     expect(init["protocolVersion"]).toBe("2025-06-18");
-    expect(init["serverInfo"]).toEqual({ name: "clover", version: "0.0.0" });
+    expect(init["serverInfo"]).toEqual({ name: "moss", version: "0.0.0" });
     expect(init["instructions"]).toBe("Use SendMessage to report.");
     const list = (await mcp.request("tools/list", {})) as { tools: { name: string; description: string }[] };
     expect(list.tools.map((t) => t.name)).toEqual(["SendMessage", "Glossary"]);

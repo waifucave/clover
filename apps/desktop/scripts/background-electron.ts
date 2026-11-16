@@ -3,7 +3,7 @@
 // Launch Services never brings it to the front, re-signed ad hoc after the edit. The test refuses any other.
 //
 //   bun run scripts/background-electron.ts <dir>
-//   CLOVER_UI_LOCAL_ELECTRON=<dir>/Electron.app/Contents/MacOS/Electron bun test test/ui-smoke.test.ts
+//   MOSS_UI_LOCAL_ELECTRON=<dir>/Electron.app/Contents/MacOS/Electron bun test test/ui-smoke.test.ts
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";

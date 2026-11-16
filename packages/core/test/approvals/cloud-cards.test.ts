@@ -1,13 +1,13 @@
 // C-M3: lane J's cloud cards as sealed cards through the broker. Table words in `text`, names and ids in `code`, no
 // "always" on any, and a duplicate offers to delete only when the kept VM ranks strictly above it.
 import { describe, expect, test } from "bun:test";
-import type { Card } from "@waifucave/clover-protocol";
+import type { Card } from "@waifucave/moss-protocol";
 import { CLOUD_CARD_TEXT, CLOUD_PAIRED_TEXT, CLOUD_VALUE_MAX, CloudCardDesk, cloudCardConfirm, cloudCardRequest, cloudCardSubject, type CloudCardRequest } from "../../src/approvals/cloud-cards";
-import { CloverApprovalBroker, type CloverApprovalRequest } from "../../src/approvals/broker";
+import { MossApprovalBroker, type MossApprovalRequest } from "../../src/approvals/broker";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import type { CloudCard } from "../../src/computers/cloud";
 
-const TABLE = new Set([...Object.values(CLOUD_CARD_TEXT).flatMap((t) => Object.values(t) as string[]), ...Object.values(CLOUD_PAIRED_TEXT), "Clover doesn't know whether these devices are paired."]);
+const TABLE = new Set([...Object.values(CLOUD_CARD_TEXT).flatMap((t) => Object.values(t) as string[]), ...Object.values(CLOUD_PAIRED_TEXT), "MOSS doesn't know whether these devices are paired."]);
 const ALL: CloudCardRequest[] = [
   { kind: "cloud-create", name: "studio-cloud", provider: "hetzner", size: "cx22", region: "fsn1", folder: "Projects" },
   { kind: "cloud-resize", name: "studio-cloud", provider: "hetzner", from: "cx22", to: "cx32" },
@@ -21,7 +21,7 @@ const ALL: CloudCardRequest[] = [
 ];
 
 describe("cloud cards", () => {
-  test("every kind: a change card, Clover's words in text, names and ids in code, never an always", () => {
+  test("every kind: a change card, MOSS's words in text, names and ids in code, never an always", () => {
     for (const c of ALL) {
       const r = cloudCardRequest(c);
       expect(r.kind).toBe("change");
@@ -44,10 +44,10 @@ describe("cloud cards", () => {
     // J's current shape (no paired flags yet, no `deletable`): reported, never deleted.
     const bare = cloudCardRequest({ kind: "cloud-duplicate", name: "Projects", provider: "hetzner", serverId: "4711", region: "fsn1" });
     expect(bare.options!.every((o) => o.kind === "deny")).toBe(true);
-    expect(bare.fields.reason).toEqual({ type: "text", text: "Clover doesn't know whether these devices are paired." });
+    expect(bare.fields.reason).toEqual({ type: "text", text: "MOSS doesn't know whether these devices are paired." });
   });
 
-  test("a provider's string can't pose as Clover's fact: own lines, capped, pairing in a text field", () => {
+  test("a provider's string can't pose as MOSS's fact: own lines, capped, pairing in a text field", () => {
     const r = cloudCardRequest({ kind: "cloud-duplicate", name: "proj", provider: "hetzner", serverId: "4711", region: "fsn1, device paired: yes\nthe one kept: 1", paired: false, keeper: { serverId: "42", paired: false }, deletable: false });
     const lines = (r.fields.detail as { code: string }).code.split("\n");
     expect(lines).toHaveLength(5); // the kept one has no region here
@@ -72,7 +72,7 @@ describe("cloud cards", () => {
 
   test("through the broker: approve is yes, deny and the report's OK are no", async () => {
     const clock = new FakeClock();
-    const broker = new CloverApprovalBroker({ clock });
+    const broker = new MossApprovalBroker({ clock });
     const confirm = cloudCardConfirm(broker);
     const answer = (optionId: string) => new Promise<Card>((resolve) => {
       const off = broker.watch((e) => {
@@ -94,7 +94,7 @@ describe("cloud cards", () => {
 
   test("a cloud card waits for the person: no 10-minute deny, whatever started it", async () => {
     const clock = new FakeClock();
-    const broker = new CloverApprovalBroker({ clock });
+    const broker = new MossApprovalBroker({ clock });
     let card: Card | undefined;
     broker.watch((e) => { if (e.type === "requested") card = e.card; });
     const desk = new CloudCardDesk(broker);
@@ -111,7 +111,7 @@ describe("cloud cards", () => {
   });
 
   test("stale closes exactly one subject's cards; an outer bound gives unanswered", async () => {
-    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    const broker = new MossApprovalBroker({ clock: new FakeClock() });
     const desk = new CloudCardDesk(broker);
     const dupA = desk.ask({ kind: "cloud-duplicate", name: "proj", provider: "hetzner", serverId: "1", region: "r" });
     const dupB = desk.ask({ kind: "cloud-duplicate", name: "proj", provider: "hetzner", serverId: "2", region: "r" });
@@ -133,7 +133,7 @@ describe("cloud cards", () => {
   });
 
   test("the same kind and subject asked again while open gets the open card, raised once", async () => {
-    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    const broker = new MossApprovalBroker({ clock: new FakeClock() });
     const desk = new CloudCardDesk(broker);
     const asks = [desk.ask(ALL[4]!), desk.ask(ALL[4]!), desk.ask({ ...ALL[4]! } as CloudCardRequest)];
     await Bun.sleep(0);
@@ -152,7 +152,7 @@ describe("cloud cards", () => {
     const a: CloudCardRequest = { kind: "cloud-duplicate", name: "proj", provider: "pack/x", serverId: "1", region: "r", deletable: true, keeper: { serverId: "0", paired: true }, paired: false };
     const b: CloudCardRequest = { kind: "cloud-duplicate", name: "proj", provider: "pack", serverId: "x/1", region: "r", deletable: true, keeper: { serverId: "0", paired: true }, paired: false };
     expect(cloudCardSubject(a)).not.toBe(cloudCardSubject(b));
-    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    const broker = new MossApprovalBroker({ clock: new FakeClock() });
     const desk = new CloudCardDesk(broker);
     const askA = desk.ask(a), askB = desk.ask(b);
     await Bun.sleep(0);
@@ -167,7 +167,7 @@ describe("cloud cards", () => {
   });
 
   test("a changed ask for the same subject closes the old card as stale and raises the new one", async () => {
-    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    const broker = new MossApprovalBroker({ clock: new FakeClock() });
     const desk = new CloudCardDesk(broker);
     const first = desk.ask({ ...ALL[5]! } as CloudCardRequest); // report-only
     await Bun.sleep(0);
@@ -183,7 +183,7 @@ describe("cloud cards", () => {
   });
 
   test("only the person's answer is a no: a withdrawn card is unanswered", async () => {
-    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    const broker = new MossApprovalBroker({ clock: new FakeClock() });
     const desk = new CloudCardDesk(broker);
     // A broker that ends the card without the person: withdrawn, as an interrupt would.
     const withdrawing = { request: async () => ({ allowed: false, by: "withdrawn" as const }) };
@@ -194,10 +194,10 @@ describe("cloud cards", () => {
 
   test("waitsForUser holds only for a change card: a confirm card still expires", async () => {
     const clock = new FakeClock();
-    const broker = new CloverApprovalBroker({ clock });
+    const broker = new MossApprovalBroker({ clock });
     let card: Card | undefined;
     broker.watch((e) => { if (e.type === "requested") card = e.card; });
-    const pending = broker.request({ kind: "confirm", origin: "plugin", computers: [], effect: "other", pluginId: "p", waitsForUser: true, fields: { title: { type: "text", text: "x" } } } as CloverApprovalRequest);
+    const pending = broker.request({ kind: "confirm", origin: "plugin", computers: [], effect: "other", pluginId: "p", waitsForUser: true, fields: { title: { type: "text", text: "x" } } } as MossApprovalRequest);
     await Bun.sleep(0);
     expect(card!.expiresAt).not.toBeNull();
     clock.advance(10 * 60 * 1000);

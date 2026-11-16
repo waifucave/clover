@@ -1,2 +1,2 @@
-// Schedules in a routine's time zone, from the bundled schedule trigger, clover/trigger-schedule (spec §7). Owner: lane D.
-export * from "../../../../plugins/clover/plugins/trigger-schedule/src/zone";
+// Schedules in a routine's time zone, from the bundled schedule trigger, moss/trigger-schedule (spec §7). Owner: lane D.
+export * from "../../../../plugins/moss/plugins/trigger-schedule/src/zone";

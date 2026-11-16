@@ -6,7 +6,7 @@
 // (§6.5, §8.5). Owner: lane D.
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { MemoryEntry } from "@waifucave/clover-protocol";
+import type { MemoryEntry } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 
 export const MEMORY_INDEX = "MEMORY.md";

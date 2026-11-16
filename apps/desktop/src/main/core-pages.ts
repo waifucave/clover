@@ -8,7 +8,7 @@
 // daemon's credential store and nowhere else: never into a log line or an error message here.
 // The plugin manager lists every plugin but the app's own and turns one off or removes it; turning plugins on waits
 // for a normal start, where its OK is a sealed card.
-import type { PluginAuthView, PluginSummary, PointView } from "@waifucave/clover-protocol";
+import type { PluginAuthView, PluginSummary, PointView } from "@waifucave/moss-protocol";
 import { SAFE_MODE_PLUGINS } from "./ui/model";
 import type { KeyTarget } from "./ui/tree-calls";
 import { textIn } from "./ui/strings";
@@ -75,7 +75,7 @@ export interface ManagedPlugin {
   child: boolean;
 }
 
-/** Every plugin but the app's own (`clover`, `alpha`, which safe mode runs), for the plugin manager. */
+/** Every plugin but the app's own (`moss`, `alpha`, which safe mode runs), for the plugin manager. */
 export async function listManaged(client: PageClient, lang: string): Promise<ManagedPlugin[]> {
   const { plugins } = await client.request<{ plugins: PluginSummary[] }>("plugin.list");
   return plugins
@@ -108,7 +108,7 @@ export interface PageDeps {
   keyTarget?(): { target: KeyTarget; session: string; shown?: boolean } | undefined;
   /** Whether the daemon has answered with its registry open (its plugin list is not the empty one it gives while opening). */
   registryReady(): boolean;
-  /** Set when the app has had no daemon for a long time (the pair's `stuck`): the root says Clover can't start. */
+  /** Set when the app has had no daemon for a long time (the pair's `stuck`): the root says MOSS can't start. */
   daemonDown?(): boolean;
 }
 
@@ -150,7 +150,7 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
     return { ok: true };
   }
   const client = deps.client();
-  if (client === undefined) throw new Error("Clover isn't running");
+  if (client === undefined) throw new Error("MOSS isn't running");
   const id = typeof p.id === "string" && ID_RE.test(p.id) ? p.id : undefined;
   switch (name as PageCall) {
     case "welcome.providers":

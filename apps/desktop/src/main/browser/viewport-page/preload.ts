@@ -14,7 +14,7 @@ interface Ipc {
   on(channel: string, listener: (event: unknown, ...args: any[]) => void): void;
 }
 const ipc = (require("electron") as { ipcRenderer: Ipc }).ipcRenderer;
-const CH = "clover-browser-viewport";
+const CH = "moss-browser-viewport";
 
 interface FrameMeta { seq: number; fullW: number; fullH: number; x: number; y: number; w: number; h: number }
 

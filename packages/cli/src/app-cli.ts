@@ -1,22 +1,22 @@
-// `clover-core app screenshot` and `clover-core app frames`: what this computer's app draws, for the user at a terminal
+// `moss-core app screenshot` and `moss-core app frames`: what this computer's app draws, for the user at a terminal
 // (the owner's ask for 14d, so whoever helps him can see the app without being sent screenshots). The daemon asks the
 // app (`app.capture` → `app.window.capture`), whose main process takes Electron's own picture of each window's page,
 // never the screen: no Screen Recording permission, no prompt, and no window shown, raised, focused or resized.
 //
-//   clover-core app screenshot [--window main|island|pill|all] --out <dir> [--frames]
-//   clover-core app frames [--window …]            (the frame list alone, no pictures)
-//   clover-core app open <target> [--window main]  (bot:<id>, app:<key> or a page's key, settings[:<section>], plugins,
+//   moss-core app screenshot [--window main|island|pill|all] --out <dir> [--frames]
+//   moss-core app frames [--window …]            (the frame list alone, no pictures)
+//   moss-core app open <target> [--window main]  (bot:<id>, app:<key> or a page's key, settings[:<section>], plugins,
 //                                                   archive, code: the route the app's own sidebar uses)
-//   clover-core app where                          (where the main window is, and its frames; nothing changes)
+//   moss-core app where                          (where the main window is, and its frames; nothing changes)
 //
 // One PNG per window drawn, `<dir>/<window>.png`; then JSON on stdout: each window's name, bounds, display scale,
 // whether it is visible, whether it was drawn (a hidden or minimised window is "not drawn", with no file), the file,
 // and with `--frames` each document's origin, mount, size and visibility (ids and sizes only, no page text).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { AppCaptureResult, AppOpenResult, CapturedWindow } from "@waifucave/clover-protocol";
+import type { AppCaptureResult, AppOpenResult, CapturedWindow } from "@waifucave/moss-protocol";
 
-export const APP_USAGE = "usage: clover-core app screenshot [--window main|island|pill|all] --out <dir> [--frames]\n       clover-core app frames [--window main|island|pill|all]\n       clover-core app open <bot:<id>|app:<key>|<page key>|settings[:<section>]|plugins|archive|code> [--window main]\n       clover-core app where";
+export const APP_USAGE = "usage: moss-core app screenshot [--window main|island|pill|all] --out <dir> [--frames]\n       moss-core app frames [--window main|island|pill|all]\n       moss-core app open <bot:<id>|app:<key>|<page key>|settings[:<section>]|plugins|archive|code> [--window main]\n       moss-core app where";
 
 export interface AppCliDeps {
   /** One call to the daemon: `app.capture` answers an `AppCaptureResult`, `app.open` and `app.where` an `AppOpenResult`. */

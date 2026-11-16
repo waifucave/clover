@@ -5,8 +5,8 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { lookalikeOf as runtimeLookalikeOf } from "@waifucave/clover-agent-runtime/lookalike";
-import { lookalikeOf } from "@waifucave/clover-plugin-sdk/fold";
-import type { Caller } from "@waifucave/clover-protocol";
+import { lookalikeOf } from "@waifucave/moss-plugin-sdk/fold";
+import type { Caller } from "@waifucave/moss-protocol";
 import type { InvokeRequest } from "../../../src/contracts/plugin-host";
 import type { FencedRun, FencedRunResult, FencedSpawner } from "../../../src/fence/spawn";
 import type { Contribution } from "../../../src/contracts/plugin-registry";
@@ -190,7 +190,7 @@ describe("command hooks, through the process door (Claude Code's protocol)", () 
     expect(r.cwd).toBe("/plugins/guard");
     expect(r.timeoutMs).toBe(30_000);
     expect(JSON.parse(r.stdin!)).toMatchObject({ event: "tool.before", session: { id: "b_luna", caller }, tool: { name: "Bash" }, input: { command: "ls" } });
-    expect(Object.keys(r.env).sort()).toEqual(["CLAUDE_PLUGIN_ROOT", "CLOVER_PLUGIN_ID", "CLOVER_PLUGIN_ROOT", "CLOVER_SESSION_ID", "HOME", "PATH"].filter((k) => k !== "HOME" || process.env.HOME !== undefined).sort());
+    expect(Object.keys(r.env).sort()).toEqual(["CLAUDE_PLUGIN_ROOT", "MOSS_PLUGIN_ID", "MOSS_PLUGIN_ROOT", "MOSS_SESSION_ID", "HOME", "PATH"].filter((k) => k !== "HOME" || process.env.HOME !== undefined).sort());
   });
 
   test("a refused run of a tool.before hook (no fence here) DENIES the call with the reason; a non-blocking one is skipped and the action goes on", async () => {
@@ -243,7 +243,7 @@ describe("command hooks, through the process door (Claude Code's protocol)", () 
     expect(await hooks.messageIn(session, "hi")).toBe("rewritten");
   });
 
-  test("Claude Code's input names ride beside Clover's: hook_event_name, session_id, cwd, tool_name, tool_input, tool_response, prompt", async () => {
+  test("Claude Code's input names ride beside MOSS's: hook_event_name, session_id, cwd, tool_name, tool_input, tool_response, prompt", async () => {
     const { hooks, runs } = commandHooksOver([hookEntry("cc", { id: "c", on: ["tool.before", "tool.after", "message.in", "turn.start"], command: "./c.sh" })], () => exited(0));
     await hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "ls" });
     await hooks.toolAfter(session, { name: "Bash", callId: "c1" }, { command: "ls" }, { stdout: "a" });
@@ -309,7 +309,7 @@ describe("command hooks, through the process door (Claude Code's protocol)", () 
 
   test("the stdin cap counts bytes, not UTF-16 units: an input of two-byte characters under the cap in units but over it in bytes is refused", async () => {
     const { hooks, runs } = commandHooksOver([hookEntry("big", { id: "b", on: ["tool.before"], command: "./b.sh" })], () => exited(0));
-    // The input rides twice (Clover's `input`, Claude Code's `tool_input`): about 2/3 of the cap in UTF-16 units and
+    // The input rides twice (MOSS's `input`, Claude Code's `tool_input`): about 2/3 of the cap in UTF-16 units and
     // 4/3 of it in bytes.
     const wide = "é".repeat(Math.floor(COMMAND_HOOK_STDIN_MAX / 3));
     expect(JSON.stringify({ input: { content: wide }, tool_input: { content: wide } }).length).toBeLessThan(COMMAND_HOOK_STDIN_MAX);
@@ -324,17 +324,17 @@ describe("command hooks, through the process door (Claude Code's protocol)", () 
   test("a command hook's environment on Windows: SystemRoot, ComSpec, TEMP and the system PATH joined with ';'; nothing else of the core's", () => {
     const env = commandHookEnv("acme/guard", "C:\\plugins\\acme", { id: "b_luna" }, "win32", {
       SystemRoot: "C:\\Windows", ComSpec: "C:\\Windows\\System32\\cmd.exe", TEMP: "C:\\Users\\u\\AppData\\Local\\Temp", USERPROFILE: "C:\\Users\\u",
-      CLOVER_TOKEN: "not-for-hooks", Path: "C:\\evil",
+      MOSS_TOKEN: "not-for-hooks", Path: "C:\\evil",
     });
-    expect(env).toMatchObject({ SystemRoot: "C:\\Windows", ComSpec: "C:\\Windows\\System32\\cmd.exe", TEMP: "C:\\Users\\u\\AppData\\Local\\Temp", USERPROFILE: "C:\\Users\\u", CLOVER_PLUGIN_ROOT: "C:\\plugins\\acme", CLAUDE_PLUGIN_ROOT: "C:\\plugins\\acme" });
+    expect(env).toMatchObject({ SystemRoot: "C:\\Windows", ComSpec: "C:\\Windows\\System32\\cmd.exe", TEMP: "C:\\Users\\u\\AppData\\Local\\Temp", USERPROFILE: "C:\\Users\\u", MOSS_PLUGIN_ROOT: "C:\\plugins\\acme", CLAUDE_PLUGIN_ROOT: "C:\\plugins\\acme" });
     const parts = env.PATH!.split(";");
     expect(parts[0]).toBe("C:\\Windows\\System32");
     expect(parts.every((p) => p.startsWith("C:\\Windows"))).toBe(true);
     expect(env.PATH).not.toContain(":/");
-    expect(env.CLOVER_TOKEN).toBeUndefined();
+    expect(env.MOSS_TOKEN).toBeUndefined();
     // With no SystemRoot given, Windows' own default; on macOS and Linux the POSIX PATH.
     expect(commandHookEnv("p", "C:\\p", { id: "s" }, "win32", {}).ComSpec).toBe("C:\\Windows\\System32\\cmd.exe");
-    expect(commandHookEnv("p", "/p", { id: "s" }, "darwin", { HOME: "/Users/u" })).toEqual({ PATH: "/usr/bin:/bin:/usr/sbin:/sbin", HOME: "/Users/u", CLOVER_PLUGIN_ID: "p", CLOVER_SESSION_ID: "s", CLOVER_PLUGIN_ROOT: "/p", CLAUDE_PLUGIN_ROOT: "/p" });
+    expect(commandHookEnv("p", "/p", { id: "s" }, "darwin", { HOME: "/Users/u" })).toEqual({ PATH: "/usr/bin:/bin:/usr/sbin:/sbin", HOME: "/Users/u", MOSS_PLUGIN_ID: "p", MOSS_SESSION_ID: "s", MOSS_PLUGIN_ROOT: "/p", CLAUDE_PLUGIN_ROOT: "/p" });
   });
 
   test("with no process door at all, a command hook is skipped and reported once", async () => {
@@ -416,7 +416,7 @@ describe("hook failures", () => {
 
 describe("Glossary", () => {
   const dirs: string[] = [];
-  const temp = () => { const d = mkdtempSync(join(tmpdir(), "clover-a3-g-")); dirs.push(d); return d; };
+  const temp = () => { const d = mkdtempSync(join(tmpdir(), "moss-a3-g-")); dirs.push(d); return d; };
 
   function registry(folder: string, extra: { points?: unknown[]; agents?: unknown[] } = {}) {
     return {
@@ -667,11 +667,11 @@ describe("plugin MCP servers sharing a name", () => {
     const { mergedServers } = await import("../../../src/runtime-sdk/turn-loop/driver");
     const obj = { type: "object" as const };
     const merged = mergedServers([
-      { server: "clover", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: obj }, { name: "WebFetch", inputSchema: obj }] },
-      { server: "clover", plugin: "clover/browser", tools: [{ name: "Browser", inputSchema: obj }, { name: "WebFetch", description: "theirs", inputSchema: obj }] },
+      { server: "moss", plugin: "moss/web", tools: [{ name: "WebSearch", inputSchema: obj }, { name: "WebFetch", inputSchema: obj }] },
+      { server: "moss", plugin: "moss/browser", tools: [{ name: "Browser", inputSchema: obj }, { name: "WebFetch", description: "theirs", inputSchema: obj }] },
       { server: "blender", plugin: "blender", tools: [{ name: "Render", inputSchema: obj }] },
     ]);
-    expect(merged.map((s) => [s.server, s.tools.map((t) => t.name)])).toEqual([["blender", ["Render"]], ["clover", ["Browser", "WebFetch", "WebSearch"]]]);
+    expect(merged.map((s) => [s.server, s.tools.map((t) => t.name)])).toEqual([["blender", ["Render"]], ["moss", ["Browser", "WebFetch", "WebSearch"]]]);
     expect(merged[1]!.tools.find((t) => t.name === "WebFetch")!.description).toBe("theirs");
   });
 });
@@ -707,28 +707,28 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
     const obj = { type: "object" as const };
     const refused: string[] = [];
     const servers = [
-      { server: "clover", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: obj }] },
-      { server: "clover", plugin: "acme", tools: [{ name: "Steal", inputSchema: obj }] },
+      { server: "moss", plugin: "moss/web", tools: [{ name: "WebSearch", inputSchema: obj }] },
+      { server: "moss", plugin: "acme", tools: [{ name: "Steal", inputSchema: obj }] },
     ];
     const merged = mergedServers(servers, (s) => refused.push(s.plugin));
-    expect(merged.map((s) => [s.plugin, s.tools.map((t) => t.name)])).toEqual([["clover/web", ["WebSearch"]]]);
+    expect(merged.map((s) => [s.plugin, s.tools.map((t) => t.name)])).toEqual([["moss/web", ["WebSearch"]]]);
     expect(refused).toEqual(["acme"]);
-    expect(keptServers(servers).map((s) => s.plugin)).toEqual(["clover/web"]);
+    expect(keptServers(servers).map((s) => s.plugin)).toEqual(["moss/web"]);
     // With no tree named after it, the first tree by plugin id holds a name.
     const wrapped = mergedServers([{ server: "blender", plugin: "zz", tools: [] }, { server: "blender", plugin: "mcp-blender", tools: [] }], (s) => refused.push(s.plugin));
     expect(wrapped.map((s) => s.plugin)).toEqual(["mcp-blender"]);
     expect(refused).toEqual(["acme", "zz"]);
-    // An installed tree's top-level id is its own name even when it gives no server, and `clover` always is.
+    // An installed tree's top-level id is its own name even when it gives no server, and `moss` always is.
     refused.length = 0;
-    expect(mergedServers([{ server: "clover", plugin: "acme", tools: [] }], (s) => refused.push(s.plugin))).toEqual([]);
-    expect(mergedServers([{ server: "blender", plugin: "acme", tools: [] }, { server: "ok", plugin: "acme", tools: [] }], (s) => refused.push(s.plugin), ["clover", "blender"]).map((s) => s.server)).toEqual(["ok"]);
+    expect(mergedServers([{ server: "moss", plugin: "acme", tools: [] }], (s) => refused.push(s.plugin))).toEqual([]);
+    expect(mergedServers([{ server: "blender", plugin: "acme", tools: [] }, { server: "ok", plugin: "acme", tools: [] }], (s) => refused.push(s.plugin), ["moss", "blender"]).map((s) => s.server)).toEqual(["ok"]);
     expect(refused).toEqual(["acme", "acme"]);
     expect(keptServers([{ server: "blender", plugin: "acme", tools: [] }], ["blender"])).toEqual([]);
   });
 
   test("the embedded seam's base widens nothing, and a provider fill may set only the model's own keys (review F1)", async () => {
     const { embeddedSessionOptions, fillProvider, PROVIDER_FILL_KEYS } = await import("../../../src/runtime-sdk/turn-loop/embedded-session");
-    const seam = embeddedSessionOptions({ home: "/tmp/clover-a3-none", spawn: (() => { throw new Error("unused"); }) as never }, { model: "anthropic/claude-x", cwd: "/tmp" });
+    const seam = embeddedSessionOptions({ home: "/tmp/moss-a3-none", spawn: (() => { throw new Error("unused"); }) as never }, { model: "anthropic/claude-x", cwd: "/tmp" });
     expect(seam.settingSources).toEqual([]);
     expect("hostMessaging" in seam || "allowedTools" in seam || "permissions" in seam || "hooks" in seam).toBe(false);
     // A session's finished options, as the driver and the backend hand them over.
@@ -820,15 +820,15 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
       const kept = mergedServers(servers, (r) => refused.push(`${r.plugin}:${r.server}`), reserved).map((x) => `${x.plugin}:${x.server}`);
       return { kept, refused };
     };
-    expect(run([s("clover", "acme")], ["clover"])).toEqual({ kept: [], refused: ["acme:clover"] });
-    expect(run([s("Clover", "acme")], ["clover"])).toEqual({ kept: [], refused: ["acme:Clover"] });
-    expect(run([s("clover_", "acme"), s("clover-", "acme2")], ["clover"])).toEqual({ kept: [], refused: ["acme:clover_", "acme2:clover-"] });
-    expect(run([s("clover", "clover-x")], ["clover", "clover-x"])).toEqual({ kept: [], refused: ["clover-x:clover"] });
-    expect(run([s("clover", "Clover")], ["clover", "Clover"])).toEqual({ kept: [], refused: ["Clover:clover"] });
-    expect(run([s("tools", "acme")], ["clover", "tools", "acme"])).toEqual({ kept: [], refused: ["acme:tools"] });
+    expect(run([s("moss", "acme")], ["moss"])).toEqual({ kept: [], refused: ["acme:moss"] });
+    expect(run([s("MOSS", "acme")], ["moss"])).toEqual({ kept: [], refused: ["acme:MOSS"] });
+    expect(run([s("moss_", "acme"), s("moss-", "acme2")], ["moss"])).toEqual({ kept: [], refused: ["acme:moss_", "acme2:moss-"] });
+    expect(run([s("moss", "moss-x")], ["moss", "moss-x"])).toEqual({ kept: [], refused: ["moss-x:moss"] });
+    expect(run([s("moss", "MOSS")], ["moss", "MOSS"])).toEqual({ kept: [], refused: ["MOSS:moss"] });
+    expect(run([s("tools", "acme")], ["moss", "tools", "acme"])).toEqual({ kept: [], refused: ["acme:tools"] });
     // By namespace: the tree `blender-tools` declares namespace `blender`, so `blender` is its, not the first comer's.
-    expect(run([s("blender", "acme"), s("blender", "blender-tools/render")], new Map([["clover", "clover"], ["blender", "blender-tools"]]))).toEqual({ kept: ["blender-tools/render:blender"], refused: ["acme:blender"] });
-    expect(run([s("ok", "acme")], ["clover"])).toEqual({ kept: ["acme:ok"], refused: [] });
+    expect(run([s("blender", "acme"), s("blender", "blender-tools/render")], new Map([["moss", "moss"], ["blender", "blender-tools"]]))).toEqual({ kept: ["blender-tools/render:blender"], refused: ["acme:blender"] });
+    expect(run([s("ok", "acme")], ["moss"])).toEqual({ kept: ["acme:ok"], refused: [] });
   });
 
   test("F8: the seam names the process holder for the session's commands, beside the daemon by default (macOS)", async () => {
@@ -836,18 +836,18 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
     const { mkdtempSync, writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const { tmpdir } = await import("node:os");
-    const dir = mkdtempSync(join(tmpdir(), "clover-a3-holder-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-a3-holder-"));
     const holder = join(dir, PROCESS_HOLDER_FILE);
     writeFileSync(holder, "");
     const spawn = (() => { throw new Error("unused"); }) as never;
-    const named = embeddedSessionOptions({ home: dir, spawn, processHolder: holder, env: { CLOVER_PROCESS_HOLDER: "/elsewhere" } }, { model: "winter-test/echo", cwd: dir });
-    const missing = embeddedSessionOptions({ home: dir, spawn, processHolder: join(dir, "nope"), env: { CLOVER_PROCESS_HOLDER: "/elsewhere" } }, { model: "winter-test/echo", cwd: dir });
+    const named = embeddedSessionOptions({ home: dir, spawn, processHolder: holder, env: { MOSS_PROCESS_HOLDER: "/elsewhere" } }, { model: "winter-test/echo", cwd: dir });
+    const missing = embeddedSessionOptions({ home: dir, spawn, processHolder: join(dir, "nope"), env: { MOSS_PROCESS_HOLDER: "/elsewhere" } }, { model: "winter-test/echo", cwd: dir });
     if (process.platform === "darwin") {
-      expect(named.env?.CLOVER_PROCESS_HOLDER).toBe(holder);
+      expect(named.env?.MOSS_PROCESS_HOLDER).toBe(holder);
       expect(processHolderFor({ processHolder: holder })).toBe(holder);
-    } else expect(named.env?.CLOVER_PROCESS_HOLDER).toBeUndefined();
+    } else expect(named.env?.MOSS_PROCESS_HOLDER).toBeUndefined();
     // Only the seam names it: a caller's own value never stands.
-    expect(missing.env?.CLOVER_PROCESS_HOLDER).toBeUndefined();
+    expect(missing.env?.MOSS_PROCESS_HOLDER).toBeUndefined();
     // On macOS a missing holder is said once (not once per session), and only there.
     const lines: string[] = [];
     const gone = join(dir, "gone");
@@ -909,7 +909,7 @@ describe("the agents' hook source", () => {
   });
 });
 
-describe("an ACP request under Clover's tool names", () => {
+describe("an ACP request under MOSS's tool names", () => {
   test("execute is Bash, edit is Edit or Write by what it carries, read/fetch/search likewise; the raw kind kept", async () => {
     const { acpHookCall } = await import("../../../src/agents/acp-hook-call");
     expect(acpHookCall({ toolKind: "execute", rawInput: { command: "rm -rf /" } })).toEqual({ name: "Bash", input: { command: "rm -rf /", acpKind: "execute" } });

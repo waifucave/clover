@@ -43,13 +43,13 @@ function offered(): OfferedServer[] {
 }
 
 beforeAll(async () => {
-  home = mkdtempSync(join(tmpdir(), "clover-bundled-tools-"));
-  await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["alpha", "clover"], cloverHome: home });
+  home = mkdtempSync(join(tmpdir(), "moss-bundled-tools-"));
+  await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["alpha", "moss"], mossHome: home });
   const source = devBundledSource(home)!;
   const s = stageBundledPlugins({ ...source, out: stagedBundledDir(home) });
   staged = { dir: s.dir!, digests: s.digests! };
   mkdirSync(join(home, "plugins"), { recursive: true });
-  opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), bundledDirs: [staged.dir], settleMs: 50 });
+  opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), bundledDirs: [staged.dir], settleMs: 50 });
 }, 240_000);
 
 afterAll(() => {
@@ -61,17 +61,17 @@ describe("the build's copy's declared tools on the staged tree", () => {
   const built = () => builtCopy({ record: (id: string) => opened.registry.get(id), staged });
   test("the builder's PluginNew is a read and the web plugin's tools are a search and a fetch, from their manifests", () => {
     const reg = opened.registry;
-    expect(offered().find((s) => s.plugin === "clover/plugin-builder")).toEqual({ server: "builder", plugin: "clover/plugin-builder", tools: [{ name: "PluginNew" }] });
-    expect(pluginToolReadOnly(reg, "clover/plugin-builder", "builder", "PluginNew", { built: built() })).toBe(true);
-    expect(pluginWebTool(reg, "clover/web", "web", "WebSearch", { built: built() })).toBe("web-search");
-    expect(pluginWebTool(reg, "clover/web", "web", "WebFetch", { built: built() })).toBe("web-fetch");
+    expect(offered().find((s) => s.plugin === "moss/plugin-builder")).toEqual({ server: "builder", plugin: "moss/plugin-builder", tools: [{ name: "PluginNew" }] });
+    expect(pluginToolReadOnly(reg, "moss/plugin-builder", "builder", "PluginNew", { built: built() })).toBe(true);
+    expect(pluginWebTool(reg, "moss/web", "web", "WebSearch", { built: built() })).toBe("web-search");
+    expect(pluginWebTool(reg, "moss/web", "web", "WebFetch", { built: built() })).toBe("web-fetch");
     // Another tool, or the same tools judged without the build's copy (a child of a tree that reaches the network):
     // never a read or a web tool.
-    expect(pluginToolReadOnly(reg, "clover/plugin-builder", "builder", "Nope", { built: built() })).toBe(false);
-    expect(pluginToolReadOnly(reg, "clover/plugin-builder", "builder", "PluginNew")).toBe(false);
-    expect(pluginWebTool(reg, "clover/web", "web", "WebSearch")).toBeUndefined();
-    expect(pluginToolReadOnly(reg, "clover/plugin-builder", "builder", "PluginNew", { built: builtCopy({ record: (id) => reg.get(id), staged: undefined }) })).toBe(false);
-    expect(pluginToolReadOnly(reg, "clover/plugin-builder", "builder", "PluginNew", { built: builtCopy({ record: (id) => { const r = reg.get(id); return r === undefined ? undefined : { ...r, source: "local" }; }, staged }) })).toBe(false);
+    expect(pluginToolReadOnly(reg, "moss/plugin-builder", "builder", "Nope", { built: built() })).toBe(false);
+    expect(pluginToolReadOnly(reg, "moss/plugin-builder", "builder", "PluginNew")).toBe(false);
+    expect(pluginWebTool(reg, "moss/web", "web", "WebSearch")).toBeUndefined();
+    expect(pluginToolReadOnly(reg, "moss/plugin-builder", "builder", "PluginNew", { built: builtCopy({ record: (id) => reg.get(id), staged: undefined }) })).toBe(false);
+    expect(pluginToolReadOnly(reg, "moss/plugin-builder", "builder", "PluginNew", { built: builtCopy({ record: (id) => { const r = reg.get(id); return r === undefined ? undefined : { ...r, source: "local" }; }, staged }) })).toBe(false);
   });
 
   test("Alpha's call of PluginNew, loaded through Glossary first, raises no card at the default level", async () => {
@@ -79,7 +79,7 @@ describe("the build's copy's declared tools on the staged tree", () => {
     const broker = { request: async (r: ApprovalRequest) => { asked.push(structuredClone(r)); return { allowed: r.effect === "read", by: r.effect === "read" ? "level" : "card" } as never; } };
     const check = botApprovalCheck(broker, {
       hostTools: () => ["Glossary", "PluginValidate", "PluginStatus", "PluginInstall", "SendMessage", "ListAgents", "TaskStop", "Agent", "RequestAccess"],
-      readOnlyTool: (_ctx, tool) => tool === "mcp__builder__PluginNew" && pluginToolReadOnly(opened.registry, "clover/plugin-builder", "builder", "PluginNew", { built: built() }),
+      readOnlyTool: (_ctx, tool) => tool === "mcp__builder__PluginNew" && pluginToolReadOnly(opened.registry, "moss/plugin-builder", "builder", "PluginNew", { built: built() }),
       levelOf: () => "ask-risky",
     });
     const ctx = { botId: "alpha", sessionId: "s1", computer: "Studio", paths: { scratch: join(home, "scratch", "alpha") }, caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "alpha" } } as unknown as BotSessionContext;
@@ -92,8 +92,8 @@ describe("the build's copy's declared tools on the staged tree", () => {
   });
 
   test("a staged manifest that no longer matches its digest is never the build's copy", () => {
-    const rec = opened.registry.get("clover/plugin-builder")!;
-    writeFileSync(join(rec.folder, "clover.json"), "{}\n");
-    expect(built()("clover/plugin-builder")).toBe(false);
+    const rec = opened.registry.get("moss/plugin-builder")!;
+    writeFileSync(join(rec.folder, "moss.json"), "{}\n");
+    expect(built()("moss/plugin-builder")).toBe(false);
   });
 });

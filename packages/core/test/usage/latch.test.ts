@@ -19,7 +19,7 @@ function service(over: Partial<LegacyServiceDeps> & { db?: UsageDb; home?: strin
   const logs: string[] = [];
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined, claudeExecutable: () => undefined,
-    cloverCodexWindows: () => [],  ingestEveryMs: 0, planWaitMs: 20_000,
+    mossCodexWindows: () => [],  ingestEveryMs: 0, planWaitMs: 20_000,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...over,
   });

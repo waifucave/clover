@@ -23,7 +23,7 @@ import type { ProjectedEvent } from "./types";
  * (`clover-sdk/dist/options.d.ts:99` on the installed barrel — the exact option name, checked,
  * not remembered). So:
  *
- *   forwardSubagentText OFF (the default, and what a Clover session gets today):
+ *   forwardSubagentText OFF (the default, and what a MOSS session gets today):
  *       thread_started  ← the spawning `tool_use` block
  *       …the child's own tool_call/tool_result events, on the child's threadId…
  *       thread_completed ← the spawning call's `tool_result` block — for a FOREGROUND spawn, or one
@@ -46,8 +46,8 @@ import type { ProjectedEvent } from "./types";
  *
  * **Task 16 obligation, recorded here and in the task report:** the
  * engine's golden carries the child's own `assistant_message`, so leaving `forwardSubagentText` off
- * makes child transcripts thinner on the Clover leg than they are today. Turning it on is a
- * one-field decision in `buildCloverOptions`, and it is a decision, not an oversight — it doubles
+ * makes child transcripts thinner on the MOSS leg than they are today. Turning it on is a
+ * one-field decision in `buildMossOptions`, and it is a decision, not an oversight — it doubles
  * the frames a fan-out of subagents puts on the wire.
  *
  * ── WHAT THIS MODULE DELIBERATELY DOES NOT PRODUCE ──────────────────────────────────────────────
@@ -61,13 +61,13 @@ import type { ProjectedEvent } from "./types";
  * fact the pair would have carried.
  */
 
-/** The spawning tools whose `tool_use` opens a child thread. Clover's name is `Agent`; the host
+/** The spawning tools whose `tool_use` opens a child thread. MOSS's name is `Agent`; the host
  *  name it is projected under is `spawn_agent` (ruling P8b-25) — matched on BOTH because
  *  `tool-names.ts` maps the wire name before a `tool_call` is built, and this module reads the
  *  raw wire block. */
 const SPAWN_TOOLS = new Set(["Agent", "Task", "spawn_agent"]);
 
-export const isSpawnTool = (cloverName: string): boolean => SPAWN_TOOLS.has(cloverName);
+export const isSpawnTool = (mossName: string): boolean => SPAWN_TOOLS.has(mossName);
 
 export interface ChildRecord {
   /** The spawning `tool_use.id`, used as the host `threadId`. */
@@ -125,12 +125,12 @@ export function threadCompleted(threadId: string, stopReason: ThreadStopReason, 
  *  - `{kind:"background"}` — the spawn LAUNCHED a child that is still running
  *    (`run_in_background`). The thread stays open until a background-task terminal frame names it
  *    (`acceptTaskFrame`). Recognised on both legs:
- *      Clover:   the output is JSON `{"status":"async_launched","agentId","taskId",…}` (agent.ts);
+ *      MOSS:   the output is JSON `{"status":"async_launched","agentId","taskId",…}` (agent.ts);
  *      official: the user frame's `tool_use_result` is `{status:"async_launched",…}` — trusted only
  *                when the frame carries exactly one tool_result, since the field is frame-level —
  *                or, failing that, Claude Code's rendered text "Async agent launched successfully."
  *                (`AgentTool.tsx`'s `mapToolResultToToolResultBlockParam`).
- *    `taskId` is Clover's background-task id when the result names one — the fallback correlator
+ *    `taskId` is MOSS's background-task id when the result names one — the fallback correlator
  *    for a `task_updated` patch, which carries no `tool_use_id`.
  */
 export type SpawnOutcome = { kind: "done"; stopReason: ThreadStopReason; failed: boolean } | { kind: "background"; taskId?: string };
@@ -219,14 +219,14 @@ export interface TaskRow { id: string; subject: string; status: HostTaskStatus; 
 // doc comment on `task_updated` requires (a live task view removes the row rather than upserting a
 // phantom that outlives the delete).
 
-/** Clover's `TaskCreate`/`TaskUpdate` tool names, matched on the RAW runtime name — the SAME
+/** MOSS's `TaskCreate`/`TaskUpdate` tool names, matched on the RAW runtime name — the SAME
  *  convention `isSpawnTool` uses, and for the same reason: the projector's assistant-frame loop
  *  reads the wire block before `renameTool` runs. Matched identically on the official leg: Claude
  *  Code's own "current task system" is the SAME four tools under the SAME names
- *  (`clover-vs-cc-tools.md`'s tool-parity table), so a `claude` child's `TaskCreate`/`TaskUpdate`
- *  calls are indistinguishable from a Clover child's at this layer. */
+ *  (`moss-vs-cc-tools.md`'s tool-parity table), so a `claude` child's `TaskCreate`/`TaskUpdate`
+ *  calls are indistinguishable from a MOSS child's at this layer. */
 const TODO_TOOLS = new Set(["TaskCreate", "TaskUpdate"]);
-export const isTodoTool = (cloverName: string): boolean => TODO_TOOLS.has(cloverName);
+export const isTodoTool = (mossName: string): boolean => TODO_TOOLS.has(mossName);
 
 /** A `TaskCreate`/`TaskUpdate` call's own input, tracked from its `tool_use` block until its
  *  `tool_result` resolves it — needed because NEITHER result shape echoes the new field values

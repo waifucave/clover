@@ -13,7 +13,7 @@ import {
   ConnWriter, ERR, IMAGE_DATA_INVALID, IMAGE_INPUT_UNSUPPORTED, IMAGE_INPUT_UNSUPPORTED_MESSAGE, IMAGE_SESSION_NOT_CODE,
   IMAGE_SESSION_NO_MODEL, IMAGE_SESSION_NO_MODEL_MESSAGE, IMAGE_STAGE_FAILED, IMAGE_TOO_LARGE, IMAGE_TOO_LARGE_MESSAGE, IMAGE_TYPE_MISMATCH, IMAGE_TYPE_UNSUPPORTED, LineDecoder, METHODS, PROTOCOL_VERSION,
   IMAGE_FILE_EXTENSIONS, NDJSON_MAX_LINE_BYTES, STAGE_IMAGE_B64_MAX_LENGTH, STAGE_IMAGE_LINE_HEADROOM_BYTES, STAGE_IMAGE_MAX_BYTES, STAGE_IMAGE_MEDIA_TYPES, encodeLine, type SessionEvent, type WritableSocket,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
@@ -89,18 +89,18 @@ describe("session.stageImage (code-mode image input)", () => {
   let tmpBase = "";
   let savedTmp: string | undefined;
   beforeEach(() => {
-    savedTmp = process.env.CLOVER_TMPDIR;
-    tmpBase = mkdtempSync(join(tmpdir(), "clover-stage-tmp-"));
-    process.env.CLOVER_TMPDIR = tmpBase;
+    savedTmp = process.env.MOSS_TMPDIR;
+    tmpBase = mkdtempSync(join(tmpdir(), "moss-stage-tmp-"));
+    process.env.MOSS_TMPDIR = tmpBase;
   });
   afterEach(() => {
     stop?.(); stop = undefined;
-    if (savedTmp === undefined) delete process.env.CLOVER_TMPDIR; else process.env.CLOVER_TMPDIR = savedTmp;
+    if (savedTmp === undefined) delete process.env.MOSS_TMPDIR; else process.env.MOSS_TMPDIR = savedTmp;
     rmSync(tmpBase, { recursive: true, force: true });
   });
 
   async function boot(liveModel?: string) {
-    const home = mkdtempSync(join(tmpdir(), "clover-stage-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-stage-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -115,7 +115,7 @@ describe("session.stageImage (code-mode image input)", () => {
     return { store, socketPath, tokens, c };
   }
 
-  const imagesDirOf = (sid: string) => join(realpathSync(tmpBase), `clover-session-${sid}`, "images");
+  const imagesDirOf = (sid: string) => join(realpathSync(tmpBase), `moss-session-${sid}`, "images");
 
   test("stages a png under the session's temp dir as image_1.png, 0600, the exact bytes, and returns its realpath", async () => {
     const { store, c } = await boot();
@@ -129,14 +129,14 @@ describe("session.stageImage (code-mode image input)", () => {
     c.close();
   });
 
-  // The prompt's one static line tells the model a staged copy "sits inside a `clover-session-…/images/` folder" — so every
+  // The prompt's one static line tells the model a staged copy "sits inside a `moss-session-…/images/` folder" — so every
   // staged path, whatever the type, must really have that shape.
-  test("every staged path has the shape the prompt line names: …/clover-session-<id>/images/image_<k>.<ext>", async () => {
+  test("every staged path has the shape the prompt line names: …/moss-session-<id>/images/image_<k>.<ext>", async () => {
     const { store, c } = await boot();
     const sid = store.createSession("global", { model: IMAGE_TAG });
     for (const [mediaType, bytes] of [["image/png", PNG], ["image/jpeg", JPEG], ["image/heic", HEIC], ["image/tiff", TIFF]] as const) {
       const res = await c.request(METHODS.sessionStageImage, { sessionId: sid, mediaType, dataBase64: b64(bytes) });
-      expect(res.result.path).toMatch(/\/clover-session-[A-Za-z0-9_-]+\/images\/image_\d+\.(png|jpg|gif|webp|heic|tiff|bmp)$/);
+      expect(res.result.path).toMatch(/\/moss-session-[A-Za-z0-9_-]+\/images\/image_\d+\.(png|jpg|gif|webp|heic|tiff|bmp)$/);
       // …and the extension is one the Read tool opens as an image (it dispatches on the extension alone).
       expect(IMAGE_FILE_EXTENSIONS as readonly string[]).toContain(`.${res.result.path.split(".").pop()}`);
     }
@@ -275,7 +275,7 @@ describe("session.stageImage (code-mode image input)", () => {
 
   darwinTest("imageDimensions reads PNG, JPEG, GIF and WebP headers without decoding", () => {
     expect(imageDimensions(makePng(640, 480))).toEqual({ width: 640, height: 480 });
-    const dir = mkdtempSync(join(tmpdir(), "clover-dims-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-dims-"));
     try {
       const src = join(dir, "a.png");
       writeFileSync(src, makePng(321, 123));
@@ -305,7 +305,7 @@ describe("session.stageImage (code-mode image input)", () => {
     expect(res.error.code).toBe(ERR.INVALID_PARAMS);
     expect(res.error.data).toEqual({ code: IMAGE_SESSION_NOT_CODE });
     expect(res.error.message).toBe("images can only be added to code and dispatch sessions");
-    expect(existsSync(join(tmpBase, `clover-session-${chat}`, "images"))).toBe(false);
+    expect(existsSync(join(tmpBase, `moss-session-${chat}`, "images"))).toBe(false);
     // Dispatch (2026-10-19) and code stage alike; an absent mode is code.
     for (const mode of ["code", "dispatch", undefined] as const) {
       const sid = store.createSession("global", { ...(mode === undefined ? {} : { mode }), model: IMAGE_TAG });
@@ -363,7 +363,7 @@ describe("session.stageImage (code-mode image input)", () => {
     expect(helloed.error).toBeUndefined();
     expect((await plugin.request(METHODS.sessionStageImage, { sessionId: sid, mediaType: "image/png", dataBase64: b64(PNG) })).error.code).toBe(ERR.UNAUTHORIZED);
     plugin.close();
-    expect(existsSync(join(tmpBase, `clover-session-${sid}`, "images"))).toBe(false);
+    expect(existsSync(join(tmpBase, `moss-session-${sid}`, "images"))).toBe(false);
     expect(REMOTE_ALLOWED_METHODS.has(METHODS.sessionStageImage)).toBe(false);
     phone.close(); admin.close(); c.close();
   });
@@ -371,8 +371,8 @@ describe("session.stageImage (code-mode image input)", () => {
   test("an agent-planted `images` symlink is refused and nothing is written through it", async () => {
     const { store, c } = await boot();
     const sid = store.createSession("global", { model: IMAGE_TAG });
-    const sessionDir = join(tmpBase, `clover-session-${sid}`);
-    const target = mkdtempSync(join(tmpdir(), "clover-stage-target-"));
+    const sessionDir = join(tmpBase, `moss-session-${sid}`);
+    const target = mkdtempSync(join(tmpdir(), "moss-stage-target-"));
     mkdirSync(sessionDir, { recursive: true });
     symlinkSync(target, join(sessionDir, "images"));
     const res = await c.request(METHODS.sessionStageImage, { sessionId: sid, mediaType: "image/png", dataBase64: b64(PNG) });
@@ -386,8 +386,8 @@ describe("session.stageImage (code-mode image input)", () => {
   test("a symlinked session directory is refused too", async () => {
     const { store, c } = await boot();
     const sid = store.createSession("global", { model: IMAGE_TAG });
-    const target = mkdtempSync(join(tmpdir(), "clover-stage-target-"));
-    symlinkSync(target, join(tmpBase, `clover-session-${sid}`));
+    const target = mkdtempSync(join(tmpdir(), "moss-stage-target-"));
+    symlinkSync(target, join(tmpBase, `moss-session-${sid}`));
     const res = await c.request(METHODS.sessionStageImage, { sessionId: sid, mediaType: "image/png", dataBase64: b64(PNG) });
     expect(res.error.data).toEqual({ code: IMAGE_STAGE_FAILED });
     expect(readdirSync(target)).toEqual([]);
@@ -397,8 +397,8 @@ describe("session.stageImage (code-mode image input)", () => {
 
   test("the session directory swapped for a symlink right after its check: nothing is written through it", () => {
     const sid = "s_swap";
-    const sessionDir = join(tmpBase, `clover-session-${sid}`);
-    const elsewhere = mkdtempSync(join(tmpdir(), "clover-stage-elsewhere-"));
+    const sessionDir = join(tmpBase, `moss-session-${sid}`);
+    const elsewhere = mkdtempSync(join(tmpdir(), "moss-stage-elsewhere-"));
     mkdirSync(join(elsewhere, "images"));
     let caught: unknown;
     try {
@@ -420,7 +420,7 @@ describe("session.stageImage (code-mode image input)", () => {
   test("a planted image_9007199254740991.png (or any index past 9 digits) does not stop staging", async () => {
     const { store, c } = await boot();
     const sid = store.createSession("global", { model: IMAGE_TAG });
-    const images = join(tmpBase, `clover-session-${sid}`, "images");
+    const images = join(tmpBase, `moss-session-${sid}`, "images");
     mkdirSync(images, { recursive: true });
     writeFileSync(join(images, "image_9007199254740991.png"), "planted");
     writeFileSync(join(images, "image_10000000000.png"), "planted");
@@ -447,9 +447,9 @@ describe("session.stageImage (code-mode image input)", () => {
   test("a pre-planted image file symlink is never followed or overwritten — the name is skipped", async () => {
     const { store, c } = await boot();
     const sid = store.createSession("global", { model: IMAGE_TAG });
-    const images = join(tmpBase, `clover-session-${sid}`, "images");
+    const images = join(tmpBase, `moss-session-${sid}`, "images");
     mkdirSync(images, { recursive: true });
-    const victim = join(mkdtempSync(join(tmpdir(), "clover-stage-victim-")), "victim.txt");
+    const victim = join(mkdtempSync(join(tmpdir(), "moss-stage-victim-")), "victim.txt");
     writeFileSync(victim, "original");
     // A dangling-or-not symlink with a name the daemon might pick: `readdirSync` sees it, so the
     // counter climbs past it; even were it picked, O_EXCL|O_NOFOLLOW refuses to open through it.
@@ -472,13 +472,13 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
   let savedTmp: string | undefined;
   const cleanup: string[] = [];
   beforeEach(() => {
-    savedTmp = process.env.CLOVER_TMPDIR;
-    tmpBase = realpathSync(mkdtempSync(join(tmpdir(), "clover-prune-tmp-")));
-    process.env.CLOVER_TMPDIR = tmpBase;
+    savedTmp = process.env.MOSS_TMPDIR;
+    tmpBase = realpathSync(mkdtempSync(join(tmpdir(), "moss-prune-tmp-")));
+    process.env.MOSS_TMPDIR = tmpBase;
   });
   afterEach(() => {
     stop?.(); stop = undefined;
-    if (savedTmp === undefined) delete process.env.CLOVER_TMPDIR; else process.env.CLOVER_TMPDIR = savedTmp;
+    if (savedTmp === undefined) delete process.env.MOSS_TMPDIR; else process.env.MOSS_TMPDIR = savedTmp;
     rmSync(tmpBase, { recursive: true, force: true });
     for (const d of cleanup.splice(0)) rmSync(d, { recursive: true, force: true });
   });
@@ -490,7 +490,7 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
     stageSessionImage({ sessionId: sid, mediaType: "image/png", dataBase64: b64(PNG) }, keep === undefined ? {} : { keep });
 
   async function boot() {
-    const home = mkdtempSync(join(tmpdir(), "clover-prune-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-prune-"));
     cleanup.push(home);
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
@@ -515,7 +515,7 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
     const [one, two, three, four] = [await stageRpc(), await stageRpc(), await stageRpc(), await stageRpc()];
     // image_1 is named by a message the user sent (the log); the others never were.
     expect((await c.request(METHODS.sessionSend, { sessionId: sid, text: "see [Image #1]", images: [{ n: 1, path: one }] })).error).toBeUndefined();
-    const images = join(tmpBase, `clover-session-${sid}`, "images");
+    const images = join(tmpBase, `moss-session-${sid}`, "images");
     // Neither of these is a staged copy: an old file of another name, an old FOLDER with a staged-looking name.
     writeFileSync(join(images, "notes.txt"), "keep me");
     mkdirSync(join(images, "image_0.png"));
@@ -542,14 +542,14 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
       for (const p of old) age(p, 60);
       await stageRpc();
       for (const p of old) expect(existsSync(p)).toBe(true);
-      expect(readdirSync(join(tmpBase, `clover-session-${sid}`, "images")).sort()).toEqual(["image_1.png", "image_2.png", "image_3.png", "image_4.png"]);
+      expect(readdirSync(join(tmpBase, `moss-session-${sid}`, "images")).sort()).toEqual(["image_1.png", "image_2.png", "image_3.png", "image_4.png"]);
     }
     c.close();
   });
 
   darwinTest("a pruned number is never handed out again — even when the newest copy goes away after the prune", () => {
     const sid = "s_numbers";
-    const images = join(tmpBase, `clover-session-${sid}`, "images");
+    const images = join(tmpBase, `moss-session-${sid}`, "images");
     const first = [1, 2, 3, 4, 5].map(() => stage(sid, () => []));
     for (const p of first) age(p, 20);
     // Day 20: the prune takes 1–4 and keeps 5 (the highest); the new copy is image_6.
@@ -590,7 +590,7 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
 
   test("the descriptor calls cannot load (not macOS on Apple silicon): nothing is pruned — never a fallback to deleting by path", () => {
     const sid = "s_nofd";
-    const root = join(tmpBase, `clover-session-${sid}`);
+    const root = join(tmpBase, `moss-session-${sid}`);
     const images = join(root, "images");
     const old = [stage(sid), stage(sid), stage(sid)];
     for (const p of old) age(p, 60);
@@ -602,14 +602,14 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
   darwinTest("a symlink planted in images/ under a staged-looking name is never followed: neither the link's target nor the link is touched", () => {
     const sid = "s_link";
     stage(sid);
-    const images = join(tmpBase, `clover-session-${sid}`, "images");
-    const outside = realpathSync(mkdtempSync(join(tmpdir(), "clover-prune-victim-")));
+    const images = join(tmpBase, `moss-session-${sid}`, "images");
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "moss-prune-victim-")));
     cleanup.push(outside);
     const victim = join(outside, "image_1.png");
     writeFileSync(victim, "the user's own");
     age(victim, 60);
     symlinkSync(victim, join(images, "image_9.png"));
-    const root = join(tmpBase, `clover-session-${sid}`);
+    const root = join(tmpBase, `moss-session-${sid}`);
     expect(pruneStagedImages(root, images, () => [], Date.now() + 365 * DAY)).toBe(1); // only the real staged copy
     expect(readFileSync(victim, "utf8")).toBe("the user's own");
     expect(lstatSync(join(images, "image_9.png")).isSymbolicLink()).toBe(true);
@@ -618,11 +618,11 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
   darwinTest("the images folder — or the session folder — swapped for a symlink right before the unlink: the delete lands in the session's OWN folder, never elsewhere", () => {
     for (const swap of ["images", "session"] as const) {
       const sid = `s_swap_${swap}`;
-      const root = join(tmpBase, `clover-session-${sid}`);
+      const root = join(tmpBase, `moss-session-${sid}`);
       const images = join(root, "images");
       for (let i = 0; i < 3; i++) stage(sid); // image_1..3; image_3 is the highest and stays
       // Elsewhere: same-named old files a PATH unlink would hit after the swap.
-      const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "clover-prune-elsewhere-")));
+      const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "moss-prune-elsewhere-")));
       cleanup.push(elsewhere);
       mkdirSync(join(elsewhere, "images"));
       for (const name of ["image_1.png", "image_2.png"]) {

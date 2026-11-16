@@ -8,7 +8,7 @@ import { validateManifest } from "../../packages/plugin-sdk/src/manifest/validat
 const dir = join(import.meta.dir, "fixtures", "acceptance-media");
 
 test("acceptance-media is valid, isolated and holds files", () => {
-  const manifest = JSON.parse(readFileSync(join(dir, "clover.json"), "utf8")) as { id: string; capabilities: string[]; client: { isolated?: boolean } };
+  const manifest = JSON.parse(readFileSync(join(dir, "moss.json"), "utf8")) as { id: string; capabilities: string[]; client: { isolated?: boolean } };
   expect(validateManifest(manifest).ok).toBe(true);
   expect(manifest.client.isolated).toBe(true);
   expect(manifest.capabilities).toContain("files");

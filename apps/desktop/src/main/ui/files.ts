@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { closeSync, constants, createReadStream, fstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { isAbsolute, join, normalize, relative } from "node:path";
-import type { AvatarFormatView } from "@waifucave/clover-protocol";
+import type { AvatarFormatView } from "@waifucave/moss-protocol";
 import type { UiPlugin } from "./model";
 
 /** Whether `child` is `parent` or inside it. */
@@ -68,7 +68,7 @@ export interface ModelServe {
 
 const AUDIO_MEDIA: Readonly<Record<string, string>> = { mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav" };
 /** Names a model's folder never shares, however a renderer's extensions are written: a plugin's own manifest and package files. */
-const NOT_MODEL = /^(clover|clover-plugin|package)\.json$/i;
+const NOT_MODEL = /^(moss|moss-plugin|package)\.json$/i;
 
 /** The media type of one declared kind for this file, or undefined when it can't be served inertly (an `image` kind is only a
  *  raster picture: never SVG). */

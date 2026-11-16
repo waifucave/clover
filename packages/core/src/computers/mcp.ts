@@ -13,8 +13,8 @@
 //   session's scratch folder.
 // * A call's files are its embedded resources and images: the computer that made the call writes them into the folder
 //   and puts their tree paths in the result instead.
-// * A name clash: a server whose tools already have a `computer` or `saveTo` field gets `cloverComputer` or
-//   `cloverSaveTo` instead, for that server.
+// * A name clash: a server whose tools already have a `computer` or `saveTo` field gets `mossComputer` or
+//   `mossSaveTo` instead, for that server.
 // * Another computer's call is `tool.run` with the tool `mcp__<server>__<tool>`, judged there as a command at the
 //   stricter of that computer's level and the call's (R1), its answer bound to the tool and its input.
 // * Mirror installs a local server on the other computers, each copy running on its own computer: `mcp.mirror` to
@@ -22,7 +22,7 @@
 import { checkActFence, fenceParam, type ActFence } from "../tree/fencing";
 import { extname } from "node:path";
 import { z } from "zod";
-import { FencingToken, Level, SessionId, SignedCardAnswer, type Caller, type TurnOrigin } from "@waifucave/clover-protocol";
+import { FencingToken, Level, SessionId, SignedCardAnswer, type Caller, type TurnOrigin } from "@waifucave/moss-protocol";
 import { ContractError, isContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import { isTreePath } from "../tree/tools";
@@ -75,7 +75,7 @@ export function placementFields(server: McpServerPlacement, tools: readonly McpT
   const has = (name: string) => tools.some((t) => Object.prototype.hasOwnProperty.call(t.inputSchema.properties ?? {}, name));
   if (server.kind === "local") {
     if (server.computers.length < 2) return { tools: tools.map((t) => structuredClone(t)), fields: {} };
-    const field = has("computer") ? "cloverComputer" : "computer";
+    const field = has("computer") ? "mossComputer" : "computer";
     return {
       fields: { computer: field },
       tools: tools.map((t) => {
@@ -86,7 +86,7 @@ export function placementFields(server: McpServerPlacement, tools: readonly McpT
       }),
     };
   }
-  const field = has("saveTo") ? "cloverSaveTo" : "saveTo";
+  const field = has("saveTo") ? "mossSaveTo" : "saveTo";
   return {
     fields: { saveTo: field },
     tools: tools.map((t) => {
@@ -128,7 +128,7 @@ export async function saveFiles(holder: LocalHolder, result: McpResult, folderOf
   const out: McpContent[] = [];
   let i = 0;
   // The folder is named only when there is a file to save (a session's scratch folder may have no folder-tree name,
-  // a Clover home outside the user's home): a result of text alone never needs it.
+  // a MOSS home outside the user's home): a result of text alone never needs it.
   let folder: string | undefined;
   for (const c of result.content ?? []) {
     const file = c.type === "image" ? { data: (c as { data: string }).data, base64: true }
@@ -155,7 +155,7 @@ export interface McpRouterOptions {
   transport: LinkTransport;
   deviceOf: (computer: string) => string | undefined;
   /** Where a server's tool runs, live (lanes A, B and D), asked per tool: servers can share a name (every bundled
-   *  plugin's tools read `mcp__clover__…`, each from its own server). */
+   *  plugin's tools read `mcp__moss__…`, each from its own server). */
   placement: (server: string, tool: string) => McpServerPlacement | undefined;
   /** The fields the session's prompt gave a server's tool (`placementFields` at its last refresh). */
   fields: (server: string, session: string, tool: string) => McpFields;
@@ -233,7 +233,7 @@ export class McpRouter {
     const device = this.#o.deviceOf(c.name);
     if (!device) throw new ContractError("computer_offline", `${c.name} can't be reached`, { computer: c.name });
     const level = ctx.level ?? c.level;
-    // The folder rides under the tool's own field name (`saveTo`, or `cloverSaveTo` when the tool has a `saveTo` of
+    // The folder rides under the tool's own field name (`saveTo`, or `mossSaveTo` when the tool has a `saveTo` of
     // its own), so the holder never takes a tool's own argument for it.
     const carried = { ...input, ...(saveTo && fields.saveTo ? { [fields.saveTo]: saveTo } : {}) };
     try {

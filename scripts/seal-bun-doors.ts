@@ -1,8 +1,8 @@
 // The compiled core runs only its own code. A `bun build --compile` binary is the whole Bun runtime, and Bun reads
 // a few environment variables before the app's code starts that make it run someone else's (lane M's door audit,
-// measured on Bun 1.4.4 against `clover-core`):
+// measured on Bun 1.4.4 against `moss-core`):
 //
-//   BUN_BE_BUN=1                       the binary IS plain Bun: `clover-core x.js`, `clover-core -e …`
+//   BUN_BE_BUN=1                       the binary IS plain Bun: `moss-core x.js`, `moss-core -e …`
 //   BUN_OPTIONS=--preload x.js         (also -r, --require, --import, --config=<a bunfig with a preload>) runs x.js
 //                                      before main, whatever the arguments
 //   BUN_INSPECT=ws://…?wait=1          opens a debugger port: Runtime.evaluate runs anything in the process
@@ -13,7 +13,7 @@
 //   NODE_PATH                          steers module resolution (the runtime ladder's package rung; that rung is now
 //                                      off in a compiled binary too, runtime-sdk/executable.ts)
 //
-// On macOS the Keychain items trust the signed `clover-core` alone, so any of these hands the user's tokens and
+// On macOS the Keychain items trust the signed `moss-core` alone, so any of these hands the user's tokens and
 // provider keys to whoever can start the binary. BUN_CONFIG_VERBOSE_FETCH needs no foreign code at all: it prints the
 // core's request headers — `x-api-key`, and with `curl` the `Authorization: Bearer` — to stderr, which daemon.log
 // keeps. No Bun flag turns any of them off, so this build step does, before the binary is signed: every occurrence of
@@ -60,7 +60,7 @@ export const REQUIRED_NATIVE_NAMES = ["BUN_BE_BUN", "BUN_OPTIONS", "BUN_INSPECT"
 
 /** Capital letters derived from `name`, `length` long: the visible rest of each replacement. */
 export function sealFiller(name: string, length: number): string {
-  const digest = createHash("sha256").update(`clover-sealed-env:${name}`).digest();
+  const digest = createHash("sha256").update(`moss-sealed-env:${name}`).digest();
   let out = "";
   for (let i = 0; out.length < length; i++) out += String.fromCharCode(65 + (digest[i % digest.length]! + i) % 26);
   return out;
@@ -205,7 +205,7 @@ export function sealProblems(bytes: Uint8Array): string[] {
 export const DYLD_ENTITLEMENT = "com.apple.security.cs.allow-dyld-environment-variables";
 
 /** The core's entitlements file, which must never grant `DYLD_ENTITLEMENT`. */
-export const CORE_ENTITLEMENTS = join(dirname(import.meta.dir), "scripts", "clover-core.entitlements");
+export const CORE_ENTITLEMENTS = join(dirname(import.meta.dir), "scripts", "moss-core.entitlements");
 
 /** The ad hoc signature a sealed Mach-O gets here: the hardened runtime and the core's entitlements, so the seal holds
  *  even before a release or the dev daemon signs it for real (both with the hardened runtime too). */

@@ -2,7 +2,7 @@
 // API as bare specifiers, which its layer provides.
 import { jsx, jsxs } from "react/jsx-runtime";
 import { useEffect, useState } from "react";
-import { useMenu, useTokens } from "@waifucave/clover-plugin-sdk/ui";
+import { useMenu, useTokens } from "@waifucave/moss-plugin-sdk/ui";
 
 export function FixtureComposer({ props }) {
   const tokens = useTokens();

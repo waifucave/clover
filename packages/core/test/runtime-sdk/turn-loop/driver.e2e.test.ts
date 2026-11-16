@@ -13,7 +13,7 @@ import type { TurnControl, TurnInput } from "../../../src/contracts/session-host
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
 import { BOT_CONVERSATION_SANDBOX, BOT_SANDBOX, BotSessionDriver, botFileFence, runtimeReservedServerNames, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
-import { CloverFence } from "../../../src/fence/fence";
+import { MossFence } from "../../../src/fence/fence";
 import { botSandboxSettings } from "../../../src/fence/sandbox-settings";
 import { connect, createServer } from "node:net";
 import { childSandboxConfigFor } from "../../../src/runtime-sdk/mode-options";
@@ -27,7 +27,7 @@ import { darwinTest } from "../../helpers/darwin-only";
 const temps: string[] = [];
 afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true }); });
 function tempHome(): string {
-  const d = mkdtempSync(join(tmpdir(), "clover-a3-"));
+  const d = mkdtempSync(join(tmpdir(), "moss-a3-"));
   temps.push(d);
   return d;
 }
@@ -502,12 +502,12 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     try {
       expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
       expect((await driver.turn(user("again"), control())).reason).toBe("end_turn");
-      expect(opened).toEqual([["clover_core"]]);
+      expect(opened).toEqual([["moss_core"]]);
       // A plugin is installed between turns: its server reaches the runtime at the next turn.
       servers.push({ server: "acceptance-echo-echo", plugin: "acceptance-echo", tools: [{ name: "Echo", inputSchema: { type: "object", properties: {} }, load: "preload" }] });
       const end = await driver.turn(user('CALL mcp__acceptance-echo-echo__Echo {}'), control());
       expect(end.reason).toBe("end_turn");
-      expect(opened).toEqual([["clover_core"], ["acceptance-echo-echo", "clover_core"]]);
+      expect(opened).toEqual([["moss_core"], ["acceptance-echo-echo", "moss_core"]]);
       expect(ran).toEqual(["Echo"]);
       expect(lines.filter((l) => l.includes("reopening: its MCP servers changed"))).toHaveLength(1);
       // Nothing changed: no reopen.
@@ -516,7 +516,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       // The plugin goes away: the runtime reopens without it.
       servers.length = 0;
       await driver.turn(user("bye"), control());
-      expect(opened.at(-1)).toEqual(["clover_core"]);
+      expect(opened.at(-1)).toEqual(["moss_core"]);
     } finally {
       await driver.stop();
     }
@@ -583,9 +583,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
   test("a server set that can't be read fails the turn and closes the runtime open under the old set, as the sandbox read does; a readable set opens it again", async () => {
     const home = tempHome();
     const runner: McpRunner = { async run(_s, tool) { return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" }; } };
-    const good: BotMcpServer = { server: "web", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] };
+    const good: BotMcpServer = { server: "web", plugin: "moss/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] };
     // A listing the driver can't read: a server with no name makes the server-set check throw.
-    const unreadable = { server: undefined, plugin: "clover/broken", tools: [] } as unknown as BotMcpServer;
+    const unreadable = { server: undefined, plugin: "moss/broken", tools: [] } as unknown as BotMcpServer;
     let servers: BotMcpServer[] = [good];
     const opened: string[][] = [];
     let closedRuntimes = 0;
@@ -608,7 +608,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, mcp: { servers: () => servers, runner }, log: (l) => lines.push(l) }));
     try {
       expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
-      expect(opened).toEqual([["clover_core", "web"]]);
+      expect(opened).toEqual([["moss_core", "web"]]);
       servers = [good, unreadable];
       const failed = await driver.turn(user("again"), control());
       expect(failed.reason).toBe("failed");
@@ -618,16 +618,16 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(closedRuntimes).toBe(1);
       servers = [good];
       expect((await driver.turn(user("back"), control())).reason).toBe("end_turn");
-      expect(opened).toEqual([["clover_core", "web"], ["clover_core", "web"]]);
+      expect(opened).toEqual([["moss_core", "web"], ["moss_core", "web"]]);
     } finally {
       await driver.stop();
     }
   }, 60_000);
 
-  test("a plugin server named like the runtime's own (clover, its standing server) is left out, so the real runtime still starts; the rest are served", async () => {
+  test("a plugin server named like the runtime's own (moss, its standing server) is left out, so the real runtime still starts; the rest are served", async () => {
     // The agent runtime refuses a configured server under its brand's name and exits before init (acceptance step 3,
-    // 2026-11-10, with the bundled tools offered as mcp__clover__…): the driver must never hand it one.
-    expect(runtimeReservedServerNames().has("clover")).toBe(true);
+    // 2026-11-10, with the bundled tools offered as mcp__moss__…): the driver must never hand it one.
+    expect(runtimeReservedServerNames().has("moss")).toBe(true);
     const home = tempHome();
     const ran: string[] = [];
     const runner: McpRunner = {
@@ -637,8 +637,8 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       },
     };
     const servers: BotMcpServer[] = [
-      { server: "clover", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] },
-      { server: "web", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] },
+      { server: "moss", plugin: "moss/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] },
+      { server: "web", plugin: "moss/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] },
     ];
     const opened: string[][] = [];
     const query: typeof sdkQuery = (args) => {
@@ -650,9 +650,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     try {
       const end = await driver.turn(user("CALL mcp__web__WebSearch {}"), control());
       expect(end.reason).toBe("end_turn");
-      expect(opened).toEqual([["clover_core", "web"]]);
+      expect(opened).toEqual([["moss_core", "web"]]);
       expect(ran).toEqual(["web.WebSearch"]);
-      expect(lines.filter((l) => l.includes("MCP server clover is left out: the agent runtime keeps that name"))).toHaveLength(1);
+      expect(lines.filter((l) => l.includes("MCP server moss is left out: the agent runtime keeps that name"))).toHaveLength(1);
     } finally {
       await driver.stop();
     }
@@ -868,7 +868,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
   const holderPath = (() => {
     if (process.platform !== "darwin") return undefined;
     const src = join(import.meta.dir, "../../../node_modules/@waifucave/clover-agent-runtime/native/process-holder.c");
-    const out = join(tempHome(), "clover-process-holder");
+    const out = join(tempHome(), "moss-process-holder");
     return Bun.spawnSync(["/usr/bin/clang", "-O2", "-o", out, src]).exitCode === 0 ? out : undefined;
   })();
   const sleepTag = () => `${(Date.now() % 10000) * 10 + Math.floor(Math.random() * 10)}`;
@@ -998,7 +998,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
 
   // The legacy IPC server's admin surface on `<home>/run/core.sock` (and the plugin host's sockets, the SSH agent,
   // Docker, launchd's) must be out of a bot's shell's reach once its commands run with no card (stage 2): the sandbox
-  // Clover draws (`botSandboxSettings`) carries no network key at any level, so the runtime's profile denies the whole
+  // MOSS draws (`botSandboxSettings`) carries no network key at any level, so the runtime's profile denies the whole
   // network, a unix socket's connect included (`(deny network*)` under `(deny default)`), even for a socket inside a
   // write root the bot has or was granted.
   darwinTest("a bot's sandboxed shell connects to no unix socket, at the default level and at automatic, in a granted folder too", async () => {
@@ -1024,10 +1024,10 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     const unsandboxed = connected;
     expect(unsandboxed).toBe(3);
     // Its own temp folder: the system's (/private/tmp) holds this home, and would be written out entry by entry.
-    const fence = new CloverFence({ home: userDir, cloverHome: home, temp: join(userDir, "t") });
+    const fence = new MossFence({ home: userDir, mossHome: home, temp: join(userDir, "t") });
     mkdirSync(join(userDir, "t"));
     let level: "ask-risky" | "automatic" = "ask-risky";
-    const sandbox = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { cloverHome: home, userHome: userDir, level, grantedWrite: [docs] });
+    const sandbox = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { mossHome: home, userHome: userDir, level, grantedWrite: [docs] });
     const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { sandbox }));
     const probe = (tag: string) => Object.entries(sockets).map(([name, p]) =>
       `/usr/bin/nc -U ${JSON.stringify(p)} </dev/null >/dev/null 2>&1; echo "$?" > ${JSON.stringify(join(dir, `${tag}.${name}.nc`))}; ` +
@@ -1070,7 +1070,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     writeFileSync(join(ctx.paths.scratch, "notes.txt"), "SECRET-free notes");
     symlinkSync(join(home, "run", "app.token"), join(ctx.paths.scratch, "tok"));
     symlinkSync(join(home, "run"), join(ctx.paths.scratch, "rundir"));
-    const fence = new CloverFence({ home: dirname(home), cloverHome: home, temp: join(dirname(home), "fence-temp") });
+    const fence = new MossFence({ home: dirname(home), mossHome: home, temp: join(dirname(home), "fence-temp") });
     // Any read denial in the sandbox (as lane C's will have) makes the runtime's search walk its folder by hand, and that
     // walk takes a link to a file as the file: without the hook's filter, Glob lists `tok` and Grep shows the token.
     const sandbox = () => ({ filesystem: { denyRead: [join(home, "elsewhere")] } });
@@ -1132,7 +1132,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     mkdirSync(join(userHome, "Projects"), { recursive: true });
     writeFileSync(join(userHome, "Projects", "notes.md"), `${SECRET.slice(0, 6)} ordinary`);
     symlinkSync(join(userHome, ".aws", "credentials"), join(ctx.paths.scratch, "creds"));
-    const fence = new CloverFence({ home: userHome, cloverHome: home, temp: join(userHome, "fence-temp") });
+    const fence = new MossFence({ home: userHome, mossHome: home, temp: join(userHome, "fence-temp") });
     const raw: { tool: string; response: unknown }[] = [];
     const driver = new BotSessionDriver(ctx, deps(home, spawn, {
       fileFence: botFileFence(fence, home, "macos", userHome),
@@ -1192,12 +1192,12 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
   test("a coding session's Bash: its own outputs, store entry and run folder; never another session's, a config copy or the bots' data", async () => {
     const home = tempHome();
     const ctx = context(home, "winter-test/calls");
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-a3-code-cwd-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "moss-a3-code-cwd-")));
     temps.push(cwd);
     const key = compatibilityKeys(cwd).transcriptProjectKey;
     const put = (rel: string, text: string) => { mkdirSync(join(home, rel, ".."), { recursive: true }); writeFileSync(join(home, rel), text); };
     const own = { outputs: "outputs/s_1/r.md", store: `sdk/projects/${key}/memory/MEMORY.md`, run: "cache/runs/run-own/settings.json" };
-    const others = { outputs: "outputs/s_2/r.md", store: "sdk/projects/-other/s.jsonl", run: "cache/runs/run-other/settings.json", config: "cache/runs/run-own/.clover.json",
+    const others = { outputs: "outputs/s_2/r.md", store: "sdk/projects/-other/s.jsonl", run: "cache/runs/run-other/settings.json", config: "cache/runs/run-own/.moss.json",
       memory: "bots/mira/memory/MEMORY.md", talk: "transcripts/mira/b.ndjson", secrets: "secrets.enc" };
     for (const [tag, rel] of Object.entries(own)) put(rel, `OWN-${tag}`);
     for (const [tag, rel] of Object.entries(others)) put(rel, `OTHER-${tag}`);
@@ -1667,20 +1667,20 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       toolBefore: async (_s, tool, input) => {
         const backend = (input as { backend?: unknown }).backend;
         seen.push({ name: tool.name, backend });
-        return tool.name === "Agent" && backend !== "clover" ? { deny: "this bot delegates only to Clover's own agents", input } : { input };
+        return tool.name === "Agent" && backend !== "moss" ? { deny: "this bot delegates only to MOSS's own agents", input } : { input };
       },
     };
     const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
       hooks,
-      coreTools: (ctx) => agentToolDefs(manager, { bot: ctx.botId, session: ctx.sessionId, origin: "bot" }, { backends: () => ["claude-code", "clover"] }),
+      coreTools: (ctx) => agentToolDefs(manager, { bot: ctx.botId, session: ctx.sessionId, origin: "bot" }, { backends: () => ["claude-code", "moss"] }),
     }));
     try {
       const out = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "claude-code", root: "home/Studio/p" })}`), control());
-      expect(results(out)[0]!.content).toContain("delegates only to Clover's own agents");
-      const ok = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "clover", root: "home/Studio/p" })}`), control());
+      expect(results(out)[0]!.content).toContain("delegates only to MOSS's own agents");
+      const ok = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "moss", root: "home/Studio/p" })}`), control());
       expect(results(ok)[0]!.isError).toBe(false);
-      expect(seen).toEqual([{ name: "Agent", backend: "claude-code" }, { name: "Agent", backend: "clover" }]);
-      expect(started).toEqual(["clover"]);
+      expect(seen).toEqual([{ name: "Agent", backend: "claude-code" }, { name: "Agent", backend: "moss" }]);
+      expect(started).toEqual(["moss"]);
     } finally {
       await driver.stop();
     }

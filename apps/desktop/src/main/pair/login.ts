@@ -1,18 +1,18 @@
 // The app's side of installing and starting the daemon (spec §3.1 "The app can install, start and update the
 // daemon"; "Each starts the other through the OS"). Lane C's daemon binary owns the login items (what the launchd
-// plist, the `systemd --user` unit and the Task Scheduler task say; each runs `clover-core supervise`) and starting
+// plist, the `systemd --user` unit and the Task Scheduler task say; each runs `moss-core supervise`) and starting
 // itself through the OS, so the app never names a launchd label, a unit or a task. It runs lane C's command:
 //
-//   clover-core autostart status    "autostart: <state> (<unit>) [registered]", or with `--json` (proposed to C)
+//   moss-core autostart status    "autostart: <state> (<unit>) [registered]", or with `--json` (proposed to C)
 //                                   { "registered": boolean, "running"?: boolean }
-//   clover-core autostart enable    registers the login item for this home (idempotent)
-//   clover-core autostart start     starts the daemon through the OS now — `launchctl kickstart`,
+//   moss-core autostart enable    registers the login item for this home (idempotent)
+//   moss-core autostart start     starts the daemon through the OS now — `launchctl kickstart`,
 //                                   `systemctl --user start`, `schtasks /Run` — never as the app's child
 //
 // (Whether the endpoint is this user's daemon is no longer a command: lane C's `protocol.prove`, on the connection
 // itself before the hello, says so on every OS; pair.ts.)
 //
-// each with `CLOVER_HOME` and `CLOVER_PROFILE` set, exit code 0 on success. A fake binary stands in for it in the
+// each with `MOSS_HOME` and `MOSS_PROFILE` set, exit code 0 on success. A fake binary stands in for it in the
 // tests until C-M1 lands.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -45,7 +45,7 @@ export interface LauncherConfig {
 
 function run(cfg: LauncherConfig, args: string[]): Promise<LoginResult> {
   return new Promise((resolve) => {
-    const env: NodeJS.ProcessEnv = { ...process.env, ...cfg.env, CLOVER_HOME: cfg.home, CLOVER_PROFILE: cfg.profile };
+    const env: NodeJS.ProcessEnv = { ...process.env, ...cfg.env, MOSS_HOME: cfg.home, MOSS_PROFILE: cfg.profile };
     delete env.ELECTRON_RUN_AS_NODE;
     execFile(cfg.binary, args, { env, timeout: cfg.timeoutMs ?? 15_000, windowsHide: true, encoding: "utf8" }, (err, stdout, stderr) => {
       const code = err === null ? 0 : typeof (err as NodeJS.ErrnoException & { code?: unknown }).code === "number" ? ((err as unknown as { code: number }).code) : null;
@@ -80,13 +80,13 @@ export function cliLauncher(cfg: LauncherConfig): DaemonLauncher {
   };
 }
 
-export const DAEMON_BINARY_NAME = process.platform === "win32" ? "clover-core.exe" : "clover-core";
+export const DAEMON_BINARY_NAME = process.platform === "win32" ? "moss-core.exe" : "moss-core";
 
-/** Where the daemon binary is, in this order: `CLOVER_DAEMON_BIN` (the dev scripts and the tests), the packaged
- *  app's resources (`<resources>/daemon/clover-core`, lane M packages it there), or none (the unpackaged dev app,
+/** Where the daemon binary is, in this order: `MOSS_DAEMON_BIN` (the dev scripts and the tests), the packaged
+ *  app's resources (`<resources>/daemon/moss-core`, lane M packages it there), or none (the unpackaged dev app,
  *  whose daemon `bun run dev:daemon` runs). On Linux an AppImage's copy is first copied out (below). */
 export function locateDaemonBinary(input: { env: NodeJS.ProcessEnv; packaged: boolean; resourcesPath?: string; platform?: NodeJS.Platform; userHome?: string }): string | undefined {
-  const fromEnv = input.env.CLOVER_DAEMON_BIN;
+  const fromEnv = input.env.MOSS_DAEMON_BIN;
   if (fromEnv !== undefined && fromEnv !== "") return fromEnv;
   if (!input.packaged || input.resourcesPath === undefined) return undefined;
   const bundled = join(input.resourcesPath, "daemon", DAEMON_BINARY_NAME);
@@ -102,11 +102,11 @@ function sha256(path: string): string {
 }
 
 /** On Linux the app copies the daemon out of the AppImage (§3.1), since the AppImage's mount goes away when the app
- *  quits and the login unit must point at a file that stays: `$XDG_DATA_HOME/clover/bin/clover-core`, replaced
+ *  quits and the login unit must point at a file that stays: `$XDG_DATA_HOME/moss/bin/moss-core`, replaced
  *  atomically when the AppImage carries a different one. */
 export function copyOutOfAppImage(bundled: string, env: NodeJS.ProcessEnv, userHome: string): string {
   const dataHome = env.XDG_DATA_HOME !== undefined && env.XDG_DATA_HOME !== "" ? env.XDG_DATA_HOME : join(userHome, ".local", "share");
-  const target = join(dataHome, env.CLOVER_PROFILE === "dev" ? "clover-dev" : "clover", "bin", DAEMON_BINARY_NAME);
+  const target = join(dataHome, env.MOSS_PROFILE === "dev" ? "moss-dev" : "moss", "bin", DAEMON_BINARY_NAME);
   const same = existsSync(target) && statSync(target).size === statSync(bundled).size && sha256(target) === sha256(bundled);
   if (!same) {
     mkdirSync(dirname(target), { recursive: true });

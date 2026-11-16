@@ -8,17 +8,17 @@
 // (the SessionHost, the ApprovalBroker, the bridge, Settings) relies on.
 //
 // What the contract promises:
-// * `detect` resolves the binary to its real path and checks it is that vendor's before anything starts it: Clover
+// * `detect` resolves the binary to its real path and checks it is that vendor's before anything starts it: MOSS
 //   never trusts a command name on PATH (`agent` is both Cursor's and Grok's; S5 edit 1).
 // * `start` launches one agent process for one delegation, contained as a group, in the translated root, with the
 //   environment from an allow-list, the bridge MCP server, and the fence as the backend's own deny rules (§9.3).
-//   A signed-out agent fails `sign_in`: the user signs in to that agent themselves; Clover never runs a browser login.
+//   A signed-out agent fails `sign_in`: the user signs in to that agent themselves; MOSS never runs a browser login.
 // * Permission requests go to the handler the host sets (the ApprovalBroker); the session answers the agent with
 //   `allow_once` or `reject_once`, never an "always" (S5 edit 5), and answers pending requests `cancelled` on cancel.
 // * Replays (updates between a `load` or `resume` request and its response) are dropped, never shown again (S5 edit 8).
 // * When a cancel leaves tool calls open, the session closes them itself; refused calls are recorded as refused
 //   whatever the agent reports (S5 edit 5).
-import type { BackendMark, Os } from "@waifucave/clover-protocol";
+import type { BackendMark, Os } from "@waifucave/moss-protocol";
 import type { AgentPermissionOption } from "./approval-broker";
 import type { Unsubscribe } from "./common";
 import type { SandboxPolicy } from "./fence";
@@ -62,7 +62,7 @@ export interface AgentQuirks {
     resume: { supported: boolean; replays: boolean };
     /** Cursor renames replayed tool calls `replay-0-N`; Antigravity keeps the live ids. */
     replayKeepsToolCallIds: boolean;
-    /** Cursor lists only the caller's session; Antigravity ignores the folder filter. Clover keeps its own record. */
+    /** Cursor lists only the caller's session; Antigravity ignores the folder filter. MOSS keeps its own record. */
     listFiltersHonestly: boolean;
     close: boolean;
   };
@@ -87,7 +87,7 @@ export interface AgentQuirks {
     effortOption: string | null;
     /** Cursor folds effort into its model values. */
     effortInModel: boolean;
-    /** A delegation's choice becomes the user's own selection (Cursor), so Clover restores it after. */
+    /** A delegation's choice becomes the user's own selection (Cursor), so MOSS restores it after. */
     choicePersists: boolean;
   };
   auth: {
@@ -130,12 +130,12 @@ export interface BridgeServer {
 }
 
 export interface AgentStartSpec {
-  /** Clover's session id for this delegation. */
+  /** MOSS's session id for this delegation. */
   sessionId: string;
   /** The bot whose delegation this is (a nested one carries the bot that started the first), for the plugins' hooks'
    *  scope: a hook scoped to bots covers its delegations too. None for a coding session the user drives. */
   bot?: string;
-  /** The root folder's real path on this computer; `Agent` already refused one holding the Clover home. */
+  /** The root folder's real path on this computer; `Agent` already refused one holding the MOSS home. */
   root: string;
   model?: string;
   effort?: string;
@@ -171,7 +171,7 @@ export type AgentEvent =
   | { type: "text"; text: string }
   | { type: "thought"; text: string }
   | { type: "tool_call"; id: string; kind: string; title: string; status: "pending" | "in_progress" | "completed" | "failed"; rawInput?: unknown }
-  | { type: "tool_call_update"; id: string; status: "pending" | "in_progress" | "completed" | "failed"; refused?: boolean; closedByClover?: boolean }
+  | { type: "tool_call_update"; id: string; status: "pending" | "in_progress" | "completed" | "failed"; refused?: boolean; closedByMoss?: boolean }
   | { type: "usage"; inputTokens: number; outputTokens: number }
   | { type: "progress" };
 

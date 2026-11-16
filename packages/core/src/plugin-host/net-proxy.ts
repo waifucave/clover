@@ -14,7 +14,7 @@
 //   that resolves to a loopback or private address is refused (a plugin's own DNS record could otherwise point its
 //   listed host at this computer's or the LAN's services), unless the name says so itself (`localhost`, `*.local`).
 // * Anything else: `403 Forbidden`, and the connection closes. A refusal names the host in the proxy's log.
-// * Each proxy has its own random token, in the URL its processes get (`http://clover:<token>@127.0.0.1:<port>`), and a
+// * Each proxy has its own random token, in the URL its processes get (`http://moss:<token>@127.0.0.1:<port>`), and a
 //   request without it is `407`: a plugin granted `localhost` can't use another plugin's proxy by its port. macOS lets a
 //   process read the environment of any other process of the same user (`KERN_PROCARGS2`, which Seatbelt's
 //   `process-info` denials don't cover; measured), so this stops a borrowed port, not a plugin that reads another's env.
@@ -31,7 +31,7 @@ import { lookup } from "node:dns/promises";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 import { ipAddressClass } from "../agent/tools/web";
-import { FIXED_CAPABILITIES } from "@waifucave/clover-plugin-sdk";
+import { FIXED_CAPABILITIES } from "@waifucave/moss-plugin-sdk";
 
 /** One `network:` entry as the proxy reads it. */
 interface HostRule {
@@ -171,7 +171,7 @@ export function startPluginProxy(o: {
   const resolve = o.resolve ?? systemResolve;
   const limits: ProxyLimits = { ...PROXY_LIMITS, ...o.limits };
   const token = randomBytes(24).toString("hex");
-  const expected = Buffer.from(`Basic ${Buffer.from(`clover:${token}`).toString("base64")}`);
+  const expected = Buffer.from(`Basic ${Buffer.from(`moss:${token}`).toString("base64")}`);
   const authorized = (headers: readonly string[]) =>
     headers.some((h) => {
       const m = /^proxy-authorization:\s*(.*?)\s*$/i.exec(h);
@@ -312,7 +312,7 @@ export function startPluginProxy(o: {
         if (m === null) return refuse(sock, "a request the proxy doesn't read");
         if (!authorized(headers)) {
           o.log?.(`[net ${o.pluginId}] refused a request without this proxy's token`);
-          return reply(sock, "407 Proxy Authentication Required", "this proxy's token is required", `Proxy-Authenticate: Basic realm="clover"\r\n`);
+          return reply(sock, "407 Proxy Authentication Required", "this proxy's token is required", `Proxy-Authenticate: Basic realm="moss"\r\n`);
         }
         if (authed.size >= limits.maxPerProxy) return fail(sock, "503 Service Unavailable", `too many connections (${authed.size} on this proxy)`);
         authed.add(sock);
@@ -369,7 +369,7 @@ export function startPluginProxy(o: {
     }
   }, Math.max(10, Math.min(30_000, limits.idleMs / 4)));
   sweep.unref?.();
-  const url = `http://clover:${token}@127.0.0.1:${listener.port}`;
+  const url = `http://moss:${token}@127.0.0.1:${listener.port}`;
   return {
     port: listener.port,
     // `NODE_USE_ENV_PROXY`: Node's own fetch and http take the proxy from the environment only with it (Node 24 and

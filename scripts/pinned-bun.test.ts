@@ -20,7 +20,7 @@ const standIn = (prints: string): string => `#!/bin/sh\nif [ "$1" = "--version" 
 /** A checkout pinning `version`, so the script reads its `.bun-version` and not this repo's, and the binary's SHA-256
  *  in `.bun-sha256` (by default the stand-in's that prints the version; `null` pins nothing). */
 function checkout(version = VERSION, pinned: string | null = createHash("sha256").update(standIn(version)).digest("hex")): string {
-  const dir = mkdtempSync(join(tmpdir(), "clover-pinned-bun-checkout-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-pinned-bun-checkout-"));
   spawnSync("git", ["init", "-q"], { cwd: dir });
   writeFileSync(join(dir, ".bun-version"), `${version}\n`);
   writeFileSync(join(dir, ".bun-sha256"), `# test pins\n${pinned === null ? "" : ASSETS.map((a) => `${version} ${a} ${pinned}`).join("\n")}\n`);
@@ -31,7 +31,7 @@ function checkout(version = VERSION, pinned: string | null = createHash("sha256"
 function zips(prints: string): Map<string, Buffer> {
   const out = new Map<string, Buffer>();
   for (const asset of ASSETS) {
-    const dir = mkdtempSync(join(tmpdir(), "clover-pinned-bun-zip-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-pinned-bun-zip-"));
     mkdirSync(join(dir, asset));
     writeFileSync(join(dir, asset, "bun"), standIn(prints), { mode: 0o755 });
     const r = spawnSync("zip", ["-qr", `${asset}.zip`, asset], { cwd: dir });
@@ -57,7 +57,7 @@ function serve(files: Map<string, Buffer>, shasums = [...files].map(([name, b]) 
 async function run(args: string[], cwd: string, cache: string): Promise<{ status: number | null; stdout: string; stderr: string }> {
   const proc = Bun.spawn([PINNED_BUN, ...args], {
     cwd,
-    env: { ...process.env, CLOVER_BUN_CACHE: cache, CLOVER_BUN_RELEASES: `http://127.0.0.1:${server!.port}/download` },
+    env: { ...process.env, MOSS_BUN_CACHE: cache, MOSS_BUN_RELEASES: `http://127.0.0.1:${server!.port}/download` },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -86,7 +86,7 @@ describe.if(posix)("scripts/pinned-bun", () => {
   test("first use fetches the pinned version, checks its SHA-256 against the release, and runs it with its folder first on PATH", async () => {
     serve(zips(VERSION));
     const cwd = checkout();
-    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    const cache = mkdtempSync(join(tmpdir(), "moss-pinned-bun-cache-"));
     const r = await run(["test", "x"], cwd, cache);
     expect(r.stderr).toContain(`fetching Bun ${VERSION}`);
     expect(r.stderr).toContain("matches the release");
@@ -105,7 +105,7 @@ describe.if(posix)("scripts/pinned-bun", () => {
   test("a zip whose SHA-256 is not the release's installs nothing", async () => {
     const files = zips(VERSION);
     serve(files, [...files].map(([name]) => `${"0".repeat(64)}  ${name}`).join("\n") + "\n");
-    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    const cache = mkdtempSync(join(tmpdir(), "moss-pinned-bun-cache-"));
     const r = await run(["--dir"], checkout(), cache);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("but the release lists");
@@ -116,7 +116,7 @@ describe.if(posix)("scripts/pinned-bun", () => {
 
   test("a binary that prints another version installs nothing", async () => {
     serve(zips("1.0.0"));
-    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    const cache = mkdtempSync(join(tmpdir(), "moss-pinned-bun-cache-"));
     // Pinned to exactly that binary, so the version answer is what refuses it.
     const r = await run(["--dir"], checkout(VERSION, createHash("sha256").update(standIn("1.0.0")).digest("hex")), cache);
     expect(r.status).toBe(1);
@@ -126,7 +126,7 @@ describe.if(posix)("scripts/pinned-bun", () => {
 
   test("a version the release does not have fails without installing", async () => {
     serve(zips(VERSION));
-    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    const cache = mkdtempSync(join(tmpdir(), "moss-pinned-bun-cache-"));
     const r = await run(["--dir"], checkout("9.9.9"), cache);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("could not download");
@@ -136,7 +136,7 @@ describe.if(posix)("scripts/pinned-bun", () => {
   test("every run checks the cached binary against .bun-sha256: a replaced one is fetched again", async () => {
     serve(zips(VERSION));
     const cwd = checkout();
-    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    const cache = mkdtempSync(join(tmpdir(), "moss-pinned-bun-cache-"));
     expect((await run(["--dir"], cwd, cache)).status).toBe(0);
     const bin = join(cache, VERSION, "bun");
     // Something that can write the user's cache swaps the binary (same version answer, other code).
@@ -155,7 +155,7 @@ describe.if(posix)("scripts/pinned-bun", () => {
 
   test("a downloaded binary whose SHA-256 is not the pinned one installs nothing, even when the release agrees", async () => {
     serve(zips(VERSION));
-    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    const cache = mkdtempSync(join(tmpdir(), "moss-pinned-bun-cache-"));
     const r = await run(["--dir"], checkout(VERSION, "1".repeat(64)), cache);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("but");
@@ -166,7 +166,7 @@ describe.if(posix)("scripts/pinned-bun", () => {
 
   test("a .bun-sha256 with no line for this version and asset is refused before anything runs", async () => {
     serve(zips(VERSION));
-    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    const cache = mkdtempSync(join(tmpdir(), "moss-pinned-bun-cache-"));
     const r = await run(["--dir"], checkout(VERSION, null), cache);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("pins no SHA-256");
@@ -174,7 +174,7 @@ describe.if(posix)("scripts/pinned-bun", () => {
   });
 
   test("a .bun-version that holds no version is refused", async () => {
-    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    const cache = mkdtempSync(join(tmpdir(), "moss-pinned-bun-cache-"));
     const r = await run(["--dir"], checkout("latest"), cache);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("does not hold a version");

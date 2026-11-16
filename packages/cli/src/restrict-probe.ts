@@ -2,13 +2,13 @@
 // The gate starts it with a dummy variable it made up, reads the process's arguments and environment from outside
 // (KERN_PROCARGS2, as any same-user process can), and closes stdin to end it. This side reports only true/false: that
 // the variable reached it (never its value), whether dyld removed a DYLD_ variable (reported, not required: that
-// depends on SIP, and GitHub's macOS runners run with it off), and that Bun.serve, fetch and bun:ffi work. Only in a build with `--define CLOVER_PLUGIN_RUN_PROBE=true`; never in a release build. Touches no home, no
+// depends on SIP, and GitHub's macOS runners run with it off), and that Bun.serve, fetch and bun:ffi work. Only in a build with `--define MOSS_PLUGIN_RUN_PROBE=true`; never in a release build. Touches no home, no
 // Keychain, no daemon. The plugin Bun runs the same function from a script file (it is plain Bun).
 
 /** The dummy variable the gate sets; its value is the gate's own random string, never a real secret. */
-export const RESTRICT_PROBE_VARIABLE = "CLOVER_RESTRICT_PROBE_DUMMY";
+export const RESTRICT_PROBE_VARIABLE = "MOSS_RESTRICT_PROBE_DUMMY";
 /** A DYLD_ variable the gate sets, which dyld must have removed before `main`. */
-export const RESTRICT_PROBE_DYLD_VARIABLE = "DYLD_CLOVER_RESTRICT_PROBE";
+export const RESTRICT_PROBE_DYLD_VARIABLE = "DYLD_MOSS_RESTRICT_PROBE";
 
 export interface RestrictProbeReady {
   ready: true;

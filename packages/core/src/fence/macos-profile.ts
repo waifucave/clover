@@ -8,7 +8,7 @@
 //   * renaming a folder that holds a fenced item is a write to that folder only, so each such folder inside a writable
 //     root gets its own literal deny (creating files inside it stays allowed);
 //   * a hard link from a fenced file is refused under the write deny, and a symbolic link is followed to its target;
-//   * names that aren't ASCII where Clover names things outside its home (the login places, an agent's install) are
+//   * names that aren't ASCII where MOSS names things outside its home (the login places, an agent's install) are
 //     refused by a deny on every new name there followed by an allow for ASCII names, which the sandbox also takes
 //     for the names that fold to ASCII (`ſ`, `ß`, the Kelvin sign) as the disk does. Inside the home the home deny
 //     refuses every new name outright, with no allow after it.
@@ -19,8 +19,8 @@ import type { CallerPlaces } from "./per-caller";
 
 export interface MacProfileInput {
   readonly policy: SandboxPolicy;
-  /** The Clover home: its top level is where Clover names things. */
-  readonly cloverHome: string;
+  /** The MOSS home: its top level is where MOSS names things. */
+  readonly mossHome: string;
   /** The user's home folder: a hook planted in any repo under it runs later, outside the sandbox. */
   readonly home: string;
   /** macOS's per-user temp folder (`getconf DARWIN_USER_TEMP_DIR`): `mktemp` writes there whatever TMPDIR says. */
@@ -68,9 +68,9 @@ function holders(denied: readonly string[], writable: readonly string[]): string
 export function macFenceProfile(input: MacProfileInput): string {
   const { policy } = input;
   const writable = policy.allowWrite;
-  // Naming folders: folders holding a fenced item outside the Clover home (the login places, an agent's install), up
+  // Naming folders: folders holding a fenced item outside the MOSS home (the login places, an agent's install), up
   // to their writable root. A name that isn't ASCII there is refused outright, as the fence's second wall is, and an
-  // ASCII name stays allowed. Inside the Clover home there is no naming handling: the home deny above already refuses
+  // ASCII name stays allowed. Inside the MOSS home there is no naming handling: the home deny above already refuses
   // every new name there, and a later allow must never open one (a bot's own folders come last, for their runner).
   // A naming folder that contains the home is skipped for the same reason: its allow must never reach inside the deny.
   // Only a folder INSIDE a writable root gets naming rules (#321's review): outside every root nothing is writable to
@@ -78,9 +78,9 @@ export function macFenceProfile(input: MacProfileInput): string {
   // make the whole folder writable).
   const naming = new Set<string>();
   for (const d of policy.denyWrite) {
-    if (!inside(d, input.cloverHome) && d !== input.cloverHome) {
+    if (!inside(d, input.mossHome) && d !== input.mossHome) {
       const parent = dirname(d);
-      if (!inside(parent, input.cloverHome) && !inside(input.cloverHome, parent) && !writable.some((w) => w === parent)
+      if (!inside(parent, input.mossHome) && !inside(input.mossHome, parent) && !writable.some((w) => w === parent)
         && writable.some((w) => inside(parent, w))) naming.add(parent);
     }
   }
@@ -107,21 +107,21 @@ export function macFenceProfile(input: MacProfileInput): string {
     "(allow file-ioctl (literal \"/dev/tty\"))",
   ];
   if (input.perUserTemp) lines.push(`(allow file-write* (regex #"^${rx(input.perUserTemp)}/[^/]+$"))`);
-  // 1. Clover home default-deny: subpath deny on the Clover home itself (broad deny for everything under it).
-  const cloverHomeDenyWrite = policy.denyWrite.filter((d) => d === input.cloverHome);
-  const cloverHomeDenyRead = policy.denyRead.filter((d) => d === input.cloverHome);
-  if (cloverHomeDenyWrite.length > 0) lines.push(`(deny file-write* ${cloverHomeDenyWrite.map((d) => `(subpath ${q(d)})`).join(" ")})`);
-  if (cloverHomeDenyRead.length > 0) lines.push(`(deny file-read* ${cloverHomeDenyRead.map((d) => `(subpath ${q(d)})`).join(" ")})`);
-  // 3. Naming folders outside the home (where Clover names things beyond it): deny non-ASCII names, then allow
+  // 1. MOSS home default-deny: subpath deny on the MOSS home itself (broad deny for everything under it).
+  const mossHomeDenyWrite = policy.denyWrite.filter((d) => d === input.mossHome);
+  const mossHomeDenyRead = policy.denyRead.filter((d) => d === input.mossHome);
+  if (mossHomeDenyWrite.length > 0) lines.push(`(deny file-write* ${mossHomeDenyWrite.map((d) => `(subpath ${q(d)})`).join(" ")})`);
+  if (mossHomeDenyRead.length > 0) lines.push(`(deny file-read* ${mossHomeDenyRead.map((d) => `(subpath ${q(d)})`).join(" ")})`);
+  // 3. Naming folders outside the home (where MOSS names things beyond it): deny non-ASCII names, then allow
   // ASCII names. Inside the home the home deny rules alone: no allow ever reopens a new name there.
   for (const f of [...naming].sort()) {
     lines.push(`(deny file-write* (regex #"^${rx(f)}/[^/]"))`);
     lines.push(`(allow file-write* (regex #"^${rx(f)}/[ -.0-~]+(/|$)"))`);
   }
-  // 4. Specific fenced item denies: the rest of denyWrite/denyRead (excluding the Clover home).
+  // 4. Specific fenced item denies: the rest of denyWrite/denyRead (excluding the MOSS home).
   // These come AFTER naming folder allows so they can't be overridden by them.
-  const specificDenyWrite = policy.denyWrite.filter((d) => d !== input.cloverHome);
-  const specificDenyRead = policy.denyRead.filter((d) => d !== input.cloverHome);
+  const specificDenyWrite = policy.denyWrite.filter((d) => d !== input.mossHome);
+  const specificDenyRead = policy.denyRead.filter((d) => d !== input.mossHome);
   if (specificDenyWrite.length > 0) lines.push(`(deny file-write* ${specificDenyWrite.map(filterOf).join(" ")})`);
   // The links on the way to a fenced item, each under its own name (never resolved): not removed, replaced or made
   // (#392's review). After the naming folders' allows, which would otherwise take a new name there back. A write
@@ -134,7 +134,7 @@ export function macFenceProfile(input: MacProfileInput): string {
   if (specificDenyRead.length > 0) lines.push(`(deny file-read* ${specificDenyRead.map(filterOf).join(" ")})`);
   if (doors.length > 0) lines.push(`(deny process-exec ${doors.map((d) => `(literal ${q(d)})`).join(" ")})`);
   // 5. The caller's rules (B's contract, `policyAllows`'s order): the home deny above refuses everything under
-  // the Clover home; the caller's own folders below open its own ways back in, and nothing else. Each read-and-write
+  // the MOSS home; the caller's own folders below open its own ways back in, and nothing else. Each read-and-write
   // folder reads on itself, reads and writes strictly inside it, and never writes over itself (deleting or moving
   // it stays denied, while moves inside it stay allowed); the bot's own folder reads only.
   const c = input.caller;
@@ -173,8 +173,8 @@ export function macFenceProfile(input: MacProfileInput): string {
   // under it, after the caller's own allows (a runner's own folders may hold a repo too). Bare repos (`*.git`)
   // match the same way.
   lines.push(`(deny file-write* (regex #"^${rx(input.home)}/.*\\.git/hooks(/|$)"))`);
-  // Clover's empty git template, read-only: `git init` and `git clone` install no hooks from it.
-  lines.push(`(allow file-read* (subpath ${q(gitTemplateDir(input.cloverHome))}))`);
+  // MOSS's empty git template, read-only: `git init` and `git clone` install no hooks from it.
+  lines.push(`(allow file-read* (subpath ${q(gitTemplateDir(input.mossHome))}))`);
   // No network (the daemon's socket included); `filtered` comes with the escape floor's ports.
   lines.push("(deny network*)");
   return `${lines.join("\n")}\n`;

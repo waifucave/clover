@@ -1,5 +1,5 @@
 // Plan readings (`docs/claude/usage.md`): the Codex ladder (its app-server → the newest rollout's `rate_limits` →
-// Clover's own codex-oauth report) and the Claude Code ladder (its own `/usage` → `~/.claude.json`'s cache), with
+// MOSS's own codex-oauth report) and the Claude Code ladder (its own `/usage` → `~/.claude.json`'s cache), with
 // FAKE executables only, the staleness rule, the throttles, and the guard on `/usage`.
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
@@ -25,7 +25,7 @@ function service(over: Partial<LegacyServiceDeps> & { logs?: string[] } = {}) {
   const logs = over.logs ?? [];
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }),
-    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],  ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
+    codexExecutable: () => undefined, claudeExecutable: () => undefined, mossCodexWindows: () => [],  ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...over,
   });
@@ -168,12 +168,12 @@ describe("the Codex plan", () => {
     expect(later.windows.map((w) => w.usedPercent)).toEqual([50, 60]);
   });
 
-  test("Codex that cannot answer: Clover's own codex-oauth report, status only, labelled; none without it; not installed whatever Clover knows", async () => {
+  test("Codex that cannot answer: MOSS's own codex-oauth report, status only, labelled; none without it; not installed whatever MOSS knows", async () => {
     const windows = () => [{ rateLimitType: "five_hour", status: "allowed" as const, at: NOW - 1000, resetsAt: NOW + 1000 }];
-    const plan = await service({ codexExecutable: () => FAILING, cloverCodexWindows: windows }).svc.sourcePlan("codex");
+    const plan = await service({ codexExecutable: () => FAILING, mossCodexWindows: windows }).svc.sourcePlan("codex");
     expect(plan).toMatchObject({ source: "winter-codex-oauth", windows: [], statusOnly: [{ rateLimitType: "five_hour", status: "allowed" }] });
     expect((await service({ codexExecutable: () => FAILING }).svc.sourcePlan("codex")).source).toBe("none");
-    expect((await service({ cloverCodexWindows: windows }).svc.sourcePlan("codex")).source).toBe("not-installed");
+    expect((await service({ mossCodexWindows: windows }).svc.sourcePlan("codex")).source).toBe("not-installed");
   });
 
   test("tracking off: nothing is spawned or read", async () => {

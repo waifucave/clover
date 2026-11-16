@@ -1,5 +1,5 @@
 // The MCP router's saveFiles: a call's files land in its saveTo or the session's scratch folder, and that folder is
-// named only when there is a file to save. A session whose scratch has no folder-tree name (a Clover home outside the
+// named only when there is a file to save. A session whose scratch has no folder-tree name (a MOSS home outside the
 // user's home) still gets a text-only result back, as the acceptance run's plugin Echo tool does.
 import { expect, test } from "bun:test";
 import { saveFiles, type McpResult } from "../../src/computers/mcp";

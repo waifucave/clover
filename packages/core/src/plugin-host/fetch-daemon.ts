@@ -9,8 +9,8 @@
 // are open (another plugin's included), and the credit windows. An upload piece past the credit the daemon gave, past
 // `chunkBytes`, or out of order cuts the fetch off (its request aborted), never buffered. A body message, a credit or a
 // cancel naming a fetch another plugin opened changes nothing.
-import type { HostProcess } from "@waifucave/clover-protocol";
-import { PLUGINS_METHODS } from "@waifucave/clover-protocol";
+import type { HostProcess } from "@waifucave/moss-protocol";
+import { PLUGINS_METHODS } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import type { ApiRouter } from "../contracts/plugin-host";
 import { handler, type MethodHandler } from "../rpc/handler";

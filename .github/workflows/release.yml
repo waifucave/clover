@@ -1,6 +1,6 @@
 name: release
 
-# Clover's release builds (plan §4 M-M2), run by hand: every OS's installers and update files for a channel, kept as
+# MOSS's release builds (plan §4 M-M2), run by hand: every OS's installers and update files for a channel, kept as
 # this run's artifacts. Unsigned, with no secret but the workflow's own token for the install, and nothing is
 # published: the owner signs and notarizes the macOS build on their Mac (scripts/release/build.ts, signing) and
 # gathers it with these into a draft release (scripts/release/publish.ts), which they publish themselves.
@@ -78,20 +78,20 @@ jobs:
           bun scripts/release/build.ts --channel "$CHANNEL"
           test "$(cat apps/desktop/out/dist/BUILD-COMMIT-${{ matrix.os }}.txt)" = "$GITHUB_SHA"
           version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
-          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/clover-core-"$version"-*)" "$(ls apps/desktop/out/dist/clover-plugins-"$version"-*.tar.gz)"
+          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/moss-core-"$version"-*)" "$(ls apps/desktop/out/dist/moss-plugins-"$version"-*.tar.gz)"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: clover-${{ matrix.os }}-${{ inputs.channel }}
+          name: moss-${{ matrix.os }}-${{ inputs.channel }}
           path: |
             apps/desktop/out/dist/*.dmg
             apps/desktop/out/dist/*.zip
             apps/desktop/out/dist/*.exe
             apps/desktop/out/dist/win-unpacked
             apps/desktop/out/dist/*.yml
-            apps/desktop/out/dist/clover-core-*
-            apps/desktop/out/dist/clover-plugin-bun-*
-            apps/desktop/out/dist/clover-plugins-*
+            apps/desktop/out/dist/moss-core-*
+            apps/desktop/out/dist/moss-plugin-bun-*
+            apps/desktop/out/dist/moss-plugins-*
             apps/desktop/out/dist/*.blockmap
             apps/desktop/out/dist/SHA256SUMS-*.txt
             apps/desktop/out/dist/BUILD-COMMIT-*.txt
@@ -142,21 +142,21 @@ jobs:
         run: |
           bun scripts/build-packages.ts --arch ${{ matrix.arch }} --channel "$CHANNEL" --check
           version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
-          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/clover-core-"$version"-linux-*)" "$(ls apps/desktop/out/dist/clover-plugins-"$version"-linux-*.tar.gz)"
-          cd apps/desktop/out/dist && sha256sum *.deb *.rpm *.AppImage *.yml clover-core-* clover-plugin-bun-* clover-plugins-* > SHA256SUMS-linux-${{ matrix.arch }}.txt
+          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/moss-core-"$version"-linux-*)" "$(ls apps/desktop/out/dist/moss-plugins-"$version"-linux-*.tar.gz)"
+          cd apps/desktop/out/dist && sha256sum *.deb *.rpm *.AppImage *.yml moss-core-* moss-plugin-bun-* moss-plugins-* > SHA256SUMS-linux-${{ matrix.arch }}.txt
           test "$(cat BUILD-COMMIT-linux-${{ matrix.arch }}.txt)" = "$GITHUB_SHA"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: clover-linux-${{ matrix.arch }}-${{ inputs.channel }}
+          name: moss-linux-${{ matrix.arch }}-${{ inputs.channel }}
           path: |
             apps/desktop/out/dist/*.deb
             apps/desktop/out/dist/*.rpm
             apps/desktop/out/dist/*.AppImage
             apps/desktop/out/dist/*.yml
-            apps/desktop/out/dist/clover-core-*
-            apps/desktop/out/dist/clover-plugin-bun-*
-            apps/desktop/out/dist/clover-plugins-*
+            apps/desktop/out/dist/moss-core-*
+            apps/desktop/out/dist/moss-plugin-bun-*
+            apps/desktop/out/dist/moss-plugins-*
             apps/desktop/out/dist/*.blockmap
             apps/desktop/out/dist/SHA256SUMS-*.txt
             apps/desktop/out/dist/BUILD-COMMIT-*.txt
@@ -194,7 +194,7 @@ jobs:
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: clover-linux-*-${{ inputs.channel }}
+          pattern: moss-linux-*-${{ inputs.channel }}
           path: packages-in
 
       - name: The repositories' metadata (unsigned)
@@ -204,6 +204,6 @@ jobs:
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: clover-linux-repo-${{ inputs.channel }}
+          name: moss-linux-repo-${{ inputs.channel }}
           path: linux-repo
           if-no-files-found: error

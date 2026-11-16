@@ -1,11 +1,11 @@
-// Plain Bun for plugins on a server install (the controller's ruling (a), #244): `clover-core server install` puts
-// `<home>/bin/daemon/clover-plugin-bun` beside `<home>/bin/daemon/clover-core`, and the server's daemon fetches it again at start
+// Plain Bun for plugins on a server install (the controller's ruling (a), #244): `moss-core server install` puts
+// `<home>/bin/daemon/moss-plugin-bun` beside `<home>/bin/daemon/moss-core`, and the server's daemon fetches it again at start
 // whenever its own Bun version (the daemon's `Bun.version`, which a self-update can change) differs from the installed
 // one. Lane B's `pluginBun()` finds it beside the compiled core and fails closed without it.
 //
 // The same checks as the daemon's own update (self-update.ts), in the same order, stopping at the first that fails:
 //   1. the update file (`<channel>-plugin-bun-<target>.yml`) and its signature, before a byte of it is read
-//   2. the binary (`clover-plugin-bun-<bun version>-<target>`): its signature, then its SHA-512 and size against the
+//   2. the binary (`moss-plugin-bun-<bun version>-<target>`): its signature, then its SHA-512 and size against the
 //      update file, which must name exactly the daemon's Bun version
 //   3. only then it runs, once: `--version` (PATH alone, 10 s), which must print that version
 // Then the atomic swap: the checked binary waits as `.new`, the installed one becomes `.old`, `.new` takes its name,
@@ -16,16 +16,16 @@
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { parsePluginBunFeed, pluginBunBinaryFile, pluginBunFeedFile, SIGNATURE_SUFFIX, verifyFeed, type CoreFeed, type CoreTarget, type FeedChannel } from "@waifucave/clover-update-feed";
+import { parsePluginBunFeed, pluginBunBinaryFile, pluginBunFeedFile, SIGNATURE_SUFFIX, verifyFeed, type CoreFeed, type CoreTarget, type FeedChannel } from "@waifucave/moss-update-feed";
 import { httpFetch, MAX_FEED_BYTES, runVersion, UPDATE_REPO, type Fetcher } from "./self-update";
 
 /** Where a server install keeps plugin Bun: beside its daemon, in `<home>/bin/daemon/`. */
 export function serverPluginBun(home: string, os: NodeJS.Platform | "win32" | "darwin" | "linux"): string {
-  return join(home, "bin", "daemon", os === "win32" ? "clover-plugin-bun.exe" : "clover-plugin-bun");
+  return join(home, "bin", "daemon", os === "win32" ? "moss-plugin-bun.exe" : "moss-plugin-bun");
 }
 
 export interface PluginBunDeps {
-  /** `<home>/bin/daemon/clover-plugin-bun` (`serverPluginBun`). */
+  /** `<home>/bin/daemon/moss-plugin-bun` (`serverPluginBun`). */
   path: string;
   /** The daemon's Bun version, which plugin Bun must be. */
   bunVersion: string;

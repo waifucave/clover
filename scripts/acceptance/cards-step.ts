@@ -17,7 +17,7 @@ export const CARDS_STEP = "a third-party plugin with `approvals` places its own 
 const FIXTURES = resolve(import.meta.dir, "fixtures");
 const A = "acceptance-cards-a";
 const B = "acceptance-cards-b";
-const sealedUrl = (id: string) => `clover-sealed://card/${encodeURIComponent(id)}/`;
+const sealedUrl = (id: string) => `moss-sealed://card/${encodeURIComponent(id)}/`;
 
 type Ev = Record<string, unknown> & { type?: string; seq?: number };
 interface Card { id: string; kind: string; change?: string; session?: string; pluginId?: string }
@@ -35,7 +35,7 @@ export async function cardsStep(ctx: ExampleCtx): Promise<string> {
 async function run(ctx: ExampleCtx): Promise<string> {
   const { cdp, rpc } = ctx;
   const done: string[] = [];
-  const docsOf = async (id: string) => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
+  const docsOf = async (id: string) => (await cdp.documents()).filter((d) => d.url.startsWith(`moss-plugin://${id}/`));
   /** What one data attribute of the first matching element of a plugin's documents says, or undefined when none is drawn. */
   const attr = async (id: string, selector: string, name: string): Promise<string | undefined> => {
     for (const d of await docsOf(id)) {
@@ -83,7 +83,7 @@ async function run(ctx: ExampleCtx): Promise<string> {
   void placed;
   const aFrames = await until("A's approve and deny frames", 20_000, async () => {
     for (const d of await docsOf(A)) {
-      const n = Number(await cdp.evaluate(d.session, `document.querySelectorAll('iframe[data-clover-sealed]').length`).catch(() => 0));
+      const n = Number(await cdp.evaluate(d.session, `document.querySelectorAll('iframe[data-moss-sealed]').length`).catch(() => 0));
       if (n >= 2) return n;
     }
     return undefined;
@@ -125,7 +125,7 @@ async function run(ctx: ExampleCtx): Promise<string> {
         const r = f.getBoundingClientRect();
         const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
         const chain = []; for (let e = f; e && chain.length < 12; e = e.parentElement) { const c = getComputedStyle(e); chain.push([e.tagName, c.opacity, c.filter, c.transform, c.overflow, c.visibility].join('|')); }
-        return { vis: document.visibilityState, state: f.getAttribute('data-clover-sealed-state'), style: f.getAttribute('style'), rect: [r.x, r.y, r.width, r.height], win: [innerWidth, innerHeight], atPoint: at ? at.tagName + (at === f ? ' (the frame)' : ' (not the frame)') : null, chain };
+        return { vis: document.visibilityState, state: f.getAttribute('data-moss-sealed-state'), style: f.getAttribute('style'), rect: [r.x, r.y, r.width, r.height], win: [innerWidth, innerHeight], atPoint: at ? at.tagName + (at === f ? ' (the frame)' : ' (not the frame)') : null, chain };
       })())`).catch(() => "gone");
       inA = `${d.url.slice(0, 60)} ${String(v)}`;
     }
@@ -188,8 +188,8 @@ async function run(ctx: ExampleCtx): Promise<string> {
   const ranCount = () => ctx.requests().filter((r) => r.toolResult?.text.includes("asked-ok")).length;
   const cardsFor = async () => (await cardsNow()).filter((c) => c.kind === "tool" && c.session === session).map((c) => c.id);
   await pickTool("allow");
-  // Renders for the owner (a run that sets CLOVER_SHOT_DIR only): the tab in light and in dark, the window's own pixels, headless.
-  const shots = process.env.CLOVER_SHOT_DIR;
+  // Renders for the owner (a run that sets MOSS_SHOT_DIR only): the tab in light and in dark, the window's own pixels, headless.
+  const shots = process.env.MOSS_SHOT_DIR;
   if (shots !== undefined && shots !== "" && ctx.setAppearance !== undefined) {
     const { mkdirSync, writeFileSync } = await import("node:fs");
     mkdirSync(shots, { recursive: true });

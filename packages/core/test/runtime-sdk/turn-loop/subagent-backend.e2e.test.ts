@@ -29,15 +29,15 @@ function spec(root: string, model: string): AgentStartSpec {
   return {
     sessionId: "s_agent", root, model,
     instructions: "Message your bot with SendMessage when you are done.",
-    bridge: { name: "clover_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
+    bridge: { name: "moss_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
     fence: { allowWrite: [root], denyWrite: [], denyRead: [], closedDoors: [], blockedAddresses: ["169.254.169.254"], network: "none" },
   };
 }
 
 describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   test("a prompt runs in the root; a write asks the host first; events and usage arrive", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     // It runs no command (a Write and its ask), so it runs anywhere the embedded runtime does; the seam says the sandbox
     // is ready, which off macOS it isn't (the test below covers that).
     const backend = inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true });
@@ -70,8 +70,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("review B2: the delegating bot's pause holds every tool call, read-only ones too, until the user resumes", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     let paused = true;
     const listeners = new Set<() => void>();
     const gate = { mayAct: () => !paused, watch: (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn); } };
@@ -97,8 +97,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   // refuses a sandboxed command ("sandbox-exec is unavailable"), so no background shell starts to stop (lane C's
   // fence brings Linux and Windows).
   darwinTest("the pause stops the agent's background shells, and holds the turn their notification starts until the user resumes", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     let paused = false;
     const listeners = new Set<() => void>();
     const gate = { mayAct: () => !paused, watch: (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn); } };
@@ -127,8 +127,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("a delegation with no pause gate is held as if paused, never let run", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: undefined as never }).start(spec(root, "winter-test/calls"));
     session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
     const events: AgentEvent[] = [];
@@ -143,7 +143,7 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("detect: available only where the embedded runtime's sandbox runs (lane K's check), whoever asks", async () => {
-    const home = temp("clover-a3-sub-home-");
+    const home = temp("moss-a3-sub-home-");
     const deps = { home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN };
     // Where the sandbox can't run, a direct caller learns it is not available, with lane K's reason.
     const off = await inProcessAgentBackend({ ...deps, sandboxReady: () => false }).detect();
@@ -155,17 +155,17 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     expect((await inProcessAgentBackend(deps).detect()).installed).toBe(inProcessSandboxReady());
   });
 
-  test("a missing root is refused (not_found), never created, as lane K's clover-code refuses it", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const missing = join(temp("clover-a3-sub-root-"), "not-there");
+  test("a missing root is refused (not_found), never created, as lane K's moss-code refuses it", async () => {
+    const home = temp("moss-a3-sub-home-");
+    const missing = join(temp("moss-a3-sub-root-"), "not-there");
     const err = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN }).start(spec(missing, "winter-test/calls")).then(() => undefined, (e: unknown) => e);
     expect(isContractError(err, "not_found")).toBe(true);
     expect(existsSync(missing)).toBe(false);
   });
 
   test("F8: a delegation's session closes the paths to launchd (denyLaunchServices)", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     const seen: unknown[] = [];
     const query: typeof sdkQuery = (args) => { seen.push(args.options?.sandbox); return sdkQuery(args); };
     const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, query }).start(spec(root, "winter-test/calls"));
@@ -175,8 +175,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   darwinTest("a delegation's background command and Monitor notifications reach its model framed, a forged closing tag defused", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN }).start(spec(root, "winter-test/calls"));
     session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
     const texts: string[] = [];
@@ -200,9 +200,9 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   darwinTest("a delegation's command never runs unsandboxed, even when the call asks (dangerouslyDisableSandbox)", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
-    const outside = join(temp("clover-a3-sub-out-"), "outside.txt");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
+    const outside = join(temp("moss-a3-sub-out-"), "outside.txt");
     const probe = `/bin/launchctl list >/dev/null 2>&1; echo "$?" > ${JSON.stringify(join(root, "launchctl"))}; touch ${JSON.stringify(outside)} 2>/dev/null; echo "$?" > ${JSON.stringify(join(root, "outside"))}`;
     const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN }).start(spec(root, "winter-test/calls"));
     session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
@@ -224,8 +224,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("the plugins' tool.before hooks cover a delegation's own tool calls: a guard denies, a rewrite applies and is what the approval sees; tool.after rewrites the result", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     const seen: { kind: string; tool: string }[] = [];
     const hooks: TurnHooks = {
       ...NO_HOOKS,
@@ -255,7 +255,7 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       expect(readFileSync(open, "utf8")).toBe("rewritten-by-the-hook");
       expect(asks.map((a) => (a.rawInput as { content?: string }).content)).toEqual(["rewritten-by-the-hook"]);
       expect(r[2]!.content).toContain("the hook's view of the file");
-      // No bot named: the user's own session on Clover's runtime, which the hooks see as `coding` (the manager's name).
+      // No bot named: the user's own session on MOSS's runtime, which the hooks see as `coding` (the manager's name).
       expect(seen.map((x) => `${x.kind}:${x.tool}`)).toEqual(["coding:Write", "coding:Write", "coding:Read"]);
     } finally {
       await session.stop();
@@ -263,8 +263,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("a bot's delegation is never drawn without its bot's builder: the start is refused (by construction)", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     const err = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true })
       .start({ ...spec(root, "winter-test/calls"), bot: "alpha" }).then(() => undefined, (e: unknown) => e);
     expect(isContractError(err) && err.code === "refused" && err.message.includes(NO_BOT_CHILD_SANDBOX)).toBe(true);
@@ -279,11 +279,11 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       host: { invoke: (async (req: { args: unknown }) => { invoked.push(req.args); return { deny: { reason: "the bots' guard said no" } }; }) as never },
     });
     const run = async (bot: string | undefined) => {
-      const home = temp("clover-a3-sub-home-");
-      const root = temp("clover-a3-sub-root-");
+      const home = temp("moss-a3-sub-home-");
+      const root = temp("moss-a3-sub-root-");
       const session = await inProcessAgentBackend({
         home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => guard,
-        botChild: botChildFor({ cloverHome: home, userHome: temp("clover-a3-sub-user-") }),
+        botChild: botChildFor({ mossHome: home, userHome: temp("moss-a3-sub-user-") }),
       }).start({ ...spec(root, "winter-test/calls"), ...(bot === undefined ? {} : { bot }) });
       session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
       try {
@@ -304,8 +304,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("before the plugins' hooks are up, a delegation's tool calls are refused with the reason, never run unguarded", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => undefined }).start(spec(root, "winter-test/calls"));
     session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
     try {
@@ -319,8 +319,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("with no plugin hooks to wait for (\"none\": plugins off, the registry gave up), a delegation's calls run", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => "none" }).start(spec(root, "winter-test/calls"));
     session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
     try {
@@ -333,8 +333,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("a delegation has none of the runtime's own subagents (Agent, Task): there is no nested query for the hooks to miss", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     const seen: string[] = [];
     const hooks: TurnHooks = { ...NO_HOOKS, toolBefore: async (_s, tool, input) => { seen.push(tool.name); return { input }; } };
     const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => hooks }).start(spec(root, "winter-test/calls"));
@@ -359,9 +359,9 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("a delegation can't reach the bot's memory (the owner's decision): Read and Write there are refused", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
-    const memory = temp("clover-a3-sub-mem-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
+    const memory = temp("moss-a3-sub-mem-");
     const { writeFileSync } = await import("node:fs");
     writeFileSync(join(memory, "MEMORY.md"), "- secret plans\n");
     const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, privateFoldersFor: () => [memory] }).start(spec(root, "winter-test/calls"));
@@ -377,11 +377,11 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("lane K's in-process bridge replaces the stdio one; its tools reach the manager", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     const got: unknown[] = [];
     const inProcessBridge = {
-      type: "sdk" as const, name: "clover_bridge",
+      type: "sdk" as const, name: "moss_bridge",
       instance: {
         listTools: () => [{ name: "SendMessage", inputSchema: { type: "object" } }],
         callTool: async (_n: string, args: Record<string, unknown>) => { got.push(args); return { content: [{ type: "text", text: "sent" }] }; },
@@ -396,18 +396,18 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     const session = await backend.start({ ...spec(root, "winter-test/calls"), inProcessBridge } as AgentStartSpec);
     session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
     try {
-      const end = await session.prompt({ text: 'CALL mcp__clover_bridge__SendMessage {"to":"luna","message":"done"}' });
+      const end = await session.prompt({ text: 'CALL mcp__moss_bridge__SendMessage {"to":"luna","message":"done"}' });
       expect(JSON.parse(end.text)[0].content).toBe("sent");
       expect(got).toEqual([{ to: "luna", message: "done" }]);
-      expect(seen).toEqual(["coding:coding:mcp__clover_bridge__SendMessage"]);
+      expect(seen).toEqual(["coding:coding:mcp__moss_bridge__SendMessage"]);
     } finally {
       await session.stop();
     }
   }, 60_000);
 
   test("cancel ends a running turn cancelled", async () => {
-    const home = temp("clover-a3-sub-home-");
-    const root = temp("clover-a3-sub-root-");
+    const home = temp("moss-a3-sub-home-");
+    const root = temp("moss-a3-sub-root-");
     const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/hang", pauseGateFor: () => OPEN }).start(spec(root, "winter-test/hang"));
     try {
       const p = session.prompt({ text: "wait" });
@@ -423,8 +423,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     // The interrupt then finds no turn to stop: the turn's own first messages send it again (a slow runner's flake),
     // and its prompt and calls are refused at the hooks whatever the interrupt does.
     for (const model of ["winter-test/hang", "winter-test/calls"]) {
-      const home = temp("clover-a3-sub-home-");
-      const root = temp("clover-a3-sub-root-");
+      const home = temp("moss-a3-sub-home-");
+      const root = temp("moss-a3-sub-root-");
       await Bun.write(join(root, "README"), "read me");
       const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => model, pauseGateFor: () => OPEN }).start(spec(root, model));
       const asks: AgentPermissionAsk[] = [];
@@ -456,8 +456,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     // mid-call cancel runs the list's second Read, and the one after that answers its own. The next turn's call is
     // held for a while too, so an interrupt of the cancel's that reached it would cut it there.
     for (const early of [true, false]) {
-      const home = temp("clover-a3-sub-home-");
-      const root = temp("clover-a3-sub-root-");
+      const home = temp("moss-a3-sub-home-");
+      const root = temp("moss-a3-sub-root-");
       const readme = join(root, "README");
       await Bun.write(readme, "read me");
       // Open for a prompt itself; then, until released, closed: the turn's first call holds at its start.

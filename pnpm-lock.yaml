@@ -55,13 +55,13 @@ importers:
       '@types/react-dom':
         specifier: 19.3.0
         version: 19.3.0(@types/react@19.3.0)
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
-      '@waifucave/clover-protocol':
+      '@waifucave/moss-protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
-      '@waifucave/clover-update-feed':
+      '@waifucave/moss-update-feed':
         specifier: workspace:*
         version: link:../../packages/update-feed
       electron:
@@ -82,13 +82,13 @@ importers:
 
   examples/battery-limiter:
     dependencies:
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
   examples/sample-echo:
     dependencies:
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
@@ -96,16 +96,16 @@ importers:
 
   packages/cli:
     dependencies:
-      '@waifucave/clover-core':
+      '@waifucave/moss-core':
         specifier: workspace:*
         version: link:../core
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@waifucave/clover-protocol':
+      '@waifucave/moss-protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@waifucave/clover-update-feed':
+      '@waifucave/moss-update-feed':
         specifier: workspace:*
         version: link:../update-feed
       chalk:
@@ -148,10 +148,10 @@ importers:
       '@waifucave/clover-agent-sdk':
         specifier: 0.0.80
         version: 0.0.80
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@waifucave/clover-protocol':
+      '@waifucave/moss-protocol':
         specifier: workspace:*
         version: link:../protocol
       '@waifucave/clover-provider-catalog':
@@ -170,10 +170,10 @@ importers:
       '@waifucave/clover-provider-conformance':
         specifier: 0.0.80
         version: 0.0.80
-      '@waifucave/clover-service-shared':
+      '@waifucave/moss-service-shared':
         specifier: workspace:*
         version: link:../../services/shared
-      '@waifucave/clover-test-harness':
+      '@waifucave/moss-test-harness':
         specifier: workspace:*
         version: link:../test-harness
     optionalDependencies:
@@ -183,7 +183,7 @@ importers:
 
   packages/plugin-sdk:
     dependencies:
-      '@waifucave/clover-protocol':
+      '@waifucave/moss-protocol':
         specifier: workspace:*
         version: link:../protocol
       zod:
@@ -205,10 +205,10 @@ importers:
 
   packages/test-harness:
     dependencies:
-      '@waifucave/clover-core':
+      '@waifucave/moss-core':
         specifier: workspace:*
         version: link:../core
-      '@waifucave/clover-protocol':
+      '@waifucave/moss-protocol':
         specifier: workspace:*
         version: link:../protocol
       miniflare:
@@ -225,7 +225,7 @@ importers:
 
   plugins/alpha/tab: {}
 
-  plugins/clover/plugins/archive:
+  plugins/moss/plugins/archive:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -259,7 +259,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/base-theme:
+  plugins/moss/plugins/base-theme:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -268,7 +268,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/base-theme/gallery:
+  plugins/moss/plugins/base-theme/gallery:
     dependencies:
       '@pixiv/three-vrm':
         specifier: 3.5.5
@@ -302,9 +302,9 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/bot-editor:
+  plugins/moss/plugins/bot-editor:
     dependencies:
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       lucide-react:
@@ -339,19 +339,19 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/browser:
+  plugins/moss/plugins/browser:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/browser-view:
+  plugins/moss/plugins/browser-view:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -385,9 +385,9 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/character:
+  plugins/moss/plugins/character:
     dependencies:
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       react:
@@ -419,24 +419,24 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/companion-ios:
+  plugins/moss/plugins/companion-ios:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/companion-web:
+  plugins/moss/plugins/companion-web:
     dependencies:
-      '@waifucave/clover-service-handshake':
+      '@waifucave/moss-service-handshake':
         specifier: workspace:*
         version: link:../../../../services/handshake
-      '@waifucave/clover-service-web':
+      '@waifucave/moss-service-web':
         specifier: workspace:*
         version: link:../../../../services/web
       node-datachannel:
@@ -446,17 +446,17 @@ importers:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
-      '@waifucave/clover-core':
+      '@waifucave/moss-core':
         specifier: workspace:*
         version: link:../../../../packages/core
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/composer:
+  plugins/moss/plugins/composer:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -490,7 +490,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/conversation:
+  plugins/moss/plugins/conversation:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -530,9 +530,9 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/devices:
+  plugins/moss/plugins/devices:
     dependencies:
-      '@waifucave/clover-plugin-island':
+      '@waifucave/moss-plugin-island':
         specifier: workspace:*
         version: link:../island
     devDependencies:
@@ -564,19 +564,19 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/fish-audio:
+  plugins/moss/plugins/fish-audio:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/forwarder:
+  plugins/moss/plugins/forwarder:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -585,9 +585,9 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/island:
+  plugins/moss/plugins/island:
     dependencies:
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
     devDependencies:
@@ -619,9 +619,9 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/live2d:
+  plugins/moss/plugins/live2d:
     dependencies:
-      '@waifucave/clover-plugin-vrm':
+      '@waifucave/moss-plugin-vrm':
         specifier: workspace:*
         version: link:../vrm
       '@waifucave/mochi2d':
@@ -659,7 +659,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/model-azure-openai:
+  plugins/moss/plugins/model-azure-openai:
     dependencies:
       '@waifucave/clover-provider-catalog':
         specifier: 0.0.77
@@ -675,7 +675,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/model-bedrock:
+  plugins/moss/plugins/model-bedrock:
     dependencies:
       '@waifucave/clover-provider-catalog':
         specifier: 0.0.77
@@ -691,7 +691,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/model-codex-oauth:
+  plugins/moss/plugins/model-codex-oauth:
     dependencies:
       '@waifucave/clover-provider-catalog':
         specifier: 0.0.77
@@ -707,7 +707,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/model-google:
+  plugins/moss/plugins/model-google:
     dependencies:
       '@waifucave/clover-provider-catalog':
         specifier: 0.0.77
@@ -723,7 +723,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/model-vertex:
+  plugins/moss/plugins/model-vertex:
     dependencies:
       '@waifucave/clover-provider-catalog':
         specifier: 0.0.77
@@ -739,7 +739,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/model-xai-oauth:
+  plugins/moss/plugins/model-xai-oauth:
     dependencies:
       '@waifucave/clover-provider-catalog':
         specifier: 0.0.77
@@ -755,7 +755,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/notifications:
+  plugins/moss/plugins/notifications:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -763,7 +763,7 @@ importers:
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       react:
@@ -773,7 +773,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/panel:
+  plugins/moss/plugins/panel:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -807,7 +807,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/panel-diff:
+  plugins/moss/plugins/panel-diff:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -841,7 +841,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/panel-files:
+  plugins/moss/plugins/panel-files:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -875,7 +875,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/panel-terminal:
+  plugins/moss/plugins/panel-terminal:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -909,9 +909,9 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/pill:
+  plugins/moss/plugins/pill:
     dependencies:
-      '@waifucave/clover-plugin-island':
+      '@waifucave/moss-plugin-island':
         specifier: workspace:*
         version: link:../island
     devDependencies:
@@ -943,22 +943,22 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/plugin-builder:
+  plugins/moss/plugins/plugin-builder:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
-      '@waifucave/clover-core':
+      '@waifucave/moss-core':
         specifier: workspace:*
         version: link:../../../../packages/core
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/plugin-index:
+  plugins/moss/plugins/plugin-index:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -992,31 +992,31 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/provider-gcp:
+  plugins/moss/plugins/provider-gcp:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/provider-hetzner:
+  plugins/moss/plugins/provider-hetzner:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/push:
+  plugins/moss/plugins/push:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -1025,19 +1025,19 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/relay-cloudflare:
+  plugins/moss/plugins/relay-cloudflare:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/settings:
+  plugins/moss/plugins/settings:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -1071,12 +1071,12 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/shell:
+  plugins/moss/plugins/shell:
     dependencies:
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
-      '@waifucave/clover-protocol':
+      '@waifucave/moss-protocol':
         specifier: workspace:*
         version: link:../../../../packages/protocol
       lucide-react:
@@ -1114,7 +1114,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/sidebar:
+  plugins/moss/plugins/sidebar:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -1148,7 +1148,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/trigger-schedule:
+  plugins/moss/plugins/trigger-schedule:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -1157,7 +1157,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/trigger-webhook:
+  plugins/moss/plugins/trigger-webhook:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -1166,9 +1166,9 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/usage:
+  plugins/moss/plugins/usage:
     dependencies:
-      '@waifucave/clover-plugin-island':
+      '@waifucave/moss-plugin-island':
         specifier: workspace:*
         version: link:../island
     devDependencies:
@@ -1200,9 +1200,9 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/voice:
+  plugins/moss/plugins/voice:
     dependencies:
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       react:
@@ -1234,7 +1234,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/vrm:
+  plugins/moss/plugins/vrm:
     dependencies:
       '@pixiv/three-vrm':
         specifier: 3.5.5
@@ -1274,7 +1274,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/plugins/web:
+  plugins/moss/plugins/web:
     dependencies:
       '@waifucave/clover-web':
         specifier: 0.0.77
@@ -1283,7 +1283,7 @@ importers:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
-      '@waifucave/clover-plugin-sdk':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
       typescript:
@@ -1304,10 +1304,10 @@ importers:
       '@types/node':
         specifier: 25.9.3
         version: 25.9.3
-      '@waifucave/clover-core':
+      '@waifucave/moss-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@waifucave/clover-test-harness':
+      '@waifucave/moss-test-harness':
         specifier: workspace:*
         version: link:../../packages/test-harness
       typescript:
@@ -1370,7 +1370,7 @@ importers:
       '@cloudflare/workers-types':
         specifier: 5.20260730.1
         version: 5.20260730.1
-      '@waifucave/clover-test-harness':
+      '@waifucave/moss-test-harness':
         specifier: workspace:*
         version: link:../../packages/test-harness
 
@@ -1406,9 +1406,9 @@ importers:
       '@types/node':
         specifier: 25.9.3
         version: 25.9.3
-      '@waifucave/clover-plugin-relay-cloudflare':
+      '@waifucave/moss-plugin-relay-cloudflare':
         specifier: workspace:*
-        version: link:../../plugins/clover/plugins/relay-cloudflare
+        version: link:../../plugins/moss/plugins/relay-cloudflare
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -1423,7 +1423,7 @@ importers:
 
   services/web:
     dependencies:
-      '@waifucave/clover-service-handshake':
+      '@waifucave/moss-service-handshake':
         specifier: workspace:*
         version: link:../handshake
     devDependencies:

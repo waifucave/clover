@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { fencedOutText } from "../../src/contracts/fence";
 
 test("the refusal names plugins, bots, agents or another computer's calls, by the caller", () => {
-  expect(fencedOutText({ kind: "plugin", pluginId: "editor" }, "/h/.clover/run")).toBe("the fence keeps plugins out of /h/.clover/run");
+  expect(fencedOutText({ kind: "plugin", pluginId: "editor" }, "/h/.moss/run")).toBe("the fence keeps plugins out of /h/.moss/run");
   expect(fencedOutText({ kind: "session", sessionId: "b_alpha", sessionKind: "bot", bot: "alpha" }, "/x")).toBe("the fence keeps bots out of /x");
   expect(fencedOutText({ kind: "session", sessionId: "t_1", sessionKind: "side-thread", bot: "alpha" }, "/x")).toBe("the fence keeps bots out of /x");
   expect(fencedOutText({ kind: "session", sessionId: "s_1", sessionKind: "coding" }, "/x")).toBe("the fence keeps agents out of /x");

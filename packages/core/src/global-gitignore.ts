@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
 /** The user's GLOBAL git excludes. git honors `core.excludesfile`, else `$XDG_CONFIG_HOME/git/ignore`
- *  (default `~/.config/git/ignore`). We target the XDG default — Clover manages only its OWN personal
+ *  (default `~/.config/git/ignore`). We target the XDG default — MOSS manages only its OWN personal
  *  patterns there, never a repo's `.gitignore`. */
 function defaultGlobalGitignorePath(): string {
   const xdg = process.env.XDG_CONFIG_HOME;
@@ -32,9 +32,9 @@ export function ensureGlobalGitignore(patterns: string[], opts: { path?: string 
   }
 }
 
-/** The personal `.clover/` patterns Clover manages in the global excludes (shared config stays committable). */
-export const CLOVER_PERSONAL_IGNORES = [
-  "**/.clover/settings.local.json",
-  "**/.clover/permissions.local.json",
-  "**/.clover/worktrees/",
+/** The personal `.moss/` patterns MOSS manages in the global excludes (shared config stays committable). */
+export const MOSS_PERSONAL_IGNORES = [
+  "**/.moss/settings.local.json",
+  "**/.moss/permissions.local.json",
+  "**/.moss/worktrees/",
 ];

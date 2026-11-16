@@ -14,7 +14,7 @@ import {
 import { storeProjectsDir } from "../../src/agent/paths";
 
 function realDir(): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), "clover-memdir-")));
+  return realpathSync(mkdtempSync(join(tmpdir(), "moss-memdir-")));
 }
 
 function git(args: string[], cwd: string): { code: number; stdout: string } {
@@ -152,52 +152,52 @@ describe("memory-dir: memoryDirFor", () => {
   beforeEach(() => _clearRepoRootCacheForTests());
 
   test("computes the store home's projects/<key>/memory (sdk/projects on a run-home build) for a repo cwd", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const root = initRepo();
-    const dir = memoryDirFor(root, { cloverHome });
-    expect(dir).toBe(join(storeProjectsDir(cloverHome), sanitizeProjectKey(root), "memory"));
+    const dir = memoryDirFor(root, { mossHome });
+    expect(dir).toBe(join(storeProjectsDir(mossHome), sanitizeProjectKey(root), "memory"));
   });
 
   test("a worktree and its main checkout share the SAME memory dir", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const root = initRepo();
     const wtParent = realDir();
     const wtDir = join(wtParent, "wt");
     git(["worktree", "add", "-q", "-b", "wt-branch2", wtDir], root);
-    expect(memoryDirFor(wtDir, { cloverHome })).toBe(memoryDirFor(root, { cloverHome }));
+    expect(memoryDirFor(wtDir, { mossHome })).toBe(memoryDirFor(root, { mossHome }));
   });
 
   test("non-repo cwd keys off the cwd itself", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const cwd = realDir();
-    expect(memoryDirFor(cwd, { cloverHome })).toBe(join(storeProjectsDir(cloverHome), sanitizeProjectKey(cwd), "memory"));
+    expect(memoryDirFor(cwd, { mossHome })).toBe(join(storeProjectsDir(mossHome), sanitizeProjectKey(cwd), "memory"));
   });
 
   test("settings.memory.directory overrides the computed path entirely (absolute)", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const root = initRepo();
     const override = realDir();
-    expect(memoryDirFor(root, { cloverHome, directory: override })).toBe(override);
+    expect(memoryDirFor(root, { mossHome, directory: override })).toBe(override);
   });
 
   test("settings.memory.directory honors a ~/ prefix", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const root = initRepo();
-    const dir = memoryDirFor(root, { cloverHome, directory: "~/clover-memdir-override-test-does-not-exist" });
+    const dir = memoryDirFor(root, { mossHome, directory: "~/moss-memdir-override-test-does-not-exist" });
     expect(dir.startsWith("/")).toBe(true);
-    expect(dir.endsWith("clover-memdir-override-test-does-not-exist")).toBe(true);
+    expect(dir.endsWith("moss-memdir-override-test-does-not-exist")).toBe(true);
   });
 
   test("an empty/whitespace-only override is treated as absent", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const root = initRepo();
-    expect(memoryDirFor(root, { cloverHome, directory: "   " })).toBe(join(storeProjectsDir(cloverHome), sanitizeProjectKey(root), "memory"));
+    expect(memoryDirFor(root, { mossHome, directory: "   " })).toBe(join(storeProjectsDir(mossHome), sanitizeProjectKey(root), "memory"));
   });
 
   test("does not create the directory (pure path computation)", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const root = initRepo();
-    const dir = memoryDirFor(root, { cloverHome });
+    const dir = memoryDirFor(root, { mossHome });
     const exists = Bun.spawnSync(["test", "-d", dir]).exitCode === 0;
     expect(exists).toBe(false);
   });
@@ -211,53 +211,53 @@ describe("memory-dir: the relocation door (P8b-17)", () => {
   beforeEach(() => _clearRepoRootCacheForTests());
 
   test("relocatedKey replaces the derived key, and is asked for exactly that key", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const root = initRepo();
     const todaysKey = sanitizeProjectKey(root);
     const asked: string[] = [];
 
     const dir = memoryDirFor(root, {
-      cloverHome,
+      mossHome,
       relocatedKey: (k) => { asked.push(k); return "compat-key-64"; },
     });
 
     expect(asked).toEqual([todaysKey]);
-    expect(dir).toBe(join(storeProjectsDir(cloverHome), "compat-key-64", "memory"));
+    expect(dir).toBe(join(storeProjectsDir(mossHome), "compat-key-64", "memory"));
   });
 
   test("a resolver that answers undefined leaves the derivation exactly as it was", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const root = initRepo();
-    expect(memoryDirFor(root, { cloverHome, relocatedKey: () => undefined })).toBe(memoryDirFor(root, { cloverHome }));
+    expect(memoryDirFor(root, { mossHome, relocatedKey: () => undefined })).toBe(memoryDirFor(root, { mossHome }));
   });
 
   test("memoryProjectKeyFor names the same key the directory is built from", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const root = initRepo();
-    const opts = { cloverHome, relocatedKey: (k: string) => (k === sanitizeProjectKey(root) ? "moved-here" : undefined) };
+    const opts = { mossHome, relocatedKey: (k: string) => (k === sanitizeProjectKey(root) ? "moved-here" : undefined) };
     expect(memoryProjectKeyFor(root, opts)).toBe("moved-here");
-    expect(memoryDirFor(root, opts)).toBe(join(storeProjectsDir(cloverHome), memoryProjectKeyFor(root, opts), "memory"));
+    expect(memoryDirFor(root, opts)).toBe(join(storeProjectsDir(mossHome), memoryProjectKeyFor(root, opts), "memory"));
   });
 
   test("the settings override still wins over a relocation — a pinned MEMDIR is never re-keyed", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const override = realDir();
     const root = initRepo();
-    expect(memoryDirFor(root, { cloverHome, directory: override, relocatedKey: () => "compat-key-64" })).toBe(override);
+    expect(memoryDirFor(root, { mossHome, directory: override, relocatedKey: () => "compat-key-64" })).toBe(override);
   });
 
   test("memoryDirForRecord reads the record's OWN key — no derivation, no git, no relocation map", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     // Deliberately a key no derivation from this path could produce: the record is the authority.
-    expect(memoryDirForRecord({ memoryProjectKey: "some-compat-key" }, { cloverHome })).toBe(
-      join(storeProjectsDir(cloverHome), "some-compat-key", "memory"),
+    expect(memoryDirForRecord({ memoryProjectKey: "some-compat-key" }, { mossHome })).toBe(
+      join(storeProjectsDir(mossHome), "some-compat-key", "memory"),
     );
   });
 
   test("memoryDirForRecord honours the settings override, same as every other MEMDIR door", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const override = realDir();
-    expect(memoryDirForRecord({ memoryProjectKey: "some-compat-key" }, { cloverHome, directory: override })).toBe(override);
+    expect(memoryDirForRecord({ memoryProjectKey: "some-compat-key" }, { mossHome, directory: override })).toBe(override);
   });
 });
 
@@ -266,24 +266,24 @@ describe("memory-dir: the relocation door (P8b-17)", () => {
 // to — see memory-migrate.ts / ipc/server.ts's own doc comments.
 describe("memory-dir: globalMemoryDirFor", () => {
   test("computes the store home's projects/_global/memory", () => {
-    const cloverHome = realDir();
-    expect(globalMemoryDirFor({ cloverHome })).toBe(join(storeProjectsDir(cloverHome), "_global", "memory"));
+    const mossHome = realDir();
+    expect(globalMemoryDirFor({ mossHome })).toBe(join(storeProjectsDir(mossHome), "_global", "memory"));
   });
 
   test("never collides with a real project's sanitized key", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const root = initRepo();
-    expect(globalMemoryDirFor({ cloverHome })).not.toBe(memoryDirFor(root, { cloverHome }));
+    expect(globalMemoryDirFor({ mossHome })).not.toBe(memoryDirFor(root, { mossHome }));
   });
 
   test("settings.memory.directory overrides the computed path entirely, same as memoryDirFor", () => {
-    const cloverHome = realDir();
+    const mossHome = realDir();
     const override = realDir();
-    expect(globalMemoryDirFor({ cloverHome, directory: override })).toBe(override);
+    expect(globalMemoryDirFor({ mossHome, directory: override })).toBe(override);
   });
 
   test("an empty/whitespace-only override is treated as absent", () => {
-    const cloverHome = realDir();
-    expect(globalMemoryDirFor({ cloverHome, directory: "  " })).toBe(join(storeProjectsDir(cloverHome), "_global", "memory"));
+    const mossHome = realDir();
+    expect(globalMemoryDirFor({ mossHome, directory: "  " })).toBe(join(storeProjectsDir(mossHome), "_global", "memory"));
   });
 });

@@ -1,10 +1,10 @@
-// Clover protocol area: agents (spec §9.3). Owner: lane K (the Agent tool, ACP backends, the bridge). Pinned by lane
+// MOSS protocol area: agents (spec §9.3). Owner: lane K (the Agent tool, ACP backends, the bridge). Pinned by lane
 // B at M0, from spike S5 (lane K's report of November 5, §8 "For the spine").
 //
 // A background agent is a session like any other (`session.*` in sessions.ts): `SendMessage` becomes its next
 // prompt, `TaskStop` is `session.stop`, and its task notification is `agent_finished`. Bots start agents with the
-// `Agent` tool, in-process; the user starts a coding session directly with `agent.start` (`clover code`). An ACP
-// agent reaches Clover's plugins only through one bridge MCP server, whose connection (role `bridge`) is bound to
+// `Agent` tool, in-process; the user starts a coding session directly with `agent.start` (`moss code`). An ACP
+// agent reaches MOSS's plugins only through one bridge MCP server, whose connection (role `bridge`) is bound to
 // that agent session by its token: its tools, `SendMessage` and `Glossary` (glossary.query, plugins.ts), nothing
 // else. Everything handed to an agent counts as stored in plain text; the bridge token is the only secret, in the
 // bridge entry's `env` (S5 edit 4).
@@ -68,12 +68,12 @@ export const BridgeTool = z.object({
   inputSchema: z.record(z.string(), z.unknown()),
 });
 
-/** The longest ACP line `clover-core code-agent` relays either way (K-M3b), in characters. Escaped inside a JSON string,
+/** The longest ACP line `moss-core code-agent` relays either way (K-M3b), in characters. Escaped inside a JSON string,
  *  a line this long can still pass the socket's 8 MiB (`NDJSON_MAX_LINE_BYTES`), so the relay also checks each request's
  *  encoded size before it sends it. */
 export const CODE_AGENT_MAX_LINE = 2 * 1024 * 1024;
 
-/** The notification that carries one ACP line from the coding agent to `clover-core code-agent`, on its bound
+/** The notification that carries one ACP line from the coding agent to `moss-core code-agent`, on its bound
  *  connection only (a notification, not a request: nothing answers it). */
 export const CODE_AGENT_LINE_NOTIFICATION = "codeAgent.line";
 export const CodeAgentLine = z.object({ line: utf16(CODE_AGENT_MAX_LINE, 1) });
@@ -95,7 +95,7 @@ export const AGENTS_METHODS = {
     params: z.object({
       backend: utf16(128, 1),
       computer: ComputerName,
-      /** A folder in the tree; refused if it contains the Clover home (§9.3). */
+      /** A folder in the tree; refused if it contains the MOSS home (§9.3). */
       root: TreePath,
       model: utf16(200).optional(),
       effort: utf16(32).optional(),
@@ -103,10 +103,10 @@ export const AGENTS_METHODS = {
       prompt: utf16(1_000_000).optional(),
     }),
     result: z.object({ session: SessionId }),
-    doc: "Starts a coding session the user drives directly, with no bot (`clover code`, §9.3).",
+    doc: "Starts a coding session the user drives directly, with no bot (`moss code`, §9.3).",
   }),
 
-  // `clover-core code-agent` (K-M3b): an outside ACP client's (Zed's) relay to Clover's coding agent, on a `cli`
+  // `moss-core code-agent` (K-M3b): an outside ACP client's (Zed's) relay to MOSS's coding agent, on a `cli`
   // connection that counts as the user. `codeAgent.open` binds the connection to one session; after it the connection
   // takes only `codeAgent.send`, and the session ends when the connection does.
   codeAgentOpen: defineMethod({

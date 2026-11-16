@@ -12,7 +12,7 @@
 // The bot service follows `watch`: it closes the gate on bots' turns when this computer stops being the runner,
 // catches up a conversation it takes over (calls the old runner never finished are recorded as maybe having run
 // there), and hands the bots back to a returning main between turns (`BotService.handBack`).
-import type { LeaseView } from "@waifucave/clover-protocol";
+import type { LeaseView } from "@waifucave/moss-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import type { Lease } from "../contracts/lease";
 

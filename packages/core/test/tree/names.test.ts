@@ -8,11 +8,11 @@ const invalid = (fn: () => unknown) => { try { fn(); } catch (e) { return isCont
 
 describe("names", () => {
   test("case and Unicode form fold on every OS; Windows drops trailing dots and spaces", () => {
-    expect(foldName(".CLOVER", "macos")).toBe(".clover");
+    expect(foldName(".MOSS", "macos")).toBe(".moss");
     expect(sameName(".café", ".CAFÉ", "linux")).toBe(true);
     expect(sameName("Key", "key", "macos")).toBe(true); // the Kelvin sign
-    expect(foldName(".clover. .", "windows")).toBe(".clover");
-    expect(foldName(".clover.", "macos")).toBe(".clover.");
+    expect(foldName(".moss. .", "windows")).toBe(".moss");
+    expect(foldName(".moss.", "macos")).toBe(".moss.");
   });
 
   test("the fold is NFC, then upper case, then lower case: the long s, the sharp s and the Kelvin sign fold as APFS and NTFS read them", () => {
@@ -20,7 +20,7 @@ describe("names", () => {
       expect(foldName("\u017Fettings", os)).toBe("settings"); // ſ
       expect(foldName("Stra\u00DFe", os)).toBe("strasse"); // ß
       expect(foldName("\u212Aey", os)).toBe("key"); // the Kelvin sign
-      expect(foldPath("/Users/me/.clover/\u017Fettings/\u212Aeys.json", os)).toBe("/users/me/.clover/settings/keys.json");
+      expect(foldPath("/Users/me/.moss/\u017Fettings/\u212Aeys.json", os)).toBe("/users/me/.moss/settings/keys.json");
     }
   });
 
@@ -28,8 +28,8 @@ describe("names", () => {
     for (const s of ["", ".", "..", "a/b", "a\0b"]) expect([s, invalid(() => checkSegment(s, "linux"))]).toEqual([s, true]);
     for (const s of ["NUL", "com1.txt", "LPT9", "con", "a:b", "a.", "a ", "x<y", "a\\b"]) expect([s, invalid(() => checkSegment(s, "windows"))]).toEqual([s, true]);
     for (const s of ["NUL", "a:b", "a."]) expect([s, invalid(() => checkSegment(s, "macos"))]).toEqual([s, false]);
-    expect(mayBeShortName("CLOVER~1", "windows")).toBe(true);
-    expect(mayBeShortName("CLOVER~1", "linux")).toBe(false);
+    expect(mayBeShortName("MOSS~1", "windows")).toBe(true);
+    expect(mayBeShortName("MOSS~1", "linux")).toBe(false);
   });
 });
 

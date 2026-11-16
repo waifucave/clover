@@ -1,7 +1,7 @@
 // A fake app client: what the Electron app will be to the daemon (spec §3.1) — a local client that says hello,
 // calls methods and receives every event — so a test can drive a daemon the way the app does, with no window.
 // It speaks the daemon's JSON-RPC 2.0 over NDJSON on the socket and records what arrives.
-import { encodeLine, LineDecoder, METHODS, PROTOCOL_VERSION } from "@waifucave/clover-protocol";
+import { encodeLine, LineDecoder, METHODS, PROTOCOL_VERSION } from "@waifucave/moss-protocol";
 
 export interface RpcError extends Error {
   rpc: { code: number; message: string; data?: unknown };
@@ -51,7 +51,7 @@ export class FakeAppClient {
       protocolVersion: PROTOCOL_VERSION,
       role: opts.role ?? "harness",
       token: opts.token,
-      clientName: opts.clientName ?? "clover-app (fake)",
+      clientName: opts.clientName ?? "moss-app (fake)",
       ...(opts.capabilities === undefined ? {} : { capabilities: opts.capabilities }),
     })) as { features?: string[] };
     client.features = hello.features ?? [];

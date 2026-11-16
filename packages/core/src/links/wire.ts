@@ -1,5 +1,5 @@
 // The wire under the LinkTransport: authenticated connections between device keys, each carrying independent,
-// prioritised byte streams. Two implementations: iroh (QUIC) through Clover's link sidecar (`sidecar-wire.ts`, spike
+// prioritised byte streams. Two implementations: iroh (QUIC) through MOSS's link sidecar (`sidecar-wire.ts`, spike
 // S1's decision), and an in-memory network for tests and several daemons in one process (`memory-wire.ts`). Nothing
 // above this file sees iroh.
 //
@@ -13,8 +13,8 @@ import type { Unsubscribe } from "../contracts/common";
 import type { Bytes } from "../identity/bytes";
 
 /** The link's own protocol; a different one carries pairing, which accepts devices that aren't paired yet. */
-export const ALPN_LINK = "clover/link/1";
-export const ALPN_PAIR = "clover/pair/1";
+export const ALPN_LINK = "moss/link/1";
+export const ALPN_PAIR = "moss/pair/1";
 
 /** The wire priority of each LinkTransport class, highest first (§8.2). */
 export const WIRE_PRIORITY = { control: 3, tokens: 2, screenshots: 1, files: 0 } as const;

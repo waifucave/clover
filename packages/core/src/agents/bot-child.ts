@@ -1,29 +1,29 @@
-// A bot's child agents (the in-process subagents and Clover's coding agent started by a bot) are never wider than
+// A bot's child agents (the in-process subagents and MOSS's coding agent started by a bot) are never wider than
 // their bot, by construction (the coordinator's ruling on stage 2's review):
 //
 // * **One builder.** A child's command sandbox is drawn by the bot's own builder (`botSandboxSettings`): the run-later
 //   denies over every root, the child's working folder included (the runtime always writes its cwd, so it is one of
 //   the roots the denies are drawn under: `ownFolders`), the secret places denied for reads and writes, the PATH
-//   folders held, git directories by content, the Clover home denied. The backend then puts `botSandbox()` on it
+//   folders held, git directories by content, the MOSS home denied. The backend then puts `botSandbox()` on it
 //   (enforce on, no unsandboxed command, `BOT_SANDBOX` last). A backend that draws a bot's child without it refuses
 //   to start.
 // * **Its commands card unless the bot holds the root** (`childCommandsHeld`): with a RequestAccess grant covering the
 //   child's root (the conversation's or a kept one), a command runs in that sandbox with no card, as the bot's own;
 //   without one, every command asks on a card, decided at each command (a grant withdrawn mid-run cards again). An
-//   agent's root is never inside the bot's own folders: the fence's `checkAgentRoot` refuses the Clover home.
+//   agent's root is never inside the bot's own folders: the fence's `checkAgentRoot` refuses the MOSS home.
 // * **Its file tools never write a run-later place** (`childRunsLater`): by the child's drawn denies, by name, and by
 //   the path classes, refused before any card.
 import { realpathSync } from "node:fs";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
-import type { Level, Os } from "@waifucave/clover-protocol";
+import type { Level, Os } from "@waifucave/moss-protocol";
 import type { SandboxPolicy } from "../contracts/fence";
 import type { AgentStartSpec } from "../contracts/agent-backend";
 import { botSandboxSettings, rootCovered, runLaterByName } from "../fence/sandbox-settings";
 import { pathFolders as pathFoldersOf, pathsClassOnDisk } from "../approvals/ordinary-paths";
 
 export interface BotChildHomes {
-  /** The Clover home. */
-  cloverHome: string;
+  /** The MOSS home. */
+  mossHome: string;
   /** The user's home. */
   userHome: string;
   os: Os;
@@ -40,7 +40,7 @@ export function hostPathFolders(os: Os): readonly string[] {
  *  write roots are its policy's (temp: `botChildPolicy`), never wider than the bot's at that level. */
 export function botChildSandboxSettings(policy: SandboxPolicy, o: BotChildHomes & { root: string; level: Level | undefined }): SandboxSettingsConfig {
   return botSandboxSettings(policy, {
-    cloverHome: o.cloverHome, userHome: o.userHome, level: o.level, ownFolders: [o.root],
+    mossHome: o.mossHome, userHome: o.userHome, level: o.level, ownFolders: [o.root],
     pathFolders: (o.pathFolders ?? (() => hostPathFolders(o.os)))(),
     ...(o.os === "windows" ? { windows: true } : {}),
   });
@@ -52,12 +52,12 @@ export function botChildSandboxSettings(policy: SandboxPolicy, o: BotChildHomes 
 export function botChildRunsLater(policy: SandboxPolicy, o: BotChildHomes & { root: string; level: Level | undefined }, path: string): boolean {
   try {
     const real = realPathOrNearest(path);
-    const homes = { os: o.os, userHome: o.userHome, cloverHome: o.cloverHome };
+    const homes = { os: o.os, userHome: o.userHome, mossHome: o.mossHome };
     if (runLaterByName(path, homes) || runLaterByName(real, homes)) return true;
     const deny = botChildSandboxSettings(policy, o).filesystem?.denyWrite ?? [];
     if (rootCovered(real, deny, o.os)) return true;
     const folders = (o.pathFolders ?? (() => hostPathFolders(o.os)))();
-    return pathsClassOnDisk([real], { home: o.userHome, os: o.os, cloverHome: o.cloverHome, pathFolders: folders }) === "card";
+    return pathsClassOnDisk([real], { home: o.userHome, os: o.os, mossHome: o.mossHome, pathFolders: folders }) === "card";
   } catch {
     return true;
   }
@@ -69,7 +69,7 @@ export function botChildRunsLater(policy: SandboxPolicy, o: BotChildHomes & { ro
  *  agent's root can't be. */
 export function botShellWriteRoots(botPolicy: SandboxPolicy, o: BotChildHomes & { level: Level | undefined; grants: readonly string[]; ownFolders: readonly string[] }): string[] {
   const drawn = botSandboxSettings(botPolicy, {
-    cloverHome: o.cloverHome, userHome: o.userHome, level: o.level, grantedWrite: o.grants, ownFolders: o.ownFolders,
+    mossHome: o.mossHome, userHome: o.userHome, level: o.level, grantedWrite: o.grants, ownFolders: o.ownFolders,
     pathFolders: (o.pathFolders ?? (() => hostPathFolders(o.os)))(), ...(o.os === "windows" ? { windows: true } : {}),
   });
   return [...o.grants, ...(drawn.filesystem?.allowWrite ?? [])];
@@ -100,7 +100,7 @@ function realPathOrNearest(path: string): string {
  *  builder at the level the manager handed (`level` on the spec), and its run-later check. */
 export function botChildFor(homes: Omit<BotChildHomes, "os"> & { os?: Os }): { sandbox(spec: AgentStartSpec): SandboxSettingsConfig; runsLater(spec: AgentStartSpec, path: string): boolean } {
   const os: Os = homes.os ?? (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
-  const h: BotChildHomes = { ...homes, cloverHome: realPathOrNearest(homes.cloverHome), userHome: realPathOrNearest(homes.userHome), os };
+  const h: BotChildHomes = { ...homes, mossHome: realPathOrNearest(homes.mossHome), userHome: realPathOrNearest(homes.userHome), os };
   const levelOf = (spec: AgentStartSpec) => (spec as AgentStartSpec & { level?: Level }).level;
   return {
     sandbox: (spec) => botChildSandboxSettings(spec.fence, { ...h, root: spec.root, level: levelOf(spec) }),

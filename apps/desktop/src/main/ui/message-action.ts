@@ -8,7 +8,7 @@
 //   * its answer reaches the page as `{ ok: true }`, or `{ note }`: one plain sentence, cut to 300 characters.
 // The call is a `gesture` entry: one key press or click the main process saw, spent per call; and one press at a time
 // per entry and message.
-import { displayText } from "@waifucave/clover-plugin-sdk/plain";
+import { displayText } from "@waifucave/moss-plugin-sdk/plain";
 import type { TreeRoute } from "./tree-calls";
 
 /** The spot whose entries this door runs. */

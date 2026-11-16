@@ -15,7 +15,7 @@ import { toBase64 } from "../bytes";
 import { DeviceKey } from "../device-key";
 import { ED25519_L, isStrictEd25519Point, isStrictEd25519Signature } from "../ed25519-strict";
 import { answerKeyBytes, generateEd25519, publicKeyFromBase64, verifyEd25519, verifyKeySignature } from "../keys";
-import * as service from "@waifucave/clover-service-shared/ed25519-strict";
+import * as service from "@waifucave/moss-service-shared/ed25519-strict";
 import { deviceIdFor, type PairingProof } from "../../contracts/device-registry";
 import { FakeDeviceRegistry, makeFakeDevice } from "../../contracts/fakes/device-registry";
 import { fallbackDialTarget } from "../../links/node";
@@ -53,7 +53,7 @@ describe("strict Ed25519 keys", () => {
 
   test("each small-order point is refused as a key, and as a signature's R", () => {
     const k = generateEd25519();
-    const data = new TextEncoder().encode("clover/card-answer/1\ncard_x");
+    const data = new TextEncoder().encode("moss/card-answer/1\ncard_x");
     const good = k.sign(data);
     for (const h of SMALL_ORDER) {
       const pt = hex(h);
@@ -107,7 +107,7 @@ describe("strict Ed25519 keys", () => {
 
   test("this desktop's answer key: a small-order key is refused by the registry, and a real one is taken", async () => {
     const key = await DeviceKey.loadOrCreate(new MemorySecretStore());
-    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-strict-")), key, clock: new FakeClock(), self: { name: "Studio", os: "macos" } });
+    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "moss-h-strict-")), key, clock: new FakeClock(), self: { name: "Studio", os: "macos" } });
     const zero = toBase64(new Uint8Array(32));
     const err = await registry.setOwnAnswerKey(zero, "none", new Uint8Array(64)).catch((e: unknown) => e);
     expect(isContractError(err, "invalid")).toBe(true);
@@ -166,7 +166,7 @@ describe("strict Ed25519 keys", () => {
     const zeroId = await deviceIdFor(zero);
     await registry.add({ id: zeroId, publicKey: toBase64(zero), name: "Zero", kind: "desktop", runsCore: true }, { via: "code", card: "card_test" } as PairingProof);
     // A statement the all-zero signature passes under a plain verify: refused here.
-    const statement = new TextEncoder().encode("clover/answer-key/1\nabc\nxyz\nnone");
+    const statement = new TextEncoder().encode("moss/answer-key/1\nabc\nxyz\nnone");
     expect(await registry.verify(zeroId, statement, new Uint8Array(64))).toBe(false);
     const real = await makeFakeDevice();
     await registry.add({ id: real.id, publicKey: real.publicKey, name: "Real", kind: "desktop", runsCore: true }, { via: "code", card: "card_test" } as PairingProof);

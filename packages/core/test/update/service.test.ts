@@ -1,17 +1,17 @@
 // `update.status` and `update.apply` (src/update/service.ts): what the app reads to know when to install, checked
 // against the protocol's own result schemas.
 import { describe, expect, test } from "bun:test";
-import { CLOVER_METHODS } from "@waifucave/clover-protocol";
-import type { CloverConn } from "../../src/ipc/clover";
+import { MOSS_METHODS } from "@waifucave/moss-protocol";
+import type { MossConn } from "../../src/ipc/moss";
 import { UpdateGate } from "../../src/update/gate";
 import { acceptUpdateExit, updateHandlers, type SelfUpdate } from "../../src/update/service";
-import { ERR } from "@waifucave/clover-protocol";
-import { rpcFromCloverRefusal } from "../../src/ipc/server";
-import { CloverLegRefusal } from "../../src/runtime-sdk/session-driver";
+import { ERR } from "@waifucave/moss-protocol";
+import { rpcFromMossRefusal } from "../../src/ipc/server";
+import { MossLegRefusal } from "../../src/runtime-sdk/session-driver";
 import { UPDATE_RESTARTING_MESSAGE } from "../../src/update/gate";
 
-const conn = {} as CloverConn;
-const parse = (method: string, result: unknown) => CLOVER_METHODS.get(method)!.result.parse(result);
+const conn = {} as MossConn;
+const parse = (method: string, result: unknown) => MOSS_METHODS.get(method)!.result.parse(result);
 
 describe("update.status and update.apply", () => {
   test("status says idle or what is busy, in the protocol's shape", async () => {
@@ -88,7 +88,7 @@ describe("update.status and update.apply", () => {
 
   test("a turn refused for the update's restart reaches a client as a RETRY, never INTERNAL", () => {
     let mapped: unknown;
-    try { rpcFromCloverRefusal(new CloverLegRefusal("daemon_shutting_down", UPDATE_RESTARTING_MESSAGE, "update-restarting")); } catch (err) { mapped = err; }
+    try { rpcFromMossRefusal(new MossLegRefusal("daemon_shutting_down", UPDATE_RESTARTING_MESSAGE, "update-restarting")); } catch (err) { mapped = err; }
     expect(mapped).toMatchObject({ code: ERR.RETRY, data: { code: "daemon_shutting_down", reason: "update-restarting", retryable: true } });
   });
 });

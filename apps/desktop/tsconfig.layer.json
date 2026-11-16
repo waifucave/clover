@@ -3,7 +3,7 @@
   // The window's core root and the layers' own code run in the browser: the DOM and React. Node's types are here only
   // because the protocol's index (which the UI API's types reach) names Buffer; test/main-no-bun.test.ts keeps Node out
   // of src/layer and src/core. The bundled parts are reached by their
-  // packages (`@waifucave/clover-plugin-<name>/client`), as any workspace package is.
+  // packages (`@waifucave/moss-plugin-<name>/client`), as any workspace package is.
   "compilerOptions": {
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     // Bun's types only because the plugin SDK's root index (which some parts' types reach) declares its Tier-2 API

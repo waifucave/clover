@@ -27,7 +27,7 @@ import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
 
 const STRONG = "fireworks/deepseek-v4-pro";
 const WEAK = "fireworks/gpt-oss-20b";
-const FIREWORKS = { id: "clover/model-fireworks", source: "bundled", manifest: { contributes: { models: [{ provider: "fireworks", auth: [{ method: "api-key", secret: "api-key" }] }] } } } as unknown as PluginRecord;
+const FIREWORKS = { id: "moss/model-fireworks", source: "bundled", manifest: { contributes: { models: [{ provider: "fireworks", auth: [{ method: "api-key", secret: "api-key" }] }] } } } as unknown as PluginRecord;
 const USER = { caller: { kind: "user", client: "app" } } as never;
 const KEY = "fw-dummy-edit-strength-0b7e";
 
@@ -56,7 +56,7 @@ function context(home: string, id: string, model: string): BotSessionContext {
 
 /** The bundled plugin's own row for `model` (what the catalog the bots run on carries). */
 function bundledStrength(model: string): string | undefined {
-  const file = join(import.meta.dir, "../../../../../plugins/clover/plugins/model-fireworks/catalog.json");
+  const file = join(import.meta.dir, "../../../../../plugins/moss/plugins/model-fireworks/catalog.json");
   const rows = (JSON.parse(readFileSync(file, "utf8")) as { rows: { key: string; strength?: string }[] }).rows;
   return rows.find((r) => r.key === model)?.strength;
 }
@@ -65,7 +65,7 @@ describeWithEmbeddedRuntime("a bot's Edit of a file it never read, by its model'
   test("the strong model's bot edits it; the weak model's bot is refused and told the line to read", async () => {
     expect(bundledStrength(STRONG)).toBe("strong");
     expect(bundledStrength(WEAK)).toBe("weak");
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-edit-strength-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-edit-strength-")));
     temps.push(home);
     // Per bot: the file its Edit names, and the tool result the runtime sent back on the second request.
     const files = new Map<string, string>();

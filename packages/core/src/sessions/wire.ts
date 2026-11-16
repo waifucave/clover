@@ -15,7 +15,7 @@
 // | a note                                   | `note`                                                         |
 // | a turn starting / ending                 | the inherited `turn_started` / `turn_completed`                |
 // | a status change                          | none: it reaches clients as `session_changed`                  |
-// | the runtime's own event                  | itself, when it is a `SessionEvent` or a Clover session event  |
+// | the runtime's own event                  | itself, when it is a `SessionEvent` or a MOSS session event  |
 // |                                          | the host doesn't project itself (`HOST_EVENT_TYPES`)           |
 // | an ACP agent's record (lane K's driver)  | the inherited event it reads as (`ACP_RECORDS`), so an agent's |
 // |                                          | live tab reads like a code session's (item 90)                 |
@@ -24,7 +24,7 @@
 // and never leave the daemon. For any reader but the user's own app and devices (a plugin's `conversation.read`, a
 // session, the CLI a bot can run), the sealed parts of approval and elicitation events are left out (§5.4: "sealed card
 // fields never reach it"), and of the streaming events only the reply's text is sent.
-import { CloverSessionEvent, SessionEvent, type Caller, type SessionKind } from "@waifucave/clover-protocol";
+import { MossSessionEvent, SessionEvent, type Caller, type SessionKind } from "@waifucave/moss-protocol";
 import type { SessionRecord, TurnEnd } from "../contracts/session-host";
 import { contextTokensOf } from "./compaction";
 import { CORE_ONLY_EVENT_TYPES } from "./durable-host";
@@ -34,7 +34,7 @@ export type WireEvent = { type: string; seq: number; sessionId: string; ts: numb
 /** The `type`s a runtime event may have to reach clients. */
 export const WIRE_EVENT_TYPES: ReadonlySet<string> = new Set([
   ...SessionEvent.options.map((o) => o.shape.type.value as string),
-  ...CloverSessionEvent.options.map((o) => o.shape.type.value as string),
+  ...MossSessionEvent.options.map((o) => o.shape.type.value as string),
 ]);
 
 /** The types the host projects from its own records. A runtime event of one of them is an echo (or a forgery: a
@@ -130,7 +130,7 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
         case "user":
           return {
             type: "user_message", ...envelope, threadId, text: input.text,
-            // The inherited event names the client; Clover's user input carries the device it came from instead.
+            // The inherited event names the client; MOSS's user input carries the device it came from instead.
             clientName: input.device, device: input.device, sentAt: input.sentAt,
             ...(input.images !== undefined && input.images.length > 0 ? { images: input.images } : {}),
             ...(input.files !== undefined && input.files.length > 0 ? { files: input.files } : {}),

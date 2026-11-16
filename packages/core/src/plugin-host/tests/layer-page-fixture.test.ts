@@ -7,7 +7,7 @@ import { afterAll, expect, test } from "bun:test";
 import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGINS_METHODS } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -21,11 +21,11 @@ const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 
 test("the page fixture's own point, own command and report answer on a component's route", async () => {
-  const home = mkdtempSync(join(tmpdir(), "clover-a-page-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-a-page-"));
   temps.push(home);
   cpSync(FIXTURE, join(home, "plugins", ID), { recursive: true });
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-  const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+  const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
   const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets: new MemorySecretStore() });
   const ui = pluginUi({ registry: opened.registry, router: ph.gate, emit: () => {} });
   try {

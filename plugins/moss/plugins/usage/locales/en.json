@@ -1,0 +1,90 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "moss.usage.title": "Usage",
+    "moss.usage.plans": "Plans",
+    "moss.usage.today": "Today",
+    "moss.usage.none": "No usage yet",
+    "moss.usage.noPlans": "No plans read yet",
+    "moss.usage.noneToday": "Nothing used today",
+    "moss.usage.source.moss": "MOSS",
+    "moss.usage.source.codex": "Codex",
+    "moss.usage.source.claude-code": "Claude Code",
+    "moss.usage.source.opencode": "OpenCode",
+    "moss.usage.source.antigravity": "Antigravity",
+    "moss.usage.window.hours": {
+      "other": "{count}-hour"
+    },
+    "moss.usage.window.daily": "Daily",
+    "moss.usage.window.weekly": "Weekly",
+    "moss.usage.window.monthly": "Monthly",
+    "moss.usage.used": "{percent}% used",
+    "moss.usage.limitReached": "Limit reached",
+    "moss.usage.resets": "Resets {when}",
+    "moss.usage.read": "Read {ago}",
+    "moss.usage.inMinutes": {
+      "one": "in 1 min",
+      "other": "in {count} min"
+    },
+    "moss.usage.inHours": {
+      "one": "in 1 h",
+      "other": "in {count} h"
+    },
+    "moss.usage.inHoursMinutes": "in {hours} h {minutes} min",
+    "moss.usage.inDays": {
+      "one": "in 1 day",
+      "other": "in {count} days"
+    },
+    "moss.usage.justNow": "just now",
+    "moss.usage.minutesAgo": {
+      "one": "1 min ago",
+      "other": "{count} min ago"
+    },
+    "moss.usage.hoursAgo": {
+      "one": "1 h ago",
+      "other": "{count} h ago"
+    },
+    "moss.usage.daysAgo": {
+      "one": "1 day ago",
+      "other": "{count} days ago"
+    },
+    "moss.usage.tokens": "{count} tokens",
+    "moss.usage.unpriced": "not priced",
+    "moss.usage.partlyPriced": "Some of it is not priced: the cost is at least this",
+    "moss.usage.noBot": "No bot",
+    "moss.usage.noSession": "No session",
+    "moss.usage.unknown": "Unknown",
+    "moss.usage.other": {
+      "one": "1 other",
+      "other": "{count} others"
+    },
+    "moss.usage.range.day": "24 hours",
+    "moss.usage.range.week": "7 days",
+    "moss.usage.range.month": "30 days",
+    "moss.usage.range.all": "All time",
+    "moss.usage.metric.cost": "Cost",
+    "moss.usage.metric.tokens": "Tokens",
+    "moss.usage.by.source": "Source",
+    "moss.usage.by.model": "Model",
+    "moss.usage.by.bot": "Bot",
+    "moss.usage.by.computer": "Computer",
+    "moss.usage.by.session": "Session",
+    "moss.usage.byLabel": "Group by",
+    "moss.usage.rangeLabel": "Period",
+    "moss.usage.metricLabel": "Show",
+    "moss.usage.perDay.cost": "Cost per day",
+    "moss.usage.perDay.tokens": "Tokens per day",
+    "moss.usage.dayTip": "{date}: {amount}",
+    "moss.usage.column.name": "Name",
+    "moss.usage.column.input": "Input",
+    "moss.usage.column.output": "Output",
+    "moss.usage.column.cost": "Cost",
+    "moss.usage.column.share": "Share",
+    "moss.usage.totalIn": "{count} in",
+    "moss.usage.totalOut": "{count} out",
+    "moss.usage.openSettings": "Details",
+    "moss.usage.loading": "Reading usage…",
+    "moss.usage.failed": "Usage could not be read"
+  }
+}

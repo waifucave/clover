@@ -1,0 +1,23 @@
+{
+  "manifest": 1,
+  "id": "acceptance-voice-bot",
+  "name": "Acceptance Voice Bot",
+  "description": "The acceptance run's bot that brings a default voice for itself on MOSS Voice's point moss.voice.defaults (the run's tone voice): its OK card carries MOSS Voice's caution line for that point. It is removed straight after.",
+  "version": "0.0.1",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "contributes": {
+    "bot": {
+      "name": "Acceptance Voice Bot",
+      "instructions": "bot/instructions.md"
+    },
+    "moss.voice.defaults": [
+      {
+        "provider": "acceptance-voice",
+        "plugin": "acceptance-voice",
+        "voice": "tone"
+      }
+    ]
+  }
+}

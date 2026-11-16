@@ -33,7 +33,7 @@ export const SHELL_STEP = "the bot's shell: a command in its own folder runs wit
 /** Stage 3: a command outside the sandbox, only behind its own card, only in a bot's own conversation. */
 export const OUTSIDE_STEP = "a command that needs the network: in the sandbox it can't reach it, with no card; flagged to run outside the sandbox it raises one card (the headline, the exact command, the plain sentence, no Always): denied it doesn't run, approved it runs; the same flagged call from a side thread or a child agent is refused with no card";
 export interface Row { n: number; name: string; status: Status; detail: string }
-/** The reopen steps (try 9's blocker: quit, reopen a few seconds later, stuck on "Starting Clover…"): the app quits the
+/** The reopen steps (try 9's blocker: quit, reopen a few seconds later, stuck on "Starting MOSS…"): the app quits the
  *  way the owner's does while a turn runs, and opens again. Each fails on a window that never fills. */
 export const REOPEN_STEPS = [
   { name: "reopen 0 s after quitting mid-turn: the window fills, and the interrupted turn shows as such", delayMs: 0 },
@@ -47,7 +47,7 @@ export const REOPEN_STEPS = [
 
 /** Alpha's stage tools are display-only (`contained`, her own tree's rule, no special case): the step proves the three
  *  levels on the real path. */
-export const AGENT_STEP = "Alpha starts her study-buddy on Clover's own coding agent with no card; the agent's row names the definition and the backend, and its report comes back to her conversation; her agent and the user's own coding session each call a plugin's tool through their bridge and get its answer";
+export const AGENT_STEP = "Alpha starts her study-buddy on MOSS's own coding agent with no card; the agent's row names the definition and the backend, and its report comes back to her conversation; her agent and the user's own coding session each call a plugin's tool through their bridge and get its answer";
 export const STAGE_STEP = "Alpha's stage tool runs with no card at the default level and changes her stage; it asks at \"ask\" and is refused at read-only, where her read-only stage_status still answers with no card";
 /** The cold-start step's name (`coldStartStep`). Its number is its own place in the table: rows after it (the idle
  *  step) must never take it. */
@@ -96,7 +96,7 @@ export const FULL_STEPS = [
   "the bot's WebFetch reads a page the user gave or a search hit with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
   "a folder-installed plugin's command hook fires on its event, fenced: no write outside its folders, no undeclared host",
   "a plugin's own API in its host half: a point's entries, call and watch; its synced store's keys, delete and watch; settings.watch; a note and a message into Alpha's conversation; its hooks on all eight events; removed with its data; turns: two plugins take one offered turn, never at once, and the holder's host process killed hands it on; streams: a host half and its page stream megabytes to each other, and a second plugin's point handler answers a caller with a stream",
-  "the clover plugin CLI against the run's daemon: list, info, logs, pin refused for a folder plugin, restart, index list; install, disable, enable, update, remove, wrap skill-folder, dev add, list and remove; new and validate",
+  "the moss plugin CLI against the run's daemon: list, info, logs, pin refused for a folder plugin, restart, index list; install, disable, enable, update, remove, wrap skill-folder, dev add, list and remove; new and validate",
   "plugins from an index the user added and from npm: installed behind their OK cards; an update offered and applied on the user's click with no card; a pinned plugin offered none; an update that adds a trigger asks again on a card that says what changed",
   "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
   "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says; a pasted MCP URL's tools list to the bot and answer it",

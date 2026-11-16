@@ -1,0 +1,137 @@
+// Fix wave, item 10 — THE BOUNDED PROBE (whole-branch review F6), now a PINNED MEASUREMENT: does a `{ type: "image" }` block
+// in a capability server's `callTool` result reach the child, and does the child forward it toward
+// the model? Measured through the driver table (no daemon) — on the built binary until A-M1, on the
+// embedded runtime (a Worker of this process) since: an `sdk` server
+// named `t8mcpsdk` (the name the `mcpsdk` double calls — `mcp__t8mcpsdk__echo`) answers with a text
+// block AND an image block. Two observations:
+//   (1) the persisted `tool_result.output` — the projector renders a non-text block in the child's
+//       `user` tool_result frame as `[<type>]`, so `[image]` in the output means the child carried
+//       the block on the wire it hands the host;
+//   (2) the child's OWN transcript JSONL under `<home>/projects/<key>/<backend>.jsonl` — the record
+//       of what the model is given on the next round; an image block there is the block reaching
+//       the model's input.
+import { afterAll, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { SessionEvent } from "@waifucave/moss-protocol";
+import { ApprovalBroker } from "../../src/agent/approvals";
+import { PermissionGate } from "../../src/agent/gate";
+import { QuestionBroker } from "../../src/agent/questions";
+import { FileSecretStore } from "../../src/auth/secret-store";
+import { createWinterRuntimeSdk } from "../../src/runtime-sdk/create";
+import { createEmbeddedSessionHost, EMBEDDED_SHUTDOWN_BUDGET_MS } from "../../src/runtime-sdk/embedded";
+import { createMossSessionDrivers } from "../../src/runtime-sdk/session-driver";
+import { openRuntimeStateDb, ProjectionCheckpoints, RuntimeSessionRecords } from "../../src/runtime-state";
+import { SessionHub } from "../../src/sessions/hub";
+import { SessionStore } from "../../src/sessions/store";
+import type { Settings } from "../../src/settings";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
+import { recordedRunHomes } from "../helpers/run-homes";
+
+const TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+describeWithEmbeddedRuntime("item 10 probe: MCP image content through a capability server, on the built binary", () => {
+  const cleanups: Array<() => Promise<void> | void> = [];
+  afterAll(async () => { for (const c of cleanups.reverse()) await c(); });
+
+  test("a text+image callTool result: what the child forwards (tool_result output; the child's transcript)", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-image-probe-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "moss-image-cwd-")));
+    const store = new SessionStore(home);
+    const hub = new SessionHub(store);
+    const rs = openRuntimeStateDb(home);
+    const records = new RuntimeSessionRecords(rs);
+    const checkpoints = new ProjectionCheckpoints(rs);
+    const settings = { runtimes: { winterIdleTimeoutSec: 10 } } as unknown as Settings;
+    const secrets = new FileSecretStore(join(home, "secrets.json"));
+    // R.1: the production shape — a run-home router (`runHomeFor` → `requireRunHome`) and real run homes, so the
+    // child writes its transcript where the record says (`sdk/projects`).
+    const runHomes = recordedRunHomes(home);
+    // A-M1: a code session runs EMBEDDED (spec §3.3), in a Worker of this process, so the handle needs
+    // the embedded host the daemon builds; the binary configured above is no longer what runs it.
+    const embedded = createEmbeddedSessionHost({ home, log: () => {} });
+    const runtime = await createWinterRuntimeSdk({
+      home, settings: () => settings, secrets, embedded,
+      runHomeFor: async (ctx) => runHomes.deps.build(runHomes.deps.inputFor({ mode: ctx.mode, dispatchChild: false, leg: ctx.leg, cwd: ctx.cwd })),
+    });
+    const calls: Array<{ name: string; args: unknown }> = [];
+    const drivers = createMossSessionDrivers({
+      home, settings: () => settings, runtime, records, checkpoints, store, hub, secrets,
+      runHome: runHomes.deps,
+      // THE PROBE SERVER: named as the double expects; its one tool answers text + image. A capability
+      // server (the daemon's own, in-process) — on a run-home build configured servers come from the run
+      // folder, and only capability servers ride Options.mcpServers, which is exactly this probe's premise.
+      buildSessionCapabilities: () => ({
+        t8mcpsdk: {
+          type: "sdk", name: "t8mcpsdk",
+          instance: {
+            // `alwaysLoad`: since the 2026-10-01 ruling every session runs with Tool Search on, so an MCP tool
+            // starts deferred — and the `mcpsdk` double calls it straight away. Loaded up front, the probe
+            // measures what it always measured.
+            listTools: () => [{ name: "echo", description: "probe", inputSchema: { type: "object", properties: { x: { type: "number" } } }, _meta: { "anthropic/alwaysLoad": true } }],
+            callTool: async (name: string, args: Record<string, unknown>) => {
+              calls.push({ name, args });
+              return { content: [{ type: "text", text: "Screenshot captured (screen is 1×1)." }, { type: "image", data: TINY_PNG_B64, mimeType: "image/png" }], isError: false };
+            },
+          },
+        },
+      }),
+      approvals: new ApprovalBroker(), questions: new QuestionBroker(), gate: new PermissionGate(),
+      rootsOf: () => [cwd], tmpDirOf: () => cwd, outDirOf: () => cwd, memoryKeyOf: () => "k",
+      idleTimeoutMs: () => 60_000, endGraceMs: 120,
+      log: () => {},
+    });
+    cleanups.push(async () => {
+      // Unregister the storage-policy consumer: a leaked one outlives this store and makes any later
+      // `refreshHostStoragePolicies()` in the same process throw "Cannot use a closed database".
+      drivers.beginShutdown?.();
+      await drivers.endAll();
+      await runtime.dispose();
+      await embedded.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS);
+      store.close(); rs.close();
+      rmSync(home, { recursive: true, force: true }); rmSync(cwd, { recursive: true, force: true });
+    });
+    const sid = store.createSession("probe", { mode: "code", model: "winter-test/mcpsdk", cwd, approvalPolicy: "auto" });
+    const session = await drivers.create(sid);
+    await session.send("call the tool", "probe");
+    const t0 = Date.now();
+    while (!store.read(sid).some((e) => e.type === "turn_completed") && Date.now() - t0 < 20_000) await Bun.sleep(25);
+    const log: SessionEvent[] = store.read(sid);
+    expect(log.map((e) => e.type)).toContain("turn_completed");
+    // the double's call reached OUR server with its scripted args
+    expect(calls).toEqual([{ name: "echo", args: { x: 1 } }]);
+    const res = log.find((e) => e.type === "tool_result") as { output: string; isError: boolean } | undefined;
+    expect(res).toBeDefined();
+    // (1) the wire the child hands the host: the projector renders a non-text block as `[image]`
+    // (2) the child's own transcript — the model's input record
+    const record = records.get(sid)!;
+    const dir = record.backendRoot;
+    const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".jsonl")) : [];
+    const transcript = files.map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
+    const lines = transcript.split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l) as Record<string, unknown>; } catch { return undefined; } }).filter(Boolean) as Array<Record<string, unknown>>;
+    const toolResults = lines.filter((l) => JSON.stringify(l).includes("tool_result"));
+    expect(files).toHaveLength(1);
+    expect(toolResults).toHaveLength(1);
+    // ── THE MEASUREMENT, FLIPPED (2026-10-07, dist/winter @ v0.0.53). At 0.0.4 (2026-09-11) the child
+    // FLATTENED the MCP content array to one text string -- the image block JSON-serialized into the text,
+    // its base64 reaching the model as TEXT -- and this test pinned that so the day it changed would be
+    // loud. Agent SDK 0.0.53 sends a host tool's image item down the same path as an external server's
+    // (`mcpResultWithImages`), and the daemon now returns the images its Computer/Browser calls stage as
+    // MCP image items (`capabilities/server.ts`'s `resultWithImages`) -- item 10's fix, shipped.
+    const transcriptToolResultContent = (toolResults[0] as { message?: { content?: Array<{ content?: unknown }> } } | undefined)?.message?.content?.[0]?.content;
+    expect(Array.isArray(transcriptToolResultContent)).toBe(true);                    // an array of blocks now
+    const blocks = transcriptToolResultContent as Array<{ type: string; text?: string; source?: { type?: string; media_type?: string; data?: string } }>;
+    expect(blocks.map((b) => b.type)).toEqual(["text", "image"]);
+    expect(blocks[0]!.text).toContain("Screenshot captured");
+    expect(blocks[1]!.source?.type).toBe("base64");
+    expect(blocks[1]!.source?.media_type).toBe("image/png");
+    expect((blocks[1]!.source?.data ?? "").length).toBeGreaterThan(0);              // the image, as an image
+    expect(JSON.stringify(blocks[0])).not.toContain('{\\"type\\":\\"image\\"');    // never serialized into the text
+    // and the host-side rendering agrees: the projector saw an image block, never the bytes as text
+    expect(res!.output).toContain("Screenshot captured");
+    expect(res!.output).not.toContain(TINY_PNG_B64);
+    expect(res!.output).not.toContain('{"type":"image"');
+    await session.end();
+  }, 40_000);
+});

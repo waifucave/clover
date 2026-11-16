@@ -3,7 +3,7 @@
 //
 //   scripts/pinned-bun scripts/acceptance/run.ts                      this checkout: the daemon from source, the
 //                                                                     desktop app built here, headless
-//   scripts/pinned-bun scripts/acceptance/run.ts --app <Clover.app>   a packaged app (a try build): its own daemon
+//   scripts/pinned-bun scripts/acceptance/run.ts --app <MOSS Code.app>   a packaged app (a try build): its own daemon
 //                                                                     and its own app, headless
 //   --keep-logs <dir>   copy the run's logs there before the temp folder goes (the logs hold no key)
 //   --verbose           print each step's progress
@@ -30,7 +30,7 @@
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
 //                       her tab opens on a transcript as long as a full run's
 //   --only-manifest     only the main chain's first rows (first start, the key, a turn, the folder install), then the
-//                       manifest fields row and the clover plugin CLI row; the run ends there
+//                       manifest fields row and the moss plugin CLI row; the run ends there
 //   --only-install      only the main chain's first rows: first start, the key, a turn, the folder install (step 4) and
 //                       its Review row (step 5); the run ends there
 //   --only-scheduled-routine  only the scheduled routine row (a routine Alpha makes runs from its schedule): the
@@ -47,23 +47,23 @@
 //   7. the daemon restarts on the same home and boots
 //   8 on (UI_STEPS). the window itself, over the DevTools protocol, on the restarted daemon (ui-steps.ts): drag the title area,
 //      type in the composer and send and read the reply, pick a model, open Settings, change a setting and reopen it.
-//      The source app takes the DevTools port behind CLOVER_DEV_DEBUG=1; a packaged one only if it is test-marked
-//      (CLOVER_TEST_DEBUG=1, loopback), and any other build refuses it (debug-guard.ts), so those steps are BLOCKED.
+//      The source app takes the DevTools port behind MOSS_DEV_DEBUG=1; a packaged one only if it is test-marked
+//      (MOSS_TEST_DEBUG=1, loopback), and any other build refuses it (debug-guard.ts), so those steps are BLOCKED.
 //   then: each boot lists the bundled web tools; the bot's WebSearch reaches the fake search backend; the bot's
 //      WebFetch reads a fake public page and is refused a private address; the installed plugin's command hook fires on
 //      turn.start under its fence (no write outside its folders, no undeclared host); its stdio MCP server lists to the
 //      bot and answers a call, run here under the same fence; and last, the cold start
 // It ends with a table, and exits 1 on any FAIL or BLOCKED.
 //
-// What it never does: no window, no Dock icon, no TCC prompt (the app runs `--clover-headless`, Chromium on its mock
+// What it never does: no window, no Dock icon, no TCC prompt (the app runs `--moss-headless`, Chromium on its mock
 // keychain); no real key and no real provider call (the only key is a random dummy, the only provider the fake); no
-// home but a temp one (`CLOVER_HOME`, and `HOME` for every process it starts); no keychain but a throwaway FILE,
+// home but a temp one (`MOSS_HOME`, and `HOME` for every process it starts); no keychain but a throwaway FILE,
 // never added to the search list (checked before and after). Every process it starts runs in its own process group
 // and is ended, and the temp folder and the keychain file are deleted, on every way out.
 //
-// The Clover home is DELIBERATELY `<temp user home>/.clover`, inside the user home as on a real Mac. Don't move it back
+// The MOSS home is DELIBERATELY `<temp user home>/.moss`, inside the user home as on a real Mac. Don't move it back
 // to a sibling folder: on 2026-11-13 the inside home turned rows 48, 50 and 55 red on three product bugs a sibling home
-// had hidden (a bot's Write into its scratch refused as a project's `.clover`; a pasted `bun -e` server refused by the
+// had hidden (a bot's Write into its scratch refused as a project's `.moss`; a pasted `bun -e` server refused by the
 // load guard under a dot-folder; a wrapped skill folder missing from Glossary), the last two in a shipped build.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -71,12 +71,12 @@ import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, r
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { CLOVER_PROTOCOL_VERSION } from "../../packages/protocol/src/index";
+import { MOSS_PROTOCOL_VERSION } from "../../packages/protocol/src/index";
 import { TEST_KEYCHAIN_PASSWORD } from "../../packages/core/src/auth/login-keychain";
 import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-files";
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
-import { CloverClient, RpcError, hello } from "./client";
+import { MossClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { checkPageReport } from "./layer-page-step";
@@ -97,7 +97,7 @@ import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { turnsClause } from "./turns-step";
 import { streamsClause } from "./streams-step";
-import { ASKS_ALL_PAGE, asksAllWrong, ONCE_CLOVERS_OWN, writeAsksAll, AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, BOT_COMMAND, BOT_PARTS_BOT, BOT_PARTS_CHECKBOX, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, CLAUDE_SKILL, oldSidebarTaken, OWN_BOT_ITEMS, OWN_BOT_MARK, ownBotWrong, writeOldSidebarTheme, writeRefusals, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
+import { ASKS_ALL_PAGE, asksAllWrong, ONCE_MOSS_OWN, writeAsksAll, AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, BOT_COMMAND, BOT_PARTS_BOT, BOT_PARTS_CHECKBOX, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, CLAUDE_SKILL, oldSidebarTaken, OWN_BOT_ITEMS, OWN_BOT_MARK, ownBotWrong, writeOldSidebarTheme, writeRefusals, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
 import { pluginOnce } from "./plugin-once";
 import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { parseOnlyUi, UI_FIRST_ROW, uiRowNumbers } from "./steps";
@@ -305,7 +305,7 @@ const statusOf = (err: unknown): Status => (err instanceof StepBlocked ? "BLOCKE
 const why = (err: unknown): string => (err instanceof StepFail ? err.message : err instanceof RpcError ? `${err.message}${whereOf(err)}` : err instanceof Error ? err.message : String(err));
 /** The daemon's "not served yet" and similar errors name no file; these point at where each is answered. */
 function whereOf(err: RpcError): string {
-  if (/is not served yet/.test(err.message)) return " [packages/core/src/ipc/clover.ts: no handler registered for the method]";
+  if (/is not served yet/.test(err.message)) return " [packages/core/src/ipc/moss.ts: no handler registered for the method]";
   return "";
 }
 
@@ -314,18 +314,18 @@ const root = mkdtempSync(join(tmpdir(), "clv-acc-"));
 // A --keep-state or --upgrade-from run keeps the home, the user home and the keychain file in its state dir; the rest
 // (logs, TMPDIR, the stub, a packaged core's copy) stays in the temp folder and goes.
 const kept_ = stateDir === undefined ? undefined : statePaths(stateDir);
-// The Clover home is `.clover` in the user home, as on the owner's Mac (the product's own default): a sibling folder hid
+// The MOSS home is `.moss` in the user home, as on the owner's Mac (the product's own default): a sibling folder hid
 // what the folder rules do with a home inside the user's (lane G's Browser screenshot into the bot's scratch).
 const userHome = kept_?.user ?? join(root, "user");
-const home = kept_?.home ?? join(userHome, ".clover");
+const home = kept_?.home ?? join(userHome, ".moss");
 const logs = join(root, "logs");
 /** The run's fake plugin index and npm registry: what it publishes (fake-exa.ts pluginWorldResponse). */
 const pluginWorld = join(root, "plugin-world");
 const keychain = kept_?.keychain ?? join(root, "kc", "acceptance.keychain-db");
 const answerKeyFile = answerKeyFileFor(keychain);
-const stubBin = join(root, "bin", "clover-core-stub");
+const stubBin = join(root, "bin", "moss-core-stub");
 for (const d of [home, userHome, logs, dirname(keychain), dirname(stubBin)]) mkdirSync(d, { recursive: true, mode: 0o700 });
-const service = kept?.service ?? `com.waifucave.clover.core.test.acceptance-${randomBytes(4).toString("hex")}`;
+const service = kept?.service ?? `com.waifucave.moss.core.test.acceptance-${randomBytes(4).toString("hex")}`;
 const dummyKey = kept?.key ?? `sk-ant-acceptance-dummy-${randomBytes(12).toString("hex")}`;
 // An upgrade writes a file of its own: the old run's is already there.
 // A sensitive place (a dot-folder in the home): a bot's write there still asks at "ask for risky actions" (§9.1).
@@ -348,14 +348,14 @@ const hitFetchUrl = `https://${FAKE_PUBLIC_SITE}${FAKE_HIT_PATH}`;
 const shellOutsidePath = join(userHome, "Documents", `acceptance-shell-${randomBytes(3).toString("hex")}.txt`);
 const writeContent = `acceptance-write-${randomBytes(4).toString("hex")}\n`;
 
-// A daemon binary the app finds instead of a real one (`CLOVER_DAEMON_BIN`, honoured by a dev or unpackaged app): any
+// A daemon binary the app finds instead of a real one (`MOSS_DAEMON_BIN`, honoured by a dev or unpackaged app): any
 // login-item or start the app tries fails here, so it never registers anything with launchd.
 writeFileSync(stubBin, "#!/bin/sh\necho 'acceptance: the app tried to start a daemon through the OS' >&2\nexit 1\n", { mode: 0o700 });
 // The reopen steps' stand-in for the OS's launcher (source target): the app's `autostart status|enable|start` as the
 // daemon binary answers them, where `start` only asks the run (a line in launch-requests) and the run starts the core
 // when, and only when, no daemon of its is running: as launchd starts the job only once the old process has gone.
 const launchRequests = join(root, "launch-requests");
-const standInBin = join(root, "bin", "clover-core-launch-stand-in");
+const standInBin = join(root, "bin", "moss-core-launch-stand-in");
 writeFileSync(standInBin, `#!/bin/sh
 case "$1 $2" in
   "autostart status") echo '{"registered":true,"running":false}' ;;
@@ -377,7 +377,7 @@ let oauthServer: FakeOAuth | undefined;
 const openAiWires = new Map<string, { fake: FakeOpenAi; key: string }>();
 /** The Google key the clause signs the bundled Google plugin in with (a dummy; the fake checks it). */
 const googleKey = `AIza-acceptance-dummy-${randomBytes(12).toString("hex")}`;
-const clients: CloverClient[] = [];
+const clients: MossClient[] = [];
 let keychainsBefore = "";
 /** What a --keep-state run leaves in state.json besides the keychain service and the key. */
 const keptFacts: Pick<KeptState, "session" | "pluginId" | "needsYou" | "needsYouMissing" | "always" | "alwaysMissing"> = {};
@@ -396,19 +396,19 @@ function baseEnv(): Record<string, string> {
     HOME: userHome,
     TMPDIR: join(root, "tmp"),
     LANG: "en_US.UTF-8",
-    CLOVER_HOME: home,
+    MOSS_HOME: home,
     // The run's fake plugin index and npm registry (fake-exa.ts): read by the source daemon's seam (a packaged test
-    // build reaches them by name through CLOVER_TEST_OUTSIDE_WORLD instead).
-    CLOVER_ACCEPTANCE_PLUGIN_WORLD: pluginWorld,
+    // build reaches them by name through MOSS_TEST_OUTSIDE_WORLD instead).
+    MOSS_ACCEPTANCE_PLUGIN_WORLD: pluginWorld,
     // The source target is a dev build; a packaged one runs as the profile its bundle id names (a dist-signed try
     // build must pass the dist app's caller check, not the dev app's).
-    ...(profile === "dev" ? { CLOVER_PROFILE: "dev" } : {}),
-    CLOVER_KEYCHAIN_SERVICE: service,
-    CLOVER_TEST_KEYCHAIN: keychain,
+    ...(profile === "dev" ? { MOSS_PROFILE: "dev" } : {}),
+    MOSS_KEYCHAIN_SERVICE: service,
+    MOSS_TEST_KEYCHAIN: keychain,
     // The test app's answer key, kept beside the keychain file (a test-marked or unpackaged headless app only): every
     // app of the run, and an upgrade's, registers the same key.
-    CLOVER_TEST_ANSWER_KEY: answerKeyFile,
-    ...(tabFlashAlone ? { CLOVER_TEST_SLEEP_AFTER_MS: String(TAB_FLASH_SLEEP_MS) } : {}),
+    MOSS_TEST_ANSWER_KEY: answerKeyFile,
+    ...(tabFlashAlone ? { MOSS_TEST_SLEEP_AFTER_MS: String(TAB_FLASH_SLEEP_MS) } : {}),
   };
 }
 mkdirSync(join(root, "tmp"), { recursive: true, mode: 0o700 });
@@ -532,8 +532,8 @@ async function buildBundledPlugins(): Promise<void> {
     const { readdirSync, existsSync } = await import("node:fs");
     const { join } = await import("node:path");
     const sources = ${JSON.stringify(join(REPO, "plugins"))};
-    const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "clover.json"))).sort();
-    const built = await buildDevBundledPlugins({ sources, ids, cloverHome: ${JSON.stringify(home)} });
+    const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "moss.json"))).sort();
+    const built = await buildDevBundledPlugins({ sources, ids, mossHome: ${JSON.stringify(home)} });
     console.log("built " + built.built.join(","));
   `], { cwd: REPO, env: baseEnv(), encoding: "utf8", timeout: 600_000 });
   writeFileSync(join(logs, "bundled-build.log"), `${r.stdout ?? ""}${r.stderr ?? ""}`);
@@ -575,7 +575,7 @@ function packagedApp(bundle: string): { exe: string; args: string[] } {
 }
 
 /** The packaged core, copied out with the bundled plugins beside it as the bundle lays them out
- *  (`<…>/Resources/daemon/clover-core`, `<…>/Resources/plugins`; packages/core/src/bundled-plugins-dir.ts). Run from
+ *  (`<…>/Resources/daemon/moss-core`, `<…>/Resources/plugins`; packages/core/src/bundled-plugins-dir.ts). Run from
  *  inside the bundle, a core with no app connected within 2 s starts the bundle through `open -n -g -a`
  *  (packages/core/src/platform/pair/launch.ts), a second, windowed app on this screen; from the copy it finds no
  *  bundle and runs alone, and the headless app connects to it. The binary is the bundle's, byte for byte. */
@@ -587,13 +587,13 @@ function packagedCore(): string {
     const plugins = join(appBundle!, "Contents", "Resources", "plugins");
     if (existsSync(plugins)) cpSync(plugins, join(res, "plugins"), { recursive: true, verbatimSymlinks: true });
   }
-  return join(res, "daemon", "clover-core");
+  return join(res, "daemon", "moss-core");
 }
 
 /** The ruling for a packaged run: only a test-marked core, which takes the test variables and refuses to start without
  *  them. A release core is never started: it would want the account's real home and write to the login keychain. */
 function checkTestBuild(): string {
-  const core = join(appBundle!, "Contents", "Resources", "daemon", "clover-core");
+  const core = join(appBundle!, "Contents", "Resources", "daemon", "moss-core");
   if (!existsSync(core)) return `${core} isn't there`;
   const r = spawnSync(core, ["--version"], { env: baseEnv(), encoding: "utf8", timeout: 30_000 });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim().split("\n")[0]?.slice(0, 200) ?? "";
@@ -634,16 +634,16 @@ async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised
   daemonRun++;
   // Usage-inert, both targets (the compiled core honours the same variables): no daemon of the run reads or runs the
   // user's own Codex, Claude Code, Antigravity or OpenCode, nor the plan beat.
-  const env = { ...baseEnv(), ...USAGE_INERT_ENV, ...extraEnv, CLOVER_ACCEPTANCE_RUN_PID: String(process.pid), CLOVER_ACCEPTANCE_USER_HOME: userHome };
+  const env = { ...baseEnv(), ...USAGE_INERT_ENV, ...extraEnv, MOSS_ACCEPTANCE_RUN_PID: String(process.pid), MOSS_ACCEPTANCE_USER_HOME: userHome };
   let started: { proc: ChildProcess; log: string };
   if (target === "source") {
     started = startChild(`daemon-${daemonRun}`, process.execPath, [join(REPO, "scripts", "acceptance", supervised ? "supervise.ts" : "daemon.ts")], env);
   } else {
     // The bundle's own test-marked core, with no override of its caller check: the same temp home and throwaway
     // keychain file as the source target, nothing else.
-    const { CLOVER_ACCEPTANCE_RUN_PID: _pid, CLOVER_ACCEPTANCE_USER_HOME: _user, ...packagedEnv } = env;
+    const { MOSS_ACCEPTANCE_RUN_PID: _pid, MOSS_ACCEPTANCE_USER_HOME: _user, ...packagedEnv } = env;
     // A core that carries the test build's outside-world seam reaches the run's fakes by name, on loopback.
-    started = startChild(`daemon-${daemonRun}`, packagedCore(), supervised ? ["supervise"] : ["daemon", "run"], { ...packagedEnv, ...(outsideWorld === undefined ? {} : { CLOVER_TEST_OUTSIDE_WORLD: outsideWorld.spec }) });
+    started = startChild(`daemon-${daemonRun}`, packagedCore(), supervised ? ["supervise"] : ["daemon", "run"], { ...packagedEnv, ...(outsideWorld === undefined ? {} : { MOSS_TEST_OUTSIDE_WORLD: outsideWorld.spec }) });
   }
   lastDaemonLog = started.log;
   const socket = join(home, "run", "core.sock");
@@ -651,17 +651,17 @@ async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised
   await until("the daemon's socket and app token", 120_000, async () => {
     if (!alive(started.proc)) fail(`the daemon exited (${started.proc.exitCode ?? started.proc.signalCode}): ${lastLines(started.log)}`);
     if (!existsSync(socket) || !existsSync(tokenFile)) return undefined;
-    try { (await CloverClient.connect(socket, 1_000)).close(); return true; } catch { return undefined; }
+    try { (await MossClient.connect(socket, 1_000)).close(); return true; } catch { return undefined; }
   }, 500);
   lastDaemon = started;
   // A registry the run holds shut (the cold starts' delay) lists nothing before it opens: the wait starts there.
-  watchBundledListing(daemonRun, started.log, Number(extraEnv.CLOVER_ACCEPTANCE_REGISTRY_DELAY_MS ?? 0) || 0);
+  watchBundledListing(daemonRun, started.log, Number(extraEnv.MOSS_ACCEPTANCE_REGISTRY_DELAY_MS ?? 0) || 0);
   return started;
 }
 
 // ── the bundled MCP servers at each boot (the last step) ────────────────────────────────────────────────────────
 // A bundled `host` MCP server that should be up lists its tools within seconds of the daemon's start: the web plugin's
-// (`clover/web`, WebSearch and WebFetch; the browser's is per-computer and starts only where a computer ticks it), or
+// (`moss/web`, WebSearch and WebFetch; the browser's is per-computer and starts only where a computer ticks it), or
 // it says at once why it can't work in this build (`not served: …`: its tools need net.fetch, which can't cross the
 // plugin host yet; packages/core/src/contracts/plugin-host.ts NET_FETCH_CROSSES_PLUGIN_HOST). A turn waits at most
 // MCP_FIRST_LISTING_WAIT_MS (packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts) for a first listing, so later
@@ -675,7 +675,7 @@ const BUNDLED_MCP_WAIT_MS = 5_000;
 // to BUNDLED_MCP_CEILING_MS so a late listing is timed, not lost.
 const BUNDLED_MCP_NO_TURN_MS = 2 * BUNDLED_MCP_WAIT_MS;
 const BUNDLED_MCP_CEILING_MS = 20_000;
-const BUNDLED_LISTED = /\[plugins\] plugin MCP clover\/web\/web: (listed \d+ tool\(s\): [^\n]*|not served: [^\n]*)/;
+const BUNDLED_LISTED = /\[plugins\] plugin MCP moss\/web\/web: (listed \d+ tool\(s\): [^\n]*|not served: [^\n]*)/;
 // Any plugin's host server whose listing failed, or whose worker went under it, fails the step. And a served server
 // that runs a worker must list in time too: the web one isn't started while it isn't served, so the plugin step 4
 // installs (acceptance-echo, no network) stands for every served one on the boots after its install.
@@ -712,7 +712,7 @@ function watchBundledListing(run: number, log: string, graceMs = 0): void {
 }
 
 /** The web plugin's tools as a session names them today: each bundled server under its own name (spec §5.3's
- *  mcp__clover__… waits on the agent runtime, which keeps `clover` for its standing server). */
+ *  mcp__moss__… waits on the agent runtime, which keeps `moss` for its standing server). */
 const WEB_SEARCH_TOOL = "mcp__web__WebSearch";
 const WEB_FETCH_TOOL = "mcp__web__WebFetch";
 /** The command hook step's outcome, from the plugin's turn on the first daemon. */
@@ -720,10 +720,10 @@ let hookOutcome: { status: Status; detail: string } | undefined;
 /** The plugin's own host API step (acceptance-points; its turn here, on the first daemon; recorded at the end). */
 let pointsOutcome: { status: Status; detail: string } | undefined;
 const POINTS_PREFIX = "a plugin's own API in its host half";
-/** The `clover plugin` CLI step (run on the first daemon after the host API step; recorded at the end). */
+/** The `moss plugin` CLI step (run on the first daemon after the host API step; recorded at the end). */
 let cliOutcome: { status: Status; detail: string } | undefined;
 let manifestOutcome: { status: Status; detail: string } | undefined;
-const CLI_PREFIX = "the clover plugin CLI against the run's daemon";
+const CLI_PREFIX = "the moss plugin CLI against the run's daemon";
 /** The index and npm step (run on the first daemon after the CLI step; recorded at the end). */
 let indexOutcome: { status: Status; detail: string } | undefined;
 const INDEX_PREFIX = "plugins from an index the user added and from npm";
@@ -741,7 +741,7 @@ let apiOutcome: { status: Status; detail: string } | undefined;
 
 /** Row 2.14: an own-process plugin (fixtures/acceptance-vault) reads the key the run stored for its `auth` entry with
  *  `secrets.get` (it answers the key's digest, never the key), and a name it doesn't list is refused. Removed after. */
-async function vaultRead(c: CloverClient): Promise<string> {
+async function vaultRead(c: MossClient): Promise<string> {
   const id = "acceptance-vault";
   const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", id);
   cpSync(join(import.meta.dir, "fixtures", id), folder, { recursive: true });
@@ -796,7 +796,7 @@ let shellOutcome: { status: Status; detail: string } | undefined;
  *  stopped by the sandbox, the bot asks with RequestAccess, its card is approved and the turn goes on, and the same
  *  command lands; a network request is refused with no card (the runtime's sandbox can't let only some hosts
  *  through, and the whole network is never given). */
-async function shellTurns(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+async function shellTurns(c: MossClient, session: string): Promise<{ status: Status; detail: string }> {
   try {
     const run = async (text: string) => {
       const seen = fake!.requests.length;
@@ -837,17 +837,17 @@ const OUTSIDE_SENTENCE = "It runs as you, with the network and everything your a
  *  to the run's own loopback server, never the real network) first in the sandbox, where it can't reach it, with no
  *  card; then flagged to run outside the sandbox: one card showing the headline, the exact command and the plain
  *  sentence, with no "Always"; denied, nothing reaches the server; approved, the command runs and reaches it once.
- *  The same flagged call from a side thread (a routine Alpha writes, run now) and from her child agent (Clover's own
+ *  The same flagged call from a side thread (a routine Alpha writes, run now) and from her child agent (MOSS's own
  *  coding agent) is refused with no card, and reaches nothing. */
-async function outsideTurns(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
-  const body = `clover outside probe ${randomBytes(4).toString("hex")}`;
+async function outsideTurns(c: MossClient, session: string): Promise<{ status: Status; detail: string }> {
+  const body = `moss outside probe ${randomBytes(4).toString("hex")}`;
   let hits = 0;
   const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
-    if (new URL(req.url).pathname !== "/clover-outside-probe") return new Response("not here", { status: 404 });
+    if (new URL(req.url).pathname !== "/moss-outside-probe") return new Response("not here", { status: 404 });
     hits++;
     return new Response(body);
   } });
-  const url = `http://127.0.0.1:${site.port}/clover-outside-probe`;
+  const url = `http://127.0.0.1:${site.port}/moss-outside-probe`;
   const command = netCommand(url);
   /** Waits for the event in Alpha's conversation (after `from`) that carries one of `marks`, and, with `turnAfter`, for a
    *  turn of hers to end after it. A child agent's report starts her a turn (or folds into a running one); a side
@@ -915,7 +915,7 @@ async function outsideTurns(c: CloverClient, session: string): Promise<{ status:
     if (sideCards.length > 0) fail(`the side thread's flagged call raised ${sideCards.map((k) => k.kind).join(", ")} (it should be refused with no card)`);
     if (hits !== 1) fail(`the side thread's flagged call reached the run's server`);
 
-    // A child agent: Alpha's study-buddy on Clover's own coding agent makes the same flagged call; refused with no card.
+    // A child agent: Alpha's study-buddy on MOSS's own coding agent makes the same flagged call; refused with no card.
     const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name;
     mkdirSync(join(userHome, "agent-notes"), { recursive: true });
     const childAsked = fake!.requests.length;
@@ -977,13 +977,13 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
       // Without a turn on this boot, the listing's time stands in for the owner's first turn, at twice the wait.
       const limit = first === undefined ? BUNDLED_MCP_NO_TURN_MS : BUNDLED_MCP_CEILING_MS;
       const from = b.graceMs > 0 ? `the registry opening (the run holds it ${b.graceMs / 1000} s after the socket answers)` : "the socket answering";
-      if (b.listed === undefined || (b.ms ?? 0) > limit) fail(`daemon ${b.run}: clover/web/web neither listed its tools nor said why it isn't served within ${limit / 1000} s of ${from}${first === undefined ? " (no turn on this boot: twice the wait a turn gives it)" : ""} [packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts]`);
+      if (b.listed === undefined || (b.ms ?? 0) > limit) fail(`daemon ${b.run}: moss/web/web neither listed its tools nor said why it isn't served within ${limit / 1000} s of ${from}${first === undefined ? " (no turn on this boot: twice the wait a turn gives it)" : ""} [packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts]`);
       const settled = b.listed!;
       const listed = settled.startsWith("listed ");
       // net.fetch crosses the plugin host (packages/core/src/contracts/plugin-host.ts NET_FETCH_CROSSES_PLUGIN_HOST):
       // the web server is offered, never "not served".
-      if (!listed) fail(`daemon ${b.run}: clover/web/web ${settled.slice(0, 300)} (net.fetch crosses the plugin host now: it must be listed and offered)`);
-      if (!/\bWebSearch\b/.test(settled) || !/\bWebFetch\b/.test(settled)) fail(`daemon ${b.run}: clover/web/web ${settled}, not WebSearch and WebFetch`);
+      if (!listed) fail(`daemon ${b.run}: moss/web/web ${settled.slice(0, 300)} (net.fetch crosses the plugin host now: it must be listed and offered)`);
+      if (!/\bWebSearch\b/.test(settled) || !/\bWebFetch\b/.test(settled)) fail(`daemon ${b.run}: moss/web/web ${settled}, not WebSearch and WebFetch`);
       // A boot after the plugin's install (daemon 1 listed it once installed): its server lists within the time too.
       // An upgrade's boot has the old run's plugin from the start.
       const installed = upgrade ? kept?.pluginId !== undefined : ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
@@ -995,7 +995,7 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
       if (listed && !named) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request didn't offer ${WEB_SEARCH_TOOL} and ${WEB_FETCH_TOOL} (web tools: ${web.join(", ") || "none"}; tools: ${first.tools.join(", ").slice(0, 300)})`);
       if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
     }
-    const listedAll = bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s${(b.ms ?? 0) > BUNDLED_MCP_WAIT_MS ? `, after the ${BUNDLED_MCP_WAIT_MS / 1000} s a turn waits: this boot's first turn still had them` : ""})${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}${b.graceMs > 0 ? ` after the registry opened (held ${b.graceMs / 1000} s)` : ""}`).join("; ");
+    const listedAll = bundledBoots.map((b) => `daemon ${b.run}: moss/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s${(b.ms ?? 0) > BUNDLED_MCP_WAIT_MS ? `, after the ${BUNDLED_MCP_WAIT_MS / 1000} s a turn waits: this boot's first turn still had them` : ""})${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}${b.graceMs > 0 ? ` after the registry opened (held ${b.graceMs / 1000} s)` : ""}`).join("; ");
     // An upgrade whose old run approved no plugin can't show the old plugin's server: the web half passed, said so.
     if (upgrade && kept?.pluginId === undefined) block(`the old run left no approved plugin, so its server can't be listed (the web tools: ${listedAll})`);
     record(n, "PASS", listedAll);
@@ -1005,7 +1005,7 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
 }
 const lastLines = (log: string, n = 3): string => readLog(log).trim().split("\n").slice(-n).join(" | ").slice(0, 500);
 
-/** The user's `clover-core app screenshot --window main --out <dir>` (row 15's clause): the target's own CLI, from source
+/** The user's `moss-core app screenshot --window main --out <dir>` (row 15's clause): the target's own CLI, from source
  *  this checkout's (`packages/cli/src/main.ts` on the run's Bun, the same binary the source daemon runs on), packaged the
  *  bundle's core (the CLI is that binary); the run's temp home and throwaway keychain, into a fresh folder under the run. */
 async function appScreenshot(): Promise<{ code: number; stdout: string; stderr: string; dir: string }> {
@@ -1013,23 +1013,23 @@ async function appScreenshot(): Promise<{ code: number; stdout: string; stderr: 
   return { ...(await appCli(["screenshot", "--window", "main", "--out", dir], "app-screenshot")), dir };
 }
 
-/** `clover-core app <words>` as the user runs it (the target's own CLI, as `appScreenshot`), its output kept in the logs. */
+/** `moss-core app <words>` as the user runs it (the target's own CLI, as `appScreenshot`), its output kept in the logs. */
 async function appCli(words: string[], log = `app-${words[0] ?? "cli"}`): Promise<{ code: number; stdout: string; stderr: string }> {
   return coreCli(["app", ...words], log);
 }
 
-/** `clover-core <words>` as the user runs it in their terminal (the target's own CLI, as `appCli`). */
+/** `moss-core <words>` as the user runs it in their terminal (the target's own CLI, as `appCli`). */
 async function coreCli(all: string[], log: string): Promise<{ code: number; stdout: string; stderr: string }> {
   const [cmd, args] = target === "source" ? [process.execPath, [join(REPO, "packages", "cli", "src", "main.ts"), ...all]] : [packagedCore(), all];
   return new Promise((done) => {
-    const p = spawn(cmd, args, { cwd: root, env: { ...baseEnv(), CLOVER_NO_AUTOLAUNCH: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(cmd, args, { cwd: root, env: { ...baseEnv(), MOSS_NO_AUTOLAUNCH: "1" }, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     p.stdout!.on("data", (b: Buffer) => { stdout += b.toString(); });
     p.stderr!.on("data", (b: Buffer) => { stderr += b.toString(); });
     const timer = setTimeout(() => p.kill("SIGKILL"), 60_000);
     p.on("close", (code) => {
       clearTimeout(timer);
-      try { appendFileSync(join(logs, `${log}.log`), `$ clover-core ${all.join(" ")}\n${stdout}\n--- stderr ---\n${stderr}\n`); } catch { /* best effort */ }
+      try { appendFileSync(join(logs, `${log}.log`), `$ moss-core ${all.join(" ")}\n${stdout}\n--- stderr ---\n${stderr}\n`); } catch { /* best effort */ }
       done({ code: code ?? -1, stdout, stderr });
     });
   });
@@ -1037,11 +1037,11 @@ async function coreCli(all: string[], log: string): Promise<{ code: number; stdo
 
 /** The bundled browser panel's layer, opened as its component's plugin opens it (`layer.token` is the app role's): undefined
  *  on a packaged run, whose own connection is the CLI's. */
-function panelOpener(app: CloverClient): ((pluginId: string) => Promise<PanelLink>) | undefined {
-  // The app's role mints the token from source; a packaged run's `cli` connection does on a test-marked core (clover-caller.ts).
+function panelOpener(app: MossClient): ((pluginId: string) => Promise<PanelLink>) | undefined {
+  // The app's role mints the token from source; a packaged run's `cli` connection does on a test-marked core (moss-caller.ts).
   return async (pluginId) => {
     const minted = await app.request<{ token: string }>("layer.token", { pluginId });
-    const d = await hello(join(home, "run", "core.sock"), "layer", minted.token, "clover-acceptance-layer", CLOVER_PROTOCOL_VERSION, { pluginId });
+    const d = await hello(join(home, "run", "core.sock"), "layer", minted.token, "moss-acceptance-layer", MOSS_PROTOCOL_VERSION, { pluginId });
     clients.push(d.client);
     const events: { type: string }[] = [];
     d.client.onNotification((method, params) => { if (method === "core.event") events.push(params as { type: string }); });
@@ -1055,10 +1055,10 @@ function panelOpener(app: CloverClient): ((pluginId: string) => Promise<PanelLin
 
 /** The run's own connection: the app's role from source (the daemon's test seam takes the run's pid), the CLI's on a
  *  packaged core. */
-async function appDriver(): Promise<{ client: CloverClient; result: Record<string, unknown> }> {
+async function appDriver(): Promise<{ client: MossClient; result: Record<string, unknown> }> {
   const role = target === "source" ? "app" : "cli";
   const token = role === "app" ? readFileSync(join(home, "run", "app.token"), "utf8").trim() : harnessToken();
-  const d = await hello(join(home, "run", "core.sock"), role, token, "clover-acceptance", CLOVER_PROTOCOL_VERSION);
+  const d = await hello(join(home, "run", "core.sock"), role, token, "moss-acceptance", MOSS_PROTOCOL_VERSION);
   clients.push(d.client);
   d.client.onNotification((method, params) => {
     const p = params as { type?: string; card?: Card } | null;
@@ -1069,7 +1069,7 @@ async function appDriver(): Promise<{ client: CloverClient; result: Record<strin
 
 // ── the session helpers ──────────────────────────────────────────────────────────────────────────────────────────
 type Ev = Record<string, unknown> & { type?: string; seq?: number };
-async function history(c: CloverClient, id: string): Promise<Ev[]> {
+async function history(c: MossClient, id: string): Promise<Ev[]> {
   const r = await c.request<{ events: Ev[] }>("session.history", { id, limit: 500 });
   return r.events;
 }
@@ -1088,7 +1088,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
+async function turn(c: MossClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -1171,7 +1171,7 @@ async function appGotCard(card: Card, log = join(logs, "app.log")): Promise<void
  *  test seam); on a packaged test-marked core it is the harness's `cli` connection, which only a test build lets list,
  *  frame and answer cards (packages/core/src/approvals/broker.ts's test-build relaxation). Neither presses the real
  *  sealed button: that is the owner's live gate. */
-async function approve(c: CloverClient, card: Card, o: { always?: boolean; log?: string } = {}): Promise<"always" | "once"> {
+async function approve(c: MossClient, card: Card, o: { always?: boolean; log?: string } = {}): Promise<"always" | "once"> {
   await appGotCard(card, o.log);
   const always = o.always === true ? card.options.find((x) => x.kind === "approve" && (x as { remember?: string }).remember === "always") : undefined;
   const option = always ?? card.options.find((x) => x.kind === "approve");
@@ -1187,7 +1187,7 @@ async function approve(c: CloverClient, card: Card, o: { always?: boolean; log?:
   return always !== undefined ? "always" : "once";
 }
 /** Answers a card no, as the app's sealed frame does (`approve`'s way, with the deny option). */
-async function deny(c: CloverClient, card: Card, log?: string): Promise<void> {
+async function deny(c: MossClient, card: Card, log?: string): Promise<void> {
   await appGotCard(card, log);
   const option = card.options.find((x) => x.kind === "deny");
   if (option === undefined) fail(`card ${card.kind} has no deny option`);
@@ -1200,7 +1200,7 @@ async function deny(c: CloverClient, card: Card, log?: string): Promise<void> {
 }
 /** The first app's DevTools connection (step 1), for the run's one real press. */
 let pressCdp: Cdp | undefined;
-/** Presses the card's Approve on its fallback card, drawn offscreen in a headless run (CLOVER_TEST_SEALED_PRESS): the
+/** Presses the card's Approve on its fallback card, drawn offscreen in a headless run (MOSS_TEST_SEALED_PRESS): the
  *  pointer enters, the page's own second passes, then a trusted DevTools click on the button. The answer goes the
  *  whole real way (the page's gates, the app's signature with its registered answer key, `card.answer` with a device
  *  proof, the broker's #verify); the app's log says how it went, and a refusal fails the step with its line. */
@@ -1213,7 +1213,7 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
   // a frame that goes away a moment later (a plugin install remounts the island's layer, and the island folds a card back
   // into its strip), so a press that brings no answer within a few seconds is made again on whatever is drawn then, the
   // fallback card included, until the card's time is up. Each attempt notes what it pressed, for the failure line.
-  const cardUrl = `clover-sealed://card/${encodeURIComponent(card.id)}/`;
+  const cardUrl = `moss-sealed://card/${encodeURIComponent(card.id)}/`;
   const tried: string[] = [];
   const deadline = Date.now() + 45_000;
   let fallbackChecked = false;
@@ -1261,8 +1261,8 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
 async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log")): Promise<string> {
   await appGotCard(card, appLog);
   const from = readLog(appLog).length;
-  const cardUrl = `clover-sealed://card/${encodeURIComponent(card.id)}/`;
-  const island = () => [...cdp.frames.values()].find((f) => f.type === "page" && f.url.startsWith("clover-core://app/?surface=island"));
+  const cardUrl = `moss-sealed://card/${encodeURIComponent(card.id)}/`;
+  const island = () => [...cdp.frames.values()].find((f) => f.type === "page" && f.url.startsWith("moss-core://app/?surface=island"));
   if (island() === undefined) fail("the app's island window has no DevTools target");
   // The island's layer draws the card inside a plugin document of its own, and a sealed frame is cross-process, so neither
   // frame tree names it. The conversation draws the same buttons in `.cl-conv-approval`: the sealed documents of this card
@@ -1300,7 +1300,7 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
   if (new RegExp(`fallback card for ${card.id}`).test(log)) fail(`the app drew its fallback card for the ${card.kind} card though the island showed its buttons`);
   // The answer came from the island's own press (read fresh and uncovered there), not from a press on the main window's card.
   const idRe = card.id.replace(/[^A-Za-z0-9_]/g, ".");
-  if (!new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in clover/island#island: fresh report uncovered after \\d+ ms`).test(log)) fail(`the ${card.kind} card was answered, but the app logged no island press read as uncovered for it (the answer did not come from the island's own press): ${log.split("\n").filter((l) => l.includes("sealed: press on")).slice(-4).join(" | ").slice(0, 400)}`);
+  if (!new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in moss/island#island: fresh report uncovered after \\d+ ms`).test(log)) fail(`the ${card.kind} card was answered, but the app logged no island press read as uncovered for it (the answer did not come from the island's own press): ${log.split("\n").filter((l) => l.includes("sealed: press on")).slice(-4).join(" | ").slice(0, 400)}`);
   if (new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in the main window`).test(log)) fail(`the ${card.kind} card was also pressed in the main window, so the island's press is not what answered it`);
   return "pressed on the island (its own window's sealed Approve, the page ready, read uncovered fresh at the press, accepted by the app and the core, the fallback card never drawn, no press in the main window)";
 }
@@ -1314,8 +1314,8 @@ interface FrameNode { frame: { url: string }; childFrames?: FrameNode[] }
 async function pressInConversation(cdp: Cdp, card: Card, appLog = join(logs, "app.log"), findMs = 30_000, lenient = false): Promise<string | undefined> {
   await appGotCard(card, appLog);
   const from = readLog(appLog).length;
-  const cardUrl = `clover-sealed://card/${encodeURIComponent(card.id)}/`;
-  const main = [...cdp.frames.values()].find((f) => f.type === "page" && f.url === "clover-core://app/");
+  const cardUrl = `moss-sealed://card/${encodeURIComponent(card.id)}/`;
+  const main = [...cdp.frames.values()].find((f) => f.type === "page" && f.url === "moss-core://app/");
   if (main === undefined) fail("the app's main window has no DevTools target");
   const size = async () => String(await cdp.evaluate(main!.session, "innerWidth+'x'+innerHeight").catch(() => "?"));
   // The conversation's own card element (`.cl-conv-approval`) holds the sealed frames of HER conversation; the island draws its
@@ -1341,7 +1341,7 @@ async function pressInConversation(cdp: Cdp, card: Card, appLog = join(logs, "ap
   } catch (err) {
     const seen: string[] = [];
     for (const d of await cdp.documents()) {
-      const v = await cdp.evaluate(d.session, `JSON.stringify({u:location.href.split('?')[0].slice(0,60),conv:document.querySelectorAll('.cl-conv-approval').length,pending:document.querySelectorAll('.cl-conv-approval[data-state=pending]').length,fr:document.querySelectorAll('iframe[data-clover-sealed]').length,msgs:document.querySelectorAll('[data-kind]').length,kinds:[...new Set([...document.querySelectorAll('[data-kind]')].map((e) => e.getAttribute('data-kind')))].slice(0,12),pend:[...document.querySelectorAll('[class*=approval]')].map((e) => e.className + ':' + (e.getAttribute('data-state')||'')).slice(0,6),w:innerWidth,h:innerHeight})`).catch(() => "gone");
+      const v = await cdp.evaluate(d.session, `JSON.stringify({u:location.href.split('?')[0].slice(0,60),conv:document.querySelectorAll('.cl-conv-approval').length,pending:document.querySelectorAll('.cl-conv-approval[data-state=pending]').length,fr:document.querySelectorAll('iframe[data-moss-sealed]').length,msgs:document.querySelectorAll('[data-kind]').length,kinds:[...new Set([...document.querySelectorAll('[data-kind]')].map((e) => e.getAttribute('data-kind')))].slice(0,12),pend:[...document.querySelectorAll('[class*=approval]')].map((e) => e.className + ':' + (e.getAttribute('data-state')||'')).slice(0,6),w:innerWidth,h:innerHeight})`).catch(() => "gone");
       seen.push(String(v));
     }
     for (const line of seen) console.error(`acceptance: her conversation, no card: ${line}`);
@@ -1358,7 +1358,7 @@ async function pressInConversation(cdp: Cdp, card: Card, appLog = join(logs, "ap
     // button's own, or the conversation's) with what is drawn at its centre, top first, and every ancestor whose opacity,
     // filter, backdrop-filter, transform, mask, clip-path or blend is not the default. Printed whole (the table cuts lines).
     for (const d of await cdp.documents()) {
-      const v = await cdp.evaluate(d.session, `JSON.stringify([...document.querySelectorAll('iframe')].filter((f) => { const u = decodeURIComponent(f.src); return u.startsWith(${JSON.stringify(`${cardUrl}button:`)}) || u.startsWith('clover-plugin://clover/'); }).map((f) => {
+      const v = await cdp.evaluate(d.session, `JSON.stringify([...document.querySelectorAll('iframe')].filter((f) => { const u = decodeURIComponent(f.src); return u.startsWith(${JSON.stringify(`${cardUrl}button:`)}) || u.startsWith('moss-plugin://moss/'); }).map((f) => {
         const r = f.getBoundingClientRect();
         const name = (e) => e.tagName + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\\s+/).slice(0, 2).join('.') : '');
         const pe = new Map(); for (const e of document.querySelectorAll('*')) pe.set(e, getComputedStyle(e).pointerEvents);
@@ -1443,7 +1443,7 @@ async function probeFrames(cdp: Cdp, label: string, ms = 1_000): Promise<string>
 }
 
 /** A reply of about 300 words streamed into her conversation (the fake's ACCEPTANCE-STREAM, about 6 s) while every
- *  document is probed for 6 s: the whole probe goes in the run's output, and the main window's clover document's part
+ *  document is probed for 6 s: the whole probe goes in the run's output, and the main window's moss document's part
  *  (the one with the transcript's rows) comes back for the row. */
 /** Her transcript's distance from the bottom, in px (`toBottom`: the reader puts it at the bottom first, as a scroll of
  *  their own would). */
@@ -1466,16 +1466,16 @@ async function transcriptHeight(cdp: Cdp): Promise<number | undefined> {
   return undefined;
 }
 
-/** Where the clover documents spend their script over `ms` (the JS profiler in each: the main window's, the island's,
+/** Where the moss documents spend their script over `ms` (the JS profiler in each: the main window's, the island's,
  *  the pill's): the functions with the most time of their own, each with a few characters of its source where it
  *  starts (the bundle is minified), and the total sampled per document. */
 async function profileTranscript(cdp: Cdp, ms: number): Promise<string> {
   const docs: { session: string; label: string }[] = [];
   for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
-    const v = await cdp.evaluate(f.session, "location.href.startsWith('clover-plugin://clover/') ? (document.querySelector('.cl-conv__unit') ? 'transcript' : innerWidth + 'x' + innerHeight) : null").catch(() => null);
+    const v = await cdp.evaluate(f.session, "location.href.startsWith('moss-plugin://moss/') ? (document.querySelector('.cl-conv__unit') ? 'transcript' : innerWidth + 'x' + innerHeight) : null").catch(() => null);
     if (typeof v === "string") docs.push({ session: f.session, label: v });
   }
-  if (docs.length === 0) return "no clover documents";
+  if (docs.length === 0) return "no moss documents";
   const one = async (d: { session: string; label: string }): Promise<string> => {
     try {
       await cdp.send("Profiler.enable", {}, d.session);
@@ -1519,15 +1519,15 @@ async function profileTranscript(cdp: Cdp, ms: number): Promise<string> {
   return (await Promise.all(docs.map(one))).join(" || ");
 }
 
-async function streamCost(c: CloverClient, session: string, cdp: Cdp, label: string, rowsInLayout = false, toBottom = false, o: { css?: string; trace?: boolean; profile?: boolean } = {}): Promise<string> {
+async function streamCost(c: MossClient, session: string, cdp: Cdp, label: string, rowsInLayout = false, toBottom = false, o: { css?: string; trace?: boolean; profile?: boolean } = {}): Promise<string> {
   // The comparison: the same reply with every row kept in layout (the stylesheet's off-screen rule overridden in the
-  // window's clover documents for this reply only), as the view was before it; or with an experiment's CSS (`css`).
+  // window's moss documents for this reply only), as the view was before it; or with an experiment's CSS (`css`).
   const OFF = "lane-b-rows-in-layout";
   const css = [rowsInLayout ? ".cl-conv__unit { content-visibility: visible !important; }" : "", o.css ?? ""].join(" ").trim();
   const toggle = async (on: boolean) => {
     for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
       const expr = on
-        ? `(() => { if (!location.href.startsWith('clover-plugin://clover/') || document.getElementById('${OFF}')) return; const s = document.createElement('style'); s.id = '${OFF}'; s.textContent = ${JSON.stringify(css)}; document.head.append(s); })()`
+        ? `(() => { if (!location.href.startsWith('moss-plugin://moss/') || document.getElementById('${OFF}')) return; const s = document.createElement('style'); s.id = '${OFF}'; s.textContent = ${JSON.stringify(css)}; document.head.append(s); })()`
         : `document.getElementById('${OFF}')?.remove()`;
       await cdp.evaluate(f.session, expr).catch(() => undefined);
     }
@@ -1548,7 +1548,7 @@ async function streamCost(c: CloverClient, session: string, cdp: Cdp, label: str
   if (css !== "") await toggle(false);
   if (trace !== undefined) console.error(`acceptance: row 42 layout trace (${label}): ${trace}`);
   console.error(`acceptance: row 42 probe ${probe}`);
-  const transcript = probe.split(" | ").find((p) => /clover-plugin:\/\/clover\/ \d+x\d+ \S+ rows [1-9]/.test(p)) ?? "no transcript document answered";
+  const transcript = probe.split(" | ").find((p) => /moss-plugin:\/\/moss\/ \d+x\d+ \S+ rows [1-9]/.test(p)) ?? "no transcript document answered";
   const done = JSON.stringify(t.events).includes("ACCEPTANCE-STREAM-DONE") ? "" : " (the reply didn't finish)";
   const follow = `${toBottom ? "put at the bottom" : "as the card left it"}: ${startGap ?? "?"} px from the bottom before, ${endGap ?? "?"} px after (the scroller ${height ?? "?"} px tall)`;
   return `${follow}; ${transcript.replace(/^.*?rows/, "rows")}${done}`;
@@ -1699,7 +1699,7 @@ async function fallbackLooksRight(cdp: Cdp, session: string, card: Card): Promis
   if (raw !== null) fail(`the ${card.kind} card's fallback shows raw JSON ("${text.slice(Math.max(0, raw.index - 20), raw.index + 40).replace(/\n/g, " ")}") [apps/desktop/src/main/sealed-pages.ts ownCardPage]`);
 }
 
-async function cards(c: CloverClient): Promise<Card[]> {
+async function cards(c: MossClient): Promise<Card[]> {
   return (await c.request<{ cards: Card[] }>("card.list")).cards;
 }
 
@@ -1724,7 +1724,7 @@ async function main(): Promise<void> {
   }
   models = startFakeModels({ key: THIRD_PARTY_KEY, reply: THIRD_PARTY_REPLY });
   oauthServer = startFakeOAuth({ reply: OAUTH_REPLY });
-  if (target === "packaged" && packagedCoreSays("CLOVER_TEST_OUTSIDE_WORLD")) startOutsideWorld();
+  if (target === "packaged" && packagedCoreSays("MOSS_TEST_OUTSIDE_WORLD")) startOutsideWorld();
   // An upgrade: the home an earlier build made, copied in (its run/ sockets and tokens left behind), then this build's settings.
   if (coldHome !== undefined) cpSync(coldHome, home, { recursive: true, filter: (src) => !/[\\/]run([\\/]|$)/.test(src.slice(coldHome.length)) });
   writeSettings(fake.url);
@@ -1765,19 +1765,19 @@ async function main(): Promise<void> {
     return;
   }
   const smokeOut = join(root, "smoke.json");
-  // The first app takes a DevTools port (the source app behind CLOVER_DEV_DEBUG, a test-marked one behind
-  // CLOVER_TEST_DEBUG) and draws a card's fallback offscreen (CLOVER_TEST_SEALED_PRESS), so the run presses the real
+  // The first app takes a DevTools port (the source app behind MOSS_DEV_DEBUG, a test-marked one behind
+  // MOSS_TEST_DEBUG) and draws a card's fallback offscreen (MOSS_TEST_SEALED_PRESS), so the run presses the real
   // Approve of step 4's plugin OK card and step 7's write card: the app signs with its registered answer key and the
-  // core's broker checks the proof (step 3's turn raises no card: Clover's own bot asks nothing).
+  // core's broker checks the proof (step 3's turn raises no card: MOSS's own bot asks nothing).
   const pressPort = freePort();
   // The renders' scheme for the first app (the new user's Plugins page, before step 4 installs anything).
   const firstAppearance = join(root, "appearance-first");
   browserFixture = startBrowserFixture();
   const appEnv = {
-    ...baseEnv(), CLOVER_TEST_BROWSER_NAMES: browserFixture.names, CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000",
-    CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_APPEARANCE_FILE: firstAppearance, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }),
+    ...baseEnv(), MOSS_TEST_BROWSER_NAMES: browserFixture.names, MOSS_DAEMON_BIN: stubBin, MOSS_SMOKE_KEEP: "1", MOSS_SMOKE_OUT: smokeOut, MOSS_SMOKE_DEADLINE_MS: "45000",
+    MOSS_TEST_SEALED_PRESS: "1", MOSS_TEST_APPEARANCE_FILE: firstAppearance, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }),
   };
-  const appProc = startChild("app", app.exe, [...app.args, "--clover-headless", "--clover-smoke", "--use-mock-keychain", `--remote-debugging-port=${pressPort}`], appEnv);
+  const appProc = startChild("app", app.exe, [...app.args, "--moss-headless", "--moss-smoke", "--use-mock-keychain", `--remote-debugging-port=${pressPort}`], appEnv);
   // A daemon that dies under the app: the app is ended at once, before its redial (3 s) tries to start a daemon through
   // the OS (apps/desktop/src/main/pair/pair.ts `kick`), which a packaged dist app does with its own core, not the stub.
   daemon.proc.once("exit", () => { if (!stoppingDaemon) { say("the daemon exited under the app: ending the app"); void endChild(appProc.proc, 2_000); } });
@@ -1821,7 +1821,7 @@ async function main(): Promise<void> {
   }
 
   // The driver: the app's own methods, as the app's main process calls them.
-  let c: CloverClient;
+  let c: MossClient;
   try {
     c = (await appDriver()).client;
   } catch (err) {
@@ -1838,7 +1838,7 @@ async function main(): Promise<void> {
     const before = await c.request<{ models: { tag?: string; id?: string; provider?: string; signedIn: boolean }[] }>("models.list", {});
     const anthropic = before.models.filter((m) => JSON.stringify(m).includes("anthropic"));
     if (anthropic.length === 0) fail(`models.list lists no Anthropic model (${before.models.length} models)`);
-    const plugin = "clover/model-anthropic";
+    const plugin = "moss/model-anthropic";
     const auth = await c.request<{ auth: { index: number; method: string; state: string }[] }>("plugin.auth.list", { id: plugin });
     const entry = auth.auth.find((a) => a.method === "api-key");
     if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
@@ -1853,7 +1853,7 @@ async function main(): Promise<void> {
     record(2, statusOf(err), why(err));
   }
 
-  // Step 3: a turn on the bundled bot's main conversation, answered by the fake. Alpha is Clover's own bundled bot, so
+  // Step 3: a turn on the bundled bot's main conversation, answered by the fake. Alpha is MOSS's own bundled bot, so
   // its provider asks nothing (the owner's ruling, packages/core/src/bots/provider-consent.ts): a `bot-provider` card
   // fails the step, approved or not.
   let session: string | undefined;
@@ -1870,7 +1870,7 @@ async function main(): Promise<void> {
     const mine = fake.requests.slice(seen).filter((r) => r.path.endsWith("/messages"));
     const replied = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
     turnsWork = replied;
-    if (changes.includes("bot-provider")) fail(`the bundled bot's first turn raised a provider card (bot-provider): Clover's own bot asks nothing (${carded.join("; ")})`);
+    if (changes.includes("bot-provider")) fail(`the bundled bot's first turn raised a provider card (bot-provider): MOSS's own bot asks nothing (${carded.join("; ")})`);
     if (replied) record(3, "PASS", `the reply came from the fake, with no provider card (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)}${carded.length ? `; ${carded.join("; ")}` : ""})`);
     else if (mine.length === 0) fail(`the turn never reached the fake provider${model ? ` (the bot runs ${model})` : ""}: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     else if (!mine.some((r) => r.keyMatched)) fail(`the fake got the turn without the dummy key (key present: ${mine.some((r) => r.keyPresent)}${keyAdded ? "" : "; step 2 added none"}): ${errorsOf(events)[0] ?? `stop ${stopOf(events)}`}`);
@@ -1899,9 +1899,9 @@ async function main(): Promise<void> {
     }
   }
 
-  // The renders (CLOVER_ACCEPT_RENDERS): the Plugins page as a new user sees it, signed in (step 2) and nothing installed
+  // The renders (MOSS_ACCEPT_RENDERS): the Plugins page as a new user sees it, signed in (step 2) and nothing installed
   // yet. A picture, never a check.
-  const renders = process.env.CLOVER_ACCEPT_RENDERS;
+  const renders = process.env.MOSS_ACCEPT_RENDERS;
   if (renders && pressCdp !== undefined) say(await renderNewUser(pressCdp, renders, (scheme) => writeFileSync(firstAppearance, scheme)));
 
   // Step 4: the fixture plugin from a local folder, and its OK card.
@@ -1984,7 +1984,7 @@ async function main(): Promise<void> {
     record(4, statusOf(err), why(err));
   }
 
-  // The `clover plugin` CLI in the user's terminal, against this run's daemon (recorded at the end): the target's own
+  // The `moss plugin` CLI in the user's terminal, against this run's daemon (recorded at the end): the target's own
   // CLI on the step-4 plugin (list, info, logs, pin refused, restart, index list); a plugin installed from a folder,
   // switched off and on, updated and removed; a skill folder wrapped and removed; a development folder added, listed and
   // removed; and a plugin made from a template and checked (new, validate), which needs no daemon. Each card a verb
@@ -2002,8 +2002,8 @@ async function main(): Promise<void> {
       const said: string[] = [];
       const run = async (words: string[], expect?: string) => {
         const r = await coreCli(["plugin", ...words], `plugin-cli-${words[0]}${words[1] !== undefined && !words[1].startsWith("/") ? `-${words[1]}` : ""}`);
-        if (r.code !== 0) fail(`clover plugin ${words.join(" ")} exited ${r.code}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`);
-        if (expect !== undefined && !r.stdout.includes(expect)) fail(`clover plugin ${words.join(" ")} didn't say "${expect}": ${r.stdout.trim().slice(0, 300)}`);
+        if (r.code !== 0) fail(`moss plugin ${words.join(" ")} exited ${r.code}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`);
+        if (expect !== undefined && !r.stdout.includes(expect)) fail(`moss plugin ${words.join(" ")} didn't say "${expect}": ${r.stdout.trim().slice(0, 300)}`);
         said.push(words.map((w) => (w.startsWith("/") ? w.slice(w.lastIndexOf("/") + 1) : w)).join(" "));
         return r;
       };
@@ -2020,32 +2020,32 @@ async function main(): Promise<void> {
       // A pin holds a plugin at its version against its index or npm (§5.6): a folder-installed plugin has none, so the
       // CLI refuses it and says why (the index row pins and unpins its indexed plugin through the CLI).
       const pin = await coreCli(["plugin", "pin", id], "plugin-cli-pin");
-      if (pin.code === 0 || !`${pin.stderr}${pin.stdout}`.includes("isn't from a plugin index or npm")) fail(`clover plugin pin ${id} (installed from a folder) exited ${pin.code}: ${(pin.stderr || pin.stdout).trim().slice(0, 300)}`);
-      if ((await pinned()) === true) fail(`clover plugin pin ${id} pinned a plugin no index or npm updates`);
+      if (pin.code === 0 || !`${pin.stderr}${pin.stdout}`.includes("isn't from a plugin index or npm")) fail(`moss plugin pin ${id} (installed from a folder) exited ${pin.code}: ${(pin.stderr || pin.stdout).trim().slice(0, 300)}`);
+      if ((await pinned()) === true) fail(`moss plugin pin ${id} pinned a plugin no index or npm updates`);
       said.push("pin (refused: it isn't from an index or npm)");
       await run(["restart", id], `restarted ${id}`);
       await run(["index", "list"]);
       // install (a folder), disable, enable, update, remove.
       const cliFolder = join(root, "cli-src", CLI_ID);
       mkdirSync(join(cliFolder, "skills", "cli-note"), { recursive: true });
-      writeFileSync(join(cliFolder, "clover.json"), `${JSON.stringify({ manifest: 1, id: CLI_ID, name: "Acceptance CLI", version: "0.0.1", engines: { clover: "^1.0.0" }, contributes: { skills: ["skills/*/SKILL.md"] } }, null, 2)}\n`);
+      writeFileSync(join(cliFolder, "moss.json"), `${JSON.stringify({ manifest: 1, id: CLI_ID, name: "Acceptance CLI", version: "0.0.1", engines: { moss: "^1.0.0" }, contributes: { skills: ["skills/*/SKILL.md"] } }, null, 2)}\n`);
       writeFileSync(join(cliFolder, "skills", "cli-note", "SKILL.md"), "---\nname: cli-note\ndescription: The acceptance run's CLI-installed skill\n---\nSay hello.\n");
       await run(["install", cliFolder], CLI_ID);
       await answerOk(CLI_ID);
       await stateIs(CLI_ID, (st) => st === "running" || st === "enabled", "on after its OK");
       await run(["disable", CLI_ID]);
-      await stateIs(CLI_ID, (st) => st === "off", "off after clover plugin disable");
+      await stateIs(CLI_ID, (st) => st === "off", "off after moss plugin disable");
       await run(["enable", CLI_ID]);
-      await stateIs(CLI_ID, (st) => st === "running" || st === "enabled", "on again after clover plugin enable");
+      await stateIs(CLI_ID, (st) => st === "running" || st === "enabled", "on again after moss plugin enable");
       // update: a folder-installed plugin has no index or npm to update from, so `update <id>` refuses it and says why;
       // `update` alone looks at every plugin, offers what an index or npm has (applying nothing) and skips the folder one.
       const upd = await coreCli(["plugin", "update", CLI_ID], "plugin-cli-update-id");
-      if (upd.code === 0 || !`${upd.stderr}${upd.stdout}`.includes("a local plugin changes only when its folder does")) fail(`clover plugin update ${CLI_ID} (installed from a folder) exited ${upd.code}: ${(upd.stderr || upd.stdout).trim().slice(0, 300)}`);
+      if (upd.code === 0 || !`${upd.stderr}${upd.stdout}`.includes("a local plugin changes only when its folder does")) fail(`moss plugin update ${CLI_ID} (installed from a folder) exited ${upd.code}: ${(upd.stderr || upd.stdout).trim().slice(0, 300)}`);
       said.push("update <id> (refused: a local plugin changes only when its folder does)");
       const updAll = await run(["update"]);
-      if (updAll.stdout.includes(CLI_ID)) fail(`clover plugin update named the folder-installed ${CLI_ID}: ${updAll.stdout.trim().slice(0, 300)}`);
+      if (updAll.stdout.includes(CLI_ID)) fail(`moss plugin update named the folder-installed ${CLI_ID}: ${updAll.stdout.trim().slice(0, 300)}`);
       await run(["remove", CLI_ID, "--yes"], `removed ${CLI_ID}`);
-      await stateIs(CLI_ID, (st) => st === undefined, "gone after clover plugin remove");
+      await stateIs(CLI_ID, (st) => st === undefined, "gone after moss plugin remove");
       // wrap (a bare skill folder), then removed.
       const skillDir = join(root, "cli-src", WRAP_DIR);
       mkdirSync(skillDir, { recursive: true });
@@ -2059,20 +2059,20 @@ async function main(): Promise<void> {
       wrappedId = undefined;
       // dev: a development folder added, listed, removed.
       mkdirSync(devFolder, { recursive: true });
-      writeFileSync(join(devFolder, "clover.json"), `${JSON.stringify({ manifest: 1, id: "acceptance-cli-dev", name: "Acceptance CLI dev", version: "0.0.1", engines: { clover: "^1.0.0" } }, null, 2)}\n`);
+      writeFileSync(join(devFolder, "moss.json"), `${JSON.stringify({ manifest: 1, id: "acceptance-cli-dev", name: "Acceptance CLI dev", version: "0.0.1", engines: { moss: "^1.0.0" } }, null, 2)}\n`);
       const dev = await run(["dev", devFolder]);
       if (dev.stdout.includes("waits for your answer on its card")) {
         const card = await until("the development folder's card", 30_000, async () => (await cards(c)).find((k) => JSON.stringify(k).includes("acceptance-cli-dev")));
         await approve(c, card);
       }
-      await until("the development folder in clover plugin dev list", 30_000, async () => ((await coreCli(["plugin", "dev", "list"], "plugin-cli-dev-list")).stdout.includes(devFolder) ? true : undefined));
+      await until("the development folder in moss plugin dev list", 30_000, async () => ((await coreCli(["plugin", "dev", "list"], "plugin-cli-dev-list")).stdout.includes(devFolder) ? true : undefined));
       said.push("dev list");
       await run(["dev", "remove", devFolder], "removed");
       const made = join(root, "cli-new-plugin");
       await run(["new", "tool", made, "--name", "Cli probe"]);
-      if (!existsSync(join(made, "clover.json"))) fail(`clover plugin new tool made no clover.json in ${made}`);
+      if (!existsSync(join(made, "moss.json"))) fail(`moss plugin new tool made no moss.json in ${made}`);
       await run(["validate", made], "valid");
-      cliOutcome = { status: "PASS", detail: `${target === "source" ? "the checkout's CLI" : "the packaged core's CLI"}: clover plugin ${said.join("; ")} (each exit 0; each card answered over the app's methods; states read back through plugin.get)` };
+      cliOutcome = { status: "PASS", detail: `${target === "source" ? "the checkout's CLI" : "the packaged core's CLI"}: moss plugin ${said.join("; ")} (each exit 0; each card answered over the app's methods; states read back through plugin.get)` };
     } catch (err) {
       cliOutcome = { status: statusOf(err), detail: why(err) };
     } finally {
@@ -2181,7 +2181,7 @@ async function main(): Promise<void> {
         else done.push(`1.21 platforms without ${here}: installed behind its card, off ("${(off.reason ?? "").slice(0, 80)}")`);
       }
 
-      // 1.25, 1.26, 1.47: what Alpha's turn and a coding session on Clover's own agent are offered.
+      // 1.25, 1.26, 1.47: what Alpha's turn and a coding session on MOSS's own agent are offered.
       const reach = writeReach(src);
       await install({ from: "folder", path: reach.agents });
       await install({ from: "folder", path: reach.cc });
@@ -2195,14 +2195,14 @@ async function main(): Promise<void> {
       const codingSeen = fake!.requests.length;
       // The coding session calls AgentsOnly by the short name its bridge gives it (its full name is too long); its card,
       // if its level asks, names the real one.
-      const coding = (await c.request<{ session: string }>("agent.start", { backend: "clover-code", computer, root: `home/${computer}/fields-code`, ...(model !== undefined ? { model } : {}), prompt: `fields coding ACCEPTANCE-CALL ${AGENTS_ONLY_SHORT} {}` }, 30_000)).session;
+      const coding = (await c.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/fields-code`, ...(model !== undefined ? { model } : {}), prompt: `fields coding ACCEPTANCE-CALL ${AGENTS_ONLY_SHORT} {}` }, 30_000)).session;
       const codingTools = await until("the coding session's request to the model", 120_000, async () => {
         const mine = fake!.requests.slice(codingSeen).filter((r) => r.lastUserText.includes("fields coding"));
         return mine.length > 0 ? mine.flatMap((r) => r.tools) : undefined;
       }).catch((err: unknown) => { wrong.push(why(err)); return [] as string[]; });
       const offer = offerWrong({ bot: botTools, coding: codingTools });
       if (offer.length > 0) wrong.push(`${offer.join("; ")} (Alpha: ${botTools.filter((t) => t.startsWith("mcp__")).join(", ") || "none"}; coding: ${codingTools.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
-      else done.push(`1.47 FieldsLocal (perComputer) and FieldsMac (when.os macos) offered to Alpha, FieldsWin (when.os windows) not; 1.25 AgentsOnly offered to the coding session (as ${AGENTS_ONLY_SHORT}: its full bridge name is too long), not to Alpha; 1.26 CcOnly (onlyBackends claude-code) offered to Alpha, not to the coding session on clover-code`);
+      else done.push(`1.47 FieldsLocal (perComputer) and FieldsMac (when.os macos) offered to Alpha, FieldsWin (when.os windows) not; 1.25 AgentsOnly offered to the coding session (as ${AGENTS_ONLY_SHORT}: its full bridge name is too long), not to Alpha; 1.26 CcOnly (onlyBackends claude-code) offered to Alpha, not to the coding session on moss-code`);
       if (offer.length === 0) {
         const carded: string[] = [];
         const answered = new Set<string>();
@@ -2212,7 +2212,7 @@ async function main(): Promise<void> {
             answered.add(card.id);
             const shown = JSON.stringify(card.fields ?? {});
             // One card for the call: the judge's (plugin-reach's, the bots' approval check), its tool card under the real
-            // name, never the short form. clover-code's own ACP request names its bridge call (`mcpCallOf`), so the
+            // name, never the short form. moss-code's own ACP request names its bridge call (`mcpCallOf`), so the
             // broker lets it through to that judge with no agent-permission card.
             if (card.kind !== "tool") wrong.push(`the coding session's call to ${AGENTS_ONLY_SHORT} raised a ${card.kind} card besides the judge's tool card: ${shown.slice(0, 200)}`);
             else if (!shown.includes(AGENTS_ONLY_REAL) || shown.includes(AGENTS_ONLY_SHORT)) wrong.push(`the tool card for ${AGENTS_ONLY_SHORT} doesn't name its real name ${AGENTS_ONLY_REAL}: ${shown.slice(0, 300)}`);
@@ -2233,7 +2233,7 @@ async function main(): Promise<void> {
       const gSeen = fake!.requests.length;
       await turn(c, session, `ACCEPTANCE-CALL Glossary ${JSON.stringify({ query: CLAUDE_SKILL })}`, 150_000);
       const g = fake!.requests.slice(gSeen).map((r) => r.toolResult).find((x) => x !== undefined);
-      if (!claude.text.includes("Clover made") && !claude.text.toLowerCase().includes("claude")) wrong.push(`${claude.id}'s OK card doesn't say it was made from a Claude Code plugin: ${claude.text.slice(0, 300)}`);
+      if (!claude.text.includes("MOSS made") && !claude.text.toLowerCase().includes("claude")) wrong.push(`${claude.id}'s OK card doesn't say it was made from a Claude Code plugin: ${claude.text.slice(0, 300)}`);
       else if (g === undefined || !g.text.includes(`${claude.id}:${CLAUDE_SKILL}`)) wrong.push(`after ${claude.id}'s OK, Alpha's Glossary search for its skill answered ${JSON.stringify((g?.text ?? "nothing").slice(0, 300))}`);
       else done.push(`1.33 a Claude Code plugin folder wrapped as ${claude.id}: OK'd, its skill ${claude.id}:${CLAUDE_SKILL} in Alpha's Glossary`);
 
@@ -2320,7 +2320,7 @@ async function main(): Promise<void> {
       }
 
       // R1 (the owner, 2026-11-15: "Yes, all with a warning"): a folder plugin that asks for the six capabilities that were
-      // Clover's own gets its OK card with each one's warning line; OK'd, each is granted, and the calls they gate answer:
+      // MOSS's own gets its OK card with each one's warning line; OK'd, each is granted, and the calls they gate answer:
       // a terminal opened (and closed) on this computer and a figure's report, as its component would make them (the
       // app's own `plugin.layer.api`); an install from npm that lands found behind its own OK card; a public page read
       // keyless through `network:public` by its host half.
@@ -2346,7 +2346,7 @@ async function main(): Promise<void> {
         }
         if (asApp && world) {
           const npmName = "acceptance-asked-npm";
-          await publishNpm(pluginWorld, npmName, "1.0.0", { "clover.json": JSON.stringify({ manifest: 1, id: "acc-asked-npm", name: "Asked from npm", version: "1.0.0", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" } }, null, 2), "host/index.ts": "export const asked = true;\n" });
+          await publishNpm(pluginWorld, npmName, "1.0.0", { "moss.json": JSON.stringify({ manifest: 1, id: "acc-asked-npm", name: "Asked from npm", version: "1.0.0", engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" } }, null, 2), "host/index.ts": "export const asked = true;\n" });
           asked = await layer("plugins.install", [{ from: "npm", name: npmName }]).then((r) => {
             const x = r as { id?: string; state?: string } | undefined;
             if (typeof x?.id === "string") installed.push(x.id);
@@ -2354,10 +2354,10 @@ async function main(): Promise<void> {
           }, (err: unknown) => why(err));
         }
         if (world) fetched = await c.request<{ result: unknown }>("command.run", { name: `${asks.id}.fetch-public`, args: {} }, 60_000).then((r) => JSON.stringify(r.result), (err: unknown) => why(err));
-        const okLines = Object.fromEntries(ONCE_CLOVERS_OWN.map((cap) => [cap, CAPABILITIES.find((x) => x.name === cap)!.ok]));
+        const okLines = Object.fromEntries(ONCE_MOSS_OWN.map((cap) => [cap, CAPABILITIES.find((x) => x.name === cap)!.ok]));
         const r1 = asksAllWrong({ card: asks.text, granted, okLines, ...(terminal === undefined ? {} : { terminal }), ...(avatar === undefined ? {} : { avatar }), ...(asked === undefined ? {} : { install: asked }), ...(fetched === undefined ? {} : { fetched }) });
         if (r1.length > 0) wrong.push(`R1 ${r1.join("; ")}`);
-        else done.push(`R1 ${asks.id} asked for ${ONCE_CLOVERS_OWN.join(", ")}: its OK card carried each one's warning line and, OK'd, each was granted; ${asApp ? `terminal.open ${terminal} on this computer and closed, avatar.report answered (as its component, through plugin.layer.api)` : "its component's calls not made (a packaged core's CLI-role run can't make plugin.layer.api)"}; ${asked !== undefined ? `plugins.install from npm: ${asked} behind its own OK card` : "no npm install (no outside world or no app role)"}; ${fetched !== undefined ? `its host's net.fetch of ${ASKS_ALL_PAGE} answered keyless` : "no public page (no outside world)"}; browser.* is the F5 row's, plugins.watch is events only`);
+        else done.push(`R1 ${asks.id} asked for ${ONCE_MOSS_OWN.join(", ")}: its OK card carried each one's warning line and, OK'd, each was granted; ${asApp ? `terminal.open ${terminal} on this computer and closed, avatar.report answered (as its component, through plugin.layer.api)` : "its component's calls not made (a packaged core's CLI-role run can't make plugin.layer.api)"}; ${asked !== undefined ? `plugins.install from npm: ${asked} behind its own OK card` : "no npm install (no outside world or no app role)"}; ${fetched !== undefined ? `its host's net.fetch of ${ASKS_ALL_PAGE} answered keyless` : "no public page (no outside world)"}; browser.* is the F5 row's, plugins.watch is events only`);
       }
 
       if (wrong.length > 0) fail(`${wrong.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ") || "none"})`);
@@ -2373,7 +2373,7 @@ async function main(): Promise<void> {
   // OK card; its Review asked over RPC as the app's card page asks; the internal job reads that plugin's tree and its
   // report comes back with the disclaimer; the card is untouched; then the plugin is removed and its card goes with it.
   if (oldHalf) record(5, "BLOCKED", "not asserted on the upgrade's old half");
-  else if (!keyAdded) record(5, "BLOCKED", "no key for Clover's own jobs to run on (step 2)");
+  else if (!keyAdded) record(5, "BLOCKED", "no key for MOSS's own jobs to run on (step 2)");
   else {
     const settingsFile = join(home, "settings.json");
     let settingsBefore: string | undefined;
@@ -2382,12 +2382,12 @@ async function main(): Promise<void> {
     try {
       const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-review");
       mkdirSync(folder, { recursive: true });
-      writeFileSync(join(folder, "clover.json"), `${JSON.stringify({ manifest: 1, id: "acceptance-review", name: "Acceptance review", version: "1.0.0", engines: { clover: "^1.0.0" } }, null, 2)}\n`);
+      writeFileSync(join(folder, "moss.json"), `${JSON.stringify({ manifest: 1, id: "acceptance-review", name: "Acceptance review", version: "1.0.0", engines: { moss: "^1.0.0" } }, null, 2)}\n`);
       writeFileSync(join(folder, "README.md"), "A plugin the acceptance run asks a Review of. It echoes text back.\n");
       const installed = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
       reviewId = installed.id;
       const card = await until("acceptance-review's OK card", 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
-      // Clover's own jobs run on the run's key (Anthropic, the fake) only with a model the user chose: the reviewer role
+      // MOSS's own jobs run on the run's key (Anthropic, the fake) only with a model the user chose: the reviewer role
       // and the default model both set to the model Alpha runs, as the user would in Settings › Models, in the home's
       // settings.json (read live), put back after (lane E's set-up, 824a1dfe6).
       const tag = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
@@ -2538,9 +2538,9 @@ async function main(): Promise<void> {
       pageSite = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => (new URL(req.url).pathname === "/page" ? new Response(PAGE_SITE_BODY) : new Response("not here", { status: 404 })) });
       const pageFolder = join(stateDir !== undefined ? userHome : root, "plugin-src", pageId);
       cpSync(join(import.meta.dir, "fixtures", pageId), pageFolder, { recursive: true });
-      const pageManifest = JSON.parse(readFileSync(join(pageFolder, "clover.json"), "utf8")) as { capabilities: string[] };
+      const pageManifest = JSON.parse(readFileSync(join(pageFolder, "moss.json"), "utf8")) as { capabilities: string[] };
       pageManifest.capabilities.push(`network:127.0.0.1:${pageSite.port}`);
-      writeFileSync(join(pageFolder, "clover.json"), JSON.stringify(pageManifest, null, 2));
+      writeFileSync(join(pageFolder, "moss.json"), JSON.stringify(pageManifest, null, 2));
       await c.request("notify.setMuted", { pluginId: pageId, muted: true });
       const pageInstalled = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: pageFolder } }, 60_000);
       if (pageInstalled.id !== pageId) fail(`the page fixture installed as ${pageInstalled.id}`);
@@ -2657,16 +2657,16 @@ async function main(): Promise<void> {
 
   // Plugins from an index the user added and from npm (recorded at the end): the run's fake index and fake npm registry
   // (plugin-world.ts; served by name through the daemon's own pinned fetch, the source daemon's seam or a packaged test
-  // build's CLOVER_TEST_OUTSIDE_WORLD), published as an author would.
+  // build's MOSS_TEST_OUTSIDE_WORLD), published as an author would.
   if (!STEPS.some((x) => x.startsWith(INDEX_PREFIX))) { /* not in this run */ }
   else if (oldHalf) indexOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
-  else if (target !== "source" && outsideWorld === undefined) indexOutcome = { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (CLOVER_TEST_OUTSIDE_WORLD, an earlier build); the run never reaches a real index or npm" };
+  else if (target !== "source" && outsideWorld === undefined) indexOutcome = { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (MOSS_TEST_OUTSIDE_WORLD, an earlier build); the run never reaches a real index or npm" };
   else {
     const id = "acceptance-indexed";
     const npmName = "acceptance-npm-plugin";
     const npmId = "acceptance-npm";
     const version = (v: string, extra: Record<string, unknown> = {}, host = `export const version = "${v}";\n`) => ({
-      "clover.json": JSON.stringify({ manifest: 1, id, name: "Acceptance indexed", version: v, engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" }, ...extra }, null, 2),
+      "moss.json": JSON.stringify({ manifest: 1, id, name: "Acceptance indexed", version: v, engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" }, ...extra }, null, 2),
       "host/index.ts": host,
     });
     const pluginOf = async (pid: string) => (await c.request<{ plugin?: { state?: string; version?: string } }>("plugin.get", { id: pid }).catch(() => ({ plugin: undefined }))).plugin;
@@ -2696,13 +2696,13 @@ async function main(): Promise<void> {
       if ((await cards(c)).some((k) => !known.has(k.id) && k.pluginId === id)) fail("the update that asks for nothing new raised a card");
       said.push("1.1.0 offered, applied on the click with no card");
       // Pinned: no update offered; unpinned, it is.
-      // Pinned and unpinned from the user's terminal (`clover plugin pin`), read back through plugin.get.
+      // Pinned and unpinned from the user's terminal (`moss plugin pin`), read back through plugin.get.
       const cli = async (words: string[], expect: string) => {
         const r = await coreCli(["plugin", ...words], `plugin-cli-index-${words[0]}`);
-        if (r.code !== 0 || !r.stdout.includes(expect)) fail(`clover plugin ${words.join(" ")} exited ${r.code}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`);
+        if (r.code !== 0 || !r.stdout.includes(expect)) fail(`moss plugin ${words.join(" ")} exited ${r.code}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`);
       };
       await cli(["pin", id], "no updates are offered for it");
-      if ((await pluginOf(id) as { pinned?: boolean } | undefined)?.pinned !== true) fail(`clover plugin pin ${id} didn't pin it`);
+      if ((await pluginOf(id) as { pinned?: boolean } | undefined)?.pinned !== true) fail(`moss plugin pin ${id} didn't pin it`);
       await publishIndexVersion(pluginWorld, id, "1.2.0", version("1.2.0",
         { contributes: { triggers: [{ type: "acceptance-indexed-ping", title: "Ping", handler: "ping" }] } },
         'export const version = "1.2.0";\nexport const ping = { arm(): void {}, disarm(): void {} };\n'));
@@ -2711,7 +2711,7 @@ async function main(): Promise<void> {
       await cli(["unpin", id], "is offered updates again");
       const unpinned = await c.request<{ offered?: { id: string; to: string }[] }>("plugin.update", {}, 60_000);
       if (!unpinned.offered?.some((o) => o.id === id && o.to === "1.2.0")) fail(`unpinned, 1.2.0 wasn't offered: ${JSON.stringify(unpinned).slice(0, 300)}`);
-      said.push("pinned with clover plugin pin: none offered; unpinned with clover plugin unpin: 1.2.0 offered");
+      said.push("pinned with moss plugin pin: none offered; unpinned with moss plugin unpin: 1.2.0 offered");
       // An update that adds a trigger asks again: its card says what changed and what the trigger does.
       await c.request("plugin.update", { id }, 60_000);
       const asked = await cardFor(id, "the update's OK card");
@@ -2722,7 +2722,7 @@ async function main(): Promise<void> {
       await runningAt(id, "1.2.0");
       said.push("1.2.0 (adds a trigger) asked again on a card naming the trigger and what changed, OK'd");
       // From npm: its record and tarball (integrity checked), behind its OK card.
-      await publishNpm(pluginWorld, npmName, "1.0.0", { "clover.json": JSON.stringify({ manifest: 1, id: npmId, name: "Acceptance npm", version: "1.0.0", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" } }, null, 2), "host/index.ts": "export const from = \"npm\";\n" });
+      await publishNpm(pluginWorld, npmName, "1.0.0", { "moss.json": JSON.stringify({ manifest: 1, id: npmId, name: "Acceptance npm", version: "1.0.0", engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" } }, null, 2), "host/index.ts": "export const from = \"npm\";\n" });
       const fromNpm = await c.request<{ id: string; state: string }>("plugin.install", { source: { from: "npm", name: npmName } }, 60_000);
       if (fromNpm.id !== npmId || fromNpm.state !== "found") fail(`from npm: ${JSON.stringify(fromNpm)}`);
       await approve(c, await cardFor(npmId, `${npmId}'s OK card`));
@@ -2806,7 +2806,7 @@ async function main(): Promise<void> {
       // 1: the granted plugin.
       const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-net");
       cpSync(join(import.meta.dir, "fixtures", "acceptance-net"), folder, { recursive: true });
-      writeFileSync(join(folder, "clover.json"), readFileSync(join(folder, "clover.json"), "utf8").replace("ACCEPTANCE_NET_PORT", String(port)));
+      writeFileSync(join(folder, "moss.json"), readFileSync(join(folder, "moss.json"), "utf8").replace("ACCEPTANCE_NET_PORT", String(port)));
       writeFileSync(join(folder, "stdio", "targets"), `${port}\n${hookTarget?.port ?? 9}\n`);
       const net = await install({ from: "folder", path: folder });
       if (!net.text.includes(`localhost:${port}`)) fail(`${net.id}'s OK card doesn't name the host it's granted (localhost:${port}): ${net.text.slice(0, 300)}`);
@@ -2950,7 +2950,7 @@ async function main(): Promise<void> {
   // Only the source daemon has the fake search backend (its keyed fetch seam): a packaged core would search the real
   // web, which a run never does.
   else if (skipWebTurns) searchOutcome = { status: "BLOCKED", detail: "--skip-web-turns: this tree's daemon has no fake web seam, so its web turns aren't run (they could reach the real web)" };
-  else if (target !== "source" && outsideWorld === undefined) searchOutcome = { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (CLOVER_TEST_OUTSIDE_WORLD, an earlier build); the run never searches the real web" };
+  else if (target !== "source" && outsideWorld === undefined) searchOutcome = { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (MOSS_TEST_OUTSIDE_WORLD, an earlier build); the run never searches the real web" };
   else {
     try {
       const seen = fake.requests.length;
@@ -2973,7 +2973,7 @@ async function main(): Promise<void> {
   // article through the same seam, and a name that resolves to a private address is refused before any request.
   if (session === undefined || !turnsWork) fetchOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   else if (skipWebTurns) fetchOutcome = { status: "BLOCKED", detail: "--skip-web-turns: this tree's daemon has no fake web seam, so its web turns aren't run (they could reach the real web)" };
-  else if (target !== "source" && outsideWorld === undefined) fetchOutcome = { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (CLOVER_TEST_OUTSIDE_WORLD, an earlier build); the run never fetches the real web" };
+  else if (target !== "source" && outsideWorld === undefined) fetchOutcome = { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (MOSS_TEST_OUTSIDE_WORLD, an earlier build); the run never fetches the real web" };
   else {
     try {
       const fetchTurn = async (url: string) => {
@@ -3105,7 +3105,7 @@ async function main(): Promise<void> {
 /** The sharded run (--shards N): the desktop app built once, then the parallel phase's shards at once (shards.ts
  *  planShards), each a run of its own (`--units`, its own temp home, keychain file, fake provider, daemon and app),
  *  then each measuring unit alone; their rows merged into the one table, each with its shard and seconds. The shards
- *  run under this run's hold of the machine (CLOVER_HEAVY_EXCLUSIVE is inherited, so none queues for it again). */
+ *  run under this run's hold of the machine (MOSS_HEAVY_EXCLUSIVE is inherited, so none queues for it again). */
 async function orchestrate(): Promise<void> {
   const plan = planShards(shards);
   const serial = serialUnits();
@@ -3164,8 +3164,8 @@ let shardSummary: string[] = [];
 
 /** The model key through the app's own methods (step 2's calls), asked again while the daemon still says
  *  `plugin.auth.list` "is not served yet" (its registry is still opening: the `--only-*` runs' start flake). */
-async function signInKey(c: CloverClient): Promise<void> {
-  const plugin = "clover/model-anthropic";
+async function signInKey(c: MossClient): Promise<void> {
+  const plugin = "moss/model-anthropic";
   const auth = await until("plugin.auth.list served", 60_000, async () => {
     try {
       return await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
@@ -3181,7 +3181,7 @@ async function signInKey(c: CloverClient): Promise<void> {
 }
 
 /** Step 4's fixture plugin (acceptance-echo) installed from its folder and OK'd over RPC, for a shard whose rows call it. */
-async function installEcho(c: CloverClient): Promise<void> {
+async function installEcho(c: MossClient): Promise<void> {
   const folder = join(root, "plugin-src", "acceptance-echo");
   cpSync(join(import.meta.dir, "fixtures", "acceptance-echo"), folder, { recursive: true });
   // Its hook's and stdio server's targets (nothing listens on port 9; the paths are the run's own), as step 4 writes them.
@@ -3204,7 +3204,7 @@ async function installEcho(c: CloverClient): Promise<void> {
 }
 
 /** Alpha's main conversation once she is on the keyed model. */
-async function keyedSession(c: CloverClient): Promise<string> {
+async function keyedSession(c: MossClient): Promise<string> {
   return until("the bot on the keyed model", 60_000, async () => {
     const b = (await c.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
     return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
@@ -3219,7 +3219,7 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   const mine = allUnits().filter((u) => ids.includes(u.id)).flatMap((u) => u.rows);
   let echoMissing = false;
   let session: string | undefined;
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   try {
     // The previous app's session in the home's store before the daemon first opens it (the archive row).
     if (ids.includes("archive")) seedArchive(home);
@@ -3274,7 +3274,7 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
 /** The rows of a `--only-kids|listen|web|drag|review` run: a daemon of its own, the dummy key, Alpha on it, then the app over it and just
  *  those rows (the unit's setup as `unitsRun` gives it, with the window's rows narrowed to the ones asked for). */
 async function appRowsOnlyRun(app: { exe: string; args: string[] }, names: readonly string[]): Promise<void> {
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   let session: string;
   try {
     await startDaemonProc();
@@ -3297,7 +3297,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
   const names = only ?? allUnits().filter((u) => ids.includes(u.id)).flatMap((u) => u.rows);
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
-  let rpc: CloverClient | undefined;
+  let rpc: MossClient | undefined;
   try {
     // Her tab, not the welcome guide (stageLevelsStep's reason): the guide is marked done, as the app marks it once it is.
     const welcomeDone = join(home, "app-data", profile, "welcome-done");
@@ -3308,13 +3308,13 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     const port = freePort();
     // The Browser row's local fixture site, its names served to this app's browser (as the full run's first app has them).
     if (ids.includes("browser") && browserFixture === undefined) browserFixture = startBrowserFixture();
-    // Whether Clover's window is in front, for the rows that place a card (CLOVER_TEST_MAIN_FRONT_FILE, test-marked and acceptance builds only): a headless run's windows are never the focused one.
+    // Whether MOSS's window is in front, for the rows that place a card (MOSS_TEST_MAIN_FRONT_FILE, test-marked and acceptance builds only): a headless run's windows are never the focused one.
     const frontFile = join(root, "main-front");
     const unitAppearance = join(root, "unit-appearance");
     // A key held in the window (the listen row's Ctrl+Shift+Space): main's own sendInputEvent from this file, as the full run's.
     const unitKeys = join(root, "unit-press-key");
-    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_APPEARANCE_FILE: unitAppearance, CLOVER_TEST_PICK: pickFile, CLOVER_TEST_MAIN_FRONT_FILE: frontFile, CLOVER_TEST_KEY_FILE: unitKeys, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
-    proc = startChild("unit-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { MOSS_TEST_BROWSER_NAMES: browserFixture.names } : {}), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_TEST_APPEARANCE_FILE: unitAppearance, MOSS_TEST_PICK: pickFile, MOSS_TEST_MAIN_FRONT_FILE: frontFile, MOSS_TEST_KEY_FILE: unitKeys, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
+    proc = startChild("unit-app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
       try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
@@ -3342,7 +3342,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
   }
 }
 
-/** Main's key presses in one app's window, through the file it watches (CLOVER_TEST_KEY_FILE): each new `n` is one press, or
+/** Main's key presses in one app's window, through the file it watches (MOSS_TEST_KEY_FILE): each new `n` is one press, or
  *  one event of a held key (`type`). One counter per file, shared by every row that presses there. */
 function keyPresser(file: string): (key: string, modifiers: string[], type?: "down" | "repeat" | "up") => void {
   let n = 0;
@@ -3350,7 +3350,7 @@ function keyPresser(file: string): (key: string, modifiers: string[], type?: "do
 }
 
 /** The examples' context over one app: its cards pressed in its window, main's picker, the fake's requests. */
-function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string, appearanceFile?: string, frontFile?: string, pressKey?: ExampleCtx["pressKey"]): ExampleCtx {
+function exampleCtxFor(cdp: Cdp, rpc: MossClient, log: string, pickFile: string, appearanceFile?: string, frontFile?: string, pressKey?: ExampleCtx["pressKey"]): ExampleCtx {
   return {
     cdp, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
     // This app's own output and the home's app log, whichever it wrote to.
@@ -3431,11 +3431,11 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
  *  the default-level turn (no card), then the row itself on its own app and daemon. */
 async function stageOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
   const n = stepNumber(FULL_STEPS, STAGE_STEP);
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   try {
     await startDaemonProc();
     c = (await appDriver()).client;
-    const plugin = "clover/model-anthropic";
+    const plugin = "moss/model-anthropic";
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
     const entry = auth.auth.find((a) => a.method === "api-key");
     if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
@@ -3474,7 +3474,7 @@ async function stageOnlyRun(app: { exe: string; args: string[] }): Promise<void>
 /** One provider's turn on a running daemon: its bundled plugin signed in with the run's dummy key through its own
  *  sign-in (`plugin.auth.signIn`), Alpha moved to its model, one turn (`check` gives the verdict on the events and the
  *  requests its fake saw during it), and Alpha's model and the sign-in put back, so no later turn sees the key. */
-async function providerTurn(c: CloverClient, session: string, p: { plugin: string; model: string; key: string; prompt: string; seen: () => number; check: (events: Ev[], from: number) => string | undefined }): Promise<string> {
+async function providerTurn(c: MossClient, session: string, p: { plugin: string; model: string; key: string; prompt: string; seen: () => number; check: (events: Ev[], from: number) => string | undefined }): Promise<string> {
   let moved = false;
   let signedIn: number | undefined;
   /** Alpha's own model setting before the turn (null: none, the default's). */
@@ -3509,7 +3509,7 @@ async function providerTurn(c: CloverClient, session: string, p: { plugin: strin
  *  on OpenAI's Responses wire and on Groq's Chat Completions wire (the declarative plugins' generic adapters), each
  *  provider at the user's own endpoint (`providers.<id>.baseUrl`, the run's loopback fakes), each with the key stored
  *  through its own sign-in. */
-async function codeAdapterTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+async function codeAdapterTurn(c: MossClient, session: string): Promise<{ status: Status; detail: string }> {
   if (gemini === undefined || openAiWires.size !== OPENAI_WIRE_PROVIDERS.length) return { status: "BLOCKED", detail: "the run's provider fakes didn't start" };
   const g = gemini;
   try {
@@ -3539,7 +3539,7 @@ async function codeAdapterTurn(c: CloverClient, session: string): Promise<{ stat
  *  and the sign-in put back. Its provider is the run's own server on this computer (fake-models.ts), which its OK names
  *  by address and port and which answers only with the key the core placed: the reply in the conversation shows the
  *  key arrived. No test seam: it runs the same on a packaged app. */
-async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+async function thirdPartyModelTurn(c: MossClient, session: string): Promise<{ status: Status; detail: string }> {
   if (models === undefined) return { status: "BLOCKED", detail: "the run's model server didn't start" };
   let moved = false;
   let signedIn: number | undefined;
@@ -3602,7 +3602,7 @@ async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ 
  *  redirect to the core's callback; it opens no window. Then Alpha's turn on the plugin's model, whose keyed fetch must
  *  carry a live token: near its expiry (renewed first) and after a 401 (renewed once, the call retried). What it can't
  *  cover: a real provider's consent page and its account, and the app opening the URL in the person's browser. */
-async function oauthSignInTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+async function oauthSignInTurn(c: MossClient, session: string): Promise<{ status: Status; detail: string }> {
   if (oauthServer === undefined) return { status: "BLOCKED", detail: "the run's OAuth server didn't start" };
   const o = oauthServer;
   let moved = false;
@@ -3681,7 +3681,7 @@ async function oauthSignInTurn(c: CloverClient, session: string): Promise<{ stat
 /** The scheduled routine clause on a running daemon, Alpha on the run's keyed model: her Routine tool makes a routine
  *  that runs every 15 s; nothing presses run now; its schedule fires it, and routine.runs lists the finished run, done,
  *  with its side thread's reply. Its file is deleted at the end, whatever happened, so nothing of it fires later. */
-async function scheduledRoutineTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+async function scheduledRoutineTurn(c: MossClient, session: string): Promise<{ status: Status; detail: string }> {
   const tag = routineTag(randomBytes(4).toString("hex"));
   let file: string | undefined;
   let id: string | undefined;
@@ -3729,11 +3729,11 @@ async function scheduledRoutineTurn(c: CloverClient, session: string): Promise<{
  *  sign-in, Alpha on the keyed model, then the clause over the app's methods. */
 async function routineOnlyRun(): Promise<void> {
   const n = stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP);
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   try {
     await startDaemonProc();
     c = (await appDriver()).client;
-    const plugin = "clover/model-anthropic";
+    const plugin = "moss/model-anthropic";
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
     const entry = auth.auth.find((a) => a.method === "api-key");
     if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
@@ -3757,7 +3757,7 @@ async function routineOnlyRun(): Promise<void> {
 /** The oauth-pkce row alone (--only-oauth-sign-in): the daemon, then the clause over the app's methods. */
 async function oauthOnlyRun(): Promise<void> {
   const n = stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP);
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   try {
     await startDaemonProc();
     c = (await appDriver()).client;
@@ -3776,7 +3776,7 @@ async function oauthOnlyRun(): Promise<void> {
 /** The third-party model row alone (--only-third-party-model): the daemon, then the clause over the app's methods. */
 async function thirdPartyOnlyRun(): Promise<void> {
   const n = stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP);
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   try {
     await startDaemonProc();
     c = (await appDriver()).client;
@@ -3794,7 +3794,7 @@ async function thirdPartyOnlyRun(): Promise<void> {
 
 /** Alpha's main conversation, once the bots' side answers (it comes up after the daemon's socket, so a call made at
  *  once may find `bot.list` not served yet). */
-async function alphaSession(c: CloverClient): Promise<string> {
+async function alphaSession(c: MossClient): Promise<string> {
   return until("Alpha's main conversation (bot.list)", 120_000, async () => {
     const bots = await c.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {}).catch(() => undefined);
     return bots?.bots.find((b) => b.id === "alpha")?.mainSession;
@@ -3804,7 +3804,7 @@ async function alphaSession(c: CloverClient): Promise<string> {
 /** The code-adapter row alone (--only-code-adapter): the daemon, then the clause over the app's methods. */
 async function codeAdapterOnlyRun(): Promise<void> {
   const n = stepNumber(FULL_STEPS, CODE_ADAPTER_STEP);
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   try {
     await startDaemonProc();
     c = (await appDriver()).client;
@@ -3822,13 +3822,13 @@ async function codeAdapterOnlyRun(): Promise<void> {
 
 async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
   const n = stepNumber(FULL_STEPS, WORKSHOP_STEP);
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
   try {
     await startDaemonProc();
     c = (await appDriver()).client;
-    const plugin = "clover/model-anthropic";
+    const plugin = "moss/model-anthropic";
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
     const entry = auth.auth.find((a) => a.method === "api-key");
     if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
@@ -3847,8 +3847,8 @@ async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<vo
     const pickFile = join(root, "folder.pick");
     writeFileSync(pickFile, `${join(import.meta.dir, "fixtures", "acceptance-page")}\n`);
     const port = freePort();
-    const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
-    proc = startChild("workshop-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    const env = { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_TEST_PICK: pickFile, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
+    proc = startChild("workshop-app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
       try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
@@ -3890,12 +3890,12 @@ async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<vo
  *  (uiPhase with `onlyUi`: no quit and reopen, no example steps). */
 async function onlyUiRun(app: { exe: string; args: string[] }): Promise<void> {
   const rowsWanted = uiRowNumbers(onlyUi!);
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   let session: string | undefined;
   try {
     await startDaemonProc();
     c = (await appDriver()).client;
-    const plugin = "clover/model-anthropic";
+    const plugin = "moss/model-anthropic";
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
     const entry = auth.auth.find((a) => a.method === "api-key");
     if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
@@ -3920,13 +3920,13 @@ async function onlyUiRun(app: { exe: string; args: string[] }): Promise<void> {
 
 async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
   const n = stepNumber(FULL_STEPS, TAB_FLASH_STEP);
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
   try {
     await startDaemonProc();
     c = (await appDriver()).client;
-    const plugin = "clover/model-anthropic";
+    const plugin = "moss/model-anthropic";
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
     const entry = auth.auth.find((a) => a.method === "api-key");
     if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
@@ -3945,8 +3945,8 @@ async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<vo
     const pickFile = join(root, "folder.pick");
     writeFileSync(pickFile, `${join(import.meta.dir, "fixtures", "acceptance-page")}\n`);
     const port = freePort();
-    const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
-    proc = startChild("tab-flash-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    const env = { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_TEST_PICK: pickFile, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
+    proc = startChild("tab-flash-app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
       try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
@@ -3987,13 +3987,13 @@ async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<vo
  *  keyed model, then the app over it (headless, its DevTools port, the window's start sampled) and the row. */
 async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
   const n = stepNumber(FULL_STEPS, BROWSER_STEP);
-  let c: CloverClient | undefined;
+  let c: MossClient | undefined;
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
   try {
     await startDaemonProc();
     c = (await appDriver()).client;
-    const plugin = "clover/model-anthropic";
+    const plugin = "moss/model-anthropic";
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
     const entry = auth.auth.find((a) => a.method === "api-key");
     if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
@@ -4014,8 +4014,8 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
     const port = freePort();
     browserFixture = startBrowserFixture();
     const frontFile = join(root, "main-front");
-    const env = { ...baseEnv(), CLOVER_TEST_BROWSER_NAMES: browserFixture.names, CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_MAIN_FRONT_FILE: frontFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
-    proc = startChild("browser-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    const env = { ...baseEnv(), MOSS_TEST_BROWSER_NAMES: browserFixture.names, MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_TEST_PICK: pickFile, MOSS_TEST_MAIN_FRONT_FILE: frontFile, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
+    proc = startChild("browser-app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
       try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
@@ -4066,7 +4066,7 @@ function childrenOf(pid: number): number[] {
   return spawnSync("pgrep", ["-P", String(pid)], { encoding: "utf8" }).stdout.split("\n").filter((l) => l.trim() !== "").map(Number);
 }
 
-/** The idle step: the daemon under its supervisor (`clover-core supervise`; on the source target its stand-in,
+/** The idle step: the daemon under its supervisor (`moss-core supervise`; on the source target its stand-in,
  *  supervise.ts, the same loop and wait), the app up and its shell drawn, then 15 s quiet; over the next 15 s each of
  *  the supervisor and the daemon uses under IDLE_CPU_MAX % of a core. The row prints both numbers. */
 async function idleStep(app: { exe: string; args: string[] }): Promise<void> {
@@ -4081,8 +4081,8 @@ async function idleStep(app: { exe: string; args: string[] }): Promise<void> {
     // The daemon is the supervisor's child (on the source target, under bun: the one child it has).
     const daemon = await until("the supervised daemon's pid", 10_000, () => childrenOf(supervisor)[0], 200);
     const port = freePort();
-    const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
-    const proc = startChild("idle-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    const env = { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
+    const proc = startChild("idle-app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     appProc = proc.proc;
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc.proc)) fail(`the app exited (${proc.proc.exitCode ?? proc.proc.signalCode}): ${lastLines(proc.log)}`);
@@ -4161,10 +4161,10 @@ function launchStandIn(): { arm(): void; settle(): Promise<void>; stop(): void; 
   };
 }
 
-/** Whether this run's daemon takes a short stop bound (CLOVER_TEST_STOP_BUDGET_MS): the source daemon of this tree. */
+/** Whether this run's daemon takes a short stop bound (MOSS_TEST_STOP_BUDGET_MS): the source daemon of this tree. */
 function daemonTakesStopBudget(): boolean {
-  if (target !== "source") return packagedCoreSays("CLOVER_TEST_STOP_BUDGET_MS");
-  try { return readFileSync(join(REPO, "scripts", "acceptance", "daemon.ts"), "utf8").includes("CLOVER_TEST_STOP_BUDGET_MS"); } catch { return false; }
+  if (target !== "source") return packagedCoreSays("MOSS_TEST_STOP_BUDGET_MS");
+  try { return readFileSync(join(REPO, "scripts", "acceptance", "daemon.ts"), "utf8").includes("MOSS_TEST_STOP_BUDGET_MS"); } catch { return false; }
 }
 
 /** Whether the packaged (test-marked) core carries a test seam, by the name it reads (a real core carries none). */
@@ -4185,13 +4185,13 @@ function startOutsideWorld(): void {
   outsideWorld = serveOutsideWorld(pluginWorld);
 }
 
-/** Whether this run's daemon holds a stopping daemon on CLOVER_TEST_STOP_HOLD_FILE: the source daemon (this tree's
+/** Whether this run's daemon holds a stopping daemon on MOSS_TEST_STOP_HOLD_FILE: the source daemon (this tree's
  *  scripts/acceptance/daemon.ts) or the packaged test-marked core says the name. */
 let takesStopHold: boolean | undefined;
 function daemonTakesStopHold(): boolean {
   if (takesStopHold === undefined) {
     const file = target === "source" ? join(REPO, "scripts", "acceptance", "daemon.ts") : packagedCore();
-    try { takesStopHold = readFileSync(file).includes("CLOVER_TEST_STOP_HOLD_FILE"); } catch { takesStopHold = false; }
+    try { takesStopHold = readFileSync(file).includes("MOSS_TEST_STOP_HOLD_FILE"); } catch { takesStopHold = false; }
   }
   return takesStopHold;
 }
@@ -4220,8 +4220,8 @@ function freePort(): number {
 /** An app as the owner starts it (headless here, with a DevTools port), the launcher stand-in its daemon binary. */
 function openApp(app: { exe: string; args: string[] }, label: string): { proc: ChildProcess; log: string; port: number } {
   const port = freePort();
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: standInBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
-  const p = startChild(label, app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+  const env = { ...baseEnv(), MOSS_DAEMON_BIN: standInBin, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
+  const p = startChild(label, app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   return { ...p, port };
 }
 
@@ -4242,7 +4242,7 @@ async function windowFills(app: { proc: ChildProcess; log: string; port: number 
       const text = await treeText(cdp!).catch(() => "");
       const root = (await cdp!.documents().catch(() => [])).map((d) => d.text).join(" ").replace(/\s+/g, " ").slice(0, 160);
       const pairLines = readLog(app.log).split("\n").filter((l) => /pair:/.test(l)).slice(-5).join(" | ").slice(0, 600);
-      fail(`${why(e)}${/Starting Clover/.test(root + text) ? ' — stuck on "Starting Clover…"' : ""} (window: "${root}"; the app's pair: ${pairLines})`);
+      fail(`${why(e)}${/Starting MOSS/.test(root + text) ? ' — stuck on "Starting MOSS…"' : ""} (window: "${root}"; the app's pair: ${pairLines})`);
     });
     return Date.now() - t0;
   } finally {
@@ -4258,7 +4258,7 @@ async function windowFills(app: { proc: ChildProcess; log: string; port: number 
 let stageDefault: { ok: true; called: string } | { ok: false; status: Status; detail: string } | undefined;
 const stageStoreFile = () => join(home, "settings", "plugin-stores", "alpha.json");
 const stageMood = (): string | undefined => { try { return (JSON.parse(readFileSync(stageStoreFile(), "utf8")) as { stage?: { mood?: string } }).stage?.mood; } catch { return undefined; } };
-async function stageTurn(c: CloverClient, session: string, want: string, press?: { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }) {
+async function stageTurn(c: MossClient, session: string, want: string, press?: { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }) {
   const seen = fake?.requests.length ?? 0;
   const t = await turn(c, session, `ACCEPTANCE-STAGE ${want}: change the mood`, 150_000, press !== undefined ? { press } : {});
   const mine = (fake?.requests ?? []).slice(seen);
@@ -4268,7 +4268,7 @@ async function stageTurn(c: CloverClient, session: string, want: string, press?:
   await Bun.sleep(400); // the store's write lands a moment after the tool's answer
   return { called: called!, result, cards: t.cards, mood: stageMood() };
 }
-async function stageStep(c: CloverClient, session: string | undefined, turnsWork: boolean): Promise<void> {
+async function stageStep(c: MossClient, session: string | undefined, turnsWork: boolean): Promise<void> {
   if (session === undefined || !turnsWork) { stageDefault = { ok: false, status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" }; return; }
   try {
     const first = await stageTurn(c, session, "joy");
@@ -4280,10 +4280,10 @@ async function stageStep(c: CloverClient, session: string | undefined, turnsWork
   }
 }
 /** A bot's Agent at the default level (the controller's ruling): Alpha hands her study-buddy definition a brief on
- *  `clover-code`, Clover's own sandboxed coding agent, in a folder of the user's home. No card; the start's answer names
+ *  `moss-code`, MOSS's own sandboxed coding agent, in a folder of the user's home. No card; the start's answer names
  *  the definition; the agent's session row carries the definition and the backend; the child (on the scripted model)
  *  answers, and its report reaches Alpha's conversation as a task notification. */
-async function agentStep(c: CloverClient, session: string | undefined, turnsWork: boolean): Promise<void> {
+async function agentStep(c: MossClient, session: string | undefined, turnsWork: boolean): Promise<void> {
   const n = FULL_STEPS.indexOf(AGENT_STEP) + 1;
   if (session === undefined || !turnsWork) return record(n, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
   try {
@@ -4298,13 +4298,13 @@ async function agentStep(c: CloverClient, session: string | undefined, turnsWork
     const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
     const started = mine.find((r) => r.toolResult !== undefined)?.toolResult;
     if (called !== "Agent") fail(`Alpha was offered no Agent tool (${mine.map((r) => r.answered).join(", ")}; built-ins: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((x) => !x.startsWith("mcp__")).join(", ")}) [packages/core/src/daemon.ts botCoreTools agents]`);
-    if (t.cards.length > 0) fail(`Agent on clover-code raised ${t.cards.join("; ")} (Clover's own sandboxed agent starts with no card) [packages/core/src/agents/start-policy.ts]`);
+    if (t.cards.length > 0) fail(`Agent on moss-code raised ${t.cards.join("; ")} (MOSS's own sandboxed agent starts with no card) [packages/core/src/agents/start-policy.ts]`);
     if (started === undefined || started.isError || !started.text.includes("with alpha's agent definition study-buddy")) fail(`Agent didn't start: ${(started?.text ?? "no result").slice(0, 200)}`);
     const agentRow = await until("the agent's session row", 30_000, async () => {
       const r = await c.request<{ sessions: { id: string; kind: string; backend?: string; definition?: string; parent?: string }[] }>("session.list", { kinds: ["agent"] }).catch(() => undefined);
       return r?.sessions.find((x) => x.definition === "alpha:study-buddy");
     }, 500);
-    if (agentRow?.backend !== "clover-code") fail(`the agent's row says backend ${agentRow?.backend}, not clover-code`);
+    if (agentRow?.backend !== "moss-code") fail(`the agent's row says backend ${agentRow?.backend}, not moss-code`);
     const report = await until("the agent's report in Alpha's conversation", 120_000, async () => {
       const evs = await history(c, session).catch(() => []);
       return evs.find((e) => JSON.stringify(e).includes(CHILD_REPORT));
@@ -4324,18 +4324,18 @@ async function agentStep(c: CloverClient, session: string | undefined, turnsWork
     });
     const delegated = await probe({ bot: session });
     const own = await probe({});
-    record(n, "PASS", `Agent on clover-code with alpha:study-buddy: no card; ${started!.text.slice(0, 90)}; its row ${agentRow!.id} (backend ${agentRow!.backend}, definition ${agentRow!.definition}); its report came back (${String((report as { type?: string }).type)}); the echo plugin's tool through the bridge: Alpha's agent ${delegated}; the user's coding session ${own}`);
+    record(n, "PASS", `Agent on moss-code with alpha:study-buddy: no card; ${started!.text.slice(0, 90)}; its row ${agentRow!.id} (backend ${agentRow!.backend}, definition ${agentRow!.definition}); its report came back (${String((report as { type?: string }).type)}); the echo plugin's tool through the bridge: Alpha's agent ${delegated}; the user's coding session ${own}`);
   } catch (err) {
     record(n, statusOf(err), why(err));
   }
 }
 
-/** An agent on clover-code calls the echo plugin's tool through its bridge (row 1.93): Alpha's delegation (`bot`: her
+/** An agent on moss-code calls the echo plugin's tool through its bridge (row 1.93): Alpha's delegation (`bot`: her
  *  conversation, `ACCEPTANCE-AGENT-ECHO`) or the user's own coding session (`agent.start`). The scripted model finds the
  *  tool among those its request offers (`…__acceptance-echo-echo__Echo`), calls it, and says the answer back; a card the
  *  call raises (it names the agent's session) is approved over RPC, at the level of the session that owns the call.
  *  Answers what happened, for the step's detail. */
-async function agentEchoProbe(c: CloverClient, computer: string, o: { bot?: string }): Promise<string> {
+async function agentEchoProbe(c: MossClient, computer: string, o: { bot?: string }): Promise<string> {
   const PONG = "acceptance-echo-pong: acceptance-child-ping";
   const folder = o.bot === undefined ? "code-echo" : "agent-echo";
   mkdirSync(join(userHome, folder), { recursive: true });
@@ -4356,7 +4356,7 @@ async function agentEchoProbe(c: CloverClient, computer: string, o: { bot?: stri
     // Alpha's. Without it the session takes the default model, which no stored key here answers (14f's first table).
     const model = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
     if (model === undefined) fail("Alpha has no model to give the user's coding session");
-    id = (await c.request<{ session: string }>("agent.start", { backend: "clover-code", computer, root, model, prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." }, 30_000)).session;
+    id = (await c.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root, model, prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." }, 30_000)).session;
   }
   // The call's card, if its level asks: it names the agent's own session.
   const carded: string[] = [];
@@ -4387,7 +4387,7 @@ async function agentEchoProbe(c: CloverClient, computer: string, o: { bot?: stri
   const mine = (fake?.requests ?? []).slice(seen);
   const called = mine.find((r) => r.toolUse !== undefined && BRIDGE_ECHO.test(r.toolUse))?.toolUse;
   if (called === undefined) fail(`the answer came back but no request called the echo tool through a bridge (${mine.map((r) => r.toolUse).filter(Boolean).join(", ") || "no tool called"})`);
-  const offered = mine.find((r) => r.tools.some((t) => BRIDGE_ECHO.test(t)))?.tools.filter((t) => t.startsWith("mcp__clover_")) ?? [];
+  const offered = mine.find((r) => r.tools.some((t) => BRIDGE_ECHO.test(t)))?.tools.filter((t) => t.startsWith("mcp__moss_")) ?? [];
   return `its bridge offered ${offered.join(", ")}; it called ${called} and got "${PONG}" back${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`;
 }
 
@@ -4401,18 +4401,18 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
   if (oldHalf) return record(n, "BLOCKED", `not asserted on the old build: the level changes are left out of the upgrade's old half (its home stays at the default level for the new build); the default level passed (${called}, no card, mood joy)`);
   if (lastDaemon !== undefined && alive(lastDaemon.proc)) await endChild(lastDaemon.proc, 20_000);
   const port = freePort();
-  // The narrow window is the window itself resized (CLOVER_TEST_WINDOW_SIZE_FILE, test-marked and acceptance builds only).
+  // The narrow window is the window itself resized (MOSS_TEST_WINDOW_SIZE_FILE, test-marked and acceptance builds only).
   const windowSizeFile = join(root, "stage-window-size");
   // Its IPC counters on (messages by channel, CPU by process, every 5 s): the narrow card's diagnosis.
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_WINDOW_SIZE_FILE: windowSizeFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const env = { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_WINDOW_SIZE_FILE: windowSizeFile, MOSS_IPC_STATS: "1", ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
   // Her tab, not the welcome guide: this app starts before its daemon, and a start that finds no provider signed in yet
   // opens the guide over the whole window, where no frame in her tab can be pressed. The user signed in long ago, so the
   // guide is done, as the app marks it once it is (index.ts welcomeFlag: the profile's app data, under the home).
   const welcomeDone = join(home, "app-data", profile, "welcome-done");
   mkdirSync(dirname(welcomeDone), { recursive: true });
   if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
-  const proc = startChild("app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
-  let c: CloverClient | undefined;
+  const proc = startChild("app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+  let c: MossClient | undefined;
   let cdp: Cdp | undefined;
   let pressedInHer = "";
   try {
@@ -4445,7 +4445,7 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     cdp = await Cdp.connect(port);
     await until("her tab (the window with no stock bar) to be open", 60_000, async () => {
       for (const d of await cdp!.documents()) {
-        if (!d.url.startsWith("clover-plugin://clover/")) continue;
+        if (!d.url.startsWith("moss-plugin://moss/")) continue;
         const mode = await cdp!.evaluate(d.session, "document.querySelector('.cl-window') ? document.querySelector('.cl-window').dataset.barMode ?? '' : null").catch(() => null);
         if (mode === "none") return true;
       }
@@ -4459,7 +4459,7 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     // resize; and a narrow one after the window sat 8 s idle at that size (the controller's (a) follow-up).
     const wideAgain = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
     pressed += `; wide again at once: ${wideAgain.cards.join("; ")}`;
-    // What a long streamed reply costs her tab's clover renderer at this transcript's length (the owner's hot app on a
+    // What a long streamed reply costs her tab's moss renderer at this transcript's length (the owner's hot app on a
     // long conversation): layout passes and time in each document while about 300 words stream in.
     // Following while it streams: right after the card (every row in layout, as before), then put at the bottom by the
     // reader, with the rule and without.
@@ -4467,7 +4467,7 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     // A narrow window (the room becomes a band on top, the pane full width): the window itself resized, as a person's drag
     // would, through the test build's size file; a build without it gets the page's own viewport override instead, and
     // the row says which (the controller's (a): whether the narrow window's slow cards were the override's or the app's).
-    const mainTarget = [...cdp.frames.values()].find((f) => f.type === "page" && f.url === "clover-core://app/");
+    const mainTarget = [...cdp.frames.values()].find((f) => f.type === "page" && f.url === "moss-core://app/");
     let narrow = "narrow window skipped: the harness has no main window target to resize";
     if (mainTarget !== undefined) {
       const widthNow = async () => Number(await cdp!.evaluate(mainTarget.session, "innerWidth").catch(() => 0));
@@ -4486,7 +4486,7 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
           const at = () => JSON.stringify([s.getBoundingClientRect(), k.getBoundingClientRect()].map((b) => [b.x, b.y, b.width, b.height].map(Math.round)));
           const before = at(); requestAnimationFrame(() => requestAnimationFrame(() => { const sr = s.getBoundingClientRect(), kr = k.getBoundingClientRect(); done(at() === before && sr.width >= innerWidth - 40 && innerHeight - kr.bottom <= 40); })); })`;
         const settle = await until("her tab's layout settled at 860 px", 15_000, async () => {
-          for (const d of await cdp!.documents()) if (d.url.startsWith("clover-plugin://clover/") && (await cdp!.evaluate(d.session, settled).catch(() => false)) === true) return "settled";
+          for (const d of await cdp!.documents()) if (d.url.startsWith("moss-plugin://moss/") && (await cdp!.evaluate(d.session, settled).catch(() => false)) === true) return "settled";
           return undefined;
         }, 200).catch(() => "not settled within 15 s");
         // Following through the resize: her transcript was at the bottom (the wide streams left it there).
@@ -4570,7 +4570,7 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
       const log0 = stand.started.length;
       let appA: ReturnType<typeof openApp> | undefined;
       let appB: ReturnType<typeof openApp> | undefined;
-      // The held step's daemon, once its pair stopped, holds until this file is there (CLOVER_TEST_STOP_HOLD_FILE, the
+      // The held step's daemon, once its pair stopped, holds until this file is there (MOSS_TEST_STOP_HOLD_FILE, the
       // source daemon's and a test-marked core's): the run writes it once the reopened app has dialled, so the app
       // always finds the old daemon still going, whatever the machine's speed (try 10's run 3 found it gone).
       const holdFile = "held" in step ? join(root, `stop-hold-${i + 1}`) : undefined;
@@ -4579,13 +4579,13 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
         if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
         stoppingDaemon = false;
         // A daemon of an earlier build (an upgrade pair's old half) has no such hold: the step can't test what it names.
-        if (holdFile !== undefined && !daemonTakesStopHold()) block("this build's daemon has no stop hold (CLOVER_TEST_STOP_HOLD_FILE, an earlier build): the old daemon can't be held until the app has dialled");
+        if (holdFile !== undefined && !daemonTakesStopHold()) block("this build's daemon has no stop hold (MOSS_TEST_STOP_HOLD_FILE, an earlier build): the old daemon can't be held until the app has dialled");
         if (holdFile !== undefined) rmSync(holdFile, { force: true });
         // The capped step's daemon: its stop's bound made 1 ms, so the process ends while the stop's tail still runs
         // (the source daemon's seam; a packaged core keeps its own 5 s bound, and the step is blocked there).
         const capped = "capped" in step;
-        if (capped && !daemonTakesStopBudget()) block(target === "source" ? "this tree's daemon has no stop bound to cut (CLOVER_TEST_STOP_BUDGET_MS, an earlier build)" : "this packaged core has no test stop bound to cut (CLOVER_TEST_STOP_BUDGET_MS, an earlier build)");
-        await startDaemonProc(holdFile !== undefined ? { CLOVER_TEST_STOP_HOLD_FILE: holdFile } : capped ? { CLOVER_TEST_STOP_BUDGET_MS: "1" } : {});
+        if (capped && !daemonTakesStopBudget()) block(target === "source" ? "this tree's daemon has no stop bound to cut (MOSS_TEST_STOP_BUDGET_MS, an earlier build)" : "this packaged core has no test stop bound to cut (MOSS_TEST_STOP_BUDGET_MS, an earlier build)");
+        await startDaemonProc(holdFile !== undefined ? { MOSS_TEST_STOP_HOLD_FILE: holdFile } : capped ? { MOSS_TEST_STOP_BUDGET_MS: "1" } : {});
         const old = lastDaemon!;
         appA = openApp(app, `reopen-${i + 1}-a`);
         await windowFills(appA, 60_000);
@@ -4642,7 +4642,7 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
           await sleep(step.delayMs);
           const oldAlive = alive(old.proc);
           // Held, the old daemon can't have gone: one that did ignored the hold (a seam missing from this core).
-          if (holdFile !== undefined && !oldAlive) fail(`the held daemon went before the app reopened: it didn't take CLOVER_TEST_STOP_HOLD_FILE (${lastLines(old.log)})`);
+          if (holdFile !== undefined && !oldAlive) fail(`the held daemon went before the app reopened: it didn't take MOSS_TEST_STOP_HOLD_FILE (${lastLines(old.log)})`);
           stand.arm();
           appB = openApp(app, `reopen-${i + 1}-b`);
           let held = "";
@@ -4764,10 +4764,10 @@ async function coldStartStep(app: { exe: string; args: string[] }, runs: number)
       // No daemon: the one from the steps before ends.
       if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
       const port = freePort();
-      const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+      const env = { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
       const appLog = join(home, "logs", "app.log");
       const logFrom = readLog(appLog).length;
-      const proc = startChild(`cold-app-${i}`, app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+      const proc = startChild(`cold-app-${i}`, app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
       let cdp: Cdp | undefined;
       try {
         await until("the window's DevTools port", 120_000, async () => {
@@ -4778,7 +4778,7 @@ async function coldStartStep(app: { exe: string; args: string[] }, runs: number)
         await until("the app to be waiting for a daemon", 60_000, () => (/pair: (unavailable|starting-daemon|reconnecting)/.test(readLog(appLog).slice(logFrom)) ? true : undefined), 300);
         await sleep(1_000);
         const at = Date.now();
-        const delay: Record<string, string> = target === "source" ? { CLOVER_ACCEPTANCE_REGISTRY_DELAY_MS: "5000", CLOVER_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS: "8000" } : {};
+        const delay: Record<string, string> = target === "source" ? { MOSS_ACCEPTANCE_REGISTRY_DELAY_MS: "5000", MOSS_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS: "8000" } : {};
         await startDaemonProc(delay);
         await until(`the shell to fill the window within ${COLD_START_SECONDS} s of the daemon's start`, COLD_START_SECONDS * 1000, () => shellDoc(cdp!)).catch(async (e: unknown) => fail(`${why(e)} (frames: ${await dumpFrames(cdp!).catch(() => "?")}; app.log: ${readLog(appLog).slice(logFrom).split("\n").filter((l) => /pair:|layers:|registry/.test(l)).slice(-6).join(" | ").slice(0, 500)})`));
         took.push(Date.now() - at);
@@ -4814,11 +4814,11 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   const blockFrom = (from: number, detail: string) => { for (let n = from; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) record(n, "BLOCKED", detail); };
   // 1: the app first (no daemon), then the daemon; the shell fills the window.
   const port = freePort();
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const env = { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
   const appLog = join(home, "logs", "app.log");
   const logFrom = readLog(appLog).length;
   // Named "app": the cards' check reads the app's own output (logs/app.log).
-  const appProc = startChild("app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+  const appProc = startChild("app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   let daemonUp = false;
   try {
@@ -4829,7 +4829,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     await until("the app to be waiting for a daemon", 60_000, () => (/pair: (unavailable|starting-daemon|reconnecting)/.test(readLog(appLog).slice(logFrom)) ? true : undefined), 300);
     await sleep(1_000);
     const at = Date.now();
-    const delay: Record<string, string> = target === "source" ? { CLOVER_ACCEPTANCE_REGISTRY_DELAY_MS: "5000", CLOVER_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS: "8000" } : {};
+    const delay: Record<string, string> = target === "source" ? { MOSS_ACCEPTANCE_REGISTRY_DELAY_MS: "5000", MOSS_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS: "8000" } : {};
     const daemon = await startDaemonProc(delay);
     daemonUp = true;
     daemon.proc.once("exit", () => { if (!stoppingDaemon) { say("the daemon exited under the app: ending the app"); void endChild(appProc.proc, 2_000); } });
@@ -4853,7 +4853,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   }
   if (!daemonUp) { blockFrom(2, "the daemon didn't start on the old home (step 1)"); trustStep(); return; }
 
-  let c: CloverClient;
+  let c: MossClient;
   try {
     c = (await appDriver()).client;
   } catch (err) {
@@ -4998,7 +4998,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
       if (k.needsYouMissing !== undefined) block(`the old run left no notifications.needsYou: ${k.needsYouMissing}`);
       fail("the old run's record has no notifications.needsYou, though its Settings step didn't fail: the harness missed it [scripts/acceptance/run.ts keepFacts, ui-steps.ts onSetting]");
     }
-    const stored = await c.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "clover/settings" });
+    const stored = await c.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "moss/settings" });
     const v = stored.settings.find((x) => x.key === "notifications.needsYou")?.value;
     if (v !== k.needsYou) fail(`notifications.needsYou is ${String(v)}; the old run left it ${String(k.needsYou)}`);
     record(8, "PASS", `notifications.needsYou is still ${String(v)}, as the old run left it`);
@@ -5021,10 +5021,10 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     record(9, statusOf(err), why(err));
   }
 
-  // 10: Clover's own plugin this build can't run yet, which the old build ran: listed off as not available, its switch
+  // 10: MOSS's own plugin this build can't run yet, which the old build ran: listed off as not available, its switch
   // as the old run left it (on), never forgotten, and no card raised for it.
   try {
-    const id = "clover/forwarder";
+    const id = "moss/forwarder";
     const got = await c.request<{ plugin?: { state?: string; reason?: string; enabled?: boolean } }>("plugin.get", { id });
     if (got.plugin === undefined) fail(`plugin.get ${id}: not listed`);
     if (got.plugin!.state !== "off" || got.plugin!.reason !== NOT_AVAILABLE_YET) fail(`${id} is ${got.plugin!.state}${got.plugin!.reason ? ` (${got.plugin!.reason})` : ""}, not off as not available`);
@@ -5063,7 +5063,7 @@ async function keepFacts(session: string | undefined, pluginId: string | undefin
   if (settingsRow !== undefined && settingsRow.status !== "PASS") keptFacts.needsYouMissing = `the old run's Settings step: ${settingsRow.status}: ${settingsRow.detail.slice(0, 200)}`;
   try {
     const d = await appDriver();
-    const stored = await d.client.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "clover/settings" });
+    const stored = await d.client.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "moss/settings" });
     const v = stored.settings.find((x) => x.key === "notifications.needsYou")?.value;
     if (typeof v === "boolean") keptFacts.needsYou = v;
     d.client.close();
@@ -5079,7 +5079,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const blockAll = (why: string) => { for (let i = 0; i <= UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
   if (!daemonUp) return blockAll("the daemon didn't come back (step 8)");
   const port = freePort();
-  // The Plugins page step's folder: main's picker, in a test-marked or acceptance build, answers with it (CLOVER_TEST_PICK).
+  // The Plugins page step's folder: main's picker, in a test-marked or acceptance build, answers with it (MOSS_TEST_PICK).
   const pickFolder = { path: join(import.meta.dir, "fixtures", "acceptance-page"), id: "acceptance-page", name: "Acceptance page plugin", tool: "PageProbe" };
   // The picker reads its folder from this file at each pick (a `.pick` file), so the examples' steps pick theirs after.
   const pickFile = join(root, "folder.pick");
@@ -5090,22 +5090,22 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   mkdirSync(avatarFolder, { recursive: true });
   for (const f of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(import.meta.dir, "..", "..", "plugins", "alpha", "assets", "live2d", f), join(avatarFolder, f));
   writeFileSync(join(avatarFolder, "Credits.txt"), "Acceptance fixture model. Free for personal use; credit the acceptance suite.\n");
-  // The media plugin's step: main's file pickers (CLOVER_TEST_PICK_FILES, test-marked builds only) answer from this file, by kind: the
+  // The media plugin's step: main's file pickers (MOSS_TEST_PICK_FILES, test-marked builds only) answer from this file, by kind: the
   // generated test video to open, a new file in the run's folder to save. Generated media only; nothing of anyone's own.
   const mediaDir = join(root, "media-fixture");
   mkdirSync(mediaDir, { recursive: true });
   cpSync(join(import.meta.dir, "media", "generated-testsrc.webm"), join(mediaDir, "generated-testsrc.webm"));
   const mediaPicks = { answers: join(root, "media.pick"), video: join(mediaDir, "generated-testsrc.webm"), saved: join(mediaDir, "export.bin"), folder: mediaDir };
   writeFileSync(mediaPicks.answers, `open=${mediaPicks.video}\nfolder=${mediaPicks.folder}\nsave=${mediaPicks.saved}\n`);
-  // The renders' dark and light: the app follows this file (CLOVER_TEST_APPEARANCE_FILE, test-marked builds only).
+  // The renders' dark and light: the app follows this file (MOSS_TEST_APPEARANCE_FILE, test-marked builds only).
   const appearanceFile = join(root, "appearance");
-  // A command's default key pressed in the window (CLOVER_TEST_KEY_FILE, test-marked and acceptance builds only): CDP key events never reach the window's before-input-event, so main presses it with sendInputEvent from this file.
+  // A command's default key pressed in the window (MOSS_TEST_KEY_FILE, test-marked and acceptance builds only): CDP key events never reach the window's before-input-event, so main presses it with sendInputEvent from this file.
   const keyFile = join(root, "press-key");
   const pressKey = keyPresser(keyFile);
   let windowSeam = 0;
   // The Browser row's fixture site by name too: on a run that isn't sharded (a packaged one) that row runs in this app.
-  const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_TEST_MAIN_FRONT_FILE: join(root, "main-front"), CLOVER_TEST_WINDOW_FILE: join(root, "main-window"), CLOVER_TEST_KEY_FILE: keyFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
-  const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+  const env = { ...baseEnv(), ...(browserFixture !== undefined ? { MOSS_TEST_BROWSER_NAMES: browserFixture.names } : {}), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_TEST_PICK: pickFile, MOSS_TEST_PICK_AVATAR: avatarFolder, MOSS_TEST_PICK_FILES: mediaPicks.answers, MOSS_TEST_APPEARANCE_FILE: appearanceFile, MOSS_TEST_MAIN_FRONT_FILE: join(root, "main-front"), MOSS_TEST_WINDOW_FILE: join(root, "main-window"), MOSS_TEST_KEY_FILE: keyFile, MOSS_IPC_STATS: "1", ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
+  const proc = startChild("ui-app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
     await until("the window's DevTools port", 120_000, async () => {
@@ -5145,7 +5145,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       if (!pressable) block(pressing ? "no plugin tool turn runs (steps 3-5), so no card to press" : "--no-press: cards go over RPC");
       const registered = await until("the reopened app's answer key registered", 15_000, () => (/answer key: registered/.test(readLog(proc.log)) ? true : undefined), 300).catch(() => false);
       const notRegistered = firstLine(proc.log, /answer key: not registered/);
-      if (notRegistered !== undefined) fail(`${notRegistered.replace(/^\[clover-app\] /, "").trim()} [apps/desktop/src/main/index.ts answerKey → fileVault (CLOVER_TEST_ANSWER_KEY)]`);
+      if (notRegistered !== undefined) fail(`${notRegistered.replace(/^\[moss-app\] /, "").trim()} [apps/desktop/src/main/index.ts answerKey → fileVault (MOSS_TEST_ANSWER_KEY)]`);
       if (registered !== true) fail('the reopened app never logged "answer key: registered"');
       const { cards: carded } = await turn(rpc, session!, "ACCEPTANCE-ECHO: call the echo tool", 150_000, { press: { cdp: cdp!, log: proc.log } });
       const pressed = carded.filter((x) => x.includes("pressed in the window"));
@@ -5258,7 +5258,7 @@ if (rowsOut !== undefined) writeFileSync(rowsOut, JSON.stringify(rows));
 // A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
 if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));
 const w = Math.max(...rows.map((r) => r.name.length));
-console.log(`\nClover acceptance (${target}${appBundle ? `: ${appBundle}` : ""})\n`);
+console.log(`\nMOSS acceptance (${target}${appBundle ? `: ${appBundle}` : ""})\n`);
 // Each row's seconds (since the previous result in its run or shard: rows whose turns ran earlier and were recorded
 // together at the end read short) and, in a sharded run, its shard.
 const secs = (r: TimedRow) => (r.seconds === undefined ? "-" : `${r.seconds.toFixed(1)} s`).padStart(8);

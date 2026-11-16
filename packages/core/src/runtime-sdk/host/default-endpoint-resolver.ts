@@ -9,7 +9,7 @@
 // resolver. That is a silent misclassification in the direction that matters most: it PROMPTS where
 // the ruling says it must not.
 //
-// THE FIX: build a real registry from the CATALOG data compiled into `@waifucave/clover-provider-
+// THE FIX: build a real registry from the CATALOG data compiled into `@waifucave/moss-provider-
 // catalog`'s `loadCatalog()` — no network, no credentials, no adapter ever invoked — and resolve
 // through `createEndpointResolver`, provider-runtime's OWN domain/readable-state derivation
 // (`continuity/domains.ts`'s header: "one derivation, in the registry"). This module reimplements
@@ -42,7 +42,7 @@ import type { ContinuityEndpoint, MessageOrigin, ProviderAdapter, ProviderRegist
 function stubAdapter(adapterId: string): ProviderAdapter {
   const notCalled = (member: string) => (): never => {
     throw new Error(
-      `clover runtime host: the default endpoint resolver's stub adapter "${adapterId}" had ${member} called — this adapter is registered ONLY to satisfy ProviderRegistry.resolve()'s presence check and must never be invoked (WS-18 W18-20 fix round 1)`,
+      `moss runtime host: the default endpoint resolver's stub adapter "${adapterId}" had ${member} called — this adapter is registered ONLY to satisfy ProviderRegistry.resolve()'s presence check and must never be invoked (WS-18 W18-20 fix round 1)`,
     );
   };
   return {
@@ -130,7 +130,7 @@ export function defaultEndpointResolver(): (origin: MessageOrigin) => Continuity
       // failed and what a host should do about it, nothing about any session's content.
       // eslint-disable-next-line no-console
       console.warn(
-        `clover runtime host: no catalog-backed endpoint resolver could be built (${error instanceof Error ? error.message : String(error)}) — every switch review falls back to the registry-free default, which reports readableState:"none" for every model and can OVER-warn on a lossless exposed-reasoning transfer. Inject HandoffBarrierDeps.resolveEndpoint / OfficialLegDeps.resolveEndpoint with a real catalog registry to fix this.`,
+        `moss runtime host: no catalog-backed endpoint resolver could be built (${error instanceof Error ? error.message : String(error)}) — every switch review falls back to the registry-free default, which reports readableState:"none" for every model and can OVER-warn on a lossless exposed-reasoning transfer. Inject HandoffBarrierDeps.resolveEndpoint / OfficialLegDeps.resolveEndpoint with a real catalog registry to fix this.`,
       );
     }
     cached = endpointFromOrigin;

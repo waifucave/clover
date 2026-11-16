@@ -1,7 +1,7 @@
 // The account-scope box (HPKE base mode, X25519 / HKDF-SHA256 / AES-256-GCM) against the forwarder plugin's WebCrypto
 // HPKE, which checks itself against RFC 9180's vectors: each opens what the other sealed.
 import { describe, expect, test } from "bun:test";
-import { AEAD_AES_256_GCM, generateX25519, openBase, sealBase } from "../../../../../plugins/clover/plugins/forwarder/src/wire/hpke";
+import { AEAD_AES_256_GCM, generateX25519, openBase, sealBase } from "../../../../../plugins/moss/plugins/forwarder/src/wire/hpke";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { BOX_KEY_REF, BoxKey, HANDSHAKE_BOX_INFO, sealToBoxKey } from "../box-key";
 import { concat, fromBase64Url, toBase64Url, utf8 } from "../bytes";
@@ -18,7 +18,7 @@ describe("box key", () => {
 
   test("opens what the forwarder's HPKE sealed, and the other way", async () => {
     const mine = BoxKey.generate();
-    const aad = utf8("clover-handshake-v1 box\nsub\ndevA\ndevB\naddr\n7");
+    const aad = utf8("moss-handshake-v1 box\nsub\ndevA\ndevB\naddr\n7");
     const theirs = await sealBase(AEAD_AES_256_GCM, mine.publicKey, utf8(HANDSHAKE_BOX_INFO), aad, utf8("from webcrypto"));
     expect(new TextDecoder().decode(mine.open(toBase64Url(concat(theirs.enc, theirs.ciphertext)), aad)!)).toBe("from webcrypto");
 

@@ -6,11 +6,11 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LayerMessage } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { LayerMessage } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { readUiPlugins, type UiPlugin } from "../src/main/ui/model";
 import { MOUNT_TOKEN_TTL_MS, UiRuntime, type FrameRef } from "../src/main/ui/runtime";
 import { SealedFrames, type SealedCard } from "../src/main/sealed";
-import { FIXTURES, alphaView, cloverViews, folderView } from "./fake-core/registry";
+import { FIXTURES, alphaView, mossViews, folderView } from "./fake-core/registry";
 
 const WIN = 1;
 let pid = 100;
@@ -22,10 +22,10 @@ function setup(extra: UiPlugin[] = [], opts: { safeMode?: boolean; now?: () => n
   const sent: { to: string; m: LayerMessage }[] = [];
   let n = 0;
   const rt = new UiRuntime({ os: "macos", platform: "darwin", ...(opts.safeMode ? { safeMode: true } : {}), ...(opts.now ? { now: opts.now } : {}), ...(opts.log ? { log: opts.log } : {}), token: () => `t${++n}`, send: (f, m) => sent.push({ to: `${f.processId}:${f.routingId}`, m }) });
-  const plugins = [...readUiPlugins([...cloverViews(), alphaView()] as never), ...extra];
+  const plugins = [...readUiPlugins([...mossViews(), alphaView()] as never), ...extra];
   rt.setRegistry(plugins);
   rt.openWindow(WIN, { material: "vibrancy", ...(opts.render ? { render: true } : {}) });
-  const rootFrame = frame("clover-core://app/");
+  const rootFrame = frame("moss-core://app/");
   const root = rt.describe(rootFrame, WIN, undefined);
   return { rt, sent, root, rootFrame };
 }
@@ -36,7 +36,7 @@ function mountShell(s: ReturnType<typeof setup>) {
   const item = view.items[0]!;
   if (item.kind !== "frame") throw new Error("the shell is not a frame");
   const token = new URL(item.url).searchParams.get("mount")!;
-  expect(s.rt.serveDocument("clover", token)).toBeDefined();
+  expect(s.rt.serveDocument("moss", token)).toBeDefined();
   const shellFrame = frame(item.url, s.rootFrame);
   const info = s.rt.describe(shellFrame, WIN, token);
   return { item, token, shellFrame, info };
@@ -45,24 +45,24 @@ function mountShell(s: ReturnType<typeof setup>) {
 const composerFixture = () => readUiPlugins([folderView(join(FIXTURES, "fixture-composer"))] as never);
 
 describe("the root and the shell", () => {
-  test("the root mounts app.root: the shell, as a frame from the clover layer", () => {
+  test("the root mounts app.root: the shell, as a frame from the moss layer", () => {
     const s = setup();
     expect(s.root).toMatchObject({ pluginId: "core", spot: "app.root", context: { material: "vibrancy", os: "macos", safeMode: false } });
     const { item, info } = mountShell(s);
-    expect(item).toMatchObject({ kind: "frame", layer: "clover", ref: "clover/shell#app.root" });
-    expect(info).toMatchObject({ pluginId: "clover/shell", component: "Shell", module: "/_clover/clover.js", css: ["/_clover/clover.css"] });
+    expect(item).toMatchObject({ kind: "frame", layer: "moss", ref: "moss/shell#app.root" });
+    expect(info).toMatchObject({ pluginId: "moss/shell", component: "Shell", module: "/_moss/moss.js", css: ["/_moss/moss.css"] });
     expect(info.context.bots).toEqual([{ id: "alpha", name: "Alpha" }]);
   });
 
-  test("everything under clover renders inline in the shell's layer", () => {
+  test("everything under moss renders inline in the shell's layer", () => {
     const s = setup();
     const { shellFrame, info } = mountShell(s);
     const sidebar = s.rt.resolve(shellFrame, info.mount, "sidebar");
-    expect(sidebar.items).toMatchObject([{ kind: "inline", ref: "clover/sidebar#sidebar", component: "SidebarEntry" }]);
+    expect(sidebar.items).toMatchObject([{ kind: "inline", ref: "moss/sidebar#sidebar", component: "SidebarEntry" }]);
     const tab = s.rt.resolve(shellFrame, info.mount, "bot.tab", "alpha");
-    expect(tab.items).toMatchObject([{ kind: "inline", ref: "clover/shell#bot-tab", component: "DefaultBotTab", context: { bot: "alpha" } }]);
+    expect(tab.items).toMatchObject([{ kind: "inline", ref: "moss/shell#bot-tab", component: "DefaultBotTab", context: { bot: "alpha" } }]);
     const composer = s.rt.resolve(shellFrame, tab.items[0]!.mount, "composer");
-    expect(composer.items).toMatchObject([{ kind: "inline", ref: "clover/composer#composer" }]);
+    expect(composer.items).toMatchObject([{ kind: "inline", ref: "moss/composer#composer" }]);
   });
 
   test("a spot the part doesn't declare waits (its fillers aren't mounted)", () => {
@@ -95,12 +95,12 @@ describe("a part from another layer: a frame with a single-use token", () => {
   test("the installed composer wins and shows as a frame from its own origin", () => {
     const { item } = withFixture();
     expect(item).toMatchObject({ kind: "frame", layer: "fixture-composer", ref: "fixture-composer#composer" });
-    expect(item.url).toMatch(/^clover-plugin:\/\/fixture-composer\/\?mount=t\d+$/);
+    expect(item.url).toMatch(/^moss-plugin:\/\/fixture-composer\/\?mount=t\d+$/);
   });
 
   test("the document is served once, for its own layer only", () => {
     const { s, token } = withFixture();
-    expect(s.rt.serveDocument("clover", token)).toBeUndefined();
+    expect(s.rt.serveDocument("moss", token)).toBeUndefined();
     expect(s.rt.serveDocument("fixture-composer", "never-issued")).toBeUndefined();
     expect(s.rt.serveDocument("fixture-composer", null)).toBeUndefined();
     expect(s.rt.serveDocument("fixture-composer", token)).toBeDefined();
@@ -131,7 +131,7 @@ describe("a part from another layer: a frame with a single-use token", () => {
     const { s, shell, item, token } = withFixture();
     s.rt.serveDocument("fixture-composer", token);
     // Another layer's frame with the token in its URL, or the right URL under the wrong parent: refused.
-    expect(() => s.rt.describe(frame(`clover-plugin://other/?mount=${token}`, shell.shellFrame), WIN, token)).toThrow();
+    expect(() => s.rt.describe(frame(`moss-plugin://other/?mount=${token}`, shell.shellFrame), WIN, token)).toThrow();
     expect(() => s.rt.describe(frame(item.url, s.rootFrame), WIN, token)).toThrow();
     expect(() => s.rt.describe(frame(item.url, shell.shellFrame), 2, token)).toThrow();
     const info = s.rt.describe(frame(item.url, shell.shellFrame), WIN, token);
@@ -146,11 +146,11 @@ describe("a part from another layer: a frame with a single-use token", () => {
     const child = frame(item.url, shell.shellFrame);
     s.rt.describe(child, WIN, token);
     s.sent.length = 0;
-    s.rt.setProps(shell.shellFrame, item.mount, { bot: { id: "alpha", name: "Alpha" }, onSend: { "$clover.callback": "1" } });
-    expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: { type: "props", mount: item.mount, props: { bot: { id: "alpha", name: "Alpha" }, onSend: { "$clover.callback": "1" } } } }]);
+    s.rt.setProps(shell.shellFrame, item.mount, { bot: { id: "alpha", name: "Alpha" }, onSend: { "$moss.callback": "1" } });
+    expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: { type: "props", mount: item.mount, props: { bot: { id: "alpha", name: "Alpha" }, onSend: { "$moss.callback": "1" } } } }]);
     // The same props again, from a parent that drew again: the child is told nothing.
     s.sent.length = 0;
-    s.rt.setProps(shell.shellFrame, item.mount, { bot: { id: "alpha", name: "Alpha" }, onSend: { "$clover.callback": "1" } });
+    s.rt.setProps(shell.shellFrame, item.mount, { bot: { id: "alpha", name: "Alpha" }, onSend: { "$moss.callback": "1" } });
     expect(s.sent).toEqual([]);
     s.rt.callback(child, "1", ["hello"]);
     s.rt.reportSize(child, 120.4);
@@ -189,7 +189,7 @@ describe("a part from another layer: a frame with a single-use token", () => {
 
 describe("a bot's shell skin reaches the window while its tab shows", () => {
   const skinned = (id: string, shell: unknown): UiPlugin => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-skin-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-skin-"));
     writeFileSync(join(dir, "theme.json"), JSON.stringify({ theme: 1, name: id, tokens: { "color.surface": "#FFFFFF" }, dark: { tokens: { "color.surface": "#1A1A1A" } }, shell }));
     return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"0".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [{ id, file: "theme.json" }], locales: [], bots: "all", isBot: true, botTheme: id, name: id }] as never)[0]!;
   };
@@ -231,7 +231,7 @@ describe("a bot's shell skin reaches the window while its tab shows", () => {
 
 describe("each part themed by its tab (decision 77)", () => {
   function botPlugin(id: string, accent: string): UiPlugin {
-    const dir = mkdtempSync(join(tmpdir(), "clover-theme-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-theme-"));
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "theme.json"), JSON.stringify({ theme: 1, name: id, tokens: { "color.accent": accent } }));
     return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"0".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [{ id, file: "theme.json" }], locales: [], bots: "all", isBot: true, botTheme: id, name: id }] as never)[0]!;
@@ -273,7 +273,7 @@ describe("each part themed by its tab (decision 77)", () => {
 
 describe("the themes' CSS (§5.5's stack, E-M2)", () => {
   function themed(id: string, files: Record<string, string>, view: Record<string, unknown>): UiPlugin {
-    const dir = mkdtempSync(join(tmpdir(), "clover-sheet-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-sheet-"));
     for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
     return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"1".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...view }] as never)[0]!;
   }
@@ -292,8 +292,8 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
     const sheets = sheetsSent(s, shell.shellFrame).at(-1)!;
     const sheet = sheets.find((x) => x.id === `bot:luna:${tab.mount}`)!;
     expect(sheet.css).toContain(`@font-face{font-family:"clv-luna__Luna Sans";src:url("/_t/luna/luna.woff2");font-display:swap}`);
-    expect(sheet.css).toContain(`@scope ([data-clover-part="${tab.mount}"]) to ([data-clover-tab]:not(:scope)){:scope{--clover-icon-app-send:url("/_t/luna/send.svg")}}`);
-    expect(sheet.css).toContain(`@scope ([data-clover-part="${tab.mount}"]) to ([data-clover-tab]:not(:scope)){.bubble{color:red;font-family:"clv-luna__Luna Sans"}}`);
+    expect(sheet.css).toContain(`@scope ([data-moss-part="${tab.mount}"]) to ([data-moss-tab]:not(:scope)){:scope{--moss-icon-app-send:url("/_t/luna/send.svg")}}`);
+    expect(sheet.css).toContain(`@scope ([data-moss-part="${tab.mount}"]) to ([data-moss-tab]:not(:scope)){.bubble{color:red;font-family:"clv-luna__Luna Sans"}}`);
     expect(sheet.css).not.toContain("@import");
     // The tab's font token names the renamed family, as its CSS does.
     expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!.kind).toBe("inline");
@@ -308,10 +308,10 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
     s.rt.serveDocument("fixture-composer", token);
     const info = s.rt.describe(frame(item.url, shell.shellFrame), WIN, token);
     expect(info.tab).toBe("luna");
-    // Clover's base theme over the whole document first, then the tab's.
-    expect(info.sheets?.map((x) => x.id)).toEqual(["base:clover/base-theme", `bot:luna:${item.mount}`]);
-    expect(info.sheets![0]!.css).toContain(`@scope ([data-clover-part="${item.mount}"]){:scope{color:var(--clover-color-text)`);
-    expect(info.sheets![1]!.css).toContain(`@scope ([data-clover-part="${item.mount}"]) to ([data-clover-tab]:not(:scope))`);
+    // MOSS's base theme over the whole document first, then the tab's.
+    expect(info.sheets?.map((x) => x.id)).toEqual(["base:moss/base-theme", `bot:luna:${item.mount}`]);
+    expect(info.sheets![0]!.css).toContain(`@scope ([data-moss-part="${item.mount}"]){:scope{color:var(--moss-color-text)`);
+    expect(info.sheets![1]!.css).toContain(`@scope ([data-moss-part="${item.mount}"]) to ([data-moss-tab]:not(:scope))`);
   });
 
   test("a style entry dresses its part, stopping at a part another dresses; the user's own CSS goes last and loads nothing", () => {
@@ -326,11 +326,11 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     s.sent.length = 0;
     const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0]!;
-    expect(composer).toMatchObject({ kind: "inline", ref: "clover/composer#composer", styled: true });
+    expect(composer).toMatchObject({ kind: "inline", ref: "moss/composer#composer", styled: true });
     const sheets = sheetsSent(s, shell.shellFrame).at(-1)!;
     const style = sheets.find((x) => x.id === `style:dresser#dress:${composer.mount}`)!;
-    expect(style.css).toBe(`@scope ([data-clover-part="${composer.mount}"]) to ([data-clover-styled]:not(:scope)){.c{border:1px solid;background:url("/_t/dresser/bg.png")}}`);
-    expect(sheets.at(-1)).toEqual({ id: "user", css: `@scope ([data-clover-part="${shell.info.mount}"]){.x{color:blue}}` });
+    expect(style.css).toBe(`@scope ([data-moss-part="${composer.mount}"]) to ([data-moss-styled]:not(:scope)){.c{border:1px solid;background:url("/_t/dresser/bg.png")}}`);
+    expect(sheets.at(-1)).toEqual({ id: "user", css: `@scope ([data-moss-part="${shell.info.mount}"]){.x{color:blue}}` });
   });
 
   test("more scoped wins: a style for all bots goes under a bot's theme and its own styles, in tokens and in sheets", () => {
@@ -379,7 +379,7 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
 
 describe("a bot's layout (§5.5)", () => {
   function layoutBot(layout: unknown, files: Record<string, string> = {}, extra: Record<string, unknown> = {}): UiPlugin {
-    const dir = mkdtempSync(join(tmpdir(), "clover-layout-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-layout-"));
     writeFileSync(join(dir, "layout.json"), JSON.stringify(layout));
     for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
     return readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...extra }] as never, { luna: { isBot: true, name: "Luna", botLayout: "layout.json" } })[0]!;
@@ -390,7 +390,7 @@ describe("a bot's layout (§5.5)", () => {
     background: "bg.png",
     root: { row: [
       { column: [{ image: "art/luna.png", size: 120 }, { text: { en: "Hello", fr: "Bonjour" } }, { markdown: "about.md" }], size: "240px", hideBelow: 700, class: "side" },
-      { column: [{ spot: "conversation", grow: 1 }, { spot: "composer", prefer: ["clover/composer"] }], grow: 1 },
+      { column: [{ spot: "conversation", grow: 1 }, { spot: "composer", prefer: ["moss/composer"] }], grow: 1 },
     ] },
   };
   const FILES = { "layout.css": ".side { padding: 8px } .side img { border-radius: 50% }", "about.md": "# Luna\nLikes *stars*." };
@@ -416,7 +416,7 @@ describe("a bot's layout (§5.5)", () => {
     const s = setup([...composerFixture(), layoutBot(LAYOUT, FILES)]);
     const shell = mountShell(s);
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
-    expect(s.rt.resolve(shell.shellFrame, tab.mount, "composer").items).toMatchObject([{ kind: "inline", ref: "clover/composer#composer" }]);
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "composer").items).toMatchObject([{ kind: "inline", ref: "moss/composer#composer" }]);
     // Without the layout's preference the installed composer wins (rule 6), as in Alpha's tab.
     const alpha = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     expect(s.rt.resolve(shell.shellFrame, alpha.mount, "composer").items).toMatchObject([{ kind: "frame", ref: "fixture-composer#composer" }]);
@@ -435,7 +435,7 @@ describe("a bot's layout (§5.5)", () => {
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
     const sheets = s.sent.filter((x) => x.m.type === "sheets").map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets).at(-1)!;
     const sheet = sheets.find((x) => x.id === `layout:luna:${tab.mount}`)!;
-    const scope = `@scope ([data-clover-part="${tab.mount}"]) to ([data-clover-part]:not(:scope))`;
+    const scope = `@scope ([data-moss-part="${tab.mount}"]) to ([data-moss-part]:not(:scope))`;
     expect(sheet.css).toBe(`${scope}{:scope{background-image:url("/_t/luna/bg.png");background-size:cover;background-position:center}}\n${scope}{.clv-luna__side{padding:8px}.clv-luna__side img{border-radius:50%}}`);
   });
 
@@ -462,7 +462,7 @@ describe("a bot's layout (§5.5)", () => {
 
   // Another plugin's patch to a bot's tab, and the user's own layout (the owner's "move a button" question).
   function mover(id: string, patch: unknown, files: Record<string, string> = {}, entry: Record<string, unknown> = {}): UiPlugin {
-    const dir = mkdtempSync(join(tmpdir(), "clover-mover-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-mover-"));
     writeFileSync(join(dir, "move.json"), JSON.stringify(patch));
     for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
     return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id, assetBase: dir, ui: [{ spot: "bot.tab", id: "move", layout: "move.json", when: { bot: "luna" }, ...entry }], themes: [], locales: [], bots: "all" }] as never)[0]!;
@@ -534,7 +534,7 @@ describe("a bot's layout (§5.5)", () => {
     expect(talk.map((c) => c.className ?? c.kind)).toEqual(["spot", "clv-mover__nudge", "spot"]);
     expect(talk[1]!.children as unknown).toEqual([{ kind: "spot", spot: "chrome.action", key: "edit" }]);
     // The tab declares the cell, and the shell's own Edit button fills it there (the bar leaves out what the tab places).
-    expect(s.rt.resolve(shell.shellFrame, tab.mount, "chrome.action", "edit").items).toMatchObject([{ kind: "inline", ref: "clover/shell#chrome-edit" }]);
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "chrome.action", "edit").items).toMatchObject([{ kind: "inline", ref: "moss/shell#chrome-edit" }]);
   });
 
   test("patches go in turn (order, then plugin id); a change that reaches too far skips its patch, said once", () => {
@@ -598,7 +598,7 @@ describe("a bot's layout (§5.5)", () => {
     expect(row.className).toBe("clv-acceptance-layout-mover__nudge");
     expect(row.children!.map((c) => c.spot)).toEqual(["bot.header"]);
     const header = s.rt.resolve(shell.shellFrame, tab.mount, "bot.header").items[0]!;
-    expect(header).toMatchObject({ kind: "inline", ref: "clover/shell#bot-header" });
+    expect(header).toMatchObject({ kind: "inline", ref: "moss/shell#bot-header" });
     expect(s.rt.resolve(shell.shellFrame, header.mount, "bot.header.action").items.map((i) => i.ref)).toEqual(["acceptance-layout-mover#wave"]);
   });
 
@@ -627,12 +627,12 @@ describe("a bot's layout (§5.5)", () => {
 
 describe("each document's strings (§5.5's translations)", () => {
   test("the core root reads the core's own; a layer reads its plugin's keys; a new language reaches every document", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-locale-"));
-    writeFileSync(join(dir, "fr.json"), JSON.stringify({ locale: 1, lang: "fr", strings: { "clover.core.root.reload": "Recharger", "fixture-composer.send": "Envoyer" } }));
+    const dir = mkdtempSync(join(tmpdir(), "moss-locale-"));
+    writeFileSync(join(dir, "fr.json"), JSON.stringify({ locale: 1, lang: "fr", strings: { "moss.core.root.reload": "Recharger", "fixture-composer.send": "Envoyer" } }));
     writeFileSync(join(dir, "en.json"), JSON.stringify({ locale: 1, lang: "en", strings: { "fixture-composer.send": "Send" } }));
     const fixture = composerFixture().map((p) => ({ ...p, locales: [{ lang: "fr", file: "fr.json" }, { lang: "en", file: "en.json" }], assetBase: dir }));
     const s = setup(fixture);
-    expect(s.root.strings).toMatchObject({ lang: "en", strings: { "clover.core.root.reload": "Reload" } });
+    expect(s.root.strings).toMatchObject({ lang: "en", strings: { "moss.core.root.reload": "Reload" } });
     const shell = mountShell(s);
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string };
@@ -645,7 +645,7 @@ describe("each document's strings (§5.5's translations)", () => {
     s.rt.setChoices({ picks: [], lists: [], language: "fr" });
     const to = (f: FrameRef) => s.sent.filter((x) => x.m.type === "strings" && x.to === `${f.processId}:${f.routingId}`).map((x) => (x.m as Extract<LayerMessage, { type: "strings" }>).strings);
     expect(to(child)).toEqual([{ lang: "fr", strings: { "fixture-composer.send": "Envoyer" } }]);
-    expect(to(s.rootFrame)[0]!.strings["clover.core.root.reload"]).toBe("Recharger");
+    expect(to(s.rootFrame)[0]!.strings["moss.core.root.reload"]).toBe("Recharger");
     // Nothing changed, nothing sent.
     s.sent.length = 0;
     s.rt.setChoices({ picks: [], lists: [], language: "fr" });
@@ -673,7 +673,7 @@ describe("a message to the main window's shell", () => {
     expect(s.sent).toEqual([]);
   });
 
-  test("a shell message goes to the window's clover shell document only (not the core root, not another window's)", () => {
+  test("a shell message goes to the window's moss shell document only (not the core root, not another window's)", () => {
     const s = setup([]);
     const shell = mountShell(s);
     const m = { type: "shell-provides" as const, sidebar: true, drag: false };
@@ -685,7 +685,7 @@ describe("a message to the main window's shell", () => {
     expect(s.sent).toEqual([]);
   });
 
-  test("the frames main gives an activation to (the player's autoplay start) are the clover shell's own document alone, never the core root or another window's", () => {
+  test("the frames main gives an activation to (the player's autoplay start) are the moss shell's own document alone, never the core root or another window's", () => {
     const s = setup([]);
     const shell = mountShell(s);
     expect(s.rt.shellFrames(WIN).map((f) => f.frame)).toEqual([{ processId: shell.shellFrame.processId, routingId: shell.shellFrame.routingId }]);
@@ -701,7 +701,7 @@ describe("lane B's #179 hooks in the runtime", () => {
   test("an avatar frame's speech: only from the document that placed it, only to an `avatar` frame, only once it is loaded", () => {
     const pip = readUiPlugins([{ pluginId: "pip", name: "Pip", treeHash: `sha256:${"4".repeat(64)}`, layer: "pip", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "avatar", key: "pngtuber", id: "avatar", component: "PngtuberAvatar" }], themes: [], locales: [], bots: "all" }] as never, { pip: { enabledAt: 3, source: "installed" } })[0]!;
     const s = setup([pip, tabbed("vn", "Visual novel", 2)]);
-    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, avatar: { shape: "keyed" }, "bot.header.action": { shape: "list" } } })) })));
+    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, avatar: { shape: "keyed" }, "bot.header.action": { shape: "list" } } })) })));
     const shell = mountShell(s);
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     const avatar = s.rt.resolve(shell.shellFrame, tab.mount, "avatar", "pngtuber").items[0] as { kind: string; mount: string; url: string };
@@ -730,7 +730,7 @@ describe("lane B's #179 hooks in the runtime", () => {
   test("an avatar frame's cues and state: a cue only from the document that placed it, to an `avatar` frame; its state only to its parent", () => {
     const pip = readUiPlugins([{ pluginId: "pip", name: "Pip", treeHash: `sha256:${"4".repeat(64)}`, layer: "pip", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "avatar", key: "pngtuber", id: "avatar", component: "PngtuberAvatar" }], themes: [], locales: [], bots: "all" }] as never, { pip: { enabledAt: 3, source: "installed" } })[0]!;
     const s = setup([pip, tabbed("vn", "Visual novel", 2)]);
-    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, avatar: { shape: "keyed" }, "bot.header.action": { shape: "list" } } })) })));
+    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, avatar: { shape: "keyed" }, "bot.header.action": { shape: "list" } } })) })));
     const shell = mountShell(s);
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     const avatar = s.rt.resolve(shell.shellFrame, tab.mount, "avatar", "pngtuber").items[0] as { kind: string; mount: string; url: string };
@@ -760,7 +760,7 @@ describe("lane B's #179 hooks in the runtime", () => {
   test("a spot's entries for the part that declares it, in the spot's order, with their fields; one shown by its ref", () => {
     const s = setup([tabbed("vn", "Visual novel", 2), tabbed("timer", "Timer", 1)]);
     // The tab's part declares bot.header.action (the fake shell's bot.tab declares the tab's spots).
-    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, "bot.header.action": { shape: "list" } } })) })));
+    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, "bot.header.action": { shape: "list" } } })) })));
     const shell = mountShell(s);
     const fresh = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     const entries = s.rt.entries(shell.shellFrame, fresh.mount, "bot.header.action");
@@ -792,18 +792,18 @@ describe("lane B's #179 hooks in the runtime", () => {
     const s = setup([buddy, tabbed("vn", "Visual novel", 2)]);
     const shell = mountShell(s);
     expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side", undefined, "buddy").map((e) => e.pluginId)).toEqual(["buddy"]);
-    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side", undefined, "alpha").map((e) => e.pluginId)).toEqual(["clover/panel"]);
-    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side").map((e) => e.pluginId)).toEqual(["clover/panel"]);
+    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side", undefined, "alpha").map((e) => e.pluginId)).toEqual(["moss/panel"]);
+    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side").map((e) => e.pluginId)).toEqual(["moss/panel"]);
   });
 
   test("a message action is data: the declaring part lists it, and nothing is ever mounted for it (no frame per message)", () => {
     const pin = readUiPlugins([{ pluginId: "pinner", name: "Pinner", treeHash: `sha256:${"5".repeat(64)}`, layer: "pinner", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "conversation.message.action", id: "pin", title: "Pin", icon: "assets/pin.png", call: "pinReply" }], themes: [], locales: [], bots: "all" }] as never, { pinner: { enabledAt: 3, source: "installed" } })[0]!;
     const s = setup([pin]);
-    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, "conversation.message.action": { shape: "list" } } })) })));
+    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, "conversation.message.action": { shape: "list" } } })) })));
     const shell = mountShell(s);
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
-    // Clover Voice's speak button is the bundled tree's own entry beside it.
-    expect(s.rt.entries(shell.shellFrame, tab.mount, "conversation.message.action").map((e) => [e.ref, e.fields.call, e.fields.title])).toEqual([["clover/voice#speak", "speak", "Speak"], ["pinner#pin", "pinReply", "Pin"]]);
+    // MOSS Voice's speak button is the bundled tree's own entry beside it.
+    expect(s.rt.entries(shell.shellFrame, tab.mount, "conversation.message.action").map((e) => [e.ref, e.fields.call, e.fields.title])).toEqual([["moss/voice#speak", "speak", "Speak"], ["pinner#pin", "pinReply", "Pin"]]);
     expect(s.rt.resolve(shell.shellFrame, tab.mount, "conversation.message.action").items).toEqual([]);
   });
 
@@ -827,7 +827,7 @@ describe("lane B's #179 hooks in the runtime", () => {
     const q = { session: "s_alpha", callId: "c1", at: 1, questions: [{ question: "Which?", options: [{ label: "A" }, { label: "B" }] }] };
     s.rt.setQuestions([q]);
     const to = s.sent.filter((x) => x.m.type === "questions").map((x) => x.to);
-    // The clover layer (its conversation reads them) does; the fixture composer, with no capability, doesn't.
+    // The moss layer (its conversation reads them) does; the fixture composer, with no capability, doesn't.
     expect(to).toContain(`${shell.shellFrame.processId}:${shell.shellFrame.routingId}`);
     expect(to).not.toContain(`${child.processId}:${child.routingId}`);
   });
@@ -835,14 +835,14 @@ describe("lane B's #179 hooks in the runtime", () => {
   test("only a part whose plugin holds user.send sends the user's words (no plugin's id decides it), and the door names each part by its plugin and capabilities", () => {
     const s = setup(composerFixture());
     const shell = mountShell(s);
-    expect(s.rt.partCaller(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
+    expect(s.rt.partCaller(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "moss/shell" });
     // The bundled shell without the capability sends nothing: the tree's name is no key.
     expect(() => s.rt.userSender(shell.shellFrame, shell.info.mount)).toThrow("user.send capability");
     // With `user.send` in its manifest (what the build grants the pill), it does.
     const granted = setup(composerFixture());
-    granted.rt.setRegistry(granted.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, capabilities: new Set([...p.capabilities, "user.send"]) })));
+    granted.rt.setRegistry(granted.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, capabilities: new Set([...p.capabilities, "user.send"]) })));
     const shell2 = mountShell(granted);
-    expect(granted.rt.userSender(shell2.shellFrame, shell2.info.mount)).toMatchObject({ pluginId: "clover/shell" });
+    expect(granted.rt.userSender(shell2.shellFrame, shell2.info.mount)).toMatchObject({ pluginId: "moss/shell" });
     // A third-party part in its own layer's document is not a tree part, and sends only if it holds the capability too.
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
@@ -876,14 +876,14 @@ describe("a held key binding's documents (§5.4 `hold`)", () => {
     // A plugin without user.send gets none, whatever it holds in the window.
     const none = open([]);
     expect(none.s.rt.heldKeyFrames(WIN, "fixture-composer")).toEqual([]);
-    expect(none.s.rt.heldKeyFrames(WIN, "clover/shell")).toEqual([]);
+    expect(none.s.rt.heldKeyFrames(WIN, "moss/shell")).toEqual([]);
     // With it: its own document, never another plugin's, and nothing in another window.
     const one = open(["fixture-composer"]);
     expect(one.s.rt.heldKeyFrames(WIN, "fixture-composer")).toEqual([id(one.child)]);
     expect(one.s.rt.heldKeyFrames(WIN + 1, "fixture-composer")).toEqual([]);
-    expect(one.s.rt.heldKeyFrames(WIN, "clover/shell")).toEqual([]);
-    const both = open(["fixture-composer", "clover/shell"]);
-    expect(both.s.rt.heldKeyFrames(WIN, "clover/shell")).toEqual([id(both.shell)]);
+    expect(one.s.rt.heldKeyFrames(WIN, "moss/shell")).toEqual([]);
+    const both = open(["fixture-composer", "moss/shell"]);
+    expect(both.s.rt.heldKeyFrames(WIN, "moss/shell")).toEqual([id(both.shell)]);
   });
 });
 
@@ -917,24 +917,24 @@ describe("safe mode and the registry", () => {
     const s = setup(composerFixture(), { safeMode: true });
     const shell = mountShell(s);
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
-    expect(s.rt.resolve(shell.shellFrame, tab.mount, "composer").items).toMatchObject([{ kind: "inline", ref: "clover/composer#composer" }]);
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "composer").items).toMatchObject([{ kind: "inline", ref: "moss/composer#composer" }]);
   });
 
   test("a registry change asks every document to resolve its spots again", () => {
     const s = setup();
     const shell = mountShell(s);
     s.sent.length = 0;
-    s.rt.setRegistry(s.rt.registry.filter((p) => p.id !== "clover/sidebar"));
+    s.rt.setRegistry(s.rt.registry.filter((p) => p.id !== "moss/sidebar"));
     expect(s.sent.filter((x) => x.m.type === "respot").map((x) => x.to).sort()).toEqual([`${s.rootFrame.processId}:${s.rootFrame.routingId}`, `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`].sort());
     expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "sidebar").items).toEqual([]);
   });
 
-  test("the clover layer says what kind of session a part shows, for `when.session`", () => {
+  test("the moss layer says what kind of session a part shows, for `when.session`", () => {
     const s = setup();
     // F's code-only panels say so with `when.session` (lane B's catalog).
     const shell = mountShell(s);
     const code = s.rt.resolve(shell.shellFrame, shell.info.mount, "panel", "diff", { session: "coding" });
-    expect(code.items).toMatchObject([{ ref: "clover/panel-diff#diff" }]);
+    expect(code.items).toMatchObject([{ ref: "moss/panel-diff#diff" }]);
     expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "panel", "diff", { session: "bot" }).items).toEqual([]);
   });
 });
@@ -979,11 +979,11 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const { s, item } = withFixtureFrame();
     s.sent.length = 0;
     // The same plugins: nothing loads again.
-    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...composerFixture()]);
+    s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...composerFixture()]);
     expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
     // Its client is now the core's build: the frame's document is served again, for the module it has now.
     const built = composerFixture().map((p) => ({ ...p, clientEntry: undefined, clientBuild: { base: "/x", file: "index.js", sha256: "cd".repeat(32) } }));
-    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...built]);
+    s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...built]);
     const reload = s.sent.find((x) => x.m.type === "child-reload");
     expect(reload?.m).toMatchObject({ type: "child-reload", child: item.mount });
     const token = new URL((reload!.m as { url: string }).url).searchParams.get("mount")!;
@@ -993,7 +993,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
 
   test("the microphone follows the capability for a frame already open: the plugin stays listed, its live frame loads again with the new policy (withdrawn and given)", () => {
     const { s, item, shell } = withFixtureFrame();
-    const base = readUiPlugins([...cloverViews(), alphaView()] as never);
+    const base = readUiPlugins([...mossViews(), alphaView()] as never);
     const withMic = (on: boolean) => composerFixture().map((p) => ({ ...p, capabilities: new Set(on ? [...p.capabilities, "microphone"] : [...p.capabilities].filter((c) => c !== "microphone")) }));
     // Given while the frame is open: it loads again (its document's policy was fixed when it was served), the layer now holds it.
     s.sent.length = 0;
@@ -1022,7 +1022,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const { s, item } = withFixtureFrame();
     s.sent.length = 0;
     const builtAs = (n: number) => composerFixture().map((p) => ({ ...p, clientEntry: undefined, clientBuild: { base: "/x", file: "index.js", sha256: n.toString(16).repeat(64).slice(0, 64) } }));
-    for (let n = 1; n <= 10; n++) s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...builtAs(n)]);
+    for (let n = 1; n <= 10; n++) s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...builtAs(n)]);
     const reloads = s.sent.filter((x) => x.m.type === "child-reload");
     // The first change reloads it; the frame is loading again (its token issued, not yet served) for the other nine.
     expect(reloads.length).toBe(1);
@@ -1031,7 +1031,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(s.rt.mountForDocument(again!).assets.module).toBe(`/_b/fixture-composer/${"a".repeat(16)}/index.js`);
     // Served with the last module: the same registry again reloads nothing.
     s.sent.length = 0;
-    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...builtAs(10)]);
+    s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...builtAs(10)]);
     expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
     expect(item.mount).toBe((reloads[0]!.m as { child: string }).child);
   });
@@ -1055,7 +1055,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const s = setup(surface);
     expect(s.rt.surfaceEntries().map((e) => e.id).sort()).toEqual(["fixture", "island", "pill"]);
     s.rt.openWindow(7, { material: "none", surface: { id: "fixture", ref: "fixture-surface#fixture" } });
-    const rootFrame = frame("clover-core://app/?surface=fixture");
+    const rootFrame = frame("moss-core://app/?surface=fixture");
     const root = s.rt.describe(rootFrame, 7, undefined);
     expect(root).toMatchObject({ spot: "app.surface", context: { surface: "fixture" } });
     const view = s.rt.resolve(rootFrame, root.mount, "app.surface");
@@ -1068,18 +1068,18 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     // That document steers its window; the main window's shell doesn't steer any surface.
     expect(s.rt.surfaceOf(doc)).toBe(7);
     expect(s.rt.surfaceOf(mountShell(s).shellFrame)).toBeUndefined();
-    // In safe mode only clover's surfaces open.
+    // In safe mode only moss's surfaces open.
     expect(setup(surface, { safeMode: true }).rt.surfaceEntries().map((e) => e.id).sort()).toEqual(["island", "pill"]);
   });
 
   test("background parts: app.background components that may run, each in a window of its own whose root shows only it; audio only for a plugin holding it", () => {
     const bg = readUiPlugins([folderView(join(FIXTURES, "fixture-background"))] as never);
     const s = setup(bg);
-    // Clover Voice's player is the bundled tree's own background part.
-    // Clover Voice holds `microphone` for its hold-to-talk button; a capability is the plugin's, so its player's window carries it too.
-    const VOICE = { ref: "clover/voice#player", pluginId: "clover/voice", audio: true, microphone: true };
+    // MOSS Voice's player is the bundled tree's own background part.
+    // MOSS Voice holds `microphone` for its hold-to-talk button; a capability is the plugin's, so its player's window carries it too.
+    const VOICE = { ref: "moss/voice#player", pluginId: "moss/voice", audio: true, microphone: true };
     expect(s.rt.backgroundEntries()).toEqual([VOICE, { ref: "fixture-background#ticker", pluginId: "fixture-background", audio: true, microphone: false }]);
-    // The surface list doesn't take it, and in safe mode only clover's would run.
+    // The surface list doesn't take it, and in safe mode only moss's would run.
     expect(s.rt.surfaceEntries().map((e) => e.id)).not.toContain("ticker");
     expect(setup(bg, { safeMode: true }).rt.backgroundEntries().filter((e) => e.pluginId !== VOICE.pluginId)).toEqual([]);
     // A plugin without `audio`.
@@ -1088,14 +1088,14 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     // Its window's root declares `app.background` and places just that entry; the frame may autoplay (the plugin holds `audio`), and the
     // other plugin's would not.
     s.rt.openWindow(8, { material: "none", surface: { id: "fixture-background#ticker", ref: "fixture-background#ticker", spot: "app.background" } });
-    const rootFrame = frame("clover-core://app/?surface=fixture-background%23ticker");
+    const rootFrame = frame("moss-core://app/?surface=fixture-background%23ticker");
     const root = s.rt.describe(rootFrame, 8, undefined);
     expect(root).toMatchObject({ spot: "app.background" });
     const view = s.rt.resolve(rootFrame, root.mount, "app.background");
     expect(view.items).toMatchObject([{ kind: "frame", ref: "fixture-background#ticker", layer: "fixture-background", autoplay: true }]);
     const q = setup(quiet);
     q.rt.openWindow(9, { material: "none", surface: { id: "fixture-background#ticker", ref: "fixture-background#ticker", spot: "app.background" } });
-    const quietRoot = frame("clover-core://app/?surface=fixture-background%23ticker");
+    const quietRoot = frame("moss-core://app/?surface=fixture-background%23ticker");
     const quietView = q.rt.resolve(quietRoot, q.rt.describe(quietRoot, 9, undefined).mount, "app.background");
     expect((quietView.items[0] as { autoplay?: true }).autoplay).toBeUndefined();
     // Closing its window drops the mount.
@@ -1121,11 +1121,11 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(mine("copy-island")).toMatchObject({ floats: true, cards: true, stepsAside: true, tap: true });
     expect(mine("plain-island")).toMatchObject({ floats: false, cards: false, stepsAside: true, tap: true });
     // Tray lines need `tray`; a toggle names the plugin's own surface that is there; each plugin has a few lines.
-    expect(s.rt.trayEntries().filter((t) => t.pluginId !== "clover/pill").map((t) => [t.pluginId, t.title, t.surface ?? t.command])).toEqual([
+    expect(s.rt.trayEntries().filter((t) => t.pluginId !== "moss/pill").map((t) => [t.pluginId, t.title, t.surface ?? t.command])).toEqual([
       ["copy-island", "Hide me", "copy-island#island"], ["copy-island", "Run it", "mine.run"],
     ]);
     // The bundled pill's own line is read the same way (its manifest says so: a toggle of its own surface).
-    expect(s.rt.trayEntries().find((t) => t.pluginId === "clover/pill")).toMatchObject({ title: "Dispatch Pill", surface: "clover/pill#pill" });
+    expect(s.rt.trayEntries().find((t) => t.pluginId === "moss/pill")).toMatchObject({ title: "Dispatch Pill", surface: "moss/pill#pill" });
     const many = view("loud", ["tray"], { more: [1, 2, 3, 4].map((n) => ({ spot: "app.tray", id: `c${n}`, title: `C${n}`, command: `loud.c${n}` })) });
     expect(setup([many]).rt.trayEntries().filter((t) => t.pluginId === "loud")).toHaveLength(3);
   });
@@ -1135,13 +1135,13 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const hold = setup(view(["microphone"]));
     expect(hold.rt.layerHolds("fixture-surface", "microphone")).toBe(true);
     expect(hold.rt.layerHolds("fixture-surface", "audio")).toBe(false);
-    // The clover layer holds it through Clover Voice (its hold-to-talk button), one of its plugins.
-    expect(hold.rt.layerHolds("clover", "microphone")).toBe(true);
+    // The moss layer holds it through MOSS Voice (its hold-to-talk button), one of its plugins.
+    expect(hold.rt.layerHolds("moss", "microphone")).toBe(true);
     expect(hold.rt.layerHolds("fixture-other", "microphone")).toBe(false);
     expect(hold.rt.layerHolds("someone-else", "microphone")).toBe(false);
     const itemOf = (s: ReturnType<typeof setup>) => {
       s.rt.openWindow(7, { material: "none", surface: { id: "fixture", ref: "fixture-surface#fixture" } });
-      const rootFrame = frame("clover-core://app/?surface=fixture");
+      const rootFrame = frame("moss-core://app/?surface=fixture");
       const root = s.rt.describe(rootFrame, 7, undefined);
       return s.rt.resolve(rootFrame, root.mount, "app.surface").items[0] as { microphone?: true };
     };
@@ -1155,7 +1155,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const bg = readUiPlugins([folderView(join(FIXTURES, "fixture-background"))] as never);
     const s = setup(bg);
     s.rt.openWindow(8, { material: "none", surface: { id: "fixture-background#ticker", ref: "fixture-background#ticker", spot: "app.background" } });
-    const rootFrame = frame("clover-core://app/?surface=fixture-background%23ticker");
+    const rootFrame = frame("moss-core://app/?surface=fixture-background%23ticker");
     const root = s.rt.describe(rootFrame, 8, undefined);
     const item = s.rt.resolve(rootFrame, root.mount, "app.background").items[0] as { mount: string; url: string };
     const token = new URL(item.url).searchParams.get("mount")!;
@@ -1169,9 +1169,9 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: message as never }]);
     // Another plugin's message doesn't reach it.
     s.sent.length = 0;
-    s.rt.pluginMessage("clover/voice", { ...message, pluginId: "clover/voice" } as never);
+    s.rt.pluginMessage("moss/voice", { ...message, pluginId: "moss/voice" } as never);
     expect(s.sent.filter((x) => x.to === `${child.processId}:${child.routingId}`)).toEqual([]);
-    // browser-press: the Clover Browser's events (`visibleOnly`) never reach a background document, and the part is known
+    // browser-press: the MOSS Browser's events (`visibleOnly`) never reach a background document, and the part is known
     // as one in the background.
     s.sent.length = 0;
     s.rt.pluginMessage("fixture-background", { ...message, params: { type: "tab_changed", tab: { id: "t" } } } as never, { visibleOnly: true });
@@ -1182,7 +1182,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect([...s.rt.capabilitiesOf(child, item.mount)]).toContain("audio");
   });
 
-  test("browser-press: the Clover Browser's events (visibleOnly) reach a visible part's document in the main window", () => {
+  test("browser-press: the MOSS Browser's events (visibleOnly) reach a visible part's document in the main window", () => {
     const { s, child, item } = withFixtureFrame();
     s.sent.length = 0;
     const m = { type: "api-event", pluginId: "fixture-composer", method: "core.event", params: { type: "tab_changed", tab: { id: "t" } } };
@@ -1203,7 +1203,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
   test("drag grants: offered by a part whose plugin may hand it out, claimed once, by a part whose plugin may hold it", () => {
     const { s, shell, tab, child, item } = withFixtureFrame();
     // The fixture composer has no capabilities: plain text only.
-    expect(s.rt.dragOffer(child, item.mount, { type: "application/x-clover-file", data: { path: "home/Laptop/a.txt" } })).toHaveProperty("error");
+    expect(s.rt.dragOffer(child, item.mount, { type: "application/x-moss-file", data: { path: "home/Laptop/a.txt" } })).toHaveProperty("error");
     const text = s.rt.dragOffer(child, item.mount, { type: "text/plain", data: "hello" });
     expect(text).toHaveProperty("token");
     const token = (text as { token: string }).token;
@@ -1213,7 +1213,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(() => s.rt.dragOffer(child, tab.mount, { type: "text/plain", data: "x" })).toThrow();
     // The conversation (conversation.read) offers a message; the composer's plugin may not hold one.
     const convo = s.rt.resolve(shell.shellFrame, tab.mount, "conversation").items[0]!;
-    const msg = s.rt.dragOffer(shell.shellFrame, convo.mount, { type: "application/x-clover-message", data: { session: "s_1", seq: 3 } }) as { token: string };
+    const msg = s.rt.dragOffer(shell.shellFrame, convo.mount, { type: "application/x-moss-message", data: { session: "s_1", seq: 3 } }) as { token: string };
     expect(msg).toHaveProperty("token");
     expect(s.rt.dragClaim(child, item.mount, msg.token)).toHaveProperty("error");
   });
@@ -1225,16 +1225,16 @@ describe("the E-M1 review's fixes", () => {
     const good = folderView(join(FIXTURES, "fixture-composer"));
     const plugins = readUiPlugins([
       good,
-      { ...good, pluginId: "evil", layer: "clover" },
+      { ...good, pluginId: "evil", layer: "moss" },
       { ...good, pluginId: "kid/part", layer: "kid--part" },
       { pluginId: "broken" },
     ], {}, (l) => lines.push(l));
     expect(plugins.map((p) => [p.id, p.layer])).toEqual([["fixture-composer", "fixture-composer"], ["kid/part", "kid--part"]]);
-    expect(lines.join("\n")).toContain("refused evil: its layer is evil, not clover");
+    expect(lines.join("\n")).toContain("refused evil: its layer is evil, not moss");
     expect(lines.join("\n")).toContain("refused a plugin view that isn't one");
   });
 
-  test("bot.tab: the clover tree's parts may show it; any other part only if it declares it", () => {
+  test("bot.tab: the moss tree's parts may show it; any other part only if it declares it", () => {
     const s = setup(composerFixture());
     const shell = mountShell(s);
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
@@ -1251,9 +1251,9 @@ describe("the E-M1 review's fixes", () => {
     const s = setup();
     const shell = mountShell(s);
     const mounts = (s.rt as unknown as { mounts: Map<string, Parameters<UiRuntime["mountForDocument"]>[0]> }).mounts;
-    expect(s.rt.mountForDocument(mounts.get(shell.info.mount)!).layers).toEqual(["alpha", "clover"]);
+    expect(s.rt.mountForDocument(mounts.get(shell.info.mount)!).layers).toEqual(["alpha", "moss"]);
     // A composer from a new layer is installed while the shell shows.
-    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...composerFixture()]);
+    s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...composerFixture()]);
     s.sent.length = 0;
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     s.rt.resolve(shell.shellFrame, tab.mount, "composer");
@@ -1261,11 +1261,11 @@ describe("the E-M1 review's fixes", () => {
     expect(reload?.to).toBe(`${s.rootFrame.processId}:${s.rootFrame.routingId}`);
     const url = (reload!.m as { url: string }).url;
     expect(reload!.m).toMatchObject({ type: "child-reload", child: shell.info.mount });
-    expect(url).toMatch(/^clover-plugin:\/\/clover\/\?mount=t\d+$/);
+    expect(url).toMatch(/^moss-plugin:\/\/moss\/\?mount=t\d+$/);
     // Served again, it names the new layer.
     const token = new URL(url).searchParams.get("mount")!;
-    const again = s.rt.serveDocument("clover", token);
-    expect(s.rt.mountForDocument(again!).layers).toEqual(["alpha", "clover", "fixture-composer"]);
+    const again = s.rt.serveDocument("moss", token);
+    expect(s.rt.mountForDocument(again!).layers).toEqual(["alpha", "moss", "fixture-composer"]);
   });
 });
 
@@ -1293,7 +1293,7 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
   test("its own bot's card gets a frame, bound to the frame of the document that placed it", () => {
     const { s, store, docFrame, mount } = placed();
     const url = s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")!;
-    expect(url).toMatch(/^clover-sealed:\/\/card\/card_own\/button%3Aallow_once\?token=/);
+    expect(url).toMatch(/^moss-sealed:\/\/card\/card_own\/button%3Aallow_once\?token=/);
     const token = new URL(url).searchParams.get("token")!;
     // The channel answers only for a sealed frame whose parent is that document's frame (the plugin's own iframe).
     expect(store.boundOf(token)).toBe(`p:${docFrame.processId}:${docFrame.routingId}`);
@@ -1308,7 +1308,7 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
 
   test("with approvals.all a plugin places any card, another bot's and a card of no bot too, whoever it is (no id decides it)", () => {
     const { s, docFrame, mount } = placed(false, true);
-    for (const id of ["card_own", "card_other", "card_none"]) expect(s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toMatch(/^clover-sealed:\/\/card\//);
+    for (const id of ["card_own", "card_other", "card_none"]) expect(s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toMatch(/^moss-sealed:\/\/card\//);
   });
 
   test("approvals.all without approvals places nothing, and with both it places any card", () => {
@@ -1333,7 +1333,7 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     s.rt.onSealedAsk = (cardId, windowId, outcome) => heard.push([cardId, windowId, outcome]);
     expect(s.rt.sealedFrameOf(docFrame, mount, "card_later", "button:allow_once")).toBeUndefined();
     expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "field:nothing")).toBe("");
-    expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")).toMatch(/^clover-sealed:/);
+    expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")).toMatch(/^moss-sealed:/);
     expect(() => s.rt.sealedFrameOf(docFrame, mount, "card_other", "button:allow_once")).toThrow();
     expect(heard).toEqual([["card_later", WIN, "not yet"], ["card_own", WIN, "absent"], ["card_own", WIN, "made"], ["card_other", WIN, "refused"]]);
   });
@@ -1351,8 +1351,8 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     expect(s.rt.isRenderWindow(WIN)).toBe(true);
     const button = s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")!;
     const field = s.rt.sealedFrameOf(docFrame, mount, "card_own", "field:title")!;
-    expect(button).toMatch(/^clover-sealed:\/\/placeholder\/[0-9a-f]{24}$/);
-    expect(field).toMatch(/^clover-sealed:\/\/placeholder\/[0-9a-f]{24}$/);
+    expect(button).toMatch(/^moss-sealed:\/\/placeholder\/[0-9a-f]{24}$/);
+    expect(field).toMatch(/^moss-sealed:\/\/placeholder\/[0-9a-f]{24}$/);
     // The same rules as a frame: a field the card lacks is nothing, a card not yet here is asked again, another bot's is refused.
     expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "field:nothing")).toBe("");
     expect(s.rt.sealedFrameOf(docFrame, mount, "card_later", "button:allow_once")).toBeUndefined();
@@ -1361,15 +1361,15 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     const page = s.rt.servePlaceholder(new URL(button).pathname.slice(1))!;
     expect(page.html).toContain('<div class="seal-placeholder" aria-hidden="true">approval button</div>');
     expect(page.html).toContain("visibility: hidden !important");
-    expect(page.html).toContain("cloverSealedSize");
-    expect(page.html).not.toContain("cloverSealed.");
-    expect(page.html).not.toContain("window.cloverSealed");
+    expect(page.html).toContain("mossSealedSize");
+    expect(page.html).not.toContain("mossSealed.");
+    expect(page.html).not.toContain("window.mossSealed");
     expect(page.html).toContain('class="seal-button'); // the real layout, hidden, so it takes the same room
     expect(page.headers["Content-Security-Policy"]).toContain("connect-src 'none'");
     expect(s.rt.servePlaceholder(new URL(button).pathname.slice(1))).toBeUndefined();
     expect(s.rt.servePlaceholder(new URL(field).pathname.slice(1))!.html).toContain(">card field</div>");
-    // A placeholder's page gets no answer bridge: the preload gives `cloverSealed` to the card host alone.
-    expect(readFileSync(join(import.meta.dir, "../src/main/preload.ts"), "utf8")).toContain('where === "clover-sealed:" && location.host === "card"');
+    // A placeholder's page gets no answer bridge: the preload gives `mossSealed` to the card host alone.
+    expect(readFileSync(join(import.meta.dir, "../src/main/preload.ts"), "utf8")).toContain('where === "moss-sealed:" && location.host === "card"');
     // The window going drops what it hadn't served.
     const left = s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:deny")!;
     s.rt.closeWindow(WIN);
@@ -1379,7 +1379,7 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
   test("an ordinary window still gets the live frame (the placeholder is the render window's alone)", () => {
     const { s, docFrame, mount } = placed();
     expect(s.rt.isRenderWindow(WIN)).toBe(false);
-    expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")).toMatch(/^clover-sealed:\/\/card\//);
+    expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")).toMatch(/^moss-sealed:\/\/card\//);
   });
 });
 
@@ -1417,7 +1417,7 @@ describe("the row diagnosis log lines (ids only, once per pair, no change of wha
     expect(() => s.rt.resolve(s.rootFrame, "nope", "bot.tab")).toThrow("that part isn't in this document");
     expect(lines.filter((l) => l.includes("asked of document"))).toHaveLength(1);
     expect(lines.find((l) => l.includes("asked of document"))).toContain("no such mount");
-    const stray = frame("clover-plugin://clover/?mount=secrettoken");
+    const stray = frame("moss-plugin://moss/?mount=secrettoken");
     expect(() => s.rt.resolve(stray, "nope", "bot.tab")).toThrow("this document isn't bound to a mount");
     expect(() => s.rt.resolve(stray, "nope", "bot.tab")).toThrow("this document isn't bound to a mount");
     const unbound = lines.filter((l) => l.includes("bound to no mount"));

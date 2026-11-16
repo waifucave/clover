@@ -7,7 +7,7 @@
 // agent that acts without asking starts read-only when its computer's level is unknown). Their hooks (K's
 // `AgentManager.sessionHooks()`) feed `ListAgents`' agent rows, `session.setModel` for agents and coding sessions,
 // and the reattaching of a restart's dormant sessions; `close` ends their processes when the daemon shuts down.
-import { BUNDLED_ROOT_PLUGIN, topPluginIdOf, type Level, type SessionView } from "@waifucave/clover-protocol";
+import { BUNDLED_ROOT_PLUGIN, topPluginIdOf, type Level, type SessionView } from "@waifucave/moss-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
@@ -183,7 +183,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
   let ingress: WebhookIngress | undefined;
   const routines: RoutineEngine | undefined = o.routines === undefined ? undefined : new RoutineEngine({
     home: o.home, computer: o.computer, clock: o.clock, computerLevel,
-    // A routine Clover paused gets one note of Clover's in its bot's conversation (it starts no turn).
+    // A routine MOSS paused gets one note of MOSS's in its bot's conversation (it starts no turn).
     bots: {
       has: (id) => bots.has(id), runSideThread: (id, run) => bots.runSideThread(id, run), onEvent: (fn) => bots.onEvent(fn),
       note: async (id, label, text) => { await bots.deliverTo(id, { from: "note", label, text, by: { kind: "core" } }); },
@@ -196,7 +196,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(o.routines.triggers === undefined ? {} : { triggerOwners: triggerOwnersFrom(o.routines.triggers) }),
     ...(o.routines.watchFiles === undefined ? {} : { watchFiles: o.routines.watchFiles }),
     ...(o.routines.ingress === undefined ? {} : { registerWebhook: (id: string, key: string, name?: string): Promise<string> => ingress!.register(id, key, name) }),
-    // Read from the registry at each use: an active `webhook` trigger type (clover/trigger-webhook's) and, where the
+    // Read from the registry at each use: an active `webhook` trigger type (moss/trigger-webhook's) and, where the
     // ingress runs, an active `webhook.ingress` entry. Neither is hardcoded: a plugin listed as not available has none.
     webhooksAvailable: () => {
       // Only the bundled tree's trigger counts (validation refuses a `webhook` trigger anywhere else; this holds for a

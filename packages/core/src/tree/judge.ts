@@ -10,8 +10,8 @@
 //   lift says so (`needsAnswer`) and carries the holder's own card, so the calling computer shows the user exactly that
 //   card and sends the signed answer back with the call.
 import { createHash } from "node:crypto";
-import type { Caller, CardContent, Level, SignedCardAnswer, TreeTransferParams, TurnOrigin } from "@waifucave/clover-protocol";
-import { DEFAULT_LEVEL, TREE_TRANSFER } from "@waifucave/clover-protocol";
+import type { Caller, CardContent, Level, SignedCardAnswer, TreeTransferParams, TurnOrigin } from "@waifucave/moss-protocol";
+import { DEFAULT_LEVEL, TREE_TRANSFER } from "@waifucave/moss-protocol";
 import {
   levelDecision, strictestLevel, verifySignedAnswer,
   type ActionEffect, type AnswerDevices, type AnswerLedger, type CallCardRenderer,

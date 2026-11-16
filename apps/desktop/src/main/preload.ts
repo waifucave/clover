@@ -1,13 +1,13 @@
 // The one preload, in every frame of every app window (sandboxed, in an isolated world). It exposes the layer bridge
-// to the core's root (`clover-core://app/`) and to plugin layers (`clover-plugin://<layer>/`), and nothing to any
+// to the core's root (`moss-core://app/`) and to plugin layers (`moss-plugin://<layer>/`), and nothing to any
 // other document: an `about:blank` or srcdoc frame a plugin makes, a sealed card. The main process binds every call
 // to the frame it came from, so the bridge carries no authority of its own beyond the mount token in the URL.
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { LayerBridge, LayerMessage } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { LayerBridge, LayerMessage } from "@waifucave/moss-plugin-sdk/ui/bridge";
 
 const where = location.protocol;
-const isRoot = where === "clover-core:" && location.host === "app" && window.top === window;
-const isLayer = where === "clover-plugin:";
+const isRoot = where === "moss-core:" && location.host === "app" && window.top === window;
+const isLayer = where === "moss-plugin:";
 
 // Where a press landed (§5.5): in EVERY frame, sealed cards and a plugin's own about:blank or srcdoc frames too, a trusted
 // pointerdown in this frame's own document is reported to the main process, which saw the press itself in the window and binds
@@ -15,7 +15,7 @@ const isLayer = where === "clover-plugin:";
 // event trusted. Capture phase, on the window, so no page stops it first.
 window.addEventListener("pointerdown", (event) => {
   if (!event.isTrusted) return;
-  ipcRenderer.send("clover:press-seen");
+  ipcRenderer.send("moss:press-seen");
 }, { capture: true });
 
 // A held key binding's down and repeats (plugin-keys.ts `hold`): main doesn't handle them in `before-input-event` (Chromium
@@ -26,7 +26,7 @@ window.addEventListener("pointerdown", (event) => {
 let heldHere = false;
 const keepHeld = (event: KeyboardEvent): void => {
   if (!event.isTrusted || !(heldHere || event.ctrlKey || event.metaKey || event.altKey || /^F([1-9]|1[0-2])$/.test(event.key))) return;
-  heldHere = ipcRenderer.sendSync("clover:held-key", { key: event.key, code: event.code }) === true;
+  heldHere = ipcRenderer.sendSync("moss:held-key", { key: event.key, code: event.code }) === true;
   if (!heldHere) return;
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -38,7 +38,7 @@ if (isRoot || isLayer) {
   const activated = (): boolean => (navigator as { userActivation?: { isActive: boolean } }).userActivation?.isActive === true;
   const token = isLayer ? new URLSearchParams(location.search).get("mount") ?? undefined : undefined;
   const listeners = new Set<(m: LayerMessage) => void>();
-  ipcRenderer.on("clover:message", (_event, message: LayerMessage) => {
+  ipcRenderer.on("moss:message", (_event, message: LayerMessage) => {
     for (const l of listeners) {
       try {
         l(message);
@@ -48,46 +48,46 @@ if (isRoot || isLayer) {
     }
   });  const bridge: LayerBridge = {
     token,
-    describe: () => ipcRenderer.invoke("clover:describe", { token }),
-    resolve: (mount, spot, key, hints) => ipcRenderer.invoke("clover:resolve", { mount, spot, key, hints }),
-    entries: (mount, spot, key, bot, session) => ipcRenderer.invoke("clover:entries", { mount, spot, key, ...(bot !== undefined ? { bot } : {}), ...(session !== undefined ? { session } : {}) }),
-    setProps: (child, props) => ipcRenderer.send("clover:props", { child, props }),
-    speech: (child, message) => ipcRenderer.send("clover:speech", { child, message }),
-    avatar: (child, message) => ipcRenderer.send("clover:avatar", { child, message }),
-    avatarUp: (message) => ipcRenderer.send("clover:avatar-up", { message }),
-    callback: (id, args) => ipcRenderer.send("clover:callback", { id, args }),
-    reportSize: (height) => ipcRenderer.send("clover:size", { height }),
-    release: (mounts) => ipcRenderer.send("clover:release", { mounts: [...mounts] }),
-    reload: (child) => ipcRenderer.invoke("clover:reload", { child }),
-    sleep: (child) => ipcRenderer.send("clover:sleep", { child }),
-    wake: (child) => ipcRenderer.invoke("clover:wake", { child }),
-    rectReply: (id, rect) => ipcRenderer.send("clover:rect-reply", { id, rect }),
-    menu: (mount, items, x, y) => ipcRenderer.invoke("clover:menu", { mount, items, x, y }),
-    surface: (request) => ipcRenderer.send("clover:surface", request),
-    surfaceEnvironment: () => ipcRenderer.invoke("clover:surface-environment", {}),
-    open: (mount, target) => ipcRenderer.invoke("clover:open", { mount, target, active: activated() }),
-    viewFrame: (mount, name, rect, used) => ipcRenderer.send("clover:view-frame", { mount, name, rect, used: used === true }),
-    webFrame: (mount, rect) => ipcRenderer.send("clover:web-frame", { mount, rect }),
-    activeSession: (mount, session) => ipcRenderer.send("clover:active-session", { mount, session }),
-    windowDrag: (mount) => ipcRenderer.send("clover:window-drag", { mount }),
+    describe: () => ipcRenderer.invoke("moss:describe", { token }),
+    resolve: (mount, spot, key, hints) => ipcRenderer.invoke("moss:resolve", { mount, spot, key, hints }),
+    entries: (mount, spot, key, bot, session) => ipcRenderer.invoke("moss:entries", { mount, spot, key, ...(bot !== undefined ? { bot } : {}), ...(session !== undefined ? { session } : {}) }),
+    setProps: (child, props) => ipcRenderer.send("moss:props", { child, props }),
+    speech: (child, message) => ipcRenderer.send("moss:speech", { child, message }),
+    avatar: (child, message) => ipcRenderer.send("moss:avatar", { child, message }),
+    avatarUp: (message) => ipcRenderer.send("moss:avatar-up", { message }),
+    callback: (id, args) => ipcRenderer.send("moss:callback", { id, args }),
+    reportSize: (height) => ipcRenderer.send("moss:size", { height }),
+    release: (mounts) => ipcRenderer.send("moss:release", { mounts: [...mounts] }),
+    reload: (child) => ipcRenderer.invoke("moss:reload", { child }),
+    sleep: (child) => ipcRenderer.send("moss:sleep", { child }),
+    wake: (child) => ipcRenderer.invoke("moss:wake", { child }),
+    rectReply: (id, rect) => ipcRenderer.send("moss:rect-reply", { id, rect }),
+    menu: (mount, items, x, y) => ipcRenderer.invoke("moss:menu", { mount, items, x, y }),
+    surface: (request) => ipcRenderer.send("moss:surface", request),
+    surfaceEnvironment: () => ipcRenderer.invoke("moss:surface-environment", {}),
+    open: (mount, target) => ipcRenderer.invoke("moss:open", { mount, target, active: activated() }),
+    viewFrame: (mount, name, rect, used) => ipcRenderer.send("moss:view-frame", { mount, name, rect, used: used === true }),
+    webFrame: (mount, rect) => ipcRenderer.send("moss:web-frame", { mount, rect }),
+    activeSession: (mount, session) => ipcRenderer.send("moss:active-session", { mount, session }),
+    windowDrag: (mount) => ipcRenderer.send("moss:window-drag", { mount }),
     // The frame's OWN transient user activation, read here in the preload (a page's script can't set it or this read): a
     // key press or click that came to another frame does not activate this one, so it can't unlock a gated call here.
-    composer: (mount, op, args) => ipcRenderer.invoke("clover:composer", { mount, op, args, active: activated() }),
-    userSend: (mount, to, message) => ipcRenderer.invoke("clover:user-send", { mount, to, message, active: activated() }),
-    shell: (mount, method, args) => ipcRenderer.invoke("clover:shell", { mount, method, args, active: activated() }),
-    shellReport: (mount, report) => ipcRenderer.send("clover:shell-report", { mount, report }),
-    api: (mount, method, params) => ipcRenderer.invoke("clover:api", { mount, method, params, active: activated() }),
-    terminalInput: (mount, terminalId, input) => ipcRenderer.invoke("clover:terminal-input", { mount, terminalId, input }),
-    dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
-    dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
-    sealedFrame: (mount, cardId, element, look, tokens) => ipcRenderer.invoke("clover:sealed-frame", { mount, cardId, element, ...(look !== undefined ? { look } : {}), ...(tokens !== undefined ? { tokens } : {}) }),
-    cardPage: (mount, cardId) => ipcRenderer.invoke("clover:card-page", { mount, cardId, active: activated() }),
+    composer: (mount, op, args) => ipcRenderer.invoke("moss:composer", { mount, op, args, active: activated() }),
+    userSend: (mount, to, message) => ipcRenderer.invoke("moss:user-send", { mount, to, message, active: activated() }),
+    shell: (mount, method, args) => ipcRenderer.invoke("moss:shell", { mount, method, args, active: activated() }),
+    shellReport: (mount, report) => ipcRenderer.send("moss:shell-report", { mount, report }),
+    api: (mount, method, params) => ipcRenderer.invoke("moss:api", { mount, method, params, active: activated() }),
+    terminalInput: (mount, terminalId, input) => ipcRenderer.invoke("moss:terminal-input", { mount, terminalId, input }),
+    dragOffer: (mount, offer) => ipcRenderer.invoke("moss:drag-offer", { mount, offer }),
+    dragClaim: (mount, token) => ipcRenderer.invoke("moss:drag-claim", { mount, token }),
+    sealedFrame: (mount, cardId, element, look, tokens) => ipcRenderer.invoke("moss:sealed-frame", { mount, cardId, element, ...(look !== undefined ? { look } : {}), ...(tokens !== undefined ? { tokens } : {}) }),
+    cardPage: (mount, cardId) => ipcRenderer.invoke("moss:card-page", { mount, cardId, active: activated() }),
     onMessage: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
   };
-  contextBridge.exposeInMainWorld("cloverLayer", bridge);
+  contextBridge.exposeInMainWorld("mossLayer", bridge);
   // A file dropped on a plugin's page: the path of a REAL dropped file is known only here (`webUtils`), never to the page, whose
   // script can't make one: a made-up event isn't trusted, and a File it builds has no path. The paths go to the main process,
   // which turns them into tokens for a plugin that holds `files` and tells this frame's page (`files-dropped`).
@@ -101,33 +101,33 @@ if (isRoot || isLayer) {
           if (p !== "") paths.push(p);
         } catch { /* not a file of the OS's */ }
       }
-      if (paths.length > 0) ipcRenderer.send("clover:drop-files", { paths });
+      if (paths.length > 0) ipcRenderer.send("moss:drop-files", { paths });
     }, true);
   }
   if (isRoot) {
-    contextBridge.exposeInMainWorld("cloverRoot", {
-      frameMetrics: (m: { top: number; start: number; end: number }) => ipcRenderer.send("clover:frame-metrics", m),
-      command: (name: string) => ipcRenderer.send("clover:root-command", { name }),
+    contextBridge.exposeInMainWorld("mossRoot", {
+      frameMetrics: (m: { top: number; start: number; end: number }) => ipcRenderer.send("moss:frame-metrics", m),
+      command: (name: string) => ipcRenderer.send("moss:root-command", { name }),
       // The core's own pages (the welcome guide, the plugin manager): a fixed set of calls, by name.
-      call: (name: string, params?: unknown) => ipcRenderer.invoke("clover:root-call", { name, params }),
+      call: (name: string, params?: unknown) => ipcRenderer.invoke("moss:root-call", { name, params }),
     });
   }
-} else if (where === "clover-sealed:" && location.host === "card") {
-  // (A render window's placeholder, `clover-sealed://placeholder/…`, gets nothing: it answers no card.)
+} else if (where === "moss-sealed:" && location.host === "card") {
+  // (A render window's placeholder, `moss-sealed://placeholder/…`, gets nothing: it answers no card.)
   // A sealed frame's page: the token is its own (a single-use channel the store minted), and its answer goes back
   // through the main process's own path — signed there with the answer key, never a plugin's connection's.
   const token = new URLSearchParams(location.search).get("token") ?? "";
-  contextBridge.exposeInMainWorld("cloverSealed", {
-    answer: (option: string, children?: readonly string[]) => ipcRenderer.invoke("clover:sealed-answer", { token, option, children }),
-    visible: (visible: boolean) => void ipcRenderer.send("clover:sealed-visible", { token, visible }),
+  contextBridge.exposeInMainWorld("mossSealed", {
+    answer: (option: string, children?: readonly string[]) => ipcRenderer.invoke("moss:sealed-answer", { token, option, children }),
+    visible: (visible: boolean) => void ipcRenderer.send("moss:sealed-visible", { token, visible }),
     // The report a press asked for (a new observer made at the press): whether the button showed whole and uncovered right then, and how
     // long the report took. The answer that follows is taken only on this.
-    fresh: (seen: boolean, ms: number) => void ipcRenderer.send("clover:sealed-fresh", { token, seen, ms }),
+    fresh: (seen: boolean, ms: number) => void ipcRenderer.send("moss:sealed-fresh", { token, seen, ms }),
     // A press the page saw, in one word of a fixed set (what it did with it); the app logs it with the card's id.
-    pressed: (what: string) => void ipcRenderer.send("clover:sealed-press", { token, what }),
-    size: (height: number) => void ipcRenderer.send("clover:sealed-size", { token, height }),
+    pressed: (what: string) => void ipcRenderer.send("moss:sealed-press", { token, what }),
+    size: (height: number) => void ipcRenderer.send("moss:sealed-size", { token, height }),
     // The Review on the app's own card page (a plugin's OK or update card): advice the app fetches for its own page,
     // never an answer.
-    review: (peek?: boolean) => ipcRenderer.invoke("clover:sealed-review", { token, ...(peek === true ? { peek: true } : {}) }),
+    review: (peek?: boolean) => ipcRenderer.invoke("moss:sealed-review", { token, ...(peek === true ? { peek: true } : {}) }),
   });
 }

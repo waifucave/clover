@@ -49,7 +49,7 @@ export function inputFor(bed: RunHomeBed, overrides: Partial<RunHomeInput> = {})
     reservedMcpServerNames: [],
     memoryDir: join(bed.sdk, "projects", "k", "memory"),
     // A-M1 review: the SDK has no default brand, and the moved host code reads the process's installed brand
-    // (Clover's, in core) when none is given. These router-era tests describe the layout under Winter's own
+    // (MOSS's, in core) when none is given. These router-era tests describe the layout under Winter's own
     // profile, so they name it.
     brand: WINTER_BRAND,
     ...overrides,

@@ -1,6 +1,6 @@
-// Contract: BrowserApi (spec §12.1 "The Clover Browser"; §5.4 the `browser` capability; spike S7). Owner: lane L.
+// Contract: BrowserApi (spec §12.1 "The MOSS Browser"; §5.4 the `browser` capability; spike S7). Owner: lane L.
 //
-// Clover runs its own browser on each computer: on desktops in the app's own Electron, where no app runs in Chrome for
+// MOSS runs its own browser on each computer: on desktops in the app's own Electron, where no app runs in Chrome for
 // Testing's headless shell driven by the daemon. Plugins with `browser` open tabs, navigate and use the DevTools
 // protocol through this API, and the browser view (a UI plugin) shows tabs its own way.
 //
@@ -16,7 +16,7 @@
 // * DevTools calls pass the allow list (`isCdpMethodAllowed`): no `Target`, `Browser` or `Storage`, and no path
 //   outside the bot's scratch folder in a call's parameters.
 // * A partition loads nothing `isBrowserUrlAllowed` refuses (`file:`, `chrome:`, `devtools:`, `view-source:`, the
-//   app's and core's own `clover…` schemes), however the request starts: `open` and `navigate` refuse it at once
+//   app's and core's own `moss…` schemes), however the request starts: `open` and `navigate` refuse it at once
 //   (`refused`), and the partition's session blocks it from a link, a redirect, a frame or DevTools' `Page.navigate`,
 //   which fails as a blocked load (review S17). The check lives in the session, not in reading DevTools parameters.
 // * Who may open a tab for which owner (#179's review, S1; `mayOpenFor`), judged on the call's own caller, which the
@@ -33,7 +33,7 @@
 import {
   AGENT_VIEWPORT, isBrowserUrlAllowed, isCdpMethodAllowed,
   type Caller, type Screenshot, type TabOwner, type TabView, type Viewport,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import type { Unsubscribe } from "./common";
 
 export { AGENT_VIEWPORT, isBrowserUrlAllowed, isCdpMethodAllowed };

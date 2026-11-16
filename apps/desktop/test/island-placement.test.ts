@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { surfaceWindowPlan, webPreferences } from "../src/main/window";
 
-const localElectron = process.env.CLOVER_UI_LOCAL_ELECTRON;
+const localElectron = process.env.MOSS_UI_LOCAL_ELECTRON;
 const enabled = process.platform === "darwin" && localElectron !== undefined && localElectron !== "";
 const dirs: string[] = [];
 afterAll(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -16,7 +16,7 @@ afterAll(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, fo
 function refuseForegroundElectron(): void {
   const plist = join(dirname(dirname(localElectron!)), "Info.plist");
   const value = spawnSync("plutil", ["-extract", "LSBackgroundOnly", "raw", plist], { encoding: "utf8" });
-  if (value.status !== 0 || value.stdout.trim() !== "true") throw new Error("CLOVER_UI_LOCAL_ELECTRON is not a background-only Electron");
+  if (value.status !== 0 || value.stdout.trim() !== "true") throw new Error("MOSS_UI_LOCAL_ELECTRON is not a background-only Electron");
 }
 
 function readBack(withOption: boolean): { focusable: boolean; canBeKey: boolean; display: { bounds: { y: number; height: number }; workArea: { y: number } }; y: number; height: number } {

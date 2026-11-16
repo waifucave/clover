@@ -14,13 +14,13 @@ import {
 } from "@waifucave/clover-agent-sdk/messaging";
 import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel } from "@waifucave/clover-agent-sdk/messaging";
 import type { Query, SessionMessagingFacet } from "@waifucave/clover-agent-sdk";
-import * as clover from "@waifucave/clover-agent-sdk";
+import * as moss from "@waifucave/clover-agent-sdk";
 import { createInMemoryRuntimeDirectoryStore, createRuntimeSdkHost } from "../../src/runtime-sdk/host";
 import type { RuntimeDirectoryStore, RuntimeSdkHost, SerializedRuntimeAddress } from "../../src/runtime-sdk/host";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { attachWinterSession, parkRecoveredSessions, releaseAllHeld, renderAttributedTurn } from "../../src/runtime-sdk/messaging";
 import type { WinterRuntimeSdk } from "../../src/runtime-sdk/create";
-import { CLOVER_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
+import { MOSS_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
 
 // ── The two sessions ────────────────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ function fakeSession(backendSessionId: string, permissionClass: PermissionClassL
       facetCalls.push("listReachable");
       return [];
     },
-    // A REAL spawned child answers this over the control pipe; a Clover session must never reach it
+    // A REAL spawned child answers this over the control pipe; a MOSS session must never reach it
     // (surface map §2.5: "no messaging runtime is registered in that process"). If a test ever sees
     // this call, the wrapper has stopped re-pointing `deliver` at the host queue.
     deliver: async (msg: GlobalAgentMessage): Promise<DeliveryOutcome> => {
@@ -96,7 +96,7 @@ function harness(
   runtime: WinterRuntimeSdk;
   sdk: RuntimeSdkHost;
   store: RuntimeDirectoryStore;
-  /** Every `clover.query(...)` the router attempted. Must stay empty in every test here. */
+  /** Every `moss.query(...)` the router attempted. Must stay empty in every test here. */
   spawned: unknown[];
 } {
   const spawned: unknown[] = [];
@@ -105,10 +105,10 @@ function harness(
     // messaging router's `coldResume` calls `sdk.query({ options: { resume: <backendSessionId> } })`
     // — a whole second session opened from inside a delivery, untracked by `trackQuery`,
     // unbudgeted in `dispose()`. Every test that says "never cold-resumes" asserts against THIS.
-    sdk: { ...clover, query: ((args: unknown) => { spawned.push(args); throw new Error("a cold resume was attempted"); }) as typeof clover.query },
+    sdk: { ...moss, query: ((args: unknown) => { spawned.push(args); throw new Error("a cold resume was attempted"); }) as typeof moss.query },
     brand: CORE_BRAND,
     directoryStore: store,
-    home: "/tmp/clover-messaging-test",
+    home: "/tmp/moss-messaging-test",
     messaging: declaredClass === undefined ? {} : { messaging: { winter: { permissionClass: () => declaredClass } } },
   });
   const runtime = { sdk } as unknown as WinterRuntimeSdk;
@@ -206,7 +206,7 @@ describe("attachWinterSession", () => {
 
   test("the wrapper's rendered frame is BYTE-IDENTICAL to the router's own push path", async () => {
     // The drift tripwire this module's header promises. `renderAttributedTurn` is not re-exported by
-    // the published router, so Clover rebuilds it; a push-ONLY handle takes the router's own
+    // the published router, so MOSS rebuilds it; a push-ONLY handle takes the router's own
     // rendering, and the two strings must be the same one.
     //
     // The declared class is load-bearing here and nowhere else: a push-only handle carries NO facet,
@@ -236,7 +236,7 @@ describe("attachWinterSession", () => {
       generation: 1,
       selection: {
         runtimeKind: "winter-agent", providerId: "unstated", modelRef: "unstated/unstated", family: "unstated",
-        authFamily: "custom", sdkVersion: CLOVER_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
+        authFamily: "custom", sdkVersion: MOSS_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
       },
       backendSessionId: "be_raw",
       capabilities: { message: true, resume: true, notifyWhenIdle: false, reply: true },
@@ -288,7 +288,7 @@ describe("attachWinterSession", () => {
 
   test("with the class DECLARED, a detached session answers `unavailable` — and never cold-resumes", async () => {
     // The brief's outcome, and the reason `detach()` drops `backendSessionId`: with the receiver's
-    // class known the inbound matrix ACCEPTS, so the delivery reaches the Clover adapter — which,
+    // class known the inbound matrix ACCEPTS, so the delivery reaches the MOSS adapter — which,
     // finding no live handle, would open a second `winter` process on the transcript if the row
     // still named one. It does not, so the answer is the honest non-retryable `unavailable` and no
     // process is spawned. (A spawn here would be visible: `peers.winter.query` would try to exec a
@@ -323,7 +323,7 @@ describe("attachWinterSession", () => {
   test("two sessions claiming ONE name: resolution is `ambiguous`, and neither is pushed to", async () => {
     // The honest reading of "a name collision". `directory.record` does NOT refuse a duplicate
     // display name (`syncLeases` only releases leases held by the SAME address), because a name is a
-    // handle, not an identity — a Clover session title is not unique. The refusal lands where it can
+    // handle, not an identity — a MOSS session title is not unique. The refusal lands where it can
     // name both candidates: at resolution, as WS-10 §11's `ambiguous`.
     const { runtime } = harness();
     const a = fakeSession("be_s");
@@ -370,7 +370,7 @@ describe("attachWinterSession", () => {
       generation: 1,
       selection: {
         runtimeKind: "winter-agent", providerId: "unstated", modelRef: "unstated/unstated", family: "unstated",
-        authFamily: "custom", sdkVersion: CLOVER_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
+        authFamily: "custom", sdkVersion: MOSS_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
       },
       parentAddress: addr("be_p"),
       capabilities: { message: true, resume: true, notifyWhenIdle: false, reply: true },
@@ -521,7 +521,7 @@ describe("parkRecoveredSessions (fix round 1, F3)", () => {
       generation: 1,
       selection: {
         runtimeKind: "winter-agent", providerId: "unstated", modelRef: "unstated/unstated", family: "unstated",
-        authFamily: "custom", sdkVersion: CLOVER_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
+        authFamily: "custom", sdkVersion: MOSS_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
       },
       backendSessionId: "be_crashed",
       capabilities: { message: true, resume: true, notifyWhenIdle: true, reply: true },
@@ -561,7 +561,7 @@ describe("parkRecoveredSessions (fix round 1, F3)", () => {
       displayName: "archived", status: "archived", mode: "code", generation: 1,
       selection: {
         runtimeKind: "winter-agent", providerId: "unstated", modelRef: "unstated/unstated", family: "unstated",
-        authFamily: "custom", sdkVersion: CLOVER_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
+        authFamily: "custom", sdkVersion: MOSS_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
       },
       backendSessionId: "be_archived",
       capabilities: { message: true, resume: true, notifyWhenIdle: true, reply: true },
@@ -588,7 +588,7 @@ describe("parkRecoveredSessions (fix round 1, F3)", () => {
       displayName: "child", status: "running", mode: "code", generation: 1,
       selection: {
         runtimeKind: "winter-agent", providerId: "unstated", modelRef: "unstated/unstated", family: "unstated",
-        authFamily: "custom", sdkVersion: CLOVER_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
+        authFamily: "custom", sdkVersion: MOSS_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
       },
       backendSessionId: "be_child_crashed",
       capabilities: { message: true, resume: true, notifyWhenIdle: true, reply: true },
@@ -611,7 +611,7 @@ describe("parkRecoveredSessions (fix round 1, F3)", () => {
       displayName: "child-archived", status: "archived", mode: "code", generation: 1,
       selection: {
         runtimeKind: "winter-agent", providerId: "unstated", modelRef: "unstated/unstated", family: "unstated",
-        authFamily: "custom", sdkVersion: CLOVER_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
+        authFamily: "custom", sdkVersion: MOSS_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: new Date().toISOString(),
       },
       backendSessionId: "be_child_archived",
       capabilities: { message: true, resume: true, notifyWhenIdle: true, reply: true },

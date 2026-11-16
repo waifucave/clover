@@ -5,7 +5,7 @@ import { COWORK_CONTROL_ENTRIES, protectedHostStorageFences, type HostStorageFen
 export * from "./host-storage-fence";
 
 /**
- * **What no agent may write under Clover's home — ONE list, three fences** (whole-branch review,
+ * **What no agent may write under MOSS's home — ONE list, three fences** (whole-branch review,
  * 2026-09-23, lane C).
  *
  * The fences:
@@ -51,7 +51,7 @@ export function homeFencedDirs(home: string, options?: HostStorageFenceOptions):
  * lies under one (`isHomeWriteOnly`). The escape floor matches one only as a whole path segment
  * (`<home>/computer-use-notes.txt` is not `<home>/computer-use`), a glob after it still counting.
  */
-// `bin` is not here: it holds the code a server's next start runs (`<home>/bin/daemon/clover-core`, plain Bun beside it,
+// `bin` is not here: it holds the code a server's next start runs (`<home>/bin/daemon/moss-core`, plain Bun beside it,
 // and the bundled plugins in `<home>/bin/plugins`), so the floor refuses any
 // mention of it, as it does `runtimes` (a write through an interpreter, `python3 -c "open(…,'wb')"`, has no write shape
 // the floor could see). `update` and `install.json` (a server's self-update records) can only freeze updates on their own.
@@ -70,15 +70,15 @@ export function homeFencedFiles(home: string): string[] {
   return [join(home, "trust.json")];
 }
 
-/** Fenced wherever they appear, in any project: every `.clover/agents/` directory (the project tier of
+/** Fenced wherever they appear, in any project: every `.moss/agents/` directory (the project tier of
  *  the agent definitions), matched as a path segment. */
-export const PROJECT_FENCED_SEGMENTS: readonly string[] = [".clover/agents/"];
+export const PROJECT_FENCED_SEGMENTS: readonly string[] = [".moss/agents/"];
 
 /** The filenames the escape floor refuses to see named at all (its match is a conservative substring):
- *  the three control-plane files plus `trust.json`, and (WS-21 §7.1, "any mention") `.clover.json` —
- *  `sdk/.clover.json` is the user's MCP server list. The write-tool fence is precise instead
+ *  the three control-plane files plus `trust.json`, and (WS-21 §7.1, "any mention") `.moss.json` —
+ *  `sdk/.moss.json` is the user's MCP server list. The write-tool fence is precise instead
  *  (`controlPlaneFileTarget` + `homeFencedFiles`). */
-export const ESCAPE_FENCED_FILENAMES: readonly string[] = [...CONTROL_PLANE_FILENAMES, "trust.json", ".clover.json"];
+export const ESCAPE_FENCED_FILENAMES: readonly string[] = [...CONTROL_PLANE_FILENAMES, "trust.json", ".moss.json"];
 
 export function homeFenceFor(home: string, options?: HostStorageFenceOptions): HomeFence {
   const active = protectedHostStorageFences(home, options);

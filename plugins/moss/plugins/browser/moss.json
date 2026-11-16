@@ -1,0 +1,30 @@
+{
+  "manifest": 1,
+  "name": "Browser tool",
+  "description": "mcp__moss__Browser: a bot's hands on the MOSS Browser, through the plugin API's browser calls.",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "capabilities": [
+    "browser"
+  ],
+  "contributes": {
+    "mcpServers": {
+      "browser": {
+        "type": "host",
+        "tools": {
+          "Browser": "preload"
+        },
+        "browserTools": [
+          "Browser"
+        ],
+        "instructions": "instructions.md",
+        "perComputer": true
+      }
+    }
+  }
+}

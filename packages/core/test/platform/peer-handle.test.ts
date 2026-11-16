@@ -12,7 +12,7 @@ const CLIENT = (path: string) => `const s = await Bun.connect({ unix: ${JSON.str
 
 /** A child connects; the handle is taken in the listener's open, as the daemon takes it. */
 async function connectedChild(argv: (client: string) => string[] = (c) => [process.execPath, "-e", c]) {
-  const path = resolveEndpoint(mkdtempSync(join(tmpdir(), "clover-ph-"))).path;
+  const path = resolveEndpoint(mkdtempSync(join(tmpdir(), "moss-ph-"))).path;
   let got!: (h: PeerHandle | null) => void;
   const handle = new Promise<PeerHandle | null>((r) => { got = r; });
   const server = Bun.listen({ unix: path, socket: { open(s) { got(peerHandle(socketFd(s), os)); }, data() {} } });

@@ -3,7 +3,7 @@
 // appearances, the approve button stands out from the card, every value is one the sealed frames accept as they are,
 // and the block sets nothing but `card.*` names.
 import { describe, expect, test } from "bun:test";
-import { luminance, parseHex, type Rgba } from "../../../clover/plugins/base-theme/src/contrast";
+import { luminance, parseHex, type Rgba } from "../../../moss/plugins/base-theme/src/contrast";
 import { readable } from "../../../../apps/desktop/src/main/sealed-pages";
 import theme from "../theme.json" with { type: "json" };
 

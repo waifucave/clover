@@ -1,12 +1,12 @@
 // WS-25 §7 B: the Mac app reads the daemon's two pairing tokens without a Keychain prompt.
 //
 // THE PROBLEM (`.superpowers/sdd/2026-09-27-keychain-prompts/progress.md`). `harness-token` and
-// `remote-token` are created by `clover-core` (`auth/tokens.ts`, through `Bun.secrets`), so their decrypt
-// ACL names `clover-core` alone. The app (`AppModel.swift`'s `KeychainToken.readHarnessToken`,
+// `remote-token` are created by `moss-core` (`auth/tokens.ts`, through `Bun.secrets`), so their decrypt
+// ACL names `moss-core` alone. The app (`AppModel.swift`'s `KeychainToken.readHarnessToken`,
 // `RemoteHost.swift`'s `readRemoteToken`) is a different binary, and its read raises the consent prompt.
 //
-// THE FIX. Re-create each item ONCE with an ACL that names both `clover-core` (this process, `null` below)
-// and the Clover app bundle. Only a trusted application may change an existing item's ACL, and doing so
+// THE FIX. Re-create each item ONCE with an ACL that names both `moss-core` (this process, `null` below)
+// and the MOSS app bundle. Only a trusted application may change an existing item's ACL, and doing so
 // (`SecKeychainItemSetAccess`) asks the user for the keychain PASSWORD — so the item is instead DELETED
 // and ADDED again by its creator, which is silent. The value is the one `ensureTokens` just read in this
 // process; nothing is decrypted for the migration.
@@ -28,11 +28,11 @@
 // the migration re-runs when that set changes (or when `ensureTokens` had to mint an item) and is a no-op
 // otherwise — a DerivedData path change or a Homebrew `bun` upgrade keeps the same requirement.
 //
-// WHO IS TRUSTED. Dist: the app bundle `clover-core` itself lives in (`<Clover.app>/Contents/Resources/
-// clover-core`, realpath'd — the Homebrew `clover` link resolves there too). Nothing else: Launch Services
-// can resolve `com.waifucave.clover` to a local Release build (CLAUDE.md), which must not be granted the dist
-// tokens. Dev (spec §7 B's "bun + Clover Dev"): this process (`bun`, or a compiled dev binary) plus the
-// `com.waifucave.clover.dev` bundles Launch Services knows THAT ARE SIGNED BY CLOVER'S TEAM (`CLOVER_TEAM_ID`,
+// WHO IS TRUSTED. Dist: the app bundle `moss-core` itself lives in (`<MOSS Code.app>/Contents/Resources/
+// moss-core`, realpath'd — the Homebrew `moss` link resolves there too). Nothing else: Launch Services
+// can resolve `com.waifucave.moss.code` to a local Release build (CLAUDE.md), which must not be granted the dist
+// tokens. Dev (spec §7 B's "bun + MOSS Code Dev"): this process (`bun`, or a compiled dev binary) plus the
+// `com.waifucave.moss.code.dev` bundles Launch Services knows THAT ARE SIGNED BY MOSS'S TEAM (`MOSS_TEAM_ID`,
 // `project.yml`'s `DEVELOPMENT_TEAM`), one per designated requirement. Never a path from an environment
 // variable: a dev daemon runs under `bun` from a repository checkout, and `bun` autoloads that `.env`.
 //
@@ -51,15 +51,15 @@
 //   - the public API cannot even build a tagged entry: `SecACLCreateWithSimpleContents` +
 //     `SecACLUpdateAuthorizations(partition-id)` makes an UNTAGGED entry that `dump-keychain -a` prints as
 //     `partition_id` but securityd never consults (`findPartitionSubject` looks up by tag) — a trap.
-// So the list is exactly `teamid:<creator's team>`. Dist: `clover-core` and Clover.app share Clover's team,
-// so the app is never prompted. Dev under Homebrew `bun` (another team): Clover Dev is asked once per item
+// So the list is exactly `teamid:<creator's team>`. Dist: `moss-core` and MOSS Code.app share MOSS's team,
+// so the app is never prompted. Dev under Homebrew `bun` (another team): MOSS Code Dev is asked once per item
 // after every re-creation, and "Always Allow" appends its team — re-creating drops it again, so the
 // migration must never re-run merely because the list lacks a team. The cure is the creator: a dev daemon
-// signed by Clover's team (`unpartitionedTeams` below names the gap in the boot log).
+// signed by MOSS's team (`unpartitionedTeams` below names the gap in the boot log).
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { CLOVER_TEAM_ID } from "../bundled-identities";
+import { MOSS_TEAM_ID } from "../bundled-identities";
 import { MIGRATION_SHADOW_SUFFIX } from "./secret-store";
 import { TOKEN_NAMES } from "./tokens";
 import { addGenericPassword, createKeychainAccess, deleteGenericPassword, genericPasswordPresent, readGenericPassword, ERR_SEC_DUPLICATE_ITEM, KeychainFfiError, type KeychainAccess, type KeychainTarget } from "./keychain-ffi";
@@ -68,8 +68,8 @@ import { addGenericPassword, createKeychainAccess, deleteGenericPassword, generi
 export const APP_READ_TOKEN_NAMES: readonly string[] = [TOKEN_NAMES.harness, TOKEN_NAMES.remote];
 export const APP_TOKEN_SHADOW_SUFFIX = MIGRATION_SHADOW_SUFFIX;
 export const APP_TOKEN_ACL_MARKER_VERSION = 2;
-/** The Apple developer team Clover's apps are signed by: one source, `bundled-identities.ts`. */
-export { CLOVER_TEAM_ID };
+/** The Apple developer team MOSS's apps are signed by: one source, `bundled-identities.ts`. */
+export { MOSS_TEAM_ID };
 
 export function appTokenAclMarkerPath(home: string): string {
   return join(home, "migration", "app-token-acl.json");
@@ -151,13 +151,13 @@ export function prepareAppTokenAccess(kc: AppTokenKeychain, trust: AppTokenTrust
   let wide: KeychainAccess | undefined;
   let selfOnly: KeychainAccess | undefined;
   try {
-    selfOnly = ops.createAccess("Clover pairing token", [null]);
+    selfOnly = ops.createAccess("MOSS pairing token", [null]);
   } catch (err) {
     kc.log?.(`keychain: the self-only access list could not be built (${describe(err)})`);
   }
   if (trust !== undefined) {
     try {
-      wide = ops.createAccess("Clover pairing token", [null, ...trust.apps]);
+      wide = ops.createAccess("MOSS pairing token", [null, ...trust.apps]);
     } catch (err) {
       kc.log?.(`keychain: the app-token access list could not be built (${describe(err)}) — the tokens keep theirs`);
     }
@@ -302,13 +302,13 @@ export function migrateAppTokenAcl(kc: AppTokenKeychain, access: AppTokenAccess,
   if (trust.unpartitionedTeams === undefined) {
     kc.log?.(`keychain: ${done.join(" and ")} readable by ${trust.apps.length === 1 ? trust.apps[0] : `${trust.apps.length} app bundles`} without a prompt`);
   } else {
-    kc.log?.(`keychain: ${done.join(" and ")} re-created with the app in the access list, but their partition list names only this process's team (not ${trust.unpartitionedTeams.map((t) => `teamid:${t}`).join(", ")}) — the app is asked once per item; a dev daemon signed by team ${CLOVER_TEAM_ID} avoids it`);
+    kc.log?.(`keychain: ${done.join(" and ")} re-created with the app in the access list, but their partition list names only this process's team (not ${trust.unpartitionedTeams.map((t) => `teamid:${t}`).join(", ")}) — the app is asked once per item; a dev daemon signed by team ${MOSS_TEAM_ID} avoids it`);
   }
   return { kind: "migrated", names: done };
 }
 
 /** The app bundle an executable lives in, when it is `<X.app>/Contents/Resources/<binary>` (the embedded
- *  `clover-core`), else `undefined`. Pure. */
+ *  `moss-core`), else `undefined`. Pure. */
 export function enclosingAppBundle(executable: string): string | undefined {
   const m = /^(.+\.app)\/Contents\/Resources\/[^/]+$/.exec(executable);
   return m?.[1];
@@ -345,7 +345,7 @@ const MIN_INSPECT_MS = 1_000;
  * BOUNDED (re-review item 1): the scan runs at boot BEFORE the IPC server listens — kept there rather than
  * moved after `listen`, because the shadow recovery must precede `ensureTokens` and the migration must run
  * before a client can read a token mid-rewrite. So it gets ONE budget (`budgetMs`, default
- * `TRUST_SCAN_BUDGET_MS`): once spent, no further Clover Dev bundle is inspected and the scan proceeds with
+ * `TRUST_SCAN_BUDGET_MS`): once spent, no further MOSS Code Dev bundle is inspected and the scan proceeds with
  * what is known — an UNINSPECTED bundle is never trusted. Each `codesign` gets only what is left.
  */
 export function trustFor(input: { profile: "dist" | "dev"; executable: string; lookup: (bundleId: string) => string[]; inspect?: (path: string, timeoutMs: number) => CodeSigningFacts; exists?: (p: string) => boolean; budgetMs?: number; now?: () => number }): AppTokenTrust | undefined {
@@ -358,7 +358,7 @@ export function trustFor(input: { profile: "dist" | "dev"; executable: string; l
   const byRequirement = new Map<string, string>();
   const appTeams = new Set<string>();
   const own = enclosingAppBundle(input.executable);
-  // Dist trusts the bundle clover-core RUNS FROM — this process's own app, never a Launch Services lookup.
+  // Dist trusts the bundle moss-core RUNS FROM — this process's own app, never a Launch Services lookup.
   if (own !== undefined && exists(own)) {
     const facts = inspect(own, Math.max(MIN_INSPECT_MS, left()));
     byRequirement.set(requirementOf(own, facts), own);
@@ -367,11 +367,11 @@ export function trustFor(input: { profile: "dist" | "dev"; executable: string; l
   const selfFacts = inspect(input.executable, Math.max(MIN_INSPECT_MS, left()));
   const self = requirementOf(input.executable, selfFacts);
   if (input.profile === "dev" && left() > 0) {
-    for (const path of [...input.lookup("com.waifucave.clover.dev")].sort()) {
+    for (const path of [...input.lookup("com.waifucave.moss.code.dev")].sort()) {
       if (left() <= 0) break; // budget spent: what is not inspected is not trusted
       if (!exists(path)) continue;
       const facts = inspect(path, left());
-      if (facts.teamId !== CLOVER_TEAM_ID) continue;
+      if (facts.teamId !== MOSS_TEAM_ID) continue;
       const req = requirementOf(path, facts);
       if (!byRequirement.has(req)) {
         byRequirement.set(req, path);
@@ -386,7 +386,7 @@ export function trustFor(input: { profile: "dist" | "dev"; executable: string; l
   return { apps: [...byRequirement.values()], requirements: [...new Set([self, ...byRequirement.keys()])].sort(), ...(unpartitioned.length > 0 ? { unpartitionedTeams: unpartitioned } : {}) };
 }
 
-/** `process.execPath`, symlinks resolved (the Homebrew `clover` link → the app's `clover-core`). */
+/** `process.execPath`, symlinks resolved (the Homebrew `moss` link → the app's `moss-core`). */
 export function realExecutable(execPath: string = process.execPath): string {
   try {
     return realpathSync(execPath);
@@ -405,6 +405,6 @@ export function appTokenAclBootTrust(input: { profile: "dist" | "dev"; log: (lin
     input.log(`keychain: the app-token access lists were not checked (${err instanceof Error ? err.name : "error"})`);
     return undefined;
   }
-  if (trust === undefined) input.log(`keychain: no ${input.profile === "dev" ? "Clover Dev build signed by Clover's team" : "enclosing Clover app"} to grant the pairing tokens to — their access lists are left as they are`);
+  if (trust === undefined) input.log(`keychain: no ${input.profile === "dev" ? "MOSS Code Dev build signed by MOSS's team" : "enclosing MOSS app"} to grant the pairing tokens to — their access lists are left as they are`);
   return trust;
 }

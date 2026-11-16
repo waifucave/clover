@@ -1,5 +1,5 @@
 // The plugin host's core side (lane B, B-M2; spec §5.2, §5.4): the plugin API's router and its areas, the caller
-// binding and the pipe's API channel. The processes themselves (the two plugin-host processes on clover-plugin-bun,
+// binding and the pipe's API channel. The processes themselves (the two plugin-host processes on moss-plugin-bun,
 // their workers, crashes, heartbeat and logs) come with #234's plugin Bun.
 import { guardApiRouter, type ApiRouter, type InstallRecord } from "../contracts/plugin-host";
 import { createApiRouter, type ApiHandlers, type ApiRouterOptions } from "./api/router";

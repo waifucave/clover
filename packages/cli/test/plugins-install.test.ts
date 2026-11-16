@@ -9,19 +9,19 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatBundledManifest } from "@waifucave/clover-core";
-import { formatCoreFeed, generateFeedKey, packTarball, pluginsFeedFile, pluginsTarballFile, signFeed, type TarballFile } from "@waifucave/clover-update-feed";
+import { formatBundledManifest } from "@waifucave/moss-core";
+import { formatCoreFeed, generateFeedKey, packTarball, pluginsFeedFile, pluginsTarballFile, signFeed, type TarballFile } from "@waifucave/moss-update-feed";
 import { ensureServerPlugins, fetchBackoffFile, manifestSha256, PluginsLock, recoverServerPlugins, serverPluginsDir, stageServerPlugins, swapPluginsIn, treeManifestSha256 } from "../src/plugins-install";
 import type { Fetcher } from "../src/self-update";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const TARGET = "linux-x64" as const;
-const tagUrl = (version: string) => `https://api.github.com/repos/waifucave/clover/releases/tags/v${version}`;
+const tagUrl = (version: string) => `https://api.github.com/repos/waifucave/moss/releases/tags/v${version}`;
 
 const TREE: TarballFile[] = [
-  { path: "clover/clover.json", bytes: enc(`{"id":"clover"}`), executable: false },
-  { path: "clover/bin/run.sh", bytes: enc("#!/bin/sh\necho hi\n"), executable: true },
-  { path: "alpha/clover.json", bytes: enc(`{"id":"alpha"}`), executable: false },
+  { path: "moss/moss.json", bytes: enc(`{"id":"moss"}`), executable: false },
+  { path: "moss/bin/run.sh", bytes: enc("#!/bin/sh\necho hi\n"), executable: true },
+  { path: "alpha/moss.json", bytes: enc(`{"id":"alpha"}`), executable: false },
 ];
 
 /** The SHA-256 of the manifest text a core built with `files` carries. */
@@ -36,7 +36,7 @@ interface Release { tag: string; version: string; tree?: TarballFile[]; spoil?: 
 function github(key: { privateKey: string }, releases: Release[]) {
   const files = new Map<string, Uint8Array>();
   const list = releases.map((r) => {
-    const url = (name: string) => `https://github.com/waifucave/clover/releases/download/${r.tag}/${name}`;
+    const url = (name: string) => `https://github.com/waifucave/moss/releases/download/${r.tag}/${name}`;
     const tarName = pluginsTarballFile(r.version, TARGET);
     const signed = packTarball(r.tree ?? TREE);
     const served = r.spoil === "tarball" ? (() => { const b = new Uint8Array(signed); b[b.length - 9]! ^= 1; return b; })() : signed;
@@ -65,7 +65,7 @@ function github(key: { privateKey: string }, releases: Release[]) {
 }
 
 function server(releases: Release[]) {
-  const home = mkdtempSync(join(tmpdir(), "clover-plugins-install-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-plugins-install-"));
   const key = generateFeedKey();
   const gh = github(key, releases);
   const lines: string[] = [];
@@ -84,10 +84,10 @@ describe("the bundled plugins on a server", () => {
     const s = server([{ tag: "v1.2.3", version: "1.2.3" }]);
     expect(s.dir).toBe(join(s.home, "bin", "plugins"));
     expect(await ensureServerPlugins(s.deps("1.2.3", coreManifestSha(TREE)))).toEqual({ kind: "installed", version: "1.2.3", files: 3 });
-    expect(readFileSync(join(s.dir, "clover", "clover.json"), "utf8")).toBe(`{"id":"clover"}`);
+    expect(readFileSync(join(s.dir, "moss", "moss.json"), "utf8")).toBe(`{"id":"moss"}`);
     if (process.platform !== "win32") {
-      expect(statSync(join(s.dir, "clover", "bin", "run.sh")).mode & 0o777).toBe(0o755);
-      expect(statSync(join(s.dir, "alpha", "clover.json")).mode & 0o777).toBe(0o644);
+      expect(statSync(join(s.dir, "moss", "bin", "run.sh")).mode & 0o777).toBe(0o755);
+      expect(statSync(join(s.dir, "alpha", "moss.json")).mode & 0o777).toBe(0o644);
     }
     expect(treeManifestSha256(s.dir)).toBe(coreManifestSha(TREE));
     expect(existsSync(`${s.dir}.new`)).toBe(false);
@@ -106,12 +106,12 @@ describe("the bundled plugins on a server", () => {
   });
 
   test("a tarball that isn't the tree the core's manifest names is refused, and the folder stays as it was", async () => {
-    const other = [...TREE.slice(0, 2), { path: "alpha/clover.json", bytes: enc(`{"id":"alphA"}`), executable: false }];
+    const other = [...TREE.slice(0, 2), { path: "alpha/moss.json", bytes: enc(`{"id":"alphA"}`), executable: false }];
     const s = server([{ tag: "v1.2.3", version: "1.2.3", tree: other }]);
     mkdirSync(join(s.dir, "keep"), { recursive: true });
     writeFileSync(join(s.dir, "keep", "x"), "x");
     const r = await ensureServerPlugins(s.deps("1.2.3", coreManifestSha(TREE)));
-    expect(r).toEqual({ kind: "refused", why: "clover-plugins-1.2.3-linux-x64.tar.gz isn't the tree this core's manifest names" });
+    expect(r).toEqual({ kind: "refused", why: "moss-plugins-1.2.3-linux-x64.tar.gz isn't the tree this core's manifest names" });
     expect(readFileSync(join(s.dir, "keep", "x"), "utf8")).toBe("x");
     expect(existsSync(`${s.dir}.new`)).toBe(false);
   });
@@ -119,11 +119,11 @@ describe("the bundled plugins on a server", () => {
   test("a tampered tarball, a tampered update file, an update file naming another file, or no release: refused", async () => {
     const sha = coreManifestSha(TREE);
     const tampered = server([{ tag: "v1.2.3", version: "1.2.3", spoil: "tarball" }]);
-    expect(await ensureServerPlugins(tampered.deps("1.2.3", sha))).toEqual({ kind: "refused", why: "clover-plugins-1.2.3-linux-x64.tar.gz: bad signature" });
+    expect(await ensureServerPlugins(tampered.deps("1.2.3", sha))).toEqual({ kind: "refused", why: "moss-plugins-1.2.3-linux-x64.tar.gz: bad signature" });
     const feed = server([{ tag: "v1.2.3", version: "1.2.3", spoil: "feed signature" }]);
     expect(await ensureServerPlugins(feed.deps("1.2.3", sha))).toEqual({ kind: "refused", why: "latest-plugins-linux-x64.yml: bad signature" });
     expect(feed.gh.asked.some((u) => u.endsWith(".tar.gz"))).toBe(false);
-    const names = server([{ tag: "v1.2.3", version: "1.2.3", names: "clover-plugins-1.2.2-linux-x64.tar.gz" }]);
+    const names = server([{ tag: "v1.2.3", version: "1.2.3", names: "moss-plugins-1.2.2-linux-x64.tar.gz" }]);
     expect((await ensureServerPlugins(names.deps("1.2.3", sha))).kind).toBe("refused");
     const none = server([{ tag: "v1.2.2", version: "1.2.2" }]);
     expect(await ensureServerPlugins(none.deps("1.2.3", sha))).toEqual({ kind: "refused", why: "release v1.2.3 could not be read" });
@@ -173,7 +173,7 @@ describe("the start: local copies first, a back-off, one lock", () => {
   const write = (path: string, files: readonly TarballFile[]) => {
     for (const f of files) { mkdirSync(join(path, f.path, ".."), { recursive: true }); writeFileSync(join(path, f.path), f.bytes); }
   };
-  const OLD_TREE = [{ path: "clover/clover.json", bytes: enc(`{"id":"clover","old":true}`), executable: false }];
+  const OLD_TREE = [{ path: "moss/moss.json", bytes: enc(`{"id":"moss","old":true}`), executable: false }];
 
   test("a power cut mid-swap: .new (the update's) or .old (a rollback's) that measures to the manifest is taken back, no download", () => {
     const s = server([]);
@@ -200,7 +200,7 @@ describe("the start: local copies first, a back-off, one lock", () => {
     write(`${t.dir}.new`, TREE);
     write(`${t.dir}.old`, OLD_TREE.map((f) => ({ ...f, bytes: enc("older") })));
     recoverServerPlugins({ dir: t.dir, manifestSha256: coreManifestSha(TREE), watching: true, log: () => {} });
-    expect(readFileSync(join(`${t.dir}.old`, "clover", "clover.json"), "utf8")).toBe("older");
+    expect(readFileSync(join(`${t.dir}.old`, "moss", "moss.json"), "utf8")).toBe("older");
   });
 
   test("while an update is watched, .old (the rollback's copy) is never taken or removed; nothing matching: nothing done", () => {

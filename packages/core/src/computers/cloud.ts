@@ -6,7 +6,7 @@
 // * Only the main computer acts: the one whose lease (lane H's) lets it act now (`CloudAuthority`). Its tenure (the
 //   lease's scope and epoch) is taken when a change starts and looked at again after the user's card answer and
 //   right before each provider call: an answer that comes after this computer lost the lease does nothing.
-// * The cloud is the source of truth. Every VM carries the `clover-computer` label with its folder's id; before a VM
+// * The cloud is the source of truth. Every VM carries the `moss-computer` label with its folder's id; before a VM
 //   is made, the provider is asked for one with that label, and one that exists is adopted, never made twice. A new
 //   main finds every VM the same way. `cloud.json` is only a cache: a `creating` entry, with its label, is written
 //   before the provider is asked to create, and settled from the provider afterwards. A resize or a delete names the
@@ -21,11 +21,11 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { COMPUTER_NAME_RE, pluginIdToSegment } from "@waifucave/clover-protocol";
+import { COMPUTER_NAME_RE, pluginIdToSegment } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 
 /** The label every cloud computer's VM carries, with its folder's id (`/` written `--`). */
-export const CLOUD_LABEL = "clover-computer";
+export const CLOUD_LABEL = "moss-computer";
 
 /** The label value for a folder: its id, `/` written `--`, which both clouds take as a label value (lower case,
  *  digits and `-`); one over their 63 characters is written `h-` and the first 40 hex digits of its SHA-256. */
@@ -50,7 +50,7 @@ export interface CloudFolder {
 /** A VM as its provider lists it. */
 export interface CloudInstance {
   serverId: string;
-  /** Its `clover-computer` label. */
+  /** Its `moss-computer` label. */
   label: string;
   region: string;
   size?: string;
@@ -62,9 +62,9 @@ export interface CloudInstance {
  *  `create` and `list` names the instance by its id and its label, and the plugin acts only when the instance there
  *  carries that label. */
 export interface CloudProviderHandler {
-  /** Creates the VM with `userData` (cloud-init), the `clover-computer` label set to `label`, and no cloud identity. */
+  /** Creates the VM with `userData` (cloud-init), the `moss-computer` label set to `label`, and no cloud identity. */
   create(args: { name: string; size: string; region: string; image?: string; userData: string; label: string }, ctx?: { signal?: AbortSignal }): Promise<{ serverId: string; address?: string }>;
-  /** The VMs carrying the `clover-computer` label: with that value, or any value when `label` is left out. */
+  /** The VMs carrying the `moss-computer` label: with that value, or any value when `label` is left out. */
   list(args: { label?: string }, ctx?: { signal?: AbortSignal }): Promise<CloudInstance[]>;
   resize(args: { serverId: string; label: string; region: string; size: string }, ctx?: { signal?: AbortSignal }): Promise<void>;
   delete(args: { serverId: string; label: string; region: string }, ctx?: { signal?: AbortSignal }): Promise<void>;
@@ -121,12 +121,12 @@ export interface CloudStateStore {
 
 const EMPTY: CloudState = { vms: [], kept: [], tokens: [] };
 
-/** `<Clover home>/computers/cloud.json`, 0600, written whole: names, ids, labels and token hashes, never a credential
+/** `<MOSS home>/computers/cloud.json`, 0600, written whole: names, ids, labels and token hashes, never a credential
  *  or a token. */
 export class FileCloudStateStore implements CloudStateStore {
   readonly #path: string;
-  constructor(cloverHome: string) {
-    this.#path = join(cloverHome, "computers", "cloud.json");
+  constructor(mossHome: string) {
+    this.#path = join(mossHome, "computers", "cloud.json");
   }
   load(): CloudState {
     try {

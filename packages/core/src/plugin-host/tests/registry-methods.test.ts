@@ -4,9 +4,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import { PLUGIN_TEMPLATES, templateFiles } from "@waifucave/clover-plugin-sdk/templates";
-import { PluginDetail, PluginSummary } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import { PLUGIN_TEMPLATES, templateFiles } from "@waifucave/moss-plugin-sdk/templates";
+import { PluginDetail, PluginSummary } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -17,7 +17,7 @@ import { iconOf } from "../ui";
 import { CORE_VERSION } from "../../version";
 import { pluginDataFolder } from "../paths";
 import { brokerCardOpener } from "../../devices/rpc";
-import type { Card } from "@waifucave/clover-protocol";
+import type { Card } from "@waifucave/moss-protocol";
 
 const temps: string[] = [];
 const temp = (prefix: string) => {
@@ -31,7 +31,7 @@ afterAll(() => {
 
 const CLI = { caller: { kind: "user", client: "cli" } } as never;
 const APP = { caller: { kind: "user", client: "app" } } as never;
-const manifest = (id: string) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } });
+const manifest = (id: string) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` } });
 
 describe("what a plugin's row shows", () => {
   const record = (o: Record<string, unknown>) => ({
@@ -39,12 +39,12 @@ describe("what a plugin's row shows", () => {
     scope: "both", adult: false, children: [], dev: false, granted: [], ...o,
   }) as never;
 
-  test("the bundled clover tree wears the app's version; a plugin its own; a wrapper with none keeps its 0.0.0 (the page shows none)", () => {
-    expect(summaryOf(record({ id: "clover", source: "bundled", version: "0.0.0", manifest: { manifest: 1, id: "clover", name: "Clover" } })).version).toBe(CORE_VERSION);
-    expect(summaryOf(record({ id: "clover/shell", source: "bundled", version: "0.0.0", manifest: { manifest: 1, id: "clover/shell", name: "Shell" } })).version).toBe(CORE_VERSION);
+  test("the bundled moss tree wears the app's version; a plugin its own; a wrapper with none keeps its 0.0.0 (the page shows none)", () => {
+    expect(summaryOf(record({ id: "moss", source: "bundled", version: "0.0.0", manifest: { manifest: 1, id: "moss", name: "MOSS" } })).version).toBe(CORE_VERSION);
+    expect(summaryOf(record({ id: "moss/shell", source: "bundled", version: "0.0.0", manifest: { manifest: 1, id: "moss/shell", name: "Shell" } })).version).toBe(CORE_VERSION);
     expect(summaryOf(record({ id: "alpha", source: "bundled", version: "0.0.0", manifest: { manifest: 1, id: "alpha", name: "Alpha" } })).version).toBe("0.0.0");
     expect(summaryOf(record({ source: "index", manifest: { manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0" } })).version).toBe("1.0.0");
-    expect(summaryOf(record({ id: "clover", source: "index", version: "0.0.0", manifest: { manifest: 1, id: "clover", name: "Clover" } })).version).toBe("0.0.0");
+    expect(summaryOf(record({ id: "moss", source: "index", version: "0.0.0", manifest: { manifest: 1, id: "moss", name: "MOSS" } })).version).toBe("0.0.0");
   });
 
   test("its description when it's text, cut; never a table that isn't, nor anything else", () => {
@@ -76,16 +76,16 @@ describe("what a plugin's row shows", () => {
 
 describe("plugin.* over the registry", () => {
   test("views, the switch, logs, the adult confirmation, development folders, removal, and what isn't served", async () => {
-    const home = temp("clover-b2-methods-");
+    const home = temp("moss-b2-methods-");
     mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
-    writeFileSync(join(home, "plugins", "tarot", "clover.json"), manifest("tarot"));
+    writeFileSync(join(home, "plugins", "tarot", "moss.json"), manifest("tarot"));
     mkdirSync(join(home, "logs", "plugins"), { recursive: true });
     writeFileSync(join(home, "logs", "plugins", "tarot.log"), "one\ntwo\nthree\n");
-    const dev = join(temp("clover-b2-dev-"), "luna");
+    const dev = join(temp("moss-b2-dev-"), "luna");
     mkdirSync(dev, { recursive: true });
-    writeFileSync(join(dev, "clover.json"), manifest("luna"));
+    writeFileSync(join(dev, "moss.json"), manifest("luna"));
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
     const restarted: string[] = [];
     const m = pluginRegistryMethods({ opened, host: { restart: async (id) => void restarted.push(id) }, home, secrets });
     const call = (name: string, params: unknown, ctx = CLI) => m[name]!(params, ctx);
@@ -143,21 +143,21 @@ describe("plugin.* over the registry", () => {
       const kept = readdirSync(join(home, "plugin-data", ".removed", "tarot"));
       expect(kept.length).toBe(1);
       expect(readFileSync(join(home, "plugin-data", ".removed", "tarot", kept[0]!, "deck.json"), "utf8")).toBe("the old deck");
-      expect(JSON.parse(readFileSync(join(home, "plugin-data", ".removed", "tarot", kept[0]!, ".clover-removed.json"), "utf8"))).toMatchObject({ id: "tarot", source: "local" });
+      expect(JSON.parse(readFileSync(join(home, "plugin-data", ".removed", "tarot", kept[0]!, ".moss-removed.json"), "utf8"))).toMatchObject({ id: "tarot", source: "local" });
     } finally {
       opened.close();
     }
   });
 
   test("removing with deleteData deletes its data folder and what earlier removals set aside; its card says so", async () => {
-    const home = temp("clover-b2-methods-");
+    const home = temp("moss-b2-methods-");
     const put = () => {
       mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
-      writeFileSync(join(home, "plugins", "tarot", "clover.json"), manifest("tarot"));
+      writeFileSync(join(home, "plugins", "tarot", "moss.json"), manifest("tarot"));
     };
     put();
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
     const asked: { fields?: unknown }[] = [];
     const m = pluginRegistryMethods({
       opened, host: { restart: async () => {} }, home, secrets,
@@ -188,11 +188,11 @@ describe("plugin.* over the registry", () => {
   });
 
   test("a secret that can't be deleted stops the removal: the folder stays, so nothing is left for a same-id reinstall (#332's second review)", async () => {
-    const home = temp("clover-b2-methods-");
+    const home = temp("moss-b2-methods-");
     mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
-    writeFileSync(join(home, "plugins", "tarot", "clover.json"), manifest("tarot"));
+    writeFileSync(join(home, "plugins", "tarot", "moss.json"), manifest("tarot"));
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
     await secrets.set({ owner: { kind: "plugin", pluginId: "tarot" }, name: "key" }, "sk" as never);
     const failing = { list: secrets.list.bind(secrets), delete: async () => { throw new Error("the store is locked"); } };
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, secrets: failing });
@@ -207,13 +207,13 @@ describe("plugin.* over the registry", () => {
 
   // J's macOS audit: install from a folder, and add a development folder from the app.
   test("an OK that lands while the folder's settle is reading it stays: the plugin turns on (acceptance step 4's race)", async () => {
-    const home = temp("clover-b2-race-");
-    const src = join(temp("clover-b2-src-"), "tarot");
+    const home = temp("moss-b2-race-");
+    const src = join(temp("moss-b2-src-"), "tarot");
     mkdirSync(src, { recursive: true });
-    writeFileSync(join(src, "clover.json"), manifest("tarot"));
+    writeFileSync(join(src, "moss.json"), manifest("tarot"));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     // No settle of its own in the test's time: the race is played by hand, in order.
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 60_000 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 60_000 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP)) as { id: string; state: string; treeHash: string };
@@ -241,12 +241,12 @@ describe("plugin.* over the registry", () => {
   });
 
   test("plugin.iconSource: a top plugin's folder and its manifest icon for the app alone; nothing for one without, a child or an unknown id", async () => {
-    const home = temp("clover-b2-iconsrc-");
-    const src = join(temp("clover-b2-src-"), "tarot");
+    const home = temp("moss-b2-iconsrc-");
+    const src = join(temp("moss-b2-src-"), "tarot");
     mkdirSync(join(src, "plugins", "eyes"), { recursive: true });
-    writeFileSync(join(src, "clover.json"), JSON.stringify({ ...JSON.parse(manifest("tarot")), icon: "assets/icon.png" }));
-    writeFileSync(join(src, "plugins", "eyes", "clover.json"), JSON.stringify({ manifest: 1, name: "Eyes", icon: "e.png", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
+    writeFileSync(join(src, "moss.json"), JSON.stringify({ ...JSON.parse(manifest("tarot")), icon: "assets/icon.png" }));
+    writeFileSync(join(src, "plugins", "eyes", "moss.json"), JSON.stringify({ manifest: 1, name: "Eyes", icon: "e.png", engines: { moss: `^${PLUGIN_API_VERSION}` } }));
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP);
@@ -261,11 +261,11 @@ describe("plugin.* over the registry", () => {
   });
 
   test("a plugin removed while an older read of its folder awaits its tree stays removed (the reverse race)", async () => {
-    const home = temp("clover-b2-race-rm-");
-    const src = join(temp("clover-b2-src-"), "tarot");
+    const home = temp("moss-b2-race-rm-");
+    const src = join(temp("moss-b2-src-"), "tarot");
     mkdirSync(src, { recursive: true });
-    writeFileSync(join(src, "clover.json"), manifest("tarot"));
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
+    writeFileSync(join(src, "moss.json"), manifest("tarot"));
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP)) as { id: string; treeHash: string };
@@ -287,12 +287,12 @@ describe("plugin.* over the registry", () => {
   });
 
   test("the OK race with a child: the parent's OK covers its child, whose OK hash is the tree's, and the stale read keeps both on", async () => {
-    const home = temp("clover-b2-race-child-");
-    const src = join(temp("clover-b2-src-"), "pack");
+    const home = temp("moss-b2-race-child-");
+    const src = join(temp("moss-b2-src-"), "pack");
     mkdirSync(join(src, "plugins", "eyes"), { recursive: true });
-    writeFileSync(join(src, "clover.json"), manifest("pack"));
-    writeFileSync(join(src, "plugins", "eyes", "clover.json"), JSON.stringify({ manifest: 1, name: "Eyes", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
+    writeFileSync(join(src, "moss.json"), manifest("pack"));
+    writeFileSync(join(src, "plugins", "eyes", "moss.json"), JSON.stringify({ manifest: 1, name: "Eyes", engines: { moss: `^${PLUGIN_API_VERSION}` } }));
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP)) as { id: string; treeHash: string };
@@ -307,17 +307,17 @@ describe("plugin.* over the registry", () => {
   });
 
   test("plugin.install from a folder: copied in, validated, found, and its OK card raised; never over an installed id", async () => {
-    const home = temp("clover-b2-install-");
-    const src = join(temp("clover-b2-src-"), "tarot");
+    const home = temp("moss-b2-install-");
+    const src = join(temp("moss-b2-src-"), "tarot");
     mkdirSync(join(src, "bin"), { recursive: true });
-    writeFileSync(join(src, "clover.json"), manifest("tarot"));
+    writeFileSync(join(src, "moss.json"), manifest("tarot"));
     writeFileSync(join(src, "readme.md"), "Tarot");
     writeFileSync(join(src, "bin", "run.sh"), "#!/bin/sh\n", { mode: 0o755 });
     symlinkSync("readme.md", join(src, "README"));
     mkdirSync(join(src, ".git"));
     writeFileSync(join(src, ".git", "config"), "[core]\n");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     const call = (name: string, params: unknown, ctx = APP) => m[name]!(params, ctx);
     try {
@@ -337,13 +337,13 @@ describe("plugin.* over the registry", () => {
       expect(((await call("plugin.install", { source: { from: "folder", path: src } }).catch((e: Error) => e.message)) as string)).toContain("already installed");
       // A link that leaves the folder, an invalid manifest, a folder inside the plugins folder, a missing one: refused,
       // nothing left behind.
-      const out = join(temp("clover-b2-src-"), "leaky");
+      const out = join(temp("moss-b2-src-"), "leaky");
       mkdirSync(out);
-      writeFileSync(join(out, "clover.json"), manifest("leaky"));
+      writeFileSync(join(out, "moss.json"), manifest("leaky"));
       symlinkSync("/etc/hosts", join(out, "hosts"));
-      const bad = join(temp("clover-b2-src-"), "bad");
+      const bad = join(temp("moss-b2-src-"), "bad");
       mkdirSync(bad);
-      writeFileSync(join(bad, "clover.json"), JSON.stringify({ manifest: 1, id: "bad", name: "Bad", version: "not a version" }));
+      writeFileSync(join(bad, "moss.json"), JSON.stringify({ manifest: 1, id: "bad", name: "Bad", version: "not a version" }));
       for (const path of [out, bad, dest, join(src, "nope")]) {
         expect([path, ((await call("plugin.install", { source: { from: "folder", path } }).catch((e: Error) => "refused: " + e.message)) as string).startsWith("refused: ")]).toEqual([path, true]);
       }
@@ -352,9 +352,9 @@ describe("plugin.* over the registry", () => {
       // npm and the index wait for their clients.
       expect(((await call("plugin.install", { source: { from: "npm", name: "x" } }).catch((e: Error) => e.message)) as string)).toContain("this computer has no index client");
       // In the terminal, the provenance says so.
-      const other = join(temp("clover-b2-src-"), "luna");
+      const other = join(temp("moss-b2-src-"), "luna");
       mkdirSync(other);
-      writeFileSync(join(other, "clover.json"), manifest("luna"));
+      writeFileSync(join(other, "moss.json"), manifest("luna"));
       await call("plugin.install", { source: { from: "folder", path: other } }, CLI);
       expect(PluginDetail.parse(((await call("plugin.get", { id: "luna" })) as { plugin: unknown }).plugin).provenance.by).toBe("user-terminal");
     } finally {
@@ -363,16 +363,16 @@ describe("plugin.* over the registry", () => {
   });
 
   test("every SDK template installs as it is generated: validated, installed from its folder into a temp home, OK'd and running", async () => {
-    const home = temp("clover-b2-templates-");
+    const home = temp("moss-b2-templates-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       for (const template of Object.keys(PLUGIN_TEMPLATES)) {
         const id = `my-${template}`;
         const made = templateFiles(template, { id, name: `My ${template}` });
         if ("error" in made) throw new Error(made.error);
-        const src = join(temp("clover-b2-tpl-src-"), id);
+        const src = join(temp("moss-b2-tpl-src-"), id);
         for (const [rel, text] of Object.entries(made.files)) {
           mkdirSync(join(src, rel, ".."), { recursive: true });
           writeFileSync(join(src, rel), text);
@@ -383,7 +383,7 @@ describe("plugin.* over the registry", () => {
         expect([template, r.id, r.state]).toEqual([template, id, "found"]);
         expect(broker.cards().find((c) => c.id === r.card)).toMatchObject({ kind: "plugin-ok", pluginId: id });
         expect([template, await opened.registry.approve(id, r.treeHash)]).toEqual([template, "approved"]);
-        // Running, or (a Settings section) waiting only for the point Clover's own Settings plugin serves, which this
+        // Running, or (a Settings section) waiting only for the point MOSS's own Settings plugin serves, which this
         // bare home doesn't have.
         const rec = opened.registry.get(id) as { state?: string; waitingFor?: string[] } | undefined;
         const ready = rec?.state === "running" || (rec?.state === "waiting" && (rec.waitingFor ?? []).length > 0 && rec.waitingFor!.every((p) => p === "settings.section"));
@@ -399,12 +399,12 @@ describe("plugin.* over the registry", () => {
   // (registry/tests/client-builds.test.ts).
 
   test("plugin.dev.add from the app raises a dev-folder card; the folder loads only on the user's yes", async () => {
-    const home = temp("clover-b2-devcard-");
-    const dev = join(temp("clover-b2-dev-"), "luna");
+    const home = temp("moss-b2-devcard-");
+    const dev = join(temp("moss-b2-dev-"), "luna");
     mkdirSync(dev, { recursive: true });
-    writeFileSync(join(dev, "clover.json"), manifest("luna"));
+    writeFileSync(join(dev, "moss.json"), manifest("luna"));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, openCard: brokerCardOpener(broker) });
     const call = (name: string, params: unknown, ctx = APP) => m[name]!(params, ctx);
     const answer = async (card: Card, optionId: string) =>
@@ -423,16 +423,16 @@ describe("plugin.* over the registry", () => {
       for (let i = 0; i < 50 && (await listed()) === 0; i++) await Bun.sleep(10);
       expect(await listed()).toBe(1);
       // A folder that isn't a plugin raises no card.
-      expect(((await call("plugin.dev.add", { path: home }).catch((e: Error) => e.message)) as string)).toContain("has no clover.json");
+      expect(((await call("plugin.dev.add", { path: home }).catch((e: Error) => e.message)) as string)).toContain("has no moss.json");
     } finally {
       opened.close();
     }
   });
 
   test("plugin.confirmAdult with card (every part's call, F2) asks on a sealed card; only the user's yes declares their age", async () => {
-    const home = temp("clover-b2-adultcard-");
+    const home = temp("moss-b2-adultcard-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, openCard: brokerCardOpener(broker) });
     const call = (name: string, params: unknown, ctx = APP) => m[name]!(params, ctx);
     const answer = async (card: Card, optionId: string) =>
@@ -457,16 +457,16 @@ describe("plugin.* over the registry", () => {
   });
 
   test("a yes on a card that can't do what it asked says why for the card: a renew after the folder's 24 hours, a removal of a plugin already gone", async () => {
-    const home = temp("clover-b2-cardnote-");
-    const dev = join(temp("clover-b2-dev-"), "luna");
+    const home = temp("moss-b2-cardnote-");
+    const dev = join(temp("moss-b2-dev-"), "luna");
     mkdirSync(dev, { recursive: true });
-    writeFileSync(join(dev, "clover.json"), manifest("luna"));
-    const src = join(temp("clover-b2-src-"), "tarot");
+    writeFileSync(join(dev, "moss.json"), manifest("luna"));
+    const src = join(temp("moss-b2-src-"), "tarot");
     mkdirSync(src, { recursive: true });
-    writeFileSync(join(src, "clover.json"), manifest("tarot"));
+    writeFileSync(join(src, "moss.json"), manifest("tarot"));
     let now = Date.now();
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 60_000, now: () => now });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 60_000, now: () => now });
     const notes: Record<string, unknown>[] = [];
     const logged: string[] = [];
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, openCard: brokerCardOpener(broker), emit: (e) => notes.push(e), log: (l) => logged.push(l) });

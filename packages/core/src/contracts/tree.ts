@@ -40,11 +40,11 @@
 //   judged at the strictest of both computers' levels and its own.
 // * Glob and grep run where the files are and send back only results.
 // * Tree paths are taken literally: `%2e%2e` is a file name, not `..`. No layer that puts tree paths in a URL (a
-//   `clover-tree:` link, an editor tab) may decode them back into segments.
+//   `moss-tree:` link, an editor tab) may decode them back into segments.
 import {
   TREE_TRANSFER, callBindingInput, type CallBinding, type Caller, type FileStat, type Level, type SignedCardAnswer, type TreePath, type TurnOrigin,
   type TreeTransferParams,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import { levelDecision, strictestLevel } from "./approval-broker";
 import { ContractError, type Unsubscribe } from "./common";
 import { foldName } from "./fence";

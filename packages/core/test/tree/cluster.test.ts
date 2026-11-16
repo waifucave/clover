@@ -72,14 +72,14 @@ describe("one tree across computers", () => {
     await cluster.join();
     expect(studio.node.tree.resolve("bots/alpha/memory/MEMORY.md")).toMatchObject({ computer: "Laptop1", area: "bot", bot: "alpha" });
     // A bot's memory is its own sessions' alone (the owner's decision, #197): another computer's call is a peer's, so the
-    // holder refuses it there. The rest of the bot's folder is the Clover home's too, default-deny: fenced as well.
+    // holder refuses it there. The rest of the bot's folder is the MOSS home's too, default-deny: fenced as well.
     expect(await code(studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "# Memory\n" }, { as: BOT }))).toBe("fenced");
     expect(await code(studio.node.tree.write("bots/alpha/agents/a_1.md", { encoding: "utf8", text: "# Agent\n" }, { as: BOT }))).toBe("fenced");
-    expect(existsSync(join(laptop.cloverHome, "bots/alpha/agents/a_1.md"))).toBe(false);
+    expect(existsSync(join(laptop.mossHome, "bots/alpha/agents/a_1.md"))).toBe(false);
     // The folder still lives on Laptop1: written on its disk (as the core). Read from Studio, the call reaches Laptop1
-    // as a peer's, which #234's home default-deny refuses the whole Clover home (the controller's ruling).
-    mkdirSync(join(laptop.cloverHome, "bots/alpha/agents"), { recursive: true });
-    writeFileSync(join(laptop.cloverHome, "bots/alpha/agents/a_1.md"), "# Agent\n");
+    // as a peer's, which #234's home default-deny refuses the whole MOSS home (the controller's ruling).
+    mkdirSync(join(laptop.mossHome, "bots/alpha/agents"), { recursive: true });
+    writeFileSync(join(laptop.mossHome, "bots/alpha/agents/a_1.md"), "# Agent\n");
     expect(await code(studio.node.tree.read("bots/alpha/agents/a_1.md", { as: BOT }))).toBe("fenced");
     expect(await code(studio.node.tree.read("bots/luna/x", { as: BOT }))).toBe("not_found");
   });
@@ -108,31 +108,31 @@ describe("the holder's rules (review N2, S6 edits 5 and 6)", () => {
   test("the fence of the computer that holds the files, whatever the spelling or the links", async () => {
     const { studio, laptop } = await two({ Laptop1: "automatic" });
     const tree = studio.node.tree;
-    mkdirSync(join(laptop.cloverHome, "settings"), { recursive: true });
-    writeFileSync(join(laptop.cloverHome, "settings", "settings.json"), "{}");
-    const err = await rejection(tree.write("home/Laptop1/.clover/settings/settings.json", { encoding: "utf8", text: "{\"x\":1}" }, { as: BOT }));
+    mkdirSync(join(laptop.mossHome, "settings"), { recursive: true });
+    writeFileSync(join(laptop.mossHome, "settings", "settings.json"), "{}");
+    const err = await rejection(tree.write("home/Laptop1/.moss/settings/settings.json", { encoding: "utf8", text: "{\"x\":1}" }, { as: BOT }));
     expect(isContractError(err, "fenced")).toBe(true);
     expect((err as { detail: unknown }).detail).toEqual({ computer: "Laptop1", reason: "settings" });
     if (caseInsensitive) {
       // S6 review round 2: the disk's own spelling decides, not the one typed.
-      expect(await code(tree.write("home/Laptop1/.CLOVER/Settings/settings.json", { encoding: "utf8", text: "{}" }, { as: BOT }))).toBe("fenced");
-      expect(await code(tree.move("home/Laptop1/.CLOVER", "home/Laptop1/moved", { as: BOT }))).toBe("fenced");
-      expect(await code(tree.remove("home/Laptop1/.Clover/settings", { as: BOT, recursive: true }))).toBe("fenced");
+      expect(await code(tree.write("home/Laptop1/.MOSS/Settings/settings.json", { encoding: "utf8", text: "{}" }, { as: BOT }))).toBe("fenced");
+      expect(await code(tree.move("home/Laptop1/.MOSS", "home/Laptop1/moved", { as: BOT }))).toBe("fenced");
+      expect(await code(tree.remove("home/Laptop1/.MOSS/settings", { as: BOT, recursive: true }))).toBe("fenced");
     }
     // A folder swapped for a link into the fence leads nowhere (a junction on Windows).
     const dirLink = process.platform === "win32" ? "junction" : "dir";
-    symlinkSync(join(laptop.cloverHome, "settings"), join(laptop.home, "d"), dirLink);
+    symlinkSync(join(laptop.mossHome, "settings"), join(laptop.home, "d"), dirLink);
     expect(await code(tree.write("home/Laptop1/d/settings.json", { encoding: "utf8", text: "{}" }, { as: BOT }))).toBe("fenced");
-    expect(await code(tree.list("home/Laptop1/d", { as: BOT }))).toBe("fenced"); // the Clover home is default-deny, reads too
+    expect(await code(tree.list("home/Laptop1/d", { as: BOT }))).toBe("fenced"); // the MOSS home is default-deny, reads too
     // A link that leaves the home isn't followed, and its target isn't told.
     const outside = mkdtempSync(join(tmpdir(), "lane-j-outside-"));
     writeFileSync(join(outside, "hosts"), "secret");
     symlinkSync(outside, join(laptop.home, "out"), dirLink);
     expect(await code(tree.read("home/Laptop1/out/hosts", { as: BOT }))).toBe("refused");
     expect(await code(tree.list("home/Laptop1/out", { as: BOT }))).toBe("refused");
-    expect(readFileSync(join(laptop.cloverHome, "settings", "settings.json"), "utf8")).toBe("{}");
+    expect(readFileSync(join(laptop.mossHome, "settings", "settings.json"), "utf8")).toBe("{}");
     // The user on Laptop1 itself never meets its fence.
-    await laptop.node.tree.write("home/Laptop1/.clover/settings/settings.json", { encoding: "utf8", text: "{\"mine\":1}" }, { as: { kind: "user", client: "app" } });
+    await laptop.node.tree.write("home/Laptop1/.moss/settings/settings.json", { encoding: "utf8", text: "{\"mine\":1}" }, { as: { kind: "user", client: "app" } });
   });
 });
 
@@ -142,23 +142,23 @@ describe("a fenced name in another case (review B1)", () => {
   test("a name that isn't on disk yet can't reach a fenced item in another case, for a peer or a bot here", async () => {
     const { studio, laptop } = await two({ Laptop1: "automatic" });
     const t = studio.node.tree;
-    const ch = laptop.cloverHome;
-    expect(await code(t.write("home/Laptop1/.clover/rules/allow.json", utf8("{}"), { as: BOT }))).toBe("fenced");
-    expect(await code(t.write("home/Laptop1/.clover/RULES/allow.json", utf8('{"allow":["*"]}'), { as: BOT }))).toBe("fenced");
-    expect(await code(t.write("home/Laptop1/.clover/plugins-state/INSTALLED.json", utf8('["evil"]'), { as: BOT }))).toBe("fenced");
-    expect(await code(t.write("home/Laptop1/.clover/Trust/x.json", utf8("{}"), { as: BOT }))).toBe("fenced");
-    expect(await code(t.write("home/Laptop1/.clover/levels/COMPUTER.JSON", utf8("{}"), { as: BOT }))).toBe("fenced");
+    const ch = laptop.mossHome;
+    expect(await code(t.write("home/Laptop1/.moss/rules/allow.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.moss/RULES/allow.json", utf8('{"allow":["*"]}'), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.moss/plugins-state/INSTALLED.json", utf8('["evil"]'), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.moss/Trust/x.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.moss/levels/COMPUTER.JSON", utf8("{}"), { as: BOT }))).toBe("fenced");
     await t.write("home/Laptop1/stage/x.json", utf8("{}"), { as: BOT });
-    expect(await code(t.move("home/Laptop1/stage", "home/Laptop1/.clover/CONNECTORS", { as: BOT }))).toBe("fenced");
-    // The long s and the Kelvin sign fold too, and a name that isn't ASCII where Clover names things under its home is
+    expect(await code(t.move("home/Laptop1/stage", "home/Laptop1/.moss/CONNECTORS", { as: BOT }))).toBe("fenced");
+    // The long s and the Kelvin sign fold too, and a name that isn't ASCII where MOSS names things under its home is
     // refused (lane B's `nonAsciiAlias`): its top level, and a folder that holds a fenced item.
-    expect(await code(t.write("home/Laptop1/.clover/\u017Fettings/settings.json", utf8("{}"), { as: BOT }))).toBe("fenced");
-    expect(await code(t.write("home/Laptop1/.clover/secrets.\u212Aey", utf8("x"), { as: BOT }))).toBe("fenced");
-    expect(await code(t.write("home/Laptop1/.clover/caf\u00E9/clover.json", utf8("{}"), { as: BOT }))).toBe("fenced");
-    expect(await code(t.write("home/Laptop1/.clover/plugins-state/caf\u00E9.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.moss/\u017Fettings/settings.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.moss/secrets.\u212Aey", utf8("x"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.moss/caf\u00E9/moss.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.moss/plugins-state/caf\u00E9.json", utf8("{}"), { as: BOT }))).toBe("fenced");
     expect(await code(t.write("home/Laptop1/caf\u00E9.txt", utf8("ok"), { as: BOT }))).toBe("ok");
     // A bot on Laptop1 itself, through its own tree.
-    expect(await code(laptop.node.tree.write("home/Laptop1/.clover/Settings/settings.json", utf8('{"evil":1}'), { as: BOT }))).toBe("fenced");
+    expect(await code(laptop.node.tree.write("home/Laptop1/.moss/Settings/settings.json", utf8('{"evil":1}'), { as: BOT }))).toBe("fenced");
     expect(existsSync(join(ch, "rules", "allow.json"))).toBe(false);
     expect(existsSync(join(ch, "plugins-state", "installed.json"))).toBe(false);
     expect(existsSync(join(ch, "connectors", "x.json"))).toBe(false);
@@ -171,37 +171,37 @@ describe("a fenced name in another case (review B1)", () => {
     const laptop = await cluster.add("Laptop1");
     await cluster.join();
     const raise = utf8(JSON.stringify({ level: "automatic", name: "Laptop1" }));
-    expect(await code(studio.node.tree.write("home/Laptop1/.clover/LEVELS/computer.json", raise, { as: BOT, level: "automatic" }))).toBe("fenced");
-    expect(await code(laptop.node.tree.write("home/Laptop1/.clover/LEVELS/computer.json", raise, { as: BOT }))).toBe("fenced");
-    expect(await code(laptop.node.tree.write("home/Laptop1/.clover/levels/computer.json", raise, { as: BOT }))).toBe("fenced");
-    expect(new FileSelfStateStore(selfStatePath(laptop.cloverHome)).load()?.level).not.toBe("automatic");
-    expect(readdirSync(laptop.cloverHome).filter((n) => n.toLowerCase() === "levels")).toEqual(["levels"]);
+    expect(await code(studio.node.tree.write("home/Laptop1/.moss/LEVELS/computer.json", raise, { as: BOT, level: "automatic" }))).toBe("fenced");
+    expect(await code(laptop.node.tree.write("home/Laptop1/.moss/LEVELS/computer.json", raise, { as: BOT }))).toBe("fenced");
+    expect(await code(laptop.node.tree.write("home/Laptop1/.moss/levels/computer.json", raise, { as: BOT }))).toBe("fenced");
+    expect(new FileSelfStateStore(selfStatePath(laptop.mossHome)).load()?.level).not.toBe("automatic");
+    expect(readdirSync(laptop.mossHome).filter((n) => n.toLowerCase() === "levels")).toEqual(["levels"]);
   });
 
-  test("Clover's fenced folders are made at start", async () => {
+  test("MOSS's fenced folders are made at start", async () => {
     cluster = new Cluster();
     const studio = await cluster.add("Studio");
     for (const name of ["settings", "levels", "rules", "connectors", "trust", "user-layers", "plugin-data", "run", "plugins-state/oks"]) {
-      expect(statSync(join(studio.cloverHome, ...name.split("/"))).isDirectory()).toBe(true);
+      expect(statSync(join(studio.mossHome, ...name.split("/"))).isDirectory()).toBe(true);
     }
-    if (process.platform !== "win32") expect(statSync(join(studio.cloverHome, "levels")).mode & 0o077).toBe(0);
+    if (process.platform !== "win32") expect(statSync(join(studio.mossHome, "levels")).mode & 0o077).toBe(0);
   });
 });
 
 describe("hard links (review S4)", () => {
   test("a file with other names is refused to anyone the fence judges, untouched", async () => {
     const { studio, laptop } = await two({ Laptop1: "automatic" });
-    writeFileSync(join(laptop.cloverHome, "rules", "allow.json"), "{}");
-    linkSync(join(laptop.cloverHome, "rules", "allow.json"), join(laptop.home, "innocent.json"));
+    writeFileSync(join(laptop.mossHome, "rules", "allow.json"), "{}");
+    linkSync(join(laptop.mossHome, "rules", "allow.json"), join(laptop.home, "innocent.json"));
     expect(await code(studio.node.tree.write("home/Laptop1/innocent.json", { encoding: "utf8", text: '{"allow":["*"]}' }, { as: BOT }))).toBe("refused");
     expect(await code(studio.node.tree.read("home/Laptop1/innocent.json", { as: BOT }))).toBe("refused");
     expect(await code(laptop.node.tree.read("home/Laptop1/innocent.json", { as: BOT }))).toBe("refused");
     // Nor through grep, nor any other content read (check 2's N1).
-    writeFileSync(join(laptop.cloverHome, "rules", "allow.json"), '{"note":"only-in-the-fenced-file"}');
+    writeFileSync(join(laptop.mossHome, "rules", "allow.json"), '{"note":"only-in-the-fenced-file"}');
     const found = await studio.node.tree.grep("only-in-the-fenced-file", { as: BOT, path: "home/Laptop1" });
     expect(found.map((m) => m.path)).not.toContain("home/Laptop1/innocent.json");
-    writeFileSync(join(laptop.cloverHome, "rules", "allow.json"), "{}");
-    expect(readFileSync(join(laptop.cloverHome, "rules", "allow.json"), "utf8")).toBe("{}");
+    writeFileSync(join(laptop.mossHome, "rules", "allow.json"), "{}");
+    expect(readFileSync(join(laptop.mossHome, "rules", "allow.json"), "utf8")).toBe("{}");
     // The user's own call isn't fenced.
     expect(await laptop.node.tree.read("home/Laptop1/innocent.json", { as: { kind: "user", client: "app" } })).toEqual({ encoding: "utf8", text: "{}" });
   });
@@ -298,7 +298,7 @@ describe("tools run where the files are (with lane A)", () => {
     expect(here).toMatchObject({ computer: "Studio" });
     expect((here.output as { stdout: string }).stdout.trim()).toBe(studio.home);
     // Into the fence: refused at the holder before anything runs.
-    expect((await studio.node.tools.run("Bash", { command: "cd home/Laptop1/.clover/run && ls" }, { ...ctx, callId: "c4" })).isError).toBe(true);
+    expect((await studio.node.tools.run("Bash", { command: "cd home/Laptop1/.moss/run && ls" }, { ...ctx, callId: "c4" })).isError).toBe(true);
   });
 
   test("a command needs the holder's level: refused at ask-risky without the user's answer", async () => {
@@ -393,7 +393,7 @@ describe("moves between computers take the direct path (review S1)", () => {
     await studio.node.tree.move("home/Studio/big.bin", "home/Laptop1/big.bin", { as: BOT });
     expect(existsSync(join(studio.home, "big.bin"))).toBe(false);
     expect(readFileSync(join(laptop.home, "big.bin")).equals(bytes)).toBe(true);
-    expect(readdirSync(laptop.home).some((n) => n.startsWith(".clover-receiving-"))).toBe(false);
+    expect(readdirSync(laptop.home).some((n) => n.startsWith(".moss-receiving-"))).toBe(false);
   });
 
   test("each holder judges the whole move once, and a refusal leaves both sides as they were", async () => {
@@ -414,7 +414,7 @@ describe("moves between computers take the direct path (review S1)", () => {
     expect(existsSync(join(laptop.home, "deep"))).toBe(false);
     expect(existsSync(join(studio.home, "proj", "a.txt"))).toBe(true);
     await studio.node.registry.setLevel("Studio", "automatic", { via: "terminal" });
-    expect(readdirSync(laptop.home).some((n) => n.startsWith(".clover-receiving-"))).toBe(false);
+    expect(readdirSync(laptop.home).some((n) => n.startsWith(".moss-receiving-"))).toBe(false);
     // At accept-edits a move is allowed whole: no answer for each file and none for the delete at the source.
     await laptop.node.registry.setLevel("Laptop1", "accept-edits", { via: "terminal" });
     await until(() => studio.node.registry.get("Laptop1")!.level === "accept-edits", 2000, "Laptop1's level to reach Studio");
@@ -489,7 +489,7 @@ describe("the Files panel's data: change events from the holder", () => {
     writeFileSync(join(laptop.home, "proj", "new.txt"), "x");
     await until(() => events.some((e) => JSON.stringify(e).includes("home/Laptop1/proj/new.txt")), 15_000, "the change event");
     // A watch on the fence is refused.
-    expect(await code(studio.node.tree.watch("home/Laptop1/.clover/run", { as: BOT }, () => {}))).toBe("fenced");
+    expect(await code(studio.node.tree.watch("home/Laptop1/.moss/run", { as: BOT }, () => {}))).toBe("fenced");
     stop();
     await until(() => laptop.node.service.counts.watches === 0, 15_000, "the watch to stop on Laptop1");
   }, 60_000);
@@ -517,7 +517,7 @@ describe("the registry over the link", () => {
     await laptop.node.registry.setLevel("Laptop1", "read-only");
     await until(() => studio.node.registry.get("Laptop1")!.level === "read-only", 2000, "the copy to update");
     // Kept across a restart of Laptop1's registry (its own entry is on its own disk).
-    expect(JSON.parse(readFileSync(join(laptop.cloverHome, "levels", "computer.json"), "utf8"))).toMatchObject({ name: "Laptop1", level: "read-only" });
+    expect(JSON.parse(readFileSync(join(laptop.mossHome, "levels", "computer.json"), "utf8"))).toMatchObject({ name: "Laptop1", level: "read-only" });
   });
 
   test("a renamed computer keeps its old name as an alias in every computer's tree", async () => {

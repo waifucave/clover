@@ -11,24 +11,24 @@ import {
   parseBundledManifest, readBundledFile, readBundledPlugin, validBundledPath, type BundledManifest,
 } from "../src/bundled-plugins-dir";
 
-const HOME = "/srv/clover-home";
+const HOME = "/srv/moss-home";
 /** A temp folder by its real path (macOS's /var is /private/var): bundledPluginsDir answers real paths. */
 const mkdtempSync = (prefix: string) => realpathSync(mkdtempRaw(prefix));
 /** Symlinks need a privilege on Windows. */
 const posixTest = test.skipIf(process.platform === "win32");
 const same = (p: string) => p;
-const SOME: BundledManifest = { files: { "clover/clover.json": { sha256: "0".repeat(64), size: 2 } } };
+const SOME: BundledManifest = { files: { "moss/moss.json": { sha256: "0".repeat(64), size: 2 } } };
 
 /** An installed app's resources: the core and the bundled plugins, with the manifest measured from them. */
 function install(): { root: string; core: string; plugins: string; manifest: BundledManifest } {
   const root = mkdtempSync(join(tmpdir(), "lane-m-bundled-install-"));
-  const res = join(root, "Clover.app", "Contents", "Resources");
+  const res = join(root, "MOSS Code.app", "Contents", "Resources");
   mkdirSync(join(res, "daemon"), { recursive: true });
-  writeFileSync(join(res, "daemon", "clover-core"), "the genuine core");
+  writeFileSync(join(res, "daemon", "moss-core"), "the genuine core");
   const files: Record<string, string> = {
-    "clover/clover.json": `{"id":"clover"}`,
-    "clover/host.js": "export const ok = true;\n",
-    "alpha/clover.json": `{"id":"alpha"}`,
+    "moss/moss.json": `{"id":"moss"}`,
+    "moss/host.js": "export const ok = true;\n",
+    "alpha/moss.json": `{"id":"alpha"}`,
     "alpha/ui/index.js": "export default 1;\n",
   };
   for (const [rel, body] of Object.entries(files)) {
@@ -36,31 +36,31 @@ function install(): { root: string; core: string; plugins: string; manifest: Bun
     writeFileSync(join(res, "plugins", rel), body);
   }
   const plugins = join(res, "plugins");
-  return { root, core: join(res, "daemon", "clover-core"), plugins, manifest: measureBundledTree(plugins) };
+  return { root, core: join(res, "daemon", "moss-core"), plugins, manifest: measureBundledTree(plugins) };
 }
 
 describe("the candidate folder, by layout", () => {
   test("an app's resources/daemon core has resources/plugins; a server's <home>/bin/daemon core has <home>/bin/plugins", () => {
-    expect(bundledPluginsDir("/Applications/Clover.app/Contents/Resources/daemon/clover-core", { realpath: same, manifest: SOME })).toBe(resolve("/Applications/Clover.app/Contents/Resources/plugins"));
-    expect(bundledPluginsDir("/opt/Clover/resources/daemon/clover-core", { realpath: same, manifest: SOME })).toBe(resolve("/opt/Clover/resources/plugins"));
-    expect(bundledPluginsDir("C:/Program Files/Clover/resources/daemon/clover-core.exe", { realpath: same, manifest: SOME })).toBe(resolve("C:/Program Files/Clover/resources/plugins"));
-    expect(bundledPluginsDir(`${HOME}/bin/daemon/clover-core`, { cloverHome: HOME, realpath: same, manifest: SOME })).toBe(resolve(`${HOME}/bin/plugins`));
+    expect(bundledPluginsDir("/Applications/MOSS Code.app/Contents/Resources/daemon/moss-core", { realpath: same, manifest: SOME })).toBe(resolve("/Applications/MOSS Code.app/Contents/Resources/plugins"));
+    expect(bundledPluginsDir("/opt/moss-code/resources/daemon/moss-core", { realpath: same, manifest: SOME })).toBe(resolve("/opt/moss-code/resources/plugins"));
+    expect(bundledPluginsDir("C:/Program Files/MOSS Code/resources/daemon/moss-core.exe", { realpath: same, manifest: SOME })).toBe(resolve("C:/Program Files/MOSS Code/resources/plugins"));
+    expect(bundledPluginsDir(`${HOME}/bin/daemon/moss-core`, { mossHome: HOME, realpath: same, manifest: SOME })).toBe(resolve(`${HOME}/bin/plugins`));
   });
 
   test("a core with no manifest (dev, source) bundles nothing; nor does the old layout, a dev checkout or <home>/plugins", () => {
-    expect(bundledPluginsDir("/opt/Clover/resources/daemon/clover-core", { realpath: same, manifest: EMPTY_BUNDLED_MANIFEST })).toBeUndefined();
-    expect(bundledPluginsDir(`${HOME}/bin/clover-core`, { cloverHome: HOME, realpath: same, manifest: SOME })).toBeUndefined();
-    expect(bundledPluginsDir("/src/clover/dist/daemon/darwin-arm64/clover-core", { realpath: same, manifest: SOME })).toBeUndefined();
-    expect(bundledPluginsDir(`${HOME}/daemon/clover-core`, { cloverHome: HOME, realpath: same, manifest: SOME })).toBeUndefined();
+    expect(bundledPluginsDir("/opt/moss-code/resources/daemon/moss-core", { realpath: same, manifest: EMPTY_BUNDLED_MANIFEST })).toBeUndefined();
+    expect(bundledPluginsDir(`${HOME}/bin/moss-core`, { mossHome: HOME, realpath: same, manifest: SOME })).toBeUndefined();
+    expect(bundledPluginsDir("/src/moss/dist/daemon/darwin-arm64/moss-core", { realpath: same, manifest: SOME })).toBeUndefined();
+    expect(bundledPluginsDir(`${HOME}/daemon/moss-core`, { mossHome: HOME, realpath: same, manifest: SOME })).toBeUndefined();
   });
 
   posixTest("the binary's real path decides: a symlink named like a core in resources/daemon proves nothing", () => {
     const dir = mkdtempSync(join(tmpdir(), "lane-m-bundled-link-"));
     mkdirSync(join(dir, "resources", "daemon"), { recursive: true });
     writeFileSync(join(dir, "real-core"), "");
-    symlinkSync(join(dir, "real-core"), join(dir, "resources", "daemon", "clover-core"));
-    expect(bundledPluginsDir(join(dir, "resources", "daemon", "clover-core"), { manifest: SOME })).toBeUndefined();
-    expect(bundledPluginsDir("/nowhere/resources/daemon/clover-core", { manifest: SOME })).toBeUndefined();
+    symlinkSync(join(dir, "real-core"), join(dir, "resources", "daemon", "moss-core"));
+    expect(bundledPluginsDir(join(dir, "resources", "daemon", "moss-core"), { manifest: SOME })).toBeUndefined();
+    expect(bundledPluginsDir("/nowhere/resources/daemon/moss-core", { manifest: SOME })).toBeUndefined();
   });
 
   test("this test process (bun, not a compiled core) carries no manifest, loaded or not", async () => {
@@ -75,24 +75,24 @@ describe("a bundled file counts only through its verified bytes", () => {
     const { core, plugins, manifest } = install();
     const dir = bundledPluginsDir(core, { manifest })!;
     expect(dir).toBe(plugins);
-    expect(bundledPluginIds(manifest)).toEqual(["alpha", "clover"]);
-    const r = readBundledPlugin(dir, "clover", manifest);
+    expect(bundledPluginIds(manifest)).toEqual(["alpha", "moss"]);
+    const r = readBundledPlugin(dir, "moss", manifest);
     expect(r.ok).toBe(true);
-    if (r.ok) expect(new TextDecoder().decode(r.files.get("clover/host.js"))).toBe("export const ok = true;\n");
+    if (r.ok) expect(new TextDecoder().decode(r.files.get("moss/host.js"))).toBe("export const ok = true;\n");
   });
 
   test("a copied genuine core beside a swapped plugin file: the folder is found, the swapped file and its plugin refused", () => {
     const genuine = install();
     const copy = mkdtempSync(join(tmpdir(), "lane-m-bundled-copy-"));
-    cpSync(join(genuine.root, "Clover.app"), join(copy, "Clover.app"), { recursive: true });
-    const core = join(copy, "Clover.app", "Contents", "Resources", "daemon", "clover-core");
+    cpSync(join(genuine.root, "MOSS Code.app"), join(copy, "MOSS Code.app"), { recursive: true });
+    const core = join(copy, "MOSS Code.app", "Contents", "Resources", "daemon", "moss-core");
     const dir = bundledPluginsDir(core, { manifest: genuine.manifest })!;
-    expect(dir).toBe(join(copy, "Clover.app", "Contents", "Resources", "plugins"));
+    expect(dir).toBe(join(copy, "MOSS Code.app", "Contents", "Resources", "plugins"));
     // Same size, other bytes.
-    writeFileSync(join(dir, "clover", "host.js"), "export const ok = fals;\n");
-    const file = readBundledFile(dir, "clover/host.js", genuine.manifest);
-    expect(file).toEqual({ ok: false, refusal: "clover/host.js: its contents aren't the manifest's (SHA-256 differs)" });
-    const plugin = readBundledPlugin(dir, "clover", genuine.manifest);
+    writeFileSync(join(dir, "moss", "host.js"), "export const ok = fals;\n");
+    const file = readBundledFile(dir, "moss/host.js", genuine.manifest);
+    expect(file).toEqual({ ok: false, refusal: "moss/host.js: its contents aren't the manifest's (SHA-256 differs)" });
+    const plugin = readBundledPlugin(dir, "moss", genuine.manifest);
     expect(plugin.ok).toBe(false);
     // The untouched plugin still reads.
     expect(readBundledPlugin(dir, "alpha", genuine.manifest).ok).toBe(true);
@@ -100,12 +100,12 @@ describe("a bundled file counts only through its verified bytes", () => {
 
   posixTest("a FIFO named in the manifest is refused at once, never read (a blocking read would hang the daemon)", () => {
     const { plugins, manifest } = install();
-    rmSync(join(plugins, "clover", "host.js"));
-    const made = Bun.spawnSync(["mkfifo", join(plugins, "clover", "host.js")]);
+    rmSync(join(plugins, "moss", "host.js"));
+    const made = Bun.spawnSync(["mkfifo", join(plugins, "moss", "host.js")]);
     expect(made.exitCode).toBe(0);
     const started = performance.now();
-    expect(readBundledFile(plugins, "clover/host.js", manifest)).toEqual({ ok: false, refusal: "clover/host.js: not a regular file" });
-    expect(readBundledPlugin(plugins, "clover", manifest).ok).toBe(false);
+    expect(readBundledFile(plugins, "moss/host.js", manifest)).toEqual({ ok: false, refusal: "moss/host.js: not a regular file" });
+    expect(readBundledPlugin(plugins, "moss", manifest).ok).toBe(false);
     expect(performance.now() - started).toBeLessThan(1_000);
   });
 
@@ -113,43 +113,43 @@ describe("a bundled file counts only through its verified bytes", () => {
     const { plugins, manifest } = install();
     writeFileSync(join(plugins, "alpha", "ui", "index.js"), "export default 12;\n");
     expect(readBundledFile(plugins, "alpha/ui/index.js", manifest)).toEqual({ ok: false, refusal: "alpha/ui/index.js: 19 bytes, not the manifest's 18" });
-    writeFileSync(join(plugins, "alpha", "clover.json"), `{"id":"alphA"}`);
-    expect(readBundledFile(plugins, "alpha/clover.json", manifest).ok).toBe(false);
+    writeFileSync(join(plugins, "alpha", "moss.json"), `{"id":"alphA"}`);
+    expect(readBundledFile(plugins, "alpha/moss.json", manifest).ok).toBe(false);
     const outside = join(plugins, "..", "outside.js");
     writeFileSync(outside, "export const ok = true;\n");
-    rmSync(join(plugins, "clover", "host.js"));
-    symlinkSync(outside, join(plugins, "clover", "host.js"));
-    const linked = readBundledFile(plugins, "clover/host.js", manifest);
+    rmSync(join(plugins, "moss", "host.js"));
+    symlinkSync(outside, join(plugins, "moss", "host.js"));
+    const linked = readBundledFile(plugins, "moss/host.js", manifest);
     expect(linked.ok).toBe(false);
-    rmSync(join(plugins, "clover", "host.js"));
-    expect(readBundledFile(plugins, "clover/host.js", manifest)).toEqual({ ok: false, refusal: "clover/host.js: can't be opened (ENOENT)" });
+    rmSync(join(plugins, "moss", "host.js"));
+    expect(readBundledFile(plugins, "moss/host.js", manifest)).toEqual({ ok: false, refusal: "moss/host.js: can't be opened (ENOENT)" });
     // A symlink is refused before it is opened.
-    expect(linked).toEqual({ ok: false, refusal: "clover/host.js: not a regular file" });
+    expect(linked).toEqual({ ok: false, refusal: "moss/host.js: not a regular file" });
   });
 
   test("an extra file is refused: by name, and the plugin whose folder holds it", () => {
     const { plugins, manifest } = install();
-    writeFileSync(join(plugins, "clover", "extra.js"), "globalThis.evil = 1;\n");
-    expect(readBundledFile(plugins, "clover/extra.js", manifest)).toEqual({ ok: false, refusal: "clover/extra.js: not in the bundled-plugins manifest this core was built with" });
-    const r = readBundledPlugin(plugins, "clover", manifest);
-    expect(r).toEqual({ ok: false, refusal: "clover: its folder holds what the manifest doesn't name: clover/extra.js" });
+    writeFileSync(join(plugins, "moss", "extra.js"), "globalThis.evil = 1;\n");
+    expect(readBundledFile(plugins, "moss/extra.js", manifest)).toEqual({ ok: false, refusal: "moss/extra.js: not in the bundled-plugins manifest this core was built with" });
+    const r = readBundledPlugin(plugins, "moss", manifest);
+    expect(r).toEqual({ ok: false, refusal: "moss: its folder holds what the manifest doesn't name: moss/extra.js" });
     // A plugin the manifest doesn't name at all.
     mkdirSync(join(plugins, "evil"));
-    writeFileSync(join(plugins, "evil", "clover.json"), "{}");
+    writeFileSync(join(plugins, "evil", "moss.json"), "{}");
     expect(readBundledPlugin(plugins, "evil", manifest).ok).toBe(false);
   });
 
   test("the bytes returned are the ones checked: a swap after the read changes nothing already read", () => {
     const { plugins, manifest } = install();
-    const r = readBundledFile(plugins, "clover/host.js", manifest);
-    writeFileSync(join(plugins, "clover", "host.js"), "export const ok = fals;\n");
+    const r = readBundledFile(plugins, "moss/host.js", manifest);
+    writeFileSync(join(plugins, "moss", "host.js"), "export const ok = fals;\n");
     expect(r.ok).toBe(true);
     if (r.ok) expect(new TextDecoder().decode(r.bytes)).toBe("export const ok = true;\n");
   });
 
   test("paths outside the tree are refused before anything is opened", () => {
     const { plugins, manifest } = install();
-    for (const rel of ["../outside.js", "clover/../alpha/clover.json", "/etc/passwd", "clover\\host.js", "C:/x", "", "clover//host.js"]) {
+    for (const rel of ["../outside.js", "moss/../alpha/moss.json", "/etc/passwd", "moss\\host.js", "C:/x", "", "moss//host.js"]) {
       expect(validBundledPath(rel)).toBe(false);
       expect(readBundledFile(plugins, rel, manifest).ok).toBe(false);
     }
@@ -174,11 +174,11 @@ describe("the manifest's text", () => {
     const file = (name: string, body: string) => ({ name, bytes: async () => new TextEncoder().encode(body) });
     expect((await loadEmbeddedManifest([])).manifest).toEqual(EMPTY_BUNDLED_MANIFEST);
     expect((await loadEmbeddedManifest([file("other.txt", "x")])).manifest).toEqual(EMPTY_BUNDLED_MANIFEST);
-    const one = await loadEmbeddedManifest([file("clover-bundled-plugins-abc123.manifest", text), file("other.txt", "x")]);
+    const one = await loadEmbeddedManifest([file("moss-bundled-plugins-abc123.manifest", text), file("other.txt", "x")]);
     expect(one.manifest).toEqual(parseBundledManifest(text));
     expect(one.text).toBe(text);
-    await expect(loadEmbeddedManifest([file("clover-bundled-plugins-a.manifest", text), file("clover-bundled-plugins-b.manifest", text)])).rejects.toThrow("2 bundled-plugins manifests");
-    await expect(loadEmbeddedManifest([file("clover-bundled-plugins-a.manifest", "{")])).rejects.toThrow();
+    await expect(loadEmbeddedManifest([file("moss-bundled-plugins-a.manifest", text), file("moss-bundled-plugins-b.manifest", text)])).rejects.toThrow("2 bundled-plugins manifests");
+    await expect(loadEmbeddedManifest([file("moss-bundled-plugins-a.manifest", "{")])).rejects.toThrow();
   });
 
   test("a path that can't ship to every OS (a Windows device name, a trailing dot or space) is refused when measured", () => {

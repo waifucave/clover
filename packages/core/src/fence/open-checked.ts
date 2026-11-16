@@ -116,7 +116,7 @@ export function openChecked(fence: Judge, path: string, o: OpenChecked = {}): nu
   }
   const real = fdRealPath(fd, process.platform, path);
   const second: FenceVerdict = real === null
-    ? { allowed: false, reason: "clover-home", path }
+    ? { allowed: false, reason: "moss-home", path }
     : fence.check(o.write ? { op: "write", path: real } : { op: "read", path: real });
   if (!second.allowed) {
     closeSync(fd);
@@ -130,7 +130,7 @@ export function openChecked(fence: Judge, path: string, o: OpenChecked = {}): nu
   if (!st.isFile() || st.nlink > 1) {
     closeSync(fd);
     if (created) { try { unlinkSync(real ?? path); } catch { /* gone */ } }
-    throw new FenceRefused({ allowed: false, reason: "clover-home", path: real ?? path }, real ?? path);
+    throw new FenceRefused({ allowed: false, reason: "moss-home", path: real ?? path }, real ?? path);
   }
   if (o.write && o.truncate) ftruncateSync(fd, 0);
   return fd;
@@ -147,7 +147,7 @@ export function readChecked(fence: Judge, path: string): Buffer {
  *  (a file growing under the read can't push past it either). */
 export function readCapped(fd: number, path: string): Buffer {
   const size = fstatSync(fd).size;
-  if (size > READ_MAX_BYTES) throw new FenceRefused({ allowed: false, reason: "clover-home", path }, path);
+  if (size > READ_MAX_BYTES) throw new FenceRefused({ allowed: false, reason: "moss-home", path }, path);
   const buf = Buffer.alloc(Math.min(size, READ_MAX_BYTES));
   let n = 0;
   while (n < buf.length) {

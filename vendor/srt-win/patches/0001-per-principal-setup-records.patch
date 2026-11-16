@@ -1,4 +1,4 @@
-From: Clover Windows lane <clover@example.com>
+From: MOSS Windows lane <moss@example.com>
 Date: Fri, 7 Nov 2026 00:00:00 +0000
 Subject: [PATCH] Per-principal setup records plus a --user selector
 
@@ -11,7 +11,7 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
-other installs' records. Clover runs one sandbox principal per
+other installs' records. MOSS runs one sandbox principal per
 session from a small per-user pool, so each install needs its own
 record and every launch path needs to name which principal it means.
 
@@ -314,7 +314,7 @@ index 8e616e2..992f5f0 100644
              Cli::try_parse_from(["srt-win.exe", SRT_WIN_DISPATCH_ARG1, "user", "status",]).is_err()
          );
 +        // The per-principal selector parses through.
-+        let named = Cli::try_parse_from(["srt-win.exe", "user", "status", "--user", "clover-sb-a"])
++        let named = Cli::try_parse_from(["srt-win.exe", "user", "status", "--user", "moss-sb-a"])
 +            .expect("user status --user should parse");
 +        assert!(matches!(
 +            named.cmd,
@@ -326,7 +326,7 @@ index 8e616e2..992f5f0 100644
 +            "srt-win.exe",
 +            "exec",
 +            "--user",
-+            "clover-sb-a",
++            "moss-sb-a",
 +            "--",
 +            "cmd.exe",
 +        ])

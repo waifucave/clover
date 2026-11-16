@@ -1,9 +1,9 @@
-// Winter Phase 8d — the compiled-binary probe behind `clover-core __runtimes-probe`. It runs
+// Winter Phase 8d — the compiled-binary probe behind `moss-core __runtimes-probe`. It runs
 // OUTSIDE a daemon (no settings, no store — `setting: undefined`, exactly as a fresh boot with
 // nothing configured would see it), resolves the `winter` and `ant` ladders from the given
 // execPath/home/env, reads the bundle's records, and reports what it found. WS-23: the official
 // `claude` ladder it also resolved is gone with the leg. It NEVER spawns `winter` (the pinned build
-// has no version flag — controller measurement M2) and never calls `resolveCloverHome()` — `home` is
+// has no version flag — controller measurement M2) and never calls `resolveMossHome()` — `home` is
 // exactly what the caller passed, so `scripts/verify-runtimes-compiled.ts` can point it at a mkdtemp
 // dir and prove the real user's homes are never touched.
 import { accessSync, constants as fsConstants, existsSync, readFileSync } from "node:fs";
@@ -13,12 +13,12 @@ import { resolveWinterExecutable } from "./executable";
 
 export interface RuntimesProbeResult {
   ok: boolean;
-  clover: { path?: string; source?: string; executable: boolean; signature?: string };
-  /** Winter Phase 10a (P10a-4): OPTIONAL, unlike clover above — a miss never affects `ok`
+  moss: { path?: string; source?: string; executable: boolean; signature?: string };
+  /** Winter Phase 10a (P10a-4): OPTIONAL, unlike moss above — a miss never affects `ok`
    *  (`resolveAntExecutable` itself has no typed refusal; see bundle-layout.ts). Reported purely
    *  for `scripts/verify-runtimes-compiled.ts`'s fixture-driven proof that the bundle rung
    *  resolves ant inside a REAL compiled `$bunfs` binary, the same way it already proves this for
-   *  clover. */
+   *  moss. */
   ant: { path?: string; source?: string; executable: boolean; signature?: string };
   /** `runtimes/VERSIONS.json`, when staged. */
   versions?: VersionsJson;
@@ -86,8 +86,8 @@ export async function runRuntimesProbe(input: {
   const errors: string[] = [];
   const exists = (p: string): boolean => existsSync(p);
 
-  // --- clover ---------------------------------------------------------------------------------
-  const cloverResolution = resolveWinterExecutable({
+  // --- moss ---------------------------------------------------------------------------------
+  const mossResolution = resolveWinterExecutable({
     setting: undefined,
     env: input.env,
     execPath: input.execPath,
@@ -95,15 +95,15 @@ export async function runRuntimesProbe(input: {
     exists,
     ...(input.resolvePlatformPackageBin === undefined ? {} : { resolvePlatformPackageBin: input.resolvePlatformPackageBin }),
   });
-  const clover: RuntimesProbeResult["clover"] = { executable: false };
-  if (cloverResolution.ok) {
-    clover.path = cloverResolution.path;
-    clover.source = cloverResolution.source;
-    clover.executable = isExecutable(cloverResolution.path);
-    if (!clover.executable) errors.push(`clover at ${cloverResolution.path} exists but is not executable`);
-    clover.signature = formatSignature(codesignInfo(cloverResolution.path));
+  const moss: RuntimesProbeResult["moss"] = { executable: false };
+  if (mossResolution.ok) {
+    moss.path = mossResolution.path;
+    moss.source = mossResolution.source;
+    moss.executable = isExecutable(mossResolution.path);
+    if (!moss.executable) errors.push(`moss at ${mossResolution.path} exists but is not executable`);
+    moss.signature = formatSignature(codesignInfo(mossResolution.path));
   } else {
-    errors.push(cloverResolution.error.message);
+    errors.push(mossResolution.error.message);
   }
 
   // --- ant (Winter Phase 10a, P10a-4) — OPTIONAL: a miss is recorded, never pushed into `errors`
@@ -145,6 +145,6 @@ export async function runRuntimesProbe(input: {
     }
   }
 
-  const ok = clover.executable;
-  return { ok, clover, ant, ...(versions === undefined ? {} : { versions }), ...(antVersions === undefined ? {} : { antVersions }), errors };
+  const ok = moss.executable;
+  return { ok, moss, ant, ...(versions === undefined ? {} : { versions }), ...(antVersions === undefined ? {} : { antVersions }), errors };
 }

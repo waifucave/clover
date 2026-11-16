@@ -14,7 +14,7 @@ import {
   SessionListResult,
   SyncConfigResult,
   DaemonStatusResult,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 
 const BARE = "gpt-5.6-sol";
 const TAG = "codex-oauth/gpt-5.6-sol";

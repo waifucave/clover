@@ -1,5 +1,5 @@
 // How a browser pairs with a computer once, without an account (spec §8.1, §8.4), through the waifucave handshake.
-// Both ends use this file: the page (services/web/src) and the computer (clover/companion-web).
+// Both ends use this file: the page (services/web/src) and the computer (moss/companion-web).
 //
 // 1. The computer makes an invite: a pair P1 registered with its own key A and an invite key B0 derived from a fresh
 //    32-byte secret S0, and a URL whose fragment carries P1, A, S0 and the core's pairing code. The fragment never
@@ -15,7 +15,7 @@
 // What crosses P1 is sealed with P1's box key (the handshake's pair-scope boxes), so the service sees only sizes.
 
 import { b64u, concatBytes, fromB64u, sha256, utf8 } from "../../shared/encoding";
-import { pairStatement, signerFromSeed, type Signer } from "@waifucave/clover-service-handshake/client";
+import { pairStatement, signerFromSeed, type Signer } from "@waifucave/moss-service-handshake/client";
 import { EFF_SHORT_WORDLIST } from "./words";
 
 // ---- invites ----
@@ -86,12 +86,12 @@ async function hkdf(ikm: Uint8Array, salt: Uint8Array, info: string, length = 32
 
 /** The invite key B0, which both ends can sign with (the computer when it registers P1, the page on P1). */
 export async function inviteSigner(invite: Pick<Invite, "pair" | "secret">): Promise<Signer> {
-  return signerFromSeed(await hkdf(invite.secret, fromB64u(invite.pair), "clover web invite key"));
+  return signerFromSeed(await hkdf(invite.secret, fromB64u(invite.pair), "moss web invite key"));
 }
 
 /** P1's pair secret, for its boxes. */
 export function invitePairSecret(invite: Pick<Invite, "pair" | "secret">): Promise<Uint8Array> {
-  return hkdf(invite.secret, fromB64u(invite.pair), "clover web invite secret");
+  return hkdf(invite.secret, fromB64u(invite.pair), "moss web invite secret");
 }
 
 // ---- the exchange ----
@@ -156,7 +156,7 @@ export interface Transcript {
 }
 
 function transcriptBytes(t: Transcript): Uint8Array {
-  return utf8(["clover web pairing v1", t.invitePair, t.pair, t.computerKey, t.browserKey, t.computerX25519, t.browserX25519, t.code].join("\n"));
+  return utf8(["moss web pairing v1", t.invitePair, t.pair, t.computerKey, t.browserKey, t.computerX25519, t.browserX25519, t.code].join("\n"));
 }
 
 export async function generateX25519(): Promise<{ publicKey: string; privateKey: CryptoKey }> {
@@ -178,10 +178,10 @@ export async function pairingResult(
   const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: "X25519", public: peer } as unknown as AlgorithmIdentifier, own, 256));
   const bytes = transcriptBytes(transcript);
   const digest = await sha256(bytes);
-  const secret = await hkdf(concatBytes(shared, inviteSecret), digest, "clover web pair secret");
+  const secret = await hkdf(concatBytes(shared, inviteSecret), digest, "moss web pair secret");
   shared.fill(0);
   const macKey = await crypto.subtle.importKey("raw", secret as Uint8Array<ArrayBuffer>, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", macKey, concatBytes(utf8("clover web words v1"), bytes)));
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", macKey, concatBytes(utf8("moss web words v1"), bytes)));
   return { secret, words: wordsFrom(mac) };
 }
 

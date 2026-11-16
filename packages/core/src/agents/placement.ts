@@ -1,7 +1,7 @@
-// What Clover's plugins give an agent beyond the bridge (spec §9.3 "How plugins reach an ACP agent"): skills, agent
+// What MOSS's plugins give an agent beyond the bridge (spec §9.3 "How plugins reach an ACP agent"): skills, agent
 // definitions and hooks, for the plugins scoped to `agents` or `both` (§5.1). Every agent reaches skills through the
 // bridge's `Glossary`; a backend that reads its own folders also gets them placed there (Claude Code: skills, agent
-// definitions, and command hooks through Clover's shim). Lane B's registry (B-M2) fills `PluginPartsSource`; until then
+// definitions, and command hooks through MOSS's shim). Lane B's registry (B-M2) fills `PluginPartsSource`; until then
 // there are none.
 
 import type { AgentSessionFacts } from "./bridge/tools";

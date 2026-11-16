@@ -3,13 +3,13 @@ import { join } from "node:path";
 
 /**
  * working-directories T4: the delivery-folder primitive — the user's standing output channel,
- * `<cloverHome>/outputs/<sessionId>`. A blessed, agent-writable exception under `~/.clover`, added to
+ * `<mossHome>/outputs/<sessionId>`. A blessed, agent-writable exception under `~/.moss`, added to
  * the session's own write-fence roots the EXACT SAME WAY the per-project MEMDIR already is
  * (daemon.ts's `sessionDirs` closure, mirroring `memory-dir.ts`'s `memoryDirFor`): once folded into
  * `SessionDirectories.roots(sessionId)`, a write there is in-root for THIS session's own tool calls
  * (no grant card, no `grantDenied` hard error) and never reachable for any OTHER session — the
- * blessing is keyed by sessionId, not by the bare `~/.clover/outputs/` prefix, so
- * `grantDeniedPrefixes: [cloverHome]` still refuses every path under `~/.clover` this session's own
+ * blessing is keyed by sessionId, not by the bare `~/.moss/outputs/` prefix, so
+ * `grantDeniedPrefixes: [mossHome]` still refuses every path under `~/.moss` this session's own
  * roots don't happen to include.
  *
  * `sessionId` is validated by the SAME regex `session-tmp.ts`'s `sessionTmpDir` already enforces —

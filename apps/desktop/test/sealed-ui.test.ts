@@ -6,11 +6,11 @@
 // markup label renders as text.
 //
 // The click is driven with `webContents.sendInputEvent` at the button's real coordinates, which produces trusted
-// events (no `trust` knob exists in production). `CLOVER_SMOKE_SEALED_CLICK` names the card, element and options the
-// smoke run clicks once everything has drawn. `CLOVER_SMOKE_SEALED_FALLBACK=1` makes the smoke run click the fallback
+// events (no `trust` knob exists in production). `MOSS_SMOKE_SEALED_CLICK` names the card, element and options the
+// smoke run clicks once everything has drawn. `MOSS_SMOKE_SEALED_FALLBACK=1` makes the smoke run click the fallback
 // window's Approve button instead.
 //
-// CI runs it (CI=true and CLOVER_UI_TESTS=1; Linux under xvfb). Locally it runs only when CLOVER_UI_LOCAL_ELECTRON
+// CI runs it (CI=true and MOSS_UI_TESTS=1; Linux under xvfb). Locally it runs only when MOSS_UI_LOCAL_ELECTRON
 // names a background-only Electron, as the UI smoke's rule.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -18,13 +18,13 @@ import { createRequire } from "node:module";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { CardAnswerProof } from "@waifucave/clover-protocol";
+import { CardAnswerProof } from "@waifucave/moss-protocol";
 import { readCalls, startFakeDaemon, type FakeDaemon } from "./fake-core/fake-daemon";
-import { cloverViews, alphaView, folderView, FIXTURES } from "./fake-core/registry";
+import { mossViews, alphaView, folderView, FIXTURES } from "./fake-core/registry";
 
 const root = join(import.meta.dir, "..");
-const ci = process.env.CI === "true" && process.env.CLOVER_UI_TESTS === "1";
-const localElectron = process.env.CLOVER_UI_LOCAL_ELECTRON;
+const ci = process.env.CI === "true" && process.env.MOSS_UI_TESTS === "1";
+const localElectron = process.env.MOSS_UI_LOCAL_ELECTRON;
 const enabled = ci || (localElectron !== undefined && localElectron !== "");
 const version = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version;
 const exe = process.platform === "win32" ? ".exe" : "";
@@ -41,7 +41,7 @@ function refuseForegroundElectron(): void {
   const plist = join(dirname(dirname(localElectron!)), "Info.plist");
   const value = spawnSync("plutil", ["-extract", "LSBackgroundOnly", "raw", plist], { encoding: "utf8" });
   if (value.status !== 0 || value.stdout.trim() !== "true") {
-    throw new Error(`CLOVER_UI_LOCAL_ELECTRON (${localElectron}) is not a background-only Electron; make one with \`bun run scripts/background-electron.ts <dir>\``);
+    throw new Error(`MOSS_UI_LOCAL_ELECTRON (${localElectron}) is not a background-only Electron; make one with \`bun run scripts/background-electron.ts <dir>\``);
   }
 }
 
@@ -62,10 +62,10 @@ function home(): string {
 }
 
 function env(h: string, registryPath: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const e: NodeJS.ProcessEnv = { ...process.env, CLOVER_HOME: h, CLOVER_DAEMON_BIN: fakeBin, CLOVER_FAKE_UI: registryPath, ...extra };
-  delete e.CLOVER_PROFILE;
+  const e: NodeJS.ProcessEnv = { ...process.env, MOSS_HOME: h, MOSS_DAEMON_BIN: fakeBin, MOSS_FAKE_UI: registryPath, ...extra };
+  delete e.MOSS_PROFILE;
   delete e.ELECTRON_RUN_AS_NODE;
-  delete e.CLOVER_APP_TOKEN;
+  delete e.MOSS_APP_TOKEN;
   return e;
 }
 
@@ -73,11 +73,11 @@ let fakeBin = "";
 beforeAll(() => {
   if (!enabled) return;
   if (!ci) refuseForegroundElectron();
-  // Always the test-marked build: its front seam (CLOVER_TEST_MAIN_FRONT_FILE) lets a headless run say its window is in front,
+  // Always the test-marked build: its front seam (MOSS_TEST_MAIN_FRONT_FILE) lets a headless run say its window is in front,
   // which these tests need (a card goes to the island unless the window is in front, and these press the window's own frame).
   const built = spawnSync("bun", ["run", "scripts/build.ts", "--test-build"], { cwd: root, encoding: "utf8" });
   expect(built.status, built.stderr).toBe(0);
-  fakeBin = join(mkdtempSync(join(tmpdir(), "ce1-bins-")), `clover-core${exe}`);
+  fakeBin = join(mkdtempSync(join(tmpdir(), "ce1-bins-")), `moss-core${exe}`);
   const compiled = spawnSync("bun", ["build", "--no-macros", "--compile", join(import.meta.dir, "fake-core", "fake-daemon.ts"), "--outfile", fakeBin], { encoding: "utf8" });
   expect(compiled.status, compiled.stderr).toBe(0);
   // The build and the compile take longer than a hook's default 5 s on a slow runner; the hook's end then kills the build.
@@ -113,7 +113,7 @@ function cardRegistry(path: string, withFixture = true, alpha = false): string {
   // partly covered and a sealed button inside it is never "ready" (IntersectionObserver v2, which treats a nested
   // frame as hidden while its element is partly covered): the fixture's page is tested with Alpha's bot and no theme
   // (the default chrome), and Alpha's own theme has its own test (`alpha: true`).
-  const plugins = [...cloverViews(), alpha ? alphaView() : { ...alphaView(), themes: [] }];
+  const plugins = [...mossViews(), alpha ? alphaView() : { ...alphaView(), themes: [] }];
   if (withFixture) plugins.push(folderView(join(FIXTURES, "fixture-card")));
   writeFileSync(path, JSON.stringify({ plugins }));
   return path;
@@ -139,14 +139,14 @@ async function runApp(opts: {
   // press is made in. The island's own placing is tested in island/card-place tests.
   const frontFile = join(h, "main-front");
   writeFileSync(frontFile, "front");
-  const app = spawn(electron(), [root, "--clover-smoke", `--log-net-log=${join(h, "net.json")}`], {
+  const app = spawn(electron(), [root, "--moss-smoke", `--log-net-log=${join(h, "net.json")}`], {
     env: env(h, reg, {
-      CLOVER_TEST_MAIN_FRONT_FILE: frontFile,
-      ...(opts.click !== undefined ? { CLOVER_SMOKE_SEALED_CLICK: JSON.stringify(opts.click) } : {}),
-      ...(opts.fallback === true ? { CLOVER_SMOKE_SEALED_FALLBACK: "1" } : {}),
-      ...(opts.pinVisible === true ? { CLOVER_SMOKE_PIN_VISIBLE: "1" } : {}),
-      ...(opts.dropFresh === true ? { CLOVER_SMOKE_DROP_FRESH: "1" } : {}),
-      CLOVER_SMOKE_SETTLE_MS: "3000",
+      MOSS_TEST_MAIN_FRONT_FILE: frontFile,
+      ...(opts.click !== undefined ? { MOSS_SMOKE_SEALED_CLICK: JSON.stringify(opts.click) } : {}),
+      ...(opts.fallback === true ? { MOSS_SMOKE_SEALED_FALLBACK: "1" } : {}),
+      ...(opts.pinVisible === true ? { MOSS_SMOKE_PIN_VISIBLE: "1" } : {}),
+      ...(opts.dropFresh === true ? { MOSS_SMOKE_DROP_FRESH: "1" } : {}),
+      MOSS_SMOKE_SETTLE_MS: "3000",
     }),
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -186,8 +186,8 @@ function answerCallsOf(home: string): { event: string; method: string; params: {
 // three skipped, the "does not land" tests on CI prove nothing, since no press lands there at all, and they fail there now
 // and then for the same reason (macOS, run 43627069632: the computer-use one saw no press reach the sealed page). So every
 // test that presses a sealed button in the main window skips on CI; the fallback window's test stays.
-// CLOVER_SEALED_UI_ON_CI=1 runs them on CI anyway.
-const onCi = test.skipIf(ci && process.env.CLOVER_SEALED_UI_ON_CI !== "1");
+// MOSS_SEALED_UI_ON_CI=1 runs them on CI anyway.
+const onCi = test.skipIf(ci && process.env.MOSS_SEALED_UI_ON_CI !== "1");
 
 describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
   onCi("an uncovered trusted press lands as a schema-valid card.answer with proof", async () => {

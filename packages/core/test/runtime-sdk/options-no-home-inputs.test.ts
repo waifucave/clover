@@ -1,7 +1,7 @@
 // WS-21 L3.4 (spec §6.1; F10, F22): once the router APPLIES a run home, the daemon stops building what the
 // run folder carries — agents, plugins, skills, configured MCP servers, the SAVED allow rules, the home
 // variable, the empty setting sources, the instructions, the output style and a code session's memory
-// text. It keeps its floor: Clover's fixed allow rules, every deny rule, the sandbox, the capability
+// text. It keeps its floor: MOSS's fixed allow rules, every deny rule, the sandbox, the capability
 // servers, the hooks, the base prompt, the workspace block, the date, and chat's/dispatch's `_assistant`
 // memory injection. With the router not applying one (0.0.11), every input is built exactly as before.
 import { beforeEach, describe, expect, test } from "bun:test";
@@ -20,8 +20,8 @@ import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
 import { QuestionBroker } from "../../src/agent/questions";
 import { assistantMemoryDirFor, memoryDirFor, _clearRepoRootCacheForTests } from "../../src/agent/memory-dir";
-import { buildCloverOptions, controlPlaneDenyRules, GLOBAL_READ_ALLOW_RULES, type CloverOptionsInput } from "../../src/runtime-sdk/mode-options";
-import { cloverSystemPromptFor } from "../../src/runtime-sdk/system-prompt";
+import { buildMossOptions, controlPlaneDenyRules, GLOBAL_READ_ALLOW_RULES, type MossOptionsInput } from "../../src/runtime-sdk/mode-options";
+import { mossSystemPromptFor } from "../../src/runtime-sdk/system-prompt";
 
 const real = (p: string): string => realpathSync(p);
 const tmp = (prefix: string): string => real(mkdtempSync(join(tmpdir(), prefix)));
@@ -37,28 +37,28 @@ const MARK = {
 };
 
 function world() {
-  const home = tmp("clover-nohome-h-");
-  const cwd = tmp("clover-nohome-cwd-");
-  writeFileSync(join(home, "CLOVER.md"), MARK.userInstr);
-  writeFileSync(join(cwd, "CLOVER.md"), MARK.projInstr);
-  mkdirSync(join(cwd, ".clover", "rules"), { recursive: true });
-  writeFileSync(join(cwd, ".clover", "rules", "r.md"), MARK.rule);
+  const home = tmp("moss-nohome-h-");
+  const cwd = tmp("moss-nohome-cwd-");
+  writeFileSync(join(home, "MOSS.md"), MARK.userInstr);
+  writeFileSync(join(cwd, "MOSS.md"), MARK.projInstr);
+  mkdirSync(join(cwd, ".moss", "rules"), { recursive: true });
+  writeFileSync(join(cwd, ".moss", "rules", "r.md"), MARK.rule);
   // the user tier of output styles is read from the store home (`storeHomeFor`: `sdk/` on a run-home build)
   mkdirSync(join(storeHomeFor(home), "output-styles"), { recursive: true });
   writeFileSync(join(storeHomeFor(home), "output-styles", "mine.md"), `---\nname: mine\ndescription: d\nkeep-coding-instructions: true\n---\n${MARK.style}`);
   const trust = new TrustStore(join(home, "trust.json"));
   trust.trust(cwd);
-  const projMem = memoryDirFor(cwd, { cloverHome: home });
+  const projMem = memoryDirFor(cwd, { mossHome: home });
   mkdirSync(projMem, { recursive: true });
   writeFileSync(join(projMem, "MEMORY.md"), `- ${MARK.projMemory}`);
-  const asstMem = assistantMemoryDirFor({ cloverHome: home });
+  const asstMem = assistantMemoryDirFor({ mossHome: home });
   mkdirSync(asstMem, { recursive: true });
   writeFileSync(join(asstMem, "MEMORY.md"), `- ${MARK.assistantMemory}`);
-  const skills = new SkillStore({ cloverHome: home, trust });
-  const styles = new OutputStyleStore({ cloverHome: home, trust });
+  const skills = new SkillStore({ mossHome: home, trust });
+  const styles = new OutputStyleStore({ mossHome: home, trust });
   const assembler = new ContextAssembler({
-    cloverHome: home, trust, skills,
-    memory: { enabled: () => true, dirFor: (c) => memoryDirFor(c, { cloverHome: home }), assistantDir: () => asstMem },
+    mossHome: home, trust, skills,
+    memory: { enabled: () => true, dirFor: (c) => memoryDirFor(c, { mossHome: home }), assistantDir: () => asstMem },
     styleResolver: (c) => styles.resolve("mine", c),
   });
   return { home, cwd, assembler };
@@ -67,7 +67,7 @@ function world() {
 beforeEach(() => _clearRepoRootCacheForTests());
 
 const promptFor = (w: ReturnType<typeof world>, mode: "code" | "chat" | "dispatch", runHomeApplied: boolean, primary: string | undefined = w.cwd): string =>
-  cloverSystemPromptFor(w.assembler, { mode, primary, cwd: primary ?? w.cwd, outDir: join(w.home, "outputs", "s"), ...(runHomeApplied ? { runHomeApplied: true } : {}) });
+  mossSystemPromptFor(w.assembler, { mode, primary, cwd: primary ?? w.cwd, outDir: join(w.home, "outputs", "s"), ...(runHomeApplied ? { runHomeApplied: true } : {}) });
 
 describe("the system prompt (context.ts / system-prompt.ts)", () => {
   test("flag OFF: every planted input is composed, as today", () => {
@@ -103,41 +103,41 @@ describe("the system prompt (context.ts / system-prompt.ts)", () => {
   });
 });
 
-// ── the Clover leg's Options ─────────────────────────────────────────────────────────────────────
-function cloverInput(over: Partial<CloverOptionsInput> = {}): CloverOptionsInput {
+// ── the MOSS leg's Options ─────────────────────────────────────────────────────────────────────
+function mossInput(over: Partial<MossOptionsInput> = {}): MossOptionsInput {
   return {
-    mode: "code", policy: "ask", sessionId: "11111111-2222-3333-4444-555555555555", home: "/tmp/clover-home", cwd: "/repo",
+    mode: "code", policy: "ask", sessionId: "11111111-2222-3333-4444-555555555555", home: "/tmp/moss-home", cwd: "/repo",
     credentials: { byProvider: {} } as never,
     spawn: { pathToClaudeCodeExecutable: "/opt/winter" },
     canUseTool: (async () => ({ behavior: "allow" as const })) as CanUseTool,
     abort: new AbortController(),
     baseEnv: { PATH: "/usr/bin", HOME: "/Users/x" },
-    env: { CLOVER_HOME: "/caller/supplied" },
+    env: { MOSS_HOME: "/caller/supplied" },
     agents: { reviewer: { description: "d", prompt: "p" } },
     plugins: [{ type: "local", path: "/h/cache/skill-plugins/sp" }],
     skills: ["sp:one"],
     userAllow: ["Edit", "mcp__srv__tool"],
     persistedAllow: ["Bash(git status)"],
     userDeny: ["Skill(denied)"],
-    capabilities: { clover__computer: { type: "sdk", name: "clover__computer", instance: {} } } as never,
+    capabilities: { moss__computer: { type: "sdk", name: "moss__computer", instance: {} } } as never,
     ...over,
   };
 }
 
-describe("buildCloverOptions", () => {
-  test("flag OFF: today's Options — agents, plugins, skills, saved allow rules, CLOVER_HOME, settingSources []", () => {
-    const o = buildCloverOptions(cloverInput());
+describe("buildMossOptions", () => {
+  test("flag OFF: today's Options — agents, plugins, skills, saved allow rules, MOSS_HOME, settingSources []", () => {
+    const o = buildMossOptions(mossInput());
     expect(o.agents).toBeDefined();
     expect(o.plugins).toHaveLength(1);
     expect(o.skills).toEqual(["sp:one"]);
     expect(o.permissions!.allow).toEqual(expect.arrayContaining(["Edit", "mcp__srv__tool", "Bash(git status)"]));
-    expect(o.env!.CLOVER_HOME).toBe("/tmp/clover-home");
+    expect(o.env!.MOSS_HOME).toBe("/tmp/moss-home");
     expect(o.settingSources).toEqual([]);
   });
 
-  test("flag ON: none of the run folder's inputs; Clover's fixed allow rules, every deny rule and the capability servers stay", () => {
-    const off = buildCloverOptions(cloverInput());
-    const on = buildCloverOptions(cloverInput({ runHomeApplied: true }));
+  test("flag ON: none of the run folder's inputs; MOSS's fixed allow rules, every deny rule and the capability servers stay", () => {
+    const off = buildMossOptions(mossInput());
+    const on = buildMossOptions(mossInput({ runHomeApplied: true }));
     expect("agents" in on).toBe(false);
     expect("plugins" in on).toBe(false);
     expect("skills" in on).toBe(false);
@@ -147,7 +147,7 @@ describe("buildCloverOptions", () => {
     expect(on.permissions!.deny).toContain("Skill(denied)");
     expect(on.sandbox).toEqual(off.sandbox);
     expect(on.mcpServers).toEqual(off.mcpServers);
-    expect("CLOVER_HOME" in on.env!).toBe(false); // the router pins it — a caller's value never survives
+    expect("MOSS_HOME" in on.env!).toBe(false); // the router pins it — a caller's value never survives
     expect(on.settingSources).toEqual(["user"]);  // stated, never absent (absent = every tier)
   });
 
@@ -156,20 +156,20 @@ describe("buildCloverOptions", () => {
   // L2 fix round 1 (M1): beside a run home the router refuses (`run_home_option_refused`) a caller's
   // `plugins`, `skills`, `agents`, `outputStyle` or `brand` — none may reach the Options, whatever the input.
   test("flag ON: none of the options a run home decides are stated, even when the input carries them", () => {
-    const on = buildCloverOptions(cloverInput({
+    const on = buildMossOptions(mossInput({
       runHomeApplied: true, outputStyle: "terse",
       agents: { reviewer: { description: "d", prompt: "p" } } as never,
       plugins: [{ type: "local", path: "/h/cache/skill-plugins/p" }] as never, skills: ["p:a"] as never,
     })) as Record<string, unknown>;
     for (const key of RUN_HOME_DECIDED_OPTIONS) expect(key in on).toBe(false);
-    const off = buildCloverOptions(cloverInput({ outputStyle: "terse" })) as Record<string, unknown>;
+    const off = buildMossOptions(mossInput({ outputStyle: "terse" })) as Record<string, unknown>;
     expect(off.outputStyle).toBe("terse"); // today's behaviour without a run home
   });
 
   test("flag ON: none of the five router-owned variables survive, even from a caller's env", () => {
-    const owned = { CLOVER_HOME: "/x", CLOVER_STORE_HOME: "/x", CLOVER_PLUGIN_CACHE_DIR: "/x", CLOVER_PROVIDER_MANAGED_BY_HOST: "1", CLOVER_DISABLE_CRON: "1" };
-    const on = buildCloverOptions(cloverInput({ runHomeApplied: true, env: owned }));
+    const owned = { MOSS_HOME: "/x", MOSS_STORE_HOME: "/x", MOSS_PLUGIN_CACHE_DIR: "/x", MOSS_PROVIDER_MANAGED_BY_HOST: "1", MOSS_DISABLE_CRON: "1" };
+    const on = buildMossOptions(mossInput({ runHomeApplied: true, env: owned }));
     for (const key of Object.keys(owned)) expect(key in on.env!).toBe(false);
-    expect(on.env!.CLOVER_PROFILE).toBeDefined(); // the daemon's own pins stay
+    expect(on.env!.MOSS_PROFILE).toBeDefined(); // the daemon's own pins stay
   });
 });

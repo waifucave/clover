@@ -1,11 +1,11 @@
-// `clover plugin validate` (spec §5.6): what a folder is and adds, without running anything, like
+// `moss plugin validate` (spec §5.6): what a folder is and adds, without running anything, like
 // `claude plugin validate`: its class, contributions, declared points, network hosts, helper permissions,
 // capabilities, tool names, settings and children, every finding, and the OK's text. `--upgrade` rewrites files in an
 // older format to the newest one (§5.1 "Formats").
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
-import { backgroundOkLines, contributionLabels, describeOk, hookOkLines, parseJsonc, upgradeDocument, validateTree, type ManifestReport, fillsOkLines } from "@waifucave/clover-plugin-sdk";
-import type { ValidationIssue } from "@waifucave/clover-protocol";
+import { backgroundOkLines, contributionLabels, describeOk, hookOkLines, parseJsonc, upgradeDocument, validateTree, type ManifestReport, fillsOkLines } from "@waifucave/moss-plugin-sdk";
+import type { ValidationIssue } from "@waifucave/moss-protocol";
 import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
 import { outsideHomeIssues } from "./outside-homes";
 import { agentEnvLines } from "./folders";
@@ -50,7 +50,7 @@ const summary = (r: ManifestReport, fallback: string, labels: string[]): PluginS
   settings: r.settings, fetchesCode: r.fetchesCode, labels, ok: r.ok,
 });
 
-export async function validatePluginFolder(folder: string, opts: { os?: "macos" | "windows" | "linux"; bundled?: boolean; homes?: { userHome: string; cloverHome: string } } = {}): Promise<FolderValidation> {
+export async function validatePluginFolder(folder: string, opts: { os?: "macos" | "windows" | "linux"; bundled?: boolean; homes?: { userHome: string; mossHome: string } } = {}): Promise<FolderValidation> {
   const name = basename(folder);
   const issues: ValidationIssue[] = [];
   let hash: string | undefined;
@@ -66,7 +66,7 @@ export async function validatePluginFolder(folder: string, opts: { os?: "macos" 
   if (opts.homes !== undefined) issues.push(...outsideHomeIssues(tree.top.manifest, opts.homes));
   // A loader config reaching outside the tree is an error here, whatever folder it is checked in (the controller's
   // ruling): a plugin built in a development folder, where the registry lets it pass, fails before it ships rather
-  // than going invalid on someone else's computer. Only Clover's own trees (`bundled`) share the repository's config.
+  // than going invalid on someone else's computer. Only MOSS's own trees (`bundled`) share the repository's config.
   if (opts.bundled !== true && hash !== undefined) issues.push(...loaderOutsideIssues(folderLoaderReach(folder, treeEntries(folder, { allowHardLinks: true }).map((e) => e.path))));
   // The OK lines as this computer's card would say them: host code is held to its hosts only where the plugin fence
   // holds it (macOS with the sandbox on, as `openPluginRegistry` decides); checked for another OS, the fence isn't known.
@@ -104,7 +104,7 @@ export function renderValidation(v: FolderValidation): string {
     if (p.fetchesCode.length > 0) list(`${indent}fetches code when it runs`, p.fetchesCode);
   };
   if (v.plugin) plugin(v.plugin);
-  else lines.push(`${v.folder}: no plugin${v.bareItem ? ` (a ${v.bareItem.replace("-", " ")}, which Clover wraps)` : ""}`);
+  else lines.push(`${v.folder}: no plugin${v.bareItem ? ` (a ${v.bareItem.replace("-", " ")}, which MOSS wraps)` : ""}`);
   if (v.treeHash) lines.push(`  tree hash: ${v.treeHash}`);
   for (const c of v.children) {
     lines.push(`  child ${c.folder}:${c.ok ? "" : " (invalid)"}`);
@@ -131,7 +131,7 @@ export interface UpgradedFile {
 }
 
 /** Rewrites each format file (a JSON file whose first key names its format) in an older version to the newest. A
- *  newer one is left and reported ("needs a newer Clover"). */
+ *  newer one is left and reported ("needs a newer MOSS"). */
 export function upgradePluginFolder(folder: string, opts: { write?: boolean } = {}): UpgradedFile[] {
   const out: UpgradedFile[] = [];
   const walk = (dir: string) => {

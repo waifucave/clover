@@ -6,17 +6,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { IPV6_REACHABILITY_PROBE, isLoopback, offMachine, readNetLog } from "./netlog";
 
-const dir = mkdtempSync(join(tmpdir(), "clover-netlog-"));
+const dir = mkdtempSync(join(tmpdir(), "moss-netlog-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 const constants = { logEventTypes: { HOST_RESOLVER_MANAGER_REQUEST: 1, UDP_CONNECT: 2, TCP_CONNECT: 3, URL_REQUEST_START_JOB: 4, OTHER: 5 } };
 const events = [
-  { type: 1, phase: 1, params: { host: "clover-plugin://probe.example", is_speculative: true } },
+  { type: 1, phase: 1, params: { host: "moss-plugin://probe.example", is_speculative: true } },
   { type: 1, phase: 1, params: { host: "localhost:80" } },
   { type: 2, phase: 1, params: { address: IPV6_REACHABILITY_PROBE } },
   { type: 3, phase: 1, params: { address_list: ["127.0.0.1:9", "93.184.216.34:443"] } },
   { type: 4, phase: 1, params: { url: "https://example.com/x" } },
-  { type: 4, phase: 1, params: { url: "clover-plugin://clover/_clover/boot.js" } },
+  { type: 4, phase: 1, params: { url: "moss-plugin://moss/_moss/boot.js" } },
   { type: 5, phase: 1, params: {} },
 ];
 

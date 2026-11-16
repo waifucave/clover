@@ -16,7 +16,7 @@
 // report, a background task's notification, a wake, another bot's message or a continuation, any of which a bot can
 // bring about itself. It is one budget per conversation: a session the bot started under it (`rootOf`) draws on its
 // root's; a routine's run is its own root, so it gets the budget once per scheduled run.
-import type { TurnOrigin } from "@waifucave/clover-protocol";
+import type { TurnOrigin } from "@waifucave/moss-protocol";
 import type { TurnInput } from "../contracts/session-host";
 import { originOf } from "../contracts/session-host";
 

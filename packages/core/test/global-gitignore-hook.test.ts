@@ -24,15 +24,15 @@ describe("global-gitignore hook", () => {
     process.env.XDG_CONFIG_HOME = xdg;
     addLocalDir(tmp("proj-"), "/some/dir");
     const gi = readFileSync(join(xdg, "git", "ignore"), "utf8");
-    expect(gi).toContain("**/.clover/settings.local.json");
-    expect(gi).toContain("**/.clover/permissions.local.json");
+    expect(gi).toContain("**/.moss/settings.local.json");
+    expect(gi).toContain("**/.moss/permissions.local.json");
   });
 
   test("PermissionRules.append(project) adds the personal patterns", () => {
     const xdg = tmp("xdg2-");
     process.env.XDG_CONFIG_HOME = xdg;
-    const pr = new PermissionRules({ globalAllow: () => [], cloverHome: tmp("home-") });
+    const pr = new PermissionRules({ globalAllow: () => [], mossHome: tmp("home-") });
     pr.append("Bash(ls:*)", "project", tmp("proj2-"));
-    expect(readFileSync(join(xdg, "git", "ignore"), "utf8")).toContain("**/.clover/permissions.local.json");
+    expect(readFileSync(join(xdg, "git", "ignore"), "utf8")).toContain("**/.moss/permissions.local.json");
   });
 });

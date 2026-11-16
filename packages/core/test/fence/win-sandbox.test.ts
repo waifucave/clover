@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  CLOVER_WFP_SUBLAYER,
+  MOSS_WFP_SUBLAYER,
   SANDBOX_EXIT,
   SANDBOX_PRINCIPAL_PREFIX,
   principalNameFromSid,
@@ -67,8 +67,8 @@ import {
 import { authenticodeDigest, validateCertificateTable } from "../../src/fence/windows-launcher";
 import type { SandboxPolicy } from "../../src/contracts/fence";
 import { policyAllows } from "../../src/contracts/fence";
-import { CloverFence } from "../../src/fence/fence";
-import type { Caller } from "@waifucave/clover-protocol";
+import { MossFence } from "../../src/fence/fence";
+import type { Caller } from "@waifucave/moss-protocol";
 
 describe("the pinned launcher", () => {
   test("the pin names the controller's tag and commit", () => {
@@ -77,13 +77,13 @@ describe("the pinned launcher", () => {
   });
 
   test("the sublayer GUID is a GUID, and the principal uses the Addendum 9 format", () => {
-    expect(CLOVER_WFP_SUBLAYER).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i);
+    expect(MOSS_WFP_SUBLAYER).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i);
     // Full name with 8 hex chars = 18 chars (fits the 20-char account limit)
-    expect(SANDBOX_PRINCIPAL_PREFIX).toBe("clover-sb-");
+    expect(SANDBOX_PRINCIPAL_PREFIX).toBe("moss-sb-");
     expect(SANDBOX_PRINCIPAL_PREFIX.length).toBe(10);
     // Test principalNameFromSid produces 18-char name
     const name = principalNameFromSid("S-1-5-21-1234567890-1234567890-1234567890-1001");
-    expect(name).toMatch(/^clover-sb-[0-9a-f]{8}$/);
+    expect(name).toMatch(/^moss-sb-[0-9a-f]{8}$/);
     expect(name.length).toBe(18);
     // Collision test: different SIDs produce different names
     const name2 = principalNameFromSid("S-1-5-21-1234567890-1234567890-1234567890-1002");
@@ -97,7 +97,7 @@ describe("the pinned launcher", () => {
   });
 
   test("a missing launcher is missing, and only the exact digest pins", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-srt-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-srt-"));
     const missing = join(dir, "srt-win.exe");
     expect(launcherDigest(missing)).toEqual({ present: false, digest: null });
     expect(launcherPinned(missing)).toBe(false);
@@ -109,23 +109,23 @@ describe("the pinned launcher", () => {
     expect(launcherProblem(file)).toContain("isn't installed");
   });
 
-  test("the launcher lives beside clover-core, overridable for dev", () => {
-    expect(srtWinPath("C:\\Program Files\\Clover\\clover-core.exe", {})).toBe("C:\\Program Files\\Clover\\srt-win.exe");
-    expect(srtWinPath("/x/clover-core", { CLOVER_SRT_WIN: "/dev/srt-win.exe" })).toBe("/dev/srt-win.exe");
+  test("the launcher lives beside moss-core, overridable for dev", () => {
+    expect(srtWinPath("C:\\Program Files\\MOSS Code\\moss-core.exe", {})).toBe("C:\\Program Files\\MOSS Code\\srt-win.exe");
+    expect(srtWinPath("/x/moss-core", { MOSS_SRT_WIN: "/dev/srt-win.exe" })).toBe("/dev/srt-win.exe");
   });
 });
 
 describe("the sandbox command's args", () => {
-  test("setup provisions the principal under Clover's sublayer, loopback closed", () => {
+  test("setup provisions the principal under MOSS's sublayer, loopback closed", () => {
     // The principal and owner are required: no bare-prefix default.
-    const a = setupArgs("C:\\Clover\\srt-win.exe", CLOVER_WFP_SUBLAYER, "clover-sb-f41c96d1", "S-1-5-21-1");
-    expect(a).toEqual(["C:\\Clover\\srt-win.exe", "install", "--sandbox-user", "clover-sb-f41c96d1", "--sublayer-guid", CLOVER_WFP_SUBLAYER, "--owner-sid", "S-1-5-21-1"]);
+    const a = setupArgs("C:\\MOSS\\srt-win.exe", MOSS_WFP_SUBLAYER, "moss-sb-f41c96d1", "S-1-5-21-1");
+    expect(a).toEqual(["C:\\MOSS\\srt-win.exe", "install", "--sandbox-user", "moss-sb-f41c96d1", "--sublayer-guid", MOSS_WFP_SUBLAYER, "--owner-sid", "S-1-5-21-1"]);
     expect(a.join(" ")).not.toContain("allow-loopback");
   });
 
   test("remove undoes everything; status never elevates", () => {
-    expect(removeArgs("srt-win.exe", CLOVER_WFP_SUBLAYER)).toEqual(["srt-win.exe", "uninstall", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
-    expect(statusArgs("srt-win.exe", CLOVER_WFP_SUBLAYER)).toEqual(["srt-win.exe", "status", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
+    expect(removeArgs("srt-win.exe", MOSS_WFP_SUBLAYER)).toEqual(["srt-win.exe", "uninstall", "--sublayer-guid", MOSS_WFP_SUBLAYER]);
+    expect(statusArgs("srt-win.exe", MOSS_WFP_SUBLAYER)).toEqual(["srt-win.exe", "status", "--sublayer-guid", MOSS_WFP_SUBLAYER]);
   });
 
   test("install's exits map to setup's message, or none", () => {
@@ -163,7 +163,7 @@ describe("the status verdict", () => {
     view.setUint16(0x58, 0x20b, true);
     view.setUint32(0xc4, 16, true);
     const bytes = new Uint8Array(buf);
-    const dir = mkdtempSync(join(tmpdir(), "clover-srt-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-srt-"));
     const file = join(dir, "srt-win.exe");
     writeFileSync(file, bytes);
     const pins = { x64: authenticodeDigest(bytes), arm64: authenticodeDigest(bytes) };
@@ -222,13 +222,13 @@ describe("the status verdict", () => {
 describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () => {
   const policy: SandboxPolicy = {
     allowWrite: ["C:\\Users\\me", "C:\\Temp"],
-    denyWrite: ["C:\\Users\\me\\.clover\\settings.json", "C:\\Users\\me\\.clover\\plugins-state\\oks"],
-    denyRead: ["C:\\Users\\me\\.clover\\run"],
+    denyWrite: ["C:\\Users\\me\\.moss\\settings.json", "C:\\Users\\me\\.moss\\plugins-state\\oks"],
+    denyRead: ["C:\\Users\\me\\.moss\\run"],
     closedDoors: ["schtasks", "Register-ScheduledTask"],
     blockedAddresses: ["169.254.169.254"],
     network: "none",
   };
-  const home = "C:\\Users\\me\\.clover";
+  const home = "C:\\Users\\me\\.moss";
 
   test("a bot has open access (the owner's ruling of November 9): the home reads, every bot's scratch and memory write, escalation stays denied", () => {
     const entries = (dir: string) => {
@@ -238,12 +238,12 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
     };
     const plan = winLaunchPlan({
       policy,
-      cloverHome: home,
+      mossHome: home,
       caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
       bots: ["luna", "sol"],
       entries,
     });
-    const at = (rel: string) => `C:\\Users\\me\\.clover\\${rel}`;
+    const at = (rel: string) => `C:\\Users\\me\\.moss\\${rel}`;
     // The home reads; it isn't written.
     expect(plan.grantRead).toContain(home);
     expect(plan.denyRead).not.toContain(home);
@@ -262,7 +262,7 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
     expect(plan.denyWrite).toContain(at("bots\\sol"));
     // Escalation stays denied: the credential and key copies, the plugins' data; the bot driver's state reads (a
     // transcript id) and is never written.
-    for (const rel of ["credentials", "runtimes", "sdk\\.clover.json", "cache\\runs", "plugin-data"]) expect(plan.denyRead).toContain(at(rel));
+    for (const rel of ["credentials", "runtimes", "sdk\\.moss.json", "cache\\runs", "plugin-data"]) expect(plan.denyRead).toContain(at(rel));
     expect(plan.denyRead).not.toContain(at("sessions-runtime"));
     expect(plan.denyWrite).toContain(at("sessions-runtime"));
     expect(plan.ownMemory).toBe(at("bots\\luna\\memory"));
@@ -273,18 +273,18 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
     const entries = (dir: string) => (dir.endsWith("\\outputs") ? ["s9"] : []);
     const plan = winLaunchPlan({
       policy,
-      cloverHome: home,
+      mossHome: home,
       caller: { kind: "session", sessionId: "s9", sessionKind: "coding" },
       bots: ["luna"],
       entries,
     });
     expect(plan.ownMemory).toBeNull();
     // Other bot's folder denied
-    expect(plan.denyRead).toContain("C:\\Users\\me\\.clover\\bots\\luna");
-    expect(plan.denyWrite).toContain("C:\\Users\\me\\.clover\\bots\\luna");
+    expect(plan.denyRead).toContain("C:\\Users\\me\\.moss\\bots\\luna");
+    expect(plan.denyWrite).toContain("C:\\Users\\me\\.moss\\bots\\luna");
     // No runtime grant either: the store stays hidden from every runner
-    expect(plan.grantRead).not.toContain("C:\\Users\\me\\.clover\\sessions-runtime\\s9.json");
-    expect(plan.denyRead).toContain("C:\\Users\\me\\.clover\\sessions-runtime");
+    expect(plan.grantRead).not.toContain("C:\\Users\\me\\.moss\\sessions-runtime\\s9.json");
+    expect(plan.denyRead).toContain("C:\\Users\\me\\.moss\\sessions-runtime");
   });
 
   test("Windows grants agree with policyAllows, caller by caller", () => {
@@ -356,12 +356,12 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
     };
     for (const caller of callers) {
       // The reference is the real fence's own policy for a Windows home; the plan under test merges it in.
-      const fence = new CloverFence({ os: "windows", home: "C:\\Users\\me", cloverHome: home, canonical: (p) => p });
+      const fence = new MossFence({ os: "windows", home: "C:\\Users\\me", mossHome: home, canonical: (p) => p });
       const ref = fence.forCaller(caller).policy();
-      const plan = winLaunchPlan({ policy: ref, cloverHome: home, caller, bots: ["luna", "sol", "alpha"], entries });
+      const plan = winLaunchPlan({ policy: ref, mossHome: home, caller, bots: ["luna", "sol", "alpha"], entries });
       const allowWrite = ref.allowWrite;
       for (const rel of matrix(caller)) {
-        const abs = `C:\\Users\\me\\.clover\\${rel}`;
+        const abs = `C:\\Users\\me\\.moss\\${rel}`;
         for (const op of ["read", "write", "unlink", "rename"] as const) {
           // A bot's open access writes any bot's memory (the owner's amendment), but a launch grants the memory folders
           // of the bots there when it starts: a bot made during the run is the known gap (as on Linux).
@@ -379,7 +379,7 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
   });
 
   test("the reset plan removes the profile by SID and fails closed on what's left", () => {
-    const plan = principalResetPlan({ sid: "S-1-5-21-1-2-3-1001", profileRoot: "C:\\Users\\clover-sandbox" });
+    const plan = principalResetPlan({ sid: "S-1-5-21-1-2-3-1001", profileRoot: "C:\\Users\\moss-sandbox" });
     expect(plan.map((s) => s.name)).toEqual(["unload-hive", "remove-profile-key", "remove-profile-dir", "remove-leftover-dirs"]);
     expect(plan.filter((s) => s.required).map((s) => s.name)).toEqual(["remove-profile-key", "remove-profile-dir"]);
     expect(plan.map((s) => s.argv.join(" ")).join("\n")).toContain("S-1-5-21-1-2-3-1001");
@@ -564,19 +564,19 @@ describe("the per-launch profile verdict (brief item 7)", () => {
     expect(profileLaunchCheck(null).ok).toBe(false);
     expect(profileLaunchCheck({ sid: "S-1-5-21-1", path: "C:\\Users\\TEMP" }).ok).toBe(false);
     expect(profileLaunchCheck({ sid: "S-1-5-21-1", path: "C:\\Users\\TEMP.testvm" }).ok).toBe(false);
-    expect(profileLaunchCheck({ sid: "S-1-5-21-1", path: "C:\\Users\\clover-sb-f41c96d1" })).toEqual({ ok: true });
+    expect(profileLaunchCheck({ sid: "S-1-5-21-1", path: "C:\\Users\\moss-sb-f41c96d1" })).toEqual({ ok: true });
     expect(isTemporaryProfile("C:\\Users\\TEMP")).toBe(true);
-    expect(isTemporaryProfile("C:\\Users\\clover-sb-f41c96d1")).toBe(false);
+    expect(isTemporaryProfile("C:\\Users\\moss-sb-f41c96d1")).toBe(false);
   });
 });
 
 describe("the child home environment (controller ruling 2)", () => {
   test("HOME, USERPROFILE and APPDATA point at the principal's profile", () => {
-    const env = sandboxHomeEnv("C:\\Users\\clover-sb-f41c96d1");
+    const env = sandboxHomeEnv("C:\\Users\\moss-sb-f41c96d1");
     expect(env).toEqual({
-      HOME: "C:\\Users\\clover-sb-f41c96d1",
-      USERPROFILE: "C:\\Users\\clover-sb-f41c96d1",
-      APPDATA: "C:\\Users\\clover-sb-f41c96d1\\AppData\\Roaming",
+      HOME: "C:\\Users\\moss-sb-f41c96d1",
+      USERPROFILE: "C:\\Users\\moss-sb-f41c96d1",
+      APPDATA: "C:\\Users\\moss-sb-f41c96d1\\AppData\\Roaming",
     });
     // Never the broker's: the caller passes exactly this plus proxy/CA entries.
     expect(env.HOME).not.toContain("real-user");
@@ -587,8 +587,8 @@ describe("the owner-SID description check (Addendum 9)", () => {
   const sid = "S-1-5-21-2049286435-129160171-2159440921-1000";
   test("stamp and read args name the principal and SID", () => {
     const dec = (a: readonly string[]) => Buffer.from(a[5]!, "base64").toString("utf16le");
-    expect(dec(setDescriptionArgs("clover-sb-f41c96d1", sid))).toContain(`-Description "${sid}"`);
-    expect(dec(getDescriptionArgs("clover-sb-f41c96d1"))).toContain("Get-LocalUser");
+    expect(dec(setDescriptionArgs("moss-sb-f41c96d1", sid))).toContain(`-Description "${sid}"`);
+    expect(dec(getDescriptionArgs("moss-sb-f41c96d1"))).toContain("Get-LocalUser");
   });
   test("only the exact SID matches", () => {
     expect(descriptionMatches(sid, sid)).toBe(true);
@@ -617,7 +617,7 @@ describe("the icacls/cmd shapes (measured on the VM)", () => {
     expect(Buffer.from(a[5]!, "base64").toString("utf16le")).toContain('New-Item -ItemType Directory -Force -Path "C:\\Users\\x\\Startup"');
   });
   test("markers claim refuses non-admin owners and locks the DACL", () => {
-    const a = claimDirArgs("C:\\ProgramData\\Clover Sandbox");
+    const a = claimDirArgs("C:\\ProgramData\\MOSS Sandbox");
     expect(a[4]).toBe("-EncodedCommand");
     const script = Buffer.from(a[5]!, "base64").toString("utf16le");
     expect(script).toContain("takeown.exe");
@@ -628,10 +628,10 @@ describe("the icacls/cmd shapes (measured on the VM)", () => {
 
 describe("the installer target SID (should-fix)", () => {
   test("reads the user SID off the protected-copy path", () => {
-    expect(installerTargetSid("C:\\Program Files\\Clover Sandbox\\S-1-5-21-1-2-3-1000\\clover-core.exe")).toBe("S-1-5-21-1-2-3-1000");
-    expect(installerTargetSid("C:\\Program Files\\Clover Sandbox\\S-1-5-21-1-2-3-1000")).toBe("S-1-5-21-1-2-3-1000");
-    expect(installerTargetSid("C:\\Users\\me\\clover-core.exe")).toBeNull();
-    expect(installerTargetSid("/x/clover-core")).toBeNull();
+    expect(installerTargetSid("C:\\Program Files\\MOSS Sandbox\\S-1-5-21-1-2-3-1000\\moss-core.exe")).toBe("S-1-5-21-1-2-3-1000");
+    expect(installerTargetSid("C:\\Program Files\\MOSS Sandbox\\S-1-5-21-1-2-3-1000")).toBe("S-1-5-21-1-2-3-1000");
+    expect(installerTargetSid("C:\\Users\\me\\moss-core.exe")).toBeNull();
+    expect(installerTargetSid("/x/moss-core")).toBeNull();
   });
 });
 
@@ -660,8 +660,8 @@ describe("the launch session protocol (ruling 1)", () => {
     expect(doc).toEqual({ read: ["r"], write: ["w"], denyWrite: ["d"] });
   });
   test("exec requires env, write roots and the principal", () => {
-    const a = execArgs({ launcher: "s", shell: ["bash"], denyRead: ["dr"], denyWrite: ["dw"], env: { HOME: "h" }, writeRoots: ["w"], user: "clover-sb-a-1" });
-    expect(a).toEqual(["s", "exec", "--quiet", "--user", "clover-sb-a-1", "--write-restricted-token",
+    const a = execArgs({ launcher: "s", shell: ["bash"], denyRead: ["dr"], denyWrite: ["dw"], env: { HOME: "h" }, writeRoots: ["w"], user: "moss-sb-a-1" });
+    expect(a).toEqual(["s", "exec", "--quiet", "--user", "moss-sb-a-1", "--write-restricted-token",
       "--deny-read", "dr", "--deny-write", "dw", "--write-root", "w", "--env", "HOME=h", "--", "bash"]);
   });
   test("a session ends with revoke then forget/restore", () => {
@@ -676,7 +676,7 @@ describe("the install marker (ruling 3)", () => {
   const owner = "S-1-5-21-1-2-3-1000";
   const m = {
     version: 2 as const, ownerSid: owner,
-    members: [{ principal: "clover-sb-abc", principalSid: "S-1-5-21-1-2-3-1025", sublayer: "g" }],
+    members: [{ principal: "moss-sb-abc", principalSid: "S-1-5-21-1-2-3-1025", sublayer: "g" }],
   };
   test("round-trips, and rejects foreign shapes", () => {
     expect(parseInstallMarker(formatInstallMarker(m))).toEqual(m);
@@ -685,8 +685,8 @@ describe("the install marker (ruling 3)", () => {
     expect(parseInstallMarker(JSON.stringify({ ...m, version: 9 }))).toBeNull();
   });
   test("a version-1 single-principal marker reads as a one-member pool", () => {
-    const v1 = JSON.stringify({ version: 1, ownerSid: owner, principal: "clover-sb-abc", principalSid: null, sublayer: "g" });
-    expect(parseInstallMarker(v1)).toEqual({ ...m, members: [{ principal: "clover-sb-abc", principalSid: null, sublayer: "g" }] });
+    const v1 = JSON.stringify({ version: 1, ownerSid: owner, principal: "moss-sb-abc", principalSid: null, sublayer: "g" });
+    expect(parseInstallMarker(v1)).toEqual({ ...m, members: [{ principal: "moss-sb-abc", principalSid: null, sublayer: "g" }] });
   });
   test("setup across owners is refused even with force", () => {
     expect(markerAllowsSetup(null, owner)).toEqual({ ok: true });
@@ -699,7 +699,7 @@ describe("the install marker (ruling 3)", () => {
     expect(markerAllowsRemove(m, "S-1-5-21-9")).toEqual({ ok: false, reason: expect.stringContaining("another user") });
   });
   test("the marker path scopes per owner under ProgramData", () => {
-    expect(installMarkerPath("C:\\ProgramData", owner)).toBe(`C:\\ProgramData\\Clover Sandbox\\markers\\${owner}.json`);
+    expect(installMarkerPath("C:\\ProgramData", owner)).toBe(`C:\\ProgramData\\MOSS Sandbox\\markers\\${owner}.json`);
   });
 });
 
@@ -711,7 +711,7 @@ describe("the pool (ruling 2)", () => {
     const names = pool.map((x) => x.principal);
     expect(new Set(names).size).toBe(4);
     for (const [i, p] of names.entries()) {
-      expect(p).toMatch(/^clover-sb-[0-9a-f]{6}-[1-4]$/);
+      expect(p).toMatch(/^moss-sb-[0-9a-f]{6}-[1-4]$/);
       expect(p.length).toBe(18);
       expect(p.endsWith(`-${i + 1}`)).toBe(true);
     }
@@ -724,15 +724,15 @@ describe("the pool (ruling 2)", () => {
   });
   test("user status and uninstall take the principal selector", () => {
     expect(userStatusArgs("s.exe")).toEqual(["s.exe", "user", "status"]);
-    expect(userStatusArgs("s.exe", "clover-sb-a-1")).toEqual(["s.exe", "user", "status", "--user", "clover-sb-a-1"]);
+    expect(userStatusArgs("s.exe", "moss-sb-a-1")).toEqual(["s.exe", "user", "status", "--user", "moss-sb-a-1"]);
     expect(removeArgs("s.exe", "g")).toEqual(["s.exe", "uninstall", "--sublayer-guid", "g"]);
-    expect(removeArgs("s.exe", "g", "clover-sb-a-1")).toEqual(["s.exe", "uninstall", "--sublayer-guid", "g", "--user", "clover-sb-a-1"]);
+    expect(removeArgs("s.exe", "g", "moss-sb-a-1")).toEqual(["s.exe", "uninstall", "--sublayer-guid", "g", "--user", "moss-sb-a-1"]);
   });
 });
 
 describe("the pool lock file", () => {
   test("one lock file per principal", () => {
-    expect(poolLockPath("C:\\l", "clover-sb-a")).toBe("C:\\l\\clover-sb-a.lock");
+    expect(poolLockPath("C:\\l", "moss-sb-a")).toBe("C:\\l\\moss-sb-a.lock");
   });
 });
 
@@ -771,7 +771,7 @@ describe("the exclusive pool lease (ruling 3)", () => {
       },
     };
   };
-  const pool2 = [{ principal: "clover-sb-a-1" }, { principal: "clover-sb-a-2" }];
+  const pool2 = [{ principal: "moss-sb-a-1" }, { principal: "moss-sb-a-2" }];
 
   test("two launches get distinct principals; a third waits, then refuses", async () => {
     const { store } = memLocks();
@@ -781,8 +781,8 @@ describe("the exclusive pool lease (ruling 3)", () => {
     const a = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, timeoutMs: 1000, now, sleep });
     const b = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, timeoutMs: 1000, now, sleep });
     if (!a.ok || !b.ok) throw new Error("expected two wins");
-    expect(a.principal).toBe("clover-sb-a-1");
-    expect(b.principal).toBe("clover-sb-a-2");
+    expect(a.principal).toBe("moss-sb-a-1");
+    expect(b.principal).toBe("moss-sb-a-2");
     const c = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, timeoutMs: 500, pollMs: 500, now, sleep });
     expect(c.ok).toBe(false);
     if (!c.ok) expect(c.reason).toContain("busy");
@@ -794,11 +794,11 @@ describe("the exclusive pool lease (ruling 3)", () => {
     const { store } = memLocks();
     const first = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), timeoutMs: 10 });
     if (!first.ok) throw new Error("expected a win");
-    expect(first.principal).toBe("clover-sb-a-1");
+    expect(first.principal).toBe("moss-sb-a-1");
     first.release(); // models the OS freeing a killed holder's lock: no staleness, no wait
     const second = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), timeoutMs: 10 });
     if (!second.ok) throw new Error("expected an immediate re-win");
-    expect(second.principal).toBe("clover-sb-a-1");
+    expect(second.principal).toBe("moss-sb-a-1");
     second.release();
     second.release(); // idempotent
   });
@@ -813,7 +813,7 @@ describe("the exclusive pool lease (ruling 3)", () => {
     ]);
     const wins = [a, b].filter((r) => r.ok);
     expect(wins).toHaveLength(1);
-    expect(wins[0]).toEqual({ ok: true, principal: "clover-sb-a-1", release: expect.any(Function) });
+    expect(wins[0]).toEqual({ ok: true, principal: "moss-sb-a-1", release: expect.any(Function) });
     const loser = [a, b].find((r) => !r.ok)!;
     if (!loser.ok) expect(loser.reason).toContain("busy");
     for (const r of wins) if (r.ok) r.release();
@@ -844,7 +844,7 @@ describe("the exclusive pool lease (ruling 3)", () => {
     };
     const r = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, timeoutMs: 100 });
     if (!r.ok) throw new Error("expected a win on the second member");
-    expect(r.principal).toBe("clover-sb-a-2");
+    expect(r.principal).toBe("moss-sb-a-2");
     r.release();
   });
 });
@@ -857,13 +857,13 @@ describe("the leases-dir trust check (Addendum 12)", () => {
   const users = "S-1-5-32-545";
 
   test("inside the user's profile nothing is checked", () => {
-    expect(leasesDirAccessProblem("C:\\Users\\amy\\.clover\\sandbox\\leases", { profileRoot: "C:\\Users\\amy", security: null })).toBeNull();
-    expect(leasesDirAccessProblem("C:\\USERS\\AMY\\.clover\\sandbox\\leases", { profileRoot: "c:\\users\\amy", security: null })).toBeNull();
+    expect(leasesDirAccessProblem("C:\\Users\\amy\\.moss\\sandbox\\leases", { profileRoot: "C:\\Users\\amy", security: null })).toBeNull();
+    expect(leasesDirAccessProblem("C:\\USERS\\AMY\\.moss\\sandbox\\leases", { profileRoot: "c:\\users\\amy", security: null })).toBeNull();
   });
 
   test("an owner-only dir outside the profile passes", () => {
     const ok = { userSid: self, ownerSid: self, allows: [{ sid: self, allow: true }, { sid: sy, allow: true }] };
-    expect(leasesDirAccessProblem("C:\\ProgramData\\Clover Sandbox\\markers", { profileRoot: "C:\\Users\\amy", security: ok })).toBeNull();
+    expect(leasesDirAccessProblem("C:\\ProgramData\\MOSS Sandbox\\markers", { profileRoot: "C:\\Users\\amy", security: ok })).toBeNull();
     const admins = { userSid: self, ownerSid: ba, allows: [{ sid: ba, allow: true }, { sid: sy, allow: true }] };
     expect(leasesDirAccessProblem("D:\\leases", { profileRoot: "C:\\Users\\amy", security: admins })).toBeNull();
     // Deny entries for anyone do not matter; only allows are gated.

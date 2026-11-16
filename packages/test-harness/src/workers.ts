@@ -1,4 +1,4 @@
-// The local emulator for Clover's Cloudflare Workers (plan §8: outside services stay local until the live gates):
+// The local emulator for MOSS's Cloudflare Workers (plan §8: outside services stay local until the live gates):
 // a service folder's wrangler config, its entry bundled by Bun, run in Miniflare's workerd on 127.0.0.1 with
 // in-memory storage. Nothing is deployed, and nothing leaves this machine.
 //

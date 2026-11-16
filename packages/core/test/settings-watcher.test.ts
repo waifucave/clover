@@ -341,7 +341,7 @@ describe("the stat look (an fs event that is late or never comes)", () => {
     const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
-    const dir = mkdtempSync(join(tmpdir(), "clover-b-settings-poll-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-b-settings-poll-"));
     const path = join(dir, "settings.json");
     writeFileSync(path, JSON.stringify({ v: 1 }));
     const applied: unknown[] = [];

@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@waifucave/clover-plugin-sdk": "workspace:*"
+    "@waifucave/moss-plugin-sdk": "workspace:*"
   }
 }

@@ -30,7 +30,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, constants, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { BotId, FencingToken, Level, levelAbove, SessionFailure as SessionFailureSchema, SessionId, TreePath, TurnOrigin, type SessionFailure } from "@waifucave/clover-protocol";
+import { BotId, FencingToken, Level, levelAbove, SessionFailure as SessionFailureSchema, SessionId, TreePath, TurnOrigin, type SessionFailure } from "@waifucave/moss-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, isContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
@@ -140,7 +140,7 @@ export interface AgentPeersOptions {
   /** This computer's pause switch, forwarded to the computers running its bots' agents. */
   pause?: AgentPauseGate;
   clock: Pick<Clock, "now">;
-  /** The Clover home: its fenced run folder keeps the boot counter the link epoch's base orders by. */
+  /** The MOSS home: its fenced run folder keeps the boot counter the link epoch's base orders by. */
   home: string;
   /** How long a turn waits for a dropped link (`LINK_GRACE_MS`); tests shorten it. */
   linkGraceMs?: number;

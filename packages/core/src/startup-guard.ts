@@ -3,7 +3,7 @@
 // keychains. Both refuse with exit 78 (`EX_CONFIG`).
 //
 // HOME on macOS (#243 checks 2 and 3): the Security framework takes the user's keychain search list and the user trust
-// settings from `$HOME/Library/Keychains`. Clover's own items are read and written in the login keychain opened by
+// settings from `$HOME/Library/Keychains`. MOSS's own items are read and written in the login keychain opened by
 // path (auth/login-keychain.ts, `<pw_dir>/Library/Keychains/login.keychain-db`), so no search list, HOME's or a
 // reordered one, chooses which item is read. This refusal still guards what a path can't: the trust settings
 // `--use-system-ca` honours, and anything else that reads HOME. A set HOME must be the account's own home
@@ -72,7 +72,7 @@ export function homeRefusal(o: { platform?: NodeJS.Platform; distBuild?: boolean
   const account = (o.account ?? accountHome)();
   const real = o.real ?? ((p: string) => { try { return realpathSync(p); } catch { return p; } });
   if (account !== undefined && home !== "" && real(home) === real(account)) return undefined;
-  return `clover-core: refusing to start: HOME is ${JSON.stringify(home)}, not this account's home${account === undefined ? " (which could not be read)" : ` (${account})`}. On macOS HOME chooses the keychains and trust settings this process reads; start it with HOME unset or set to the account's home.`;
+  return `moss-core: refusing to start: HOME is ${JSON.stringify(home)}, not this account's home${account === undefined ? " (which could not be read)" : ` (${account})`}. On macOS HOME chooses the keychains and trust settings this process reads; start it with HOME unset or set to the account's home.`;
 }
 
 /**
@@ -86,19 +86,19 @@ export function dyldRefusal(raw: readonly string[], o: { platform?: NodeJS.Platf
   if ((o.platform ?? process.platform) !== "darwin" || !(o.distBuild ?? DIST_BUILD)) return undefined;
   const names = [...new Set(raw.filter((e) => e.startsWith("DYLD_")).map((e) => e.slice(0, Math.max(e.indexOf("="), 0) || e.length)))];
   if (names.length === 0) return undefined;
-  return `clover-core: refusing to start: ${names.length === 1 ? "a DYLD_ variable is" : "DYLD_ variables are"} set (${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}). dyld removes them from this hardened release when System Integrity Protection is on; one that reached it means SIP is off, and then any library can be injected into this process. Unset ${names.length === 1 ? "it" : "them"}.`;
+  return `moss-core: refusing to start: ${names.length === 1 ? "a DYLD_ variable is" : "DYLD_ variables are"} set (${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}). dyld removes them from this hardened release when System Integrity Protection is on; one that reached it means SIP is off, and then any library can be injected into this process. Unset ${names.length === 1 ? "it" : "them"}.`;
 }
 
 /**
  * A test-marked release build's start (scripts/test-build.ts; main.ts calls this only behind the compile-time
- * `__CLOVER_TEST_BUILD__`, so a real build has none of it): it takes a test's keychain variables where a release
+ * `__MOSS_TEST_BUILD__`, so a real build has none of it): it takes a test's keychain variables where a release
  * refuses them, and REFUSES to start without them, never falling back to the login keychain or the live home. It needs
- * the throwaway keychain FILE (`CLOVER_TEST_KEYCHAIN`, non-empty in every raw entry) and a HOME that is set and, in
+ * the throwaway keychain FILE (`MOSS_TEST_KEYCHAIN`, non-empty in every raw entry) and a HOME that is set and, in
  * every raw entry, not this account's home by real path (HOME chooses the keychains, the trust settings and the
- * default Clover home); a `CLOVER_HOME` must be outside this account's home. Undefined: start.
+ * default MOSS home); a `MOSS_HOME` must be outside this account's home. Undefined: start.
  */
 export function testBuildStartRefusal(env: Record<string, string | undefined>, raw: readonly string[], o: { account?: () => string | undefined; real?: (p: string) => string } = {}): string | undefined {
-  const refuse = (why: string) => `clover-core: refusing to start: this is a test-marked build, and ${why}. It runs only on a throwaway keychain file (CLOVER_TEST_KEYCHAIN) and a temp HOME, never the login keychain or the live home.`;
+  const refuse = (why: string) => `moss-core: refusing to start: this is a test-marked build, and ${why}. It runs only on a throwaway keychain file (MOSS_TEST_KEYCHAIN) and a temp HOME, never the login keychain or the live home.`;
   const entries = (name: string) => [...raw.filter((e) => e === name || e.startsWith(`${name}=`)).map((e) => e.slice(name.length + 1)), ...(env[name] === undefined ? [] : [env[name]!])];
   const keychains = entries(TEST_KEYCHAIN_ENV);
   if (keychains.length === 0 || keychains.some((v) => v === "")) return refuse(`${TEST_KEYCHAIN_ENV} is ${keychains.length === 0 ? "not set" : "empty"}`);
@@ -109,9 +109,9 @@ export function testBuildStartRefusal(env: Record<string, string | undefined>, r
   const homes = entries("HOME");
   if (homes.length === 0) return refuse("HOME is not set (it would be this account's home)");
   if (homes.some((h) => h === "" || real(h) === own)) return refuse("HOME is this account's home");
-  for (const c of entries("CLOVER_HOME")) {
+  for (const c of entries("MOSS_HOME")) {
     const at = real(c);
-    if (c === "" || at === own || at.startsWith(`${own}${sep}`)) return refuse("CLOVER_HOME is inside this account's home");
+    if (c === "" || at === own || at.startsWith(`${own}${sep}`)) return refuse("MOSS_HOME is inside this account's home");
   }
   return undefined;
 }
@@ -125,5 +125,5 @@ export function testKeychainRefusal(env: Record<string, string | undefined>, raw
   if (!distBuild) return undefined;
   const set = TEST_KEYCHAIN_VARIABLES.filter((k) => env[k] !== undefined || raw.some((e) => e === k || e.startsWith(`${k}=`)));
   if (set.length === 0) return undefined;
-  return `clover-core: refusing to start: ${set.join(", ")} ${set.length === 1 ? "is" : "are"} set, which only a test sets. A release build uses the login keychain and its own service, never a test's; unset ${set.length === 1 ? "it" : "them"}.`;
+  return `moss-core: refusing to start: ${set.join(", ")} ${set.length === 1 ? "is" : "are"} set, which only a test sets. A release build uses the login keychain and its own service, never a test's; unset ${set.length === 1 ? "it" : "them"}.`;
 }

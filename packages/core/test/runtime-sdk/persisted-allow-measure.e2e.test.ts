@@ -1,5 +1,5 @@
 // MEASUREMENT (lane B, 2026-09-22) — on a REAL, spawned `winter` child, under the daemon's own
-// `buildCloverOptions`: does a SAVED allow rule take effect without asking the host, and does the
+// `buildMossOptions`: does a SAVED allow rule take effect without asking the host, and does the
 // control-plane DENY still beat a saved allow rule that matches the same call?
 //
 // The scripted `winter-test/laneb` double makes exactly ONE `Write` to the path on the prompt's last
@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { query, type CanUseTool, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import type { CredentialPresence } from "../../src/runtime-sdk/host";
-import { buildCloverOptions } from "../../src/runtime-sdk/mode-options";
+import { buildMossOptions } from "../../src/runtime-sdk/mode-options";
 import type { ModelTag } from "../../src/runtime-sdk/model-tag";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
@@ -30,12 +30,12 @@ async function writeOnce(spawn: SpawnClaudeCodeProcess, opts: { home: string; cw
     asked.push(name);
     return { behavior: "deny", message: "measurement: the host refuses everything" };
   };
-  const options = buildCloverOptions({
+  const options = buildMossOptions({
     mode: "code", policy: "ask", sessionId: crypto.randomUUID(), home: opts.home, cwd: opts.cwd,
     model: "winter-test/laneb" as ModelTag, credentials: { byProvider: {} } as unknown as CredentialPresence,
     systemPrompt: "You are a measurement.", exaKeyPresent: false,
     // As production spawns every session (`create.ts`): the path is only a label, the hook runs the Worker.
-    spawn: { pathToClaudeCodeExecutable: "clover-embedded", spawnClaudeCodeProcess: spawn }, canUseTool, abort: new AbortController(),
+    spawn: { pathToClaudeCodeExecutable: "moss-embedded", spawnClaudeCodeProcess: spawn }, canUseTool, abort: new AbortController(),
     baseEnv: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: opts.home, TMPDIR: opts.home },
     ...(opts.persistedAllow === undefined ? {} : { persistedAllow: opts.persistedAllow }),
   });
@@ -45,7 +45,7 @@ async function writeOnce(spawn: SpawnClaudeCodeProcess, opts: { home: string; cw
   queue.push(opts.target);
   try {
     for await (const m of q) {
-      if (process.env.CLOVER_DEBUG_MEASURE === "1") console.warn(JSON.stringify(m).slice(0, 600));
+      if (process.env.MOSS_DEBUG_MEASURE === "1") console.warn(JSON.stringify(m).slice(0, 600));
       if ((m as { type?: string }).type === "result") break;
     }
   } finally {
@@ -56,8 +56,8 @@ async function writeOnce(spawn: SpawnClaudeCodeProcess, opts: { home: string; cw
 
 describeWithEmbeddedRuntime("saved allow rules on a real winter child — applied natively, and never over a deny", (spawn) => {
   test("no rule → asked and refused; `Edit` saved → written unasked; `Edit` saved → a control-plane file is still denied", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-allow-measure-home-")));
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-allow-measure-cwd-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-allow-measure-home-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "moss-allow-measure-cwd-")));
     try {
       const first = join(cwd, "first.txt");
       const without = await writeOnce(spawn, { home, cwd, target: first });

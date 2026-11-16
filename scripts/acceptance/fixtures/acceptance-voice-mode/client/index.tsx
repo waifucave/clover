@@ -4,7 +4,7 @@
 // turn go, and records the span with its host half. It draws nothing. Its document's root shows what it holds now
 // (`data-avm-speaking`) for the run's record.
 import { useEffect } from "react";
-import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
+import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 
 export function Speaker() {
   const api = usePluginApi();

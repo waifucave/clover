@@ -3,7 +3,7 @@
 // is a network host), `handler` (an export of `host.entry`), `component` (an export of `client.entry`), `program` (a
 // program to run) or `code` (a folder of code).
 import { z } from "zod";
-import { Text as ProtocolText, utf16 } from "@waifucave/clover-protocol";
+import { Text as ProtocolText, utf16 } from "@waifucave/moss-protocol";
 
 export const POINT_FORMATS = ["path", "url", "handler", "component", "program", "code"] as const;
 export type PointFormat = (typeof POINT_FORMATS)[number];

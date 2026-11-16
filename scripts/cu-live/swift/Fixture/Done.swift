@@ -21,7 +21,7 @@ struct DoneModel: Equatable {
     /// The report (or log) to read.
     var path: String
 
-    static let title = "Clover computer-use live test finished"
+    static let title = "MOSS computer-use live test finished"
     /// The window's longest life: it exits by itself after this.
     static let lifetime: TimeInterval = 30 * 60
 

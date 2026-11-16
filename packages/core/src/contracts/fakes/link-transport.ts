@@ -2,7 +2,7 @@
 // would over real links (plan §3 "several daemons in one test joined by the fake link"). Messages are structured-cloned
 // and delivered on microtasks; `partition` and `heal` cut and restore pairs. Priorities are recorded, not scheduled:
 // each stream and the message channel keep their own order.
-import type { LinkPath, LinkView } from "@waifucave/clover-protocol";
+import type { LinkPath, LinkView } from "@waifucave/moss-protocol";
 import type { Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import type { Link, LinkPriority, LinkRequestOptions, LinkStream, LinkTransport } from "../link-transport";

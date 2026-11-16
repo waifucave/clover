@@ -6,7 +6,7 @@ const run = (argv: string[], o: { packaged?: boolean; env?: Record<string, strin
 
 describe("the launch guard", () => {
   test("a plain launch starts", () => {
-    expect(run(["apps/desktop", "--clover-headless", "--safe-mode"])).toEqual([]);
+    expect(run(["apps/desktop", "--moss-headless", "--safe-mode"])).toEqual([]);
     expect(run([], { packaged: true })).toEqual([]);
   });
 
@@ -20,14 +20,14 @@ describe("the launch guard", () => {
   });
 
   test("a value or a path that only looks like a switch is not one", () => {
-    expect(run(["--clover-capture=/tmp/--inspect.png", "inspect", "-inspect", "--inspector"])).toEqual([]);
+    expect(run(["--moss-capture=/tmp/--inspect.png", "inspect", "-inspect", "--inspector"])).toEqual([]);
   });
 
-  test("the dev app may debug behind CLOVER_DEV_DEBUG=1; a packaged app never does", () => {
-    expect(run(["--inspect"], { env: { CLOVER_DEV_DEBUG: "1" } })).toEqual([]);
-    expect(run(["--inspect"], { env: { CLOVER_DEV_DEBUG: "0" } })).toEqual(["inspect"]);
-    expect(run(["--inspect"], { packaged: true, env: { CLOVER_DEV_DEBUG: "1" } })).toEqual(["inspect"]);
-    expect(run(["--remote-debugging-port=1"], { packaged: true, env: { CLOVER_DEV_DEBUG: "1" } })).toEqual(["remote-debugging-port"]);
+  test("the dev app may debug behind MOSS_DEV_DEBUG=1; a packaged app never does", () => {
+    expect(run(["--inspect"], { env: { MOSS_DEV_DEBUG: "1" } })).toEqual([]);
+    expect(run(["--inspect"], { env: { MOSS_DEV_DEBUG: "0" } })).toEqual(["inspect"]);
+    expect(run(["--inspect"], { packaged: true, env: { MOSS_DEV_DEBUG: "1" } })).toEqual(["inspect"]);
+    expect(run(["--remote-debugging-port=1"], { packaged: true, env: { MOSS_DEV_DEBUG: "1" } })).toEqual(["remote-debugging-port"]);
   });
 
   test("the secret-bearing net log is refused in the packaged app; ordinary logging is not", () => {
@@ -38,10 +38,10 @@ describe("the launch guard", () => {
 
   test("a packaged test build takes the net log only with the marker AND the opt-in, and never a debugging switch", () => {
     const net = ["--log-net-log=/tmp/n.json", "--net-log-capture-mode=Everything"];
-    expect(run(net, { packaged: true, testBuild: true, env: { CLOVER_TEST_NETLOG: "1" } })).toEqual([]);
+    expect(run(net, { packaged: true, testBuild: true, env: { MOSS_TEST_NETLOG: "1" } })).toEqual([]);
     expect(run(net, { packaged: true, testBuild: true })).toEqual(["log-net-log", "net-log-capture-mode"]);
-    expect(run(net, { packaged: true, testBuild: false, env: { CLOVER_TEST_NETLOG: "1" } })).toEqual(["log-net-log", "net-log-capture-mode"]);
-    expect(run(["--inspect", "--remote-debugging-port=1"], { packaged: true, testBuild: true, env: { CLOVER_TEST_NETLOG: "1" } })).toEqual(["inspect", "remote-debugging-port"]);
+    expect(run(net, { packaged: true, testBuild: false, env: { MOSS_TEST_NETLOG: "1" } })).toEqual(["log-net-log", "net-log-capture-mode"]);
+    expect(run(["--inspect", "--remote-debugging-port=1"], { packaged: true, testBuild: true, env: { MOSS_TEST_NETLOG: "1" } })).toEqual(["inspect", "remote-debugging-port"]);
   });
 
   test("a test-marked build's DevTools port: the port alone, never an address, the pipe or --inspect; a real build never", () => {
@@ -49,6 +49,6 @@ describe("the launch guard", () => {
     expect(run(["--remote-debugging-port=9301", "--remote-debugging-address=0.0.0.0"], { packaged: true, testDebug: true })).toEqual(["remote-debugging-address"]);
     expect(run(["--remote-debugging-pipe", "--inspect", "--debug-port=1"], { packaged: true, testDebug: true })).toEqual(["debug-port", "inspect", "remote-debugging-pipe"]);
     // `testDebug` is the define AND the opt-in, computed in index.ts; without it the port is refused everywhere.
-    expect(run(["--remote-debugging-port=9301"], { packaged: true, testBuild: true, env: { CLOVER_TEST_DEBUG: "1" } })).toEqual(["remote-debugging-port"]);
+    expect(run(["--remote-debugging-port=9301"], { packaged: true, testBuild: true, env: { MOSS_TEST_DEBUG: "1" } })).toEqual(["remote-debugging-port"]);
   });
 });

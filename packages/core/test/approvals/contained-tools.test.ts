@@ -4,7 +4,7 @@
 // earlier rules. A plugin's read-only tools the same way (lane B's `pluginToolReadOnly`): a hit is a read.
 import { expect, test } from "bun:test";
 import { botApprovalCheck } from "../../src/approvals/bot-check";
-import { CloverApprovalBroker } from "../../src/approvals/broker";
+import { MossApprovalBroker } from "../../src/approvals/broker";
 import type { BotSessionContext } from "../../src/bots/service";
 import { Listeners } from "../../src/contracts/common";
 import { levelDecision, type ApprovalRequest } from "../../src/contracts/approval-broker";
@@ -39,10 +39,10 @@ const entry = (pluginId: string, name: string): Contribution =>
   ({ point: "mcpServers", pluginId, ref: `mcpServers/${name}`, entryId: name, value: { name, type: "host" }, state: "active" }) as Contribution;
 
 test("routedTool binds a call to the plugin and server it reaches by the served name, never by splitting it", async () => {
-  const entries = [entry("acme/tools", "stage"), entry("acme", "tools-stage"), entry("clover", "web")];
+  const entries = [entry("acme/tools", "stage"), entry("acme", "tools-stage"), entry("moss", "web")];
   const registry = {
     entries: (point: string) => (point === "mcpServers" ? entries : []),
-    get: (id: string) => ({ id, source: id === "clover" ? "bundled" : "user", folder: "/nonexistent", enabled: true, state: "running" }),
+    get: (id: string) => ({ id, source: id === "moss" ? "bundled" : "user", folder: "/nonexistent", enabled: true, state: "running" }),
     watch: () => () => {},
   };
   const mcp = new PluginMcp({ registry: registry as never, host: host((s) => (s === "web" ? ["WebSearch"] : ["set_mood"])) as never, self: () => "Studio" });
@@ -52,7 +52,7 @@ test("routedTool binds a call to the plugin and server it reaches by the served 
     // `acme/tools`'s `stage` and `acme`'s `tools-stage` would both mint `acme-tools-stage`: the router serves neither.
     expect(served).not.toContain("acme-tools-stage");
     expect(mcp.routedTool("bot", "mcp__acme-tools-stage__set_mood")).toBeUndefined();
-    expect(mcp.routedTool("bot", "mcp__web__WebSearch")).toEqual({ plugin: "clover", server: "web", tool: "WebSearch" });
+    expect(mcp.routedTool("bot", "mcp__web__WebSearch")).toEqual({ plugin: "moss", server: "web", tool: "WebSearch" });
     // A name the router never served routes nowhere.
     for (const crafted of ["mcp__web__set_mood", "mcp__web__WebSearch ", "web__WebSearch", "mcp__web__"]) expect([crafted, mcp.routedTool("bot", crafted)]).toEqual([crafted, undefined]);
   } finally {
@@ -117,10 +117,10 @@ test("a contained tool call runs at the default level and above, asks at ask, an
   expect(levelDecision("ask", "other", false, true)).toBe("ask");
   expect(levelDecision("read-only", "other", false, true)).toBe("deny");
   // Through the real broker at the default level: no card.
-  const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "ask-risky", localComputer: "Studio" });
+  const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "ask-risky", localComputer: "Studio" });
   const check = botApprovalCheck(broker, { containedTool: (_c, tool) => tool === "mcp__acme-stage__set_mood" });
   expect(await check(ctx, () => "user")("mcp__acme-stage__set_mood", { mood: "sunny" }, run)).toMatchObject({ behavior: "allow" });
-  const readOnly = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "read-only", localComputer: "Studio" });
+  const readOnly = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "read-only", localComputer: "Studio" });
   const refused = botApprovalCheck(readOnly, { containedTool: () => true });
   expect(await refused(ctx, () => "user")("mcp__acme-stage__set_mood", {}, run)).toMatchObject({ behavior: "deny" });
 });
@@ -153,7 +153,7 @@ test("the check marks a routed read-only tool a read, at each call; a read runs 
   expect(asked).toBe(before + 1);
   // Through the real broker: no card at any level, read-only included; a card every time still comes first.
   for (const level of ["read-only", "ask", "ask-risky", "accept-edits", "automatic"] as const) {
-    const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio" });
+    const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio" });
     const real = botApprovalCheck(broker, { readOnlyTool: (_c, tool) => tool === "mcp__acme-notes__list_notes" });
     expect([level, (await real(ctx, () => "user")("mcp__acme-notes__list_notes", { folder: "work" }, run))?.behavior]).toEqual([level, "allow"]);
     expect(broker.cards()).toHaveLength(0);
@@ -161,7 +161,7 @@ test("the check marks a routed read-only tool a read, at each call; a read runs 
 });
 
 test("a read-only tool naming a secret place is refused with no card, at automatic too", async () => {
-  const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
+  const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
   const check = botApprovalCheck(broker, { home: "/Users/u", readOnlyTool: () => true });
   const d = await check(ctx, () => "user")("mcp__acme-notes__list_notes", { path: "/Users/u/.aws/credentials" }, run);
   expect(d).toMatchObject({ behavior: "deny" });

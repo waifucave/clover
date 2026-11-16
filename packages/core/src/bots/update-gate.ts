@@ -10,7 +10,7 @@
 //   arrives is recorded and waits; `onReopen` starts it again, so a routine fired meanwhile runs then.
 // * **The user's own message** (and a relayed one) is refused while closed, typed as the gate types it
 //   (`daemon_shutting_down`, `update-restarting`, `retry`), so the app says "restarting for an update" and sends again.
-import { ERR } from "@waifucave/clover-protocol";
+import { ERR } from "@waifucave/moss-protocol";
 import { MethodError } from "../rpc/handler";
 
 /** What D uses of #198's `UpdateGate`. */

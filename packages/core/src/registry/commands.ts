@@ -10,8 +10,8 @@
 // scope or its plugin's, §5.5) runs for the user and for that bot's own sessions (its conversation, side threads and
 // the agents it starts), never another bot's or a coding session's. The checks are before the args check, so a refused
 // caller learns nothing of the command's schema.
-import { validateArgs, type HoldPhase } from "@waifucave/clover-plugin-sdk";
-import { PLUGINS_METHODS, type Caller } from "@waifucave/clover-protocol";
+import { validateArgs, type HoldPhase } from "@waifucave/moss-plugin-sdk";
+import { PLUGINS_METHODS, type Caller } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
 import { grantsInForce, type PluginRegistry } from "../contracts/plugin-registry";
@@ -94,7 +94,7 @@ export function registryCommand(registry: Pick<PluginRegistry, "entries"> & Part
   return { name, pluginId: c.pluginId, handler: v.handler, ...(v.args === undefined ? {} : { args: v.args }), ...(scope === undefined ? {} : { scope }), ...(hold ? { hold } : {}) };
 }
 
-/** `command.run` on Clover's connections: every caller's call goes through `runCommand`, the args check first. */
+/** `command.run` on MOSS's connections: every caller's call goes through `runCommand`, the args check first. */
 export function commandMethods(deps: { registry: Pick<PluginRegistry, "entries"> & Partial<Pick<PluginRegistry, "get">>; host: Pick<PluginHost, "invoke"> }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   const o: CommandRunnerOptions = { find: (name) => registryCommand(deps.registry, name), host: deps.host, grantedOf: (id) => grantsInForce(deps.registry.get?.(id)) };

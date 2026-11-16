@@ -1,5 +1,5 @@
 // Each bot's memory, kept alike on all of the user's computers (H-M3; the owner's decision: a bot's memory is
-// `home/memory` in its tree, `<Clover home>/bots/<bot>/memory/` on every computer that runs the core; spec §6.5).
+// `home/memory` in its tree, `<MOSS home>/bots/<bot>/memory/` on every computer that runs the core; spec §6.5).
 //
 // The bot writes `MEMORY.md` and its other memory files with its ordinary tools on whichever computer runs it; lane
 // J's holder tells this sync of each change once it is on disk (`changed`, the holder's `memoryChanged`), and a scan
@@ -38,7 +38,7 @@
 //   computer); never a phone, a browser or a device that doesn't run the core.
 // * **Paths** are names in the bot's memory folder, folded (NFC, case) to compare; `..`, absolute paths and other
 //   bots' paths are refused; nothing is written through a link (memory-files.ts).
-import { isAnyPluginId, pluginIdFromSegment } from "@waifucave/clover-protocol";
+import { isAnyPluginId, pluginIdFromSegment } from "@waifucave/moss-protocol";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { botPaths } from "../bots/paths";
@@ -56,7 +56,7 @@ import { ContentKeyRing, contentAad, type SharedContentKey } from "./memory-keys
 import { mountSyncStreams } from "./streams";
 
 const PREFIX = "memory:";
-export const MAIL_INFO = "clover memory v1 mail";
+export const MAIL_INFO = "moss memory v1 mail";
 const DEVICE_RE = /^[a-z0-9]{16,64}$/;
 const HASH_RE = /^[0-9a-f]{64}$/;
 /** What one push or one pull page carries at most in content (the link's own frames are smaller; it splits them). */
@@ -122,7 +122,7 @@ export type SkipReason = "not_writer" | "counters" | "ahead";
 export type PushResult = { ok: true; took: number; conflicts: number; skipped?: { rel: string; reason: SkipReason }[] } | { ok: false; reason: Refusal; detail?: string };
 
 export interface MemorySyncOptions {
-  /** The Clover home: memories are in `bots/<bot>/memory/` there, this sync's own state in `sync/`. */
+  /** The MOSS home: memories are in `bots/<bot>/memory/` there, this sync's own state in `sync/`. */
   home: string;
   /** This computer's device id and its link key, which signs its versions and its mail. */
   self: string;
@@ -971,15 +971,15 @@ export const MEMORY_HELLO = "link.memory.hello";
 
 /** What a version's writer signs: the bot, the path, the vector, the time, the content's hash and size. */
 export function versionStatement(bot: string, v: MemoryVersion): Bytes {
-  return utf8(["clover-memory-v1 version", bot, v.rel, vvText(v.vv), String(v.ts), v.hash ?? "-", String(v.size)].join("\n"));
+  return utf8(["moss-memory-v1 version", bot, v.rel, vvText(v.vv), String(v.ts), v.hash ?? "-", String(v.size)].join("\n"));
 }
 
 function mailAad(from: string, to: string, id: string): Bytes {
-  return utf8(["clover-memory-v1 mail", from, to, id].join("\n"));
+  return utf8(["moss-memory-v1 mail", from, to, id].join("\n"));
 }
 
 function mailStatement(from: string, to: string, id: string, box: string): Bytes {
-  return utf8(["clover-memory-v1 mail", from, to, id, sha256Hex(utf8(box))].join("\n"));
+  return utf8(["moss-memory-v1 mail", from, to, id, sha256Hex(utf8(box))].join("\n"));
 }
 
 function botOf(stream: unknown): string | undefined {

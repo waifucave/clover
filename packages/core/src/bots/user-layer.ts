@@ -5,13 +5,13 @@
 //
 // One file per bot, `<home>/user-layers/<bot>.json`, rewritten whole (atomic-file.ts). The layer syncs with the
 // account's settings once lane H's sync exists (§8.5 "bots' user layers … sync").
-import { UserLayerPatch, type Text } from "@waifucave/clover-protocol";
+import { UserLayerPatch, type Text } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { readJson, removeFileDurably, writeJsonAtomic } from "../sessions/atomic-file";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { displayText } from "@waifucave/clover-plugin-sdk/plain";
-import { LayoutFileSchema } from "@waifucave/clover-plugin-sdk";
+import { displayText } from "@waifucave/moss-plugin-sdk/plain";
+import { LayoutFileSchema } from "@waifucave/moss-plugin-sdk";
 import { userLayerFile, userLayersDir } from "./paths";
 
 export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "avatar", "theme", "layout", "lan"] as const;
@@ -62,7 +62,7 @@ export function applyUserLayerPatch(layer: UserLayer, patch: UserLayerPatch): Us
 }
 
 /** A credit note a person or a model's own file wrote, as plain text a page may show: the shared cleaner
- *  (`@waifucave/clover-plugin-sdk/plain`), the first 300 characters. */
+ *  (`@waifucave/moss-plugin-sdk/plain`), the first 300 characters. */
 export const neutralNote = (text: string): string => displayText(text, 300) ?? "";
 
 export function userLayerFields(layer: UserLayer): UserLayerField[] {

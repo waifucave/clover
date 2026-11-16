@@ -1,4 +1,4 @@
-// What the fake daemon's `plugin.ui` hands the app: the `clover` tree read from its manifests (found wherever lane M's
+// What the fake daemon's `plugin.ui` hands the app: the `moss` tree read from its manifests (found wherever lane M's
 // layout puts the children), Alpha as a bot with its tab's theme, and any extra plugin folders (the tests' third-party
 // fixtures). Lane B's registry (B-M1) makes the real one.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -38,12 +38,12 @@ interface Manifest {
 }
 
 function read(dir: string): Manifest | undefined {
-  const file = join(dir, "clover.json");
+  const file = join(dir, "moss.json");
   return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as Manifest) : undefined;
 }
 
-/** Every child of `clover` with UI or themes, by its folder's name. */
-export function cloverChildren(root = join(REPO, "plugins", "clover"), depth = 0): { name: string; dir: string; manifest: Manifest }[] {
+/** Every child of `moss` with UI or themes, by its folder's name. */
+export function mossChildren(root = join(REPO, "plugins", "moss"), depth = 0): { name: string; dir: string; manifest: Manifest }[] {
   const out: { name: string; dir: string; manifest: Manifest }[] = [];
   if (depth > 3 || !existsSync(root)) return out;
   for (const name of readdirSync(root)) {
@@ -52,17 +52,17 @@ export function cloverChildren(root = join(REPO, "plugins", "clover"), depth = 0
     if (!statSync(dir).isDirectory()) continue;
     const manifest = read(dir);
     if (manifest !== undefined && (manifest.contributes?.ui !== undefined || manifest.contributes?.themes !== undefined)) out.push({ name, dir, manifest });
-    out.push(...cloverChildren(dir, depth + 1));
+    out.push(...mossChildren(dir, depth + 1));
   }
   return out;
 }
 
-export function cloverViews(): FakeView[] {
-  return cloverChildren().map(({ name, dir, manifest }, i) => ({
-    pluginId: `clover/${name}`,
+export function mossViews(): FakeView[] {
+  return mossChildren().map(({ name, dir, manifest }, i) => ({
+    pluginId: `moss/${name}`,
     name: manifest.name ?? name,
     treeHash: ZERO,
-    layer: "clover",
+    layer: "moss",
     assetBase: dir,
     ...(manifest.client?.entry !== undefined ? { clientEntry: manifest.client.entry } : {}),
     ui: manifest.contributes?.ui ?? [],

@@ -1,6 +1,6 @@
 // Winter Phase 8d (P8d-1/P8d-2) — the STANDALONE proof of `embed-runtimes.sh` (the body of
 // project.yml's "Embed runtimes" postCompileScript), run exactly the way the section brief
-// prescribes: BUILT_PRODUCTS_DIR=<mkdtemp>, CONTENTS_FOLDER_PATH=Clover.app/Contents,
+// prescribes: BUILT_PRODUCTS_DIR=<mkdtemp>, CONTENTS_FOLDER_PATH=MOSS Code.app/Contents,
 // CONFIGURATION=Release, EXPANDED_CODE_SIGN_IDENTITY=- (ad-hoc — this is the build-phase proof,
 // not release.ts's own gate, which requires a real Developer ID team identity).
 //
@@ -36,10 +36,10 @@ function pinnedVendoredAnt(): string | undefined {
 
 // The tests that stage the agent runtime's binary are a compiled-artifact proof: they need dist/winter (`bun run
 // build:winter`, or CI's macOS job, which copies the installed platform package's binary there and sets
-// CLOVER_RUNTIME_REQUIRE_BINARY=1 so a missing one fails). A plain run without it skips them and says why, as the
+// MOSS_RUNTIME_REQUIRE_BINARY=1 so a missing one fails). A plain run without it skips them and says why, as the
 // built-binary tests do (docs/claude/testing.md); nothing here builds it.
 const HAVE_RUNTIME_BINARY = existsSync(PINNED_DIST_WINTER);
-const REQUIRE_RUNTIME_BINARY = process.env.CLOVER_RUNTIME_REQUIRE_BINARY === "1";
+const REQUIRE_RUNTIME_BINARY = process.env.MOSS_RUNTIME_REQUIRE_BINARY === "1";
 if (!HAVE_RUNTIME_BINARY && !REQUIRE_RUNTIME_BINARY) {
   console.warn(`SKIP embed-runtimes' staging tests: no dist/winter at ${PINNED_DIST_WINTER} (a compiled-artifact proof; \`bun run build:winter\` makes it, CI's macOS job requires it)`);
 }
@@ -60,7 +60,7 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
     }
 
     const builtProducts = mkdtempSync(join(tmpdir(), "embed-runtimes-"));
-    // Winter Phase 10a (Task L3): a self-contained `ant` fixture via CLOVER_STAGE_ANT_PATH — this
+    // Winter Phase 10a (Task L3): a self-contained `ant` fixture via MOSS_STAGE_ANT_PATH — this
     // test never depends on `bun run scripts/fetch-ant.ts` having been run (a real vendored `ant`
     // is exercised separately below, best-effort). Plain re-sign-ability is all this step needs:
     // `codesign --force --sign -` accepts any file, Mach-O or not (measured).
@@ -75,15 +75,15 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
           ...process.env,
           CONFIGURATION: "Release",
           BUILT_PRODUCTS_DIR: builtProducts,
-          CONTENTS_FOLDER_PATH: "Clover.app/Contents",
+          CONTENTS_FOLDER_PATH: "MOSS Code.app/Contents",
           EXPANDED_CODE_SIGN_IDENTITY: "-",
-          CLOVER_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
-          CLOVER_STAGE_ANT_PATH: antFixture,
+          MOSS_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
+          MOSS_STAGE_ANT_PATH: antFixture,
         },
       });
       if (r.status !== 0) throw new Error(`embed-runtimes.sh exited ${r.status}:\n[stderr]\n${r.stderr}\n[stdout]\n${r.stdout}`);
 
-      const dest = join(builtProducts, "Clover.app", "Contents", "Resources", "runtimes");
+      const dest = join(builtProducts, "MOSS Code.app", "Contents", "Resources", "runtimes");
       expect(existsSync(join(dest, "winter"))).toBe(true);
       expect(existsSync(join(dest, "VERSIONS.json"))).toBe(true);
       expect(existsSync(join(dest, "ant", "ant"))).toBe(true);
@@ -93,8 +93,8 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
 
       // winter: re-signed with the stable identifier, ad-hoc identity accepted (this is the
       // build-phase proof, not release.ts's real-team-identity gate).
-      const cloverDvv = spawnSync("codesign", ["-dvv", join(dest, "winter")], { encoding: "utf8" });
-      expect(`${cloverDvv.stdout}${cloverDvv.stderr}`).toContain("Identifier=com.winter.runtime");
+      const mossDvv = spawnSync("codesign", ["-dvv", join(dest, "winter")], { encoding: "utf8" });
+      expect(`${mossDvv.stdout}${mossDvv.stderr}`).toContain("Identifier=com.winter.runtime");
       // A2: exactly the JIT entitlement on winter (a bun binary); none on ant (Go).
       const csKeys = (path: string): string[] => {
         const xml = spawnSync("codesign", ["-d", "--entitlements", "-", "--xml", path], { encoding: "utf8" }).stdout ?? "";
@@ -103,7 +103,7 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
       expect(csKeys(join(dest, "winter"))).toEqual(["com.apple.security.cs.allow-jit"]);
       expect(csKeys(join(dest, "ant", "ant"))).toEqual([]);
 
-      // ant: RE-SIGNED with Clover's own stable identifier, same shape as clover.
+      // ant: RE-SIGNED with MOSS's own stable identifier, same shape as moss.
       const antDvv = spawnSync("codesign", ["-dvv", join(dest, "ant", "ant")], { encoding: "utf8" });
       expect(`${antDvv.stdout}${antDvv.stderr}`).toContain("Identifier=com.winter.ant");
       expect(readFileSync(join(dest, "ant", "ant"), "utf8")).toBe("#!/bin/sh\necho fixture-ant\n");
@@ -144,10 +144,10 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
           ...process.env,
           CONFIGURATION: "Release",
           BUILT_PRODUCTS_DIR: builtProducts,
-          CONTENTS_FOLDER_PATH: "Clover.app/Contents",
+          CONTENTS_FOLDER_PATH: "MOSS Code.app/Contents",
           EXPANDED_CODE_SIGN_IDENTITY: "-",
-          CLOVER_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
-          CLOVER_STAGE_ANT_PATH: "/nonexistent/path/to/ant",
+          MOSS_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
+          MOSS_STAGE_ANT_PATH: "/nonexistent/path/to/ant",
         },
       });
       expect(r.status).not.toBe(0);
@@ -178,15 +178,15 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
           ...process.env,
           CONFIGURATION: "Release",
           BUILT_PRODUCTS_DIR: builtProducts,
-          CONTENTS_FOLDER_PATH: "Clover.app/Contents",
+          CONTENTS_FOLDER_PATH: "MOSS Code.app/Contents",
           EXPANDED_CODE_SIGN_IDENTITY: "-",
-          CLOVER_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
-          // deliberately NOT setting CLOVER_STAGE_ANT_PATH — proves the default (VERSIONS.json
+          MOSS_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
+          // deliberately NOT setting MOSS_STAGE_ANT_PATH — proves the default (VERSIONS.json
           // tag -> vendor/ant/<tag>/ant) resolution path, not the test seam.
         },
       });
       if (r.status !== 0) throw new Error(`embed-runtimes.sh exited ${r.status}:\n[stderr]\n${r.stderr}\n[stdout]\n${r.stdout}`);
-      const dest = join(builtProducts, "Clover.app", "Contents", "Resources", "runtimes");
+      const dest = join(builtProducts, "MOSS Code.app", "Contents", "Resources", "runtimes");
       const antDvv = spawnSync("codesign", ["-dvv", join(dest, "ant", "ant")], { encoding: "utf8" });
       expect(`${antDvv.stdout}${antDvv.stderr}`).toContain("Identifier=com.winter.ant");
 

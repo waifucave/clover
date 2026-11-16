@@ -5,7 +5,7 @@
 // command gives it to the run, which checks each answer. Where it writes, which conversation it notes in and which
 // site it fetches come from its settings, which the run sets once the plugin runs.
 import { useEffect, useState } from "react";
-import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
+import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 
 const said = (e: unknown) => `refused: ${(e instanceof Error ? e.message : String(e)).slice(0, 240)}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

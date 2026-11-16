@@ -1,19 +1,19 @@
-// `clover-core server install|uninstall` (src/server-install.ts) against a temp home, a recording runner and lane C's
+// `moss-core server install|uninstall` (src/server-install.ts) against a temp home, a recording runner and lane C's
 // login start faked: never launchctl, systemctl, loginctl or schtasks for real.
 import { describe, expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readInstallMarker, removeInstallMarker, writeInstallMarker, type LoginSpec } from "@waifucave/clover-core";
+import { readInstallMarker, removeInstallMarker, writeInstallMarker, type LoginSpec } from "@waifucave/moss-core";
 import { earlierLayoutFiles, insideApp, migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serverInstall, serverUninstall, type ServerDeps } from "../src/server-install";
 import { serverPluginBun, type PluginBunResult } from "../src/plugin-bun-install";
 import { serverPluginsDir, type PluginsResult } from "../src/plugins-install";
 
 function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registered?: boolean; bin?: string; pluginBun?: PluginBunResult; plugins?: PluginsResult } = {}) {
-  const root = mkdtempSync(join(tmpdir(), "clover-server-install-"));
+  const root = mkdtempSync(join(tmpdir(), "moss-server-install-"));
   const home = join(root, "home");
   mkdirSync(home);
-  const bin = opts.bin ?? join(root, "Downloads", "clover-core-1.2.3-linux-x64");
+  const bin = opts.bin ?? join(root, "Downloads", "moss-core-1.2.3-linux-x64");
   mkdirSync(join(bin, ".."), { recursive: true });
   writeFileSync(bin, "the daemon");
   const ran: string[] = [];
@@ -28,7 +28,7 @@ function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registe
       if (argv[1] === "show-user") return { ok: true, out: `${opts.lingerBefore ?? "no"}\n` };
       return { ok: true, out: "" };
     },
-    loginEnable: async (spec) => { enabled.push(spec); return { registered: opts.registered ?? true, label: "com.waifucave.clover.core" }; },
+    loginEnable: async (spec) => { enabled.push(spec); return { registered: opts.registered ?? true, label: "com.waifucave.moss.core" }; },
     loginRemove: async (spec) => { removed.push(spec); },
     stopDaemon: async (spec) => { stopped.push(spec.bin); return "not-running"; },
     readMarker: (h) => readInstallMarker(h), writeMarker: writeInstallMarker, removeMarker: removeInstallMarker,
@@ -40,7 +40,7 @@ function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registe
     },
     plugins: async (dir, channel) => {
       bundled.push({ dir, channel });
-      if (opts.plugins?.kind !== "refused") { mkdirSync(join(dir, "clover"), { recursive: true }); writeFileSync(join(dir, "clover", "clover.json"), "{}"); }
+      if (opts.plugins?.kind !== "refused") { mkdirSync(join(dir, "moss"), { recursive: true }); writeFileSync(join(dir, "moss", "moss.json"), "{}"); }
       return opts.plugins ?? { kind: "installed", version: "1.2.3", files: 1 };
     },
   };
@@ -50,7 +50,7 @@ function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registe
   return { home, bin, deps, ran, enabled, removed, lines, plugin, bundled, stopped };
 }
 
-describe("clover-core server install and uninstall", () => {
+describe("moss-core server install and uninstall", () => {
   test("arguments", () => {
     expect(parseServerArgs(["install"])).toEqual({ action: "install", channel: "latest" });
     expect(parseServerArgs(["install", "--channel", "beta"])).toEqual({ action: "install", channel: "beta" });
@@ -63,7 +63,7 @@ describe("clover-core server install and uninstall", () => {
     const s = setup("linux");
     expect(await serverInstall(s.deps, "beta")).toBe(0);
     const bin = serverBinary(s.home, "linux");
-    expect(bin).toBe(join(s.home, "bin", "daemon", "clover-core"));
+    expect(bin).toBe(join(s.home, "bin", "daemon", "moss-core"));
     expect(readFileSync(bin, "utf8")).toBe("the daemon");
     expect(s.enabled.map((e) => e.bin)).toEqual([bin]);
     expect(s.ran).toEqual(["loginctl show-user srv --property=Linger --value", "loginctl enable-linger srv"]);
@@ -90,12 +90,12 @@ describe("clover-core server install and uninstall", () => {
       expect(await serverInstall(s.deps, "latest")).toBe(0);
       expect(s.enabled.map((e) => e.bin)).toEqual([serverBinary(s.home, os)]);
       expect(s.ran).toEqual([]);
-      expect(serverBinary(s.home, os).endsWith(os === "win32" ? "clover-core.exe" : "clover-core")).toBe(true);
+      expect(serverBinary(s.home, os).endsWith(os === "win32" ? "moss-core.exe" : "moss-core")).toBe(true);
     }
   });
 
   test("refused: the app's own daemon, a home the app or a package owns, and an uninstall with no server", async () => {
-    const appBin = setup("darwin", { bin: join(mkdtempSync(join(tmpdir(), "clover-app-")), "Clover.app", "Contents", "Resources", "daemon", "clover-core") });
+    const appBin = setup("darwin", { bin: join(mkdtempSync(join(tmpdir(), "moss-app-")), "MOSS Code.app", "Contents", "Resources", "daemon", "moss-core") });
     expect(insideApp(appBin.bin)).toBe(true);
     expect(await serverInstall(appBin.deps, "latest")).toBe(1);
     expect(appBin.enabled).toEqual([]);
@@ -112,14 +112,14 @@ describe("clover-core server install and uninstall", () => {
     const s = setup("linux");
     expect(await serverInstall(s.deps, "beta")).toBe(0);
     const bun = serverPluginBun(s.home, "linux");
-    expect(bun).toBe(join(s.home, "bin", "daemon", "clover-plugin-bun"));
+    expect(bun).toBe(join(s.home, "bin", "daemon", "moss-plugin-bun"));
     expect(s.plugin).toEqual([{ path: bun, channel: "beta" }]);
     expect(readFileSync(bun, "utf8")).toBe("plain bun");
     writeFileSync(`${bun}.old`, "older bun");
     expect(await serverUninstall(s.deps)).toBe(0);
     expect(existsSync(bun)).toBe(false);
     expect(existsSync(`${bun}.old`)).toBe(false);
-    expect(serverPluginBun("/h", "win32")).toBe(join("/h", "bin", "daemon", "clover-plugin-bun.exe"));
+    expect(serverPluginBun("/h", "win32")).toBe(join("/h", "bin", "daemon", "moss-plugin-bun.exe"));
   });
 
   test("the bundled plugins go in <home>/bin/plugins on install, on the install's channel, and go with it on uninstall", async () => {
@@ -128,25 +128,25 @@ describe("clover-core server install and uninstall", () => {
     const dir = serverPluginsDir(s.home);
     expect(dir).toBe(join(s.home, "bin", "plugins"));
     expect(s.bundled).toEqual([{ dir, channel: "beta" }]);
-    expect(existsSync(join(dir, "clover", "clover.json"))).toBe(true);
+    expect(existsSync(join(dir, "moss", "moss.json"))).toBe(true);
     for (const d of [`${dir}.old`, `${dir}.new`]) mkdirSync(d);
     expect(await serverUninstall(s.deps)).toBe(0);
     for (const d of [dir, `${dir}.old`, `${dir}.new`]) expect(existsSync(d)).toBe(false);
   });
 
   test("a server whose bundled plugins can't be installed isn't installed: nothing registered, no marker", async () => {
-    const s = setup("linux", { plugins: { kind: "refused", why: "clover-plugins-1.2.3-linux-x64.tar.gz isn't the tree this core's manifest names" } });
+    const s = setup("linux", { plugins: { kind: "refused", why: "moss-plugins-1.2.3-linux-x64.tar.gz isn't the tree this core's manifest names" } });
     expect(await serverInstall(s.deps, "latest")).toBe(1);
     expect(s.enabled).toEqual([]);
     expect(readInstallMarker(s.home)).toBeUndefined();
     expect(s.lines.at(-1)).toContain("isn't the tree this core's manifest names");
   });
 
-  test("the earlier layout (<home>/bin/clover-core, plugin Bun beside it) is stopped and removed at install", async () => {
+  test("the earlier layout (<home>/bin/moss-core, plugin Bun beside it) is stopped and removed at install", async () => {
     const s = setup("linux");
     const earlier = earlierLayoutFiles(s.home, "linux");
     mkdirSync(join(s.home, "bin"), { recursive: true });
-    for (const f of [earlier[0]!, `${earlier[0]}.old`, join(s.home, "bin", "clover-plugin-bun")]) writeFileSync(f, "earlier");
+    for (const f of [earlier[0]!, `${earlier[0]}.old`, join(s.home, "bin", "moss-plugin-bun")]) writeFileSync(f, "earlier");
     expect(await serverInstall(s.deps, "latest")).toBe(0);
     expect(s.stopped).toEqual([earlier[0]!]);
     for (const f of earlier) expect(existsSync(f)).toBe(false);
@@ -154,7 +154,7 @@ describe("clover-core server install and uninstall", () => {
   });
 
   test("a server that can't have plain Bun for plugins isn't installed: nothing registered, no marker", async () => {
-    const s = setup("linux", { pluginBun: { kind: "refused", why: "clover-plugin-bun-1.4.4-linux-x64: bad signature" } });
+    const s = setup("linux", { pluginBun: { kind: "refused", why: "moss-plugin-bun-1.4.4-linux-x64: bad signature" } });
     expect(await serverInstall(s.deps, "latest")).toBe(1);
     expect(s.enabled).toEqual([]);
     expect(readInstallMarker(s.home)).toBeUndefined();
@@ -179,7 +179,7 @@ describe("clover-core server install and uninstall", () => {
 
 describe("one step from the earlier layout", () => {
   const earlierServer = () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-server-migrate-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-server-migrate-")));
     mkdirSync(join(home, "bin"));
     const [oldBin, , , , oldBun] = earlierLayoutFiles(home, "linux");
     writeFileSync(oldBin!, "the daemon", { mode: 0o755 });
@@ -194,9 +194,9 @@ describe("one step from the earlier layout", () => {
     expect(r).toEqual({ kind: "restart" });
     const bin = serverBinary(e.home, "linux");
     expect(readFileSync(bin, "utf8")).toBe("the daemon");
-    expect(readFileSync(join(e.home, "bin", "daemon", "clover-plugin-bun"), "utf8")).toBe("plain bun");
+    expect(readFileSync(join(e.home, "bin", "daemon", "moss-plugin-bun"), "utf8")).toBe("plain bun");
     expect(lstatSync(e.oldBin).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(e.oldBin)).toBe(join("daemon", "clover-core"));
+    expect(readlinkSync(e.oldBin)).toBe(join("daemon", "moss-core"));
     expect(realpathSync(e.oldBin)).toBe(bin);
     // The restarted daemon runs from the new layout: nothing more to do, and the link the login unit runs through stays.
     writeFileSync(`${e.oldBin}.old`, "an old one");
@@ -208,8 +208,8 @@ describe("one step from the earlier layout", () => {
   test("Windows: copied, and the logon task registered again for the new path; the next logon starts it", async () => {
     const e = earlierServer();
     const registered: string[] = [];
-    const r = await migrateEarlierLayout({ home: e.home, os: "win32", execPath: e.oldBin.replace(/clover-core$/, "clover-core.exe"), reRegister: async (b) => { registered.push(b); return true; }, log: () => {} });
-    // (The earlier Windows layout's binary is clover-core.exe: this one isn't, so nothing is to be done.)
+    const r = await migrateEarlierLayout({ home: e.home, os: "win32", execPath: e.oldBin.replace(/moss-core$/, "moss-core.exe"), reRegister: async (b) => { registered.push(b); return true; }, log: () => {} });
+    // (The earlier Windows layout's binary is moss-core.exe: this one isn't, so nothing is to be done.)
     expect(r).toEqual({ kind: "not needed" });
     const exe = earlierLayoutFiles(e.home, "win32")[0]!;
     writeFileSync(exe, "the daemon");

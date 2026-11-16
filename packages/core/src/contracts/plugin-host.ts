@@ -2,7 +2,7 @@
 // Owner: lane B.
 //
 // Two plugin-host processes per computer, separate from the daemon (the owner's answer to S4, amending §5.2's one
-// shared host): the bundled `clover` tree's host halves run in a process of their own, and every other plugin's share
+// shared host): the bundled `moss` tree's host halves run in a process of their own, and every other plugin's share
 // the other one, each plugin in its own worker; Node or native plugins get a process of their own. The core decides
 // the process from the install record (`hostProcessFor`), never from anything a plugin claims. The daemon calls into
 // them; it never runs plugin code itself.
@@ -24,14 +24,14 @@
 //   The host stamps each call's `pluginId` from its own worker table, the worker that made the call, never from
 //   anything the worker says (review S3); across the pipe it is `pluginHost.api`'s `pluginId`, on a connection bound
 //   to its process. The core's router refuses a call whose plugin doesn't run in the process it came from, so a
-//   third-party worker presenting a `clover/*` id is refused, and honours the account token and `keys.*` only from
-//   the `clover` process (`guardApiRouter`, S4).
+//   third-party worker presenting a `moss/*` id is refused, and honours the account token and `keys.*` only from
+//   the `moss` process (`guardApiRouter`, S4).
 // * Who a plugin's API call acts for (ruling R7): a call the plugin makes while it serves a call from the core (a tool
 //   call, a hook) acts as that call's caller, the session that made the tool call. The core binds it from its own
 //   record of the call it made: the host carries the call's id with each API call made inside it (`ApiCall.invocation`,
 //   the `ctx.api` the handler got, or in a `host` MCP server the `tools/call` the host runs inside the call), and the
 //   core looks the caller up by that id. The core never trusts a caller the plugin supplies: no `_meta` caller, no
-//   argument. An MCP request the core sends carries the id as `_meta["clover/invocation"]`, which the host takes off
+//   argument. An MCP request the core sends carries the id as `_meta["moss/invocation"]`, which the host takes off
 //   before the server sees it, and an id that isn't an open call to that plugin is refused. A call made outside any
 //   (a timer, a `start` task) acts as the plugin. A call's `ctx.api` ends with the call (#179's review, S1): kept and
 //   used later, from a timer or while serving another call, it rejects `closed`, so a plugin can't go on acting as
@@ -42,7 +42,7 @@
 // * `stream` runs a handler that returns an async iterable (a model adapter's output, a voice's audio; review S16):
 //   values arrive in order, the iterable's return value ends the stream, and `input` feeds a handler that takes one
 //   (a voice's microphone audio) as `ctx.input`. The limits, cancelling, crashes and reloads are `invoke`'s.
-import { BUNDLED_ROOT_PLUGIN, type Caller, type HostProcess, type PluginSource } from "@waifucave/clover-protocol";
+import { BUNDLED_ROOT_PLUGIN, type Caller, type HostProcess, type PluginSource } from "@waifucave/moss-protocol";
 import { ContractError, type Unsubscribe } from "./common";
 
 export const PLUGIN_CALL_TIMEOUT_MS = 10_000;
@@ -70,20 +70,20 @@ export interface InstallRecord {
 }
 
 /** The process a host half runs in (the owner's answer to S4): a Node or native plugin's own, or a Bun one that asks
- *  for its own (`host.process: "own"`); the `clover` process for the bundled `clover` tree (installed with the app,
- *  top-level id `clover`); the shared one for every other. */
+ *  for its own (`host.process: "own"`); the `moss` process for the bundled `moss` tree (installed with the app,
+ *  top-level id `moss`); the shared one for every other. */
 export function hostProcessFor(plugin: InstallRecord): HostProcess {
   if (plugin.runtime === "node" || plugin.process === "own") return "own";
   const top = plugin.id.includes("/") ? plugin.id.slice(0, plugin.id.indexOf("/")) : plugin.id;
-  return plugin.source === "bundled" && top === BUNDLED_ROOT_PLUGIN ? "clover" : "shared";
+  return plugin.source === "bundled" && top === BUNDLED_ROOT_PLUGIN ? "moss" : "shared";
 }
 
 /** The `auth` name of the account token (the plugin SDK's `WAIFUCAVE_AUTH`). */
 const ACCOUNT_AUTH = "waifucave";
 
-/** Whether a plugin-API call is one the core honours only from the `clover` process: the account token
+/** Whether a plugin-API call is one the core honours only from the `moss` process: the account token
  *  (`net.fetch` with `auth: "waifucave"`) and the core's key pairs (`keys.*`). */
-export function cloverProcessOnly(path: string, args: readonly unknown[]): boolean {
+export function mossProcessOnly(path: string, args: readonly unknown[]): boolean {
   if (path.startsWith("keys.")) return true;
   if (path !== "net.fetch") return false;
   const opts = args[2];
@@ -91,7 +91,7 @@ export function cloverProcessOnly(path: string, args: readonly unknown[]): boole
 }
 
 /** The process checks every router sits behind (S4): a call whose plugin the core didn't start in the process it came
- *  from is refused (`refused`), as is a `clover`-only call from any other process; the rest go to `router`, which
+ *  from is refused (`refused`), as is a `moss`-only call from any other process; the rest go to `router`, which
  *  checks capabilities. `recordOf` reads the core's install records. */
 export function guardApiRouter(router: ApiRouter, recordOf: (pluginId: string) => InstallRecord | undefined): ApiRouter {
   return async (call) => {
@@ -99,8 +99,8 @@ export function guardApiRouter(router: ApiRouter, recordOf: (pluginId: string) =
     if (record === undefined || hostProcessFor(record) !== call.process) {
       throw new ContractError("refused", `${call.pluginId} doesn't run in the ${call.process} process`);
     }
-    if (call.process !== "clover" && cloverProcessOnly(call.path, call.args)) {
-      throw new ContractError("refused", `${call.path} is honoured only from the clover process`);
+    if (call.process !== "moss" && mossProcessOnly(call.path, call.args)) {
+      throw new ContractError("refused", `${call.path} is honoured only from the moss process`);
     }
     return router(call);
   };
@@ -187,7 +187,7 @@ export interface HostedStatus {
 
 /** The key an MCP request from the core carries its call's id under (R7): set by the core, taken off by the host
  *  before the plugin's server sees the request. */
-export const MCP_INVOCATION_META = "clover/invocation";
+export const MCP_INVOCATION_META = "moss/invocation";
 
 /** Whether a plugin's host code can use `net.fetch` in this build: yes. A worker's request and the daemon's Response
  *  cross the plugin host as their own messages (plugin-host/fetch-wire.ts): headers as pairs, bodies streamed both

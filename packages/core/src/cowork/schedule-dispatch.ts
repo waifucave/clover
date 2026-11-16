@@ -1,4 +1,4 @@
-import type { CoworkSchedule, CoworkScheduleOccurrence } from "@waifucave/clover-protocol";
+import type { CoworkSchedule, CoworkScheduleOccurrence } from "@waifucave/moss-protocol";
 import type { CapabilityCeiling } from "./types";
 
 /*

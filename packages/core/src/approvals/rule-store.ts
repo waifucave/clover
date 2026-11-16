@@ -15,8 +15,8 @@ export const SAVED_RULES_VERSION = 2;
 const MAX_BYTES = 8 * 1024 * 1024;
 const NO_FOLLOW = constants.O_NOFOLLOW ?? 0;
 
-export function savedRulesPath(cloverHome: string): string {
-  return join(cloverHome, "rules", "saved-rules.json");
+export function savedRulesPath(mossHome: string): string {
+  return join(mossHome, "rules", "saved-rules.json");
 }
 
 const isRule = (r: unknown): r is StoredRule => {
@@ -51,9 +51,9 @@ function readNoFollow(path: string): string | undefined {
   }
 }
 
-export function fileRuleStore(cloverHome: string): RuleStore {
-  const dir = join(cloverHome, "rules");
-  const path = savedRulesPath(cloverHome);
+export function fileRuleStore(mossHome: string): RuleStore {
+  const dir = join(mossHome, "rules");
+  const path = savedRulesPath(mossHome);
   return {
     load() {
       const text = readNoFollow(path);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseCodeArgs, runCodeCommand, treeRootOf } from "../src/code-cli";
 
-describe("clover code", () => {
+describe("moss code", () => {
   test("arguments", () => {
     expect(parseCodeArgs(["src", "--backend", "cursor", "-p", "fix it"])).toEqual({ kind: "ok", args: { folder: "src", backend: "cursor", prompt: "fix it" } });
     expect(parseCodeArgs(["--model"]).kind).toBe("usage");
@@ -24,16 +24,16 @@ describe("clover code", () => {
     const lines: string[] = [];
     const code = await runCodeCommand(["--backend", "cursor", "--model", "m1"], {
       connect: async () => ({ request: async (method, params) => (calls.push([method, params]), { session: "agent_abc" }), close: () => {} }),
-      log: (l) => lines.push(l), error: (l) => lines.push(l), cwd: "/Users/me/project1", home: "/Users/me", env: { CLOVER_COMPUTER: "Studio" },
+      log: (l) => lines.push(l), error: (l) => lines.push(l), cwd: "/Users/me/project1", home: "/Users/me", env: { MOSS_COMPUTER: "Studio" },
     });
     expect(code).toBe(0);
     expect(calls).toEqual([["agent.start", { backend: "cursor", computer: "Studio", root: "home/Studio/project1", model: "m1" }]]);
     expect(lines).toEqual(["Started coding session agent_abc (cursor) in home/Studio/project1."]);
     const failed = await runCodeCommand(["--backend", "cursor"], {
       connect: async () => ({ request: async () => { throw new Error("no agent backend named cursor"); }, close: () => {} }),
-      log: () => {}, error: (l) => lines.push(l), cwd: "/Users/me", home: "/Users/me", env: { CLOVER_COMPUTER: "Studio" },
+      log: () => {}, error: (l) => lines.push(l), cwd: "/Users/me", home: "/Users/me", env: { MOSS_COMPUTER: "Studio" },
     });
     expect(failed).toBe(1);
-    expect(lines.at(-1)).toBe("clover code: no agent backend named cursor");
+    expect(lines.at(-1)).toBe("moss code: no agent backend named cursor");
   });
 });

@@ -1,8 +1,8 @@
-// The other installs that share this machine with Clover, named in ONE place so every guard refuses them by the same
-// names: the live Winter install (spec §2: it keeps running beside Clover until the hand-over), its dev profile, and
-// the legacy install kept as the rollback source (`legacy-names.ts`). A Clover daemon, the dev scripts and the tests
-// never run on, read or write any of these homes or Keychain services. Clover's own names are in `profile.ts` and
-// `clover-dir.ts`.
+// The other installs that share this machine with MOSS, named in ONE place so every guard refuses them by the same
+// names: the live Winter install (spec §2: it keeps running beside MOSS until the hand-over), its dev profile, and
+// the legacy install kept as the rollback source (`legacy-names.ts`). A MOSS daemon, the dev scripts and the tests
+// never run on, read or write any of these homes or Keychain services. MOSS's own names are in `profile.ts` and
+// `moss-dir.ts`.
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
@@ -24,7 +24,7 @@ export const OTHER_INSTALL_HOMES: readonly { dir: string; what: string }[] = [
   { dir: LEGACY_DEV_HOME_DIR, what: "the legacy dev home (the rollback source)" },
 ];
 
-/** Their Keychain services, and what each is: a Clover daemon, script or test never reads or writes one. */
+/** Their Keychain services, and what each is: a MOSS daemon, script or test never reads or writes one. */
 export const OTHER_INSTALL_KEYCHAIN_SERVICES: readonly { service: string; what: string }[] = [
   { service: WINTER_KEYCHAIN_SERVICE, what: "the live Winter install's Keychain service" },
   { service: WINTER_DEV_KEYCHAIN_SERVICE, what: "Winter Dev's Keychain service" },
@@ -35,7 +35,7 @@ export const OTHER_INSTALL_KEYCHAIN_SERVICES: readonly { service: string; what: 
 export class OtherInstallHomeRefused extends Error {
   readonly code = "other_install_home";
   constructor(public readonly home: string, public readonly what: string) {
-    super(`refusing to use ${home} as a Clover home: it is ${what}, which Clover never touches`);
+    super(`refusing to use ${home} as a MOSS home: it is ${what}, which MOSS never touches`);
     this.name = "OtherInstallHomeRefused";
   }
 }

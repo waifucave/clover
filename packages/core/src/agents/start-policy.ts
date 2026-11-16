@@ -1,18 +1,18 @@
 // How a bot's `Agent` call is judged before anything starts (the controller's ruling of 2026-11-11), for bot-check's
 // `agentStart`:
 //
-// * **Clover's own sandboxed coding agents** (`clover`, `clover-code`; `AgentManager.isContainedBackend`: the reserved id
+// * **MOSS's own sandboxed coding agents** (`moss`, `moss-code`; `AgentManager.isContainedBackend`: the reserved id
 //   resolves to that backend, installed, its own, tested and sandboxed) start with no card, at every level. The start
 //   itself does nothing: the child's every act asks at its bot's level (a routine's raised level included), its
-//   commands ask on a card while the bot's do, its commands write temp alone, and the Clover home and the user's secret
+//   commands ask on a card while the bot's do, its commands write temp alone, and the MOSS home and the user's secret
 //   places are out of its reach (the manager). At read-only it runs read-only.
-// * **Any other backend** (a coding agent outside Clover's sandbox, a plugin's backend, one not admitted here) asks on a
+// * **Any other backend** (a coding agent outside MOSS's sandbox, a plugin's backend, one not admitted here) asks on a
 //   card at each start, naming the backend and showing the whole task as the agent gets it, at every level a card can
 //   answer (read-only refuses it), with no "always". A definition's words count in the task: an edited definition takes
 //   its plugin out of action until the user OKs it again, so the text the card showed is the text that runs.
 // * **Who may start what, by the turn's origin:** an outside backend only in a turn the user's own message started (any
 //   other origin is refused at once, no card: no one asked for it, and a bot can bring those turns about itself);
-//   Clover's own from the user's turn, an agent's report (`task-notification`) or a routine's run, never from a
+//   MOSS's own from the user's turn, an agent's report (`task-notification`) or a routine's run, never from a
 //   plugin's, a peer's, another bot's or an agent's message.
 // * **Budgets the bot can't reset itself** (the adversarial review): at most `AGENT_STARTS_PER_TURN` in one turn, and
 //   at most `AGENT_STARTS_PER_USER_MESSAGE` between two of the user's messages across the bot's conversation and every
@@ -21,9 +21,9 @@
 //   `AGENTS_RUNNING_PER_BOT` of a bot's agents running at once, all backends together.
 // * **Refused before any card, besides:** an unknown backend or definition, and a task too long for a card to show
 //   whole.
-// * **One level:** an agent's own tools have no `Agent` (the in-process and clover-code tool lists, the bridge's tools),
+// * **One level:** an agent's own tools have no `Agent` (the in-process and moss-code tool lists, the bridge's tools),
 //   and only a bot's session is offered it.
-import type { TurnOrigin } from "@waifucave/clover-protocol";
+import type { TurnOrigin } from "@waifucave/moss-protocol";
 import type { AgentStartClass } from "../approvals/bot-check";
 import type { BotSessionContext } from "../bots/service";
 import { agentTaskText, type AgentDefinitionView } from "./tools";
@@ -79,7 +79,7 @@ export class AgentStarts {
     const limit = routine ? AGENT_STARTS_PER_ROUTINE_RUN : AGENT_STARTS_PER_USER_MESSAGE;
     const sinceUser = this.#root.get(root);
     if (sinceUser === undefined) {
-      return { ok: false, why: routine ? "this routine's run began before Clover last started, so it starts no more agents" : "Clover started again since the person last wrote here, so no agent starts until they do" };
+      return { ok: false, why: routine ? "this routine's run began before MOSS last started, so it starts no more agents" : "MOSS started again since the person last wrote here, so no agent starts until they do" };
     }
     if (sinceUser >= limit) {
       return { ok: false, why: routine ? `at most ${AGENT_STARTS_PER_ROUTINE_RUN} agents start in one routine's run` : `at most ${AGENT_STARTS_PER_USER_MESSAGE} agents start between two of the person's messages; ask them before starting more` };
@@ -91,7 +91,7 @@ export class AgentStarts {
 }
 
 export interface AgentStartPolicyOptions {
-  /** Whether `backend` is one of Clover's own sandboxed agents here (`AgentManager.isContainedBackend`). */
+  /** Whether `backend` is one of MOSS's own sandboxed agents here (`AgentManager.isContainedBackend`). */
   contained(backend: string): Promise<boolean>;
   /** The backends offered on this computer, by id. */
   backends(): readonly string[];
@@ -118,7 +118,7 @@ export function agentStartPolicy(o: AgentStartPolicyOptions): (ctx: BotSessionCo
     const contained = await o.contained(backend);
     if (contained && !CONTAINED_ORIGINS.has(origin)) return refused(`Agent was refused: an agent starts only from the person's message, an agent's report or a routine's run, not from a ${origin} message`);
     if (!contained && (origin !== "user" || ctx.kind !== "bot")) {
-      return refused(`Agent was refused: ${backend} runs outside Clover's sandbox, so it starts only when the person's own message asks for it and they answer its card; only Clover's own agents (clover, clover-code) start from here`);
+      return refused(`Agent was refused: ${backend} runs outside MOSS's sandbox, so it starts only when the person's own message asks for it and they answer its card; only MOSS's own agents (moss, moss-code) start from here`);
     }
     const text = def === undefined ? brief : agentTaskText(def, brief);
     if (!contained && text.length > AGENT_TASK_CARD_MAX) return refused(`Agent was refused: the task is ${text.length} characters, more than its card can show whole (${AGENT_TASK_CARD_MAX}); shorten it`);

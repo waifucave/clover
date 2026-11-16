@@ -2,7 +2,7 @@
  * 2026-09-19: WHICH `@waifucave/clover-provider-runtime` adapter FAMILIES the daemon's own
  * background jobs (titles, the bash reviewer, the dreamer, the session cleaner) can be driven over.
  *
- * A LEAF module on purpose — it imports the provider runtime and the catalog and nothing of Clover's
+ * A LEAF module on purpose — it imports the provider runtime and the catalog and nothing of MOSS's
  * own, so `settings.ts` can read `internalDrivableAdapterIds()` for its eligibility predicate without
  * an import cycle, and `internal-provider.ts` can build the real adapters off the same table.
  *
@@ -34,11 +34,11 @@
  * NOT DRIVABLE, and why each (report these rather than working around them):
  *  - `winter.bedrock-converse`, `winter.vertex-gemini` — their credential material is `aws` /
  *    `gcp-service-account` / `gcp-access-token`, and `providers/credential-store.ts`'s
- *    `toCloverMaterial` refuses those typed (Clover's own material records are api-key/oauth/bearer
+ *    `toMossMaterial` refuses those typed (MOSS's own material records are api-key/oauth/bearer
  *    only). A daemon-side gap, not an SDK one.
- *  - `winter.xai-oauth` — the SDK ships the adapter and the login flow, but Clover has no login door
+ *  - `winter.xai-oauth` — the SDK ships the adapter and the login flow, but MOSS has no login door
  *    for it and `credentialInventory()` derives no slot (it lists only api-key providers plus the two
- *    fixed OAuth accounts Clover's own doors write), so nothing could resolve its credential.
+ *    fixed OAuth accounts MOSS's own doors write), so nothing could resolve its credential.
  *  - `winter.azure-openai`, `winter.local-openai` — `requiresUserEndpoint` / local-only rows, which
  *    `credentialInventory()` already excludes by construction.
  */

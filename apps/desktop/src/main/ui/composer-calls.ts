@@ -38,7 +38,7 @@ export interface ComposerRoute {
   op: unknown;
   args: unknown;
   takeGesture(windowId: number): boolean;
-  /** On the app's own connection (the `clover` layer's right). */
+  /** On the app's own connection (the `moss` layer's right). */
   asApp(method: string, params: unknown): Promise<unknown>;
   /** On the entry's own plugin connection: the `layer` role's door. */
   asLayer(pluginId: string, method: string, params: unknown): Promise<unknown>;
@@ -122,7 +122,7 @@ export async function routeComposer(r: ComposerRoute): Promise<unknown> {
 async function routeComposerOp(r: ComposerRoute): Promise<unknown> {
   const c = r.composer;
   if (c === undefined) {
-    r.log(`composer: ${String(r.op)} refused (not the entry the core mounted in the composer spot, for a session of the clover tree's)`);
+    r.log(`composer: ${String(r.op)} refused (not the entry the core mounted in the composer spot, for a session of the moss tree's)`);
     throw r.refuse("this isn't the entry the core mounted in the composer spot");
   }
   const op = COMPOSER_OPS.find((o) => o === r.op);

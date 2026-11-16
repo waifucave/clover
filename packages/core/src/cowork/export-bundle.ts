@@ -11,7 +11,7 @@
  *     shared/{instructions,memory,outputs}/**    regular files only
  *
  * The contents are a WHITELIST. Nothing outside it is ever read into a bundle: no authority database, no bookmark, no
- * credential, no Keychain item, nothing from `~/.clover*` beyond the workspace's own two images and three shared roots.
+ * credential, no Keychain item, nothing from `~/.moss*` beyond the workspace's own two images and three shared roots.
  *
  * WHAT THE INTEGRITY INDEX IS AND IS NOT. It detects corruption and truncation of any file. It does NOT detect a deliberate
  * rewrite of the whole bundle (an attacker can recompute the index), because nothing in the database binds it: the closed v1
@@ -23,7 +23,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { closeSync, constants, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, writeSync, type BigIntStats } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { utf16 } from "@waifucave/clover-protocol";
+import { utf16 } from "@waifucave/moss-protocol";
 import { ExportIoError, hashDescriptor, listDirectoryAt, openAt, openDirectoryNoFollow, stampDescriptor } from "./export-io";
 import { EXPORT_MANIFEST_MAX_BYTES } from "./exports";
 import { CoworkLifecycleError, canonicalJson, lifecycleFail, sha256Hex } from "./storage-lifecycle";

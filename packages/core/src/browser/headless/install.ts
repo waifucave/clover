@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, constants as fsConstants, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, rmSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import ruled from "../../../../../plugins/clover/plugins/browser/headless-shell.pins.json" with { type: "json" };
+import ruled from "../../../../../plugins/moss/plugins/browser/headless-shell.pins.json" with { type: "json" };
 import integrity from "./integrity.json" with { type: "json" };
 import { entryData, extractAll, listEntries } from "./unzip";
 
@@ -39,7 +39,7 @@ export interface HeadlessPin {
   platforms: Partial<Record<string, PlatformPin>>;
 }
 
-/** The production pin, in the controller's shape (`plugins/clover/plugins/browser/headless-shell.pins.json`): lane M's
+/** The production pin, in the controller's shape (`plugins/moss/plugins/browser/headless-shell.pins.json`): lane M's
  *  CI check keeps its milestone on the Chromium of the app's Electron. */
 export interface HeadlessShellPins {
   electron: string;
@@ -348,7 +348,7 @@ export interface StagedLaunch {
  *  (0700 parent, tightened as the install is), and its whole tree is hashed again at each start (a copy that no longer
  *  matches, tampered with or damaged, is removed and made again). A new copy is made beside it under a name nothing can
  *  predict and renamed into place, so a start never sees one half made. Copies of other versions, and the per-process
- *  copies of an older Clover whose process is gone, are removed first. `release` leaves the shared copy where it is. */
+ *  copies of an older MOSS whose process is gone, are removed first. `release` leaves the shared copy where it is. */
 export async function stageForLaunch(installed: Installed, opts: { dir: string; pin?: HeadlessPin }): Promise<StagedLaunch> {
   const pin = opts.pin ?? HEADLESS_PIN;
   const p = pin.platforms[installed.platform];

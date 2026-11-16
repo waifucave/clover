@@ -12,7 +12,7 @@ import { MACRO_IMPORTER, MACRO_REFUSAL_SUFFIX, macroRefusal } from "../no-macros
 const GUARD = join(import.meta.dir, "..", "no-macros.ts");
 
 function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), "clover-no-macros-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-no-macros-"));
   const marker = join(dir, "macro-ran.txt");
   writeFileSync(join(dir, "mac.ts"), `import { appendFileSync } from "node:fs";\nexport function grab(): string { appendFileSync(${JSON.stringify(marker)}, "ran;"); return "x"; }\n`);
   writeFileSync(join(dir, "host.ts"), `import { grab } from "./mac.ts" with { type: "macro" };\nexport const v = grab();\n`);

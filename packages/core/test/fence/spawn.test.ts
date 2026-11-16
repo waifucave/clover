@@ -6,7 +6,7 @@ import { FENCED_SPAWN_NOT_YET, hookSpawner, RUN_AS_USER, windowsHookShell, type 
 
 const win = process.platform === "win32";
 const base = (command: string, extra: Partial<FencedRun> = {}): FencedRun => ({
-  command, cwd: realpathSync(mkdtempSync(join(tmpdir(), "clover-spawn-"))), timeoutMs: 10_000,
+  command, cwd: realpathSync(mkdtempSync(join(tmpdir(), "moss-spawn-"))), timeoutMs: 10_000,
   env: win ? { SystemRoot: process.env.SystemRoot ?? "C:\\Windows", PATH: process.env.PATH ?? "" } : { PATH: "/usr/bin:/bin" },
   who: { caller: { kind: "plugin", pluginId: "p" }, hook: "h" }, ...extra,
 });

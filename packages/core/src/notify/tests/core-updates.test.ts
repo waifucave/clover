@@ -9,8 +9,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION, type NotifierUpdate } from "@waifucave/clover-plugin-sdk";
-import type { Caller, SessionView } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION, type NotifierUpdate } from "@waifucave/moss-plugin-sdk";
+import type { Caller, SessionView } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -47,15 +47,15 @@ export const seen = async () => got;
 
 describe("the core's own updates reach the notifier plugins", () => {
   test("over a real host: a non-user turn's end, an agent's report and a routine's result come as their kinds; the user's turn tells nothing and their message clears", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-e-core-notices-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-e-core-notices-")));
     temps.push(home);
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 60_000 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 60_000 });
     const folder = join(home, "plugins", "pinger");
     mkdirSync(join(folder, "host"), { recursive: true });
-    writeFileSync(join(folder, "clover.json"), JSON.stringify({
-      manifest: 1, id: "pinger", name: "Pinger", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" },
+    writeFileSync(join(folder, "moss.json"), JSON.stringify({
+      manifest: 1, id: "pinger", name: "Pinger", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" },
       contributes: { notifiers: [{ id: "ping", name: "Pinger", handler: "notifier" }] },
     }));
     writeFileSync(join(folder, "package.json"), "{\"type\":\"module\"}");
@@ -88,7 +88,7 @@ describe("the core's own updates reach the notifier plugins", () => {
       await sessions.deliver("b_alpha", { from: "plugin", pluginId: "somebody", text: "SECRET WORDS" });
       await endTurn();
       const first = await until("the message update", 10_000, async () => (await updates()).find((u) => u.kind === "message"));
-      expect(first).toMatchObject({ kind: "message", bot: "alpha", session: "b_alpha", unseen: 1, sender: { pluginId: "clover", name: "Clover", bundled: true } });
+      expect(first).toMatchObject({ kind: "message", bot: "alpha", session: "b_alpha", unseen: 1, sender: { pluginId: "moss", name: "MOSS", bundled: true } });
       expect(JSON.stringify(await seen())).not.toContain("SECRET WORDS");
 
       // An agent's report and a routine's result: their own kinds, the count going up.

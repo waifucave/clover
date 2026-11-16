@@ -30,7 +30,7 @@ describe("capabilities", () => {
 
   test("F2: the app's door for parts gates by eight capabilities any plugin may ask for, each with its line on the OK card; plugins.manage carries plugins.read", () => {
     const eight = ["app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
-    const asks = validateManifest({ manifest: 1, id: "my-settings", name: "My Settings", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: eight }, { folderName: "my-settings" });
+    const asks = validateManifest({ manifest: 1, id: "my-settings", name: "My Settings", engines: { moss: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: eight }, { folderName: "my-settings" });
     expect(asks.issues.filter((i) => i.severity === "error")).toEqual([]);
     const ok = describeOk(asks);
     for (const name of eight) expect(ok).toContain(`It ${CAPABILITIES.find((c) => c.name === name)!.ok}.`);
@@ -39,11 +39,11 @@ describe("capabilities", () => {
     expect(withImplied(["plugins.read"])).toEqual(["plugins.read"]);
   });
 
-  test("no capability is Clover's own: any plugin may ask for the six that were (the owner, 2026-11-15), each a warning on its card", () => {
+  test("no capability is MOSS's own: any plugin may ask for the six that were (the owner, 2026-11-15), each a warning on its card", () => {
     const six = ["browser", "terminal", "plugins.install", "plugins.watch", "avatar.report", "network:public"];
     for (const name of six) expect({ name, warns: CAPABILITIES.find((c) => c.name === name)?.warns }).toEqual({ name, warns: true });
     expect(CAPABILITIES.some((c) => "bundledOnly" in c)).toBe(false);
-    const asks = validateManifest({ manifest: 1, id: "asks-all", name: "Asks", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: six }, { folderName: "asks-all" });
+    const asks = validateManifest({ manifest: 1, id: "asks-all", name: "Asks", engines: { moss: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: six }, { folderName: "asks-all" });
     expect(asks.issues.filter((i) => i.severity === "error")).toEqual([]);
     const ok = describeOk(asks);
     for (const name of six) expect(ok).toContain(`It ${CAPABILITIES.find((c) => c.name === name)!.ok}.`);
@@ -51,7 +51,7 @@ describe("capabilities", () => {
 
   test("a web plugin's tools are its manifest's (webSearch, webFetch, needs), any plugin's, each a warning on its card", () => {
     const web = (server: Record<string, unknown>, capabilities: string[] = ["network:search.example.com", "network:public"]) => validateManifest(
-      { manifest: 1, id: "acme-web", name: "Acme web", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, capabilities, contributes: { mcpServers: { web: { type: "host", tools: { Search: "preload", Fetch: "preload" }, ...server } } } },
+      { manifest: 1, id: "acme-web", name: "Acme web", engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts" }, capabilities, contributes: { mcpServers: { web: { type: "host", tools: { Search: "preload", Fetch: "preload" }, ...server } } } },
       { folderName: "acme-web" },
     );
     const good = web({ webSearch: ["Search"], webFetch: ["Fetch"], needs: { Fetch: "network:public" } });
@@ -72,12 +72,12 @@ describe("capabilities", () => {
     expect(reachesPublicNetwork(["network:public"])).toBe(true);
     expect(reachesPublicNetwork(["network:api.example.com"])).toBe(false);
     const web = (id: string, parent?: { id: string; namespace: string }) => validateManifest(
-      { manifest: 1, ...(parent ? {} : { id }), name: "Web", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, capabilities: ["network:public"] },
+      { manifest: 1, ...(parent ? {} : { id }), name: "Web", engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts" }, capabilities: ["network:public"] },
       parent ? { parent, folderName: id, bundled: true } : { folderName: id },
     );
     expect(web("webby").issues).toEqual([]);
     expect(web("webby").networkHosts).toEqual([]);
-    const bundled = web("web", { id: "clover", namespace: "clover" });
+    const bundled = web("web", { id: "moss", namespace: "moss" });
     expect(bundled.issues).toEqual([]);
     expect(bundled.networkHosts).toEqual([]);
   });
@@ -129,7 +129,7 @@ describe("the plugin API's gating", () => {
     // network:public gates the core's fetch, as network:<host> does, not an API call; project.write gates the
     // plugin-process fence (its hooks' and MCP servers' writes to project folders); plugins.watch gates events only
     // (the controller's ruling: nothing callable).
-    // logs.read widens what `logs.*` reads (Clover's log and every plugin's, beyond the plugin's own), which the core
+    // logs.read widens what `logs.*` reads (MOSS's log and every plugin's, beyond the plugin's own), which the core
     // checks per source: the calls themselves need no capability.
     // avatar.control.all widens whose figure `avatar.cue` may move (the core checks it per bot) and carries avatar.control
     // with it (IMPLIED_CAPABILITIES): the call itself is gated by avatar.control.
@@ -150,14 +150,14 @@ describe("the plugin API's gating", () => {
     expect(apiCallAllowed("secrets.get", "ui", [])).toBe(false);
     // Only a process of the plugin's own reads a secret, never a worker of a shared process (review minor).
     expect(apiCallAllowed("secrets.get", "shared", [])).toBe(false);
-    expect(apiCallAllowed("secrets.get", "clover", [])).toBe(false);
+    expect(apiCallAllowed("secrets.get", "moss", [])).toBe(false);
     expect(apiCallAllowed("secrets.get", "own", [])).toBe(true);
-    // Key pairs only from the clover process (the owner's answer to S4).
+    // Key pairs only from the moss process (the owner's answer to S4).
     for (const call of ["keys.open", "keys.publicKey", "keys.delete"]) {
-      expect([call, apiCallAllowed(call, "clover", []), apiCallAllowed(call, "shared", []), apiCallAllowed(call, "own", []), apiCallAllowed(call, "ui", [])]).toEqual([call, true, false, false, false]);
+      expect([call, apiCallAllowed(call, "moss", []), apiCallAllowed(call, "shared", []), apiCallAllowed(call, "own", []), apiCallAllowed(call, "ui", [])]).toEqual([call, true, false, false, false]);
     }
     // Calls for any host half reach every process.
-    for (const from of ["clover", "shared", "own"] as const) expect(apiCallAllowed("ui.send", from, [])).toBe(true);
+    for (const from of ["moss", "shared", "own"] as const) expect(apiCallAllowed("ui.send", from, [])).toBe(true);
     expect(apiCallAllowed("host.call", "shared", [])).toBe(false);
     expect(apiCallAllowed("commands.run", "shared", ["call:luna"], { plugin: "luna/tarot" })).toBe(true);
     expect(apiCallAllowed("commands.run", "shared", ["call:luna"], { plugin: "nova" })).toBe(false);
@@ -264,7 +264,7 @@ describe("points and spots", () => {
     expect(spot("panel").placeholder).toBe(true);
     expect(spot("panel").context).toContain("session");
     const panel = (when: unknown) => validateManifest({
-      manifest: 1, id: "term", name: "Term", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" },
+      manifest: 1, id: "term", name: "Term", engines: { moss: "^1.0.0" }, client: { entry: "ui/index.js" },
       contributes: { ui: [{ spot: "panel", key: "terminal", component: "Terminal", title: "Terminal", when }] },
     });
     expect(panel({ session: "coding" }).issues).toEqual([]);
@@ -274,45 +274,45 @@ describe("points and spots", () => {
 
   test("the schedule and webhook trigger types are the bundled tree's: a third-party triggers entry can't take either", () => {
     const trigger = (type: string, parent?: { id: string; namespace: string }) => validateManifest(
-      { manifest: 1, ...(parent ? {} : { id: "hooks" }), name: "Hooks", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, contributes: { triggers: [{ type, title: "T", handler: "t" }] } },
+      { manifest: 1, ...(parent ? {} : { id: "hooks" }), name: "Hooks", engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts" }, contributes: { triggers: [{ type, title: "T", handler: "t" }] } },
       parent ? { parent, folderName: "hooks", bundled: true } : { folderName: "hooks" },
     ).issues.filter((i) => i.severity === "error").map((i) => `${i.code}:${i.path}`);
     expect(trigger("webhook")).toEqual(["trigger_reserved:/contributes/triggers/0/type"]);
     expect(trigger("schedule")).toEqual(["trigger_reserved:/contributes/triggers/0/type"]);
     expect(trigger("slack")).toEqual([]);
-    expect(trigger("webhook", { id: "clover", namespace: "clover" })).toEqual([]);
+    expect(trigger("webhook", { id: "moss", namespace: "moss" })).toEqual([]);
   });
 
-  test("lane G's asks: reserved island tabs, always-on-top surfaces and pill targets' handlers are the clover tree's rules", () => {
+  test("lane G's asks: reserved island tabs, always-on-top surfaces and pill targets' handlers are the moss tree's rules", () => {
     const entry = (ui: Record<string, unknown>, parent?: { id: string; namespace: string }, capabilities: string[] = []) => validateManifest(
-      { manifest: 1, ...(parent ? {} : { id: "home" }), name: "Home", capabilities, engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, host: { entry: "host/index.ts" }, contributes: { ui: [ui] } },
+      { manifest: 1, ...(parent ? {} : { id: "home" }), name: "Home", capabilities, engines: { moss: "^1.0.0" }, client: { entry: "ui/index.js" }, host: { entry: "host/index.ts" }, contributes: { ui: [ui] } },
       parent ? { parent, folderName: "home", bundled: true } : { folderName: "home" },
     ).issues.map((i) => `${i.code}:${i.path}`);
-    const CLOVER = { id: "clover", namespace: "clover" };
+    const MOSS = { id: "moss", namespace: "moss" };
     // A third-party island tab can't pose as Needs you, by id or by title in any case or width.
     expect(entry({ spot: "island.tab", id: "needs-you", component: "Tab", title: "Lights" })).toEqual(["ui_reserved:/contributes/ui/0/id"]);
     expect(entry({ spot: "island.tab", id: "lights", component: "Tab", title: "ＮＥＥＤＳ  you" })).toEqual(["ui_reserved:/contributes/ui/0/title"]);
     expect(entry({ spot: "island.tab", id: "lights", component: "Tab", title: "Lights" })).toEqual([]);
-    expect(entry({ spot: "island.tab", id: "needs-you", component: "Tab", title: "Needs you" }, CLOVER)).toEqual([]);
+    expect(entry({ spot: "island.tab", id: "needs-you", component: "Tab", title: "Needs you" }, MOSS)).toEqual([]);
     // Invisible characters, lookalike letters, accents and punctuation don't make it another title (#179's review).
     for (const title of ["Needs\u200B you", "Needs y\u043Eu", "N\u0435eds you", "Ne\u0301eds you!", "needs_you", "NEEDS\u2060 YOU"]) {
       expect([title, entry({ spot: "island.tab", id: "lights", component: "Tab", title })]).toEqual([title, ["ui_reserved:/contributes/ui/0/title"]]);
     }
     expect(entry({ spot: "island.tab", id: "needs_you", component: "Tab", title: "Lights" })).toEqual(["ui_reserved:/contributes/ui/0/id"]);
     // Nor may a plugin be named so: the island labels a tab with its plugin's name.
-    const named = (name: string, bundled = false) => validateManifest({ manifest: 1, ...(bundled ? {} : { id: "home" }), name }, bundled ? { parent: CLOVER, folderName: "home", bundled: true } : { folderName: "home" })
+    const named = (name: string, bundled = false) => validateManifest({ manifest: 1, ...(bundled ? {} : { id: "home" }), name }, bundled ? { parent: MOSS, folderName: "home", bundled: true } : { folderName: "home" })
       .issues.map((i) => `${i.code}:${i.path}`);
     expect(named("Needs\u200B y\u043Eu")).toEqual(["name_reserved:/name"]);
     expect(named("Needs you", true)).toEqual([]);
     expect(named("Lights")).toEqual([]);
-    for (const name of ["Clover", "CL\u041EVER", "clover!"]) expect([name, named(name)]).toEqual([name, ["name_reserved:/name"]]);
-    expect(named("Clover", true)).toEqual([]);
+    for (const name of ["MOSS", "CL\u041EVER", "moss!"]) expect([name, named(name)]).toEqual([name, ["name_reserved:/name"]]);
+    expect(named("MOSS", true)).toEqual([]);
     // Always-on-top surfaces are for a plugin with the `overlay` capability, whoever it is (F4), and cards and the tray likewise.
     const float = { spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } };
     expect(entry(float)).toEqual(["ui_window_capability:/contributes/ui/0/window/alwaysOnTop"]);
-    expect(entry(float, CLOVER)).toEqual(["ui_window_capability:/contributes/ui/0/window/alwaysOnTop"]);
+    expect(entry(float, MOSS)).toEqual(["ui_window_capability:/contributes/ui/0/window/alwaysOnTop"]);
     expect(entry(float, undefined, ["overlay"])).toEqual([]);
-    expect(entry(float, CLOVER, ["overlay"])).toEqual([]);
+    expect(entry(float, MOSS, ["overlay"])).toEqual([]);
     // approvals.all alone is refused: it is a widening of `approvals`.
     expect(validateManifest({ manifest: 1, id: "home", name: "Home", capabilities: ["approvals.all"] }, { folderName: "home" }).issues.map((i) => `${i.code}:${i.path}`)).toEqual(["capability_needs:/capabilities/0"]);
     const cards = { spot: "app.surface", component: "Float", window: { type: "overlay", cards: true } };
@@ -332,7 +332,7 @@ describe("points and spots", () => {
     // As lane G's island compares: small capitals, Cherokee letters, I/1/l as one, "rn" as "m", and missing or
     // invisible spaces fold too, so the manifest check and the island agree.
     for (const t of ["Needsyou", "Needs\u200Byou", "\u0274\u1D07\u1D07\u1D05\uA731 \u028F\u1D0F\u1D1C"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
-    for (const t of ["CIover", "C1over", "Cl0ver", "\u13DFlover", "Clov\u0435\u0433"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Clover")]);
+    for (const t of ["CIover", "C1over", "Cl0ver", "\u13DFlover", "Clov\u0435\u0433"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("MOSS")]);
     expect(foldTitle("Rnoon")).toBe(foldTitle("moon"));
     // Lane G's cases: I and i are one letter, with 1, l, | and the Greek and Cyrillic lookalikes, so a bot named
     // "Iris" refuses a pill target "iris"; "vv" reads as "w" and "cl" as "d", as the island folds them.
@@ -344,7 +344,7 @@ describe("points and spots", () => {
     expect(foldTitle("Iris")).toBe("lrls");
     // #187's review: stroke letters, Lisu, the lunate sigma, and marks NFKC would spell out.
     for (const t of ["Neeđs you", "Neeɗs you", "Needs yøu", "Ꮑeeds you", "ꓠeeds you", "Needs ყou"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
-    for (const t of ["Cłover", "Cƚover", "ꓚlover", "Ϲlover", "ϲlover", "Clover™", "Clover®", "Cloveɍ", "Clovɘr", "Clѻver", "Cl○ver"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Clover")]);
+    for (const t of ["Cłover", "Cƚover", "ꓚlover", "Ϲlover", "ϲlover", "MOSS™", "MOSS®", "Cloveɍ", "Clovɘr", "Clѻver", "Cl○ver"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("MOSS")]);
     expect(foldTitle("ħŧđ")).toBe("htd");
     expect(foldTitle("Iris")).not.toBe(foldTitle("Irma"));
     // #264's review: lookalikes the island's own fold refused, which needed the order (NFKD and marks first, the map
@@ -355,7 +355,7 @@ describe("points and spots", () => {
     expect(foldTitle("\u03B7eeds you")).not.toBe(foldTitle("Needs you"));
     // The panel says whose tabs a bot's panel shows; the client entry's bare imports are React 19's and the UI API's.
     expect(Object.keys((SPOTS.find((s) => s.name === "panel")!.props as unknown as { shape: Record<string, unknown> }).shape)).toEqual(["app", "session", "bot"]);
-    expect(CLIENT_BARE_IMPORTS).toContain("@waifucave/clover-plugin-sdk/ui");
+    expect(CLIENT_BARE_IMPORTS).toContain("@waifucave/moss-plugin-sdk/ui");
     expect(API_CALLS["files.watch"]).toEqual({ capability: "files", where: "both" });
   });
 
@@ -383,7 +383,7 @@ describe("tokens", () => {
     expect(new Set(TOKENS.map((t) => cssProperty(t.name))).size).toBe(TOKENS.length);
   });
 
-  test("lane F's twelve plugin.clover tokens are catalog tokens now, at F's measured values", () => {
+  test("lane F's twelve plugin.moss tokens are catalog tokens now, at F's measured values", () => {
     const value = (name: string) => { const t = TOKENS.find((x) => x.name === name)!; return [t.type, t.default, t.dark]; };
     expect(value("sidebar.tint")).toEqual(["color", "#F5F5F5B3", "#202020B3"]);
     expect(value("sidebar.solid")).toEqual(["color", "#F5F5F5", "#202020"]);
@@ -404,14 +404,14 @@ describe("tokens", () => {
     expect(TOKENS.some((t) => t.name === "card.approve.ink")).toBe(false);
   });
 
-  test("names: lowercase segments, a letter first; the property is --clover- and the name with hyphens", () => {
+  test("names: lowercase segments, a letter first; the property is --moss- and the name with hyphens", () => {
     expect(isTokenName("color.text.muted")).toBe(true);
     for (const bad of ["Color.text", "color..text", "color.text-muted", "1color", "color.", ".color", "color_text"]) {
       expect([bad, isTokenName(bad)]).toEqual([bad, false]);
     }
-    expect(cssProperty("color.text.muted")).toBe("--clover-color-text-muted");
-    expect(cssVar("color.text.muted")).toBe("var(--clover-color-text-muted)");
-    expect(cssProperty("plugin.mcp-blender.glow")).toBe("--clover-plugin-mcp_blender-glow");
+    expect(cssProperty("color.text.muted")).toBe("--moss-color-text-muted");
+    expect(cssVar("color.text.muted")).toBe("var(--moss-color-text-muted)");
+    expect(cssProperty("plugin.mcp-blender.glow")).toBe("--moss-plugin-mcp_blender-glow");
     expect(cssProperty("plugin.mcp.blender.glow")).not.toBe(cssProperty("plugin.mcp-blender.glow"));
     for (const bad of ["x; y", "mcp-blender.glow", "color.text-muted", "plugin.-x.glow"]) expect(() => cssProperty(bad)).toThrow();
   });
@@ -493,11 +493,11 @@ describe("names", () => {
     expect(splitToolWireName("Bash")).toBeNull();
   });
 
-  test("wrappers are mcp-<server>, skill-<name>, agent-<name>, claude-<name>, cleaned up, numbered on a clash or for clover (§5.1)", () => {
+  test("wrappers are mcp-<server>, skill-<name>, agent-<name>, claude-<name>, cleaned up, numbered on a clash or for moss (§5.1)", () => {
     expect(wrapperId("mcp", "Blender", new Set())).toEqual({ id: "mcp-blender", namespace: "blender" });
     expect(wrapperId("mcp", "My Cool_Server!!", new Set())).toEqual({ id: "mcp-my-cool-server", namespace: "my-cool-server" });
     expect(wrapperId("mcp", "blender", new Set(["mcp-blender"]))).toEqual({ id: "mcp-blender-2", namespace: "blender-2" });
-    expect(wrapperId("mcp", "clover", new Set())).toEqual({ id: "mcp-clover-2", namespace: "clover-2" });
+    expect(wrapperId("mcp", "moss", new Set())).toEqual({ id: "mcp-moss-2", namespace: "moss-2" });
     expect(wrapperId("mcp", "!!!", new Set())).toEqual({ id: "mcp-server", namespace: "server" });
     expect(wrapperId("skill", "PDF Tools", new Set())).toEqual({ id: "skill-pdf-tools", namespace: "pdf-tools" });
     const long = wrapperId("claude", "x".repeat(80), new Set());

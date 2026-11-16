@@ -3,9 +3,9 @@
 // view is a WebContentsView the core draws over the place its part reports, clipped to the part's frame like the
 // browser's live view, and gone with the part.
 //
-// The session is the plugin's own (`persist:clover-web-<layer>-<partition>`, so two plugins never share one), with the
+// The session is the plugin's own (`persist:moss-web-<layer>-<partition>`, so two plugins never share one), with the
 // app's hardening: no permission, no download, no spellchecker, an explicit proxy. The page keeps to its own origin:
-// popups are refused, and a navigation elsewhere is too. A folder page is served on `clover-web://<layer>/`, from that
+// popups are refused, and a navigation elsewhere is too. A folder page is served on `moss-web://<layer>/`, from that
 // plugin's folder only.
 import { session as sessions, WebContentsView, type BaseWindow, type Session, type WebContents } from "electron";
 import type { Rect } from "./brokers";
@@ -42,7 +42,7 @@ export function webSpec(raw: Readonly<Record<string, unknown>> | undefined): Web
   return { ...(url !== undefined ? { url } : {}), ...(entry !== undefined ? { entry } : {}), partition };
 }
 
-/** The page's address: the URL, or the folder page on the plugin's own `clover-web` origin. */
+/** The page's address: the URL, or the folder page on the plugin's own `moss-web` origin. */
 export function webAddress(plugin: Pick<UiPlugin, "layer">, spec: WebSpec): string {
   if (spec.url !== undefined) return spec.url;
   return `${WEB_SCHEME}://${plugin.layer}/${spec.entry!.split("/").map(encodeURIComponent).join("/")}`;
@@ -50,7 +50,7 @@ export function webAddress(plugin: Pick<UiPlugin, "layer">, spec: WebSpec): stri
 
 /** The session partition a plugin's web page gets: its own, by its layer label and the entry's partition. */
 export function webPartition(plugin: Pick<UiPlugin, "layer">, spec: WebSpec): string {
-  return `persist:clover-web-${plugin.layer}-${spec.partition}`;
+  return `persist:moss-web-${plugin.layer}-${spec.partition}`;
 }
 
 const webSessions = new WeakSet<Session>();

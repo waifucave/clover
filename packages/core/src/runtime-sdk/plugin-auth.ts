@@ -4,7 +4,7 @@
 // A plugin's sign-ins are its `auth` entries, numbered in one list: each `models` entry's, in order, then the
 // manifest's own `auth` (the welcome guide numbers the models' the same way). Where each one's key or token lives:
 //
-// * a bundled model plugin (`clover/model-<provider>`): its provider's keychain slot (`modelPluginSlotFor`), the one
+// * a bundled model plugin (`moss/model-<provider>`): its provider's keychain slot (`modelPluginSlotFor`), the one
 //   the model plugins read (`keychain-tokens.ts`) and the providers' older doors wrote, so a key stored before the
 //   plugins existed shows as signed in;
 // * any other plugin: its own item in the secret store, `{ owner: plugin, name: <the entry's secret> }`, the one
@@ -18,14 +18,14 @@
 //   finishes on the redirect in the background; `plugin_auth_changed` says how it ended. A bundled plugin's tokens
 //   land in its slot as an OAuth record (Codex's refresher renews them); another plugin's access token is its secret.
 // * `custom`: the plugin's handler is asked which flow to run; today a handler can only name a core flow
-//   (`{ flow: "core", id }`, `clover/model-xai-oauth`'s), which runs as `core` below.
+//   (`{ flow: "core", id }`, `moss/model-xai-oauth`'s), which runs as `core` below.
 // * `core`: the core's own flows. `xai-device` (xAI's device grant, `startXaiLogin`) answers with the verification URL
 //   and lands its token in the slot; the Console flows are refused here (their own doors, `provider.login`).
 //
 // One sign-in per entry runs at a time (`busy`). Signing out deletes the entry's secret (for Codex, every name its
 // older doors used).
 import type { CardOpener } from "../devices/rpc";
-import { PLUGINS_METHODS, type PluginAuthView } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS, type PluginAuthView } from "@waifucave/moss-protocol";
 import { startXaiLogin, type CredentialStore } from "@waifucave/clover-provider-runtime";
 import { clearCredentialMaterial, readCredentialMaterial, writeCredentialMaterial } from "../auth/credential-material";
 import type { SecretStore as DaemonSecretStore } from "../auth/secret-store";

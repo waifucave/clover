@@ -8,7 +8,7 @@
 //
 // React's types are deliberately not imported: `UiNode` stands for a React node, and lane E's runtime binds the
 // declarations to React's own types when it adds React to the app.
-import type { CardFieldName, CardMeta } from "@waifucave/clover-protocol";
+import type { CardFieldName, CardMeta } from "@waifucave/moss-protocol";
 import type { TokenValue } from "../catalogs/tokens";
 import type { PluginApi, Unsubscribe } from "./plugin-api";
 
@@ -22,7 +22,7 @@ export type UiComponent<P> = (props: P) => UiNode;
  *  and which entry it is. */
 export interface EntryProps<P = Record<string, unknown>> {
   readonly props: P;
-  /** By token name (`color.accent`); the same values are set as `--clover-…` custom properties on the part. */
+  /** By token name (`color.accent`); the same values are set as `--moss-…` custom properties on the part. */
   readonly tokens: Readonly<Record<string, TokenValue>>;
   readonly entry: { readonly pluginId: string; readonly id: string; readonly spot: string; readonly key?: string };
 }
@@ -49,7 +49,7 @@ export interface SpotEntryView {
   readonly ref: string;
   readonly pluginId: string;
   readonly pluginName: string;
-  /** Whether it comes from the bundled `clover` tree. */
+  /** Whether it comes from the bundled `moss` tree. */
   readonly bundled: boolean;
   readonly key?: string;
   readonly fields: Readonly<Record<string, unknown>>;
@@ -78,7 +78,7 @@ export interface MenuItem {
 
 /** Data a part offers for a drag to another part, through the core (the drag broker). */
 export interface DragOffer {
-  type: "text/plain" | "text/uri-list" | "application/x-clover-file" | "application/x-clover-message";
+  type: "text/plain" | "text/uri-list" | "application/x-moss-file" | "application/x-moss-message";
   data: unknown;
 }
 
@@ -91,7 +91,7 @@ export interface Rect {
 
 /** What an `app.surface` entry asks of its window (lane G's ask): to show, its size, and the regions that take clicks;
  *  elsewhere clicks pass through to what is under it. The window itself is the entry's manifest `window` (its type,
- *  `transparent`, `placement`; `alwaysOnTop` only for the bundled `clover` tree in 1.111.1, R12). */
+ *  `transparent`, `placement`; `alwaysOnTop` only for the bundled `moss` tree in 1.111.1, R12). */
 export interface SurfaceRequest {
   visible?: boolean;
   width?: number;
@@ -109,7 +109,7 @@ export interface SurfaceEnvironment {
   readonly os: "macos" | "windows" | "linux";
   readonly session?: "wayland" | "x11";
   readonly display: { readonly bounds: Rect; readonly workArea: Rect; readonly notch: Rect | null };
-  /** Whether Clover's main window is the front window now (a surface that `steers aside` or draws cards by that rule reads it). */
+  /** Whether MOSS's main window is the front window now (a surface that `steers aside` or draws cards by that rule reads it). */
   readonly mainFront?: boolean;
 }
 
@@ -204,7 +204,7 @@ export interface CardComponents extends UiComponent<CardElementProps> {
   Deny: UiComponent<CardButtonProps>;
 }
 
-/** What `@waifucave/clover-plugin-sdk/ui` exports to components (lane E). */
+/** What `@waifucave/moss-plugin-sdk/ui` exports to components (lane E). */
 export interface UiApi {
   Spot: UiComponent<SpotElementProps>;
   Card: CardComponents;
@@ -234,10 +234,10 @@ export interface UiApi {
   /** Where this part's surface window lives, kept current as the display changes; undefined outside a surface window
    *  and until the core answers. */
   useSurfaceEnvironment?(): SurfaceEnvironment | undefined;
-  /** Opens a place in the main window (Settings at a section and an item, a bot's tab): for the `clover` tree's parts
+  /** Opens a place in the main window (Settings at a section and an item, a bot's tab): for the `moss` tree's parts
    *  only, in 1.111.1. */
   useOpen?(): (target: OpenTarget) => Promise<void>;
-  /** Places a native view the core draws over this part (the Clover Browser's live view, `name` "browser"): the ref
+  /** Places a native view the core draws over this part (the MOSS Browser's live view, `name` "browser"): the ref
    *  callback goes on the element the view covers (a DOM element; the SDK carries no DOM types), and the core keeps the
    *  view on it, clipped to this part's own frame. Only a plugin with `browser` places one; with two parts placing the
    *  same view, the one the person used last has it (ruling R8). */
@@ -253,14 +253,14 @@ export interface UiApi {
    *  plugin's frame; plain data only reaches a frame. */
   useAvatarControl?(): { onCue(listener: (cue: unknown) => void): () => void; setCatalogue(names: unknown): void; setBox(box: unknown): void };
   /** Sends the user's own words (lane G's ask, the pill), in place of `conversation.send`, whose turns are the
-   *  plugin's. Only the bundled `clover` tree's surfaces have it. Call it synchronously inside the key press or click
+   *  plugin's. Only the bundled `moss` tree's surfaces have it. Call it synchronously inside the key press or click
    *  that sends: the runtime counts it only within that frame's transient user activation (§5.5), and otherwise
    *  refuses it and sends nothing, so a script can't speak as the user. The app's main process carries the words to the
    *  daemon as `user.send`, an `app`-role method no layer may call (#179's review, S2). */
   useUserSend?(): ((to: UserSendTarget, message: UserSendMessage) => Promise<void>) | undefined;
 }
 
-// `useLayerMessage()` (the app's commands from shortcuts and menus) stays lane E's, for the `clover` layer only, and
+// `useLayerMessage()` (the app's commands from shortcuts and menus) stays lane E's, for the `moss` layer only, and
 // is not part of these declarations: no third-party part hears the app's commands.
 
 /** One frame of the speech the app plays for a bot, for lip-sync: what the `avatar` spot's `speech` feed hands on, so

@@ -2,7 +2,7 @@
 // declares them (the owner's ruling for the stage, F6). A filler is in force as soon as its plugin runs, and a plugin
 // that tries to declare one is refused.
 import { describe, expect, test } from "bun:test";
-import { catalogPointDecl, validateManifest } from "@waifucave/clover-plugin-sdk";
+import { catalogPointDecl, validateManifest } from "@waifucave/moss-plugin-sdk";
 import type { Manifest } from "../../contracts/sdk-types";
 import { pointChanges, pointsApi } from "../../plugin-host/api/points";
 import { RegistryCore, type RegistryInput } from "../core";
@@ -24,7 +24,7 @@ describe("the platform's data points", () => {
 
   test("a plugin that declares avatar.formats or avatar.packs is refused: it is the platform's", () => {
     for (const name of ["avatar.formats", "avatar.packs"]) {
-      const codes = validateManifest({ manifest: 1, id: "stage", name: "Stage", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" }, contributes: { ui: [{ spot: "bot.stage", id: "s", component: "S", declares: { [name]: { shape: "list", fields: { type: "object" } } } }] } }).issues?.map((i: { code: string }) => i.code) ?? [];
+      const codes = validateManifest({ manifest: 1, id: "stage", name: "Stage", engines: { moss: "^1.0.0" }, client: { entry: "client/index.tsx" }, contributes: { ui: [{ spot: "bot.stage", id: "s", component: "S", declares: { [name]: { shape: "list", fields: { type: "object" } } } }] } }).issues?.map((i: { code: string }) => i.code) ?? [];
       expect(codes).toContain("point_declares_core");
     }
   });

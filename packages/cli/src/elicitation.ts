@@ -1,4 +1,4 @@
-import { METHODS } from "@waifucave/clover-protocol";
+import { METHODS } from "@waifucave/moss-protocol";
 
 // WS-27: an MCP server's URL-mode elicitation ("open this link") on the terminal. The card carries the
 // link's host only — the url may carry a one-time code, so it is fetched (`elicitation.url`) only when
@@ -15,12 +15,12 @@ export function elicitationUrlToOpen(raw: unknown, host: string): string | undef
   return parsed.href;
 }
 
-/** The one line `clover -p` (and the plain, non-TUI shell) prints when it declines a card (it never opens links). Host only. */
+/** The one line `moss -p` (and the plain, non-TUI shell) prints when it declines a card (it never opens links). Host only. */
 export function elicitationDeclinedLine(serverName: string, host: string): string {
-  return `link request from ${serverName} (${host}) declined — this shell never opens links (use the Clover app or the interactive clover)`;
+  return `link request from ${serverName} (${host}) declined — this shell never opens links (use the MOSS app or the interactive moss)`;
 }
 
-/** `clover -p`'s whole handling of a card: print the one line, answer `decline` at once. `request`
+/** `moss -p`'s whole handling of a card: print the one line, answer `decline` at once. `request`
  *  is the connection's JSON-RPC door; its failure is swallowed (the card's own timeout still ends it). */
 export function declineElicitationHeadless(
   e: { elicitationId: string; serverName: string; host: string },
@@ -33,9 +33,9 @@ export function declineElicitationHeadless(
 
 export interface HeadlessCardEvent { type: string; seq: number; threadId?: string; elicitationId?: string; serverName?: string; host?: string }
 
-/** Which cards `clover -p` (and the plain shell) may decline: only those raised during a turn THIS
+/** Which cards `moss -p` (and the plain shell) may decline: only those raised during a turn THIS
  *  shell started — never one it merely sees (a card the user may be answering on the Mac, in a turn the
- *  Mac started, must not be declined by `clover resume <id> "text"` attaching to the same session).
+ *  Mac started, must not be declined by `moss resume <id> "text"` attaching to the same session).
  *  A turn is this shell's when its main `turn_started` follows this shell's own `user_message` (its
  *  seq, from `session.send`); it stays so until that turn's `turn_completed`. Events that arrive while
  *  the send is still in flight are held and judged once its seq is known. Pure: `observe` returns the

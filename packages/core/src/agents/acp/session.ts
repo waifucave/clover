@@ -1,4 +1,4 @@
-// One ACP agent session: Clover's client side of one delegation (spec §9.3, spike S5 §7 "Connection", "Handlers",
+// One ACP agent session: MOSS's client side of one delegation (spec §9.3, spike S5 §7 "Connection", "Handlers",
 // "AgentSession"). It implements the spine's `AgentSession` (packages/core/src/contracts/agent-backend.ts) over a
 // JSON-RPC peer, reading the backend's quirks instead of its name.
 //
@@ -11,8 +11,8 @@
 //   MCP call's server and tool are read from the tool call's structured input where the quirks say (Cursor's
 //   `rawInput.providerIdentifier` and `toolName`, which arrive in an update before the request), never the title.
 //   Pending requests are answered `cancelled` on a cancel, as ACP requires of a client.
-// * **Clover's own record of each tool call**: a refused call is recorded refused whatever the agent reports
-//   (Cursor says `completed`), and calls a cancel leaves open are closed by Clover (`closedByClover`).
+// * **MOSS's own record of each tool call**: a refused call is recorded refused whatever the agent reports
+//   (Cursor says `completed`), and calls a cancel leaves open are closed by MOSS (`closedByMoss`).
 // * **How a turn ends**: a refusal that ends the turn with no reply (Antigravity reports `end_turn`) is `refusal`; the
 //   final text is the agent's text after its last tool call, unchanged; usage is passed on where the agent reports it.
 // * **Model and effort** through `session/set_config_option`. Where a choice persists into the user's own settings
@@ -29,7 +29,7 @@
 //
 // The client advertises neither `fs` nor `terminal`: agents use their own tools, inside their own sandbox (§9.3).
 // Reaching the folder tree and Bash under the fence through those doors comes with Gemini CLI, which uses them (M2).
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import type {
   AgentEvent, AgentPermissionAnswer, AgentPermissionAsk, AgentQuirks, AgentSession, AgentSessionState, AgentTurnEnd,
 } from "../../contracts/agent-backend";
@@ -56,7 +56,7 @@ export interface AgentProcess {
   stop(graceMs?: number): Promise<void>;
 }
 
-/** Clover's own record of one tool call. */
+/** MOSS's own record of one tool call. */
 export interface ToolCallRecord {
   id: string;
   kind: string;
@@ -68,7 +68,7 @@ export interface ToolCallRecord {
   /** Wall-clock start, for the watchdog's process check (the process table is on wall time). */
   startedAtWall: number;
   decision?: "allowed" | "refused" | "cancelled";
-  closedByClover?: boolean;
+  closedByMoss?: boolean;
 }
 
 export interface OpenOptions {
@@ -105,7 +105,7 @@ export interface OpenOptions {
   modeConfirmMs?: number;
   /** For an agent whose permission requests don't name an MCP call's server and tool (`mcpNames: null`), the agent's
    *  own side can: the call's server and tool by its tool call id and the request's own title and kind, or undefined
-   *  (clover-code, in the daemon, gives a plugin tool on its own bridge, from the runtime's real tool name). */
+   *  (moss-code, in the daemon, gives a plugin tool on its own bridge, from the runtime's real tool name). */
   mcpCallOf?: (toolCallId: string, asked: { title?: string; kind?: string }) => { server: string; tool: string } | undefined;
 }
 
@@ -138,7 +138,7 @@ export const MAX_OPEN_ASKS = 8;
 /** A tool call's `rawInput` longer than this, as JSON, is kept as a preview. */
 export const MAX_RAW_INPUT_CHARS = 256 * 1024;
 
-export const CLIENT_INFO = { name: "clover", title: "Clover", version: "0.0.0" };
+export const CLIENT_INFO = { name: "moss", title: "MOSS", version: "0.0.0" };
 const DEFAULT_START_TIMEOUT_MS = 120_000;
 const CONFIG_TIMEOUT_MS = 30_000;
 
@@ -226,7 +226,7 @@ export class AcpAgentSession implements AgentSession {
   }
 
   /** Starts the ACP session on a launched process: `initialize`, then `session/new` or a reattach, then model and
-   *  effort. A signed-out agent fails `sign_in`; the user signs in to it themselves, never through Clover. */
+   *  effort. A signed-out agent fails `sign_in`; the user signs in to it themselves, never through MOSS. */
   static async open(opts: OpenOptions): Promise<AcpAgentSession> {
     const s = new AcpAgentSession(opts);
     try {
@@ -297,7 +297,7 @@ export class AcpAgentSession implements AgentSession {
     const caps = readCaps(init);
     this.#caps = caps;
     if (caps.protocolVersion !== undefined && caps.protocolVersion !== ACP_PROTOCOL_VERSION) {
-      throw new ContractError("refused", `the agent speaks ACP version ${caps.protocolVersion}; Clover speaks ${ACP_PROTOCOL_VERSION}`);
+      throw new ContractError("refused", `the agent speaks ACP version ${caps.protocolVersion}; MOSS speaks ${ACP_PROTOCOL_VERSION}`);
     }
     const promptMeta = this.#systemPromptMeta(opts.instructions);
     if (opts.instructions && !promptMeta) this.#preamble = opts.instructions;
@@ -519,11 +519,11 @@ export class AcpAgentSession implements AgentSession {
     const refuse = (why: string): never => {
       throw new ContractError("refused", `the agent ${why}, which this level doesn't allow, so its session was ended`);
     };
-    if (floor.allowed !== undefined && this.#currentModes().length === 0) refuse("reports no mode Clover has checked");
+    if (floor.allowed !== undefined && this.#currentModes().length === 0) refuse("reports no mode MOSS has checked");
     if (bad().length === 0) return;
     const was = bad()[0]!;
     const to = floor.fallback;
-    if (to === undefined || !floorAllows(floor, to)) refuse(`is in its ${was} mode and Clover has no mode to switch it to`);
+    if (to === undefined || !floorAllows(floor, to)) refuse(`is in its ${was} mode and MOSS has no mode to switch it to`);
     const o = this.#config.find((c) => c.id === "mode");
     if (o && !floorAllows(floor, o.currentValue ?? "") && o.values.includes(to!)) await this.#setOption(o.id, to!);
     if (this.#modes?.current !== undefined && !floorAllows(floor, this.#modes.current) && this.#modes.available.includes(to!)) {
@@ -536,7 +536,7 @@ export class AcpAgentSession implements AgentSession {
 
   /** Switches the agent into its read-only mode, or back to the mode it had: its `mode` config option, else ACP's
    *  `session/set_mode`. Refused when it offers no read-only mode, or its answer doesn't show the mode set (check 1's
-   *  minor 11: Clover counts on the agent's own word only once it says so). */
+   *  minor 11: MOSS counts on the agent's own word only once it says so). */
   async setReadOnly(on: boolean): Promise<void> {
     if (on === this.#readOnly) return;
     const mode = this.#readOnlyMode;
@@ -544,7 +544,7 @@ export class AcpAgentSession implements AgentSession {
     const refuse = (why: string): never => {
       throw new ContractError("refused", `this agent acts without asking and ${why}, so it can't run at read-only`);
     };
-    // An unconfirmed switch on a running session ends it, as the mode floor does: Clover never counts on a read-only
+    // An unconfirmed switch on a running session ends it, as the mode floor does: MOSS never counts on a read-only
     // mode the agent hasn't reported itself (its config option's answer, or its own `current_mode_update`).
     const unconfirmed = async (): Promise<never> => {
       if (this.#state === "ready" || this.#state === "idle") {
@@ -636,7 +636,7 @@ export class AcpAgentSession implements AgentSession {
         // A URL-mode sign-in would open a browser; form elicitations come with M2's cards. Declined for now.
         return { action: "decline" };
       default:
-        throw new RpcError(RPC_METHOD_NOT_FOUND, `Clover's client doesn't offer ${method}`);
+        throw new RpcError(RPC_METHOD_NOT_FOUND, `MOSS's client doesn't offer ${method}`);
     }
   }
 
@@ -743,7 +743,7 @@ export class AcpAgentSession implements AgentSession {
           if (id) {
             this.#modes.current = id;
             for (const w of [...this.#modeWaiters]) w();
-            // The agent left its read-only mode on its own: Clover no longer counts on it.
+            // The agent left its read-only mode on its own: MOSS no longer counts on it.
             if (this.#readOnly && !this.#readOnlyMode?.values.includes(id)) this.#readOnly = false;
           }
         }
@@ -751,7 +751,7 @@ export class AcpAgentSession implements AgentSession {
     }
   }
 
-  /** Merges a `tool_call`, a `tool_call_update` or a permission request's `toolCall` into Clover's record. */
+  /** Merges a `tool_call`, a `tool_call_update` or a permission request's `toolCall` into MOSS's record. */
   #merge(id: string, src: Obj | undefined, created: boolean): ToolCallRecord {
     let r = this.#calls.get(id);
     if (!r) {
@@ -777,8 +777,8 @@ export class AcpAgentSession implements AgentSession {
       const r = this.#calls.get(id);
       if (!r || (r.status !== "pending" && r.status !== "in_progress")) continue;
       r.status = "failed";
-      r.closedByClover = true;
-      this.#emit({ type: "tool_call_update", id, status: "failed", closedByClover: true });
+      r.closedByMoss = true;
+      this.#emit({ type: "tool_call_update", id, status: "failed", closedByMoss: true });
     }
   }
 
@@ -801,9 +801,9 @@ export function capRawInput(v: unknown): unknown {
   try {
     json = JSON.stringify(v) ?? "";
   } catch {
-    return { clover_unreadable: true };
+    return { moss_unreadable: true };
   }
-  return json.length <= MAX_RAW_INPUT_CHARS ? v : { clover_truncated: json.slice(0, 4096), length: json.length };
+  return json.length <= MAX_RAW_INPUT_CHARS ? v : { moss_truncated: json.slice(0, 4096), length: json.length };
 }
 
 function isEmptyObject(v: unknown): boolean {

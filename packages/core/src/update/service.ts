@@ -1,8 +1,8 @@
-// `update.status` and `update.apply` (lane M's methods, packages/protocol/src/app.ts), served on Clover connections.
+// `update.status` and `update.apply` (lane M's methods, packages/protocol/src/app.ts), served on MOSS connections.
 // The app's own update is electron-updater's (apps/desktop/src/main/updater.ts): the app downloads it, asks here
 // whether the daemon is idle (`idle`, `busy`), and installs once it is. A server install (no app; `<home>/install.json`
 // says `server`) updates the daemon itself (`self`, src/update/self-update.ts), which `update.apply` starts.
-import type { CloverHandler } from "../ipc/clover";
+import type { MossHandler } from "../ipc/moss";
 import type { UpdateGate } from "./gate";
 
 /** The daemon's own update, on a server install. */
@@ -29,7 +29,7 @@ function wireBusy(busy: readonly string[]): string[] {
   return busy.slice(0, 32).map((b) => (b.length > 64 ? b.slice(0, 64) : b));
 }
 
-export function updateHandlers(d: UpdateServiceDeps): Record<string, CloverHandler> {
+export function updateHandlers(d: UpdateServiceDeps): Record<string, MossHandler> {
   return {
     "update.status": () => {
       const v = d.gate.verdict();

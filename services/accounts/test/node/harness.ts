@@ -1,5 +1,5 @@
 // Starts the account service (test/node/serve.mjs) from Bun against a sign-in stack, for end-to-end tests: this
-// service's own and the core's (lane H's AccountClient). Import it as "@waifucave/clover-service-accounts/harness".
+// service's own and the core's (lane H's AccountClient). Import it as "@waifucave/moss-service-accounts/harness".
 // It answers with the same `url`, `issuer` and `jwks` as the core's `startFakeAccountService`, so a test can swap one
 // for the other. The signing key is made here, in memory, for this run.
 

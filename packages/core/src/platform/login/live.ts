@@ -64,7 +64,7 @@ export function parseProfileImagePath(out: string, env: Record<string, string | 
 export type TaskXmlWriter = (xml: string) => { path: string; cleanup(): void };
 
 export const tempTaskXml: TaskXmlWriter = (xml) => {
-  const dir = mkdtempSync(join(tmpdir(), "clover-task-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-task-"));
   const path = join(dir, "task.xml");
   writeFileSync(path, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(xml, "utf16le")]));
   return { path, cleanup: () => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* raced */ } } };

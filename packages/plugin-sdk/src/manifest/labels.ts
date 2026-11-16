@@ -1,4 +1,4 @@
-// The small labels a plugin shows for what it brings (the Plugins page's rows and detail, `clover plugin validate`'s
+// The small labels a plugin shows for what it brings (the Plugins page's rows and detail, `moss plugin validate`'s
 // report): derived from its contributions in this one place. A plugin is a box of things (spec §5.5): the labels name
 // the things, never a kind of plugin, so no label says "plugin", "type" or "kind".
 

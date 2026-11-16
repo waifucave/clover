@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Clover layout",
+  "title": "MOSS layout",
   "description": "Layout format 1: how a bot's tab arranges its parts (spec §5.5): a whole layout, or a patch that extends the stock tab and states only its changes.",
   "anyOf": [
     {

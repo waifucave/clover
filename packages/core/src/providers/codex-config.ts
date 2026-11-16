@@ -44,15 +44,15 @@ export const CODEX = {
 
     /**
      * Originator header — identifies the client to the ChatGPT backend.
-     * We SELF-IDENTIFY as "clover" rather than sending codex-rs's first-party value
-     * "codex_cli_rs". Deliberate go-public decision (ToS mitigation, option A): Clover is an
+     * We SELF-IDENTIFY as "moss" rather than sending codex-rs's first-party value
+     * "codex_cli_rs". Deliberate go-public decision (ToS mitigation, option A): MOSS is an
      * independent client and says so honestly — we do not impersonate OpenAI's own first-party
      * originator to obtain `is_first_party_originator` treatment. Tradeoff accepted: OpenAI's
-     * backend can distinguish (and, if it ever chooses, cleanly gate) Clover traffic; the
+     * backend can distinguish (and, if it ever chooses, cleanly gate) MOSS traffic; the
      * shipped BYO-API-key path is the sanctioned fallback if the ChatGPT-OAuth route is
      * ever restricted. Do NOT revert to a first-party value to chase fingerprint parity.
      */
-    originator: "clover",
+    originator: "moss",
   } as Record<string, string>,
 } as const;
 

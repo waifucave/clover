@@ -22,7 +22,7 @@ const REPO = join(import.meta.dir, "..", "..", "..", "..", "..");
 describe("a macro import is refused, never run (the plugin builder)", () => {
   for (const side of ["bun", "node", "client"] as BuildSide[]) {
     test(`${side}: the build fails saying macros are disabled; the macro doesn't run, read or inline anything`, async () => {
-      const dir = mkdtempSync(join(tmpdir(), "clover-build-macro-"));
+      const dir = mkdtempSync(join(tmpdir(), "moss-build-macro-"));
       const secret = join(dir, "ignored", "secret.txt");
       const ran = join(dir, "macro-ran.txt");
       mkdirSync(join(dir, "ignored"));

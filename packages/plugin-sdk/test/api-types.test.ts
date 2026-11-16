@@ -27,7 +27,7 @@ const beforeTool: Handler<HookInput, HookOutput> = (input) =>
 // A service: an object of handlers, whose caller names the one it calls (the waifucave forwarder's `webhook.ingress`).
 const ingress: WebhookIngressHandler = {
   register: async (args, ctx) => {
-    // The `clover` process's own key pair (only there: elsewhere the core refuses it).
+    // The `moss` process's own key pair (only there: elsewhere the core refuses it).
     const pub: Uint8Array | undefined = await ctx.api.keys?.publicKey("forwarder");
     const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/routines", { method: "POST", body: JSON.stringify({ ...args, key: pub?.length }) }, { auth: WAIFUCAVE_AUTH });
     return res.status === 409 ? { conflict: { device: "Laptop" } } : { url: `https://hooks.waifucave.com/t/${args.routine}` };
@@ -56,7 +56,7 @@ const relay: RelayHandler = {
 };
 const companion: CompanionHandler = {
   presence: async (args, ctx) => void (await ctx.api.storage.synced.set(`online:${args.device}`, args.online)),
-  pairing: async (args) => ({ url: `https://clover.waifucave.com/pair#${args.code}` }),
+  pairing: async (args) => ({ url: `https://moss.waifucave.com/pair#${args.code}` }),
 };
 const speak: StreamHandler<{ text: string }, Uint8Array, { words: number }> = async function* (args, ctx) {
   for (const word of args.text.split(" ")) {
@@ -99,14 +99,14 @@ const TarotPanel = ({ props, tokens }: EntryProps<{ bot: { id: string } }>) => {
     ...ui.useApprovals().cards.flatMap((c) => c.options.filter((o) => o.remember === "always").map((o) => ui.Card.Approve({ option: o.id }))),
   ] });
   const view = ui.AppView({ call: { session: "ses_1", callId: "call_1" }, className: "luna-app" });
-  void api.points.call("webhook.ingress", { pluginId: "clover/forwarder", entryId: "waifucave" }, "handler", { routine: "r" }, { method: "register" });
+  void api.points.call("webhook.ingress", { pluginId: "moss/forwarder", entryId: "waifucave" }, "handler", { routine: "r" }, { method: "register" });
   return [ui.Spot({ name: "luna.deck", props: { bot: props.bot.id } }), card, view, tokens["color.accent"]];
 };
 const client: ClientModule = { TarotPanel };
 
 // A manifest, typed.
 const manifest: Manifest = {
-  manifest: 1, id: "luna", name: { en: "Luna", fr: "Luna" }, engines: { clover: "^1.0.0" },
+  manifest: 1, id: "luna", name: { en: "Luna", fr: "Luna" }, engines: { moss: "^1.0.0" },
   host: { entry: "host/index.ts" }, client: { entry: "client/index.tsx" },
   capabilities: ["conversation.post", "network:api.luna.example"],
   contributes: {
@@ -125,24 +125,24 @@ describe("the declarations", () => {
     expect(manifest.contributes?.commands?.[0]?.handler).toBe("draw");
   });
 
-  test("only the clover tree, from the clover process, fetches waifucave's own https hosts with the account token", () => {
-    const C = "clover" as const;
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.waifucave.com/v1/next", C)).toBe(true);
-    expect(mayUseWaifucaveAuth("clover", "https://push.waifucave.com./v1/notify", C)).toBe(true);
+  test("only the moss tree, from the moss process, fetches waifucave's own https hosts with the account token", () => {
+    const C = "moss" as const;
+    expect(mayUseWaifucaveAuth("moss/forwarder", "https://hooks.waifucave.com/v1/next", C)).toBe(true);
+    expect(mayUseWaifucaveAuth("moss", "https://push.waifucave.com./v1/notify", C)).toBe(true);
     expect(mayUseWaifucaveAuth("luna", "https://hooks.waifucave.com/", C)).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "http://hooks.waifucave.com/", C)).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://evil-waifucave.com/", C)).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://waifucave.com.evil.example/", C)).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://u:p@hooks.waifucave.com/", C)).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "not a url", C)).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.emulator.test/", C, { domain: "emulator.test" })).toBe(true);
-    // A clover id from any other process is no clover plugin's call (the owner's answer to S4).
-    for (const from of ["shared", "own", "ui"] as const) expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.waifucave.com/v1/next", from)).toBe(false);
+    expect(mayUseWaifucaveAuth("moss/forwarder", "http://hooks.waifucave.com/", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("moss/forwarder", "https://evil-waifucave.com/", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("moss/forwarder", "https://waifucave.com.evil.example/", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("moss/forwarder", "https://u:p@hooks.waifucave.com/", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("moss/forwarder", "not a url", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("moss/forwarder", "https://hooks.emulator.test/", C, { domain: "emulator.test" })).toBe(true);
+    // A moss id from any other process is no moss plugin's call (the owner's answer to S4).
+    for (const from of ["shared", "own", "ui"] as const) expect(mayUseWaifucaveAuth("moss/forwarder", "https://hooks.waifucave.com/v1/next", from)).toBe(false);
     // A development profile's emulators are exact origins, http allowed (review minor).
     const dev = { origins: ["http://127.0.0.1:8787", "http://127.0.0.1:8788"] };
-    expect(mayUseWaifucaveAuth("clover/forwarder", "http://127.0.0.1:8787/v1/next", C, dev)).toBe(true);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "http://127.0.0.1:9999/v1/next", C, dev)).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.waifucave.com/", C, dev)).toBe(false);
+    expect(mayUseWaifucaveAuth("moss/forwarder", "http://127.0.0.1:8787/v1/next", C, dev)).toBe(true);
+    expect(mayUseWaifucaveAuth("moss/forwarder", "http://127.0.0.1:9999/v1/next", C, dev)).toBe(false);
+    expect(mayUseWaifucaveAuth("moss/forwarder", "https://hooks.waifucave.com/", C, dev)).toBe(false);
     expect(mayUseWaifucaveAuth("luna", "http://127.0.0.1:8787/", C, dev)).toBe(false);
     expect(typeof host.ingress).toBe("object");
     expect(Object.keys(asObject).sort()).toEqual(["ack", "drop", "list", "next", "register", "unregister"]);
@@ -161,7 +161,7 @@ describe("the declarations", () => {
     expect([...clean.keys()]).toEqual(["content-type"]);
     // The manifest takes a placement only from the list.
     const auth = (placement: unknown) => validateManifest({
-      manifest: 1, id: "weather", name: "W", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" },
+      manifest: 1, id: "weather", name: "W", engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts" },
       auth: [{ method: "api-key", secret: "api_key", placement }],
     });
     expect(auth({ header: "x-api-key" }).ok).toBe(true);
@@ -182,7 +182,7 @@ describe("the declarations", () => {
   });
 
   test("a routine's key reaches an ingress only as its hash; the long poll fits the 10-minute cap", async () => {
-    const want = createHash("sha256").update("clover hook key v1|k3y").digest("base64url");
+    const want = createHash("sha256").update("moss hook key v1|k3y").digest("base64url");
     expect(await webhookKeyHash("k3y")).toBe(want);
     expect(WEBHOOK_NEXT_WAIT_MAX_MS + WEBHOOK_NEXT_GRACE_MS).toBeLessThanOrEqual(API_CALL_MAX_TIMEOUT_MS);
     expect(WEBHOOK_NEXT_MAX_BYTES).toBe(WEBHOOK_NEXT_MAX * WEBHOOK_BODY_MAX_BYTES);

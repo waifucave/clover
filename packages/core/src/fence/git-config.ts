@@ -113,7 +113,7 @@ export interface WatchedGitChange {
 export function parseGitConfigWithGit(text: string): Map<string, string[]> | null {
   let dir = "";
   try {
-    dir = mkdtempSync(join(tmpdir(), "clover-gitcfg-"));
+    dir = mkdtempSync(join(tmpdir(), "moss-gitcfg-"));
     const f = join(dir, "config");
     writeFileSync(f, text, { mode: 0o600 });
     const r = spawnSync("git", ["config", "--file", f, "--list", "-z", "--no-includes"], { encoding: "buffer", timeout: 10_000 });

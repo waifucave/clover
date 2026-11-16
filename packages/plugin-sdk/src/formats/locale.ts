@@ -1,10 +1,10 @@
 // Locale format 1 (spec §5.5 "Translations", §5.9): `{ locale: 1, lang, strings: { <key>: string | { one?, other, … } } }`.
-// Keys start with their plugin's id and a dot, and the core's and `clover`'s with `clover.`; a child's keys start with
+// Keys start with their plugin's id and a dot, and the core's and `moss`'s with `moss.`; a child's keys start with
 // its top-level plugin's id. Strings use `{name}` placeholders, and a key may hold plural forms by the language's
 // rules (CLDR's categories, `other` required). A missing string falls back from a regional language to its base
 // (`pt-BR` to `pt`), then to English, then to any language its plugin has.
 import { z } from "zod";
-import { utf16 } from "@waifucave/clover-protocol";
+import { utf16 } from "@waifucave/moss-protocol";
 import { LangTag } from "../manifest/fields";
 
 export const PLURAL_CATEGORIES = ["zero", "one", "two", "few", "many", "other"] as const;
@@ -31,7 +31,7 @@ export const LocaleSchema = z.strictObject({
 });
 export type Locale = z.infer<typeof LocaleSchema>;
 
-/** The plugin a key belongs to: its first segment (`luna.greeting` → `luna`; `clover.…` → the core and `clover`). */
+/** The plugin a key belongs to: its first segment (`luna.greeting` → `luna`; `moss.…` → the core and `moss`). */
 export function localeKeyOwner(key: string): string {
   return key.split(".")[0]!;
 }

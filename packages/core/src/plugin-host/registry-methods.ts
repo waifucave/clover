@@ -13,7 +13,7 @@
 import { CORE_VERSION } from "../version";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { PLUGINS_METHODS, PluginDetail, PluginSummary, topPluginIdOf, type InstallSource, type PluginProvenance } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS, PluginDetail, PluginSummary, topPluginIdOf, type InstallSource, type PluginProvenance } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord } from "../contracts/plugin-registry";
@@ -55,9 +55,9 @@ export function pluginLogTail(home: string, pluginId: string, n: number): string
 const DESCRIPTION_MAX = 500;
 
 export function summaryOf(r: PluginRecord): PluginSummary {
-  // The bundled `clover` tree is the app itself: its version is the app's (the generated VERSION), not its manifests'
+  // The bundled `moss` tree is the app itself: its version is the app's (the generated VERSION), not its manifests'
   // unset "0.0.0".
-  const app = r.source === "bundled" && topPluginIdOf(r.id) === "clover" && (r.manifest as { version?: unknown } | undefined)?.version === undefined;
+  const app = r.source === "bundled" && topPluginIdOf(r.id) === "moss" && (r.manifest as { version?: unknown } | undefined)?.version === undefined;
   // Its description only when it's text (a string, or a table with `en`), each language cut to DESCRIPTION_MAX: a
   // manifest that isn't valid lists still, and the list stays small (the page shows one line).
   const d = (r.manifest as { description?: unknown } | undefined)?.description;
@@ -95,7 +95,7 @@ function devFolderCheck(path: string): string {
   } catch {
     throw new ContractError("invalid", `${path} doesn't exist`);
   }
-  if (!statSync(real).isDirectory() || !existsSync(join(real, "clover.json"))) throw new ContractError("invalid", `${real} has no clover.json`);
+  if (!statSync(real).isDirectory() || !existsSync(join(real, "moss.json"))) throw new ContractError("invalid", `${real} has no moss.json`);
   return real;
 }
 
@@ -193,7 +193,7 @@ export function pluginRegistryMethods(o: {
         // it was made from. Each gets its own OK card.
         const made = await installWrapped({
           ...target, kind: source.kind, value: source.value, by: "user",
-          homes: { user: o.userHome ?? homedir(), clover: o.home, os: target.os ?? (process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos") },
+          homes: { user: o.userHome ?? homedir(), moss: o.home, os: target.os ?? (process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos") },
           ...(o.secrets?.set !== undefined ? { secrets: { set: o.secrets.set.bind(o.secrets), delete: o.secrets.delete.bind(o.secrets) } } : {}),
         });
         const results = [];
@@ -279,7 +279,7 @@ export function pluginRegistryMethods(o: {
     [M.pluginRemove.name]: handler(M.pluginRemove, async ({ id, card, deleteData }, ctx) => {
       requireUser(ctx, "remove a plugin");
       const r = must(id);
-      if (r.source === "bundled") throw new ContractError("refused", `${id} comes with Clover; switch it off instead`);
+      if (r.source === "bundled") throw new ContractError("refused", `${id} comes with MOSS; switch it off instead`);
       if (r.dev) throw new ContractError("refused", `${id} is a development folder; remove the folder from development instead`);
       const pluginsDir = resolve(join(o.home, "plugins"));
       const folder = resolve(r.folder);
@@ -341,7 +341,7 @@ export function pluginRegistryMethods(o: {
         await folders.addDevFolder(path, "cli");
         return { applied: true as const };
       }
-      if (o.openCard === undefined) notServed("adding a development folder from the app", "this computer's approval broker isn't running; `clover plugin dev <folder>` in your terminal adds it");
+      if (o.openCard === undefined) notServed("adding a development folder from the app", "this computer's approval broker isn't running; `moss plugin dev <folder>` in your terminal adds it");
       const checked = devFolderCheck(path);
       const opened = await o.openCard!({
         kind: "change", origin: "user", computers: [], effect: "other", change: "dev-folder",
@@ -372,7 +372,7 @@ export function pluginRegistryMethods(o: {
       // kind of yes as adding it.
       const d = folders.devFolders().find((x) => x.path === path);
       if (d === undefined) throw new ContractError("not_found", `${path} isn't a development folder`);
-      if (o.openCard === undefined) notServed("renewing a development folder from the app", "this computer's approval broker isn't running; `clover plugin dev renew <folder>` in your terminal renews it");
+      if (o.openCard === undefined) notServed("renewing a development folder from the app", "this computer's approval broker isn't running; `moss plugin dev renew <folder>` in your terminal renews it");
       const opened = await o.openCard!({
         kind: "change", origin: "user", computers: [], effect: "other", change: "dev-folder",
         fields: {

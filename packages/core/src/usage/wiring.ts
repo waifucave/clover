@@ -8,12 +8,12 @@ import { SOURCE_ID, type UsageSourceEntry, type UsageSourcePort } from "./source
 
 // Boot wiring for usage tracking (spec §12 "Usage sources"). The core reads no app: a tool's usage is a `usage.sources`
 // entry's, a plugin's, called through the plugin host once it is up (`attach`; the host starts after this service does).
-// Whose apps: the daemon's `userHome` — the user's home folder for the daemon on its default home (`isDefaultCloverHome`),
+// Whose apps: the daemon's `userHome` — the user's home folder for the daemon on its default home (`isDefaultMossHome`),
 // NONE for any other (a temp-home or test daemon): such a daemon calls NO entry unless one is named, because a plugin
 // runs the user's own programs with the user's own access (`api.outside`). Named by `injection.sources` (a list of source
-// names; `null` = none) or `$CLOVER_USAGE_SOURCES` (a comma list; `off` = none).
-// Both test preloads set `CLOVER_USAGE_SOURCES=off`, so no test daemon ever reads or runs the real ones, and switch the
-// background plan checks off (`CLOVER_USAGE_BACKGROUND=off`).
+// names; `null` = none) or `$MOSS_USAGE_SOURCES` (a comma list; `off` = none).
+// Both test preloads set `MOSS_USAGE_SOURCES=off`, so no test daemon ever reads or runs the real ones, and switch the
+// background plan checks off (`MOSS_USAGE_BACKGROUND=off`).
 
 /** What a usage service may call (diagnostics and tests): the entries it would ask now. */
 export interface UsageSources {
@@ -43,9 +43,9 @@ export interface UsageInjection {
  */
 export const USAGE_INERT: UsageInjection = Object.freeze({ sources: null, catchUp: false, background: false });
 
-/** The same for a daemon spawned as a process (`clover daemon run`, a compiled `clover-core`): its environment. */
+/** The same for a daemon spawned as a process (`moss daemon run`, a compiled `moss-core`): its environment. */
 export const USAGE_INERT_ENV: Readonly<Record<string, string>> = Object.freeze({
-  CLOVER_USAGE_SOURCES: "off", CLOVER_USAGE_BACKGROUND: "off", CLOVER_USAGE_CATCH_UP: "off",
+  MOSS_USAGE_SOURCES: "off", MOSS_USAGE_BACKGROUND: "off", MOSS_USAGE_CATCH_UP: "off",
 });
 
 /** Which source names a daemon may call: undefined = every one (the user's own computer), a set = only those. */
@@ -54,7 +54,7 @@ export function allowedSources(opts: { userHome: string | undefined; injection?:
   if (inj === null) return "none";
   if (inj === undefined && opts.injection?.port !== undefined) return "all";
   if (inj !== undefined) return new Set(inj.filter((s) => SOURCE_ID.test(s)));
-  const env = (opts.env ?? process.env).CLOVER_USAGE_SOURCES;
+  const env = (opts.env ?? process.env).MOSS_USAGE_SOURCES;
   if (env === "off") return "none";
   if (env !== undefined && env.length > 0) return new Set(env.split(",").map((s) => s.trim()).filter((s) => SOURCE_ID.test(s)));
   return opts.userHome === undefined ? "none" : "all";
@@ -124,7 +124,7 @@ export function createUsageService(opts: {
   // Code's transcripts are read before its own cleanup deletes them, Usage screen open or not. Unref'd timers (never
   // hold the daemon), a handful of wakeups a day; off with the env switch (tests, the idle-wakeups gate).
   const timers: ReturnType<typeof setTimeout>[] = [];
-  if (inj.catchUp !== false && env.CLOVER_USAGE_CATCH_UP !== "off") {
+  if (inj.catchUp !== false && env.MOSS_USAGE_CATCH_UP !== "off") {
     const run = (): void => { void service.catchUp().catch(() => { /* logged per pass; the next catch-up retries */ }); };
     const first = setTimeout(run, inj.catchUpFirstMs ?? USAGE_CATCH_UP_FIRST_MS);
     const every = setInterval(run, inj.catchUpEveryMs ?? USAGE_CATCH_UP_EVERY_MS);
@@ -134,7 +134,7 @@ export function createUsageService(opts: {
   }
   // The background plan checks (user 2026-10-18): every plan every 30 min, and a plan with an alarm on its own throttle.
   // Unref'd; off with the env switch (both test preloads) or the injection.
-  if (inj.background !== false && env.CLOVER_USAGE_BACKGROUND !== "off") service.startBackground();
+  if (inj.background !== false && env.MOSS_USAGE_BACKGROUND !== "off") service.startBackground();
   return {
     service,
     sources: { entries: () => port.entries().map((e) => ({ id: e.id, pluginId: e.pluginId })) },

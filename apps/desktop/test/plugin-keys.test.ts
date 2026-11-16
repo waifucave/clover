@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { APP_CHORDS, canonicalChord } from "@waifucave/clover-plugin-sdk";
+import { APP_CHORDS, canonicalChord } from "@waifucave/moss-plugin-sdk";
 import { PluginKeys, keysMayRun } from "../src/main/plugin-keys";
 import { appShortcut } from "../src/main/shortcuts";
 
@@ -150,13 +150,13 @@ describe("a press's type", () => {
 
 describe("where the focus is", () => {
   test("a sealed frame (an approval or OK card) or an open secret field keeps a command's key from running", () => {
-    expect(keysMayRun({ frameUrl: "clover-sealed://card/card_1/own?token=x", secureOpen: false })).toBe(false);
-    expect(keysMayRun({ frameUrl: "clover-core://app/", secureOpen: true })).toBe(false);
+    expect(keysMayRun({ frameUrl: "moss-sealed://card/card_1/own?token=x", secureOpen: false })).toBe(false);
+    expect(keysMayRun({ frameUrl: "moss-core://app/", secureOpen: true })).toBe(false);
     expect(keysMayRun({ frameUrl: undefined, secureOpen: true })).toBe(false);
   });
   test("any other focus, or none, lets it run", () => {
-    expect(keysMayRun({ frameUrl: "clover-core://app/", secureOpen: false })).toBe(true);
-    expect(keysMayRun({ frameUrl: "clover-plugin://alpha/?mount=1", secureOpen: false })).toBe(true);
+    expect(keysMayRun({ frameUrl: "moss-core://app/", secureOpen: false })).toBe(true);
+    expect(keysMayRun({ frameUrl: "moss-plugin://alpha/?mount=1", secureOpen: false })).toBe(true);
     expect(keysMayRun({ frameUrl: null, secureOpen: false })).toBe(true);
     expect(keysMayRun({ frameUrl: undefined, secureOpen: false })).toBe(true);
   });

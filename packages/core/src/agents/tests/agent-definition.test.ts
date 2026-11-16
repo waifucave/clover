@@ -4,7 +4,7 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describeOk, validateManifest, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { describeOk, validateManifest, PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { describeSession } from "../../bots/tools";
 import { agentDefinitionOf, plainName } from "../../runtime-sdk/turn-loop/glossary";
 import { agentToolDefs, type AgentDefinitionView } from "../tools";
@@ -16,9 +16,9 @@ function setup(def?: Partial<AgentDefinitionView>) {
   const started: Record<string, unknown>[] = [];
   const manager = { start: async (p: Record<string, unknown>) => (started.push(p), { sessionId: "a_1", transcript: "t.jsonl" }) } as never;
   const checked: string[] = [];
-  const study: AgentDefinitionView = { pluginId: "alpha", id: "study-buddy", name: "Study buddy", prompt: "Write notes.md, sourced.", backend: "clover-code", model: "anthropic/claude-haiku-5-5", ...def };
+  const study: AgentDefinitionView = { pluginId: "alpha", id: "study-buddy", name: "Study buddy", prompt: "Write notes.md, sourced.", backend: "moss-code", model: "anthropic/claude-haiku-5-5", ...def };
   const [agent] = agentToolDefs(manager, { bot: "alpha", session: "b_alpha", origin: "user" }, {
-    backends: () => ["clover-code", "codex"],
+    backends: () => ["moss-code", "codex"],
     checkModel: async (m) => (checked.push(m), m.startsWith("openrouter/") ? { ok: false as const, reason: "not allowed" } : { ok: true as const }),
     definition: (name) => (name === "alpha:study-buddy" ? study : undefined),
   });
@@ -27,12 +27,12 @@ function setup(def?: Partial<AgentDefinitionView>) {
 
 test("a definition brings its words only: its instructions before the brief; the backend, model, folder and computer are the bot's", async () => {
   const { agent, started, checked } = setup();
-  const out = await agent.run({ agent: "alpha:study-buddy", prompt: "Summarise the Nile chapter.", backend: "clover-code", root: "home/Studio/egypt" });
+  const out = await agent.run({ agent: "alpha:study-buddy", prompt: "Summarise the Nile chapter.", backend: "moss-code", root: "home/Studio/egypt" });
   expect(out.isError).toBe(false);
   expect(out.text).toContain("with alpha's agent definition study-buddy");
   // The start names the definition, from the registry's view (never the bot's words): its record and its row say it.
   expect(started[0]).toMatchObject({ definition: { pluginId: "alpha", id: "study-buddy" } });
-  expect(started[0]).toMatchObject({ backend: "clover-code", root: "home/Studio/egypt", title: "Study buddy", prompt: "Write notes.md, sourced.\n\n---\n\nSummarise the Nile chapter." });
+  expect(started[0]).toMatchObject({ backend: "moss-code", root: "home/Studio/egypt", title: "Study buddy", prompt: "Write notes.md, sourced.\n\n---\n\nSummarise the Nile chapter." });
   // Its own backend and model are never taken (the controller's ruling): with none from the bot, none is used.
   expect(started[0]!.model).toBeUndefined();
   expect(checked).toEqual([]);
@@ -42,25 +42,25 @@ test("a definition brings its words only: its instructions before the brief; the
 });
 
 test("a definition never names the backend: without the bot's, the call is refused; an unknown definition is too", async () => {
-  const { agent, started } = setup({ backend: "clover-code" });
+  const { agent, started } = setup({ backend: "moss-code" });
   expect((await agent.run({ agent: "alpha:study-buddy", prompt: "x", root: "home/Studio/a" })).isError).toBe(true);
-  expect((await agent.run({ agent: "alpha:study-buddy", prompt: "x", backend: "clover-code" })).isError).toBe(true);
-  expect((await agent.run({ agent: "nope:x", prompt: "x", backend: "clover-code", root: "home/Studio/a" })).text).toContain("no agent definition nope:x");
+  expect((await agent.run({ agent: "alpha:study-buddy", prompt: "x", backend: "moss-code" })).isError).toBe(true);
+  expect((await agent.run({ agent: "nope:x", prompt: "x", backend: "moss-code", root: "home/Studio/a" })).text).toContain("no agent definition nope:x");
   expect(started).toHaveLength(0);
 });
 
 test("agentDefinitionOf reads a definition by Glossary's name, as words only, from a plugin whose entries reach the session", () => {
-  const folder = mkdtempSync(join(tmpdir(), "clover-agentdef-"));
+  const folder = mkdtempSync(join(tmpdir(), "moss-agentdef-"));
   temps.push(folder);
   mkdirSync(join(folder, "agents"), { recursive: true });
   writeFileSync(join(folder, "agents", "study-buddy.md"), "---\nname: study-buddy\ndescription: x\n---\n\nRead the folder, write notes.md.\n");
-  const value = { id: "study-buddy", name: { en: "Study buddy" }, backend: "clover-code", instructions: "agents/study-buddy.md", root: "/", computer: "Other", plugins: { only: ["x"] } };
+  const value = { id: "study-buddy", name: { en: "Study buddy" }, backend: "moss-code", instructions: "agents/study-buddy.md", root: "/", computer: "Other", plugins: { only: ["x"] } };
   const reg = {
     entries: (p: string) => (p === "agents" ? [{ point: "agents", pluginId: "alpha", ref: "agents/0", entryId: "study-buddy", value, state: "active" }] : []),
     get: (id: string) => (id === "alpha" ? { id, folder } : undefined),
   } as never;
   const def = agentDefinitionOf(reg, "alpha:study-buddy");
-  expect(def).toEqual({ pluginId: "alpha", id: "study-buddy", name: "Study buddy", prompt: "Read the folder, write notes.md.", backend: "clover-code" });
+  expect(def).toEqual({ pluginId: "alpha", id: "study-buddy", name: "Study buddy", prompt: "Read the folder, write notes.md.", backend: "moss-code" });
   expect(agentDefinitionOf(reg, "alpha:other")).toBeUndefined();
   expect(agentDefinitionOf(reg, "alpha:study-buddy", () => false)).toBeUndefined();
 });
@@ -68,9 +68,9 @@ test("agentDefinitionOf reads a definition by Glossary's name, as words only, fr
 test("a definition's name is plain text of at most 80 characters; a backend, model or effort that isn't a plain id is dropped", () => {
   expect(plainName("Study\u202e buddy\n\tnow")).toBe("Study buddy now");
   expect(plainName("x".repeat(200))).toHaveLength(80);
-  const folder = mkdtempSync(join(tmpdir(), "clover-agentdef-"));
+  const folder = mkdtempSync(join(tmpdir(), "moss-agentdef-"));
   temps.push(folder);
-  const value = { id: "odd", name: "Odd\u0000 one", backend: "clover-code; rm -rf", model: "anthropic/claude-haiku-5-5", effort: "High Effort" };
+  const value = { id: "odd", name: "Odd\u0000 one", backend: "moss-code; rm -rf", model: "anthropic/claude-haiku-5-5", effort: "High Effort" };
   const reg = {
     entries: (p: string) => (p === "agents" ? [{ point: "agents", pluginId: "alpha", ref: "agents/0", entryId: "odd", value, state: "active" }] : []),
     get: (id: string) => (id === "alpha" ? { id, folder } : undefined),
@@ -79,14 +79,14 @@ test("a definition's name is plain text of at most 80 characters; a backend, mod
 });
 
 test("an agent's row says which plugin's definition it started from", () => {
-  const line = describeSession({ id: "agent_1", kind: "agent", computer: "Studio", status: "idle", startedAt: 1, updatedAt: 1, backend: "clover-code", definition: "alpha:study-buddy", title: "anything the bot wrote" }, () => undefined, "b_alpha");
+  const line = describeSession({ id: "agent_1", kind: "agent", computer: "Studio", status: "idle", startedAt: 1, updatedAt: 1, backend: "moss-code", definition: "alpha:study-buddy", title: "anything the bot wrote" }, () => undefined, "b_alpha");
   expect(line).toContain("from the agent definition alpha:study-buddy");
 });
 
 test("the OK card names each agent definition a plugin brings", () => {
   const report = validateManifest({
-    manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
-    contributes: { agents: [{ id: "study-buddy", name: { en: "Study buddy" }, backend: "clover-code", instructions: "agents/study.md" }, "agents/reviewer.md"] },
+    manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
+    contributes: { agents: [{ id: "study-buddy", name: { en: "Study buddy" }, backend: "moss-code", instructions: "agents/study.md" }, "agents/reviewer.md"] },
   });
   expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
   const lines = describeOk(report);
@@ -94,13 +94,13 @@ test("the OK card names each agent definition a plugin brings", () => {
   expect(lines).toContain("It adds an agent definition reviewer: instructions an agent follows when your bot hands it work.");
 });
 
-test("Clover's own agents run on the bot's own model when the bot names none; another backend gets none chosen for it", async () => {
+test("MOSS's own agents run on the bot's own model when the bot names none; another backend gets none chosen for it", async () => {
   const started: Record<string, unknown>[] = [];
   const manager = { start: async (p: Record<string, unknown>) => (started.push(p), { sessionId: "a_1", transcript: "t.jsonl" }) } as never;
-  const [agent] = agentToolDefs(manager, { bot: "alpha", session: "b_alpha", origin: "user" }, { backends: () => ["clover-code", "codex"], botModel: () => "anthropic/claude-haiku-5-5" });
-  await agent!.run({ prompt: "x", backend: "clover-code", root: "home/Studio/a" });
+  const [agent] = agentToolDefs(manager, { bot: "alpha", session: "b_alpha", origin: "user" }, { backends: () => ["moss-code", "codex"], botModel: () => "anthropic/claude-haiku-5-5" });
+  await agent!.run({ prompt: "x", backend: "moss-code", root: "home/Studio/a" });
   await agent!.run({ prompt: "x", backend: "codex", root: "home/Studio/a" });
-  await agent!.run({ prompt: "x", backend: "clover-code", root: "home/Studio/a", model: "anthropic/claude-sonnet-5-5" });
+  await agent!.run({ prompt: "x", backend: "moss-code", root: "home/Studio/a", model: "anthropic/claude-sonnet-5-5" });
   expect(started.map((s) => s.model)).toEqual(["anthropic/claude-haiku-5-5", undefined, "anthropic/claude-sonnet-5-5"]);
 });
 
@@ -109,12 +109,12 @@ test("a model the bot names, or the bot's own it falls back to, is held to the p
   const checked: string[] = [];
   const manager = { start: async (p: Record<string, unknown>) => (started.push(p), { sessionId: "a_1", transcript: "t.jsonl" }) } as never;
   const [agent] = agentToolDefs(manager, { bot: "alpha", session: "b_alpha", origin: "user" }, {
-    backends: () => ["clover-code"], botModel: () => "anthropic/claude-haiku-5-5",
+    backends: () => ["moss-code"], botModel: () => "anthropic/claude-haiku-5-5",
     checkModel: async (m) => (checked.push(m), m.startsWith("openrouter/") ? { ok: false as const, reason: "openrouter isn't one of this bot's providers" } : { ok: true as const }),
   });
-  expect(await agent!.run({ prompt: "x", backend: "clover-code", root: "home/Studio/a", model: "openrouter/some-paid-model" })).toEqual({ text: "openrouter isn't one of this bot's providers", isError: true });
+  expect(await agent!.run({ prompt: "x", backend: "moss-code", root: "home/Studio/a", model: "openrouter/some-paid-model" })).toEqual({ text: "openrouter isn't one of this bot's providers", isError: true });
   expect(started).toHaveLength(0);
-  await agent!.run({ prompt: "x", backend: "clover-code", root: "home/Studio/a" });
+  await agent!.run({ prompt: "x", backend: "moss-code", root: "home/Studio/a" });
   expect(checked).toEqual(["openrouter/some-paid-model", "anthropic/claude-haiku-5-5"]);
   expect(started).toHaveLength(1);
 });

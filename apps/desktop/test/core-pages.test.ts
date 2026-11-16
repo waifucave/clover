@@ -8,14 +8,14 @@ const SUMMARY = { version: "1.0.0", source: "index", class: "code", namespace: "
 function client(overrides: Record<string, (params: Record<string, unknown>) => unknown> = {}): PageClient & { calls: { method: string; params: unknown }[] } {
   const calls: { method: string; params: unknown }[] = [];
   const answers: Record<string, (params: Record<string, unknown>) => unknown> = {
-    "point.list": () => ({ points: [{ name: "models", shape: "list", declaredBy: "core", spot: false, occupants: [{ pluginId: "luna-models", entry: "models" }, { pluginId: "clover/openai", entry: "models" }, { pluginId: "luna-models", entry: "models" }], waiting: [], replacesShipped: false, private: false }] }),
+    "point.list": () => ({ points: [{ name: "models", shape: "list", declaredBy: "core", spot: false, occupants: [{ pluginId: "luna-models", entry: "models" }, { pluginId: "moss/openai", entry: "models" }, { pluginId: "luna-models", entry: "models" }], waiting: [], replacesShipped: false, private: false }] }),
     "plugin.get": (p) => ({ plugin: { name: p.id, manifest: { contributes: { models: p.id === "luna-models"
       ? [{ provider: "luna", name: { en: "Luna AI", fr: "Luna IA" }, terms: "https://luna.example/terms", auth: [{ method: "api-key", help: "Make a key in Luna's console." }, { method: "oauth-pkce" }] }]
       : [{ provider: "openai", name: "OpenAI", terms: "Be nice.", auth: [{ method: "api-key" }] }] } } } }),
     "plugin.auth.list": (p) => ({ auth: p.id === "luna-models" ? [{ index: 0, method: "api-key", state: "signed-out" }, { index: 1, method: "oauth-pkce", state: "signed-out" }] : [{ index: 0, method: "api-key", state: "signed-in", account: "me@example.com" }] }),
     "plugin.list": () => ({ plugins: [
-      { id: "clover", name: "Clover", state: "enabled", enabled: true, ...SUMMARY, source: "bundled" },
-      { id: "clover/shell", parent: "clover", name: "Shell", state: "enabled", enabled: true, ...SUMMARY, source: "bundled" },
+      { id: "moss", name: "MOSS", state: "enabled", enabled: true, ...SUMMARY, source: "bundled" },
+      { id: "moss/shell", parent: "moss", name: "Shell", state: "enabled", enabled: true, ...SUMMARY, source: "bundled" },
       { id: "alpha", name: "Alpha", state: "enabled", enabled: true, ...SUMMARY, source: "bundled" },
       { id: "vn-shell", name: { en: "VN shell" }, state: "enabled", enabled: true, ...SUMMARY },
       { id: "vn-shell/extra", parent: "vn-shell", name: "Extra", state: "disabled", enabled: false, ...SUMMARY },
@@ -64,7 +64,7 @@ describe("the welcome guide", () => {
     const providers = await listProviders(client(), "fr");
     expect(providers).toEqual([
       { id: "luna-models", name: "Luna IA", terms: { url: "https://luna.example/terms" }, auth: [{ index: 0, method: "api-key", state: "signed-out", help: "Make a key in Luna's console." }, { index: 1, method: "oauth-pkce", state: "signed-out" }] },
-      { id: "clover/openai", name: "OpenAI", terms: { text: "Be nice." }, auth: [{ index: 0, method: "api-key", state: "signed-in", account: "me@example.com" }] },
+      { id: "moss/openai", name: "OpenAI", terms: { text: "Be nice." }, auth: [{ index: 0, method: "api-key", state: "signed-in", account: "me@example.com" }] },
     ]);
     expect(anyReady(providers)).toBe(true);
     expect(anyReady(providers.slice(0, 1))).toBe(false);
@@ -100,7 +100,7 @@ describe("the welcome guide", () => {
     const d = deps(client());
     await pageCall("welcome.openTerms", { id: "luna-models" }, d);
     expect(d.opened).toEqual(["https://luna.example/terms"]);
-    await expect(pageCall("welcome.openTerms", { id: "clover/openai" }, d)).rejects.toThrow("no terms to open");
+    await expect(pageCall("welcome.openTerms", { id: "moss/openai" }, d)).rejects.toThrow("no terms to open");
     await pageCall("welcome.done", {}, d);
     expect([d.done, d.closed]).toEqual([1, 1]);
   });
@@ -125,7 +125,7 @@ describe("safe mode's plugin manager", () => {
 
   test("never the app's own, never a child on its own, never another call", async () => {
     const d = deps(client());
-    await expect(pageCall("plugins.turnOff", { id: "clover/shell" }, d)).rejects.toThrow();
+    await expect(pageCall("plugins.turnOff", { id: "moss/shell" }, d)).rejects.toThrow();
     await expect(pageCall("plugins.remove", { id: "alpha" }, d)).rejects.toThrow();
     await expect(pageCall("plugins.remove", { id: "vn-shell/extra" }, d)).rejects.toThrow();
     await expect(pageCall("plugin.setEnabled", { id: "vn-shell", enabled: true }, d)).rejects.toThrow("not a call");

@@ -1,8 +1,8 @@
-// `clover plugin validate <folder> [--json] [--upgrade]` (spec §5.6): a folder's class, contributions, points, hosts,
+// `moss plugin validate <folder> [--json] [--upgrade]` (spec §5.6): a folder's class, contributions, points, hosts,
 // capabilities, tools, settings and children, every finding and the OK's text, without running anything. Exits
 // non-zero on any error. `--upgrade` first rewrites files in an older format to the newest one (§5.1 "Formats").
 import { resolve } from "node:path";
-import { registry } from "@waifucave/clover-core";
+import { registry } from "@waifucave/moss-core";
 
 export interface ValidateRun {
   code: number;
@@ -27,7 +27,7 @@ const osName = (): "macos" | "windows" | "linux" => (process.platform === "darwi
 
 export async function runPluginValidate(args: readonly string[], cwd = process.cwd()): Promise<ValidateRun> {
   const p = parseValidateArgs(args);
-  if (p.error) return { code: 2, output: `${p.error}\nusage: clover plugin validate [<folder>] [--json] [--upgrade]` };
+  if (p.error) return { code: 2, output: `${p.error}\nusage: moss plugin validate [<folder>] [--json] [--upgrade]` };
   const folder = resolve(cwd, p.folder ?? ".");
   const upgraded = p.upgrade ? registry.upgradePluginFolder(folder) : [];
   const v = await registry.validatePluginFolder(folder, { os: osName() });
@@ -36,8 +36,8 @@ export async function runPluginValidate(args: readonly string[], cwd = process.c
   if (p.json) return { code, output: JSON.stringify(p.upgrade ? { ...v, upgraded } : v, null, 2) };
   const head = upgraded.map((u) =>
     u.status === "upgraded" ? `upgraded ${u.file}: ${u.format} format ${u.from} to ${u.to}`
-      : u.status === "newer" ? `${u.file}: ${u.format} format ${u.from} needs a newer Clover`
-        : `${u.file}: ${u.format} format ${u.from} is one this Clover never shipped`);
+      : u.status === "newer" ? `${u.file}: ${u.format} format ${u.from} needs a newer MOSS`
+        : `${u.file}: ${u.format} format ${u.from} is one this MOSS never shipped`);
   if (p.upgrade && upgraded.length === 0) head.push("every file is in its format's newest version");
   return { code, output: [...head, ...(head.length > 0 ? [""] : []), registry.renderValidation(v)].join("\n") };
 }

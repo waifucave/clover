@@ -18,7 +18,7 @@ import { sessionLogPath, sessionMetaPath } from "../ids";
 
 const homes: string[] = [];
 function tempHome(): string {
-  const home = mkdtempSync(join(tmpdir(), "clover-d-sessions-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-d-sessions-"));
   homes.push(home);
   return home;
 }
@@ -481,12 +481,12 @@ describe("DurableSessionHost when things go wrong", () => {
     expect(seqs).toEqual(seqs.map((_, i) => i));
   });
 
-  test("a meta written by a newer Clover stops the start rather than be skipped", async () => {
+  test("a meta written by a newer MOSS stops the start rather than be skipped", async () => {
     const { home, clock, host } = durable();
     open(host);
     await host.close();
     writeFileSync(sessionMetaPath(home, "alpha", "b_alpha"), JSON.stringify({ meta: 2, id: "b_alpha" }));
-    expect(() => new DurableSessionHost({ home, clock })).toThrow("newer Clover");
+    expect(() => new DurableSessionHost({ home, clock })).toThrow("newer MOSS");
   });
 
   test("when the disk refuses a turn's start, the input stays first in line and runs once the disk is back", async () => {

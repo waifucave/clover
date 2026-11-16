@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type SignInStub, startSignInStub } from "@waifucave/clover-test-harness/signin-stub";
+import { type SignInStub, startSignInStub } from "@waifucave/moss-test-harness/signin-stub";
 import ts from "typescript";
 
 import { verifyAccountToken } from "../../../shared/account-token";
@@ -16,7 +16,7 @@ import { deviceIdFor, mintStatement, registerStatement } from "../../src/wire";
 import { type AccountServiceHarness, harnessReady, startAccountService } from "./harness";
 
 const servicesDir = join(dirname(import.meta.path), "../../..");
-const coreContracts = join(dirname(fileURLToPath(import.meta.resolve("@waifucave/clover-core"))), "contracts");
+const coreContracts = join(dirname(fileURLToPath(import.meta.resolve("@waifucave/moss-core"))), "contracts");
 const laneB = (await import(join(coreContracts, "device-registry.ts"))) as { deviceIdFor(publicKey: Uint8Array): Promise<string> };
 const laneH = (await import(join(coreContracts, "../identity/account.ts"))) as {
   registerStatement(account: string, d: { id: string; publicKey: string; boxKey: string; name: string; kind: string; os?: string }, t: number): Uint8Array;

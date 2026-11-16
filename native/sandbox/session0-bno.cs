@@ -2,7 +2,7 @@
 // Session 0 object path; it must not install this temporary namespace alias.
 using System;
 using System.Runtime.InteropServices;
-public static class CloverSessionZero {
+public static class MossSessionZero {
  [StructLayout(LayoutKind.Sequential)] struct US { public ushort len,max; public IntPtr buf; }
  [StructLayout(LayoutKind.Sequential)] struct OA { public int len; public IntPtr root,name; public uint flags; public IntPtr sd,sqos; }
  [DllImport("ntdll.dll")] static extern int NtCreateDirectoryObject(out IntPtr handle,uint access,ref OA attr);

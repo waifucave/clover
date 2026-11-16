@@ -35,8 +35,8 @@ describe("verify:fd-receiver helpers", () => {
   });
   test("procArgsParts splits a KERN_PROCARGS2 buffer into its arguments and its environment", () => {
     const argc = Buffer.alloc(4); argc.writeInt32LE(2);
-    const buf = Buffer.concat([argc, Buffer.from("/x/probe-bin\0\0\0\0probe-bin\0__restrict-probe\0A=1\0CLOVER_RESTRICT_PROBE_DUMMY=d\0\0")]);
-    expect(procArgsParts(buf)).toEqual({ argv: ["probe-bin", "__restrict-probe"], env: ["A=1", "CLOVER_RESTRICT_PROBE_DUMMY=d"] });
+    const buf = Buffer.concat([argc, Buffer.from("/x/probe-bin\0\0\0\0probe-bin\0__restrict-probe\0A=1\0MOSS_RESTRICT_PROBE_DUMMY=d\0\0")]);
+    expect(procArgsParts(buf)).toEqual({ argv: ["probe-bin", "__restrict-probe"], env: ["A=1", "MOSS_RESTRICT_PROBE_DUMMY=d"] });
     // A reader handed no environment (a restricted process): the arguments alone.
     expect(procArgsParts(Buffer.concat([argc, Buffer.from("/x/c\0\0c\0p\0")]))).toEqual({ argv: ["c", "p"], env: [] });
     expect(procArgsParts(Buffer.alloc(2))).toBeUndefined();
@@ -46,7 +46,7 @@ describe("verify:fd-receiver helpers", () => {
     expect(gate).toContain("const CORE_OPTIONS = signOptions(RESOURCE_BINARIES.find(");
     expect(gate).toContain("const PLUGIN_BUN_OPTIONS = signOptions(RESOURCE_BINARIES.find(");
     expect(gate).toContain('sign(control, "runtime")');
-    expect(readFileSync(join(import.meta.dir, "..", "packages", "cli", "src", "main.ts"), "utf8")).toContain('CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__restrict-probe"');
+    expect(readFileSync(join(import.meta.dir, "..", "packages", "cli", "src", "main.ts"), "utf8")).toContain('MOSS_PLUGIN_RUN_PROBE === true && process.argv[2] === "__restrict-probe"');
   });
   test("SIP's state comes from csrutil and the control's DYLD_ removal, which must agree", () => {
     expect(parseCsrutil("System Integrity Protection status: enabled.\n")).toBe(true);

@@ -12,7 +12,7 @@ import {
   pairBoxKey,
   signerFromKeyPair,
   signText,
-} from "@waifucave/clover-service-handshake/client";
+} from "@waifucave/moss-service-handshake/client";
 import { b64u } from "../../shared/encoding";
 import {
   generateX25519,

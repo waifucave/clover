@@ -1,4 +1,4 @@
-// #243 check 3: Clover's own items are read and written in ONE keychain named by path (the login keychain in
+// #243 check 3: MOSS's own items are read and written in ONE keychain named by path (the login keychain in
 // production), never through the search list a same-user process can reorder. Against THROWAWAY keychain files
 // only (`security create-keychain` in a temp dir, deleted after; the same practice as app-token-acl.test.ts,
 // measured not to touch the user's search list): one stands in for the login keychain, the other holds a
@@ -144,22 +144,22 @@ describe("under a test, the real login keychain is never opened", () => {
   });
 
   test("any test signal without a test keychain refuses, and opens nothing", () => {
-    for (const env of [{ CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-isolated" }, { WINTER_TEST_KEYCHAIN: "memory" }, { [TEST_KEYCHAIN_ENV]: "" }, { NODE_ENV: "test" }]) {
+    for (const env of [{ MOSS_KEYCHAIN_SERVICE: "com.waifucave.moss.core.test-isolated" }, { WINTER_TEST_KEYCHAIN: "memory" }, { [TEST_KEYCHAIN_ENV]: "" }, { NODE_ENV: "test" }]) {
       const { r, opened } = recorder({ env });
       expect(() => resolveKeychain(r)).toThrow(KeychainFfiError);
       expect(opened).toEqual([]);
     }
     // The refusal says what is set and what to set instead (a throwaway daemon with only the service crashed unexplained).
-    const { r } = recorder({ env: { CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.scratch" } });
-    expect(() => resolveKeychain(r)).toThrow(/CLOVER_KEYCHAIN_SERVICE set.*security create-keychain -p clover-throwaway-test-keychain <path>.*CLOVER_TEST_KEYCHAIN=<path>/);
+    const { r } = recorder({ env: { MOSS_KEYCHAIN_SERVICE: "com.waifucave.moss.core.scratch" } });
+    expect(() => resolveKeychain(r)).toThrow(/MOSS_KEYCHAIN_SERVICE set.*security create-keychain -p moss-throwaway-test-keychain <path>.*MOSS_TEST_KEYCHAIN=<path>/);
   });
 
   // A test-marked release build (scripts/test-build.ts): only ever its throwaway file, never the login keychain, whatever
   // else is set (no variable at all, a service alone, NODE_ENV, an empty name).
   test("a test-marked build opens only its throwaway keychain file, and refuses without one, opening nothing", () => {
-    for (const env of [{}, { CLOVER_KEYCHAIN_SERVICE: "x" }, { NODE_ENV: "production" }, { [TEST_KEYCHAIN_ENV]: "" }]) {
+    for (const env of [{}, { MOSS_KEYCHAIN_SERVICE: "x" }, { NODE_ENV: "production" }, { [TEST_KEYCHAIN_ENV]: "" }]) {
       const { r, opened } = recorder({ env });
-      expect(() => resolveTestBuildKeychain(r)).toThrow(/test-marked build.*CLOVER_TEST_KEYCHAIN=<path>/);
+      expect(() => resolveTestBuildKeychain(r)).toThrow(/test-marked build.*MOSS_TEST_KEYCHAIN=<path>/);
       expect(opened).toEqual([]);
     }
     const dir = mkdtempSync(join(tmpdir(), "lane-int-kc-testbuild-"));
@@ -187,10 +187,10 @@ describe("under a test, the real login keychain is never opened", () => {
     const file = join(dir, "t.keychain-db");
     writeFileSync(file, "");
     try {
-      const inProcess = recorder({ testFile: file, env: { CLOVER_KEYCHAIN_SERVICE: "x" } });
+      const inProcess = recorder({ testFile: file, env: { MOSS_KEYCHAIN_SERVICE: "x" } });
       resolveKeychain(inProcess.r);
       expect(inProcess.opened).toEqual([`file ${realpathOf(file)}`]);
-      const named = recorder({ env: { CLOVER_KEYCHAIN_SERVICE: "x", [TEST_KEYCHAIN_ENV]: file } });
+      const named = recorder({ env: { MOSS_KEYCHAIN_SERVICE: "x", [TEST_KEYCHAIN_ENV]: file } });
       resolveKeychain(named.r);
       expect(named.opened).toEqual([`file ${realpathOf(file)}`]);
       // A release build: the variable never chooses a keychain, and it still marks a test, so nothing opens.
@@ -256,10 +256,10 @@ darwinTest("opening a throwaway keychain file turns this process's keychain UI o
 
 // The read itself, in a child process with a hard time limit: an item another program owns (its access list trusts
 // only /usr/bin/true) must come back as an error at once, never block on a dialog. A dialog is a window on the screen
-// if this fails, so locally it runs only on request (CLOVER_KEYCHAIN_PROMPT_TEST=1); CI runs it.
+// if this fails, so locally it runs only on request (MOSS_KEYCHAIN_PROMPT_TEST=1); CI runs it.
 /** `errSecAuthFailed`: what the same no-UI read returns where there is no login session to ask in (a CI runner). */
 const ERR_SEC_AUTH_FAILED = -25293;
-const promptTest = process.env.CI === "true" || process.env.CLOVER_KEYCHAIN_PROMPT_TEST === "1" ? darwinTest : test.skip;
+const promptTest = process.env.CI === "true" || process.env.MOSS_KEYCHAIN_PROMPT_TEST === "1" ? darwinTest : test.skip;
 promptTest("a read of an item the reader isn't trusted for is refused at once, with no secret, and never blocks", () => {
   const dir = mkdtempSync(join(tmpdir(), "lane-int-noui-acl-"));
   const path = join(dir, "t.keychain-db");

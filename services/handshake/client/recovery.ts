@@ -6,7 +6,7 @@ import { fromB64u } from "../../shared/encoding";
 import { type Signer, signerFromSeed } from "./signer";
 
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-const INFO = "clover handshake v1 recovery";
+const INFO = "moss handshake v1 recovery";
 
 /** A new code's 16 bytes. */
 export function newRecoveryCode(): Uint8Array {

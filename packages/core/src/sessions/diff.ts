@@ -11,7 +11,7 @@
 // cloned with such a filter runs it here as it would in their own `git diff`.
 import { closeSync, constants, fstatSync, lstatSync, openSync, readlinkSync, readSync } from "node:fs";
 import { join } from "node:path";
-import type { SessionDiff, SessionDiffFile } from "@waifucave/clover-protocol";
+import type { SessionDiff, SessionDiffFile } from "@waifucave/moss-protocol";
 
 export const DIFF_FILES_MAX = 300;
 export const DIFF_FILE_MAX_LINES = 2_000;

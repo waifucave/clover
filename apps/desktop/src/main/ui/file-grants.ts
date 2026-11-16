@@ -7,7 +7,7 @@
 import { closeSync, constants, createReadStream, fstatSync, openSync, realpathSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { basename, dirname, join } from "node:path";
-import { apiCallAllowed } from "@waifucave/clover-plugin-sdk";
+import { apiCallAllowed } from "@waifucave/moss-plugin-sdk";
 
 export type GrantKind = "file" | "folder";
 /** What the core is told: a folder picked for writing carries read too, a save grant also reads its one file (the core adds it). */

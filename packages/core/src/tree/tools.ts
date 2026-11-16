@@ -12,7 +12,7 @@
 //   takes the tree's direct path instead (the owner's item 89): the files go holder to holder.
 // * A computer that is off answers `computer_offline` at once.
 import { fenceParam, type ActFence } from "./fencing";
-import type { Caller, Level, SessionKind, SignedCardAnswer } from "@waifucave/clover-protocol";
+import type { Caller, Level, SessionKind, SignedCardAnswer } from "@waifucave/moss-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
 import { ContractError, isContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
@@ -21,7 +21,7 @@ import type { LocalHolder } from "./holder";
 import { offlineAs } from "./remote";
 import { runKey, type ToolExecutor } from "./service";
 import { withAnswer, type AnswerAsker } from "./judge";
-import type { TurnOrigin } from "@waifucave/clover-protocol";
+import type { TurnOrigin } from "@waifucave/moss-protocol";
 import type { CoreTree, TreeDirectory } from "./tree";
 
 /** The tools this layer runs on tree paths. */

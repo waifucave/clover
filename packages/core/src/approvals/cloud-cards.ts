@@ -2,16 +2,16 @@
 // (C-M3, the controller's ruling of November 7). Each is a `change` card (`computer-create`, `computer-resize`,
 // `computer-delete`, `device-add` for pairing again, `main-computer`), so it is never remembered: no "always" (rule 1), answered on its own each time.
 //
-// What the card says: its title, question and buttons are Clover's own table strings (`text`). Every name and id comes
+// What the card says: its title, question and buttons are MOSS's own table strings (`text`). Every name and id comes
 // from the user's settings or a provider plugin (a folder, a provider, a server id, a region, a size), so they go in a
 // `code` field, the hiding characters out (`plainOf`), never in a sentence (#267's review, item 5).
 //
 // A second VM with a folder's label (`cloud-duplicate`, J's #284) says whether each VM's device is paired, and offers
-// to delete the duplicate only when the VM Clover keeps ranks strictly above it (`deletable`); otherwise the card only
+// to delete the duplicate only when the VM MOSS keeps ranks strictly above it (`deletable`); otherwise the card only
 // reports both VMs, with nothing to delete.
-import type { TurnOrigin } from "@waifucave/clover-protocol";
+import type { TurnOrigin } from "@waifucave/moss-protocol";
 import type { ApprovalBroker, ApprovalRequest } from "../contracts/approval-broker";
-import type { CloverApprovalRequest } from "./broker";
+import type { MossApprovalRequest } from "./broker";
 import { plainOf } from "./strings";
 
 /** One VM a duplicate card names. */
@@ -31,7 +31,7 @@ export type CloudCardRequest =
     kind: "cloud-duplicate"; name: string; provider: string; serverId: string; region: string;
     /** Whether this VM's device is paired. */
     paired?: boolean;
-    /** The VM Clover keeps. */
+    /** The VM MOSS keeps. */
     keeper?: CloudVmRef;
     /** True only when the keeper ranks strictly above this one: then, and only then, the card offers to delete it. */
     deletable?: boolean;
@@ -39,7 +39,7 @@ export type CloudCardRequest =
   | { kind: "cloud-repair"; name: string; provider: string; why: "token-expired" | "main-changed" }
   | { kind: "cloud-make-main"; name: string };
 
-/** Clover's own words for each card. */
+/** MOSS's own words for each card. */
 export const CLOUD_CARD_TEXT = {
   "cloud-create": { title: "Create a cloud computer", what: "Create a cloud computer for this folder? It costs money while it exists.", yes: "Create", no: "Not now" },
   "cloud-resize": { title: "Resize a cloud computer", what: "Change this cloud computer's size? Its price changes with it.", yes: "Resize", no: "Not now" },
@@ -48,7 +48,7 @@ export const CLOUD_CARD_TEXT = {
   "cloud-duplicate": { title: "A second cloud computer", what: "A second cloud computer for this folder exists. Delete it?", yes: "Delete it", no: "Keep both" },
   "cloud-duplicate-report": {
     title: "A second cloud computer",
-    what: "A second cloud computer for this folder exists. Clover can't tell which one to keep, so it deletes neither; check both with the provider.",
+    what: "A second cloud computer for this folder exists. MOSS can't tell which one to keep, so it deletes neither; check both with the provider.",
     ok: "OK",
   },
   "cloud-repair-token-expired": { title: "Pair a cloud computer again", what: "This cloud computer didn't pair before its code expired. Pair it again?", yes: "Pair again", no: "Not now" },
@@ -74,7 +74,7 @@ function details(lines: readonly (readonly [string, string | undefined])[]): { t
   return { type: "code", code: lines.filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${value(v!)}`).join("\n") };
 }
 
-/** Whether each VM's device is paired: Clover's own fact, in a text field from this table, never next to a
+/** Whether each VM's device is paired: MOSS's own fact, in a text field from this table, never next to a
  *  provider's string. */
 export const CLOUD_PAIRED_TEXT: Record<string, string> = {
   "yes-yes": "This one's device is paired, and so is the one kept.",
@@ -83,12 +83,12 @@ export const CLOUD_PAIRED_TEXT: Record<string, string> = {
   "no-no": "Neither one's device is paired.",
 };
 const pairedKey = (p: boolean | undefined) => (p === undefined ? "unknown" : p ? "yes" : "no");
-const PAIRED_UNKNOWN = "Clover doesn't know whether these devices are paired.";
+const PAIRED_UNKNOWN = "MOSS doesn't know whether these devices are paired.";
 
 /** The broker's request for one cloud card. `origin`: what started it (the reconcile is the daemon's own by default).
  *  It waits for the person whatever started it (`waitsForUser`): a cloud card is never denied by a timeout, since a
  *  timeout read as "keep" would bill a duplicate forever (the controller's ruling on #290). */
-export function cloudCardRequest(card: CloudCardRequest, origin: TurnOrigin = "routine"): CloverApprovalRequest {
+export function cloudCardRequest(card: CloudCardRequest, origin: TurnOrigin = "routine"): MossApprovalRequest {
   const base = { kind: "change" as const, origin, computers: [] as string[], effect: "other" as const, waitsForUser: true };
   const title = (t: string) => ({ type: "text" as const, text: t });
   switch (card.kind) {
@@ -113,7 +113,7 @@ export function cloudCardRequest(card: CloudCardRequest, origin: TurnOrigin = "r
       } };
     }
     case "cloud-duplicate": {
-      // Each provider string on its own line; whether each device is paired is Clover's, in its own text field.
+      // Each provider string on its own line; whether each device is paired is MOSS's, in its own text field.
       const vms = details([
         ["folder", card.name], ["provider", card.provider],
         ["this one", card.serverId], ["this one's region", card.region || undefined],

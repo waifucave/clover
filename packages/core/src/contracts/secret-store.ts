@@ -18,7 +18,7 @@
 //   against `owner` (§5.1), and adapters get access tokens by reference with a generation number (§3.3).
 // * Account-wide items sync end-to-end encrypted (§8.5); the device's own key never leaves the device (§8.1).
 // * Every write gives the item a new generation, so a caller holding generation n asks for one newer after a 401.
-import type { Os, SecretKeySource, SecretStoreView } from "@waifucave/clover-protocol";
+import type { Os, SecretKeySource, SecretStoreView } from "@waifucave/moss-protocol";
 
 export type SecretOwner =
   /** The core's own items: sign-ins, API keys, the bridge's per-session tokens. */

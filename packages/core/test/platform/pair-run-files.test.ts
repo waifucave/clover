@@ -7,7 +7,7 @@ import { bunRunner, windowsUserSid } from "../../src/platform/login/live";
 import { appStarter, type AppLauncher } from "../../src/platform/pair/launch";
 import type { Runner } from "../../src/platform/login/live";
 
-const run = () => mkdtempSync(join(tmpdir(), "clover-run-"));
+const run = () => mkdtempSync(join(tmpdir(), "moss-run-"));
 /** This OS, with a runner that answers yes (on Windows, icacls). */
 const native = { os: (process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux") as "darwin" | "linux" | "win32", run: (async () => ({ ok: true, out: "" })) as Runner, userSid: "S-1-5-21-1-2-3-1001" };
 

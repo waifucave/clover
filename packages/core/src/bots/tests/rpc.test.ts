@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CLOVER_ERR, ERR, SENT_AT_WINDOW_MS, SESSIONS_METHODS as M, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
+import { MOSS_ERR, ERR, SENT_AT_WINDOW_MS, SESSIONS_METHODS as M, type Caller, type MethodSpec } from "@waifucave/moss-protocol";
 import type { z } from "zod";
 import type { Unsubscribe } from "../../contracts/common";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
@@ -51,7 +51,7 @@ describe("the sessions area's methods", () => {
     const { b, call, fails } = await setup();
     expect(await call(M.botSetUserLayer, { id: "alpha", patch: { name: "Ally", effort: "high" } })).toEqual({ applied: true });
     expect((await call(M.botGet, { id: "alpha" })).bot).toMatchObject({ name: "Ally", effort: "high", userLayer: ["name", "effort"] });
-    expect((await fails(M.botSetUserLayer, { id: "alpha", patch: { name: "Evil" } }, aBot)).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await fails(M.botSetUserLayer, { id: "alpha", patch: { name: "Evil" } }, aBot)).code).toBe(MOSS_ERR.NOT_THE_USER);
     expect((await fails(M.botSetUserLayer, { id: "alpha", patch: { model: "not-a-model" } })).code).toBe(ERR.INVALID_PARAMS);
     await b.shutdown();
   });
@@ -64,10 +64,10 @@ describe("the sessions area's methods", () => {
     await flush();
     expect(b.drivers.for("b_alpha").turns[0]!.input).toMatchObject({ from: "user", text: "hi", device: "phone00000000000000", sentAt: b.clock.now() });
     expect((await fails(M.sessionSend, { id: "b_alpha", message: { text: "  ", clientMessageId: "c-2" } })).code).toBe(ERR.INVALID_PARAMS);
-    expect((await fails(M.sessionSend, { id: "b_alpha", message: { text: "x", clientMessageId: "c-3" } }, aBot)).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await fails(M.sessionSend, { id: "b_alpha", message: { text: "x", clientMessageId: "c-3" } }, aBot)).code).toBe(MOSS_ERR.NOT_THE_USER);
     expect((await fails(M.sessionSend, { id: "b_nobody", message: { text: "x", clientMessageId: "c-4" } })).code).toBe(ERR.NOT_FOUND);
     b.host.setAsleep("b_alpha", true);
-    expect((await fails(M.sessionSend, { id: "b_alpha", message: { text: "x", clientMessageId: "c-5" } })).code).toBe(CLOVER_ERR.BOT_ASLEEP);
+    expect((await fails(M.sessionSend, { id: "b_alpha", message: { text: "x", clientMessageId: "c-5" } })).code).toBe(MOSS_ERR.BOT_ASLEEP);
     b.host.setAsleep("b_alpha", false);
     const run = b.bots.runSideThread("alpha", { routine: "r_1", name: "Check", text: "Check." });
     await flush();
@@ -86,8 +86,8 @@ describe("the sessions area's methods", () => {
     driver().end({ reason: "failed", failure: "error" });
     await flush();
     // Not the user's: a bot, a plugin; and the schema takes only {session}.
-    expect((await fails(M.sessionResend, { session: "b_alpha" }, aBot)).code).toBe(CLOVER_ERR.NOT_THE_USER);
-    expect((await fails(M.sessionResend, { session: "b_alpha" }, aPlugin)).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await fails(M.sessionResend, { session: "b_alpha" }, aBot)).code).toBe(MOSS_ERR.NOT_THE_USER);
+    expect((await fails(M.sessionResend, { session: "b_alpha" }, aPlugin)).code).toBe(MOSS_ERR.NOT_THE_USER);
     expect((await fails(M.sessionResend, { session: "b_nobody" })).code).toBe(ERR.NOT_FOUND);
     // Words, a message or an id the caller adds are not read: the stored message is what goes.
     const seq = (await call(M.sessionResend, { session: "b_alpha", text: "evil", message: { text: "evil" }, clientMessageId: "mine" })).seq;
@@ -279,7 +279,7 @@ describe("the sessions area's methods", () => {
     const remote = await fails(M.sessionSend, { id: "b_alpha", message }, thePhone);
     expect(remote.code).toBe(ERR.INVALID_PARAMS);
     expect(remote.message).toContain("isn't an image this device staged for this session");
-    // Here, a file inside the Clover home is no image of the user's.
+    // Here, a file inside the MOSS home is no image of the user's.
     expect((await fails(M.sessionSend, { id: "b_alpha", message })).code).toBe(ERR.INVALID_PARAMS);
     expect(b.host.history("b_alpha").some((r) => r.type === "input")).toBe(false);
     await b.shutdown();
@@ -289,8 +289,8 @@ describe("the sessions area's methods", () => {
     const { b, call, fails, home } = await setup();
     const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
     const stage = { id: "b_alpha", mediaType: "image/png", dataBase64: png };
-    expect((await fails(M.sessionStageImage, stage, aPlugin)).code).toBe(CLOVER_ERR.NOT_THE_USER);
-    expect((await fails(M.sessionStageImage, stage, aBot)).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await fails(M.sessionStageImage, stage, aPlugin)).code).toBe(MOSS_ERR.NOT_THE_USER);
+    expect((await fails(M.sessionStageImage, stage, aBot)).code).toBe(MOSS_ERR.NOT_THE_USER);
     // The bytes must be the type they say.
     expect((await fails(M.sessionStageImage, { ...stage, mediaType: "image/jpeg" }, thePhone)).code).toBe(ERR.INVALID_PARAMS);
     const { path } = await call(M.sessionStageImage, stage, thePhone);
@@ -330,7 +330,7 @@ describe("the sessions area's methods", () => {
     const { b, call, fails } = await setup();
     await call(M.sessionSend, { id: "b_alpha", message: { text: "go", clientMessageId: "g" } });
     await flush();
-    expect((await fails(M.sessionInterrupt, { id: "b_alpha" }, aPlugin)).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await fails(M.sessionInterrupt, { id: "b_alpha" }, aPlugin)).code).toBe(MOSS_ERR.NOT_THE_USER);
     await call(M.sessionInterrupt, { id: "b_alpha" });
     await flush();
     expect(b.drivers.for("b_alpha").interrupts).toBe(1);
@@ -383,7 +383,7 @@ describe("bot.importAvatar and bot.avatarFormats read the registry's avatar.form
   const withFormats = async (on: { vrm: boolean; live2d: boolean }) => {
     const { home, b } = await setup();
     const entry = (pluginId: string, value: unknown, active: boolean) => ({ point: "avatar.formats", pluginId, ref: "avatar.formats/0", value, state: active ? "active" : "waiting" });
-    const registry = { entries: (point: string) => (point === "avatar.formats" ? [entry("clover/vrm", VRM, on.vrm), entry("clover/live2d", LIVE2D, on.live2d)] : []) } as never;
+    const registry = { entries: (point: string) => (point === "avatar.formats" ? [entry("moss/vrm", VRM, on.vrm), entry("moss/live2d", LIVE2D, on.live2d)] : []) } as never;
     const methods = sessionsMethods({ home, computer: "Studio", bots: b.bots, host: b.host, clock: new FakeClock(), localDevice: "studio0000000000000", registry });
     const call = async <S extends MethodSpec>(spec: S, params: unknown): Promise<z.output<S["result"]>> => spec.result.parse(await methods[spec.name]!(params, { caller: theUser })) as z.output<S["result"]>;
     const fails = async (spec: MethodSpec, params: unknown) => (await methods[spec.name]!(params, { caller: theUser }).then(() => undefined, (e: unknown) => e)) as MethodError;
@@ -416,7 +416,7 @@ describe("bot.importAvatar and bot.avatarFormats read the registry's avatar.form
 
 describe("the SDK's example-pngtuber: a third format end to end", () => {
   const EXAMPLE = join(import.meta.dir, "..", "..", "..", "..", "plugin-sdk", "examples", "example-pngtuber");
-  const PNGTUBER = (JSON.parse(readFileSync(join(EXAMPLE, "clover.json"), "utf8")) as { contributes: Record<string, unknown[]> }).contributes["avatar.formats"]![0];
+  const PNGTUBER = (JSON.parse(readFileSync(join(EXAMPLE, "moss.json"), "utf8")) as { contributes: Record<string, unknown[]> }).contributes["avatar.formats"]![0];
   const methodsWith = async (state: "active" | "waiting" | "absent") => {
     const { home, b } = await setup();
     const registry = { entries: (point: string) => (point === "avatar.formats" && state !== "absent" ? [{ point, pluginId: "example-pngtuber", ref: "avatar.formats/0", value: PNGTUBER, state }] : []) } as never;

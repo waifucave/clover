@@ -1,7 +1,7 @@
-// Validating a manifest without running anything (spec §5.1 "Formats", §5.4 "Point schemas", §5.6 "`clover plugin
-// validate`", §5.9 "Checked before anything runs"). `validateManifest` checks one `clover.json`; `validateTree` (tree.ts)
+// Validating a manifest without running anything (spec §5.1 "Formats", §5.4 "Point schemas", §5.6 "`moss plugin
+// validate`", §5.9 "Checked before anything runs"). `validateManifest` checks one `moss.json`; `validateTree` (tree.ts)
 // reads a whole plugin folder through a reader, children and referenced files included. Both return what
-// `clover plugin validate` prints: the class, contributions, declared points, network hosts, helper permissions,
+// `moss plugin validate` prints: the class, contributions, declared points, network hosts, helper permissions,
 // capabilities, tool names, settings and findings, and `describeOk` gives the OK's text.
 //
 // What a finding refuses (§5.1, §5.4): an error in the manifest's envelope refuses the plugin; an unknown key in
@@ -10,7 +10,7 @@
 import type { z } from "zod";
 import {
   BUNDLED_BOT_PLUGIN, BUNDLED_ROOT_PLUGIN, isPluginId, type ValidationIssue,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import { capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { hookReadsStdinAsScript } from "./hook-command";
@@ -31,7 +31,7 @@ import type { Manifest, PointDecl } from "./types";
 
 /** Environment names a plugin's server never sets (the core refuses them too, `refuseReservedPluginEnv`). Matched
  *  without case: Windows' environment names are case-insensitive, and a manifest runs on every OS. */
-export const RESERVED_ENV = /^(CLOVER_|BUN_|LD_|DYLD_|NODE_(?!(ENV|NO_WARNINGS)$))/i;
+export const RESERVED_ENV = /^(MOSS_|BUN_|LD_|DYLD_|NODE_(?!(ENV|NO_WARNINGS)$))/i;
 
 export type PluginClassName = "data" | "web" | "code";
 
@@ -79,8 +79,8 @@ export interface ManifestReport {
    *  lets any process of the same user read another's environment, and a third-party server's program can't be signed
    *  to hide it (the controller's ruling on #377). */
   envSecrets: string[];
-  /** It declares programs of its own (a `stdio` server, a helper, or a Node host, Clover's own plugins only), which
-   *  Clover's load guard doesn't hold to the plugin's folder: the OK says so (#234's check 3). */
+  /** It declares programs of its own (a `stdio` server, a helper, or a Node host, MOSS's own plugins only), which
+   *  MOSS's load guard doesn't hold to the plugin's folder: the OK says so (#234's check 3). */
   ownPrograms: boolean;
   /** Its host half runs in a process of its own that runs programs (`host.programs`), fenced to its own folders and
    *  the files the user picks: the OK says so. */
@@ -102,11 +102,11 @@ export interface ValidateOptions {
   folderName?: string;
   /** For a child plugin: its top-level plugin's id and namespace. */
   parent?: { id: string; namespace: string };
-  /** The app's own plugins (`clover`, `alpha` and their children) may use the reserved names. */
+  /** The app's own plugins (`moss`, `alpha` and their children) may use the reserved names. */
   bundled?: boolean;
   /** The plugin API the app has; default `PLUGIN_API_VERSION`. */
   apiVersion?: string;
-  /** The file name findings name; default `clover.json`. */
+  /** The file name findings name; default `moss.json`. */
   file?: string;
 }
 
@@ -357,7 +357,7 @@ export function refusedReport(issues: ValidationIssue[], id?: string, namespace?
   };
 }
 
-/** Validates one `clover.json`, given as text (JSON with comments) or as parsed JSON. */
+/** Validates one `moss.json`, given as text (JSON with comments) or as parsed JSON. */
 export function validateManifest(input: unknown, opts: ValidateOptions = {}): ManifestReport {
   const f = new Findings(opts.file ?? MANIFEST_FILE);
   const empty = (): ManifestReport => refusedReport(f.list);
@@ -376,14 +376,14 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     return empty();
   }
 
-  // The format comes first: a newer one is refused with "needs a newer Clover" (§5.1).
+  // The format comes first: a newer one is refused with "needs a newer MOSS" (§5.1).
   const format = raw.manifest;
   if (typeof format !== "number" || !Number.isInteger(format) || format < 1) {
     f.error("plugin", "manifest_format", ["manifest"], `\`manifest\` must be ${FORMATS.manifest}`);
     return empty();
   }
   if (format > FORMATS.manifest) {
-    f.error("plugin", "needs_newer_clover", ["manifest"], `manifest format ${format} needs a newer Clover (this one reads format ${FORMATS.manifest})`);
+    f.error("plugin", "needs_newer_moss", ["manifest"], `manifest format ${format} needs a newer MOSS (this one reads format ${FORMATS.manifest})`);
     return empty();
   }
 
@@ -417,20 +417,20 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   const topId = isChild ? opts.parent!.id : declaredId;
   if (!opts.bundled) {
     if (!isChild && (declaredId === BUNDLED_ROOT_PLUGIN || declaredId === BUNDLED_BOT_PLUGIN)) {
-      f.error("plugin", "id_reserved", ["id"], `"${declaredId}" is one of the plugins Clover ships`);
+      f.error("plugin", "id_reserved", ["id"], `"${declaredId}" is one of the plugins MOSS ships`);
     }
-    if (namespace === BUNDLED_ROOT_PLUGIN) f.error("plugin", "namespace_reserved", ["namespace"], "the namespace `clover` is reserved for the plugins Clover ships");
+    if (namespace === BUNDLED_ROOT_PLUGIN) f.error("plugin", "namespace_reserved", ["namespace"], "the namespace `moss` is reserved for the plugins MOSS ships");
   }
-  // A plugin named like a reserved title would label its tab with it (#179's review): "Needs you" and "Clover" are
-  // Clover's own (lane G's ask).
+  // A plugin named like a reserved title would label its tab with it (#179's review): "Needs you" and "MOSS" are
+  // MOSS's own (lane G's ask).
   if (topId !== BUNDLED_ROOT_PLUGIN && typeof top.name === "string" && isReservedPluginName(top.name)) {
-    f.error("plugin", "name_reserved", ["name"], `"${top.name}" is a name only Clover's own plugins have`);
+    f.error("plugin", "name_reserved", ["name"], `"${top.name}" is a name only MOSS's own plugins have`);
   }
 
-  // "Not available in this build yet" is Clover's word about its own plugins: another plugin can't wear it (it would
-  // read as Clover's own state, and the plugin's author would expect it to stop a plugin the registry would start).
+  // "Not available in this build yet" is MOSS's word about its own plugins: another plugin can't wear it (it would
+  // read as MOSS's own state, and the plugin's author would expect it to stop a plugin the registry would start).
   if (top.availability !== undefined && topId !== BUNDLED_ROOT_PLUGIN) {
-    f.error("plugin", "availability_bundled_only", ["availability"], "only the plugins Clover ships can be marked not available yet");
+    f.error("plugin", "availability_bundled_only", ["availability"], "only the plugins MOSS ships can be marked not available yet");
   }
 
   const capabilities = Array.isArray(top.capabilities) ? top.capabilities.filter((c): c is string => typeof c === "string") : [];
@@ -446,9 +446,9 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   if (top.helper !== undefined) {
     f.error("plugin", "helper_not_supported", ["helper"], "a helper isn't supported: run a program from the host half (`host.process: \"own\"` with `host.programs: true`), or as a `stdio` MCP server");
   }
-  // A host half runs under Bun, where Clover's load guard holds it to its folder (#234's check 3, the controller's
+  // A host half runs under Bun, where MOSS's load guard holds it to its folder (#234's check 3, the controller's
   // ruling). Bun runs Node-style code (`node:` modules, npm packages), and a program of its own runs from a host half
-  // with `host.programs` or as a `stdio` server, which the OK covers. Node isn't supported for any plugin: Clover's own
+  // with `host.programs` or as a `stdio` server, which the OK covers. Node isn't supported for any plugin: MOSS's own
   // cloud model plugins run on Bun in a process of their own too (lane A's code adapters).
   if (isObject(top.host) && top.host.runtime === "node") {
     f.error("plugin", "host_runtime_node", ["host", "runtime"], "node is not supported: a plugin's host runs under Bun, which runs Node-style code (`node:` modules, npm packages), so leave out `runtime`; a program of its own runs with `host.programs` (in a process of its own) or as a `stdio` server");
@@ -483,7 +483,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
 
   // A built plugin (`built: true`) names JavaScript modules only: TypeScript would mean the build didn't run.
   if (top.built === true && opts.bundled !== true) {
-    f.error("plugin", "built_not_bundled", ["built"], "only the plugins Clover ships are built by its release; this plugin can't say it is");
+    f.error("plugin", "built_not_bundled", ["built"], "only the plugins MOSS ships are built by its release; this plugin can't say it is");
   }
   if (top.built === true) {
     const js = (p: unknown) => typeof p !== "string" || /\.(?:js|mjs)$/.test(p);
@@ -579,9 +579,9 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   }
 
   // A bot's voice was once set here: an older bot still loads, the field ignored (a plugin gives its bot a default voice
-  // on Clover Voice's point instead).
+  // on MOSS Voice's point instead).
   if (isObject(kept.bot) && kept.bot.voice !== undefined) {
-    f.warn("bot_voice", ["contributes", "bot", "voice"], "a bot's voice is no longer set here and this is ignored; give your bot a default voice with `clover.voice.defaults` (Clover Voice's point), which the user's own choice overrides");
+    f.warn("bot_voice", ["contributes", "bot", "voice"], "a bot's voice is no longer set here and this is ignored; give your bot a default voice with `moss.voice.defaults` (MOSS Voice's point), which the user's own choice overrides");
     delete (kept.bot as Record<string, unknown>).voice;
   }
 
@@ -605,15 +605,15 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   const manifestOut = { ...(topParsed.success ? topParsed.data : (top as Record<string, unknown>)), ...(rawContributes !== undefined ? { contributes } : {}) } as Manifest;
   const klass = classify(manifestOut);
 
-  // engines.clover is required when the plugin has code, and must take in this app's plugin API (§5.1).
-  const engines = isObject(top.engines) && typeof top.engines.clover === "string" ? top.engines.clover : undefined;
+  // engines.moss is required when the plugin has code, and must take in this app's plugin API (§5.1).
+  const engines = isObject(top.engines) && typeof top.engines.moss === "string" ? top.engines.moss : undefined;
   const apiVersion = opts.apiVersion ?? PLUGIN_API_VERSION;
   if (engines === undefined) {
-    if (klass === "code") f.error("plugin", "engines_missing", ["engines"], "a plugin with code needs `engines.clover`, the plugin-API range it was written for");
+    if (klass === "code") f.error("plugin", "engines_missing", ["engines"], "a plugin with code needs `engines.moss`, the plugin-API range it was written for");
   } else if (!isRange(engines)) {
-    f.error("plugin", "engines_range", ["engines", "clover"], `"${engines}" is not a semver range`);
+    f.error("plugin", "engines_range", ["engines", "moss"], `"${engines}" is not a semver range`);
   } else if (!satisfies(apiVersion, engines)) {
-    f.error("plugin", "engines_excludes_api", ["engines", "clover"], `needs plugin API ${engines}; this Clover has ${apiVersion}`);
+    f.error("plugin", "engines_excludes_api", ["engines", "moss"], `needs plugin API ${engines}; this MOSS has ${apiVersion}`);
   }
   if (top.platforms !== undefined && klass !== "code") f.warn("platforms_no_code", ["platforms"], "`platforms` limits where code runs, and this plugin has none");
 
@@ -628,10 +628,10 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     dynamicHosts = true;
     for (const key of p.settings) if (!settingKeys.has(key)) f.error("plugin", "interpolation", ["capabilities", i], `\${setting:${key}} names no setting of this plugin`);
   });
-  // A sign-in the core runs is the clover tree's alone (lane A's ask), at the top level as in entries.
+  // A sign-in the core runs is the moss tree's alone (lane A's ask), at the top level as in entries.
   (Array.isArray(top.auth) ? top.auth : []).forEach((a: unknown, i: number) => {
     if (isObject(a) && a.method === "core" && topId !== BUNDLED_ROOT_PLUGIN) {
-      f.error("plugin", "auth_core_bundled_only", ["auth", i, "method"], "a sign-in the core runs is only for the plugins Clover ships");
+      f.error("plugin", "auth_core_bundled_only", ["auth", i, "method"], "a sign-in the core runs is only for the plugins MOSS ships");
     }
   });
   for (const url of urlFields(manifestOut)) {
@@ -670,7 +670,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
         const lists = [s.readOnly, s.contained, s.webSearch, s.webFetch, s.browserTools].map((l) => (Array.isArray(l) ? new Set(l as string[]) : new Set<string>()));
         const twice = [...new Set([...search, ...fetch, ...browserList])].filter((t) => lists.filter((l) => l.has(t)).length > 1);
         if (twice.length > 0) f.error("plugin", "tool_in_both_lists", ["contributes", "mcpServers", name], `${twice.join(", ")} can't be on two of readOnly, contained, webSearch, webFetch and browserTools: list each tool in one of them`);
-        if (browserList.length > 0 && !capabilities.includes("browser")) f.error("plugin", "browser_tool_no_capability", ["contributes", "mcpServers", name, "browserTools"], `a Browser tool drives the Clover Browser: the plugin needs the browser capability`);
+        if (browserList.length > 0 && !capabilities.includes("browser")) f.error("plugin", "browser_tool_no_capability", ["contributes", "mcpServers", name, "browserTools"], `a Browser tool drives the MOSS Browser: the plugin needs the browser capability`);
         if (search.length > 0 && !capabilities.some((c) => c.startsWith("network:"))) f.error("plugin", "web_tool_no_network", ["contributes", "mcpServers", name, "webSearch"], `a web search tool needs a network: capability to reach its search service`);
         if (fetch.length > 0 && !capabilities.includes("network:public")) f.error("plugin", "web_tool_no_network", ["contributes", "mcpServers", name, "webFetch"], `a page-fetch tool needs network:public, the core's fetch with its web safeguards`);
       }
@@ -944,7 +944,7 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
       if (isObject(e.env)) {
         const reserved = Object.keys(e.env).filter((k) => RESERVED_ENV.test(k)).sort();
         if (reserved.length > 0) {
-          f.error("entry", "reserved_env", [...at, "env", reserved[0]!], `a server's \`env\` never sets ${reserved.join(", ")}: Clover sets its own \`CLOVER_*\` names, and what changes how Bun, Node or the loader loads code (\`BUN_*\`, \`NODE_*\` but \`NODE_ENV\` and \`NODE_NO_WARNINGS\`, \`LD_*\`, \`DYLD_*\`) isn't a plugin's`);
+          f.error("entry", "reserved_env", [...at, "env", reserved[0]!], `a server's \`env\` never sets ${reserved.join(", ")}: MOSS sets its own \`MOSS_*\` names, and what changes how Bun, Node or the loader loads code (\`BUN_*\`, \`NODE_*\` but \`NODE_ENV\` and \`NODE_NO_WARNINGS\`, \`LD_*\`, \`DYLD_*\`) isn't a plugin's`);
           return false;
         }
       }
@@ -1025,9 +1025,9 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
     }
     case "triggers":
       // `schedule` and `webhook` are the core's own types, and `webhook` working at all is read from the bundled
-      // trigger's entry: a plugin outside the bundled tree can't contribute either (as Clover's reserved UI entries).
+      // trigger's entry: a plugin outside the bundled tree can't contribute either (as MOSS's reserved UI entries).
       if ((e.type === "schedule" || e.type === "webhook") && ctx.topId !== BUNDLED_ROOT_PLUGIN) {
-        f.error("entry", "trigger_reserved", [...at, "type"], `the "${e.type}" trigger is Clover's own`);
+        f.error("entry", "trigger_reserved", [...at, "type"], `the "${e.type}" trigger is MOSS's own`);
         return false;
       }
       return needHost("handler");
@@ -1053,7 +1053,7 @@ function checkAuthHandlers(f: Findings, auth: unknown, at: Seg[], ctx: CoreCtx):
       return false;
     }
     if (isObject(a) && a.method === "core" && ctx.topId !== BUNDLED_ROOT_PLUGIN) {
-      f.error("entry", "auth_core_bundled_only", [...at, i, "method"], "a sign-in the core runs is only for the plugins Clover ships");
+      f.error("entry", "auth_core_bundled_only", [...at, i, "method"], "a sign-in the core runs is only for the plugins MOSS ships");
       return false;
     }
   }
@@ -1145,11 +1145,11 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   if (spot?.reserved && !bundledTree) {
     const id = typeof e.id === "string" ? e.id : spotName;
     if (spot.reserved.ids.some((r) => foldTitle(r) === foldTitle(id))) {
-      f.error("entry", "ui_reserved", [...at, "id"], `"${id}" is reserved for Clover's own ${spotName} entry`);
+      f.error("entry", "ui_reserved", [...at, "id"], `"${id}" is reserved for MOSS's own ${spotName} entry`);
       return false;
     }
     if (typeof e.title === "string" && spot.reserved.titles.some((t) => foldTitle(t) === foldTitle(e.title as string))) {
-      f.error("entry", "ui_reserved", [...at, "title"], `"${e.title}" is reserved for Clover's own ${spotName} entry`);
+      f.error("entry", "ui_reserved", [...at, "title"], `"${e.title}" is reserved for MOSS's own ${spotName} entry`);
       return false;
     }
   }
@@ -1329,7 +1329,7 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
   if (changes.has("message.in") || changes.has("message.out")) can.push("change messages");
   if (changes.has("tool.before")) can.push("change or refuse a tool call (never approve one)");
   if (changes.has("tool.after")) can.push("change what a tool returns");
-  // An external coding agent's own session is its own: the hooks see only what it asks Clover about (Clover's rule).
+  // An external coding agent's own session is its own: the hooks see only what it asks MOSS about (MOSS's rule).
   const agents = `Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session${events.has("tool.before") ? "; they can refuse starting one" : ""}.`;
   if (sees.length === 0) return [own ? "Its hooks run when its own bot's turns start, end or are compacted, and see no other bot." : "Its hooks run when a conversation's turns start, end or are compacted.", agents];
   if (own) return [`Its hooks see only what its own bot does: ${sees.join(", ").replace("your messages", "your messages to it").replace("the bots' replies", "its replies")}${can.length > 0 ? `; they can ${can.join(", ")}` : ""}.`, agents];
@@ -1346,9 +1346,9 @@ export const NOTIFIER_OK_LINE = "It is told when your bots need you or have answ
 export const PILL_TARGET_OK_LINE = "It can be picked as a target in the Dispatch pill: what you then type there goes to it, as your own words, and not to a bot.";
 
 export const HOST_START_OK_LINES = {
-  each: "It runs in the background from the moment Clover starts, on every computer it's installed on.",
-  main: "It runs in the background from the moment Clover starts, on your main computer.",
-  chosen: "It runs in the background from the moment Clover starts, on the computer you add it on.",
+  each: "It runs in the background from the moment MOSS starts, on every computer it's installed on.",
+  main: "It runs in the background from the moment MOSS starts, on your main computer.",
+  chosen: "It runs in the background from the moment MOSS starts, on the computer you add it on.",
 } as const;
 
 /** What a plugin tree runs without being asked, for its OK (§5.2, §7): the routine triggers it adds (a routine that
@@ -1380,7 +1380,7 @@ export function backgroundOkLines(reports: readonly ManifestReport[]): string[] 
 
 
 /** A point's `fills` line as its declarer wrote it, with who declared it and its title (§5.4): the core's points'
- *  from `CORE_POINTS` (declared by Clover), a plugin's from its declaration. `tree`: the declarer's top-level id (its
+ *  from `CORE_POINTS` (declared by MOSS), a plugin's from its declaration. `tree`: the declarer's top-level id (its
  *  own tree's entries get no line). */
 export interface FillsDecl { by: string; title: string; ok: string; warns?: boolean; tree?: string; /** The declarer's plugin id (a plugin's point; none for the core's). */ id?: string }
 /** The `fills` of a point a plugin declares, as the registry knows it now (undefined: none, or not declared here). */
@@ -1396,7 +1396,7 @@ export function plainLine(s: string, max: number): string {
   return s.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
-/** One filler's line for a point with `fills`, attributed to its declarer so it can't pass as Clover's words: a
+/** One filler's line for a point with `fills`, attributed to its declarer so it can't pass as MOSS's words: a
  *  plugin's point names the declarer by its name and its id (the id alone when the name is empty once made plain). */
 export function fillsLine(f: FillsDecl): string {
   const ok = plainLine(f.ok, FILLS_OK_MAX).replace(/[.!?]$/, "");
@@ -1410,7 +1410,7 @@ export function fillsLine(f: FillsDecl): string {
 /** The core point's `fills`, from the catalog. */
 function coreFills(point: string): FillsDecl | undefined {
   const p = CORE_POINTS.find((x) => x.name === point);
-  return p?.fills === undefined ? undefined : { by: "Clover", title: p.title ?? p.name, ok: p.fills.ok, ...(p.fills.warns === true ? { warns: true } : {}) };
+  return p?.fills === undefined ? undefined : { by: "MOSS", title: p.title ?? p.name, ok: p.fills.ok, ...(p.fills.warns === true ? { warns: true } : {}) };
 }
 
 /** The `fills` lines of a tree's OK card (§5.4, §5.6): one per point with a `fills` line that the tree's plugins fill
@@ -1431,8 +1431,8 @@ export function fillsOkLines(reports: readonly ManifestReport[], declared?: Fill
 
 /** A plugin that fills the island's `island.line` point (the owner's ruling, 2026-11-14): the card says it puts words on the
  *  island, so the user has seen that before it can. */
-export const ISLAND_LINE_OK_LINE = "It puts a line of text on the island, with its name beside it, in the island's own style, when Clover isn't in front.";
-export const BACKGROUND_OK_LINE = "It keeps a part running in the background while Clover is open.";
+export const ISLAND_LINE_OK_LINE = "It puts a line of text on the island, with its name beside it, in the island's own style, when MOSS isn't in front.";
+export const BACKGROUND_OK_LINE = "It keeps a part running in the background while MOSS is open.";
 /** The most `app.background` parts one plugin may have. */
 export const BACKGROUND_PARTS_MAX = 2;
 
@@ -1518,7 +1518,7 @@ export function describeOk(
     /** The plugin's host code runs fenced to its network proxy on this computer (macOS with its sandbox on, B-M2's
      *  2g): only then does the OK say host code is held to the list. */
     hostNetworkHeld?: boolean;
-    /** Whether this computer runs plugin processes in Clover's sandbox (the plugin fence). `false`: the OK says the
+    /** Whether this computer runs plugin processes in MOSS's sandbox (the plugin fence). `false`: the OK says the
      *  plugin's programs run without it here (#406's review); absent: nothing is said either way. */
     sandboxed?: boolean;
     /** The core's grant to a wrapper the user brought (its install record's `wrapped.network`, the owner's ruling of
@@ -1535,8 +1535,8 @@ export function describeOk(
   const lines: string[] = [];
   const what = report.class === "code" ? "runs code on your computers" : report.class === "web" ? "shows web pages" : "is data only: files, no code";
   lines.push(`${report.id ?? "This plugin"} ${what}.`);
-  if (opts.networkOpen === true) lines.push("It can reach any host on the network, including services on this computer and your local network: it's a server you added, which names no hosts, so Clover doesn't hold its programs to a list. They are still fenced from your files.");
-  if (report.class === "code" && opts.os && opts.os !== "macos") lines.push("Its code could read Clover's logins and approve its own cards.");
+  if (opts.networkOpen === true) lines.push("It can reach any host on the network, including services on this computer and your local network: it's a server you added, which names no hosts, so MOSS doesn't hold its programs to a list. They are still fenced from your files.");
+  if (report.class === "code" && opts.os && opts.os !== "macos") lines.push("Its code could read MOSS's logins and approve its own cards.");
   if (report.contributions.length > 0) lines.push(`It adds: ${report.contributions.map((c) => c.point).join(", ")}.`);
   lines.push(...botPartLines(report.manifest));
   lines.push(...ownPanelLines(report.manifest));
@@ -1588,13 +1588,13 @@ export function describeOk(
   if (report.envSecrets.length > 0) {
     lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
   }
-  if (report.ownPrograms) lines.push("It runs its own programs, which Clover doesn't confine.");
+  if (report.ownPrograms) lines.push("It runs its own programs, which MOSS doesn't confine.");
   // Its host code's programs (`host.programs`): held to its own folder and the user's picks where the fence holds them;
   // elsewhere the line below says they run without the sandbox.
   if (report.hostPrograms === true) lines.push(opts.sandboxed === false ? HOST_PROGRAMS_OK_LINE_UNFENCED : HOST_PROGRAMS_OK_LINE);
-  if (opts.sandboxed === false && report.class === "code") lines.push("Its programs run without Clover's sandbox on this computer.");
+  if (opts.sandboxed === false && report.class === "code") lines.push("Its programs run without MOSS's sandbox on this computer.");
   lines.push(...outsideOkLines(report.outside ?? { programs: [], read: [] }));
-  if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
+  if (report.addons) lines.push("It loads add-ons of its own, which MOSS doesn't check.");
   if (report.adult) lines.push("It may contain adult content.");
   return lines;
 }
@@ -1616,7 +1616,7 @@ export function outsideFolderOk(p: string): boolean {
   if (parts.length === 0 || parts.includes("..") || parts.includes(".")) return false;
   // An absolute path names a folder below the disk's top folders, never one of them (`/Users`, `/home`, `/Volumes`,
   // `/private` hold every home), and nothing of the system's own (`/System` reaches the homes another way). The core
-  // also refuses any folder that holds the user's home or Clover's.
+  // also refuses any folder that holds the user's home or MOSS's.
   // Case-folded: the disk is case-insensitive by default, so `/system` is `/System`.
   if (p.startsWith("/")) return parts.length >= 2 && parts[0]!.toLowerCase() !== "system";
   return true;
@@ -1633,7 +1633,7 @@ export function outsideOkLines(o: { programs: readonly string[]; read: readonly 
 }
 
 /** The start of the OK card's line for each program a plugin runs outside its sandbox (P5); the program follows. */
-export const OUTSIDE_PROGRAM_LINE = "It runs this program of yours outside Clover's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network)";
+export const OUTSIDE_PROGRAM_LINE = "It runs this program of yours outside MOSS's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network)";
 
 /** The OK card's lines for the tools of a plugin that runs programs outside its sandbox (P5): each server that says its
  *  tools only read, only change its display or search or read the web, one line saying they still ask (its tools are
@@ -1664,7 +1664,7 @@ function serverReachesNetwork(s: { type?: unknown; url?: unknown }): boolean {
 
 /** Whether a server's read-only tools still ask: they skip the card only where a call can't carry its arguments off
  *  the computer. So never for an http server, a tree with any `network:` grant (`network:public` and local ones
- *  included), a wrapper whose install record carries a network grant, or where Clover's fence doesn't hold plugin
+ *  included), a wrapper whose install record carries a network grant, or where MOSS's fence doesn't hold plugin
  *  processes (`fenced` false). A cardless "read-only" call on a networked server is a cardless send of whatever the
  *  bot puts in its arguments. The call-time check (`pluginToolReadOnly`) and the OK card read this same rule. */
 export function readOnlyReachesNetwork(
@@ -1677,7 +1677,7 @@ export function readOnlyReachesNetwork(
     || tree.capabilities.some((c) => typeof c === "string" && c.startsWith("network:"));
 }
 
-/** The capabilities a tree may hold for its display-only tools (`contained`) to skip the card: reads of Clover's own
+/** The capabilities a tree may hold for its display-only tools (`contained`) to skip the card: reads of MOSS's own
  *  state, which change nothing and, with no network anywhere in the tree and the plugin fence holding its processes,
  *  stay on this computer. A contained tool's plugin may keep what a call hands it in its own data (that is what a
  *  display is for), so what it may read and where it may send it bound the skip. Every other capability, and any one
@@ -1717,7 +1717,7 @@ export function containedToolsHold(
  *  at most `OK_LINE_MAX`; or, where they don't hold (`containedToolsHold`), one line saying they still ask. */
 export function containedOkLines(r: { server: string; tools: readonly string[] }, hold: boolean): string[] {
   const n = r.tools.length;
-  if (!hold) return [`Its server ${r.server} says ${n === 1 ? "one tool only changes" : `${n} tools only change`} its own display, but it can reach the network or do more than read Clover's state, so ${n === 1 ? "it still asks" : "they still ask"} before running.`];
+  if (!hold) return [`Its server ${r.server} says ${n === 1 ? "one tool only changes" : `${n} tools only change`} its own display, but it can reach the network or do more than read MOSS's state, so ${n === 1 ? "it still asks" : "they still ask"} before running.`];
   const lines: string[] = [];
   let line = `Its server ${r.server} says ${n === 1 ? "this tool only changes its own display, so at the default level it runs" : "these tools only change its own display, so at the default level they run"} without asking: `;
   let first = true;
@@ -1740,7 +1740,7 @@ export function webToolOkLines(w: { server: string; search: readonly string[]; f
   const names = (t: readonly string[]) => t.join(", ").slice(0, 300);
   if (w.search.length > 0) lines.push(`Its server ${w.server} says ${names(w.search)} search${w.search.length === 1 ? "es" : ""} the web: at the default approval level a search runs without asking, and what a bot searches goes to this plugin.`);
   if (w.fetch.length > 0) lines.push(`Its server ${w.server} says ${names(w.fetch)} read${w.fetch.length === 1 ? "s" : ""} web pages: at the default approval level a page whose link a bot already has is read without asking (a few a turn), any other page asks, site by site, and what is read goes through this plugin.`);
-  if ((w.browser ?? []).length > 0) lines.push(`Its server ${w.server} says ${names(w.browser!)} drive${w.browser!.length === 1 ? "s" : ""} the calling bot's own tab of the Clover Browser. Looking and acting are told apart by the plugin's own word (its verbs): at the default approval level what it calls looking runs without asking, what it calls clicking and typing asks for the site, and what the tab shows goes through this plugin.`);
+  if ((w.browser ?? []).length > 0) lines.push(`Its server ${w.server} says ${names(w.browser!)} drive${w.browser!.length === 1 ? "s" : ""} the calling bot's own tab of the MOSS Browser. Looking and acting are told apart by the plugin's own word (its verbs): at the default approval level what it calls looking runs without asking, what it calls clicking and typing asks for the site, and what the tab shows goes through this plugin.`);
   return lines;
 }
 

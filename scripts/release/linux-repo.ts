@@ -1,4 +1,4 @@
-// Clover's Linux package repositories (plan §4 M-M2): an apt repository for the deb and a dnf repository for the rpm,
+// MOSS's Linux package repositories (plan §4 M-M2): an apt repository for the deb and a dnf repository for the rpm,
 // both signed with an OpenPGP Ed25519 key that exists only in the owner's login Keychain. Where they are hosted is
 // the owner's decision (REPO_BASE_URL is the one place that names it); nothing here creates or uploads anything
 // unless the owner runs the upload by hand.
@@ -8,7 +8,7 @@
 //       dists/<suite> (apt-ftparchive), dnf's packages and repodata (createrepo_c)
 //   bun scripts/release/linux-repo.ts sign --dir <dir>                                            (the owner's Mac)
 //       signs apt's Release (InRelease, Release.gpg) and dnf's repomd.xml (repomd.xml.asc) with the Keychain's key,
-//       after checking it is the one committed in packaging/linux/clover-archive-keyring.asc
+//       after checking it is the one committed in packaging/linux/moss-archive-keyring.asc
 //   bun scripts/release/linux-repo.ts refresh --dir <dir>                                         (the owner's Mac)
 //       the 30-day keep-alive with no CI run: rewrites only Date and Valid-Until in each suite's Release (nothing else
 //       changes, so every hash it lists still holds) and signs the tree again, as `sign` does
@@ -32,9 +32,9 @@ import { parseChannel } from "./lib";
 /** Where the repositories are served: the owner's choice, pending (the controller's ruling). */
 export const REPO_BASE_URL = "https://packages.waifucave.com";
 /** The bucket the owner's upload writes to (R2), with the same caveat. */
-export const REPO_BUCKET = "clover-packages";
-export const KEYRING_FILE = "packaging/linux/clover-archive-keyring.asc";
-export const REPO_KEY_ITEM = { service: "com.waifucave.clover.release", name: "linux-repo-openpgp" } as const;
+export const REPO_BUCKET = "moss-packages";
+export const KEYRING_FILE = "packaging/linux/moss-archive-keyring.asc";
+export const REPO_KEY_ITEM = { service: "com.waifucave.moss.core.release", name: "linux-repo-openpgp" } as const;
 
 export function suiteFor(channel: Channel): "stable" | "beta" {
   return channel === "latest" ? "stable" : "beta";
@@ -48,8 +48,8 @@ export const RELEASE_VALID_DAYS = 30;
 export function releaseConfig(suite: string, now: Date = new Date()): string[] {
   return [
     "-o", `APT::FTPArchive::Release::Date=${aptDate(now)}`,
-    "-o", "APT::FTPArchive::Release::Origin=Clover",
-    "-o", "APT::FTPArchive::Release::Label=Clover",
+    "-o", "APT::FTPArchive::Release::Origin=MOSS",
+    "-o", "APT::FTPArchive::Release::Label=MOSS",
     "-o", `APT::FTPArchive::Release::Suite=${suite}`,
     "-o", `APT::FTPArchive::Release::Codename=${suite}`,
     "-o", "APT::FTPArchive::Release::Architectures=amd64 arm64",
@@ -150,21 +150,21 @@ export function refreshRelease(text: string, now: Date = new Date()): string {
 export function installLines(suite: "stable" | "beta"): { apt: string[]; dnf: string[] } {
   return {
     apt: [
-      `curl -fsSL ${REPO_BASE_URL}/clover-archive-keyring.asc | sudo tee /etc/apt/keyrings/clover.asc > /dev/null`,
-      `echo "deb [signed-by=/etc/apt/keyrings/clover.asc] ${REPO_BASE_URL}/apt ${suite} main" | sudo tee /etc/apt/sources.list.d/clover.list`,
-      "sudo apt update && sudo apt install clover",
+      `curl -fsSL ${REPO_BASE_URL}/moss-archive-keyring.asc | sudo tee /etc/apt/keyrings/moss.asc > /dev/null`,
+      `echo "deb [signed-by=/etc/apt/keyrings/moss.asc] ${REPO_BASE_URL}/apt ${suite} main" | sudo tee /etc/apt/sources.list.d/moss.list`,
+      "sudo apt update && sudo apt install moss",
     ],
     dnf: [
-      `sudo tee /etc/yum.repos.d/clover.repo <<'EOF'`,
-      "[clover]",
-      `name=Clover (${suite})`,
+      `sudo tee /etc/yum.repos.d/moss.repo <<'EOF'`,
+      "[moss]",
+      `name=MOSS (${suite})`,
       `baseurl=${REPO_BASE_URL}/rpm/${suite}/$basearch`,
       "enabled=1",
       "repo_gpgcheck=1",
       "gpgcheck=0",
-      `gpgkey=${REPO_BASE_URL}/clover-archive-keyring.asc`,
+      `gpgkey=${REPO_BASE_URL}/moss-archive-keyring.asc`,
       "EOF",
-      "sudo dnf install clover",
+      "sudo dnf install moss",
     ],
   };
 }
@@ -177,9 +177,9 @@ const run = (cmd: string[], cwd: string): string => {
 
 /** The deb's and rpm's architecture, from their file names (electron-builder's names, lib.ts's installers). */
 export function archOf(name: string): { kind: "deb" | "rpm"; arch: string } | undefined {
-  let m = /^clover_.+_(amd64|arm64)\.deb$/.exec(name);
+  let m = /^moss_.+_(amd64|arm64)\.deb$/.exec(name);
   if (m) return { kind: "deb", arch: m[1]! };
-  m = /^clover-.+\.(x86_64|arm64|aarch64)\.rpm$/.exec(name);
+  m = /^moss-.+\.(x86_64|arm64|aarch64)\.rpm$/.exec(name);
   if (m) return { kind: "rpm", arch: m[1] === "x86_64" ? "x86_64" : "aarch64" };
   return undefined;
 }
@@ -191,7 +191,7 @@ export function metadata(from: string[], channel: Channel, out: string, now: Dat
     for (const name of readdirSync(dir)) {
       const k = archOf(name);
       if (k === undefined) continue;
-      const to = k.kind === "deb" ? join(out, "apt", "pool", "main", "c", "clover") : join(out, "rpm", suite, k.arch, "packages");
+      const to = k.kind === "deb" ? join(out, "apt", "pool", "main", "c", "moss") : join(out, "rpm", suite, k.arch, "packages");
       mkdirSync(to, { recursive: true });
       copyFileSync(join(dir, name), join(to, name));
     }
@@ -226,7 +226,7 @@ export const repoKeychain: RepoKeyStore = { get: (i) => Bun.secrets.get(i), set:
  * nothing is ever encrypted to it.
  */
 export async function generateRepoKey(): Promise<{ privateKey: string; publicKey: string; fingerprint: string }> {
-  const { privateKey, publicKey } = await openpgp.generateKey({ type: "ecc", curve: "ed25519Legacy", subkeys: [], userIDs: [{ name: "Clover packages", email: "w@waifucave.com" }], format: "armored" });
+  const { privateKey, publicKey } = await openpgp.generateKey({ type: "ecc", curve: "ed25519Legacy", subkeys: [], userIDs: [{ name: "MOSS packages", email: "w@waifucave.com" }], format: "armored" });
   const fingerprint = (await openpgp.readKey({ armoredKey: publicKey })).getFingerprint();
   return { privateKey, publicKey, fingerprint };
 }
@@ -358,7 +358,7 @@ export async function signTree(dir: string, key: openpgp.PrivateKey, keyring: st
       if (existsSync(repomd)) writeFileSync(`${repomd}.asc`, (await signRelease(new Uint8Array(readFileSync(repomd)), key)).detached);
     }
   }
-  writeFileSync(join(dir, "clover-archive-keyring.asc"), keyring);
+  writeFileSync(join(dir, "moss-archive-keyring.asc"), keyring);
   // The signatures only: the upload gate checks the dates (a test signs a tree dated in the past on purpose).
   const problems = await verifyTree(dir, keyring, { dates: false });
   if (problems.length > 0) throw new Error(`the signatures don't verify: ${problems.join("; ")}`);
@@ -419,12 +419,12 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     if (cmd === "upload") {
       const dir = value("--dir");
       if (dir === undefined) throw new Error("upload takes --dir <dir>");
-      if (!existsSync(join(dir, "clover-archive-keyring.asc"))) throw new Error("the tree isn't signed: run sign first");
+      if (!existsSync(join(dir, "moss-archive-keyring.asc"))) throw new Error("the tree isn't signed: run sign first");
       // Every signature checks against the committed key before anything leaves this Mac.
       const committed = readFileSync(join(root, KEYRING_FILE), "utf8");
       const bad = await verifyTree(dir, committed);
       if (bad.length > 0) throw new Error(`not uploading: ${bad.join("; ")}`);
-      if (readFileSync(join(dir, "clover-archive-keyring.asc"), "utf8") !== committed) throw new Error("the tree's keyring is not the committed one");
+      if (readFileSync(join(dir, "moss-archive-keyring.asc"), "utf8") !== committed) throw new Error("the tree's keyring is not the committed one");
       const plan = uploadPlan(dir);
       for (const p of plan) console.log(`  ${uploadArgs(p.file, p.key, root).join(" ")}`);
       if (!rest.includes("--yes")) { console.log(`linux-repo: ${plan.length} files to ${REPO_BUCKET}, nothing uploaded (add --yes)`); return 0; }

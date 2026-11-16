@@ -16,7 +16,7 @@
 // can't (Linux, and Windows without a TPM), the owner accepted the risk: "any desktop may answer; a
 // compromised plugin on a Windows or Linux computer could approve actions on other computers". A server, a cloud
 // computer and a browser never sign: their only key is the core's, or they may answer no card (`mayAnswerCards`).
-import type { AnswerKeyAlg, AnswerKeyHolder, DeviceKind, DeviceOs } from "@waifucave/clover-protocol";
+import type { AnswerKeyAlg, AnswerKeyHolder, DeviceKind, DeviceOs } from "@waifucave/moss-protocol";
 import { isStrictEd25519Point, isStrictEd25519Signature } from "../identity/ed25519-strict";
 import type { Unsubscribe } from "./common";
 
@@ -26,9 +26,9 @@ export interface DeviceRecord {
   kind: DeviceKind;
   /** A computer's OS, or a phone's `ios`. */
   os?: DeviceOs;
-  /** Runs clover-core: a computer in the tree that can take over (§6.4, §9.1). */
+  /** Runs moss-core: a computer in the tree that can take over (§6.4, §9.1). */
   runsCore: boolean;
-  /** Its folder-tree name, for a device that runs clover-core. */
+  /** Its folder-tree name, for a device that runs moss-core. */
   computer?: string;
   hasDisplay?: boolean;
   /** Its Ed25519 public key, raw 32 bytes, base64: the core's link key on a computer. */

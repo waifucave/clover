@@ -1,5 +1,5 @@
 // Pairing without an account (spec §8.1): a code or QR, the 4-word check on both devices, then the user's sealed card
-// (or their own terminal). It runs over its own ALPN (`clover/pair/1`), the one door that takes a key the registry
+// (or their own terminal). It runs over its own ALPN (`moss/pair/1`), the one door that takes a key the registry
 // doesn't know; the link's ALPN refuses unpaired keys.
 //
 // The QR carries the pairing's id and 32-byte secret, the host's link key and where to reach it. The short code a
@@ -16,7 +16,7 @@
 // Each device adds the other once both confirms have crossed. The words and the pair secret cover both nonces
 // (identity/sas.ts).
 //
-// The pair door (`clover/pair/1`) is the one that takes an unknown key, so it is kept narrow: a connection is turned
+// The pair door (`moss/pair/1`) is the one that takes an unknown key, so it is kept narrow: a connection is turned
 // away unless this device shows a pairing, its first frame must come within `FIRST_FRAME_MS`, and at most
 // `MAX_DOOR_ATTEMPTS` run at once.
 //
@@ -25,7 +25,7 @@
 // Devices without an account also form one group per user for the lease: the host's group if it has one, else the
 // joiner's, else a new one the host founds; the device not yet in it joins, admitted by the other.
 import { hkdfSync } from "node:crypto";
-import { AnswerKeyHolder, type PairingView as PairingViewSchema } from "@waifucave/clover-protocol";
+import { AnswerKeyHolder, type PairingView as PairingViewSchema } from "@waifucave/moss-protocol";
 import type { z } from "zod";
 import type { Clock } from "../contracts/clock";
 import { ContractError, isContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -51,7 +51,7 @@ import { ALPN_PAIR, CLOSE_NORMAL, CLOSE_PROTOCOL, type DialTarget, type WireConn
 type PairingView = z.infer<typeof PairingViewSchema>;
 
 export const PAIRING_TTL_MS = 10 * 60_000;
-const QR_PREFIX = "clover-pair:1:";
+const QR_PREFIX = "moss-pair:1:";
 const STEP_TIMEOUT_MS = 30_000;
 /** How long an incoming pairing connection has to send its hello. */
 const FIRST_FRAME_MS = 10_000;
@@ -893,11 +893,11 @@ export function parseCode(code: string): Bytes | undefined {
 }
 
 function codeSecret(part: Uint8Array): Bytes {
-  return own(new Uint8Array(hkdfSync("sha256", part, new Uint8Array(0), utf8("clover/pair-code-secret/1"), 32)));
+  return own(new Uint8Array(hkdfSync("sha256", part, new Uint8Array(0), utf8("moss/pair-code-secret/1"), 32)));
 }
 
 function rendezvousKey(part: Uint8Array): Bytes {
-  return own(new Uint8Array(hkdfSync("sha256", part, new Uint8Array(0), utf8("clover/pair-rendezvous/1"), 32)));
+  return own(new Uint8Array(hkdfSync("sha256", part, new Uint8Array(0), utf8("moss/pair-rendezvous/1"), 32)));
 }
 
 function rendezvousContext(slot: string) {

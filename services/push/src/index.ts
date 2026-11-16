@@ -1,4 +1,4 @@
-// push.waifucave.com: waifucave push (spec §10). The user's computer (the clover/push notifier) sends a count;
+// push.waifucave.com: waifucave push (spec §10). The user's computer (the moss/push notifier) sends a count;
 // this service sends an empty "you have N updates" through Apple to the account's phones and through Web Push
 // to its browsers. It never receives content: there is none to receive.
 //

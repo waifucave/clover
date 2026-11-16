@@ -9,7 +9,7 @@ mock.module("electron", () => ({ app: {}, ipcMain: {}, protocol: {}, webFrameMai
 
 let handler: (request: Request) => Response | Promise<Response>;
 // The long, real spelling (Windows' temp folder is a short name, `RUNNER~1`): the folders the route compares are real paths.
-const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "clover-avjson-")));
+const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "moss-avjson-")));
 
 function folder(name: string, files: Record<string, string>): string {
   const base = join(dir, name);
@@ -20,7 +20,7 @@ function folder(name: string, files: Record<string, string>): string {
   return base;
 }
 
-const MODEL = { "assets/live2d/a.model3.json": "{}", "assets/live2d/a.physics3.json": "{}", "assets/live2d/motions/idle.motion3.json": "{}", "assets/live2d/a.moc3": "MOC3", "assets/live2d/tex.png": "png", "assets/other/x.json": "{}", "clover.json": "{\"secret\":1}", "assets/live2d/notes.json": "{}" };
+const MODEL = { "assets/live2d/a.model3.json": "{}", "assets/live2d/a.physics3.json": "{}", "assets/live2d/motions/idle.motion3.json": "{}", "assets/live2d/a.moc3": "MOC3", "assets/live2d/tex.png": "png", "assets/other/x.json": "{}", "moss.json": "{\"secret\":1}", "assets/live2d/notes.json": "{}" };
 const plugin = (id: string, assetBase: string, extra: Record<string, unknown>) => ({ id, topId: id, layer: id, assetBase, isBot: false, themes: [], entries: [], css: [], avatarFormats: [], ...extra });
 const LIVE2D = { format: "live2d", extensions: [".model3.json"], find: "cubism-model3", kinds: [{ ext: [".json"], type: "json", maxBytes: 8 * 1024 * 1024 }, { ext: [".moc3"], type: "binary", maxBytes: 128 * 1024 * 1024 }, { ext: [".png"], type: "image", maxBytes: 128 * 1024 * 1024 }] };
 const VRM = { format: "vrm", extensions: [".vrm"], find: "folder", kinds: [{ ext: [".vrm", ".glb"], type: "binary", maxBytes: 128 * 1024 * 1024 }] };
@@ -31,12 +31,12 @@ beforeAll(async () => {
   mkdirSync(join(dir, "outside"), { recursive: true });
   writeFileSync(join(dir, "outside", "o.json"), "{}");
   symlinkSync(join(dir, "outside", "o.json"), join(live, "assets/live2d/link.json"));
-  symlinkSync(join(live, "clover.json"), join(live, "assets/live2d/rootlink.json"));
+  symlinkSync(join(live, "moss.json"), join(live, "assets/live2d/rootlink.json"));
   writeFileSync(join(live, "assets/live2d/big.json"), Buffer.alloc(8 * 1024 * 1024 + 1, 32));
-  const rootModel = folder("rootmodel", { "r.model3.json": "{}", "r.physics3.json": "{}", "clover.json": "{}", "data.json": "{}" });
+  const rootModel = folder("rootmodel", { "r.model3.json": "{}", "r.physics3.json": "{}", "moss.json": "{}", "data.json": "{}" });
   const vrm = folder("vrmbot", { "assets/a.vrm": "VRM", "assets/data.json": "{}" });
   const theme = folder("themed", { "t/theme.json": "{}", "t/a.png": "png" });
-  const tuber = folder("tuber", { "model/hero.pngtuber.json": "{}", "model/idle.png": "png", "model/data.json": "{}", "model/a.skel": "x", "model/x.svg": "<svg/>", "model/talk.wav": "w", "clover.json": "{}", "other/o.json": "{}" });
+  const tuber = folder("tuber", { "model/hero.pngtuber.json": "{}", "model/idle.png": "png", "model/data.json": "{}", "model/a.skel": "x", "model/x.svg": "<svg/>", "model/talk.wav": "w", "moss.json": "{}", "other/o.json": "{}" });
   const registry = [
     plugin("live", live, { isBot: true, botAvatar: { file: "assets/live2d/a.model3.json", format: "live2d" } }),
     plugin("rootmodel", rootModel, { isBot: true, botAvatar: { file: "r.model3.json", format: "live2d" } }),
@@ -50,11 +50,11 @@ beforeAll(async () => {
     plugin("tuber-renderer", join(dir, "tuber-renderer"), { avatarFormats: [PNGTUBER] }),
   ];
   const { installUiSession } = await import("../src/main/ui/electron");
-  const ses = { protocol: { handle: (scheme: string, h: typeof handler) => { if (scheme === "clover-plugin") handler = h; } }, webRequest: { onBeforeRequest: () => {} } };
+  const ses = { protocol: { handle: (scheme: string, h: typeof handler) => { if (scheme === "moss-plugin") handler = h; } }, webRequest: { onBeforeRequest: () => {} } };
   installUiSession(ses as never, { registry } as never, { core: dir, layer: dir }, () => {});
 });
 
-const get = async (id: string, path: string) => handler(new Request(`clover-plugin://clover/_t/${id}/${path}`));
+const get = async (id: string, path: string) => handler(new Request(`moss-plugin://moss/_t/${id}/${path}`));
 
 describe("a Live2D bot's own model JSON on /_t/", () => {
   test("model3, physics3 and motion files in the avatar folder are served, as JSON, nosniff, with the strict CSP", async () => {
@@ -70,12 +70,12 @@ describe("a Live2D bot's own model JSON on /_t/", () => {
     expect((await get("live", "assets/live2d/a.moc3")).status).toBe(200);
     expect((await get("live", "assets/live2d/tex.png")).status).toBe(200);
   });
-  test("the plugin's root clover.json and a JSON in a sibling folder are refused", async () => {
-    expect((await get("live", "clover.json")).status).toBe(403);
+  test("the plugin's root moss.json and a JSON in a sibling folder are refused", async () => {
+    expect((await get("live", "moss.json")).status).toBe(403);
     expect((await get("live", "assets/other/x.json")).status).toBe(403);
   });
   test("traversal, plain and encoded, is refused", async () => {
-    for (const p of ["assets/live2d/../../clover.json", "assets/live2d/%2e%2e/%2e%2e/clover.json", "assets%2Flive2d%2F..%2F..%2Fclover.json", "..%2Fclover.json"]) {
+    for (const p of ["assets/live2d/../../moss.json", "assets/live2d/%2e%2e/%2e%2e/moss.json", "assets%2Flive2d%2F..%2F..%2Fmoss.json", "..%2Fmoss.json"]) {
       const s = (await get("live", p)).status;
       expect(s === 403 || s === 404, `${p}: ${s}`).toBe(true);
     }
@@ -86,11 +86,11 @@ describe("a Live2D bot's own model JSON on /_t/", () => {
     expect((await get("live", "assets/live2d/rootlink.json")).status).toBe(403);
   });
   // Windows known failure (a product gap, reported): `declaredKind` (src/main/ui/files.ts) takes the file's name after the last "/",
-  // and a Windows path has "\\", so the manifest-name check never matches there and clover.json is served as a declared kind.
+  // and a Windows path has "\\", so the manifest-name check never matches there and moss.json is served as a declared kind.
   test.skipIf(process.platform === "win32")("a model at the plugin's root passes its declared kinds, never the manifest", async () => {
     expect((await get("rootmodel", "r.model3.json")).status).toBe(200);
     expect((await get("rootmodel", "r.physics3.json")).status).toBe(200);
-    expect((await get("rootmodel", "clover.json")).status).toBe(403);
+    expect((await get("rootmodel", "moss.json")).status).toBe(403);
     expect((await get("rootmodel", "data.json")).status).toBe(200);
   });
   test("a VRM bot, a theme plugin and a bot with no avatar get no JSON", async () => {
@@ -112,7 +112,7 @@ describe("a Live2D bot's own model JSON on /_t/", () => {
     expect((await get("tuber", "model/data.json")).status).toBe(200);
     expect((await get("tuber", "model/idle.png")).status).toBe(200);
     // Not a declared kind (a `.skel`, a sound it never listed, an SVG), not the manifest, not outside the avatar's folder.
-    for (const p of ["model/a.skel", "model/talk.wav", "clover.json", "other/o.json"]) expect((await get("tuber", p)).status, p).toBe(403);
+    for (const p of ["model/a.skel", "model/talk.wav", "moss.json", "other/o.json"]) expect((await get("tuber", p)).status, p).toBe(403);
   });
   test("an unknown plugin is refused as it always was", async () => {
     expect((await get("nobody", "assets/live2d/a.model3.json")).status).toBe(403);
@@ -122,7 +122,7 @@ describe("a Live2D bot's own model JSON on /_t/", () => {
   });
   test("a case-variant path is judged by the file's real path: outside the avatar folder it is refused; inside, it is the same file", async () => {
     // On a case-insensitive disk (macOS) the variant names the very file the real path names; on a case-sensitive one it is not found.
-    for (const p of ["CLOVER.JSON", "Clover.json", "ASSETS/OTHER/X.JSON", "assets/Other/x.json"]) {
+    for (const p of ["MOSS.JSON", "MOSS.json", "ASSETS/OTHER/X.JSON", "assets/Other/x.json"]) {
       const s = (await get("live", p)).status;
       expect(s === 403 || s === 404, `${p}: ${s}`).toBe(true);
     }

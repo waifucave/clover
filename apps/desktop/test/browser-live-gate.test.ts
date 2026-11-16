@@ -42,7 +42,7 @@ describe("the browser's live gate", () => {
   test("it won't run in CI, under an agent or without a terminal", () => {
     expect(refusal({ CI: "true" }, true)).toMatch(/CI/);
     expect(refusal({ CLAUDECODE: "1" }, true)).toMatch(/agent/);
-    expect(refusal({ CLOVER_AGENT: "1" }, true)).toMatch(/agent/);
+    expect(refusal({ MOSS_AGENT: "1" }, true)).toMatch(/agent/);
     expect(refusal({}, false)).toMatch(/terminal/);
     expect(refusal({ CI: "false" }, true)).toBeUndefined();
     expect(refusal({}, true)).toBeUndefined();

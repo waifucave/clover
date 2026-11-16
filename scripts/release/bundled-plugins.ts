@@ -4,7 +4,7 @@
 // folder that electron-builder.yml packs, and refuses a build whose plugins/ has any uncommitted change, so nothing a
 // working tree happens to hold (an edit, a build output, a `.env`, a key, a file swapped for a symlink) can come
 // along, and no symlink is ever copied or followed. The staged tree is then measured (`measureBundledTree`: every
-// file's SHA-256 and size) and that manifest compiled into clover-core (scripts/build-daemon.ts --plugins-manifest):
+// file's SHA-256 and size) and that manifest compiled into moss-core (scripts/build-daemon.ts --plugins-manifest):
 // the core trusts a bundled file only when its bytes are the manifest's (packages/core/src/bundled-plugins-dir.ts).
 // The checks here run on what was built:
 //   - `bundledPluginsProblems`: what shipped is exactly the manifest's tree, each top-level plugin's manifest is
@@ -23,7 +23,7 @@ import { buildPluginForShipping, untarGz, type ShippedPlugin, type ShipTarget } 
 /** The bundled plugins' folder in the app's resources (electron-builder.yml), beside `daemon/`. */
 export const BUNDLED_PLUGINS_DIR = "plugins";
 /** The top-level plugins every build ships (each with its manifest). */
-export const BUNDLED_PLUGIN_IDS = ["clover", "alpha"] as const;
+export const BUNDLED_PLUGIN_IDS = ["moss", "alpha"] as const;
 /** Where the release scripts stage the tracked plugins for electron-builder (relative to apps/desktop). */
 export const STAGED_PLUGINS = join("out", "plugins");
 
@@ -373,7 +373,7 @@ export function manifestDifferences(expected: BundledManifest, shipped: BundledM
  *  nothing is a symlink. `walk` lists the tree without following links. */
 export function bundledPluginsProblems(resources: string, manifest: BundledManifest, exists: (path: string) => boolean, walk: (dir: string) => TreeEntry[], measure: (dir: string) => BundledManifest = measureBundledTree): string[] {
   const dir = join(resources, BUNDLED_PLUGINS_DIR);
-  const problems = BUNDLED_PLUGIN_IDS.filter((id) => !exists(join(dir, id, "clover.json"))).map((id) => `${join(dir, id, "clover.json")} is missing: the ${id} plugin isn't bundled`);
+  const problems = BUNDLED_PLUGIN_IDS.filter((id) => !exists(join(dir, id, "moss.json"))).map((id) => `${join(dir, id, "moss.json")} is missing: the ${id} plugin isn't bundled`);
   const entries = walk(dir);
   const links = entries.filter((e) => e.link).map((e) => e.rel);
   if (links.length > 0) problems.push(`${dir} holds symlinks, which a release never ships: ${links.slice(0, 5).join(", ")}${links.length > 5 ? ", …" : ""}`);

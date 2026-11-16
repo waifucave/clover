@@ -62,13 +62,13 @@ function Tabs({ node, axis, width, renderSpot, path }: DrawProps & { node: Extra
   const [at, setAt] = useState(0);
   const current = node.tabs[Math.min(at, node.tabs.length - 1)];
   return (
-    <div className={node.className} data-clover-layout="tabs" style={{ ...boxStyle(node, axis), display: "flex", flexDirection: "column" }}>
-      <div role="tablist" data-clover-layout="tablist">
+    <div className={node.className} data-moss-layout="tabs" style={{ ...boxStyle(node, axis), display: "flex", flexDirection: "column" }}>
+      <div role="tablist" data-moss-layout="tablist">
         {node.tabs.map((t, i) => (
-          <button key={i} type="button" role="tab" aria-selected={i === at} data-clover-layout="tab" onClick={() => setAt(i)}>{t.title}</button>
+          <button key={i} type="button" role="tab" aria-selected={i === at} data-moss-layout="tab" onClick={() => setAt(i)}>{t.title}</button>
         ))}
       </div>
-      <div role="tabpanel" data-clover-layout="tabpanel" style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div role="tabpanel" data-moss-layout="tabpanel" style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
         {current !== undefined ? <Draw node={current.node} axis="column" width={width} renderSpot={renderSpot} path={`${path}.${at}`} /> : null}
       </div>
     </div>
@@ -84,14 +84,14 @@ function Draw(props: DrawProps): ReactNode {
     case "column": {
       const dir = node.kind as "row" | "column";
       return (
-        <div className={node.className} data-clover-layout={dir} style={{ ...box, display: "flex", flexDirection: dir, ...(node.align !== undefined ? { alignItems: ALIGN[node.align] } : {}) }}>
+        <div className={node.className} data-moss-layout={dir} style={{ ...box, display: "flex", flexDirection: dir, ...(node.align !== undefined ? { alignItems: ALIGN[node.align] } : {}) }}>
           {node.children.map((c, i) => <Draw key={i} node={c} axis={dir} width={width} renderSpot={renderSpot} path={`${path}.${i}`} />)}
         </div>
       );
     }
     case "stack":
       return (
-        <div className={node.className} data-clover-layout="stack" style={{ ...box, display: "grid", ...(node.align !== undefined ? { alignItems: ALIGN[node.align], justifyItems: ALIGN[node.align] } : {}) }}>
+        <div className={node.className} data-moss-layout="stack" style={{ ...box, display: "grid", ...(node.align !== undefined ? { alignItems: ALIGN[node.align], justifyItems: ALIGN[node.align] } : {}) }}>
           {node.children.map((c, i) => (
             <div key={i} style={{ gridArea: "1 / 1", minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
               <Draw node={c} axis="column" width={width} renderSpot={renderSpot} path={`${path}.${i}`} />
@@ -105,18 +105,18 @@ function Draw(props: DrawProps): ReactNode {
       // A spot that asks for no share keeps its own height (the composer under a conversation that fills): the ones that
       // grow give way instead.
       return (
-        <div className={node.className} data-clover-layout="spot" style={{ ...box, display: "flex", flexDirection: "column", ...(node.size === undefined && node.grow === undefined ? { flexShrink: 0 } : {}) }}>
+        <div className={node.className} data-moss-layout="spot" style={{ ...box, display: "flex", flexDirection: "column", ...(node.size === undefined && node.grow === undefined ? { flexShrink: 0 } : {}) }}>
           {renderSpot(node.spot, node.key)}
         </div>
       );
     case "image":
-      return <img className={node.className} data-clover-layout="image" src={node.src} alt="" draggable={false} style={{ ...box, objectFit: "contain", maxWidth: box.maxWidth ?? "100%" }} />;
+      return <img className={node.className} data-moss-layout="image" src={node.src} alt="" draggable={false} style={{ ...box, objectFit: "contain", maxWidth: box.maxWidth ?? "100%" }} />;
     case "text":
-      return <p className={node.className} data-clover-layout="text" style={{ ...box, margin: 0 }}>{node.text}</p>;
+      return <p className={node.className} data-moss-layout="text" style={{ ...box, margin: 0 }}>{node.text}</p>;
     case "markdown":
-      return <div className={node.className} data-clover-layout="markdown" style={box}>{markdown(node.markdown)}</div>;
+      return <div className={node.className} data-moss-layout="markdown" style={box}>{markdown(node.markdown)}</div>;
     case "spacer":
-      return <div className={node.className} data-clover-layout="spacer" aria-hidden="true" style={{ flex: "1 1 auto", ...box }} />;
+      return <div className={node.className} data-moss-layout="spacer" aria-hidden="true" style={{ flex: "1 1 auto", ...box }} />;
   }
 }
 
@@ -124,7 +124,7 @@ function Draw(props: DrawProps): ReactNode {
 export function LayoutRoot({ layout, renderSpot }: { layout: LayoutView; renderSpot: DrawProps["renderSpot"] }) {
   const width = useWindowWidth();
   return (
-    <div data-clover-layout="root" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+    <div data-moss-layout="root" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       <Draw node={layout.grow === undefined && layout.size === undefined ? { ...layout, grow: 1 } : layout} axis="column" width={width} renderSpot={renderSpot} path="0" />
     </div>
   );

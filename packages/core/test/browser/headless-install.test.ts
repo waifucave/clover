@@ -95,7 +95,7 @@ function tamper(path: string, data: string): void {
   writeFileSync(path, data);
 }
 
-const home = () => mkdtempSync(join(tmpdir(), "clover-headless-install-"));
+const home = () => mkdtempSync(join(tmpdir(), "moss-headless-install-"));
 async function code(p: Promise<unknown>): Promise<string | undefined> {
   try {
     await p;
@@ -120,7 +120,7 @@ describe("the pin", () => {
   });
 
   test("the pin file is in the controller's shape, its milestone the Chromium's, and the installer takes every asset from it", () => {
-    const file = JSON.parse(readFileSync(join(import.meta.dir, "../../../../plugins/clover/plugins/browser/headless-shell.pins.json"), "utf8")) as HeadlessShellPins;
+    const file = JSON.parse(readFileSync(join(import.meta.dir, "../../../../plugins/moss/plugins/browser/headless-shell.pins.json"), "utf8")) as HeadlessShellPins;
     expect(Object.keys(file).sort()).toEqual(["assets", "chromium", "electron", "milestone"]);
     expect(file.milestone).toBe(Number(file.chromium.split(".")[0]));
     expect(file.chromium).toBe(HEADLESS_PIN.version);
@@ -140,7 +140,7 @@ describe("the pin", () => {
     const version = electron.devDependencies?.electron ?? electron.dependencies?.electron;
     // Moving Electron means moving the pin (or saying in `why` why it's ahead): the pin names the Electron it follows.
     expect(HEADLESS_PIN.why).toContain(`${version} ships Chromium ${HEADLESS_PIN.version}`);
-    const file = JSON.parse(readFileSync(join(import.meta.dir, "../../../../plugins/clover/plugins/browser/headless-shell.pins.json"), "utf8")) as HeadlessShellPins;
+    const file = JSON.parse(readFileSync(join(import.meta.dir, "../../../../plugins/moss/plugins/browser/headless-shell.pins.json"), "utf8")) as HeadlessShellPins;
     expect(file.electron).toBe(version!);
   });
 

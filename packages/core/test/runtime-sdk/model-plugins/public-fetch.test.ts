@@ -12,13 +12,13 @@ import { PUBLIC_BODY_MAX_BYTES, publicFetch } from "../../../src/runtime-sdk/mod
 
 const KEY = "sk-public-test-0123456789abcdef";
 
-/** A world: `clover/webby` (bundled) with the capabilities given, its OK granting them; a fake internet by Host. */
+/** A world: `moss/webby` (bundled) with the capabilities given, its OK granting them; a fake internet by Host. */
 function world(capabilities: string[]) {
   const registry = new FakePluginRegistry({
     catalog: catalogPointDecl,
     plugins: [
-      { id: "clover", manifest: { manifest: 1, id: "clover", name: "Clover" } as never, source: "bundled" },
-      { id: "clover/webby", manifest: { manifest: 1, name: "Webby", capabilities, contributes: { models: [{ provider: "webby", name: "Webby", catalog: [], auth: [{ method: "api-key", secret: "api-key" }], endpoint: { protocol: "openai-chat", baseUrl: "https://api.webby.example/v1" } }] } } as never, source: "bundled" },
+      { id: "moss", manifest: { manifest: 1, id: "moss", name: "MOSS" } as never, source: "bundled" },
+      { id: "moss/webby", manifest: { manifest: 1, name: "Webby", capabilities, contributes: { models: [{ provider: "webby", name: "Webby", catalog: [], auth: [{ method: "api-key", secret: "api-key" }], endpoint: { protocol: "openai-chat", baseUrl: "https://api.webby.example/v1" } }] } } as never, source: "bundled" },
     ],
   });
   const seen: { host: string; url: string; headers: Headers }[] = [];
@@ -49,7 +49,7 @@ function world(capabilities: string[]) {
   });
   const router = createApiRouter({ registry, handlers: [handlers], allowNetwork: pluginNetworkAllowed });
   const call = (url: string, init: RequestInit = {}, options: Record<string, unknown> = {}) =>
-    router({ pluginId: "clover/webby", process: "clover", path: "net.fetch", args: [url, init, options], caller: { kind: "plugin", pluginId: "clover/webby" } as never }) as Promise<Response>;
+    router({ pluginId: "moss/webby", process: "moss", path: "net.fetch", args: [url, init, options], caller: { kind: "plugin", pluginId: "moss/webby" } as never }) as Promise<Response>;
   return { call, seen, audit, log };
 }
 
@@ -110,7 +110,7 @@ describe("network:public", () => {
     const w = world(["network:public"]);
     await w.call("https://news.example.com/story/123?token=abc-secret#frag");
     await refusal(w.call("http://news.example.com/x?q=private"));
-    expect(w.audit[0]).toMatchObject({ kind: "network", tool: "net.fetch", via: "network:public", plugin: "clover/webby", host: "news.example.com", pathLength: "/story/123".length, outcome: "ok", status: 200 });
+    expect(w.audit[0]).toMatchObject({ kind: "network", tool: "net.fetch", via: "network:public", plugin: "moss/webby", host: "news.example.com", pathLength: "/story/123".length, outcome: "ok", status: 200 });
     expect(w.audit[1]).toMatchObject({ host: "news.example.com", outcome: "refused" });
     const text = JSON.stringify(w.audit);
     for (const s of ["abc-secret", "frag", "/story", "private"]) expect(text).not.toContain(s);
@@ -128,7 +128,7 @@ describe("network:public", () => {
       limits: { idleMs: 200, totalMs: 400 },
     });
     const t0 = Date.now();
-    const r = await drip("clover/webby", "https://slow.example.com/", {}, undefined);
+    const r = await drip("moss/webby", "https://slow.example.com/", {}, undefined);
     expect(await r.arrayBuffer().then(() => "read", (e: unknown) => (e as Error).message)).toContain("took more than 0.4 s");
     expect(Date.now() - t0).toBeLessThan(2_000);
   });

@@ -27,7 +27,7 @@ afterEach(async () => {
 const sha256 = (t: string) => createHash("sha256").update(t).digest("hex");
 
 async function daemon(net: MemoryNetwork, name: string) {
-  const links = await startDeviceLinks({ home: mkdtempSync(join(tmpdir(), "clover-h-relay-")), store: new MemorySecretStore(), clock, self: { name, os: "macos" }, wire: (key) => net.endpoint(key.publicKey) });
+  const links = await startDeviceLinks({ home: mkdtempSync(join(tmpdir(), "moss-h-relay-")), store: new MemorySecretStore(), clock, self: { name, os: "macos" }, wire: (key) => net.endpoint(key.publicKey) });
   stops.push(() => links.close());
   return links;
 }

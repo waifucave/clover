@@ -19,11 +19,11 @@ const connects = (path: string): Promise<boolean> => Bun.connect({ unix: path, s
 
 describe.skipIf(process.platform === "win32")("a daemon the pair stops", () => {
   test("takes no new connection from the moment the pair stops it, and its stop ends within the bound", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-stopacc-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-stopacc-"));
     daemon = await startDaemon({
       home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, appPeer: "none",
       links: { binary: null, handshake: null, publicTime: null, mainComputer: { watchSleep: false, monotonic: () => performance.now() }, watch: () => () => {}, self: { name: "Studio", os: "macos" } },
-      parts: { userHome: mkdtempSync(join(tmpdir(), "clover-stopacc-user-")) },
+      parts: { userHome: mkdtempSync(join(tmpdir(), "moss-stopacc-user-")) },
     });
     expect(await connects(daemon.socketPath)).toBe(true);
     // The pair stops (no app: at once). The daemon's own stop runs a moment later (the pair's answer goes first).

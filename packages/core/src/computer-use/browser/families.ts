@@ -9,7 +9,7 @@ export interface FamilyInfo {
   /** What a person calls the family: "Google Chrome". */
   name: string;
   /** The app's bundle ids, the main channel first (the one a grant and the per-app card name). Beta/Dev/Canary and
-   *  Chrome for Testing are the same family. Empty for `winter` and `headless` (Clover's own browsers are no app the
+   *  Chrome for Testing are the same family. Empty for `winter` and `headless` (MOSS's own browsers are no app the
    *  policy governs). */
   bundleIds: readonly string[];
 }
@@ -39,7 +39,7 @@ const CHANNELS: ReadonlyArray<{ bundleId: string; family: BrowserFamily; name: s
 ];
 
 const FAMILY_NAMES: Readonly<Record<BrowserFamily, string>> = {
-  winter: "Clover (built-in)", headless: "Clover (headless)", chrome: "Google Chrome", edge: "Microsoft Edge", brave: "Brave", vivaldi: "Vivaldi",
+  winter: "MOSS (built-in)", headless: "MOSS (headless)", chrome: "Google Chrome", edge: "Microsoft Edge", brave: "Brave", vivaldi: "Vivaldi",
   opera: "Opera", arc: "Arc", chromium: "Chromium",
 };
 

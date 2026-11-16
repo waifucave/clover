@@ -2,7 +2,7 @@
 // lowering applies at once; a raise applies only from the user's own terminal (no card binds a call yet), never from
 // the app; renames keep the old name as an alias; holds are listed with the user-working mark.
 import { describe, expect, test } from "bun:test";
-import { CLOVER_ERR, ERR, type Caller } from "@waifucave/clover-protocol";
+import { MOSS_ERR, ERR, type Caller } from "@waifucave/moss-protocol";
 import { computerMethods } from "../../src/computers/rpc";
 import { CoreComputerRegistry } from "../../src/computers/registry";
 
@@ -52,14 +52,14 @@ describe("computer.* for the app", () => {
   test("hold.list gives the computer's holds and its user-working mark", async () => {
     const { registry, call } = make();
     expect(await call("hold.list", { computer: "Studio" })).toEqual({ holds: [], userWorking: false });
-    const hold = registry.takeHold({ computer: "Studio", target: { kind: "app", app: "Safari" }, session: "s1", pluginId: "clover/cu" });
+    const hold = registry.takeHold({ computer: "Studio", target: { kind: "app", app: "Safari" }, session: "s1", pluginId: "moss/cu" });
     registry.markUserWorking("Studio", "Notes");
     expect(await call("hold.list", { computer: "Studio" })).toEqual({ holds: [hold], userWorking: true });
   });
 
   test("only the user changes a computer", async () => {
     const { call, code } = make();
-    expect(await code(call("computer.setLevel", { name: "Studio", level: "read-only" }, bot))).toBe(CLOVER_ERR.NOT_THE_USER);
-    expect(await code(call("computer.rename", { name: "Studio", to: "Desk" }, bot))).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect(await code(call("computer.setLevel", { name: "Studio", level: "read-only" }, bot))).toBe(MOSS_ERR.NOT_THE_USER);
+    expect(await code(call("computer.rename", { name: "Studio", to: "Desk" }, bot))).toBe(MOSS_ERR.NOT_THE_USER);
   });
 });

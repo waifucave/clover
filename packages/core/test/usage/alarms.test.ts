@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/moss-protocol";
 import { USAGE_DB_SCHEMA_VERSION, UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
 import { planScopeKey, planWindowKey } from "../../src/usage/plan";
@@ -33,7 +33,7 @@ function service(over: Partial<LegacyServiceDeps> = {}) {
   const tracking = { codex: true, claudeCode: true, antigravity: true, opencode: true };
   const svc = new UsageService({
     db, pricer, tracking: () => tracking,
-    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],  ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
+    codexExecutable: () => undefined, claudeExecutable: () => undefined, mossCodexWindows: () => [],  ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
     setInterval: (fn, ms) => {
       const t = { fn, ms, cancelled: false };
       timers.push(t);
@@ -336,13 +336,13 @@ describe("the background beats", () => {
     expect(fastBeatFloor(6_000)).toBe(3_000);
   });
 
-  test("CLOVER_USAGE_BACKGROUND=off (both preloads) keeps it off; without it the daemon's service starts it", () => {
-    expect(process.env.CLOVER_USAGE_BACKGROUND).toBe("off");
+  test("MOSS_USAGE_BACKGROUND=off (both preloads) keeps it off; without it the daemon's service starts it", () => {
+    expect(process.env.MOSS_USAGE_BACKGROUND).toBe("off");
     const off = createUsageService({ home: tempDir("wire"), userHome: undefined, settings: () => undefined, injection: { catchUp: false } })!;
     expect(off.service.backgroundRunning).toBe(false);
     off.close();
-    const saved = process.env.CLOVER_USAGE_BACKGROUND;
-    delete process.env.CLOVER_USAGE_BACKGROUND;
+    const saved = process.env.MOSS_USAGE_BACKGROUND;
+    delete process.env.MOSS_USAGE_BACKGROUND;
     try {
       const on = createUsageService({ home: tempDir("wire"), userHome: undefined, settings: () => undefined, injection: { catchUp: false } })!;
       expect(on.service.backgroundRunning).toBe(true);
@@ -352,7 +352,7 @@ describe("the background beats", () => {
       expect(injectedOff.service.backgroundRunning).toBe(false);
       injectedOff.close();
     } finally {
-      process.env.CLOVER_USAGE_BACKGROUND = saved;
+      process.env.MOSS_USAGE_BACKGROUND = saved;
     }
   });
 });

@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { isContractError } from "../../src/contracts/common";
 import { computersApiRoutes } from "../../src/computers/api";
 import { placementFields, type McpResult, type McpServerPlacement } from "../../src/computers/mcp";
@@ -113,7 +113,7 @@ describe("the direct path: copies, and mv and cp in Bash (item 89)", () => {
     expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT }))).toBe("refused");
     expect(phone.shown).toEqual([]);
     expect(existsSync(join(laptop.home, "proj"))).toBe(false);
-    expect(readdirSync(laptop.home).filter((n) => n.startsWith(".clover-receiving-"))).toEqual([]);
+    expect(readdirSync(laptop.home).filter((n) => n.startsWith(".moss-receiving-"))).toEqual([]);
     expect(existsSync(join(studio.home, "proj", "a.txt"))).toBe(true);
   });
 
@@ -317,7 +317,7 @@ describe("the terminal panel (R4)", () => {
     expect(got.length).toBe(0); // nothing goes out at once
     await until(() => got.some((o) => o.exited), 10_000, "the exit");
     const seconds = (performance.now() - t0) / 1000;
-    const delivered = got.filter((o) => !o.data.startsWith("\r\n[clover")).reduce((n, o) => n + o.data.length, 0);
+    const delivered = got.filter((o) => !o.data.startsWith("\r\n[moss")).reduce((n, o) => n + o.data.length, 0);
     expect(delivered).toBeLessThanOrEqual(400_000);
     expect(delivered).toBeGreaterThan(390_000);
     expect(delivered / seconds).toBeLessThan(200_000 * 1.25);
@@ -386,8 +386,8 @@ describe("MCP tools across computers", () => {
     expect(placementFields(figma, tools).tools[0]!.inputSchema.required).toEqual(["scene"]);
     // A clash: the server's own field keeps its name, ours is prefixed.
     const clash = [{ name: "Go", inputSchema: { type: "object" as const, properties: { computer: { type: "string" }, saveTo: { type: "string" } } } }];
-    expect(placementFields(blender, clash).fields).toEqual({ computer: "cloverComputer" });
-    expect(placementFields(figma, clash).fields).toEqual({ saveTo: "cloverSaveTo" });
+    expect(placementFields(blender, clash).fields).toEqual({ computer: "mossComputer" });
+    expect(placementFields(figma, clash).fields).toEqual({ saveTo: "mossSaveTo" });
   });
 
   test("calls run on the computer they name, or the one that holds saveTo, and the files land there", async () => {
@@ -397,7 +397,7 @@ describe("MCP tools across computers", () => {
       return { content: [{ type: "text", text: `done on ${self}` }, { type: "image", data: PNG, mimeType: "image/png" }] };
     };
     const servers = new Map([["blender", blender], ["figma", figma], ["sketch", figma]]);
-    // `sketch`'s tool has a saveTo of its own, so the router's folder field is cloverSaveTo for it.
+    // `sketch`'s tool has a saveTo of its own, so the router's folder field is mossSaveTo for it.
     const ownSaveTo = [{ name: "x", inputSchema: { type: "object" as const, properties: { saveTo: { type: "string" } } } }];
     const { studio, laptop } = await two({
       levels: { Laptop1: "automatic" },
@@ -425,10 +425,10 @@ describe("MCP tools across computers", () => {
     const f = await studio.node.mcp!.run("figma", "Export", { node: "1", saveTo: "home/Laptop1/designs" }, { ...ctx, callId: "call_2" });
     expect(f.computer).toBe("Laptop1");
     expect(readFileSync(join(laptop.home, "designs", "call_2-0.png"), "base64")).toBe(PNG);
-    // A tool with a saveTo of its own: the folder rides as cloverSaveTo to the holder, and the tool's own saveTo reaches
+    // A tool with a saveTo of its own: the folder rides as mossSaveTo to the holder, and the tool's own saveTo reaches
     // the tool untouched, never taken for the folder.
     calls.length = 0;
-    const own = await studio.node.mcp!.run("sketch", "Export", { saveTo: "its-own-arg", cloverSaveTo: "home/Laptop1/designs" }, { ...ctx, callId: "call_4" });
+    const own = await studio.node.mcp!.run("sketch", "Export", { saveTo: "its-own-arg", mossSaveTo: "home/Laptop1/designs" }, { ...ctx, callId: "call_4" });
     expect(own.computer).toBe("Laptop1");
     expect(calls).toEqual(['Laptop1 sketch.Export {"saveTo":"its-own-arg"} as peer']);
     expect(readFileSync(join(laptop.home, "designs", "call_4-0.png"), "base64")).toBe(PNG);

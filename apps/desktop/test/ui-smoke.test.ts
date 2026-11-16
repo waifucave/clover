@@ -2,8 +2,8 @@
 // third-party part in a layer of its own, the packaged app, and the pair (the app starts the daemon, starts it again
 // after a crash, and Quit stops both).
 //
-// CI runs it (CI=true and CLOVER_UI_TESTS=1, the app job in .github/workflows/ci.yml; Linux under xvfb). Locally it
-// runs only when CLOVER_UI_LOCAL_ELECTRON names an Electron that can never come to the front (a copy with
+// CI runs it (CI=true and MOSS_UI_TESTS=1, the app job in .github/workflows/ci.yml; Linux under xvfb). Locally it
+// runs only when MOSS_UI_LOCAL_ELECTRON names an Electron that can never come to the front (a copy with
 // LSBackgroundOnly on macOS); every run is headless: no window shown, no Dock or tray icon, no focus (plan §8).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -13,11 +13,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { readCalls } from "./fake-core/fake-daemon";
 import { IPV6_REACHABILITY_PROBE, offMachine, readNetLog } from "./netlog";
-import { FIXTURES, REPO, alphaView, cloverViews, folderView } from "./fake-core/registry";
+import { FIXTURES, REPO, alphaView, mossViews, folderView } from "./fake-core/registry";
 
 const root = join(import.meta.dir, "..");
-const ci = process.env.CI === "true" && process.env.CLOVER_UI_TESTS === "1";
-const localElectron = process.env.CLOVER_UI_LOCAL_ELECTRON;
+const ci = process.env.CI === "true" && process.env.MOSS_UI_TESTS === "1";
+const localElectron = process.env.MOSS_UI_LOCAL_ELECTRON;
 const enabled = ci || (localElectron !== undefined && localElectron !== "");
 const version = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version;
 const exe = process.platform === "win32" ? ".exe" : "";
@@ -41,7 +41,7 @@ function refuseForegroundElectron(): void {
   const plist = join(dirname(dirname(localElectron!)), "Info.plist");
   const value = spawnSync("plutil", ["-extract", "LSBackgroundOnly", "raw", plist], { encoding: "utf8" });
   if (value.status !== 0 || value.stdout.trim() !== "true") {
-    throw new Error(`CLOVER_UI_LOCAL_ELECTRON (${localElectron}) is not a background-only Electron; make one with \`bun run scripts/background-electron.ts <dir>\``);
+    throw new Error(`MOSS_UI_LOCAL_ELECTRON (${localElectron}) is not a background-only Electron; make one with \`bun run scripts/background-electron.ts <dir>\``);
   }
 }
 
@@ -53,10 +53,10 @@ function home(): string {
 }
 
 function env(h: string, registry: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const e: NodeJS.ProcessEnv = { ...process.env, CLOVER_HOME: h, CLOVER_DAEMON_BIN: fakeCore, CLOVER_FAKE_UI: registries[registry], ELECTRON_ENABLE_LOGGING: "1", ...extra };
-  delete e.CLOVER_PROFILE;
+  const e: NodeJS.ProcessEnv = { ...process.env, MOSS_HOME: h, MOSS_DAEMON_BIN: fakeCore, MOSS_FAKE_UI: registries[registry], ELECTRON_ENABLE_LOGGING: "1", ...extra };
+  delete e.MOSS_PROFILE;
   delete e.ELECTRON_RUN_AS_NODE;
-  delete e.CLOVER_APP_TOKEN;
+  delete e.MOSS_APP_TOKEN;
   return e;
 }
 
@@ -65,7 +65,7 @@ function smoke(executable: string, args: string[], registry: string, extra: Reco
   const out = join(h, "smoke.json");
   // Every run records a net log: what it sent off the machine is asserted (none of it beyond loopback).
   const netlog = join(h, "net.json");
-  const r = spawnSync(executable, [...args, "--clover-smoke", `--log-net-log=${netlog}`], { env: env(h, registry, { CLOVER_SMOKE_OUT: out, ...extra }), encoding: "utf8", timeout: 100_000 });
+  const r = spawnSync(executable, [...args, "--moss-smoke", `--log-net-log=${netlog}`], { env: env(h, registry, { MOSS_SMOKE_OUT: out, ...extra }), encoding: "utf8", timeout: 100_000 });
   const facts = existsSync(out) ? (JSON.parse(readFileSync(out, "utf8")) as Smoke) : undefined;
   const all = `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`;
   return { status: r.status, facts, output: all.slice(-6000), all, home: h, netlog };
@@ -86,12 +86,12 @@ function expectQuiet(r: ReturnType<typeof smoke>, allowed: Parameters<typeof off
 function expectShell(r: ReturnType<typeof smoke>, opts: { safeMode?: boolean } = {}): Frame {
   expect(r.facts, r.output).toBeDefined();
   const f = r.facts!;
-  expect(f, r.output).toMatchObject({ ok: true, profile: "dist", appId: "com.waifucave.clover", name: "Clover", visibleWindows: 0, pair: "connected", safeMode: opts.safeMode ?? false });
-  // The main window, one per surface (the island and the pill are clover's; they stay hidden), and one per background
-  // part that runs (Clover Voice's player; hidden too).
+  expect(f, r.output).toMatchObject({ ok: true, profile: "dist", appId: "com.waifucave.moss.code", name: "MOSS", visibleWindows: 0, pair: "connected", safeMode: opts.safeMode ?? false });
+  // The main window, one per surface (the island and the pill are moss's; they stay hidden), and one per background
+  // part that runs (MOSS Voice's player; hidden too).
   expect(f.windows).toBe(1 + (f.surfaces as unknown[]).length + (f.backgrounds as unknown[]).length);
-  const rootFrame = f.frames.find((x) => x.origin === "clover-core://app");
-  const shell = f.frames.find((x) => x.origin === "clover-plugin://clover");
+  const rootFrame = f.frames.find((x) => x.origin === "moss-core://app");
+  const shell = f.frames.find((x) => x.origin === "moss-plugin://moss");
   expect(rootFrame, r.output).toBeDefined();
   expect(shell, r.output).toMatchObject({ shell: true, sidebar: true, conversation: true, bridge: "object" });
   // The shell is its own layer: a process other than the root's.
@@ -131,17 +131,17 @@ function expectBothStopped(r: ReturnType<typeof smoke>): void {
 beforeAll(() => {
   if (!enabled) return;
   if (!ci) refuseForegroundElectron();
-  work = mkdtempSync(join(tmpdir(), "clover-ui-"));
+  work = mkdtempSync(join(tmpdir(), "moss-ui-"));
   // Always built, never reused: an `out/` left from another commit (a bisect, a branch switch) has another SDK in its layer bundle
-  // and fails in ways that look like the page's (a part that "stopped"). CLOVER_UI_SKIP_BUILD=1 reuses it on purpose.
-  if (process.env.CLOVER_UI_SKIP_BUILD !== "1" || !existsSync(join(root, "out", "main", "index.js"))) {
+  // and fails in ways that look like the page's (a part that "stopped"). MOSS_UI_SKIP_BUILD=1 reuses it on purpose.
+  if (process.env.MOSS_UI_SKIP_BUILD !== "1" || !existsSync(join(root, "out", "main", "index.js"))) {
     const built = spawnSync("bun", ["run", "scripts/build.ts"], { cwd: root, encoding: "utf8" });
     expect(built.status, built.stderr).toBe(0);
   }
-  fakeCore = join(work, `clover-core${exe}`);
+  fakeCore = join(work, `moss-core${exe}`);
   const compiled = spawnSync("bun", ["build", "--compile", "--no-macros", join(import.meta.dir, "fake-core", "fake-daemon.ts"), "--outfile", fakeCore], { encoding: "utf8" });
   expect(compiled.status, compiled.stderr).toBe(0);
-  const base = [...cloverViews(), alphaView()];
+  const base = [...mossViews(), alphaView()];
   registries.default = join(work, "default.json");
   registries.fixture = join(work, "fixture.json");
   writeFileSync(registries.default, JSON.stringify({ plugins: base }));
@@ -151,11 +151,11 @@ beforeAll(() => {
   // The same page twice: as it is, and as a plugin that asks for cross-origin isolation in its manifest (`client.isolated`).
   const isolatedCopy = join(work, "fixture-isolated");
   cpSync(join(FIXTURES, "fixture-media"), isolatedCopy, { recursive: true });
-  const manifest = JSON.parse(readFileSync(join(isolatedCopy, "clover.json"), "utf8")) as { id: string; client: Record<string, unknown>; contributes: { ui: Record<string, unknown>[] } };
+  const manifest = JSON.parse(readFileSync(join(isolatedCopy, "moss.json"), "utf8")) as { id: string; client: Record<string, unknown>; contributes: { ui: Record<string, unknown>[] } };
   manifest.id = "fixture-isolated";
   manifest.client.isolated = true;
   manifest.contributes.ui[0]!.id = "isolated";
-  writeFileSync(join(isolatedCopy, "clover.json"), JSON.stringify(manifest));
+  writeFileSync(join(isolatedCopy, "moss.json"), JSON.stringify(manifest));
   registries.isolation = join(work, "isolation.json");
   writeFileSync(registries.isolation, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-media"), 1006), folderView(isolatedCopy, 1007)] }));
   registries.welcome = join(work, "welcome.json");
@@ -173,8 +173,8 @@ beforeAll(() => {
 }, 180_000);
 
 afterAll(() => {
-  // CLOVER_UI_KEEP_HOMES=1 keeps each run's home (its log, net log and calls) for a look after a failure.
-  if (process.env.CLOVER_UI_KEEP_HOMES === "1") return;
+  // MOSS_UI_KEEP_HOMES=1 keeps each run's home (its log, net log and calls) for a look after a failure.
+  if (process.env.MOSS_UI_KEEP_HOMES === "1") return;
   for (const h of homes) rmSync(h, { recursive: true, force: true });
   if (work !== undefined) rmSync(work, { recursive: true, force: true });
 });
@@ -192,9 +192,9 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     // A CI Linux runner has no GPU: Chromium gives a page WebGL there only through its software renderer (as the galleries' browser is
     // launched), so this run asks for it; macOS and Windows have a GL context of their own.
     const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
-    const r = smoke(electron(), [root, ...software], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_INPUT: "click", CLOVER_SMOKE_PICK_FILES: pickFile, CLOVER_SMOKE_WAIT_TEXT: "video: 64x48|save: export.bin", CLOVER_SMOKE_SETTLE_MS: "1500" });
+    const r = smoke(electron(), [root, ...software], "media", { MOSS_SMOKE_LAYERS: "0", MOSS_SMOKE_INPUT: "click", MOSS_SMOKE_PICK_FILES: pickFile, MOSS_SMOKE_WAIT_TEXT: "video: 64x48|save: export.bin", MOSS_SMOKE_SETTLE_MS: "1500" });
     const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
-    const frame = surfaces.find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
+    const frame = surfaces.find((x) => x.id === "media")?.frames.find((x) => x.origin === "moss-plugin://fixture-media");
     expect(frame, r.output).toBeDefined();
     // The page held a token, the name and the size, never the path; the media URL answers a range, refuses one past the end,
     // and the video element played it from there.
@@ -226,8 +226,8 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const video = join(h, "dropped.webm");
     copyFileSync(join(import.meta.dir, "fixtures", "media", "generated-testsrc.webm"), video);
     const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
-    const r = smoke(electron(), [root, ...software], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_DROP: video, CLOVER_SMOKE_WAIT_TEXT: "drop:", CLOVER_SMOKE_SETTLE_MS: "1000" });
-    const frame = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
+    const r = smoke(electron(), [root, ...software], "media", { MOSS_SMOKE_LAYERS: "0", MOSS_SMOKE_DROP: video, MOSS_SMOKE_WAIT_TEXT: "drop:", MOSS_SMOKE_SETTLE_MS: "1000" });
+    const frame = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "media")?.frames.find((x) => x.origin === "moss-plugin://fixture-media");
     expect(frame!.text, stoppedWhy(r) || r.output).toContain("drop: dropped.webm read token");
     expect(frame!.text).not.toContain(h);
     const asked = readCalls(r.home).filter((c) => c.event === "request" && c.method === "plugin.grant.add");
@@ -238,13 +238,13 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
     // Both pages' own lines are waited for (each page writes all its lines at once): "webgl:" alone was true as soon as ONE of
     // the two had drawn, and on a slow runner the other had not by the end of the settle (macOS, the merge queue's run 43724595940).
-    const r = smoke(electron(), [root, ...software], "isolation", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_WAIT_TEXT: "sab: undefined/isolated=false|sab: function/isolated=true", CLOVER_SMOKE_SETTLE_MS: "2500" });
+    const r = smoke(electron(), [root, ...software], "isolation", { MOSS_SMOKE_LAYERS: "0", MOSS_SMOKE_WAIT_TEXT: "sab: undefined/isolated=false|sab: function/isolated=true", MOSS_SMOKE_SETTLE_MS: "2500" });
     const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
     const text = (id: string, origin: string) => surfaces.find((x) => x.id === id)?.frames.find((x) => x.origin === origin)?.text ?? "";
-    expect(text("media", "clover-plugin://fixture-media"), stoppedWhy(r) || r.output).toContain("sab: undefined/isolated=false");
-    expect(text("isolated", "clover-plugin://fixture-isolated"), stoppedWhy(r) || r.output).toContain("sab: function/isolated=true");
+    expect(text("media", "moss-plugin://fixture-media"), stoppedWhy(r) || r.output).toContain("sab: undefined/isolated=false");
+    expect(text("isolated", "moss-plugin://fixture-isolated"), stoppedWhy(r) || r.output).toContain("sab: function/isolated=true");
     // The rest of what a layer does is the same in both.
-    for (const t of [text("media", "clover-plugin://fixture-media"), text("isolated", "clover-plugin://fixture-isolated")]) {
+    for (const t of [text("media", "moss-plugin://fixture-media"), text("isolated", "moss-plugin://fixture-isolated")]) {
       expect(t).toContain("wasm: add(2,3)=5");
       expect(t).toContain("worker: x2=42");
     }
@@ -252,13 +252,13 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expectQuiet(r);
   }, 120_000);
 
-  test("the default shell from F's plugins renders in the clover layer; the app starts the daemon and Quit stops both", () => {
+  test("the default shell from F's plugins renders in the moss layer; the app starts the daemon and Quit stops both", () => {
     // The mounts it asserts are the ones it waits for: a placed part's mounts land a beat after its document draws.
-    const r = smoke(electron(), [root], "default", { CLOVER_SMOKE_WAIT_MOUNTS: "root:4,frame:4" });
+    const r = smoke(electron(), [root], "default", { MOSS_SMOKE_WAIT_MOUNTS: "root:4,frame:4" });
     const shell = expectShell(r);
     expect(shell.composer).toBe(true);
     expect(shell.text).toContain("Alpha");
-    // Clover Voice's player, a background part, is a root and a frame of its own.
+    // MOSS Voice's player, a background part, is a root and a frame of its own.
     expect(r.facts!.mounts).toMatchObject({ root: 4, frame: 4 });
     expectBothStopped(r);
     expectQuiet(r);
@@ -266,9 +266,9 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
 
   test("a third-party part renders in a layer of its own, in its own process, themed by its tab; surfaces and menus go through the core", () => {
     // Both menus answered: the composer's (in the main window) and the surface's (in its own window).
-    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1", CLOVER_SMOKE_WAIT_TEXT: "Picked: second|Menu: second", CLOVER_SMOKE_WAIT_MOUNTS: "root:5,frame:6", CLOVER_TEST_MENU_PICK: "second", CLOVER_SMOKE_INPUT: "1" });
+    const r = smoke(electron(), [root], "fixture", { MOSS_SMOKE_LAYERS: "1", MOSS_SMOKE_WAIT_TEXT: "Picked: second|Menu: second", MOSS_SMOKE_WAIT_MOUNTS: "root:5,frame:6", MOSS_TEST_MENU_PICK: "second", MOSS_SMOKE_INPUT: "1" });
     const shell = expectShell(r);
-    const part = r.facts!.frames.find((x) => x.origin === "clover-plugin://fixture-composer");
+    const part = r.facts!.frames.find((x) => x.origin === "moss-plugin://fixture-composer");
     expect(part, r.output).toMatchObject({ bridge: "object", node: false });
     expect(part!.text).toContain("Send");
     expect(part!.text).toContain("Picked: second");
@@ -285,7 +285,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const surfaces = r.facts!.surfaces as { id: string; visible: boolean; bounds: { width: number; height: number }; frames: Frame[] }[];
     const fixture = surfaces.find((x) => x.id === "fixture");
     expect(fixture, r.output).toMatchObject({ visible: false, bounds: { width: 360, height: 120 } });
-    const surfaceFrame = fixture!.frames.find((x) => x.origin === "clover-plugin://fixture-surface");
+    const surfaceFrame = fixture!.frames.find((x) => x.origin === "moss-plugin://fixture-surface");
     expect(surfaceFrame, r.output).toMatchObject({ text: "Menu: second", node: false, bridge: "object" });
     expect(surfaces.map((x) => x.id).sort()).toEqual(["fixture", "island", "pill"]);
     expect(r.facts!.mounts).toMatchObject({ root: 5, frame: 6 });
@@ -304,7 +304,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   test("a third-party layer that hangs has its process stopped; the app doesn't restart into safe mode", () => {
     // The layer hangs in its own handler; the window's `unresponsive` is raised by the run (index.ts says why), and
     // the app pings each document (3 s), stops the silent layer's process, and the census finds it gone.
-    const r = smoke(electron(), [root], "spin", { CLOVER_SMOKE_HANG: "spin", CLOVER_SMOKE_WAIT_TEXT: "stopped drawing", CLOVER_SMOKE_WAIT_MOUNTS: "root:4,frame:4" });
+    const r = smoke(electron(), [root], "spin", { MOSS_SMOKE_HANG: "spin", MOSS_SMOKE_WAIT_TEXT: "stopped drawing", MOSS_SMOKE_WAIT_MOUNTS: "root:4,frame:4" });
     expectShell(r);
     // The whole run's output: these lines come early in it, and a fast run's 6,000-character tail cuts them.
     expect(r.all).toContain("went unresponsive; not answering: fixture-spin");
@@ -320,15 +320,15 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   test("the welcome guide opens on a first start with no provider signed in; its terms come first, and a key goes only to the sign-in", () => {
     const key = "fixture-key-0123456789";
     const steps = [
-      { check: '[data-clover-terms="fixture-model"]' },
-      { fill: '[data-clover-key="fixture-model#0"]', value: key },
-      { click: '[data-clover-save="fixture-model#0"]' },
+      { check: '[data-moss-terms="fixture-model"]' },
+      { fill: '[data-moss-key="fixture-model#0"]', value: key },
+      { click: '[data-moss-save="fixture-model#0"]' },
     ];
-    const r = smoke(electron(), [root], "welcome", { CLOVER_SMOKE_ROOT_STEPS: JSON.stringify(steps), CLOVER_SMOKE_WAIT_TEXT: "Saved. Clover keeps the key" });
+    const r = smoke(electron(), [root], "welcome", { MOSS_SMOKE_ROOT_STEPS: JSON.stringify(steps), MOSS_SMOKE_WAIT_TEXT: "Saved. MOSS keeps the key" });
     expectShell(r);
     expect(r.all).toContain("welcome: no model provider is signed in; the guide opens");
-    const rootFrame = r.facts!.frames.find((x) => x.origin === "clover-core://app")!;
-    expect(rootFrame.text).toContain("Welcome to Clover");
+    const rootFrame = r.facts!.frames.find((x) => x.origin === "moss-core://app")!;
+    expect(rootFrame.text).toContain("Welcome to MOSS");
     expect(rootFrame.text).toContain("Use it kindly.");
     expect(rootFrame.text).toContain("Signed in");
     const signIn = readCalls(r.home).find((c) => c.event === "request" && c.method === "plugin.auth.signIn");
@@ -340,15 +340,15 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   }, 120_000);
 
   test("safe mode's plugin manager, from the core's own page: every plugin but the app's own, and one turned off", () => {
-    const steps = [{ click: '[data-clover-turn-off="fixture-composer"]' }];
-    const r = smoke(electron(), [root, "--safe-mode"], "manage", { CLOVER_SMOKE_PAGE: "plugins", CLOVER_SMOKE_ROOT_STEPS: JSON.stringify(steps), CLOVER_SMOKE_WAIT_TEXT: "fixture-composer · Off" });
+    const steps = [{ click: '[data-moss-turn-off="fixture-composer"]' }];
+    const r = smoke(electron(), [root, "--safe-mode"], "manage", { MOSS_SMOKE_PAGE: "plugins", MOSS_SMOKE_ROOT_STEPS: JSON.stringify(steps), MOSS_SMOKE_WAIT_TEXT: "fixture-composer · Off" });
     expectShell(r, { safeMode: true });
-    const rootFrame = r.facts!.frames.find((x) => x.origin === "clover-core://app")!;
-    expect(rootFrame.text).toContain("Safe mode: only Clover's own plugins run.");
+    const rootFrame = r.facts!.frames.find((x) => x.origin === "moss-core://app")!;
+    expect(rootFrame.text).toContain("Safe mode: only MOSS's own plugins run.");
     // The third-party plugin, now off, can still be removed; none of the app's own is listed.
     expect(rootFrame.text).toContain("fixture-composer · Off");
     expect(rootFrame.text).toContain("Remove");
-    expect(rootFrame.text).not.toContain("clover/");
+    expect(rootFrame.text).not.toContain("moss/");
     expect(rootFrame.text).not.toContain("alpha");
     const turnedOff = readCalls(r.home).filter((c) => c.event === "request" && c.method === "plugin.setEnabled").map((c) => c.params);
     expect(turnedOff).toEqual([{ id: "fixture-composer", enabled: false }]);
@@ -357,11 +357,11 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   }, 120_000);
 
   test("a web page entry shows in an isolated view of its own, in its own session, reaching nothing of the app's", () => {
-    const r = smoke(electron(), [root], "web", { CLOVER_SMOKE_WAIT_TEXT: "Fixture web page (scripted)" });
+    const r = smoke(electron(), [root], "web", { MOSS_SMOKE_WAIT_TEXT: "Fixture web page (scripted)" });
     expectShell(r);
     const web = r.facts!.web as { mount: string; url: string; visible: boolean; text: string }[];
     expect(web, r.output).toHaveLength(1);
-    expect(web[0]!.url, r.all).toBe("clover-web://fixture-web/page.html");
+    expect(web[0]!.url, r.all).toBe("moss-web://fixture-web/page.html");
     expect(web[0]!.text).toContain("Fixture web page (scripted)");
     expect(web[0]!.text).toContain("bridge: none; node: none");
     // The view is drawn over its part, in the window (shown, though the window itself never is in a headless run).
@@ -373,7 +373,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   test("a window that stays unresponsive while every document in it answers restarts the app into safe mode after the longer window", () => {
     // The GPU or compositor case: the window is said to be unresponsive (as Chromium says it), each document answers
     // its ping, and the longer window (60 s, shortened here) runs out. The relaunch itself is left out of the run.
-    const r = smoke(electron(), [root], "default", { CLOVER_SMOKE_UNRESPONSIVE: "1", CLOVER_SMOKE_COMPOSITOR_MS: "1500", CLOVER_SMOKE_SETTLE_MS: "5000", CLOVER_SMOKE_NO_RESTART: "1" });
+    const r = smoke(electron(), [root], "default", { MOSS_SMOKE_UNRESPONSIVE: "1", MOSS_SMOKE_COMPOSITOR_MS: "1500", MOSS_SMOKE_SETTLE_MS: "5000", MOSS_SMOKE_NO_RESTART: "1" });
     expectShell(r);
     expect(r.all).toMatch(/went unresponsive; not answering: none/);
     expect(r.all).toContain("every document answers; it has 2 s to come back");
@@ -386,7 +386,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   test("S9's DNS-prefetch probe: a layer looks up no host name; the same document without its allowlist does", () => {
     const guarded = "fixture-dns-probe.example";
     const control = "fixture-dns-control-probe.example";
-    const r = smoke(electron(), [root], "dns", { CLOVER_TEST_UNGUARDED_LAYERS: "fixture-dns-control", CLOVER_SMOKE_WAIT_TEXT: `probe: ${guarded}|probe: ${control}`, CLOVER_SMOKE_SETTLE_MS: "3000" });
+    const r = smoke(electron(), [root], "dns", { MOSS_TEST_UNGUARDED_LAYERS: "fixture-dns-control", MOSS_SMOKE_WAIT_TEXT: `probe: ${guarded}|probe: ${control}`, MOSS_SMOKE_SETTLE_MS: "3000" });
     expectShell(r);
     const texts = (r.facts!.surfaces as { frames: Frame[] }[]).flatMap((x) => x.frames.map((f) => f.text));
     expect(texts, r.output).toContain(`probe: ${guarded}`);
@@ -403,21 +403,21 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   test.if(ci)("the unsigned packaged app draws the same shell", () => {
     const dist = join(root, "out", "dist");
     const candidates = process.platform === "darwin"
-      ? [join(dist, `mac-${process.arch}`, "Clover.app", "Contents", "MacOS", "Clover"), join(dist, "mac", "Clover.app", "Contents", "MacOS", "Clover")]
+      ? [join(dist, `mac-${process.arch}`, "MOSS Code.app", "Contents", "MacOS", "MOSS"), join(dist, "mac", "MOSS Code.app", "Contents", "MacOS", "MOSS")]
       : process.platform === "win32"
-        ? [join(dist, "win-unpacked", "Clover.exe")]
-        : [join(dist, process.arch === "x64" ? "linux-unpacked" : `linux-${process.arch}-unpacked`, "clover")];
+        ? [join(dist, "win-unpacked", "MOSS Code.exe")]
+        : [join(dist, process.arch === "x64" ? "linux-unpacked" : `linux-${process.arch}-unpacked`, "moss")];
     const executable = candidates.find((c) => existsSync(c));
     expect(executable, "run `bun run dist` first (the app job does)").toBeDefined();
-    // A packaged dist app ignores CLOVER_DAEMON_BIN: it finds its daemon in its own resources, where lane M packages
+    // A packaged dist app ignores MOSS_DAEMON_BIN: it finds its daemon in its own resources, where lane M packages
     // it, so the fake goes there.
     const resources = process.platform === "darwin" ? join(dirname(dirname(executable!)), "Resources") : join(dirname(executable!), "resources");
     mkdirSync(join(resources, "daemon"), { recursive: true });
-    copyFileSync(fakeCore, join(resources, "daemon", `clover-core${exe}`));
+    copyFileSync(fakeCore, join(resources, "daemon", `moss-core${exe}`));
     // This run's net log (asserted below) is a switch the packaged app refuses (debug-guard.ts), unless this test
     // build's resources carry the marker and the run sets the opt-in. The release build has neither.
-    writeFileSync(join(resources, "clover-test-build"), "");
-    const r = smoke(executable!, [], "default", { CLOVER_TEST_NETLOG: "1" });
+    writeFileSync(join(resources, "moss-test-build"), "");
+    const r = smoke(executable!, [], "default", { MOSS_TEST_NETLOG: "1" });
     expectShell(r);
     expect(r.facts!).toMatchObject({ packaged: true, version });
     expectBothStopped(r);
@@ -428,7 +428,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const h = home();
     const e = env(h, "default");
     const netlog = join(h, "net.json");
-    const app: ChildProcess = spawn(electron(), [root, "--clover-headless", `--log-net-log=${netlog}`], { env: e, stdio: ["ignore", "pipe", "pipe"] });
+    const app: ChildProcess = spawn(electron(), [root, "--moss-headless", `--log-net-log=${netlog}`], { env: e, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     app.stdout?.on("data", (d) => (output += d));
     app.stderr?.on("data", (d) => (output += d));
@@ -452,7 +452,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
       const second = Number(readFileSync(pidFile, "utf8"));
       expect(second).not.toBe(first);
       // The launcher's Quit: a second instance with --quit.
-      spawnSync(electron(), [root, "--clover-headless", "--quit"], { env: e, timeout: 30_000 });
+      spawnSync(electron(), [root, "--moss-headless", "--quit"], { env: e, timeout: 30_000 });
       const code = await Promise.race([exited, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 20_000))]);
       expect(code, output.slice(-4000)).toBe(0);
       await until(() => events().includes("daemon-quit"), 10_000, "the daemon stopped");

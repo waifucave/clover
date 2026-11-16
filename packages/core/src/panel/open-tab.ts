@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { z } from "zod";
-import type { PanelTabKind } from "@waifucave/clover-protocol";
+import type { PanelTabKind } from "@waifucave/moss-protocol";
 import type { SessionHub } from "../sessions/hub";
 
 // ================================================================================================

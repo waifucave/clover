@@ -5,13 +5,13 @@ import { migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serve
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, stopWithin, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testBuildStartRefusal, testKeychainRefusal, loadBundledManifest, loadPrebuiltHostBundles } from "@waifucave/clover-core";
-import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
-import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
+import { resolveMossHome, isDefaultMossHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, stopWithin, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveMossProfile, splitTag, sdkLocalMcpServers, installMossProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, mossCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testBuildStartRefusal, testKeychainRefusal, loadBundledManifest, loadPrebuiltHostBundles } from "@waifucave/moss-core";
+import type { CredentialRow, SecretStore, Settings } from "@waifucave/moss-core";
+import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/moss-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
 import { policySwitchNotes } from "./tui/policy-switch-notes";
 import { toolHeadFor } from "./tui/format";
-import { CloverClient } from "./client";
+import { MossClient } from "./client";
 import { checkCodeSession, filterCodeSessions, sessionModeMarker, sessionRuntimeMarker } from "./session-mode";
 import { applyEvent, isStalled, type WatchdogState } from "./watchdog";
 import { declineElicitationHeadless, HeadlessElicitationGate, type HeadlessCardEvent } from "./elicitation";
@@ -70,14 +70,14 @@ import { legacyFilesDoctorLine, sdkHomeDoctorSection } from "./doctor-legacy-fil
 import { makeEventBridge, type EventBridge } from "./tui/event-bridge";
 import { COMPUTER_WAKE_CLIENT_NAME, endedWords, stoppedWords, waitingWords, type ArmedWakeFacts } from "./wake-words";
 /** A build define (`compile:core`: false; `verify:fd-receiver`: true): the plugin-run probe route (#234). */
-declare const CLOVER_PLUGIN_RUN_PROBE: boolean | undefined;
+declare const MOSS_PLUGIN_RUN_PROBE: boolean | undefined;
 
 const AQUA = "\x1b[38;2;53;214;232m";
 
 /** WS-20: best-effort `splitTag` for DISPLAY only — the daemon-side producer of a `model`/`.id`
  *  string may not have migrated to the tag shape yet on an older/partially-migrated settings.json
  *  (L3.1 was schemas only), so this never throws: a non-tag-shaped value prints as-is rather than
- *  crashing a status/listing command. Never used on a WRITE path — `clover model <tag>` validates
+ *  crashing a status/listing command. Never used on a WRITE path — `moss model <tag>` validates
  *  the tag shape itself (`validateModelTag`) and refuses outright rather than tolerating a bare id. */
 function modelIdOf(m: string): string {
   try {
@@ -242,19 +242,19 @@ async function readLine(promptText: string): Promise<string | null> {
 
 async function getToken(): Promise<string> {
   const t = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
-  if (!t) throw new Error("no harness token — is the daemon installed? run: clover daemon run");
+  if (!t) throw new Error("no harness token — is the daemon installed? run: moss daemon run");
   return t;
 }
 
 /** The daemon's endpoint: `<home>/run/core.sock`, or the home's named pipe on Windows. */
 function socketPath(): string {
-  return resolveEndpoint(join(resolveCloverHome(), "run")).path;
+  return resolveEndpoint(join(resolveMossHome(), "run")).path;
 }
 
 const AUTOLAUNCH_POLL_MS = 200;
 const AUTOLAUNCH_TIMEOUT_MS = 8000;
 
-// Lifecycle Task 5, C-M1: the pure core behind "clover starts the daemon when it is down". The CLI
+// Lifecycle Task 5, C-M1: the pure core behind "moss starts the daemon when it is down". The CLI
 // starts the daemon through the OS (`startDaemonThroughOs`: launchctl, systemctl --user, schtasks), and
 // on a desktop the daemon starts the app itself (the pair, spec §3.1). The OS, the clock and the env
 // are seams, so the outcomes are unit-testable with no real process launches — connect() below wires
@@ -266,7 +266,7 @@ export async function ensureDaemonReachable(deps: {
   startThroughOs: () => Promise<DaemonStartResult>;
   sleepMs: (ms: number) => Promise<void>;
   now: () => number;
-  noAutoLaunch: boolean; // CLOVER_NO_AUTOLAUNCH — escape hatch for scripts/CI, always "no-app"
+  noAutoLaunch: boolean; // MOSS_NO_AUTOLAUNCH — escape hatch for scripts/CI, always "no-app"
 }): Promise<"already-up" | "launched" | "no-app"> {
   if (await deps.endpointUp()) return "already-up";
   if (deps.noAutoLaunch) return "no-app";
@@ -282,14 +282,14 @@ export async function ensureDaemonReachable(deps: {
     await deps.sleepMs(AUTOLAUNCH_POLL_MS);
   }
   if (await deps.endpointUp()) return "launched";
-  throw new Error("Clover isn't responding — start Clover, or run: clover daemon run");
+  throw new Error("MOSS isn't responding — start MOSS, or run: moss daemon run");
 }
 
 /**
  * WS-19 (fix round 4): the daemon door the credential verbs use WHEN ONE IS ALREADY LISTENING.
  *
- * Deliberately NOT `connect()` above: that one STARTS the daemon (and with it Clover.app) when the endpoint is missing,
- * which is exactly wrong here — `clover login` has always worked with no daemon, and launching the
+ * Deliberately NOT `connect()` above: that one STARTS the daemon (and with it MOSS Code.app) when the endpoint is missing,
+ * which is exactly wrong here — `moss login` has always worked with no daemon, and launching the
  * user's menu-bar app because they typed a credential command would be a surprise, not a service.
  * So this probes the socket file first and answers `undefined` for every failure: no socket, no
  * harness token yet, a stale socket whose daemon is gone. The caller then writes the store itself
@@ -300,7 +300,7 @@ async function openCredentialDaemonDoor(): Promise<CredentialRpcDoor | undefined
   try {
     const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
     if (!token) return undefined;
-    return await CloverClient.connect({ socketPath: socketPath(), token, clientName: "cli-credentials", onEvent: () => {} });
+    return await MossClient.connect({ socketPath: socketPath(), token, clientName: "cli-credentials", onEvent: () => {} });
   } catch {
     // A stale socket file, a daemon mid-shutdown, a Keychain that will not answer — all the same
     // answer: there is no daemon to tell, so do it in-process.
@@ -309,41 +309,41 @@ async function openCredentialDaemonDoor(): Promise<CredentialRpcDoor | undefined
 }
 
 /**
- * WS-21: the daemon door `clover plugin`'s write verbs use when one is already listening — same
+ * WS-21: the daemon door `moss plugin`'s write verbs use when one is already listening — same
  * no-auto-launch posture as `openCredentialDaemonDoor` just above (a plugin install/enable/etc.
- * must not launch Clover.app as a side effect), but returns the FULL `CloverClient` rather than
- * `CredentialRpcDoor`'s narrow `request`/`close` shape: `CloverClient` already declares every
+ * must not launch MOSS Code.app as a side effect), but returns the FULL `MossClient` rather than
+ * `CredentialRpcDoor`'s narrow `request`/`close` shape: `MossClient` already declares every
  * `PluginDoor` method (`client.ts`'s own `plugin*` methods), so it satisfies `plugin-cli.ts`'s
  * `PluginDoor` interface structurally, with no adapter shim.
  */
-async function openPluginDaemonDoor(): Promise<CloverClient | undefined> {
+async function openPluginDaemonDoor(): Promise<MossClient | undefined> {
   if (!(await endpointPresent(socketPath()))) return undefined;
   try {
     const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
     if (!token) return undefined;
-    return await CloverClient.connect({ socketPath: socketPath(), token, clientName: "cli-plugin", onEvent: () => {} });
+    return await MossClient.connect({ socketPath: socketPath(), token, clientName: "cli-plugin", onEvent: () => {} });
   } catch {
     return undefined;
   }
 }
 
-async function connect(name: string, onEvent: (e: any) => void = () => {}): Promise<CloverClient> {
+async function connect(name: string, onEvent: (e: any) => void = () => {}): Promise<MossClient> {
   await ensureDaemonReachable({
     endpointUp: () => endpointPresent(socketPath()),
     // The login unit serves the profile's default home; a CLI on any other home (a test's temp home)
     // never starts it.
     startThroughOs: async () => {
-      if (typeof __CLOVER_TEST_BUILD__ === "string") return "not-installed";
+      if (typeof __MOSS_TEST_BUILD__ === "string") return "not-installed";
       const spec = currentLoginSpec();
-      return isDefaultCloverHome(spec.home, spec.profile) ? startDaemonThroughOs(spec, bunRunner) : "not-installed";
+      return isDefaultMossHome(spec.home, spec.profile) ? startDaemonThroughOs(spec, bunRunner) : "not-installed";
     },
     sleepMs: (ms) => Bun.sleep(ms),
     now: () => Date.now(),
-    noAutoLaunch: !!process.env.CLOVER_NO_AUTOLAUNCH,
+    noAutoLaunch: !!process.env.MOSS_NO_AUTOLAUNCH,
   });
   // "no-app" falls through here unchanged: getToken() throws its existing dev-hint error below,
   // byte-identical to before this task (the daemon's actually-down error path is untouched).
-  return CloverClient.connect({ socketPath: socketPath(), token: await getToken(), clientName: name, onEvent });
+  return MossClient.connect({ socketPath: socketPath(), token: await getToken(), clientName: name, onEvent });
 }
 
 /** Phase 4b Task 2: connect + call `plugin.revokeToken` + close, for
@@ -358,9 +358,9 @@ async function revokePluginTokenViaDaemon(pluginId: string): Promise<void> {
   }
 }
 
-// Canned prompt for `clover init`: surveys the project and writes/updates a CLOVER.md at its root.
+// Canned prompt for `moss init`: surveys the project and writes/updates a MOSS.md at its root.
 export const INIT_PROMPT =
-  "Survey this project to understand it: read the README, the package manifest (package.json/pyproject/Cargo.toml/etc.), and skim the directory structure and a few key source files. Then write a concise CLOVER.md at the project root capturing: what this project is, how to build/test/run it, and the key conventions a new contributor should follow. If a CLOVER.md already exists, read it and UPDATE it rather than clobbering. Keep it tight and factual.";
+  "Survey this project to understand it: read the README, the package manifest (package.json/pyproject/Cargo.toml/etc.), and skim the directory structure and a few key source files. Then write a concise MOSS.md at the project root capturing: what this project is, how to build/test/run it, and the key conventions a new contributor should follow. If a MOSS.md already exists, read it and UPDATE it rather than clobbering. Keep it tight and factual.";
 
 // T5 — the dim "how to resume" hint printed after the Ink TUI exits (every Ink chat exit, not just a
 // resumed one — mirrors CC's own "you can resume this conversation" chrome). Pure + exported so
@@ -369,7 +369,7 @@ export const INIT_PROMPT =
 // module's `import.meta.main`-gated CLI dispatch. Uses the same raw DIM/RESET escapes (task-block.ts)
 // this file already writes with elsewhere, rather than a fresh Chalk instance, for one convention.
 export function formatResumeHint(sessionId: string): string {
-  return `${DIM}\nResume this session with:\n  clover resume ${sessionId}\n${RESET}`;
+  return `${DIM}\nResume this session with:\n  moss resume ${sessionId}\n${RESET}`;
 }
 
 // Chat mode Slice B1 Task 4: the TTY question_asked handler's per-question headline. `header` is
@@ -408,23 +408,23 @@ export function invisibleKeyCharWarning(key: string): string | null {
 // the client, the pinned-block/event machinery, the raw control-key listener, and the stall
 // watchdog ONCE, then either runs a SINGLE turn and exits (chat:false — `-p`, `resume id text`,
 // `init`; byte-identical to before on the non-TTY path, incl. exit codes + the bg grace-kill) or
-// LOOPS (chat:true — bare `clover`, `resume <id>` with no text): after each turn it erases the block
+// LOOPS (chat:true — bare `moss`, `resume <id>` with no text): after each turn it erases the block
 // and shows the `› ` composer, sends the next line, and watches again. ctrl+C / ctrl+D (EOF) tears
 // down cleanly (timers cleared, terminal restored, client closed).
 async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boolean; existingSessionId?: string; chat: boolean; printModel?: PrintModel }): Promise<void> {
   const { promptOverride, forceAuto = false, existingSessionId, chat, printModel } = opts;
 
   // Ink TUI cutover (Phase 3a Task 6): the new Ink renderer owns the interactive chat TTY unless the
-  // CLOVER_LEGACY_CLI escape hatch is set. Everything else — one-shot `-p`, piped/non-TTY, the escape
+  // MOSS_LEGACY_CLI escape hatch is set. Everything else — one-shot `-p`, piped/non-TTY, the escape
   // hatch — keeps the byte-identical legacy path below. Decided here (not just at the connect point)
   // because the legacy-only resize handler further down would otherwise paint the pinned block over
   // Ink's surface; `inkMode` gates it off. `bridge` is the connect-time `onEvent` sink that <App>
   // subscribes to (buffers attach-replay until the App mounts). Both are inert on the legacy path.
-  const inkMode = chat && !!process.stdout.isTTY && process.env.CLOVER_LEGACY_CLI !== "1";
+  const inkMode = chat && !!process.stdout.isTTY && process.env.MOSS_LEGACY_CLI !== "1";
   const bridge: EventBridge | null = inkMode ? makeEventBridge() : null;
 
   // -p teardown: mirrors Claude Code's headless grace-kill. Any bg tasks still running when the
-  // turn completes get a grace period (CLOVER_BG_PRINT_WAIT_MS, default 5000ms; 0 = poll until none
+  // turn completes get a grace period (MOSS_BG_PRINT_WAIT_MS, default 5000ms; 0 = poll until none
   // are running rather than racing a fixed timer) before we force-kill whatever remains. One-shot
   // (chat:false) only — chat mode leaves bg tasks running across turns and tears down via
   // teardownAndExit instead. Uses the enclosing closures (c/sessionId/wdTimer/spinnerTimer).
@@ -435,7 +435,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
     clearInterval(spinnerTimer); // stop the status-line spinner/elapsed tick — the turn is over
     const running = (await c.bgList(sessionId)).filter((t) => t.status === "running");
     if (running.length) {
-      const waitMs = Number(process.env.CLOVER_BG_PRINT_WAIT_MS ?? 5000);
+      const waitMs = Number(process.env.MOSS_BG_PRINT_WAIT_MS ?? 5000);
       if (waitMs > 0) {
         await new Promise((r) => setTimeout(r, waitMs));
       } else {
@@ -473,10 +473,10 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
     dim: (text) => `${DIM}${text}${RESET}`,
   });
   let sessionId = ""; // set below, before send() — turn_completed can only fire after that
-  // T5 resume replay: set ONLY on the Ink `clover resume <id>` route (see the `existingSessionId`
+  // T5 resume replay: set ONLY on the Ink `moss resume <id>` route (see the `existingSessionId`
   // branch below) — the seq `<App>`'s replay is expected to reach before it clears its "Resuming
   // conversation…" line. Left `undefined` on every other route (fresh session, legacy/
-  // CLOVER_LEGACY_CLI chat resume, non-TTY, resumeOneShot) — mountTui/`<App>` treat that exactly like
+  // MOSS_LEGACY_CLI chat resume, non-TTY, resumeOneShot) — mountTui/`<App>` treat that exactly like
   // today (no resuming line, ever).
   let resumeTargetSeq: number | undefined;
   // TUI renderer T5 (status chrome): the resume route's per-session model/effort overrides + the
@@ -485,7 +485,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
   // which IS the daemon's resolution for an override-less session (engine.ts `meta.model || base`).
   let sessionModelOverride: string | undefined;
   let sessionEffortOverride: string | undefined;
-  let initialActivity: import("@waifucave/clover-protocol").SessionActivity | undefined;
+  let initialActivity: import("@waifucave/moss-protocol").SessionActivity | undefined;
   const wd: WatchdogState = { turnRunning: false, toolsInFlight: 0, approvalsPending: 0, lastEventAt: Date.now() };
   let wdTimer: ReturnType<typeof setInterval> | undefined; // one session-long stall poll; cleared on teardown
   let exiting = false; // guard to ensure a single exit path wins (stall watchdog vs endHeadlessTurn vs ctrl+C)
@@ -760,7 +760,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
       turnRunning = true;
       refreshBlock(); // show the status line immediately rather than waiting up to 120ms for the first tick
     } else if ((e.type === "wake_armed" || e.type === "wake_ended") && e.sessionId === sessionId && e.threadId === "main") {
-      // ComputerV2 wake triggers: Clover waits for the user (and stops waiting) — a note each, from the pair.
+      // ComputerV2 wake triggers: MOSS waits for the user (and stops waiting) — a note each, from the pair.
       if (e.type === "wake_armed") {
         // The pair reaches an attached client twice (its session's fan-out and the global broadcast): said once.
         if (!wakeFacts.has(e.wakeId)) {
@@ -777,7 +777,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
       }
     } else if (e.type === "user_message" && e.clientName === COMPUTER_WAKE_CLIENT_NAME && e.sessionId === sessionId && e.threadId === "main") {
       // The daemon's wake: never shown as the user's words (its text is the model's) — what happened, as a note.
-      emit(`${DIM}↻ ${wakeNews.length === 0 ? "a wake trigger ended — Clover continues" : `Clover continued: ${wakeNews.splice(0).join("; ")}`}${RESET}\n`);
+      emit(`${DIM}↻ ${wakeNews.length === 0 ? "a wake trigger ended — MOSS continues" : `MOSS continued: ${wakeNews.splice(0).join("; ")}`}${RESET}\n`);
     } else if (e.type === "assistant_message") {
       if (sa.action === "close_then_print_full") { emit("\n"); emit(`${AQUA}${e.text}${RESET}\n`); }
       else if (sa.action === "print_full") emit(`${AQUA}${e.text}${RESET}\n`);
@@ -985,7 +985,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
         sessionId: string; scope: string; lastSeq: number; mode?: string;
         // T5 status chrome: the row's per-session model/effort overrides + derived activity
         // (SessionSummary fields the daemon already serves — methods.ts SessionListResult).
-        model?: string; effort?: string; activity?: import("@waifucave/clover-protocol").SessionActivity;
+        model?: string; effort?: string; activity?: import("@waifucave/moss-protocol").SessionActivity;
       }>;
     };
     const check = checkCodeSession(sessions, existingSessionId);
@@ -999,7 +999,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
     // 0 there replays the whole session so `<App>` can render the full transcript back (T5), with a
     // "Resuming conversation…" line shown until the replay catches up to `resumeTargetSeq` (the seq
     // this very attach() call returns — the daemon's current tip, regardless of the fromSeq it was
-    // asked to replay from). Every other route (legacy/CLOVER_LEGACY_CLI chat resume, non-TTY,
+    // asked to replay from). Every other route (legacy/MOSS_LEGACY_CLI chat resume, non-TTY,
     // resumeOneShot) keeps attaching from the tip — attaching from 0 there would replay every
     // historical turn_completed event on this session, tripping endHeadlessTurn immediately
     // (unchanged concern from before this task; inkMode is false on all of those routes anyway).
@@ -1019,7 +1019,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
     sessionId = created.sessionId;
     if (!created.trusted) {
       const wantTrust = process.argv.includes("--trust")
-        || (process.stdout.isTTY && !process.argv.includes("--no-trust") && (await askYesNo(`Do you trust the files in ${cwd}? Clover may grant directory access declared there. [y/N] `)));
+        || (process.stdout.isTTY && !process.argv.includes("--no-trust") && (await askYesNo(`Do you trust the files in ${cwd}? MOSS may grant directory access declared there. [y/N] `)));
       if (wantTrust) { await c.trustDir(cwd); console.log(`${DIM}trusted ${cwd}${RESET}`); }
     }
     await c.attach(sessionId);
@@ -1035,15 +1035,15 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
   // dangling legacy timers/listener and exit cleanly, exactly as the legacy chat teardown does.
   if (inkMode) {
     const { mountTui } = await import("./tui/mount");
-    // Welcome-banner data. Version: the unified @waifucave/clover-core CORE_VERSION (also correct for a
+    // Welcome-banner data. Version: the unified @waifucave/moss-core CORE_VERSION (also correct for a
     // compiled binary, which has no adjacent package.json to read). Model: the resolved provider
-    // model the daemon will use, read from settings.json (same source as `clover model`), best-effort
+    // model the daemon will use, read from settings.json (same source as `moss model`), best-effort
     // with an inert fallback so missing settings never blocks the interactive session.
     const version = CORE_VERSION;
     let model = "";
     let effort: string | undefined;
     try {
-      const s = loadSettings(join(resolveCloverHome(), "settings.json"));
+      const s = loadSettings(join(resolveMossHome(), "settings.json"));
       model = s.provider.model;
       effort = s.provider.reasoningEffort; // T5 status chrome: the global effort half
     } catch { /* keep fallback */ }
@@ -1094,7 +1094,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
   // Stall watchdog: one session-long poll. If the turn is running with nothing in flight (no tool
   // executing, no approval awaiting a human) and no event has landed for thresholdMs, assume the
   // turn is wedged and abort. Between turns (chat) wd.turnRunning is false, so it never false-fires.
-  const thresholdMs = Number(process.env.CLOVER_TURN_STALL_MS ?? 180000);
+  const thresholdMs = Number(process.env.MOSS_TURN_STALL_MS ?? 180000);
   wdTimer = setInterval(() => {
     if (isStalled(wd, Date.now(), thresholdMs)) {
       if (exiting) return;
@@ -1159,7 +1159,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
 //    switch statement's existing handling, untouched.
 //
 // Finding 4: the two "chat" outcomes reachable with NO existing session (bare / --auto / --plan)
-// require `isTTY` — a script piping into bare `clover` must keep seeing the original usage output,
+// require `isTTY` — a script piping into bare `moss` must keep seeing the original usage output,
 // not silently open a chat loop it can't drive. (`resume <id>` chat entry is pre-existing,
 // unflagged behavior and isn't gated here — see the fix report.)
 export type CliRoute =
@@ -1189,31 +1189,31 @@ export function routeCliInvocation(argv: string[], isTTY: boolean): CliRoute {
 
 // Plan-immunity Task 2, fix round 1 (whole-branch review, Important): the first pass gated
 // send/watch/resume but left EIGHT more session-targeted verbs reaching chat/dispatch sessions
-// with no check at all — proven live against a real daemon (`clover steer <chatId> "..."` injected
-// a real user_message into a chat session's JSONL; `clover steer <dispatchId> "..."` started a real
-// dispatch turn from the terminal; `clover bg peek <chatId> <task>` read chat output into the
+// with no check at all — proven live against a real daemon (`moss steer <chatId> "..."` injected
+// a real user_message into a chat session's JSONL; `moss steer <dispatchId> "..."` started a real
+// dispatch turn from the terminal; `moss bg peek <chatId> <task>` read chat output into the
 // terminal). Each verb's logic is pulled out of its `case` block into its own small function here —
 // client + params in, a plain discriminated result out, no console.log/process.exit inside — so the
-// gate is directly unit-testable with a fake `CloverClient` (`test/cli-verb-gates.test.ts`, same
+// gate is directly unit-testable with a fake `MossClient` (`test/cli-verb-gates.test.ts`, same
 // recorded-calls double as tui/commands.test.ts's own `makeClient`) instead of only reachable by
 // hand through a real CLI invocation. Every `case` block below stays a thin, obviously-correct
 // wrapper: resolve argv, call the route function, print/exit on the result exactly as before this
 // fix — the console output strings are byte-identical to what each case block printed previously.
-export async function runAddDirRoute(c: CloverClient, sessionId: string, path: string, persist: boolean): Promise<{ ok: true; roots: string[] } | { ok: false; message: string }> {
+export async function runAddDirRoute(c: MossClient, sessionId: string, path: string, persist: boolean): Promise<{ ok: true; roots: string[] } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
   return { ok: true, roots: await c.addDir(sessionId, path, persist) };
 }
 
-export async function runCdRoute(c: CloverClient, sessionId: string, cwd: string): Promise<{ ok: true; cwd: string } | { ok: false; message: string }> {
+export async function runCdRoute(c: MossClient, sessionId: string, cwd: string): Promise<{ ok: true; cwd: string } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
   return { ok: true, cwd: await c.setCwd(sessionId, cwd) };
 }
 
-export async function runSteerRoute(c: CloverClient, sessionId: string, text: string): Promise<{ ok: true; injected: boolean } | { ok: false; message: string }> {
+export async function runSteerRoute(c: MossClient, sessionId: string, text: string): Promise<{ ok: true; injected: boolean } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
@@ -1221,7 +1221,7 @@ export async function runSteerRoute(c: CloverClient, sessionId: string, text: st
   return { ok: true, injected: r.injected };
 }
 
-export async function runInterruptRoute(c: CloverClient, sessionId: string): Promise<{ ok: true; wasRunning: boolean } | { ok: false; message: string }> {
+export async function runInterruptRoute(c: MossClient, sessionId: string): Promise<{ ok: true; wasRunning: boolean } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
@@ -1229,7 +1229,7 @@ export async function runInterruptRoute(c: CloverClient, sessionId: string): Pro
   return { ok: true, wasRunning: r.wasRunning };
 }
 
-export async function runCompactRoute(c: CloverClient, sessionId: string): Promise<{ ok: true; compacted: boolean; uptoSeq: number; summaryChars: number; requested?: boolean } | { ok: false; message: string }> {
+export async function runCompactRoute(c: MossClient, sessionId: string): Promise<{ ok: true; compacted: boolean; uptoSeq: number; summaryChars: number; requested?: boolean } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
@@ -1237,14 +1237,14 @@ export async function runCompactRoute(c: CloverClient, sessionId: string): Promi
   return { ok: true, ...r };
 }
 
-export async function runBgListRoute(c: CloverClient, sessionId: string): Promise<{ ok: true; tasks: Array<{ taskId: string; command: string; status: string; exitCode: number | null; startedAt: number }> } | { ok: false; message: string }> {
+export async function runBgListRoute(c: MossClient, sessionId: string): Promise<{ ok: true; tasks: Array<{ taskId: string; command: string; status: string; exitCode: number | null; startedAt: number }> } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
   return { ok: true, tasks: await c.bgList(sessionId) };
 }
 
-export async function runBgPeekRoute(c: CloverClient, sessionId: string, taskId: string): Promise<{ ok: true; chunk: string; status: string; exitCode: number | null } | { ok: false; message: string }> {
+export async function runBgPeekRoute(c: MossClient, sessionId: string, taskId: string): Promise<{ ok: true; chunk: string; status: string; exitCode: number | null } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
@@ -1252,7 +1252,7 @@ export async function runBgPeekRoute(c: CloverClient, sessionId: string, taskId:
   return { ok: true, ...r };
 }
 
-export async function runBgKillRoute(c: CloverClient, sessionId: string, taskId: string): Promise<{ ok: true } | { ok: false; message: string }> {
+export async function runBgKillRoute(c: MossClient, sessionId: string, taskId: string): Promise<{ ok: true } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
@@ -1261,11 +1261,11 @@ export async function runBgKillRoute(c: CloverClient, sessionId: string, taskId:
 }
 
 /**
- * WS-19 (W19-11) — `clover credentials`'s decision, extracted from its `case` block exactly the way
+ * WS-19 (W19-11) — `moss credentials`'s decision, extracted from its `case` block exactly the way
  * the eight session verbs above were: store + args in, a plain discriminated result out, nothing
  * printed and nothing exited. That is what makes it testable on a `FileSecretStore` in a temp dir —
  * the `case` block's real `KeychainSecretStore` can never be used from a test (`keychainService()`
- * resolves the REAL `com.waifucave.clover.core` service when no home is passed, and these tests must never
+ * resolves the REAL `com.waifucave.moss.core` service when no home is passed, and these tests must never
  * touch it).
  *
  * `readKey` is injected for the same reason: the real one is `readSecret`'s masked raw-mode TTY
@@ -1280,7 +1280,7 @@ export async function runBgKillRoute(c: CloverClient, sessionId: string, taskId:
  * WS-19 (fix round 4) — THE CLI's CREDENTIAL DOORS GO THROUGH THE DAEMON WHEN ONE IS LISTENING.
  *
  * Every credential verb here used to write the Keychain IN-PROCESS. That is still the right
- * fallback — `clover login` has always worked with no daemon, and a credential door whose first
+ * fallback — `moss login` has always worked with no daemon, and a credential door whose first
  * move is to reach the daemon is useless in exactly the state a user reaches for it — but it left
  * the daemon ignorant of the change. A live child's `Options.provider.authRef` is fixed at spawn, so
  * a key added from the terminal did not reach a session already running until the 900 s idle reap:
@@ -1299,10 +1299,10 @@ export async function runBgKillRoute(c: CloverClient, sessionId: string, taskId:
  * THE TOOL ROWS: `web-search` (the legacy Brave key) is read by NOTHING since the 2026-09-18 web-tools
  * ruling retired `web_search` — the row survives only so a stored key can be REMOVED, and
  * `credential.set` refuses it typed. **`exa` is the live one** and it is no longer read per call either
- * (2026-09-18, agent SDK 0.0.17): a Clover child's `Options.web.search.authRef` names it,
+ * (2026-09-18, agent SDK 0.0.17): a MOSS child's `Options.web.search.authRef` names it,
  * and whether it exists decides chat's and dispatch's tool surface — so it goes through the daemon
- * exactly like a provider key, and `evictSessionsForCredential` replaces every Clover-leg child for
- * it. Both still fall back to an in-process write with no daemon, so `clover login --exa-key` keeps
+ * exactly like a provider key, and `evictSessionsForCredential` replaces every MOSS-leg child for
+ * it. Both still fall back to an in-process write with no daemon, so `moss login --exa-key` keeps
  * working on a machine whose daemon is down; the printed note says which happened.
  */
 export interface CredentialRpcDoor {
@@ -1327,7 +1327,7 @@ export async function writeCredentialThroughDaemonOrLocally(
   secrets: SecretStore,
   openDaemon?: () => Promise<CredentialRpcDoor | undefined>,
 ): Promise<CredentialWriteResult> {
-  const { METHODS } = await import("@waifucave/clover-protocol");
+  const { METHODS } = await import("@waifucave/moss-protocol");
   const door = openDaemon === undefined ? undefined : await openDaemon();
   if (door !== undefined) {
     try {
@@ -1347,7 +1347,7 @@ export async function writeCredentialThroughDaemonOrLocally(
       try { door.close(); } catch { /* already closed */ }
     }
   }
-  const { setCredential, removeCredential } = await import("@waifucave/clover-core");
+  const { setCredential, removeCredential } = await import("@waifucave/moss-core");
   if (op.kind === "set") {
     const refusal = await setCredential(secrets, op.providerId, op.apiKey);
     return refusal === undefined
@@ -1363,7 +1363,7 @@ export async function writeCredentialThroughDaemonOrLocally(
 /**
  * B-1 (2026-09-19): tell a LIVE daemon that the Keychain moved under it.
  *
- * `clover login` (the ChatGPT/Codex OAuth flow) and bare `clover logout` write
+ * `moss login` (the ChatGPT/Codex OAuth flow) and bare `moss logout` write
  * `codex-oauth:default` IN-PROCESS — deliberately, and they always have: a login door whose first move
  * is to reach the daemon is useless in exactly the state a user reaches for it. They cannot go through
  * `credential.set`/`credential.remove` either, since that door takes an API-KEY string and this material
@@ -1387,7 +1387,7 @@ export async function notifyDaemonOfOutOfBandCredentialChange(
   const door = await openDaemon();
   if (door === undefined) return false;
   try {
-    const { METHODS } = await import("@waifucave/clover-protocol");
+    const { METHODS } = await import("@waifucave/moss-protocol");
     await door.request(METHODS.credentialList, {});
     return true;
   } catch {
@@ -1419,11 +1419,11 @@ export async function runCredentialsRoute(
   readKey: () => Promise<string>,
   openDaemon?: () => Promise<CredentialRpcDoor | undefined>,
 ): Promise<CredentialsRouteResult> {
-  const { credentialRows, CredentialStoreUnavailable } = await import("@waifucave/clover-core");
+  const { credentialRows, CredentialStoreUnavailable } = await import("@waifucave/moss-core");
   switch (verb ?? "list") {
     case "list":
       // READ-ONLY, so it stays in-process on purpose: it needs no daemon, it changes nothing, and
-      // `clover credentials` must answer on a machine whose daemon is down.
+      // `moss credentials` must answer on a machine whose daemon is down.
       try {
         return { ok: true, kind: "list", rows: await credentialRows(secrets, home) };
       } catch (err) {
@@ -1434,21 +1434,21 @@ export async function runCredentialsRoute(
         throw err;
       }
     case "set": {
-      if (!providerId) return { ok: false, message: "usage: clover credentials set <providerId>" };
+      if (!providerId) return { ok: false, message: "usage: moss credentials set <providerId>" };
       const written = await writeCredentialThroughDaemonOrLocally({ kind: "set", providerId, apiKey: await readKey() }, secrets, openDaemon);
       return written.ok ? { ok: true, kind: "set", providerId, via: written.via } : written;
     }
     case "remove": {
-      if (!providerId) return { ok: false, message: "usage: clover credentials remove <providerId>" };
+      if (!providerId) return { ok: false, message: "usage: moss credentials remove <providerId>" };
       const written = await writeCredentialThroughDaemonOrLocally({ kind: "remove", providerId }, secrets, openDaemon);
       return written.ok ? { ok: true, kind: "remove", providerId, removed: written.removed === true, via: written.via } : written;
     }
     default:
-      return { ok: false, message: "usage: clover credentials [list] | credentials set <providerId> | credentials remove <providerId>" };
+      return { ok: false, message: "usage: moss credentials [list] | credentials set <providerId> | credentials remove <providerId>" };
   }
 }
 
-/** WS-19 (W19-11): `clover logout --openai`, extracted for the same reason. Clears BOTH the material
+/** WS-19 (W19-11): `moss logout --openai`, extracted for the same reason. Clears BOTH the material
  *  record and the legacy raw record — the same pair the bare Codex sign-out clears for its own
  *  provider — so a rotated-away key is never left live under the old name. */
 export async function runLogoutOpenAiRoute(
@@ -1476,14 +1476,14 @@ function currentDaemonPlatform(): "darwin" | "linux" | "win32" {
 /** This computer's login spec for the running binary and the current home and profile. `app` is the
  *  app's executable (macOS: its bundle), which the installer passes with `--app`. */
 function currentLoginSpec(app?: string): LoginSpec {
-  const home = resolveCloverHome();
+  const home = resolveMossHome();
   return {
-    os: currentDaemonPlatform(), bin: process.execPath, home, logsDir: join(home, "logs"), profile: resolveCloverProfile(),
+    os: currentDaemonPlatform(), bin: process.execPath, home, logsDir: join(home, "logs"), profile: resolveMossProfile(),
     ...(app ? { app: { bin: resolve(app) } } : {}),
   };
 }
 
-const AUTOSTART_USAGE = "usage: clover autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path to the app>]";
+const AUTOSTART_USAGE = "usage: moss autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path to the app>]";
 
 /** Whether a process's executable is the daemon's binary (`bin`, or this CLI's own when they're one binary). */
 function isDaemonImage(image: string | null, bin: string): boolean {
@@ -1507,7 +1507,7 @@ async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
     async requestQuit() {
       try {
         const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
-        if (token) { await cloverCall(socketPath(), { role: "cli", token, clientName: "clover-autostart" }, "pair.quit", { handOver: false }); return true; }
+        if (token) { await mossCall(socketPath(), { role: "cli", token, clientName: "moss-autostart" }, "pair.quit", { handOver: false }); return true; }
       } catch { /* an older daemon, or a token it won't take: fall back */ }
       if (spec.os === "win32" || !(pid > 0)) return false;
       // Only a process running the daemon's binary is signalled (review M5): a pid in the lock file may have
@@ -1531,15 +1531,15 @@ async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
   return "still running";
 }
 
-/** `clover autostart enable|disable|stop|remove|start|status [--json] [--app <path>]`: login start on this OS. The
- *  definitions run `clover-core supervise` on the running binary (`process.execPath`); lane M's
+/** `moss autostart enable|disable|stop|remove|start|status [--json] [--app <path>]`: login start on this OS. The
+ *  definitions run `moss-core supervise` on the running binary (`process.execPath`); lane M's
  *  installer invokes the installed binary, and passes the app's path with `--app` so the daemon can
  *  start the app (spec §3.1). `disable` turns off only the login trigger: the running pair keeps
  *  running and either side can still start the other. `remove` is for an uninstaller. */
 async function runAutostartCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
   // A test-marked build (scripts/test-build.ts) never registers a login item or starts anything through the OS.
-  if (typeof __CLOVER_TEST_BUILD__ === "string") { console.error(TEST_BUILD_NO_OS_START); process.exitCode = 1; return; }
-  // `start` is `clover daemon start` under the name the app calls (E-M1): through the OS, never as
+  if (typeof __MOSS_TEST_BUILD__ === "string") { console.error(TEST_BUILD_NO_OS_START); process.exitCode = 1; return; }
+  // `start` is `moss daemon start` under the name the app calls (E-M1): through the OS, never as
   // the caller's child.
   if (sub === "start") { await runDaemonStart(); return; }
   const appAt = rest.indexOf("--app");
@@ -1551,8 +1551,8 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
   const spec: LoginSpec = winUser ? { ...base, winUser } : base;
   // One login unit per profile, serving the profile's default home: a unit for another home would
   // take over the profile's label.
-  if (sub !== "status" && sub !== undefined && !isDefaultCloverHome(spec.home, spec.profile)) {
-    console.error(`autostart serves the ${spec.profile} profile's default home; CLOVER_HOME is ${spec.home}`);
+  if (sub !== "status" && sub !== undefined && !isDefaultMossHome(spec.home, spec.profile)) {
+    console.error(`autostart serves the ${spec.profile} profile's default home; MOSS_HOME is ${spec.home}`);
     process.exitCode = 1;
     return;
   }
@@ -1560,9 +1560,9 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
   const os = liveLoginOsDeps();
   switch (sub ?? "status") {
     case "enable": {
-      // The unit must run a real `clover-core` binary; under `bun src/main.ts` the executable is bun.
+      // The unit must run a real `moss-core` binary; under `bun src/main.ts` the executable is bun.
       if (/[\\/]bun(\.exe)?$/.test(process.execPath)) {
-        console.error("autostart enable needs the compiled clover-core binary; in dev, run the daemon with: clover daemon run");
+        console.error("autostart enable needs the compiled moss-core binary; in dev, run the daemon with: moss daemon run");
         process.exitCode = 1;
         return;
       }
@@ -1577,7 +1577,7 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
       const stopped = rest.includes("--stop") ? await stopRunningDaemon(spec) : null;
       await loginDisable(spec, os);
       console.log(stopped === null
-        ? `autostart disabled (${spec.profile}); Clover can still be started, and keeps running`
+        ? `autostart disabled (${spec.profile}); MOSS can still be started, and keeps running`
         : `autostart disabled (${spec.profile}); the daemon: ${stopped}`);
       break;
     }
@@ -1614,34 +1614,34 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
   }
 }
 
-/** `clover daemon start`: start the daemon through the OS (never as this process's child) and wait
+/** `moss daemon start`: start the daemon through the OS (never as this process's child) and wait
  *  until it answers. The app's side runs this when no daemon answers (spec §3.1). */
 async function runDaemonStart(): Promise<void> {
-  if (typeof __CLOVER_TEST_BUILD__ === "string") { console.error(TEST_BUILD_NO_OS_START); process.exitCode = 1; return; }
+  if (typeof __MOSS_TEST_BUILD__ === "string") { console.error(TEST_BUILD_NO_OS_START); process.exitCode = 1; return; }
   const path = socketPath();
-  if (await endpointAnswers(path)) { console.log("clover-core is already running"); return; }
+  if (await endpointAnswers(path)) { console.log("moss-core is already running"); return; }
   const spec = currentLoginSpec();
-  if (!isDefaultCloverHome(spec.home, spec.profile)) {
-    console.error(`the login unit serves the ${spec.profile} profile's default home; for CLOVER_HOME ${spec.home} run: clover daemon run`);
+  if (!isDefaultMossHome(spec.home, spec.profile)) {
+    console.error(`the login unit serves the ${spec.profile} profile's default home; for MOSS_HOME ${spec.home} run: moss daemon run`);
     process.exitCode = 1;
     return;
   }
   const r = await startDaemonThroughOs(spec, bunRunner);
   if (r === "not-installed") {
-    console.error("clover-core has no login unit for this profile; run: clover autostart enable (or, in dev: clover daemon run)");
+    console.error("moss-core has no login unit for this profile; run: moss autostart enable (or, in dev: moss daemon run)");
     process.exitCode = 1;
     return;
   }
   const deadline = Date.now() + AUTOLAUNCH_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (await endpointAnswers(path)) { console.log("clover-core started"); return; }
+    if (await endpointAnswers(path)) { console.log("moss-core started"); return; }
     await Bun.sleep(AUTOLAUNCH_POLL_MS);
   }
-  console.error(r === "failed" ? "the OS refused to start clover-core" : "clover-core did not answer in time");
+  console.error(r === "failed" ? "the OS refused to start moss-core" : "moss-core did not answer in time");
   process.exitCode = 1;
 }
 
-/** `clover-core sandbox setup|remove|status`: Windows Bash under the fence (lane C, C-M2 part 2).
+/** `moss-core sandbox setup|remove|status`: Windows Bash under the fence (lane C, C-M2 part 2).
  *  `setup` is idempotent, `remove` exits 0 when nothing is left, `status` never elevates. Exits 0
  *  on done, 2 when not elevated, 3 on a launcher hash mismatch (both fail closed). */
 async function runSandboxCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
@@ -1683,8 +1683,8 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
     markerAllowsSetup,
     markerAllowsRemove,
     minimalChildEnv,
-  } = await import("@waifucave/clover-core");
-  const usage = "usage: clover-core sandbox setup [--force]|remove|status [--json]";
+  } = await import("@waifucave/moss-core");
+  const usage = "usage: moss-core sandbox setup [--force]|remove|status [--json]";
   if (process.platform !== "win32") {
     console.error("sandbox setup runs on Windows only");
     process.exitCode = 1;
@@ -1742,7 +1742,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       // setup and remove run from the installer's protected copy (Addendum 8): the per-user install
       // folder is user-writable, so running from there could launch a swapped binary (TOCTOU).
       if (!fromProtected || targetSid === null) {
-        console.error("sandbox setup runs from the protected copy %ProgramFiles%\\Clover Sandbox\\<your SID>\\clover-core.exe (lane M's installer puts it there)");
+        console.error("sandbox setup runs from the protected copy %ProgramFiles%\\MOSS Sandbox\\<your SID>\\moss-core.exe (lane M's installer puts it there)");
         process.exitCode = 1;
         return;
       }
@@ -1766,7 +1766,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       const { dirname, join } = await import("node:path");
       // Claim the markers home for admins (should-fix, like lane M's protected copy): a folder
       // owned by a non-admin fails setup closed instead of inheriting a squatted DACL.
-      const markersRoot = join(programData, "Clover Sandbox");
+      const markersRoot = join(programData, "MOSS Sandbox");
       for (const dir of [markersRoot, join(markersRoot, "markers")]) {
         const claim = await run([...claimDirArgs(dir)]);
         if (claim.code !== 0) {
@@ -1842,7 +1842,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       // Record this install for the next setup/remove (ruling 3): owner plus every pool member.
       await mkdir(dirname(markerFile), { recursive: true });
       await writeFile(markerFile, formatInstallMarker({ version: 2, ownerSid, members }), "utf8");
-      console.log("Bash is set up under Clover's fence");
+      console.log("Bash is set up under MOSS's fence");
       return;
     }
     case "remove": {
@@ -1853,7 +1853,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         return;
       }
       if (!fromProtected || targetSid === null) {
-        console.error("sandbox remove runs from the protected copy %ProgramFiles%\\Clover Sandbox\\<your SID>\\clover-core.exe (lane M's installer puts it there)");
+        console.error("sandbox remove runs from the protected copy %ProgramFiles%\\MOSS Sandbox\\<your SID>\\moss-core.exe (lane M's installer puts it there)");
         process.exitCode = 1;
         return;
       }
@@ -1944,7 +1944,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       const problem = launcherProblem(launcher, arch);
       if (problem !== null) {
         if (rest.includes("--json")) console.log(JSON.stringify({ ready: false, reason: "launcher-missing-or-unpinned" }));
-        else console.log("Bash isn't set up under Clover's fence: the launcher is missing or unpinned");
+        else console.log("Bash isn't set up under MOSS's fence: the launcher is missing or unpinned");
         process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
         return;
       }
@@ -2008,7 +2008,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         console.log(JSON.stringify({ ready, reason, user: firstUser, members }));
         return;
       }
-      console.log(ready ? "Bash is set up under Clover's fence" : `Bash isn't set up under Clover's fence: ${reason ?? "unknown"}`);
+      console.log(ready ? "Bash is set up under MOSS's fence" : `Bash isn't set up under MOSS's fence: ${reason ?? "unknown"}`);
       return;
     }
     default:
@@ -2017,7 +2017,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
   }
 }
 
-/** `clover-core supervise`: start the daemon and restart it after a crash; a clean stop ends the loop. */
+/** `moss-core supervise`: start the daemon and restart it after a crash; a clean stop ends the loop. */
 async function runSupervise(): Promise<void> {
   // The logon task's fallback (a server on Windows) may have started this as `<bin>.old.exe`: each start of the daemon
   // takes `<bin>` once that is back (self-update.ts's healFromOld), so `bin` is asked again at every start.
@@ -2036,7 +2036,7 @@ async function runSupervise(): Promise<void> {
         try {
           const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
           if (token) {
-            await cloverCall(socketPath(), { role: "cli", token, clientName: "clover-supervise" }, "pair.quit", { handOver: false });
+            await mossCall(socketPath(), { role: "cli", token, clientName: "moss-supervise" }, "pair.quit", { handOver: false });
             if (await Promise.race([childExited.then(() => true), Bun.sleep(5_000).then(() => false)])) { wake?.(); return; }
           }
         } catch { /* no token, or no answer: the kill below */ }
@@ -2084,9 +2084,9 @@ async function ownManifestSha256(): Promise<string | undefined> {
 }
 
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
-declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+declare const __MOSS_TEST_BUILD__: string | false | undefined;
 /** What a test-marked build says to `autostart` and `daemon start`. */
-const TEST_BUILD_NO_OS_START = "clover-core: a test-marked build never registers a login item or starts through the OS: run `clover-core daemon run` on a temp home";
+const TEST_BUILD_NO_OS_START = "moss-core: a test-marked build never registers a login item or starts through the OS: run `moss-core daemon run` on a temp home";
 
 if (import.meta.main) {
   // Lane M's door audit: a release build takes no TLS trust from its environment (verification off, extra CAs, read from
@@ -2097,7 +2097,7 @@ if (import.meta.main) {
     const raw = DIST_BUILD ? rawEnvironment() ?? [] : [];
     // A test-marked build (scripts/test-build.ts, compile-time only) takes a test's keychain file and temp home where a
     // release refuses them, and refuses to start without them; a real build compiles this branch out.
-    const keychain = typeof __CLOVER_TEST_BUILD__ === "string" ? testBuildStartRefusal(process.env, raw) : homeRefusal() ?? testKeychainRefusal(process.env, raw);
+    const keychain = typeof __MOSS_TEST_BUILD__ === "string" ? testBuildStartRefusal(process.env, raw) : homeRefusal() ?? testKeychainRefusal(process.env, raw);
     const refusal = tlsEnvRefusal(process.env, undefined, raw) ?? keychain ?? dyldRefusal(raw);
     if (refusal !== undefined) {
       process.stderr.write(`${refusal}\n`);
@@ -2145,26 +2145,26 @@ if (import.meta.main) {
     process.exit(0);
   }
   // WS-23: the RUNTIME's workflow worker (COMPILED path) — an embedded chat/dispatch session's Workflow
-  // tool spawns `<clover-core> __runtime-workflow-worker --bridge` under the seatbelt
+  // tool spawns `<moss-core> __runtime-workflow-worker --bridge` under the seatbelt
   // (`runtime-sdk/embedded.ts`'s `runtimeWorkflowWorkerCommand`). POSITIONAL, like the probes below
   // (review F-11), and checked FIRST: it is a different program from the daemon's own
   // `__workflow-worker` below, with a different bridge.
   if (process.argv[2] === RUNTIME_WORKFLOW_WORKER_ARG) {
     await runRuntimeWorkflowWorker();
   }
-  // K-M1: the agents' MCP bridge, which an ACP agent starts as `<clover-core> bridge` (`bridgeCommand()`). POSITIONAL,
+  // K-M1: the agents' MCP bridge, which an ACP agent starts as `<moss-core> bridge` (`bridgeCommand()`). POSITIONAL,
   // like the workers here, and checked before anything else: it speaks MCP on stdio and exits when the agent closes it.
   if (process.argv[2] === "bridge") {
     const { bridgeMain } = await import("./bridge-entry");
     await bridgeMain();
   }
-  // K-M3b: Clover's coding agent for an outside ACP client (Zed and others), which starts `<clover-core> code-agent`
+  // K-M3b: MOSS's coding agent for an outside ACP client (Zed and others), which starts `<moss-core> code-agent`
   // as its agent server: a relay of ACP lines between its stdio and the daemon's endpoint. POSITIONAL, like `bridge`.
   if (process.argv[2] === "code-agent") {
     const { codeAgentMain } = await import("../../core/src/agents/code-agent/relay");
     await codeAgentMain(socketPath());
   }
-  // Workflow worker subprocess (COMPILED path): the daemon self-spawns `<clover-core> __workflow-worker`
+  // Workflow worker subprocess (COMPILED path): the daemon self-spawns `<moss-core> __workflow-worker`
   // already wrapped in sandbox-exec; THIS process is the sandboxed worker. Route straight to the entry
   // and never fall through to daemon-connect / TUI. (In dev/test the runtime spawns the entry .ts
   // directly, so this branch is only exercised by the compiled binary.)
@@ -2173,9 +2173,9 @@ if (import.meta.main) {
     await new Promise(() => {});   // entry drives itself to process.exit(); block everything below
   }
   // ComputerV2 (2026-10-08): the per-session AUTOMATION worker (COMPILED path) — the daemon self-spawns
-  // `<clover-core> __automation-worker` inside the workflow seatbelt; THIS process is the sandboxed worker,
+  // `<moss-core> __automation-worker` inside the workflow seatbelt; THIS process is the sandboxed worker,
   // and it refuses (exit 77) before reading input outside a sandbox that denies it the Keychain. POSITIONAL,
-  // like the probes below, so `clover -p "__automation-worker"` stays a prompt.
+  // like the probes below, so `moss -p "__automation-worker"` stays a prompt.
   if (process.argv[2] === AUTOMATION_WORKER_ARG) {
     runAutomationWorker();
     await new Promise(() => {});   // the worker exits when the daemon closes its stdin
@@ -2183,17 +2183,17 @@ if (import.meta.main) {
 
   // Compiled-artifact probe (P8b-18): proves runtime-state.db is created/migrated INSIDE the
   // compiled binary with an injected FileSecretStore — never the Keychain, never a real home.
-  // Reached only by scripts/verify-runtime-state-compiled.ts. CLOVER_HOME must be set to a temp dir
-  // by the caller; the probe refuses without it. Static, and importing from the `@waifucave/clover-core`
+  // Reached only by scripts/verify-runtime-state-compiled.ts. MOSS_HOME must be set to a temp dir
+  // by the caller; the probe refuses without it. Static, and importing from the `@waifucave/moss-core`
   // barrel exactly like `runWorkflowSubprocess` above — that is the import shape that survives
   // `bun build --compile` (a dynamic import keyed on a string does not resolve in $bunfs).
   //
   // POSITIONAL, not `argv.includes` (review F-11): `includes` matches the token anywhere, so
-  // `clover -p "__runtime-state-probe"` would boot the probe instead of running the prompt. `argv[2]`
+  // `moss -p "__runtime-state-probe"` would boot the probe instead of running the prompt. `argv[2]`
   // is the first user argument in BOTH the dev (`bun main.ts …`) and compiled ($bunfs) shapes —
   // the same index the CLI's own `process.argv.slice(2)` routing assumes below. The pre-existing
   // `__workflow-worker` branch above keeps its `includes` shape; it is not this batch's to change.
-  // 0.120.1: the compiled-binary `bun:ffi` probe, run by release.ts on the SIGNED clover-core. `bun:ffi`'s
+  // 0.120.1: the compiled-binary `bun:ffi` probe, run by release.ts on the SIGNED moss-core. `bun:ffi`'s
   // `dlopen` builds its call trampolines at run time in memory that is not MAP_JIT, which the hardened
   // runtime kills (SIGKILL, "Code Signature Invalid") unless the binary carries
   // `allow-unsigned-executable-memory` — 0.120.0 shipped without it and the daemon crash-looped at its
@@ -2222,7 +2222,7 @@ if (import.meta.main) {
     await runDevKeychainAdopt();
   }
   if (process.argv[2] === "__runtime-state-probe") {
-    const result = await runRuntimeStateProbe({ home: process.env.CLOVER_HOME });
+    const result = await runRuntimeStateProbe({ home: process.env.MOSS_HOME });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exit(result.ok ? 0 : 1);
   }
@@ -2230,24 +2230,24 @@ if (import.meta.main) {
   // same argv[2] shape and the same reasons as `__runtime-state-probe` above. Resolves both runtime
   // ladders from THIS binary's execPath (the bundle rung is `<dirname(execPath)>/runtimes/…`).
   //
-  // Whole-branch review Nit 3: `home` used to be `process.env.CLOVER_HOME ?? ""` — an unset
-  // CLOVER_HOME probed a RELATIVE empty-string home (inert: no rung under it ever resolves, but a
-  // silently wrong answer rather than the CLI's own normal default). `resolveCloverHome()` is the
-  // same "env var or else `~/.clover`" fallback every OTHER command here already uses, and it is
-  // PURE (`process.env.CLOVER_HOME ?? join(homedir(), ".clover")`, `clover-dir.ts`) — no directory
-  // creation, no side effect (that's `bootstrapCloverDir`'s separate job) — so calling it here does
+  // Whole-branch review Nit 3: `home` used to be `process.env.MOSS_HOME ?? ""` — an unset
+  // MOSS_HOME probed a RELATIVE empty-string home (inert: no rung under it ever resolves, but a
+  // silently wrong answer rather than the CLI's own normal default). `resolveMossHome()` is the
+  // same "env var or else `~/.moss`" fallback every OTHER command here already uses, and it is
+  // PURE (`process.env.MOSS_HOME ?? join(homedir(), ".moss")`, `moss-dir.ts`) — no directory
+  // creation, no side effect (that's `bootstrapMossDir`'s separate job) — so calling it here does
   // NOT touch the user's real home in a test: `scripts/verify-runtimes-compiled.ts` sets
-  // `CLOVER_HOME` to a temp dir before spawning this route, so `resolveCloverHome()` returns that
-  // temp dir, never `~/.clover`, exactly as `__runtime-state-probe`'s own neighboring route already
+  // `MOSS_HOME` to a temp dir before spawning this route, so `resolveMossHome()` returns that
+  // temp dir, never `~/.moss`, exactly as `__runtime-state-probe`'s own neighboring route already
   // relies on for the identical reason.
   if (process.argv[2] === "__runtimes-probe") {
-    const result = await runRuntimesProbe({ execPath: process.execPath, home: resolveCloverHome(), env: process.env });
+    const result = await runRuntimesProbe({ execPath: process.execPath, home: resolveMossHome(), env: process.env });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exit(result.ok ? 0 : 1);
   }
   // WS-23: the compiled-binary EMBEDDED probe (`scripts/verify-embedded-compiled.ts`) — one chat turn
-  // through a real daemon on a temp CLOVER_HOME with a FileSecretStore, the session in a Bun Worker
-  // built from the second compile entrypoint. Same argv[2] shape and the same CLOVER_HOME rule as
+  // through a real daemon on a temp MOSS_HOME with a FileSecretStore, the session in a Bun Worker
+  // built from the second compile entrypoint. Same argv[2] shape and the same MOSS_HOME rule as
   // `__runtime-state-probe` (it refuses without one; it never touches a real home or the Keychain).
   // M1: bun:ffi in the compiled binary on every OS (./ffi-probe.ts), and the bridge's peer-pid check through it;
   // `build:daemon --smoke` runs both.
@@ -2258,11 +2258,11 @@ if (import.meta.main) {
     process.stdout.write(`${r.line}\n${peer.line}\n`);
     process.exit(r.ok && peer.ok ? 0 : 1);
   }
-  // #234's checks 4 and 5: a plugin host started inside the compiled core runs on `clover-plugin-bun`, guarded
+  // #234's checks 4 and 5: a plugin host started inside the compiled core runs on `moss-plugin-bun`, guarded
   // (`scripts/verify-fd-receiver-compiled.ts`, step 3d). argv[3]: an empty scratch folder; touches nothing else. Only in a
-  // build with `--define CLOVER_PLUGIN_RUN_PROBE=true` (the gate's): `compile:core` defines it false, so no release
+  // build with `--define MOSS_PLUGIN_RUN_PROBE=true` (the gate's): `compile:core` defines it false, so no release
   // build has the route, and from source it is undefined.
-  if (typeof CLOVER_PLUGIN_RUN_PROBE !== "undefined" && CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__plugin-run-probe") {
+  if (typeof MOSS_PLUGIN_RUN_PROBE !== "undefined" && MOSS_PLUGIN_RUN_PROBE === true && process.argv[2] === "__plugin-run-probe") {
     const { runPluginRunProbe } = await import("./plugin-run-probe");
     const result = runPluginRunProbe(process.argv[3]);
     process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -2270,7 +2270,7 @@ if (import.meta.main) {
   }
   // Lane M: a plugin-host process started from the bundles this core embeds, answering `pluginHost.ping` (the same
   // gate's define; never in a release build).
-  if (typeof CLOVER_PLUGIN_RUN_PROBE !== "undefined" && CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__plugin-host-probe") {
+  if (typeof MOSS_PLUGIN_RUN_PROBE !== "undefined" && MOSS_PLUGIN_RUN_PROBE === true && process.argv[2] === "__plugin-host-probe") {
     const { runPluginHostProbe } = await import("./plugin-run-probe");
     const result = await runPluginHostProbe(process.argv[3]);
     process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -2278,7 +2278,7 @@ if (import.meta.main) {
   }
   // Lane M: what a core signed `--options runtime,restrict` still does, while the gate reads its environment from
   // outside (scripts/verify-fd-receiver-compiled.ts, step 4). The same gate's define; never in a release build.
-  if (typeof CLOVER_PLUGIN_RUN_PROBE !== "undefined" && CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__restrict-probe") {
+  if (typeof MOSS_PLUGIN_RUN_PROBE !== "undefined" && MOSS_PLUGIN_RUN_PROBE === true && process.argv[2] === "__restrict-probe") {
     const { runRestrictProbe } = await import("./restrict-probe");
     await runRestrictProbe();
   }
@@ -2339,22 +2339,22 @@ if (import.meta.main) {
     process.exit(result.ok ? 0 : 1);
   }
   if (process.argv[2] === "__embedded-probe") {
-    const result = await runEmbeddedProbe({ home: process.env.CLOVER_HOME });
+    const result = await runEmbeddedProbe({ home: process.env.MOSS_HOME });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exit(result.ok ? 0 : 1);
   }
 
-  // C0 (review S1): every provider call this process makes presents as Clover — `User-Agent`, the Codex
+  // C0 (review S1): every provider call this process makes presents as MOSS — `User-Agent`, the Codex
   // `originator` and the contact URL (core installs it when it loads; this makes the CLI's start explicit).
-  installCloverProcessIdentity();
-  // Every command runs on a Clover home, and `resolveCloverHome()` refuses another install's by real path
+  installMossProcessIdentity();
+  // Every command runs on a MOSS home, and `resolveMossHome()` refuses another install's by real path
   // (`other-installs.ts`). Asked once here, so a command that would write there without a daemon (`mcp`, `plugin`,
   // `output-style`, `workflow`, settings) stops with one line rather than a stack trace.
   try {
-    resolveCloverHome();
+    resolveMossHome();
   } catch (err) {
     if (!(err instanceof OtherInstallHomeRefused)) throw err;
-    console.error(`clover: ${err.message} — set CLOVER_HOME to a Clover home`);
+    console.error(`moss: ${err.message} — set MOSS_HOME to a MOSS home`);
     process.exit(1);
   }
   const argv = process.argv.slice(2);
@@ -2362,7 +2362,7 @@ if (import.meta.main) {
   const route = routeCliInvocation(argv, isTTY);
 
   if (argv[0] === "-p") {
-    // `--model <tag>` is parsed and checked BEFORE anything connects: `connect()` launches Clover.app when the
+    // `--model <tag>` is parsed and checked BEFORE anything connects: `connect()` launches MOSS Code.app when the
     // daemon is down, and a bad flag must not do that. Without it the prompt is still `argv[3]`, exactly as before.
     const printArgs = parsePrintArgs(argv.slice(1));
     if (printArgs.kind === "usageError") { console.error(printArgs.message); process.exit(1); }
@@ -2372,7 +2372,7 @@ if (import.meta.main) {
     let printModel: PrintModel | undefined;
     if (printArgs.model !== undefined) {
       let settings: Settings | undefined;
-      try { settings = loadSettings(join(resolveCloverHome(), "settings.json")); } catch { /* no settings yet: the catalog alone decides */ }
+      try { settings = loadSettings(join(resolveMossHome(), "settings.json")); } catch { /* no settings yet: the catalog alone decides */ }
       const checked = checkPrintModelOffline(printArgs.model, settings);
       if (!checked.ok) { console.error(checked.message); process.exit(1); }
       printModel = checked.model;
@@ -2381,7 +2381,7 @@ if (import.meta.main) {
     await runTurnSession({ chat: false, promptOverride: printArgs.prompt, ...(printModel !== undefined ? { printModel } : {}) });
   }
   if (route.kind === "chat" && route.existingSessionId === undefined) {
-    // bare `clover`, or `clover --auto`/`--plan` (Finding 3) → persistent chat mode on a fresh
+    // bare `moss`, or `moss --auto`/`--plan` (Finding 3) → persistent chat mode on a fresh
     // session (loops until ctrl+C/ctrl+D); Finding 4 — routeCliInvocation already gated this on
     // isTTY, so a non-TTY bare/--auto/--plan invocation falls through to the switch below instead.
     await runTurnSession({ chat: true });
@@ -2397,14 +2397,14 @@ if (import.meta.main) {
   case "-v": {
     // Handoff Task 2: thin dispatcher for routeCliInvocation's {kind:"version"} (the pure, tested
     // decision — both spellings land here because cmdKey is just argv[0] for non-daemon commands).
-    console.log(typeof __CLOVER_TEST_BUILD__ === "string" ? `clover ${CORE_VERSION} test build (${__CLOVER_TEST_BUILD__}: a test-marked build, never for release)` : `clover ${CORE_VERSION}`);
+    console.log(typeof __MOSS_TEST_BUILD__ === "string" ? `moss ${CORE_VERSION} test build (${__MOSS_TEST_BUILD__}: a test-marked build, never for release)` : `moss ${CORE_VERSION}`);
     process.exit(0);
   }
   case "autostart": {
-    // `clover-core autostart enable|disable|remove|start|status` — login start on this OS (spec §3.1).
+    // `moss-core autostart enable|disable|remove|start|status` — login start on this OS (spec §3.1).
     // Lane M's install hooks run `enable` and `disable`, the app runs `status --json` and `start`;
     // `enable` writes the launchd agent, systemd user unit or Task Scheduler task that runs
-    // `clover-core supervise`, and with `--app` the app's own unit, task or XDG entry. The exit code
+    // `moss-core supervise`, and with `--app` the app's own unit, task or XDG entry. The exit code
     // is the command's (the app and the installers read it).
     await runAutostartCommand(sub, process.argv.slice(4));
     process.exit(process.exitCode ?? 0);
@@ -2420,12 +2420,12 @@ if (import.meta.main) {
       process.exit(2);
     }
     if (/[\\/]bun(\.exe)?$/.test(process.execPath)) {
-      console.error("server install needs the compiled clover-core binary (a release's clover-core-<version>-<target>)");
+      console.error("server install needs the compiled moss-core binary (a release's moss-core-<version>-<target>)");
       process.exit(1);
     }
     const base = currentLoginSpec();
-    if (!isDefaultCloverHome(base.home, base.profile)) {
-      console.error(`a server install serves the ${base.profile} profile's default home; CLOVER_HOME is ${base.home}`);
+    if (!isDefaultMossHome(base.home, base.profile)) {
+      console.error(`a server install serves the ${base.profile} profile's default home; MOSS_HOME is ${base.home}`);
       process.exit(1);
     }
     const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
@@ -2469,7 +2469,7 @@ if (import.meta.main) {
     break;
   }
   case "sandbox": {
-    // `clover-core sandbox setup|remove|status`: Windows Bash under the fence (lane C, C-M2 part 2).
+    // `moss-core sandbox setup|remove|status`: Windows Bash under the fence (lane C, C-M2 part 2).
     // Lane M's per-user NSIS installer runs `setup` via runas at install; the app's Set up Bash
     // action runs the same command. Exit codes: 0 done, 2 not elevated, 3 launcher hash mismatch.
     await runSandboxCommand(sub, process.argv.slice(4));
@@ -2481,8 +2481,8 @@ if (import.meta.main) {
     // included), so a crash anywhere in the start counts: after a server's daemon swapped in its update, this counts
     // each start of the new version, and the third (two crashes) puts the old binary back and restarts into it.
     // A server (`<home>/install.json` says server) first leaves the earlier layout if it still runs from there
-    // (server-install.ts's one migration step), then knows its binary as `<home>/bin/daemon/clover-core`.
-    const bootHome = resolveCloverHome();
+    // (server-install.ts's one migration step), then knows its binary as `<home>/bin/daemon/moss-core`.
+    const bootHome = resolveMossHome();
     const bootOs = currentDaemonPlatform();
     const bootTarget = coreTargetOf(process.platform, process.arch);
     const bootMarker = readInstallMarker(bootHome, process.execPath);
@@ -2529,15 +2529,15 @@ if (import.meta.main) {
     // Phase 9c Migration B: the boot hook inside `startDaemon` throws a typed `MigrationRefused`
     // (code `home_half_migrated`) BEFORE creating anything on disk when the home is mid-migration —
     // print the operator-facing message and exit cleanly rather than an uncaught-exception stack
-    // trace; the daemon never auto-resumes on its own (`clover migrate --resume`/`--rollback` is
+    // trace; the daemon never auto-resumes on its own (`moss migrate --resume`/`--rollback` is
     // the door).
     // 2026-09-17: tee this process's stdout/stderr into <home>/logs/daemon.log (rotating) BEFORE the
     // daemon boots, so the boot lines themselves are captured — the release app wires our stdio to
     // /dev/null, and the file is the only diagnostic that survives that.
-    const { installDaemonLogFile } = await import("@waifucave/clover-core");
+    const { installDaemonLogFile } = await import("@waifucave/moss-core");
     // Another install's home was refused before any command ran (above), before the log file or anything else
     // touches the home; `installDaemonLogFile` and `startDaemon` refuse it again on their own.
-    const daemonLog = installDaemonLogFile(resolveCloverHome());
+    const daemonLog = installDaemonLogFile(resolveMossHome());
     console.error(`daemon log: ${daemonLog.path}`);
     let daemon: Awaited<ReturnType<typeof startDaemon>>;
     try {
@@ -2563,7 +2563,7 @@ if (import.meta.main) {
     // Bounded (`stopWithin`): a daemon going away never holds its lock and its process for long.
     // A test build only (compiled out of a real one): the acceptance's capped-stop step cuts the bound short, so the
     // process ends while the stop's tail still runs.
-    const budget = typeof __CLOVER_TEST_BUILD__ === "string" ? Number(process.env.CLOVER_TEST_STOP_BUDGET_MS) : Number.NaN;
+    const budget = typeof __MOSS_TEST_BUILD__ === "string" ? Number(process.env.MOSS_TEST_STOP_BUDGET_MS) : Number.NaN;
     const shutdown = async () => { await stopWithin(daemon, Number.isFinite(budget) && budget > 0 ? budget : undefined); bootWasGood(home, serverBin ?? process.execPath); process.exit(0); };
     // A server install (`<home>/install.json` says server, and this is its binary) updates itself.
     const target = bootTarget;
@@ -2609,8 +2609,8 @@ if (import.meta.main) {
     void daemon.pairStopped.then(async () => {
       // A test build only (compiled out of a real one): the acceptance's reopen step holds the stopping daemon, its
       // listener already closed, until the run writes this file (once the reopened app has dialled), at most 30 s.
-      if (typeof __CLOVER_TEST_BUILD__ === "string") {
-        const hold = process.env.CLOVER_TEST_STOP_HOLD_FILE;
+      if (typeof __MOSS_TEST_BUILD__ === "string") {
+        const hold = process.env.MOSS_TEST_STOP_HOLD_FILE;
         const until = Date.now() + 30_000;
         if (hold !== undefined && hold !== "") while (Date.now() < until && !existsSync(hold)) await Bun.sleep(100);
       }
@@ -2622,8 +2622,8 @@ if (import.meta.main) {
   }
   case "ping": {
     const c = await connect("cli-ping");
-    const profileTag = resolveCloverProfile() === "dev" ? " (dev)" : "";
-    console.log(`${AQUA}◍ clover-core is up${profileTag}${RESET} ${DIM}(${socketPath()})${RESET}`);
+    const profileTag = resolveMossProfile() === "dev" ? " (dev)" : "";
+    console.log(`${AQUA}◍ moss-core is up${profileTag}${RESET} ${DIM}(${socketPath()})${RESET}`);
     c.close();
     break;
   }
@@ -2657,17 +2657,17 @@ if (import.meta.main) {
     process.exit(await runCodeCommand(argv.slice(1), { connect: (name) => connect(name), log: (l) => console.log(l), error: (l) => console.error(l) }));
   }
   case "app": {
-    // `clover-core app screenshot` / `app frames` (app-cli.ts): what this computer's app draws, the app's own capture of
+    // `moss-core app screenshot` / `app frames` (app-cli.ts): what this computer's app draws, the app's own capture of
     // its windows. The running daemon only (never one this command starts), as the user's own CLI.
     const { runApp, parseAppArgs, parseNavArgs } = await import("./app-cli");
     const nav = argv[1] === "open" || argv[1] === "where";
     const parsed = nav ? parseNavArgs(argv.slice(1)) : parseAppArgs(argv.slice(1));
     if (typeof parsed === "string") { console.error(parsed); process.exit(2); }
-    if (!(await endpointAnswers(socketPath()))) { console.error("Clover isn't running on this computer: start it, then try again"); process.exit(1); }
+    if (!(await endpointAnswers(socketPath()))) { console.error("MOSS isn't running on this computer: start it, then try again"); process.exit(1); }
     const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness).catch(() => undefined);
-    if (!token) { console.error("this terminal can't reach Clover: its token isn't readable"); process.exit(1); }
+    if (!token) { console.error("this terminal can't reach MOSS: its token isn't readable"); process.exit(1); }
     process.exit(await runApp(argv.slice(1), {
-      request: (method, params) => cloverCall(socketPath(), { role: "cli", token, clientName: "clover-app" }, method, params, 30_000),
+      request: (method, params) => mossCall(socketPath(), { role: "cli", token, clientName: "moss-app" }, method, params, 30_000),
       log: (l) => console.log(l),
       error: (l) => console.error(l),
     }));
@@ -2679,22 +2679,22 @@ if (import.meta.main) {
     // change (`providerIdOf` is a no-op fallback for the pre-migration shape); `s.provider.model`
     // may already be split by the daemon or may still be a full tag — `modelIdOf` handles both.
     const provider = s.provider ? `${providerIdOf(s.provider.id) ?? s.provider.id} (${modelIdOf(s.provider.model)})` : "(none configured)";
-    const profileTag = resolveCloverProfile() === "dev" ? " (dev)" : "";
-    console.log(`${AQUA}clover-core v${s.version}${profileTag}${RESET} ${DIM}up ${formatElapsed(s.uptimeMs)} · ${s.socketPath}${RESET}`);
+    const profileTag = resolveMossProfile() === "dev" ? " (dev)" : "";
+    console.log(`${AQUA}moss-core v${s.version}${profileTag}${RESET} ${DIM}up ${formatElapsed(s.uptimeMs)} · ${s.socketPath}${RESET}`);
     console.log(`${DIM}provider: ${provider} · sessions: ${s.sessionsCount} · plugins: ${s.pluginsCount}${RESET}`);
     c.close();
     break;
   }
   case "doctor": {
-    // WS-16 §15's diagnostics/repair. IN-PROCESS against CLOVER_HOME, deliberately NOT an RPC: a
+    // WS-16 §15's diagnostics/repair. IN-PROCESS against MOSS_HOME, deliberately NOT an RPC: a
     // doctor whose first move is to reach the daemon is useless in exactly the state it exists for.
     // `runtime-state.db` is WAL, so the read-only half runs happily beside a live daemon; every
     // repair refuses while the lock is held, on the same probe `lock.ts` uses.
     const {
       diagnoseRuntimeState, repairRuntimeState, isDaemonLockHeld, DAEMON_RUNNING_REFUSAL, diagnoseRuntimes, loadSettings,
       diagnoseMigration, formatMigrationDoctorLines,
-    } = await import("@waifucave/clover-core");
-    const home = resolveCloverHome();
+    } = await import("@waifucave/moss-core");
+    const home = resolveMossHome();
     const args = process.argv.slice(3);
     const flag = (name: string): string | undefined => {
       const i = args.indexOf(name);
@@ -2716,8 +2716,8 @@ if (import.meta.main) {
       // guard just above — a diagnostic that can crash the diagnostic tool defeats its own purpose.
       // C-M2: the secret store's status, and a warning when its key sits unsealed (never a silent default).
       try {
-        const { openCloverSecretStore, secretStoreWarning, keychainService, resolveCloverProfile: profileOf } = await import("@waifucave/clover-core");
-        const st = (await openCloverSecretStore({ home, service: keychainService(profileOf(), home) })).status();
+        const { openMossSecretStore, secretStoreWarning, keychainService, resolveMossProfile: profileOf } = await import("@waifucave/moss-core");
+        const st = (await openMossSecretStore({ home, service: keychainService(profileOf(), home) })).status();
         console.log(`${AQUA}secrets${RESET} ${DIM}${st.backend}${"keySource" in st && st.keySource ? ` (${st.keySource}${"tpm" in st && st.tpm ? ", TPM" : ""})` : ""}${RESET}`);
         const warning = secretStoreWarning(st);
         if (warning) console.log(`  \x1b[33mwarning:\x1b[0m ${warning}`);
@@ -2731,12 +2731,12 @@ if (import.meta.main) {
         return;
       }
       // WS-23: the `winter` executable only — the official `claude` ladder is gone with the leg. A-M1: sessions run
-      // embedded in clover-core, so that executable is reported as the coding agent no session runs.
-      console.log(`  ${AQUA}sessions:${RESET} ${DIM}embedded in clover-core (one worker per session)${RESET}`);
-      if (report.clover.resolved) {
-        console.log(`  ${AQUA}coding agent:${RESET} ${report.clover.resolved.path} ${DIM}(${report.clover.resolved.source}; no session runs it)${RESET}`);
+      // embedded in moss-core, so that executable is reported as the coding agent no session runs.
+      console.log(`  ${AQUA}sessions:${RESET} ${DIM}embedded in moss-core (one worker per session)${RESET}`);
+      if (report.moss.resolved) {
+        console.log(`  ${AQUA}coding agent:${RESET} ${report.moss.resolved.path} ${DIM}(${report.moss.resolved.source}; no session runs it)${RESET}`);
       } else {
-        console.log(`  ${AQUA}coding agent:${RESET} ${DIM}${report.clover.error ?? "unresolved"} (no session runs it)${RESET}`);
+        console.log(`  ${AQUA}coding agent:${RESET} ${DIM}${report.moss.error ?? "unresolved"} (no session runs it)${RESET}`);
       }
       if (report.bundle?.versions) {
         const v = report.bundle.versions;
@@ -2755,7 +2755,7 @@ if (import.meta.main) {
     const printMigrationSection = async (): Promise<void> => {
       try {
         // C0 (review S2): this home's own Migration B record only. No legacy home is looked at and no legacy
-        // Keychain item is probed: only an explicit `clover migrate --from` reads a legacy home.
+        // Keychain item is probed: only an explicit `moss migrate --from` reads a legacy home.
         const report = await diagnoseMigration({ home });
         for (const line of formatMigrationDoctorLines(report)) console.log(`${AQUA}${line}${RESET}`);
       } catch (err) {
@@ -2775,14 +2775,14 @@ if (import.meta.main) {
     // not". Never crashes the diagnostic tool on a read error, same posture as its siblings.
     const printAnthropicConsoleSection = async (): Promise<void> => {
       try {
-        const { anthropicConfigDirFor, ANTHROPIC_PROFILE_NAME } = await import("@waifucave/clover-core");
+        const { anthropicConfigDirFor, ANTHROPIC_PROFILE_NAME } = await import("@waifucave/moss-core");
         const dir = anthropicConfigDirFor(home);
         const present = existsSync(join(dir, "credentials", `${ANTHROPIC_PROFILE_NAME}.json`));
         console.log(`${AQUA}anthropic console profile:${RESET} ${present ? "present" : "absent"} ${DIM}(config dir ${dir})${RESET}`);
         try {
-          const { daemonLogPathFor } = await import("@waifucave/clover-core");
+          const { daemonLogPathFor } = await import("@waifucave/moss-core");
           const { statSync: st } = await import("node:fs");
-          const logPath = daemonLogPathFor(resolveCloverHome());
+          const logPath = daemonLogPathFor(resolveMossHome());
           let size = "absent";
           try { size = `${Math.round(st(logPath).size / 1024)} KB`; } catch { /* not written yet */ }
           console.log(`${AQUA}daemon log:${RESET} ${logPath} ${DIM}(${size})${RESET}`);
@@ -2792,11 +2792,11 @@ if (import.meta.main) {
       }
     };
     // WS-19 (W19-11): ONE line — how many provider slots hold material, and which. A COUNT AND
-    // NAMES ONLY; never a value, never a fragment, never a length. In-process against CLOVER_HOME
+    // NAMES ONLY; never a value, never a fragment, never a length. In-process against MOSS_HOME
     // like every other section here, and equally unable to crash the diagnostic tool.
     const printCredentialsSection = async (): Promise<void> => {
       try {
-        const { KeychainSecretStore, credentialRows } = await import("@waifucave/clover-core");
+        const { KeychainSecretStore, credentialRows } = await import("@waifucave/moss-core");
         const rows = await credentialRows(new KeychainSecretStore(), home);
         const present = rows.filter((r) => r.present);
         const names = present.map((r) => r.providerId).join(", ");
@@ -2840,7 +2840,7 @@ if (import.meta.main) {
       : undefined;
     if (!op) {
       console.error(
-        "usage: clover doctor | clover doctor --repair rebuild-index" +
+        "usage: moss doctor | moss doctor --repair rebuild-index" +
           " | --repair quarantine-tail --session <id> | --repair relink-backend --session <id> --backend <uuid>" +
           " | --repair detach-backend --session <id> | --repair restore-backup --backup <path>" +
           " | --repair adopt-legacy-session --session <id> [--keep recorded|canonical]",
@@ -2867,11 +2867,11 @@ if (import.meta.main) {
     break;
   }
   case "send": {
-    // usage: clover send <sessionId|new> <text...>
+    // usage: moss send <sessionId|new> <text...>
     const args = process.argv.slice(3);
     const target = args[0];
     const text = args.slice(1).join(" ");
-    if (!target || !text) { console.error("usage: clover send <sessionId|new> <text…>"); process.exit(1); }
+    if (!target || !text) { console.error("usage: moss send <sessionId|new> <text…>"); process.exit(1); }
     const c = await connect("cli-send");
     let sessionId: string;
     if (target === "new") {
@@ -2897,7 +2897,7 @@ if (import.meta.main) {
   case "add-dir": {
     const sessionId = process.argv[3];
     const path = process.argv[4];
-    if (!sessionId || !path) { console.error("usage: clover add-dir <sessionId> <path> [--persist]"); process.exit(1); }
+    if (!sessionId || !path) { console.error("usage: moss add-dir <sessionId> <path> [--persist]"); process.exit(1); }
     const c = await connect("cli-add-dir");
     const result = await runAddDirRoute(c, sessionId, path, process.argv.includes("--persist"));
     if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
@@ -2908,8 +2908,8 @@ if (import.meta.main) {
   case "trust": {
     const arg = process.argv[3];
     if (arg === "--list") {
-      // Protocol has no daemon.trustList method (kept minimal) — read ~/.clover/trust.json directly.
-      const trustPath = join(resolveCloverHome(), "trust.json");
+      // Protocol has no daemon.trustList method (kept minimal) — read ~/.moss/trust.json directly.
+      const trustPath = join(resolveMossHome(), "trust.json");
       let dirs: string[] = [];
       if (existsSync(trustPath)) {
         try {
@@ -2929,7 +2929,7 @@ if (import.meta.main) {
       else for (const d of dirs) console.log(d);
     } else if (arg === "remove") {
       const path = process.argv[4];
-      if (!path) { console.error("usage: clover trust remove <path>"); process.exit(1); }
+      if (!path) { console.error("usage: moss trust remove <path>"); process.exit(1); }
       const c = await connect("cli-trust-remove");
       const removed = await c.trustRemove(resolve(path));
       console.log(removed ? `${AQUA}untrusted ${resolve(path)}${RESET}` : `${DIM}already untrusted: ${resolve(path)}${RESET}`);
@@ -2940,7 +2940,7 @@ if (import.meta.main) {
       console.log(`${AQUA}trusted ${resolve(arg)}${RESET}`);
       c.close();
     } else {
-      console.error("usage: clover trust <dir> | clover trust --list | clover trust list | clover trust remove <path>");
+      console.error("usage: moss trust <dir> | moss trust --list | moss trust list | moss trust remove <path>");
       process.exit(1);
     }
     break;
@@ -2948,7 +2948,7 @@ if (import.meta.main) {
   case "cd": {
     const sessionId = process.argv[3];
     const cwd = process.argv[4];
-    if (!sessionId || !cwd) { console.error("usage: clover cd <sessionId> <path>"); process.exit(1); }
+    if (!sessionId || !cwd) { console.error("usage: moss cd <sessionId> <path>"); process.exit(1); }
     const c = await connect("cli-cd");
     const result = await runCdRoute(c, sessionId, cwd);
     if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
@@ -2959,7 +2959,7 @@ if (import.meta.main) {
   case "steer": {
     const sessionId = process.argv[3];
     const text = process.argv.slice(4).join(" ");
-    if (!sessionId || !text) { console.error("usage: clover steer <sessionId> <text…>"); process.exit(1); }
+    if (!sessionId || !text) { console.error("usage: moss steer <sessionId> <text…>"); process.exit(1); }
     const c = await connect("cli-steer");
     const result = await runSteerRoute(c, sessionId, text);
     if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
@@ -2969,7 +2969,7 @@ if (import.meta.main) {
   }
   case "interrupt": {
     const sessionId = process.argv[3];
-    if (!sessionId) { console.error("usage: clover interrupt <sessionId>"); process.exit(1); }
+    if (!sessionId) { console.error("usage: moss interrupt <sessionId>"); process.exit(1); }
     const c = await connect("cli-interrupt");
     const result = await runInterruptRoute(c, sessionId);
     if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
@@ -2979,7 +2979,7 @@ if (import.meta.main) {
   }
   case "compact": {
     const sid = process.argv[3];
-    if (!sid) { console.error("usage: clover compact <sessionId>"); process.exit(1); }
+    if (!sid) { console.error("usage: moss compact <sessionId>"); process.exit(1); }
     const c = await connect("cli-compact");
     const result = await runCompactRoute(c, sid);
     if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
@@ -3005,17 +3005,17 @@ if (import.meta.main) {
     const sub = process.argv[3];
     const rest = process.argv.slice(4);
 
-    // Bare `clover mcp` / `clover mcp list` — the live-status listing, over a real daemon
+    // Bare `moss mcp` / `moss mcp list` — the live-status listing, over a real daemon
     // connection (autolaunch is fine here, same as every other read verb — `connect()`), PLUS the
     // LOCAL-scope entries (WS-21 spec §4.4): those are never a live in-daemon connection — folded
-    // into a run folder's `.clover.json` at spawn time by the router (§3.4.5), not started/tracked
-    // by `mcp.list`'s own `McpManager` — so this reads `sdk/.clover.json`'s `projects[cwd]` directly,
+    // into a run folder's `.moss.json` at spawn time by the router (§3.4.5), not started/tracked
+    // by `mcp.list`'s own `McpManager` — so this reads `sdk/.moss.json`'s `projects[cwd]` directly,
     // no daemon required, and shows the scope of every server either way ("list shows the scope of
     // each server", this task's own brief).
     if (sub === undefined || sub === "list") {
       const c = await connect("cli-mcp");
       const servers = await c.listMcp(process.cwd());
-      const local = sdkLocalMcpServers(resolveCloverHome(), process.cwd());
+      const local = sdkLocalMcpServers(resolveMossHome(), process.cwd());
       if (!servers.length && Object.keys(local).length === 0) console.log("no MCP servers configured");
       for (const [name, entry] of Object.entries(local)) {
         console.log(`${AQUA}${name}${RESET}  ${DIM}(local, ${entry.type})${RESET}`);
@@ -3035,9 +3035,9 @@ if (import.meta.main) {
     // daemon or not (that file isn't daemon state). Deliberately `openCredentialDaemonDoor()`, never
     // `connect()`: these are write verbs, and `connect()` auto-launches the dist app on a dead
     // socket — exactly the "surprise, not a service" `openCredentialDaemonDoor`'s own doc warns
-    // against for `clover login`/`credentials`.
+    // against for `moss login`/`credentials`.
     if (sub === "add" || sub === "add-json" || sub === "remove" || sub === "rename" || sub === "get") {
-      const cloverHome = resolveCloverHome();
+      const mossHome = resolveMossHome();
       const door = await openCredentialDaemonDoor();
       // `openCredentialDaemonDoor` is typed narrowly (`CredentialRpcDoor`: `request`/`close` only —
       // it exists for the credential verbs above), so its typed `mcpAdd`/`mcpRemove`/`mcpGet`
@@ -3052,7 +3052,7 @@ if (import.meta.main) {
         mcpRename: (name: string, newName: string, scope: "user" | "local" | "project" = "user", cwd?: string) => door.request(METHODS.mcpRename, { name, newName, scope, ...(cwd !== undefined ? { cwd } : {}) }),
         mcpGet: (name: string) => door.request(METHODS.mcpGet, { name, scope: "user" }),
       } : undefined;
-      const deps = { cwd: process.cwd(), cloverHome, door: mcpDoor };
+      const deps = { cwd: process.cwd(), mossHome, door: mcpDoor };
       if (sub === "add") {
         const outcome = await runMcpAddRoute(rest, deps);
         console.log(renderMcpAddOutcome(outcome));
@@ -3089,20 +3089,20 @@ if (import.meta.main) {
     }
 
     // WS-25 (MCP OAuth): `login` / `logout [--forget-client]` / `set-secret` — through the daemon when it is
-    // live (never `connect()`'s auto-launch: a sign-in must not launch Clover.app as a side effect), else
+    // live (never `connect()`'s auto-launch: a sign-in must not launch MOSS Code.app as a side effect), else
     // the same doors in-process (`mcp-cli.ts`'s WS-25 section says why both, and why a secret comes in
     // only at the masked prompt).
     if (sub === "login" || sub === "logout" || sub === "set-secret") {
-      const cloverHome = resolveCloverHome();
+      const mossHome = resolveMossHome();
       const door = await openCredentialDaemonDoor();
-      const { McpOAuthDoors, daemonMcpOAuthStore, keychainService, TrustStore, cliCommandName } = await import("@waifucave/clover-core");
+      const { McpOAuthDoors, daemonMcpOAuthStore, keychainService, TrustStore, cliCommandName } = await import("@waifucave/moss-core");
       const deps: McpAuthDeps = {
         cwd: process.cwd(),
         ...(door !== undefined ? { door } : {}),
         local: () => new McpOAuthDoors({
-          home: cloverHome,
-          store: () => daemonMcpOAuthStore(keychainService(resolveCloverProfile(), cloverHome)),
-          trust: new TrustStore(join(cloverHome, "trust.json")),
+          home: mossHome,
+          store: () => daemonMcpOAuthStore(keychainService(resolveMossProfile(), mossHome)),
+          trust: new TrustStore(join(mossHome, "trust.json")),
         }),
         openBrowser: (url) => { try { Bun.spawn(["open", url], { stdout: "ignore", stderr: "ignore" }); } catch { /* the URL is printed too */ } },
         confirm: (question) => (process.stdin.isTTY ? askYesNo(question) : Promise.resolve(false)),
@@ -3137,38 +3137,38 @@ if (import.meta.main) {
     // WS-26: `permissions` — the connector permissions (`mcp-cli.ts`'s section says how). Non-interactive,
     // through the daemon when it is live (never `connect()`'s auto-launch), else settings.json directly.
     if (sub === "permissions") {
-      const { cliCommandName } = await import("@waifucave/clover-core");
+      const { cliCommandName } = await import("@waifucave/moss-core");
       const door = await openCredentialDaemonDoor();
-      const outcome = await runMcpPermissionsRoute(rest, { cwd: process.cwd(), cloverHome: resolveCloverHome(), ...(door !== undefined ? { door } : {}) });
+      const outcome = await runMcpPermissionsRoute(rest, { cwd: process.cwd(), mossHome: resolveMossHome(), ...(door !== undefined ? { door } : {}) });
       if (outcome.ok) console.log(renderMcpPermissionsOutcome(outcome, cliCommandName()));
       else console.error(renderMcpPermissionsOutcome(outcome, cliCommandName()));
       door?.close();
       process.exit(outcome.ok ? 0 : 1);
     }
 
-    // Skipped, deliberately (see the report): `serve` (Clover has no "act as an MCP server" mode),
+    // Skipped, deliberately (see the report): `serve` (MOSS has no "act as an MCP server" mode),
     // `add-from-claude-desktop` (an Ink dialog over Claude Desktop's OWN config format — not
-    // trivially mappable), `reset-project-choices` (Clover has no per-project approve/reject ledger
-    // for `.mcp.json` servers — `clover trust`'s directory-level TrustStore is the only gate).
-    console.error("usage: clover mcp [list] | get <name> | login <name> [--yes] [--confirm-issuer-change] | logout <name> [--forget-client] | set-secret <name> [--from-clipboard [--issuer <issuer>]] | add [-s local|user|project] [-t stdio|sse|http] [-e KEY=value...] [-H \"Name: value\"...] [--version-negotiation legacy|auto|<revision>] <name> <commandOrUrl> [-- args...] | add-json [-s local|user|project] <name> <json> | remove <name> [-s local|user|project] | rename <old> <new> [-s local|user|project] | permissions <server> [<tool> | '*'] [allow|ask|deny|default]");
+    // trivially mappable), `reset-project-choices` (MOSS has no per-project approve/reject ledger
+    // for `.mcp.json` servers — `moss trust`'s directory-level TrustStore is the only gate).
+    console.error("usage: moss mcp [list] | get <name> | login <name> [--yes] [--confirm-issuer-change] | logout <name> [--forget-client] | set-secret <name> [--from-clipboard [--issuer <issuer>]] | add [-s local|user|project] [-t stdio|sse|http] [-e KEY=value...] [-H \"Name: value\"...] [--version-negotiation legacy|auto|<revision>] <name> <commandOrUrl> [-- args...] | add-json [-s local|user|project] <name> <json> | remove <name> [-s local|user|project] | rename <old> <new> [-s local|user|project] | permissions <server> [<tool> | '*'] [allow|ask|deny|default]");
     process.exit(1);
   }
   case "plugin": {
-    // `clover plugin` is Clover's plugin registry (spec §5.6, clover-plugin-cli.ts): list, info, install, wrap, enable,
+    // `moss plugin` is MOSS's plugin registry (spec §5.6, moss-plugin-cli.ts): list, info, install, wrap, enable,
     // disable, remove, update, pin, unpin, restart, index, dev, logs, new, validate.
-    // `clover plugin claude …` is WS-21's Claude-plugin manager (spec §5.2), which mirrors `claude plugin` —
+    // `moss plugin claude …` is WS-21's Claude-plugin manager (spec §5.2), which mirrors `claude plugin` —
     // install/uninstall/enable/disable/update/list/marketplace{add,remove,list,update}, over Contract B. It goes through
     // the daemon when it's live (a real socket + a harness token — `openPluginDaemonDoor`, never `connect()`'s
-    // auto-launch: a plugin write must not launch Clover.app as a side effect, exactly the `openCredentialDaemonDoor`
+    // auto-launch: a plugin write must not launch MOSS Code.app as a side effect, exactly the `openCredentialDaemonDoor`
     // precedent), and the SDK adapter directly otherwise.
     const claude = process.argv[3] === "claude";
     const base = claude ? 4 : 3;
     const sub = process.argv[base];
-    const home = resolveCloverHome();
+    const home = resolveMossHome();
     const rest = process.argv.slice(base + 1);
 
     if (!claude) {
-      const pcli = await import("./clover-plugin-cli");
+      const pcli = await import("./moss-plugin-cli");
       const emit = (run: { code: number; output: string }): never => {
         (run.code === 0 ? console.log : console.error)(run.output);
         process.exit(run.code);
@@ -3183,10 +3183,10 @@ if (import.meta.main) {
       const CHANGES = ["install", "wrap", "enable", "disable", "remove", "update", "pin", "unpin", "restart", "index", "info"];
       if (sub === "list" || sub === "dev" || sub === "logs" || (sub !== undefined && CHANGES.includes(sub))) {
         // The running daemon, as the CLI: never one this command starts.
-        if (!(await endpointAnswers(socketPath()))) emit({ code: 1, output: "Clover isn't running on this computer: start it, then try again" });
+        if (!(await endpointAnswers(socketPath()))) emit({ code: 1, output: "MOSS isn't running on this computer: start it, then try again" });
         const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness).catch(() => undefined);
-        if (!token) emit({ code: 1, output: "this terminal can't reach Clover: its token isn't readable" });
-        const call = (method: string, params: unknown) => cloverCall(socketPath(), { role: "cli", token: token!, clientName: "clover-plugin" }, method, params, 15_000);
+        if (!token) emit({ code: 1, output: "this terminal can't reach MOSS: its token isn't readable" });
+        const call = (method: string, params: unknown) => mossCall(socketPath(), { role: "cli", token: token!, clientName: "moss-plugin" }, method, params, 15_000);
         if (CHANGES.includes(sub!)) {
           // A y/N question in the user's own terminal; with no terminal to ask in, it's a no (`--yes` answers it).
           const confirm = async (question: string): Promise<boolean> => {
@@ -3200,7 +3200,7 @@ if (import.meta.main) {
             }
           };
           // An install or an update downloads: up to 30 minutes for a large one.
-          const slow = (method: string, params: unknown) => cloverCall(socketPath(), { role: "cli", token: token!, clientName: "clover-plugin" }, method, params, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : 30_000);
+          const slow = (method: string, params: unknown) => mossCall(socketPath(), { role: "cli", token: token!, clientName: "moss-plugin" }, method, params, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : 30_000);
           emit(await pcli.runPluginCommand(sub!, rest, slow, { cwd: process.cwd(), confirm }));
         }
         emit(sub === "list" ? await pcli.runPluginList(rest, call) : sub === "dev" ? await pcli.runPluginDev(rest, call) : await pcli.runPluginLogs(rest, call));
@@ -3226,10 +3226,10 @@ if (import.meta.main) {
       const mktSub = process.argv[base + 1];
       const mktRest = process.argv.slice(base + 2);
       const door = await openPluginDaemonDoor();
-      const deps = { cwd: process.cwd(), cloverHome: home, door };
+      const deps = { cwd: process.cwd(), mossHome: home, door };
       if (mktSub === "add") {
         const source = mktRest[0];
-        if (!source) { console.error("usage: clover plugin claude marketplace add <source>"); process.exit(1); }
+        if (!source) { console.error("usage: moss plugin claude marketplace add <source>"); process.exit(1); }
         const outcome = await runPluginMarketplaceAddRoute(deps, source);
         console.log(renderPluginMarketplaceAddOutcome(outcome));
         door?.close();
@@ -3237,7 +3237,7 @@ if (import.meta.main) {
       }
       if (mktSub === "remove") {
         const name = mktRest[0];
-        if (!name) { console.error("usage: clover plugin claude marketplace remove <name>"); process.exit(1); }
+        if (!name) { console.error("usage: moss plugin claude marketplace remove <name>"); process.exit(1); }
         const outcome = await runPluginMarketplaceRemoveRoute(deps, name);
         console.log(renderPluginMarketplaceRemoveOutcome(outcome));
         door?.close();
@@ -3255,14 +3255,14 @@ if (import.meta.main) {
         door?.close();
         process.exit(outcome.ok ? 0 : 1);
       }
-      console.error("usage: clover plugin claude marketplace add <source> | remove <name> | list | update [name]");
+      console.error("usage: moss plugin claude marketplace add <source> | remove <name> | list | update [name]");
       door?.close();
       process.exit(1);
     }
 
     if (sub === "list") {
       const door = await openPluginDaemonDoor();
-      const outcome = await runPluginListRoute({ cwd: process.cwd(), cloverHome: home, door }, process.cwd());
+      const outcome = await runPluginListRoute({ cwd: process.cwd(), mossHome: home, door }, process.cwd());
       console.log(renderPluginListOutcome(outcome));
       door?.close();
       process.exit(outcome.ok ? 0 : 1);
@@ -3271,9 +3271,9 @@ if (import.meta.main) {
     if (sub === "install") {
       const { positionals, scopeRaw } = extractScope(rest);
       const specOrPath = positionals[0];
-      if (!specOrPath) { console.error("usage: clover plugin claude install <plugin>[@<marketplace>] [--scope user|project|local]"); process.exit(1); }
+      if (!specOrPath) { console.error("usage: moss plugin claude install <plugin>[@<marketplace>] [--scope user|project|local]"); process.exit(1); }
       const door = await openPluginDaemonDoor();
-      const outcome = await runPluginInstallRoute({ cwd: process.cwd(), cloverHome: home, door }, specOrPath, scopeRaw, process.cwd());
+      const outcome = await runPluginInstallRoute({ cwd: process.cwd(), mossHome: home, door }, specOrPath, scopeRaw, process.cwd());
       console.log(renderPluginInstallOutcome(outcome));
       door?.close();
       process.exit(outcome.ok ? 0 : 1);
@@ -3282,9 +3282,9 @@ if (import.meta.main) {
     if (sub === "uninstall" || sub === "remove") {
       const { positionals, scopeRaw } = extractScope(rest);
       const spec = positionals[0];
-      if (!spec) { console.error(`usage: clover plugin claude ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
+      if (!spec) { console.error(`usage: moss plugin claude ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
       const door = await openPluginDaemonDoor();
-      const outcome = await runPluginUninstallRoute({ cwd: process.cwd(), cloverHome: home, door }, spec, scopeRaw, process.cwd());
+      const outcome = await runPluginUninstallRoute({ cwd: process.cwd(), mossHome: home, door }, spec, scopeRaw, process.cwd());
       console.log(renderPluginUninstallOutcome(outcome));
       // Phase 4b Task 2 (kept): best-effort revoke of the plugin's daemon-side token — a Tier-2
       // platform plugin's own, harmless no-op for a Tier-1/legacy one (the daemon just deletes a
@@ -3302,9 +3302,9 @@ if (import.meta.main) {
     if (sub === "enable" || sub === "disable") {
       const { positionals, scopeRaw } = extractScope(rest);
       const spec = positionals[0];
-      if (!spec) { console.error(`usage: clover plugin claude ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
+      if (!spec) { console.error(`usage: moss plugin claude ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
       const door = await openPluginDaemonDoor();
-      const outcome = await runPluginSetEnabledRoute({ cwd: process.cwd(), cloverHome: home, door }, spec, scopeRaw, sub === "enable", process.cwd());
+      const outcome = await runPluginSetEnabledRoute({ cwd: process.cwd(), mossHome: home, door }, spec, scopeRaw, sub === "enable", process.cwd());
       console.log(renderPluginSetEnabledOutcome(outcome));
       if (sub === "disable" && outcome.ok) {
         for (const id of pluginTokenIdsFor(outcome.spec)) {
@@ -3318,9 +3318,9 @@ if (import.meta.main) {
 
     if (sub === "update") {
       const spec = rest[0];
-      if (!spec) { console.error("usage: clover plugin claude update <plugin>[@<marketplace>]"); process.exit(1); }
+      if (!spec) { console.error("usage: moss plugin claude update <plugin>[@<marketplace>]"); process.exit(1); }
       const door = await openPluginDaemonDoor();
-      const outcome = await runPluginUpdateRoute({ cwd: process.cwd(), cloverHome: home, door }, spec);
+      const outcome = await runPluginUpdateRoute({ cwd: process.cwd(), mossHome: home, door }, spec);
       console.log(renderPluginUpdateOutcome(outcome));
       door?.close();
       process.exit(outcome.ok ? 0 : 1);
@@ -3328,7 +3328,7 @@ if (import.meta.main) {
 
     if (sub === "restart") {
       const name = process.argv[4];
-      if (!name) { console.error("usage: clover plugin claude restart <plugin>[@<marketplace>]"); process.exit(1); }
+      if (!name) { console.error("usage: moss plugin claude restart <plugin>[@<marketplace>]"); process.exit(1); }
       const c = await connect(`cli-plugin-restart-${name}`);
       try {
         await c.restartPlugin(name);
@@ -3342,7 +3342,7 @@ if (import.meta.main) {
       process.exit(0);
     }
 
-    console.error("usage: clover plugin claude list | install <plugin>[@<marketplace>] [-s user|project|local] | uninstall <plugin>[@<marketplace>] [-s ...] | enable <plugin>[@<marketplace>] [-s ...] | disable <plugin>[@<marketplace>] [-s ...] | update <plugin>[@<marketplace>] | marketplace add|remove|list|update | restart <name>");
+    console.error("usage: moss plugin claude list | install <plugin>[@<marketplace>] [-s user|project|local] | uninstall <plugin>[@<marketplace>] [-s ...] | enable <plugin>[@<marketplace>] [-s ...] | disable <plugin>[@<marketplace>] [-s ...] | update <plugin>[@<marketplace>] | marketplace add|remove|list|update | restart <name>");
     process.exit(1);
   }
   case "bg": {
@@ -3350,7 +3350,7 @@ if (import.meta.main) {
     const bgSessionId = process.argv[4];
     const bgTaskId = process.argv[5];
     if (!bgSessionId || (bgSub !== "list" && !bgTaskId)) {
-      console.error("usage: clover bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>");
+      console.error("usage: moss bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>");
       process.exit(1);
     }
     const c = await connect("cli-bg");
@@ -3369,7 +3369,7 @@ if (import.meta.main) {
       if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
       console.log(`${AQUA}killed ${bgTaskId}${RESET}`);
     } else {
-      console.error("usage: clover bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>");
+      console.error("usage: moss bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>");
       c.close();
       process.exit(1);
     }
@@ -3377,12 +3377,12 @@ if (import.meta.main) {
     break;
   }
   case "routines": {
-    // usage: clover routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt…>
+    // usage: moss routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt…>
     //        | routines delete <id> | routines enable <id> | routines disable <id>
     // Argument validation happens BEFORE connecting (mirrors `bg`'s fail-fast usage check just
     // above) — a bad invocation never opens a daemon socket at all.
-    const routinesUsage = 'usage: clover routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt…> | routines delete <id> | routines enable <id> | routines disable <id>';
-    const createUsage = 'usage: clover routines create "<spec>" [--policy auto|plan] -- <prompt…>';
+    const routinesUsage = 'usage: moss routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt…> | routines delete <id> | routines enable <id> | routines disable <id>';
+    const createUsage = 'usage: moss routines create "<spec>" [--policy auto|plan] -- <prompt…>';
     const routinesSub = process.argv[3];
 
     if (routinesSub === "create") {
@@ -3415,7 +3415,7 @@ if (import.meta.main) {
 
     if (routinesSub === "delete") {
       const id = process.argv[4];
-      if (!id) { console.error("usage: clover routines delete <id>"); process.exit(1); }
+      if (!id) { console.error("usage: moss routines delete <id>"); process.exit(1); }
       const c = await connect("cli-routines");
       const { removed } = await c.routinesDelete(id);
       if (!removed) {
@@ -3430,7 +3430,7 @@ if (import.meta.main) {
 
     if (routinesSub === "enable" || routinesSub === "disable") {
       const id = process.argv[4];
-      if (!id) { console.error(`usage: clover routines ${routinesSub} <id>`); process.exit(1); }
+      if (!id) { console.error(`usage: moss routines ${routinesSub} <id>`); process.exit(1); }
       const c = await connect("cli-routines");
       try {
         const { routine } = await c.routinesUpdate({ id, patch: { enabled: routinesSub === "enable" } });
@@ -3457,16 +3457,16 @@ if (import.meta.main) {
     process.exit(1);
   }
   case "bot": {
-    // usage: clover bot avatar <bot> <folder|zip|file>: the user's own model, copied into the user's folder. What a model
+    // usage: moss bot avatar <bot> <folder|zip|file>: the user's own model, copied into the user's folder. What a model
     // may be is the installed renderers' (`bot.avatarFormats`), said after the usage line when the daemon answers.
-    const botUsage = "usage: clover bot avatar <bot id> <a folder, a .zip or a model file of a format an installed renderer draws>";
+    const botUsage = "usage: moss bot avatar <bot id> <a folder, a .zip or a model file of a format an installed renderer draws>";
     const botId = process.argv[4];
     const from = process.argv[5];
     if (process.argv[3] !== "avatar" || !botId || !from) {
       console.error(botUsage);
       // What the installed renderers take, when a daemon answers (never started for a usage line).
       const c = (await endpointPresent(socketPath()))
-        ? await getToken().then((token) => CloverClient.connect({ socketPath: socketPath(), token, clientName: "cli-bot", onEvent: () => {} })).catch(() => undefined)
+        ? await getToken().then((token) => MossClient.connect({ socketPath: socketPath(), token, clientName: "cli-bot", onEvent: () => {} })).catch(() => undefined)
         : undefined;
       const r = await c?.request("bot.avatarFormats", {}).catch(() => undefined) as { formats: { name: string; accepts: string[]; files: string[]; entries: string[] }[] } | undefined;
       c?.close();
@@ -3479,7 +3479,7 @@ if (import.meta.main) {
     const c = await connect("cli-bot");
     try {
       const r = await c.request("bot.importAvatar", { id: botId, path: resolve(from) }) as { format: string; name?: string; files: number; bytes: number };
-      console.log(`${AQUA}${botId} now draws your ${r.name ?? r.format} model${RESET} ${DIM}(${r.files} files, ${(r.bytes / 1048576).toFixed(1)} MiB, copied into your Clover folder)${RESET}`);
+      console.log(`${AQUA}${botId} now draws your ${r.name ?? r.format} model${RESET} ${DIM}(${r.files} files, ${(r.bytes / 1048576).toFixed(1)} MiB, copied into your MOSS folder)${RESET}`);
     } catch (err) {
       console.error((err as Error).message);
       c.close();
@@ -3489,7 +3489,7 @@ if (import.meta.main) {
     break;
   }
   case "memory": {
-    // usage: clover memory [list] [--project] | show <name> [--project] | rm <name> [--project]
+    // usage: moss memory [list] [--project] | show <name> [--project] | rm <name> [--project]
     // Argument validation (parseMemoryArgs) happens BEFORE connecting — mirrors `routines`' own
     // fail-fast usage check just above: a bad invocation never opens a daemon socket.
     const route = parseMemoryArgs(process.argv.slice(3), process.cwd());
@@ -3522,7 +3522,7 @@ if (import.meta.main) {
       let sessionRoute: CoworkSessionCliRoute;
       try { sessionRoute = parseCoworkSessionArgs(process.argv.slice(3)); }
       catch (error) { console.error(coworkErrorMessage(error)); console.error(COWORK_CLI_USAGE); process.exit(1); }
-      let client: CloverClient | undefined;
+      let client: MossClient | undefined;
       try {
         client = await connect(`cli-${cmdKey}`);
         for (const line of await runCoworkSessionRoute(client, sessionRoute)) console.log(line);
@@ -3536,7 +3536,7 @@ if (import.meta.main) {
     if ("help" in route) { console.log(COWORK_CLI_USAGE); break; }
     // Use the existing local harness connection. Input resolution/help never opens a socket, and no
     // picker, grant resolution, provisioning or execution fallback is performed by the CLI.
-    let client: CloverClient | undefined;
+    let client: MossClient | undefined;
     try {
       client = await connect(`cli-${cmdKey}`);
       const result = await runCoworkRoute(client, route);
@@ -3547,10 +3547,10 @@ if (import.meta.main) {
   }
   case "watch": {
     const sessionId = process.argv[3];
-    if (!sessionId) { console.error("usage: clover watch <sessionId>"); process.exit(1); }
+    if (!sessionId) { console.error("usage: moss watch <sessionId>"); process.exit(1); }
     const c = await connect("cli-watch", (e) => {
       // A ComputerV2 wake message's text is the MODEL's (its own note among it): never printed — a note instead.
-      if (e.type === "user_message" && e.clientName === COMPUTER_WAKE_CLIENT_NAME) console.log(`${DIM}↻ [${e.clientName}] a wake trigger ended — Clover continues${RESET}`);
+      if (e.type === "user_message" && e.clientName === COMPUTER_WAKE_CLIENT_NAME) console.log(`${DIM}↻ [${e.clientName}] a wake trigger ended — MOSS continues${RESET}`);
       else if (e.type === "user_message") console.log(`${AQUA}❯${RESET} [${e.clientName}] ${e.text}`);
       else console.log(`${DIM}· ${e.type}${"clientName" in e ? ` (${e.clientName})` : ""}${RESET}`);
     });
@@ -3564,7 +3564,7 @@ if (import.meta.main) {
     await new Promise(() => {}); // run until interrupted
     break; // unreachable, but keeps the switch uniform
   }
-  // C-M1: the old LaunchAgent installer is retired; these spellings forward to `clover autostart`.
+  // C-M1: the old LaunchAgent installer is retired; these spellings forward to `moss autostart`.
   case "daemon install": {
     await runAutostartCommand("enable");
     break;
@@ -3594,14 +3594,14 @@ if (import.meta.main) {
     const rest = process.argv.slice(4);
     const at = rest.indexOf("--image");
     const image = at >= 0 ? rest[at + 1] : undefined;
-    if (!image) { console.error("usage: clover-core daemon check-server --image <the daemon's binary> [--json]"); process.exitCode = 2; break; }
+    if (!image) { console.error("usage: moss-core daemon check-server --image <the daemon's binary> [--json]"); process.exitCode = 2; break; }
     const r = await checkDaemonServer(socketPath(), { image });
     console.log(rest.includes("--json") ? JSON.stringify(r) : r.ok ? "ok" : `not ok: ${r.reason}`);
     process.exitCode = r.ok ? 0 : 1;
     break;
   }
   case "login": {
-    const { KeychainSecretStore, CodexAuthStore, runLoginFlow, CODEX, writeOpenAiApiKey, EXA_API_KEY_SECRET, OPENAI_API_KEY_SECRET: OPENAI_API_KEY_SECRET_LOGIN, profileDisplayName } = await import("@waifucave/clover-core");
+    const { KeychainSecretStore, CodexAuthStore, runLoginFlow, CODEX, writeOpenAiApiKey, EXA_API_KEY_SECRET, OPENAI_API_KEY_SECRET: OPENAI_API_KEY_SECRET_LOGIN, profileDisplayName } = await import("@waifucave/moss-core");
     console.log(`${AQUA}${profileDisplayName()} login${RESET}`);
     const secrets = new KeychainSecretStore();
     // Winter Phase 10a (O7, P10a-6): the Anthropic Console login door. Per the design amendment
@@ -3613,12 +3613,12 @@ if (import.meta.main) {
     // reached through the SAME `createConsoleProfileBroker` thin adapter the daemon uses (never a
     // second core-side spawn).
     if (process.argv.includes("--anthropic-console")) {
-      const { createConsoleProfileBroker, resolveAntExecutable } = await import("@waifucave/clover-core");
-      const home = resolveCloverHome();
+      const { createConsoleProfileBroker, resolveAntExecutable } = await import("@waifucave/moss-core");
+      const home = resolveMossHome();
       let settings: Settings | undefined;
       try { settings = loadSettings(join(home, "settings.json")); } catch { settings = undefined; }
       // Fix wave 3 (M-A): the `claude` executable requirement is GONE — the single login door is
-      // `ant auth login --profile clover`, which never touches `claude` at all (measured: `claude
+      // `ant auth login --profile moss`, which never touches `claude` at all (measured: `claude
       // auth login --console` does not even write the profile file). `createConsoleProfileBroker`'s
       // own `login()` refuses typed (`ant_executable_unavailable`, after the version-gate check) if
       // `ant` itself is unresolved — no separate, earlier CLI-side check is needed or wanted.
@@ -3667,9 +3667,9 @@ if (import.meta.main) {
           // own (see ConsoleProfileBroker.startWatcher), but only if one is actually running.
           console.error(`warning: could not refresh the native-provider bearer token yet (${refreshed.reason}) — a running daemon will notice this profile and retry automatically; otherwise this refreshes the next time a daemon with this profile starts`);
         }
-        // WS-23 live-gate fix: the bearer is the `console` provider's credential now, and Clover's own
+        // WS-23 live-gate fix: the bearer is the `console` provider's credential now, and MOSS's own
         // jobs may run on it — this write never went through the daemon, so its internal-jobs view is
-        // told the same way `clover login` (ChatGPT) tells it (`notifyDaemonOfOutOfBandCredentialChange`).
+        // told the same way `moss login` (ChatGPT) tells it (`notifyDaemonOfOutOfBandCredentialChange`).
         await notifyDaemonOfOutOfBandCredentialChange(openCredentialDaemonDoor);
       } else {
         console.error(`sign-in failed: ${result.reason}`);
@@ -3703,7 +3703,7 @@ if (import.meta.main) {
       // ...'`) is untouched here and remains a follow-up — that message flows through
       // engine.ts into an `agent_error` SessionEvent PERSISTED to the session JSONL, and can become
       // a parent-model-visible tool_result via a dispatched child's errorMessage. Catching a bad key
-      // at `clover login` time is strictly better than fixing it after the fact, but does not make
+      // at `moss login` time is strictly better than fixing it after the fact, but does not make
       // the provider sink itself safe against a key that reaches it some other way.
       const invisibleWarning = invisibleKeyCharWarning(key);
       if (invisibleWarning) { console.error(invisibleWarning); process.exit(1); }
@@ -3714,7 +3714,7 @@ if (import.meta.main) {
       if (!wroteOpenAi.ok) { console.error(wroteOpenAi.message); process.exit(1); }
       if (wroteOpenAi.via === "daemon") await secrets.set(OPENAI_API_KEY_SECRET_LOGIN, "");
       else await writeOpenAiApiKey(secrets, key);   // in-process: the one call that does both halves
-      console.log(`${AQUA}API key stored in Keychain${RESET} — set provider type in ~/.clover/settings.json (openai-compatible); ${credentialEffectNote(wroteOpenAi.via)}`);
+      console.log(`${AQUA}API key stored in Keychain${RESET} — set provider type in ~/.moss/settings.json (openai-compatible); ${credentialEffectNote(wroteOpenAi.via)}`);
       break;
     }
     // DEPRECATED (2026-09-18, the web-tools ruling): the Brave-backed `web_search` retired, so there is
@@ -3725,15 +3725,15 @@ if (import.meta.main) {
     // one line, and it names the door out for a key already stored.
     if (process.argv.includes("--web-search-key")) {
       console.log(
-        `${AQUA}--web-search-key is retired${RESET} — Clover's Brave-backed web_search is gone; the ` +
+        `${AQUA}--web-search-key is retired${RESET} — MOSS's Brave-backed web_search is gone; the ` +
         `runtime's own WebSearch and the Exa-backed Search have replaced it. Nothing needs a Brave key ` +
-        `any more.\n  A key you stored earlier can be removed with: clover credentials remove web-search\n` +
-        `  Search's own key (Exa) is set with: clover login --exa-key`,
+        `any more.\n  A key you stored earlier can be removed with: moss credentials remove web-search\n` +
+        `  Search's own key (Exa) is set with: moss login --exa-key`,
       );
       break;
     }
-    // B1-T5: Search's Exa API key — the one web-tool key Clover still uses (`Search`, Exa ANSWER mode),
-    // and the same item a Clover child resolves for its own `WebSearch` through
+    // B1-T5: Search's Exa API key — the one web-tool key MOSS still uses (`Search`, Exa ANSWER mode),
+    // and the same item a MOSS child resolves for its own `WebSearch` through
     // `Options.web.search.authRef`.
     if (process.argv.includes("--exa-key")) {
       const key = (await readSecret("Paste your Exa API key: ")).trim();
@@ -3770,12 +3770,12 @@ if (import.meta.main) {
     break;
   }
   // -----------------------------------------------------------------------------------------
-  // WS-19 (W19-11) — `clover credentials [list] | set <providerId> | remove <providerId>`.
+  // WS-19 (W19-11) — `moss credentials [list] | set <providerId> | remove <providerId>`.
   //
   // IN-PROCESS, like `login`/`logout`/`doctor` and for the same reason: the daemon may not be
   // running, and a credential door whose first move is to reach the daemon is useless in exactly
   // the state a user reaches for it. It calls the SAME library functions the daemon's own
-  // `credential.*` RPC handlers call (`@waifucave/clover-core`'s `credentialRows`/
+  // `credential.*` RPC handlers call (`@waifucave/moss-core`'s `credentialRows`/
   // `setCredential`/`removeCredential`) — never a second implementation, so a rule added on one
   // door is on all three.
   //
@@ -3788,7 +3788,7 @@ if (import.meta.main) {
     const secrets = new KeychainSecretStore();
     const providerId = process.argv[4];
     const r = await runCredentialsRoute(
-      secrets, resolveCloverHome(), sub, providerId,
+      secrets, resolveMossHome(), sub, providerId,
       // The masked raw-mode prompt — the ONLY door a value comes in through.
       async () => (await readSecret(`Paste the API key for ${providerId}: `)).trim(),
       openCredentialDaemonDoor,
@@ -3809,7 +3809,7 @@ if (import.meta.main) {
         console.log(`  ${row.providerId.padEnd(width)} ${AQUA}present${RESET} ${DIM}${row.kind ?? "?"} via ${row.door}${row.risk === "review-required" ? " [review-required]" : ""}${RESET}`);
       }
       if (present.length === 0) console.log(`  ${DIM}none stored${RESET}`);
-      console.log(`${DIM}  ${r.rows.length - present.length} more slot(s) are empty — \`clover credentials set <providerId>\` for any catalog provider.${RESET}`);
+      console.log(`${DIM}  ${r.rows.length - present.length} more slot(s) are empty — \`moss credentials set <providerId>\` for any catalog provider.${RESET}`);
       break;
     }
     if (r.kind === "set") {
@@ -3821,16 +3821,16 @@ if (import.meta.main) {
     break;
   }
   case "logout": {
-    const { KeychainSecretStore, CODEX_SECRET_NAMES, CREDENTIAL_MATERIAL_NAMES, clearCredentialMaterial, ANTHROPIC_CREDENTIAL_SECRET_NAME, OPENAI_API_KEY_SECRET } = await import("@waifucave/clover-core");
+    const { KeychainSecretStore, CODEX_SECRET_NAMES, CREDENTIAL_MATERIAL_NAMES, clearCredentialMaterial, ANTHROPIC_CREDENTIAL_SECRET_NAME, OPENAI_API_KEY_SECRET } = await import("@waifucave/moss-core");
     const secrets = new KeychainSecretStore();
     // Winter Phase 10a (O7, P10a-6; fix wave 3 M-A corrected the door): `--anthropic-console` runs
-    // the SDK's own `ant auth logout --profile clover` (via the SAME broker adapter the daemon and
-    // `clover login --anthropic-console` use) and then clears the bearer material — distinct from
+    // the SDK's own `ant auth logout --profile moss` (via the SAME broker adapter the daemon and
+    // `moss login --anthropic-console` use) and then clears the bearer material — distinct from
     // `--anthropic` below, which only ever clears an api-key material and never touches the console
     // profile. The `claude` binary's own `auth logout` is never used for this door.
     if (process.argv.includes("--anthropic-console")) {
-      const { createConsoleProfileBroker, resolveAntExecutable } = await import("@waifucave/clover-core");
-      const home = resolveCloverHome();
+      const { createConsoleProfileBroker, resolveAntExecutable } = await import("@waifucave/moss-core");
+      const home = resolveMossHome();
       let settings: Settings | undefined;
       try { settings = loadSettings(join(home, "settings.json")); } catch { settings = undefined; }
       // Fix wave 3 (M-A): same ladder as the login door above, `claude` requirement dropped —
@@ -3861,8 +3861,8 @@ if (import.meta.main) {
       console.log(`anthropic API key cleared — ${credentialEffectNote(cleared.via)}`);
       break;
     }
-    // WS-19 (W19-11): `--openai` — the flag that was missing. `clover login --api-key` has stored
-    // an OpenAI key since Phase 1 and there was no way to clear it short of `clover credentials
+    // WS-19 (W19-11): `--openai` — the flag that was missing. `moss login --api-key` has stored
+    // an OpenAI key since Phase 1 and there was no way to clear it short of `moss credentials
     // remove openai` (which this file also now offers) or editing the Keychain by hand. Clears the
     // material record AND the legacy raw record, the same pair the bare Codex sign-out below clears
     // for its own provider.
@@ -3878,7 +3878,7 @@ if (import.meta.main) {
     for (const name of Object.values(CODEX_SECRET_NAMES)) {
       await secrets.delete(name);
     }
-    // Hotfix (credential material, P8b): the material record is what the spawned Clover child
+    // Hotfix (credential material, P8b): the material record is what the spawned MOSS child
     // actually reads — blanking only the legacy five would leave a signed-out install still
     // holding a live codex-oauth:default record the child happily authenticates with.
     await clearCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.codexOauth);
@@ -3889,8 +3889,8 @@ if (import.meta.main) {
     break;
   }
   case "provider": {
-    const { loadSettings, resolveCloverHome } = await import("@waifucave/clover-core");
-    const s = loadSettings(join(resolveCloverHome(), "settings.json"));
+    const { loadSettings, resolveMossHome } = await import("@waifucave/moss-core");
+    const s = loadSettings(join(resolveMossHome(), "settings.json"));
     // WS-20: no `.type` read — the provider is the tag's own providerId; a not-yet-migrated
     // settings.json (a bare model, pre-L3.3) prints the raw value rather than reaching for the
     // field this command is retiring.
@@ -3904,8 +3904,8 @@ if (import.meta.main) {
     // "changing models must NOT require a daemon restart") is that a running daemon picks the
     // new value up on its NEXT turn via providers/manager.ts's live model resolver — no restart,
     // no RPC round-trip needed here at all.
-    const { loadSettings, saveSettings, resolveCloverHome, setProviderModel, setReasoningEffort, setAdvisorModel, parseModelTag } = await import("@waifucave/clover-core");
-    const settingsPath = join(resolveCloverHome(), "settings.json");
+    const { loadSettings, saveSettings, resolveMossHome, setProviderModel, setReasoningEffort, setAdvisorModel, parseModelTag } = await import("@waifucave/moss-core");
+    const settingsPath = join(resolveMossHome(), "settings.json");
     const settings = loadSettings(settingsPath);
     const action = parseModelArgs(process.argv.slice(3));
 
@@ -3924,7 +3924,7 @@ if (import.meta.main) {
       // token, a stale socket) fall back to the stored tag alone — the historical no-daemon
       // posture this command has always had.
       try {
-        const { METHODS, SyncConfigModel } = await import("@waifucave/clover-protocol");
+        const { METHODS, SyncConfigModel } = await import("@waifucave/moss-protocol");
         const door = await openCredentialDaemonDoor();
         if (door) {
           // Review nit: try/finally — a `request` throw (a dead-mid-call daemon, a malformed
@@ -3946,7 +3946,7 @@ if (import.meta.main) {
       } catch { /* no live daemon (or an older one) — the bare current tag printed above is the whole answer */ }
       // Winter Phase 8d (P8d-8, Task 4.3): the D30 advisor line — "auto" is the honest label for
       // an unset override (the router applies its own per-family default, never a slug this CLI
-      // invents), mirroring `clover model --advisor auto`'s own clearing spelling.
+      // invents), mirroring `moss model --advisor auto`'s own clearing spelling.
       console.log(`${DIM}advisor: ${settings.runtimes?.advisorModel ? modelDisplayWithHint(settings.runtimes.advisorModel) : "auto"}${RESET}`);
       process.exit(0);
     }
@@ -3961,7 +3961,7 @@ if (import.meta.main) {
       }
       const modelArg = action.kind === "setAdvisor" ? action.slug : null;
       // Review fix (Nit 4): when the daemon is live, the write goes through `settings.
-      // setAdvisorModel` (the SAME door.request pattern `clover model` (show) uses for
+      // setAdvisorModel` (the SAME door.request pattern `moss model` (show) uses for
       // sync.config) so the tag is validated against the pinned catalog before it lands on disk —
       // never a bare `saveSettings` racing the daemon's own settings-watcher. Falls back to the
       // direct file write ONLY when there is no live daemon to ask, same no-daemon posture this
@@ -3973,7 +3973,7 @@ if (import.meta.main) {
         let stored: string | null = null;
         let daemonError: string | undefined;
         try {
-          const { METHODS } = await import("@waifucave/clover-protocol");
+          const { METHODS } = await import("@waifucave/moss-protocol");
           const raw = await door.request(METHODS.settingsSetAdvisorModel, { model: modelArg });
           stored = (raw as { model?: string | null } | undefined)?.model ?? null;
         } catch (err) {
@@ -3997,7 +3997,7 @@ if (import.meta.main) {
 
     let next = settings;
     if (action.kind === "setModel" || action.kind === "setModelAndEffort") {
-      // Design correction (after item 4): `clover model <tag>` writes the GLOBAL
+      // Design correction (after item 4): `moss model <tag>` writes the GLOBAL
       // settings.provider.model, but that no longer REFUSES a non-internal-provider tag — any
       // catalog provider may be the default model (a user whose default is Claude must be able to
       // boot). Only the shape/catalog checks (`validateModelTag`) still gate the write; a
@@ -4032,18 +4032,18 @@ if (import.meta.main) {
     // settings.outputStyle, live, on the session's next turn — same live-getter precedent as the
     // provider model).
     const { parseOutputStyleArgs } = await import("./output-style-cli");
-    const { resolveCloverHome, setOutputStyle, OutputStyleStore, TrustStore, sdkOutputStyle, updateSdkSettings } = await import("@waifucave/clover-core");
+    const { resolveMossHome, setOutputStyle, OutputStyleStore, TrustStore, sdkOutputStyle, updateSdkSettings } = await import("@waifucave/moss-core");
     const action = parseOutputStyleArgs(process.argv.slice(3));
-    const home = resolveCloverHome();
+    const home = resolveMossHome();
 
     if (action.action === "help") {
-      console.log("Usage: clover output-style [name]\n  (no arg)  list available styles\n  <name>    set the active output style");
+      console.log("Usage: moss output-style [name]\n  (no arg)  list available styles\n  <name>    set the active output style");
       break;
     }
 
     // WS-21: `outputStyle` lives in `sdk/settings.json` (claude `Settings`) — read and written there
     // (`sdkOutputStyle`/`updateSdkSettings`; the write refuses to clobber an unparseable file).
-    const store = new OutputStyleStore({ cloverHome: home, trust: new TrustStore(join(home, "trust.json")) });
+    const store = new OutputStyleStore({ mossHome: home, trust: new TrustStore(join(home, "trust.json")) });
     const cwd = process.cwd();
     const current = sdkOutputStyle(home) ?? "default";
 
@@ -4067,22 +4067,22 @@ if (import.meta.main) {
   }
   case "workflow": {
     // CC-parity phase 3 (Workflows), Track C Task C3. `list`/`save` are file-direct (WorkflowStore,
-    // C1) — mirrors `case "output-style"` just above: reading/writing `.clover/workflows/*.js`
+    // C1) — mirrors `case "output-style"` just above: reading/writing `.moss/workflows/*.js`
     // never needs the daemon up, exactly like an output-style switch never needing a restart.
     // `run` is the one exception: workflows actually EXECUTE in the daemon (WorkflowRuntime,
-    // core/src/workflows/runtime.ts, C2), so it goes through CloverClient/connect() like every
+    // core/src/workflows/runtime.ts, C2), so it goes through MossClient/connect() like every
     // other daemon-RPC case (`memory`, `routines`, …) instead of touching files directly.
     const { parseWorkflowArgs } = await import("./workflow-cli");
     const action = parseWorkflowArgs(process.argv.slice(3));
 
     if (action.action === "help") {
-      console.log("Usage: clover workflow [list] | run <name> [json-args] | save <name> [file]\n  (no arg)     list saved workflows (+ running runs, if a daemon is already up)\n  run <name>   run a saved workflow; json-args (a JSON string) seeds its `args` binding\n  save <name>  save a workflow script from <file> (or stdin, if omitted) to ~/.clover/workflows/<name>.js");
+      console.log("Usage: moss workflow [list] | run <name> [json-args] | save <name> [file]\n  (no arg)     list saved workflows (+ running runs, if a daemon is already up)\n  run <name>   run a saved workflow; json-args (a JSON string) seeds its `args` binding\n  save <name>  save a workflow script from <file> (or stdin, if omitted) to ~/.moss/workflows/<name>.js");
       break;
     }
 
-    const { WorkflowStore, TrustStore, userWorkflowsDir } = await import("@waifucave/clover-core");
-    const home = resolveCloverHome();
-    const store = new WorkflowStore({ cloverHome: home, trust: new TrustStore(join(home, "trust.json")) });
+    const { WorkflowStore, TrustStore, userWorkflowsDir } = await import("@waifucave/moss-core");
+    const home = resolveMossHome();
+    const store = new WorkflowStore({ mossHome: home, trust: new TrustStore(join(home, "trust.json")) });
     const cwd = process.cwd();
 
     if (action.action === "list") {
@@ -4092,7 +4092,7 @@ if (import.meta.main) {
 
       // Best-effort daemon augmentation, ONLY if a daemon is ALREADY up (a direct existsSync
       // check — never connect()'s own autolaunch: unlike `run`, a plain `list` must not have the
-      // side effect of spawning Clover.app). workflow.list is session-scoped server-side
+      // side effect of spawning MOSS Code.app). workflow.list is session-scoped server-side
       // (WorkflowRegistry.list(sessionId) filters strictly to that session's own runs), so this
       // creates a session the same way `run` does below; wrapped in try/catch because the
       // file-direct saved list above already answered the primary ask — a down/flaked daemon must
@@ -4156,14 +4156,14 @@ if (import.meta.main) {
     break;
   }
   case "init": {
-    await runTurnSession({ promptOverride: INIT_PROMPT, forceAuto: true, chat: false }); // force auto: writes CLOVER.md without approval prompts
+    await runTurnSession({ promptOverride: INIT_PROMPT, forceAuto: true, chat: false }); // force auto: writes MOSS.md without approval prompts
     break;
   }
   case "resume": {
     const sid = process.argv[3];
     if (!sid) {
       // picker: list resumable sessions. Plan-immunity Task 2: this is a PICKER (same shape as the
-      // TUI's `/sessions` — its own inline comment is the same phrase), not the plain `clover
+      // TUI's `/sessions` — its own inline comment is the same phrase), not the plain `moss
       // sessions` inventory, so it HIDES non-code rows (`filterCodeSessions`) rather than marking
       // them — showing a row here that `resume <id>` would immediately refuse below is the
       // shown-but-broken shape this slice keeps closing. See session-mode.ts's file doc.
@@ -4195,13 +4195,13 @@ if (import.meta.main) {
     break;
   }
   case "provider-smoke": {
-    const { loadSettings, resolveCloverHome, createProvider, KeychainSecretStore } = await import("@waifucave/clover-core");
-    const s = loadSettings(join(resolveCloverHome(), "settings.json"));
+    const { loadSettings, resolveMossHome, createProvider, KeychainSecretStore } = await import("@waifucave/moss-core");
+    const s = loadSettings(join(resolveMossHome(), "settings.json"));
     const active = await createProvider(s, new KeychainSecretStore());
     // Design correction (Lane 3, round 4): `createProvider` now answers `null` rather than
     // refusing, whenever `provider.model` names a provider outside the daemon's internal set
     // (codex-oauth/openai) — the same "inert, not a refusal" shape `internalProviderNote`
-    // (model-cli.ts) warns about for `clover model <tag>` itself.
+    // (model-cli.ts) warns about for `moss model <tag>` itself.
     if (!active) {
       let note: string | undefined;
       try { note = internalProviderNote(s.provider.model); } catch { /* not tag-shaped — fall through to the generic message */ }
@@ -4209,7 +4209,7 @@ if (import.meta.main) {
       process.exit(1);
     }
     const promptIdx = process.argv.indexOf("--prompt");
-    const prompt = promptIdx > 0 ? process.argv[promptIdx + 1]! : "Reply with exactly: clover provider smoke OK";
+    const prompt = promptIdx > 0 ? process.argv[promptIdx + 1]! : "Reply with exactly: moss provider smoke OK";
     console.log(`${DIM}provider=${active.provider.id} model=${active.model}${RESET}`);
     let text = "";
     for await (const e of active.provider.streamTurn({
@@ -4226,7 +4226,7 @@ if (import.meta.main) {
     // WS-16 §18 Migration B — the same real machinery the daemon's own boot hook runs (never a
     // second copy of it). `runMigrateCommand` is provable outside this argv switch (main.test.ts's
     // own header); this case is a thin wrapper over real deps.
-    const { KeychainSecretStore: To, LegacyKeychainSecretStore, resolveCloverHome: home, resolveCloverProfile: profileOf, isDaemonLockHeld } = await import("@waifucave/clover-core");
+    const { KeychainSecretStore: To, LegacyKeychainSecretStore, resolveMossHome: home, resolveMossProfile: profileOf, isDaemonLockHeld } = await import("@waifucave/moss-core");
     const { runMigrateCommand } = await import("./commands/migrate");
     const profile = profileOf();
     const code = await runMigrateCommand({
@@ -4244,11 +4244,11 @@ if (import.meta.main) {
   }
   case "migrate-project": {
     const { runMigrateProjectCommand } = await import("./commands/migrate-project");
-    const { resolveCloverHome: cloverHomeOf } = await import("@waifucave/clover-core");
+    const { resolveMossHome: mossHomeOf } = await import("@waifucave/moss-core");
     const code = await runMigrateProjectCommand({
       argv: process.argv.slice(3),
       cwd: process.cwd(),
-      home: cloverHomeOf(), // WS-21: the approved-rules record read for this project
+      home: mossHomeOf(), // WS-21: the approved-rules record read for this project
 
       log: (l) => console.log(l),
       error: (l) => console.error(l),
@@ -4257,7 +4257,7 @@ if (import.meta.main) {
     process.exit(code);
   }
   default:
-    console.log(`clover ${CORE_VERSION} — commands:
+    console.log(`moss ${CORE_VERSION} — commands:
   daemon run | daemon start | daemon stop | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
@@ -4270,7 +4270,7 @@ if (import.meta.main) {
   plugin validate [<folder>] [--json] [--upgrade]   a plugin folder's class, contributions, hosts and OK text; non-zero on an error
   plugin list | install <git-url> [name] | enable <name> | disable <name> | remove <name> | restart <name>
   bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>
-  bot avatar <bot> <folder|zip|model file>                             use your own avatar model (copied into your Clover folder)
+  bot avatar <bot> <folder|zip|model file>                             use your own avatar model (copied into your MOSS folder)
   routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt>
     | routines delete <id> | routines enable <id> | routines disable <id>       manage scheduled routines
   memory [list] [--project] | show <name> [--project] | rm <name> [--project]  manage saved memory facts
@@ -4278,10 +4278,10 @@ if (import.meta.main) {
   logout [--anthropic] [--anthropic-console] [--openai]           (bare: signs out of ChatGPT/Codex)
   credentials [list] | credentials set <providerId> | credentials remove <providerId>   every provider's API key (masked prompt)
   provider | provider-smoke [--prompt <text>]
-  init                                            generate/update CLOVER.md by surveying the project
+  init                                            generate/update MOSS.md by surveying the project
   migrate [--from <legacyHome>] [--status|--resume|--rollback] [--yes]        Migration B: copy a legacy home into this one
   migrate --cowork-schema --rollback [--home <dir>] [--yes]  roll back unused Cowork tables to v7; keep the SDK layout
-  migrate-project [dir] [--yes]                   convert one project's legacy instructions file / project dir to CLOVER.md/.clover
-  -p "<prompt>" [--auto|--plan] [--trust|--no-trust] [--model <providerId>/<modelId>]   headless agent turn (asks for tool approval unless --auto/--plan; --model picks this one session's model; \`clover model\` lists them)`);
+  migrate-project [dir] [--yes]                   convert one project's legacy instructions file / project dir to MOSS.md/.moss
+  -p "<prompt>" [--auto|--plan] [--trust|--no-trust] [--model <providerId>/<modelId>]   headless agent turn (asks for tool approval unless --auto/--plan; --model picks this one session's model; \`moss model\` lists them)`);
   }
 }

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import {
   findFiles, percentOf, resetMs, runOutside, shortStr, staleness, timeOf, tokenCount,
   type FoundFile, type Outside, type PlanWindow, type PlanWindowKind, type UsagePlanReading, type UsageRecord,
-} from "@waifucave/clover-plugin-sdk/usage-source";
+} from "@waifucave/moss-plugin-sdk/usage-source";
 
 // The user's own Claude Code (spec §12 "Usage sources") — READ ONLY, and only what is needed:
 //
@@ -18,7 +18,7 @@ import {
 //    MCP servers' secrets): the manifest names only `~/.claude/projects` and `~/.claude/stats-cache.json`, and the fence
 //    keeps the sign-in file unreadable inside a folder a plugin names. The plan's size ("20x") that `~/.claude.json`
 //    gave is no longer read.
-//    (https://code.claude.com/docs/en/legal-and-compliance) — the CLI makes its own call, Clover reads its output.
+//    (https://code.claude.com/docs/en/legal-and-compliance) — the CLI makes its own call, MOSS reads its output.
 
 /** One transcript line → at most one record (PURE). Streamed messages repeat across lines: `dedupe` is the message id
  *  plus the request id, so the first copy wins. */

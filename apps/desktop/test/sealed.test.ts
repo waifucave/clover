@@ -2,7 +2,7 @@
 // to their own frames, and one answer per button — a `{via:"device", device, at, signature}` proof, marks resolved at
 // the core's own answer (spec §5.5).
 import { describe, expect, test } from "bun:test";
-import { cardAnswerSigningInput } from "@waifucave/clover-protocol";
+import { cardAnswerSigningInput } from "@waifucave/moss-protocol";
 import { FRESH_MAX_AGE_MS, SealedFrames, type AnswerSigner, type SealedCard } from "../src/main/sealed";
 
 const CARD: SealedCard = {

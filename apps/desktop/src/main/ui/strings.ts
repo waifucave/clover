@@ -1,22 +1,22 @@
 // Each document's strings (spec §5.5 "Translations", the `locales` point). Pure apart from reading locale files.
 //
-// A document reads its plugin's keys: `<top-level id>.…`, and `clover.…` for the `clover` layer and the core root. For
+// A document reads its plugin's keys: `<top-level id>.…`, and `moss.…` for the `moss` layer and the core root. For
 // each key the table takes the first string it finds, trying the user's language, its base (`pt-BR` → `pt`), English,
 // then any language the key's own plugin has; in each language the plugin's own tables first (the core's built-in
-// English for `clover.` keys among them), then packs: the one the user chose for that language, then the first
+// English for `moss.` keys among them), then packs: the one the user chose for that language, then the first
 // enabled. A pack is any plugin's table for keys that aren't its own, except a bot's: a bot's plugin translates only
-// its own keys (a pack for the rest can be a child in its folder). The strings of sealed cards and the OK (`clover.card.…`,
-// `clover.ok.…`) come only from the built-in tables and the `clover` tree's own, so a pack a bot edits can't relabel
+// its own keys (a pack for the rest can be a child in its folder). The strings of sealed cards and the OK (`moss.card.…`,
+// `moss.ok.…`) come only from the built-in tables and the `moss` tree's own, so a pack a bot edits can't relabel
 // them; without one they read in English (there is no official index to vouch for another pack: the owner's ruling,
 // 2026-11-13).
 import { readFileSync } from "node:fs";
-import { LocaleSchema, localeFallbacks, type Locale } from "@waifucave/clover-plugin-sdk";
-import type { LocaleValue, StringTable } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { LocaleSchema, localeFallbacks, type Locale } from "@waifucave/moss-plugin-sdk";
+import type { LocaleValue, StringTable } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { pluginFile } from "./files";
 import type { UiPlugin } from "./model";
 
 /** The keys only trusted tables may translate (sealed cards, the OK). */
-export const TRUSTED_PREFIXES: readonly string[] = ["clover.card.", "clover.ok."];
+export const TRUSTED_PREFIXES: readonly string[] = ["moss.card.", "moss.ok."];
 
 export function isTrustedKey(key: string): boolean {
   return TRUSTED_PREFIXES.some((p) => key.startsWith(p));
@@ -42,7 +42,7 @@ export interface StringsInput {
 interface Table {
   lang: string;
   strings: Readonly<Record<string, LocaleValue>>;
-  /** The core's, a `clover` table, or the plugin whose key it is. */
+  /** The core's, a `moss` table, or the plugin whose key it is. */
   own: boolean;
   trusted: boolean;
   /** For packs: the user's choice first, then the first enabled. */
@@ -78,7 +78,7 @@ export class StringStore {
 
 function tablesFor(store: StringStore, input: StringsInput, owner: string): Table[] {
   const out: Table[] = [];
-  if (owner === "clover") {
+  if (owner === "moss") {
     for (const [lang, strings] of Object.entries(input.builtIn)) out.push({ lang: normalizeLang(lang), strings, own: true, trusted: true, rank: -1 });
   }
   const packs = [...input.plugins].sort((a, b) => a.enabledAt - b.enabledAt || a.id.localeCompare(b.id));
@@ -91,13 +91,13 @@ function tablesFor(store: StringStore, input: StringsInput, owner: string): Tabl
       if (locale === null) continue;
       const lang = normalizeLang(locale.lang);
       const chosen = input.packs?.[lang] === p.id || input.packs?.[locale.lang] === p.id;
-      out.push({ lang, strings: locale.strings, own, trusted: p.topId === "clover", rank: chosen ? -1 : index });
+      out.push({ lang, strings: locale.strings, own, trusted: p.topId === "moss", rank: chosen ? -1 : index });
     }
   }
   return out;
 }
 
-/** The strings a document of `owner`'s (a top-level plugin id; `clover` for the core and the `clover` layer) reads. */
+/** The strings a document of `owner`'s (a top-level plugin id; `moss` for the core and the `moss` layer) reads. */
 export function stringTable(store: StringStore, input: StringsInput, owner: string): StringTable {
   const lang = normalizeLang(input.lang);
   const prefix = `${owner}.`;

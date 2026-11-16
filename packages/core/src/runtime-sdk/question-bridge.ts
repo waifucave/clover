@@ -1,10 +1,10 @@
 import { z } from "zod";
 import type { PermissionResult } from "@waifucave/clover-agent-sdk";
-import { QUESTION_PLACEHOLDER_MAX, utf16, type NewSessionEvent, type Question } from "@waifucave/clover-protocol";
+import { QUESTION_PLACEHOLDER_MAX, utf16, type NewSessionEvent, type Question } from "@waifucave/moss-protocol";
 import type { QuestionBroker } from "../agent/questions";
 import { NO_PARK_TIMEOUT_MS, type BridgeLogger } from "./bridge-common";
 
-/** Clover's built-in question tool. Pinned by the SDK surface map §5.6 (`canonicalName` /
+/** MOSS's built-in question tool. Pinned by the SDK surface map §5.6 (`canonicalName` /
  *  `advertisedName: "AskUserQuestion"`). */
 export const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
 
@@ -29,7 +29,7 @@ export const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
  * (and anything a later runtime adds) ride through untouched whether or not they appear here — the
  * "strip unknown keys" default can therefore never lose a field. `header` is REQUIRED (1–12), as the
  * runtime's own executor requires it (SDK #47): a header-less question would be asked, answered and THEN
- * rejected by the executor, so it is refused here, up front, before anyone is asked. (Clover's wire
+ * rejected by the executor, so it is refused here, up front, before anyone is asked. (MOSS's wire
  * `QuestionSchema` keeps `header` optional for chat's simplified card; this tool never produces one.)
  * `options: null` is a free-text question like an absent or empty list, and a free-text question is never
  * multiple-choice (`multiSelect` is forced false, as the runtime does).
@@ -67,7 +67,7 @@ export function clampPlaceholder(raw: string | undefined): string | undefined {
 }
 
 export interface AskUserQuestionDeps {
-  /** The OWNING Clover session. A Clover sub-agent's question surfaces HERE (see below). */
+  /** The OWNING MOSS session. A MOSS sub-agent's question surfaces HERE (see below). */
   sessionId: string;
   threadId?: string;
   questions: QuestionBroker;
@@ -83,23 +83,23 @@ export interface AskUserQuestionDeps {
 }
 
 /**
- * **The `AskUserQuestion` bridge** — a Clover child's question over the daemon's EXISTING
+ * **The `AskUserQuestion` bridge** — a MOSS child's question over the daemon's EXISTING
  * `QuestionBroker`, `question_asked`/`question_resolved` events and `ask_user.respond` RPC, the
  * same machinery `ask_user` (code) and `AskQuestion` (chat/dispatch) use today. The two tools
- * collapse into this one (Clover map §5.3 / digest item 51); the answer goes back to the model as
+ * collapse into this one (MOSS map §5.3 / digest item 51); the answer goes back to the model as
  * `canUseTool`'s `updatedInput.answers`, keyed by question TEXT — which is exactly how
  * `QuestionBroker`, `AskUserRespondParams` and `QuestionResolvedEvent.answers` are already keyed,
  * so no translation is needed anywhere on the phone's path.
  *
- * **Routing, and `agentID`.** The event is emitted on `deps.sessionId` — the owning Clover session —
+ * **Routing, and `agentID`.** The event is emitted on `deps.sessionId` — the owning MOSS session —
  * *by construction*: this bridge is built once per session and never learns a child session id. A
- * Clover `agentID` names a sub-agent INSIDE that session's one child process, not a Clover session
+ * MOSS `agentID` names a sub-agent INSIDE that session's one child process, not a MOSS session
  * of its own; it has no event stream, no `SessionStore` row and no id `ask_user.respond` could
  * address. So a sub-agent's question surfaces on the parent's stream and is answered at the
  * parent's `sessionId` — the same end state today's dispatch relay reaches by MIRRORING a child
  * session's `question_asked` into the parent's stream (`agent/dispatch-children.ts`), minus the
  * mirror, because there is no second stream to mirror from. (`AskUserQuestion` is in any case
- * `availability: { insideSubagent: false }` in Clover's own descriptor, so `agentID` here is the
+ * `availability: { insideSubagent: false }` in MOSS's own descriptor, so `agentID` here is the
  * narrow case of a non-Agent-tool sub-agent.)
  *
  * **Fail-closed** (P8b-19): a timeout, an abort, an unparseable input, an emit failure or an empty
@@ -156,7 +156,7 @@ export function askUserQuestionBridge(deps: AskUserQuestionDeps): AskUserQuestio
     }
     const raw = parsed.data;
 
-    // Clover's `QuestionSchema` requires `multiSelect`; Clover's descriptor makes it optional. The
+    // MOSS's `QuestionSchema` requires `multiSelect`; MOSS's descriptor makes it optional. The
     // default is `false` — a single-choice question, which is what an omitted flag means.
     // `options` is ALWAYS emitted (`[]` for a free-text question): a shipped Swift client decodes it
     // as a required array (see the protocol's `QuestionSchema`).

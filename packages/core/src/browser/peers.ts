@@ -1,4 +1,4 @@
-// The browser's `computer` field across computers (plan §4 L, M2; spec §12.1: "Clover runs its own browser, headless,
+// The browser's `computer` field across computers (plan §4 L, M2; spec §12.1: "MOSS runs its own browser, headless,
 // on each computer"). Each computer's tabs live in its own browser, driven by its own daemon. A call that names
 // another computer goes there over the link (lane H's `LinkTransport`, found through lane J's computers), and that
 // computer's `BrowserService` answers it under its own rules: the holder decides, as lane J's holders do for the tree.
@@ -15,7 +15,7 @@
 //
 // The holder tells each calling device about the tabs it has opened or used there (`tab_changed`, `tab_closed`), and
 // about DevTools events on the tabs it follows (`cdp_event`), so the caller's own events carry them.
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import type { Link, LinkTransport } from "../contracts/link-transport";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { Screenshot, ScreenshotFormat, TabOwner, TabView, Viewport } from "./contract";

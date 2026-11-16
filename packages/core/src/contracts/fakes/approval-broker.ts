@@ -5,7 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   type Card, type CardMeta, type CardOption, type CardOutcome, type Level,
   type TreeTransferParams, DEFAULT_LEVEL, TREE_TRANSFER, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, callBindingInput, cardHashInput,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import {
   ALWAYS_CARD_KINDS, bindsOutsideRequest, CALL_CARD_METHODS, callBindingOf, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel, writesRunLater,
   type AnswerLedger, type CallCardRenderer, type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,

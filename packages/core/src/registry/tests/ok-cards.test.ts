@@ -1,8 +1,8 @@
 // The OK as a sealed `plugin-ok` card through the broker: its text and children, the user's approve with the children
 // they checked, and their deny refusing the plugin.
 import { describe, expect, test } from "bun:test";
-import { catalogPointDecl } from "@waifucave/clover-plugin-sdk";
-import type { Card } from "@waifucave/clover-protocol";
+import { catalogPointDecl } from "@waifucave/moss-plugin-sdk";
+import type { Card } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import type { Manifest } from "../../contracts/sdk-types";

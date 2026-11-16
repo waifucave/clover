@@ -1,18 +1,18 @@
-// How Clover's areas describe their methods and events. The wire stays as it is: JSON-RPC 2.0 over NDJSON
+// How MOSS's areas describe their methods and events. The wire stays as it is: JSON-RPC 2.0 over NDJSON
 // (jsonrpc.ts, ndjson.ts), requests and responses in both directions on one connection, and events as
 // notifications. Each area file (plugins.ts, approvals.ts, …) lists its methods with `defineMethod` and its events
-// with `defineEvent`; clover.ts gathers them into one table, derives each role's allow list and generates the JSON
+// with `defineEvent`; moss.ts gathers them into one table, derives each role's allow list and generates the JSON
 // Schemas and fixtures (`pnpm protocol:generate`).
 import { z } from "zod";
 import { type Lane, Timestamp } from "./common";
-import type { CloverRole } from "./roles";
+import type { MossRole } from "./roles";
 
 /** Who sends a request: a client to the daemon (most methods), or the daemon to a client (the browser's tabs live in
  *  the app, §12.1; handlers run in the plugin host, §5.2). `peer` methods go both ways between two daemons. */
 export type Direction = "to-daemon" | "from-daemon";
 
 /** How a method changes access (§5.5):
- *  - `core`: it changes the core's settings or a user layer. Only the `clover` layer (role `app`) and the user's own
+ *  - `core`: it changes the core's settings or a user layer. Only the `moss` layer (role `app`) and the user's own
  *    terminal change them directly; from any other layer the change becomes a sealed card.
  *  - `sensitive`: it is a sensitive change (levels, devices, the main computer, loading a found plugin, development
  *    folders, trusting a repo, saved rules, connector permissions). It ends in a sealed card unless the user makes it
@@ -20,16 +20,16 @@ export type Direction = "to-daemon" | "from-daemon";
 export type ChangeKind = "core" | "sensitive";
 
 export interface MethodSpec<P extends z.ZodType = z.ZodType, R extends z.ZodType = z.ZodType> {
-  /** `<area>.<verb>`, unique across Clover's protocol. */
+  /** `<area>.<verb>`, unique across MOSS's protocol. */
   readonly name: string;
   readonly params: P;
   /** What a role may send, where it differs from the others (#179's review, S3 and check 2): a call from that role is
    *  parsed with this alone (`paramsFor`). A peer can't name another computer's level; a layer installs only from an
    *  index or npm. */
-  readonly roleParams?: Partial<Record<CloverRole, z.ZodType>>;
+  readonly roleParams?: Partial<Record<MossRole, z.ZodType>>;
   readonly result: R;
-  /** The roles that may call it. The allow lists are exactly these (clover.ts). */
-  readonly roles: readonly CloverRole[];
+  /** The roles that may call it. The allow lists are exactly these (moss.ts). */
+  readonly roles: readonly MossRole[];
   /** The lane that implements it. */
   readonly owner: Lane;
   readonly direction: Direction;
@@ -51,9 +51,9 @@ export interface MethodSpec<P extends z.ZodType = z.ZodType, R extends z.ZodType
 export interface MethodInput<P extends z.ZodType, R extends z.ZodType> {
   name: string;
   params: P;
-  roleParams?: Partial<Record<CloverRole, z.ZodType>>;
+  roleParams?: Partial<Record<MossRole, z.ZodType>>;
   result: R;
-  roles: readonly CloverRole[];
+  roles: readonly MossRole[];
   owner: Lane;
   direction?: Direction;
   capability?: string;
@@ -65,7 +65,7 @@ export interface MethodInput<P extends z.ZodType, R extends z.ZodType> {
 
 /** The params schema a call from `role` is parsed with: that role's own (`roleParams`) where the method has one. Every
  *  server that takes a call (the daemon's endpoint, the link's peer side) parses with this. */
-export function paramsFor(spec: Pick<MethodSpec, "params" | "roleParams">, role: CloverRole): z.ZodType {
+export function paramsFor(spec: Pick<MethodSpec, "params" | "roleParams">, role: MossRole): z.ZodType {
   return spec.roleParams?.[role] ?? spec.params;
 }
 
@@ -88,25 +88,25 @@ export function defineMethod<P extends z.ZodType, R extends z.ZodType>(m: Method
 
 /** Where an event lives:
  *  - `core`: daemon-wide state (plugins, cards, devices, computers, tabs…), delivered as a `core.event` notification
- *    to connections that subscribed to its area (`events.subscribe`, clover.ts).
+ *    to connections that subscribed to its area (`events.subscribe`, moss.ts).
  *  - `session`: a session's own log, delivered with the inherited `event` notification and envelope (`seq`,
- *    `sessionId`, `ts`). Clover's session events join `SessionEvent` (events.ts) when lane D wires them through the
+ *    `sessionId`, `ts`). MOSS's session events join `SessionEvent` (events.ts) when lane D wires them through the
  *    inherited checklist (docs/claude/protocol-and-remote.md); until then they are their own union (sessions.ts). */
 export type EventScope = "core" | "session";
 
 export interface EventSpec<S extends z.ZodType = z.ZodType> {
-  /** The `type` discriminator, unique across the inherited `SessionEvent` and Clover's events. */
+  /** The `type` discriminator, unique across the inherited `SessionEvent` and MOSS's events. */
   readonly type: string;
   readonly schema: S;
   /** The roles that receive it. */
-  readonly roles: readonly CloverRole[];
+  readonly roles: readonly MossRole[];
   readonly owner: Lane;
   readonly scope: EventScope;
   /** A transient event is never stored or replayed (the inherited `TRANSIENT_EVENT_TYPES` rule). */
   readonly transient: boolean;
   /** A plugin receiver (`layer`, `plugin-host`) needs this capability. */
   readonly capability?: string;
-  /** A canonical example, generated into `generated/clover/fixtures/` and parsed by the tests. */
+  /** A canonical example, generated into `generated/moss/fixtures/` and parsed by the tests. */
   readonly fixture: z.input<S>;
   readonly doc: string;
 }
@@ -114,7 +114,7 @@ export interface EventSpec<S extends z.ZodType = z.ZodType> {
 export interface EventInput<S extends z.ZodType> {
   type: string;
   schema: S;
-  roles: readonly CloverRole[];
+  roles: readonly MossRole[];
   owner: Lane;
   scope?: EventScope;
   transient?: boolean;

@@ -4,12 +4,12 @@
 // limits, failures, crash backoff and the stop after three,
 // reloads, MCP channels and the plugin-API router.
 import { describe, expect, test } from "bun:test";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { isContractError } from "../common";
 import { FakeClock, advanceAndSettle, flush } from "../fakes/clock";
 import { type FakePluginHost } from "../fakes/plugin-host";
 import {
-  CRASH_WINDOW_MS, MCP_INVOCATION_META, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, cloverProcessOnly, crashBackoffMs,
+  CRASH_WINDOW_MS, MCP_INVOCATION_META, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, mossProcessOnly, crashBackoffMs,
   guardApiRouter, hostProcessFor, resolveHandler, type ApiRouter, type HostedStatus, type InstallRecord,
 } from "../plugin-host";
 import type { HandlerContext } from "../sdk-types";
@@ -85,9 +85,9 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
         }
       }
       const notifier = { unseen: 0, notify(u: { unseen: number }) { this.unseen = u.unseen; return this.unseen; }, clear: () => 0 };
-      host.define("clover/forwarder", { ingress: new Ingress(), notifier, plain: () => "plain" });
+      host.define("moss/forwarder", { ingress: new Ingress(), notifier, plain: () => "plain" });
       const call = (handler: string, method?: string, args: unknown = null) =>
-        host.invoke({ pluginId: "clover/forwarder", handler, ...(method === undefined ? {} : { method }), args, caller: { kind: "core" } });
+        host.invoke({ pluginId: "moss/forwarder", handler, ...(method === undefined ? {} : { method }), args, caller: { kind: "core" } });
       expect(await call("ingress", "next")).toBe("d1");
       expect(await call("ingress", "next")).toBeNull();
       expect(await call("notifier", "notify", { unseen: 4 })).toBe(4);
@@ -274,7 +274,7 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
         // A plugin can't speak for anyone else: what it passes as a caller is only an argument.
         tabs: async (_a: unknown, ctx: HandlerContext) => ctx.api.settings.get("owner", { bot: "sol" }),
       });
-      await host.invoke({ pluginId: "browser", handler: "tabs", args: { _meta: { "clover/caller": USER } }, caller: SESSION, session: "s_alpha" });
+      await host.invoke({ pluginId: "browser", handler: "tabs", args: { _meta: { "moss/caller": USER } }, caller: SESSION, session: "s_alpha" });
       await startApi!.settings.get("owner");
       expect(callers).toEqual([["settings.get", SESSION], ["settings.get", { kind: "plugin", pluginId: "browser" }]]);
     });
@@ -328,32 +328,32 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
         spoof: async (_a: unknown, ctx: HandlerContext) => {
           await ctx.api.net.fetch("https://hooks.waifucave.com/x", {}, { auth: "waifucave" });
           // A member the catalog doesn't have fails at once, by name; a real call's arguments can't name a plugin.
-          expect(() => (ctx.api as unknown as { call(o: unknown): Promise<unknown> }).call({ pluginId: "clover/forwarder" })).toThrow("api.call doesn't exist");
-          await (ctx.api.settings.get as unknown as (o: unknown) => Promise<unknown>)({ pluginId: "clover/forwarder" });
+          expect(() => (ctx.api as unknown as { call(o: unknown): Promise<unknown> }).call({ pluginId: "moss/forwarder" })).toThrow("api.call doesn't exist");
+          await (ctx.api.settings.get as unknown as (o: unknown) => Promise<unknown>)({ pluginId: "moss/forwarder" });
         },
       });
       await host.invoke({ pluginId: "third-party", handler: "spoof", args: 0, caller: USER });
       expect(ids).toEqual(["third-party", "third-party"]);
     });
 
-    test("the core decides the process from the install record: the bundled clover tree's own, the shared one, a Node plugin's own (S4)", () => {
-      expect(hostProcessFor({ id: "clover/forwarder", source: "bundled" })).toBe("clover");
-      expect(hostProcessFor({ id: "clover", source: "bundled" })).toBe("clover");
-      // An id is no claim: a clover id that wasn't installed with the app is a third-party plugin.
-      expect(hostProcessFor({ id: "clover/forwarder", source: "local" })).toBe("shared");
-      expect(hostProcessFor({ id: "cloverleaf", source: "bundled" })).toBe("shared");
+    test("the core decides the process from the install record: the bundled moss tree's own, the shared one, a Node plugin's own (S4)", () => {
+      expect(hostProcessFor({ id: "moss/forwarder", source: "bundled" })).toBe("moss");
+      expect(hostProcessFor({ id: "moss", source: "bundled" })).toBe("moss");
+      // An id is no claim: a moss id that wasn't installed with the app is a third-party plugin.
+      expect(hostProcessFor({ id: "moss/forwarder", source: "local" })).toBe("shared");
+      expect(hostProcessFor({ id: "mossleaf", source: "bundled" })).toBe("shared");
       expect(hostProcessFor({ id: "luna/tarot", source: "index" })).toBe("shared");
       expect(hostProcessFor({ id: "opensky", source: "index", runtime: "node" })).toBe("own");
-      expect(hostProcessFor({ id: "clover/model-bedrock", source: "bundled", runtime: "node" })).toBe("own");
+      expect(hostProcessFor({ id: "moss/model-bedrock", source: "bundled", runtime: "node" })).toBe("own");
       // A Bun plugin that signs with its secret may ask for a process of its own (lane A's ask).
-      expect(hostProcessFor({ id: "clover/model-vertex", source: "bundled", process: "own" })).toBe("own");
+      expect(hostProcessFor({ id: "moss/model-vertex", source: "bundled", process: "own" })).toBe("own");
       expect(hostProcessFor({ id: "tarot", source: "local", runtime: "bun", process: "own" })).toBe("own");
     });
 
-    test("a third-party worker presenting a clover/* id is refused, and the account token and keys answer only the clover process (S4)", async () => {
+    test("a third-party worker presenting a moss/* id is refused, and the account token and keys answer only the moss process (S4)", async () => {
       const { host } = setup();
       const records = new Map<string, InstallRecord>([
-        ["clover/forwarder", { id: "clover/forwarder", source: "bundled" }],
+        ["moss/forwarder", { id: "moss/forwarder", source: "bundled" }],
         ["luna", { id: "luna", source: "index" }],
       ]);
       const served: { pluginId: string; process: string; path: string }[] = [];
@@ -363,7 +363,7 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
         return call.path === "net.fetch" ? new Response(null) : undefined;
       };
       host.serveApi(guardApiRouter(inner, (id) => records.get(id)));
-      host.define("clover/forwarder", {
+      host.define("moss/forwarder", {
         next: async (_a: unknown, ctx: HandlerContext) => {
           // `keys.*` isn't served yet (the catalog's `notYet`): the process gate is what this case pins, through the
           // suite's own router, so the call is made past the SDK's types.
@@ -376,9 +376,9 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
         keys: async (_a: unknown, ctx: HandlerContext) => (ctx.api.keys as unknown as LegacyKeys).publicKey("mine"),
         fine: async (_a: unknown, ctx: HandlerContext) => ctx.api.storage.synced.get("x"),
       }, { source: "index" });
-      expect([host.processOf("clover/forwarder"), host.processOf("luna")]).toEqual(["clover", "shared"]);
-      await host.invoke({ pluginId: "clover/forwarder", handler: "next", args: null, caller: USER });
-      expect(served.map((c) => `${c.pluginId}@${c.process}:${c.path}`)).toEqual(["clover/forwarder@clover:keys.open", "clover/forwarder@clover:net.fetch"]);
+      expect([host.processOf("moss/forwarder"), host.processOf("luna")]).toEqual(["moss", "shared"]);
+      await host.invoke({ pluginId: "moss/forwarder", handler: "next", args: null, caller: USER });
+      expect(served.map((c) => `${c.pluginId}@${c.process}:${c.path}`)).toEqual(["moss/forwarder@moss:keys.open", "moss/forwarder@moss:net.fetch"]);
       // From the shared process: the account token and key pairs are refused, even for luna's own pair.
       expect(isContractError(await rejection(host.invoke({ pluginId: "luna", handler: "sneak", args: null, caller: USER })), "refused")).toBe(true);
       expect(isContractError(await rejection(host.invoke({ pluginId: "luna", handler: "keys", args: null, caller: USER })), "refused")).toBe(true);
@@ -386,13 +386,13 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       // A compromised shared process presenting the forwarder's id, or an unknown one, is refused before any call runs.
       served.length = 0;
       for (const path of ["keys.open", "net.fetch", "storage.synced.get"]) {
-        expect(isContractError(await rejection(host.forgeApiCall("shared", "clover/forwarder", path, [])), "refused")).toBe(true);
+        expect(isContractError(await rejection(host.forgeApiCall("shared", "moss/forwarder", path, [])), "refused")).toBe(true);
       }
-      expect(isContractError(await rejection(host.forgeApiCall("clover", "luna", "storage.synced.get", [])), "refused")).toBe(true);
+      expect(isContractError(await rejection(host.forgeApiCall("moss", "luna", "storage.synced.get", [])), "refused")).toBe(true);
       expect(isContractError(await rejection(host.forgeApiCall("shared", "no-such-plugin", "storage.synced.get", [])), "refused")).toBe(true);
       expect(served).toEqual([]);
-      expect(cloverProcessOnly("net.fetch", ["https://api.example.com", {}, { auth: "luna" }])).toBe(false);
-      expect(cloverProcessOnly("keys.delete", ["x"])).toBe(true);
+      expect(mossProcessOnly("net.fetch", ["https://api.example.com", {}, { auth: "luna" }])).toBe(false);
+      expect(mossProcessOnly("keys.delete", ["x"])).toBe(true);
     });
 
     test("a streamed handler's values arrive in order, then its return value; its input arrives as ctx.input (review S16)", async () => {

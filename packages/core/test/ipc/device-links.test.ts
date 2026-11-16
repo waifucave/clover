@@ -5,21 +5,21 @@ import { join } from "node:path";
 import { SystemClock } from "../../src/clock/system-clock";
 import { MemoryNetwork } from "../../src/links/memory-wire";
 import { MemoryRendezvous } from "../../src/links/pairing";
-import { CloverSecretStore, KeychainValues, memoryVault } from "../../src/secrets/clover-secret-store";
+import { MossSecretStore, KeychainValues, memoryVault } from "../../src/secrets/moss-secret-store";
 import { defaultDeviceName, linkSidecarBinary, refuseUntilBroker, startDaemonLinks, type DaemonLinks } from "../../src/ipc/device-links";
-import type { CloverHandler } from "../../src/ipc/clover";
+import type { MossHandler } from "../../src/ipc/moss";
 
-// C-M2: H's links in the daemon, on H's in-memory network: the real CloverSecretStore holds the device keys, the devices
-// methods mount, peer.call reaches the Clover server's dispatch as the peer, and a network change re-dials.
+// C-M2: H's links in the daemon, on H's in-memory network: the real MossSecretStore holds the device keys, the devices
+// methods mount, peer.call reaches the MOSS server's dispatch as the peer, and a network change re-dials.
 
 const clock = new SystemClock();
 let stops: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const s of stops.reverse()) await s(); stops = []; });
 
 async function boot(net: MemoryNetwork, name: string) {
-  const home = mkdtempSync(join(tmpdir(), "clover-c-links-"));
-  const store = new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
-  const handlers: Record<string, CloverHandler> = {};
+  const home = mkdtempSync(join(tmpdir(), "moss-c-links-"));
+  const store = new MossSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
+  const handlers: Record<string, MossHandler> = {};
   const dispatched: Array<{ method: string; caller: unknown; role: string }> = [];
   let netChange: ((why: "addresses" | "wake") => void) | undefined;
   const d = await startDaemonLinks({
@@ -37,9 +37,9 @@ async function boot(net: MemoryNetwork, name: string) {
 describe("the daemon's links (H-M1 wiring)", () => {
   test("no sidecar: the links start local-only (one computer on its own), say so, and reach no other device", async () => {
     const lines: string[] = [];
-    const handlers: Record<string, CloverHandler> = {};
+    const handlers: Record<string, MossHandler> = {};
     const d = await startDaemonLinks({
-      home: mkdtempSync(join(tmpdir(), "x-")), store: new CloverSecretStore({ home: mkdtempSync(join(tmpdir(), "y-")), values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
+      home: mkdtempSync(join(tmpdir(), "x-")), store: new MossSecretStore({ home: mkdtempSync(join(tmpdir(), "y-")), values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
       // The defaults: local-only must not reach for production's handshake, SNTP or the network watch on its own.
       clock, handlers, binary: null, mainComputer: { watchSleep: false },
       self: { name: "Studio", os: "macos" }, dispatch: async () => null, log: (l) => lines.push(l),
@@ -58,13 +58,13 @@ describe("the daemon's links (H-M1 wiring)", () => {
     // A lone computer: its own main, holding its lease.
     for (let i = 0; i < 200 && links.main?.lease.state().holder !== links.key.id; i++) await Bun.sleep(10);
     expect(links.main?.lease.state().holder).toBe(links.key.id);
-    expect(linkSidecarBinary("/nonexistent/bin/clover-core")).toBeNull();
+    expect(linkSidecarBinary("/nonexistent/bin/moss-core")).toBeNull();
     // The environment never names the sidecar that is handed the device key: only the one beside the daemon counts.
-    const bin = mkdtempSync(join(tmpdir(), "clover-c-bin-"));
-    writeFileSync(join(bin, "clover-core"), "");
-    expect(linkSidecarBinary(join(bin, "clover-core"), "darwin")).toBeNull();
-    writeFileSync(join(bin, "clover-link"), "");
-    expect(linkSidecarBinary(join(bin, "clover-core"), "darwin")).toBe(realpathSync(join(bin, "clover-link")));
+    const bin = mkdtempSync(join(tmpdir(), "moss-c-bin-"));
+    writeFileSync(join(bin, "moss-core"), "");
+    expect(linkSidecarBinary(join(bin, "moss-core"), "darwin")).toBeNull();
+    writeFileSync(join(bin, "moss-link"), "");
+    expect(linkSidecarBinary(join(bin, "moss-core"), "darwin")).toBe(realpathSync(join(bin, "moss-link")));
   });
 
   test("the device key goes in the real store; the devices methods mount; a sensitive change outside the terminal is refused", async () => {
@@ -94,10 +94,10 @@ describe("the daemon's links (H-M1 wiring)", () => {
   }, 30_000);
 
   // Lane I's account settings (#258): the default handshake, the account and short codes' rendezvous all come from
-  // `waifucaveAccount` (here `<clover home>/account.json`, read as a test build reads it), at a local stand-in.
+  // `waifucaveAccount` (here `<moss home>/account.json`, read as a test build reads it), at a local stand-in.
   async function accountBoot(settings: Record<string, string>) {
     // The environment's overrides (a dev or test build reads them) would win over the file: none while this runs.
-    const saved = Object.fromEntries(Object.keys(process.env).filter((k) => k.startsWith("CLOVER_ACCOUNT_") || k === "CLOVER_HANDSHAKE_URL").map((k) => [k, process.env[k]]));
+    const saved = Object.fromEntries(Object.keys(process.env).filter((k) => k.startsWith("MOSS_ACCOUNT_") || k === "MOSS_HANDSHAKE_URL").map((k) => [k, process.env[k]]));
     for (const k of Object.keys(saved)) delete process.env[k];
     stops.push(async () => void Object.assign(process.env, saved));
     const seen: string[] = [];
@@ -112,9 +112,9 @@ describe("the daemon's links (H-M1 wiring)", () => {
     });
     stops.push(async () => void server.stop(true));
     const url = `http://127.0.0.1:${server.port}`;
-    const home = mkdtempSync(join(tmpdir(), "clover-int-account-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-int-account-"));
     writeFileSync(join(home, "account.json"), JSON.stringify(Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, v.replace("$URL", url)]))));
-    const store = new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
+    const store = new MossSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
     const lines: string[] = [];
     const net = new MemoryNetwork();
     const d = await startDaemonLinks({
@@ -147,9 +147,9 @@ describe("the daemon's links (H-M1 wiring)", () => {
   test("a test's own handshake (or none) has no account or rendezvous unless it passes them", async () => {
     const net = new MemoryNetwork();
     const start = async (account?: { rendezvous: MemoryRendezvous }) => {
-      const home = mkdtempSync(join(tmpdir(), "clover-int-account-"));
+      const home = mkdtempSync(join(tmpdir(), "moss-int-account-"));
       const d = await startDaemonLinks({
-        home, store: new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
+        home, store: new MossSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
         clock, self: { name: "Studio", os: "macos" }, handlers: {}, binary: null, handshake: null, publicTime: null,
         mainComputer: { watchSleep: false }, driver: false, wire: (key) => net.endpoint(key.publicKey),
         dispatch: async () => null, watch: () => () => {}, ...(account ? { account } : {}),
@@ -177,8 +177,8 @@ describe("the daemon's links (H-M1 wiring)", () => {
 
   test("a host name too long for the registry still starts the links", async () => {
     const net = new MemoryNetwork();
-    const home = mkdtempSync(join(tmpdir(), "clover-int-name-"));
-    const store = new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
+    const home = mkdtempSync(join(tmpdir(), "moss-int-name-"));
+    const store = new MossSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
     const d = await startDaemonLinks({
       home, store, clock, handlers: {}, binary: null, handshake: null, publicTime: null, mainComputer: { watchSleep: false },
       self: { name: defaultDeviceName(`runner-${"0".repeat(90)}.local`), os: "macos" },
@@ -189,13 +189,13 @@ describe("the daemon's links (H-M1 wiring)", () => {
   });
 
   test("a dev build with a handshake it can't use (http to a host that isn't this one) doesn't start its links, and never falls back to production's", async () => {
-    const saved = process.env.CLOVER_HANDSHAKE_URL;
-    process.env.CLOVER_HANDSHAKE_URL = "http://handshake.example.invalid";
+    const saved = process.env.MOSS_HANDSHAKE_URL;
+    process.env.MOSS_HANDSHAKE_URL = "http://handshake.example.invalid";
     try {
-      const home = mkdtempSync(join(tmpdir(), "clover-int-account-"));
+      const home = mkdtempSync(join(tmpdir(), "moss-int-account-"));
       const net = new MemoryNetwork();
       const err = await startDaemonLinks({
-        home, store: new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
+        home, store: new MossSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
         clock, self: { name: "Studio", os: "macos" }, handlers: {}, binary: null, publicTime: null, mainComputer: { watchSleep: false }, driver: false,
         wire: (key) => net.endpoint(key.publicKey), dispatch: async () => null, watch: () => () => {},
       }).then((d) => (stops.push(() => d.close()), undefined), (e: unknown) => e);
@@ -203,8 +203,8 @@ describe("the daemon's links (H-M1 wiring)", () => {
       expect((err as Error).message).toMatch(/the links don't start: handshakeUrl \(from env\) isn't used.*never falls back to production's handshake/);
       expect((err as Error).message).not.toContain("example.invalid"); // the value itself is never said
     } finally {
-      if (saved === undefined) delete process.env.CLOVER_HANDSHAKE_URL;
-      else process.env.CLOVER_HANDSHAKE_URL = saved;
+      if (saved === undefined) delete process.env.MOSS_HANDSHAKE_URL;
+      else process.env.MOSS_HANDSHAKE_URL = saved;
     }
   });
 });

@@ -1,6 +1,6 @@
 // A plugin's sign-ins through a REAL plugin host (rows 1.16 and 1.17), each ending in a keyed call that carries what the
 // sign-in stored:
-//   1.17 `custom`: the bundled xAI plugin's `signIn` handler, run in the clover plugin-host process, names the core's
+//   1.17 `custom`: the bundled xAI plugin's `signIn` handler, run in the moss plugin-host process, names the core's
 //        device flow; the token it lands in the slot is the one the plugin's adapter sends to its provider. A third
 //        party's handler that names no core flow, or throws, is refused.
 //   1.16 `oauth-pkce`: a folder-installed plugin's entry, against a fake OAuth server on loopback: the core's PKCE flow
@@ -13,7 +13,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import type { ProviderEvent, TurnRequest } from "@waifucave/clover-provider-runtime";
 import { startXaiChatFake } from "@waifucave/clover-provider-runtime/testing";
 import type { SecretStore as DaemonSecretStore } from "../../auth/secret-store";
@@ -61,16 +61,16 @@ async function approve(opened: Awaited<ReturnType<typeof openPluginRegistry>>, b
 describe("auth custom (row 1.17): the bundled xAI plugin's handler in a real plugin host", () => {
   let home: string;
   beforeAll(async () => {
-    home = temp("clover-a-auth-custom-");
-    await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["clover"], cloverHome: home });
+    home = temp("moss-a-auth-custom-");
+    await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["moss"], mossHome: home });
   }, 300_000);
 
   test("its signIn handler names the core's device flow; the token that flow stores is what the plugin's adapter sends; a third party's handler naming no core flow, or throwing, is refused", async () => {
     const staged = stageBundledPlugins({ ...devBundledSource(home)!, out: stagedBundledDir(home) });
     const folder = join(home, "plugins", "acme-custom");
     mkdirSync(join(folder, "host"), { recursive: true });
-    writeFileSync(join(folder, "clover.json"), JSON.stringify({
-      manifest: 1, id: "acme-custom", name: "Acme custom", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" },
+    writeFileSync(join(folder, "moss.json"), JSON.stringify({
+      manifest: 1, id: "acme-custom", name: "Acme custom", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" },
       auth: [{ method: "custom", handler: "signIn" }, { method: "custom", handler: "broken" }],
     }));
     writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
@@ -78,7 +78,7 @@ describe("auth custom (row 1.17): the bundled xAI plugin's handler in a real plu
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     const slots = new DaemonStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests });
     const chat = await startXaiChatFake();
     const sent: (string | null)[] = [];
@@ -99,10 +99,10 @@ describe("auth custom (row 1.17): the bundled xAI plugin's handler in a real plu
           await store.set({ kind: "keychain", account: "xai-oauth:x" }, { kind: "oauth", accessToken: "xai-token-from-the-device-flow", refreshToken: "r", expiresAt: Date.now() + 3_600_000 });
         },
       });
-      expect(await auth.list("clover/model-xai-oauth")).toEqual([expect.objectContaining({ method: "custom", state: "signed-out" })]);
-      expect(await auth.signIn("clover/model-xai-oauth", 0)).toEqual({ state: "refreshing", authorizeUrl: "https://accounts.x.ai/device?user_code=TEST" });
-      for (let i = 0; i < 100 && (await auth.list("clover/model-xai-oauth"))[0]!.state !== "signed-in"; i++) await Bun.sleep(20);
-      expect((await auth.list("clover/model-xai-oauth"))[0]!.state).toBe("signed-in");
+      expect(await auth.list("moss/model-xai-oauth")).toEqual([expect.objectContaining({ method: "custom", state: "signed-out" })]);
+      expect(await auth.signIn("moss/model-xai-oauth", 0)).toEqual({ state: "refreshing", authorizeUrl: "https://accounts.x.ai/device?user_code=TEST" });
+      for (let i = 0; i < 100 && (await auth.list("moss/model-xai-oauth"))[0]!.state !== "signed-in"; i++) await Bun.sleep(20);
+      expect((await auth.list("moss/model-xai-oauth"))[0]!.state).toBe("signed-in");
       // The keyed call: the plugin's adapter, its fetch keyed by the `custom` entry, carries that token.
       const adapter = started.plugins.providerAdapterFor("xai-oauth", { caller: { kind: "core" } })!;
       expect(await text(adapter.streamTurn(turn("grok-4.5"), ctxOf("xai-oauth")))).toEqual({ text: "ok" });
@@ -162,14 +162,14 @@ function fakeOAuth() {
 
 describe("auth oauth-pkce (row 1.16): a third-party plugin's sign-in against a fake OAuth server", () => {
   test("the core's PKCE flow (its loopback callback, the code exchanged with the verifier) stores the token as the plugin's own item; its keyed fetch carries it", async () => {
-    const home = temp("clover-a-auth-oauth-");
+    const home = temp("moss-a-auth-oauth-");
     const oauth = fakeOAuth();
     const folder = join(home, "plugins", "acme-oauth");
     mkdirSync(join(folder, "host"), { recursive: true });
     const row = (await import("@waifucave/clover-provider-catalog")).loadCatalog().models.find((m) => m.providerId === "groq")!;
     writeFileSync(join(folder, "catalog.json"), JSON.stringify({ catalog: 1, rows: [{ ...row, key: "acme-oauth/fast", providerId: "acme-oauth", upstreamId: "fast", displayName: "Fast", aliases: [] }] }));
-    writeFileSync(join(folder, "clover.json"), JSON.stringify({
-      manifest: 1, id: "acme-oauth", name: "Acme OAuth", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" },
+    writeFileSync(join(folder, "moss.json"), JSON.stringify({
+      manifest: 1, id: "acme-oauth", name: "Acme OAuth", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" },
       capabilities: [`network:127.0.0.1:${oauth.port}`],
       contributes: { models: [{ provider: "acme-oauth", name: "Acme OAuth", catalog: "catalog.json", adapter: "adapter",
         auth: [{ method: "oauth-pkce", authorizeUrl: `${oauth.url}/authorize`, tokenUrl: `${oauth.url}/token`, clientId: "acme-client", scopes: ["models"], secret: "oauth" }] }] },
@@ -189,7 +189,7 @@ export const adapter = {
 };`);
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
     let started: Awaited<ReturnType<typeof startModelPlugins>> | undefined;
     try {
@@ -232,19 +232,19 @@ export const adapter = {
   }, 120_000);
 
   test("the acceptance run's fixture (scripts/acceptance/fixtures/acceptance-oauth), placed as the run places it, signs in and its turn carries the token", async () => {
-    const home = temp("clover-a-auth-oauth-fixture-");
+    const home = temp("moss-a-auth-oauth-fixture-");
     const oauth = fakeOAuth();
     const dest = join(home, "plugins", "acceptance-oauth");
     cpSync(join(import.meta.dir, "..", "..", "..", "..", "..", "scripts", "acceptance", "fixtures", "acceptance-oauth"), dest, { recursive: true });
-    const m = JSON.parse(readFileSync(join(dest, "clover.json"), "utf8")) as { capabilities: string[]; contributes: { models: { auth: { authorizeUrl: string; tokenUrl: string }[] }[] } };
+    const m = JSON.parse(readFileSync(join(dest, "moss.json"), "utf8")) as { capabilities: string[]; contributes: { models: { auth: { authorizeUrl: string; tokenUrl: string }[] }[] } };
     m.capabilities = [`network:127.0.0.1:${oauth.port}`];
     m.contributes.models[0]!.auth[0]!.authorizeUrl = `${oauth.url}/authorize`;
     m.contributes.models[0]!.auth[0]!.tokenUrl = `${oauth.url}/token`;
-    writeFileSync(join(dest, "clover.json"), JSON.stringify(m));
+    writeFileSync(join(dest, "moss.json"), JSON.stringify(m));
     writeFileSync(join(dest, "host", "endpoint.json"), JSON.stringify({ url: `${oauth.url}/v1/turn` }));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
     let started: Awaited<ReturnType<typeof startModelPlugins>> | undefined;
     try {
@@ -334,15 +334,15 @@ function renewingOAuth(o: { expiresIn: number }) {
 
 describe("auth oauth-pkce renewal: a third party's token renewed at its own token endpoint", () => {
   test("near expiry it is renewed before the call; after a 401 it is renewed once and the call retried; a refused renewal signs the plugin out and says to sign in again; the refresh token never reaches the plugin", async () => {
-    const home = temp("clover-a-auth-renew-");
+    const home = temp("moss-a-auth-renew-");
     // A token that lives 30 s: inside RENEW_BEFORE_MS from the start.
     const oauth = renewingOAuth({ expiresIn: 30 });
     const folder = join(home, "plugins", "acme-oauth");
     mkdirSync(join(folder, "host"), { recursive: true });
     const row = (await import("@waifucave/clover-provider-catalog")).loadCatalog().models.find((m) => m.providerId === "groq")!;
     writeFileSync(join(folder, "catalog.json"), JSON.stringify({ catalog: 1, rows: [{ ...row, key: "acme-oauth/fast", providerId: "acme-oauth", upstreamId: "fast", displayName: "Fast", aliases: [] }] }));
-    writeFileSync(join(folder, "clover.json"), JSON.stringify({
-      manifest: 1, id: "acme-oauth", name: "Acme OAuth", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own" },
+    writeFileSync(join(folder, "moss.json"), JSON.stringify({
+      manifest: 1, id: "acme-oauth", name: "Acme OAuth", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own" },
       capabilities: [`network:127.0.0.1:${oauth.port}`],
       contributes: { models: [{ provider: "acme-oauth", name: "Acme OAuth", catalog: "catalog.json", adapter: "adapter",
         auth: [{ method: "oauth-pkce", authorizeUrl: `${oauth.url}/authorize`, tokenUrl: `${oauth.url}/token`, clientId: "acme-client", scopes: ["models"], secret: "oauth" }] }] },
@@ -363,7 +363,7 @@ export const adapter = {
 };`);
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
     const signedOut: string[] = [];
     const renewal = createOAuthRenewal({ store: secrets, registry: opened.registry, onSignedOut: (id, _s, reason) => { signedOut.push(`${id}: ${reason}`); } });

@@ -2,7 +2,7 @@
 // the real host side, with modules a caller defines instead of a plugin's built entry. The conformance suite runs on
 // it (`tests/core-host.test.ts`), with the fake's drivers (`define`, `undefine`, `crash`, `forgeApiCall`), so what the
 // processes run is what the suite pins.
-import type { HostProcess, PluginSource } from "@waifucave/clover-protocol";
+import type { HostProcess, PluginSource } from "@waifucave/moss-protocol";
 import type { Clock } from "../contracts/clock";
 import type { HostModule } from "../contracts/sdk-types";
 import { CorePluginHost, type HostedRecord } from "./core-host";

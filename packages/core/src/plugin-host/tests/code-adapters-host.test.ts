@@ -1,4 +1,4 @@
-// The model plugins' code adapters through a REAL plugin host (rows 1.42 and 1.92): the bundled `clover` tree built
+// The model plugins' code adapters through a REAL plugin host (rows 1.42 and 1.92): the bundled `moss` tree built
 // and staged as a dev run stages it, the real plugin host (processes, workers, the fd-3 link), the model plugins
 // started on it with their adapters served (`serveCodeAdapters`), and a fake provider wire under the core's keyed
 // fetch: the daemon's platform fetch seam sends each request to a loopback fake of its provider, and records what was
@@ -92,13 +92,13 @@ function adapterOf(provider: string): ProviderAdapter {
 const turn = (model: string, signal?: AbortSignal): TurnRequest => ({ model, messages: [{ role: "user", content: "hi" }], ...(signal ? { signal } : {}) }) as TurnRequest;
 
 beforeAll(async () => {
-  home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-codeadapters-")));
-  await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["clover"], cloverHome: home });
+  home = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-codeadapters-")));
+  await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["moss"], mossHome: home });
   const staged = stageBundledPlugins({ ...devBundledSource(home)!, out: stagedBundledDir(home) });
   mkdirSync(join(home, "plugins"), { recursive: true });
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const secrets = new MemorySecretStore();
-  opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
+  opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
   const userEndpoint = (id: string) => userEndpointOf(opened.registry.get(id), userSettings);
   ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests, userEndpoint });
   started = await startModelPlugins({
@@ -171,7 +171,7 @@ describe("the bundled code adapters through a real plugin host", () => {
     expect(req.signal?.aborted).toBe(true);
   }, 60_000);
 
-  test("Codex: a turn on its plugin with the slot's sign-in, the account id filled in and Clover's originator; a 401 renews the token once and retries", async () => {
+  test("Codex: a turn on its plugin with the slot's sign-in, the account id filled in and MOSS's originator; a 401 renews the token once and retries", async () => {
     const fake = await codexFake.startCodexFake({ scenarios: { "gpt-5.6-luna": [openaiResponsesFake.responsesStream({ text: ["hello from ", "codex"] })] }, requireRefreshFor: ["gpt-5.6-luna"] });
     wires.set("chatgpt.com", fake);
     daemonStore.values.set("codex-oauth:default", JSON.stringify({ kind: "oauth", accessToken: codexFake.FAKE_ACCESS_TOKEN, accountId: codexFake.FAKE_ACCOUNT_ID }));
@@ -181,14 +181,14 @@ describe("the bundled code adapters through a real plugin host", () => {
     expect((fake as unknown as { bearers: string[] }).bearers).toEqual([codexFake.FAKE_ACCESS_TOKEN, codexFake.FAKE_REFRESHED_ACCESS_TOKEN]);
     const last = sent.filter((s) => s.path.endsWith("/responses")).at(-1)!;
     expect(last.headers["chatgpt-account-id"]).toBe(codexFake.FAKE_ACCOUNT_ID);
-    expect(last.headers["originator"]).toBe("clover");
+    expect(last.headers["originator"]).toBe("moss");
   }, 60_000);
 
   test("Bedrock: in a Bun process of its own, it reads its secret with secrets.get and signs each request (SigV4), which the fake verifies", async () => {
     const fake = await bedrockFake.startBedrockFake({ scenarios: { "amazon.nova-lite-v1:0": [bedrockFake.eventStreamResponse(bedrockFake.textTurnFrames("hello from bedrock"))] } });
     wires.set(`bedrock-runtime.${bedrockFake.FAKE_REGION}.amazonaws.com`, fake);
     daemonStore.values.set("bedrock:default", JSON.stringify({ kind: "aws", accessKeyId: bedrockFake.FAKE_ACCESS_KEY_ID, secretAccessKey: bedrockFake.FAKE_SECRET_ACCESS_KEY }));
-    expect(ph.host.status("clover/model-bedrock").state).toBeDefined();
+    expect(ph.host.status("moss/model-bedrock").state).toBeDefined();
     expect(await text(adapterOf("bedrock").streamTurn(turn("amazon.nova-lite-v1:0"), ctxOf("bedrock", { region: bedrockFake.FAKE_REGION })))).toBe("hello from bedrock");
     expect((fake as unknown as { signatures: { verified: boolean; accessKeyId: string }[] }).signatures.map((x) => [x.verified, x.accessKeyId])).toEqual([[true, bedrockFake.FAKE_ACCESS_KEY_ID]]);
   }, 60_000);
@@ -197,19 +197,19 @@ describe("the bundled code adapters through a real plugin host", () => {
     const { privateKeyPem, publicKey } = await vertexFake.generateTestKeyPair();
     const tokenPath = new URL(vertexFake.vertexTokenUrl("http://127.0.0.1:1")).pathname;
     const opts = {
-      publicKey, project: "clover-test-project", location: "us-central1", tokenUri: `https://oauth2.googleapis.com${tokenPath}`,
+      publicKey, project: "moss-test-project", location: "us-central1", tokenUri: `https://oauth2.googleapis.com${tokenPath}`,
       verified: [] as { header: Record<string, unknown>; claims: Record<string, unknown> }[],
       stream: { "gemini-2.5-flash": [geminiFake.geminiStreamResponse([{ parts: [{ text: "hello from vertex" }], finishReason: "STOP" }])] },
     };
     const fake = await startFake({ routes: vertexFake.vertexFakeRoutes(opts) });
     wires.set("us-central1-aiplatform.googleapis.com", fake);
     wires.set("oauth2.googleapis.com", fake);
-    daemonStore.values.set("vertex:default", JSON.stringify({ kind: "gcp-service-account", clientEmail: "clover-test@clover-test-project.iam.gserviceaccount.com", privateKeyPem, tokenUri: opts.tokenUri }));
+    daemonStore.values.set("vertex:default", JSON.stringify({ kind: "gcp-service-account", clientEmail: "moss-test@moss-test-project.iam.gserviceaccount.com", privateKeyPem, tokenUri: opts.tokenUri }));
     sent.length = 0;
     expect(await text(adapterOf("vertex").streamTurn(turn("gemini-2.5-flash"), ctxOf("vertex", { project: opts.project, location: opts.location })))).toBe("hello from vertex");
-    // Its own process, apart from the clover process's workers.
-    expect(ph.pidOf("clover/model-vertex")).toBeDefined();
-    expect(ph.pidOf("clover/model-vertex")).not.toBe(ph.pidOf("clover/model-google"));
+    // Its own process, apart from the moss process's workers.
+    expect(ph.pidOf("moss/model-vertex")).toBeDefined();
+    expect(ph.pidOf("moss/model-vertex")).not.toBe(ph.pidOf("moss/model-google"));
     // The JWT it signed was verified against the service account's public key, and both hosts were its declared ones.
     expect(opts.verified.length).toBeGreaterThan(0);
     expect([...new Set(sent.map((x) => x.host))].sort()).toEqual(["oauth2.googleapis.com", "us-central1-aiplatform.googleapis.com"]);
@@ -287,8 +287,8 @@ describe("a model plugin dying mid-turn", () => {
     let killedAt = 0;
     const out = await outcome(adapterOf("google").streamTurn(turn("gemini-2.5-flash"), googleCtx()), (t) => {
       if (killedAt === 0 && t.includes("p1 ")) {
-        const pid = ph.pidOf("clover/model-google");
-        if (pid === undefined) throw new Error("the clover plugin process isn't up");
+        const pid = ph.pidOf("moss/model-google");
+        if (pid === undefined) throw new Error("the moss plugin process isn't up");
         killedAt = Date.now();
         process.kill(pid, "SIGKILL"); // the process this test's plugin host started
       }
@@ -307,7 +307,7 @@ describe("a model plugin dying mid-turn", () => {
     await slowGoogle();
     let at = 0;
     const out = await outcome(adapterOf("google").streamTurn(turn("gemini-2.5-flash"), googleCtx()), (t) => {
-      if (at === 0 && t.includes("p1 ")) { at = Date.now(); void ph.host.stop("clover/model-google", "stopped from Settings"); }
+      if (at === 0 && t.includes("p1 ")) { at = Date.now(); void ph.host.stop("moss/model-google", "stopped from Settings"); }
     });
     expect(out.endedAt - at).toBeLessThan(5_000);
     expect(out.error).toBe(`The ${NAME} model plugin is stopped (stopped from Settings), so this reply couldn't run. Turn it on in Settings → Plugins, then send again.`);
@@ -315,7 +315,7 @@ describe("a model plugin dying mid-turn", () => {
     const whileStopped = await outcome(adapterOf("google").streamTurn(turn("gemini-2.5-flash"), googleCtx()));
     expect(whileStopped.endedAt - t0).toBeLessThan(5_000);
     expect(whileStopped.error).toStartWith(`The ${NAME} model plugin is stopped`);
-    await ph.host.restart("clover/model-google");
+    await ph.host.restart("moss/model-google");
     const again = await outcome(adapterOf("google").streamTurn(turn("gemini-2.5-flash"), googleCtx()));
     expect(again.error).toBeUndefined();
     expect(again.text).toEndWith("end");
@@ -330,7 +330,7 @@ describe("a model plugin dying mid-turn", () => {
     expect((await outcome(adapterOf("bedrock").streamTurn(turn("amazon.nova-micro-v1:0"), bedrockCtx()))).error).toBeUndefined();
     const pending = outcome(adapterOf("bedrock").streamTurn(turn("amazon.nova-micro-v1:0"), bedrockCtx()));
     await Bun.sleep(700);
-    const pid = ph.pidOf("clover/model-bedrock");
+    const pid = ph.pidOf("moss/model-bedrock");
     expect(pid).toBeDefined();
     const at = Date.now();
     process.kill(pid!, "SIGKILL"); // the own process this test's plugin host started

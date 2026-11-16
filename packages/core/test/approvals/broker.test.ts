@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Card, Level, TurnOrigin } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker, RESOLVED_KEEP_MS, UNRESOLVED_PATHS_REASON, type CloverApprovalRequest } from "../../src/approvals/broker";
+import type { Card, Level, TurnOrigin } from "@waifucave/moss-protocol";
+import { MossApprovalBroker, RESOLVED_KEEP_MS, UNRESOLVED_PATHS_REASON, type MossApprovalRequest } from "../../src/approvals/broker";
 import { botApprovalCheck, botToolRequest, effectOf, isBuiltinTool, resolveSessionPath, ruleKeyOf } from "../../src/approvals/bot-check";
 import { fileRuleStore, savedRulesPath } from "../../src/approvals/rule-store";
 import { looksCredentialBearing, plainOf, ruleDisplay, ruleKeyHash, shownCode } from "../../src/approvals/strings";
@@ -12,23 +12,23 @@ import { runApprovalBrokerConformance } from "../../src/contracts/conformance/ap
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import type { ApprovalRequest, Reviewer } from "../../src/contracts/approval-broker";
 import type { BotSessionContext } from "../../src/bots/service";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { brokerCardOpener } from "../../src/devices/rpc";
 
 // B's suite: every rule of the contract, against the real broker.
-runApprovalBrokerConformance((opts) => new CloverApprovalBroker(opts));
+runApprovalBrokerConformance((opts) => new MossApprovalBroker(opts));
 
-const home = () => mkdtempSync(join(tmpdir(), "clover-approvals-"));
+const home = () => mkdtempSync(join(tmpdir(), "moss-approvals-"));
 const clockAt = () => new FakeClock();
 const bash = (over: Partial<ApprovalRequest> = {}): ApprovalRequest => ({
   kind: "tool", session: "s1", bot: "luna", origin: "user", computers: ["Studio"], effect: "execute", ruleKey: "Bash(git push)",
   fields: { title: { type: "text", text: "Run a command" }, command: { type: "code", code: "git push", language: "sh" } }, ...over,
 });
 
-const FRAME_OF = (b: CloverApprovalBroker, c: Card) => ({ via: "sealed-frame" as const, frame: b.frameChannel(c.id) ?? "frame_gone", input: "click" as const, at: 1 });
+const FRAME_OF = (b: MossApprovalBroker, c: Card) => ({ via: "sealed-frame" as const, frame: b.frameChannel(c.id) ?? "frame_gone", input: "click" as const, at: 1 });
 
 /** Answers the next card through the app's sealed frame, as the app's main process does. */
-function answerNext(b: CloverApprovalBroker, optionId: string): Promise<Card> {
+function answerNext(b: MossApprovalBroker, optionId: string): Promise<Card> {
   return new Promise((resolve) => {
     const off = b.watch((e) => {
       if (e.type !== "requested") return;
@@ -41,7 +41,7 @@ function answerNext(b: CloverApprovalBroker, optionId: string): Promise<Card> {
 describe("the real broker's saved rules and records", () => {
   test("an \"always\" is saved owner-only as a hash and a display string, and holds after a restart", async () => {
     const h = home(), clock = clockAt();
-    const first = new CloverApprovalBroker({ clock, rules: fileRuleStore(h) });
+    const first = new MossApprovalBroker({ clock, rules: fileRuleStore(h) });
     const answered = answerNext(first, "always");
     expect(await first.request(bash())).toMatchObject({ allowed: true, by: "card", remembered: true });
     await answered;
@@ -52,7 +52,7 @@ describe("the real broker's saved rules and records", () => {
       expect(statSync(savedRulesPath(h)).mode & 0o777).toBe(0o600);
       expect(statSync(join(h, "rules")).mode & 0o777).toBe(0o700);
     }
-    const again = new CloverApprovalBroker({ clock, rules: fileRuleStore(h) });
+    const again = new MossApprovalBroker({ clock, rules: fileRuleStore(h) });
     expect(again.rules()).toMatchObject([{ ruleKey: "Bash(git push)", computers: ["Studio"], bot: "luna" }]);
     expect(await again.request(bash())).toEqual({ allowed: true, by: "rule" });
     // The bot's own "always" (the owner's ruling): not another bot's, nor the user's own session's.
@@ -71,7 +71,7 @@ describe("the real broker's saved rules and records", () => {
   });
 
   test("a rule matches only a request that names a computer", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt() });
+    const b = new MossApprovalBroker({ clock: clockAt() });
     const saved = answerNext(b, "always");
     await b.request(bash());
     await saved;
@@ -90,7 +90,7 @@ describe("the real broker's saved rules and records", () => {
       mkdirSync(join(h, "rules"), { recursive: true });
       writeFileSync(savedRulesPath(h), text);
       const lines: string[] = [];
-      const b = new CloverApprovalBroker({ clock: clockAt(), rules: fileRuleStore(h), log: (l) => lines.push(l) });
+      const b = new MossApprovalBroker({ clock: clockAt(), rules: fileRuleStore(h), log: (l) => lines.push(l) });
       expect(b.rules()).toEqual([]);
       expect(lines).toEqual(["[approvals] the saved rules file is unreadable; starting with no saved rules"]);
     }
@@ -103,7 +103,7 @@ describe("the real broker's saved rules and records", () => {
     chmodSync(join(h, "rules"), 0o755);
     symlinkSync(elsewhere, savedRulesPath(h));
     const lines: string[] = [];
-    const b = new CloverApprovalBroker({ clock: clockAt(), rules: fileRuleStore(h), log: (l) => lines.push(l) });
+    const b = new MossApprovalBroker({ clock: clockAt(), rules: fileRuleStore(h), log: (l) => lines.push(l) });
     expect(lines).toEqual(["[approvals] the saved rules file is unreadable; starting with no saved rules"]);
     const saved = answerNext(b, "always");
     await b.request(bash());
@@ -115,7 +115,7 @@ describe("the real broker's saved rules and records", () => {
 
   test("a key that looks like it carries a credential is never offered \"always\" nor saved", async () => {
     const h = home();
-    const b = new CloverApprovalBroker({ clock: clockAt(), rules: fileRuleStore(h) });
+    const b = new MossApprovalBroker({ clock: clockAt(), rules: fileRuleStore(h) });
     const key = "Bash(curl -H 'Authorization: Bearer abcdefghijklmnop' https://api.example.com)";
     let card: Card | undefined;
     b.watch((e) => { if (e.type === "requested") card = e.card; });
@@ -133,7 +133,7 @@ describe("the real broker's saved rules and records", () => {
   });
 
   test("paths from a session on another computer are unresolved: a card every time, no rule matched or saved", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), localComputer: "Studio", levels: () => "automatic" });
+    const b = new MossApprovalBroker({ clock: clockAt(), localComputer: "Studio", levels: () => "automatic" });
     const read = (over: Partial<ApprovalRequest> = {}) => bash({ effect: "read", ruleKey: "Read", paths: ["/p/a.ts"], computers: ["Laptop"], ...over });
     // The local computer's own paths run as the level says.
     expect(await b.request(read({ computers: ["Studio"] }))).toEqual({ allowed: true, by: "level", level: "automatic" });
@@ -148,14 +148,14 @@ describe("the real broker's saved rules and records", () => {
     expect(await b.answer(card!.id, { optionId: "always", hash: card!.hash, proof: FRAME_OF(b, card!) }, { role: "app" })).toBe("already-answered");
     // A request marked unresolved by its requester, on any computer, asks too, and a rule saved for its key doesn't
     // match it.
-    const asks = new CloverApprovalBroker({ clock: clockAt(), localComputer: "Studio", levels: () => "ask" });
+    const asks = new MossApprovalBroker({ clock: clockAt(), localComputer: "Studio", levels: () => "ask" });
     const edit = bash({ computers: ["Studio"], ruleKey: "Edit(/p/a.ts)", effect: "edit", paths: ["/p/a.ts"] });
     const saved = answerNext(asks, "always");
     expect(await asks.request(edit)).toMatchObject({ allowed: true, remembered: true });
     await saved;
     expect(await asks.request(edit)).toEqual({ allowed: true, by: "rule" });
     const again = answerNext(asks, "deny");
-    expect(await asks.request({ ...edit, paths: ["a.ts"], pathsUnresolved: true } as CloverApprovalRequest)).toMatchObject({ allowed: false, by: "card" });
+    expect(await asks.request({ ...edit, paths: ["a.ts"], pathsUnresolved: true } as MossApprovalRequest)).toMatchObject({ allowed: false, by: "card" });
     await again;
     expect(asks.rules().map((r) => r.ruleKey)).toEqual(["Edit(/p/a.ts)"]);
   });
@@ -172,7 +172,7 @@ describe("the real broker's saved rules and records", () => {
   test("a card past its expiresAt is expired whatever its timer did", async () => {
     let t = 1_000_000;
     const clock: Clock = { now: () => t, monotonic: () => t, setTimeout: () => ({}) as never, clearTimeout: () => {}, status: () => ({ synced: true }) as never };
-    const b = new CloverApprovalBroker({ clock });
+    const b = new MossApprovalBroker({ clock });
     let card: Card | undefined;
     b.watch((e) => { if (e.type === "requested") card = e.card; });
     const pending = b.request(bash({ origin: "routine" }));
@@ -188,7 +188,7 @@ describe("the real broker's saved rules and records", () => {
   test("a turn stopped while the reviewer judges raises no card and leaves none open", async () => {
     let release!: (v: "safe" | "risky" | "unavailable") => void;
     const reviewer: Reviewer = () => new Promise((r) => { release = r; });
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask-risky", reviewer });
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "ask-risky", reviewer });
     const events: string[] = [];
     b.watch((e) => events.push(e.type));
     const ac = new AbortController();
@@ -204,7 +204,7 @@ describe("the real broker's saved rules and records", () => {
 
   test("resolved cards stay readable for a day, then go", async () => {
     const clock = clockAt();
-    const b = new CloverApprovalBroker({ clock });
+    const b = new MossApprovalBroker({ clock });
     const card = answerNext(b, "deny");
     await b.request(bash());
     const id = (await card).id;
@@ -252,7 +252,7 @@ describe("strings from a model or a plugin", () => {
 describe("a bot's tool calls through the broker", () => {
   const scratch = realpathSync(home());
   const ctx = { botId: "luna", sessionId: "s1", computer: "Studio", paths: { scratch } } as unknown as BotSessionContext;
-  const call = (b: CloverApprovalBroker, tool: string, input: Record<string, unknown>, origin?: TurnOrigin, signal = new AbortController().signal, c = ctx) =>
+  const call = (b: MossApprovalBroker, tool: string, input: Record<string, unknown>, origin?: TurnOrigin, signal = new AbortController().signal, c = ctx) =>
     botApprovalCheck(b)(c, () => origin)(tool, input, { signal, toolUseID: "t1", requestId: "r1" });
 
   test("what each tool does comes from the built-in's identity, never a bare name", () => {
@@ -302,7 +302,7 @@ describe("a bot's tool calls through the broker", () => {
   });
 
   test("an \"always\" for a file in one session's folder never allows the same name in another's", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "ask" });
     const other = { ...ctx, paths: { scratch: realpathSync(home()) } } as unknown as BotSessionContext;
     const first = answerNext(b, "always");
     expect(await call(b, "Write", { file_path: "notes.md", content: "x" }, "user")).toMatchObject({ behavior: "allow" });
@@ -314,7 +314,7 @@ describe("a bot's tool calls through the broker", () => {
   });
 
   test("an \"always\" for a tool named like a built-in's rule never allows the built-in", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "ask" });
     const saved = answerNext(b, "always");
     expect(await call(b, "Bash(git push)", {}, "user")).toMatchObject({ behavior: "allow" });
     await saved;
@@ -325,7 +325,7 @@ describe("a bot's tool calls through the broker", () => {
   });
 
   test("a read runs at once at the default level; a command waits for the card and runs only on approve", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt() });
+    const b = new MossApprovalBroker({ clock: clockAt() });
     expect(await call(b, "Read", { file_path: "/p/a.ts" }, "user")).toEqual({ behavior: "allow", updatedInput: { file_path: "/p/a.ts" } });
     const shown = answerNext(b, "approve");
     expect(await call(b, "Bash", { command: "git push" }, "user")).toEqual({ behavior: "allow", updatedInput: { command: "git push" } });
@@ -340,7 +340,7 @@ describe("a bot's tool calls through the broker", () => {
 
   test("a turn of unknown origin is not the user's: its card expires; a stopped turn's call is refused", async () => {
     const clock = clockAt();
-    const b = new CloverApprovalBroker({ clock });
+    const b = new MossApprovalBroker({ clock });
     let card: Card | undefined;
     b.watch((e) => { if (e.type === "requested") card = e.card; });
     const pending = call(b, "Bash", { command: "make" });
@@ -358,7 +358,7 @@ describe("a bot's tool calls through the broker", () => {
 
 describe("the broker's close (INT, #292 review: the daemon closes it first at the stop)", () => {
   test("an open card is cancelled, and a request after the close is refused without a card", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "ask" });
     const pending = b.request(bash());
     await Bun.sleep(0);
     expect(b.cards()).toHaveLength(1);
@@ -372,25 +372,25 @@ describe("the broker's close (INT, #292 review: the daemon closes it first at th
 
 describe("a bot's calls on this computer's fence first (INT, the broker swap; #347's review and the owner's ruling)", () => {
   const userHome = realpathSync(home());
-  const cloverHome = join(userHome, ".clover");
-  mkdirSync(join(cloverHome, "run"), { recursive: true });
-  mkdirSync(join(cloverHome, "bots", "luna", "memory"), { recursive: true });
-  const fence = new CloverFence({ home: userHome, cloverHome });
-  const scratch = join(cloverHome, "scratch", "luna");
+  const mossHome = join(userHome, ".moss");
+  mkdirSync(join(mossHome, "run"), { recursive: true });
+  mkdirSync(join(mossHome, "bots", "luna", "memory"), { recursive: true });
+  const fence = new MossFence({ home: userHome, mossHome });
+  const scratch = join(mossHome, "scratch", "luna");
   mkdirSync(scratch, { recursive: true });
   const ctx = {
     botId: "luna", sessionId: "s1", computer: "Studio", paths: { scratch },
     caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
   } as unknown as BotSessionContext;
-  const call = (b: CloverApprovalBroker, tool: string, input: Record<string, unknown>, level: Level = "ask", c: BotSessionContext = ctx) =>
-    botApprovalCheck(b, { home: userHome, localComputer: "Studio", fence, cloverHome, levelOf: () => level, commandsAlwaysCard: true })(c, () => "user")(tool, input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" });
+  const call = (b: MossApprovalBroker, tool: string, input: Record<string, unknown>, level: Level = "ask", c: BotSessionContext = ctx) =>
+    botApprovalCheck(b, { home: userHome, localComputer: "Studio", fence, mossHome, levelOf: () => level, commandsAlwaysCard: true })(c, () => "user")(tool, input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" });
 
   test("a place the fence refuses the bot (the credentials, run/, the settings) is refused with no card", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "ask" });
     for (const [tool, input] of [
-      ["Read", { file_path: join(cloverHome, "credentials", "keys") }],
-      ["Grep", { pattern: "token", path: join(cloverHome, "run") }],
-      ["Write", { file_path: join(cloverHome, "settings.json"), content: "{}" }],
+      ["Read", { file_path: join(mossHome, "credentials", "keys") }],
+      ["Grep", { pattern: "token", path: join(mossHome, "run") }],
+      ["Write", { file_path: join(mossHome, "settings.json"), content: "{}" }],
     ] as const) {
       const d = await call(b, tool, input);
       expect(d?.behavior).toBe("deny");
@@ -400,8 +400,8 @@ describe("a bot's calls on this computer's fence first (INT, the broker swap; #3
   });
 
   test("a file read or write the fence lets the bot make inside the home runs with no card", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
-    const memory = join(cloverHome, "bots", "luna", "memory", "MEMORY.md");
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const memory = join(mossHome, "bots", "luna", "memory", "MEMORY.md");
     expect(await call(b, "Read", { file_path: memory })).toEqual({ behavior: "allow", updatedInput: { file_path: memory } });
     const edit = { file_path: join(scratch, "notes.md"), old_string: "a", new_string: "b" };
     expect(await call(b, "Edit", edit)).toEqual({ behavior: "allow", updatedInput: edit });
@@ -409,9 +409,9 @@ describe("a bot's calls on this computer's fence first (INT, the broker swap; #3
   });
 
   test("#353 blocker: read-only stays absolute, the bot's own folders included: its scratch and memory writes are refused", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "read-only" });
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "read-only" });
     const scratchEdit = { file_path: join(scratch, "notes.md"), old_string: "a", new_string: "b" };
-    const memoryWrite = { file_path: join(cloverHome, "bots", "luna", "memory", "MEMORY.md"), content: "x" };
+    const memoryWrite = { file_path: join(mossHome, "bots", "luna", "memory", "MEMORY.md"), content: "x" };
     for (const [tool, input] of [["Edit", scratchEdit], ["Write", memoryWrite]] as const) {
       expect(await call(b, tool, input, "read-only")).toEqual({ behavior: "deny", message: `${tool} was refused: this computer's level doesn't allow it.` });
     }
@@ -424,16 +424,16 @@ describe("a bot's calls on this computer's fence first (INT, the broker swap; #3
   });
 
   test("#353 S2: the credentials and the runtime's run records are refused to a bot's reads with no card (they must hold under the open-read fence too)", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "automatic" });
-    for (const path of [join(cloverHome, "credentials", "anthropic.json"), join(cloverHome, "sdk", "cache", "runs", "r1", "state.json")]) {
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "automatic" });
+    for (const path of [join(mossHome, "credentials", "anthropic.json"), join(mossHome, "sdk", "cache", "runs", "r1", "state.json")]) {
       expect((await call(b, "Read", { file_path: path }, "automatic"))?.behavior).toBe("deny");
     }
     expect(b.cards()).toEqual([]);
   });
 
   test("#353 S3: until the bot's Bash sandbox is drawn from the fence, its command always asks on a card, whatever the level: a write to transcripts/ is never run unasked", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "automatic", reviewer: async () => "safe" });
-    const pending = call(b, "Bash", { command: `echo x > ${join(cloverHome, "transcripts", "s1.jsonl")}` }, "automatic");
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "automatic", reviewer: async () => "safe" });
+    const pending = call(b, "Bash", { command: `echo x > ${join(mossHome, "transcripts", "s1.jsonl")}` }, "automatic");
     await Bun.sleep(0);
     const cards = b.cards();
     expect(cards).toHaveLength(1);
@@ -442,13 +442,13 @@ describe("a bot's calls on this computer's fence first (INT, the broker swap; #3
     b.close();
     expect((await pending)?.behavior).toBe("deny");
     // Read-only's deny still comes first: no card at all.
-    const ro = new CloverApprovalBroker({ clock: clockAt(), levels: () => "read-only" });
+    const ro = new MossApprovalBroker({ clock: clockAt(), levels: () => "read-only" });
     expect((await call(ro, "Bash", { command: "ls" }, "read-only"))?.behavior).toBe("deny");
     expect(ro.cards()).toEqual([]);
   });
 
   test("outside the home, the broker decides as before: a read at ask runs, a write asks on a card", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "ask" });
     expect(await call(b, "Read", { file_path: join(userHome, "project", "a.txt") })).toMatchObject({ behavior: "allow" });
     const pending = call(b, "Write", { file_path: join(userHome, "project", "a.txt"), content: "x" });
     await Bun.sleep(0);
@@ -460,7 +460,7 @@ describe("a bot's calls on this computer's fence first (INT, the broker swap; #3
 
 describe("brokerCardOpener (INT, #353's nit)", () => {
   test("two changes at the same time each get their own card, never the other's", async () => {
-    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const b = new MossApprovalBroker({ clock: clockAt(), levels: () => "ask" });
     const open = brokerCardOpener(b);
     const req = (title: string): ApprovalRequest => ({
       kind: "change", change: "device-revoke", origin: "user", computers: ["Studio"], effect: "other",

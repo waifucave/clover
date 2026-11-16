@@ -1,6 +1,6 @@
 // The kit a `usage.sources` plugin imports (spec §12 "Usage sources"): the types of what the core asks and what a
 // source answers, the pure helpers of a plan reading, and the helpers that read a tool's files. Host halves only
-// (`@waifucave/clover-plugin-sdk/usage-source`): it reads files with `node:fs`.
+// (`@waifucave/moss-plugin-sdk/usage-source`): it reads files with `node:fs`.
 export type {
   PlanStatusWindow, PlanWindow, PlanWindowKind, UsageIngestArgs, UsageIngestReply, UsagePlanArgs, UsagePlanReading, UsagePlanReply,
   UsageRecord, UsageSourceHandler, UsageStored,

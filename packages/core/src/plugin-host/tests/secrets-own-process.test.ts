@@ -6,8 +6,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import type { SecretStore as DaemonSecretStore } from "../../auth/secret-store";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -29,8 +29,8 @@ class NoSlots implements DaemonSecretStore {
 function plugin(home: string, id: string, own: boolean): void {
   const folder = join(home, "plugins", id);
   mkdirSync(join(folder, "host"), { recursive: true });
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({
-    manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({
+    manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
     host: { entry: "host/index.js", ...(own ? { process: "own" } : {}) },
     auth: [{ method: "api-key", secret: "api-key" }],
   }));
@@ -45,7 +45,7 @@ function plugin(home: string, id: string, own: boolean): void {
 
 describe("secrets.get in a third party's own process (real host)", () => {
   test("reads its own stored key; another name is refused; a worker is refused the call", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-secrets-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-b-secrets-")));
     temps.push(home);
     plugin(home, "vault", true);
     plugin(home, "sharer", false);
@@ -53,7 +53,7 @@ describe("secrets.get in a third party's own process (real host)", () => {
     const secrets = new MemorySecretStore();
     await secrets.set({ owner: { kind: "plugin", pluginId: "vault" }, name: "api-key" }, "VAULT-OWN-KEY");
     await secrets.set({ owner: { kind: "plugin", pluginId: "sharer" }, name: "api-key" }, "SHARER-KEY");
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets });
     let started: Awaited<ReturnType<typeof startModelPlugins>> | undefined;
     try {

@@ -1,4 +1,4 @@
-// The scheduled routine row (checklist row 4.23, the bundled clover/trigger-schedule: the core's own schedule, in its
+// The scheduled routine row (checklist row 4.23, the bundled moss/trigger-schedule: the core's own schedule, in its
 // grammar): Alpha's `Routine` tool makes a routine that runs `every 15s`; nobody presses run now, and its schedule fires
 // it: its side thread's turn reaches the model, and `routine.runs` lists the finished run, done, with the side thread's
 // reply as its summary. Then its file is deleted, as the Routine tool's text says a routine is removed, and it is gone

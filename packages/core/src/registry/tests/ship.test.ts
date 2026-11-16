@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION, validateManifest } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION, validateManifest } from "@waifucave/moss-plugin-sdk";
 import { PluginBuildError } from "../build";
 import { buildPluginForShipping, hostShipTarget, SHIP_TARGETS, untarGz, type ShipTarget } from "../ship";
 
@@ -42,7 +42,7 @@ const NATIVE_PKG = () => pkg("fake-native", {
 const NATIVE_JS = `import { dep } from "fake-dep";\nexport const native = () => dep;\n`;
 
 async function checkout(o: { plugin?: Record<string, string>; tamper?: string; misnamed?: boolean; lock?: Record<string, unknown[]> } = {}) {
-  const root = mkdtempSync(join(tmpdir(), "clover-b-ship-"));
+  const root = mkdtempSync(join(tmpdir(), "moss-b-ship-"));
   const tarballs = new Map<string, Uint8Array>();
   const lock: Record<string, unknown[]> = { "fake-lib": ["fake-lib@1.0.0", "", {}, "sha512-AAAA"], ...o.lock };
   // The native and its dependency, as the registry serves them: what a release ships, checked against the lockfile.
@@ -73,8 +73,8 @@ async function checkout(o: { plugin?: Record<string, string>; tamper?: string; m
   });
   const plugin = join(root, "plugins", "demo");
   write(plugin, {
-    "clover.json": `// the demo plugin\n${json({
-      manifest: 1, id: "demo", name: "Demo", version: "1.0.0", icon: "assets/icon.svg", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    "moss.json": `// the demo plugin\n${json({
+      manifest: 1, id: "demo", name: "Demo", version: "1.0.0", icon: "assets/icon.svg", engines: { moss: `^${PLUGIN_API_VERSION}` },
       host: { entry: "host/index.ts" },
       client: { entry: "./client/index.tsx" },
       contributes: { mcpServers: { tools: { type: "stdio", command: "bun", args: ["--smol", "server/main.ts", "--port", "1"] }, other: { type: "stdio", command: "uvx", args: ["tool.py"] } } },
@@ -92,7 +92,7 @@ async function checkout(o: { plugin?: Record<string, string>; tamper?: string; m
     "tsconfig.json": "{}",
     "bunfig.toml": "",
     ".env": "X=1\n",
-    "plugins/kid/clover.json": json({ manifest: 1, name: "Kid", client: { entry: "client/index.tsx" } }),
+    "plugins/kid/moss.json": json({ manifest: 1, name: "Kid", client: { entry: "client/index.tsx" } }),
     "plugins/kid/client/index.tsx": `export const Kid = () => <b>kid</b>;\n`,
     "plugins/kid/notes.md": "kid\n",
     ...o.plugin,
@@ -120,7 +120,7 @@ describe("buildPluginForShipping", () => {
       "client/index.css",
       "client/index.js",
       "client/style.css",
-      "clover.json",
+      "moss.json",
       "host/index.js",
       "node_modules/@fake-native/linux-x64-gnu/fake.node",
       "node_modules/@fake-native/linux-x64-gnu/package.json",
@@ -130,7 +130,7 @@ describe("buildPluginForShipping", () => {
       "node_modules/fake-native/package.json",
       "package.json",
       "plugins/kid/client/index.js",
-      "plugins/kid/clover.json",
+      "plugins/kid/moss.json",
       "plugins/kid/notes.md",
       "plugins/kid/package.json",
       "server/main.js",
@@ -144,14 +144,14 @@ describe("buildPluginForShipping", () => {
     expect(read(r.dir, "node_modules/@fake-native/linux-x64-gnu/fake.node")).toBe("binary for linux-x64-gnu");
     expect(r.natives).toEqual([{ file: "node_modules/@fake-native/linux-x64-gnu/fake.node", package: "fake-native", target: "linux-x64" }]);
 
-    const top = JSON.parse(read(r.dir, "clover.json"));
+    const top = JSON.parse(read(r.dir, "moss.json"));
     expect(top.built).toBe(true);
     expect(top.host).toEqual({ entry: "host/index.js" });
     expect(top.client).toEqual({ entry: "client/index.js", css: ["client/index.css"] });
     expect(top.contributes.mcpServers.tools.args).toEqual(["--smol", "server/main.js", "--port", "1"]);
     expect(top.contributes.mcpServers.other.args).toEqual(["tool.py"]);
-    expect(validateManifest(read(r.dir, "clover.json"), { folderName: "demo", bundled: true }).issues.filter((i) => i.severity === "error")).toEqual([]);
-    expect(JSON.parse(read(r.dir, "plugins/kid/clover.json"))).toEqual({ manifest: 1, name: "Kid", client: { entry: "client/index.js" }, built: true });
+    expect(validateManifest(read(r.dir, "moss.json"), { folderName: "demo", bundled: true }).issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(JSON.parse(read(r.dir, "plugins/kid/moss.json"))).toEqual({ manifest: 1, name: "Kid", client: { entry: "client/index.js" }, built: true });
     expect(JSON.parse(read(r.dir, "package.json"))).toEqual({ name: "@x/demo", version: "1.0.0", license: "MIT", private: true, type: "module", dependencies: { "fake-native": "1.0.0" } });
 
     const mod = (file: string) => r.modules.find((m) => m.file === file)!;
@@ -180,14 +180,14 @@ describe("buildPluginForShipping", () => {
     const release = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download, bundled: true });
     expect(c.downloads.length).toBe(3);
     expect(read(release.dir, "node_modules/@fake-native/linux-arm64-gnu/fake.node")).toBe("binary for linux-arm64-gnu");
-    expect(JSON.parse(read(release.dir, "clover.json")).built).toBe(true);
+    expect(JSON.parse(read(release.dir, "moss.json")).built).toBe(true);
     c.downloads.length = 0;
     const dev = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download, dev: true });
     expect(c.downloads).toEqual([]);
     expect(read(dev.dir, "node_modules/@fake-native/linux-arm64-gnu/fake.node")).toBe("installed binary for linux-arm64-gnu");
     expect(dev.natives).toEqual([{ file: "node_modules/@fake-native/linux-arm64-gnu/fake.node", package: "fake-native", target: "linux-arm64" }]);
     // Only a bundled tree is marked built (#271's L2).
-    expect(JSON.parse(read(dev.dir, "clover.json")).built).toBeUndefined();
+    expect(JSON.parse(read(dev.dir, "moss.json")).built).toBeUndefined();
   });
 
   test("a download whose package isn't the lockfile's exact name and version is refused", async () => {
@@ -219,7 +219,7 @@ describe("buildPluginForShipping", () => {
     const c = await checkout({ plugin: { "client/index.tsx": `import { nope } from "not-installed";\nexport const X = () => nope;\n` } });
     const e = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download }).catch((x) => x);
     expect(e).toBeInstanceOf(PluginBuildError);
-    expect(e.problems.some((p: string) => p.startsWith("clover.json: ") && p.includes("not-installed"))).toBe(true);
+    expect(e.problems.some((p: string) => p.startsWith("moss.json: ") && p.includes("not-installed"))).toBe(true);
     // No folder of the computer that built it in the error (#271's L5).
     expect(e.message).not.toContain(c.root);
     expect(e.message).not.toContain(realpathSync(c.root));
@@ -313,9 +313,9 @@ describe("buildPluginForShipping", () => {
 
   test("programs: bun run, node --import, and a form it can't build refuses rather than ship unbuilt", async () => {
     const runs = async (args: string[], command = "node", extra: Record<string, string> = {}) => {
-      const c = await checkout({ plugin: { ...extra, "plugins/kid/clover.json": json({ manifest: 1, name: "Kid", contributes: { mcpServers: { s: { type: "stdio", command, args } } } }), "plugins/kid/setup.ts": `globalThis.x = 1;\n`, "plugins/kid/main.ts": `console.log(1);\n` } });
+      const c = await checkout({ plugin: { ...extra, "plugins/kid/moss.json": json({ manifest: 1, name: "Kid", contributes: { mcpServers: { s: { type: "stdio", command, args } } } }), "plugins/kid/setup.ts": `globalThis.x = 1;\n`, "plugins/kid/main.ts": `console.log(1);\n` } });
       return buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download }).then(
-        (r) => JSON.parse(read(r.dir, "plugins/kid/clover.json")).contributes.mcpServers.s.args,
+        (r) => JSON.parse(read(r.dir, "plugins/kid/moss.json")).contributes.mcpServers.s.args,
         (e) => (e instanceof PluginBuildError ? `refused: ${e.message}` : e),
       );
     };
@@ -386,11 +386,11 @@ describe("the bundled plugins", () => {
           throw new Error(`no download in this test: ${url}`);
         },
       });
-      const manifest = JSON.parse(read(r.dir, "clover.json"));
+      const manifest = JSON.parse(read(r.dir, "moss.json"));
       expect(manifest.built).toBe(true);
       for (const m of r.modules) {
         const bare = new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(m.source).map((i) => i.path).filter((s) => !s.startsWith("node:") && !s.startsWith("bun"));
-        if (m.kind === "client") expect([m.file, bare.filter((s) => !["react", "react/jsx-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"].includes(s))]).toEqual([m.file, []]);
+        if (m.kind === "client") expect([m.file, bare.filter((s) => !["react", "react/jsx-runtime", "react-dom", "react-dom/client", "@waifucave/moss-plugin-sdk/ui"].includes(s))]).toEqual([m.file, []]);
       }
       expect(r.files.some((f) => /\.(?:ts|tsx)$/.test(f))).toBe(false);
     }, 120_000);

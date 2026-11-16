@@ -1,4 +1,4 @@
-// Upgrading a file to the newest version of its format (spec §5.1 "Formats"; `clover plugin validate --upgrade`). A
+// Upgrading a file to the newest version of its format (spec §5.1 "Formats"; `moss plugin validate --upgrade`). A
 // format file names its format and version in its first key (`{ "manifest": 1 }`, `{ "theme": 1 }`); the app reads
 // every version it has shipped, and this rewrites an older one step by step. Version 1 is the first of each format, so
 // there is nothing to rewrite yet: a step is added here, from N to N + 1, when a format's version rises.
@@ -22,9 +22,9 @@ export function formatOf(doc: unknown): { format: FormatName; version: number } 
 export type UpgradeResult =
   | { status: "current"; format: FormatName; version: number }
   | { status: "upgraded"; format: FormatName; from: number; to: number; doc: Record<string, unknown> }
-  /** A newer format than this Clover reads: "needs a newer Clover". */
+  /** A newer format than this MOSS reads: "needs a newer MOSS". */
   | { status: "newer"; format: FormatName; version: number; reads: number }
-  /** No step leads on from this version (a version this Clover never shipped). */
+  /** No step leads on from this version (a version this MOSS never shipped). */
   | { status: "unknown"; format: FormatName; version: number };
 
 /** Brings a document to its format's newest version. */

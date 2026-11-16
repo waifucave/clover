@@ -9,16 +9,16 @@ import { app, BrowserWindow, screen } from "electron";
 import { createInterface } from "node:readline";
 import { createBrowserHost, PERSON_POLICY, type BrowserHost, type BrowserProxySetting, type TabView } from "../src/main/browser/index";
 
-const site = process.env.CLOVER_LIVE_SITE ?? "";
-const preload = process.env.CLOVER_LIVE_PRELOAD ?? "";
-const html = process.env.CLOVER_LIVE_HTML ?? "";
+const site = process.env.MOSS_LIVE_SITE ?? "";
+const preload = process.env.MOSS_LIVE_PRELOAD ?? "";
+const html = process.env.MOSS_LIVE_HTML ?? "";
 
 const say = (o: unknown): void => { process.stdout.write(`${JSON.stringify(o)}\n`); };
 const alpha = { kind: "bot" as const, bot: "alpha" };
 
 async function main(): Promise<void> {
-  const win = new BrowserWindow({ width: 1100, height: 760, show: true, title: "Clover browser live gate", webPreferences: { sandbox: true, contextIsolation: true } });
-  await win.loadURL("data:text/html;charset=utf-8,<title>Clover browser live gate</title><body style='margin:0;background:%23eee;font:14px system-ui'><div style='position:absolute;left:20px;top:10px'>The bot's tab shows below when the script says so.</div></body>");
+  const win = new BrowserWindow({ width: 1100, height: 760, show: true, title: "MOSS browser live gate", webPreferences: { sandbox: true, contextIsolation: true } });
+  await win.loadURL("data:text/html;charset=utf-8,<title>MOSS browser live gate</title><body style='margin:0;background:%23eee;font:14px system-ui'><div style='position:absolute;left:20px;top:10px'>The bot's tab shows below when the script says so.</div></body>");
   const viewTarget = { window: win, bounds: { x: 20, y: 40, width: 900, height: 600 } };
   let n = 0;
   const host: BrowserHost = createBrowserHost({

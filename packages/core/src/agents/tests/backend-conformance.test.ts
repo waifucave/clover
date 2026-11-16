@@ -9,7 +9,7 @@ import { acpConformanceFactory } from "../testing/harness";
 // Real processes: generous on a loaded CI runner.
 setDefaultTimeout(60_000);
 
-const root = mkdtempSync(join(tmpdir(), "clover-k-conf-"));
+const root = mkdtempSync(join(tmpdir(), "moss-k-conf-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 runAgentBackendConformance(acpConformanceFactory(root));

@@ -7,8 +7,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLUGIN_API_VERSION, spotInfo } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION, spotInfo } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -22,7 +22,7 @@ afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true
 
 const BOT: Caller = { kind: "session", sessionId: "b_alpha", botId: "alpha" } as unknown as Caller;
 const USER: Caller = { kind: "user", client: "app" };
-const engines = { clover: `^${PLUGIN_API_VERSION}` };
+const engines = { moss: `^${PLUGIN_API_VERSION}` };
 
 async function until<T>(what: string, ms: number, f: () => T | undefined | Promise<T | undefined>): Promise<T> {
   const end = Date.now() + ms;
@@ -59,22 +59,22 @@ export const whoami = async () => "kid";
 
 describe("a child plugin of a bot-built tree", () => {
   test("its MCP tool is listed to the bot and callable, its hook runs, its ui entry is active in the spot catalog, its handler answers under its own id", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-e-child-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-e-child-")));
     temps.push(home);
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 60_000 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 60_000 });
     // Stands in for the bundled shell, which declares `main` (a catalog spot: its entries wait until a shell does).
     const stub: Record<string, string> = {
-      "clover.json": JSON.stringify({
+      "moss.json": JSON.stringify({
         manifest: 1, id: "stubshell", name: "Stub shell", version: "1.0.0", engines, client: { entry: "client/index.tsx" },
         contributes: { ui: [{ spot: "app.root", component: "Shell", declares: { main: { shape: "keyed" } } }] },
       }),
       "client/index.tsx": "export function Shell() { return <div />; }\n",
     };
     const files: Record<string, string> = {
-      "clover.json": JSON.stringify({ manifest: 1, id: "pack", name: "Pack", version: "1.0.0", engines, description: "A parent with one child." }),
-      "plugins/kid/clover.json": JSON.stringify({
+      "moss.json": JSON.stringify({ manifest: 1, id: "pack", name: "Pack", version: "1.0.0", engines, description: "A parent with one child." }),
+      "plugins/kid/moss.json": JSON.stringify({
         manifest: 1, name: "Pack kid", description: "The child.", engines, host: { entry: "host/index.js" },
         client: { entry: "client/index.tsx" },
         contributes: {

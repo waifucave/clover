@@ -2,7 +2,7 @@
 // browser or its profile): Alpha's session calls `Browser` through the fake model's tool_use, the core's turn loop, the
 // plugin host, the tool's host half, `api.browser.*` (the core's browser service) and the app's browser host, which
 // draws the page offscreen in the bot's own partition. The fixture is a local server the app reaches by NAME
-// (`CLOVER_TEST_BROWSER_NAMES`, apps/desktop/src/main/browser/test-names.ts: a test or acceptance build only): the name
+// (`MOSS_TEST_BROWSER_NAMES`, apps/desktop/src/main/browser/test-names.ts: a test or acceptance build only): the name
 // resolves to a public-kind address and is dialled to this server, so the network filter judges it as any web address.
 // Loopback itself stays refused to a bot's tab, and a row below holds that.
 import { spawnSync } from "node:child_process";
@@ -19,7 +19,7 @@ export const FIXTURE_NAME = "browser-fixture.test";
 export const OTHER_NAME = "browser-other.test";
 
 export interface BrowserFixture {
-  /** The app's `CLOVER_TEST_BROWSER_NAMES` value. */
+  /** The app's `MOSS_TEST_BROWSER_NAMES` value. */
   readonly names: string;
   /** The address of the fixture as a bot is told it. */
   readonly url: string;
@@ -141,7 +141,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   else {
     const back = await browse(ctx, session, { verb: "navigate", url: fixture.url });
     if (back.isError) fail(`navigate before the panel: ${back.text.slice(0, 200)}`);
-    const panel = await openLayer("clover/browser-view");
+    const panel = await openLayer("moss/browser-view");
     try {
       await panel.request("events.subscribe", { areas: ["browser", "plugins"] });
       const listed = (await panel.request("browser.tabs", { owner: { kind: "bot", bot: "alpha" } })) as { tabs: { id: string; place: string }[] };
@@ -175,7 +175,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   // by the plugin's component tests).
   if (openLayer === undefined) lines.push("usage: not run here (this target has no layer token door)");
   else {
-    const usage = await openLayer("clover/usage");
+    const usage = await openLayer("moss/usage");
     try {
       const deadline = Date.now() + 20_000;
       let alpha: { key: string; inputTokens: number; outputTokens: number } | undefined;
@@ -197,7 +197,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   // and connectors (`session.outputs`/`context`/`connectors`), each from its own layer.
   if (openLayer === undefined) fail("panels: this run has no layer token door");
   else {
-    const filesLayer = await openLayer("clover/panel-files");
+    const filesLayer = await openLayer("moss/panel-files");
     try {
       const conv = (await filesLayer.request("plugin.layer.call", { call: "conversation.get", args: [session] })) as { result: { root?: string; computer?: string } };
       // A bot's conversation has no folder (a coding session's has: `root`); the clause uses the computer's home folder in the tree.
@@ -215,16 +215,16 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
           readNote = `reads ${first.path.split("/").pop()}`;
         }
         lines.push(`files panel: lists the session folder (${listed.result.length} entries), ${readNote}`);
-        const term = await openLayer("clover/panel-terminal");
+        const term = await openLayer("moss/panel-terminal");
         try {
           await term.request("events.subscribe", { areas: ["computers"] });
           const open = (await term.request("terminal.open", { computer, cwd: root, session, cols: 80, rows: 24 })) as { terminalId: string };
           await term.request("terminal.resize", { terminalId: open.terminalId, cols: 100, rows: 30 });
-          await term.request("terminal.write", { terminalId: open.terminalId, data: "echo clover-panel-$((20+22))\r" });
+          await term.request("terminal.write", { terminalId: open.terminalId, data: "echo moss-panel-$((20+22))\r" });
           const until2 = Date.now() + 15_000;
           const out = () => term.heard("terminal_output").map((e) => (e as unknown as { terminalId: string; data: string })).filter((e) => e.terminalId === open.terminalId).map((e) => e.data).join("");
-          while (!/clover-panel-42/.test(out()) && Date.now() < until2) await new Promise((r) => setTimeout(r, 100));
-          if (!/clover-panel-42/.test(out())) fail(`the terminal panel's shell never answered the typed line (heard ${JSON.stringify(out().slice(-200))})`);
+          while (!/moss-panel-42/.test(out()) && Date.now() < until2) await new Promise((r) => setTimeout(r, 100));
+          if (!/moss-panel-42/.test(out())) fail(`the terminal panel's shell never answered the typed line (heard ${JSON.stringify(out().slice(-200))})`);
           await term.request("terminal.close", { terminalId: open.terminalId });
           lines.push("terminal panel: opens a shell in the session folder, resizes it, takes a typed line and hears its output, closes it");
         } finally {
@@ -234,7 +234,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     } finally {
       filesLayer.close();
     }
-    // The diff panel (4.17): a real coding session (Clover's own coding agent, started the app's way with no prompt) on a
+    // The diff panel (4.17): a real coding session (MOSS's own coding agent, started the app's way with no prompt) on a
     // git folder in the user's home with one committed file changed and one new file; the panel's own layer reads its
     // changes (`session.diff`) and gets both, with their hunks, the branch as the base.
     const computerName = (await ctx.rpc.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? fail("computer.list lists no computer");
@@ -251,8 +251,8 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     gitIn("commit", "-q", "-m", "the first commit");
     writeFileSync(join(work, "notes.txt"), "first line\nSECOND LINE, changed\n");
     writeFileSync(join(work, "fresh.txt"), "a new file\n");
-    const coding = (await ctx.rpc.request<{ session: string }>("agent.start", { backend: "clover-code", computer: computerName, root: `home/${computerName}/diff-work` }, 60_000)).session;
-    const diffLayer = await openLayer("clover/panel-diff");
+    const coding = (await ctx.rpc.request<{ session: string }>("agent.start", { backend: "moss-code", computer: computerName, root: `home/${computerName}/diff-work` }, 60_000)).session;
+    const diffLayer = await openLayer("moss/panel-diff");
     try {
       type DiffFile = { path: string; status: string; added: number; removed: number; hunks?: { lines: { kind: string; text: string }[] }[] };
       const d = (await diffLayer.request("session.diff", { id: coding })) as { base: string; target: string; files: DiffFile[]; notice?: string };
@@ -270,7 +270,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     // The column's reads (the slim column's context and outputs, a coding session's connectors), from the column's own
     // layer: a file delivered to the coding session's outputs folder is listed by name and kind; Alpha's last measured
     // turn against her model's window; the coding session's plugin MCP servers counted.
-    const column = await openLayer("clover/panel");
+    const column = await openLayer("moss/panel");
     try {
       mkdirSync(join(ctx.home, "outputs", coding), { recursive: true });
       writeFileSync(join(ctx.home, "outputs", coding, "summary.md"), "# What changed\n");
@@ -325,11 +325,11 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     const okText = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: okCard.id })).card);
     await ctx.pressCard("the third-party tab's OK card", (c) => c.id === okCard.id);
     await until("the third-party tab's plugin running", 60_000, async () => ((await ctx.rpc.request<{ plugin: { state: string } }>("plugin.get", { id: tabId }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
-    // The app's own card is gone with the answer. The window that took the card while Clover was in front was once kept in no
+    // The app's own card is gone with the answer. The window that took the card while MOSS was in front was once kept in no
     // list (the island had shown the card's buttons first), so nothing closed it: it stayed open beside the island's card.
-    await until("the app's own card for the answered OK card closed", 15_000, async () => ((await ctx.cdp.documents()).some((d) => d.url.startsWith(`clover-sealed://card/${encodeURIComponent(okCard.id)}/own`)) ? undefined : true));
+    await until("the app's own card for the answered OK card closed", 15_000, async () => ((await ctx.cdp.documents()).some((d) => d.url.startsWith(`moss-sealed://card/${encodeURIComponent(okCard.id)}/own`)) ? undefined : true));
     lines.push("the app's own card closed with the answer");
-    if (process.env.CLOVER_ACCEPT_RENDERS) writeFileSync(join(process.env.CLOVER_ACCEPT_RENDERS, "third-party-tab-ok-card.json"), okText);
+    if (process.env.MOSS_ACCEPT_RENDERS) writeFileSync(join(process.env.MOSS_ACCEPT_RENDERS, "third-party-tab-ok-card.json"), okText);
     lines.push(`third-party tab OK card says: ${okText.replace(/\s+/g, " ").slice(0, 600)}`);
     const settings = await settingsUsageText(ctx.cdp).catch((e: unknown) => fail(`the Settings Usage section: ${(e as Error).message}`));
     const settingsProblem = settingsDrawnProblem(settings);
@@ -338,7 +338,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     let island: string | undefined;
     let islandError: string | undefined;
     await ctx.inspectTurn(session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "click", ref: otherButton })}`, 150_000, async () => {
-      const renders = process.env.CLOVER_ACCEPT_RENDERS;
+      const renders = process.env.MOSS_ACCEPT_RENDERS;
       const shooter = renders ? islandShooter(ctx.cdp, renders, ctx.setAppearance) : undefined;
       try { island = await islandUsageText(ctx.cdp, shooter?.shoot, { label: "Weather · Acceptance tab", words: "21 degrees and clear", say: (line) => ctx.rpc.request("command.run", { name: "acceptance-tab.say", args: line }, 30_000) }); } catch (e) { islandError = (e as Error).message; }
       await shooter?.done();
@@ -351,8 +351,8 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     if (lineRead === undefined) fail(`the island drew no line from the third-party plugin (${island!.slice(-200)})`);
     lines.push(`island line: the third-party plugin's line is drawn in the island's rows with its name and the bot's: ${lineRead}`);
     lines.push(`devices tab read: ${/\[devices\] (.*)/.exec(island!)?.[1]?.slice(0, 120) ?? ""}`);
-    lines.push("usage drawn: the Settings Usage section and the island's Usage tab show Clover's counted tokens; a third-party plugin's tab sits on the dots and draws its own words");
-    // The closed strip's line (the owner's ruling: when Clover isn't in front): shown under the closed strip, gone while the window
+    lines.push("usage drawn: the Settings Usage section and the island's Usage tab show MOSS's counted tokens; a third-party plugin's tab sits on the dots and draws its own words");
+    // The closed strip's line (the owner's ruling: when MOSS isn't in front): shown under the closed strip, gone while the window
     // is in front, back after; then a card waiting (the plugin's own removal card) takes the strip, and the line does not come back
     // over it.
     if (ctx.setMainFront === undefined) fail("this run has no seam to say the window is in front");
@@ -404,14 +404,14 @@ async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixtur
     // its own frame through the app's door. Looking with no press; a navigate with no press refused; on a real press, it goes.
     await install(F5_IDS.view, folders.view);
     const viewDoc = async () => {
-      for (const d of (await ctx.cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${F5_IDS.view}/`))) {
+      for (const d of (await ctx.cdp.documents()).filter((x) => x.url.startsWith(`moss-plugin://${F5_IDS.view}/`))) {
         const ready = await ctx.cdp.evaluate(d.session, "typeof window.__accView === 'object' && document.querySelector('[data-acc-view=\"go\"]') !== null").catch(() => false);
         if (ready === true) return d.session;
       }
       return undefined;
     };
     // Alpha's conversation in front, so her composer (and the part in it) is drawn.
-    const treeDocs = async () => (await ctx.cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/"));
+    const treeDocs = async () => (await ctx.cdp.documents()).filter((d) => d.url.startsWith("moss-plugin://moss/"));
     const composerShown = async () => {
       for (const d of await treeDocs()) if ((await ctx.cdp.evaluate(d.session, "!!document.querySelector('.cl-composer textarea')").catch(() => false)) === true) return true;
       return undefined;
@@ -447,7 +447,7 @@ async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixtur
     // A background part holding `browser`: refused.
     await install(F5_IDS.bg, folders.bg);
     const bg = await until("acc-bg's background part answered", 45_000, async () => {
-      for (const d of (await ctx.cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${F5_IDS.bg}/`))) {
+      for (const d of (await ctx.cdp.documents()).filter((x) => x.url.startsWith(`moss-plugin://${F5_IDS.bg}/`))) {
         const v = await ctx.cdp.evaluate(d.session, "(() => { const e = document.querySelector('[data-acc-bg]'); return e ? e.getAttribute('data-acc-bg') : ''; })()").catch(() => "");
         if (typeof v === "string" && v !== "" && v !== "waiting") return v;
       }

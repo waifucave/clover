@@ -12,7 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { CLOVER_EVENTS } from "@waifucave/clover-protocol";
+import { MOSS_EVENTS } from "@waifucave/moss-protocol";
 import { EVENT_AREAS } from "../../../../plugin-sdk/src/ui/event-areas";
 
 const PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins");
@@ -20,7 +20,7 @@ const PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins");
 /** Parts that listen for an event they can't hear today, each with the lane fixing it: the walk must find exactly
  *  these, so a fix removes its entry and a new gap fails the test. No manifest gains a grant here: a grant to a bundled
  *  part is a who-may-see change, decided by the controller.
- *  - `clover/plugin-index`: its card notes and resolved cards need `plugins.install` and `approvals` (lane B's events
+ *  - `moss/plugin-index`: its card notes and resolved cards need `plugins.install` and `approvals` (lane B's events
  *    head grants them and removes those two lines); `plugin_changed`, `plugin_found` and `plugin_removed` go to the app
  *    and the CLI only (lane B is wiring the registry's transitions to events gated for layers).
  */
@@ -33,24 +33,24 @@ function sources(dir: string): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) {
-      if (!SKIP_DIRS.has(name) && !(name === "plugins" && existsSync(join(dir, "clover.json")))) out.push(...sources(p));
+      if (!SKIP_DIRS.has(name) && !(name === "plugins" && existsSync(join(dir, "moss.json")))) out.push(...sources(p));
     } else if (/\.(ts|tsx)$/.test(name) && !/\.(test|spec)\.tsx?$/.test(name)) out.push(p);
   }
   return out;
 }
 
-/** Every bundled plugin with a client: the `clover` tree's parts and Alpha's. */
+/** Every bundled plugin with a client: the `moss` tree's parts and Alpha's. */
 function parts(): { id: string; dir: string; capabilities: string[] }[] {
   const out: { id: string; dir: string; capabilities: string[] }[] = [];
   const add = (id: string, dir: string) => {
-    const file = join(dir, "clover.json");
+    const file = join(dir, "moss.json");
     if (!existsSync(file)) return;
     const m = JSON.parse(readFileSync(file, "utf8")) as { client?: unknown; capabilities?: string[] };
     if (m.client !== undefined) out.push({ id, dir, capabilities: m.capabilities ?? [] });
     const kids = join(dir, "plugins");
     if (existsSync(kids)) for (const k of readdirSync(kids)) add(`${id}/${k}`, join(kids, k));
   };
-  add("clover", join(PLUGINS, "clover"));
+  add("moss", join(PLUGINS, "moss"));
   add("alpha", join(PLUGINS, "alpha"));
   return out;
 }
@@ -60,7 +60,7 @@ const WATCHERS: [RegExp, string[]][] = [
   [/\.bots\??\.watch\??\(/, ["bot_changed"]],
   [/\.computers\??\.watch\??\(/, ["computer_changed"]],
   [/\.devices\??\.watch\??\(/, ["device_changed"]],
-  // A plugin's own settings (`plugin_settings_changed`) and its own avatar change (`plugin_ui_message`, `clover.avatar.changed`): own-plugin events, no capability.
+  // A plugin's own settings (`plugin_settings_changed`) and its own avatar change (`plugin_ui_message`, `moss.avatar.changed`): own-plugin events, no capability.
   [/\.settings\??\.watch\??\(/, ["plugin_settings_changed"]],
   [/\.avatar\??\.watch\??\(/, ["plugin_ui_message"]],
   [/\.points\??\.watch\??\(/, ["plugin_point_changed"]],
@@ -69,7 +69,7 @@ const WATCHERS: [RegExp, string[]][] = [
 /** What a part listens for: each event, and whether it is heard through `useCore().on` (which needs `EVENT_AREAS`). */
 function listened(dir: string): Map<string, { viaOn: boolean }> {
   const out = new Map<string, { viaOn: boolean }>();
-  const names = new Set(CLOVER_EVENTS.keys());
+  const names = new Set(MOSS_EVENTS.keys());
   for (const file of sources(dir)) {
     const text = readFileSync(file, "utf8");
     if (/\buseCore\(/.test(text) && /\.on\(/.test(text)) {
@@ -82,7 +82,7 @@ function listened(dir: string): Map<string, { viaOn: boolean }> {
 
 /** Why a part can't hear `type`, or undefined when it can. */
 function cannotHear(part: { id: string; capabilities: string[] }, type: string, viaOn: boolean): string | undefined {
-  const spec = CLOVER_EVENTS.get(type);
+  const spec = MOSS_EVENTS.get(type);
   if (spec === undefined) return `${type}: no such core event`;
   if (spec.scope !== "core") return `${type}: a ${spec.scope} event, not sent as core.event`;
   if (!spec.roles.includes("layer")) return `${type}: not sent to a layer`;
@@ -98,8 +98,8 @@ describe("the bundled parts' events", () => {
     expect(all.length).toBeGreaterThan(15);
     expect(all.some((p) => p.id === "alpha")).toBe(true);
     // The island listens for cards; the plugin index for its card notes.
-    expect([...listened(all.find((p) => p.id === "clover/island")!.dir).keys()]).toContain("card_pending");
-    expect([...listened(all.find((p) => p.id === "clover/plugin-index")!.dir).keys()]).toContain("plugin_card_note");
+    expect([...listened(all.find((p) => p.id === "moss/island")!.dir).keys()]).toContain("card_pending");
+    expect([...listened(all.find((p) => p.id === "moss/plugin-index")!.dir).keys()]).toContain("plugin_card_note");
   });
 
   test("each part hears every event it listens for (the known exceptions listed with their lane)", () => {

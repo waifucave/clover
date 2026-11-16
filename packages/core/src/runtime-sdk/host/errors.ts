@@ -41,7 +41,7 @@ export class RuntimeSdkError extends Error {
 export class RuntimeLaunchInputError extends RuntimeSdkError {
   readonly field: string;
   constructor(args: { field: string; reason: string; leg?: "official" | "winter" }) {
-    super(`clover runtime host: ${args.leg === undefined ? "" : `the ${args.leg} leg: `}\`${args.field}\` — ${args.reason}`);
+    super(`moss runtime host: ${args.leg === undefined ? "" : `the ${args.leg} leg: `}\`${args.field}\` — ${args.reason}`);
     this.field = args.field;
   }
 }
@@ -63,7 +63,7 @@ export class UnaddressableEntryError extends RuntimeSdkError {
   readonly address: string;
   constructor(address: string) {
     super(
-      `clover runtime host: ${JSON.stringify(address)} is not a canonical runtime address, so a directory row under it would be listed to the model by ListAgents and refused by every resolution door (WS-15 §6.1). Build it with serializeRuntimeAddress(buildSessionAddress(<winter session id>)) — the canonical forms are "session:<id>" and "agent:<parent>:<child>"`,
+      `moss runtime host: ${JSON.stringify(address)} is not a canonical runtime address, so a directory row under it would be listed to the model by ListAgents and refused by every resolution door (WS-15 §6.1). Build it with serializeRuntimeAddress(buildSessionAddress(<winter session id>)) — the canonical forms are "session:<id>" and "agent:<parent>:<child>"`,
     );
     this.address = address;
   }
@@ -86,7 +86,7 @@ export class NotImplementedYet extends RuntimeSdkError {
   readonly lane: LaneId;
   readonly seam: string;
   constructor(lane: LaneId, seam: string) {
-    super(`clover runtime host: ${seam} is not implemented yet — Phase 7b ${lane} owns it (the spine ships the signature, not the behaviour)`);
+    super(`moss runtime host: ${seam} is not implemented yet — Phase 7b ${lane} owns it (the spine ships the signature, not the behaviour)`);
     this.lane = lane;
     this.seam = seam;
   }
@@ -95,6 +95,6 @@ export class NotImplementedYet extends RuntimeSdkError {
 /** A `RuntimeSdk` method called after `dispose()`. */
 export class RuntimeSdkDisposedError extends RuntimeSdkError {
   constructor(method: string) {
-    super(`clover runtime host: ${method}() was called after dispose()`);
+    super(`moss runtime host: ${method}() was called after dispose()`);
   }
 }

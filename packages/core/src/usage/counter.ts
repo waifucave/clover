@@ -1,4 +1,4 @@
-// Counting Clover's own turns (spec §12, §5.8): the counter reads every session's log and writes a usage row per
+// Counting MOSS's own turns (spec §12, §5.8): the counter reads every session's log and writes a usage row per
 // model per turn into the ledger, with the session's bot, so usage adds up per bot and per session. Owner: lane D.
 //
 // Where the numbers come from, in order:
@@ -54,7 +54,7 @@ interface SessionInfo {
   model?: string;
 }
 
-export class CloverUsageCounter {
+export class MossUsageCounter {
   readonly #ledger: UsageLedger;
   readonly #host: DurableSessionHost;
   readonly #price: Pricer | undefined;
@@ -118,7 +118,7 @@ export class CloverUsageCounter {
   }
 
   #rowsFor(record: SessionRecord, info: SessionInfo): LedgerRowInput[] {
-    const base = { source: "clover" as const, at: record.ts, session: record.sessionId, ...(info.bot === undefined ? {} : { bot: info.bot }) };
+    const base = { source: "moss" as const, at: record.ts, session: record.sessionId, ...(info.bot === undefined ? {} : { bot: info.bot }) };
     if (record.type === "turn_started") {
       this.#turnHasUsage.delete(record.sessionId);
       return [];

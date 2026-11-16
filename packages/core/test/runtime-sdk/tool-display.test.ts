@@ -7,7 +7,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SessionEvent, ToolCallEvent, ToolDisplay, ToolResultEvent, type Caller } from "@waifucave/clover-protocol";
+import { SessionEvent, ToolCallEvent, ToolDisplay, ToolResultEvent, type Caller } from "@waifucave/moss-protocol";
 import { botApprovalCheck } from "../../src/approvals/bot-check";
 import type { BotSessionContext } from "../../src/bots/service";
 import type { ApprovalRequest } from "../../src/contracts/approval-broker";
@@ -318,7 +318,7 @@ describe("the result's display", () => {
   });
 
   test("a reopened conversation shows the same: the display and title are in the log and come back on its replay", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-d-display-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-d-display-"));
     temps.push(home);
     const clock = new FakeClock();
     const host = new DurableSessionHost({ home, clock });

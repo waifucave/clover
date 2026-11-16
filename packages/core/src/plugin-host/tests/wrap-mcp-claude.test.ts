@@ -6,10 +6,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PluginDetail } from "@waifucave/clover-protocol";
+import { PluginDetail } from "@waifucave/moss-protocol";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -37,11 +37,11 @@ const KEY = "dummy-key-0000";
 type Installed = { id: string; state: string; card?: string; more?: { id: string; card?: string }[] };
 
 async function world(o: { secrets?: boolean; userHome?: string } = {}) {
-  const home = temp("clover-wrapm-");
-  const userHome = o.userHome ?? temp("clover-wrapm-user-");
+  const home = temp("moss-wrapm-");
+  const userHome = o.userHome ?? temp("moss-wrapm-user-");
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const secrets = new MemorySecretStore();
-  const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+  const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
   const m = pluginRegistryMethods({
     opened, host: { restart: async () => {} }, home, userHome,
     ...(o.secrets === false ? {} : { secrets }),
@@ -49,7 +49,7 @@ async function world(o: { secrets?: boolean; userHome?: string } = {}) {
   const call = (name: string, params: unknown) => m[name]!(params, APP);
   const install = (kind: string, value: string) => call("plugin.install", { source: { from: "wrap", kind, value } }) as Promise<Installed>;
   const refused = (kind: string, value: string) => install(kind, value).then(() => "installed", (e: Error) => `refused: ${e.message}`);
-  const manifest = (id: string) => JSON.parse(readFileSync(join(home, "plugins", id, "clover.json"), "utf8"));
+  const manifest = (id: string) => JSON.parse(readFileSync(join(home, "plugins", id, "moss.json"), "utf8"));
   const pluginsLeft = () => (existsSync(join(home, "plugins")) ? readdirSync(join(home, "plugins")) : []);
   const detail = async (id: string) => PluginDetail.parse(((await call("plugin.get", { id })) as { plugin: unknown }).plugin);
   return { home, userHome, broker, secrets, opened, call, install, refused, manifest, pluginsLeft, detail };
@@ -80,10 +80,10 @@ describe("wrapping an MCP server's config or address", () => {
       // `sse` is served as `http`.
       expect(w.manifest("mcp-docs").contributes.mcpServers.docs.type).toBe("http");
       const blender = w.manifest("mcp-blender");
-      expect(blender.engines?.clover).toStartWith("^");
+      expect(blender.engines?.moss).toStartWith("^");
       expect(blender.contributes.mcpServers.blender).toEqual({ type: "stdio", command: "uvx", args: ["blender-mcp"], env: { BLENDER_TOKEN: "${secret:BLENDER_TOKEN}" } });
       // No key on disk; each in its own plugin's secrets.
-      for (const id of ["mcp-linear", "mcp-blender"]) expect(readFileSync(join(w.home, "plugins", id, "clover.json"), "utf8")).not.toContain(KEY);
+      for (const id of ["mcp-linear", "mcp-blender"]) expect(readFileSync(join(w.home, "plugins", id, "moss.json"), "utf8")).not.toContain(KEY);
       expect(await w.secrets.get({ owner: { kind: "plugin", pluginId: "mcp-linear" }, name: "header.Authorization" })).not.toBeNull();
       expect((await w.secrets.list({ kind: "plugin", pluginId: "mcp-blender" })).map((s) => s.ref.name)).toEqual(["BLENDER_TOKEN"]);
       // The network grant: on the local server's record only (an http server is reached by the runtime, not a plugin
@@ -163,9 +163,9 @@ darwinDescribe("the fence's open network, on a real process", () => {
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     const port = (server.address() as { port: number }).port;
     try {
-      const home = temp("clover-wrapf-");
+      const home = temp("moss-wrapf-");
       const reach = (network: "open" | { proxyPort: number }) => {
-        const profile = pluginFenceProfile({ cloverHome: join(home, "clover"), userHome: join(home, "user"), read: [], write: [], exec: "any", network });
+        const profile = pluginFenceProfile({ mossHome: join(home, "moss"), userHome: join(home, "user"), read: [], write: [], exec: "any", network });
         return Bun.spawnSync(["/usr/bin/sandbox-exec", "-p", profile, "/usr/bin/nc", "-z", "-w", "3", "127.0.0.1", String(port)], { stdout: "ignore", stderr: "ignore" }).exitCode;
       };
       expect(reach("open")).toBe(0);
@@ -179,7 +179,7 @@ darwinDescribe("the fence's open network, on a real process", () => {
 
 describe("wrapping a Claude Code plugin folder", () => {
   function claudePlugin(extra: { pluginJson?: Record<string, unknown> } = {}): string {
-    const root = join(temp("clover-wrapc-src-"), "deploy-kit");
+    const root = join(temp("moss-wrapc-src-"), "deploy-kit");
     mkdirSync(join(root, ".claude-plugin"), { recursive: true });
     writeFileSync(join(root, ".claude-plugin", "plugin.json"), JSON.stringify({
       name: "deploy-kit", version: "1.2.3", description: "Ship things",
@@ -238,12 +238,12 @@ describe("wrapping a Claude Code plugin folder", () => {
         },
         contributes: { skills: ["skills/*", "command-skills/*"], agents: ["agents/deployer.md"] },
       });
-      expect(m.engines?.clover).toStartWith("^");
+      expect(m.engines?.moss).toStartWith("^");
       // The folder as it was, beside the generated parts.
       expect(readFileSync(join(dest, "hooks", "check.sh"), "utf8")).toContain("exit 0");
       expect(readFileSync(join(dest, "command-skills", "deploy", "SKILL.md"), "utf8")).toBe("---\nname: deploy\ndescription: \"Deploy the app\"\n---\nDeploy $ARGUMENTS now.\n");
       expect(readFileSync(join(dest, "command-skills", "status", "SKILL.md"), "utf8")).toContain('description: "Show the deploy status."');
-      // Servers: Claude Code's variables as Clover's, a sensitive option a secret in env and headers.
+      // Servers: Claude Code's variables as MOSS's, a sensitive option a secret in env and headers.
       expect(m.contributes.mcpServers.deployer).toEqual({
         type: "stdio", command: "${plugin}/bin/server", args: ["--region", "${setting:region}", "--data", "${data}"],
         env: { DEPLOY_KEY: "${secret:api_key}", CLAUDE_PLUGIN_ROOT: "${plugin}", CLAUDE_PLUGIN_DATA: "${data}" },
@@ -274,7 +274,7 @@ describe("wrapping a Claude Code plugin folder", () => {
   test("a folder of skills alone runs nothing: no grant, no engines", async () => {
     const w = await world();
     try {
-      const bare = join(temp("clover-wrapc-bare-"), "notes");
+      const bare = join(temp("moss-wrapc-bare-"), "notes");
       mkdirSync(join(bare, "skills", "jot"), { recursive: true });
       writeFileSync(join(bare, "skills", "jot", "SKILL.md"), "---\nname: jot\ndescription: Jot\n---\n");
       const r = await w.install("claude-plugin", bare);
@@ -286,17 +286,17 @@ describe("wrapping a Claude Code plugin folder", () => {
     }
   });
 
-  test("refused: a folder that's a Clover plugin, one that's nothing Claude Code reads, a path in plugin.json that leaves the folder", async () => {
+  test("refused: a folder that's a MOSS plugin, one that's nothing Claude Code reads, a path in plugin.json that leaves the folder", async () => {
     const w = await world();
     try {
-      const base = temp("clover-wrapc-bad-");
-      const clover = join(base, "clover");
-      mkdirSync(join(clover, "skills"), { recursive: true });
-      writeFileSync(join(clover, "clover.json"), "{}");
+      const base = temp("moss-wrapc-bad-");
+      const moss = join(base, "moss");
+      mkdirSync(join(moss, "skills"), { recursive: true });
+      writeFileSync(join(moss, "moss.json"), "{}");
       const empty = join(base, "empty");
       mkdirSync(empty);
       writeFileSync(join(empty, "README.md"), "hi");
-      expect(await w.refused("claude-plugin", clover)).toContain("it's a plugin already");
+      expect(await w.refused("claude-plugin", moss)).toContain("it's a plugin already");
       expect(await w.refused("claude-plugin", empty)).toContain("isn't a Claude Code plugin folder");
       expect(await w.refused("claude-plugin", claudePlugin({ pluginJson: { hooks: "../../../etc/hooks.json" } }))).toContain("leaves the plugin's folder");
       expect(w.pluginsLeft()).toEqual([]);
@@ -337,7 +337,7 @@ function approved(registry: { get(id: string): { state: string } | undefined; wa
 }
 
 // A local server, as `npx` or `node` would start one: it tries a host it never declared, a listed one through its
-// proxy (Node's plain fetch, which reads the proxy's env), and a file in the Clover home.
+// proxy (Node's plain fetch, which reads the proxy's env), and a file in the MOSS home.
 const probeScript = (o: { undeclared: number; listed: number; token: string }) => [
   "const net = require('node:net'); const fs = require('node:fs'); const out = {};",
   "const c = (h, p) => new Promise((r) => { const s = net.connect(p, h); s.setTimeout(5000, () => { s.destroy(); r('timeout'); }); s.on('connect', () => { s.end(); r('connected'); }); s.on('error', (e) => r(e.code || e.message)); });",
@@ -363,14 +363,14 @@ darwinDescribe("a wrapper's grant on real processes", () => {
     const token = join(w.home, "run", "app.token");
     writeFileSync(token, "dummy-token", { mode: 0o600 });
     const script = probeScript({ undeclared, listed, token });
-    const ph = await startPluginHost({ home: w.home, computer: "Studio", registry: w.opened.registry, secrets: w.secrets, userHome: temp("clover-wrapn-user-") });
+    const ph = await startPluginHost({ home: w.home, computer: "Studio", registry: w.opened.registry, secrets: w.secrets, userHome: temp("moss-wrapn-user-") });
     const approve = async (id: string, card: string | undefined) => {
       const shown = w.broker.cards().find((c) => c.id === card)!;
       await w.broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: w.broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
       await approved(w.opened.registry, id);
     };
     const guard = {
-      files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], proxyFor: ph.proxyFor,
+      files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { mossHome: w.home }), shared: [], proxyFor: ph.proxyFor,
       openNetwork: (id: string) => wrapperOpensNetwork(w.opened.registry, id),
     };
     const run = async (id: string) => {
@@ -390,7 +390,7 @@ darwinDescribe("a wrapper's grant on real processes", () => {
       // A native code plugin with a local server and no hosts.
       const native = join(w.home, "plugins", "native");
       mkdirSync(native, { recursive: true });
-      writeFileSync(join(native, "clover.json"), JSON.stringify({ manifest: 1, id: "native", name: "Native", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, contributes: { mcpServers: { probe: { type: "stdio", command: "node", args: ["-e", script] } } } }));
+      writeFileSync(join(native, "moss.json"), JSON.stringify({ manifest: 1, id: "native", name: "Native", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, contributes: { mcpServers: { probe: { type: "stdio", command: "node", args: ["-e", script] } } } }));
       await w.opened.folders.scan();
       const { card: nativeCard } = await w.opened.registry.installed("native", "app");
       await approve("native", nativeCard);
@@ -405,8 +405,8 @@ darwinDescribe("a wrapper's grant on real processes", () => {
 
       // The user edits the wrapper to name one host: held to it, and its OK is asked again.
       const folder = w.opened.registry.get("mcp-probe")!.folder;
-      const m = JSON.parse(readFileSync(join(folder, "clover.json"), "utf8"));
-      writeFileSync(join(folder, "clover.json"), JSON.stringify({ ...m, capabilities: [`network:127.0.0.1:${listed}`] }));
+      const m = JSON.parse(readFileSync(join(folder, "moss.json"), "utf8"));
+      writeFileSync(join(folder, "moss.json"), JSON.stringify({ ...m, capabilities: [`network:127.0.0.1:${listed}`] }));
       await w.opened.folders.refresh(folder);
       expect(w.opened.registry.get("mcp-probe")?.state).toBe("found");
       expect(wrapperOpensNetwork(w.opened.registry, "mcp-probe")).toBe(false);

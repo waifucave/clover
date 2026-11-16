@@ -11,13 +11,13 @@
 // there for the channel and that each update file matches the files it names, on macOS that the dmg is signed
 // and stapled, and that every OS was built from the same commit of main (each build's `BUILD-COMMIT-<os>.txt`),
 // which the release is then tagged at (`gh release create --target`). The daemon's files for a server's self-update
-// travel too: each OS's `clover-core-<version>-<target>` and `<channel>-core-<target>.yml`, the update file checked
+// travel too: each OS's `moss-core-<version>-<target>` and `<channel>-core-<target>.yml`, the update file checked
 // against the binary, and both signed. Without `--create-draft` it only prints what it would upload. With it, it signs each update file with
 // the update feed's key from the login Keychain (an Ed25519 `.sig` beside it, packages/update-feed; the key is read
 // into memory, checked against the one the app carries, and never written), and creates the release as a draft (a
 // pre-release on beta) tagged v<version>; the owner reads it and publishes it on GitHub, which is the moment it
 // reaches anyone. Before any of that, a release with a macOS build must prove the sealed core on this Mac: the one
-// Clover.app beside the dmg, whose `clover-core` must be byte for byte the one inside the shipped zip and the shipped
+// MOSS Code.app beside the dmg, whose `moss-core` must be byte for byte the one inside the shipped zip and the shipped
 // dmg (mounted read-only, never shown); the zip's own copy, in a private temp folder, passes `verify:sealed-core
 // --signed --require-proof` (the seal's premise, SIP on, proven here, never assumed) and is unchanged after it, or no
 // draft is made.
@@ -180,7 +180,7 @@ export function signFeeds(plan: ReleasePlan, read: (dir: string, name: string) =
 export function draftReleaseArgs(plan: ReleasePlan, repo: string): string[] {
   if (plan.commit === undefined) throw new Error("the plan has no commit to tag");
   return ["gh", "release", "create", `v${plan.version}`, "--repo", repo, "--target", plan.commit, "--draft", ...(plan.channel === "beta" ? ["--prerelease"] : []),
-    "--title", `Clover ${plan.version}`, "--notes", `Clover ${plan.version}${plan.channel === "beta" ? " (beta)" : ""}.`,
+    "--title", `MOSS ${plan.version}`, "--notes", `MOSS ${plan.version}${plan.channel === "beta" ? " (beta)" : ""}.`,
     ...plan.assets.map((a) => join(a.dir, a.name))];
 }
 
@@ -199,14 +199,14 @@ export function promotedName(name: string): string {
   return name.replace(/^beta/, "latest");
 }
 
-const REPO = "waifucave/clover";
+const REPO = "waifucave/moss";
 
 /** A beta update file: the app's for each OS, and the daemon's, plugin Bun's and the bundled plugins' for each target. */
 const BETA_FEED = /^beta(-mac|-linux|-linux-arm64|-(?:core|plugin-bun|plugins)-(darwin-arm64|linux-x64|linux-arm64|windows-x64))?\.yml$/;
 /** A release's beta update files: the app's four, and four each for the daemon, plugin Bun and the bundled plugins. */
 const BETA_FEEDS = 16;
 
-const CORE_IN_APP = ["Clover.app", "Contents", "Resources", "daemon", "clover-core"] as const;
+const CORE_IN_APP = ["MOSS Code.app", "Contents", "Resources", "daemon", "moss-core"] as const;
 
 /** How the shipped copies are opened: the update zip with `ditto -x -k`, the dmg read-only with `hdiutil attach
  *  -nobrowse -noautoopen` (mounted, never shown in the Finder or opened) at a temp mount point, detached after. */
@@ -231,40 +231,40 @@ function sha256Of(path: string): string {
 
 /**
  * Proves the macOS core the release ships, or says why it can't. Only the dmg's own folder counts (a stale `mac*`
- * folder elsewhere among `--from` never does), and it must hold exactly one `Clover.app`. That app's core, the one
+ * folder elsewhere among `--from` never does), and it must hold exactly one `MOSS Code.app`. That app's core, the one
  * inside the shipped update zip and the one inside the shipped dmg must be the same bytes. The proof then runs on the
  * zip's copy, extracted into this run's own temp folder (0700, the payload's own bytes with their signature), not on
  * the build folder's file, which anything that can write there could swap after the hashing; that copy's SHA-256 is
  * checked again after the proof, and the folder removed only then. Undefined when it is proven.
  */
 export function proveShippedMacCore(dmgDir: string, version: string, prove: (core: string) => boolean, openers: ShippedOpeners = REAL_SHIPPED_OPENERS, list: (dir: string) => string[] = (d) => { try { return readdirSync(d); } catch { return []; } }): string | undefined {
-  const apps = list(dmgDir).filter((n) => n === "mac" || n.startsWith("mac-")).filter((sub) => existsSync(join(dmgDir, sub, "Clover.app")));
-  if (apps.length !== 1) return `${dmgDir} must hold exactly one mac*/Clover.app beside the dmg, not ${apps.length}`;
+  const apps = list(dmgDir).filter((n) => n === "mac" || n.startsWith("mac-")).filter((sub) => existsSync(join(dmgDir, sub, "MOSS Code.app")));
+  if (apps.length !== 1) return `${dmgDir} must hold exactly one mac*/MOSS Code.app beside the dmg, not ${apps.length}`;
   const unpacked = join(dmgDir, apps[0]!, ...CORE_IN_APP);
-  if (!existsSync(unpacked)) return `${join(dmgDir, apps[0]!, "Clover.app")} has no Contents/Resources/daemon/clover-core`;
+  if (!existsSync(unpacked)) return `${join(dmgDir, apps[0]!, "MOSS Code.app")} has no Contents/Resources/daemon/moss-core`;
   const want = sha256Of(unpacked);
-  const work = mkdtempSync(join(tmpdir(), "clover-shipped-core-"));
+  const work = mkdtempSync(join(tmpdir(), "moss-shipped-core-"));
   try {
-    const zip = join(dmgDir, `Clover-${version}-mac.zip`);
+    const zip = join(dmgDir, `MOSS-Code-${version}-mac.zip`);
     if (!existsSync(zip)) return `no ${zip}: the update zip's core can't be compared`;
     const zipped = join(work, "zip");
     mkdirSync(zipped);
     const copy = join(zipped, ...CORE_IN_APP);
-    if (!openers.extractZip(zip, zipped) || !existsSync(copy)) return `${zip} holds no Clover.app/Contents/Resources/daemon/clover-core`;
-    if (sha256Of(copy) !== want) return `the clover-core in ${zip} is not the one in ${join(dmgDir, apps[0]!)}`;
-    const dmg = join(dmgDir, `Clover-${version}.dmg`);
+    if (!openers.extractZip(zip, zipped) || !existsSync(copy)) return `${zip} holds no MOSS Code.app/Contents/Resources/daemon/moss-core`;
+    if (sha256Of(copy) !== want) return `the moss-core in ${zip} is not the one in ${join(dmgDir, apps[0]!)}`;
+    const dmg = join(dmgDir, `MOSS-Code-${version}.dmg`);
     const mount = join(work, "dmg");
     mkdirSync(mount);
     const detach = openers.mountDmg(dmg, mount);
     if (detach === undefined) return `${dmg} could not be mounted read-only`;
     try {
-      if (!existsSync(join(mount, ...CORE_IN_APP))) return `${dmg} holds no Clover.app/Contents/Resources/daemon/clover-core`;
-      if (sha256Of(join(mount, ...CORE_IN_APP)) !== want) return `the clover-core in ${dmg} is not the one in ${join(dmgDir, apps[0]!)}`;
+      if (!existsSync(join(mount, ...CORE_IN_APP))) return `${dmg} holds no MOSS Code.app/Contents/Resources/daemon/moss-core`;
+      if (sha256Of(join(mount, ...CORE_IN_APP)) !== want) return `the moss-core in ${dmg} is not the one in ${join(dmgDir, apps[0]!)}`;
     } finally {
       detach();
     }
-    if (!prove(copy)) return `verify:sealed-core --require-proof failed on the shipped clover-core (${zip}'s copy): no draft without the seal's proof (it needs a Mac with SIP on)`;
-    if (sha256Of(copy) !== want) return `the proven copy of clover-core changed during its proof: no draft`;
+    if (!prove(copy)) return `verify:sealed-core --require-proof failed on the shipped moss-core (${zip}'s copy): no draft without the seal's proof (it needs a Mac with SIP on)`;
+    if (sha256Of(copy) !== want) return `the proven copy of moss-core changed during its proof: no draft`;
     return undefined;
   } finally {
     rmSync(work, { recursive: true, force: true });
@@ -317,7 +317,7 @@ export async function main(argv: readonly string[], root: string, deps: { proveS
     if (unsigned.length > 0) { console.error(`release/publish: ${tag} has no signature for ${unsigned.join(", ")}`); return 1; }
     console.log(`release/publish: promote ${tag}: upload ${betas.map(promotedName).join(", ")} and their signatures, then make it a full release and the latest`);
     if (!a.yes) { console.log("release/publish: nothing done (add --yes)"); return 0; }
-    const dir = mkdtempSync(join(tmpdir(), "clover-promote-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-promote-"));
     try {
       const privateKey = await signingKey(keychain);
       if (gh(["gh", "release", "download", tag, "--repo", REPO, "--dir", dir, ...betas.flatMap((n) => ["--pattern", n, "--pattern", `${n}${SIGNATURE_SUFFIX}`])]).status !== 0) throw new Error("couldn't download the beta update files");
@@ -355,13 +355,13 @@ export async function main(argv: readonly string[], root: string, deps: { proveS
     spawnSync("git", ["fetch", "--quiet", "origin", "main"], { cwd: root });
     if ((spawnSync("git", ["merge-base", "--is-ancestor", plan.commit, "origin/main"], { cwd: root }).status ?? 1) !== 0) plan.problems.push(`the builds' commit ${plan.commit} is not on main`);
   }
-  const dmg = plan.assets.find((x) => x.name === `Clover-${version}.dmg`);
+  const dmg = plan.assets.find((x) => x.name === `MOSS-Code-${version}.dmg`);
   if (dmg !== undefined) plan.problems.push(...macSignedAndStapled(join(dmg.dir, dmg.name)));
   // The name scan: every asset, inside where it opens, and the signed app as built (scripts/release/name-scan.ts).
   if (plan.problems.length === 0) {
-    // The unpacked apps beside the builds: the signed Clover.app, and CI's win-unpacked.
+    // The unpacked apps beside the builds: the signed MOSS Code.app, and CI's win-unpacked.
     const apps = [
-      ...(dmg !== undefined && existsSync(join(dmg.dir, "mac-arm64", "Clover.app")) ? [join(dmg.dir, "mac-arm64", "Clover.app")] : []),
+      ...(dmg !== undefined && existsSync(join(dmg.dir, "mac-arm64", "MOSS Code.app")) ? [join(dmg.dir, "mac-arm64", "MOSS Code.app")] : []),
       ...a.from.map((d) => join(d, "win-unpacked")).filter((d) => existsSync(d)),
     ];
     const scan = nameScan(plan.assets.map((x) => join(x.dir, x.name)), apps);
@@ -383,7 +383,7 @@ export async function main(argv: readonly string[], root: string, deps: { proveS
     if (problem !== undefined) { console.error(`release/publish: ${problem}`); return 1; }
   }
   if (gh(["gh", "release", "view", `v${version}`, "--repo", REPO]).status === 0) { console.error(`release/publish: v${version} already exists`); return 1; }
-  const sigDir = mkdtempSync(join(tmpdir(), "clover-feed-sigs-"));
+  const sigDir = mkdtempSync(join(tmpdir(), "moss-feed-sigs-"));
   try {
     const privateKey = await signingKey(keychain);
     for (const s of signFeeds(plan, (d, n) => new Uint8Array(readFileSync(join(d, n))), privateKey)) {

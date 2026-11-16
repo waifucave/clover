@@ -12,7 +12,7 @@
 // 1. Changes, `confirm`, plugin OKs, elicitations and the person's browser (R10) are always cards (§5.5, S5 §7), and none of them offers an
 //    "always", whatever `ruleKey` or `options` the requester passes: each is answered on its own (`ALWAYS_CARD_KINDS`).
 // 2. An agent's request that exactly names the session's bridge server and one of the bridge's own tools is answered
-//    at once: the bridge applies Clover's approval itself when the call arrives (S5 edit 7). Never read from the title.
+//    at once: the bridge applies MOSS's approval itself when the call arrives (S5 edit 7). Never read from the title.
 // 3. A request that touches a fenced path is always a card, at every level, and no saved rule covers it (§9.3). One
 //    that would write (edit, move, delete) where a file runs later outside any sandbox (`RUN_LATER_KINDS`: shell start
 //    files, login items, the coding agents' installs and settings) is refused without a card (`by: "fence"`), at every
@@ -33,11 +33,11 @@
 //    (role `app`), naming the channel minted for this card (`frameChannel`). A device's signature counts relayed by
 //    any computer (review N4), from a device that may answer cards (a phone, or a desktop with its app's answer key:
 //    `mayAnswerCards`, the owner's decision on N1), with its time inside `answerTimeOk`'s bounds, over the option and
-//    the children checked (`clover/card-answer/2`).
+//    the children checked (`moss/card-answer/2`).
 //    The owner's decision, recorded here: any desktop may answer; a compromised plugin on a Windows or Linux computer
 //    could approve actions on other computers.
 // 8. An agent never gets an "always": `acpOutcomeFor` picks `allow_once` or `reject_once`, and a card's "always" is
-//    saved as Clover's own rule instead (S5 edit 5).
+//    saved as MOSS's own rule instead (S5 edit 5).
 // 9. A request that binds one call (`binds`: a level raise's `computer.setLevel`, the answer key's hand-over, a call
 //    for another computer) is always a card, at every level, past any saved rule, the bridge and the reviewer, and
 //    never offers an "always": the card is the proof, so it is answered on its own. Read-only's deny and rule 3's
@@ -50,10 +50,10 @@
 //    proves another.
 import {
   type Card, type CardAnswerProof, type CardFieldName, type CardKind, type CardMeta, type CardOption, type CardOutcome,
-  type ChangeSubject, type CloverRole, type DeviceKind, type Level, LEVELS, type SealedValue, type SignedCardAnswer,
+  type ChangeSubject, type MossRole, type DeviceKind, type Level, LEVELS, type SealedValue, type SignedCardAnswer,
   type CallBinding, type CardContent, type TurnOrigin, TREE_TRANSFER, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardContentInput,
   cardHashInput, isUserTurn,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import { fromBase64, type Unsubscribe } from "./common";
 import { mayAnswerCards, type DeviceRegistry } from "./device-registry";
 import { RUN_LATER_KINDS, type Fence } from "./fence";
@@ -131,9 +131,9 @@ export interface ApprovalRequest {
   /** A fetch or a tool call that stays inside what the fence and the sandbox already confine (§9.1, the owner's
    *  "bots act on their own for what isn't risky"): a page whose address the session already saw, an admitted agent's
    *  start, a message to another of the user's sessions, a command its sandbox holds (no network, writes to its roots
-   *  only, never outside it). Only Clover's own requesters set it; at ask for risky actions
+   *  only, never outside it). Only MOSS's own requesters set it; at ask for risky actions
    *  it runs without asking (`levelDecision`). For an edit or a move it is never read: the broker decides from the
-   *  paths itself (`CloverApprovalBrokerOptions.pathClass`). */
+   *  paths itself (`MossApprovalBrokerOptions.pathClass`). */
   contained?: boolean;
   /** Real paths the action touches, for rule 3. */
   paths?: readonly string[];
@@ -197,7 +197,7 @@ export interface ApprovalDecision {
   level?: Level;
   cardId?: string;
   optionId?: string;
-  /** The user picked an "always" option: Clover saved its own rule. */
+  /** The user picked an "always" option: MOSS saved its own rule. */
   remembered?: boolean;
   /** An approved bound card's binding, as the card sealed it (rule 9). */
   binds?: CallBinding;
@@ -230,7 +230,7 @@ export type AnswerResult =
 /** Where an answer arrived from, as the connection says, never as the answer does: its role, and for a device link
  *  (`remote`, `peer`), the device the link authenticated. */
 export interface AnswerOrigin {
-  role: CloverRole;
+  role: MossRole;
   device?: string;
   /** A test-marked build only (scripts/test-build.ts): the `cli` connection the harness token authenticated, outside
    *  any session (the acceptance run's driver). Its sealed-frame answer counts as the app's (broker.ts); every other

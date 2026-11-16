@@ -8,7 +8,7 @@ function setup(over: Partial<ComposerRoute> & { gestures?: number } = {}) {
   const calls: string[] = [];
   const logs: string[] = [];
   let gestures = over.gestures ?? 0;
-  const mount: ComposerMount = { windowId: 1, pluginId: "clover/composer", session: "alpha:main", bot: "alpha", capabilities: BUNDLED_COMPOSER };
+  const mount: ComposerMount = { windowId: 1, pluginId: "moss/composer", session: "alpha:main", bot: "alpha", capabilities: BUNDLED_COMPOSER };
   const r: ComposerRoute = {
     composer: mount,
     op: "models",
@@ -87,7 +87,7 @@ describe("the composer spot's callbacks", () => {
   });
 
   test("another session's model switch is session.setModel; a malformed model is refused", async () => {
-    const other: ComposerMount = { windowId: 1, pluginId: "clover/composer", session: "s_1", capabilities: BUNDLED_COMPOSER };
+    const other: ComposerMount = { windowId: 1, pluginId: "moss/composer", session: "s_1", capabilities: BUNDLED_COMPOSER };
     const { r, calls } = setup({ composer: other, op: "setModel", args: { model: "a/b" }, gestures: 2 });
     await routeComposer(r);
     expect(calls).toEqual(['app:session.setModel:{"id":"s_1","model":"a/b"}']);

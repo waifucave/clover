@@ -2,14 +2,14 @@
 // size asked, by the route the sidebar uses, captured once it shows and closed after (or at the timeout); Settings is
 // never drawn; `window` is the user's main window as it is, never while Settings shows there; one render at a time.
 import { describe, expect, test } from "bun:test";
-import type { ShellState } from "@waifucave/clover-plugin-sdk";
-import type { ShellAct } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import type { CapturedWindow } from "@waifucave/clover-protocol";
+import type { ShellState } from "@waifucave/moss-plugin-sdk";
+import type { ShellAct } from "@waifucave/moss-plugin-sdk/ui/bridge";
+import type { CapturedWindow } from "@waifucave/moss-protocol";
 import { RENDER_TARGETS, RenderQueue, renderPlace, type RenderDeps, type RenderHandle } from "../src/main/render";
 
 const known = { bots: ["alpha", "luna"], pages: ["ex-timeline", "reel"] };
 const state = (tab: ShellState["tab"], extra: Partial<ShellState> = {}): ShellState => ({ tab, ...(tab.kind === "bot" ? { bot: tab.id } : {}), sidebar: { collapsed: false, side: "bots" }, panels: { open: [], available: [] }, safeArea: { left: 80, top: 44 }, ...extra });
-const shot = (size: { width: number; height: number }, drawn = true): CapturedWindow => ({ name: "render", bounds: { x: 0, y: 0, ...size }, scale: 1, visible: false, drawn, ...(drawn ? { png: "UE5H", pixels: size } : { note: "nothing painted yet: not drawn" }), views: [], frames: [{ origin: "clover-core://app", width: size.width, height: size.height, visibility: "visible" }] });
+const shot = (size: { width: number; height: number }, drawn = true): CapturedWindow => ({ name: "render", bounds: { x: 0, y: 0, ...size }, scale: 1, visible: false, drawn, ...(drawn ? { png: "UE5H", pixels: size } : { note: "nothing painted yet: not drawn" }), views: [], frames: [{ origin: "moss-core://app", width: size.width, height: size.height, visibility: "visible" }] });
 
 function fake(o: { never?: boolean; openFails?: boolean; hang?: boolean; settingsInRender?: boolean; settingsAtCapture?: boolean; main?: ShellState; mainDrawn?: boolean } = {}) {
   const log: string[] = [];

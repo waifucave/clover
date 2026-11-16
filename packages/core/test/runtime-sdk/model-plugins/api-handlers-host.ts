@@ -4,7 +4,7 @@
 import { ContractError } from "../../../src/contracts/common";
 import { guardApiRouter, type PluginHost } from "../../../src/contracts/plugin-host";
 import type { PluginRegistry } from "../../../src/contracts/plugin-registry";
-import type { ApiCallPath } from "@waifucave/clover-plugin-sdk";
+import type { ApiCallPath } from "@waifucave/moss-plugin-sdk";
 import type { ApiHandlers } from "../../../src/plugin-host/api/router";
 
 export function serveApiHandlers(host: Pick<PluginHost, "serveApi">, registry: Pick<PluginRegistry, "get">): { addApiHandlers(h: ApiHandlers): () => void; served(): number } {

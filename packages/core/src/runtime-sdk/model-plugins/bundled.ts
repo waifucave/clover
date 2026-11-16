@@ -1,10 +1,10 @@
-// The model plugins Clover bundles (spec §3.3, §5.1 "What ships": "one model plugin per current provider"). Owner:
+// The model plugins MOSS bundles (spec §3.3, §5.1 "What ships": "one model plugin per current provider"). Owner:
 // lane A.
 //
-// Every provider of the SDK's catalog is a child of the bundled `clover` plugin, `plugins/clover/plugins/model-<id>/`,
+// Every provider of the SDK's catalog is a child of the bundled `moss` plugin, `plugins/moss/plugins/model-<id>/`,
 // GENERATED from that catalog (`generate.ts`) and committed, like the protocol's codegen; a test fails while the
 // committed folders and the catalog disagree. Each folder holds:
-//   * `clover.json`: one `models[]` entry, minimal (provider, name, catalog, auth and an endpoint or an adapter);
+//   * `moss.json`: one `models[]` entry, minimal (provider, name, catalog, auth and an endpoint or an adapter);
 //   * `catalog.json`: the provider's rows and the rest of its record (provider-catalog's catalog file, format 1).
 //
 // DECLARATIVE (data, no code): every provider on one of the SDK's generic adapters, 212 of 218. Its entry names a
@@ -16,7 +16,7 @@
 //   * signing with its secret in a process of its own (`modelAdapterFromSigningAdapter`): Bedrock (SigV4) and Vertex
 //     (a service account's JWT), declared `host.process: "own"` on Bun (spec §5.2): only there does `secrets.get`
 //     exist, and no other plugin shares the process that holds the secret.
-// Their `host/` folders are hand-written; the generator writes and checks only `clover.json` and `catalog.json`.
+// Their `host/` folders are hand-written; the generator writes and checks only `moss.json` and `catalog.json`.
 //
 // SIGN-INS stay in the core (§3.3). An API key is an `api-key` entry whose placement is the header its protocol's
 // generic adapter sends; Codex's ChatGPT sign-in is `oauth-pkce` with Codex's public client; the sign-ins the core
@@ -26,8 +26,8 @@
 import { join } from "node:path";
 import { CODEX } from "@waifucave/clover-provider-runtime";
 
-/** Where the bundled `clover` tree keeps its children: the one place lane A's code and tests resolve them from. */
-export const BUNDLED_CHILDREN_DIR = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins", "clover", "plugins");
+/** Where the bundled `moss` tree keeps its children: the one place lane A's code and tests resolve them from. */
+export const BUNDLED_CHILDREN_DIR = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins", "moss", "plugins");
 
 /** The folder (and child id) of a provider's plugin: `model-<provider>`. */
 export function modelPluginFolder(providerId: string): string {
@@ -36,7 +36,7 @@ export function modelPluginFolder(providerId: string): string {
 
 /** The plugin id of a provider's bundled plugin. */
 export function modelPluginId(providerId: string): string {
-  return `clover/${modelPluginFolder(providerId)}`;
+  return `moss/${modelPluginFolder(providerId)}`;
 }
 
 /** The `auth` secret every key-taking provider keeps its key under. */
@@ -48,14 +48,14 @@ export type AuthEntry =
   | { method: "custom"; handler: string };
 
 export interface CodePluginTemplate {
-  /** Absent: a worker in the `clover` plugin host; `own`: a Bun process of its own (it signs with its secret, which
+  /** Absent: a worker in the `moss` plugin host; `own`: a Bun process of its own (it signs with its secret, which
    *  `secrets.get` reads only there). */
   process?: "own";
   capabilities: string[];
   auth: AuthEntry[];
 }
 
-const keyHelp = (name: string): string => `Your ${name} API key. Clover keeps it in your credential store and adds it to ${name}'s requests itself; this plugin never sees it.`;
+const keyHelp = (name: string): string => `Your ${name} API key. MOSS keeps it in your credential store and adds it to ${name}'s requests itself; this plugin never sees it.`;
 
 /** The six providers whose adapter is their own, by provider id. */
 /** The AWS regions Bedrock answers in, as the bedrock plugin declares their hosts. */

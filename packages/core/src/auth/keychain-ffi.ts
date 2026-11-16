@@ -1,7 +1,7 @@
 // WS-25 §7 B + the doctor fix: the few Security.framework calls `Bun.secrets` does not offer, over bun:ffi.
 //
 // WHY FFI AT ALL. `Bun.secrets` can read, write and delete a generic password, and that is all: it cannot
-// (a) find an item WITHOUT decrypting it, which is what `clover doctor` needs to count legacy items without
+// (a) find an item WITHOUT decrypting it, which is what `moss doctor` needs to count legacy items without
 // raising a consent prompt per item, or (b) create an item with an explicit access-control list, which is
 // what lets the Mac app read the daemon's two pairing tokens without a prompt (`app-token-acl.ts`), or
 // (c) list a service's accounts without their data, which the credential ACL migration enumerates with
@@ -14,7 +14,7 @@
 //   - Log or throw a value. Errors carry an OSStatus and the ACCOUNT, never the data.
 //   - Run anywhere but macOS: every entry point checks the platform first and throws typed.
 //
-// The APIs are deprecated (since 10.10) but present and supported on every macOS Clover targets — the
+// The APIs are deprecated (since 10.10) but present and supported on every macOS MOSS targets — the
 // data-protection keychain that replaced them has no per-application ACL at all, only entitlement-gated
 // access groups, which a `bun`-launched dev daemon cannot hold. `SecTrustedApplicationCreateFromPath`
 // records each application by its DESIGNATED REQUIREMENT (measured: `identifier bun and anchor apple
@@ -119,7 +119,7 @@ function release(ref: Ref | undefined): void {
 
 /**
  * Where to look. `null` = the user's default search list (and, for a create, the default keychain) —
- * exactly where `Bun.secrets` reads and writes, and so NOT used for Clover's own items in production: a same-user
+ * exactly where `Bun.secrets` reads and writes, and so NOT used for MOSS's own items in production: a same-user
  * process can put a keychain of its own ahead of the login keychain in that list (or make it the default), and a
  * look-alike item there would be read first. Production passes the login keychain itself (`login-keychain.ts`,
  * opened by real path from the password database's home, never HOME). A `KeychainFile` is that, or a temporary

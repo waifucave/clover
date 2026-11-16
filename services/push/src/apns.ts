@@ -64,11 +64,11 @@ export function apnsPayload(badge: number): Record<string, unknown> {
   if (badge === 0) return { aps: { badge: 0 } };
   return {
     aps: {
-      alert: { "loc-key": "CLOVER_UPDATES", "loc-args": [String(badge)] },
+      alert: { "loc-key": "MOSS_UPDATES", "loc-args": [String(badge)] },
       badge,
       sound: "default",
       "mutable-content": 1,
-      "thread-id": "clover",
+      "thread-id": "moss",
     },
   };
 }
@@ -88,7 +88,7 @@ export async function sendApns(config: ApnsConfig, target: ApnsTarget, badge: nu
         "apns-push-type": "alert",
         "apns-priority": badge === 0 ? "5" : "10",
         "apns-expiration": String(Math.floor(now / 1000) + 24 * 3600),
-        "apns-collapse-id": "clover-updates",
+        "apns-collapse-id": "moss-updates",
         "content-type": "application/json",
       },
       body,

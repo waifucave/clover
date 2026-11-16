@@ -1,7 +1,7 @@
 // The bundled plugins the registry loads (#259's rule; B-M2's dev layout): never a folder read in place. Each bundled
 // top-level plugin is read once through `readBundledPlugin` (every file's size and hash against the manifest, and
 // nothing in its folder the manifest doesn't name), and the verified bytes are written into a private copy under the
-// Clover home's `run/` (which no runner writes). The registry's `bundledDirs` is that copy, so a file swapped in the
+// MOSS home's `run/` (which no runner writes). The registry's `bundledDirs` is that copy, so a file swapped in the
 // app's resources after the check changes nothing that runs.
 //
 // Where the manifest comes from:
@@ -10,7 +10,7 @@
 // * the dev profile, or a core run from source: the dev stage, `<home>/run/dev-bundled/`, which `buildDevBundledPlugins`
 //   makes from the repository's `plugins/` with `buildPluginForShipping({ dev: true, bundled: true })` and measures. A
 //   dist core never reads a dev stage. So in a dev run, the checkout's own `plugins/` is what counts as bundled: a local
-//   edit to `plugins/alpha` is Clover's own there (its model asks nothing, `stagedBotChoice`).
+//   edit to `plugins/alpha` is MOSS's own there (its model asks nothing, `stagedBotChoice`).
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
@@ -19,16 +19,16 @@ import {
   type BundledManifest,
 } from "../bundled-plugins-dir";
 import { buildPluginForShipping, hostShipTarget } from "./ship";
-import { parseJsonc } from "@waifucave/clover-plugin-sdk";
+import { parseJsonc } from "@waifucave/moss-plugin-sdk";
 
 /** The private copy of the verified bundled plugins (the registry's `bundledDirs`). */
-export function stagedBundledDir(cloverHome: string): string {
-  return join(cloverHome, "run", "bundled-plugins");
+export function stagedBundledDir(mossHome: string): string {
+  return join(mossHome, "run", "bundled-plugins");
 }
 
 /** The dev stage: `plugins/` (each top-level plugin built for this computer) and the manifest measured from it. */
-export function devBundledDir(cloverHome: string): string {
-  return join(cloverHome, "run", "dev-bundled");
+export function devBundledDir(mossHome: string): string {
+  return join(mossHome, "run", "dev-bundled");
 }
 
 /** Copies every bundled plugin that verifies against `manifest` into `out`, replacing what was there, and returns `out`
@@ -73,8 +73,8 @@ export function stageBundledPlugins(o: { root: string; manifest: BundledManifest
 }
 
 /** The dev stage's root and manifest, or undefined when there is none (or it's unreadable). */
-export function devBundledSource(cloverHome: string): { root: string; manifest: BundledManifest } | undefined {
-  const dir = devBundledDir(cloverHome);
+export function devBundledSource(mossHome: string): { root: string; manifest: BundledManifest } | undefined {
+  const dir = devBundledDir(mossHome);
   const file = join(dir, BUNDLED_MANIFEST_FILE);
   if (!existsSync(file)) return undefined;
   try {
@@ -87,11 +87,11 @@ export function devBundledSource(cloverHome: string): { root: string; manifest: 
 /** Builds the dev stage from the repository's `plugins/`: each of `ids` built for this computer as a release would
  *  build it (`dev: true` lets it copy natives from this checkout), then measured into the manifest beside them.
  *  Replaces the stage whole, or leaves the old one when a build fails. Returns how long it took and what it built. */
-export async function buildDevBundledPlugins(o: { sources: string; ids: readonly string[]; cloverHome: string }): Promise<{ ms: number; built: string[] }> {
+export async function buildDevBundledPlugins(o: { sources: string; ids: readonly string[]; mossHome: string }): Promise<{ ms: number; built: string[] }> {
   const started = performance.now();
   const target = hostShipTarget();
   if (target === undefined) throw new Error(`no release target builds for ${process.platform}-${process.arch}`);
-  const dir = devBundledDir(o.cloverHome);
+  const dir = devBundledDir(o.mossHome);
   const tmp = `${dir}.tmp-${process.pid}`;
   rmSync(tmp, { recursive: true, force: true });
   mkdirSync(join(tmp, "plugins"), { recursive: true, mode: 0o700 });
@@ -117,7 +117,7 @@ export function stagedManifest(o: { folder: string; stagedDir: string; digests: 
     const root = realpathSync(o.stagedDir);
     const folder = realpathSync(o.folder);
     if (!(folder + sep).startsWith(root.endsWith(sep) ? root : root + sep)) return undefined;
-    const manifest = realpathSync(join(folder, "clover.json"));
+    const manifest = realpathSync(join(folder, "moss.json"));
     const want = o.digests.get(manifest);
     if (want === undefined) return undefined;
     const bytes = readFileSync(manifest);
@@ -127,12 +127,12 @@ export function stagedManifest(o: { folder: string; stagedDir: string; digests: 
   }
 }
 
-/** What Clover's own bundled plugin chose for its bot (its `contributes.bot` model tag), read from a staged
+/** What MOSS's own bundled plugin chose for its bot (its `contributes.bot` model tag), read from a staged
  *  folder's manifest as staging verified it, or undefined on any doubt: the folder must be inside the staged copy
  *  (`stagedBundledDir`, under `run/`, which no runner reads or writes), and the manifest's bytes, read once, must hash
  *  to the digest staging measured (`digests`, by real path); the choice is parsed from those same bytes. The bot side
  *  (`BotServiceOptions.bundledChoice`) exempts a loaded tag from the provider card only when it equals this, so what
- *  is exempt is a tag Clover's verified bytes chose, never the id, the name or a manifest's claim.
+ *  is exempt is a tag MOSS's verified bytes chose, never the id, the name or a manifest's claim.
  *
  *  In a dev run (`dev:daemon`, or a core run from source) the staged copy is built from this checkout's own
  *  `plugins/` (`devBundledSource`): a local edit to `plugins/alpha` is staged, verified and exempt there, as the

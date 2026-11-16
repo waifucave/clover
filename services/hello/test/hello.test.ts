@@ -1,7 +1,7 @@
 // The Worker under the harness's local emulator (miniflare): nothing leaves this machine.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { startWorker, type RunningWorker } from "@waifucave/clover-test-harness/workers";
+import { startWorker, type RunningWorker } from "@waifucave/moss-test-harness/workers";
 
 let worker: RunningWorker;
 beforeAll(async () => {

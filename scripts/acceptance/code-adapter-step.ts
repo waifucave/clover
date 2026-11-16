@@ -12,8 +12,8 @@ export const CODE_ADAPTER_STEP = "a turn on each kind of model plugin at the use
 /** The OpenAI-wire providers the clause runs: the plugin, the model Alpha is moved to, the wire, and the base URL
  *  path its catalog endpoint has (the user's endpoint keeps it). */
 export const OPENAI_WIRE_PROVIDERS = [
-  { plugin: "clover/model-openai", provider: "openai", model: "openai/gpt-4.1-mini", wire: "responses", basePath: "/v1" },
-  { plugin: "clover/model-groq", provider: "groq", model: "groq/qwen/qwen3.8-27b", wire: "chat/completions", basePath: "/openai/v1" },
+  { plugin: "moss/model-openai", provider: "openai", model: "openai/gpt-4.1-mini", wire: "responses", basePath: "/v1" },
+  { plugin: "moss/model-groq", provider: "groq", model: "groq/qwen/qwen3.8-27b", wire: "chat/completions", basePath: "/openai/v1" },
 ] as const;
 export const OPENAI_REPLY = "ACCEPTANCE-OPENAI-WIRE-OK from the generic adapter";
 
@@ -29,7 +29,7 @@ export function openAiWireWrong(o: { provider: string; wire: string; model: stri
 }
 
 /** The bundled Google model plugin, the model Alpha is moved to, and what the fake answers. */
-export const GOOGLE_PLUGIN = "clover/model-google";
+export const GOOGLE_PLUGIN = "moss/model-google";
 export const GEMINI_MODEL = "google/gemini-2.5-flash";
 export const GEMINI_REPLY = "ACCEPTANCE-GEMINI-OK from the plugin's adapter";
 

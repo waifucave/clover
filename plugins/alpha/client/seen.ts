@@ -34,7 +34,7 @@ export function seenFolder(now: () => number = Date.now): { take(e: Record<strin
           if (isToday) next.today.tools++;
           let detail = "";
           try { const a = JSON.parse(String(e.argsJson ?? "{}")); const path = String(a.file_path ?? a.path ?? ""); if (isToday && path !== "" && WRITES.has(kind(String(e.name ?? "")))) { const key = `${mid.getTime()}:${path}`; if (!touched.has(key)) { touched.add(key); next.today.files++; } } detail = String(a.file_path ?? a.command ?? a.query ?? a.url ?? "").split("/").slice(-2).join("/"); } catch { /* none */ }
-          // A title only from her own plugin's tools (here it is her own widget); another plugin's never stands in for Clover's wording.
+          // A title only from her own plugin's tools (here it is her own widget); another plugin's never stands in for MOSS's wording.
           const own = /^mcp__alpha(-[a-z0-9-]+)?__/.test(String(e.name ?? ""));
           const title = own && typeof e.displayTitle === "string" ? e.displayTitle.replace(/[\u0000-\u001f]+/g, " ").trim().slice(0, 60) : "";
           next.tool = { name: kind(String(e.name ?? "")), detail, status: "running", ...(title ? { title } : {}) };

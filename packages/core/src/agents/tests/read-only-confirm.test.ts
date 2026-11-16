@@ -1,5 +1,5 @@
 // The read-only switch is counted on only when the agent confirms it: its config option's answer, or for ACP's session
-// modes its own `current_mode_update` (never Clover's own record of what it asked for). Unconfirmed, a session isn't
+// modes its own `current_mode_update` (never MOSS's own record of what it asked for). Unconfirmed, a session isn't
 // started, and a running one is ended before the turn is sent, as the sandbox writer's mode floor does.
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import type { AgentQuirks } from "../../contracts/agent-backend";

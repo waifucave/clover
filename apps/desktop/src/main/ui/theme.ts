@@ -1,11 +1,11 @@
 // Each part's tokens (spec §5.5, decision 77: "each frame themed by its tab"). E-M1 resolves the stack's data layers
-// that already exist — the catalog's defaults, the base theme (`clover`'s, or the user's pick), the user's global
+// that already exist — the catalog's defaults, the base theme (`moss`'s, or the user's pick), the user's global
 // theme, the bot's theme in its tab, the style-only entries that dress the part, and the user's overrides — with the
 // OS accent and appearance, through lane B's `resolveTokens`. E-M2 adds the CSS half: each theme's CSS, cleaned
 // (`css.ts`), its fonts and icons, as one sheet per place it dresses (`themeSheet`). The frame's variables
 // (`frame.*`) come from the window, never a theme. Pure apart from reading theme files.
 import { readFileSync } from "node:fs";
-import { TOKENS, ThemeSchema, resolveShell, resolveTokens, themeTokensFor, type Appearance, type Theme, type TokenLayer, type TokenValue } from "@waifucave/clover-plugin-sdk";
+import { TOKENS, ThemeSchema, resolveShell, resolveTokens, themeTokensFor, type Appearance, type Theme, type TokenLayer, type TokenValue } from "@waifucave/moss-plugin-sdk";
 import type { UiPlugin } from "./model";
 import { pluginFile } from "./files";
 import { cleanCss, namePrefix, renameFontValue } from "./css";
@@ -26,7 +26,7 @@ export interface SheetScope {
 
 /** The selector for a mount's root element in its document. */
 export function partSelector(mount: string): string {
-  return `[data-clover-part="${mount}"]`;
+  return `[data-moss-part="${mount}"]`;
 }
 
 export interface ThemeChoices {
@@ -50,7 +50,7 @@ export function defaultFrameMetrics(platform: NodeJS.Platform, titleBarHeight = 
   return platform === "darwin" ? { top: titleBarHeight, start: 80, end: 0 } : { top: titleBarHeight, start: 0, end: 138 };
 }
 
-/** The frame's variables as tokens (`--clover-frame-inset-top`…). `frame.window.controls.end` is asked of lane B. */
+/** The frame's variables as tokens (`--moss-frame-inset-top`…). `frame.window.controls.end` is asked of lane B. */
 export function frameTokens(m: FrameMetrics): Record<string, TokenValue> {
   return { "frame.inset.top": `${m.top}px`, "frame.window.controls": `${m.start}px`, "frame.window.controls.end": `${m.end}px` };
 }
@@ -74,7 +74,7 @@ export class ThemeStore {
     return { ...theme, tokens: rename(theme.tokens), ...(theme.dark !== undefined ? { dark: { tokens: rename(theme.dark.tokens) } } : {}) };
   }
 
-  /** A theme's sheet for one place: its fonts (`@font-face`, prefixed), its icons (`--clover-icon-<name>` on the part)
+  /** A theme's sheet for one place: its fonts (`@font-face`, prefixed), its icons (`--moss-icon-<name>` on the part)
    *  and its CSS, cleaned and scoped to the place. Cached per theme, so the cleaner runs once per file. */
   themeSheet(plugin: UiPlugin, theme: Theme, scope: SheetScope): string {
     const ROOT = "\u0000root\u0000";
@@ -87,7 +87,7 @@ export class ThemeStore {
       for (const f of theme.fonts ?? []) {
         parts.push(`@font-face{font-family:"${p}${f.family}";src:url("${themeAssetUrl(plugin.id, f.src)}");font-display:swap${f.weight !== undefined ? `;font-weight:${f.weight}` : ""}${f.style !== undefined ? `;font-style:${f.style}` : ""}}`);
       }
-      const icons = Object.entries(theme.icons ?? {}).map(([name, path]) => `--clover-icon-${name.replace(/\./g, "-")}:url("${themeAssetUrl(plugin.id, path)}")`);
+      const icons = Object.entries(theme.icons ?? {}).map(([name, path]) => `--moss-icon-${name.replace(/\./g, "-")}:url("${themeAssetUrl(plugin.id, path)}")`);
       if (icons.length > 0) parts.push(`@scope (${ROOT})${scope.limit !== undefined ? ` to (${LIMIT})` : ""}{:scope{${icons.join(";")}}}`);
       if (theme.css !== undefined) {
         try {
@@ -139,11 +139,11 @@ export class ThemeStore {
     return plugin !== undefined && entry !== undefined ? this.read(plugin, entry.file) : null;
   }
 
-  /** `clover`'s base theme: the theme `clover` in the `clover` tree. */
-  cloverBase(plugins: readonly UiPlugin[]): Theme | null {
+  /** `moss`'s base theme: the theme `moss` in the `moss` tree. */
+  mossBase(plugins: readonly UiPlugin[]): Theme | null {
     for (const p of plugins) {
-      if (p.topId !== "clover") continue;
-      const t = p.themes.find((x) => x.id === "clover");
+      if (p.topId !== "moss") continue;
+      const t = p.themes.find((x) => x.id === "moss");
       if (t !== undefined) return this.read(p, t.file);
     }
     return null;
@@ -177,7 +177,7 @@ export function tokenLayers(store: ThemeStore, input: PartTheme): TokenLayer[] {
 /** The stack's theme layers for a part, lowest first, with the plugin each comes from (the user's overrides aside). */
 export function stackThemes(store: ThemeStore, input: PartTheme): { kind: "base" | "global" | "bot" | "style"; plugin: UiPlugin; theme: Theme }[] {
   const out: { kind: "base" | "global" | "bot" | "style"; plugin: UiPlugin; theme: Theme }[] = [];
-  const base = themeByRef(store, input.plugins, input.choices.baseTheme) ?? cloverBaseTheme(store, input.plugins);
+  const base = themeByRef(store, input.plugins, input.choices.baseTheme) ?? mossBaseTheme(store, input.plugins);
   if (base !== undefined) out.push({ kind: "base", ...base });
   const global = themeByRef(store, input.plugins, input.choices.globalTheme);
   if (global !== undefined) out.push({ kind: "global", ...global });
@@ -207,10 +207,10 @@ function themeByRef(store: ThemeStore, plugins: readonly UiPlugin[], ref: string
   return theme === null || plugin === undefined ? undefined : { plugin, theme };
 }
 
-function cloverBaseTheme(store: ThemeStore, plugins: readonly UiPlugin[]): { plugin: UiPlugin; theme: Theme } | undefined {
+function mossBaseTheme(store: ThemeStore, plugins: readonly UiPlugin[]): { plugin: UiPlugin; theme: Theme } | undefined {
   for (const p of plugins) {
-    if (p.topId !== "clover") continue;
-    const t = p.themes.find((x) => x.id === "clover");
+    if (p.topId !== "moss") continue;
+    const t = p.themes.find((x) => x.id === "moss");
     const theme = t === undefined ? null : store.read(p, t.file);
     if (theme !== null) return { plugin: p, theme };
   }

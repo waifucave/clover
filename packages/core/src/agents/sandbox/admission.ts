@@ -1,13 +1,13 @@
-// Which agents' own sandboxes Clover counts as holding the fence (spec §9.3 "The fence reaches agents through their
+// Which agents' own sandboxes MOSS counts as holding the fence (spec §9.3 "The fence reaches agents through their
 // own settings"; spike S8 §8.3). The rule from S8: protection is admitted per exact backend, OS and version, on
 // evidence, never on a vendor's word or a flag's name. Only an admitted ("protected") sandbox makes `detect` report
-// `sandboxed: true`; every other agent starts only after the user's OK, which says it could read Clover's logins
+// `sandboxed: true`; every other agent starts only after the user's OK, which says it could read MOSS's logins
 // and approve its own cards (oks.ts), and Settings marks it.
 //
 // A protected backend also needs a writer: the fenced set denied in its own format (writers.ts). Codex's and Claude
 // Code's writers are ready; their rows stay `unverified` until the live gates in `live-gates.ts` pass, and a row turns
 // `protected` only with that evidence, for the versions the gates ran on.
-import type { Level, Os } from "@waifucave/clover-protocol";
+import type { Level, Os } from "@waifucave/moss-protocol";
 import type { SandboxPolicy } from "../../contracts/fence";
 import type { Obj } from "@waifucave/clover-agent-sdk/acp";
 import type { ModeFloorFor } from "../acp/session";

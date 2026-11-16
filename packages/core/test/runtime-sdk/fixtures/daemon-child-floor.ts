@@ -6,7 +6,7 @@ const mode = process.argv[2];
 const { registerHostStorageFences } = await import("../../../src/runtime-sdk/host-storage-fence");
 const { HookRunner } = await import("../../../src/plugins/hook-runner");
 const { LspManager } = await import("../../../src/agent/lsp/manager");
-const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-daemon-child-floor-")));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-daemon-child-floor-")));
 const home = join(root, "home"), project = join(root, "project"), coordination = join(root, "coordination");
 for (const dir of [join(home, "cowork/workspaces/w"), project, coordination]) mkdirSync(dir, { recursive: true });
 const options = { coordinationDir: coordination, coworkStorageActive: true };
@@ -14,7 +14,7 @@ const payload = { event: "test", sessionId: "fixture", pluginId: "fixture", ts: 
 // The question here is the Cowork floor alone, so the plugin-process fence (2f), which holds a hook to its plugin's
 // own folders, is off: `fence: false` over run files of its own home.
 const { ensurePluginRunFiles } = await import("../../../src/registry/plugin-run");
-const runner = new HookRunner({ files: ensurePluginRunFiles(join(root, "run"), { cloverHome: root }), fence: false });
+const runner = new HookRunner({ files: ensurePluginRunFiles(join(root, "run"), { mossHome: root }), fence: false });
 let manager: InstanceType<typeof LspManager> | undefined;
 const registrations: Array<() => void> = [];
 try {

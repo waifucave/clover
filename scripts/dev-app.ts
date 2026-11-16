@@ -1,5 +1,5 @@
-// The DEV app: apps/desktop run unpackaged under Electron as "Clover Dev" (`com.waifucave.clover.dev`, its own
-// user-data folder), on the dev profile's home, `~/.clover-dev` — the home the dev daemon (scripts/dev-daemon.ts)
+// The DEV app: apps/desktop run unpackaged under Electron as "MOSS Code Dev" (`com.waifucave.moss.code.dev`, its own
+// user-data folder), on the dev profile's home, `~/.moss-dev` — the home the dev daemon (scripts/dev-daemon.ts)
 // runs on. macOS, Linux and Windows alike.
 //
 //   bun run dev:app                    build apps/desktop, then run it
@@ -7,15 +7,15 @@
 //   bun run dev:app --dry-run [...]    print what the other flags would do, and stop: nothing built or opened
 //   bun run dev:app -- <electron args> pass the rest to Electron after the app's folder
 //
-// It sets both CLOVER_HOME and CLOVER_PROFILE=dev, since the two are independent; the dist home and every other
+// It sets both MOSS_HOME and MOSS_PROFILE=dev, since the two are independent; the dist home and every other
 // install's are refused (`devDaemonHome`). It opens a window: run it on your own screen, never from an agent on a
 // screen someone else is using (plan §8).
 //
-// macOS: the daemon takes an `app` hello only from a process signed as the profile's Clover app (the caller check's
+// macOS: the daemon takes an `app` hello only from a process signed as the profile's MOSS app (the caller check's
 // peer-image check, packages/core/src/platform/peer-signature.ts), and Electron from npm is signed ad hoc. So the dev
-// app runs a COPY, `dist/dev/app/Clover Dev.app`: Electron.app with the bundle identifier com.waifucave.clover.dev,
-// every nested framework and helper and then the app signed with the dev identity (the one dev:daemon uses: Clover's
-// team, `CLOVER_DEV_SIGN_IDENTITY` to choose another) under the hardened runtime, with the packaged app's entitlements
+// app runs a COPY, `dist/dev/app/MOSS Code Dev.app`: Electron.app with the bundle identifier com.waifucave.moss.code.dev,
+// every nested framework and helper and then the app signed with the dev identity (the one dev:daemon uses: MOSS's
+// team, `MOSS_DEV_SIGN_IDENTITY` to choose another) under the hardened runtime, with the packaged app's entitlements
 // (no get-task-allow), checked against the daemon's requirement. It is made again when
 // Electron's version or the identity changes.
 import { spawn, spawnSync } from "node:child_process";
@@ -23,7 +23,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { appRequirement, CLOVER_APP_IDENTIFIER, CLOVER_TEAM_ID } from "../packages/core/src/bundled-identities";
+import { appRequirement, MOSS_APP_IDENTIFIER, MOSS_TEAM_ID } from "../packages/core/src/bundled-identities";
 import { OPENING_ENTITLEMENTS } from "../packages/core/src/platform/peer-signature";
 import { devDaemonHome, devOs, resolveDevSigningIdentity, type DevOs } from "./dev-daemon-lib";
 import { codesignDevArgs } from "./release/lib";
@@ -35,7 +35,7 @@ export interface DevAppPlan {
   build: boolean;
   /** What Electron is given: the app's folder (relative to the repo root), then the pass-through. */
   args: string[];
-  env: { CLOVER_HOME: string; CLOVER_PROFILE: "dev" };
+  env: { MOSS_HOME: string; MOSS_PROFILE: "dev" };
   dryRun: boolean;
 }
 
@@ -53,7 +53,7 @@ export function devAppPlan(input: { argv: readonly string[]; env: NodeJS.Process
     home,
     build: !flags.has("--no-build"),
     args: ["apps/desktop", ...passthrough],
-    env: { CLOVER_HOME: home, CLOVER_PROFILE: "dev" },
+    env: { MOSS_HOME: home, MOSS_PROFILE: "dev" },
     dryRun: flags.has("--dry-run"),
   };
 }
@@ -63,14 +63,14 @@ export function describeDevAppPlan(plan: DevAppPlan, electron: string): string[]
     `dev:app: the plan on ${plan.os} (dry run: nothing is built or opened)`,
     `  home     ${plan.home}`,
     `  build    ${plan.build ? "(in apps/desktop) bun run build" : "none (--no-build): apps/desktop/out as it is"}`,
-    ...(plan.os === "macos" ? [`  sign     ${DEV_APP_BUNDLE} (a copy of Electron.app as ${CLOVER_APP_IDENTIFIER.dev}, signed with the dev identity of team ${CLOVER_TEAM_ID}), unless it is already`] : []),
+    ...(plan.os === "macos" ? [`  sign     ${DEV_APP_BUNDLE} (a copy of Electron.app as ${MOSS_APP_IDENTIFIER.dev}, signed with the dev identity of team ${MOSS_TEAM_ID}), unless it is already`] : []),
     `  run      ${plan.os === "macos" ? join(DEV_APP_BUNDLE, DEV_APP_EXECUTABLE) : electron} ${plan.args.join(" ")}`,
-    `  as       Clover Dev (com.waifucave.clover.dev), CLOVER_HOME=${plan.env.CLOVER_HOME} CLOVER_PROFILE=${plan.env.CLOVER_PROFILE}`,
+    `  as       MOSS Code Dev (com.waifucave.moss.code.dev), MOSS_HOME=${plan.env.MOSS_HOME} MOSS_PROFILE=${plan.env.MOSS_PROFILE}`,
   ];
 }
 
 /** macOS: the dev app's signed copy of Electron.app (relative to the repo root), and its executable inside it. */
-export const DEV_APP_BUNDLE = join("dist", "dev", "app", "Clover Dev.app");
+export const DEV_APP_BUNDLE = join("dist", "dev", "app", "MOSS Code Dev.app");
 export const DEV_APP_EXECUTABLE = join("Contents", "MacOS", "Electron");
 /** What the copy was made from, beside it (never inside the bundle, which the signature seals). */
 export const DEV_APP_STAMP = join("dist", "dev", "app", "signed.json");
@@ -91,7 +91,7 @@ export interface DevAppSignInput {
 /**
  * The commands that make the dev app's signed copy, in order: copy Electron.app, give it the dev app's identifier and
  * name, sign each nested framework and helper app (helpers with the app's entitlements, as a release does), then the
- * app itself as `com.waifucave.clover.dev` with the team's designated requirement, and check the result against the
+ * app itself as `com.waifucave.moss.code.dev` with the team's designated requirement, and check the result against the
  * daemon's own requirement for the dev app.
  */
 export function devAppSignSteps(input: DevAppSignInput): string[][] {
@@ -103,12 +103,12 @@ export function devAppSignSteps(input: DevAppSignInput): string[][] {
     ["rm", "-rf", input.target],
     ["mkdir", "-p", dirname(input.target)],
     ["ditto", input.source, input.target],
-    ["plutil", "-replace", "CFBundleIdentifier", "-string", CLOVER_APP_IDENTIFIER.dev, plist],
-    ["plutil", "-replace", "CFBundleName", "-string", "Clover Dev", plist],
-    ["plutil", "-replace", "CFBundleDisplayName", "-string", "Clover Dev", plist],
+    ["plutil", "-replace", "CFBundleIdentifier", "-string", MOSS_APP_IDENTIFIER.dev, plist],
+    ["plutil", "-replace", "CFBundleName", "-string", "MOSS Code Dev", plist],
+    ["plutil", "-replace", "CFBundleDisplayName", "-string", "MOSS Code Dev", plist],
     ...nested.map((n) => ["codesign", "--force", "--deep", "--sign", input.identityHash, "--options", "runtime", "--timestamp=none",
       ...(n.endsWith(".app") ? ["--entitlements", input.entitlements] : []), ...keychain, join(input.target, "Contents", "Frameworks", n)]),
-    codesignDevArgs(input.target, input.identityHash, CLOVER_APP_IDENTIFIER.dev, input.teamId, input.entitlements, input.keychain),
+    codesignDevArgs(input.target, input.identityHash, MOSS_APP_IDENTIFIER.dev, input.teamId, input.entitlements, input.keychain),
     ["codesign", "--verify", "--deep", "--strict", `-R=${appRequirement("dev", input.teamId)}`, input.target],
   ];
 }
@@ -152,8 +152,8 @@ function devSignedElectron(root: string, electron: string): string {
   const run = (args: string[], input?: string) => spawnSync(args[0]!, args.slice(1), { encoding: "utf8", ...(input !== undefined ? { input } : {}) });
   const identity = resolveDevSigningIdentity({
     identitiesOutput: run(["security", "find-identity", "-v", "-p", "codesigning"]).stdout ?? "",
-    teamId: CLOVER_TEAM_ID,
-    override: process.env.CLOVER_DEV_SIGN_IDENTITY,
+    teamId: MOSS_TEAM_ID,
+    override: process.env.MOSS_DEV_SIGN_IDENTITY,
     subjectOf: (name) => {
       const pem = run(["security", "find-certificate", "-c", name, "-p"]).stdout ?? "";
       if (pem === "") return undefined;
@@ -169,9 +169,9 @@ function devSignedElectron(root: string, electron: string): string {
     && run(["codesign", "--verify", "--strict", `-R=${appRequirement("dev")}`, target]).status === 0) return executable;
   console.log(`dev:app: signing ${DEV_APP_BUNDLE} (Electron ${version}) with ${identity.name}`);
   const steps = devAppSignSteps({
-    source, target, nested: readdirSync(join(source, "Contents", "Frameworks")), identityHash: identity.hash, teamId: CLOVER_TEAM_ID,
+    source, target, nested: readdirSync(join(source, "Contents", "Frameworks")), identityHash: identity.hash, teamId: MOSS_TEAM_ID,
     entitlements: join(root, "packaging", "macos", "entitlements.mac.plist"),
-    ...(process.env.CLOVER_MAC_DEV_KEYCHAIN ? { keychain: process.env.CLOVER_MAC_DEV_KEYCHAIN } : {}),
+    ...(process.env.MOSS_MAC_DEV_KEYCHAIN ? { keychain: process.env.MOSS_MAC_DEV_KEYCHAIN } : {}),
   });
   for (const step of steps) {
     const r = run(step);
@@ -214,7 +214,7 @@ function main(): void {
   }
   if (!existsSync(join(appDir, "out", "main", "index.js"))) die("apps/desktop/out/main/index.js does not exist — run without --no-build");
   const env: NodeJS.ProcessEnv = { ...process.env, ...plan.env };
-  delete env.CLOVER_KEYCHAIN_SERVICE;
+  delete env.MOSS_KEYCHAIN_SERVICE;
   delete env.ELECTRON_RUN_AS_NODE;
   // macOS: the dev-signed copy, which the daemon's app check takes (the plain npm Electron is refused).
   const binary = plan.os === "macos" ? devSignedElectron(root, electron) : electron;

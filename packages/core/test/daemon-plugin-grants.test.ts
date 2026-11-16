@@ -9,8 +9,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/clover-protocol";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { MOSS_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/moss-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { catalogPointDecl } from "../../plugin-sdk/src/catalogs/index";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { Drivers } from "../src/bots/tests/fixtures";
@@ -29,7 +29,7 @@ afterEach(async () => {
   daemon = undefined;
 });
 
-/** A raw Clover connection: requests by id, and every notification the daemon sends. */
+/** A raw MOSS connection: requests by id, and every notification the daemon sends. */
 async function rpc(path: string) {
   const decoder = new LineDecoder();
   const pending = new Map<number, (m: Record<string, unknown>) => void>();
@@ -57,8 +57,8 @@ async function rpc(path: string) {
 const TOKEN = "grant:5f0c2a8e-1b3d-4c6e-9f7a-2d4b6c8e0a1f";
 
 darwinTest("the app registers a pick; the plugin's host half stats it by its token and gets its real path; the plugin's own process reads it", async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-grants-")));
-  const home = join(root, "clover-home");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-grants-")));
+  const home = join(root, "moss-home");
   const userHome = join(root, "home");
   mkdirSync(join(userHome, "Movies"), { recursive: true });
   const clip = join(userHome, "Movies", "clip.mp4");
@@ -67,7 +67,7 @@ darwinTest("the app registers a pick; the plugin's host half stats it by its tok
   // A third-party plugin with the `files` capability and a host half that uses the token.
   const folder = join(home, "plugins", "cutter");
   mkdirSync(join(folder, "host"), { recursive: true });
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({ manifest: 1, id: "cutter", name: "Cutter", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" }, capabilities: ["files"] }));
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({ manifest: 1, id: "cutter", name: "Cutter", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" }, capabilities: ["files"] }));
   writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
   writeFileSync(join(folder, "host", "index.js"), [
     // What its page may call (`host.call` reaches the module's `ui` table only).
@@ -91,15 +91,15 @@ darwinTest("the app registers a pick; the plugin's host half stats it by its tok
       agents: false,
     },
   });
-  await daemon.cloverParts.ready;
+  await daemon.mossParts.ready;
   const app = await rpc(daemon.socketPath);
-  expect((await app.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] }))["error"]).toBeUndefined();
+  expect((await app.request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] }))["error"]).toBeUndefined();
 
   // The user's OK for the plugin (its `files` capability with it): it runs.
   const stateOf = async () => ((await app.request("plugin.get", { id: "cutter" }))["result"] as { plugin: { state: string } } | undefined)?.plugin.state;
   for (let i = 0; i < 300 && (await stateOf()) === undefined; i++) await Bun.sleep(10);
   const switched = (await app.request("plugin.setEnabled", { id: "cutter", enabled: true }))["result"] as { applied: boolean; card: string };
-  const broker = daemon.cloverParts.broker()!;
+  const broker = daemon.mossParts.broker()!;
   for (let i = 0; i < 300 && broker.cards().find((c) => c.id === switched.card) === undefined; i++) await Bun.sleep(10);
   const card = broker.cards().find((c) => c.id === switched.card)!;
   expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card.id)!, input: "click", at: Date.now() } }, { role: "app" })).toBe("accepted");
@@ -123,9 +123,9 @@ darwinTest("the app registers a pick; the plugin's host half stats it by its tok
   expect(path).toBe(clip);
 
   // A process of the plugin's own, fenced as the daemon fences its stdio servers with the picks the daemon kept.
-  const picked = new PluginGrants({ cloverHome: home, userHome }).fencePaths("cutter");
+  const picked = new PluginGrants({ mossHome: home, userHome }).fencePaths("cutter");
   expect(picked).toEqual({ read: [clip], write: [] });
-  const profile = pluginFenceProfile({ cloverHome: home, userHome, read: [], write: [], picked: picked.read, exec: "any" });
+  const profile = pluginFenceProfile({ mossHome: home, userHome, read: [], write: [], picked: picked.read, exec: "any" });
   const cat = (p: string) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/cat", p], { encoding: "utf8" });
   expect(cat(path).stdout).toBe("0123456789");
   expect(cat(join(userHome, "Movies", "other.mp4")).stdout).not.toContain("OTHER");

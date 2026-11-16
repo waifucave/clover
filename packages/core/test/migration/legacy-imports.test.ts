@@ -1,4 +1,4 @@
-// M-M0: Clover imports nothing from a legacy install until a later lane turns an import on in
+// M-M0: MOSS imports nothing from a legacy install until a later lane turns an import on in
 // `src/migration/legacy-imports.ts`. Turning one on means changing the first test below, in review. (A daemon boot's
 // Migration B is covered in `daemon-migration-boot.test.ts`: it runs only through a test's seam.)
 import { describe, expect, test } from "bun:test";

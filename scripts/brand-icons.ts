@@ -1,7 +1,7 @@
-// Clover's icons, every raster drawn from the eight source SVGs in assets/brand/clover/ (docs/clover-brand.md says
+// MOSS's icons, every raster drawn from the eight source SVGs in assets/brand/moss/ (docs/moss-brand.md says
 // which variant goes where). Nothing it writes is edited by hand: change a source, run this, commit both.
 //
-//   bun scripts/brand-icons.ts                    write every output, and assets/brand/clover/outputs.json
+//   bun scripts/brand-icons.ts                    write every output, and assets/brand/moss/outputs.json
 //   bun scripts/brand-icons.ts --check            write nothing; fail if an output differs from what it would write
 //   bun scripts/brand-icons.ts --preview <png>    also draw a contact sheet of the set (not committed)
 //
@@ -19,7 +19,7 @@ import { dirname, join, relative } from "node:path";
 export const RESVG_VERSION = "2.6.2";
 
 export const REPO = join(import.meta.dir, "..");
-export const BRAND = join(REPO, "assets", "brand", "clover");
+export const BRAND = join(REPO, "assets", "brand", "moss");
 export const RECORD = join(BRAND, "outputs.json");
 
 export const VARIANTS = [
@@ -34,16 +34,16 @@ export const VARIANTS = [
 ] as const;
 export type Variant = (typeof VARIANTS)[number];
 
-export const sourcePath = (v: Variant) => join(BRAND, `clover-${v}.svg`);
+export const sourcePath = (v: Variant) => join(BRAND, `moss-${v}.svg`);
 
-/** The clover's one path, as every source draws it: its `d` and its transform. */
-export function cloverPath(svg: string): { d: string; transform: string; fill: string } {
+/** The moss's one path, as every source draws it: its `d` and its transform. */
+export function mossPath(svg: string): { d: string; transform: string; fill: string } {
   const m = svg.match(/<path\s+fill="([^"]+)"\s+transform="([^"]+)"\s+d="([^"]+)"\s*\/>/);
-  if (m === null) throw new Error("a Clover source has exactly one <path fill transform d />");
+  if (m === null) throw new Error("a MOSS source has exactly one <path fill transform d />");
   return { fill: m[1]!, transform: m[2]!, d: m[3]!.replace(/\s+/g, " ").trim() };
 }
 
-/** A source's drawing (its plate and the clover) without its <svg> and <title>, on the 200 by 200 viewBox. */
+/** A source's drawing (its plate and the moss) without its <svg> and <title>, on the 200 by 200 viewBox. */
 function body(svg: string): string {
   const inner = svg.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
   return inner.replace(/<title>[\s\S]*?<\/title>/, "").trim();
@@ -61,7 +61,7 @@ const onMacGrid = (src: string) => svgOf(1024, `<g transform="translate(100 100)
 /** A menu-bar template: the shape alone in black, its alpha the only thing macOS reads. */
 const template = (src: string) => svgOf(200, body(src).replace(/fill="#[0-9A-Fa-f]{6}"/, 'fill="#000000"'));
 
-/** Maskable (a PWA's, and iOS's touch icon): the plate full bleed, square, and the clover inside the 80 % safe circle. */
+/** Maskable (a PWA's, and iOS's touch icon): the plate full bleed, square, and the moss inside the 80 % safe circle. */
 const maskable = (src: string) => {
   const plate = body(src).match(/<rect[^>]*fill="(#[0-9A-Fa-f]{6})"/)?.[1];
   if (plate === undefined) throw new Error("a maskable icon needs a plated source");
@@ -88,7 +88,7 @@ export const JOBS: Job[] = [
   { kind: "icns", out: join(DESKTOP, "build", "icon.icns"), from: "white-on-green" },
   { kind: "ico", out: join(DESKTOP, "build", "icon.ico"), from: "white-on-green", sizes: ICO_SIZES },
   ...LINUX_SIZES.map((n): PngJob => ({ kind: "png", out: join(DESKTOP, "build", "icons", `${n}x${n}.png`), from: "white-on-green", size: n, draw: asDrawn })),
-  // Clover Dev (`bun run dev:app`, unpackaged): green on dark, its Dock icon on the grid and its window icon as drawn.
+  // MOSS Code Dev (`bun run dev:app`, unpackaged): green on dark, its Dock icon on the grid and its window icon as drawn.
   { kind: "png", out: join(RUNTIME, "dev-dock.png"), from: "green-on-dark", size: 512, draw: onMacGrid },
   { kind: "png", out: join(RUNTIME, "dev-window.png"), from: "green-on-dark", size: 256, draw: asDrawn },
   // The menu-bar template (macOS draws it in the bar's own colour): 18 pt and 16 pt, @1x and @2x.
@@ -279,8 +279,8 @@ function writePreview(out: string): void {
   add("macOS .icns on dark", by("build/icon.icns"), "#1E1E1E");
   add("Windows .ico (as drawn)", by("build/icon.ico"), "#F3F3F3");
   add("Linux 256", by("icons/256x256.png"), "#FFFFFF");
-  add("Clover Dev (Dock)", by("dev-dock.png"), "#ECECEC", 256);
-  add("Clover Dev (Dock) on dark", by("dev-dock.png"), "#1E1E1E", 256);
+  add("MOSS Code Dev (Dock)", by("dev-dock.png"), "#ECECEC", 256);
+  add("MOSS Code Dev (Dock) on dark", by("dev-dock.png"), "#1E1E1E", 256);
   add("Menu bar template @2x", by("trayTemplate@2x.png"), "#F6F6F6", 72);
   add("Tray on dark @2x", by("tray-on-dark@2x.png"), "#202020", 64);
   add("Tray on light @2x", by("tray-on-light@2x.png"), "#F3F3F3", 64);
@@ -301,7 +301,7 @@ function writePreview(out: string): void {
   });
   const w = cols * cw;
   const h = 60 + rows * ch;
-  const sheet = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#FAFAF7"/><text x="16" y="38" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="bold" fill="#111">Clover icon set (scripts/brand-icons.ts)</text>${parts.join("")}</svg>`;
+  const sheet = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#FAFAF7"/><text x="16" y="38" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="bold" fill="#111">MOSS icon set (scripts/brand-icons.ts)</text>${parts.join("")}</svg>`;
   writeFileSync(out, Buffer.from(new Resvg(sheet, { font: { loadSystemFonts: true } }).render().asPng()));
   console.log(`brand-icons: preview at ${out}`);
 }

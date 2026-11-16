@@ -7,20 +7,20 @@
 // * a bot plugin acts only for its own bot: the bot whose id is the plugin's top-level id (§6.1). A cue is judged here
 //   against what the renderer said it does and the names its model has, and answered plainly when it can't be played
 //   (`no-renderer`, `unsupported`, `unknown-name`), never dropped; one that can goes on to the stage as `plugin_ui_message`
-//   (event `clover.avatar.cue`, for the stage's own layer only), which hands it to the renderer. A plugin that holds
+//   (event `moss.avatar.cue`, for the stage's own layer only), which hands it to the renderer. A plugin that holds
 //   `avatar.control.all` may name another bot (`opts.bot`), the one rule; speech is a cue of its own kind (`{ type:
 //   "speech" }`: mouth levels stamped in epoch milliseconds, sent in batches ahead of the clock), which the stage keeps
 //   by time and hands the renderer as the speech feed.
-// * a bot plugin's frames hear the catalogue and the box change as `plugin_ui_message` (`clover.avatar.changed`, for the
+// * a bot plugin's frames hear the catalogue and the box change as `plugin_ui_message` (`moss.avatar.changed`, for the
 //   plugin's own layer only); its host half through `avatar.watch`.
-import { SPEECH_AHEAD_MAX_MS, SPEECH_CUES_PER_SECOND, SPEECH_FRAMES_PER_SECOND, boxOrDefault, cleanAvatarCue, cleanAvatarReport, cleanSpeechCue, judgeCue, judgeSpeech, type AvatarApi, type AvatarCatalogue, type AvatarChange, type AvatarCueResult, type AvatarReport } from "@waifucave/clover-plugin-sdk";
-import { topPluginIdOf } from "@waifucave/clover-protocol";
+import { SPEECH_AHEAD_MAX_MS, SPEECH_CUES_PER_SECOND, SPEECH_FRAMES_PER_SECOND, boxOrDefault, cleanAvatarCue, cleanAvatarReport, cleanSpeechCue, judgeCue, judgeSpeech, type AvatarApi, type AvatarCatalogue, type AvatarChange, type AvatarCueResult, type AvatarReport } from "@waifucave/moss-plugin-sdk";
+import { topPluginIdOf } from "@waifucave/moss-protocol";
 import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
 import { listenerArg, type ApiHandlers } from "./router";
 
 /** The message names the app's layers hear (`host.on`). */
-export const AVATAR_CUE_EVENT = "clover.avatar.cue";
-export const AVATAR_CHANGED_EVENT = "clover.avatar.changed";
+export const AVATAR_CUE_EVENT = "moss.avatar.cue";
+export const AVATAR_CHANGED_EVENT = "moss.avatar.changed";
 /** Cues a plugin may send a second. */
 export const AVATAR_CUES_PER_SECOND = 20;
 /** The capability that lets a plugin cue a bot that is not its own (`avatar.cue`'s `opts.bot`). */

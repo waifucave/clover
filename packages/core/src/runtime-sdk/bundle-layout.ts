@@ -1,19 +1,19 @@
 // Winter Phase 8d (ruling P8d-1): the ONE place the Release bundle's runtime layout is spelled.
 //
-// `Clover.app/Contents/Resources/` holds `clover-core` (the daemon — `process.execPath` in a compiled
+// `MOSS Code.app/Contents/Resources/` holds `moss-core` (the daemon — `process.execPath` in a compiled
 // build), so `dirname(execPath)` is that directory and every runtime payload sits under its
 // `runtimes/` subtree (WS-02 §7.1's placement; final subpaths owned by the app project):
 //
-//   runtimes/winter             # the pinned-tag `winter` build, re-signed under Clover's team identity
+//   runtimes/winter             # the pinned-tag `winter` build, re-signed under MOSS's team identity
 //   runtimes/VERSIONS.json      # the runtimes record: { schema: 2, winterAgentSdk, winterRuntimeSdk, checksums: { winterPreSign }, stagedAt, winterSource }
 //   runtimes/ant/ant            # Winter Phase 10a (L1-L4): Anthropic's Platform CLI — the Console's one
 //                               # login and token-refresh door — vendored from vendor/ant/<tag>/ant
-//                               # (scripts/fetch-ant.ts) and RE-SIGNED under Clover's own team identity
+//                               # (scripts/fetch-ant.ts) and RE-SIGNED under MOSS's own team identity
 //                               # (--identifier com.winter.ant). See scripts/embed-runtimes.sh.
 //   runtimes/ant/VERSIONS.json  # ant's OWN record: { schema: 1, tag, checksums: { antPreSign }, stagedAt }
 //
 // WS-23: `runtimes/claude-official/` (Anthropic's `claude` binary and the record that lived beside it)
-// is gone with the official leg. The record it carried was two records in one — the Clover runtime's
+// is gone with the official leg. The record it carried was two records in one — the MOSS runtime's
 // and, since Phase 10a, `ant`'s pre-sign checksum — so it is now split: the runtimes record moved up
 // to `runtimes/VERSIONS.json` (schema 2: the claude fields gone), and `ant` has its own beside its
 // binary, written by the one step that stages it.
@@ -75,7 +75,7 @@ export interface AntVersionsJson {
   stagedAt: string;
 }
 
-const CLOVER_SOURCES = ["platform-package", "checkout-build"] as const;
+const MOSS_SOURCES = ["platform-package", "checkout-build"] as const;
 
 /** An absent `winterSource` is a record from before this field existed — those were ALWAYS a
  *  from-source build (there was no other rung yet), so `"checkout-build"` is the correct default,
@@ -127,8 +127,8 @@ export function parseVersionsJson(text: string): VersionsJson {
   const { str, sha } = fieldReaders(v, "VERSIONS.json");
   let winterSource: VersionsJson["winterSource"];
   if (v.winterSource !== undefined) {
-    if (typeof v.winterSource !== "string" || !(CLOVER_SOURCES as readonly string[]).includes(v.winterSource)) {
-      throw new Error(`VERSIONS.json: winterSource must be one of ${CLOVER_SOURCES.join(", ")} (got ${JSON.stringify(v.winterSource)})`);
+    if (typeof v.winterSource !== "string" || !(MOSS_SOURCES as readonly string[]).includes(v.winterSource)) {
+      throw new Error(`VERSIONS.json: winterSource must be one of ${MOSS_SOURCES.join(", ")} (got ${JSON.stringify(v.winterSource)})`);
     }
     winterSource = v.winterSource as VersionsJson["winterSource"];
   }
@@ -196,7 +196,7 @@ export function isCompiledBinary(): boolean {
  * own typed failure for "no ant available" at the point that actually matters. So this ladder just
  * returns `undefined` on a total miss.
  *
- * The ladder, exactly (Interfaces): `settings.runtimes.antExecutable` → `$CLOVER_ANT_EXECUTABLE` →
+ * The ladder, exactly (Interfaces): `settings.runtimes.antExecutable` → `$MOSS_ANT_EXECUTABLE` →
  * the bundle path (`antExecutablePath`, gated on existing AND being executable) → `which ant`
  * (dev-only) → `undefined`.
  *
@@ -233,14 +233,14 @@ export function resolveAntExecutable(input: {
    *  `bun test` always runs uncompiled, so this file's own tests must inject `true` to exercise
    *  the compiled-gate branch at all. */
   isCompiled?: () => boolean;
-  /** Test seams: a dist build (`build-kind.ts`) ignores `CLOVER_ANT_EXECUTABLE` and says so once. */
+  /** Test seams: a dist build (`build-kind.ts`) ignores `MOSS_ANT_EXECUTABLE` and says so once. */
   distBuild?: boolean;
   noteIgnored?: (name: string) => void;
 }): { path: string; source: AntExecutableSource } | undefined {
   const settingPath = input.setting?.trim() || undefined;
   if (settingPath) return { path: settingPath, source: "setting" };
-  const envPath = input.env.CLOVER_ANT_EXECUTABLE?.trim() || undefined;
-  if (envPath && (input.distBuild ?? DIST_BUILD)) (input.noteIgnored ?? noteIgnoredEnvOverride)("CLOVER_ANT_EXECUTABLE");
+  const envPath = input.env.MOSS_ANT_EXECUTABLE?.trim() || undefined;
+  if (envPath && (input.distBuild ?? DIST_BUILD)) (input.noteIgnored ?? noteIgnoredEnvOverride)("MOSS_ANT_EXECUTABLE");
   else if (envPath) return { path: envPath, source: "env" };
 
   const bundlePath = antExecutablePath(input.execPath);

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sessionTmpDir } from "../../src/agent/session-tmp";
 
-afterEach(() => { delete process.env.CLOVER_TMPDIR; });
+afterEach(() => { delete process.env.MOSS_TMPDIR; });
 
 describe("sessionTmpDir", () => {
   test("creates a stable realpath'd dir per session id", () => {
@@ -24,21 +24,21 @@ describe("sessionTmpDir", () => {
   });
 });
 
-describe("sessionTmpDir CLOVER_TMPDIR override", () => {
-  test("uses CLOVER_TMPDIR as the base when set", () => {
-    const base = realpathSync(mkdtempSync(join(tmpdir(), "clover-tmpbase-")));
-    process.env.CLOVER_TMPDIR = base;
-    expect(sessionTmpDir("s1")).toBe(join(base, "clover-session-s1"));
+describe("sessionTmpDir MOSS_TMPDIR override", () => {
+  test("uses MOSS_TMPDIR as the base when set", () => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "moss-tmpbase-")));
+    process.env.MOSS_TMPDIR = base;
+    expect(sessionTmpDir("s1")).toBe(join(base, "moss-session-s1"));
   });
-  test("empty CLOVER_TMPDIR falls back to os.tmpdir()", () => {
-    process.env.CLOVER_TMPDIR = "";
-    expect(sessionTmpDir("s2")).toBe(join(realpathSync(tmpdir()), "clover-session-s2"));
+  test("empty MOSS_TMPDIR falls back to os.tmpdir()", () => {
+    process.env.MOSS_TMPDIR = "";
+    expect(sessionTmpDir("s2")).toBe(join(realpathSync(tmpdir()), "moss-session-s2"));
   });
   test("unset → os.tmpdir()", () => {
-    expect(sessionTmpDir("s3")).toBe(join(realpathSync(tmpdir()), "clover-session-s3"));
+    expect(sessionTmpDir("s3")).toBe(join(realpathSync(tmpdir()), "moss-session-s3"));
   });
-  test("fix-wave D: whitespace-only CLOVER_TMPDIR falls back to os.tmpdir() (blank is treated as unset, not used verbatim)", () => {
-    process.env.CLOVER_TMPDIR = "   ";
-    expect(sessionTmpDir("s4")).toBe(join(realpathSync(tmpdir()), "clover-session-s4"));
+  test("fix-wave D: whitespace-only MOSS_TMPDIR falls back to os.tmpdir() (blank is treated as unset, not used verbatim)", () => {
+    process.env.MOSS_TMPDIR = "   ";
+    expect(sessionTmpDir("s4")).toBe(join(realpathSync(tmpdir()), "moss-session-s4"));
   });
 });

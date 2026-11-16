@@ -5,7 +5,7 @@
 // * A view is a running plugin's (on, and running or waiting) that has components, `ui` entries, themes, locales or a
 //   bot. Its files are its folder's (`assetBase`: for a bundled plugin, the private copy of its verified bytes). Its
 //   `clientEntry` is the manifest's `client.entry` when that is a built module (`.js`/`.mjs`); a TypeScript entry gets
-//   `clientBuild` once the registry's load-time build (`registry/client-builds.ts`) lands, and its parts mount then. Everything under `clover` shares the `clover` layer; any other
+//   `clientBuild` once the registry's load-time build (`registry/client-builds.ts`) lands, and its parts mount then. Everything under `moss` shares the `moss` layer; any other
 //   plugin's layer is its id with `/` written `--`. `ui`, `themes`, `locales` and the bot are its active entries.
 // * `plugin.layer.api` runs as the user (`client: app`), from the `ui` side of the capability gate: only the calls a
 //   component may make, each needing what the plugin's OK granted. `pluginId` is the one the app bound the mount to,
@@ -15,7 +15,7 @@
 // * A component reaches every member the SDK's catalog gives components (`COMPONENT_CALLS`), on its own layer
 //   connection (`plugin.layer.call`) or the app's (`plugin.layer.api`): the same router, so the same capability, fence
 //   and limits as its host half's call, from the `ui` side as the plugin. What only a host half's process could ask is
-//   held the same way here: the account token (`net.fetch` with `auth: "waifucave"`) only for the bundled `clover`
+//   held the same way here: the account token (`net.fetch` with `auth: "waifucave"`) only for the bundled `moss`
 //   tree's own components; `secrets.get` never (the router: own process only); a `net.fetch` key placed by the core and
 //   masked out of what comes back, so the page never sees it. A member that takes a listener is a watch
 //   (`plugin.layer.watch`): the core's listener sits in its place and each value goes back as `plugin_api_event` to
@@ -24,21 +24,21 @@
 import {
   API_CALLS, apiCallAllowed, clampAvatarCap, isComponentCall, listenerArgOf, fromLayerWire, responseToLayerWire, toLayerWire,
   type ApiCallInfo, type AvatarFormatEntry,
-} from "@waifucave/clover-plugin-sdk";
+} from "@waifucave/moss-plugin-sdk";
 import { randomUUID } from "node:crypto";
-import { PLUGINS_EVENTS, PLUGINS_METHODS, topPluginIdOf, type UiPluginView } from "@waifucave/clover-protocol";
+import { PLUGINS_EVENTS, PLUGINS_METHODS, topPluginIdOf, type UiPluginView } from "@waifucave/moss-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
-import { cloverProcessOnly, type ApiRouter } from "../contracts/plugin-host";
+import { mossProcessOnly, type ApiRouter } from "../contracts/plugin-host";
 import { RUNNING_STATES, type PluginRecord, type PluginRegistry } from "../contracts/plugin-registry";
 import { handler, MethodError, toMethodError, type MethodHandler } from "../rpc/handler";
 
 /** The registry states whose plugins show UI: on and running, or waiting for a point. */
 const SHOWN = new Set(["running", "waiting"]);
 
-/** The layer a plugin's documents load in: `clover` for the whole bundled tree, otherwise its id with `/` as `--`. */
+/** The layer a plugin's documents load in: `moss` for the whole bundled tree, otherwise its id with `/` as `--`. */
 export function layerOf(pluginId: string): string {
-  return pluginId === "clover" || pluginId.startsWith("clover/") ? "clover" : pluginId.replace(/\//g, "--");
+  return pluginId === "moss" || pluginId.startsWith("moss/") ? "moss" : pluginId.replace(/\//g, "--");
 }
 
 type Entries = Pick<PluginRegistry, "entries">;
@@ -132,9 +132,9 @@ export interface PluginUiOptions {
   settings?: { layerView(pluginId: string, key?: string, bot?: string): Promise<unknown>; layerSet(pluginId: string, key: string, value: unknown, bot?: string): void };
   /** The capability gate with no process check (`createApiRouter`'s): a component's call comes from the `ui` side. */
   router: ApiRouter;
-  /** Sends a core event to the app (the Clover server's `coreEvent`). */
+  /** Sends a core event to the app (the MOSS server's `coreEvent`). */
   emit(event: { type: string; [key: string]: unknown }): void;
-  /** Sends a core event to the one connection whose follows these are (a component's watch value): the Clover server's
+  /** Sends a core event to the one connection whose follows these are (a component's watch value): the MOSS server's
    *  `coreEvent` with `to: (conn) => conn.follows === follows`. Absent: a watch is refused. */
   emitTo?(follows: Map<string, () => void>, event: { type: string; [key: string]: unknown }): void;
   clock?: Pick<Clock, "setTimeout" | "clearTimeout">;
@@ -191,7 +191,7 @@ export function layerCallRefusal(call: string, watch = false): string | undefine
   return undefined;
 }
 
-const isBundledClover = (r: Pick<PluginRecord, "id" | "source"> | undefined): boolean => r !== undefined && r.source === "bundled" && topPluginIdOf(r.id) === "clover";
+const isBundledMoss = (r: Pick<PluginRecord, "id" | "source"> | undefined): boolean => r !== undefined && r.source === "bundled" && topPluginIdOf(r.id) === "moss";
 
 /** The serialized size of a value, or undefined when it isn't JSON. */
 function jsonBytes(v: unknown): number | undefined {
@@ -291,9 +291,9 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     if (size > max) throw new ContractError("invalid", `${method}'s args are ${size} bytes; at most ${max}`);
   };
   /** What only a host half's own process could ask is held here the same way: the account token only for the bundled
-   *  `clover` tree's own components (`guardApiRouter`'s rule for its `clover` process). */
+   *  `moss` tree's own components (`guardApiRouter`'s rule for its `moss` process). */
   const processRule = (pluginId: string, call: string, args: readonly unknown[]) => {
-    if (cloverProcessOnly(call, args) && !isBundledClover(o.registry.get?.(pluginId))) throw new ContractError("refused", `${call} is honoured only from the bundled clover tree`);
+    if (mossProcessOnly(call, args) && !isBundledMoss(o.registry.get?.(pluginId))) throw new ContractError("refused", `${call} is honoured only from the bundled moss tree`);
   };
   const failed = (err: unknown, pluginId: string, call: string): never => {
     const e = toMethodError(err instanceof ContractError || err instanceof MethodError ? err : new ContractError("failed", err instanceof Error ? err.message : String(err)));
@@ -477,7 +477,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     },
     close() {
       stop();
-      for (const w of [...watches.values()]) w.end("Clover's plugins closed");
+      for (const w of [...watches.values()]) w.end("MOSS's plugins closed");
       if (timer !== undefined) {
         if (o.clock !== undefined) o.clock.clearTimeout(timer as TimerHandle);
         else clearTimeout(timer as ReturnType<typeof setTimeout>);

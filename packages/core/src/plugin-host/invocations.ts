@@ -1,9 +1,9 @@
 // Who a plugin's API call acts for (ruling R7; the PluginHost contract): the core keeps its own record of every call it
-// makes into a plugin (a handler's `pluginHost.invoke`, an MCP request with `_meta["clover/invocation"]`), and binds
+// makes into a plugin (a handler's `pluginHost.invoke`, an MCP request with `_meta["moss/invocation"]`), and binds
 // each API call made inside one to that call's caller, looked up by the call's id. A call made outside any acts as the
 // plugin. An id that isn't an open call to that plugin is refused: it was never one, it belongs to another plugin, or
 // its call has ended (a `ctx.api` kept past its call, #179's review S1). The plugin never names its caller.
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 
 export interface OpenInvocation {

@@ -6,8 +6,8 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
-import { UpdateGate, UPDATE_RESTART_EXIT_CODE } from "@waifucave/clover-core";
+import { coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, signFeed } from "@waifucave/moss-update-feed";
+import { UpdateGate, UPDATE_RESTART_EXIT_CODE } from "@waifucave/moss-core";
 import { badBinary, beginUpdatedBoot, replaceBinary, bootWasGood, coreTargetOf, healFromOld, isNewer, MAX_FEED_BYTES, oldBinary, pluginsDirOf, superviseTarget, readCapped, rolledBack, runBundledManifest, runVersion, SelfUpdater, SWAP_BACKOFF_MS, versionEnv, type Fetcher } from "../src/self-update";
 import { recoverServerPlugins, treeManifestSha256 } from "../src/plugins-install";
 import { realOps, type DurableOps } from "../src/durable";
@@ -15,11 +15,11 @@ import { realOps, type DurableOps } from "../src/durable";
 const posix = test.if(process.platform !== "win32");
 const enc = (s: string) => new TextEncoder().encode(s);
 const TARGET = "linux-x64" as const;
-const RELEASES = "https://api.github.com/repos/waifucave/clover/releases?per_page=30";
+const RELEASES = "https://api.github.com/repos/waifucave/moss/releases?per_page=30";
 
-/** A binary as a shell script: `--version` prints `clover <version>` (or whatever `say` makes it do). */
+/** A binary as a shell script: `--version` prints `moss <version>` (or whatever `say` makes it do). */
 const script = (body: string) => `#!/bin/sh\n${body}\n`;
-const versionScript = (version: string) => script(`[ -z "$HOME$CLOVER_HOME" ] || exit 3\necho "clover ${version}"`);
+const versionScript = (version: string) => script(`[ -z "$HOME$MOSS_HOME" ] || exit 3\necho "moss ${version}"`);
 
 interface Release {
   version: string;
@@ -35,7 +35,7 @@ function github(key: { privateKey: string }, releases: Release[]) {
   const asked: string[] = [];
   const list = releases.map((r) => {
     const tag = `v${r.version}`;
-    const url = (name: string) => `https://github.com/waifucave/clover/releases/download/${tag}/${name}`;
+    const url = (name: string) => `https://github.com/waifucave/moss/releases/download/${tag}/${name}`;
     const binName = coreBinaryFile(r.version, TARGET);
     const bin = enc(r.binary);
     const sha512 = r.spoil === "hash" ? createHash("sha512").update("something else").digest("base64") : createHash("sha512").update(bin).digest("base64");
@@ -62,8 +62,8 @@ function github(key: { privateKey: string }, releases: Release[]) {
 
 /** A plugins tree for `version` written at `dir`, and the SHA-256 of the manifest it measures to. */
 function pluginsTree(dir: string, version: string): string {
-  mkdirSync(join(dir, "clover"), { recursive: true });
-  writeFileSync(join(dir, "clover", "clover.json"), `{"id":"clover","v":"${version}"}`);
+  mkdirSync(join(dir, "moss"), { recursive: true });
+  writeFileSync(join(dir, "moss", "moss.json"), `{"id":"moss","v":"${version}"}`);
   return treeManifestSha256(dir)!;
 }
 
@@ -72,13 +72,13 @@ function pluginsTree(dir: string, version: string): string {
 interface PluginsOpt { says?: string | "none" | undefined; refuse?: string }
 
 function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number; onRenew?: () => void; drainMs?: number; reopenAfterMs?: number; plugins?: PluginsOpt; ops?: DurableOps }) {
-  const home = mkdtempSync(join(tmpdir(), "clover-self-update-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-self-update-"));
   const binDir = opts.plugins === undefined ? join(home, "bin") : join(home, "bin", "daemon");
   mkdirSync(binDir, { recursive: true });
-  const bin = join(binDir, "clover-core");
+  const bin = join(binDir, "moss-core");
   const pluginsDir = join(home, "bin", "plugins");
   const staged: string[] = [];
-  const nextSha = pluginsTree(join(mkdtempSync(join(tmpdir(), "clover-self-update-tree-")), "p"), "1.3.0");
+  const nextSha = pluginsTree(join(mkdtempSync(join(tmpdir(), "moss-self-update-tree-")), "p"), "1.3.0");
   if (opts.plugins !== undefined) pluginsTree(pluginsDir, opts.version ?? "1.2.3");
   writeFileSync(bin, versionScript(opts.version ?? "1.2.3"), { mode: 0o755 });
   const key = generateFeedKey();
@@ -138,12 +138,12 @@ describe("a server's daemon updating itself", () => {
   });
 
   posix("--version runs with nothing in its environment but PATH, and for at most its time", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-version-check-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-version-check-"));
     const ok = join(dir, "ok"), env = join(dir, "env"), hang = join(dir, "hang");
     writeFileSync(ok, versionScript("1.3.0"), { mode: 0o755 });
-    writeFileSync(env, script('[ -n "$PATH" ] && [ -z "$HOME$USER$CLOVER_HOME" ] && echo clean'), { mode: 0o755 });
+    writeFileSync(env, script('[ -n "$PATH" ] && [ -z "$HOME$USER$MOSS_HOME" ] && echo clean'), { mode: 0o755 });
     writeFileSync(hang, script("sleep 30"), { mode: 0o755 });
-    expect(await runVersion(ok)).toBe("clover 1.3.0");
+    expect(await runVersion(ok)).toBe("moss 1.3.0");
     expect(await runVersion(env)).toBe("clean");
     const started = Date.now();
     expect(await runVersion(hang, 300)).toBeUndefined();
@@ -161,14 +161,14 @@ describe("a server's daemon updating itself", () => {
   test("a bad signature on the update file: refused before it is read, and the binary is never fetched", async () => {
     const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0"), spoil: "feed signature" }] });
     expect(await s.updater.check()).toEqual({ kind: "refused", why: "latest-core-linux-x64.yml: bad signature" });
-    expect(s.asked.some((u) => u.endsWith("/clover-core-1.3.0-linux-x64"))).toBe(false);
+    expect(s.asked.some((u) => u.endsWith("/moss-core-1.3.0-linux-x64"))).toBe(false);
     expect(existsSync(`${s.bin}.new`)).toBe(false);
     expect(s.updater.ready()).toBe(false);
   });
 
   test("a bad hash: the binary is signed but isn't the one the update file names, so it never runs", async () => {
     const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0"), spoil: "hash" }] });
-    expect(await s.updater.check()).toEqual({ kind: "refused", why: "clover-core-1.3.0-linux-x64's sha512 or size doesn't match latest-core-linux-x64.yml" });
+    expect(await s.updater.check()).toEqual({ kind: "refused", why: "moss-core-1.3.0-linux-x64's sha512 or size doesn't match latest-core-linux-x64.yml" });
     expect(existsSync(`${s.bin}.new`)).toBe(false);
     expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
   });
@@ -178,7 +178,7 @@ describe("a server's daemon updating itself", () => {
     expect(await failing.updater.check()).toMatchObject({ kind: "refused", why: expect.stringContaining("--version said nothing") });
     expect(existsSync(`${failing.bin}.new`)).toBe(false);
     const lying = server({ releases: [{ version: "1.3.0", binary: versionScript("1.2.3") }] });
-    expect(await lying.updater.check()).toMatchObject({ kind: "refused", why: expect.stringContaining('"clover 1.2.3", not clover 1.3.0') });
+    expect(await lying.updater.check()).toMatchObject({ kind: "refused", why: expect.stringContaining('"moss 1.2.3", not moss 1.3.0') });
     lying.updater.apply();
     await Bun.sleep(10);
     expect(lying.exited).toEqual([]);
@@ -227,12 +227,12 @@ describe("a server's daemon updating itself", () => {
   });
 
   test("the boot check never throws, and does nothing without a swap behind it", () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-boot-"));
-    expect(beginUpdatedBoot(home, join(home, "bin", "clover-core"))).toBe("normal");
+    const home = mkdtempSync(join(tmpdir(), "moss-boot-"));
+    expect(beginUpdatedBoot(home, join(home, "bin", "moss-core"))).toBe("normal");
     mkdirSync(join(home, "update"));
     writeFileSync(join(home, "update", "boot.json"), "{not json");
-    expect(beginUpdatedBoot(home, join(home, "bin", "clover-core"))).toBe("normal");
-    expect(() => bootWasGood(home, join(home, "nowhere", "clover-core"))).not.toThrow();
+    expect(beginUpdatedBoot(home, join(home, "bin", "moss-core"))).toBe("normal");
+    expect(() => bootWasGood(home, join(home, "nowhere", "moss-core"))).not.toThrow();
   });
 
   test("downloads are bounded: an update file over 64 KiB, or a binary over its signed size, is refused", async () => {
@@ -241,7 +241,7 @@ describe("a server's daemon updating itself", () => {
     big.files.set(feedUrl, new Uint8Array(MAX_FEED_BYTES + 1));
     expect(await big.updater.check()).toMatchObject({ kind: "refused", why: expect.stringContaining("over 65536 bytes") });
     const long = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }] });
-    const binUrl = [...long.files.keys()].find((u) => u.endsWith("/clover-core-1.3.0-linux-x64"))!;
+    const binUrl = [...long.files.keys()].find((u) => u.endsWith("/moss-core-1.3.0-linux-x64"))!;
     long.files.set(binUrl, enc(`${versionScript("1.3.0")}# and more`));
     expect(await long.updater.check()).toMatchObject({ kind: "refused", why: expect.stringContaining("over its") });
     // The reader itself stops at the limit.
@@ -252,7 +252,7 @@ describe("a server's daemon updating itself", () => {
   });
 
   test("--version's environment: PATH alone, and on Windows SystemRoot and windir too", () => {
-    const env = { PATH: "/bin", HOME: "/h", SystemRoot: "C:\\Windows", windir: "C:\\Windows", CLOVER_HOME: "/c" };
+    const env = { PATH: "/bin", HOME: "/h", SystemRoot: "C:\\Windows", windir: "C:\\Windows", MOSS_HOME: "/c" };
     expect(versionEnv(env, "linux")).toEqual({ PATH: "/bin" });
     expect(versionEnv(env, "darwin")).toEqual({ PATH: "/bin" });
     expect(versionEnv(env, "win32")).toEqual({ PATH: "/bin", SystemRoot: "C:\\Windows", windir: "C:\\Windows" });
@@ -314,8 +314,8 @@ describe("a server's daemon updating itself", () => {
   });
 
   posix("a good boot removes the old, the rolled-back and the moved-aside binaries", () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-good-boot-"));
-    const bin = join(home, "clover-core");
+    const home = mkdtempSync(join(tmpdir(), "moss-good-boot-"));
+    const bin = join(home, "moss-core");
     for (const f of [bin, `${bin}.old`, `${bin}.bad`, `${bin}.old-1700000000000`, `${bin}.new`]) writeFileSync(f, "x");
     bootWasGood(home, bin);
     expect(existsSync(bin)).toBe(true);
@@ -378,12 +378,12 @@ describe("a server's daemon updating itself", () => {
 
   posix("a new binary with no manifest, or plugins that can't be had, refuse the update: nothing waits", async () => {
     const none = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: { says: "none" } });
-    expect(await none.updater.check()).toEqual({ kind: "refused", why: "clover-core-1.3.0-linux-x64 carries no bundled-plugins manifest" });
+    expect(await none.updater.check()).toEqual({ kind: "refused", why: "moss-core-1.3.0-linux-x64 carries no bundled-plugins manifest" });
     expect(existsSync(`${none.bin}.new`)).toBe(false);
     const silent = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: { says: undefined } });
     expect((await silent.updater.check()).kind).toBe("refused");
-    const refused = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: { refuse: "clover-plugins-1.3.0-linux-x64.tar.gz: bad signature" } });
-    expect(await refused.updater.check()).toEqual({ kind: "refused", why: "the bundled plugins for 1.3.0: clover-plugins-1.3.0-linux-x64.tar.gz: bad signature" });
+    const refused = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: { refuse: "moss-plugins-1.3.0-linux-x64.tar.gz: bad signature" } });
+    expect(await refused.updater.check()).toEqual({ kind: "refused", why: "the bundled plugins for 1.3.0: moss-plugins-1.3.0-linux-x64.tar.gz: bad signature" });
     expect(existsSync(`${refused.bin}.new`)).toBe(false);
     expect(refused.updater.ready()).toBe(false);
   });
@@ -392,7 +392,7 @@ describe("a server's daemon updating itself", () => {
     const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {} });
     const before = treeManifestSha256(s.pluginsDir);
     await s.updater.check();
-    writeFileSync(join(`${s.pluginsDir}.new`, "clover", "planted.js"), "globalThis.x = 1;");
+    writeFileSync(join(`${s.pluginsDir}.new`, "moss", "planted.js"), "globalThis.x = 1;");
     await s.gate.closeForRestart({ timeoutMs: 1_000 });
     await s.updater.swap();
     expect(s.exited).toEqual([]);
@@ -404,7 +404,7 @@ describe("a server's daemon updating itself", () => {
   });
 
   posix("__bundled-manifest is asked like --version: PATH alone, its SHA-256 or none, and nothing else counts", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-manifest-check-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-manifest-check-"));
     const sha = "a".repeat(64);
     const answer = (name: string, body: string) => { writeFileSync(join(dir, name), script(body), { mode: 0o755 }); return join(dir, name); };
     expect(await runBundledManifest(answer("one", `[ "$1" = __bundled-manifest ] && [ -z "$HOME" ] && echo "bundled-manifest: 996 files, sha256 ${sha}"`))).toBe(sha);
@@ -499,17 +499,17 @@ describe("a server's daemon updating itself", () => {
   });
 
   test("Windows names: the rollback copies end in .exe, so cmd.exe and the logon task can start them", () => {
-    expect(oldBinary("C:\\h\\bin\\daemon\\clover-core.exe")).toBe("C:\\h\\bin\\daemon\\clover-core.old.exe");
-    expect(badBinary("C:\\h\\bin\\daemon\\clover-core.exe")).toBe("C:\\h\\bin\\daemon\\clover-core.bad.exe");
-    expect(oldBinary("/h/bin/daemon/clover-core")).toBe("/h/bin/daemon/clover-core.old");
+    expect(oldBinary("C:\\h\\bin\\daemon\\moss-core.exe")).toBe("C:\\h\\bin\\daemon\\moss-core.old.exe");
+    expect(badBinary("C:\\h\\bin\\daemon\\moss-core.exe")).toBe("C:\\h\\bin\\daemon\\moss-core.bad.exe");
+    expect(oldBinary("/h/bin/daemon/moss-core")).toBe("/h/bin/daemon/moss-core.old");
   });
 
   test("supervise started as the .old copy takes the binary once it is back, and only a server's", () => {
     const have = (set: string[]) => (p: string) => set.includes(p);
-    expect(superviseTarget("/h/bin/daemon/clover-core.old", have(["/h/bin/daemon/clover-core"]))).toBe("/h/bin/daemon/clover-core");
-    expect(superviseTarget("/h/bin/daemon/clover-core.old", have([]))).toBe("/h/bin/daemon/clover-core.old");
-    expect(superviseTarget("C:/h/bin/daemon/clover-core.old.exe", have(["C:/h/bin/daemon/clover-core.exe"]))).toBe("C:/h/bin/daemon/clover-core.exe");
-    expect(superviseTarget("/h/bin/daemon/clover-core", have([]))).toBe("/h/bin/daemon/clover-core");
+    expect(superviseTarget("/h/bin/daemon/moss-core.old", have(["/h/bin/daemon/moss-core"]))).toBe("/h/bin/daemon/moss-core");
+    expect(superviseTarget("/h/bin/daemon/moss-core.old", have([]))).toBe("/h/bin/daemon/moss-core.old");
+    expect(superviseTarget("C:/h/bin/daemon/moss-core.old.exe", have(["C:/h/bin/daemon/moss-core.exe"]))).toBe("C:/h/bin/daemon/moss-core.exe");
+    expect(superviseTarget("/h/bin/daemon/moss-core", have([]))).toBe("/h/bin/daemon/moss-core");
     expect(superviseTarget("/elsewhere/x.old", have(["/elsewhere/x"]))).toBe("/elsewhere/x.old");
   });
 
@@ -555,8 +555,8 @@ describe("a server's daemon updating itself", () => {
   });
 
   test("replaceBinary on this OS (links on macOS and Linux, renames on Windows): the new one in place, the old one aside, a failure undone", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-replace-"));
-    const bin = join(dir, process.platform === "win32" ? "clover-core.exe" : "clover-core");
+    const dir = mkdtempSync(join(tmpdir(), "moss-replace-"));
+    const bin = join(dir, process.platform === "win32" ? "moss-core.exe" : "moss-core");
     writeFileSync(bin, "old");
     writeFileSync(`${bin}.new`, "new");
     expect(replaceBinary(bin, `${bin}.new`, oldBinary(bin))).toBeUndefined();
@@ -571,8 +571,8 @@ describe("a server's daemon updating itself", () => {
   // Windows is where healing happens: these build the state a cut between its two renames leaves, with its .exe names,
   // from plain files, so they run on every OS (CI's Windows leg included).
   const cutBetweenRenames = (newBytes: string, recorded: string) => {
-    const home = mkdtempSync(join(tmpdir(), "clover-heal-"));
-    const bin = join(home, "bin", "daemon", "clover-core.exe");
+    const home = mkdtempSync(join(tmpdir(), "moss-heal-"));
+    const bin = join(home, "bin", "daemon", "moss-core.exe");
     mkdirSync(join(home, "bin", "daemon"), { recursive: true });
     mkdirSync(join(home, "update"), { recursive: true });
     writeFileSync(oldBinary(bin), "old version");

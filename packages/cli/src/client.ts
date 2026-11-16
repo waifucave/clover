@@ -12,7 +12,7 @@ import {
   SessionSetDirsResult,
   DaemonStatusResult, QuotaStateResult, TrustListResult, TrustRemoveResult,
   PluginRevokeTokenResult, PluginRestartResult,
-  // WS-21 (spec §5.2): `clover plugin` = `claude plugin`, over Contract B.
+  // WS-21 (spec §5.2): `moss plugin` = `claude plugin`, over Contract B.
   PluginListResult, PluginInstallResult, PluginUninstallResult, PluginSetEnabledResult,
   PluginUpdateResult, PluginMarketplaceAddResult, PluginMarketplaceRemoveResult,
   PluginMarketplaceListResult, PluginMarketplaceUpdateResult, type PluginScope,
@@ -20,7 +20,7 @@ import {
   MemoryListResult, MemoryReadResult, MemoryDeleteResult,
   WorkflowListResult, WorkflowRunResult, WorkflowStopResult, WorkflowGetResult,
   ConnWriter, type WritableSocket, type UserMessageImageRef,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 
 /** Mirrors `RoutineSchema` (protocol/src/methods.ts) / `Routine` (core/src/routines/store.ts)
  *  field-for-field — a plain inline interface, matching this file's own convention of spelling
@@ -78,7 +78,7 @@ export interface ConnectOptions {
   onWorkspaceWatchError?: (subscriptionId: string, error: unknown) => void;
 }
 
-export class CloverClient {
+export class MossClient {
   private decoder = new LineDecoder();
   private disconnected = false;
   private nextId = 1;
@@ -98,8 +98,8 @@ export class CloverClient {
     this.timeoutMs = timeoutMs;
   }
 
-  static async connect(opts: ConnectOptions): Promise<CloverClient> {
-    const client = new CloverClient(opts.timeoutMs ?? 5000);
+  static async connect(opts: ConnectOptions): Promise<MossClient> {
+    const client = new MossClient(opts.timeoutMs ?? 5000);
     client.watchError = opts.onWorkspaceWatchError;
     client.socket = await Bun.connect({
       unix: opts.socketPath,
@@ -114,7 +114,7 @@ export class CloverClient {
               // message, additively. Every existing caller reads `.message` and is byte-unaffected;
               // what this unlocks is a caller branching on a TYPED refusal (`data.code` /
               // `data.reason` / `data.door`) instead of string-matching prose — which is how the
-              // `clover credentials` doors surface the daemon's own refusal vocabulary unchanged
+              // `moss credentials` doors surface the daemon's own refusal vocabulary unchanged
               // when they go through the socket rather than writing the Keychain themselves.
               if (msg.error) p.reject(Object.assign(new Error(`${msg.error.message} (code ${msg.error.code})`), { rpc: msg.error }));
               else p.resolve(msg.result);
@@ -184,7 +184,7 @@ export class CloverClient {
     // and `z.object({}).safeParse(undefined)` FAILS — the exact defect that killed the orb's
     // `session.dispatch` from the Swift client (see WinterClient.swift's own note). The daemon now
     // normalizes too (`parseParams`, ipc/server.ts), but this client must not depend on that: a
-    // `clover` CLI can be pointed at an older daemon. Normalized HERE rather than at `listSessions`
+    // `moss` CLI can be pointed at an older daemon. Normalized HERE rather than at `listSessions`
     // (today's only params-less caller) so the whole class is closed for every future one.
     this.writer.enqueue(encodeLine({ jsonrpc: "2.0", id, method, params: params ?? {} }));
     return new Promise((resolve, reject) => {
@@ -291,7 +291,7 @@ export class CloverClient {
   }
 
   /** `model` (optional) is the one-shot per-session model choice -- a provider-qualified tag the daemon
-   *  validates and stamps at creation (`session.create`'s own `model`); `clover -p --model` sends it. */
+   *  validates and stamps at creation (`session.create`'s own `model`); `moss -p --model` sends it. */
   async createSession(scope: string, opts?: { cwd?: string; approvalPolicy?: ApprovalPolicy; model?: string }): Promise<{ sessionId: string; trusted: boolean }> {
     const r = this.validated(SessionCreateResult, await this.request(METHODS.sessionCreate, { scope, ...opts }), METHODS.sessionCreate);
     return { sessionId: r.sessionId, trusted: r.trusted };
@@ -373,7 +373,7 @@ export class CloverClient {
   async agentStop(sessionId: string, agent: string): Promise<{ ok: true; status: "running" | "completed" | "failed" | "stopped" | "timeout" }> {
     return this.validated(AgentStopResult, await this.request(METHODS.agentStop, { sessionId, agent }), METHODS.agentStop);
   }
-  /** On the Clover leg the daemon answers `requested: true` at once: the session runs `/compact` as its
+  /** On the MOSS leg the daemon answers `requested: true` at once: the session runs `/compact` as its
    *  next turn and the log says when it is done (a `continuity_warning`). */
   async compact(sessionId: string, instructions?: string): Promise<{ compacted: boolean; uptoSeq: number; summaryChars: number; requested: boolean }> {
     const params = instructions !== undefined && instructions.trim().length > 0 ? { sessionId, instructions: instructions.trim() } : { sessionId };
@@ -389,20 +389,20 @@ export class CloverClient {
   }
   // WS-21 made `mcp.add`/`mcp.remove`/`mcp.get` default a missing `scope` to "local" (which needs a
   // project cwd), so these USER-scope doors must name the scope explicitly -- without it every
-  // `clover mcp add -s user` through a live daemon was refused as a local-scope call.
-  /** `clover mcp add`/`add-json` — USER scope only (project scope, `<cwd>/.mcp.json`, is never
+  // `moss mcp add -s user` through a live daemon was refused as a local-scope call.
+  /** `moss mcp add`/`add-json` — USER scope only (project scope, `<cwd>/.mcp.json`, is never
    *  RPC-routed; see `mcp-cli.ts`'s own header). A rejection (reserved/duplicate name, or the
    *  credential-shaped-header refusal on an http/sse entry) surfaces as an ordinary thrown `Error`
    *  — the daemon's own message, same posture every other RPC method on this client already has. */
   async mcpAdd(name: string, entry: { type: "stdio"; command: string; args?: string[]; env?: Record<string, string> } | { type: "http" | "sse"; url: string; headers?: Record<string, string> }): Promise<{ ok: true; name: string; transport: "stdio" | "http" | "sse"; started: boolean }> {
     return this.request(METHODS.mcpAdd, { name, entry, scope: "user" });
   }
-  /** `clover mcp remove` — USER scope only. `removed: false` (never a thrown error) when the name
+  /** `moss mcp remove` — USER scope only. `removed: false` (never a thrown error) when the name
    *  wasn't present, mirroring `mcp.enable`/`mcp.disable`'s own idempotent posture. */
   async mcpRemove(name: string): Promise<{ ok: true; name: string; removed: boolean }> {
     return this.request(METHODS.mcpRemove, { name, scope: "user" });
   }
-  /** `clover mcp get <name>` — USER scope only; `found: false` (never a thrown error) when the
+  /** `moss mcp get <name>` — USER scope only; `found: false` (never a thrown error) when the
    *  name isn't configured there (the CLI itself checks project scope separately, by reading
    *  `<cwd>/.mcp.json` directly — that scope is never RPC-routed). */
   async mcpGet(name: string): Promise<{
@@ -412,7 +412,7 @@ export class CloverClient {
   }> {
     return this.request(METHODS.mcpGet, { name, scope: "user" });
   }
-  // WS-21 (spec §5.2): `clover plugin` = `claude plugin`, over Contract B
+  // WS-21 (spec §5.2): `moss plugin` = `claude plugin`, over Contract B
   // (`plugins/plugin-manager.ts`). Every result mirrors the SDK's own shape field-for-field
   // (protocol/methods.ts's own header) — retires the pre-WS-21 `pluginsList()`, whose wire method
   // (`plugins.list`) the daemon no longer handles (ipc/server.ts, this lane).
@@ -447,7 +447,7 @@ export class CloverClient {
   async pluginMarketplaceUpdate(name?: string): Promise<{ ok: true }> {
     return this.validated(PluginMarketplaceUpdateResult, await this.request(METHODS.pluginMarketplaceUpdate, { name }), METHODS.pluginMarketplaceUpdate);
   }
-  /** `plugin.setConsent` — the Clover-only extras' own consent (spec §5.4), keyed by the qualified
+  /** `plugin.setConsent` — the MOSS-only extras' own consent (spec §5.4), keyed by the qualified
    *  `"<name>@<marketplace>"` spec (WS-21 fix round 2, C2: a bare name was ambiguous across
    *  marketplaces — `ipc/server.ts`'s own doc on the case this closed). `fingerprint` is the
    *  disclosure fingerprint the caller saw in the `plugin.list` listing it displayed
@@ -484,7 +484,7 @@ export class CloverClient {
     return this.sessionSetPolicy({ sessionId, policy });
   }
   /** session-activity-hygiene T3: `session.setActivity` — the lifecycle write verb behind the TUI's
-   *  `/background` and `/archive` and the `clover agents` roster's verbs.
+   *  `/background` and `/archive` and the `moss agents` roster's verbs.
    *
    *  activity-verb-semantics: FOUR values, ONE FLAG PER VERB. `"background"`/`"archived"` SET their
    *  own stored bit and leave the other alone; `"unbackground"` clears the background bit only; and
@@ -537,7 +537,7 @@ export class CloverClient {
   async pluginRevokeToken(pluginId: string): Promise<{ ok: true }> {
     return this.validated(PluginRevokeTokenResult, await this.request(METHODS.pluginRevokeToken, { pluginId }), METHODS.pluginRevokeToken);
   }
-  /** Final-review Fix 1: `clover plugin restart <id>` — forces a fresh spawn cycle for a plugin the
+  /** Final-review Fix 1: `moss plugin restart <id>` — forces a fresh spawn cycle for a plugin the
    *  daemon's supervisor is already tracking, including recovering one stuck "circuit-open"
    *  (nothing else ever clears that state). harness/admin role, same precedent as `pluginsList`
    *  above — NOT one of the six plugin-role verbs. */
@@ -563,7 +563,7 @@ export class CloverClient {
     return this.validated(RoutinesDeleteResult, await this.request(METHODS.routinesDelete, { id }), METHODS.routinesDelete);
   }
   /** Phase 5b T4: the CLI/slash surface over T3's `memory.*` RPCs — list/read/delete only (write
-   *  stays tool-only, per the brief: `clover memory list|show <name>|rm <name>`, no `write`/`add`
+   *  stays tool-only, per the brief: `moss memory list|show <name>|rm <name>`, no `write`/`add`
    *  subcommand; audit has no CLI surface yet either). Mirrors the routines.* quartet above:
    *  harness/admin role, no special gating, a store failure is a thrown RpcFailure (never a typed
    *  result union) for read/delete exactly like routines.create/update. */
@@ -577,7 +577,7 @@ export class CloverClient {
     await this.validated(MemoryDeleteResult, await this.request(METHODS.memoryDelete, { scope, name, cwd }), METHODS.memoryDelete);
   }
   /** CC-parity phase 3 (Workflows, Track C Task C2): the management/control surface over the
-   *  daemon's WorkflowRuntime (live runs) + WorkflowStore (saved `.clover/workflows` scripts, C1)
+   *  daemon's WorkflowRuntime (live runs) + WorkflowStore (saved `.moss/workflows` scripts, C1)
    *  — mirrors the routines.* / memory.* quartets above: harness/admin role, no special gating
    *  (LOCAL-ONLY IN V1 — these four are not reachable over the remote/plugin roles,
    *  ipc/server.ts's allowlists). `workflowRun`'s `name`/`script` mirror the wire's own "exactly

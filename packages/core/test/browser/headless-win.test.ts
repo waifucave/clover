@@ -11,7 +11,7 @@ import { spawnWithWinPipes } from "../../src/browser/headless/winpipe";
 const WIN = process.platform === "win32";
 
 describe.skipIf(!WIN)("the headless shell's Windows start", () => {
-  const root = mkdtempSync(join(tmpdir(), "clover-winpipe-"));
+  const root = mkdtempSync(join(tmpdir(), "moss-winpipe-"));
   afterAll(() => {
     // Windows keeps a file busy a moment after its process is gone.
     try {
@@ -78,20 +78,20 @@ describe.skipIf(!WIN)("the headless shell's Windows start", () => {
   }, 60_000);
 
   test("the browser's environment is the minimal one, not the daemon's", async () => {
-    process.env.CLOVER_WINPIPE_SECRET = "must-not-leak";
+    process.env.MOSS_WINPIPE_SECRET = "must-not-leak";
     try {
       const f = fakeBrowser("env", "short");
       const { process: proc } = await spawnWithWinPipes(f.bat, [], env());
       await proc.exited;
       const text = await Bun.file(f.out).text();
-      expect(text).not.toContain("CLOVER_WINPIPE_SECRET");
+      expect(text).not.toContain("MOSS_WINPIPE_SECRET");
       expect(text).not.toContain("must-not-leak");
       expect(text.toLowerCase()).toContain(`localappdata=${join(root, "home", "LocalAppData").toLowerCase()}`);
       expect(text.toLowerCase()).toContain(`temp=${join(root, "home", "Temp").toLowerCase()}`);
       const path = text.split(/\r?\n/).find((l) => l.toLowerCase().startsWith("path="));
       expect(path?.toLowerCase()).toBe(`path=${join(process.env.SystemRoot ?? "C:\\Windows", "System32").toLowerCase()}`);
     } finally {
-      delete process.env.CLOVER_WINPIPE_SECRET;
+      delete process.env.MOSS_WINPIPE_SECRET;
     }
   }, 60_000);
 });

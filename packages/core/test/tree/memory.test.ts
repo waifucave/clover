@@ -1,5 +1,5 @@
 // A bot's memory in the tree (the owner's ruling for J-M3): `home/memory/` beside the computers, that bot's
-// `<Clover home>/bots/<bot>/memory/` on every computer that runs the core, kept in sync by lane H. Only that bot's own
+// `<MOSS home>/bots/<bot>/memory/` on every computer that runs the core, kept in sync by lane H. Only that bot's own
 // sessions reach it as `home/memory`; it never goes over the link; a write lands here even while another computer is
 // off, and lane H's sync is told of every change. For anyone else `home/memory` is no folder (not found), and the
 // memory's real path is fenced (`bot-memory`, as lane B's fence says it) for every caller that isn't a bot. Another
@@ -10,7 +10,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { fenceContextFor } from "../../src/contracts/fence";
 import { LocalHolder } from "../../src/tree/holder";
 import { hostOs } from "../../src/tree/names";
@@ -22,7 +22,7 @@ const ALPHA_SIDE = { kind: "session", sessionId: "s_alpha2", sessionKind: "side-
 const LUNA = { kind: "session", sessionId: "s_luna", sessionKind: "bot", bot: "luna" } as const;
 const CODING = { kind: "session", sessionId: "s_code", sessionKind: "coding" } as const;
 const AGENT = { kind: "session", sessionId: "s_agent", sessionKind: "agent", bot: "alpha" } as const;
-const PLUGIN = { kind: "plugin", pluginId: "clover/fish-audio" } as const;
+const PLUGIN = { kind: "plugin", pluginId: "moss/fish-audio" } as const;
 const USER = { kind: "user", client: "app" } as const;
 const utf8 = (text: string) => ({ encoding: "utf8" as const, text });
 const code = async (p: Promise<unknown>) => ((await p.then(() => undefined, (e: unknown) => e)) as { code?: string } | undefined)?.code ?? "ok";
@@ -60,7 +60,7 @@ describe("home/memory", () => {
     const { studio, changed } = await two();
     const t = studio.node.tree;
     await t.write("home/memory/MEMORY.md", utf8("# Alpha\n"), { as: ALPHA });
-    expect(readFileSync(join(studio.cloverHome, "bots", "alpha", "memory", "MEMORY.md"), "utf8")).toBe("# Alpha\n");
+    expect(readFileSync(join(studio.mossHome, "bots", "alpha", "memory", "MEMORY.md"), "utf8")).toBe("# Alpha\n");
     expect(await t.read("home/memory/MEMORY.md", { as: ALPHA_SIDE })).toEqual(utf8("# Alpha\n"));
     expect((await t.list("home/memory", { as: ALPHA })).map((s) => s.path)).toEqual(["home/memory/MEMORY.md"]);
     expect(t.computersFor(["home/memory/MEMORY.md"])).toEqual(["Studio"]);
@@ -86,47 +86,47 @@ describe("home/memory", () => {
     // Another bot's `home/memory` is its own.
     await t.write("home/memory/secret.md", utf8("luna's"), { as: LUNA });
     expect(await t.read("home/memory/secret.md", { as: ALPHA })).toEqual(utf8("alpha's"));
-    expect(readFileSync(join(studio.cloverHome, "bots", "luna", "memory", "secret.md"), "utf8")).toBe("luna's");
+    expect(readFileSync(join(studio.mossHome, "bots", "luna", "memory", "secret.md"), "utf8")).toBe("luna's");
     // For a coding session, an agent, a plugin or the user, `home/memory` is no folder at all.
     for (const as of [CODING, AGENT, PLUGIN, USER]) {
       expect(await code(t.read("home/memory/secret.md", { as }))).toBe("not_found");
       expect(await code(t.write("home/memory/x.md", utf8("x"), { as }))).toBe("not_found");
     }
     // Nor by alpha's folder, or the home folder's own path to it, for anyone but a bot; another bot, as the fence says.
-    const secret = join(studio.cloverHome, "bots", "alpha", "memory", "secret.md");
+    const secret = join(studio.mossHome, "bots", "alpha", "memory", "secret.md");
     for (const as of [LUNA, CODING, AGENT]) {
       expect(await code(t.read("bots/alpha/memory/secret.md", { as }))).toBe(readVerdict(studio, as, secret));
-      const planted = join(studio.cloverHome, "bots", "alpha", "memory", `from-${as.sessionId}.md`);
+      const planted = join(studio.mossHome, "bots", "alpha", "memory", `from-${as.sessionId}.md`);
       expect(await code(t.write(`bots/alpha/memory/from-${as.sessionId}.md`, utf8("x"), { as }))).toBe(verdict(studio, as, planted, "write"));
-      expect(await code(t.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe(readVerdict(studio, as, secret));
+      expect(await code(t.read("home/Studio/.moss/bots/alpha/memory/secret.md", { as }))).toBe(readVerdict(studio, as, secret));
     }
-    // The Clover home is default-deny (#234): another bot's whole folder is out of reach, not just its memory.
+    // The MOSS home is default-deny (#234): another bot's whole folder is out of reach, not just its memory.
     for (const as of [CODING, AGENT]) {
       expect(await code(t.list("bots/alpha", { as }))).toBe("fenced");
       expect(await code(t.glob("**/*", { as, cwd: "bots/alpha" }))).toBe("fenced");
       expect(await code(t.grep("alpha", { as, path: "bots/alpha" }))).toBe("fenced");
     }
     // The memory folder itself is never removed, whoever asks (the fence's own `bot-memory` rule).
-    expect(await code(t.remove("bots/alpha/memory", { as: LUNA, recursive: true }))).toBe(verdict(studio, LUNA, join(studio.cloverHome, "bots", "alpha", "memory"), "delete"));
+    expect(await code(t.remove("bots/alpha/memory", { as: LUNA, recursive: true }))).toBe(verdict(studio, LUNA, join(studio.mossHome, "bots", "alpha", "memory"), "delete"));
     // The real path is no way around it for any model-driven caller (the user's own coding sessions included): only the
     // user's own surfaces and the core reach it there.
     for (const as of [CODING, AGENT, LUNA, PLUGIN] as Caller[]) {
-      const real = "home/Studio/.clover/bots/alpha/memory";
+      const real = "home/Studio/.moss/bots/alpha/memory";
       const reads = readVerdict(studio, as, secret);
       expect(await code(t.read(`${real}/secret.md`, { as }))).toBe(reads);
       expect(await code(t.stat(`${real}/secret.md`, { as }))).toBe(reads);
       if (reads === "fenced") expect(await code(t.list(real, { as }))).toBe("fenced");
-      expect(await code(t.write(`${real}/planted.md`, utf8("x"), { as }))).toBe(verdict(studio, as, join(studio.cloverHome, "bots", "alpha", "memory", "planted.md"), "write"));
+      expect(await code(t.write(`${real}/planted.md`, utf8("x"), { as }))).toBe(verdict(studio, as, join(studio.mossHome, "bots", "alpha", "memory", "planted.md"), "write"));
       const ctx = { session: "s_x", sessionKind: "coding" as const, callId: `c-${as.kind}`, cwd: "home/Studio" };
-      expect((await studio.node.tools.run("Read", { file_path: ".clover/bots/alpha/memory/secret.md" }, ctx)).isError).toBe(true);
+      expect((await studio.node.tools.run("Read", { file_path: ".moss/bots/alpha/memory/secret.md" }, ctx)).isError).toBe(true);
       if (reads === "fenced") expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/secret.md`);
     }
-    expect(existsSync(join(studio.cloverHome, "bots", "alpha", "memory", "planted.md"))).toBe(verdict(studio, LUNA, join(studio.cloverHome, "bots", "alpha", "memory", "planted.md"), "write") === "ok");
+    expect(existsSync(join(studio.mossHome, "bots", "alpha", "memory", "planted.md"))).toBe(verdict(studio, LUNA, join(studio.mossHome, "bots", "alpha", "memory", "planted.md"), "write") === "ok");
     // The bot itself, from another computer: memory never goes over the link.
     expect(await code(laptop.node.tree.read("bots/alpha/memory/secret.md", { as: ALPHA }))).toBe("fenced");
     // The user on this computer still has their own files.
-    expect(await t.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as: USER })).toEqual(utf8("alpha's"));
-    expect(readFileSync(join(studio.cloverHome, "bots", "alpha", "memory", "secret.md"), "utf8")).toBe("alpha's");
+    expect(await t.read("home/Studio/.moss/bots/alpha/memory/secret.md", { as: USER })).toEqual(utf8("alpha's"));
+    expect(readFileSync(join(studio.mossHome, "bots", "alpha", "memory", "secret.md"), "utf8")).toBe("alpha's");
   });
 
   test("each computer keeps its own copy: a write lands while the other computer is off, and the sync is told", async () => {
@@ -134,8 +134,8 @@ describe("home/memory", () => {
     cluster.net.partition(studio.device);
     expect(laptop.node.registry.get("Studio")!.state).toBe("offline");
     await laptop.node.tree.write("home/memory/MEMORY.md", utf8("# From Laptop1\n"), { as: ALPHA });
-    expect(readFileSync(join(laptop.cloverHome, "bots", "alpha", "memory", "MEMORY.md"), "utf8")).toBe("# From Laptop1\n");
-    expect(existsSync(join(studio.cloverHome, "bots", "alpha", "memory", "MEMORY.md"))).toBe(false);
+    expect(readFileSync(join(laptop.mossHome, "bots", "alpha", "memory", "MEMORY.md"), "utf8")).toBe("# From Laptop1\n");
+    expect(existsSync(join(studio.mossHome, "bots", "alpha", "memory", "MEMORY.md"))).toBe(false);
     expect(changed).toContain("Laptop1 alpha MEMORY.md");
   });
 
@@ -147,7 +147,7 @@ describe("home/memory", () => {
     mkdirSync(laptop.home, { recursive: true });
     writeFileSync(join(laptop.home, "b.md"), "b");
     await t.copy("home/Laptop1/b.md", "home/memory/b.md", { as: ALPHA });
-    expect(readFileSync(join(studio.cloverHome, "bots", "alpha", "memory", "b.md"), "utf8")).toBe("b");
+    expect(readFileSync(join(studio.mossHome, "bots", "alpha", "memory", "b.md"), "utf8")).toBe("b");
     await t.copy("home/memory/a.md", "home/Studio/a.md", { as: ALPHA });
     expect(readFileSync(join(studio.home, "a.md"), "utf8")).toBe("a");
   });
@@ -157,11 +157,11 @@ describe("home/memory", () => {
     const t = studio.node.tree;
     // `ghost` isn't in this computer's list (not made yet, synced before the list caught up, or removed and left
     // behind): its memory folder is still only ghost's.
-    const dir = join(studio.cloverHome, "bots", "ghost", "memory");
+    const dir = join(studio.mossHome, "bots", "ghost", "memory");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "MEMORY.md"), "ghost's");
     const GHOST = { kind: "session", sessionId: "s_ghost", sessionKind: "bot", bot: "ghost" } as const;
-    const real = "home/Studio/.clover/bots/ghost/memory";
+    const real = "home/Studio/.moss/bots/ghost/memory";
     // A write lands in a file of its own (a bot may write another bot's memory, as the fence says), so ghost's
     // MEMORY.md stays as it was.
     const callers = [ALPHA, LUNA, CODING, AGENT, PLUGIN] as Caller[];
@@ -169,7 +169,7 @@ describe("home/memory", () => {
       const reads = readVerdict(studio, as, join(dir, "MEMORY.md"));
       expect(await code(t.read(`${real}/MEMORY.md`, { as }))).toBe(reads);
       expect(await code(t.write(`${real}/from-${i}.md`, utf8("x"), { as }))).toBe(verdict(studio, as, join(dir, `from-${i}.md`), "write"));
-      expect(await code(t.remove("home/Studio/.clover/bots/ghost", { as, recursive: true }))).not.toBe("ok");
+      expect(await code(t.remove("home/Studio/.moss/bots/ghost", { as, recursive: true }))).not.toBe("ok");
       if (reads === "fenced") expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/MEMORY.md`);
     }
     // Only a valid bot id reaches a memory folder (#197's check 5, kept by #234): `GHOST` isn't one, so it doesn't land
@@ -192,27 +192,27 @@ describe("home/memory", () => {
   });
 });
 
-describe("a Clover home behind a link (#254's review, should-fix 7)", () => {
+describe("a MOSS home behind a link (#254's review, should-fix 7)", () => {
   test("the bots' folder made after the first check is still fenced, by the link's path and the real one", async () => {
     const root = realpathSync.native(mkdtempSync(join(tmpdir(), "lane-j-linked-home-")));
     try {
       const home = join(root, "home");
-      const elsewhere = join(root, "disk2", "clover");
+      const elsewhere = join(root, "disk2", "moss");
       mkdirSync(home, { recursive: true });
       mkdirSync(elsewhere, { recursive: true });
-      const cloverHome = join(home, ".clover");
-      symlinkSync(elsewhere, cloverHome, process.platform === "win32" ? "junction" : "dir");
-      const h = new LocalHolder({ clock: { now: () => Date.now() }, name: () => "Studio", home, cloverHome, botsRoot: join(cloverHome, "bots"), os: hostOs() });
+      const mossHome = join(home, ".moss");
+      symlinkSync(elsewhere, mossHome, process.platform === "win32" ? "junction" : "dir");
+      const h = new LocalHolder({ clock: { now: () => Date.now() }, name: () => "Studio", home, mossHome, botsRoot: join(mossHome, "bots"), os: hostOs() });
       // The first check, while `bots/` isn't there yet.
-      await h.write("home/Studio/.clover/notes.md", utf8("x"), { as: CODING });
-      expect(await code(h.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as: CODING }))).toBe("fenced");
+      await h.write("home/Studio/.moss/notes.md", utf8("x"), { as: CODING });
+      expect(await code(h.read("home/Studio/.moss/bots/alpha/memory/secret.md", { as: CODING }))).toBe("fenced");
       // Then the bot's memory is made.
       mkdirSync(join(elsewhere, "bots", "alpha", "memory"), { recursive: true });
       writeFileSync(join(elsewhere, "bots", "alpha", "memory", "secret.md"), "alpha's");
       for (const as of [CODING, LUNA, AGENT]) {
         // No fence here: another bot's reach is the fence's to judge, so it goes through; nobody else's does.
-        expect(await code(h.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe(as === LUNA ? "ok" : "fenced");
-        if (as !== LUNA) expect(await code(h.write("home/Studio/.clover/bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("fenced");
+        expect(await code(h.read("home/Studio/.moss/bots/alpha/memory/secret.md", { as }))).toBe(as === LUNA ? "ok" : "fenced");
+        if (as !== LUNA) expect(await code(h.write("home/Studio/.moss/bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("fenced");
       }
       expect(await h.read("home/memory/secret.md", { as: ALPHA })).toEqual(utf8("alpha's"));
       expect(readFileSync(join(elsewhere, "bots", "alpha", "memory", "secret.md"), "utf8")).toBe("alpha's");

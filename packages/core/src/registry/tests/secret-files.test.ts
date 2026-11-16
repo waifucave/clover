@@ -23,7 +23,7 @@ afterAll(() => {
 
 describe("a secret's file", () => {
   test("is 0600 in a 0700 folder of its plugin's own, written whole, and gone when its instance stops", () => {
-    const home = temp("clover-sf-");
+    const home = temp("moss-sf-");
     const files = new PluginSecretFiles(home);
     const one = PluginSecretFiles.instance();
     const path = files.write("luna/tarot", "keyed", "LUNA_KEY", "sk-test-value", one);
@@ -49,18 +49,18 @@ describe("a secret's file", () => {
   });
 
   test("a folder on the way that's a link or a file is refused, never written through; one there already is made 0700", () => {
-    const home = temp("clover-sf-");
-    const elsewhere = temp("clover-sf-elsewhere-");
+    const home = temp("moss-sf-");
+    const elsewhere = temp("moss-sf-elsewhere-");
     const files = new PluginSecretFiles(home);
     mkdirSync(secretFilesRoot(home), { recursive: true });
     // A same-user process pre-plants a link where the plugin's folder goes.
     symlinkSync(elsewhere, secretFilesFolder(home, "luna"));
-    expect(() => files.write("luna", "keyed", "LUNA_KEY", "x", PluginSecretFiles.instance())).toThrow("isn't a folder of Clover's");
+    expect(() => files.write("luna", "keyed", "LUNA_KEY", "x", PluginSecretFiles.instance())).toThrow("isn't a folder of MOSS's");
     expect(readdirSync(elsewhere)).toEqual([]);
     // A file where a server's folder goes.
     mkdirSync(secretFilesFolder(home, "tarot"), { mode: 0o755 });
     writeFileSync(join(secretFilesFolder(home, "tarot"), "cards"), "");
-    expect(() => files.write("tarot", "cards", "TAROT_KEY", "x", PluginSecretFiles.instance())).toThrow("isn't a folder of Clover's");
+    expect(() => files.write("tarot", "cards", "TAROT_KEY", "x", PluginSecretFiles.instance())).toThrow("isn't a folder of MOSS's");
     // A folder there already, too open: made 0700.
     chmodSync(secretFilesRoot(home), 0o755);
     files.write("tarot", "deck", "TAROT_KEY", "x", PluginSecretFiles.instance());
@@ -68,7 +68,7 @@ describe("a secret's file", () => {
   });
 
   test("a release that removes the shared server folder mid-write: the write makes its folders again once and lands", () => {
-    const home = temp("clover-sf-");
+    const home = temp("moss-sf-");
     const first = PluginSecretFiles.instance();
     const second = PluginSecretFiles.instance();
     let races = 0;
@@ -87,7 +87,7 @@ describe("a secret's file", () => {
   });
 
   test("its plugin removed, or the daemon started: none is left", () => {
-    const home = temp("clover-sf-");
+    const home = temp("moss-sf-");
     const files = new PluginSecretFiles(home);
     const a = files.write("luna", "keyed", "LUNA_KEY", "x", PluginSecretFiles.instance());
     const b = files.write("tarot", "cards", "TAROT_KEY", "y", PluginSecretFiles.instance());
@@ -98,11 +98,11 @@ describe("a secret's file", () => {
   });
 
   test("a server's ${secretFile:k} becomes the file's path in its env and args; a missing secret starts nothing and leaves no file", () => {
-    const home = temp("clover-sf-");
+    const home = temp("moss-sf-");
     const root = join(home, "plugins", "luna");
     mkdirSync(root, { recursive: true });
     const files = new PluginSecretFiles(home);
-    const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], fence: false as const };
+    const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { mossHome: home }), shared: [], fence: false as const };
     const values = { pluginId: "luna", server: "keyed", dataDir: join(home, "plugin-data", "luna"), setting: () => undefined, secret: (k: string) => (k === "LUNA_KEY" ? "sk-test-value" : undefined), secretFiles: files };
     const { config, release } = resolvedPluginStdioMcpServer(
       { command: "luna-mcp", args: ["--key-file", "${secretFile:LUNA_KEY}"], env: { LUNA_KEY_FILE: "${secretFile:LUNA_KEY}", MODE: "fast" } },
@@ -123,9 +123,9 @@ describe("a secret's file", () => {
 
 darwinDescribe("a secret's file under the fence", () => {
   test("its plugin's hook or server reads it and can't write it; another plugin's can't read it", () => {
-    const home = temp("clover-sf-");
-    const userHome = temp("clover-sf-user-");
-    const files = ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home });
+    const home = temp("moss-sf-");
+    const userHome = temp("moss-sf-user-");
+    const files = ensurePluginRunFiles(join(home, "run", "plugin-host"), { mossHome: home });
     const path = new PluginSecretFiles(home).write("luna", "keyed", "LUNA_KEY", "sk-test-value", PluginSecretFiles.instance());
     const run = (pluginId: string, script: string) => {
       const root = join(home, "plugins", pluginId);

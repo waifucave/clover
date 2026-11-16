@@ -5,7 +5,7 @@
 //
 // Both halves share this code: the host runtime (a watch over `pluginHost.api`) and a component (a watch over the layer
 // connection) each give it a `StreamsTransport`. Types only besides the bounds, so a plugin-host process loads it
-// without the rest of the SDK (`@waifucave/clover-plugin-sdk/streams`).
+// without the rest of the SDK (`@waifucave/moss-plugin-sdk/streams`).
 import type { StreamMeta, StreamOpenEvent, StreamOpenOptions, StreamReadEvent, StreamsAcceptHandle } from "./plugin-api";
 
 /** A piece of a stream, at most (raw bytes): a component's piece crosses its connection as base64 in one watch value

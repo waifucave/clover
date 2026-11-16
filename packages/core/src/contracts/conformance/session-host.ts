@@ -6,7 +6,7 @@
 // message's origin and signature (N3).
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
-import { SENT_AT_WINDOW_MS, userMessageHashInput, userMessageSigningInput } from "@waifucave/clover-protocol";
+import { SENT_AT_WINDOW_MS, userMessageHashInput, userMessageSigningInput } from "@waifucave/moss-protocol";
 import type { ApprovalDecision } from "../approval-broker";
 import { isContractError } from "../common";
 import { FakeApprovalBroker } from "../fakes/approval-broker";

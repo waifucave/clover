@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { updateAddsTrigger } from "../changes";
 import { readPluginFolder, treeOkLines } from "../folders";
 
@@ -14,15 +14,15 @@ afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true
 
 type Files = Record<string, string>;
 const BASE = {
-  manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
   contributes: { mcpServers: { srv: { type: "stdio", command: "bin/srv" } } },
 };
 const BASE_FILES: Files = { "bin/srv": "#!/bin/sh\necho srv\n" };
 
 async function snap(manifest: Record<string, unknown>, files: Files = {}) {
-  const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-trig-"))), "luna");
+  const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "moss-trig-"))), "luna");
   temps.push(dirname(dir));
-  for (const [path, text] of Object.entries({ ...BASE_FILES, ...files, "clover.json": JSON.stringify(manifest) })) {
+  for (const [path, text] of Object.entries({ ...BASE_FILES, ...files, "moss.json": JSON.stringify(manifest) })) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
     if (path.startsWith("bin/")) chmodSync(join(dir, path), 0o755);
@@ -64,7 +64,7 @@ describe("every OK-card line an update adds or alters asks again", () => {
       ["host code that starts at once (host.start)", withContrib({}, { host: { entry: "host/index.js", start: "each" } }), { "host/index.js": "export {};\n" }],
       ["routine triggers", withContrib({ triggers: [{ type: "luna-ping", title: "Ping", handler: "ping" }] }, { host: { entry: "host/index.js" } }), { "host/index.js": "export const ping = {};\n" }],
       // The card's title and the plugin list name it: the label.
-      ["its name", { ...BASE, version: "1.1.0", name: "Clover Settings" }],
+      ["its name", { ...BASE, version: "1.1.0", name: "MOSS Settings" }],
       ["its author", { ...BASE, version: "1.1.0", author: { name: "waifucave" } }],
     ];
     for (const [kind, manifest, files] of cases) {
@@ -82,13 +82,13 @@ describe("every OK-card line an update adds or alters asks again", () => {
     const h0 = await snap(host(), { "host/index.js": "export {};\n" });
     const h1 = await snap({ ...host("main"), version: "1.2.0" }, { "host/index.js": "export {};\n" });
     const h2 = await snap({ ...host("each"), version: "1.3.0" }, { "host/index.js": "export {};\n" });
-    expect(updateAddsTrigger(h0.snapshot, h1.snapshot)).toContain("It runs in the background from the moment Clover starts, on your main computer.");
+    expect(updateAddsTrigger(h0.snapshot, h1.snapshot)).toContain("It runs in the background from the moment MOSS starts, on your main computer.");
     expect(updateAddsTrigger(h1.snapshot, h2.snapshot)).toContain("on every computer it's installed on");
     // A data plugin that now runs code: its first line alters.
     const data = await snap({ manifest: 1, id: "luna", name: "Luna", version: "1.0.0" }, {});
     expect(updateAddsTrigger(data.snapshot, base.snapshot)).toBe("it now runs code");
     // A child with code is new on the card's tree.
-    const child = await snap(BASE, { "plugins/extra/clover.json": JSON.stringify({ manifest: 1, name: "Extra", engines: { clover: `^${PLUGIN_API_VERSION}` }, contributes: { mcpServers: { x: { type: "stdio", command: "bin/x" } } } }), "plugins/extra/bin/x": "#!/bin/sh\n" });
+    const child = await snap(BASE, { "plugins/extra/moss.json": JSON.stringify({ manifest: 1, name: "Extra", engines: { moss: `^${PLUGIN_API_VERSION}` }, contributes: { mcpServers: { x: { type: "stdio", command: "bin/x" } } } }), "plugins/extra/bin/x": "#!/bin/sh\n" });
     expect(updateAddsTrigger(base.snapshot, child.snapshot)).toContain("its child extra is new");
   });
 
@@ -109,7 +109,7 @@ describe("every OK-card line an update adds or alters asks again", () => {
 describe("a notifier's OK card", () => {
   test("says what it is told and that it gets no words; a plugin with no notifier says nothing of it", async () => {
     const notifier = await snap({
-      manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+      manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
       host: { entry: "host/index.js" }, contributes: { notifiers: [{ id: "banner", handler: "banner" }] },
     }, { "host/index.js": "export default {};\n" });
     expect(notifier.lines).toContain("It is told when your bots need you or have answered, so it can notify you; it does not get the words.");

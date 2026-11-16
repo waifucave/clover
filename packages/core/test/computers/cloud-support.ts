@@ -15,9 +15,9 @@ import { MemorySecretStore } from "../../src/contracts/fakes/secret-store";
 import type { ApiRouter } from "../../src/contracts/plugin-host";
 import type { HostModule } from "../../src/contracts/sdk-types";
 import { cloudInit } from "../../src/computers/image";
-import { FakeHetzner } from "../../../../plugins/clover/plugins/provider-hetzner/test/fake-hetzner";
+import { FakeHetzner } from "../../../../plugins/moss/plugins/provider-hetzner/test/fake-hetzner";
 
-export const PROVIDER = "clover/provider-hetzner";
+export const PROVIDER = "moss/provider-hetzner";
 export const TOKEN = "test-token-not-a-secret";
 const SHA = "b".repeat(64);
 
@@ -50,20 +50,20 @@ function keyedFetch(registry: FakePluginRegistry, secrets: MemorySecretStore, se
  *  The Hetzner provider is parked in this build (its `availability: not-yet` mark): by default it is staged as a build
  *  that runs it would read it, so the cloud computers stay tested; `asShipped` keeps the mark. */
 export async function cloudPlugins(o: { asShipped?: boolean } = {}) {
-  // The bundled `clover` plugin with the Hetzner provider as its child, as the repo keeps it.
-  const root = join(tempDir("lane-j-cloud-point-"), "clover");
+  // The bundled `moss` plugin with the Hetzner provider as its child, as the repo keeps it.
+  const root = join(tempDir("lane-j-cloud-point-"), "moss");
   mkdirSync(root, { recursive: true });
-  writeFileSync(join(root, "clover.json"), readFileSync(join(REPO, "plugins", "clover", "clover.json"), "utf8"));
-  cpSync(join(REPO, "plugins", "clover", "plugins", "provider-hetzner"), join(root, "plugins", "provider-hetzner"), { recursive: true });
+  writeFileSync(join(root, "moss.json"), readFileSync(join(REPO, "plugins", "moss", "moss.json"), "utf8"));
+  cpSync(join(REPO, "plugins", "moss", "plugins", "provider-hetzner"), join(root, "plugins", "provider-hetzner"), { recursive: true });
   if (o.asShipped !== true) {
-    const file = join(root, "plugins", "provider-hetzner", "clover.json");
+    const file = join(root, "plugins", "provider-hetzner", "moss.json");
     const { availability: _parked, ...runs } = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
     writeFileSync(file, `${JSON.stringify(runs, null, 2)}\n`);
   }
   const bundled = await pluginFromFolder(root, { bundled: true });
   // The user's cloud computer folder: data only.
   const folderDir = writePlugin(tempDir("lane-j-cloud-folder-"), "computer-cloud1", {
-    "clover.json": { manifest: 1, id: "computer-cloud1", name: "Cloud1", contributes: { computer: { provider: "hetzner", name: "Cloud1", size: "cx22", region: "fsn1" } } },
+    "moss.json": { manifest: 1, id: "computer-cloud1", name: "Cloud1", contributes: { computer: { provider: "hetzner", name: "Cloud1", size: "cx22", region: "fsn1" } } },
   });
   const folder = await pluginFromFolder(folderDir);
   const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [...bundled.inputs, ...folder.inputs] });
@@ -81,6 +81,6 @@ export async function cloudPlugins(o: { asShipped?: boolean } = {}) {
 /** The official image's cloud-init with test pins. */
 export const testUserData = ({ name, token }: { name: string; token: string }) => cloudInit({
   name, token, join: "join-ticket-for-tests",
-  daemon: { url: "https://example.invalid/clover-core-linux-x64.tar.gz", sha256: SHA },
+  daemon: { url: "https://example.invalid/moss-core-linux-x64.tar.gz", sha256: SHA },
   browser: { url: "https://example.invalid/chrome-headless-shell-linux64.zip", sha256: SHA },
 });

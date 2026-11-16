@@ -17,7 +17,7 @@ beforeAll(() => {
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 function realTmp(): string {
-  return require("node:fs").realpathSync(mkdtempSync(join(tmpdir(), "clover-grants-")));
+  return require("node:fs").realpathSync(mkdtempSync(join(tmpdir(), "moss-grants-")));
 }
 
 function route(over: Partial<PickRoute> & { paths?: string[] }): { r: PickRoute; seen: DialogRequest[]; registered: Grant[]; grants: FileGrants } {
@@ -115,8 +115,8 @@ describe("the pickers' door", () => {
 
   test("the core's refusal reaches the page as its reason and leaves no token behind", async () => {
     const grants = new FileGrants();
-    const t = route({ grants, paths: [video], register: async () => { throw new Error("That folder holds Clover's own home."); } });
-    await expect(routePick(t.r)).rejects.toThrow(/Clover's own home/);
+    const t = route({ grants, paths: [video], register: async () => { throw new Error("That folder holds MOSS's own home."); } });
+    await expect(routePick(t.r)).rejects.toThrow(/MOSS's own home/);
     expect(t.registered).toEqual([]);
     const probe = grants.issue("editor", { path: video, kind: "file", access: "read" });
     expect(grants.get("editor", probe.token)).toBeDefined();
@@ -284,7 +284,7 @@ describe("a drop on a page", () => {
   test("a core refusal leaves the item out, with its reason, and no token behind", async () => {
     const { routeDrop } = await import("../src/main/ui/file-grants");
     const grants = new FileGrants();
-    const out = await routeDrop({ grants, paths: [video], plugin: { id: "editor", capabilities: ["files"] }, register: async () => { throw new Error("That is Clover's home."); }, log: () => {} });
-    expect(out).toEqual({ grants: [], refused: "That is Clover's home." });
+    const out = await routeDrop({ grants, paths: [video], plugin: { id: "editor", capabilities: ["files"] }, register: async () => { throw new Error("That is MOSS's home."); }, log: () => {} });
+    expect(out).toEqual({ grants: [], refused: "That is MOSS's home." });
   });
 });

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import type { Secret } from "../../contracts/secret-store";
 import { FileDeviceRegistry } from "../../devices/registry";
-import { ANSWER_KEY_HOLDERS, cardAnswerSigningInput } from "@waifucave/clover-protocol";
+import { ANSWER_KEY_HOLDERS, cardAnswerSigningInput } from "@waifucave/moss-protocol";
 import { fromBase64, utf8 } from "../bytes";
 import { AnswerKey, answerKeyHolder } from "../answer-key";
 import { DeviceKey } from "../device-key";
@@ -35,7 +35,7 @@ describe("answer key", () => {
 
     const store = new MemorySecretStore();
     const key = await DeviceKey.loadOrCreate(store);
-    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-answer-")), key, clock: { now: () => Date.now() }, self: { name: "Studio", os: "macos" } });
+    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "moss-h-answer-")), key, clock: { now: () => Date.now() }, self: { name: "Studio", os: "macos" } });
     const reg = appKey.registration(key.id);
     await registry.setOwnAnswerKey(reg.publicKey, reg.held, fromBase64(reg.signature)!);
     const answer = { id: "card_abcdef", hash: "00".repeat(32), option: "approve", at: Date.now() };
@@ -52,7 +52,7 @@ describe("answer key", () => {
     const old = await AnswerKey.loadOrCreate(mem(), "none");
     const next = await AnswerKey.loadOrCreate(mem(), "app-keychain");
     const key = await DeviceKey.loadOrCreate(new MemorySecretStore());
-    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-answer-")), key, clock: { now: () => Date.now() }, self: { name: "Studio", os: "macos" } });
+    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "moss-h-answer-")), key, clock: { now: () => Date.now() }, self: { name: "Studio", os: "macos" } });
     const r1 = old.registration(key.id);
     await registry.setOwnAnswerKey(r1.publicKey, r1.held, fromBase64(r1.signature)!);
     const r2 = next.registration(key.id);

@@ -5,7 +5,7 @@
 // | File               | What                                                                      |
 // | :----------------- | :------------------------------------------------------------------------ |
 // | `acp.ndjson`       | the raw ACP wire, both ways, minus replays: `{ ts, dir, msg }` per line   |
-// | `calls.ndjson`     | Clover's own record: each permission answer and each call Clover closed   |
+// | `calls.ndjson`     | MOSS's own record: each permission answer and each call MOSS closed   |
 // | `agent.json`       | who the agent is: backend, the agent's own session id, root, model       |
 // | `agent.stderr.log` | the agent's stderr                                                        |
 //
@@ -29,7 +29,7 @@
 // the transcript, never the agent.
 import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { isAnyPluginId, pluginIdToSegment } from "@waifucave/clover-protocol";
+import { isAnyPluginId, pluginIdToSegment } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import type { JsonRpcMessage } from "@waifucave/clover-agent-sdk/acp";
 
@@ -322,7 +322,7 @@ export class AgentTranscript {
       const cap = (Object.hasOwn(this.#caps, file) ? this.#caps[file] : undefined) ?? (Object.hasOwn(TRANSCRIPT_CAPS, file) ? TRANSCRIPT_CAPS[file] : undefined) ?? Number.POSITIVE_INFINITY;
       if (size + bytes > cap) {
         this.#full.add(file);
-        const note = file.endsWith(".ndjson") ? `${JSON.stringify({ clover: "truncated", cap })}\n` : `\n[Clover: this log reached its ${cap}-byte cap; the rest isn't kept]\n`;
+        const note = file.endsWith(".ndjson") ? `${JSON.stringify({ moss: "truncated", cap })}\n` : `\n[MOSS: this log reached its ${cap}-byte cap; the rest isn't kept]\n`;
         writeSync(fd, note);
         return;
       }

@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import {
   LEVELS, TreeTransferParams, UNATTENDED_CARD_TIMEOUT_MS, callBindingInput, cardAnswerSigningInput, cardContentInput, cardHashInput, type Card,
   type CardAnswerProof, type Level, type SignedCardAnswer,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import {
   ACTION_EFFECTS, CALL_CARD_METHODS, DECISION_RANK, acpOutcomeFor, bindsComputer, boundCardRecord, callBindingOf, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel,
   verifySignedAnswer, type CallCardRenderer,
@@ -48,7 +48,7 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
 
   function setup(opts: { levels?: Record<string, Level>; reviewer?: "safe" | "risky" | "unavailable"; fenced?: boolean } = {}) {
     const clock = new FakeClock();
-    const fence = new FakeFence({ home: "/Users/me", cloverHome: "/Users/me/.clover" });
+    const fence = new FakeFence({ home: "/Users/me", mossHome: "/Users/me/.moss" });
     const broker = make({
       clock,
       levels: (c) => opts.levels?.[c] ?? "ask-risky",
@@ -113,7 +113,7 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(await broker.answer(card.id, { optionId: "always", hash: card.hash, proof: viaFrame(broker, card) }, APP)).toBe("accepted");
       expect(await broker.request(bash({ ruleKey: "Bash(git push:*)" }))).toEqual({ allowed: true, by: "rule" });
       expect(await broker.request(bash({ ruleKey: "Bash(git push:*)", computers: ["Vault"] }))).toEqual({ allowed: false, by: "level", level: "read-only" });
-      expect(await broker.request(bash({ effect: "edit", computers: ["Vault"], paths: ["/Users/me/.clover/settings/settings.json"] }))).toEqual({ allowed: false, by: "level", level: "read-only" });
+      expect(await broker.request(bash({ effect: "edit", computers: ["Vault"], paths: ["/Users/me/.moss/settings/settings.json"] }))).toEqual({ allowed: false, by: "level", level: "read-only" });
       expect(await broker.request(bash({ effect: "read", computers: ["Vault"] }))).toEqual({ allowed: true, by: "level", level: "read-only" });
       expect(broker.cards()).toEqual([]);
     });
@@ -177,18 +177,18 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       const options: AgentPermissionOption[] = [{ optionId: "a", name: "Allow", kind: "allow_once" }, { optionId: "r", name: "Reject", kind: "reject_once" }];
       const agent = (server: string, tool: string) => bash({
         kind: "agent-permission", effect: "other",
-        agent: { backend: "cursor", toolCallId: "t1", toolKind: "other", title: "clover-bridge-SendMessage: SendMessage", mcp: { server, tool }, bridge: { server: "clover-bridge", tools: ["SendMessage", "Glossary"] }, options },
+        agent: { backend: "cursor", toolCallId: "t1", toolKind: "other", title: "moss-bridge-SendMessage: SendMessage", mcp: { server, tool }, bridge: { server: "moss-bridge", tools: ["SendMessage", "Glossary"] }, options },
       });
-      expect(await broker.request(agent("clover-bridge", "SendMessage"))).toEqual({ allowed: true, by: "bridge" });
-      void broker.request(agent("clover-bridge-2", "SendMessage"));
-      void broker.request(agent("clover-bridge", "Bash"));
+      expect(await broker.request(agent("moss-bridge", "SendMessage"))).toEqual({ allowed: true, by: "bridge" });
+      void broker.request(agent("moss-bridge-2", "SendMessage"));
+      void broker.request(agent("moss-bridge", "Bash"));
       await flush();
       expect(broker.cards()).toHaveLength(2);
     });
 
     test("rule 3: a fenced path is always a card, at every level, and no saved rule covers it", async () => {
       const { broker } = setup({ levels: { Studio: "automatic" } });
-      void broker.request(bash({ kind: "agent-permission", effect: "edit", paths: ["/Users/me/.clover/settings/settings.json"], ruleKey: "Edit(*)" }));
+      void broker.request(bash({ kind: "agent-permission", effect: "edit", paths: ["/Users/me/.moss/settings/settings.json"], ruleKey: "Edit(*)" }));
       await flush();
       expect(broker.cards()).toHaveLength(1);
       expect(await broker.request(bash({ effect: "edit", paths: ["/Users/me/project/a.ts"] }))).toMatchObject({ allowed: true, by: "level" });
@@ -208,7 +208,7 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(broker.cards()).toHaveLength(2);
     });
 
-    test("rule 4: a card's always saves Clover's own rule for those computers", async () => {
+    test("rule 4: a card's always saves MOSS's own rule for those computers", async () => {
       const { broker } = setup();
       const { card, decision } = await carded(broker, bash({ ruleKey: "Bash(git push:*)" }));
       expect(card.options.map((o) => o.id)).toEqual(["approve", "always", "deny"]);
@@ -582,7 +582,7 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       const passed = await carded(broker, bash({ binds: { ...call, computer: "Studio" }, options: [{ id: "approve", kind: "approve", label: "Allow" }, always] }));
       expect(passed.card.options.map((o) => o.id)).toEqual(["approve"]);
       // The bridge's own tool and a plainly safe command (the reviewer says so) are cards once bound.
-      await carded(broker, bash({ kind: "agent-permission", binds: { ...call, computer: "Studio" }, agent: { backend: "codex", toolCallId: "t1", toolKind: "other", title: "x", mcp: { server: "clover", tool: "ask" }, bridge: { server: "clover", tools: ["ask"] }, options: [] } }));
+      await carded(broker, bash({ kind: "agent-permission", binds: { ...call, computer: "Studio" }, agent: { backend: "codex", toolCallId: "t1", toolKind: "other", title: "x", mcp: { server: "moss", tool: "ask" }, bridge: { server: "moss", tools: ["ask"] }, options: [] } }));
       await carded(broker, bash({ computers: ["Laptop1"], effect: "execute", binds: call }));
       expect(broker.cards()).toHaveLength(4);
     });

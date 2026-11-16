@@ -3,7 +3,7 @@
 // folder runs, a click saves a file with the save picker, and what a layer can do is read off. Everything it learned is a
 // data attribute on its root, which the run reads. TSX importing React and the UI SDK, no react in the folder.
 import { useEffect, useRef, useState } from "react";
-import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
+import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 
 type Facts = Record<string, string>;
 

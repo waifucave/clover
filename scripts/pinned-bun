@@ -13,8 +13,8 @@
 # the pinned version, or nothing is installed. EVERY run checks the cached binary against `.bun-sha256` again (about
 # a fifth of a second): anything that can write the user's cache folder could otherwise swap the Bun that the dev
 # daemon, the tests and the dev plugin-Bun copy run. A mismatch is fetched again; a fetch that doesn't match fails. It lands in
-# ~/Library/Caches/clover-bun/<version>/bun on macOS and ${XDG_CACHE_HOME:-~/.cache}/clover-bun/<version>/bun on
-# Linux. CLOVER_BUN_CACHE sets the cache folder; CLOVER_BUN_RELEASES the download base (both for tests).
+# ~/Library/Caches/moss-bun/<version>/bun on macOS and ${XDG_CACHE_HOME:-~/.cache}/moss-bun/<version>/bun on
+# Linux. MOSS_BUN_CACHE sets the cache folder; MOSS_BUN_RELEASES the download base (both for tests).
 set -euo pipefail
 
 say() { echo "pinned-bun: $*" >&2; }
@@ -29,12 +29,12 @@ top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 version="$(tr -d ' \t\r\n' < "$pin")"
 case "$version" in ''|*[!0-9.]*) die "$pin does not hold a version (\"$version\")" ;; esac
 
-if [ -n "${CLOVER_BUN_CACHE:-}" ]; then
-  cache="$CLOVER_BUN_CACHE"
+if [ -n "${MOSS_BUN_CACHE:-}" ]; then
+  cache="$MOSS_BUN_CACHE"
 elif [ "$(uname -s)" = "Darwin" ]; then
-  cache="$HOME/Library/Caches/clover-bun"
+  cache="$HOME/Library/Caches/moss-bun"
 else
-  cache="${XDG_CACHE_HOME:-$HOME/.cache}/clover-bun"
+  cache="${XDG_CACHE_HOME:-$HOME/.cache}/moss-bun"
 fi
 dir="$cache/$version"
 bin="$dir/bun"
@@ -69,7 +69,7 @@ sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d
 
 fetch() {
   local base tmp want got
-  base="${CLOVER_BUN_RELEASES:-https://github.com/oven-sh/bun/releases/download}/bun-v$version"
+  base="${MOSS_BUN_RELEASES:-https://github.com/oven-sh/bun/releases/download}/bun-v$version"
   mkdir -p "$dir"
   tmp="$(mktemp -d "$dir/.fetch.XXXXXX")"
   trap 'rm -rf "$tmp"' EXIT

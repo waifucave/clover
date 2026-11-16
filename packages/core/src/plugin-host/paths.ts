@@ -1,4 +1,4 @@
-// A plugin's folders in the Clover home, by its id (`<root>/<top>[/<child>]`): its data folder and its log.
+// A plugin's folders in the MOSS home, by its id (`<root>/<top>[/<child>]`): its data folder and its log.
 import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { ContractError } from "../contracts/common";
@@ -11,8 +11,8 @@ export function pluginPath(root: string, pluginId: string): string {
 }
 
 /** `<home>/plugin-data/<id>/`, made on first use. */
-export function pluginDataFolder(cloverHome: string, pluginId: string): string {
-  const dir = pluginPath(join(cloverHome, "plugin-data"), pluginId);
+export function pluginDataFolder(mossHome: string, pluginId: string): string {
+  const dir = pluginPath(join(mossHome, "plugin-data"), pluginId);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }

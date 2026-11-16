@@ -29,6 +29,6 @@ describe("the copy the stage clause installs", () => {
     expect(js).toContain("BotStage");
     expect(existsSync(join(dir, "client", "styles.css"))).toBe(true);
     const bare = [...js.matchAll(/^(?:import|export)\b[^;\n]*?\bfrom\s*"([^"./][^"]*)"/gm)].map((m) => m[1]!);
-    for (const spec of bare) expect(["react", "react/jsx-runtime", "@waifucave/clover-plugin-sdk"].some((a) => spec === a || spec.startsWith(`${a}/`))).toBe(true);
+    for (const spec of bare) expect(["react", "react/jsx-runtime", "@waifucave/moss-plugin-sdk"].some((a) => spec === a || spec.startsWith(`${a}/`))).toBe(true);
   }, 60_000);
 });

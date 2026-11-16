@@ -1,4 +1,4 @@
-// browser-press: the main process's reading of a part's Clover Browser call (browser-calls.ts).
+// browser-press: the main process's reading of a part's MOSS Browser call (browser-calls.ts).
 import { expect, test } from "bun:test";
 import { BrowserAreaFrames, browserReach, browserRefusal, isBrowserEvent, ViewBindings } from "../src/main/ui/browser-calls";
 
@@ -52,7 +52,7 @@ test("a background part is refused everything; an acting call goes only with a p
   expect(browserRefusal(browserReach("files.list", {}), { background: true, takePress })).toBeUndefined();
 });
 
-test("the Clover Browser's events: the tab changes and a browser watch's values; nothing else", () => {
+test("the MOSS Browser's events: the tab changes and a browser watch's values; nothing else", () => {
   const watches = new Set(["w_browser"]);
   expect(isBrowserEvent({ type: "tab_changed", tab: {} }, watches)).toBe(true);
   expect(isBrowserEvent({ type: "tab_closed", id: "t" }, watches)).toBe(true);

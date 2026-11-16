@@ -1,11 +1,11 @@
-// WS-21 L3.7: `clover daemon run` treats Migration C's typed refusals exactly like Migration B's — a
+// WS-21 L3.7: `moss daemon run` treats Migration C's typed refusals exactly like Migration B's — a
 // message and exit 1, never a stack (a launchd crash loop otherwise).
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AlreadyRunningError, CredentialMigrationBusy, LockFailedError, LockHeldNoDaemonError, MigrationCRefused, MigrationRefused, OtherInstallHomeRefused, OTHER_INSTALL_HOMES } from "@waifucave/clover-core";
+import { AlreadyRunningError, CredentialMigrationBusy, LockFailedError, LockHeldNoDaemonError, MigrationCRefused, MigrationRefused, OtherInstallHomeRefused, OTHER_INSTALL_HOMES } from "@waifucave/moss-core";
 import { bootRefusalExitCode, CREDENTIAL_MIGRATION_BUSY_EXIT_CODE, migrationRefusalMessage } from "../src/daemon-boot-refusal";
 
 describe("the home's daemon lock at boot (C-M1)", () => {
@@ -47,14 +47,14 @@ describe("migrationRefusalMessage", () => {
 
 // C0 review B1: `daemon run` refuses another install's home before its log file — or anything else — touches it.
 // The CLI runs with HOME set to a stand-in user home, so the real one is never named.
-describe("clover daemon run on another install's home", () => {
+describe("moss daemon run on another install's home", () => {
   test("is refused, with nothing written there", () => {
-    const user = mkdtempSync(join(tmpdir(), "clover-fake-user-"));
+    const user = mkdtempSync(join(tmpdir(), "moss-fake-user-"));
     for (const o of OTHER_INSTALL_HOMES) {
       const home = join(user, o.dir);
       mkdirSync(home);
       const r = spawnSync("bun", [join(import.meta.dir, "..", "src", "main.ts"), "daemon", "run"], {
-        env: { ...process.env, HOME: user, CLOVER_HOME: home },
+        env: { ...process.env, HOME: user, MOSS_HOME: home },
         encoding: "utf8",
         timeout: 60_000,
       });
@@ -67,12 +67,12 @@ describe("clover daemon run on another install's home", () => {
 
   // C0 check (B1): the commands that write without a daemon refuse it too, before writing anything.
   test("a command that writes without a daemon is refused the same way", () => {
-    const user = mkdtempSync(join(tmpdir(), "clover-fake-user-"));
+    const user = mkdtempSync(join(tmpdir(), "moss-fake-user-"));
     const o = OTHER_INSTALL_HOMES[0]!;
     const home = join(user, o.dir);
     mkdirSync(home);
     const r = spawnSync("bun", [join(import.meta.dir, "..", "src", "main.ts"), "mcp", "add", "-s", "user", "probe", "echo"], {
-      env: { ...process.env, HOME: user, CLOVER_HOME: home },
+      env: { ...process.env, HOME: user, MOSS_HOME: home },
       encoding: "utf8",
       timeout: 60_000,
     });

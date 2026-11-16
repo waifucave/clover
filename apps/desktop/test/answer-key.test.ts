@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLIENT_ERR, RpcCallError } from "../src/main/protocol/client";
 import { AnswerKey, KeyRegistration, REGISTER_FAULT_TRIES, fileVault, answerKeyRotateStatement, answerKeyStatement, memoryVault, safeStorageVault, type SafeStorageLike } from "../src/main/answer-key";
-import { CloverApprovalBroker } from "../../../packages/core/src/approvals/broker";
+import { MossApprovalBroker } from "../../../packages/core/src/approvals/broker";
 import { FakeClock } from "../../../packages/core/src/contracts/fakes/clock";
 import { MemorySecretStore } from "../../../packages/core/src/contracts/fakes/secret-store";
 import { answerKeyRotateStatement as coreRotateStatement, FileDeviceRegistry } from "../../../packages/core/src/devices/registry";
@@ -41,11 +41,11 @@ describe("the answer key", () => {
     expect(Buffer.from(p.publicKey, "base64")).toHaveLength(32);
     expect(verify(null, Buffer.from(answerKeyStatement("dev_laptop", p.publicKey, "app-keychain")), verifier(p.publicKey), Buffer.from(p.signature, "base64"))).toBe(true);
     // The statement is lane H's, byte for byte.
-    expect(new TextDecoder().decode(answerKeyStatement("dev_laptop", "AAAA", "none"))).toBe("clover/answer-key/1\ndev_laptop\nAAAA\nnone");
+    expect(new TextDecoder().decode(answerKeyStatement("dev_laptop", "AAAA", "none"))).toBe("moss/answer-key/1\ndev_laptop\nAAAA\nnone");
   });
 
   test("made once and kept: the same key across starts; the file holds only what the OS's key encrypted", () => {
-    const file = join(mkdtempSync(join(tmpdir(), "clover-answer-key-")), "answer-key");
+    const file = join(mkdtempSync(join(tmpdir(), "moss-answer-key-")), "answer-key");
     const first = new AnswerKey(safeStorageVault(file, fakeStorage, "darwin")).publicKey();
     const again = new AnswerKey(safeStorageVault(file, fakeStorage, "darwin")).publicKey();
     expect(again).toBe(first);
@@ -69,7 +69,7 @@ describe("the answer key", () => {
     expect(labels).not.toContain("hello");
     expect(labels).not.toContain("tpm");
     // Loading, saving (over a made key) and signing stay free of anything the OS would ask about.
-    const file = join(mkdtempSync(join(tmpdir(), "clover-answer-key-")), "answer-key");
+    const file = join(mkdtempSync(join(tmpdir(), "moss-answer-key-")), "answer-key");
     const vault = safeStorageVault(file, fakeStorage, "win32");
     const key = new AnswerKey(vault);
     expect(key.sign(new Uint8Array([1, 2, 3]))).toHaveLength(64);
@@ -106,8 +106,8 @@ describe("replacing the answer key, against the core's own handler", () => {
   async function core() {
     const clock = new FakeClock();
     const device = await DeviceKey.loadOrCreate(new MemorySecretStore());
-    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-e-akr-")), key: device, clock, self: { name: "Studio", os: "macos" } });
-    const broker = new CloverApprovalBroker({ clock });
+    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "moss-e-akr-")), key: device, clock, self: { name: "Studio", os: "macos" } });
+    const broker = new MossApprovalBroker({ clock });
     const m = devicesMethods({ registry, clock, answerKeyRotation: () => ({ broker, computer: "Studio" }) } as unknown as DevicesMethodsDeps);
     const hooks: {
       beforeCardGet?: () => Promise<void>;
@@ -385,7 +385,7 @@ describe("replacing the answer key, against the core's own handler", () => {
   });
 
   test("the OS store keeps the staged key in its own file, and promotes it by a rename over the key", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-e-akr-vault-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-e-akr-vault-"));
     const vault = safeStorageVault(join(dir, "answer-key"), fakeStorage, "darwin");
     vault.save(new Uint8Array([1, 2, 3]));
     vault.saveStaged({ secret: new Uint8Array([4, 5, 6]), at: 7, card: "card_abc" });
@@ -455,7 +455,7 @@ describe("the registration, tried again while the core can't take it yet (try 8)
   });
 });
 
-describe("a test run's kept key (CLOVER_TEST_ANSWER_KEY's file vault)", () => {
+describe("a test run's kept key (MOSS_TEST_ANSWER_KEY's file vault)", () => {
   test("a second app on the same file has the same key; the file is the run's own (0600)", () => {
     const dir = mkdtempSync(join(tmpdir(), "ak-file-"));
     const file = join(dir, "answer-key");

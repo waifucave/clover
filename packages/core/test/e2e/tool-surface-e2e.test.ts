@@ -1,7 +1,7 @@
 // THE TOOL SURFACE, end to end through a REAL daemon (the 2026-10-01 tool-surface ruling).
 //
 // A real `startDaemon` on a temp home and a real NDJSON client. Chat and dispatch run EMBEDDED (a Worker
-// each, no binary); code runs the real `winter` binary (CLOVER_RUNTIME_EXECUTABLE, else skipped). Every
+// each, no binary); code runs the real `winter` binary (MOSS_RUNTIME_EXECUTABLE, else skipped). Every
 // session runs `winter-test/calls`, the agent SDK's prompt-scripted double: the user message's
 // `CALL <Tool> <json>` lines are the calls it makes, BY THE NAME THE MODEL IS SHOWN, one per round — so
 // what is pinned here is what a model actually gets:
@@ -12,13 +12,13 @@
 //     deferred tools the ruling names (`Computer`, `Browser`, `CronList`, the office/LSP tools in code)
 //     and nothing outside the mode's set;
 //   * the renamed tools are reachable under their PLAIN names, and only those (`ListSessions` runs; the
-//     old `mcp__clover__sessions__list_sessions` is not a tool the model is offered);
+//     old `mcp__moss__sessions__list_sessions` is not a tool the model is offered);
 //   * the Exa key swaps `Search` for `WebSearch` in chat and dispatch.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/moss-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { EXA_API_KEY_SECRET } from "../../src/agent/exa-key";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
@@ -77,7 +77,7 @@ interface Surface { eager: string[]; results: Reported }
 
 /** The modes' surfaces, by Exa-key state (`withExa` / `noExa` daemons). */
 async function bootDaemon(withExa: boolean): Promise<{ home: string; daemon: RunningDaemon; client: TestClient }> {
-  const home = mkdtempSync(join(tmpdir(), `clover-tool-surface-${withExa ? "exa" : "noexa"}-`));
+  const home = mkdtempSync(join(tmpdir(), `moss-tool-surface-${withExa ? "exa" : "noexa"}-`));
   writeFileSync(join(home, "settings.json"), JSON.stringify({
     schemaVersion: 3,
     provider: { model: "winter-test/calls" },
@@ -99,7 +99,7 @@ async function surfaceOf(d: { daemon: RunningDaemon; client: TestClient }, sid: 
   await d.client.call(METHODS.sessionSend, { sessionId: sid, text: script });
   await d.client.waitFor((e) => d.client.events.indexOf(e) >= before && e.type === "turn_completed" && e.sessionId === sid);
   const answer = [...d.daemon.sessions.read(sid)].reverse().find((e) => e.type === "assistant_message" && (e as { threadId?: string }).threadId === "main") as { text?: string } | undefined;
-  return { eager: [...(d.daemon.clover.get(sid)?.init?.tools ?? [])].sort(), results: JSON.parse(answer?.text ?? "[]") as Reported };
+  return { eager: [...(d.daemon.moss.get(sid)?.init?.tools ?? [])].sort(), results: JSON.parse(answer?.text ?? "[]") as Reported };
 }
 
 /** The deferred names the runtime announced to the model, read from the child's own transcript (its
@@ -129,16 +129,16 @@ const toolSearchResult = (s: Surface, i = 0): { matches: string[]; total_deferre
 /** The STANDING server's alias twins of `SendMessage`/`ListAgents` (the agent SDK's WS-09 §10 design: a
  *  model that knows the canonical spelling may still select it). Deferred wherever their native is
  *  offered, hidden wherever it is not; same executor, so no new capability. */
-const SEND_MESSAGE_TWIN = "mcp__clover__send_message";
-const LIST_AGENTS_TWIN = "mcp__clover__list_agents";
+const SEND_MESSAGE_TWIN = "mcp__moss__send_message";
+const LIST_AGENTS_TWIN = "mcp__moss__list_agents";
 
 /** Every name a mode could conceivably be offered — a `select:` over it loads exactly what the mode has. A-M1
  *  review M9: the twins too, now that nothing in the daemon denies them by name (the SDK spells them from the
  *  session's brand and hides them with their natives), so a mode that lacks the natives must not load them. */
 const PROBE = [
-  "Computer", "ComputerV2", "mcp__clover__computer_v2__script", "Browser", "CronList", "SpawnSession", "ListSessions", "ManageSession",
-  "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides", "mcp__clover__lsp__lsp",
-  "mcp__clover__computer__computer", "mcp__clover__browser__browser", "mcp__clover__sessions__session_spawn",
+  "Computer", "ComputerV2", "mcp__moss__computer_v2__script", "Browser", "CronList", "SpawnSession", "ListSessions", "ManageSession",
+  "mcp__moss__office__docs", "mcp__moss__office__sheets", "mcp__moss__office__slides", "mcp__moss__lsp__lsp",
+  "mcp__moss__computer__computer", "mcp__moss__browser__browser", "mcp__moss__sessions__session_spawn",
   "Edit", "Write", "Agent", "Glob", "Grep", "Monitor", "ListAgents", SEND_MESSAGE_TWIN, LIST_AGENTS_TWIN,
 ].join(",");
 
@@ -149,12 +149,12 @@ describe("the tool surface (Exa key stored)", () => {
 
   test("DISPATCH: exactly the ruling's allowed set up front; Computer/Browser/CronList deferred; the renamed tools run by their plain names", async () => {
     const { sessionId } = await d.client.call<{ sessionId: string }>(METHODS.sessionDispatch, {});
-    await d.daemon.clover.get(sessionId)?.end();
+    await d.daemon.moss.get(sessionId)?.end();
     d.daemon.sessions.setModel(sessionId, "winter-test/calls");
     const s = await surfaceOf(d, sessionId, [
       `CALL ToolSearch {"query":"select:${PROBE}"}`,
       `CALL ListSessions {}`,
-      `CALL mcp__clover__sessions__list_sessions {}`,
+      `CALL mcp__moss__sessions__list_sessions {}`,
       `CALL Edit {"file_path":"/tmp/x","old_string":"a","new_string":"b"}`,
     ].join("\n"));
     expect(s.eager).toEqual([
@@ -174,7 +174,7 @@ describe("the tool surface (Exa key stored)", () => {
     // as no such tool.
     const [, listed, oldSpelling, edit] = s.results;
     expect(listed).toMatchObject({ name: "ListSessions", isError: false });
-    expect(oldSpelling).toMatchObject({ name: "mcp__clover__sessions__list_sessions", isError: false });
+    expect(oldSpelling).toMatchObject({ name: "mcp__moss__sessions__list_sessions", isError: false });
     expect(oldSpelling!.content).toBe(listed!.content);
     // Refused by the fail-closed deny list first (every known built-in dispatch's allowed list leaves out),
     // ahead of the runtime's own "No such tool" for a built-in outside `Options.tools`.
@@ -229,7 +229,7 @@ describe("the tool surface (NO Exa key)", () => {
     expect(c.eager).not.toContain("Search");
     expect(toolSearchResult(c).matches).toEqual(["WebSearch"]);
     const { sessionId: dispatch } = await d.client.call<{ sessionId: string }>(METHODS.sessionDispatch, {});
-    await d.daemon.clover.get(dispatch)?.end();
+    await d.daemon.moss.get(dispatch)?.end();
     d.daemon.sessions.setModel(dispatch, "winter-test/calls");
     const s = await surfaceOf(d, dispatch, `CALL ToolSearch {"query":"select:Search,WebSearch"}`);
     expect(s.eager).toContain("WebSearch");
@@ -255,7 +255,7 @@ describeWithEmbeddedRuntime("the tool surface — CODE (embedded, like every ses
     const search = toolSearchResult(s);
     expect([...search.matches].sort()).toEqual([
       "Agent", "Browser", "ComputerV2", "CronList", "Edit", "Glob", "Grep", "ListAgents", "Monitor", "Write",
-      LIST_AGENTS_TWIN, "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
+      LIST_AGENTS_TWIN, "mcp__moss__lsp__lsp", "mcp__moss__office__docs", "mcp__moss__office__sheets", "mcp__moss__office__slides",
       SEND_MESSAGE_TWIN,
     ]);
     // Browser, ComputerV2, CronList, the three office tools, LSP — and the two standing twins.
@@ -276,7 +276,7 @@ describeWithEmbeddedRuntime("the tool surface — CODE (embedded, like every ses
       ].join("\n"));
       const [loaded, ran] = s.results;
       // Under dont-ask the load itself used to be denied (ToolSearch is not in the runtime's silent set) —
-      // `hooks.ts`'s `toolSearchDontAskHook` states Clover's READ_ONLY verdict to the child.
+      // `hooks.ts`'s `toolSearchDontAskHook` states MOSS's READ_ONLY verdict to the child.
       expect(loaded).toMatchObject({ name: "ToolSearch", isError: false });
       expect(loaded!.content).not.toContain("Denied");
       expect(ran).toMatchObject({ name: "ComputerV2", isError: false });

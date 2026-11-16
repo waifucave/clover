@@ -108,13 +108,13 @@ export async function writeAppStart(runDir: string, start: AppStart, deps: RunFi
 }
 
 /** The daemon's proof that it holds this run's app token, answered to `protocol.prove` before the app's
- *  hello (E-M1's review; review S3): HMAC-SHA256 under the token of `clover-daemon-proof\0<nonce>\0<pid>`,
+ *  hello (E-M1's review; review S3): HMAC-SHA256 under the token of `moss-daemon-proof\0<nonce>\0<pid>`,
  *  base64url, where `pid` is the client's pid as the daemon sees it on that connection. Only the daemon
  *  that minted the token, or the user's own processes outside the fence, can read it; and since the pid
  *  is the connection's own, a proof a squatter relays from its own connection to the daemon names the
  *  squatter's pid, which the app refuses. No native code in the app, on every OS. */
 export function proveDaemon(appToken: string, nonce: string, pid: number): string {
-  return createHmac("sha256", appToken).update(`clover-daemon-proof\0${nonce}\0${pid}`).digest("base64url");
+  return createHmac("sha256", appToken).update(`moss-daemon-proof\0${nonce}\0${pid}`).digest("base64url");
 }
 
 /** The app's check of `proveDaemon`'s answer, with its own pid (the main process's, which holds the

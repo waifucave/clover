@@ -1,0 +1,48 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "moss.island.label": "MOSS island.",
+    "moss.island.nothingNeedsYou": "Nothing needs you",
+    "moss.island.lines": "Updates from plugins",
+    "moss.island.stripLine": "{from}: {text}. Open the island.",
+    "moss.island.lineProgress": "{percent} percent",
+    "moss.island.linesMore": {
+      "one": "1 more",
+      "other": "{count} more"
+    },
+    "moss.island.needsYouCount": {
+      "one": "1 thing needs you.",
+      "other": "{count} things need you."
+    },
+    "moss.island.workingCount": {
+      "one": "1 bot working.",
+      "other": "{count} bots working."
+    },
+    "moss.island.needsYou": "Needs you",
+    "moss.island.pluginTab": "{title} · {plugin}",
+    "moss.island.aPlugin": "a plugin",
+    "moss.island.question": "Question",
+    "moss.island.questionFrom": "Question · {name}",
+    "moss.island.asks": "{name} asks",
+    "moss.island.aQuestion": "A question for you",
+    "moss.island.otherPlaceholder": "Something else",
+    "moss.island.typeAnswer": "Type an answer",
+    "moss.island.next": "Next question",
+    "moss.island.showEverything": "Show everything",
+    "moss.island.showLess": "Show less",
+    "moss.island.previous": "Previous question",
+    "moss.island.send": "Send",
+    "moss.island.showWaiting": "Waiting: {line}. Show it.",
+    "moss.island.tabs": "Island tabs",
+    "moss.island.onComputer": "on {computer}",
+    "moss.island.notSent": "Not sent. Try again.",
+    "moss.island.approval": "Approval",
+    "moss.island.linkRequest": "Link request",
+    "moss.island.moreBelow": "More below",
+    "moss.island.declineLink": "Decline the link",
+    "moss.island.openLink": "Open the link",
+    "moss.island.deny": "Deny",
+    "moss.island.allowOnce": "Allow once"
+  }
+}

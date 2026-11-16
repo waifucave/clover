@@ -1,17 +1,17 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { unlinkSync, existsSync } from "node:fs";
-import { LEGACY_LAUNCHD_LABEL, legacyImportOn, loginLabel, resolveCloverProfile, type CloverProfile } from "@waifucave/clover-core";
+import { LEGACY_LAUNCHD_LABEL, legacyImportOn, loginLabel, resolveMossProfile, type MossProfile } from "@waifucave/moss-core";
 
 // C-M1 retired this file's LaunchAgent installer (`installDaemon`, `uninstallDaemon`, `daemonStatus`,
 // `renderPlist`, `plistPath`): it ran `daemon run` under `KeepAlive true`, which restarted a daemon the
-// user had quit. Login start is now core's cross-OS `platform/login/` behind `clover autostart
-// enable|disable|status` (a crash-only unit running `clover-core supervise`); `clover daemon
+// user had quit. Login start is now core's cross-OS `platform/login/` behind `moss autostart
+// enable|disable|status` (a crash-only unit running `moss-core supervise`); `moss daemon
 // install|uninstall|status` forward to it. What stays: the profile label and the teardown of the
 // historical pre-rename agent.
 
 /** The LaunchAgent label for a profile: core's `loginLabel`, resolved at call time. */
-export function launchdLabel(profile: CloverProfile = resolveCloverProfile()): string {
+export function launchdLabel(profile: MossProfile = resolveMossProfile()): string {
   return loginLabel(profile);
 }
 
@@ -35,7 +35,7 @@ export interface MigrateLaunchdDeps {
 
 /** Lifecycle T4: tears down the HISTORICAL `LEGACY_LAUNCHD_LABEL` KeepAlive launchd agent — a
  * pre-profiles, pre-rename install that predates BOTH the dev/dist profile split and this app's own
- * `DaemonSupervisor` embedding clover-core directly. A leftover `KeepAlive` agent would otherwise
+ * `DaemonSupervisor` embedding moss-core directly. A leftover `KeepAlive` agent would otherwise
  * relaunch a daemon the app just killed, defeating the app↔daemon lifecycle coupling entirely — so
  * this must run before/at app-driven daemon supervision starts. No-op if the plist was never
  * installed (fresh installs, or a machine already migrated). NEVER throws: a failed bootout/unlink

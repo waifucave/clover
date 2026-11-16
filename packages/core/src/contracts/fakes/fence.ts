@@ -1,6 +1,6 @@
-// FakeFence: the fenced set laid out under a Clover home, POSIX paths, prefix semantics. The layout is the fake's;
+// FakeFence: the fenced set laid out under a MOSS home, POSIX paths, prefix semantics. The layout is the fake's;
 // lane C owns the real one, and a test can override any item.
-import type { Caller, Os } from "@waifucave/clover-protocol";
+import type { Caller, Os } from "@waifucave/moss-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
   agentConfigPaths, autoRunPaths, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, gitHooksRoot, isBotCaller, BOT_READ_DENIED, ownFoldersOf, patternItemAt, isInsideFolded, judge, pluginLoadDenies, READ_DENIED_KINDS,
@@ -8,7 +8,7 @@ import {
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
-/** Where the fake puts each item, under the Clover home. Development folders are wherever the user keeps them. */
+/** Where the fake puts each item, under the MOSS home. Development folders are wherever the user keeps them. */
 export const FAKE_FENCE_LAYOUT: Record<Exclude<FencedKind, "dev-folders">, string | null> = {
   settings: "settings",
   levels: "levels",
@@ -29,9 +29,9 @@ export const FAKE_FENCE_LAYOUT: Record<Exclude<FencedKind, "dev-folders">, strin
   "run-folder": "run",
   transcripts: "sessions",
   usage: "usage",
-  /** Under the app's userData folder, outside the Clover home (`userData`). */
+  /** Under the app's userData folder, outside the MOSS home (`userData`). */
   "browser-profiles": null,
-  /** The OS's login item, outside the Clover home, plus macOS's parked copy in `<home>/login/`. */
+  /** The OS's login item, outside the MOSS home, plus macOS's parked copy in `<home>/login/`. */
   "login-start": null,
   /** Wherever the OK'd agents are installed (`agentInstalls`). */
   "agent-installs": null,
@@ -44,8 +44,8 @@ export interface FakeFenceOptions {
   os?: Os;
   /** The user's home folder: commands may write in it (§9.1). */
   home: string;
-  /** The Clover home (`~/.clover`, `~/.clover-dev`, or a test's temp home). */
-  cloverHome: string;
+  /** The MOSS home (`~/.moss`, `~/.moss-dev`, or a test's temp home). */
+  mossHome: string;
   temp?: string;
   devFolders?: string[];
   /** The install folders of the coding agents the user has OK'd. */
@@ -62,9 +62,9 @@ export interface FakeFenceOptions {
 
 /** The app's userData folder on each OS, under the user's home. */
 function defaultUserData(os: Os, home: string): string {
-  if (os === "macos") return `${home}/Library/Application Support/Clover`;
-  if (os === "windows") return `${home}/AppData/Roaming/Clover`;
-  return `${home}/.config/Clover`;
+  if (os === "macos") return `${home}/Library/Application Support/MOSS Code`;
+  if (os === "windows") return `${home}/AppData/Roaming/MOSS Code`;
+  return `${home}/.config/MOSS Code`;
 }
 
 /** The fake's own login-start places and the shared list as one: each once, and none inside another (a folder's
@@ -81,13 +81,13 @@ function posixOf(paths: readonly string[]): string[] {
 
 /** The login item's files (lane C's `loginUnitPath`, `parkedPlistPath`); none on Windows. */
 /** The login-start places: every folder and file a planted write could run later, outside the sandbox (spec item
- *  1116, the controller's ruling) — Clover's own login item first, then the shells and their logout scripts, SSH
+ *  1116, the controller's ruling) — MOSS's own login item first, then the shells and their logout scripts, SSH
  *  and git config, the folders that come ahead on PATH, editors, package managers, and the desktop's autostart,
  *  systemd, application and session-script folders. The gnupg entries are only its config files (gpg writes its
  *  trustdb and random seed in normal use), and `.git/config` stays writable (git writes it in normal use; setting
  *  risky keys through it is the reviewer's call) — only `.git/hooks` is fenced, as a pattern (any repo under the
  *  home). macOS also fences the loginwindow plist and `~/Library/Scripts`. Lane C's layout lists the same. */
-function loginStartPaths(os: Os, home: string, cloverHome: string): string[] {
+function loginStartPaths(os: Os, home: string, mossHome: string): string[] {
   const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login",
     ".bash_logout", ".zlogout", ".logout"];
   const shells = [...shell.map((f) => `${home}/${f}`), `${home}/.config/fish`];
@@ -98,7 +98,7 @@ function loginStartPaths(os: Os, home: string, cloverHome: string): string[] {
     `${home}/.cargo/config.toml`, `${home}/.cargo/config`, `${home}/.config/pip`, `${home}/.pip`];
   if (os === "macos") {
     return [
-      `${home}/Library/LaunchAgents/com.waifucave.clover.core.plist`, `${cloverHome}/login`,
+      `${home}/Library/LaunchAgents/com.waifucave.moss.core.plist`, `${mossHome}/login`,
       `${home}/Library/LaunchAgents`, `${home}/Library/LaunchDaemons`, `${home}/Library/StartupItems`,
       `${home}/Library/Application Support/com.apple.backgroundtaskmanagementagent`,
       `${home}/Library/Preferences/com.apple.loginwindow.plist`, `${home}/Library/Scripts`,
@@ -127,24 +127,24 @@ function loginStartPaths(os: Os, home: string, cloverHome: string): string[] {
   ];
 }
 
-/** Lane M's self-update files under the Clover home (lane C's `layout.ts` lists the same): the `bin/` daemon
+/** Lane M's self-update files under the MOSS home (lane C's `layout.ts` lists the same): the `bin/` daemon
  *  binary, its `.new`/`.old` swap copies, the `update/` folder, and the install record. Never owned, read-only. */
-function selfUpdatePaths(cloverHome: string): string[] {
+function selfUpdatePaths(mossHome: string): string[] {
   return [
-    `${cloverHome}/bin/clover-core`,
-    `${cloverHome}/bin/clover-core.new`,
-    `${cloverHome}/bin/clover-core.old`,
-    `${cloverHome}/bin/.new`,
-    `${cloverHome}/bin/.old`,
-    `${cloverHome}/update`,
-    `${cloverHome}/install.json`,
+    `${mossHome}/bin/moss-core`,
+    `${mossHome}/bin/moss-core.new`,
+    `${mossHome}/bin/moss-core.old`,
+    `${mossHome}/bin/.new`,
+    `${mossHome}/bin/.old`,
+    `${mossHome}/update`,
+    `${mossHome}/install.json`,
   ];
 }
 
 export class FakeFence implements Fence {
   readonly os: Os;
   readonly #home: string;
-  readonly #cloverHome: string;
+  readonly #mossHome: string;
   readonly #temp: string;
   readonly #userData: string;
   readonly #layout: Partial<Record<FencedKind, string[]>>;
@@ -157,7 +157,7 @@ export class FakeFence implements Fence {
   constructor(opts: FakeFenceOptions) {
     this.os = opts.os ?? "macos";
     this.#home = normalizePosix(opts.home);
-    this.#cloverHome = normalizePosix(opts.cloverHome);
+    this.#mossHome = normalizePosix(opts.mossHome);
     this.#temp = normalizePosix(opts.temp ?? "/tmp");
     this.#userData = normalizePosix(opts.userData ?? defaultUserData(this.os, this.#home));
     this.#devFolders = (opts.devFolders ?? []).map(normalizePosix);
@@ -170,7 +170,7 @@ export class FakeFence implements Fence {
   /** `node_modules` above every folder plugin code loads from (`pluginLoadDenies`): the plugins folder, the
    *  development folders and the others the fake was given. */
   #pluginLoadDenies(): string[] {
-    const plugins = this.#layout.plugins ?? [`${this.#cloverHome}/${FAKE_FENCE_LAYOUT.plugins}`];
+    const plugins = this.#layout.plugins ?? [`${this.#mossHome}/${FAKE_FENCE_LAYOUT.plugins}`];
     return pluginLoadDenies([...plugins, ...(this.#layout["dev-folders"] ?? this.#devFolders), ...this.#pluginLoadFolders]);
   }
 
@@ -181,19 +181,19 @@ export class FakeFence implements Fence {
     // Lane M's self-update files first (lane C's `layout.ts` pending `self-update`, pending until B names the
     // kind): never owned by any caller, read-only. First on purpose: they sit under login-start's `bin/` folder,
     // and the more specific kind names the attack.
-    for (const p of (this.#layout as Record<string, string[] | undefined>)["self-update"] ?? selfUpdatePaths(this.#cloverHome)) {
+    for (const p of (this.#layout as Record<string, string[] | undefined>)["self-update"] ?? selfUpdatePaths(this.#mossHome)) {
       add("self-update" as FencedKind, p);
     }
     for (const [kind, rel] of Object.entries(FAKE_FENCE_LAYOUT) as [Exclude<FencedKind, "dev-folders">, string | null][]) {
       if ((kind === "secrets-file" || kind === "key-file") && this.os === "macos") continue; // the Keychain holds them there
       const override = this.#layout[kind];
       if (override) for (const p of override) add(kind, p);
-      else if (rel !== null) add(kind, `${this.#cloverHome}/${rel}`);
-      else if (kind === "key-file") for (const n of ["secrets.key", "secrets.key.cred"]) add(kind, `${this.#cloverHome}/${n}`);
+      else if (rel !== null) add(kind, `${this.#mossHome}/${rel}`);
+      else if (kind === "key-file") for (const n of ["secrets.key", "secrets.key.cred"]) add(kind, `${this.#mossHome}/${n}`);
       else if (kind === "browser-profiles") add(kind, `${this.#userData}/Partitions`);
-      else if (kind === "login-start") for (const p of loginStartUnion([...loginStartPaths(this.os, this.#home, this.#cloverHome), ...posixOf(autoRunPaths(this.os, this.#home))])) add(kind, p);
+      else if (kind === "login-start") for (const p of loginStartUnion([...loginStartPaths(this.os, this.#home, this.#mossHome), ...posixOf(autoRunPaths(this.os, this.#home))])) add(kind, p);
       else if (kind === "agent-installs") for (const p of [...this.#agentInstalls, ...posixOf(agentConfigPaths(this.os, this.#home))]) add(kind, p);
-      else if (kind === "bot-memory") for (const bot of this.#bots) out.push({ kind, path: `${this.#cloverHome}/bots/${bot.replace("/", "--")}/memory`, deny: "caller", bot });
+      else if (kind === "bot-memory") for (const bot of this.#bots) out.push({ kind, path: `${this.#mossHome}/bots/${bot.replace("/", "--")}/memory`, deny: "caller", bot });
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
     // Python's user site folders need the disk read (`pythonSiteDirNames`); the fake's fictional paths have none,
@@ -211,12 +211,12 @@ export class FakeFence implements Fence {
     }
     const deny = ctx?.user ? undefined : writesPluginLoadDeny(op, this.#pluginLoadDenies(), this.os);
     if (deny !== undefined) return { allowed: false, reason: "plugins", path: deny };
-    return judge(this.fencedSet(), op, { os: this.os, cloverHome: this.#cloverHome, ...(ctx ? { caller: ctx } : {}) });
+    return judge(this.fencedSet(), op, { os: this.os, mossHome: this.#mossHome, ...(ctx ? { caller: ctx } : {}) });
   }
 
   touches(paths: readonly string[]): FencedPath | null {
     for (const path of paths) {
-      const p = patternItemAt(path, this.#cloverHome, this.os);
+      const p = patternItemAt(path, this.#mossHome, this.os);
       if (p?.kind === "bot-memory") return { kind: "bot-memory", path: p.root, deny: "caller", ...(p.folder ? { bot: p.folder.replace("--", "/") } : {}) };
       if (p?.kind === "sessions-runtime") return { kind: "sessions-runtime", path: p.root, deny: "read-write" };
       const hooks = gitHooksRoot(path, this.#home, this.os);
@@ -229,9 +229,9 @@ export class FakeFence implements Fence {
   }
 
   checkAgentRoot(root: string): FenceVerdict {
-    // Inside the Clover home, or holding it (#197's check 3): an unsandboxed agent rooted there could edit what's fenced.
-    if (isInsideFolded(this.#cloverHome, root, this.os) || isInsideFolded(root, this.#cloverHome, this.os)) {
-      return { allowed: false, reason: "clover-home", path: this.#cloverHome };
+    // Inside the MOSS home, or holding it (#197's check 3): an unsandboxed agent rooted there could edit what's fenced.
+    if (isInsideFolded(this.#mossHome, root, this.os) || isInsideFolded(root, this.#mossHome, this.os)) {
+      return { allowed: false, reason: "moss-home", path: this.#mossHome };
     }
     for (const item of this.fencedSet()) {
       if (item.kind === "dev-folders") continue;
@@ -245,21 +245,21 @@ export class FakeFence implements Fence {
 
   policy(ctx?: FenceContext): SandboxPolicy {
     const set = this.fencedSet().filter((i) => i.deny !== "caller");
-    const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
+    const patterns = [`${this.#mossHome}/bots/*/memory`, `${this.#mossHome}/sessions-runtime`];
     return {
       allowWrite: [this.#home, this.#temp],
-      // The whole Clover home, for every runner (the home default-deny), and the bots folder and the pattern items by
+      // The whole MOSS home, for every runner (the home default-deny), and the bots folder and the pattern items by
       // name (C's base); the runner's own folders come back below (`ownFoldersOf`, its own memory included).
       // A bot writes every bot's memory (the owner's amendment): no memory pattern in its write list either.
-      denyWrite: [...set.map((i) => i.path), ...(isBotCaller(ctx) ? [] : [patterns[0]!]), `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
+      denyWrite: [...set.map((i) => i.path), ...(isBotCaller(ctx) ? [] : [patterns[0]!]), `${this.#mossHome}/bots`, this.#mossHome, ...this.#pluginLoadDenies()],
       // A bot's open access (the owner's ruling of November 9): no memory pattern, what it can't read by name.
       denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path),
-        ...(isBotCaller(ctx) ? BOT_READ_DENIED.map((rel) => [this.#cloverHome, ...rel].join("/")) : patterns), this.#cloverHome],
+        ...(isBotCaller(ctx) ? BOT_READ_DENIED.map((rel) => [this.#mossHome, ...rel].join("/")) : patterns), this.#mossHome],
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",
-      ...ownFoldersOf(ctx, this.#cloverHome),
-      ...(isBotCaller(ctx) ? { botAccess: { home: this.#cloverHome, scratch: `${this.#cloverHome}/scratch`, bots: `${this.#cloverHome}/bots` } } : {}),
+      ...ownFoldersOf(ctx, this.#mossHome),
+      ...(isBotCaller(ctx) ? { botAccess: { home: this.#mossHome, scratch: `${this.#mossHome}/scratch`, bots: `${this.#mossHome}/bots` } } : {}),
     };
   }
 

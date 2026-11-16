@@ -30,6 +30,6 @@ describe("the copy the conversation clause installs", () => {
     expect(js).toContain("ConversationEntry");
     expect(existsSync(join(dir, "client", "styles.css"))).toBe(true);
     const bare = [...js.matchAll(/^(?:import|export)\b[^;\n]*?\bfrom\s*"([^"./][^"]*)"/gm)].map((m) => m[1]!);
-    for (const spec of bare) expect(["react", "react/jsx-runtime", "@waifucave/clover-plugin-sdk/ui"].some((a) => spec === a || spec.startsWith(`${a}/`))).toBe(true);
+    for (const spec of bare) expect(["react", "react/jsx-runtime", "@waifucave/moss-plugin-sdk/ui"].some((a) => spec === a || spec.startsWith(`${a}/`))).toBe(true);
   }, 60_000);
 });

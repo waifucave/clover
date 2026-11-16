@@ -1,21 +1,21 @@
-// Push-to-talk (spec §6.6, F1's listening half): Clover Voice's own hold-to-talk button (its `composer.action` entry,
+// Push-to-talk (spec §6.6, F1's listening half): MOSS Voice's own hold-to-talk button (its `composer.action` entry,
 // key `voice`) records while the user holds it and streams the audio to its own host half; on the release the voice
 // picked writes it down and the words go to the bot as the user's message (`user.send`, one send after the press and
 // release main saw). The run's fixture voice (`acceptance-voice`: no key, no network) is installed the user's way and set
-// as Alpha's voice (Clover Voice's own setting for her); the button appears with no window focus, and the row holds it
-// with real mouse events, as a person does, then with Ctrl+Shift+Space (Clover Voice's held key binding, §5.4 `hold`) through
+// as Alpha's voice (MOSS Voice's own setting for her); the button appears with no window focus, and the row holds it
+// with real mouse events, as a person does, then with Ctrl+Shift+Space (MOSS Voice's held key binding, §5.4 `hold`) through
 // main's own key events.
 //
-// No real microphone: the test build's recorder takes a generated 1.2 s tone clip in place of getUserMedia (Clover
+// No real microphone: the test build's recorder takes a generated 1.2 s tone clip in place of getUserMedia (MOSS
 // Voice's `clipSource`), so no run opens a device or raises a system prompt; the row proves the real door was never
 // reached (a counter on `navigator.mediaDevices.getUserMedia`) and that the recording document's Permissions-Policy
 // allows the microphone (`permissionsPolicy`, which asks nothing of the user). What it proves is the path around the
-// device: the press, the recording whole in Clover Voice's host half, the voice's words, and the user's message.
+// device: the press, the recording whole in MOSS Voice's host half, the voice's words, and the user's message.
 import { resolve } from "node:path";
 import { fail, sleep, treeDocs, until, type ExampleCtx, toAlphasTab } from "./example-steps";
 import { VOICE_MODE_CLAUSE, voiceModeClause, type Talk } from "./voice-mode-step";
 
-export const LISTEN_STEP = `push-to-talk: Clover Voice's talk button shows only where the bot's voice listens, with no window focus needed; held, it records a generated clip (never the microphone) and the recording reaches the voice whole, and its words are sent as the user's message, not put in the box; Ctrl+Shift+Space held with real key events (Clover Voice's held key binding) holds it the same way, the words sent once, and the chord never types; ${VOICE_MODE_CLAUSE}`;
+export const LISTEN_STEP = `push-to-talk: MOSS Voice's talk button shows only where the bot's voice listens, with no window focus needed; held, it records a generated clip (never the microphone) and the recording reaches the voice whole, and its words are sent as the user's message, not put in the box; Ctrl+Shift+Space held with real key events (MOSS Voice's held key binding) holds it the same way, the words sent once, and the chord never types; ${VOICE_MODE_CLAUSE}`;
 
 const VOICE_DIR = resolve(import.meta.dir, "fixtures", "acceptance-voice");
 const VOICE_ID = "acceptance-voice";
@@ -71,7 +71,7 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
   };
   try {
     await until("the composer's text box", 30_000, () => inTree<boolean>(`!!document.querySelector('${BOX}')`));
-    // Alpha has no voice yet: text-only, so no talk button (Clover Voice's host half says her voice doesn't listen).
+    // Alpha has no voice yet: text-only, so no talk button (MOSS Voice's host half says her voice doesn't listen).
     await sleep(1_000);
     if ((await button()) !== undefined) fail("the composer shows a talk button for a bot with no voice");
     done.push("with no voice, the composer has no talk button");
@@ -82,10 +82,10 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
     installed = true;
     await ctx.pressCard(`${VOICE_ID}'s OK card`, (c) => c.kind === "plugin-ok" && c.pluginId === VOICE_ID);
     await until(`${VOICE_ID} running`, 30_000, async () => ((await state()) === "running" ? true : undefined));
-    for (const [key, value] of [["provider", VOICE_ID], ["voice", "tone"]] as const) await rpc.request("plugin.settings.set", { id: "clover/voice", key, value, bot: "alpha" });
+    for (const [key, value] of [["provider", VOICE_ID], ["voice", "tone"]] as const) await rpc.request("plugin.settings.set", { id: "moss/voice", key, value, bot: "alpha" });
     voiced = true;
 
-    // The talk button appears by itself: it reads Clover Voice's own settings as they change (no window focus given).
+    // The talk button appears by itself: it reads MOSS Voice's own settings as they change (no window focus given).
     await until("the talk button", 30_000, button, async () => "no talk button in the composer");
     done.push("with a listening voice set, the talk button shows, with no window focus given");
 
@@ -115,9 +115,9 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
     if (c.starts !== 1 || c.bytes !== 38_400) fail(`the recorder's counters read ${JSON.stringify(c)}; wanted 1 start, 38400 bytes`);
     if (c.probe !== 0) fail(`getUserMedia was called ${c.probe} time(s): the real microphone was asked for`);
     done.push(`the recorder ran the generated clip once (${c.starts} start, ${c.bytes} bytes), and getUserMedia was never called`);
-    // The same button held from the keyboard: Clover Voice's held key binding.
+    // The same button held from the keyboard: MOSS Voice's held key binding.
     done.push(...(await keyHoldClause(ctx, sentWith, inTree, counters!.session)));
-    // The document that recorded (the one with the counters) is the clover layer's own (Clover Voice's button is drawn there), and the
+    // The document that recorded (the one with the counters) is the moss layer's own (MOSS Voice's button is drawn there), and the
     // browser's Permissions-Policy for its frame allows the microphone; a document of a layer that doesn't hold `microphone` (Alpha's,
     // the fixture voice's) does not (the real device is never asked).
     // Two readings must agree: the browser's own state for the frame (CDP `Page.getPermissionsPolicyState`: the header and the
@@ -132,10 +132,10 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
       return { href: page[0]!, browser, page: page[1] as "allowed" | "blocked" | "unavailable" };
     };
     const mine = await policyOf(counters!.session);
-    if (!mine.href.startsWith("clover-plugin://clover/") || mine.browser !== true || mine.page === "blocked") fail(`the recording document ${mine.href}: the browser's Permissions-Policy state says the microphone is ${String(mine.browser)}, the page says ${mine.page}; it must be allowed for Clover Voice's button`);
+    if (!mine.href.startsWith("moss-plugin://moss/") || mine.browser !== true || mine.page === "blocked") fail(`the recording document ${mine.href}: the browser's Permissions-Policy state says the microphone is ${String(mine.browser)}, the page says ${mine.page}; it must be allowed for MOSS Voice's button`);
     const others: string[] = [];
     for (const d of await cdp.documents()) {
-      if (d.session === counters!.session || d.url.startsWith("clover-plugin://clover/") || !d.url.startsWith("clover-plugin://")) continue;
+      if (d.session === counters!.session || d.url.startsWith("moss-plugin://moss/") || !d.url.startsWith("moss-plugin://")) continue;
       const v = await policyOf(d.session).catch(() => undefined);
       if (v === undefined) continue;
       if (v.browser === true || v.page === "allowed") fail(`a document of another layer allows the microphone: ${v.href} (browser ${String(v.browser)}, page ${v.page})`);
@@ -146,7 +146,7 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
     done.push(...(await voiceModeClause(ctx, talk)));
     return done.join("; ");
   } finally {
-    if (voiced) for (const key of ["provider", "voice"]) await rpc.request("plugin.settings.set", { id: "clover/voice", key, value: null, bot: "alpha" }).catch(() => undefined);
+    if (voiced) for (const key of ["provider", "voice"]) await rpc.request("plugin.settings.set", { id: "moss/voice", key, value: null, bot: "alpha" }).catch(() => undefined);
     if (installed) {
       const rm = await rpc.request<{ card?: string }>("plugin.remove", { id: VOICE_ID }).catch(() => undefined);
       if (rm?.card !== undefined) await ctx.approveCard(rm.card).catch(() => undefined);
@@ -154,19 +154,19 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
   }
 }
 
-/** Ctrl+Shift+Space held with real key events (Clover Voice's held key binding `clover.push-to-talk`, §5.4 `hold`): main's own
+/** Ctrl+Shift+Space held with real key events (MOSS Voice's held key binding `moss.push-to-talk`, §5.4 `hold`): main's own
  *  `sendInputEvent` sends the chord's down with the composer's box focused, two auto-repeats while the clip plays, then the
  *  shift let go first (which ends the hold) and the space's up, one event each. The talk button holds as when it is held,
  *  the voice's words go to Alpha once as the user's message, and the box never gets a space. */
 async function keyHoldClause(ctx: ExampleCtx, sentWith: (words: string) => Promise<number>, inTree: <T>(expr: string) => Promise<{ session: string; value: T } | undefined>, doc: string): Promise<string[]> {
   const { cdp } = ctx;
-  if (ctx.pressKey === undefined) fail("this run can't press a key in the window (no CLOVER_TEST_KEY_FILE)");
+  if (ctx.pressKey === undefined) fail("this run can't press a key in the window (no MOSS_TEST_KEY_FILE)");
   const send = async (key: string, modifiers: string[], type: "down" | "repeat" | "up") => {
     ctx.pressKey!(key, modifiers, type);
     await sleep(600); // main polls the key file every 250 ms: one event per write
   };
   const starts = async () => Number((await inTree<string>("document.documentElement.dataset.voiceTalkStarts ?? null"))?.value ?? 0);
-  const keyLines = () => ctx.appLog().split("\n").filter((l) => l.includes("keys: clover.push-to-talk "));
+  const keyLines = () => ctx.appLog().split("\n").filter((l) => l.includes("keys: moss.push-to-talk "));
   const before = await sentWith(HEARD);
   const startsBefore = await starts();
   const linesBefore = keyLines().length;
@@ -191,12 +191,12 @@ async function keyHoldClause(ctx: ExampleCtx, sentWith: (words: string) => Promi
   if (started !== 1) fail(`the held key started ${started} recording(s), not one (its repeats are no new press)`);
   const lines = keyLines().slice(linesBefore);
   // The context's log is the app's own output and the home's app log together, so a line may be there twice: each source counts alone.
-  const once = (what: string) => Math.max(...[true, false].map((own) => lines.filter((l) => l.startsWith("[clover-app]") === own && l.includes(what)).length));
-  const downs = once("clover.push-to-talk down from its key");
-  const ups = once("clover.push-to-talk up from its key");
+  const once = (what: string) => Math.max(...[true, false].map((own) => lines.filter((l) => l.startsWith("[moss-app]") === own && l.includes(what)).length));
+  const downs = once("moss.push-to-talk down from its key");
+  const ups = once("moss.push-to-talk up from its key");
   if (downs !== 1 || ups !== 1) fail(`main delivered ${downs} down(s) and ${ups} up(s) of the held key, not one each: ${lines.join(" | ")}`);
   const boxAfter = String(await cdp.evaluate(doc, `document.querySelector('${BOX}') ? document.querySelector('${BOX}').value : null`).catch(() => null));
   if (boxAfter !== boxBefore) fail(`the composer's box changed while the chord was held: ${JSON.stringify(boxBefore)} became ${JSON.stringify(boxAfter)}`);
   if ((await cdp.evaluate(doc, "!!document.querySelector('.cl-voice-talk[data-voice-talk=listening]')")) === true) fail("the talk button still says it is listening after the key's release");
-  return [`Ctrl+Shift+Space held with real key events (its down with the box focused, 2 auto-repeats, the shift let go first and the words sent on that release, then the space let go): main delivered Clover Voice's held binding one down and one up, the button recorded once (1 start), the words "${HEARD}" were sent to Alpha once as the user's message, and the box stayed ${JSON.stringify(boxBefore)} (the chord never typed)`];
+  return [`Ctrl+Shift+Space held with real key events (its down with the box focused, 2 auto-repeats, the shift let go first and the words sent on that release, then the space let go): main delivered MOSS Voice's held binding one down and one up, the button recorded once (1 start), the words "${HEARD}" were sent to Alpha once as the user's message, and the box stayed ${JSON.stringify(boxBefore)} (the chord never typed)`];
 }

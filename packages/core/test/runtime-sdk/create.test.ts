@@ -16,7 +16,7 @@ import { RUNTIME_SHUTDOWN_DRAIN_MS } from "../../src/runtime-state/wiring";
 import { buildCoreBrand, CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createWinterRuntimeSdk, SHUTDOWN_QUERY_GRACE_MS, type WinterRuntimeSdk, type WinterRuntimeSdkDeps } from "../../src/runtime-sdk/create";
 import { EmbeddedRuntimeUnavailable, type EmbeddedSessionHost } from "../../src/runtime-sdk/embedded";
-import { CLOVER_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
+import { MOSS_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
 import type { Settings } from "../../src/settings";
 import { registerHostStorageFences } from "../../src/runtime-sdk/host-storage-fence";
 import { HostCodeUnavailable, HostCodeExecutionService } from "../../src/runtime-sdk/host-code-broker";
@@ -36,13 +36,13 @@ beforeEach(() => {
   handles = [];
   // The env door is a real input to `spawnHookFor`; a developer machine that happens to export it
   // would otherwise make the "nothing resolves" case pass for the wrong reason.
-  envBefore = process.env.CLOVER_RUNTIME_EXECUTABLE;
-  delete process.env.CLOVER_RUNTIME_EXECUTABLE;
+  envBefore = process.env.MOSS_RUNTIME_EXECUTABLE;
+  delete process.env.MOSS_RUNTIME_EXECUTABLE;
 });
 afterEach(async () => {
   for (const h of handles) await h.dispose();
-  if (envBefore === undefined) delete process.env.CLOVER_RUNTIME_EXECUTABLE;
-  else process.env.CLOVER_RUNTIME_EXECUTABLE = envBefore;
+  if (envBefore === undefined) delete process.env.MOSS_RUNTIME_EXECUTABLE;
+  else process.env.MOSS_RUNTIME_EXECUTABLE = envBefore;
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -58,7 +58,7 @@ function withRuntimes(runtimes: Omit<NonNullable<Settings["runtimes"]>, "handoff
 // answer like chat and dispatch — never the host-code broker's refusal for a missing optional broker.
 test("active retained storage refuses Code through the embedded floor, not for a missing optional worker/bridge broker",async()=>{
   mkdirSync(join(home,"cowork"));
-  const coordination=mkdtempSync(join(tmpdir(),"clover-create-floor-coordination-"));
+  const coordination=mkdtempSync(join(tmpdir(),"moss-create-floor-coordination-"));
   const unregister=registerHostStorageFences(home,{coordinationDir:coordination,coworkStorageActive:true});
   try {
     const handle=await createWinterRuntimeSdk(deps({codeExecution:new HostCodeExecutionService(home,null)}));handles.push(handle);
@@ -112,11 +112,11 @@ describe("createWinterRuntimeSdk — the options it hands the session host", () 
     expect(typeof handle.sdk.messaging.send).toBe("function");
     expect(handle.sdk.directory).toBeDefined();
     // Resolved through the SDK's own `resolveBrand`, and it is OURS.
-    expect(handle.sdk.brand.mcpServerName).toBe("clover");
-    expect(handle.sdk.brand.homeDirName).toBe(".clover");
+    expect(handle.sdk.brand.mcpServerName).toBe("moss");
+    expect(handle.sdk.brand.homeDirName).toBe(".moss");
     // test-keychain-isolation fix: no longer the frozen `CORE_BRAND` singleton by identity — it is
     // built fresh from THIS call's own `deps.home` (`buildCoreBrand(undefined, home)`) so its
-    // `keychainService` can honour `CLOVER_KEYCHAIN_SERVICE` for a non-default home (P9c-15's
+    // `keychainService` can honour `MOSS_KEYCHAIN_SERVICE` for a non-default home (P9c-15's
     // guard), which a module-load-time singleton with no home in scope never could. Every other
     // field is unchanged from `CORE_BRAND`.
     expect(opts.brand).not.toBe(CORE_BRAND);
@@ -129,15 +129,15 @@ describe("createWinterRuntimeSdk — the options it hands the session host", () 
   test("A-M1: the SDK directly — no peers, no peer versions, no capabilities, nothing for the other leg", async () => {
     const { opts } = await build();
     expect(typeof opts.sdk?.query).toBe("function");
-    expect(opts.sdk?.SDK_VERSION).toBe(CLOVER_PEER_VERSIONS.winterAgentSdk);
+    expect(opts.sdk?.SDK_VERSION).toBe(MOSS_PEER_VERSIONS.winterAgentSdk);
     const loose = opts as unknown as Record<string, unknown>;
     for (const key of ["peers", "peerVersions", "capabilities", "handoff", "vendoredOfficialRuntime", "official", "toInputShape", "advisor", "keychain"]) expect(key in loose).toBe(false);
     expect(opts.home).toBe(home);
   });
 
-  test("WS-23: a Claude catalog model with an Anthropic key selects the Clover runtime, in Code mode too", async () => {
+  test("WS-23: a Claude catalog model with an Anthropic key selects the MOSS runtime, in Code mode too", async () => {
     // A real key in this temp home's file store: before WS-23 this exact input routed Code mode to
-    // the official leg (D13-2). With the peer declared absent, the router's own rule sends it to Clover.
+    // the official leg (D13-2). With the peer declared absent, the router's own rule sends it to MOSS.
     const secrets = new FileSecretStore(secretsDir);
     await writeCredentialMaterial(secrets, ANTHROPIC_CREDENTIAL_SECRET_NAME, { kind: "api-key", key: "sk-ant-test" });
     const { handle } = await build({ secrets });
@@ -148,7 +148,7 @@ describe("createWinterRuntimeSdk — the options it hands the session host", () 
     expect(decided.modelRef).toBe("anthropic/claude-sonnet-5");
   });
 
-  test("the Clover permission class is forwarded when declared — and only the Clover adapter's", async () => {
+  test("the MOSS permission class is forwarded when declared — and only the MOSS adapter's", async () => {
     const sessionPermissionClass = () => "unknown" as const;
     const { opts } = await build({ sessionPermissionClass });
     expect(opts.messaging?.messaging?.winter?.permissionClass).toBe(sessionPermissionClass);
@@ -159,7 +159,7 @@ describe("createWinterRuntimeSdk — the options it hands the session host", () 
     const store = createInMemoryRuntimeDirectoryStore();
     const { opts } = await build({ directoryStore: store });
     expect(opts.directoryStore).toBe(store);
-    // §1.6: the seams must resolve under the daemon's home, not `resolveCloverHome()`'s default.
+    // §1.6: the seams must resolve under the daemon's home, not `resolveMossHome()`'s default.
     expect(opts.home).toBe(home);
     // No permission class declared ⇒ no messaging-policy block at all.
     expect(opts.messaging?.messaging).toBeUndefined();
@@ -250,13 +250,13 @@ describe("spawnHookFor — P8b-1's one topology site", () => {
     const { handle } = await build({ embedded });
     const captured = handle.spawnHookFor("chat") as { spawnClaudeCodeProcess: (o: unknown) => unknown };
     mkdirSync(join(home, "cowork"));
-    const coordination = mkdtempSync(join(tmpdir(), "clover-embedded-topology-coordination-"));
+    const coordination = mkdtempSync(join(tmpdir(), "moss-embedded-topology-coordination-"));
     const unregister = registerHostStorageFences(home, { coordinationDir: coordination, coworkStorageActive: true });
     try {
       for (const mode of ["chat", "dispatch"] as const) {
         expect(handle.spawnHookFor(mode)).toBeInstanceOf(EmbeddedRuntimeUnavailable);
       }
-      expect(() => captured.spawnClaudeCodeProcess({ command: "clover-embedded", args: [], cwd: home, env: {} })).toThrow("embedded-host-floor-unavailable");
+      expect(() => captured.spawnClaudeCodeProcess({ command: "moss-embedded", args: [], cwd: home, env: {} })).toThrow("embedded-host-floor-unavailable");
       expect(embedded.spawned).toHaveLength(0);
     } finally { unregister(); rmSync(coordination, { recursive: true, force: true }); }
   });
@@ -265,35 +265,35 @@ describe("spawnHookFor — P8b-1's one topology site", () => {
     const embedded = recordingEmbeddedHost();
     const { handle } = await build({ embedded });
     const hook = handle.spawnHookFor("dispatch") as { spawnClaudeCodeProcess: (o: unknown) => unknown };
-    expect(() => hook.spawnClaudeCodeProcess({ command: "clover-embedded", args: [], cwd: home, env: {}, requireHostFloor: true })).toThrow("embedded-host-floor-unavailable");
+    expect(() => hook.spawnClaudeCodeProcess({ command: "moss-embedded", args: [], cwd: home, env: {}, requireHostFloor: true })).toThrow("embedded-host-floor-unavailable");
     expect(embedded.spawned).toHaveLength(0);
   });
 
   test("A-M1: every mode is EMBEDDED — the host's workerProcess, and no binary is resolved for any of them", async () => {
     // A binary that does not exist, explicitly configured twice over: were any mode still resolving
     // the ladder, it would refuse `winter_executable_unavailable` here. Code included (spec §3.3).
-    process.env.CLOVER_RUNTIME_EXECUTABLE = join(home, "missing-clover");
-    settings = withRuntimes({ retention: { deliveriesDays: 30, nameLeasesDays: 7 }, migrations: { memoryKeys: false }, winterLeg: { chat: false, dispatch: false, code: false }, winterExecutable: join(home, "missing-setting-clover"), winterIdleTimeoutSec: 900 });
+    process.env.MOSS_RUNTIME_EXECUTABLE = join(home, "missing-moss");
+    settings = withRuntimes({ retention: { deliveriesDays: 30, nameLeasesDays: 7 }, migrations: { memoryKeys: false }, winterLeg: { chat: false, dispatch: false, code: false }, winterExecutable: join(home, "missing-setting-moss"), winterIdleTimeoutSec: 900 });
     const embedded = recordingEmbeddedHost();
     const { handle } = await build({ embedded });
     for (const mode of ["chat", "dispatch", "code"] as const) {
       const hook = handle.spawnHookFor(mode);
       expect(hook).not.toBeInstanceOf(Error);
       const spawnHook = hook as { pathToClaudeCodeExecutable: string; spawnClaudeCodeProcess?: (o: unknown) => unknown; runtimeVersion?: string };
-      expect(spawnHook.pathToClaudeCodeExecutable).toBe("clover-embedded");
-      expect(spawnHook.runtimeVersion).toBe(CLOVER_PEER_VERSIONS.winterAgentSdk);
+      expect(spawnHook.pathToClaudeCodeExecutable).toBe("moss-embedded");
+      expect(spawnHook.runtimeVersion).toBe(MOSS_PEER_VERSIONS.winterAgentSdk);
       expect(typeof spawnHook.spawnClaudeCodeProcess).toBe("function");
       // The hook IS the host's spawn: what query() hands it goes straight to the embedded host.
-      const options = { command: "clover-embedded", args: ["--run", "--config-json", "{}"], cwd: home, env: {} };
+      const options = { command: "moss-embedded", args: ["--run", "--config-json", "{}"], cwd: home, env: {} };
       expect(() => spawnHook.spawnClaudeCodeProcess!(options)).toThrow("recordingEmbeddedHost spawns nothing");
     }
     expect(embedded.spawned).toHaveLength(3);
   });
 
   test("A-M1: with NO embedded host every mode refuses typed — never a fallback to a spawned binary", async () => {
-    const bin = join(home, "clover-bin");
+    const bin = join(home, "moss-bin");
     writeFileSync(bin, "#!/bin/sh\n");
-    process.env.CLOVER_RUNTIME_EXECUTABLE = bin;
+    process.env.MOSS_RUNTIME_EXECUTABLE = bin;
     const { handle } = await build();
     for (const mode of ["chat", "dispatch", "code"] as const) {
       const hook = handle.spawnHookFor(mode);
@@ -306,7 +306,7 @@ describe("spawnHookFor — P8b-1's one topology site", () => {
     const embedded = recordingEmbeddedHost();
     const { handle } = await build({ embedded });
     mkdirSync(join(home, "cowork"));
-    const coordination = mkdtempSync(join(tmpdir(), "clover-embedded-code-coordination-"));
+    const coordination = mkdtempSync(join(tmpdir(), "moss-embedded-code-coordination-"));
     const unregister = registerHostStorageFences(home, { coordinationDir: coordination, coworkStorageActive: true });
     try {
       expect(handle.spawnHookFor("code")).toBeInstanceOf(EmbeddedRuntimeUnavailable);
@@ -346,7 +346,7 @@ describe("dispose — G-14: every Query ends BEFORE the router disposes", () => 
   });
 
   // G-14 is "awaits iterations with a bounded grace, ABORTS stragglers", and the abort is the half
-  // that cannot be delegated: Clover's `Query` has no `close()`, so a child that outlives this is
+  // that cannot be delegated: MOSS's `Query` has no `close()`, so a child that outlives this is
   // unreachable for the rest of the process's life and then survives it.
   test("an end that never resolves is bounded, ABORTED, and logged — and the router still disposes", async () => {
     const lines: string[] = [];
@@ -460,7 +460,7 @@ describe("createWinterRuntimeSdk — run homes (WS-21)", () => {
     const runHomeFor = async () => { throw new Error("never called by these doors"); };
     const { handle } = await build({ runHomeFor });
     expect(handle.runHomeOutcome?.("an-unknown-run")).toBe("pending");
-    const root = mkdtempSync(join(tmpdir(), "clover-create-recover-"));
+    const root = mkdtempSync(join(tmpdir(), "moss-create-recover-"));
     const report = await handle.reconcileRootForRecovery?.(root);
     expect(report?.outcome).toBe("clean");
     expect(report?.transcripts).toEqual([]);

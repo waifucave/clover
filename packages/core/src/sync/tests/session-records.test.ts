@@ -3,7 +3,7 @@
 // a computer that comes online later catches up; only the session's writer is taken, and records from an earlier
 // lease arrive marked late. The host here is a stand-in with the shape lane D's `DurableSessionHost` takes.
 import { afterEach, describe, expect, test } from "bun:test";
-import type { SessionView } from "@waifucave/clover-protocol";
+import type { SessionView } from "@waifucave/moss-protocol";
 import { SystemClock } from "../../clock/system-clock";
 import { ContractError, Listeners } from "../../contracts/common";
 import type { SessionRecord, SessionRecordBody } from "../../contracts/session-host";

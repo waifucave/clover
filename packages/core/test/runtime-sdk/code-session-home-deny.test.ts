@@ -1,4 +1,4 @@
-// A coding session's Bash meets the Clover home's default-deny (the owner's November 6 ruling, #347's review): what the
+// A coding session's Bash meets the MOSS home's default-deny (the owner's November 6 ruling, #347's review): what the
 // spawn is sent (`childSandboxConfigFor`) reads the runtime's store but of its `projects/` only the session's own
 // entries, the plugin views but of `cache/runs/` only its own run folder, the installed plugins, its own outputs and its
 // working directories; never a config copy that carries keys, the bots' data, or the sessions' logs.
@@ -19,8 +19,8 @@ const temp = (prefix: string) => {
 };
 
 function setup() {
-  const h = temp("clover-code-home-deny-");
-  const cwd = temp("clover-code-home-deny-cwd-");
+  const h = temp("moss-code-home-deny-");
+  const cwd = temp("moss-code-home-deny-cwd-");
   const key = compatibilityKeys(cwd).transcriptProjectKey;
   for (const d of ["sessions", `sdk/projects/${key}/memory`, "sdk/projects/-other-project", "sdk/plugins/p", "cache/runs/run-own", "cache/runs/run-other", "cache/views/v", "plugins/pack",
     "outputs/s_1", "outputs/s_2", "bots/pack--luna/memory", "scratch/pack--luna", "transcripts/pack--luna", "transcripts/_", "work/project", "work/other"]) mkdirSync(join(h, d), { recursive: true });
@@ -33,7 +33,7 @@ describe("a coding session's Bash sandbox (childSandboxConfigFor)", () => {
   test("its own store entries, run folder, outputs and working directories are readable", () => {
     const { h, key, list } = setup();
     for (const p of [`sdk/projects/${key}/memory/MEMORY.md`, `sdk/projects/${key}/s.jsonl`, "sdk/projects/_global/memory/M.md", "sdk/projects/_assistant/memory/M.md", "sdk/plugins/p/skills/x/SKILL.md",
-      "sdk/skills/a/run.sh", "cache/runs/run-own/settings.json", "cache/runs/run-own/plugins/x", "cache/views/v/SKILL.md", "plugins/pack/clover.json", "outputs/s_1/r.md", "work/project/a.ts"]) {
+      "sdk/skills/a/run.sh", "cache/runs/run-own/settings.json", "cache/runs/run-own/plugins/x", "cache/views/v/SKILL.md", "plugins/pack/moss.json", "outputs/s_1/r.md", "work/project/a.ts"]) {
       expect([p, deniedBy(list, join(h, p))]).toEqual([p, false]);
     }
   });
@@ -51,27 +51,27 @@ describe("a coding session's Bash sandbox (childSandboxConfigFor)", () => {
 
   test("the config copies that carry keys are refused, its own run folder's and a staging root's included (the blocker)", () => {
     const { h, list } = setup();
-    for (const p of ["cache/runs/run-own/.clover.json", "cache/runs/run-other/.clover.json", "cache/runs/run-own/.claude.json", "cache/runs/run-own/.credentials.json",
-      "cache/runs/run-own/backups/.claude.json.backup.1", "cache/runs/run-own/nested/deeper/.clover.json", "sdk/.clover.json"]) {
+    for (const p of ["cache/runs/run-own/.moss.json", "cache/runs/run-other/.moss.json", "cache/runs/run-own/.claude.json", "cache/runs/run-own/.credentials.json",
+      "cache/runs/run-own/backups/.claude.json.backup.1", "cache/runs/run-own/nested/deeper/.moss.json", "sdk/.moss.json"]) {
       expect([p, deniedBy(list, join(h, p))]).toEqual([p, true]);
     }
-    for (const f of [".clover.json", ".claude.json", ".credentials.json", "backups/x"]) {
+    for (const f of [".moss.json", ".claude.json", ".credentials.json", "backups/x"]) {
       const staged = join(tmpdir(), "claude-resume-0000", f);
       expect([f, deniedBy(list, staged) || deniedBy(list, join(realpathSync(tmpdir()), "claude-resume-0000", f))]).toEqual([f, true]);
     }
   });
 
   test("its own run folder's MCP list is denied by its exact name, so the runtime still loads it (a link to it isn't named)", () => {
-    const h = temp("clover-code-own-mcp-");
+    const h = temp("moss-code-own-mcp-");
     const runDir = join(h, "cache", "runs", "run-own");
     mkdirSync(runDir, { recursive: true });
-    writeFileSync(join(runDir, ".clover.json"), "{}");
-    symlinkSync("./.clover.json", join(runDir, ".claude.json"));
+    writeFileSync(join(runDir, ".moss.json"), "{}");
+    symlinkSync("./.moss.json", join(runDir, ".claude.json"));
     const list = childSandboxConfigFor(h, null, [], { runDir }).filesystem?.denyRead ?? [];
-    expect(list).toContain(join(runDir, ".clover.json"));
+    expect(list).toContain(join(runDir, ".moss.json"));
     expect(list).not.toContain(join(runDir, ".claude.json"));
     // No pattern names the top-level file too (the agent SDK's own read wants the exact denial alone).
-    expect(list.filter((e) => /[*?]/.test(e) && deniedBy([e], join(runDir, ".clover.json")))).toEqual([]);
+    expect(list.filter((e) => /[*?]/.test(e) && deniedBy([e], join(runDir, ".moss.json")))).toEqual([]);
   });
 
   test("the bots' data, the sessions' logs and the secrets file are refused", () => {
@@ -108,7 +108,7 @@ describe("a coding session's Bash sandbox (childSandboxConfigFor)", () => {
   });
 
   test("the session's project keys: its transcripts' and its memory's, and the shared buckets", () => {
-    const cwd = temp("clover-code-keys-");
+    const cwd = temp("moss-code-keys-");
     const k = compatibilityKeys(cwd);
     expect(codeSessionProjectKeys(cwd)).toEqual(expect.arrayContaining(["_global", "_assistant", k.transcriptProjectKey, k.memoryProjectKey]));
   });

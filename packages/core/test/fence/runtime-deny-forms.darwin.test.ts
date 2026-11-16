@@ -1,14 +1,14 @@
 // The owner's try 14: every file tool of Alpha's came back "Error: protected host path access refused", a Write of a
-// new file on his Desktop included, though macOS had let Clover into the Desktop. The runtime's file-tool check (agent
+// new file on his Desktop included, though macOS had let MOSS into the Desktop. The runtime's file-tool check (agent
 // SDK 0.0.78 `hostCodePathAllowed`) resolves every deny entry of the session at each call, inside one `try`, and
 // refuses EVERY path when one entry fails to resolve with anything but "not there". The user's secret places in
-// `~/Library` (Mail, Messages, Safari, Cookies, Safari's container) are folders macOS keeps Clover out of without Full
+// `~/Library` (Mail, Messages, Safari, Cookies, Safari's container) are folders macOS keeps MOSS out of without Full
 // Disk Access: Bun's `realpathSync` opens a path, and answers EPERM there. Here a folder without permission (mode 000)
 // stands for one: `realpathSync` answers EACCES on it the same way, while `lstat` still works.
 // Agent SDK 0.0.79 fixed the check itself (an unresolvable entry denies its own place by its spelling); the respelling
 // here stays as a second guard.
 //
-// Checked with the installed runtime's own check, not a copy: the sandbox Clover hands the runtime (`botSandbox`,
+// Checked with the installed runtime's own check, not a copy: the sandbox MOSS hands the runtime (`botSandbox`,
 // `runtimeDenyForms`) lets the file tools work everywhere else, and still refuses the secret place, a file under it, the
 // place in another letter case, and a link elsewhere into it. A Finder `.DS_Store` among the bots' scratch folders
 // (a name under a file never resolves: ENOTDIR) breaks nothing either.
@@ -17,7 +17,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathS
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { secretReadPlaces } from "../../src/contracts/fence";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { runtimeDenyForms } from "../../src/fence/runtime-deny-forms";
 import { botSandboxSettings, KEPT_FOLDER_PIN } from "../../src/fence/sandbox-settings";
 import { botSandbox } from "../../src/runtime-sdk/turn-loop/driver";
@@ -45,7 +45,7 @@ afterAll(() => {
 });
 
 /** A user's home shaped like a Mac's, with `~/Library/Mail` and `~/Library/Containers` closed to this process, and its
- *  Clover home with Alpha's folders and a `.DS_Store` among the bots' scratch folders. */
+ *  MOSS home with Alpha's folders and a `.DS_Store` among the bots' scratch folders. */
 function mac() {
   const user = realpathSync(mkdtempSync(join(tmpdir(), "deny-forms-home-")));
   const t = { dir: user, locked: [] as string[] };
@@ -53,39 +53,39 @@ function mac() {
   for (const d of ["Desktop", "Documents", "Library/Mail/V10", "Library/Containers/com.apple.Safari/Data", "Library/Application Support", ".ssh"]) mkdirSync(join(user, d), { recursive: true });
   writeFileSync(join(user, "Library/Mail/V10/inbox.mbox"), "secret");
   writeFileSync(join(user, "Documents", "notes.md"), "once");
-  const clover = join(user, ".clover");
-  for (const d of ["scratch/alpha", "bots/alpha/memory", "outputs/s1", "routines/alpha"]) mkdirSync(join(clover, d), { recursive: true });
-  writeFileSync(join(clover, "scratch", ".DS_Store"), "finder");
-  writeFileSync(join(clover, "bots", ".DS_Store"), "finder");
+  const moss = join(user, ".moss");
+  for (const d of ["scratch/alpha", "bots/alpha/memory", "outputs/s1", "routines/alpha"]) mkdirSync(join(moss, d), { recursive: true });
+  writeFileSync(join(moss, "scratch", ".DS_Store"), "finder");
+  writeFileSync(join(moss, "bots", ".DS_Store"), "finder");
   const lock = (rel: string) => { chmodSync(join(user, rel), 0o000); t.locked.push(join(user, rel)); };
-  return { user, clover, lock };
+  return { user, moss, lock };
 }
 
 /** Alpha's sandbox at the default level as the driver hands it to the runtime. */
-function alphaSandbox(user: string, clover: string, forms = true) {
-  const policy = new CloverFence({ os: "macos", home: user, cloverHome: clover, temp: "/private/tmp", canonical: (p) => p })
+function alphaSandbox(user: string, moss: string, forms = true) {
+  const policy = new MossFence({ os: "macos", home: user, mossHome: moss, temp: "/private/tmp", canonical: (p) => p })
     .policy({ sessionId: "s1", memoryOf: "alpha" } as never);
-  const drawn = botSandboxSettings(policy, { cloverHome: clover, userHome: user, level: undefined, ownFolders: [join(clover, "scratch", "alpha")], pathFolders: [] });
+  const drawn = botSandboxSettings(policy, { mossHome: moss, userHome: user, level: undefined, ownFolders: [join(moss, "scratch", "alpha")], pathFolders: [] });
   return forms ? botSandbox(drawn, { userHome: user, os: "macos" }) : drawn;
 }
 
 darwinDescribe("deny lists the runtime's file-tool check can resolve", () => {
-  test("a secret place Clover is kept out of no longer refuses every path; it, a file under it, its other cases and a link into it stay refused", async () => {
+  test("a secret place MOSS is kept out of no longer refuses every path; it, a file under it, its other cases and a link into it stay refused", async () => {
     const allowed = await runtimeCheck();
-    const { user, clover, lock } = mac();
+    const { user, moss, lock } = mac();
     const link = join(user, "Desktop", "mail-link");
     symlinkSync(join(user, "Library/Mail/V10"), link);
     lock("Library/Mail");
     lock("Library/Containers");
     // The plain entries made agent SDK 0.0.78's check refuse a Write on the Desktop (the owner's report); 0.0.79 denies an
     // unresolvable entry by its spelling alone, so they no longer do. The respelling below stays (belt and braces).
-    const before = alphaSandbox(user, clover, false);
+    const before = alphaSandbox(user, moss, false);
     expect(allowed(join(user, "Desktop", "hello_world.md"), "write", before as never)).toBe(true);
-    const s = alphaSandbox(user, clover) as never;
+    const s = alphaSandbox(user, moss) as never;
     for (const [path, access] of [
       [join(user, "Desktop", "hello_world.md"), "write"], [join(user, "Desktop", "hello_world.md"), "read"],
       [join(user, "Documents", "notes.md"), "read"], [join(user, "Documents", "notes.md"), "write"],
-      [join(clover, "scratch", "alpha", "draft.md"), "write"], [join(clover, "bots", "alpha", "memory", "m.md"), "write"],
+      [join(moss, "scratch", "alpha", "draft.md"), "write"], [join(moss, "bots", "alpha", "memory", "m.md"), "write"],
       [user, "read"], [join(user, "Library", "Application Support"), "read"],
     ] as const) expect([path, access, allowed(path, access, s)]).toEqual([path, access, true]);
     for (const [path, access] of [
@@ -135,23 +135,23 @@ darwinDescribe("deny lists the runtime's file-tool check can resolve", () => {
 
   test("a `.DS_Store` among the bots' scratch folders: no kept folder, pin or hold under it, and the file tools work", async () => {
     const allowed = await runtimeCheck();
-    const { user, clover } = mac();
-    const drawn = alphaSandbox(user, clover, false);
+    const { user, moss } = mac();
+    const drawn = alphaSandbox(user, moss, false);
     const all = [...drawn.filesystem!.allowWrite!, ...drawn.filesystem!.denyWrite!, ...drawn.filesystem!.denyRead!];
-    for (const f of [join(clover, "scratch", ".DS_Store"), join(clover, "bots", ".DS_Store")]) {
+    for (const f of [join(moss, "scratch", ".DS_Store"), join(moss, "bots", ".DS_Store")]) {
       expect(all.filter((e) => e.startsWith(`${f}/`))).toEqual([]);
       expect(drawn.filesystem!.allowWrite).not.toContain(f);
     }
-    expect(drawn.filesystem!.denyWrite).toContain(join(clover, "scratch", "alpha", KEPT_FOLDER_PIN));
+    expect(drawn.filesystem!.denyWrite).toContain(join(moss, "scratch", "alpha", KEPT_FOLDER_PIN));
     expect(allowed(join(user, "Desktop", "hello_world.md"), "write", drawn as never)).toBe(true);
-    expect(allowed(join(clover, "scratch", "alpha", "draft.md"), "write", drawn as never)).toBe(true);
+    expect(allowed(join(moss, "scratch", "alpha", "draft.md"), "write", drawn as never)).toBe(true);
   });
 
   test("an entry under a file (one an older build drew) is spelled so it resolves, and still denies its place", async () => {
     const allowed = await runtimeCheck();
-    const { clover, user } = mac();
-    const under = join(clover, "scratch", ".DS_Store", KEPT_FOLDER_PIN);
-    const s = { filesystem: { denyWrite: runtimeDenyForms([under, `${join(clover, "scratch", ".DS_Store")}/**/*.git/hooks`], { os: "macos", userHome: user }) } };
+    const { moss, user } = mac();
+    const under = join(moss, "scratch", ".DS_Store", KEPT_FOLDER_PIN);
+    const s = { filesystem: { denyWrite: runtimeDenyForms([under, `${join(moss, "scratch", ".DS_Store")}/**/*.git/hooks`], { os: "macos", userHome: user }) } };
     // The plain entry refused every path on agent SDK 0.0.78; 0.0.79 keeps an entry under a file to its own place.
     expect(allowed(join(user, "Desktop", "a.md"), "write", { filesystem: { denyWrite: [under] } })).toBe(true);
     expect(allowed(join(user, "Desktop", "a.md"), "write", s)).toBe(true);

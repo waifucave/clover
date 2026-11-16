@@ -42,7 +42,7 @@ describe("partitions", () => {
     expect(partitionFor(alpha)).toBe("persist:bot-alpha");
     expect(partitionFor({ kind: "bot", bot: "pack/luna" })).toBe("persist:bot-pack--luna");
     expect(partitionFor(user)).toBe("persist:user");
-    expect(partitionFor({ kind: "plugin", plugin: "clover/browser-view" })).toBe("persist:plugin-clover--browser-view");
+    expect(partitionFor({ kind: "plugin", plugin: "moss/browser-view" })).toBe("persist:plugin-moss--browser-view");
     expect(() => partitionFor({ kind: "plugin", plugin: "../x" })).toThrow(BrowserError);
     // A session without a bot: its own, named by a hash of its id (no id ever spells a folder name).
     const own = partitionFor({ kind: "session", session: "sess_1" });
@@ -55,11 +55,11 @@ describe("partitions", () => {
 });
 
 describe("the URL rule", () => {
-  test("web pages and about:blank open; files, the browser's own pages and Clover's schemes never do", () => {
+  test("web pages and about:blank open; files, the browser's own pages and MOSS's schemes never do", () => {
     // The URL rule is about schemes. Which addresses a tab may reach (no loopback or private address from a bot's tab,
     // R13) is checked when each connection is made, after DNS, in the app (`apps/desktop/src/main/browser/network.ts`).
     for (const ok of ["https://example.com/", "http://example.com:8080/x", "about:blank", "about:srcdoc", "data:text/html,hi"]) expect(isBrowserUrlAllowed(ok)).toBe(true);
-    for (const no of ["file:///etc/passwd", "chrome://settings", "devtools://x", "view-source:https://a.b", "clover-plugin://x/y", "cloverui://a", "about:config", "not a url"]) expect(isBrowserUrlAllowed(no)).toBe(false);
+    for (const no of ["file:///etc/passwd", "chrome://settings", "devtools://x", "view-source:https://a.b", "moss-plugin://x/y", "mossui://a", "about:config", "not a url"]) expect(isBrowserUrlAllowed(no)).toBe(false);
   });
 });
 
@@ -144,8 +144,8 @@ describe("opening and owning tabs", () => {
   });
 
   test("a plugin's call while it serves a tool call is that session's, never the plugin's (R7)", () => {
-    const plugin = { kind: "plugin", pluginId: "clover/browser" } as const;
-    expect(browserCallerOf(plugin)).toEqual({ kind: "plugin", pluginId: "clover/browser" });
+    const plugin = { kind: "plugin", pluginId: "moss/browser" } as const;
+    expect(browserCallerOf(plugin)).toEqual({ kind: "plugin", pluginId: "moss/browser" });
     expect(browserCallerOf(plugin, { kind: "session", sessionId: "s1", bot: "alpha" })).toEqual({ kind: "agent", bot: "alpha", session: "s1" });
     expect(browserCallerOf(plugin, { kind: "session", sessionId: "s2" })).toEqual({ kind: "agent", session: "s2" });
     expect(browserCallerOf({ kind: "peer", device: "d1", sessionId: "s3", bot: "luna" })).toEqual({ kind: "agent", device: "d1", bot: "luna", session: "s3" });
@@ -224,7 +224,7 @@ describe("the person holding a tab", () => {
     expect(await code(service.screenshot(asAlpha, tab.id))).toBeUndefined();
     expect(await code(service.navigate(person, tab.id, "https://b.example/"))).toBeUndefined();
     // Only the person passes a hold (B-M1's contract review S1): a plugin's own code and the core are refused too.
-    expect(await code(service.cdp({ kind: "plugin", pluginId: "clover/browser-view" }, tab.id, "Page.getNavigationHistory"))).toBe("no_tab");
+    expect(await code(service.cdp({ kind: "plugin", pluginId: "moss/browser-view" }, tab.id, "Page.getNavigationHistory"))).toBe("no_tab");
     expect(await code(service.navigate({ kind: "core" }, tab.id, "https://d.example/"))).toBe("held");
     expect(await code(service.screenshot({ kind: "core" }, tab.id))).toBeUndefined();
     service.hold(tab.id, false);

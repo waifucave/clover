@@ -10,8 +10,8 @@
 //   plugin removed takes its choices with it (the registry's records forget them).
 // * When the active one stops being a filler (turned off, removed, stopped), the next one takes over and the user is
 //   told once, in words (`ActiveNotices`).
-import { CORE_POINTS, oneAtATimeOf, type CorePointInfo } from "@waifucave/clover-plugin-sdk";
-import { topPluginIdOf } from "@waifucave/clover-protocol";
+import { CORE_POINTS, oneAtATimeOf, type CorePointInfo } from "@waifucave/moss-plugin-sdk";
+import { topPluginIdOf } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { RUNNING_STATES, type Contribution, type PluginRegistry, type RegisteredPoint } from "../contracts/plugin-registry";
 

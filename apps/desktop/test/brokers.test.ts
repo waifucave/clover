@@ -54,7 +54,7 @@ describe("the menu gate", () => {
 describe("the drag broker", () => {
   test("an offer: a known kind, data that fits, from a plugin that may hand it out", () => {
     expect(checkDragOffer({ type: "text/plain", data: "hi" }, new Set())).toEqual({ type: "text/plain", data: "hi" });
-    expect(checkDragOffer({ type: "application/x-clover-file", data: { path: "a" } }, new Set())).toHaveProperty("error");
+    expect(checkDragOffer({ type: "application/x-moss-file", data: { path: "a" } }, new Set())).toHaveProperty("error");
     expect(checkDragOffer({ type: "application/x-other", data: 1 }, new Set())).toHaveProperty("error");
     expect(checkDragOffer({ type: "text/plain", data: "x".repeat(300_000) }, new Set())).toHaveProperty("error");
     expect(checkDragOffer({ type: "text/plain", data: { not: "text" } }, new Set())).toHaveProperty("error");
@@ -62,26 +62,26 @@ describe("the drag broker", () => {
 
   test("the core mints a file's grant: its place in the folder tree, named by the core, nothing the plugin added", () => {
     const files = new Set(["files"]);
-    expect(checkDragOffer({ type: "application/x-clover-file", data: { path: "home/Laptop/notes/todo.md", name: "photo.png", size: 3, bytes: "AAAA" } }, files))
-      .toEqual({ type: "application/x-clover-file", data: { path: "home/Laptop/notes/todo.md", name: "todo.md" } });
-    expect(checkDragOffer({ type: "application/x-clover-file", data: "bots/alpha/memory/a.md" }, files)).toEqual({ type: "application/x-clover-file", data: { path: "bots/alpha/memory/a.md", name: "a.md" } });
+    expect(checkDragOffer({ type: "application/x-moss-file", data: { path: "home/Laptop/notes/todo.md", name: "photo.png", size: 3, bytes: "AAAA" } }, files))
+      .toEqual({ type: "application/x-moss-file", data: { path: "home/Laptop/notes/todo.md", name: "todo.md" } });
+    expect(checkDragOffer({ type: "application/x-moss-file", data: "bots/alpha/memory/a.md" }, files)).toEqual({ type: "application/x-moss-file", data: { path: "bots/alpha/memory/a.md", name: "a.md" } });
     // Not a place in the tree: a plain path, a way out, an empty segment, the tree's root itself.
     for (const bad of ["a", "/etc/passwd", "home/Laptop/../../etc", "home//x", "home/./x", "home", "C:\\Users"]) {
-      expect(checkDragOffer({ type: "application/x-clover-file", data: { path: bad } }, files), bad).toHaveProperty("error");
+      expect(checkDragOffer({ type: "application/x-moss-file", data: { path: bad } }, files), bad).toHaveProperty("error");
     }
   });
 
   test("and a message's: its session and seq", () => {
     const read = new Set(["conversation.read"]);
-    expect(checkDragOffer({ type: "application/x-clover-message", data: { session: "s_1", seq: 4, text: "forged" } }, read)).toEqual({ type: "application/x-clover-message", data: { session: "s_1", seq: 4 } });
-    expect(checkDragOffer({ type: "application/x-clover-message", data: { session: "s 1", seq: 4 } }, read)).toHaveProperty("error");
-    expect(checkDragOffer({ type: "application/x-clover-message", data: { session: "s_1", seq: -1 } }, read)).toHaveProperty("error");
+    expect(checkDragOffer({ type: "application/x-moss-message", data: { session: "s_1", seq: 4, text: "forged" } }, read)).toEqual({ type: "application/x-moss-message", data: { session: "s_1", seq: 4 } });
+    expect(checkDragOffer({ type: "application/x-moss-message", data: { session: "s 1", seq: 4 } }, read)).toHaveProperty("error");
+    expect(checkDragOffer({ type: "application/x-moss-message", data: { session: "s_1", seq: -1 } }, read)).toHaveProperty("error");
   });
 
   test("a claim: only by a plugin that may hold that kind", () => {
     expect(mayClaim("text/plain", new Set())).toBe(true);
-    expect(mayClaim("application/x-clover-message", new Set())).toBe(false);
-    expect(mayClaim("application/x-clover-message", new Set(["conversation.read"]))).toBe(true);
+    expect(mayClaim("application/x-moss-message", new Set())).toBe(false);
+    expect(mayClaim("application/x-moss-message", new Set(["conversation.read"]))).toBe(true);
     expect(mayClaim("unknown/kind", new Set(["files"]))).toBe(false);
   });
 });
@@ -105,7 +105,7 @@ describe("surface windows", () => {
   });
 });
 
-describe("surfaces outside the clover tree", () => {
+describe("surfaces outside the moss tree", () => {
   const workArea = { width: 1512, height: 949 };
   test("sizes stay inside the work area, and a third party's inside a smaller box", () => {
     expect(surfaceSize({ width: 5000, height: 5000 }, { width: 100, height: 100 }, { trusted: true, workArea })).toEqual({ width: 1512, height: 949 });
@@ -124,7 +124,7 @@ describe("lane G's surface host: a whole place on the screen, and places the app
     expect(surfaceBounds({ x: 0, y: 0, width: "w", height: 1 }, display, true)).toBeUndefined();
   });
 
-  test("Settings at a section and an item, or a bot's tab; nothing else, and only for the clover tree", () => {
+  test("Settings at a section and an item, or a bot's tab; nothing else, and only for the moss tree", () => {
     expect(openTarget({ kind: "settings", section: "devices", item: "laptop" })).toEqual({ kind: "settings", section: "devices", item: "laptop" });
     expect(openTarget({ kind: "settings" })).toEqual({ kind: "settings" });
     expect(openTarget({ kind: "settings", section: "Devices!" })).toBeUndefined();
@@ -143,7 +143,7 @@ describe("lane G's surface host: a whole place on the screen, and places the app
   });
 });
 
-describe("native views (the Clover Browser's live view, ruling R8)", () => {
+describe("native views (the MOSS Browser's live view, ruling R8)", () => {
   test("a view's frame is clipped to the part's own frame, then placed in the window", () => {
     const chain = [{ x: 0, y: 0, width: 1280, height: 820 }, { x: 900, y: 45, width: 380, height: 775 }];
     expect(viewRect({ x: 0, y: 80, width: 380, height: 695 }, chain)).toEqual({ x: 900, y: 125, width: 380, height: 695 });
@@ -228,7 +228,7 @@ describe("sends counted as the user's (§5.5)", () => {
   test("where the words may go, and the pictures with them", () => {
     expect(sendTarget({ bot: "alpha" })).toEqual({ bot: "alpha" });
     expect(sendTarget({ session: "s_alpha:main" })).toEqual({ session: "s_alpha:main" });
-    expect(sendTarget({ target: "clover/pill#codex" })).toEqual({ target: "clover/pill#codex" });
+    expect(sendTarget({ target: "moss/pill#codex" })).toEqual({ target: "moss/pill#codex" });
     for (const bad of [{ bot: "Alpha!" }, { bot: "alpha", session: "x" }, { target: "nohash" }, "alpha", null]) expect(sendTarget(bad)).toBeUndefined();
     expect(sendImages([{ mediaType: "image/png", data: new Uint8Array([1, 2]) }])).toEqual([{ mediaType: "image/png", data: "AQI=" }]);
     expect(sendImages([{ mediaType: "image/gif", data: new Uint8Array([1]) }])).toHaveProperty("error");
@@ -594,24 +594,24 @@ describe("a part's gestured call spends only a press in its own frame (F2, read 
   test("a press on a sealed card's button unlocks no part's write: its innermost frame is the sealed frame, not the document that placed it", () => {
     const g = new SendGate(() => 5_000);
     const hold = g.press(W, { kind: "mouse", key: "left" });
-    g.holdFrames(W, hold, ["clover-doc", "plugin:acme", "sealed:card-1"]);
+    g.holdFrames(W, hold, ["moss-doc", "plugin:acme", "sealed:card-1"]);
     expect(g.takeIn(W, "plugin:acme")).toBe(false);
-    expect(g.takeIn(W, "clover-doc")).toBe(false);
+    expect(g.takeIn(W, "moss-doc")).toBe(false);
   });
 
   test("the bundled tree's parts share one document: a press anywhere in it is that document's; a press in a plugin's frame nested in it is the plugin's alone", () => {
     const g = new SendGate(() => 9_000);
     const h1 = g.press(W, { kind: "mouse", key: "left" });
-    g.holdFrames(W, h1, ["clover-doc"]);
-    expect(g.takeIn(W, "clover-doc")).toBe(true);
+    g.holdFrames(W, h1, ["moss-doc"]);
+    expect(g.takeIn(W, "moss-doc")).toBe(true);
     const h2 = g.press(W, { kind: "mouse", key: "left" });
-    g.holdFrames(W, h2, ["clover-doc", "plugin:acme"]);
-    expect(g.takeIn(W, "clover-doc")).toBe(false);
+    g.holdFrames(W, h2, ["moss-doc", "plugin:acme"]);
+    expect(g.takeIn(W, "moss-doc")).toBe(false);
     expect(g.takeIn(W, "plugin:acme")).toBe(true);
     // A press on the window's own root (no frame) is no part's.
     const h3 = g.press(W, { kind: "mouse", key: "left" });
     g.holdFrames(W, h3, []);
-    expect(g.takeIn(W, "clover-doc")).toBe(false);
+    expect(g.takeIn(W, "moss-doc")).toBe(false);
   });
 
   test("a click's frame is found a moment after the press: a call waits for it (settle), then is judged; with no press it doesn't wait", async () => {
@@ -705,31 +705,31 @@ describe("SendGate.takeIn is timed by the press itself (browser-press, read 53 i
   });
 });
 
-describe("Clover Voice's talk button on the press record (F1 on F2): a hold in its own frame gives that frame the one send after the release", () => {
-  // The button is drawn in the clover layer's document (CLOVER), a frame in the window's core root (ROOT); another plugin's frame
+describe("MOSS Voice's talk button on the press record (F1 on F2): a hold in its own frame gives that frame the one send after the release", () => {
+  // The button is drawn in the moss layer's document (MOSS), a frame in the window's core root (ROOT); another plugin's frame
   // in the same window (OTHER) never takes its press. What happens in between: the button's own plugin-API calls (the microphone
   // turn, the stream to its host half) are no gestured call and spend nothing; the words come back seconds after the release.
   const W = 3;
   const ROOT = "1:1";
-  const CLOVER = "1:2";
+  const MOSS = "1:2";
   const OTHER = "1:3";
 
-  test("a real mouse hold: main sees the press, the clover document's own trusted pointerdown (clover:press-seen) names its frame, the release credits it", () => {
+  test("a real mouse hold: main sees the press, the moss document's own trusted pointerdown (moss:press-seen) names its frame, the release credits it", () => {
     const now = { t: 0 };
     const g = new SendGate(() => now.t);
     g.press(W, { kind: "mouse", key: "left" });
     now.t += 20;
-    // The preload in the clover document reports; main binds it to that frame and the frames it sits in (frameChainOf).
-    expect(g.seen(W, [ROOT, CLOVER])).toBe(true);
-    expect(g.pressFrames(W)).toEqual([ROOT, CLOVER]);
+    // The preload in the moss document reports; main binds it to that frame and the frames it sits in (frameChainOf).
+    expect(g.seen(W, [ROOT, MOSS])).toBe(true);
+    expect(g.pressFrames(W)).toEqual([ROOT, MOSS]);
     now.t += 4_000; // held while recording
     g.release(W, { kind: "mouse", key: "left" });
     now.t += 6_000; // the host half writes it down
     expect(g.takeRelease(W, OTHER)).toBe(false);
-    expect(g.takeRelease(W, CLOVER)).toBe(true);
+    expect(g.takeRelease(W, MOSS)).toBe(true);
     // One hold, one send.
-    expect(g.takeRelease(W, CLOVER)).toBe(false);
-    expect(g.takeIn(W, CLOVER)).toBe(false);
+    expect(g.takeRelease(W, MOSS)).toBe(false);
+    expect(g.takeIn(W, MOSS)).toBe(false);
   });
 
   test("the report may come after the release (a busy renderer): the release is credited when it does", () => {
@@ -738,34 +738,34 @@ describe("Clover Voice's talk button on the press record (F1 on F2): a hold in i
     g.press(W, { kind: "mouse", key: "left" });
     now.t += 300;
     g.release(W, { kind: "mouse", key: "left" });
-    expect(g.takeRelease(W, CLOVER)).toBe(false);
+    expect(g.takeRelease(W, MOSS)).toBe(false);
     now.t += 100;
-    expect(g.seen(W, [ROOT, CLOVER])).toBe(true);
+    expect(g.seen(W, [ROOT, MOSS])).toBe(true);
     now.t += 5_000;
-    expect(g.takeRelease(W, CLOVER)).toBe(true);
+    expect(g.takeRelease(W, MOSS)).toBe(true);
   });
 
   for (const key of [" ", "Enter"]) {
-    test(`${key === " " ? "Space" : "Enter"} held on the focused button: the key's frames are the focused frame's (the clover document), the key-up there credits it`, () => {
+    test(`${key === " " ? "Space" : "Enter"} held on the focused button: the key's frames are the focused frame's (the moss document), the key-up there credits it`, () => {
       const now = { t: 0 };
       const g = new SendGate(() => now.t);
       // before-input-event: the first key down (auto-repeats are no new press), frames from the focused frame (frameChainOf).
-      g.press(W, { kind: "key", key, frames: [ROOT, CLOVER] });
+      g.press(W, { kind: "key", key, frames: [ROOT, MOSS] });
       now.t += 3_000;
-      g.release(W, { kind: "key", key, frame: CLOVER });
+      g.release(W, { kind: "key", key, frame: MOSS });
       now.t += 8_000;
       expect(g.takeRelease(W, OTHER)).toBe(false);
-      expect(g.takeRelease(W, CLOVER)).toBe(true);
-      expect(g.takeRelease(W, CLOVER)).toBe(false);
+      expect(g.takeRelease(W, MOSS)).toBe(true);
+      expect(g.takeRelease(W, MOSS)).toBe(false);
     });
   }
 
   test("a key released in another frame (the focus moved) credits nothing; the button drops such a hold itself (its blur)", () => {
     const now = { t: 0 };
     const g = new SendGate(() => now.t);
-    g.press(W, { kind: "key", key: " ", frames: [ROOT, CLOVER] });
+    g.press(W, { kind: "key", key: " ", frames: [ROOT, MOSS] });
     g.release(W, { kind: "key", key: " ", frame: OTHER });
-    expect(g.takeRelease(W, CLOVER)).toBe(false);
+    expect(g.takeRelease(W, MOSS)).toBe(false);
   });
 });
 

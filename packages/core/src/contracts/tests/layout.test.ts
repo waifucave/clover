@@ -19,7 +19,7 @@ describe("the contracts' layout", () => {
   test("they import only the protocol, node:crypto and each other", () => {
     for (const file of sources) {
       for (const spec of specifiers(file)) {
-        const ok = spec === "@waifucave/clover-protocol" || spec === "node:crypto" || spec.startsWith("./") || spec.startsWith("../")
+        const ok = spec === "@waifucave/moss-protocol" || spec === "node:crypto" || spec.startsWith("./") || spec.startsWith("../")
           ? !spec.includes("plugin-sdk") || file.endsWith("sdk-types.ts")
           : false;
         expect({ file: file.slice(root.length + 1), spec, ok }).toEqual({ file: file.slice(root.length + 1), spec, ok: true });
@@ -30,7 +30,7 @@ describe("the contracts' layout", () => {
   test("the conformance suites import only bun:test, the protocol, node:crypto, the contracts and their fakes", () => {
     for (const file of suites) {
       for (const spec of specifiers(file)) {
-        const ok = ["bun:test", "@waifucave/clover-protocol", "node:crypto"].includes(spec) || ((spec.startsWith("./") || spec.startsWith("../")) && !spec.includes("plugin-sdk"));
+        const ok = ["bun:test", "@waifucave/moss-protocol", "node:crypto"].includes(spec) || ((spec.startsWith("./") || spec.startsWith("../")) && !spec.includes("plugin-sdk"));
         expect({ file: file.slice(root.length + 1), spec, ok }).toEqual({ file: file.slice(root.length + 1), spec, ok: true });
       }
     }

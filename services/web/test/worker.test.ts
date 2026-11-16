@@ -15,7 +15,7 @@ const assets = { fetch: async () => new Response("<!doctype html>", { headers: {
 describe("the page's Worker", () => {
   test("serves pages with a strict CSP naming only the handshake", async () => {
     const env = { ASSETS: assets, HANDSHAKE_ORIGIN: "https://handshake.waifucave.com", ALLOWED_HANDSHAKES: "" };
-    const response = await worker.fetch(new Request("https://clover.waifucave.com/"), env);
+    const response = await worker.fetch(new Request("https://moss.waifucave.com/"), env);
     const csp = response.headers.get("content-security-policy")!;
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("script-src 'self'");
@@ -30,7 +30,7 @@ describe("the page's Worker", () => {
   });
 
   test("/config.json names the handshake, and local emulators only when configured", async () => {
-    const prod = await worker.fetch(new Request("https://clover.waifucave.com/config.json"), { ASSETS: assets, HANDSHAKE_ORIGIN: "https://handshake.waifucave.com" });
+    const prod = await worker.fetch(new Request("https://moss.waifucave.com/config.json"), { ASSETS: assets, HANDSHAKE_ORIGIN: "https://handshake.waifucave.com" });
     expect(await prod.json()).toEqual({ handshake: "https://handshake.waifucave.com" });
     const local = await worker.fetch(new Request("http://127.0.0.1:8790/config.json"), {
       ASSETS: assets,

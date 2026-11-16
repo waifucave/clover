@@ -2,10 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type PluginState, type WritableSocket } from "@waifucave/clover-protocol";
+import { MOSS_ERR, MOSS_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type PluginState, type WritableSocket } from "@waifucave/moss-protocol";
 import { startIpcServer } from "../../src/ipc/server";
-import { createCloverServer } from "../../src/ipc/clover";
-import { CloverTokens } from "../../src/auth/clover-tokens";
+import { createMossServer } from "../../src/ipc/moss";
+import { MossTokens } from "../../src/auth/moss-tokens";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
@@ -54,7 +54,7 @@ class Client {
     return new Promise((r) => this.pending.set(id, r));
   }
   hello(role: string, token: string, extra: Record<string, unknown> = {}): Promise<any> {
-    return this.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role, token, clientName: `test-${role}`, ...extra });
+    return this.request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role, token, clientName: `test-${role}`, ...extra });
   }
   close(): void { this.socket.end(); }
 }
@@ -62,42 +62,42 @@ class Client {
 const outside: PeerFacts = { pid: 4242, ancestors: [1], probe: { sandboxedMac: false, inHostNamespacesLinux: true, tokenRestrictedWin: false, appContainerWin: false }, floor: "outside-floor" };
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe.skipIf(!onDarwin)("the Clover Browser panel's calls over the real socket", () => {
+describe.skipIf(!onDarwin)("the MOSS Browser panel's calls over the real socket", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot() {
     const rec = (source: string, granted: string[]) => ({ enabled: true, state: "running" as PluginState, granted, source });
     const records: Record<string, any> = {
-      "clover/browser-view": rec("bundled", ["browser"]),
-      "clover/other": rec("bundled", []),
+      "moss/browser-view": rec("bundled", ["browser"]),
+      "moss/other": rec("bundled", []),
       "acme/panel": rec("user", ["browser"]),
       "bare": rec("user", []),
     };
     // F5: by capability, never by a plugin's id.
     const holds = (id: string) => grantsInForce(records[id]).includes("browser");
-    const home = mkdtempSync(join(tmpdir(), "clover-browser-rpc-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-browser-rpc-"));
     const store = new SessionStore(home);
     mkdirSync(join(home, "run"), { recursive: true });
     const socketPath = resolveEndpoint(join(home, "run")).path;
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     await authority.ensureTokens();
     const appToken = "a".repeat(43);
-    const tokens = new CloverTokens({ appToken, verifyCli: (t) => authority.verify("harness", t) });
+    const tokens = new MossTokens({ appToken, verifyCli: (t) => authority.verify("harness", t) });
     const pair = new DaemonPair({
       now: () => Date.now(), after: (ms, fn) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); },
       startApp: async () => "started", stopDaemon: () => {}, tellAppQuit: () => {},
     }, { desktop: true, graceMs: 60_000 });
     const app = new FakeApp();
     const service = new BrowserService({ computer: "Studio", app: () => app });
-    const clover = createCloverServer({
-      tokens, processes: new (await import("../../src/auth/clover-caller")).SessionProcesses(), serverVersion: "test", deviceId: "d".repeat(32), pair, appToken, appPeer: "none",
+    const moss = createMossServer({
+      tokens, processes: new (await import("../../src/auth/moss-caller")).SessionProcesses(), serverVersion: "test", deviceId: "d".repeat(32), pair, appToken, appPeer: "none",
       pluginCapabilities: (id: string) => grantsInForce(records[id]),
       hostPidOf: () => undefined, linkPid: () => 4242, probe: () => outside,
       handlers: browserRpcHandlers(() => service, holds),
     });
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
-    stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, mossConnections: moss });
+    stop = () => { moss.dispose(); pair.dispose(); server.stop(); store.close(); };
     const appClient = await Client.connect(socketPath);
     await appClient.hello("app", appToken);
     const layerOf = async (pluginId: string) => {
@@ -106,13 +106,13 @@ describe.skipIf(!onDarwin)("the Clover Browser panel's calls over the real socke
       await c.hello("layer", token, { pluginId });
       return c;
     };
-    return { app, service, clover, appClient, layerOf, holds };
+    return { app, service, moss, appClient, layerOf, holds };
   }
 
   test("the bundled panel's layer lists and shows a bot's tab and takes it back; the app does too", async () => {
     const b = await boot();
     const botTab = await b.service.open({ kind: "user" }, { owner: { kind: "bot", bot: "alpha" }, url: "https://example.com/" });
-    const panel = await b.layerOf("clover/browser-view");
+    const panel = await b.layerOf("moss/browser-view");
     const listed = await panel.request("browser.tabs", { owner: { kind: "bot", bot: "alpha" } });
     expect(listed.result.tabs.map((t: { id: string }) => t.id)).toEqual([botTab.id]);
     const shown = await panel.request("browser.show", { id: botTab.id, view: "browser", viewport: { width: 800, height: 600 } });
@@ -132,21 +132,21 @@ describe.skipIf(!onDarwin)("the Clover Browser panel's calls over the real socke
     expect((await acme.request("browser.tabs", {})).result.tabs.map((t: { id: string }) => t.id)).toEqual([botTab.id]);
     expect((await acme.request("browser.show", { id: botTab.id, view: "browser", viewport: { width: 800, height: 600 } })).result.tab).toMatchObject({ place: "shown" });
     acme.close();
-    for (const id of ["clover/other", "bare"]) {
+    for (const id of ["moss/other", "bare"]) {
       const c = await b.layerOf(id);
       const r = await c.request("browser.tabs", {});
-      expect([id, r.error?.code === CLOVER_ERR.ROLE_REFUSED || r.error?.code === CLOVER_ERR.CAPABILITY_REFUSED]).toEqual([id, true]);
+      expect([id, r.error?.code === MOSS_ERR.ROLE_REFUSED || r.error?.code === MOSS_ERR.CAPABILITY_REFUSED]).toEqual([id, true]);
       c.close();
     }
   });
 
   test("tab_changed reaches the app and the layers of plugins holding browser once each subscribed, and no other plugin's layer", async () => {
     const b = await boot();
-    const panel = await b.layerOf("clover/browser-view");
-    const other = await b.layerOf("clover/other");
+    const panel = await b.layerOf("moss/browser-view");
+    const other = await b.layerOf("moss/other");
     for (const c of [panel, other, b.appClient]) await c.request("events.subscribe", { areas: ["browser"] });
     const tab = { id: "tab_1", computer: "Studio", owner: { kind: "bot", bot: "alpha" }, partition: "persist:bot-alpha", url: "https://example.com/", title: "", place: "headless", viewport: { width: 1280, height: 800 }, loading: false, heldByUser: false };
-    const sent = b.clover.coreEvent({ type: "tab_changed", tab } as never, { to: hearsTabsOf(b.holds) });
+    const sent = b.moss.coreEvent({ type: "tab_changed", tab } as never, { to: hearsTabsOf(b.holds) });
     await wait(100);
     const heard = (c: Client) => c.fromDaemon.filter((m) => m.method === "core.event" && m.params?.type === "tab_changed").length;
     expect([heard(panel), heard(other), heard(b.appClient)]).toEqual([1, 0, 1]);

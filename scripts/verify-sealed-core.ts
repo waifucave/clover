@@ -1,10 +1,10 @@
 // verify:sealed-core — the compiled core runs only its own code, and its environment can't make it leak a key
 // (lane M's door audit, scripts/seal-bun-doors.ts).
 //
-// Runs the built `clover-core` with every door a Bun-compiled binary has — its environment, its arguments, its
+// Runs the built `moss-core` with every door a Bun-compiled binary has — its environment, its arguments, its
 // working folder — and fails unless, for each one:
 //   - a payload that writes a marker file never ran;
-//   - the core STAYED ITSELF: with the door set, `--version` still prints `clover <version>` (a binary that became
+//   - the core STAYED ITSELF: with the door set, `--version` still prints `moss <version>` (a binary that became
 //     plain Bun writes no marker for a door that is only half the attack, so a missing marker alone proves nothing);
 //   - no debugger port opened and no debugger connected out;
 //   - a request the core makes with a dummy key (`__fetch-probe`) never shows that key on stdout or stderr
@@ -14,7 +14,7 @@
 // start with them), and a SWEEP of every `BUN_*` and `NODE_*` name the binary's code contains outside the module graph,
 // each set to `1`, `*`, `--preload=<payload>` and `<payload>`, so a variable a future Bun adds is tried too.
 //
-// macOS: the binary is signed as a release signs it — hardened runtime, scripts/clover-core.entitlements — and the
+// macOS: the binary is signed as a release signs it — hardened runtime, scripts/moss-core.entitlements — and the
 // gate asserts the hardened runtime and that no `allow-dyld-environment-variables` entitlement is there (the macOS
 // seal is `DYLD_*` names, which dyld removes only from a hardened process). DYLD_INSERT_LIBRARIES is tried too.
 // Windows: the binary must NOT be sealed (seal-bun-doors.ts says why); Bun's own variables are open there by design
@@ -46,7 +46,7 @@
 //   bun run verify:sealed-core:proof                the owner's proof on a SIP-on Mac (= --require-proof)
 //
 // Nothing here starts a daemon or reads a secret store: every run is `--version`, `bridge` without its session,
-// `__runtimes-probe` or `__fetch-probe` to a local server (or Apple's), on a temp CLOVER_HOME and no HOME, with no
+// `__runtimes-probe` or `__fetch-probe` to a local server (or Apple's), on a temp MOSS_HOME and no HOME, with no
 // keychain involved.
 import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -111,7 +111,7 @@ export function doors(): Door[] {
     { name: "working folder tsconfig.json and package.json", cwdFiles: { "tsconfig.json": `{"compilerOptions":{"paths":{"@waifucave/*":["./payload.js"]}}}`, "package.json": `{"name":"x","main":"payload.js","bun":{"preload":["./payload.js"]}}` } },
     { name: "NODE_PATH (the runtime ladder's package rung)", env: { NODE_PATH: "$NP" }, args: ["__runtimes-probe"], check: "probe" },
     { name: "working folder node_modules (the runtime ladder's package rung)", args: ["__runtimes-probe"], check: "probe", cwdFiles: { "node_modules": "$PLANT" } },
-    { name: "CLOVER_RUNTIME_EXECUTABLE (dist ignores it)", env: { CLOVER_RUNTIME_EXECUTABLE: "$NP/@yanlinglabs/winter-agent-sdk-darwin-arm64/bin/winter" }, args: ["__runtimes-probe"], check: "probe" },
+    { name: "MOSS_RUNTIME_EXECUTABLE (dist ignores it)", env: { MOSS_RUNTIME_EXECUTABLE: "$NP/@yanlinglabs/winter-agent-sdk-darwin-arm64/bin/winter" }, args: ["__runtimes-probe"], check: "probe" },
     { name: "DYLD_INSERT_LIBRARIES (hardened runtime)", env: { DYLD_INSERT_LIBRARIES: "$DYLIB" }, os: ["darwin"] },
     { name: "HTTPS_PROXY (allowed)", env: { HTTPS_PROXY: "http://127.0.0.1:9", HTTP_PROXY: "http://127.0.0.1:9" } },
     // An empty variable name: Darwin's getenv matched one to every name a NUL-led seal made empty.
@@ -150,7 +150,7 @@ export function refusalDoors(): Door[] {
   }
   out.push({ name: "HOME=<a planted home>", env: { HOME: "$PLANTED_HOME" }, os: ["darwin"] });
   // A test's keychain variables: a release refuses them at startup, naming them.
-  for (const name of ["CLOVER_TEST_KEYCHAIN", "CLOVER_KEYCHAIN_SERVICE", "WINTER_TEST_KEYCHAIN"]) out.push({ name: `${name}=<set>`, env: { [name]: name === "CLOVER_TEST_KEYCHAIN" ? "$CA" : "x" } });
+  for (const name of ["MOSS_TEST_KEYCHAIN", "MOSS_KEYCHAIN_SERVICE", "WINTER_TEST_KEYCHAIN"]) out.push({ name: `${name}=<set>`, env: { [name]: name === "MOSS_TEST_KEYCHAIN" ? "$CA" : "x" } });
   return out;
 }
 
@@ -176,8 +176,8 @@ function runBinary(file: string, args: string[], cwd: string, env: Record<string
 
 function baseEnv(dir: string, mark: string): Record<string, string> {
   // No HOME: macOS refuses one that isn't the account's own (and takes the account's home from the password database
-  // without one); the core's own state goes to the temp CLOVER_HOME.
-  const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin", CLOVER_HOME: join(dir, "home"), DOOR_MARK: mark };
+  // without one); the core's own state goes to the temp MOSS_HOME.
+  const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin", MOSS_HOME: join(dir, "home"), DOOR_MARK: mark };
   for (const k of ["SystemRoot", "windir", "TEMP", "TMP"]) if (process.env[k] !== undefined) env[k] = process.env[k]!;
   if (process.platform === "win32") env.USERPROFILE = join(dir, "h");
   return env;
@@ -300,12 +300,12 @@ async function trustChecks(work: string, nonce: string, run: (args: string[]) =>
     }
   }
   if (process.platform === "linux" && spawnSync("sudo", ["-n", "true"]).status === 0 && existsSync("/usr/local/share/ca-certificates")) {
-    const made = openssl(["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=Clover sealed-core gate CA", "-keyout", "ca.key", "-out", "ca.pem"], dir)
+    const made = openssl(["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=MOSS sealed-core gate CA", "-keyout", "ca.key", "-out", "ca.pem"], dir)
       && openssl(["req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=localhost", "-keyout", "leaf.key", "-out", "leaf.csr"], dir)
       && (writeFileSync(join(dir, "leaf.ext"), "subjectAltName=DNS:localhost\n"), openssl(["x509", "-req", "-in", "leaf.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial", "-days", "2", "-extfile", "leaf.ext", "-out", "leaf.pem"], dir));
     if (!made) problems.push("openssl could not make the throwaway CA");
     else {
-      const installed = "/usr/local/share/ca-certificates/clover-sealed-core-gate.crt";
+      const installed = "/usr/local/share/ca-certificates/moss-sealed-core-gate.crt";
       const server = await httpsServer(readFileSync(join(dir, "leaf.pem"), "utf8"), readFileSync(join(dir, "leaf.key"), "utf8"));
       try {
         const before = outcome(await run(["__fetch-probe", server.url, nonce]));
@@ -360,7 +360,7 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
   problems.push(...sealProblems(bytes).map((p) => `byte check: ${p}`));
   const win = process.platform === "win32";
 
-  const work = mkdtempSync(join(tmpdir(), "clover-sealed-core-"));
+  const work = mkdtempSync(join(tmpdir(), "moss-sealed-core-"));
   // `__fetch-probe` takes only a 32-hex key (fetch-probe.ts).
   const nonce = randomBytes(16).toString("hex");
   let hits = 0;
@@ -373,9 +373,9 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
     let execEnv = "";
     if (process.platform === "darwin") {
       if (!opts.signed) {
-        bin = join(work, "clover-core");
+        bin = join(work, "moss-core");
         copyFileSync(binary, bin);
-        const s = spawnSync("codesign", ["--force", "--sign", "-", "--options", "runtime", "--entitlements", join(ROOT, "scripts", "clover-core.entitlements"), bin], { encoding: "utf8" });
+        const s = spawnSync("codesign", ["--force", "--sign", "-", "--options", "runtime", "--entitlements", join(ROOT, "scripts", "moss-core.entitlements"), bin], { encoding: "utf8" });
         if (s.status !== 0) return [...problems, `codesign (hardened runtime, ad hoc) failed: ${s.stderr.trim()}`];
       }
       // The macOS seal holds only under the hardened runtime and without the DYLD entitlement.
@@ -448,7 +448,7 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
       }
       return { ...(await runBinary(bin, args, cwd, env, mark)), mark };
     };
-    const itself = (r: Run) => r.code === 0 && r.stdout.trim() === `clover ${VERSION}`;
+    const itself = (r: Run) => r.code === 0 && r.stdout.trim() === `moss ${VERSION}`;
     /** A run that never happened: an ERROR, which fails the gate, never "closed" or "OPEN". */
     const errored = (name: string, ...runs: Run[]): boolean => {
       const bad = runs.find((r) => r.error !== undefined);
@@ -461,7 +461,7 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
     {
       const r = await runDoor({ name: "baseline" }, ["--version"]);
       if (errored("baseline", r)) return problems;
-      if (!itself(r)) problems.push(`baseline: \`clover-core --version\` did not answer \`clover ${VERSION}\` (exit ${r.code}): ${(r.stdout + r.stderr).trim().slice(0, 200)}`);
+      if (!itself(r)) problems.push(`baseline: \`moss-core --version\` did not answer \`moss ${VERSION}\` (exit ${r.code}): ${(r.stdout + r.stderr).trim().slice(0, 200)}`);
     }
 
     // The macOS seal's premise: with SIP on, dyld removes DYLD_* from the hardened copy before it starts.
@@ -515,7 +515,7 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
       if (door.raw !== undefined && (execEnv === "" || !existsSync(execEnv))) continue;
       const r = await runDoor(door, ["--version"]);
       if (errored(door.name, r)) continue;
-      const refused = r.code === 78 && r.stderr.includes("refusing to start") && !r.stdout.includes("clover ");
+      const refused = r.code === 78 && r.stderr.includes("refusing to start") && !r.stdout.includes("moss ");
       if (!refused) problems.push(`${door.name}: a release build must refuse to start with it (exit ${r.code}: ${(r.stdout + r.stderr).trim().slice(0, 160)})`);
       console.log(`verify:sealed-core: ${refused ? "refused" : "OPEN   "} ${door.name}`);
     }

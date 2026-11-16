@@ -60,7 +60,7 @@ export function osPowerKeeper(o: OsPowerKeeperOptions = {}): PowerKeeper {
   const on = () => {
     try {
       if (platform === "darwin") proc = spawn(["/usr/bin/caffeinate", "-i", "-w", String(process.pid)]);
-      else if (platform === "linux") proc = spawn(["systemd-inhibit", "--what=idle:sleep", "--who=Clover", `--why=${[...reasons.values()][0] ?? "working"}`, "--mode=block", "sleep", "infinity"]);
+      else if (platform === "linux") proc = spawn(["systemd-inhibit", "--what=idle:sleep", "--who=MOSS", `--why=${[...reasons.values()][0] ?? "working"}`, "--mode=block", "sleep", "infinity"]);
       else if (platform === "win32") (o.setExecutionState ?? windowsExecutionState)(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
     } catch (err) {
       o.log?.(`[power] keeping the machine awake failed: ${err instanceof Error ? err.message : String(err)}`);

@@ -6,15 +6,15 @@ import { NEVER, SEND_ONLY, TREE_CALLS, needsOf, treeVerdict, type TreeCaller } f
 
 // F2: the door asks for capabilities, never for an id. A bundled part's are what its manifest lists (the build grants
 // them), read here from its folder; any other plugin's are what a test gives it.
-const BUNDLED = join(import.meta.dir, "../../../plugins/clover/plugins");
+const BUNDLED = join(import.meta.dir, "../../../plugins/moss/plugins");
 const capsCache = new Map<string, ReadonlySet<string>>();
 function capsOf(pluginId: string): ReadonlySet<string> {
   const hit = capsCache.get(pluginId);
   if (hit !== undefined) return hit;
   let caps: ReadonlySet<string> = new Set();
-  if (pluginId.startsWith("clover/")) {
+  if (pluginId.startsWith("moss/")) {
     try {
-      caps = new Set((JSON.parse(readFileSync(join(BUNDLED, pluginId.slice("clover/".length), "clover.json"), "utf8")) as { capabilities?: string[] }).capabilities ?? []);
+      caps = new Set((JSON.parse(readFileSync(join(BUNDLED, pluginId.slice("moss/".length), "moss.json"), "utf8")) as { capabilities?: string[] }).capabilities ?? []);
     } catch { /* no such bundled part */ }
   }
   capsCache.set(pluginId, caps);
@@ -24,17 +24,17 @@ const verdict = (part: string, method: string, params?: unknown) => treeVerdict(
 
 describe("the door for parts: by capability, never by id (F2)", () => {
   test("a read passes for a part whose plugin holds its capability, whichever plugin; a method the table doesn't name isn't its business", () => {
-    for (const m of ["archive.history", "archive.list"]) expect(verdict("clover/conversation", m)).toMatchObject({ ok: true, by: "conversation.read" });
-    for (const m of ["plugin.list", "plugin.get", "plugin.ui"]) expect(verdict("clover/bot-editor", m)).toMatchObject({ ok: true, by: "plugins.read" });
-    expect(verdict("clover/settings", "ui.settings")).toMatchObject({ ok: true, by: "app.settings" });
-    expect(verdict("clover/bot-editor", "ui.settings")).toMatchObject({ ok: true, by: "bots.edit" });
-    expect(verdict("clover/shell", "account.status")).toMatchObject({ ok: true, by: "account.read" });
-    expect(verdict("clover/bot-editor", "models.list")).toMatchObject({ ok: true, by: "bots.read" });
+    for (const m of ["archive.history", "archive.list"]) expect(verdict("moss/conversation", m)).toMatchObject({ ok: true, by: "conversation.read" });
+    for (const m of ["plugin.list", "plugin.get", "plugin.ui"]) expect(verdict("moss/bot-editor", m)).toMatchObject({ ok: true, by: "plugins.read" });
+    expect(verdict("moss/settings", "ui.settings")).toMatchObject({ ok: true, by: "app.settings" });
+    expect(verdict("moss/bot-editor", "ui.settings")).toMatchObject({ ok: true, by: "bots.edit" });
+    expect(verdict("moss/shell", "account.status")).toMatchObject({ ok: true, by: "account.read" });
+    expect(verdict("moss/bot-editor", "models.list")).toMatchObject({ ok: true, by: "bots.read" });
     // Without the capability: not a door of this table's (models.list, account.status and ui.settings aren't the layer role's).
-    expect(verdict("clover/archive", "models.list")).toMatchObject({ ok: false, owned: true, why: "models.list needs the bots.read capability" });
-    expect(verdict("clover/conversation", "account.status")).toMatchObject({ ok: false, owned: true, why: "account.status needs the account.read capability" });
-    expect(verdict("clover/conversation", "ui.settings")).toMatchObject({ ok: false, owned: true });
-    expect(verdict("clover/composer", "nonsense.method")).toMatchObject({ ok: false, owned: false });
+    expect(verdict("moss/archive", "models.list")).toMatchObject({ ok: false, owned: true, why: "models.list needs the bots.read capability" });
+    expect(verdict("moss/conversation", "account.status")).toMatchObject({ ok: false, owned: true, why: "account.status needs the account.read capability" });
+    expect(verdict("moss/conversation", "ui.settings")).toMatchObject({ ok: false, owned: true });
+    expect(verdict("moss/composer", "nonsense.method")).toMatchObject({ ok: false, owned: false });
     // A third party's part with the capability passes as the bundled one does; the same id with none doesn't.
     expect(treeVerdict(["account.read"], "account.status")).toMatchObject({ ok: true });
     expect(treeVerdict(["plugins.manage"], "plugin.get")).toMatchObject({ ok: true, by: "plugins.read" });
@@ -44,44 +44,44 @@ describe("the door for parts: by capability, never by id (F2)", () => {
   test("a write without its capability: the layer door for a method the layer role has (the core's own rules and cards), refused for any other", () => {
     for (const m of ["plugin.setEnabled", "plugin.settings.set", "ui.set", "bot.setUserLayer", "plugin.install"]) {
       expect(LAYER_METHODS.has(m)).toBe(true);
-      for (const part of ["clover/conversation", "clover/sidebar"]) expect(verdict(part, m, { patch: { appearance: "dark" } })).toMatchObject({ ok: false, owned: false });
+      for (const part of ["moss/conversation", "moss/sidebar"]) expect(verdict(part, m, { patch: { appearance: "dark" } })).toMatchObject({ ok: false, owned: false });
     }
     for (const m of ["tool.setPermission", "point.active.set", "plugin.remove", "ui.secret", "ui.pick", "bot.importAvatar"]) {
       expect(LAYER_METHODS.has(m)).toBe(false);
-      expect(verdict("clover/conversation", m)).toMatchObject({ ok: false, owned: true });
-      expect(verdict("clover/conversation", m).ok === false && (verdict("clover/conversation", m) as { why: string }).why).toContain("capability");
+      expect(verdict("moss/conversation", m)).toMatchObject({ ok: false, owned: true });
+      expect(verdict("moss/conversation", m).ok === false && (verdict("moss/conversation", m) as { why: string }).why).toContain("capability");
     }
   });
 
   test("the composer's session control is not on the door: it is the composer spot's callbacks", () => {
-    for (const m of ["session.setModel", "session.interrupt", "session.stop"]) expect(verdict("clover/composer", m)).toMatchObject({ ok: false, owned: true });
+    for (const m of ["session.setModel", "session.interrupt", "session.stop"]) expect(verdict("moss/composer", m)).toMatchObject({ ok: false, owned: true });
   });
 
   test("a send is never a bare call, the cards are never answered, trust-changing calls need a card", () => {
-    for (const m of SEND_ONLY) expect(verdict("clover/composer", m)).toMatchObject({ ok: false, owned: true });
-    for (const m of NEVER) expect(verdict("clover/settings", m)).toMatchObject({ ok: false, owned: true });
+    for (const m of SEND_ONLY) expect(verdict("moss/composer", m)).toMatchObject({ ok: false, owned: true });
+    for (const m of NEVER) expect(verdict("moss/settings", m)).toMatchObject({ ok: false, owned: true });
     for (const m of ["computer.setLevel", "device.revoke", "main.set"]) {
-      expect(verdict("clover/settings", m)).toMatchObject({ ok: false, owned: true });
-      expect(verdict("clover/composer", m)).toMatchObject({ ok: false, owned: true });
+      expect(verdict("moss/settings", m)).toMatchObject({ ok: false, owned: true });
+      expect(verdict("moss/composer", m)).toMatchObject({ ok: false, owned: true });
     }
   });
 
   test("what the daemon doesn't serve is refused", () => {
     for (const m of ["models.catalog", "session.changes", "session.createPr"]) {
-      expect(verdict("clover/panel", m)).toMatchObject({ ok: false, owned: true });
+      expect(verdict("moss/panel", m)).toMatchObject({ ok: false, owned: true });
     }
   });
 
   test("the session panels' reads: conversation.read, no gesture; without it the layer door (the layer role's own)", () => {
     for (const m of ["session.diff", "session.outputs", "session.context", "session.connectors"]) {
       expect(TREE_CALLS[m]).toEqual({ disposition: "read", needs: "conversation.read" });
-      expect(verdict("clover/panel", m)).toMatchObject({ ok: true });
+      expect(verdict("moss/panel", m)).toMatchObject({ ok: true });
       expect(treeVerdict(["conversation.read"], m)).toMatchObject({ ok: true });
       expect(treeVerdict([], m)).toMatchObject({ ok: false, owned: false });
     }
   });
 
-  test("a non-clover layer's calls are unchanged: the layer door still refuses each of them", () => {
+  test("a non-moss layer's calls are unchanged: the layer door still refuses each of them", () => {
     // The table is reached only for the bundled tree's parts; for any other layer, the layer role's methods stand.
     for (const m of ["session.send", "session.setModel", "session.interrupt", "session.stop", "computer.setLevel", "device.revoke", "main.set", "models.list", "account.status", "card.answer", "card.confirm"]) {
       if (m === "card.confirm") continue; // the layer role's own (the sealed card's)
@@ -97,11 +97,11 @@ describe("the door for parts: by capability, never by id (F2)", () => {
 import { PART_LOG_LINES_MAX, PICK_TOKEN_MS, PickTokens, pageParams, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
 
 // The bundled parts this file names (their ids only NAME them here; what each may do is its manifest's capabilities).
-const PLUGINS_PART = "clover/plugin-index";
-const BOT_EDITOR_PART = "clover/bot-editor";
-const CONVERSATION_PART = "clover/conversation";
-const CHARACTER_PART = "clover/character";
-const SHELL_PART = "clover/shell";
+const PLUGINS_PART = "moss/plugin-index";
+const BOT_EDITOR_PART = "moss/bot-editor";
+const CONVERSATION_PART = "moss/conversation";
+const CHARACTER_PART = "moss/character";
+const SHELL_PART = "moss/shell";
 
 /** A test's route: `tree` names the calling part (its capabilities its manifest's, or `caps` for a third party's). */
 type Over = Partial<Omit<TreeRoute, "caller">> & { gesture?: boolean; tree?: { windowId: number; pluginId: string } | undefined; caps?: readonly string[] };
@@ -109,7 +109,7 @@ function route(over: Over) {
   const calls: string[] = [];
   const logs: string[] = [];
   const { tree, caps, ...rest } = over;
-  const who = "tree" in over ? tree : { windowId: 1, pluginId: "clover/composer" };
+  const who = "tree" in over ? tree : { windowId: 1, pluginId: "moss/composer" };
   const caller: TreeCaller | undefined = who === undefined ? undefined : { ...who, capabilities: caps !== undefined ? new Set(caps) : capsOf(who.pluginId) };
   const r: TreeRoute = {
     caller,
@@ -135,7 +135,7 @@ describe("routing a part's call", () => {
   });
 
   test("a conversation or composer frame has no settings capability: its settings writes go the layer door (the core's own rules), never the app's connection", async () => {
-    for (const part of ["clover/conversation", "clover/composer"]) {
+    for (const part of ["moss/conversation", "moss/composer"]) {
       for (const method of ["ui.set", "plugin.setEnabled", "plugin.settings.set"]) {
         const { r, calls } = route({ tree: { windowId: 1, pluginId: part }, method, params: { patch: { appearance: "dark" } }, gesture: true });
         expect(await routeCall(r)).toBe("layer");
@@ -147,18 +147,18 @@ describe("routing a part's call", () => {
       expect(calls).toEqual([]);
       expect(logs[0]).toContain("refused");
     }
-    const { r, calls } = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "ui.set", params: { patch: { appearance: "dark" } }, gesture: true });
+    const { r, calls } = route({ tree: { windowId: 1, pluginId: "moss/settings" }, method: "ui.set", params: { patch: { appearance: "dark" } }, gesture: true });
     expect(await routeCall(r)).toBe("app");
     expect(calls).toEqual(["app:ui.set"]);
   });
 
   test("switching a plugin on or off is the settings part's and needs the user's click", async () => {
-    const t = { windowId: 1, pluginId: "clover/settings" };
+    const t = { windowId: 1, pluginId: "moss/settings" };
     const none = route({ tree: t, method: "plugin.setEnabled", gesture: false });
     await expect(routeCall(none.r)).rejects.toThrow("only right after the user's own key press or click");
     expect(none.calls).toEqual([]);
     expect(await routeCall(route({ tree: t, method: "plugin.setEnabled", gesture: true }).r)).toBe("app");
-    const other = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "plugin.setEnabled", gesture: true });
+    const other = route({ tree: { windowId: 1, pluginId: "moss/composer" }, method: "plugin.setEnabled", gesture: true });
     expect(await routeCall(other.r)).toBe("layer");
     // A third party's part with plugins.manage passes as Settings does, on the user's press.
     const third = { windowId: 1, pluginId: "my-settings" };
@@ -182,14 +182,14 @@ describe("routing a part's call", () => {
 
   test("a bot's user layer is the bot editor's (and the avatar's two fields the character plugin's), with the user's click; no other part's", async () => {
     const patch = { id: "alpha", patch: { instructions: "x" } };
-    const editor = { windowId: 1, pluginId: "clover/bot-editor" };
+    const editor = { windowId: 1, pluginId: "moss/bot-editor" };
     expect(await routeCall(route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: true }).r)).toBe("app");
     const none = route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: false });
     await expect(routeCall(none.r)).rejects.toThrow("only right after");
     expect(none.calls).toEqual([]);
     // Without bots.edit: the layer door, where the core raises its card for a user-layer change.
     // (The composer holds bots.edit for its model picker on a bot's main conversation.)
-    for (const part of ["clover/conversation", "clover/settings"]) {
+    for (const part of ["moss/conversation", "moss/settings"]) {
       const other = route({ tree: { windowId: 1, pluginId: part }, method: "bot.setUserLayer", params: patch, gesture: true });
       expect(await routeCall(other.r)).toBe("layer");
       expect(other.calls).toEqual(["layer"]);
@@ -200,20 +200,20 @@ describe("routing a part's call", () => {
 
   test("another plugin's settings take plugins.read (a read) and plugins.manage (a write, on a press); a part's own go through the plugin API, not this door", async () => {
     // The composer holds neither: a read is refused (not the layer role's), a write goes the layer door.
-    const composer = { windowId: 1, pluginId: "clover/composer" };
-    const read = route({ tree: composer, method: "plugin.settings.get", params: { id: "clover/provider-gcp" } });
+    const composer = { windowId: 1, pluginId: "moss/composer" };
+    const read = route({ tree: composer, method: "plugin.settings.get", params: { id: "moss/provider-gcp" } });
     await expect(routeCall(read.r)).rejects.toThrow("plugin.settings.get needs the plugins.read capability");
     expect(read.calls).toEqual([]);
-    expect(await routeCall(route({ tree: composer, method: "plugin.settings.set", params: { id: "clover/provider-gcp", key: "project", value: "x" }, gesture: true }).r)).toBe("layer");
+    expect(await routeCall(route({ tree: composer, method: "plugin.settings.set", params: { id: "moss/provider-gcp", key: "project", value: "x" }, gesture: true }).r)).toBe("layer");
     // A third party with plugins.read reads any plugin's settings view (a secret only as set or not, the core's own).
-    const reader = route({ tree: { windowId: 1, pluginId: "my-plugins" }, caps: ["plugins.read"], method: "plugin.settings.get", params: { id: "clover/provider-gcp" } });
+    const reader = route({ tree: { windowId: 1, pluginId: "my-plugins" }, caps: ["plugins.read"], method: "plugin.settings.get", params: { id: "moss/provider-gcp" } });
     expect(await routeCall(reader.r)).toBe("app");
     expect(reader.calls).toEqual(["app:plugin.settings.get"]);
   });
 });
 
 describe("the bot editor's switch for other plugins' layout patches", () => {
-  const editor = { windowId: 1, pluginId: "clover/bot-editor" };
+  const editor = { windowId: 1, pluginId: "moss/bot-editor" };
   const stored = { picks: [], lists: [{ spot: "status", order: ["a"], hidden: [] }, { spot: "bot.tab", bot: "luna", order: [], hidden: ["old#x"] }, { spot: "bot.tab", bot: "alpha", order: [], hidden: ["m#move"] }] };
   const go = (params: unknown, gesture = true) => {
     const got: [string, unknown][] = [];
@@ -259,7 +259,7 @@ describe("the bot editor's switch for other plugins' layout patches", () => {
     }
     const none = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: [] }] } }, false);
     await expect(none.run).rejects.toThrow("only right after the user's own");
-    expect(verdict("clover/conversation", "ui.set", { patch: { lists: [] } })).toMatchObject({ ok: false, owned: false, why: "ui.set needs the bots.edit capability" });
+    expect(verdict("moss/conversation", "ui.set", { patch: { lists: [] } })).toMatchObject({ ok: false, owned: false, why: "ui.set needs the bots.edit capability" });
     expect(treeVerdict(["bots.edit"], "ui.set", { patch: { lists: [] } })).toMatchObject({ ok: true, by: "bots.edit" });
     // bots.edit sets lists, never the look.
     expect(treeVerdict(["bots.edit"], "ui.set", { patch: { appearance: "dark" } })).toMatchObject({ ok: false, why: "ui.set needs the app.settings capability" });
@@ -270,13 +270,13 @@ describe("the re-founded Voice makes no call through this door (F1): its own set
   test("voice.stop, voice.speak and voice.played are gone from the door, and its speak-replies switch is its own setting", () => {
     for (const m of ["voice.stop", "voice.speak", "voice.played"]) expect(Object.hasOwn(TREE_CALLS, m)).toBe(false);
     // A patch of `voice` is no shape of ui.set's own: it is the look's, which takes app.settings, and drops what isn't a look key.
-    expect(verdict("clover/voice", "ui.set", { patch: { voice: { speakReplies: true } } })).toMatchObject({ ok: false, owned: false, why: "ui.set needs the app.settings capability" });
-    expect(verdict("clover/voice", "plugin.settings.get", { id: "clover/voice" })).toMatchObject({ ok: false, owned: true });
+    expect(verdict("moss/voice", "ui.set", { patch: { voice: { speakReplies: true } } })).toMatchObject({ ok: false, owned: false, why: "ui.set needs the app.settings capability" });
+    expect(verdict("moss/voice", "plugin.settings.get", { id: "moss/voice" })).toMatchObject({ ok: false, owned: true });
   });
 });
 
 describe("the Settings page's ui.set", () => {
-  const settings = { windowId: 1, pluginId: "clover/settings" };
+  const settings = { windowId: 1, pluginId: "moss/settings" };
   const sent = async (params: unknown, gesture = true) => {
     const got: unknown[] = [];
     const { r } = route({ tree: settings, method: "ui.set", params, gesture, request: async (_m, p) => { got.push(p); return "app"; } });
@@ -292,7 +292,7 @@ describe("the Settings page's ui.set", () => {
     expect(none.got).toEqual([]);
   });
   test("the keys its controls write pass with their values checked", async () => {
-    for (const patch of [{ appearance: "light" }, { appearance: "system" }, { globalTheme: "midnight#night" }, { globalTheme: "clover/base-theme#base" }, { language: "pt-BR" }, { language: "de" }]) {
+    for (const patch of [{ appearance: "light" }, { appearance: "system" }, { globalTheme: "midnight#night" }, { globalTheme: "moss/base-theme#base" }, { language: "pt-BR" }, { language: "de" }]) {
       const c = await sent({ patch });
       await c.run;
       expect(c.got).toEqual([{ patch }]);
@@ -519,20 +519,20 @@ describe("the door, table by table: what each entry needs, with what press", () 
   test("no test or table names a bundled id to allow a call: the bundled parts pass by the capabilities their manifests list", async () => {
     // Every call each bundled part makes today, from its own manifest's capabilities.
     const makes: Record<string, string[]> = {
-      "clover/settings": ["ui.settings", "ui.set", "plugin.setEnabled", "plugin.logs", "plugin.list", "plugin.ui", "account.status", "tool.permissions", "tool.setPermission", "point.active.list", "point.active.set", "computer.list"],
+      "moss/settings": ["ui.settings", "ui.set", "plugin.setEnabled", "plugin.logs", "plugin.list", "plugin.ui", "account.status", "tool.permissions", "tool.setPermission", "point.active.list", "point.active.set", "computer.list"],
       [PLUGINS_PART]: ["plugin.install", "plugin.remove", "plugin.get", "plugin.settings.get", "plugin.settings.set", "ui.pick", "ui.secret", "plugin.logs", "notify.setMuted", "computer.list", "command.list"],
       [BOT_EDITOR_PART]: ["bot.setUserLayer", "models.list", "plugin.list", "plugin.ui", "ui.secret", "ui.settings"],
       [CHARACTER_PART]: ["bot.importAvatar", "plugin.list"],
       [CONVERSATION_PART]: ["archive.history", "session.resend", "conversation.messageAction"],
       [SHELL_PART]: ["account.status", "computer.list"],
-      "clover/sidebar": ["account.status", "computer.list"],
-      "clover/panel": ["session.outputs", "session.context", "session.connectors", "computer.list"],
-      "clover/panel-diff": ["session.diff"],
-      "clover/archive": ["archive.list", "archive.history"],
+      "moss/sidebar": ["account.status", "computer.list"],
+      "moss/panel": ["session.outputs", "session.context", "session.connectors", "computer.list"],
+      "moss/panel-diff": ["session.diff"],
+      "moss/archive": ["archive.list", "archive.history"],
     };
     for (const [part, methods] of Object.entries(makes)) for (const m of methods) expect([part, m, verdict(part, m, paramsFor(m, part, new PickTokens(), part === CHARACTER_PART ? "bots.avatar" : part === BOT_EDITOR_PART ? "bots.edit" : "")).ok]).toEqual([part, m, true]);
     const src = readFileSync(join(import.meta.dir, "../src/main/ui/tree-calls.ts"), "utf8");
-    expect(src).not.toMatch(/"clover\/[a-z-]+"/);
+    expect(src).not.toMatch(/"moss\/[a-z-]+"/);
   });
 
   test("every bundled part that opens a place in the main window (useOpen) holds shell.control, as any plugin must (mayOpen)", () => {
@@ -542,7 +542,7 @@ describe("the door, table by table: what each entry needs, with what press", () 
     for (const name of readdirSync(BUNDLED)) {
       let client: string[] = [];
       try { client = files(join(BUNDLED, name, "client")); } catch { continue; }
-      if (client.some((f) => !/\/sdk\.tsx?$/.test(f) && /\buseOpen\(\)/.test(readFileSync(f, "utf8")))) openers.push(`clover/${name}`);
+      if (client.some((f) => !/\/sdk\.tsx?$/.test(f) && /\buseOpen\(\)/.test(readFileSync(f, "utf8")))) openers.push(`moss/${name}`);
     }
     expect(openers.length).toBeGreaterThan(0);
     for (const id of openers) expect([id, capsOf(id).has("shell.control")]).toEqual([id, true]);
@@ -556,8 +556,8 @@ describe("the door, table by table: what each entry needs, with what press", () 
     expect(treeVerdict(["files"], "plugin.settings.get", { id: "alpha", bot: "alpha" })).toMatchObject({ ok: false, why: "plugin.settings.get needs the bots.edit or plugins.read capability" });
     for (const method of ["plugin.settings.get", "plugin.settings.set"]) {
       const page = route({
-        tree: { windowId: 1, pluginId: "clover/settings" }, method, params: { id: "clover/provider-gcp", key: "project", value: "x" }, gesture: true,
-        request: async (m) => (m === "plugin.get" ? { plugin: { id: "clover/provider-gcp", manifest: { settings: { project: { type: "string" } } } } } : "app"),
+        tree: { windowId: 1, pluginId: "moss/settings" }, method, params: { id: "moss/provider-gcp", key: "project", value: "x" }, gesture: true,
+        request: async (m) => (m === "plugin.get" ? { plugin: { id: "moss/provider-gcp", manifest: { settings: { project: { type: "string" } } } } } : "app"),
       });
       expect(await routeCall(page.r)).toBe("app");
     }
@@ -593,7 +593,7 @@ describe("the Plugins page's calls as main sends them", () => {
     const again = page("plugin.install", { source: { from: "folder", path: token } }, { tokens });
     await expect(routeCall(again.r)).rejects.toThrow("comes from the folder picker");
     // Another part's token, an expired one: refused.
-    expect(tokens.redeem(tokens.issue("clover/settings", "/x", "plugin.install"), PLUGINS_PART, "plugin.install")).toBeUndefined();
+    expect(tokens.redeem(tokens.issue("moss/settings", "/x", "plugin.install"), PLUGINS_PART, "plugin.install")).toBeUndefined();
     let now = 0;
     const timed = new PickTokens(() => now);
     const t = timed.issue(PLUGINS_PART, "/x", "plugin.install");
@@ -605,9 +605,9 @@ describe("the Plugins page's calls as main sends them", () => {
     const pasted = page("plugin.install", { source: { from: "wrap", kind: "mcp-config", value: "{\"mcpServers\":{}}" } }, { tokens });
     await routeCall(pasted.r);
     expect(pasted.sent).toEqual([{ source: { from: "wrap", kind: "mcp-config", value: "{\"mcpServers\":{}}" } }]);
-    const npm = page("plugin.install", { source: { from: "npm", name: "clover-tarot", version: "1.0.0" } }, { tokens });
+    const npm = page("plugin.install", { source: { from: "npm", name: "moss-tarot", version: "1.0.0" } }, { tokens });
     await routeCall(npm.r);
-    expect(npm.sent).toEqual([{ source: { from: "npm", name: "clover-tarot", version: "1.0.0" } }]);
+    expect(npm.sent).toEqual([{ source: { from: "npm", name: "moss-tarot", version: "1.0.0" } }]);
   });
 
   test("ui.pick: main's dialog, a token and the name back, never the path; cancelled says so", async () => {
@@ -642,12 +642,12 @@ describe("the Plugins page's calls as main sends them", () => {
     // The key: refused before the core sees a value, whatever the page says the field is.
     for (const value of ["sk-new", null, ""]) {
       const key = page("plugin.settings.set", { id: "tarot", key: "token", value, type: "string" });
-      await expect(routeCall(key.r)).rejects.toThrow("only in Clover's own key dialog");
+      await expect(routeCall(key.r)).rejects.toThrow("only in MOSS's own key dialog");
       expect(key.sent).toEqual([]);
     }
     // A sign-in from the page takes no key; a browser sign-in passes as id and index.
     const withKey = page("plugin.auth.signIn", { id: "tarot", index: 0, key: "sk-new" });
-    await expect(routeCall(withKey.r)).rejects.toThrow("only in Clover's own key dialog");
+    await expect(routeCall(withKey.r)).rejects.toThrow("only in MOSS's own key dialog");
     expect(withKey.sent).toEqual([]);
     const browser = page("plugin.auth.signIn", { id: "tarot", index: 1, extra: true });
     await routeCall(browser.r);
@@ -699,7 +699,7 @@ describe("the Plugins page's calls as main sends them", () => {
     // No gesture, no dialog; another part, no dialog.
     const none = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "ui.secret", params: { id: "tarot", key: "token" }, gesture: false, openKey, request: async (m) => appConnection(m) });
     await expect(routeCall(none.r)).rejects.toThrow("only right after");
-    const other = route({ tree: { windowId: 1, pluginId: "clover/sidebar" }, method: "ui.secret", params: { id: "tarot", key: "token" }, gesture: true, openKey, request: async (m) => appConnection(m) });
+    const other = route({ tree: { windowId: 1, pluginId: "moss/sidebar" }, method: "ui.secret", params: { id: "tarot", key: "token" }, gesture: true, openKey, request: async (m) => appConnection(m) });
     await expect(routeCall(other.r)).rejects.toThrow("ui.secret needs the plugins.manage or bots.edit capability");
     expect(opened.length).toBe(2);
     // While a key dialog is open, another is refused: the user closes it first.
@@ -736,18 +736,18 @@ describe("the Plugins page's calls as main sends them", () => {
   });
 
   test("plugin.iconSource (a plugin's folder path) is main's alone: the door never makes it for a part, and a layer's own connection can't call it", () => {
-    for (const part of [PLUGINS_PART, "clover/settings", "clover/composer"]) expect(verdict(part, "plugin.iconSource").ok).toBe(false);
+    for (const part of [PLUGINS_PART, "moss/settings", "moss/composer"]) expect(verdict(part, "plugin.iconSource").ok).toBe(false);
     expect(LAYER_METHODS.has("plugin.iconSource")).toBe(false);
   });
 
-  test("notify.setMuted: a top-level plugin, a bundled bot's like any (alpha), never Clover's own tree or a part of it; a boolean; nothing else", async () => {
+  test("notify.setMuted: a top-level plugin, a bundled bot's like any (alpha), never MOSS's own tree or a part of it; a boolean; nothing else", async () => {
     const ok = page("notify.setMuted", { pluginId: "tarot-panel", muted: true, extra: 1, client: "cli" });
     await routeCall(ok.r);
     expect(ok.sent).toEqual([{ pluginId: "tarot-panel", muted: true }]);
     const alpha = page("notify.setMuted", { pluginId: "alpha", muted: true });
     await routeCall(alpha.r);
     expect(alpha.sent).toEqual([{ pluginId: "alpha", muted: true }]);
-    for (const params of [{ pluginId: "clover", muted: true }, { pluginId: "clover/shell", muted: true }, { pluginId: "tarot-panel/part", muted: true }, { pluginId: "tarot-panel", muted: "yes" }, { muted: true }, { pluginId: "../x", muted: false }, { pluginId: "1tarot", muted: true }, { pluginId: "tarot--x", muted: true }, { pluginId: "x".repeat(41), muted: true }]) {
+    for (const params of [{ pluginId: "moss", muted: true }, { pluginId: "moss/shell", muted: true }, { pluginId: "tarot-panel/part", muted: true }, { pluginId: "tarot-panel", muted: "yes" }, { muted: true }, { pluginId: "../x", muted: false }, { pluginId: "1tarot", muted: true }, { pluginId: "tarot--x", muted: true }, { pluginId: "x".repeat(41), muted: true }]) {
       const r = page("notify.setMuted", params);
       await expect(routeCall(r.r)).rejects.toThrow();
       expect(r.sent).toEqual([]);
@@ -759,7 +759,7 @@ describe("the Plugins page's calls as main sends them", () => {
     const forged = { client: "cli", caller: "cli", role: "cli", origin: "user-terminal", by: "user-terminal" };
     const cases: [string, Record<string, unknown>][] = [
       ["plugin.dev.add", { path: tokens.issue(PLUGINS_PART, "/picked/dev", "plugin.dev.add"), ...forged }],
-      ["plugin.install", { source: { from: "npm", name: "clover-tarot" }, ...forged }],
+      ["plugin.install", { source: { from: "npm", name: "moss-tarot" }, ...forged }],
       ["plugin.remove", { id: "tarot", ...forged }],
       ["plugin.update", { id: "tarot", ...forged }],
       ["plugin.pin", { id: "tarot", pinned: true, ...forged }],
@@ -782,7 +782,7 @@ describe("the Plugins page's calls as main sends them", () => {
     }
     // Any other part's forwarded call the same (a read: the computers).
     const sent: unknown[] = [];
-    const own = route({ tree: { windowId: 1, pluginId: "clover/sidebar" }, method: "computer.list", params: { ...forged }, request: async (_m, p) => { sent.push(p); return "app"; } });
+    const own = route({ tree: { windowId: 1, pluginId: "moss/sidebar" }, method: "computer.list", params: { ...forged }, request: async (_m, p) => { sent.push(p); return "app"; } });
     await routeCall(own.r);
     expect(sent).toEqual([{}]);
   });
@@ -792,7 +792,7 @@ describe("the Plugins page's calls as main sends them", () => {
     await routeCall(renew.r);
     expect(renew.sent).toEqual([{ path: "/picked/dev", card: true }]);
     for (const [lines, want] of [[1_000_000, PART_LOG_LINES_MAX], [50, 50], [-3, 1], ["x", 200]] as const) {
-      for (const part of [PLUGINS_PART, "clover/settings"]) {
+      for (const part of [PLUGINS_PART, "moss/settings"]) {
         const sent: unknown[] = [];
         const logs = route({ tree: { windowId: 1, pluginId: part }, method: "plugin.logs", params: { id: "tarot", lines }, request: async (_m, p) => { sent.push(p); return "app"; } });
         await routeCall(logs.r);
@@ -880,7 +880,7 @@ describe("the character plugin's avatar section: a pick of main's, then one impo
       await expect(routeCall(r.r)).rejects.toThrow("comes from the file picker");
       expect(r.sent).toEqual([]);
     }
-    for (const [part, use] of [[CHARACTER_PART, "plugin.install"], [CHARACTER_PART, "plugin.dev.add"], [PLUGINS_PART, "bot.importAvatar"], ["clover/settings", "bot.importAvatar"]] as const) {
+    for (const [part, use] of [[CHARACTER_PART, "plugin.install"], [CHARACTER_PART, "plugin.dev.add"], [PLUGINS_PART, "bot.importAvatar"], ["moss/settings", "bot.importAvatar"]] as const) {
       const r = editor("bot.importAvatar", { id: "alpha", path: tokens.issue(part, "/picked/x", use as never) }, { tokens });
       await expect(routeCall(r.r)).rejects.toThrow("comes from the file picker");
       expect(r.sent).toEqual([]);
@@ -893,7 +893,7 @@ describe("the character plugin's avatar section: a pick of main's, then one impo
     await expect(routeCall(expired.r)).rejects.toThrow("comes from the file picker");
     // An id main's own listing doesn't hold (a free string, a plugin that isn't a bot, a path): refused, the token kept.
     const held = tokens.issue(CHARACTER_PART, "/picked/x", "bot.importAvatar");
-    for (const id of ["nobody", "clover/composer", "../alpha", "", 7, undefined]) {
+    for (const id of ["nobody", "moss/composer", "../alpha", "", 7, undefined]) {
       const r = editor("bot.importAvatar", { id, path: held }, { tokens });
       await expect(routeCall(r.r)).rejects.toThrow("which bot?");
       expect(r.sent).toEqual([]);
@@ -1018,7 +1018,7 @@ describe("Try again on the conversation: main forwards the session to the daemon
   });
 
   test("another part, or no gesture, is refused before anything is sent", async () => {
-    for (const part of ["clover/composer", "clover/bot-editor", PLUGINS_PART, "clover/settings", "clover/sidebar"]) {
+    for (const part of ["moss/composer", "moss/bot-editor", PLUGINS_PART, "moss/settings", "moss/sidebar"]) {
       const t = resendFrom({ part });
       await expect(routeCall(t.r)).rejects.toThrow("session.resend needs the user.send capability");
       expect(t.sent).toEqual([]);
@@ -1029,7 +1029,7 @@ describe("Try again on the conversation: main forwards the session to the daemon
   });
 
   test("the daemon's refusal shows as a plain sentence with no path, capped; main reads no log and decides nothing", async () => {
-    const t = resendFrom({ send: () => { throw new Error(`that turn was not begun by a message you sent (/Users/x/.clover/y) ${"z".repeat(500)}`); } });
+    const t = resendFrom({ send: () => { throw new Error(`that turn was not begun by a message you sent (/Users/x/.moss/y) ${"z".repeat(500)}`); } });
     const err = await routeCall(t.r).then(() => undefined, (e: Error) => e);
     expect(err?.message).toContain("not begun by a message you sent");
     expect(err?.message).not.toContain("/Users");
@@ -1094,7 +1094,7 @@ describe("a message action (`conversation.messageAction`): main finds the entry 
       [{ entry: "alpha#pin", session: "b_alpha", seq: 1.5 }, {}],
       [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { gesture: false }],
       // A part that doesn't declare the spot finds no entry in it (the runtime's `entries` is the declarer's own).
-      [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { tree: { windowId: 1, pluginId: "clover/composer" }, entries: () => [] }],
+      [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { tree: { windowId: 1, pluginId: "moss/composer" }, entries: () => [] }],
       [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { entries: () => [{ ref: "alpha#pin", pluginId: "alpha", fields: { title: "Pin", call: "not a name" } }] }],
       [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { entries: undefined }],
     ];
@@ -1152,7 +1152,7 @@ describe("a setting from the bot's Edit page goes through the door", () => {
   test("another plugin's id, an unknown bot, or an id that isn't the edited bot's is refused, read or write", async () => {
     for (const method of ["plugin.settings.get", "plugin.settings.set"]) {
       for (const params of [
-        { id: "clover/provider-gcp", bot: "alpha", key: "k", value: "x" },
+        { id: "moss/provider-gcp", bot: "alpha", key: "k", value: "x" },
         { id: "luna", bot: "alpha", key: "k", value: "x" },
         { id: "alpha", bot: "nobody", key: "k", value: "x" },
       ]) {
@@ -1173,7 +1173,7 @@ describe("a setting from the bot's Edit page goes through the door", () => {
 
   test("a key, a value outside its kind's bounds or choices, and an unknown setting are refused", async () => {
     for (const [key, value, why] of [
-      ["token", "sk-1", "Clover's own key dialog"],
+      ["token", "sk-1", "MOSS's own key dialog"],
       ["n", 9, "at most 5"],
       ["n", "3", "takes a number"],
       ["c", "z", ""],

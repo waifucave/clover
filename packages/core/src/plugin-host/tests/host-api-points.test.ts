@@ -7,7 +7,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -31,12 +31,12 @@ async function until<T>(f: () => Promise<T | undefined>, ms = 15_000): Promise<T
 
 describe("a host half's own API (the acceptance-points fixture)", () => {
   test("points, the synced store, settings and their watches work in a real host", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b-points-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b-points-"));
     temps.push(home);
     cpSync(FIXTURE, join(home, "plugins", "acceptance-points"), { recursive: true });
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets });
     try {
       const { card } = await opened.registry.installed("acceptance-points", "app");

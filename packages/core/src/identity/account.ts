@@ -19,7 +19,7 @@
 //   GET    /.well-known/jwks.json                    the keys tokens are checked against
 // Each takes the Supabase access token as `Authorization: Bearer`.
 import { createHash } from "node:crypto";
-import type { AccountView, DeviceKind, DeviceOs } from "@waifucave/clover-protocol";
+import type { AccountView, DeviceKind, DeviceOs } from "@waifucave/moss-protocol";
 import { encode } from "../links/codec";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import { ACCOUNT_TOKEN_MAX_MS, type KeyedTokenSource, mintedTokenSource, Secret, type SecretRef, type SecretStore } from "../contracts/secret-store";
@@ -34,10 +34,10 @@ export type AccountProvider = "email" | "discord" | "google";
  *  anyone between) can't list the device with another key or name than it gave. Canonical CBOR, so no field can read
  *  as another. */
 export const registerStatement = (account: string, d: { id: string; publicKey: string; boxKey: string; name: string; kind: string; os?: string }, t: number): Uint8Array =>
-  encode(["clover-account-v2 register", account, d.id, d.publicKey, d.boxKey, d.name, d.kind, d.os ?? null, t]);
+  encode(["moss-account-v2 register", account, d.id, d.publicKey, d.boxKey, d.name, d.kind, d.os ?? null, t]);
 /** What a device signs to have a token minted: the account it's on too, as the register statement names it (lane I). */
 export const mintStatement = (account: string, audience: string, device: string, t: number): Uint8Array =>
-  utf8(["clover-account-v1 mint", account, audience, device, String(t)].join("\n"));
+  utf8(["moss-account-v1 mint", account, audience, device, String(t)].join("\n"));
 
 export interface AccountConfig {
   /** The Supabase project URL. */
@@ -112,7 +112,7 @@ export class AccountClient {
   /** What two devices compare at pairing to tell whether they share an account, without telling which. */
   async accountHash(): Promise<string | null> {
     const id = await this.accountId();
-    return id === null ? null : createHash("sha256").update(`clover-account-v1 hash\n${id}`).digest("base64url").slice(0, 22);
+    return id === null ? null : createHash("sha256").update(`moss-account-v1 hash\n${id}`).digest("base64url").slice(0, 22);
   }
 
   /** Starts a PKCE sign-in: returns the URL the client opens, and resolves `done` once the browser came back and the
@@ -136,7 +136,7 @@ export class AccountClient {
       fetch: async (req) => {
         const url = new URL(req.url);
         if (url.pathname !== "/callback") return new Response("Not found", { status: 404 });
-        if (url.searchParams.get("state") !== state) return new Response("This sign-in link is stale. Start again from Clover.", { status: 400 });
+        if (url.searchParams.get("state") !== state) return new Response("This sign-in link is stale. Start again from MOSS.", { status: 400 });
         const code = url.searchParams.get("code");
         if (!code) {
           fail(new ContractError("refused", "the sign-in was cancelled"));
@@ -148,10 +148,10 @@ export class AccountClient {
           const session = await this.#token("pkce", { auth_code: code, code_verifier: verifier }, provider);
           await this.#save(session);
           finish(await this.status());
-          return new Response("Signed in to Clover. You can close this tab.", { headers: { "content-type": "text/plain; charset=utf-8" } });
+          return new Response("Signed in to MOSS. You can close this tab.", { headers: { "content-type": "text/plain; charset=utf-8" } });
         } catch (err) {
           fail(err);
-          return new Response("Sign-in failed. Start again from Clover.", { status: 400 });
+          return new Response("Sign-in failed. Start again from MOSS.", { status: 400 });
         } finally {
           setTimeout(() => this.#endPending(server), 0);
         }

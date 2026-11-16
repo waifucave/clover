@@ -12,7 +12,7 @@
 // so the model gets a typed deny and the turn goes on; one from the user's own turn waits for them. The origin is read
 // when the question is asked, as the dispatch child's `dispatchCardTimeoutMs` reads its own.
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
-import { UNATTENDED_CARD_TIMEOUT_MS, type NewSessionEvent, type TurnOrigin } from "@waifucave/clover-protocol";
+import { UNATTENDED_CARD_TIMEOUT_MS, type NewSessionEvent, type TurnOrigin } from "@waifucave/moss-protocol";
 import { QuestionBroker } from "../agent/questions";
 import { ASK_USER_QUESTION_TOOL, askUserQuestionBridge } from "../runtime-sdk/question-bridge";
 import type { DurableSessionHost } from "../sessions/durable-host";

@@ -1,0 +1,49 @@
+{
+  "manifest": 1,
+  "name": "Web search and fetch",
+  "description": "mcp__moss__WebSearch and mcp__moss__WebFetch: a bot's web search (Exa) and page fetch, through the core's fetch.",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "capabilities": [
+    "network:mcp.exa.ai",
+    "network:public"
+  ],
+  "settings": {
+    "blockedDomains": {
+      "type": "string",
+      "title": {
+        "en": "Blocked domains"
+      },
+      "description": {
+        "en": "Domains WebSearch leaves out and WebFetch never reads, besides MOSS's own list. Separate them with commas or spaces."
+      },
+      "default": ""
+    }
+  },
+  "contributes": {
+    "mcpServers": {
+      "web": {
+        "type": "host",
+        "tools": {
+          "WebSearch": "preload",
+          "WebFetch": "preload"
+        },
+        "webSearch": [
+          "WebSearch"
+        ],
+        "webFetch": [
+          "WebFetch"
+        ],
+        "needs": {
+          "WebFetch": "network:public"
+        },
+        "instructions": "instructions.md"
+      }
+    }
+  }
+}

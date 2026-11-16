@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ensureDaemonReachable } from "../src/main";
 
-// Lifecycle Task 5, C-M1: `clover` starts the daemon through the OS when it is down (and on a desktop
+// Lifecycle Task 5, C-M1: `moss` starts the daemon through the OS when it is down (and on a desktop
 // the daemon starts the app). `ensureDaemonReachable` is the pure, injectable core (OS/clock/env seams
 // passed in) — these tests never touch a real endpoint and never run launchctl, systemctl or schtasks;
 // `connect()` wires the real seams (see main.ts).

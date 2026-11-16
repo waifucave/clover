@@ -36,7 +36,7 @@ export default defineConfig({
           ACCOUNT_ISSUER: "https://accounts.test",
           ACCOUNT_JWKS: jwks,
           HANDSHAKE_ORIGIN: "https://handshake.test",
-          WEB_ORIGINS: "https://clover.test, http://127.0.0.1:8790",
+          WEB_ORIGINS: "https://moss.test, http://127.0.0.1:8790",
           TICKET_SECRET: randomBytes(32).toString("base64url"),
           TEST_SIGNING_KEYS: signingKeys,
         },

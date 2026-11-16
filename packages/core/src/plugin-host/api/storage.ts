@@ -1,6 +1,6 @@
 // Storage (spec §5.4 "Storage"): each plugin's data folder on each computer and its synced store.
 //
-// * The data folder is `<home>/plugin-data/<id>/` (a child's under its parent's, `plugin-data/clover/web/`), never
+// * The data folder is `<home>/plugin-data/<id>/` (a child's under its parent's, `plugin-data/moss/web/`), never
 //   synced, kept when the plugin is removed, and fenced from bots' writes (§9.1, the fence's `plugin-data`). The core
 //   makes it (0700) when a host half asks for it.
 // * The synced store holds up to 1 MB of JSON per plugin (`SYNCED_STORE_LIMIT_BYTES`, counted as UTF-8 of the whole
@@ -10,7 +10,7 @@
 //   syncs these files with the account's settings; here they are this computer's copy.
 // * A plugin reaches only its own store and folder: the plugin is the one the host stamped (review S3), never one an
 //   argument names.
-import { SYNCED_STORE_LIMIT_BYTES } from "@waifucave/clover-plugin-sdk";
+import { SYNCED_STORE_LIMIT_BYTES } from "@waifucave/moss-plugin-sdk";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
@@ -26,8 +26,8 @@ export interface SyncedStoreBackend {
 }
 
 /** The store files under `<home>/settings/plugin-stores/<id>.json`, written whole through a temp file. */
-export function fileSyncedStores(cloverHome: string): SyncedStoreBackend {
-  const file = (id: string) => `${pluginPath(join(cloverHome, "settings", "plugin-stores"), id)}.json`;
+export function fileSyncedStores(mossHome: string): SyncedStoreBackend {
+  const file = (id: string) => `${pluginPath(join(mossHome, "settings", "plugin-stores"), id)}.json`;
   return {
     read(id) {
       const f = file(id);
@@ -74,17 +74,17 @@ function sameJson(a: unknown, b: unknown): boolean {
 }
 
 /** A store key: a plain name of at most 128 characters (letters, digits, `.`, `_`, `-`), never starting with a dot,
- *  never holding `..`, and never under `clover.`, which Clover keeps for its own keys in a plugin's store (§5.4: the
+ *  never holding `..`, and never under `moss.`, which MOSS keeps for its own keys in a plugin's store (§5.4: the
  *  add-on hashes a user OK'd). A key only names a field of the plugin's own store file (`fileSyncedStores` keeps one
  *  file per plugin, named from the plugin's id the host stamped), so it never names a file; the rule keeps keys
  *  readable and leaves no room to try. */
-export const STORE_KEY_RE = /^(?!\.)(?!clover\.)(?!.*\.\.)[A-Za-z0-9._-]{1,128}$/;
+export const STORE_KEY_RE = /^(?!\.)(?!moss\.)(?!.*\.\.)[A-Za-z0-9._-]{1,128}$/;
 
 /** Names every object has, which a key never takes. */
 const OBJECT_NAMES = new Set(["__proto__", "constructor", "prototype"]);
 
 function checkKey(key: string): string {
-  if (!STORE_KEY_RE.test(key) || OBJECT_NAMES.has(key)) throw new ContractError("invalid", `${JSON.stringify(key.slice(0, 64))} isn't a store key: letters, digits, ".", "_" and "-", at most 128, not starting with "." or "clover.", no ".."`);
+  if (!STORE_KEY_RE.test(key) || OBJECT_NAMES.has(key)) throw new ContractError("invalid", `${JSON.stringify(key.slice(0, 64))} isn't a store key: letters, digits, ".", "_" and "-", at most 128, not starting with "." or "moss.", no ".."`);
   return key;
 }
 

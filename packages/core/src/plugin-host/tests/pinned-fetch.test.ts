@@ -12,13 +12,13 @@ afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, f
 
 /** A CA and a server certificate for `name` (and only it), made with openssl in a temp folder. */
 function certificates(name: string): { ca: string; cert: string; key: string } {
-  const dir = mkdtempSync(join(tmpdir(), "clover-pinned-tls-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-pinned-tls-"));
   temps.push(dir);
   const run = (...args: string[]) => {
     const r = spawnSync("openssl", args, { cwd: dir, encoding: "utf8" });
     if (r.status !== 0) throw new Error(`openssl ${args[0]}: ${r.stderr}`);
   };
-  run("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "2", "-subj", "/CN=clover-test-ca");
+  run("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "2", "-subj", "/CN=moss-test-ca");
   run("req", "-newkey", "rsa:2048", "-nodes", "-keyout", "server.key", "-out", "server.csr", "-subj", `/CN=${name}`);
   writeFileSync(join(dir, "ext.cnf"), `subjectAltName=DNS:${name}\n`);
   run("x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial", "-out", "server.pem", "-days", "2", "-extfile", "ext.cnf");

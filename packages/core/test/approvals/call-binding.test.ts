@@ -3,8 +3,8 @@
 // with the same change subject, not another change subject with the same call, and never twice.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import type { Level } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker } from "../../src/approvals/broker";
+import type { Level } from "@waifucave/moss-protocol";
+import { MossApprovalBroker } from "../../src/approvals/broker";
 import { CoreComputerRegistry } from "../../src/computers/registry";
 import { boundCardRecord, callBindingOf, type ApprovalRequest, type CallRequestBinding, type CardRecord } from "../../src/contracts/approval-broker";
 import { isContractError } from "../../src/contracts/common";
@@ -17,7 +17,7 @@ const rejection = async (p: Promise<unknown>) => p.then(() => undefined, (e: unk
 
 function world() {
   const clock = new FakeClock();
-  const broker = new CloverApprovalBroker({ clock, levels: () => "ask-risky", localComputer: "Studio" });
+  const broker = new MossApprovalBroker({ clock, levels: () => "ask-risky", localComputer: "Studio" });
   // Each registry judges a card raise on the broker's own record (#342: without the lookup, no card raises a level).
   const cardRecord = (id: string) => broker.get(id);
   const studio = new CoreComputerRegistry({ clock, self: { name: "Studio", device: "studio00000000000000" }, cardRecord });

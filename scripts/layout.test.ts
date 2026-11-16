@@ -1,4 +1,4 @@
-// The repo layout's conventions (docs/clover-layout.md, plan §7), as far as a test can check them: the workspace
+// The repo layout's conventions (docs/moss-layout.md, plan §7), as far as a test can check them: the workspace
 // globs, package names and fields, plugin manifests, services' wrangler configs, the native areas' READMEs, and one
 // lockfile. A new package or plugin that breaks one fails here, with the convention it broke.
 import { describe, expect, test } from "bun:test";
@@ -18,15 +18,15 @@ const REQUIRED_GLOBS = ["packages/*", "apps/*", "plugins/*", "plugins/*/*", "plu
 export function expectedPackageName(dir: string): string | undefined {
   const parts = dir.split("/");
   const [area, a, b] = parts;
-  if (area === "packages" && parts.length === 2) return `@waifucave/clover-${a}`;
-  if (area === "apps" && parts.length === 2) return `@waifucave/clover-${a}`;
-  if (area === "services" && parts.length === 2) return `@waifucave/clover-service-${a}`;
-  if (area === "native" && parts.length === 2) return `@waifucave/clover-native-${a}`;
-  if (area === "plugins" && parts.length === 2) return `@waifucave/clover-plugin-${a}`;
+  if (area === "packages" && parts.length === 2) return `@waifucave/moss-${a}`;
+  if (area === "apps" && parts.length === 2) return `@waifucave/moss-${a}`;
+  if (area === "services" && parts.length === 2) return `@waifucave/moss-service-${a}`;
+  if (area === "native" && parts.length === 2) return `@waifucave/moss-native-${a}`;
+  if (area === "plugins" && parts.length === 2) return `@waifucave/moss-plugin-${a}`;
   // A child lives in its parent's plugins/ folder, as installed (spec §5.1): plugins/<plugin>/plugins/<child>. A package
   // in one of a plugin's own folders (Alpha's tab look) is named for the plugin and the folder.
-  if (area === "plugins" && parts.length === 4 && b === "plugins") return a === "clover" ? `@waifucave/clover-plugin-${parts[3]}` : `@waifucave/clover-plugin-${a}-${parts[3]}`;
-  if (area === "plugins" && parts.length === 3 && b !== "plugins") return a === "clover" ? `@waifucave/clover-plugin-${b}` : `@waifucave/clover-plugin-${a}-${b}`;
+  if (area === "plugins" && parts.length === 4 && b === "plugins") return a === "moss" ? `@waifucave/moss-plugin-${parts[3]}` : `@waifucave/moss-plugin-${a}-${parts[3]}`;
+  if (area === "plugins" && parts.length === 3 && b !== "plugins") return a === "moss" ? `@waifucave/moss-plugin-${b}` : `@waifucave/moss-plugin-${a}-${b}`;
   return undefined;
 }
 
@@ -41,7 +41,7 @@ function pnpmWorkspaces(): string[] {
 
 const governed = (p: WorkspacePackage): boolean => expectedPackageName(p.dir) !== undefined;
 
-/** Top-level plugin folders whose clover.json an open pull request adds. Until it lands such a folder may have none;
+/** Top-level plugin folders whose moss.json an open pull request adds. Until it lands such a folder may have none;
  *  once it does, the manifest is checked like any other, and the entry can go. */
 export const MANIFEST_AWAITS: Readonly<Record<string, string>> = {};
 
@@ -49,7 +49,7 @@ export const MANIFEST_AWAITS: Readonly<Record<string, string>> = {};
  *  (each Worker's tsconfig includes it). */
 const SERVICES_SHARED = "shared";
 
-describe("the repo layout (docs/clover-layout.md)", () => {
+describe("the repo layout (docs/moss-layout.md)", () => {
   test("one workspace list: the root package.json and pnpm-workspace.yaml agree, and hold the layout's globs", () => {
     const bun = rootWorkspaces();
     const pnpm = pnpmWorkspaces();
@@ -90,26 +90,26 @@ describe("the repo layout (docs/clover-layout.md)", () => {
     expect(own).toEqual([]);
   });
 
-  test("plugins: a top-level plugin's clover.json names it by its folder; a child's has no id", () => {
+  test("plugins: a top-level plugin's moss.json names it by its folder; a child's has no id", () => {
     const problems: string[] = [];
     for (const top of dirsIn("plugins")) {
-      const file = `plugins/${top}/clover.json`;
+      const file = `plugins/${top}/moss.json`;
       if (existsSync(join(ROOT, file))) {
         const m = Bun.JSONC.parse(read(file)) as { manifest?: unknown; id?: unknown; name?: unknown };
         if (m.manifest !== 1) problems.push(`${file}: manifest is not 1`);
         if (m.id !== top) problems.push(`${file}: id ${JSON.stringify(m.id)}, but a top-level plugin's id is its folder's name, ${JSON.stringify(top)}`);
         if (m.name === undefined) problems.push(`${file}: no name`);
       } else if (MANIFEST_AWAITS[top] === undefined) {
-        problems.push(`plugins/${top}: no clover.json`);
+        problems.push(`plugins/${top}: no moss.json`);
         continue;
       }
       for (const own of dirsIn(`plugins/${top}`)) {
         // A child sits in plugins/<top>/plugins/, never beside the plugin's own folders (assets, code, Alpha's tab).
-        if (own !== "plugins" && existsSync(join(ROOT, "plugins", top, own, "clover.json"))) problems.push(`plugins/${top}/${own}: a child plugin goes in plugins/${top}/plugins/${own}`);
+        if (own !== "plugins" && existsSync(join(ROOT, "plugins", top, own, "moss.json"))) problems.push(`plugins/${top}/${own}: a child plugin goes in plugins/${top}/plugins/${own}`);
       }
       for (const child of dirsIn(`plugins/${top}/plugins`)) {
-        const childFile = `plugins/${top}/plugins/${child}/clover.json`;
-        if (!existsSync(join(ROOT, childFile))) { problems.push(`plugins/${top}/plugins/${child}: no clover.json (only children go in plugins/)`); continue; }
+        const childFile = `plugins/${top}/plugins/${child}/moss.json`;
+        if (!existsSync(join(ROOT, childFile))) { problems.push(`plugins/${top}/plugins/${child}: no moss.json (only children go in plugins/)`); continue; }
         const c = Bun.JSONC.parse(read(childFile)) as { manifest?: unknown; id?: unknown; name?: unknown };
         if (c.manifest !== 1) problems.push(`${childFile}: manifest is not 1`);
         if (c.id !== undefined) problems.push(`${childFile}: a child has no id (it takes its parent's)`);
@@ -117,8 +117,8 @@ describe("the repo layout (docs/clover-layout.md)", () => {
       }
     }
     expect(problems).toEqual([]);
-    // Clover's own plugin is here from the start; Alpha's folder comes with lane D's bot (D-M1).
-    expect(dirsIn("plugins")).toContain("clover");
+    // MOSS's own plugin is here from the start; Alpha's folder comes with lane D's bot (D-M1).
+    expect(dirsIn("plugins")).toContain("moss");
   });
 
   test("services: each one is a Worker with its wrangler config; services/shared is their shared source, a package and not a Worker", () => {
@@ -161,15 +161,15 @@ describe("the repo layout (docs/clover-layout.md)", () => {
   });
 
   test("the conventions' names follow the folders", () => {
-    expect(expectedPackageName("packages/core")).toBe("@waifucave/clover-core");
-    expect(expectedPackageName("apps/desktop")).toBe("@waifucave/clover-desktop");
-    expect(expectedPackageName("plugins/clover/plugins/shell")).toBe("@waifucave/clover-plugin-shell");
-    expect(expectedPackageName("plugins/alpha/tab")).toBe("@waifucave/clover-plugin-alpha-tab");
-    expect(expectedPackageName("plugins/alpha/plugins/x")).toBe("@waifucave/clover-plugin-alpha-x");
-    expect(expectedPackageName("plugins/clover/plugins")).toBeUndefined();
-    expect(expectedPackageName("plugins/alpha")).toBe("@waifucave/clover-plugin-alpha");
-    expect(expectedPackageName("services/forwarder")).toBe("@waifucave/clover-service-forwarder");
-    expect(expectedPackageName("native/mounts")).toBe("@waifucave/clover-native-mounts");
+    expect(expectedPackageName("packages/core")).toBe("@waifucave/moss-core");
+    expect(expectedPackageName("apps/desktop")).toBe("@waifucave/moss-desktop");
+    expect(expectedPackageName("plugins/moss/plugins/shell")).toBe("@waifucave/moss-plugin-shell");
+    expect(expectedPackageName("plugins/alpha/tab")).toBe("@waifucave/moss-plugin-alpha-tab");
+    expect(expectedPackageName("plugins/alpha/plugins/x")).toBe("@waifucave/moss-plugin-alpha-x");
+    expect(expectedPackageName("plugins/moss/plugins")).toBeUndefined();
+    expect(expectedPackageName("plugins/alpha")).toBe("@waifucave/moss-plugin-alpha");
+    expect(expectedPackageName("services/forwarder")).toBe("@waifucave/moss-service-forwarder");
+    expect(expectedPackageName("native/mounts")).toBe("@waifucave/moss-native-mounts");
     expect(expectedPackageName("spikes/bun-compile")).toBeUndefined();
     expect(expectedPackageName("examples/sample-echo")).toBeUndefined();
   });

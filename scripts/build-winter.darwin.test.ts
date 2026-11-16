@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assertBinaryDoesNotEmbedPath, checkoutIsAtTag, copyCheckoutExcludingGit, signCloverArgs } from "./build-winter";
+import { assertBinaryDoesNotEmbedPath, checkoutIsAtTag, copyCheckoutExcludingGit, signMossArgs } from "./build-winter";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
@@ -88,13 +88,13 @@ describe("checkoutIsAtTag (P8b-2 pinned-peer gate)", () => {
   });
 });
 
-// P8d-14: the dev `--sign`/`CLOVER_RUNTIME_SIGN_IDENTITY` re-sign step. `buildWinter()` itself is
+// P8d-14: the dev `--sign`/`MOSS_RUNTIME_SIGN_IDENTITY` re-sign step. `buildWinter()` itself is
 // not exercised here (a real SDK checkout + a two-minute compile) — only the codesign argv it
 // runs, and that argv's actual effect on a real (fake, non-Mach-O) file via the real `codesign`
 // binary. No Keychain access, no real winter/claude binary.
-describe("signCloverArgs (P8d-14 re-sign for a stable Keychain-ACL identity)", () => {
+describe("signMossArgs (P8d-14 re-sign for a stable Keychain-ACL identity)", () => {
   test("carries a stable --identifier com.winter.runtime, hardened runtime, and a secure timestamp — same shape as the Release embed step (P8d-2)", () => {
-    expect(signCloverArgs("-", "/tmp/dist/winter")).toEqual([
+    expect(signMossArgs("-", "/tmp/dist/winter")).toEqual([
       "--force", "--sign", "-", "--identifier", "com.winter.runtime", "--options", "runtime", "--timestamp", "/tmp/dist/winter",
     ]);
   });
@@ -102,10 +102,10 @@ describe("signCloverArgs (P8d-14 re-sign for a stable Keychain-ACL identity)", (
   test("a REAL codesign with an ad-hoc (`-`) identity lands Identifier=com.winter.runtime — the identifier is what fixes the Keychain-reprompt trap, not a real team identity", () => {
     const dir = mkdtempSync(join(tmpdir(), "build-winter-sign-"));
     temps.push(dir);
-    const fake = join(dir, "clover-fake");
+    const fake = join(dir, "moss-fake");
     writeFileSync(fake, "#!/bin/sh\necho fake winter\n");
     chmodSync(fake, 0o755);
-    const cs = spawnSync("codesign", signCloverArgs("-", fake), { encoding: "utf8" });
+    const cs = spawnSync("codesign", signMossArgs("-", fake), { encoding: "utf8" });
     if (cs.status !== 0) throw new Error(`codesign failed: ${cs.stderr || cs.stdout}`);
     const dvv = spawnSync("codesign", ["-dvv", fake], { encoding: "utf8" });
     const out = `${dvv.stdout}${dvv.stderr}`;

@@ -1,12 +1,12 @@
 // The plugin host's two bundles (the process's thread and a plugin's worker), each one file with everything it imports.
 // From source they're built here; a compiled core carries them prebuilt, since its sources aren't on disk. Either way
 // they're written into the run folder beside the load guard (`writeHostBundles`): a worker's guard lets it load from
-// there and from its plugin's folder only, never Clover's sources or their node_modules.
+// there and from its plugin's folder only, never MOSS's sources or their node_modules.
 //
 // Prebuilt (lane M): `compile:core` (packages/cli/package.json) bundles HOST_BUNDLE_ENTRIES with `bun build --target
-// bun --no-macros` (the same options as `buildHostBundles`, and every dist step's `__CLOVER_DIST__` define) into
+// bun --no-macros` (the same options as `buildHostBundles`, and every dist step's `__MOSS_DIST__` define) into
 // `.build/<HOST_BUNDLE_FILES>`, and passes both files to the compile, which embeds them (Bun.embeddedFiles, named
-// `clover-plugin-host-<bun's hash>.bundle`). They're read from their Blobs once (`loadPrebuiltHostBundles`). The core's
+// `moss-plugin-host-<bun's hash>.bundle`). They're read from their Blobs once (`loadPrebuiltHostBundles`). The core's
 // own signature (macOS) or the signed feed it came from covers the embedded text, as it covers the bundled-plugins
 // manifest. It doesn't cover the copies on disk: what runs is <run folder>/plugin-host.js and plugin-worker.js, which a
 // plugin (it has node:fs, as the user) could rewrite. So they're written whole, never through a link, and their SHA-256
@@ -25,7 +25,7 @@ export const HOST_BUNDLE_ENTRIES = {
   worker: fileURLToPath(new URL("./worker-main.ts", import.meta.url)),
 } as const;
 
-/** Builds both bundles and returns their text. `define` passes a build's constants (a dist build's `__CLOVER_DIST__`). */
+/** Builds both bundles and returns their text. `define` passes a build's constants (a dist build's `__MOSS_DIST__`). */
 export async function buildHostBundles(o: { define?: Record<string, string> } = {}): Promise<{ host: string; worker: string }> {
   const result = await Bun.build({
     entrypoints: [HOST_BUNDLE_ENTRIES.host, HOST_BUNDLE_ENTRIES.worker],
@@ -42,11 +42,11 @@ export async function buildHostBundles(o: { define?: Record<string, string> } = 
 }
 
 /** The embedded files' names in a compiled core (`compile:core`'s `.build/` outputs). */
-export const HOST_BUNDLE_FILES = { host: "clover-plugin-host.bundle", worker: "clover-plugin-worker.bundle" } as const;
+export const HOST_BUNDLE_FILES = { host: "moss-plugin-host.bundle", worker: "moss-plugin-worker.bundle" } as const;
 
 const EMBEDDED_NAMES = {
-  host: /^clover-plugin-host(?:-[a-z0-9]+)?\.bundle$/,
-  worker: /^clover-plugin-worker(?:-[a-z0-9]+)?\.bundle$/,
+  host: /^moss-plugin-host(?:-[a-z0-9]+)?\.bundle$/,
+  worker: /^moss-plugin-worker(?:-[a-z0-9]+)?\.bundle$/,
 } as const;
 
 /** An embedded file of a compiled core: its name, and its bytes. */

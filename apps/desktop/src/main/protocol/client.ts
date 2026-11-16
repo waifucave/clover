@@ -7,16 +7,16 @@
 import { connect, type Socket } from "node:net";
 import { createHash } from "node:crypto";
 import { posix, win32 } from "node:path";
-import { LineDecoder, encodeLine } from "@waifucave/clover-protocol";
+import { LineDecoder, encodeLine } from "@waifucave/moss-protocol";
 
 /** Where the daemon listens for a home, as lane C's `platform/transport.ts` resolves it: `<home>/run/core.sock`, or
- *  on Windows the named pipe `\\.\pipe\clover-core-<id>`, `<id>` the first 16 hex of SHA-256 over the run
+ *  on Windows the named pipe `\\.\pipe\moss-core-<id>`, `<id>` the first 16 hex of SHA-256 over the run
  *  directory's path, so two homes (the dist one, the dev one, a test's) never meet. */
 export function daemonEndpoint(home: string, platform: NodeJS.Platform = process.platform): string {
   const runDir = platform === "win32" ? win32.join(home, "run") : posix.join(home, "run");
   if (platform !== "win32") return posix.join(runDir, "core.sock");
   const id = createHash("sha256").update(runDir).digest("hex").slice(0, 16);
-  return `\\\\.\\pipe\\clover-core-${id}`;
+  return `\\\\.\\pipe\\moss-core-${id}`;
 }
 
 /** A JSON-RPC error answer, or a local failure (`closed`, `timeout`) with a code of its own. */

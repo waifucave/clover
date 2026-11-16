@@ -1,6 +1,6 @@
 import { afterEach, expect, jest, test } from "bun:test";
-import type { NewSessionEvent } from "@waifucave/clover-protocol";
-import { PlanPresentedEvent, PlanResolvedEvent } from "@waifucave/clover-protocol";
+import type { NewSessionEvent } from "@waifucave/moss-protocol";
+import { PlanPresentedEvent, PlanResolvedEvent } from "@waifucave/moss-protocol";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
 import { planBridgeFor, type BridgedPlanRequest } from "../../src/runtime-sdk/plan-bridge";
 

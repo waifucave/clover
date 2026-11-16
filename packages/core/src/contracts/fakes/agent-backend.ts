@@ -82,7 +82,7 @@ export const S5_ANTIGRAVITY_QUIRKS: AgentQuirks = {
     transports: ["stdio", "http"], storesPlainText: true, passesEnvironment: true,
     instructionsReachPrompt: "unknown", systemPromptChannel: "_meta.antigravity.systemPrompt.append", tellsConversationId: true,
   },
-  // Its `resume` replays history, so Clover reattaches with `load` and drops the replay (S5 edit 8).
+  // Its `resume` replays history, so MOSS reattaches with `load` and drops the replay (S5 edit 8).
   sessions: { load: { supported: true, replays: true }, resume: { supported: true, replays: true }, replayKeepsToolCallIds: true, listFiltersHonestly: false, close: true },
   turns: { refusal: "ends-turn", cancelLeavesToolCallsOpen: true, reportsUsage: true, quotaErrorsAsText: false },
   permissions: { optionKinds: ["allow_once", "reject_once"], neverAsks: ["read-only MCP calls"], mcpNames: null },
@@ -207,8 +207,8 @@ export class FakeAgentSession implements AgentSession {
     let usage: AgentTurnEnd["usage"];
     const finish = (stopReason: AgentTurnEnd["stopReason"]): AgentTurnEnd => {
       if (stopReason === "cancelled" && q.turns.cancelLeavesToolCallsOpen) {
-        // The agent left them open; Clover closes them itself (S5 edit 5).
-        for (const id of open) this.#emit({ type: "tool_call_update", id, status: "failed", closedByClover: true });
+        // The agent left them open; MOSS closes them itself (S5 edit 5).
+        for (const id of open) this.#emit({ type: "tool_call_update", id, status: "failed", closedByMoss: true });
       }
       this.#cancel = undefined;
       this.#proceed = undefined;
@@ -255,7 +255,7 @@ export class FakeAgentSession implements AgentSession {
               this.#emit({ type: "tool_call_update", id, status: "failed", refused: true });
               return finish("refusal");
             }
-            // The agent reports the refused call its own way; Clover's record says refused.
+            // The agent reports the refused call its own way; MOSS's record says refused.
             this.#emit({ type: "tool_call_update", id, status: q.turns.refusal === "reported-completed" ? "completed" : "failed", refused: true });
             continue;
           }

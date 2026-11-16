@@ -3,7 +3,7 @@
 // (runtime.ts) and the contracts' fake host (contracts/fakes/plugin-host.ts) both answer by it, so a conformance test
 // holds them to one rule.
 // The catalog alone (its own module, types only besides): the host process loads no more of the SDK than this.
-import { API_CALLS } from "@waifucave/clover-plugin-sdk/api-calls";
+import { API_CALLS } from "@waifucave/moss-plugin-sdk/api-calls";
 
 /** Every dotted prefix of a call the catalog lists (`storage`, `storage.synced`, `storage.synced.get`): what a host
  *  half's `api` has, at any depth. */
@@ -62,5 +62,5 @@ export function apiMemberValue(path: readonly string[], prop: string | symbol, m
   if (kind === "member") return make([...path, prop as string]);
   if (kind === "function") return (Function.prototype as unknown as Record<string, unknown>)[prop as string];
   if (kind === "harmless") return undefined;
-  throw new TypeError(`api.${[...path, String(prop)].join(".")} doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)`);
+  throw new TypeError(`api.${[...path, String(prop)].join(".")} doesn't exist in the plugin API (see API_CALLS in @waifucave/moss-plugin-sdk)`);
 }

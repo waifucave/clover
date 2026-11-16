@@ -1,11 +1,11 @@
-import { noteSpawned } from "../auth/clover-caller";
+import { noteSpawned } from "../auth/moss-caller";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { cloverSharedRoots, ensurePluginRunFiles, isBunCommand, pluginBunLaunch, pluginRunFileChecks, type PluginRunGuard } from "../registry/plugin-run";
+import { mossSharedRoots, ensurePluginRunFiles, isBunCommand, pluginBunLaunch, pluginRunFileChecks, type PluginRunGuard } from "../registry/plugin-run";
 import { fencedSpawn, pluginFenceAvailable, realOrResolved, toolFence } from "../registry/plugin-fence";
 import { checkRunFiles } from "../plugin-host/run-file";
-import type { NewSessionEvent } from "@waifucave/clover-protocol";
+import type { NewSessionEvent } from "@waifucave/moss-protocol";
 
 /**
  * PluginSupervisor — process lifecycle for Tier-2 (`platform`) plugins (design spec §3, plan
@@ -31,13 +31,13 @@ import type { NewSessionEvent } from "@waifucave/clover-protocol";
  * `installed_plugins.json`'s own key) — the one every other plugin surface (consent, enable, install)
  * already used. It was the bare name, so two marketplaces' same-named plugins shared one runtime, one
  * PID file, one token and one tool namespace. The id is the plugin's whole identity downstream: its PID
- * file (`<runDir>/plugins/<spec>.pid`), the token minted for it, the `CLOVER_PLUGIN_ID` it says hello
+ * file (`<runDir>/plugins/<spec>.pid`), the token minted for it, the `MOSS_PLUGIN_ID` it says hello
  * with, its contributions and its tools (`plugin__<spec>__<tool>`).
  *
  * WHAT A BARE-NAME ERA LEFT BEHIND. A PID file a pre-WS-24 core wrote is `<name>.pid`; the bare name is
  * never an eligible id now, so `sweepOrphans` finds it and — only on a VERIFIED start-time match — ends
  * that process, and `startAll` spawns the plugin fresh under its spec. Adopting it instead would be
- * wrong: the orphan authenticated as the bare name (its token, its `CLOVER_PLUGIN_ID`), so it could
+ * wrong: the orphan authenticated as the bare name (its token, its `MOSS_PLUGIN_ID`), so it could
  * never register under the spec. `daemon.ts` revokes the bare-name tokens at boot for the same reason.
  */
 
@@ -163,7 +163,7 @@ export type SupervisorStatus = "starting" | "running" | "backoff" | "circuit-ope
 
 /** `plugins.supervisor.{registrationTimeoutMs,backoffCapMs,circuitFailures,circuitWindowMs}`
  *  (settings.ts) plus two constructor-only test-injection seams that are deliberately NOT part of
- *  settings.json: `invokeTimeoutMs` (spec: env-var only, `CLOVER_PLUGIN_TOOL_TIMEOUT_MS`) and
+ *  settings.json: `invokeTimeoutMs` (spec: env-var only, `MOSS_PLUGIN_TOOL_TIMEOUT_MS`) and
  *  `killGraceMs` (spec-fixed 5s SIGTERM→SIGKILL grace, not settings-overridable at all). */
 export interface PluginSupervisorSettings {
   registrationTimeoutMs?: number;
@@ -180,9 +180,9 @@ export interface PluginSupervisorDeps {
   /** Injectable clock — defaults to `Date.now`. Every lifecycle decision (backoff delay math,
    *  circuit-window pruning) reads time through this, never `Date.now()` directly. */
   now?: () => number;
-  /** `~/.clover/run` (clover-dir.ts's `dirs.runDir`) — PID files live at `<runDir>/plugins/<id>.pid`. */
+  /** `~/.moss/run` (moss-dir.ts's `dirs.runDir`) — PID files live at `<runDir>/plugins/<id>.pid`. */
   runDir: string;
-  /** `CLOVER_SOCKET` value handed to every spawned plugin process. */
+  /** `MOSS_SOCKET` value handed to every spawned plugin process. */
   socketPath: string;
   /** Daemon-side lazy mint (`SessionStore#mintPluginToken`), called fresh right before every
    *  spawn (including restarts) — re-minting rotates the token each time, which is fine (the old
@@ -208,7 +208,7 @@ export interface PluginSupervisorDeps {
   /** Testability seam for PID-reuse identity verification — see `defaultProcessStartedAt` above.
    *  Real `ps` semantics by default; tests inject a fake so they never shell out. */
   processStartedAt?: (pid: number) => string | null;
-  /** Clover's run files for plugin processes (#234, F2): every plugin process runs with Clover's bunfig, no `.env`, and
+  /** MOSS's run files for plugin processes (#234, F2): every plugin process runs with MOSS's bunfig, no `.env`, and
    *  the load guard held to its plugin's folder. Default: written into `<runDir>/plugin-run` on first spawn. */
   pluginRun?: PluginRunGuard;
   /** Testability seam: the plugin Bun (`pluginBun`). */
@@ -332,7 +332,7 @@ export class PluginSupervisor {
     this.backoffCapMs = deps.settings?.backoffCapMs ?? 60_000;
     this.circuitFailures = deps.settings?.circuitFailures ?? 5;
     this.circuitWindowMs = deps.settings?.circuitWindowMs ?? 10 * 60_000;
-    this.invokeTimeoutMs = deps.settings?.invokeTimeoutMs ?? Number(process.env.CLOVER_PLUGIN_TOOL_TIMEOUT_MS ?? 60_000);
+    this.invokeTimeoutMs = deps.settings?.invokeTimeoutMs ?? Number(process.env.MOSS_PLUGIN_TOOL_TIMEOUT_MS ?? 60_000);
     this.killGraceMs = deps.settings?.killGraceMs ?? 5_000;
   }
 
@@ -561,7 +561,7 @@ export class PluginSupervisor {
     this.failPendingInvokes(id);
   }
 
-  /** Manual restart — the small CLI/manager-UI rider (`clover plugin restart <id>`, spec: "restart
+  /** Manual restart — the small CLI/manager-UI rider (`moss plugin restart <id>`, spec: "restart
    *  via re-enable in 4d UI"): forces a fresh spawn cycle regardless of current status, including
    *  "circuit-open" (which nothing else ever recovers from) and "stopped". Clears backoff/circuit
    *  accounting and kills any process still owned first — restart means start over clean. The
@@ -596,7 +596,7 @@ export class PluginSupervisor {
   }
 
   /** WS-24: every id (spec) this supervisor tracks, in any status — for a caller that must resolve a
-   *  pre-WS-24 BARE name (`clover plugin restart <name>`) to the one spec it can mean. */
+   *  pre-WS-24 BARE name (`moss plugin restart <name>`) to the one spec it can mean. */
   trackedIds(): string[] {
     return [...this.runtimes.keys()];
   }
@@ -672,7 +672,7 @@ export class PluginSupervisor {
 
   /** Requires "running" + a live connection (set by `notifyRegistered`); pushes
    *  `plugin_tool_invoke` on that connection and awaits `resolveToolResult` (per-call timeout
-   *  `invokeTimeoutMs`, default 60s / `CLOVER_PLUGIN_TOOL_TIMEOUT_MS`). Never throws — every
+   *  `invokeTimeoutMs`, default 60s / `MOSS_PLUGIN_TOOL_TIMEOUT_MS`). Never throws — every
    *  failure path is a typed `InvokeError`. `sessionId` on the pushed event is the plugin id
    *  itself (non-empty, satisfies the protocol's `Base.sessionId.min(1)`) — this push targets a
    *  specific plugin CONNECTION, not a session's attachments, so there is no real session to
@@ -771,7 +771,7 @@ export class PluginSupervisor {
 
     let proc: SupervisedProcess;
     try {
-      // A plugin host runs under Bun only, where Clover's load guard holds it to its folder (#234's check 3); a program
+      // A plugin host runs under Bun only, where MOSS's load guard holds it to its folder (#234's check 3); a program
       // that isn't Bun is one a manifest declares (a stdio server, a helper), never a host.
       if (!isBunCommand(config.entry.command)) throw new Error(`a plugin host runs under Bun only, not ${basename(config.entry.command)}`);
       const token = this.deps.mintToken(config.id);
@@ -779,11 +779,11 @@ export class PluginSupervisor {
       // Bun resolves its modules through the path it's given (measured, 2f).
       const dir = realOrResolved(config.dir);
       const cwd = config.entry.cwd ? join(dir, config.entry.cwd) : dir;
-      this.pluginRun ??= this.deps.pluginRun ?? { files: ensurePluginRunFiles(this.deps.runDir, { cloverHome: dirname(this.deps.runDir) }) };
+      this.pluginRun ??= this.deps.pluginRun ?? { files: ensurePluginRunFiles(this.deps.runDir, { mossHome: dirname(this.deps.runDir) }) };
       // The plugin Bun, never the one the manifest's command names (#234's check 5, K1): it chooses Bun and the args.
       const launch = pluginBunLaunch(
         config.entry.args ?? [],
-        { ...process.env, CLOVER_PLUGIN_TOKEN: token, CLOVER_SOCKET: this.deps.socketPath, CLOVER_PLUGIN_ID: config.id, CLOVER_PLUGIN_DIR: dir },
+        { ...process.env, MOSS_PLUGIN_TOKEN: token, MOSS_SOCKET: this.deps.socketPath, MOSS_PLUGIN_ID: config.id, MOSS_PLUGIN_DIR: dir },
         { pluginRoot: dir, ...this.pluginRun },
       );
       const bunCmd = this.deps.bun === undefined ? launch.cmd : [this.deps.bun, ...launch.cmd.slice(1)];
@@ -794,14 +794,14 @@ export class PluginSupervisor {
       let cmd = bunCmd;
       let env: Record<string, string> = launch.env;
       let spawnCwd = cwd;
-      // The bunfig, the guard it preloads and the spawn trampoline are the ones Clover wrote, checked last thing before
+      // The bunfig, the guard it preloads and the spawn trampoline are the ones MOSS wrote, checked last thing before
       // the start (a plugin can write the run folder; #312's review, S1).
       checkRunFiles(pluginRunFileChecks(this.pluginRun.files), `plugin ${config.id}`);
       if (guard.fence !== false && pluginFenceAvailable()) {
         // The network: its tree's proxy, or for a wrapper with the grant on its install record, any host (`guard.openNetwork`).
         const open = guard.openNetwork?.(config.id) === true;
         const proxy = open ? undefined : guard.proxyFor?.(config.id);
-        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}), ...(open ? { openNetwork: true } : {}), ...(guard.picked ? { picked: guard.picked(config.id) } : {}) });
+        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? mossSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}), ...(open ? { openNetwork: true } : {}), ...(guard.picked ? { picked: guard.picked(config.id) } : {}) });
         // Through the spawn trampoline: its own TCC-responsible process (the controller's ruling after #345).
         const spawned = fencedSpawn({
           cmd: bunCmd, env: { ...launch.env, ...(proxy?.env ?? {}), TMPDIR: tmp }, cwd, files: guard.files,

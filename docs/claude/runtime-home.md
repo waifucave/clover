@@ -1,6 +1,6 @@
 # Runtime home
 
-> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-clover` tag, before the Clover rename (C0). Where it describes code that C0 renamed, read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*` and `~/.winter` as `~/.clover`. For Clover itself, [the spec](../clover-spec.md) is the source of truth, then [the plan](../clover-plan.md).
+> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-moss` tag, before the MOSS rename (C0). Where it describes code that C0 renamed, read `winter-core` as `moss-core`, `WINTER_*` as `MOSS_*` and `~/.winter` as `~/.moss`. For MOSS itself, [the spec](../moss-spec.md) is the source of truth, then [the plan](../moss-plan.md).
 
 *Read before touching `<home>/sdk`, run folders, MCP/settings scopes, saved answers, plugins or Migration C. Paths are under `packages/core/src/` unless stated.*
 

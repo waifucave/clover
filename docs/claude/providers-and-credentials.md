@@ -1,6 +1,6 @@
 # Providers and credentials
 
-> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-clover` tag, before the Clover rename (C0). Where it describes code that C0 renamed, read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*` and `~/.winter` as `~/.clover`. For Clover itself, [the spec](../clover-spec.md) is the source of truth, then [the plan](../clover-plan.md).
+> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-moss` tag, before the MOSS rename (C0). Where it describes code that C0 renamed, read `winter-core` as `moss-core`, `WINTER_*` as `MOSS_*` and `~/.winter` as `~/.moss`. For MOSS itself, [the spec](../moss-spec.md) is the source of truth, then [the plan](../moss-plan.md).
 
 *Read this before touching a Keychain slot, a credential door, the host-credential broker, the boot Keychain passes or Anthropic sign-in.*
 

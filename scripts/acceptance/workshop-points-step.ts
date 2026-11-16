@@ -32,12 +32,12 @@ export function boardFiles(): Record<string, string> {
 /** The second plugin's files: a manifest that adds one entry to the first one's point, and nothing else. */
 export function itemFiles(): Record<string, string> {
   return {
-    "clover.json": `${JSON.stringify({
+    "moss.json": `${JSON.stringify({
       manifest: 1,
       id: ITEM_ID,
       name: ITEM_NAME,
       description: "An item on Workshop board, added by Alpha.",
-      engines: { clover: "^1.0.0" },
+      engines: { moss: "^1.0.0" },
       contributes: { [BOARD_POINT]: [{ id: "hello", title: ITEM_TITLE }] },
     }, null, 2)}\n`,
   };

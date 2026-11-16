@@ -1,6 +1,6 @@
 // The seam every in-process session of the embedded runtime shares (lane A): a bot's conversation (driver.ts), an
-// in-process subagent (subagent-backend.ts), and lane K's in-process coding agent (clover-code). Each one is a `query()`
-// over the embedded host's spawn hook, with the core's brand on the Clover home, an environment from an allow-list,
+// in-process subagent (subagent-backend.ts), and lane K's in-process coding agent (moss-code). Each one is a `query()`
+// over the embedded host's spawn hook, with the core's brand on the MOSS home, an environment from an allow-list,
 // and, for a real model, the daemon's provider fill (the provider, the credential broker, the model plugins' adapters).
 // Owner: lane A; lane K builds on it.
 import type { Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
@@ -12,7 +12,7 @@ import { testProviderNameFor } from "../provider-selection";
 
 /** What the daemon hands every in-process session. */
 export interface EmbeddedSessionDeps {
-  /** The Clover home: the runtime's own home (`CLOVER_HOME`), its transcripts. */
+  /** The MOSS home: the runtime's own home (`MOSS_HOME`), its transcripts. */
   home: string;
   profile?: string;
   /** The embedded runtime's spawn hook (`createEmbeddedSessionHost().spawn`). */
@@ -25,13 +25,13 @@ export interface EmbeddedSessionDeps {
   /** macOS: the process holder (agent SDK 0.0.70's `native/process-holder.c`, built and signed by lane M's packaging
    *  under its own identity). Every command of the session runs as its child, so what a command leaves running,
    *  setsid'd and double-forked processes included, is adopted as a background task the pause stops. Default: the
-   *  `clover-process-holder` beside the daemon's executable, when it is there; without one, the command's process group
+   *  `moss-process-holder` beside the daemon's executable, when it is there; without one, the command's process group
    *  stands for what it leaves. */
   processHolder?: string;
 }
 
 /** The file name of the process holder beside the daemon (lane M's layout). */
-export const PROCESS_HOLDER_FILE = "clover-process-holder";
+export const PROCESS_HOLDER_FILE = "moss-process-holder";
 
 /** Paths already said to have no holder (one log line each, not one per session). */
 const missingHolderLogged = new Set<string>();
@@ -45,7 +45,7 @@ export function processHolderFor(deps: Pick<EmbeddedSessionDeps, "processHolder"
   if (existsSync(path)) return path;
   if (!missingHolderLogged.has(path)) {
     missingHolderLogged.add(path);
-    log(`clover: no process holder at ${path}: what a command leaves running is stood for by its process group, so one that starts a session of its own is out of the pause's reach`);
+    log(`moss: no process holder at ${path}: what a command leaves running is stood for by its process group, so one that starts a session of its own is out of the pause's reach`);
   }
   return undefined;
 }
@@ -63,16 +63,16 @@ export function embeddedSessionOptions(deps: Pick<EmbeddedSessionDeps, "home" | 
   }
   Object.assign(env, deps.env);
   // Pinned last, so nothing a caller passes moves the home or the profile. The runtime's home is the session store's
-  // (`storeHomeFor`: `<home>/sdk` in Migration C's layout), never the Clover home itself: the runtime writes its
+  // (`storeHomeFor`: `<home>/sdk` in Migration C's layout), never the MOSS home itself: the runtime writes its
   // transcripts (`projects/`), backups and the rest under its home, which is where the core reads them back
-  // (`cloverSessions`, a resume) and where Migration C put them. A runtime on the Clover home wrote the old layout,
+  // (`mossSessions`, a resume) and where Migration C put them. A runtime on the MOSS home wrote the old layout,
   // which the next boot refused (or migrated again) and the core never found to resume.
-  env.CLOVER_HOME = storeHomeFor(deps.home);
-  env.CLOVER_PROFILE = deps.profile ?? "";
+  env.MOSS_HOME = storeHomeFor(deps.home);
+  env.MOSS_PROFILE = deps.profile ?? "";
   // The runtime reads `<PREFIX>PROCESS_HOLDER` at each command (F8); set here, after the caller's, so only the seam names it.
   const holder = processHolderFor(deps);
-  if (holder !== undefined) env.CLOVER_PROCESS_HOLDER = holder;
-  else delete env.CLOVER_PROCESS_HOLDER;
+  if (holder !== undefined) env.MOSS_PROCESS_HOLDER = holder;
+  else delete env.MOSS_PROCESS_HOLDER;
   const testProvider = testProviderNameFor(s.model);
   if (testProvider !== undefined) env.WINTER_TEST_PROVIDER = testProvider;
   return {

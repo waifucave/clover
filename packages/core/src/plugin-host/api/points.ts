@@ -24,8 +24,8 @@
 // * `points.active` and `points.onActive` (§5.4 "One at a time"): which entry of a one-at-a-time point is active, as
 //   its plugin and entry id (never its value), for the declarer's tree and for a plugin of a tree with an entry in it
 //   (`registry/active-one.ts`). Only the user's own door changes it (`point.active.set`); no plugin call does.
-import { STREAM_POINT_TIMEOUT_MAX_MS, DATA_POINTS, catalogPointDecl, dataPointInfo, type ActiveFiller, type PointEntry } from "@waifucave/clover-plugin-sdk";
-import { topPluginIdOf } from "@waifucave/clover-protocol";
+import { STREAM_POINT_TIMEOUT_MAX_MS, DATA_POINTS, catalogPointDecl, dataPointInfo, type ActiveFiller, type PointEntry } from "@waifucave/moss-plugin-sdk";
+import { topPluginIdOf } from "@waifucave/moss-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { PluginHost } from "../../contracts/plugin-host";
 import { RUNNING_STATES, type Contribution, type PluginRegistry, type RegisteredPoint } from "../../contracts/plugin-registry";

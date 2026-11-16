@@ -59,7 +59,7 @@ async function world(names: string[], opts: { limits?: Record<string, Partial<Me
   const computers = new Map<string, Computer>();
   for (const n of names) {
     const d = c.devices.get(n)!;
-    const home = mkdtempSync(join(tmpdir(), "clover-h-memory-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-h-memory-"));
     stops.push(() => rmSync(home, { recursive: true, force: true }));
     const box = BoxKey.generate();
     const store = new MemorySecretStore();

@@ -2,7 +2,7 @@
 // tool, and edits it afterwards in place. Three core tools, for a bot's own sessions (its conversation and its side
 // threads, never an agent's):
 //
-// * `PluginValidate { folder }`: what `clover plugin validate` says of a folder (its class, what it adds and reaches,
+// * `PluginValidate { folder }`: what `moss plugin validate` says of a folder (its class, what it adds and reaches,
 //   every finding, the OK card's text) and, for the bot's own installed plugin, whether that tree would apply without a
 //   card against the user's last OK (`workshopAdds`). A read: nothing runs, nothing is copied.
 // * `PluginInstall { folder }`: a folder inside the bot's scratch or the session's outputs, copied in as any install is
@@ -18,8 +18,8 @@
 // does asks again on a card. The bot's edits never grant its plugin anything: the card decides.
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
-import { MANIFEST_FILE } from "@waifucave/clover-plugin-sdk";
-import type { Os, PluginProvenance, PluginState, ValidationIssue } from "@waifucave/clover-protocol";
+import { MANIFEST_FILE } from "@waifucave/moss-plugin-sdk";
+import type { Os, PluginProvenance, PluginState, ValidationIssue } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import type { CoreToolDef, CoreToolResult } from "../runtime-sdk/turn-loop/servers";
 import { botPaths } from "../bots/paths";
@@ -48,7 +48,7 @@ export interface WorkshopFolders {
 }
 
 export interface WorkshopOptions {
-  /** The Clover home: `<home>/plugins`, the staging folder, the scratch and outputs folders, the plugin logs. */
+  /** The MOSS home: `<home>/plugins`, the staging folder, the scratch and outputs folders, the plugin logs. */
   home: string;
   os?: Os;
   registry: WorkshopRegistry;
@@ -244,7 +244,7 @@ export function workshopToolDefs(workshop: PluginWorkshop, caller: WorkshopCalle
     {
       name: "PluginValidate",
       description: [
-        "Check a plugin folder you are building, as `clover plugin validate` does, without running or installing anything:",
+        "Check a plugin folder you are building, as `moss plugin validate` does, without running or installing anything:",
         "what it is (data, web or code), what it adds and reaches, every error and warning, and the text the user's OK card",
         "will show. For a plugin you already installed, it also says whether installing this folder would update it at",
         "once or ask the user again. Fix every error before PluginInstall.",
@@ -263,7 +263,7 @@ export function workshopToolDefs(workshop: PluginWorkshop, caller: WorkshopCalle
     {
       name: "PluginInstall",
       description: [
-        "Install a plugin you built from your scratch folder (or this conversation's outputs) into Clover's plugins folder.",
+        "Install a plugin you built from your scratch folder (or this conversation's outputs) into MOSS's plugins folder.",
         "It lands waiting for the user's OK on a card that names you as its builder; nothing of it runs before their yes.",
         "After the OK, edit the installed folder in place (the result says where): an edit that asks for nothing beyond what",
         "the card listed reloads at once, with no card; one that adds a capability, a network host, a program or anything",
@@ -280,7 +280,7 @@ export function workshopToolDefs(workshop: PluginWorkshop, caller: WorkshopCalle
           const head = r.updated ? `Updated your plugin ${r.id}` : `Installed ${r.id}`;
           const state = STATE_WORDS[r.state] ?? r.state;
           const asks = r.asks !== undefined ? ` The user is asked again, since ${r.asks}.` : "";
-          const edit = r.updated ? "" : ` Once it's OK'd, edit it in place at ${where} under Clover's home.`;
+          const edit = r.updated ? "" : ` Once it's OK'd, edit it in place at ${where} under MOSS's home.`;
           return ok(`${head}: ${state}.${asks}${edit} PluginStatus ${r.id} shows its state, findings and log.`);
         } catch (err) {
           return fail(`Couldn't install ${folder}: ${errorText(err)}`);

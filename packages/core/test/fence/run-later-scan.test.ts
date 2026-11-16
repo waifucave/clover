@@ -16,7 +16,7 @@ const o = { home: "/nonexistent-home", os: process.platform === "darwin" ? "maco
 const settle = () => Bun.sleep(2_100);
 
 function crowded(dirs: number, files: number): string {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-scan-")));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-b-scan-")));
   temps.push(root);
   for (let i = 0; i < dirs; i++) {
     const d = join(root, `t${i}`, "work");

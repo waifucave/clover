@@ -32,7 +32,7 @@ import { providerGrantKey } from "../../bots/provider-consent";
 import type { SessionGrants } from "../../sessions/grants";
 
 export interface BotProviderFillDeps {
-  /** The Clover home (`providerFor`'s Keychain locator). */
+  /** The MOSS home (`providerFor`'s Keychain locator). */
   home: string;
   /** The daemon's one credential broker, the sessions' too (`createHostCredentialBroker`). */
   broker: HostCredentialBroker;

@@ -121,7 +121,7 @@ export function hookReadsStdinAsScript(command: string, args?: readonly string[]
 
 /** The environment variable a placeholder's value travels in, for a `command` without `args`. */
 export function hookPlaceholderEnv(part: { kind: "plugin" } | { kind: "data" } | { kind: "setting"; key: string }): string {
-  if (part.kind === "plugin") return "CLOVER_PLUGIN_ROOT";
-  if (part.kind === "data") return "CLOVER_PLUGIN_DATA";
-  return `CLOVER_SETTING_${part.key.replace(/[^A-Za-z0-9_]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`)}`;
+  if (part.kind === "plugin") return "MOSS_PLUGIN_ROOT";
+  if (part.kind === "data") return "MOSS_PLUGIN_DATA";
+  return `MOSS_SETTING_${part.key.replace(/[^A-Za-z0-9_]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`)}`;
 }

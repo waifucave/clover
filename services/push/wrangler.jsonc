@@ -1,13 +1,13 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   // push.waifucave.com: waifucave push (spec §10). Content-free "you have N updates" pushes to the account's
-  // phones (APNs) and browsers (Web Push), asked for by the clover/push notifier on the user's computer.
+  // phones (APNs) and browsers (Web Push), asked for by the moss/push notifier on the user's computer.
   //
   // The top level is the local profile that the tests use, where every outbound request goes to local fakes of
   // APNs and the Web Push services; env.production is what the first deploy at the live gates would use.
   // Nothing here has been deployed. Secrets are never in this file: APNS_PRIVATE_KEY and VAPID_PRIVATE_KEY come
   // from `wrangler secret put` (production) or the test harness (local).
-  "name": "clover-push-local",
+  "name": "moss-push-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
@@ -37,13 +37,13 @@
   ],
   "env": {
     "production": {
-      "name": "clover-push",
+      "name": "moss-push",
       "workers_dev": false,
       "observability": { "enabled": false },
       "routes": [{ "pattern": "push.waifucave.com", "custom_domain": true }],
       // The account service's keys go through this binding: a Worker can't fetch another Worker's route on its own
       // zone. ACCOUNT_JWKS_URL is the path asked for, and the fallback.
-      "services": [{ "binding": "ACCOUNT_SERVICE", "service": "clover-accounts" }],
+      "services": [{ "binding": "ACCOUNT_SERVICE", "service": "moss-accounts" }],
       "vars": {
         // waifucave's account service (services/accounts): its issuer and its keys' URL. Set at the live gates:
         // the APNs key's ids, the iOS app's bundle id and the VAPID public key (the private halves are secrets).

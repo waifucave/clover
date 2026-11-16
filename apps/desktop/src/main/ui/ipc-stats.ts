@@ -1,5 +1,5 @@
 // What crosses between the main process and the windows, counted by channel, and what each process costs, said in the app's
-// own log every few seconds, when asked for (`CLOVER_IPC_STATS=1`, or an `ipc-stats` file in the home; off by default, any build): the
+// own log every few seconds, when asked for (`MOSS_IPC_STATS=1`, or an `ipc-stats` file in the home; off by default, any build): the
 // acceptance run reads it to hold an idle app to a budget, and a person chasing a hot idle app reads it to see which channel never stops. Counts only: no
 // payload, no plugin id, no text ever goes in the line.
 
@@ -35,7 +35,7 @@ export class IpcStats {
 
 const total = (m: ReadonlyMap<string, number>): number => [...m.values()].reduce((a, b) => a + b, 0);
 const top = (m: ReadonlyMap<string, number>, n = 6): string =>
-  [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => `${k.replace(/^clover:/, "")} ${v}`).join(", ");
+  [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => `${k.replace(/^moss:/, "")} ${v}`).join(", ");
 
 /** One process's share of a core over the last window. */
 export interface ProcessCpu { type: string; percent: number }
@@ -95,9 +95,9 @@ export function parseIpcLine(line: string): ParsedIpcLine | undefined {
   return { seconds: Number(m[1]), inPerSecond: Number(m[2]), outPerSecond: Number(m[3]), cpu };
 }
 
-/** Whether the counter runs, in any build: off by default; on with `CLOVER_IPC_STATS=1` in the app's environment, or with an empty
+/** Whether the counter runs, in any build: off by default; on with `MOSS_IPC_STATS=1` in the app's environment, or with an empty
  *  file named `ipc-stats` in the app's home (for an app started from the Dock, where no variable reaches it); read once at start.
  *  It writes counts and CPU only, never a payload, a plugin id or text, so it is safe to leave on. */
 export function ipcStatsOn(input: { env: Readonly<Record<string, string | undefined>>; flagFile: boolean }): boolean {
-  return input.env.CLOVER_IPC_STATS === "1" || input.flagFile;
+  return input.env.MOSS_IPC_STATS === "1" || input.flagFile;
 }

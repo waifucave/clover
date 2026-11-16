@@ -1,5 +1,5 @@
 // P8b-2: where the daemon finds the `winter` runtime binary it spawns for every session on the
-// Clover leg.
+// MOSS leg.
 //
 // WHY A PATH IS ALWAYS PASSED. The SDK's own `resolveRuntimeExecutable` falls back to the
 // platform package `@yanlinglabs/winter-agent-sdk-darwin-arm64`, which is `private` and NOT on npm
@@ -8,10 +8,10 @@
 // in a real `node_modules`. So the host ALWAYS passes `Options.pathToClaudeCodeExecutable`, and
 // this module is how it gets one.
 //
-// P8d-1: the "bundle" rung moved from a bare `<dirname(execPath)>/clover` sibling to
+// P8d-1: the "bundle" rung moved from a bare `<dirname(execPath)>/moss` sibling to
 // `<dirname(execPath)>/runtimes/winter` (`bundleRuntimePath`, the one place this layout is
 // spelled) — the Release app now embeds BOTH runtimes under one `Resources/runtimes/` subtree
-// rather than dropping `winter` next to `clover-core` itself.
+// rather than dropping `winter` next to `moss-core` itself.
 //
 // P9a-9: the ladder gains a FIFTH, LAST rung — the installed npm platform package
 // (`@yanlinglabs/winter-agent-sdk-darwin-arm64`, published starting with the v0.0.5 tag; see
@@ -45,7 +45,7 @@ export type WinterExecutableSource = "setting" | "env" | "bundle" | "home" | "pl
 // A-M1: the binary is the last published build, on its own pin (`CODING_AGENT_BINARY_VERSION`), and core's
 // own optional dependency, so it resolves from core directly (the wrapper it once came nested under is not
 // installed any more).
-const CLOVER_PLATFORM_PACKAGE = "@yanlinglabs/winter-agent-sdk-darwin-arm64";
+const MOSS_PLATFORM_PACKAGE = "@yanlinglabs/winter-agent-sdk-darwin-arm64";
 
 /**
  * P9a-9's package door: resolves the platform package's `package.json` from `fromUrl` (default
@@ -60,7 +60,7 @@ const CLOVER_PLATFORM_PACKAGE = "@yanlinglabs/winter-agent-sdk-darwin-arm64";
 export function resolvePlatformPackageWinter(fromUrl: string = import.meta.url): string | undefined {
   let packageJsonPath: string;
   try {
-    packageJsonPath = createRequire(fromUrl).resolve(`${CLOVER_PLATFORM_PACKAGE}/package.json`);
+    packageJsonPath = createRequire(fromUrl).resolve(`${MOSS_PLATFORM_PACKAGE}/package.json`);
   } catch {
     return undefined;
   }
@@ -82,7 +82,7 @@ export type WinterExecutableResolution =
   | { ok: true; path: string; source: WinterExecutableSource }
   | { ok: false; error: WinterExecutableUnavailable };
 
-/** The typed refusal. A session on the Clover leg fails at create with this — NEVER a silent
+/** The typed refusal. A session on the MOSS leg fails at create with this — NEVER a silent
  *  fallback to the retiring engine (P8b-2). `tried` stays PURE PATHS (an explicit path, or the two
  *  implicit filesystem rungs) — P9a-9's package door has no fixed path to report on a miss (it is
  *  a `require` resolution, not a `existsSync` probe), so it is named separately via
@@ -94,7 +94,7 @@ export class WinterExecutableUnavailable extends Error {
       `winter runtime executable not found (tried: ${tried.join(", ") || "nothing configured"}` +
         `${opts?.triedPlatformPackage ? ", nor the installed platform package (@yanlinglabs/winter-agent-sdk-darwin-arm64)" : ""})` +
         `${opts?.detail ? `: ${opts.detail}` : ""}; ` +
-        `set settings.runtimes.winterExecutable or CLOVER_RUNTIME_EXECUTABLE, run \`bun run build:winter\`, or install the optional ` +
+        `set settings.runtimes.winterExecutable or MOSS_RUNTIME_EXECUTABLE, run \`bun run build:winter\`, or install the optional ` +
         `@yanlinglabs/winter-agent-sdk-darwin-arm64 platform package (\`bun install\`)`,
     );
     this.name = "WinterExecutableUnavailable";
@@ -115,16 +115,16 @@ export function resolveWinterExecutable(input: {
   /** Test seam for the P9a-9 package door; defaults to `resolvePlatformPackageWinter`. Injected
    *  (never real-install-dependent) so the ladder's unit tests never need `bun add` a tarball. */
   resolvePlatformPackageBin?: () => string | undefined;
-  /** Test seams for the build: a dist build (`build-kind.ts`) ignores `CLOVER_RUNTIME_EXECUTABLE`, and a compiled
+  /** Test seams for the build: a dist build (`build-kind.ts`) ignores `MOSS_RUNTIME_EXECUTABLE`, and a compiled
    *  binary never takes the platform-package rung. Default: this process's own build. */
   distBuild?: boolean;
   isCompiled?: boolean;
   /** Where a dist build says, once, that it ignored the env override. */
   noteIgnored?: (name: string) => void;
 }): WinterExecutableResolution {
-  const envValue = input.env.CLOVER_RUNTIME_EXECUTABLE?.trim() || undefined;
+  const envValue = input.env.MOSS_RUNTIME_EXECUTABLE?.trim() || undefined;
   const distBuild = input.distBuild ?? DIST_BUILD;
-  if (envValue !== undefined && distBuild) (input.noteIgnored ?? noteIgnoredEnvOverride)("CLOVER_RUNTIME_EXECUTABLE");
+  if (envValue !== undefined && distBuild) (input.noteIgnored ?? noteIgnoredEnvOverride)("MOSS_RUNTIME_EXECUTABLE");
   const explicit: Array<[WinterExecutableSource, string | undefined]> = [["setting", input.setting?.trim() || undefined], ["env", distBuild ? undefined : envValue]];
   for (const [source, path] of explicit) {
     if (!path) continue;
@@ -150,7 +150,7 @@ export function resolveWinterExecutable(input: {
   return { ok: false, error: new WinterExecutableUnavailable(tried, { triedPlatformPackage: true }) };
 }
 
-/** An explicitly configured runtime (`runtimes.winterExecutable` / `$CLOVER_RUNTIME_EXECUTABLE`) is used as
+/** An explicitly configured runtime (`runtimes.winterExecutable` / `$MOSS_RUNTIME_EXECUTABLE`) is used as
  *  it is — that is how a local SDK build gets tested — so nothing refuses a version that differs from the
  *  pin. But a stale one silently runs yesterday's runtime (2026-09-30: a dev home's `dist/winter` stayed on
  *  0.0.35 after the pin moved to 0.0.36, and code sessions got the old Read). This names the mismatch:
@@ -178,5 +178,5 @@ export function explicitRuntimeVersionNote(path: string, deps: VersionProbeDeps 
   const reported = winterBinaryVersion(path, deps);
   return reported === undefined || reported === CODING_AGENT_BINARY_VERSION
     ? undefined
-    : `code sessions run ${path}, which reports winter ${reported}, but this daemon is pinned to ${CODING_AGENT_BINARY_VERSION} — rebuild it (bun run build:winter) or unset runtimes.winterExecutable / $CLOVER_RUNTIME_EXECUTABLE`;
+    : `code sessions run ${path}, which reports winter ${reported}, but this daemon is pinned to ${CODING_AGENT_BINARY_VERSION} — rebuild it (bun run build:winter) or unset runtimes.winterExecutable / $MOSS_RUNTIME_EXECUTABLE`;
 }

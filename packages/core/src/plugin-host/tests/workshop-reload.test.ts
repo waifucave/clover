@@ -8,8 +8,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { templateFiles } from "@waifucave/clover-plugin-sdk/templates";
-import type { Caller } from "@waifucave/clover-protocol";
+import { templateFiles } from "@waifucave/moss-plugin-sdk/templates";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -37,14 +37,14 @@ async function until<T>(what: string, ms: number, f: () => T | undefined | Promi
 
 describe("a workshop plugin edited in place", () => {
   test("its host half reloads: the next tool call answers the new code with no card, a changed description is listed again, and the plugin event goes out", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-ws-reload-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-b-ws-reload-")));
     temps.push(home);
     const folder = join(home, "plugins", ID);
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     // The folder watch's settle is long, so the test reads each change itself (`installed`, `refresh`), as a settled
     // change would: the install is read with its builder, never first as a folder that appeared.
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 60_000 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 60_000 });
     // What PluginInstall puts in place: the SDK's tool template.
     const made = templateFiles("tool", { id: ID, name: "Workshop greeter" });
     if ("error" in made) throw new Error(made.error);
@@ -95,7 +95,7 @@ describe("a workshop plugin edited in place", () => {
       // reloaded worker, which still answers.
       const relists = () => lines.filter((l) => l.includes(`${ID}: its tree changed; its servers are listed again`)).length;
       const before = relists();
-      const manifest = join(folder, "clover.json");
+      const manifest = join(folder, "moss.json");
       const hashBefore = opened.registry.get(ID)!.treeHash;
       writeFileSync(manifest, readFileSync(manifest, "utf8").replace("Workshop greeter, a tool.", "Greets people, twice."));
       await opened.folders.refresh(folder);

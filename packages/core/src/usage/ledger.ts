@@ -1,8 +1,8 @@
-// Clover's own usage rows (spec §12 "Usage tracking", §5.8 "the usage counting of Clover's own turns"): one row per
+// MOSS's own usage rows (spec §12 "Usage tracking", §5.8 "the usage counting of MOSS's own turns"): one row per
 // model per turn, append-only, tagged with the bot and the session, so usage counts per bot and per session. Owner:
 // lane D.
 //
-// `<home>/usage/clover.db`, beside the inherited `usage.db` (whose readers of Codex, Claude Code, OpenCode and
+// `<home>/usage/moss.db`, beside the inherited `usage.db` (whose readers of Codex, Claude Code, OpenCode and
 // Antigravity carry over, §12), with a schema of its own (`PRAGMA user_version`). A row's wire id is
 // `<computer>:<database>:<n>`, where `<database>` is minted when the file is made, so rows synced from several
 // computers never clash, nor do a computer's rows from before and after its ledger was made again (protocol
@@ -13,15 +13,15 @@ import { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { UsageRow, UsageSource } from "@waifucave/clover-protocol";
+import type { UsageRow, UsageSource } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 
 export const LEDGER_SCHEMA_VERSION = 1;
 export const ROWS_PAGE_DEFAULT = 1_000;
 export const ROWS_PAGE_MAX = 10_000;
 
-export function cloverUsageDbPath(home: string): string {
-  return join(home, "usage", "clover.db");
+export function mossUsageDbPath(home: string): string {
+  return join(home, "usage", "moss.db");
 }
 
 export interface LedgerRowInput {
@@ -119,7 +119,7 @@ export class UsageLedger {
     this.#db.exec("PRAGMA journal_mode = WAL");
     this.#db.exec("PRAGMA busy_timeout = 5000");
     const version = (this.#db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
-    if (version > LEDGER_SCHEMA_VERSION) throw new Error(`the usage ledger at ${opts.path} is from a newer Clover (schema ${version})`);
+    if (version > LEDGER_SCHEMA_VERSION) throw new Error(`the usage ledger at ${opts.path} is from a newer MOSS (schema ${version})`);
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS rows (
         n INTEGER PRIMARY KEY AUTOINCREMENT,

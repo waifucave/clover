@@ -14,14 +14,14 @@
  * names the signing certificate's common name, so a rebuild by another person (or after a certificate
  * renewal) would be a new app to TCC and lose its grants. This script states the requirement instead —
  * `identifier "com.winter.computeruse.dev" and anchor apple generic and certificate leaf[subject.OU] =
- * "<team>"` — which every Clover-team certificate satisfies, so a rebuild keeps them.
+ * "<team>"` — which every MOSS-team certificate satisfies, so a rebuild keeps them.
  *
  * Steps: `xcodegen generate`; xcodebuild of the WinterComputerUse scheme (Debug = the dev identity),
  * unsigned, into `out/computer-helper/dd`; the built bundle is unregistered from LaunchServices (Xcode
  * registers every app it builds — a second registered copy of com.winter.computeruse.dev would compete with
  * the real one) and copied to a temp name in `dist/dev/`; `codesign --identifier com.winter.computeruse.dev
  * --options runtime -r=<the stated requirement>` with the team identity (`dev-daemon-lib.ts`'s
- * `resolveDevSigningIdentity`, `CLOVER_DEV_SIGN_IDENTITY` overrides); the checks (`checkSignedHelper`: the
+ * `resolveDevSigningIdentity`, `MOSS_DEV_SIGN_IDENTITY` overrides); the checks (`checkSignedHelper`: the
  * recorded requirement is the stated one, team, identifier, hardened runtime, the Apple Events entitlement only, LSUIElement,
  * version, no test hooks) and `codesign --verify --deep --strict -R=<requirement>`; then the swap into
  * `dist/dev/Winter Computer Use Dev.app` and `lsregister -f`.
@@ -40,7 +40,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CLOVER_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
+import { MOSS_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
 import { allowedOrigins, EXTENSION_IDS, NATIVE_HOST_NAME } from "../packages/core/src/computer-use/browser/extension/extension-ids";
 import { hostManifest, writeHostManifests } from "../packages/core/src/computer-use/browser/extension/manifest";
 import {
@@ -69,8 +69,8 @@ export function run(cmd: string, args: string[], opts: { cwd?: string } = {}): {
 export function signingIdentity(): { hash: string; name: string } {
   return resolveDevSigningIdentity({
     identitiesOutput: run("security", ["find-identity", "-v", "-p", "codesigning"]).stdout,
-    teamId: CLOVER_TEAM_ID,
-    override: process.env.CLOVER_DEV_SIGN_IDENTITY,
+    teamId: MOSS_TEAM_ID,
+    override: process.env.MOSS_DEV_SIGN_IDENTITY,
     subjectOf: (name) => {
       const pem = run("security", ["find-certificate", "-c", name, "-p"]).stdout;
       if (pem === "") return undefined;
@@ -109,9 +109,9 @@ export function buildHelper(flavor: "dev" | "test", log: (line: string) => void)
 export function signHelper(appPath: string, flavor: HelperFlavor, identityHash: string): string[] {
   const host = browserHostExecutable(appPath);
   if (!existsSync(host)) return [`no winter-browser-host at ${host} — the WinterBrowserHost target did not build into the helper`];
-  const hostSigned = run("codesign", browserHostSignArgs({ identityHash, flavor, teamId: CLOVER_TEAM_ID, path: host }));
+  const hostSigned = run("codesign", browserHostSignArgs({ identityHash, flavor, teamId: MOSS_TEAM_ID, path: host }));
   if (hostSigned.status !== 0) return [`codesign of winter-browser-host failed: ${hostSigned.stderr.trim()}`];
-  const signed = run("codesign", helperSignArgs({ identityHash, flavor, teamId: CLOVER_TEAM_ID, appPath }));
+  const signed = run("codesign", helperSignArgs({ identityHash, flavor, teamId: MOSS_TEAM_ID, appPath }));
   if (signed.status !== 0) return [`codesign failed: ${signed.stderr.trim()}`];
   return inspectHelper(appPath, flavor);
 }
@@ -122,14 +122,14 @@ export function inspectHelper(appPath: string, flavor: HelperFlavor): string[] {
   if (!existsSync(exe)) return [`no executable at ${exe}`];
   const dr = run("codesign", ["-d", "-r-", appPath]);
   const plist = run("plutil", ["-convert", "json", "-o", "-", join(appPath, "Contents", "Info.plist")]);
-  const failures = checkSignedHelper(flavor, CLOVER_TEAM_ID, readHelperVersion(), {
+  const failures = checkSignedHelper(flavor, MOSS_TEAM_ID, readHelperVersion(), {
     codesignDvv: run("codesign", ["-dvv", appPath]).stderr,
     codesignDr: `${dr.stdout}\n${dr.stderr}`,
     entitlementsXml: run("codesign", ["-d", "--entitlements", "-", "--xml", appPath]).stdout,
     infoPlist: plist.status === 0 ? (JSON.parse(plist.stdout) as Record<string, unknown>) : {},
     executable: readFileSync(exe),
   });
-  const strict = run("codesign", ["--verify", "--deep", "--strict", `-R=${helperRequirement(HELPER[flavor].identifier, CLOVER_TEAM_ID)}`, appPath]);
+  const strict = run("codesign", ["--verify", "--deep", "--strict", `-R=${helperRequirement(HELPER[flavor].identifier, MOSS_TEAM_ID)}`, appPath]);
   if (strict.status !== 0) failures.push(`codesign --verify --deep --strict against the stated requirement failed: ${strict.stderr.trim()}`);
   failures.push(...inspectBrowserHost(appPath, flavor));
   return failures;
@@ -141,13 +141,13 @@ export function inspectBrowserHost(appPath: string, flavor: HelperFlavor): strin
   const host = browserHostExecutable(appPath);
   if (!existsSync(host)) return [`no winter-browser-host at ${host}`];
   const dr = run("codesign", ["-d", "-r-", host]);
-  const failures = checkSignedBrowserHost(flavor, CLOVER_TEAM_ID, {
+  const failures = checkSignedBrowserHost(flavor, MOSS_TEAM_ID, {
     codesignDvv: run("codesign", ["-dvv", host]).stderr,
     codesignDr: `${dr.stdout}\n${dr.stderr}`,
     entitlementsXml: run("codesign", ["-d", "--entitlements", "-", "--xml", host]).stdout,
     executable: readFileSync(host),
   });
-  const strict = run("codesign", ["--verify", "--strict", `-R=${helperRequirement(BROWSER_HOST[flavor].identifier, CLOVER_TEAM_ID)}`, host]);
+  const strict = run("codesign", ["--verify", "--strict", `-R=${helperRequirement(BROWSER_HOST[flavor].identifier, MOSS_TEAM_ID)}`, host]);
   if (strict.status !== 0) failures.push(`winter-browser-host does not satisfy its stated requirement: ${strict.stderr.trim()}`);
   return failures;
 }
@@ -221,9 +221,9 @@ function main(): void {
     if (registered.status !== 0) die(`lsregister -f failed: ${registered.stderr.trim()}`);
   }
   console.error(
-    `dev:helper: ${target} — ${HELPER.dev.identifier}, team ${CLOVER_TEAM_ID}, designated => ${helperRequirement(HELPER.dev.identifier, CLOVER_TEAM_ID)}` +
+    `dev:helper: ${target} — ${HELPER.dev.identifier}, team ${MOSS_TEAM_ID}, designated => ${helperRequirement(HELPER.dev.identifier, MOSS_TEAM_ID)}` +
       (register ? "; registered with LaunchServices" : "; NOT registered") +
-      `; winter-browser-host => ${helperRequirement(BROWSER_HOST.dev.identifier, CLOVER_TEAM_ID)}`,
+      `; winter-browser-host => ${helperRequirement(BROWSER_HOST.dev.identifier, MOSS_TEAM_ID)}`,
   );
   if (manifests) {
     const root = manifestsRoot === undefined ? join(homedir(), "Library", "Application Support") : resolve(manifestsRoot);

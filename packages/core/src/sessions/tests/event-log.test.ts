@@ -13,7 +13,7 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 function logPath(): string {
-  const dir = mkdtempSync(join(tmpdir(), "clover-d-log-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-d-log-"));
   dirs.push(dir);
   return join(dir, "b_alpha.ndjson");
 }

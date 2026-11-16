@@ -5,7 +5,7 @@ import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/moss-plugin-sdk";
 import { RegistryCore } from "../core";
 import { DEV_FOLDER_MS, PluginFolders } from "../folders";
 import { fileRegistryStore } from "../state";
@@ -14,10 +14,10 @@ import { fileRegistryStore } from "../state";
 setDefaultTimeout(90_000);
 
 const manifest = (id: string, over: Record<string, unknown> = {}) =>
-  JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, ...over });
+  JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, ...over });
 
 function world(opts: { settleMs?: number; catchUpMs?: number; now?: () => number } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "clover-b-folders-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-b-folders-"));
   const pluginsDir = join(home, "plugins");
   const bundledDir = join(home, "app", "plugins");
   mkdirSync(pluginsDir, { recursive: true });
@@ -39,7 +39,7 @@ describe("PluginFolders", () => {
   test("a found folder waits for its OK; after it, a data edit applies and a code change asks again", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");
-    w.write(tarot, { "clover.json": manifest("tarot"), "README.md": "hi" });
+    w.write(tarot, { "moss.json": manifest("tarot"), "README.md": "hi" });
     await w.folders.scan();
     expect(w.core.get("tarot")).toMatchObject({ state: "found", provenance: { by: "found" } });
     expect(await w.core.approve("tarot", w.core.get("tarot")!.treeHash!)).toBe("approved");
@@ -57,7 +57,7 @@ describe("PluginFolders", () => {
     const tarot = join(w.pluginsDir, "tarot");
     const host = { host: { entry: "host/index.ts" } };
     w.write(tarot, {
-      "clover.json": manifest("tarot", host), "host/index.ts": "import { x } from \"lib\";\nexport const main = () => x;\n",
+      "moss.json": manifest("tarot", host), "host/index.ts": "import { x } from \"lib\";\nexport const main = () => x;\n",
       "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { lib: ["./host/lib.ts"] } } }), "host/lib.ts": "export const x = 1;\n", "README.md": "Tarot",
     });
     await w.folders.scan();
@@ -93,7 +93,7 @@ describe("PluginFolders", () => {
     const tarot = join(w.pluginsDir, "tarot");
     const host = { host: { entry: "host/index.ts" } };
     w.write(tarot, {
-      "clover.json": manifest("tarot", host), "host/index.ts": "export const main = () => 1;\n",
+      "moss.json": manifest("tarot", host), "host/index.ts": "export const main = () => 1;\n",
       "tsconfig.json": JSON.stringify({ extends: "./config/base" }), "config/base.json": JSON.stringify({ extends: "./strict.json", compilerOptions: { strict: true } }),
       "config/strict.json": JSON.stringify({ compilerOptions: { noImplicitAny: true } }), "README.md": "Tarot",
     });
@@ -119,14 +119,14 @@ describe("PluginFolders", () => {
     ] as const) {
       const one = join(w.pluginsDir, "one");
       rmSync(one, { recursive: true, force: true });
-      w.write(one, { "clover.json": manifest("one", host), "host/index.ts": "export const main = () => 1;\n", [file]: text });
+      w.write(one, { "moss.json": manifest("one", host), "host/index.ts": "export const main = () => 1;\n", [file]: text });
       await w.folders.refresh(one);
       expect([file, text, w.core.get("one")?.state]).toEqual([file, text, "invalid"]);
       expect(w.core.get("one")?.reason ?? "").toContain("outside the plugin");
     }
-    // A bundled plugin ships with the app and needs no OK: Clover's own trees extend the repository's shared tsconfig.
+    // A bundled plugin ships with the app and needs no OK: MOSS's own trees extend the repository's shared tsconfig.
     const own = join(w.bundledDir, "own");
-    w.write(own, { "clover.json": manifest("own", host), "host/index.ts": "export const main = () => 1;\n", "tsconfig.json": JSON.stringify({ extends: "../../../tsconfig.base.json" }) });
+    w.write(own, { "moss.json": manifest("own", host), "host/index.ts": "export const main = () => 1;\n", "tsconfig.json": JSON.stringify({ extends: "../../../tsconfig.base.json" }) });
     await w.folders.scan();
     expect(w.core.get("own")?.source).toBe("bundled");
     expect(w.core.get("own")?.state).not.toBe("invalid");
@@ -136,7 +136,7 @@ describe("PluginFolders", () => {
     const w = world();
     const codex = join(w.pluginsDir, "codex");
     w.write(codex, {
-      "clover.json": manifest("codex", { contributes: { agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "codex-acp", args: [], quirks: "quirks.json" }, { id: "plain", name: "Plain", protocol: "acp", command: "plain-acp", args: [] }] } }),
+      "moss.json": manifest("codex", { contributes: { agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "codex-acp", args: [], quirks: "quirks.json" }, { id: "plain", name: "Plain", protocol: "acp", command: "plain-acp", args: [] }] } }),
       "quirks.json": JSON.stringify({ quirks: { placement: "local", launch: { envAllow: ["CODEX_PATH", "CODEX_HOME"], envSet: { NO_BROWSER: "1" } } } }),
     });
     await w.folders.scan();
@@ -151,7 +151,7 @@ describe("PluginFolders", () => {
     const codex = join(w.pluginsDir, "codex");
     const backend = { contributes: { agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "codex-acp", args: [], quirks: "quirks.json" }] } };
     const quirks = (env: Record<string, string>) => JSON.stringify({ quirks: { placement: "local", launch: { envSet: env } } });
-    w.write(codex, { "clover.json": manifest("codex", backend), "quirks.json": quirks({ NO_BROWSER: "1" }), "README.md": "Codex" });
+    w.write(codex, { "moss.json": manifest("codex", backend), "quirks.json": quirks({ NO_BROWSER: "1" }), "README.md": "Codex" });
     await w.folders.scan();
     expect(await w.core.approve("codex", w.core.get("codex")!.treeHash!)).toBe("approved");
     expect(w.core.get("codex")?.state).toBe("running");
@@ -174,7 +174,7 @@ describe("PluginFolders", () => {
   test("the OK survives a restart, and a change made while the core was down is judged against it", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");
-    w.write(tarot, { "clover.json": manifest("tarot"), "README.md": "hi" });
+    w.write(tarot, { "moss.json": manifest("tarot"), "README.md": "hi" });
     await w.folders.scan();
     await w.core.approve("tarot", w.core.get("tarot")!.treeHash!);
     w.write(tarot, { "README.md": "edited while down" });
@@ -184,32 +184,32 @@ describe("PluginFolders", () => {
     expect(core.get("tarot")?.state).toBe("running");
   });
 
-  test("an upgrade that adds a capability to a bundled plugin grants it at once, with no new OK (network:public on clover/web)", async () => {
-    // The home an earlier build made: Clover's own tree OK'd with the web plugin on its declared host only.
+  test("an upgrade that adds a capability to a bundled plugin grants it at once, with no new OK (network:public on moss/web)", async () => {
+    // The home an earlier build made: MOSS's own tree OK'd with the web plugin on its declared host only.
     const w = world();
-    const own = join(w.bundledDir, "clover");
+    const own = join(w.bundledDir, "moss");
     const web = (capabilities: string[]) => JSON.stringify({ manifest: 1, name: "Web", capabilities });
-    w.write(own, { "clover.json": manifest("clover"), "plugins/web/clover.json": web(["network:mcp.exa.ai"]) });
+    w.write(own, { "moss.json": manifest("moss"), "plugins/web/moss.json": web(["network:mcp.exa.ai"]) });
     await w.folders.scan();
-    const before = w.core.get("clover")!.okHash;
+    const before = w.core.get("moss")!.okHash;
     expect(before).toBeDefined();
-    expect(w.core.get("clover/web")?.granted).toEqual(["network:mcp.exa.ai"]);
+    expect(w.core.get("moss/web")?.granted).toEqual(["network:mcp.exa.ai"]);
     // The new build's tree adds network:public; the core starts again on the same records.
-    w.write(own, { "plugins/web/clover.json": web(["network:mcp.exa.ai", "network:public"]) });
+    w.write(own, { "plugins/web/moss.json": web(["network:mcp.exa.ai", "network:public"]) });
     const core = new RegistryCore({ catalog: catalogPointDecl, store: w.store });
     await new PluginFolders({ core, store: w.store, pluginsDir: w.pluginsDir, bundledDirs: [w.bundledDir] }).scan();
-    const rec = core.get("clover/web")!;
+    const rec = core.get("moss/web")!;
     expect([rec.state, rec.source]).toEqual(["running", "bundled"]);
     expect(rec.granted).toEqual(["network:mcp.exa.ai", "network:public"]);
-    expect(core.get("clover")!.okHash).not.toBe(before);
+    expect(core.get("moss")!.okHash).not.toBe(before);
   });
 
   test("a found plugin's OK names what its hooks see (a child's too)", async () => {
     const w = world();
     const tree = join(w.pluginsDir, "watcher");
     w.write(tree, {
-      "clover.json": manifest("watcher"),
-      "plugins/eyes/clover.json": JSON.stringify({ manifest: 1, name: "Eyes", engines: { clover: `^${PLUGIN_API_VERSION}` }, contributes: { hooks: [{ id: "see", on: ["tool.after", "message.in"], command: "sh see.sh" }] } }),
+      "moss.json": manifest("watcher"),
+      "plugins/eyes/moss.json": JSON.stringify({ manifest: 1, name: "Eyes", engines: { moss: `^${PLUGIN_API_VERSION}` }, contributes: { hooks: [{ id: "see", on: ["tool.after", "message.in"], command: "sh see.sh" }] } }),
     });
     await w.folders.scan();
     const text = w.folders.okText("watcher", "macos");
@@ -219,9 +219,9 @@ describe("PluginFolders", () => {
   test("a manifest that doesn't parse yet leaves the plugin as it was; a removed folder goes away", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");
-    w.write(tarot, { "clover.json": manifest("tarot") });
+    w.write(tarot, { "moss.json": manifest("tarot") });
     await w.folders.scan();
-    w.write(tarot, { "clover.json": "{ \"manifest\": 1, " });
+    w.write(tarot, { "moss.json": "{ \"manifest\": 1, " });
     await w.folders.refresh(tarot);
     expect(w.core.get("tarot")?.state).toBe("found");
     rmSync(tarot, { recursive: true });
@@ -231,7 +231,7 @@ describe("PluginFolders", () => {
 
   test("a folder whose name isn't its id, or with a symlink out, is invalid with the reason", async () => {
     const w = world();
-    w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarrot") });
+    w.write(join(w.pluginsDir, "tarot"), { "moss.json": manifest("tarrot") });
     await w.folders.scan();
     expect(w.core.get("tarot")?.state ?? w.core.list()[0]?.state).toBe("invalid");
   });
@@ -239,9 +239,9 @@ describe("PluginFolders", () => {
   test("bundled plugins need no OK; children load with their parent and are invalid alone", async () => {
     const w = world();
     w.write(join(w.bundledDir, "alpha"), {
-      "clover.json": manifest("alpha"),
-      "plugins/tab/clover.json": JSON.stringify({ manifest: 1, name: "Tab" }),
-      "plugins/broken/clover.json": "{}",
+      "moss.json": manifest("alpha"),
+      "plugins/tab/moss.json": JSON.stringify({ manifest: 1, name: "Tab" }),
+      "plugins/broken/moss.json": "{}",
     });
     await w.folders.scan();
     expect(w.core.list().map((r) => [r.id, r.state, r.source])).toEqual([
@@ -256,14 +256,14 @@ describe("PluginFolders", () => {
     const server = (scope: string) => ({ stage: { type: "host", tools: { "*": "preload" }, scope } });
     const command = (scope?: string) => [{ name: "outfit", description: { en: "Outfit." }, handler: "outfit", ...(scope ? { scope } : {}) }];
     w.write(alpha, {
-      "clover.json": manifest("alpha", { scope: "own-bot", host: { entry: "server/index.ts" }, settings: { scene: { type: "enum", title: { en: "Scene" }, options: ["meadow"], default: "meadow" } }, contributes: { ...bot, mcpServers: server("bots"), commands: command() } }),
+      "moss.json": manifest("alpha", { scope: "own-bot", host: { entry: "server/index.ts" }, settings: { scene: { type: "enum", title: { en: "Scene" }, options: ["meadow"], default: "meadow" } }, contributes: { ...bot, mcpServers: server("bots"), commands: command() } }),
       "bot/instructions.md": "You are Alpha.\n", "server/index.ts": "export const outfit = () => ({ text: 'ok' });\n",
     });
     await w.folders.scan();
     expect(w.core.get("alpha")).toMatchObject({ state: "running", source: "bundled" });
     const was = w.core.get("alpha")!.treeHash;
     w.write(alpha, {
-      "clover.json": manifest("alpha", { scope: "own-bot", host: { entry: "server/index.ts" }, settings: { scene: { type: "enum", title: { en: "Scene" }, options: ["meadow"], default: "meadow" }, outfit: { type: "enum", title: { en: "Outfit" }, options: ["lilac-dress", "navy-uniform"], default: "lilac-dress" } }, contributes: { ...bot, mcpServers: server("own-bot"), commands: command("own-bot") } }),
+      "moss.json": manifest("alpha", { scope: "own-bot", host: { entry: "server/index.ts" }, settings: { scene: { type: "enum", title: { en: "Scene" }, options: ["meadow"], default: "meadow" }, outfit: { type: "enum", title: { en: "Outfit" }, options: ["lilac-dress", "navy-uniform"], default: "lilac-dress" } }, contributes: { ...bot, mcpServers: server("own-bot"), commands: command("own-bot") } }),
     });
     await w.folders.scan();
     expect(w.core.get("alpha")).toMatchObject({ state: "running", source: "bundled" });
@@ -273,7 +273,7 @@ describe("PluginFolders", () => {
   test("a development folder gets the static checks too: a dependency it doesn't ship, or a reach outside, makes it invalid (#234's check 5, K3)", async () => {
     const w = world();
     const dev = join(w.home, "dev", "luna");
-    w.write(dev, { "clover.json": manifest("luna", { description: "dev" }), "client/index.tsx": "import x from \"not-shipped\";\nexport {};\n" });
+    w.write(dev, { "moss.json": manifest("luna", { description: "dev" }), "client/index.tsx": "import x from \"not-shipped\";\nexport {};\n" });
     await w.folders.addDevFolder(dev, "cli");
     expect([w.core.get("luna")?.state, w.core.get("luna")?.reason ?? ""]).toEqual(["invalid", expect.stringContaining("not-shipped")]);
     w.write(dev, { "client/index.tsx": "export {};\n", "tsconfig.json": JSON.stringify({ extends: "../../outside/base.json" }) });
@@ -284,9 +284,9 @@ describe("PluginFolders", () => {
   test("a development folder's tree never becomes the installed plugin's OK snapshot (the review of 6047b427f)", async () => {
     let now = 1_000_000;
     const w = world({ now: () => now });
-    w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot", { description: "installed" }) });
+    w.write(join(w.pluginsDir, "tarot"), { "moss.json": manifest("tarot", { description: "installed" }) });
     const dev = join(w.home, "dev", "tarot");
-    w.write(dev, { "clover.json": manifest("tarot", { description: "dev" }), "host/index.ts": "export const x = 1;" });
+    w.write(dev, { "moss.json": manifest("tarot", { description: "dev" }), "host/index.ts": "export const x = 1;" });
     await w.folders.scan();
     const installedHash = w.core.get("tarot")!.treeHash!;
     await w.core.approve("tarot", installedHash);
@@ -307,9 +307,9 @@ describe("PluginFolders", () => {
   test("an installed folder deleted while a development folder stands over it leaves nothing: a tree found later asks fresh", async () => {
     let now = 1_000_000;
     const w = world({ now: () => now });
-    w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot", { description: "installed" }) });
+    w.write(join(w.pluginsDir, "tarot"), { "moss.json": manifest("tarot", { description: "installed" }) });
     const dev = join(w.home, "dev", "tarot");
-    w.write(dev, { "clover.json": manifest("tarot", { description: "dev" }) });
+    w.write(dev, { "moss.json": manifest("tarot", { description: "dev" }) });
     await w.folders.scan();
     await w.core.approve("tarot", w.core.get("tarot")!.treeHash!);
     await w.folders.addDevFolder(dev, "cli");
@@ -321,7 +321,7 @@ describe("PluginFolders", () => {
     await w.folders.expireDevFolders();
     expect(w.core.get("tarot")).toBeUndefined();
     // The same id again, the same files even: it waits for its OK.
-    w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot", { description: "installed" }) });
+    w.write(join(w.pluginsDir, "tarot"), { "moss.json": manifest("tarot", { description: "installed" }) });
     await w.folders.refresh(join(w.pluginsDir, "tarot"));
     expect(w.core.get("tarot")?.state).toBe("found");
   });
@@ -329,9 +329,9 @@ describe("PluginFolders", () => {
   test("a development folder loads without asking, replaces the installed plugin with its id, and turns off after 24 hours", async () => {
     let now = 1_000_000;
     const w = world({ now: () => now });
-    w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot", { description: "installed" }) });
+    w.write(join(w.pluginsDir, "tarot"), { "moss.json": manifest("tarot", { description: "installed" }) });
     const dev = join(w.home, "dev", "tarot");
-    w.write(dev, { "clover.json": manifest("tarot", { description: "dev" }), "client/index.tsx": "export {}" });
+    w.write(dev, { "moss.json": manifest("tarot", { description: "dev" }), "client/index.tsx": "export {}" });
     await w.folders.scan();
     await w.core.approve("tarot", w.core.get("tarot")!.treeHash!);
     await w.folders.addDevFolder(dev, "cli");
@@ -352,7 +352,7 @@ describe("PluginFolders", () => {
     let now = 1_000_000;
     const w = world({ now: () => now, settleMs: 100, catchUpMs: 300 });
     const dev = join(w.home, "dev", "tarot");
-    w.write(dev, { "clover.json": manifest("tarot", { description: "dev" }), "client/index.tsx": "export {}" });
+    w.write(dev, { "moss.json": manifest("tarot", { description: "dev" }), "client/index.tsx": "export {}" });
     w.folders.start();
     await w.folders.scan();
     try {
@@ -383,7 +383,7 @@ describe("PluginFolders", () => {
     rmSync(w.pluginsDir, { recursive: true, force: true });
     w.folders.start();
     try {
-      w.write(join(w.pluginsDir, "lyra"), { "clover.json": manifest("lyra") });
+      w.write(join(w.pluginsDir, "lyra"), { "moss.json": manifest("lyra") });
       for (const end = Date.now() + 30_000; !w.core.get("lyra") && Date.now() < end;) await Bun.sleep(20);
       expect(w.core.get("lyra")?.state).toBe("found");
       const before = w.core.get("lyra")!.treeHash;
@@ -402,8 +402,8 @@ describe("PluginFolders", () => {
     rmSync(w.pluginsDir, { recursive: true, force: true });
     w.folders.start();
     try {
-      w.write(join(w.pluginsDir, "reel"), { "clover.json": manifest("reel"), "src/a.ts": "export const A = 1;" });
-      w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot"), "src/a.ts": "export const A = 1;" });
+      w.write(join(w.pluginsDir, "reel"), { "moss.json": manifest("reel"), "src/a.ts": "export const A = 1;" });
+      w.write(join(w.pluginsDir, "tarot"), { "moss.json": manifest("tarot"), "src/a.ts": "export const A = 1;" });
       await w.folders.installed("reel", "bot", { bot: "alpha" });
       await w.folders.installed("tarot", "user-app");
       for (const id of ["reel", "tarot"]) expect(await w.core.approve(id, w.core.get(id)!.treeHash!)).toBe("approved");
@@ -432,18 +432,18 @@ describe("PluginFolders", () => {
     }
   });
 
-  test("a write Clover's own tools made in the plugins folder is read at once, with no watch and no catch-up look; any other path is ignored", async () => {
+  test("a write MOSS's own tools made in the plugins folder is read at once, with no watch and no catch-up look; any other path is ignored", async () => {
     const w = world({ settleMs: 50, catchUpMs: 0 });
     await w.folders.scan();
     rmSync(w.pluginsDir, { recursive: true, force: true });
     w.folders.start();
     try {
-      w.write(join(w.pluginsDir, "vega"), { "clover.json": manifest("vega") });
+      w.write(join(w.pluginsDir, "vega"), { "moss.json": manifest("vega") });
       w.folders.touched(join(w.home, "elsewhere", "file.txt"));
       w.folders.touched(join(w.pluginsDir, ".staging", "x"));
       await Bun.sleep(300);
       expect(w.core.get("vega")).toBeUndefined();
-      w.folders.touched(join(w.pluginsDir, "vega", "clover.json"));
+      w.folders.touched(join(w.pluginsDir, "vega", "moss.json"));
       for (const end = Date.now() + 30_000; !w.core.get("vega") && Date.now() < end;) await Bun.sleep(20);
       expect(w.core.get("vega")?.state).toBe("found");
     } finally {
@@ -457,7 +457,7 @@ describe("PluginFolders", () => {
     await w.folders.scan();
     try {
       // No wait for the watch to start: a folder it misses is read by the catch-up look.
-      w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot") });
+      w.write(join(w.pluginsDir, "tarot"), { "moss.json": manifest("tarot") });
       const deadline = Date.now() + 30_000;
       while (!w.core.get("tarot") && Date.now() < deadline) await Bun.sleep(50);
       expect(w.core.get("tarot")?.state).toBe("found");
@@ -468,18 +468,18 @@ describe("PluginFolders", () => {
 });
 
 describe("openPluginRegistry", () => {
-  test("opens on a Clover home: a found plugin's OK card through the broker carries its OK text, and the OK is kept", async () => {
+  test("opens on a MOSS home: a found plugin's OK card through the broker carries its OK text, and the OK is kept", async () => {
     const { openPluginRegistry } = await import("../open");
     const { FakeApprovalBroker } = await import("../../contracts/fakes/approval-broker");
     const { FakeClock } = await import("../../contracts/fakes/clock");
-    const home = mkdtempSync(join(tmpdir(), "clover-b-open-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b-open-"));
     mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
-    writeFileSync(join(home, "plugins", "tarot", "clover.json"), manifest("tarot", { name: "Tarot" }));
+    writeFileSync(join(home, "plugins", "tarot", "moss.json"), manifest("tarot", { name: "Tarot" }));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const { MemorySecretStore } = await import("../../contracts/fakes/secret-store");
     const secrets = new MemorySecretStore();
-    expect(await openPluginRegistry({ cloverHome: home, os: "linux", broker }).catch((e: Error) => e.message)).toContain("secret store");
-    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
+    expect(await openPluginRegistry({ mossHome: home, os: "linux", broker }).catch((e: Error) => e.message)).toContain("secret store");
+    const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker, secrets, settleMs: 50 });
     try {
       const { card } = await opened.registry.installed("tarot", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
@@ -502,7 +502,7 @@ describe("#197's review", () => {
   test("a development folder is kept by its real path; a symlink to it adds the same folder", async () => {
     const w = world();
     const dev = join(w.home, "dev", "tarot");
-    w.write(dev, { "clover.json": manifest("tarot") });
+    w.write(dev, { "moss.json": manifest("tarot") });
     const link = join(w.home, "tarot-link");
     symlinkSync(dev, link);
     await w.folders.scan();
@@ -517,14 +517,14 @@ describe("#197's review", () => {
     const outside = join(w.home, "outside.js");
     writeFileSync(outside, "export const a = 1;");
     const tool = join(w.pluginsDir, "tool");
-    w.write(tool, { "clover.json": manifest("tool", { host: { entry: "host/index.js" } }) });
+    w.write(tool, { "moss.json": manifest("tool", { host: { entry: "host/index.js" } }) });
     mkdirSync(join(tool, "host"), { recursive: true });
     linkSync(outside, join(tool, "host", "index.js"));
     await w.folders.scan();
     expect(w.core.get("tool")).toMatchObject({ state: "invalid" });
     expect(w.core.get("tool")?.reason).toContain("hard link");
     const dev = join(w.home, "dev", "tool");
-    w.write(dev, { "clover.json": manifest("tool", { host: { entry: "host/index.js" } }) });
+    w.write(dev, { "moss.json": manifest("tool", { host: { entry: "host/index.js" } }) });
     mkdirSync(join(dev, "host"), { recursive: true });
     linkSync(outside, join(dev, "host", "index.js"));
     await w.folders.addDevFolder(dev, "cli");
@@ -533,7 +533,7 @@ describe("#197's review", () => {
 
   test("records edited outside the registry fail closed: with a key, a changed or unsigned file reads as absent", async () => {
     const { fileRegistryStore } = await import("../state");
-    const dir = mkdtempSync(join(tmpdir(), "clover-b-mac-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-b-mac-"));
     const tampered: string[] = [];
     const key = new Uint8Array(32).fill(7);
     const store = fileRegistryStore(dir, { macKey: key, onTampered: (f) => tampered.push(f) });

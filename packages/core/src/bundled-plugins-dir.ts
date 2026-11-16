@@ -3,19 +3,19 @@
 // (#259 check 3, the controller's ruling) has no time-of-check gap: the signed core carries the manifest.
 //
 //   - At release build time the staged plugins tree is measured ({relative path → sha256, size}, scripts/release/
-//     bundled-plugins.ts) and the manifest is compiled INTO clover-core as an embedded file (scripts/build-daemon.ts
+//     bundled-plugins.ts) and the manifest is compiled INTO moss-core as an embedded file (scripts/build-daemon.ts
 //     `--plugins-manifest`). The core's own signature (macOS) or the signed feed it came from covers it.
 //   - A file counts only through `readBundledFile`: it is read ONCE, its size and hash checked against the manifest,
 //     and the verified bytes returned. Callers load from those bytes (or a private copy of them), never by reading the
 //     path again, so swapping a file after the check changes nothing that runs. A file the manifest doesn't name is
 //     refused; `readBundledPlugin` refuses a whole plugin when any of its files fails or its folder holds an extra one.
-//   - `bundledPluginsDir` only finds the candidate folder by layout: `<dirname(realpath(clover-core))>/../plugins`,
-//     an app's `…/resources/daemon/clover-core` → `…/resources/plugins` or a server's
-//     `<cloverHome>/bin/daemon/clover-core` → `<cloverHome>/bin/plugins` (#244). A copied genuine core beside swapped
+//   - `bundledPluginsDir` only finds the candidate folder by layout: `<dirname(realpath(moss-core))>/../plugins`,
+//     an app's `…/resources/daemon/moss-core` → `…/resources/plugins` or a server's
+//     `<mossHome>/bin/daemon/moss-core` → `<mossHome>/bin/plugins` (#244). A copied genuine core beside swapped
 //     plugins finds a folder and then gets each swapped file refused. No per-OS folder trust (code signature, root
 //     ownership, read-only mounts) is needed or used.
 //   - A dev or source build has no embedded manifest, so nothing is bundled (lane B settles the dev layout). The
-//     user's own `<cloverHome>/plugins` is never the bundled folder.
+//     user's own `<mossHome>/plugins` is never the bundled folder.
 //   - The manifest is read from the embedded Blob itself (`loadBundledManifest`, once, at the daemon's start), never
 //     through a path. Until it is loaded, `bundledManifest()` is the empty one: nothing is bundled.
 import { createHash } from "node:crypto";
@@ -28,9 +28,9 @@ export interface BundledEntry { sha256: string; size: number }
 /** The bundled tree's manifest: every shipped file, by its path relative to the plugins folder (with `/`). */
 export interface BundledManifest { files: Readonly<Record<string, BundledEntry>> }
 
-/** The embedded file's name in a compiled core: `clover-bundled-plugins-<bun's hash>.manifest`. */
-export const BUNDLED_MANIFEST_FILE = "clover-bundled-plugins.manifest";
-const EMBEDDED_NAME = /^clover-bundled-plugins(?:-[a-z0-9]+)?\.manifest$/;
+/** The embedded file's name in a compiled core: `moss-bundled-plugins-<bun's hash>.manifest`. */
+export const BUNDLED_MANIFEST_FILE = "moss-bundled-plugins.manifest";
+const EMBEDDED_NAME = /^moss-bundled-plugins(?:-[a-z0-9]+)?\.manifest$/;
 
 /** The manifest of a build that ships no bundled plugins (dev, source, a core built without one). */
 export const EMPTY_BUNDLED_MANIFEST: BundledManifest = Object.freeze({ files: Object.freeze({}) });
@@ -223,7 +223,7 @@ function extraFiles(root: string, id: string, manifest: BundledManifest): string
 }
 
 export interface BundledPluginsDirOptions {
-  cloverHome?: string;
+  mossHome?: string;
   realpath?: (p: string) => string;
   /** The manifest this core carries (default: its embedded one). An empty one means nothing is bundled. */
   manifest?: BundledManifest;
@@ -244,7 +244,7 @@ export function bundledPluginsDir(execPath: string, o: BundledPluginsDirOptions 
   if (basename(daemonDir) !== "daemon") return undefined;
   const parent = dirname(daemonDir);
   const dir = join(parent, "plugins");
-  const home = o.cloverHome === undefined ? undefined : resolve(o.cloverHome);
+  const home = o.mossHome === undefined ? undefined : resolve(o.mossHome);
   // Never the user's own plugins folder.
   if (home !== undefined && dir === join(home, "plugins")) return undefined;
   if (home !== undefined && parent === join(home, "bin")) return dir;

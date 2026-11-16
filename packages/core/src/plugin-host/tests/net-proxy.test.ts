@@ -4,8 +4,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -151,8 +151,8 @@ describe("the network list", () => {
       expect(token).toMatch(/^[0-9a-f]{48}$/);
       expect(new URL(other.env.HTTPS_PROXY!).password).not.toBe(token);
       const bare = `http://127.0.0.1:${proxy.port}`;
-      const wrong = `http://clover:${"0".repeat(48)}@127.0.0.1:${proxy.port}`;
-      const borrowed = `http://clover:${new URL(other.env.HTTPS_PROXY!).password}@127.0.0.1:${proxy.port}`;
+      const wrong = `http://moss:${"0".repeat(48)}@127.0.0.1:${proxy.port}`;
+      const borrowed = `http://moss:${new URL(other.env.HTTPS_PROXY!).password}@127.0.0.1:${proxy.port}`;
       for (const via of [bare, wrong, borrowed]) expect([via, (await fetch(`http://api.test:${listed}/`, { proxy: via })).status]).toEqual([via, 407]);
       expect(await raw(proxy.port, `CONNECT api.test:${listed} HTTP/1.1\r\n\r\n`)).toStartWith("HTTP/1.1 407");
       expect(lines.filter((l) => l.includes("without this proxy's token")).length).toBe(4);
@@ -341,15 +341,15 @@ describe("net.fetch's gate", () => {
     const home = temp("cf-netgate-");
     const root = join(home, "plugins", "spy");
     mkdirSync(join(root, "host"), { recursive: true });
-    writeFileSync(join(root, "clover.json"), JSON.stringify({
-      manifest: 1, id: "spy", name: "Spy", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    writeFileSync(join(root, "moss.json"), JSON.stringify({
+      manifest: 1, id: "spy", name: "Spy", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
       host: { entry: "host/index.js" }, capabilities: ["network:api.example.com", "network:*.cdn.example.com", "network:files.example.com:8443"],
     }));
     writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
     writeFileSync(join(root, "host", "index.js"), "export const get = async (args, ctx) => { try { return await (await ctx.api.net.fetch(args.url)).text(); } catch (e) { return `refused: ${e.message}`; } };\n");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
     // `net.fetch` answers a Response (it crosses the plugin host as its own messages since #428: fetch-wire.ts).
     const off = ph.addApiHandlers({ "net.fetch": (_ctx, args) => new Response(`fetched ${String(args[0])}`) });
@@ -383,8 +383,8 @@ darwinDescribe("a fenced plugin's network", () => {
     const home = temp("cf-net-");
     const root = join(home, "plugins", "spy");
     mkdirSync(join(root, "host"), { recursive: true });
-    writeFileSync(join(root, "clover.json"), JSON.stringify({
-      manifest: 1, id: "spy", name: "Spy", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    writeFileSync(join(root, "moss.json"), JSON.stringify({
+      manifest: 1, id: "spy", name: "Spy", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
       host: { entry: "host/index.js" }, capabilities: [`network:api.test:${listed}`],
     }));
     writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
@@ -407,7 +407,7 @@ try { await Bun.dns.lookup("example.com"); out.dns = "resolved"; } catch (e) { o
     writeFileSync(join(root, "probe.mjs"), `${probe}\nconsole.log(JSON.stringify(out));\n`);
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome: temp("cf-net-user-"), netConnect: testConnect, netResolve: testResolve });
     try {
       const { card } = await opened.registry.installed("spy", "app");
@@ -418,7 +418,7 @@ try { await Bun.dns.lookup("example.com"); out.dns = "resolved"; } catch (e) { o
       const got = await ph.host.invoke({ pluginId: "spy", handler: "probe", args: null, caller: USER });
       expect(got).toMatchObject(expected);
       // A hook of the same plugin: the same proxy, the same deny.
-      const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], proxyFor: ph.proxyFor };
+      const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { mossHome: home }), shared: [], proxyFor: ph.proxyFor };
       const hook = await new HookRunner(guard).run({ pluginId: "spy", command: "bun probe.mjs", cwd: root, timeoutMs: 30_000 }, { sessionId: "s_1", event: "SessionStart" } as never);
       expect(JSON.parse(String((hook as { stdout: string }).stdout).trim().split("\n").at(-1)!)).toMatchObject(expected);
     } finally {
@@ -436,8 +436,8 @@ try { await Bun.dns.lookup("example.com"); out.dns = "resolved"; } catch (e) { o
     const home = temp("cf-net-node-");
     const root = join(home, "plugins", "spy");
     mkdirSync(join(root, "host"), { recursive: true });
-    writeFileSync(join(root, "clover.json"), JSON.stringify({
-      manifest: 1, id: "spy", name: "Spy", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    writeFileSync(join(root, "moss.json"), JSON.stringify({
+      manifest: 1, id: "spy", name: "Spy", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
       host: { entry: "host/index.js" }, capabilities: [`network:api.test:${listed}`],
     }));
     writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
@@ -461,7 +461,7 @@ console.log(JSON.stringify(out));
 `);
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome: temp("cf-net-node-user-"), netConnect: testConnect, netResolve: testResolve });
     try {
       const { card } = await opened.registry.installed("spy", "app");
@@ -472,7 +472,7 @@ console.log(JSON.stringify(out));
       expect(await new Promise((resolve) => {
         Bun.connect({ hostname: "127.0.0.1", port: listed, socket: { open: (sock) => { sock.end(); resolve("connected"); }, data() {}, connectError: (_s, e) => resolve(e.message) } }).catch((e: Error) => resolve(e.message));
       })).toBe("connected");
-      const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], proxyFor: ph.proxyFor };
+      const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { mossHome: home }), shared: [], proxyFor: ph.proxyFor };
       const run = async (command: string) => {
         const r = (await new HookRunner(guard).run({ pluginId: "spy", command, cwd: root, timeoutMs: 60_000 }, { sessionId: "s_1", event: "SessionStart" } as never)) as { status: string; stdout: string; reason?: string };
         return { ...r, last: String(r.stdout).trim().split("\n").at(-1) ?? "" };

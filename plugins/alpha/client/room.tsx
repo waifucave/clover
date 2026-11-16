@@ -4,8 +4,8 @@
 // tab as on every tab (Bots doesn't offer a bot the sidebar). What the buttons do is the plugin API's: `avatar.*` for her figure, her stage's store
 // for the rest. Nothing here is special-cased for Alpha by the app: any bot plugin can draw its own.
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
-import type { AvatarBox, AvatarCatalogue, AvatarCue, ShellState } from "@waifucave/clover-plugin-sdk";
+import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
+import type { AvatarBox, AvatarCatalogue, AvatarCue, ShellState } from "@waifucave/moss-plugin-sdk";
 import { useStageState } from "./stage-store";
 import { DARK_SCENES } from "./backdrop";
 import { Grass } from "./grass";
@@ -25,10 +25,10 @@ export const SAY_RIGHT = "calc(100% - min(260px, 30%) - 16px)";
 const CSS = `
 html, body { background: transparent !important; margin: 0; height: 100%; overflow: hidden; -webkit-font-smoothing: antialiased; font-family: ${UI}; }
 .rm { --ink: #1B2247; --ink2: #465078; --ink3: #6D7598; --glass: rgba(255,253,247,.72); --glass-line: rgba(27,34,71,.10); --field: rgba(27,34,71,.06);
-  --gold: #A8823A; --gold-soft: rgba(168,130,58,.25); --clover: #2F9E6A; --cyan: #1D86CF; --paper: #FFFAF0; --paper-ink: #2A2A44; --seg-on: #1B2247; --seg-on-ink: #FFFAF0; --shadow-ink: 255,255,255;
+  --gold: #A8823A; --gold-soft: rgba(168,130,58,.25); --moss: #2F9E6A; --cyan: #1D86CF; --paper: #FFFAF0; --paper-ink: #2A2A44; --seg-on: #1B2247; --seg-on-ink: #FFFAF0; --shadow-ink: 255,255,255;
   position: relative; box-sizing: border-box; height: 100vh; width: 100vw; overflow: hidden; color: var(--ink); user-select: none; }
 .rm[data-dark] { --ink: #EEF0FB; --ink2: #B9BFDC; --ink3: #8A90B4; --glass: rgba(16,22,52,.62); --glass-line: rgba(255,255,255,.10); --field: rgba(255,255,255,.07);
-  --gold: #D9B46A; --gold-soft: rgba(217,180,106,.28); --clover: #5FD29A; --cyan: #74D2FF; --paper: #F3EAD3; --seg-on: #EEF0FB; --seg-on-ink: #141A3C; --shadow-ink: 0,0,0; }
+  --gold: #D9B46A; --gold-soft: rgba(217,180,106,.28); --moss: #5FD29A; --cyan: #74D2FF; --paper: #F3EAD3; --seg-on: #EEF0FB; --seg-on-ink: #141A3C; --shadow-ink: 0,0,0; }
 .rm svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 :where(.rm) button { all: unset; box-sizing: border-box; cursor: pointer; }
 :where(.rm) button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
@@ -45,7 +45,7 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__title { position: absolute; left: clamp(20px, 4.6%, 96px); top: 72px; max-width: 46%; }
 .rm__name { margin: 0; font: italic 400 clamp(44px, 5.6vh, 76px)/.95 ${SERIF}; letter-spacing: -.01em; color: var(--ink); text-shadow: 0 2px 24px rgba(var(--shadow-ink),.3); }
 .rm__status { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 15px; color: var(--ink2); }
-.rm__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--clover); box-shadow: 0 0 0 3px color-mix(in srgb, var(--clover) 22%, transparent); }
+.rm__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--moss); box-shadow: 0 0 0 3px color-mix(in srgb, var(--moss) 22%, transparent); }
 .rm[data-state="thinking"] .rm__dot { animation: rm-pulse 1.1s ease-in-out infinite; }
 .rm[data-state="asleep"] .rm__dot, .rm[data-state="paused"] .rm__dot { background: var(--ink3); box-shadow: none; }
 @keyframes rm-pulse { 50% { transform: scale(1.6); } }
@@ -83,7 +83,7 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__say { position: absolute; box-sizing: border-box; /* Placed from the figure's head, but never past this frame's own right edge (the frame is narrower than the window: it clips what leaves it). */ left: max(16px, min(var(--rm-say-x, 56%), ${SAY_RIGHT})); top: var(--rm-say-y, 14%); width: 260px; max-width: 30%; padding: 16px 20px 15px; border-radius: 22px 22px 22px 6px; background: var(--paper); color: var(--paper-ink); box-shadow: 0 16px 40px -14px rgba(0,0,0,.55); transition: left .4s ease, top .4s ease; }
 .rm__say::after { content: ""; position: absolute; left: -2px; bottom: -14px; width: 30px; height: 24px; background: var(--paper); clip-path: polygon(0 0, 100% 0, 0 100%); transform: rotate(8deg); }
 .rm__say small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6f6a80; }
-.rm__say small i { width: 6px; height: 6px; border-radius: 50%; background: var(--clover); }
+.rm__say small i { width: 6px; height: 6px; border-radius: 50%; background: var(--moss); }
 .rm__say p { margin: 4px 0 0; font: 400 21px/1.2 ${SERIF}; }
 .rm__say em { display: block; font-size: 13.5px; font-style: normal; color: #6f6a80; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rm__say[data-attention] { box-shadow: 0 0 0 3px var(--gold), 0 16px 40px -14px rgba(0,0,0,.55); }

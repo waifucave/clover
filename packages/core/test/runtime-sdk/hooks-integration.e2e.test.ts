@@ -1,4 +1,4 @@
-// Phase 8c Lane 3, Tasks 3.2/3.3 — proves the ASSEMBLED `sessionHooksFor(...).clover` (not just its
+// Phase 8c Lane 3, Tasks 3.2/3.3 — proves the ASSEMBLED `sessionHooksFor(...).moss` (not just its
 // individual callbacks, already covered unit-level in `hooks.test.ts`) against a REAL spawned
 // `winter` child: multiple matcher groups on the same event (the unmatched plugin group alongside a
 // `Bash`-matched group) fire together correctly, and the fileDiff producer's PreToolUse snapshot /
@@ -17,7 +17,7 @@ import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 async function drive(spawn: SpawnClaudeCodeProcess, opts: {
-  provider: string; sessionId: string; home: string; cwd: string; hooks: ReturnType<typeof sessionHooksFor>["clover"]; prompt: string;
+  provider: string; sessionId: string; home: string; cwd: string; hooks: ReturnType<typeof sessionHooksFor>["moss"]; prompt: string;
 }): Promise<Array<Record<string, unknown>>> {
   const queue = createHostPromptQueue();
   const messages: Array<Record<string, unknown>> = [];
@@ -34,10 +34,10 @@ async function drive(spawn: SpawnClaudeCodeProcess, opts: {
       hooks: opts.hooks,
       env: {
         PATH: process.env.PATH ?? "/usr/bin:/bin",
-        // Pre-rename this set two distinct env keys — the daemon's own home var, and CLOVER_HOME (the SDK's
+        // Pre-rename this set two distinct env keys — the daemon's own home var, and MOSS_HOME (the SDK's
         // brand-derived home); the rename makes them the same key, so it is written once now.
-        HOME: opts.home, TMPDIR: opts.home, CLOVER_HOME: opts.home,
-        CLOVER_PROFILE: "test", WINTER_TEST_PROVIDER: opts.provider,
+        HOME: opts.home, TMPDIR: opts.home, MOSS_HOME: opts.home,
+        MOSS_PROFILE: "test", WINTER_TEST_PROVIDER: opts.provider,
       },
     },
   });
@@ -66,9 +66,9 @@ describeWithEmbeddedRuntime("sessionHooksFor — assembled against a real winter
         return [];
       },
     };
-    const { clover } = sessionHooksFor({ sessionId: "s_hi1", home, roots: [cwd], hookFacade });
+    const { moss } = sessionHooksFor({ sessionId: "s_hi1", home, roots: [cwd], hookFacade });
 
-    const messages = await drive(spawn, { provider: "laneb", sessionId: "s_hi1", home, cwd, hooks: clover, prompt: `write it here:\n${target}` });
+    const messages = await drive(spawn, { provider: "laneb", sessionId: "s_hi1", home, cwd, hooks: moss, prompt: `write it here:\n${target}` });
 
     expect(messages.map((m) => m.type)).toEqual(["system", "assistant", "user", "assistant", "result"]);
     expect(readFileSync(target, "utf8")).toBe("winter-t8-laneb-fixture-content\n");
@@ -96,9 +96,9 @@ describeWithEmbeddedRuntime("sessionHooksFor — assembled against a real winter
         return [{ pluginId: "test-plugin", result: { status: "blocked", stdout: "", reason: "policy says no" } }];
       },
     };
-    const { clover } = sessionHooksFor({ sessionId: "s_hi2", home, roots: [cwd], hookFacade });
+    const { moss } = sessionHooksFor({ sessionId: "s_hi2", home, roots: [cwd], hookFacade });
 
-    const messages = await drive(spawn, { provider: "lanec", sessionId: "s_hi2", home, cwd, hooks: clover, prompt: "go" });
+    const messages = await drive(spawn, { provider: "lanec", sessionId: "s_hi2", home, cwd, hooks: moss, prompt: "go" });
 
     const denialNotice = messages.find((m) => m.type === "system" && (m as { subtype?: string }).subtype === "permission_denied");
     expect(denialNotice).toMatchObject({ tool_name: "Bash", message: "blocked by plugin hook test-plugin: policy says no" });

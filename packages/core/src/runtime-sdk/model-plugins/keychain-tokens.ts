@@ -6,7 +6,7 @@
 // providers' sign-ins and `credential.set` already write are the source, so a key a user stored before the plugins
 // existed keeps working with no migration:
 //
-// * a bundled plugin (`clover/model-<provider>`, from the bundled tree) maps to its provider's inventory slot
+// * a bundled plugin (`moss/model-<provider>`, from the bundled tree) maps to its provider's inventory slot
 //   (`credentialInventory()`: `<provider>:default`, `openai:default`, `codex-oauth:default`, `anthropic:default`,
 //   `anthropic:console`), read as the daemon reads it (`readCredentialMaterial`): an api-key record gives its key,
 //   an OAuth record its access token, a bearer record its token;
@@ -23,7 +23,7 @@ import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-regist
 import type { ProviderRefresher } from "../host-credentials";
 import { credentialInventory, DEFAULT_CREDENTIAL_ACCOUNT_ID } from "../keychain";
 import { CODE_PLUGINS } from "./bundled";
-import { isBundledClover } from "./load";
+import { isBundledMoss } from "./load";
 import type { ModelPluginApiOptions } from "./plugin-api";
 import type { KeyedToken, KeyedTokenSource } from "@waifucave/clover-provider-runtime";
 
@@ -44,9 +44,9 @@ export interface ModelPluginSlot {
   account: string;
 }
 
-/** The provider a bundled clover model plugin serves (its one `models` entry), or undefined for any other plugin. */
+/** The provider a bundled moss model plugin serves (its one `models` entry), or undefined for any other plugin. */
 export function bundledModelProviderOf(record: Pick<PluginRecord, "id" | "source" | "manifest"> | undefined): string | undefined {
-  if (record === undefined || !isBundledClover(record)) return undefined;
+  if (record === undefined || !isBundledMoss(record)) return undefined;
   const models = record.manifest?.contributes?.models ?? [];
   return models.length === 1 ? models[0]!.provider : undefined;
 }

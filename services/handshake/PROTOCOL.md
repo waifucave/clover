@@ -22,7 +22,7 @@ This file is the contract between the service (lane I, `services/handshake/`) an
 - **Keys are Ed25519 public keys** (32 bytes, base64url).
   - The service knows members only by these keys.
   - Lane H chooses whether they are fresh per pair or group (recommended: then the service can't link a device's pairs to its link key or its other pairs) or the device's link key.
-  - Either way, every signature below starts with its own `clover-handshake-v1 …` prefix, so it can't be mistaken for any other use of the key.
+  - Either way, every signature below starts with its own `moss-handshake-v1 …` prefix, so it can't be mistaken for any other use of the key.
 - **A pair belongs to no group at the service.** A group exists only for the lease; devices join it when they pair (the controller's ruling: one group per user for their account-less devices).
 
 ## Encoding
@@ -48,10 +48,10 @@ Registration requests carry statements signed with Ed25519. Each statement is UT
 
 | Statement | Lines | Signed by |
 | :- | :- | :- |
-| Pair | `clover-handshake-v1 pair`, `<pair>`, `<key A>`, `<key B>`, `<t>` | both A and B, the same text |
-| Group | `clover-handshake-v1 group`, `<group>`, `<key>`, `<t>` | the founding member |
-| Join | `clover-handshake-v1 join`, `<group>`, `<new key>`, `<t>`, and `<from>` when the join moves the key out of another group | the joining device |
-| Admit | `clover-handshake-v1 admit`, `<group>`, `<new key>`, `<t>` | a current member |
+| Pair | `moss-handshake-v1 pair`, `<pair>`, `<key A>`, `<key B>`, `<t>` | both A and B, the same text |
+| Group | `moss-handshake-v1 group`, `<group>`, `<key>`, `<t>` | the founding member |
+| Join | `moss-handshake-v1 join`, `<group>`, `<new key>`, `<t>`, and `<from>` when the join moves the key out of another group | the joining device |
+| Admit | `moss-handshake-v1 admit`, `<group>`, `<new key>`, `<t>` | a current member |
 
 The keys in a pair statement are in the order the request lists them. `<t>` is written in decimal.
 
@@ -60,13 +60,13 @@ The keys in a pair statement are in the order the request lists them. `<t>` is w
 Every other pair or group request carries one header:
 
 ```
-Authorization: Clover-Sig key=<member key>, t=<ms>, sig=<signature>
+Authorization: MOSS-Sig key=<member key>, t=<ms>, sig=<signature>
 ```
 
 `sig` is the Ed25519 signature, by `key`, over:
 
 ```
-clover-handshake-v1 request
+moss-handshake-v1 request
 <METHOD>
 <path, with its query if any>
 <t>
@@ -223,7 +223,7 @@ Agreed with lane H (H-M1's review and the controller's rulings, November 6, 2026
   - The requester's own signed request is its vote when it votes. Each co-signer signs the remove statement:
 
     ```
-    clover-handshake-v1 remove
+    moss-handshake-v1 remove
     <group>
     <key>
     <t>
@@ -241,11 +241,11 @@ Agreed with lane H (H-M1's review and the controller's rulings, November 6, 2026
   - **The card:** `GET /v1/groups/<group>/rollback/<key>` (signed) answers `{"restores": [key…], "drops": [key…]}`, so the removal card lists what would go and the user can keep the keys they recognise.
 - **The recovery code** (the owner's decision, for two-device account-less groups; lane H's client shows it when a second account-less device joins):
   - 128 random bits, shown as 26 Crockford base32 characters in groups of five (`XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-X`), read in any case, with 0/O and 1/I/L alike.
-  - Its key is Ed25519 from seed = HKDF-SHA256(ikm = the code's 16 bytes, salt = the group id's 16 bytes, info = `clover handshake v1 recovery`, 32 bytes). `client/recovery.ts` has the format, the parser and the signer.
+  - Its key is Ed25519 from seed = HKDF-SHA256(ikm = the code's 16 bytes, salt = the group id's 16 bytes, info = `moss handshake v1 recovery`, 32 bytes). `client/recovery.ts` has the format, the parser and the signer.
   - **Setting it:** `PUT /v1/groups/<group>/recovery`, signed by a member, `{"key": "<public key>"|null, "t", "sigs": [{"by","sig"}]}`, over
 
     ```
-    clover-handshake-v1 recovery
+    moss-handshake-v1 recovery
     <group>
     <key, or empty to clear>
     <t>
@@ -312,14 +312,14 @@ The service never opens a box. Both clients must seal them alike:
 
 - **Pair scope.**
   - Pairing gives both devices a 32-byte pair secret S (lane H derives it from the pairing handshake; it never reaches the service).
-  - The key: K = HKDF-SHA256(ikm = S, salt = the pair id's 16 bytes, info = `clover handshake v1 box`, 32 bytes).
+  - The key: K = HKDF-SHA256(ikm = S, salt = the pair id's 16 bytes, info = `moss handshake v1 box`, 32 bytes).
   - The box: base64url of `nonce (12 random bytes) || AES-256-GCM(K, nonce, plaintext, aad)`.
 - **Account scope.**
   - HPKE base mode, single shot, with DHKEM(X25519, HKDF-SHA256), HKDF-SHA256 and AES-256-GCM: the forwarder's suite.
-  - It is sealed to the recipient device's X25519 key from the account's device list, with info `clover handshake v1 box`.
+  - It is sealed to the recipient device's X25519 key from the account's device list, with info `moss handshake v1 box`.
   - The box: base64url of `enc (32) || ciphertext`.
   - This needs every account device to list an X25519 key (lane H).
-- **`aad`** is UTF-8 lines joined by `\n`: `clover-handshake-v1 box`, the scope id (`<pair>`, or the account's `sub`), the sender key or device id, the recipient key or device id, the kind, and for a record its `gen`.
+- **`aad`** is UTF-8 lines joined by `\n`: `moss-handshake-v1 box`, the scope id (`<pair>`, or the account's `sub`), the sender key or device id, the recipient key or device id, the kind, and for a record its `gen`.
 
   A box moved to another pair, another direction, another kind or another generation fails to open.
 
@@ -364,4 +364,4 @@ Plaintexts are UTF-8 JSON. Unknown fields are ignored, and `at` (ms) lets the re
 
 ## Cross-origin
 
-The web companion (`https://clover.waifucave.com`) calls the service from the browser. The service answers CORS preflights for that origin alone (a list, `WEB_ORIGINS`, for local emulators), allowing `authorization` and `content-type`.
+The web companion (`https://moss.waifucave.com`) calls the service from the browser. The service answers CORS preflights for that origin alone (a list, `WEB_ORIGINS`, for local emulators), allowing `authorization` and `content-type`.

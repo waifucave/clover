@@ -5,7 +5,7 @@
 //
 // A computer that is off answers `computer_offline` at once: the link fails a request fast when no path reaches the
 // peer, and a request in flight when the link drops fails the same way, never after a hang.
-import type { FileStat } from "@waifucave/clover-protocol";
+import type { FileStat } from "@waifucave/moss-protocol";
 import { fenceParam, type ActFence } from "./fencing";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkPriority, LinkTransport } from "../contracts/link-transport";
@@ -151,7 +151,7 @@ export class RemoteHolder implements Holder {
    *  answers as if it weren't there, having followed them (#225's review). */
   #confirmsNoFollow(r: { noFollow?: unknown }, path: string): void {
     if (r.noFollow !== true) {
-      throw new ContractError("refused", `${this.#computer()} can't read ${path} without following links (an older build); update Clover there`, { reason: "unsupported" });
+      throw new ContractError("refused", `${this.#computer()} can't read ${path} without following links (an older build); update MOSS there`, { reason: "unsupported" });
     }
   }
 

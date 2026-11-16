@@ -1,11 +1,11 @@
 // A web page part (checklist row 1.90; spec §5.5 "Web pages"): a `ui` entry of kind `web` instead of `component`. The
 // `acceptance-webpart` fixture (no code: a page in its own folder at the conversation spot) is installed from its folder
 // the user's way, its OK card pressed in the window, and its page must draw in an isolated view of its own (a document
-// on `clover-web://`, never a plugin layer's or the app's origin) that reaches nothing of the app: no bridge, no Node.
+// on `moss-web://`, never a plugin layer's or the app's origin) that reaches nothing of the app: no bridge, no Node.
 import { resolve } from "node:path";
 import { fail, sleep, until, type ExampleCtx, toAlphasTab } from "./example-steps";
 
-export const WEB_STEP = "a web page part: a plugin whose ui entry is a web page installs from a folder, its OK card (which says it shows web pages) is pressed, and its page draws in a sealed view on clover-web:// with no bridge to the app and no Node";
+export const WEB_STEP = "a web page part: a plugin whose ui entry is a web page installs from a folder, its OK card (which says it shows web pages) is pressed, and its page draws in a sealed view on moss-web:// with no bridge to the app and no Node";
 
 const FIXTURE_DIR = resolve(import.meta.dir, "fixtures", "acceptance-webpart");
 const PLUGIN_ID = "acceptance-webpart";
@@ -27,7 +27,7 @@ export async function webStep(ctx: ExampleCtx, _session: string): Promise<string
   const done: string[] = [];
   let installed = false;
   /** The web page's document: on the folder-page scheme, carrying the fixture's mark. */
-  const webDoc = async () => (await cdp.documents()).find((d) => d.url.startsWith("clover-web://") && d.text.includes("ACCEPTANCE-WEB-PART"));
+  const webDoc = async () => (await cdp.documents()).find((d) => d.url.startsWith("moss-web://") && d.text.includes("ACCEPTANCE-WEB-PART"));
   try {
     if (await webDoc() !== undefined) fail("a web page of this fixture is already drawn before it is installed");
     const r = await rpc.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: FIXTURE_DIR } }, 60_000);
@@ -41,7 +41,7 @@ export async function webStep(ctx: ExampleCtx, _session: string): Promise<string
     const info = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: PLUGIN_ID });
     if (["found", "refused", "invalid", "off", "waiting"].includes(info.plugin.state)) fail(`${PLUGIN_ID} is ${info.plugin.state} after its OK`);
 
-    const doc = await until("the web page's document (clover-web://)", 60_000, async () => await webDoc(), async () =>
+    const doc = await until("the web page's document (moss-web://)", 60_000, async () => await webDoc(), async () =>
       (await cdp.documents()).map((d) => `${d.url.slice(0, 60)}: ${d.text.replace(/\s+/g, " ").slice(0, 60)}`).join(" || "));
     // The script has run once its reach line is written.
     const text = await until("the page's own reach line", 15_000, async () => {
@@ -50,9 +50,9 @@ export async function webStep(ctx: ExampleCtx, _session: string): Promise<string
     });
     const bad = sealedProblem(text);
     if (bad !== undefined) fail(bad);
-    done.push(`the page drew on ${doc.url.replace(/^(clover-web:\/\/[^/]*\/).*/, "$1…")} and reads "${text.replace(/\s+/g, " ").trim()}"`);
+    done.push(`the page drew on ${doc.url.replace(/^(moss-web:\/\/[^/]*\/).*/, "$1…")} and reads "${text.replace(/\s+/g, " ").trim()}"`);
     // Its origin isn't a plugin layer's: the app's own pages and layers are on other schemes.
-    if (doc.url.startsWith("clover-plugin://") || doc.url.startsWith("clover-core://")) fail(`the web page is on ${doc.url.slice(0, 30)}`);
+    if (doc.url.startsWith("moss-plugin://") || doc.url.startsWith("moss-core://")) fail(`the web page is on ${doc.url.slice(0, 30)}`);
     return done.join("; ");
   } finally {
     if (installed) {

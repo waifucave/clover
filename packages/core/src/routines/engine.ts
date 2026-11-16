@@ -24,7 +24,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { appendFileSync, closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, watch, writeFileSync, writeSync, type FSWatcher } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
-import { isAnyPluginId, levelAbove, pluginIdFromSegment, type Level, type RoutineRunView, type RoutineView } from "@waifucave/clover-protocol";
+import { isAnyPluginId, levelAbove, pluginIdFromSegment, type Level, type RoutineRunView, type RoutineView } from "@waifucave/moss-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -36,7 +36,7 @@ import { settingsDir } from "../bots/gate";
 import { readOwnFile } from "../bots/own-file";
 import { parseRoutine, routineHash, triggerSummary, withId, withPaused, ROUTINE_FILE_MAX_BYTES, type RoutineFile, type RoutineTrigger } from "./file";
 import { firesBetween, nextRunInZone } from "./zone";
-import { isLate, untrusted, WEBHOOK_LATE_MS } from "../../../../plugins/clover/plugins/trigger-webhook/src/webhook";
+import { isLate, untrusted, WEBHOOK_LATE_MS } from "../../../../plugins/moss/plugins/trigger-webhook/src/webhook";
 
 export { untrusted, WEBHOOK_LATE_MS };
 
@@ -89,7 +89,7 @@ export interface RoutineEngineOptions {
   bots: {
     has(id: string): boolean;
     runSideThread(id: string, run: SideThreadRun): Promise<RoutineRunView>;
-    /** A note of Clover's in the bot's conversation, which starts no turn (a routine it paused). */
+    /** A note of MOSS's in the bot's conversation, which starts no turn (a routine it paused). */
     note?(id: string, label: string, text: string): Promise<void>;
     onEvent?(fn: (event: { type: string }) => void): Unsubscribe;
   };
@@ -142,7 +142,7 @@ interface EngineState {
   deliveries?: Record<string, number>;
   /** The routines whose webhook key the user has been shown (`routine.webhookKey` shows it once). */
   keysShown?: Record<string, number>;
-  /** Why Clover paused a routine (a plugin's trigger over `PLUGIN_FIRES_PER_HOUR`), by id, while its file says paused. */
+  /** Why MOSS paused a routine (a plugin's trigger over `PLUGIN_FIRES_PER_HOUR`), by id, while its file says paused. */
   pausedWhy?: Record<string, string>;
 }
 
@@ -383,7 +383,7 @@ export class RoutineEngine {
     if (o.detach !== true) await run;
   }
 
-  /** Clover pauses a routine (a plugin's trigger over its hourly cap): `paused: true` in its file, as a user would write
+  /** MOSS pauses a routine (a plugin's trigger over its hourly cap): `paused: true` in its file, as a user would write
    *  it, so the user's ordinary resume (taking it out) resumes it; the why shows in the list until then; one note in the
    *  bot's conversation. */
   #pauseForFires(l: Loaded, why: string): void {
@@ -428,7 +428,7 @@ export class RoutineEngine {
       if (before && before.hash === f.hash && before.path === f.path && before.state === this.#stateOf(f) && before.level === this.#levelOf(f)) continue;
       if (before) this.#disarm(before);
       const l: Loaded = { ...f, state: this.#stateOf(f), level: this.#levelOf(f), timers: [] };
-      // The user resumed a routine Clover paused (took `paused` out of its file): the why goes, and the hour's count.
+      // The user resumed a routine MOSS paused (took `paused` out of its file): the why goes, and the hour's count.
       if (!f.routine.paused && this.#state.pausedWhy?.[f.routine.id] !== undefined) {
         delete this.#state.pausedWhy[f.routine.id];
         this.#pluginFires.delete(f.routine.id);
@@ -483,7 +483,7 @@ export class RoutineEngine {
         const path = join(root, folder.name, file);
         try {
           // Never through a link the bot left (toward another bot's routine or data, the fence review): the folder and
-          // the file are read as the bot's own, from the Clover home down.
+          // the file are read as the bot's own, from the MOSS home down.
           const read = readOwnFile(this.#o.home, path, { maxBytes: ROUTINE_FILE_MAX_BYTES, whole: true });
           if (!read.ok) {
             if (read.why === "too-large") this.#warn(`${path} is larger than ${ROUTINE_FILE_MAX_BYTES} bytes; it isn't loaded`);
@@ -741,7 +741,7 @@ export class RoutineEngine {
     const last = this.#state.lastRunAt[l.routine.id];
     return {
       id: l.routine.id, name: l.routine.name.slice(0, 200), bot: l.bot, computer: this.#o.computer,
-      file: `home/${this.#o.computer}/.clover/routines/${botSegment(l.bot)}/${basename(l.path)}`,
+      file: `home/${this.#o.computer}/.moss/routines/${botSegment(l.bot)}/${basename(l.path)}`,
       triggers: l.routine.triggers.map((t) => (t.type === "webhook" && !this.webhooksAvailable() ? { type: "webhook", summary: WEBHOOK_NOT_AVAILABLE_NOTE } : triggerSummary(t))),
       level: l.level, state: l.state,
       ...(l.state === "paused" && this.#state.pausedWhy?.[l.routine.id] !== undefined ? { pausedWhy: this.#state.pausedWhy[l.routine.id]!.slice(0, 300) } : {}),

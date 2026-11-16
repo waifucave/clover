@@ -28,7 +28,7 @@ const codeOf = (f: () => unknown) => {
 
 describe("installing from a folder", () => {
   test("a source file is read without following a link, as a regular file, within the budget", () => {
-    const d = temp("clover-inst-");
+    const d = temp("moss-inst-");
     writeFileSync(join(d, "a.txt"), "hello");
     symlinkSync(join(d, "a.txt"), join(d, "link"));
     mkdirSync(join(d, "dir"));
@@ -44,7 +44,7 @@ describe("installing from a folder", () => {
   });
 
   test("the walk stops at the first file past a cap, before reading the rest", () => {
-    const d = temp("clover-inst-");
+    const d = temp("moss-inst-");
     for (let i = 0; i < 5; i++) writeFileSync(join(d, `f${i}`), "x".repeat(10));
     expect(treeEntries(d, { maxFiles: 5 })).toHaveLength(5);
     expect(() => treeEntries(d, { maxFiles: 3 })).toThrow(TreeProblem);
@@ -53,10 +53,10 @@ describe("installing from a folder", () => {
   });
 
   test("a rename's failures are the install's: a folder there meanwhile is a conflict; another volume is copied beside and renamed in", () => {
-    const d = temp("clover-inst-");
+    const d = temp("moss-inst-");
     const staged = join(d, "stage", "tarot");
     mkdirSync(staged, { recursive: true });
-    writeFileSync(join(staged, "clover.json"), "{}");
+    writeFileSync(join(staged, "moss.json"), "{}");
     const plugins = join(d, "plugins");
     mkdirSync(join(plugins, "tarot"), { recursive: true });
     writeFileSync(join(plugins, "tarot", "other"), "theirs");
@@ -71,12 +71,12 @@ describe("installing from a folder", () => {
       renameSync(from, to);
     };
     renameInto(staged, join(plugins, "luna"), "luna", acrossVolumes);
-    expect(readFileSync(join(plugins, "luna", "clover.json"), "utf8")).toBe("{}");
+    expect(readFileSync(join(plugins, "luna", "moss.json"), "utf8")).toBe("{}");
     expect(readdirSync(plugins).sort()).toEqual(["luna", "tarot"]);
   });
 
   test("an install's folder that a crash left is swept; an install never lands over one that appeared meanwhile", async () => {
-    const d = temp("clover-inst-");
+    const d = temp("moss-inst-");
     const stages = join(d, "run", "plugin-install");
     mkdirSync(join(stages, "abc", "tarot"), { recursive: true });
     const leftPlugins = join(d, "plugins-left");
@@ -85,9 +85,9 @@ describe("installing from a folder", () => {
     sweepInstallStages(stages, leftPlugins);
     expect(existsSync(stages)).toBe(false);
     expect(readdirSync(leftPlugins)).toEqual(["luna"]);
-    const src = join(temp("clover-inst-src-"), "tarot");
+    const src = join(temp("moss-inst-src-"), "tarot");
     mkdirSync(src);
-    writeFileSync(join(src, "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0" }));
+    writeFileSync(join(src, "moss.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0" }));
     const plugins = join(d, "plugins");
     // The id's folder appears while the install checks it: refused as a conflict.
     const err = await installFromFolder({
@@ -95,6 +95,6 @@ describe("installing from a folder", () => {
       taken: (id) => { mkdirSync(join(plugins, id, "x"), { recursive: true }); return false; },
     }).catch((e: unknown) => e);
     expect((err as ContractError).code).toBe("conflict");
-    expect(existsSync(join(plugins, "tarot", "clover.json"))).toBe(false);
+    expect(existsSync(join(plugins, "tarot", "moss.json"))).toBe(false);
   });
 });

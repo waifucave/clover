@@ -1,7 +1,7 @@
 // The tab-flash row (the owner's report on try 14d: "the old layout we had for alpha shows for a split second when i
 // move from reel to alpha tab"): coming back to Alpha's tab from an app's page, the Plugins page, the Archive and the
 // Settings dialog, and the window at its start, never draws her tab in the stock layout or her conversation's empty
-// state while it has a transcript. The window's own document (the `clover` layer's, which holds the shell, the stock
+// state while it has a transcript. The window's own document (the `moss` layer's, which holds the shell, the stock
 // sidebar, her layout and the conversation) is sampled at every frame it draws, from just before the press to a while
 // after: which layout shows (the stock tab's `.cl-bot-tab`, her layout's part), whether the stock sidebar shows, whether
 // "This is the start of your conversation" shows and how many rows the conversation has, and each of her frames
@@ -42,27 +42,27 @@ const SAMPLER = (ms: number) => `(() => {
   const q = (s) => document.querySelector(s);
   const sample = () => ({
     stockTab: vis(q(".cl-bot-tab")),
-    layout: [...document.querySelectorAll("[data-clover-layout-part]")].some(vis),
+    layout: [...document.querySelectorAll("[data-moss-layout-part]")].some(vis),
     stockSidebar: [...document.querySelectorAll(".cl-sidebar")].some(vis),
     empty: [...document.querySelectorAll(".cl-conv__empty")].some(vis),
     rows: [...document.querySelectorAll(".cl-conv__unit")].filter(vis).length,
-    appPage: [...document.querySelectorAll('[data-clover-entry^="${APP_ID}#"]')].some((e) => e.tagName === "IFRAME" && vis(e) && e.getBoundingClientRect().height > 40),
+    appPage: [...document.querySelectorAll('[data-moss-entry^="${APP_ID}#"]')].some((e) => e.tagName === "IFRAME" && vis(e) && e.getBoundingClientRect().height > 40),
     loadingNote: [...document.querySelectorAll(".cl-shell-empty")].some(vis),
-    alpha: [...document.querySelectorAll('[data-clover-entry^="alpha#"]')].map((f) => f.getAttribute("data-clover-entry") + ":" + (f.tagName !== "IFRAME" ? (f.hasAttribute("data-clover-asleep") ? "asleep" : "inline") : (f.hasAttribute("data-clover-drawn") || (f.style.height !== "" && document.querySelector("iframe[data-clover-drawn]") === null) ? "drawn" : "loading")) + (vis(f) ? "" : ":hidden")).sort(),
+    alpha: [...document.querySelectorAll('[data-moss-entry^="alpha#"]')].map((f) => f.getAttribute("data-moss-entry") + ":" + (f.tagName !== "IFRAME" ? (f.hasAttribute("data-moss-asleep") ? "asleep" : "inline") : (f.hasAttribute("data-moss-drawn") || (f.style.height !== "" && document.querySelector("iframe[data-moss-drawn]") === null) ? "drawn" : "loading")) + (vis(f) ? "" : ":hidden")).sort(),
   });
   const t0 = performance.now();
   const out = [];
   let last = "";
   let frames = 0;
-  window.__cloverFlash = { done: false, out, frames: 0 };
+  window.__mossFlash = { done: false, out, frames: 0 };
   const tick = () => {
     frames++;
     const s = sample();
     const key = JSON.stringify(s);
     if (key !== last) { out.push({ t: Math.round(performance.now() - t0), n: 1, ...s }); last = key; }
     else out[out.length - 1].n++;
-    window.__cloverFlash.frames = frames;
-    if (performance.now() - t0 < ${ms}) requestAnimationFrame(tick); else window.__cloverFlash.done = true;
+    window.__mossFlash.frames = frames;
+    if (performance.now() - t0 < ${ms}) requestAnimationFrame(tick); else window.__mossFlash.done = true;
   };
   requestAnimationFrame(tick);
   return true;
@@ -90,7 +90,7 @@ function timeline(samples: (FlashSample & { n: number })[]): string {
 
 async function windowDoc(cdp: Cdp): Promise<string> {
   const d = await until("the window's document (the shell)", 30_000, async () => {
-    for (const x of await treeDocs(cdp)) if (x.url.startsWith("clover-plugin://clover/") && (await cdp.evaluate(x.session, "!!document.querySelector('.cl-window')").catch(() => false)) === true) return x.session;
+    for (const x of await treeDocs(cdp)) if (x.url.startsWith("moss-plugin://moss/") && (await cdp.evaluate(x.session, "!!document.querySelector('.cl-window')").catch(() => false)) === true) return x.session;
     return undefined;
   }, () => dumpFrames(cdp));
   return d;
@@ -99,7 +99,7 @@ async function windowDoc(cdp: Cdp): Promise<string> {
 /** Opens her tab when the window shows something else (her layout not showing): presses the sidebar's Alpha row. */
 async function openHerTab(cdp: Cdp): Promise<void> {
   const win = await windowDoc(cdp);
-  const hers = await cdp.evaluate(win, `[...document.querySelectorAll("[data-clover-layout-part]")].some((el) => el.getClientRects().length > 0)`).catch(() => false);
+  const hers = await cdp.evaluate(win, `[...document.querySelectorAll("[data-moss-layout-part]")].some((el) => el.getClientRects().length > 0)`).catch(() => false);
   if (hers === true) return;
   const at = await until("the sidebar's Alpha row", 20_000, async () => {
     for (const d of await treeDocs(cdp)) {
@@ -116,7 +116,7 @@ async function herTabSettled(cdp: Cdp, minRows: number): Promise<void> {
   await until("Alpha's tab drawn (her layout, her room, her transcript)", 60_000, async () => {
     const s = await windowDoc(cdp).catch(() => undefined);
     if (s === undefined) return undefined;
-    const v = (await cdp.evaluate(s, `(() => { const vis = (el) => !!el && el.getClientRects().length > 0; const room = document.querySelector('iframe[data-clover-entry="alpha#room"]'); return !!document.querySelector('[data-clover-layout-part]') && vis(room) && (room.getAttribute('data-clover-drawn') !== null || room.style.height !== '') && document.querySelectorAll('.cl-conv__unit').length >= ${minRows}; })()`).catch(() => false)) as boolean;
+    const v = (await cdp.evaluate(s, `(() => { const vis = (el) => !!el && el.getClientRects().length > 0; const room = document.querySelector('iframe[data-moss-entry="alpha#room"]'); return !!document.querySelector('[data-moss-layout-part]') && vis(room) && (room.getAttribute('data-moss-drawn') !== null || room.style.height !== '') && document.querySelectorAll('.cl-conv__unit').length >= ${minRows}; })()`).catch(() => false)) as boolean;
     return v ? true : undefined;
   }, () => dumpFrames(cdp));
 }
@@ -134,8 +134,8 @@ async function sampled(cdp: Cdp, what: string, press: { selector: string; text?:
   }, () => dumpFrames(cdp));
   await cdp.evaluate(win, SAMPLER(ms));
   await cdp.click(at.session, at.c.x, at.c.y);
-  await until(`${what}: the samples`, ms + 10_000, async () => ((await cdp.evaluate(win, "window.__cloverFlash && window.__cloverFlash.done").catch(() => false)) === true ? true : undefined));
-  const r = (await cdp.evaluate(win, "JSON.stringify(window.__cloverFlash)")) as string;
+  await until(`${what}: the samples`, ms + 10_000, async () => ((await cdp.evaluate(win, "window.__mossFlash && window.__mossFlash.done").catch(() => false)) === true ? true : undefined));
+  const r = (await cdp.evaluate(win, "JSON.stringify(window.__mossFlash)")) as string;
   return (JSON.parse(r) as { out: (FlashSample & { n: number })[] }).out;
 }
 
@@ -147,16 +147,16 @@ const SETTINGS = "button[aria-label=Settings]";
 export async function launchSamples(cdp: Cdp, ms = 6_000): Promise<(FlashSample & { n: number })[]> {
   const win = await windowDoc(cdp);
   await cdp.evaluate(win, SAMPLER(ms));
-  await until("the window's start: the samples", ms + 10_000, async () => ((await cdp.evaluate(win, "window.__cloverFlash && window.__cloverFlash.done").catch(() => false)) === true ? true : undefined));
-  return (JSON.parse((await cdp.evaluate(win, "JSON.stringify(window.__cloverFlash)")) as string) as { out: (FlashSample & { n: number })[] }).out;
+  await until("the window's start: the samples", ms + 10_000, async () => ((await cdp.evaluate(win, "window.__mossFlash && window.__mossFlash.done").catch(() => false)) === true ? true : undefined));
+  return (JSON.parse((await cdp.evaluate(win, "JSON.stringify(window.__mossFlash)")) as string) as { out: (FlashSample & { n: number })[] }).out;
 }
 
 /** How long her frames stay out of sight before they sleep when the row runs alone: the app's seam
- *  (CLOVER_TEST_SLEEP_AFTER_MS, a test or acceptance build's), so "a minute away" is this, not the layer's minute. */
+ *  (MOSS_TEST_SLEEP_AFTER_MS, a test or acceptance build's), so "a minute away" is this, not the layer's minute. */
 export const TAB_FLASH_SLEEP_MS = 5_000;
 
 /** Her frames in the window's document as the sampler names them (`<entry>:<state>[:hidden]`). */
-const ALPHA_FRAMES = `[...document.querySelectorAll('[data-clover-entry^="alpha#"]')].map((f) => f.getAttribute("data-clover-entry") + ":" + (f.hasAttribute("data-clover-asleep") ? "asleep" : f.tagName))`;
+const ALPHA_FRAMES = `[...document.querySelectorAll('[data-moss-entry^="alpha#"]')].map((f) => f.getAttribute("data-moss-entry") + ":" + (f.hasAttribute("data-moss-asleep") ? "asleep" : f.tagName))`;
 
 /** `sleepAfterMs`: the app was started with that seam (the row alone); unset, the layer's own minute. */
 export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (FlashSample & { n: number })[], sleepAfterMs?: number): Promise<string> {
@@ -214,8 +214,8 @@ export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (F
     const win = await windowDoc(cdp);
     await cdp.evaluate(win, SAMPLER(1_500));
     for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, win).catch(() => undefined);
-    await until("Settings closed: the samples", 12_000, async () => ((await cdp.evaluate(win, "window.__cloverFlash && window.__cloverFlash.done").catch(() => false)) === true ? true : undefined));
-    judge("Settings → her tab", (JSON.parse((await cdp.evaluate(win, "JSON.stringify(window.__cloverFlash)")) as string) as { out: (FlashSample & { n: number })[] }).out, true);
+    await until("Settings closed: the samples", 12_000, async () => ((await cdp.evaluate(win, "window.__mossFlash && window.__mossFlash.done").catch(() => false)) === true ? true : undefined));
+    judge("Settings → her tab", (JSON.parse((await cdp.evaluate(win, "JSON.stringify(window.__mossFlash)")) as string) as { out: (FlashSample & { n: number })[] }).out, true);
     await herTabSettled(cdp, 2);
 
     // 5. A minute away (her frames out of sight long enough to sleep), and back. Away until they have slept: past the

@@ -35,9 +35,9 @@
 
 import { DurableObject } from "cloudflare:workers";
 
-import { b64u, equalBytes, fromB64u, own, randomBytes, type Bytes } from "../../../plugins/clover/plugins/forwarder/src/wire/bytes";
-import { keyId, sealEnvelope, ROUTINE_ID_RE } from "../../../plugins/clover/plugins/forwarder/src/wire/envelope";
-import { encap } from "../../../plugins/clover/plugins/forwarder/src/wire/hpke";
+import { b64u, equalBytes, fromB64u, own, randomBytes, type Bytes } from "../../../plugins/moss/plugins/forwarder/src/wire/bytes";
+import { keyId, sealEnvelope, ROUTINE_ID_RE } from "../../../plugins/moss/plugins/forwarder/src/wire/envelope";
+import { encap } from "../../../plugins/moss/plugins/forwarder/src/wire/hpke";
 import {
   CLOSE_PROTOCOL,
   CLOSE_REAUTH,
@@ -54,7 +54,7 @@ import {
   type DropReport,
   type RoutineInfo,
   type ServiceFrame,
-} from "../../../plugins/clover/plugins/forwarder/src/wire/protocol";
+} from "../../../plugins/moss/plugins/forwarder/src/wire/protocol";
 import { limitsFrom, type Env, type Limits } from "./env";
 
 /** Who is calling, as the Worker established it from a verified account token. */
@@ -550,10 +550,10 @@ export class ForwarderDO extends DurableObject<Env> {
   override async fetch(request: Request): Promise<Response> {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return new Response("expected a websocket", { status: 426 });
     // Set by the Worker from the ticket it verified; nothing else can reach this object.
-    const device = request.headers.get("x-clover-device") ?? "";
-    const nonce = request.headers.get("x-clover-nonce") ?? "";
-    const expires = Number(request.headers.get("x-clover-ticket-expires"));
-    const authExpires = Number(request.headers.get("x-clover-auth-expires"));
+    const device = request.headers.get("x-moss-device") ?? "";
+    const nonce = request.headers.get("x-moss-nonce") ?? "";
+    const expires = Number(request.headers.get("x-moss-ticket-expires"));
+    const authExpires = Number(request.headers.get("x-moss-auth-expires"));
     if (!nonce || !Number.isSafeInteger(expires) || !Number.isSafeInteger(authExpires)) return new Response("bad ticket", { status: 400 });
     if (!this.deviceRow(device) || this.isRevoked(device)) return new Response("unknown device", { status: 403 });
     const now = Date.now();

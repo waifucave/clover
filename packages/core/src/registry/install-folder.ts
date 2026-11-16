@@ -10,13 +10,13 @@
 // * Bounded: at most `INSTALL_MAX_FILES` files and `INSTALL_MAX_BYTES` bytes in all; the excluded names (`.git` and
 //   the others the tree hash leaves out) aren't copied.
 // * The id is the manifest's `id`, else the source folder's name, and the folder is named by it. An id that's already
-//   installed here is refused (removing it first is the user's own act), and so is one from Clover's bundled plugins.
+//   installed here is refused (removing it first is the user's own act), and so is one from MOSS's bundled plugins.
 import { homesOf } from "./outside-homes";
 import { chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, sep } from "node:path";
 import { randomBytes } from "node:crypto";
-import { MANIFEST_FILE, parseJsonc } from "@waifucave/clover-plugin-sdk";
-import { TopPluginId, type PluginProvenance } from "@waifucave/clover-protocol";
+import { MANIFEST_FILE, parseJsonc } from "@waifucave/moss-plugin-sdk";
+import { TopPluginId, type PluginProvenance } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { treeEntries, TreeProblem } from "./tree";
 import { validatePluginFolder } from "./validate";
@@ -84,8 +84,8 @@ export function renameInto(staged: string, dest: string, id: string, rename: (fr
 }
 
 /** `<home>/run/plugin-install`: where an install's copy is staged, outside the plugins folder. */
-export function installStagingDir(cloverHome: string): string {
-  return join(cloverHome, "run", "plugin-install");
+export function installStagingDir(mossHome: string): string {
+  return join(mossHome, "run", "plugin-install");
 }
 
 /** The staging folders a run before left (a crash mid-install): removed when the daemon starts, and with them a copy
@@ -166,7 +166,7 @@ export function newStage(stagingDir: string): { dir: string; done(): void } {
 }
 
 /** Validates a staged plugin folder, the copy that will be installed, by the same validation the terminal's
- *  `clover plugin validate` runs, and renames it into the plugins folder under its id. */
+ *  `moss plugin validate` runs, and renames it into the plugins folder under its id. */
 export async function installStaged(staged: string, o: InstallTarget, expect: { id?: string; treeHash?: string; version?: string; check?: (id: string, treeHash: string) => void; from?: Partial<PluginProvenance> } = {}): Promise<{ id: string; folder: string; treeHash: string }> {
   chmodSync(staged, 0o755);
   const v = await validatePluginFolder(staged, { ...(o.os ? { os: o.os } : {}), homes: homesOf(o.pluginsDir) });

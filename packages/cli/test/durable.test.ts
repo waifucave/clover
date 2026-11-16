@@ -9,8 +9,8 @@ import { flush, FULLFSYNC_UNSUPPORTED, syncDir, syncFile } from "../src/durable"
 
 describe("durable flushes", () => {
   test("a file and its folder flush, and the file keeps its bytes", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-durable-"));
-    const f = join(dir, "clover-core.new");
+    const dir = mkdtempSync(join(tmpdir(), "moss-durable-"));
+    const f = join(dir, "moss-core.new");
     writeFileSync(f, "the binary");
     syncFile(f);
     syncDir(dir);
@@ -18,7 +18,7 @@ describe("durable flushes", () => {
   });
 
   test("F_FULLFSYNC: done; not supported here (ENOTSUP, ENOTTY, EINVAL) falls back to fsync; anything else throws", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-durable-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-durable-"));
     const fd = openSync(join(dir, "f"), "w");
     try {
       flush(fd, () => ({ result: 0, errno: 0 }));

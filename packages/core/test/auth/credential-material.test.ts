@@ -20,12 +20,12 @@ import { OPENAI_API_KEY_SECRET } from "../../src/providers/manager";
 import { createHostCredentialBroker, sessionCredentialAllowlist } from "../../src/runtime-sdk/host-credentials";
 
 function store(): FileSecretStore {
-  return new FileSecretStore(mkdtempSync(join(tmpdir(), "clover-cred-material-")));
+  return new FileSecretStore(mkdtempSync(join(tmpdir(), "moss-cred-material-")));
 }
 
 // -------------------------------------------------------------------------------------------
 // mirror of clover-sdk v0.0.4 keychain-store.ts coerceMaterial — the child's parser; not
-// exported. Copied here (api-key + oauth arms only, the only two Clover ever writes) so this test
+// exported. Copied here (api-key + oauth arms only, the only two MOSS ever writes) so this test
 // verifies the ACTUAL contract the spawned child enforces, independent of our own module's
 // internal validation, which could drift from the child's without anyone noticing.
 // -------------------------------------------------------------------------------------------
@@ -49,7 +49,7 @@ function coerceMaterial(value: unknown): CredentialMaterial | undefined {
           }
         : undefined;
     // (bearer / aws / gcp arms omitted here — no test below exercises a bearer round-trip through
-    // this file's own coerceMaterial mirror yet, even though Clover's console-broker DOES write
+    // this file's own coerceMaterial mirror yet, even though MOSS's console-broker DOES write
     // "bearer" material as of Winter Phase 10a; see the tripwire test's own comment above)
     default:
       return undefined;
@@ -114,7 +114,7 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
     // P10a-4 comment there names the exact same host-brokered-Console-refresh reason this repo's
     // `credential-material.ts` doc gives for the same field). The only divergence is the SDK's
     // `aws`/`gcp-service-account`/`gcp-access-token` arms, which this mirror deliberately omits
-    // (falls through to `default: undefined`, matching the child's own refusal for a kind Clover
+    // (falls through to `default: undefined`, matching the child's own refusal for a kind MOSS
     // never sends) — an intentional narrowing already documented above, not a drift. Re-diff again
     // on the next bump.
     //
@@ -149,7 +149,7 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
     // published): `git diff v0.0.17 v0.0.20 -- packages/runtime/src/provider/keychain-store.ts` came
     // back EMPTY (0 lines); the mirror stands unchanged.
     //
-    // 0.0.20 → 0.0.22 (WS-21, the shared ~/.clover/sdk home; 0.0.21 was tagged but its release CI
+    // 0.0.20 → 0.0.22 (WS-21, the shared ~/.moss/sdk home; 0.0.21 was tagged but its release CI
     // failed on pre-existing, unrelated defects and was never published): `git diff v0.0.20 v0.0.22
     // -- packages/runtime/src/provider/keychain-store.ts` came back EMPTY (0 lines); the mirror
     // stands unchanged.
@@ -208,7 +208,7 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
     // 0.0.52 → 0.0.53 (host-tool images reach the model): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.53 → 0.0.54 (sandbox violations reach the model): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.54 → 0.0.55 (free-text questions, case-variant write roots): keychain-store.ts diff EMPTY; the mirror stands.
-    // 0.0.55 → 0.0.63 (A-M1: the packages are @waifucave/clover-*): keychain-store.ts diff is its three import
+    // 0.0.55 → 0.0.63 (A-M1: the packages are @waifucave/moss-*): keychain-store.ts diff is its three import
     // specifiers only (`git diff v0.0.55 HEAD -- packages/runtime/src/provider/keychain-store.ts`); the mirror stands.
     // 0.0.64 → 0.0.65 (A-M2's review): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.63 → 0.0.64 (A-M2: every provider a model plugin): keychain-store.ts diff EMPTY; the mirror stands.

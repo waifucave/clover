@@ -3,7 +3,7 @@
 // user's answer. No plugin can read or answer it (the broker's sealed path), and it is denied after 10 minutes
 // unanswered (the broker's rule 6 for `confirm`). The card's other strings are the core's; the plugin's own words go
 // only in `what`, shown as the plugin's.
-import type { SealedValue } from "@waifucave/clover-protocol";
+import type { SealedValue } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import type { ApprovalBroker } from "../../contracts/approval-broker";
 import type { ApiCallContext, ApiHandlers } from "./router";

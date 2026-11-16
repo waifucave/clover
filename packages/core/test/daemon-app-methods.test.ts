@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { SystemClock } from "../src/clock/system-clock";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
-import { cloverCall } from "../src/ipc/clover-client";
+import { mossCall } from "../src/ipc/moss-client";
 import { HandshakeClient } from "../src/links/handshake";
 import { startFakeHandshake } from "../src/links/handshake-fake";
 import { MemoryNetwork } from "../src/links/memory-wire";
@@ -27,19 +27,19 @@ describe("the app's archive and plan methods, on a booted daemon", () => {
     const hs = startFakeHandshake();
     stops.push(() => hs.stop());
     const net = new MemoryNetwork();
-    const home = mkdtempSync(join(tmpdir(), "clover-d-app-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-d-app-"));
     daemon = await startDaemon({
       home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
       links: {
         wire: (k) => net.endpoint(k.publicKey), handshake: new HandshakeClient({ baseUrl: hs.url, clock }), publicTime: null,
         mainComputer: { watchSleep: false, monotonic: () => performance.now() }, watch: () => () => {}, self: { name: "Studio", os: "macos" },
       },
-      parts: { bots: false, node: false, userHome: mkdtempSync(join(tmpdir(), "clover-d-app-user-")) },
+      parts: { bots: false, node: false, userHome: mkdtempSync(join(tmpdir(), "moss-d-app-user-")) },
     });
     const id = daemon.sessions.createSession("global", { mode: "chat" });
     daemon.sessions.append(id, { type: "user_message", sessionId: id, threadId: "main", text: "an old chat", clientName: "t" });
     const app = { role: "cli" as const, token: daemon.tokens.harness, clientName: "lane-d-test" };
-    const call = <T>(method: string, params: unknown = {}) => cloverCall(daemon!.socketPath, app, method, params) as Promise<T>;
+    const call = <T>(method: string, params: unknown = {}) => mossCall(daemon!.socketPath, app, method, params) as Promise<T>;
     const listed = await call<{ sessions: { id: string; mode: string; messages: number }[]; more: boolean }>("archive.list", {});
     expect(listed.sessions).toEqual([expect.objectContaining({ id, mode: "chat", messages: 1 })]);
     const history = await call<{ events: { type: string }[] }>("archive.history", { id });

@@ -29,7 +29,7 @@ import { constants as FS, promises as fsp } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import { z } from "zod";
-import { FencingToken, Level, SessionId, SignedCardAnswer, TreePath, type Caller, type TurnOrigin } from "@waifucave/clover-protocol";
+import { FencingToken, Level, SessionId, SignedCardAnswer, TreePath, type Caller, type TurnOrigin } from "@waifucave/moss-protocol";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { Link, LinkStream, LinkTransport } from "../contracts/link-transport";
 import { transferChange, transferEndsHold } from "../contracts/tree";
@@ -433,7 +433,7 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
   const entries = await walk(src, from.real, scall, p.move);
   const kept = await existingAbove(to.real);
   await dst.makeParents(to, p.to);
-  const staging = join(dirname(to.real), `.clover-receiving-${randomUUID()}`);
+  const staging = join(dirname(to.real), `.moss-receiving-${randomUUID()}`);
   let files = 0;
   let bytes = 0;
   try {
@@ -508,7 +508,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     await judgeEnd(o.holder, call, "destination", p.move, p.from, p.to, src.computer, o.holder.name, ends);
     const above = await existingAbove(dst.real);
     await o.holder.makeParents(dst, p.to);
-    const staging = join(dirname(dst.real), `.clover-receiving-${randomUUID()}`);
+    const staging = join(dirname(dst.real), `.moss-receiving-${randomUUID()}`);
     let link: Link;
     try {
       link = await t.connect(src.device);

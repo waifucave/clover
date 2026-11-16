@@ -1,6 +1,6 @@
-// The picture-swap renderer, a whole character renderer in one file. The app's character part (clover/character) puts the `avatar`
+// The picture-swap renderer, a whole character renderer in one file. The app's character part (moss/character) puts the `avatar`
 // spot on a bot's stage and picks the entry whose `key` is the bot's avatar format ("pngtuber" here); that entry draws it.
-// What this folder declares in clover.json is all the app needs to know about the format: the files it may serve (a small JSON
+// What this folder declares in moss.json is all the app needs to know about the format: the files it may serve (a small JSON
 // list and pictures, inside the model's own folder), the extension that picks it when a user imports a model, and the one thing
 // it can do (`lipsync`, `expressions`). It ships no engine: the pictures are plain <img> elements, and a second set, for the
 // `happy` expression, is drawn by code (an inline SVG), so there is nothing to ship for it.
@@ -8,7 +8,7 @@
 // The avatar contract (`useAvatarControl`): a bot plugin's cue arrives with `onCue`, the renderer says which expressions it has
 // with `setCatalogue`, and where the figure stands with `setBox`. A cue for an expression it doesn't list never gets here.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAvatarControl, useAvatarSpeech, useT } from "@waifucave/clover-plugin-sdk/ui";
+import { useAvatarControl, useAvatarSpeech, useT } from "@waifucave/moss-plugin-sdk/ui";
 
 /** What the app gives the `avatar` spot. `file` is the URL of the bot's `.pngtuber.json`. The speech comes from
  *  `useAvatarSpeech()`, not the props: in a plugin's frame it arrives as numbers the app sends on. */
@@ -165,7 +165,7 @@ const CSS = `
 .pt [data-framed] { position: absolute; max-width: none; max-height: none; }
 .pt [data-framed] .pt__svg { width: 100%; height: 100%; }
 .pt img, .pt__svg { max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: auto; user-select: none; -webkit-user-drag: none; }
-.pt__note { color: var(--clover-color-text-muted, #6B6046); font: 13px var(--clover-font-family, system-ui, sans-serif); }
+.pt__note { color: var(--moss-color-text-muted, #6B6046); font: 13px var(--moss-font-family, system-ui, sans-serif); }
 `;
 
 export function PngtuberAvatar({ props }: EntryProps) {

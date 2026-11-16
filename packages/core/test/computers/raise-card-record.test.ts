@@ -1,13 +1,13 @@
 // A level raise with a card counts only on the approval broker's own record of it (C's call-binding review; #342's
 // review): the registry looks the card up (`cardRecord`, the broker's `get`) and judges that record, never the copy
 // handed over; with no lookup no card raises; a card answered too long ago, or before the registry started, is no
-// proof; and a card raises once, across a restart too (the used ids kept on disk under the Clover home).
+// proof; and a card raises once, across a restart too (the used ids kept on disk under the MOSS home).
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { callBindingInput, cardHashInput, type Card, type Level } from "@waifucave/clover-protocol";
+import { callBindingInput, cardHashInput, type Card, type Level } from "@waifucave/moss-protocol";
 import { SystemClock } from "../../src/clock/system-clock";
 import type { ApprovalRequest, CardRecord } from "../../src/contracts/approval-broker";
 import { isContractError } from "../../src/contracts/common";
@@ -19,7 +19,7 @@ import { FileAnswerLedger, usedCardsPath } from "../../src/computers/store";
 import { startDaemonParts } from "../../src/daemon-parts";
 import { startDaemonLinks } from "../../src/ipc/device-links";
 import { MemoryNetwork } from "../../src/links/memory-wire";
-import { CloverSecretStore, KeychainValues, memoryVault } from "../../src/secrets/clover-secret-store";
+import { MossSecretStore, KeychainValues, memoryVault } from "../../src/secrets/moss-secret-store";
 import { catalogPointDecl } from "../../../plugin-sdk/src/catalogs/index";
 import { Drivers } from "../../src/bots/tests/fixtures";
 
@@ -161,7 +161,7 @@ describe("through startComputerNode, as the daemon calls it (startDaemonParts)",
 
   const clock = new SystemClock();
 
-  async function start(home: string, store: CloverSecretStore, broker: Map<string, CardRecord>) {
+  async function start(home: string, store: MossSecretStore, broker: Map<string, CardRecord>) {
     const net = new MemoryNetwork();
     const d = await startDaemonLinks({
       home, store, clock, self: { name: "Studio", os: "macos" }, handlers: {}, binary: null, wire: (k) => net.endpoint(k.publicKey),
@@ -170,8 +170,8 @@ describe("through startComputerNode, as the daemon calls it (startDaemonParts)",
     });
     const fakes = new Drivers();
     const parts = await startDaemonParts({
-      cloverHome: home, userHome: temp("lane-j-raise-user-"), clock, links: d.links, handlers: {},
-      bots: { registry: new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [] }), drivers: () => fakes.factory, defaultModel: () => ({ model: "clover-test/calls" }) },
+      mossHome: home, userHome: temp("lane-j-raise-user-"), clock, links: d.links, handlers: {},
+      bots: { registry: new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [] }), drivers: () => fakes.factory, defaultModel: () => ({ model: "moss-test/calls" }) },
       approvals: { request: async (_r: ApprovalRequest) => ({ allowed: false, by: "card" }) as never, get: (id) => broker.get(id) },
     });
     let stopped = false;
@@ -187,7 +187,7 @@ describe("through startComputerNode, as the daemon calls it (startDaemonParts)",
 
   test("a made-up record is refused; the broker's own record raises exactly once, and not again after a restart", async () => {
     const home = temp("lane-j-raise-home-");
-    const store = new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
+    const store = new MossSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
     const broker = new Map<string, CardRecord>();
     const first = await start(home, store, broker);
     const reg = first.node.registry;

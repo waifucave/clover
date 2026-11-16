@@ -1,4 +1,4 @@
-// `clover-core supervise`: the restart loop the OS login unit runs (§3.1). It starts the daemon and
+// `moss-core supervise`: the restart loop the OS login unit runs (§3.1). It starts the daemon and
 // restarts it after a crash with growing back-off; a clean daemon exit (a Quit, which the daemon
 // reports) ends the loop, so the OS unit — crash-only — does not bring it back until the next login.
 // On Windows this loop is the daemon's only restart mechanism, because Task Scheduler does not

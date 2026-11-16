@@ -5,7 +5,7 @@
 // session host, as it reaches any session, and `ListAgents` lists the agents from `AgentManager.sessionHooks().agents`.
 import { RESERVED_BACKEND_IDS } from "./plugin-backends";
 import { ContractError, isContractError } from "../contracts/common";
-import type { Level, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Level, TurnOrigin } from "@waifucave/moss-protocol";
 import type { AgentManager } from "./manager";
 
 export interface CoreToolDef {
@@ -46,7 +46,7 @@ export interface AgentToolOptions {
    *  controller's ruling): its instructions go before the bot's brief, and nothing else of it is taken; the backend,
    *  the model, the effort, the folder, the computer and the tools are the bot's alone. */
   definition?: (name: string) => AgentDefinitionView | undefined;
-  /** The bot's own model now: Clover's own agents (`clover`, `clover-code`) run on it when the bot names none, rather
+  /** The bot's own model now: MOSS's own agents (`moss`, `moss-code`) run on it when the bot names none, rather
    *  than on the user's default, which may be a provider the bot doesn't use. */
   botModel?: () => string | undefined;
 }
@@ -151,7 +151,7 @@ export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, op
           await manager.stop(id, { bot: caller.bot });
           return { text: `Stopped ${id}.`, isError: false };
         } catch (err) {
-          // Not one of Clover's agents at all: the runtime's own task (a background command, a monitor), if it has one.
+          // Not one of MOSS's agents at all: the runtime's own task (a background command, a monitor), if it has one.
           if (opts.stopRuntimeTask && isContractError(err) && err.code === "not_found") return opts.stopRuntimeTask(id);
           return fail(err);
         }

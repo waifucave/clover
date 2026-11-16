@@ -1,23 +1,23 @@
-// What Clover's installers do with the daemon's login start (spec §3.1, plan §4 M1). Lane C's command (C-M1)
+// What MOSS's installers do with the daemon's login start (spec §3.1, plan §4 M1). Lane C's command (C-M1)
 // writes and removes the launchd agent, the systemd user unit and the Task Scheduler task, each running
-// `clover-core supervise`; an installer calls that command, never systemctl or schtasks itself. The one exception is
-// the Homebrew cask's `launchctl` stanza, a fallback for an app already deleted: it removes only Clover's own label.
+// `moss-core supervise`; an installer calls that command, never systemctl or schtasks itself. The one exception is
+// the Homebrew cask's `launchctl` stanza, a fallback for an app already deleted: it removes only MOSS's own label.
 // This file is the one place that names the command, and `packaging.test.ts` checks every installer's hook against it.
 //
 // Who turns login start ON: the app, at its first launch (spec §3.1: "On first launch the app installs the matching
-// clover-core and its login item"), on every OS. An installer can't do it everywhere: a deb or rpm script runs as
+// moss-core and its login item"), on every OS. An installer can't do it everywhere: a deb or rpm script runs as
 // root, outside the user's systemd session, and a dmg has no script at all. So the installers only turn it OFF, on
 // an uninstall that is not an upgrade, from the installed binary, as the user. The deb and rpm can't reach a user's
 // unit either; there the unit itself must stay inert once its binary is gone (a question for lane C).
 
-/** The daemon's login-start command, lane C's: `clover-core autostart enable|disable|remove|start|status`. `disable`
+/** The daemon's login-start command, lane C's: `moss-core autostart enable|disable|remove|start|status`. `disable`
  *  only turns the login trigger off, keeping the definitions and the running daemon; `remove`, an uninstaller's,
  *  stops the daemon and deletes them all, and is idempotent. */
 export const AUTOSTART_SUBCOMMAND = "autostart";
 export type AutostartAction = "enable" | "disable" | "remove" | "status";
 
 /** The macOS login item's label (lane C's `loginLabel`), which the cask's launchctl fallback names. */
-export const LAUNCHD_LABEL = "com.waifucave.clover.core";
+export const LAUNCHD_LABEL = "com.waifucave.moss.core";
 
 /** The arguments that run it. */
 export function autostartArgs(action: AutostartAction): string[] {
@@ -28,12 +28,12 @@ export type Installer = "homebrew" | "dmg" | "nsis" | "winget" | "deb" | "rpm" |
 
 /** Where each installer leaves the daemon binary, as its own script spells it. */
 export const INSTALLED_DAEMON: Readonly<Record<Installer, string>> = {
-  homebrew: "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core",
-  dmg: "/Applications/Clover.app/Contents/Resources/daemon/clover-core",
-  nsis: "$INSTDIR\\resources\\daemon\\clover-core.exe",
-  winget: "$INSTDIR\\resources\\daemon\\clover-core.exe", // winget runs the NSIS installer
-  deb: "/opt/Clover/resources/daemon/clover-core",
-  rpm: "/opt/Clover/resources/daemon/clover-core",
+  homebrew: "#{appdir}/MOSS Code.app/Contents/Resources/daemon/moss-core",
+  dmg: "/Applications/MOSS Code.app/Contents/Resources/daemon/moss-core",
+  nsis: "$INSTDIR\\resources\\daemon\\moss-core.exe",
+  winget: "$INSTDIR\\resources\\daemon\\moss-core.exe", // winget runs the NSIS installer
+  deb: "/opt/moss-code/resources/daemon/moss-core",
+  rpm: "/opt/moss-code/resources/daemon/moss-core",
   appimage: "(inside the AppImage; the app copies it out, spec §3.1)",
 };
 
@@ -48,7 +48,7 @@ export interface InstallerHook {
 }
 
 export const INSTALLER_HOOKS: Readonly<Record<Installer, InstallerHook>> = {
-  homebrew: { onInstall: null, onUninstall: "remove", file: "packaging/clover.rb.tmpl", why: "the cask's uninstall runs as the user, before the app's files are removed, and goes on when the app is already gone" },
+  homebrew: { onInstall: null, onUninstall: "remove", file: "packaging/moss.rb.tmpl", why: "the cask's uninstall runs as the user, before the app's files are removed, and goes on when the app is already gone" },
   dmg: { onInstall: null, onUninstall: null, file: null, why: "a dmg has no scripts: the app turns login start on at first launch, and Homebrew's uninstall (or the app's own) turns it off" },
   nsis: { onInstall: null, onUninstall: "remove", file: "packaging/windows/installer.nsh", why: "a per-user installer runs as the user; an upgrade runs the old uninstaller with --updated, which keeps login start (stopping the old daemon there is still open: installer.nsh)" },
   winget: { onInstall: null, onUninstall: null, file: null, why: "winget runs the NSIS installer and its uninstaller, which carry the hooks" },

@@ -10,7 +10,7 @@
 // `needs` and `keep` come from the spec; the props are the least each spot obviously hands over, for E and F to settle
 // at E-M1 and F-M2 through the controller.
 import { z } from "zod";
-import { utf16 } from "@waifucave/clover-protocol";
+import { utf16 } from "@waifucave/moss-protocol";
 import { HandlerName, Path, Text } from "../manifest/fields";
 import { foldTitle } from "./fold";
 
@@ -19,7 +19,7 @@ export { foldTitle, lookalikeOf } from "./fold";
 export interface SpotInfo {
   readonly name: string;
   readonly shape: "single" | "list" | "keyed";
-  /** Who declares it: the app's plugin runtime (a core point), or a bundled part of `clover`. */
+  /** Who declares it: the app's plugin runtime (a core point), or a bundled part of `moss`. */
   readonly declaredBy: "app" | "shell" | "settings" | "bot-tab" | "bot-stage" | "bot-editor" | "composer" | "conversation" | "file-view" | "island" | "pill";
   /** What Bots offers a bot's own plugin here, on that bot's tab only (§5.5, the owner's rule of November 14): the whole
    *  spot (`true`), only these keys (a keyed spot: `panel`'s Browser and agent panels), or nothing (`false`: a part
@@ -36,7 +36,7 @@ export interface SpotInfo {
   /** For a keyed spot: a key no plugin fills shows the declaring part's placeholder, which offers to find a plugin
    *  for it (lane F's request): the plugins page, searched for that spot and key. */
   readonly placeholder?: true;
-  /** Entry ids and titles only the bundled `clover` tree may use here (lane G's review: a third-party island tab can't
+  /** Entry ids and titles only the bundled `moss` tree may use here (lane G's review: a third-party island tab can't
    *  pose as Needs you). Titles compare folded (`foldTitle`). */
   readonly reserved?: { readonly ids: readonly string[]; readonly titles: readonly string[] };
   /** The spot's own entry fields (title, icon, opens…), beyond the `ui` entry's. */
@@ -75,7 +75,7 @@ export const SPOTS: readonly SpotInfo[] = [
     doc: "Top-level floating windows, such as the island and the Dispatch pill; `window` says how they float." },
   { name: "app.background", shape: "list", declaredBy: "app", botsOffer: false, context: ["os"], fields: none,
     props: none,
-    doc: "A part with no place in the window: it runs in a hidden window of its own while Clover is open and the plugin runs, outlives the main window, is never slept or slowed, and may play sound when the plugin holds `audio`. At most two per plugin; in a plugin with a bot it needs \"app\": true." },
+    doc: "A part with no place in the window: it runs in a hidden window of its own while MOSS is open and the plugin runs, outlives the main window, is never slept or slowed, and may play sound when the plugin holds `audio`. At most two per plugin; in a plugin with a bot it needs \"app\": true." },
   { name: "app.tray", shape: "list", declaredBy: "app", botsOffer: false, needs: ["tray"], fields: titled,
     props: none,
     doc: "A line in the menu-bar (tray) menu, with the `tray` capability: `toggles` names one of the plugin's own `app.surface` entries (the line hides and shows it, and the choice is kept), or `command` names a command of the plugin's own that the line runs." },
@@ -155,7 +155,7 @@ export const SPOTS: readonly SpotInfo[] = [
     doc: "One message, keyed by kind; the `approval` cell can't be hidden. The `tool` cell gets a run of calls." },
   { name: "conversation.message.extra", shape: "list", declaredBy: "conversation", botsOffer: true, needs: ["conversation.read"], context: ["bot"],
     fields: none, props: z.object(inConversation),
-    doc: "Add-ons under each message, with a UI of their own. A plugin outside Clover's own tree draws in its own layer, so each one is a frame under every message: for a button, use `conversation.message.action`." },
+    doc: "Add-ons under each message, with a UI of their own. A plugin outside MOSS's own tree draws in its own layer, so each one is a frame under every message: for a button, use `conversation.message.action`." },
   { name: "conversation.message.action", shape: "list", declaredBy: "conversation", botsOffer: true, context: ["bot"],
     fields: z.object({ title: Text, icon: Path.optional(), call: HandlerName, on: z.enum(["assistant", "user", "both"]).optional() }), props: none,
     doc: "A small button the conversation draws itself in a message's row of actions (beside copy and speak), no frame and no component: `title` is its tooltip, `icon` a picture in the plugin's folder, `on` which messages carry it (a finished reply by default). A press runs `call`, a handler in the plugin's own `ui` table, with `{ session, seq }` (the message's place in the session's log) and nothing else; it answers `{ ok: true }`, or `{ note }`, one sentence the conversation shows under the message for a moment." },
@@ -169,7 +169,7 @@ export const SPOTS: readonly SpotInfo[] = [
   { name: "island.tab", shape: "list", declaredBy: "island", botsOffer: false, context: ["surface"],
     fields: z.object({ title: Text, icon: Path.optional(), size: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(), idle: z.boolean().optional(), attention: z.enum(["never", "badge", "expand"]).optional() }),
     props: z.object({ expanded: z.boolean() }), reserved: { ids: ["needs-you"], titles: ["Needs you"] },
-    doc: "A tab of the island, such as Needs you, Devices or Usage. The island labels a third-party tab with its plugin's name, and only the `clover` tree's tabs raise the strip's attention." },
+    doc: "A tab of the island, such as Needs you, Devices or Usage. The island labels a third-party tab with its plugin's name, and only the `moss` tree's tabs raise the strip's attention." },
   { name: "pill.target", shape: "list", declaredBy: "pill", botsOffer: false, context: ["surface"], fields: titled.extend({ handler: HandlerName }), props: none,
     doc: "Something the Dispatch pill can message besides the bots: `handler` (a `PillTargetHandler`) gets the user's words. The pill names it with its plugin's name, and leaves out one titled as a bot." },
 ];
@@ -240,16 +240,16 @@ export function spotInfo(name: string): SpotInfo | undefined {
   return SPOTS.find((s) => s.name === name);
 }
 
-/** Names only the bundled `clover` tree's plugins may have (lane G's ask): the app's own, beside the titles spots
+/** Names only the bundled `moss` tree's plugins may have (lane G's ask): the app's own, beside the titles spots
  *  reserve. */
-export const RESERVED_PLUGIN_NAMES: readonly string[] = ["Clover"];
+export const RESERVED_PLUGIN_NAMES: readonly string[] = ["MOSS"];
 
-/** Every title some spot reserves for the `clover` tree, folded. */
+/** Every title some spot reserves for the `moss` tree, folded. */
 export function reservedTitles(): ReadonlySet<string> {
   return new Set(SPOTS.flatMap((s) => s.reserved?.titles ?? []).map(foldTitle));
 }
 
-/** Whether a plugin outside the `clover` tree may not be named so: it reads as a reserved title or as Clover itself. */
+/** Whether a plugin outside the `moss` tree may not be named so: it reads as a reserved title or as MOSS itself. */
 export function isReservedPluginName(name: string): boolean {
   const folded = foldTitle(name);
   return reservedTitles().has(folded) || RESERVED_PLUGIN_NAMES.some((n) => foldTitle(n) === folded);

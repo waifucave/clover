@@ -5,13 +5,13 @@
 // SETTINGS ARE HOT, never a restart: every reader reads the daemon's live holder, and a write made here (an
 // "Always allow" answer, `computerUse.apps.set`, `computerUse.setSettings`) is ALSO served from memory until the
 // settings watcher swaps the holder (the `connector-source.ts` `noteWritten` pattern) — the very next call sees it.
-import { PanelOpenTabParams, type NewSessionEvent, type SessionEvent } from "@waifucave/clover-protocol";
+import { PanelOpenTabParams, type NewSessionEvent, type SessionEvent } from "@waifucave/moss-protocol";
 import type { ApprovalBroker } from "../agent/approvals";
 import { sessionTmpDir, sessionTmpDirPath } from "../agent/session-tmp";
 import { mintPanelTab } from "../panel/open-tab";
 import { foldPanelTabs } from "../panel/store";
 import { sandboxConfigFor } from "../runtime-sdk/mode-options";
-import type { CloverProfile } from "../profile";
+import type { MossProfile } from "../profile";
 import type { SessionHub } from "../sessions/hub";
 import type { SessionStore } from "../sessions/store";
 import { isHumanTurnOrigin } from "../sessions/turn-origins";
@@ -28,7 +28,7 @@ import { installedBrowser, systemAppResolver } from "./app-resolve";
 import { BrowserLink, type HeadlessLinkActions } from "./browser/cef-link/rpc";
 import { BrowserEngine } from "./browser/engine";
 import { BrowserBackendRegistry } from "./browser/registry";
-import { resolveCloverHeadless, winterAppRequirementFor } from "./browser/headless/engines";
+import { resolveMossHeadless, winterAppRequirementFor } from "./browser/headless/engines";
 import { HEADLESS_NAME, HeadlessPool, sweepHeadless, type HeadlessPoolDeps } from "./browser/headless/pool";
 import { processSatisfiesRequirement } from "./helper-verify";
 import { DiffBases } from "./diff-base";
@@ -71,7 +71,7 @@ export interface ComputerUseInjection {
 
 export interface ComputerUseRuntimeDeps {
   home: string;
-  profile: CloverProfile;
+  profile: MossProfile;
   /** The daemon's live settings holder. */
   settings(): Settings | null | undefined;
   settingsPath: string;
@@ -149,11 +149,11 @@ export interface ComputerUseRuntime {
   settings(): Settings | null | undefined;
   /** The hub observer: compaction (diff bases) and main-thread turn ends (the helper fades the mirrors). */
   observe(event: SessionEvent): void;
-  /** Phase 2: the browser engine, the backends it can use, and Clover.app's browser link (`browserLink.*`). */
+  /** Phase 2: the browser engine, the backends it can use, and MOSS Code.app's browser link (`browserLink.*`). */
   browsers: BrowserEngine;
   backends: BrowserBackendRegistry;
   browserLink: BrowserLink;
-  /** Phase 4: Clover's headless browser (the `headless` backend). */
+  /** Phase 4: MOSS's headless browser (the `headless` backend). */
   headless: HeadlessPool;
   /** Wake triggers (2026-10-12): the registry. `wakes.start()` runs the boot sweep once the session drivers exist;
    *  `wakes.beginShutdown()` stops deliveries before the drivers drain. */
@@ -298,10 +298,10 @@ export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): Computer
     log,
   });
 
-  // Phase 2: the browsers. The registry holds the backends (Clover.app's link registers the built-in browser; Clover
+  // Phase 2: the browsers. The registry holds the backends (MOSS Code.app's link registers the built-in browser; MOSS
   // for Chrome's host server registers the user's); the engine drives their tabs for the service.
   const backends = new BrowserBackendRegistry();
-  const cloverWebTabs = (sessionId: string): { tabs: Array<{ tabId: string; url?: string; title?: string }>; activeTabId?: string } => {
+  const mossWebTabs = (sessionId: string): { tabs: Array<{ tabId: string; url?: string; title?: string }>; activeTabId?: string } => {
     let events: SessionEvent[];
     try { events = deps.store.read(sessionId); } catch { return { tabs: [] }; }
     const fold = foldPanelTabs(events);
@@ -317,25 +317,25 @@ export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): Computer
   };
   const browserLink: BrowserLink = new BrowserLink({
     registry: backends, log, headless: headlessActions,
-    tabUrl: (sessionId, tabId) => cloverWebTabs(sessionId).tabs.find((t) => t.tabId === tabId)?.url,
+    tabUrl: (sessionId, tabId) => mossWebTabs(sessionId).tabs.find((t) => t.tabId === tabId)?.url,
   });
-  // Phase 4: Clover's headless browser — the `headless` backend, its engine started on the first tab. A helper and a
+  // Phase 4: MOSS's headless browser — the `headless` backend, its engine started on the first tab. A helper and a
   // cache an earlier daemon left behind go first (this daemon is starting: nothing of them can be in use).
   const telemetry = new AutomationTelemetry(deps.home);
   sweepHeadless(deps.home, { log });
   const headless: HeadlessPool = new HeadlessPool({
     home: deps.home,
     enabled: () => computerUseHeadlessEnabledFrom(settings()),
-    // A daemon off its profile's own home finds the helper only through `$CLOVER_HEADLESS_APP` (never an installed one).
-    resolve: deps.inject?.headless?.resolve ?? (() => resolveCloverHeadless(deps.profile, { overrideOnly: !(deps.inject?.launchAllowed ?? deps.launchAllowed) })),
+    // A daemon off its profile's own home finds the helper only through `$MOSS_HEADLESS_APP` (never an installed one).
+    resolve: deps.inject?.headless?.resolve ?? (() => resolveMossHeadless(deps.profile, { overrideOnly: !(deps.inject?.launchAllowed ?? deps.launchAllowed) })),
     ...(deps.inject?.headless?.spawn === undefined ? {} : { spawn: deps.inject.headless.spawn }),
     verify: deps.inject?.headless?.verify ?? processSatisfiesRequirement,
     ...(deps.inject?.headless?.memoryOf === undefined ? {} : { memoryOf: deps.inject.headless.memoryOf }),
     ...(deps.inject?.headless?.idleExitMs === undefined ? {} : { idleExitMs: deps.inject.headless.idleExitMs }),
     ...(deps.inject?.headless?.enabledPollMs === undefined ? {} : { enabledPollMs: deps.inject.headless.enabledPollMs }),
     ...(deps.inject?.headless?.timeouts === undefined ? {} : { timeouts: deps.inject.headless.timeouts }),
-    // Lane H3: Clover.app's panel shows a headless tab (the browser link's feature `headless`); the helper accepts only
-    // Clover's own app as its viewer.
+    // Lane H3: MOSS Code.app's panel shows a headless tab (the browser link's feature `headless`); the helper accepts only
+    // MOSS's own app as its viewer.
     viewer: () => browserLink.headlessViewer(),
     viewerMissing: () => browserLink.headlessViewerMissing(),
     viewerRequirement: () => winterAppRequirementFor(deps.profile),
@@ -348,9 +348,9 @@ export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): Computer
     registry: backends,
     // The old Browser's door: parsed through the panel's schema (the http/https guard and the caps), then minted —
     // opened and activated in the session's strip, exactly as `Browser`'s `open` does.
-    mintCloverTab: (sessionId, url) => mintPanelTab(deps.hub, PanelOpenTabParams.parse({ sessionId, kind: "web", ...(url === undefined ? {} : { url }) })),
-    cloverTabClosed: (sessionId, tabId) => { deps.hub.append(sessionId, { type: "panel_tab_closed", sessionId, tabId } as NewSessionEvent); },
-    cloverTabs: cloverWebTabs,
+    mintMossTab: (sessionId, url) => mintPanelTab(deps.hub, PanelOpenTabParams.parse({ sessionId, kind: "web", ...(url === undefined ? {} : { url }) })),
+    mossTabClosed: (sessionId, tabId) => { deps.hub.append(sessionId, { type: "panel_tab_closed", sessionId, tabId } as NewSessionEvent); },
+    mossTabs: mossWebTabs,
     sessionInfo: (sessionId) => {
       const meta = deps.store.meta(sessionId);
       let title: string | null = null;
@@ -384,7 +384,7 @@ export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): Computer
     headlessView: (tabKey) => headless.view(tabKey),
     headlessHeld: (tabKey) => headless.held(tabKey),
     headlessHolds: (tabKey) => headless.holds(tabKey),
-    // Wake triggers: the helper's input to a browser bound as an APP reaches its page as trusted DOM events — Clover's
+    // Wake triggers: the helper's input to a browser bound as an APP reaches its page as trusted DOM events — MOSS's
     // own, never the user's action on a tab trigger (the service records it per app, from every session).
     ownAppInputAt: (bundleId, at) => service?.ownAppInputAt(bundleId, at) === true,
     log,
@@ -557,7 +557,7 @@ export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): Computer
       // the apps it (and its Dispatch children) were refused in because the user was working there.
       const goAhead = goAheadFor(event);
       if (goAhead !== undefined) svc.userSaidGoAhead(goAhead);
-      // A built-in tab closed in the strip (by the user, or by Clover): the engine lets go of it.
+      // A built-in tab closed in the strip (by the user, or by MOSS): the engine lets go of it.
       if (event.type === "panel_tab_closed") browsers.panelTabClosed(event.sessionId, (event as { tabId: string }).tabId);
       if (event.type === "turn_completed") {
         const threadId = (event as { threadId?: string }).threadId;

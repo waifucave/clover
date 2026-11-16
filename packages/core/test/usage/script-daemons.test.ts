@@ -7,7 +7,7 @@
 //   - a spawn that boots a daemon (`daemon run`, the cu-live daemon binary, a compiled probe route that boots one, a
 //     `bun` probe file) passes an `env` that carries `USAGE_INERT_ENV` — in the call, or in the definition of the
 //     variable or function it names (and any `Object.assign` onto it before the call);
-//   - STRUCTURALLY, whatever the spawn's shape: every file under `scripts/` whose code names the daemon (`clover-core`,
+//   - STRUCTURALLY, whatever the spawn's shape: every file under `scripts/` whose code names the daemon (`moss-core`,
 //     `startDaemon`, `daemon run`) carries `USAGE_INERT_ENV` / `USAGE_INERT` / a `background: false` injection, or is
 //     listed in `NO_DAEMON_OF_ITS_OWN` with its reason (no stale entries).
 import { describe, expect, test } from "bun:test";
@@ -34,47 +34,47 @@ const NOT_A_DAEMON = [
 ];
 const SPAWN_CALL = /\b(?:Bun\.spawnSync|Bun\.spawn|spawnSync|spawn|execFileSync|execFile|runChild)\(/g;
 
-/** The structural rule's subject: a script that names the daemon binary (`clover-core`, `clover-core-live`, a
- *  `dist/dev/clover-core`, never the `@waifucave/clover-core` package), `startDaemon` or `daemon run`… */
-const NAMES_A_DAEMON = /(?<!@waifucave\/)\bclover-core\b|\bstartDaemon\b|\bdaemon run\b|["']daemon["']\s*,\s*["']run["']/;
+/** The structural rule's subject: a script that names the daemon binary (`moss-core`, `moss-core-live`, a
+ *  `dist/dev/moss-core`, never the `@waifucave/moss-core` package), `startDaemon` or `daemon run`… */
+const NAMES_A_DAEMON = /(?<!@waifucave\/)\bmoss-core\b|\bstartDaemon\b|\bdaemon run\b|["']daemon["']\s*,\s*["']run["']/;
 /** …carries the usage-inert switch somewhere in its code (not a comment)… */
 const CARRIES_INERT = /\bUSAGE_INERT_ENV\b|\bUSAGE_INERT\b|\busage\s*:\s*\{[^}]*\bbackground\s*:\s*false\b/;
 /** …or is one of these, each for its reason. A NEW script naming the daemon fails until it is one or the other, so a
  *  spawn shape the call scan below does not know is still caught. */
 const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/dev-daemon.ts": "the developer's own dev daemon — real, on purpose",
-  "scripts/acceptance/ui-steps.ts": "the window steps over DevTools; names the app's `clover-core://app/` page URL (for a screenshot), starts no daemon",
-  "scripts/acceptance/cdp.ts": "a DevTools client; names the app's `clover-core://app/` page URL, starts no daemon",
-  "scripts/acceptance/cdp.test.ts": "tests the DevTools client against a stand-in socket; names `clover-core://app/` page URLs, starts no daemon",
-  "scripts/acceptance/web-step.ts": "the web page part's step over DevTools; names the `clover-core://` scheme (a page that must not be the app's), starts no daemon",
-  "scripts/acceptance/example-steps.ts":"the SDK examples' window steps over DevTools; names the app's `clover-core://app/` page (the key dialog), starts no daemon",
-  "scripts/acceptance/conversation-copy-step.ts": "the conversation copy's step over DevTools; names the app's `clover-core://app/` page (the root document its negative clause clicks), starts no daemon",
+  "scripts/acceptance/ui-steps.ts": "the window steps over DevTools; names the app's `moss-core://app/` page URL (for a screenshot), starts no daemon",
+  "scripts/acceptance/cdp.ts": "a DevTools client; names the app's `moss-core://app/` page URL, starts no daemon",
+  "scripts/acceptance/cdp.test.ts": "tests the DevTools client against a stand-in socket; names `moss-core://app/` page URLs, starts no daemon",
+  "scripts/acceptance/web-step.ts": "the web page part's step over DevTools; names the `moss-core://` scheme (a page that must not be the app's), starts no daemon",
+  "scripts/acceptance/example-steps.ts":"the SDK examples' window steps over DevTools; names the app's `moss-core://app/` page (the key dialog), starts no daemon",
+  "scripts/acceptance/conversation-copy-step.ts": "the conversation copy's step over DevTools; names the app's `moss-core://app/` page (the root document its negative clause clicks), starts no daemon",
   "scripts/dev-daemon-lib.ts": "the dev daemon's helpers (paths, signing, the transition)",
   "scripts/dev-daemon.test.ts": "tests the dev daemon's helpers; boots none",
-  "scripts/cu-live/build.ts": "compiles and signs clover-core-live; runs it never",
-  "scripts/build-daemon.ts": "compiles clover-core for each target; runs only the host binary's `--version` and `__ffi-probe` (each prints and exits, no daemon)",
+  "scripts/cu-live/build.ts": "compiles and signs moss-core-live; runs it never",
+  "scripts/build-daemon.ts": "compiles moss-core for each target; runs only the host binary's `--version` and `__ffi-probe` (each prints and exits, no daemon)",
   "scripts/build-packages.ts": "builds the Linux packages with the daemon in them and lists their files; runs no daemon",
-  "scripts/packaging.test.ts": "checks the installers' hooks and the package check against fixtures; runs a stand-in clover-core script, never a daemon",
+  "scripts/packaging.test.ts": "checks the installers' hooks and the package check against fixtures; runs a stand-in moss-core script, never a daemon",
   "scripts/release/lib.ts": "names the daemon's file and signing identifier for the release; runs nothing",
   "scripts/release/build.ts": "builds and stages the daemon for a release build and signs the file; never runs it",
   "scripts/release/release.test.ts": "checks the release's signing commands and plans against fixtures; runs no daemon",
   "scripts/build-daemon.test.ts": "tests the daemon build's helpers; compiles and boots none",
-  "scripts/release/publish.ts": "finds the signed app's clover-core and has verify-sealed-core prove it; boots no daemon",
-  "scripts/release/check-plugins-tarball.ts": "asks the built clover-core for its bundled-plugins manifest (`__bundled-manifest`, which prints and exits, no daemon) and checks the plugins tarball against it",
-  "scripts/release/name-scan.test.ts": "the build-time name scan's fixtures (a clover-core path among them); runs no daemon",
+  "scripts/release/publish.ts": "finds the signed app's moss-core and has verify-sealed-core prove it; boots no daemon",
+  "scripts/release/check-plugins-tarball.ts": "asks the built moss-core for its bundled-plugins manifest (`__bundled-manifest`, which prints and exits, no daemon) and checks the plugins tarball against it",
+  "scripts/release/name-scan.test.ts": "the build-time name scan's fixtures (a moss-core path among them); runs no daemon",
   "scripts/ci-changes.ts": "maps changed paths to CI jobs; names the core's seal and gate scripts, runs nothing",
-  "scripts/seal-bun-doors.ts": "byte-patches and ad hoc signs a built clover-core; never runs it",
-  "scripts/verify-sealed-core.ts": "runs the sealed clover-core with each door: `--version`, `bridge` without a session, `__runtimes-probe` and `__fetch-probe` (each prints and exits, no daemon)",
+  "scripts/seal-bun-doors.ts": "byte-patches and ad hoc signs a built moss-core; never runs it",
+  "scripts/verify-sealed-core.ts": "runs the sealed moss-core with each door: `--version`, `bridge` without a session, `__runtimes-probe` and `__fetch-probe` (each prints and exits, no daemon)",
   "scripts/verify-automation-worker-compiled.ts": "runs only the `__automation-worker` route (a worker, no daemon)",
   "scripts/verify-workflow-compiled.ts": "runs only the `__workflow-worker` route (a worker, no daemon)",
   "scripts/verify-fd-receiver-compiled.ts": "runs only the compiled binary's probe routes (`__fd-receiver-probe`, `__host-code-adapter-probe`, `__host-env-lazy-probe`, `__plugin-run-probe`, `__plugin-host-probe`, `__restrict-probe`): no daemon",
   "scripts/verify-runtimes-compiled.ts": "runs only `__runtimes-probe` (resolves the bundled runtimes, no daemon)",
-  "scripts/release.ts": "builds, signs and notarizes clover-core; runs only `__keychain-ffi-probe` (an ffi check, no daemon)",
+  "scripts/release.ts": "builds, signs and notarizes moss-core; runs only `__keychain-ffi-probe` (an ffi check, no daemon)",
   "scripts/release.test.ts": "tests the release's helpers; boots none",
   "scripts/release-lib.test.ts": "tests the release's helpers; boots none",
   "scripts/rename/codemod.test.ts": "the rename codemod's fixtures (strings)",
-  "scripts/test-build.test.ts": "the test build's marker gate on byte fixtures; its one clover-core is a text file verify-sealed-core refuses before running anything",
-  "scripts/try/verify.sh": "a try's static checks: runs the built clover-core's probe routes only (`__worker-entry-probe`, `__fd-receiver-probe`, `__host-bundles`, `__bundled-manifest`; each prints and exits, no daemon) on a temp home",
+  "scripts/test-build.test.ts": "the test build's marker gate on byte fixtures; its one moss-core is a text file verify-sealed-core refuses before running anything",
+  "scripts/try/verify.sh": "a try's static checks: runs the built moss-core's probe routes only (`__worker-entry-probe`, `__fd-receiver-probe`, `__host-bundles`, `__bundled-manifest`; each prints and exits, no daemon) on a temp home",
 };
 
 /** Every script file (any language this repo writes them in), tests included. */
@@ -265,7 +265,7 @@ describe("script and probe daemons are usage-inert", () => {
   test("USAGE_INERT and USAGE_INERT_ENV switch everything off", () => {
     expect(USAGE_INERT).toMatchObject({ sources: null, catchUp: false, background: false });
     for (const k of ["SOURCES", "BACKGROUND", "CATCH_UP"]) {
-      expect(USAGE_INERT_ENV[`CLOVER_USAGE_${k}`]).toBe("off");
+      expect(USAGE_INERT_ENV[`MOSS_USAGE_${k}`]).toBe("off");
     }
   });
 

@@ -2,7 +2,7 @@
 // tabs, spots, images, text and spacers, with sizes and rules for narrow windows. A layout has no events, scripts or
 // outside URLs, so the bot editor, and bots themselves, can write one safely.
 import { z } from "zod";
-import { utf16 } from "@waifucave/clover-protocol";
+import { utf16 } from "@waifucave/moss-protocol";
 import { Path, PointName, Text } from "../manifest/fields";
 
 /** A size: CSS pixels, or a CSS length (`240px`, `30%`, `12rem`). */

@@ -8,7 +8,7 @@
 // * The OK carries over: an update that adds none of the triggers (`updateAddsTrigger`) runs on the OK given, its code
 //   changes included, after the user's yes on its update card when asked from a page (`confirm`), and its OK snapshot
 //   moves to the new tree; one that adds a trigger asks again for its OK, from any source. Nothing new runs silently.
-// * Checked as an install is: the index's tree hash (or npm's integrity record), Clover's own unpacker, validation with
+// * Checked as an install is: the index's tree hash (or npm's integrity record), MOSS's own unpacker, validation with
 //   the same id and the listed version.
 // * The previous version is kept beside it (`.<id>.previous-*` in the plugins folder, which the registry skips), with a
 //   record in the MAC'd state written before the first rename, until the new tree is OK'd; it comes back if the new one
@@ -17,7 +17,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { topPluginIdOf, type PluginProvenance } from "@waifucave/clover-protocol";
+import { topPluginIdOf, type PluginProvenance } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import type { PluginFolders } from "../folders";

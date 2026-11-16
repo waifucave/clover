@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { FencingToken } from "@waifucave/clover-protocol";
+import type { FencingToken } from "@waifucave/moss-protocol";
 import { SystemClock } from "../../clock/system-clock";
 import { ContractError, isContractError } from "../../contracts/common";
 import { FenceGuard, fencingTokenOf } from "../../contracts/lease";
@@ -45,7 +45,7 @@ describe("acts between computers carry the lease's fencing token", () => {
       const d = c.devices.get(n)!;
       const scope = service.scope(d.id);
       const m = startMainComputer({
-        home: mkdtempSync(join(tmpdir(), "clover-h-fence-")), self: d.id, registry: d.registry, transport: d.transport, clock,
+        home: mkdtempSync(join(tmpdir(), "moss-h-fence-")), self: d.id, registry: d.registry, transport: d.transport, clock,
         scope: () => scope, monotonic: () => performance.now(), watchSleep: false, timings: TIMINGS,
       });
       stops.push(() => m.close());
@@ -115,7 +115,7 @@ describe("acts between computers carry the lease's fencing token", () => {
     stops.push(() => c.close());
     const d = c.devices.get("Studio")!;
     const m = startMainComputer({
-      home: mkdtempSync(join(tmpdir(), "clover-h-fence-")), self: d.id, registry: d.registry, transport: d.transport, clock,
+      home: mkdtempSync(join(tmpdir(), "moss-h-fence-")), self: d.id, registry: d.registry, transport: d.transport, clock,
       scope: () => undefined, monotonic: () => performance.now(), watchSleep: false, timings: TIMINGS,
     });
     stops.push(() => m.close());

@@ -78,7 +78,7 @@ describe("the model plugins' calls behind B's gate", () => {
 
   test("the account token is never a third party's; the keyless public path is, once it holds network:public, with no key", async () => {
     const w = await world([{ id: "acme", manifest: manifest("acme", { capabilities: ["network:api.example.com", "network:public"] }), source: "local" }]);
-    // The account token: the clover process only (guardApiRouter's `cloverProcessOnly`).
+    // The account token: the moss process only (guardApiRouter's `mossProcessOnly`).
     await expect(w.call("acme", "net.fetch", ["https://api.example.com/", {}, { auth: "waifucave" }])).rejects.toThrow();
     expect(w.sent).toEqual([]);
     // `network:public`, granted after its OK card's warning line: an undeclared public host, keyless.

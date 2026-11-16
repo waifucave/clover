@@ -9,11 +9,11 @@ import type { AppLauncher } from "../../src/platform/pair/launch";
 const os = (process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux") as "darwin" | "linux" | "win32";
 
 function setup(launcher: AppLauncher | null) {
-  const runDir = mkdtempSync(join(tmpdir(), "clover-pair-"));
+  const runDir = mkdtempSync(join(tmpdir(), "moss-pair-"));
   const timers: Array<{ ms: number; fn: () => void }> = [];
   const stops: string[] = [];
   const side = startDaemonPairSide({
-    runDir, os, profile: "dev", execPath: "/x/clover-core", env: {},
+    runDir, os, profile: "dev", execPath: "/x/moss-core", env: {},
     tellAppQuit() {}, stopDaemon(why) { stops.push(why); },
     run: async (argv) => ({ ok: true, out: argv[0] === "whoami" ? '"pc\\\\u","S-1-5-21-1-2-3-1001"' : "" }),
     launcher, now: () => 7, after(ms, fn) { timers.push({ ms, fn }); return () => {}; },

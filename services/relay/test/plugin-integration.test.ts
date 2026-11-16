@@ -1,10 +1,10 @@
-// The relay plugin's client (clover/relay-cloudflare) against this Worker: the keyed fetch is played by a fetch that
+// The relay plugin's client (moss/relay-cloudflare) against this Worker: the keyed fetch is played by a fetch that
 // adds the relay key, as the core would from the plugin's `auth` entry.
 
 import { env, exports } from "cloudflare:workers";
 import { describe, expect, test } from "vitest";
 
-import { RelayClient } from "@waifucave/clover-plugin-relay-cloudflare/client";
+import { RelayClient } from "@waifucave/moss-plugin-relay-cloudflare/client";
 
 const keyedFetch = (url: string, init: RequestInit = {}) => {
   const headers = new Headers(init.headers);

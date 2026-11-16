@@ -14,7 +14,7 @@
 //     anything in a folder on the user's PATH (a program put there runs the next time the user types its name);
 //   * review (the reviewer, then a card when it isn't sure), and run at accept edits: anything outside the user's home;
 //     a dotfile or dot-folder directly in the home (`~/.aws`, `~/.kube`, `~/.config`) and everything under one; macOS
-//     `~/Library` and anything inside an `.app` bundle; Windows `AppData` and any 8.3 short name; the Clover home; a
+//     `~/Library` and anything inside an `.app` bundle; Windows `AppData` and any 8.3 short name; the MOSS home; a
 //     dot-entry deeper down (`~/Projects/x/.env`, `.vscode`, `.github`); a file with more than one name (a hard link);
 //   * ordinary: everything else in the home.
 //
@@ -25,15 +25,15 @@
 // ordinary.
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync, type Dirent } from "node:fs";
 import { posix, win32 } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import { gitIncludedFiles, readGitConfigFile } from "../fence/run-later";
 
 export interface OrdinaryPathsOptions {
   /** The user's home (its real path). */
   home: string;
   os: Os;
-  /** Clover's home: never ordinary, wherever it is. */
-  cloverHome?: string;
+  /** MOSS's home: never ordinary, wherever it is. */
+  mossHome?: string;
   /** The folders on the user's PATH (their real paths; `pathFolders`): anything inside one is a card. */
   pathFolders?: readonly string[];
 }
@@ -82,9 +82,9 @@ export function pathClass(path: string, o: OrdinaryPathsOptions): PathClass {
   }
   const home = names(o.home, o.os);
   if (home === null || !strictlyInside(p, home)) return "review";
-  if (o.cloverHome !== undefined) {
-    const clover = names(o.cloverHome, o.os);
-    if (clover === null || within(p, clover)) return "review";
+  if (o.mossHome !== undefined) {
+    const moss = names(o.mossHome, o.os);
+    if (moss === null || within(p, moss)) return "review";
   }
   const first = p[home.length]!;
   if (o.os === "macos" && first === "library") return "review";

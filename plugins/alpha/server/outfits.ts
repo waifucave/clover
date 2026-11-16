@@ -1,5 +1,5 @@
-// Her outfits: the three her own model wears, one at a time (its nodes carry the renderer's outfit mark, `extras.clover.outfit`,
-// plugins/clover/plugins/vrm/src/placeholder/model.ts `OUTFITS`), and her `outfit` setting, which picks one. The setting is the
+// Her outfits: the three her own model wears, one at a time (its nodes carry the renderer's outfit mark, `extras.moss.outfit`,
+// plugins/moss/plugins/vrm/src/placeholder/model.ts `OUTFITS`), and her `outfit` setting, which picks one. The setting is the
 // one place her outfit lives: the Edit page's picker, her `toggle_outfit` tool and `/outfit` all write it, and her stage dresses
 // her in it. With another avatar picked for her (the user layer's), the setting is ignored and that model's own parts switch as
 // they are. Pure: her server's store and her tab's room read it (the tab keeps its own copy, client/outfits.ts; a test holds

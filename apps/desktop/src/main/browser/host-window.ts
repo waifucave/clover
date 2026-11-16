@@ -37,7 +37,7 @@ export class HostWindow {
       skipTaskbar: true,
       hasShadow: false,
       transparent: process.platform !== "linux",
-      title: "Clover",
+      title: "MOSS",
       ...(windows ? { type: "toolbar" } : {}),
     });
     window.setIgnoreMouseEvents(true);
@@ -51,7 +51,7 @@ export class HostWindow {
     // set once the window is mapped and its first tab draws (`tabStarting`). On Wayland the compositor places a
     // one-pixel window, which the live gates check.
     window.showInactive();
-    // App Nap would stop the host's tabs on macOS while the person isn't using Clover.
+    // App Nap would stop the host's tabs on macOS while the person isn't using MOSS.
     this.blocker = powerSaveBlocker.start("prevent-app-suspension");
     this.window = window;
     return window;

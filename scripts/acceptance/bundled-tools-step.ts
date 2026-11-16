@@ -12,9 +12,9 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { STAGE_TOOLS } from "../../plugins/alpha/server/tools";
-import { TOOL_NAME as BROWSER_TOOL } from "../../plugins/clover/plugins/browser/src/schema";
-import { WEB_TOOLS } from "../../plugins/clover/plugins/web/src/tools";
-import { TOOLS as BUILDER_TOOLS, TOOL_NEW } from "../../plugins/clover/plugins/plugin-builder/src/tools";
+import { TOOL_NAME as BROWSER_TOOL } from "../../plugins/moss/plugins/browser/src/schema";
+import { WEB_TOOLS } from "../../plugins/moss/plugins/web/src/tools";
+import { TOOLS as BUILDER_TOOLS, TOOL_NEW } from "../../plugins/moss/plugins/plugin-builder/src/tools";
 import { callTurn, type ExampleCtx } from "./example-steps";
 import { FAKE_PUBLIC_SITE } from "./fake-exa";
 
@@ -25,9 +25,9 @@ const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins");
 /** Each bundled plugin's MCP server, by `<plugin>/<server>`, with the names of the tools it lists. */
 const SERVERS: Record<string, readonly string[]> = {
   "alpha/stage": STAGE_TOOLS.map((t) => t.name),
-  "clover/browser/browser": [BROWSER_TOOL],
-  "clover/plugin-builder/builder": BUILDER_TOOLS.map((t) => t.name),
-  "clover/web/web": WEB_TOOLS.map((t) => t.name),
+  "moss/browser/browser": [BROWSER_TOOL],
+  "moss/plugin-builder/builder": BUILDER_TOOLS.map((t) => t.name),
+  "moss/web/web": WEB_TOOLS.map((t) => t.name),
 };
 const WEB: ReadonlySet<string> = new Set(WEB_TOOLS.map((t) => t.name));
 
@@ -45,7 +45,7 @@ const INPUTS: Record<string, Record<string, unknown>> = {
   [BROWSER_TOOL]: { verb: "tabs" },
   WebSearch: { query: "acceptance smoke" },
   WebFetch: { url: `https://${FAKE_PUBLIC_SITE}/article` },
-  // It returns a template's files and writes nothing (plugins/clover/plugins/plugin-builder/src/tools.ts).
+  // It returns a template's files and writes nothing (plugins/moss/plugins/plugin-builder/src/tools.ts).
   [TOOL_NEW]: { template: "theme", id: "acceptance-smoke", name: "Acceptance smoke" },
 };
 
@@ -70,7 +70,7 @@ const fail = (m: string): never => { throw new Failed(m); };
 function bundledServers(): { key: string; marked: boolean }[] {
   const out: { key: string; marked: boolean }[] = [];
   const visit = (folder: string, id: string) => {
-    const file = join(folder, "clover.json");
+    const file = join(folder, "moss.json");
     if (!existsSync(file)) return;
     const m = JSON.parse(readFileSync(file, "utf8")) as { availability?: { status?: string }; contributes?: { mcpServers?: Record<string, unknown> } };
     for (const server of Object.keys(m.contributes?.mcpServers ?? {})) out.push({ key: `${id}/${server}`, marked: m.availability?.status === "not-yet" });
@@ -81,7 +81,7 @@ function bundledServers(): { key: string; marked: boolean }[] {
   return out.sort((a, b) => (a.key < b.key ? -1 : 1));
 }
 
-/** The smoke, on a bot session that has every bundled tool (Alpha's: her stage's, and the clover tree's for every bot).
+/** The smoke, on a bot session that has every bundled tool (Alpha's: her stage's, and the moss tree's for every bot).
  *  `web` says whether the run's fake search backend is there (or why not). */
 export async function bundledToolsStep(ctx: ExampleCtx, session: string, web: true | string): Promise<string> {
   const all = bundledServers();

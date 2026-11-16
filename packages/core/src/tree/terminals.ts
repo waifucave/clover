@@ -12,7 +12,7 @@
 //   command, at the stricter of the holder's level and the call's: below `automatic` it takes the user's signed answer
 //   bound to that open (`terminal.open` with its folder). A dropped link closes the peer's terminals, as ssh does.
 import { z } from "zod";
-import { FencingToken, Level, SessionId, SignedCardAnswer, TerminalId, TreePath, type Caller, type TurnOrigin } from "@waifucave/clover-protocol";
+import { FencingToken, Level, SessionId, SignedCardAnswer, TerminalId, TreePath, type Caller, type TurnOrigin } from "@waifucave/moss-protocol";
 import { checkActFence, fenceParam, type ActFence } from "./fencing";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
@@ -249,7 +249,7 @@ export function outputPacer(
     if (out) send({ terminalId: id, data: out });
     if (queue.length === 0) {
       if (dropped) {
-        send({ terminalId: id, data: "\r\n[clover: some output was dropped; the terminal printed faster than it could be sent]\r\n" });
+        send({ terminalId: id, data: "\r\n[moss: some output was dropped; the terminal printed faster than it could be sent]\r\n" });
         dropped = false;
       }
       if (exited !== undefined) send({ terminalId: id, data: "", exited });

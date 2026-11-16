@@ -2,14 +2,14 @@
 // act, the answer waits until the shell says the place shows, an unknown target is refused with the targets there are,
 // a hidden window changes nothing, and `where` sends nothing.
 import { describe, expect, test } from "bun:test";
-import type { ShellState } from "@waifucave/clover-plugin-sdk";
-import type { ShellAct } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import type { CapturedWindow } from "@waifucave/clover-protocol";
+import type { ShellState } from "@waifucave/moss-plugin-sdk";
+import type { ShellAct } from "@waifucave/moss-plugin-sdk/ui/bridge";
+import type { CapturedWindow } from "@waifucave/moss-protocol";
 import { openWindow, planOpen, type OpenDeps } from "../src/main/open";
 
 const known = { bots: ["alpha", "luna"], pages: ["ex-timeline", "reel"] };
 const state = (tab: ShellState["tab"], side: "bots" | "code" = "bots"): ShellState => ({ tab, ...(tab.kind === "bot" ? { bot: tab.id } : {}), sidebar: { collapsed: false, side }, panels: { open: [], available: [] }, safeArea: { left: 80, top: 44 } });
-const win = (drawn = true): CapturedWindow => ({ name: "main", bounds: { x: 0, y: 0, width: 1280, height: 820 }, scale: 2, visible: drawn, drawn, ...(drawn ? {} : { note: "hidden: not drawn" }), views: [], frames: [{ origin: "clover-core://app", width: 1280, height: 820, visibility: "visible" }] });
+const win = (drawn = true): CapturedWindow => ({ name: "main", bounds: { x: 0, y: 0, width: 1280, height: 820 }, scale: 2, visible: drawn, drawn, ...(drawn ? {} : { note: "hidden: not drawn" }), views: [], frames: [{ origin: "moss-core://app", width: 1280, height: 820, visibility: "visible" }] });
 
 /** A shell that shows what each act asks for after `delay` checks, or never. */
 function fake(o: { drawn?: boolean; shows?: (act: ShellAct) => ShellState | undefined; delay?: number } = {}) {

@@ -1,9 +1,9 @@
-// The bridge MCP server (spec §9.3): the one stdio MCP server Clover hands each ACP agent at `session/new`. The agent
-// starts it as a child; it speaks MCP to the agent on stdio and Clover's protocol to the daemon on a socket, with role
+// The bridge MCP server (spec §9.3): the one stdio MCP server MOSS hands each ACP agent at `session/new`. The agent
+// starts it as a child; it speaks MCP to the agent on stdio and MOSS's protocol to the daemon on a socket, with role
 // `bridge`, bound to that one agent session by its token.
 //
-// * It reads its token, session and socket from its environment (`CLOVER_BRIDGE_TOKEN`, `CLOVER_BRIDGE_SESSION`,
-//   `CLOVER_BRIDGE_SOCKET`) and deletes them from `process.env` at once, so nothing it might start inherits them. The
+// * It reads its token, session and socket from its environment (`MOSS_BRIDGE_TOKEN`, `MOSS_BRIDGE_SESSION`,
+//   `MOSS_BRIDGE_SOCKET`) and deletes them from `process.env` at once, so nothing it might start inherits them. The
 //   process's original environment block still holds them (`ps eww`, `/proc/<pid>/environ`), readable by the agent's
 //   own processes: the defence is the token's binding to the agent's process tree, not the deletion.
 // * It connects to the daemon as soon as it starts, before the agent asks anything, so the real bridge holds the
@@ -16,11 +16,11 @@
 // * Tool descriptions come from the daemon (`bridge.tools`) and stand on their own; the instructions go out as the
 //   server's own, and the essentials also travel in the agent's system prompt (S5 edit 3).
 import { randomUUID } from "node:crypto";
-import { CLOVER_PROTOCOL_VERSION } from "@waifucave/clover-protocol";
+import { MOSS_PROTOCOL_VERSION } from "@waifucave/moss-protocol";
 import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer } from "@waifucave/clover-agent-sdk/acp";
 import { listedBridgeTool, type BridgeToolDef } from "./tools";
 
-export const BRIDGE_ENV = { token: "CLOVER_BRIDGE_TOKEN", session: "CLOVER_BRIDGE_SESSION", socket: "CLOVER_BRIDGE_SOCKET" } as const;
+export const BRIDGE_ENV = { token: "MOSS_BRIDGE_TOKEN", session: "MOSS_BRIDGE_SESSION", socket: "MOSS_BRIDGE_SOCKET" } as const;
 
 /** The MCP revisions the legacy handshake answers; the newest is offered when a client names one it doesn't know. */
 export const MCP_LEGACY_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"] as const;
@@ -67,13 +67,13 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
       const peer = new RpcPeer({ write: (line) => link.write(line) });
       const link = await io.connect(socket, (c) => peer.feed(c), () => {
         closed = true;
-        if (daemon === peer) broken ??= "the Clover daemon went away";
-        peer.close(new Error(broken ?? "the Clover daemon closed the connection"));
+        if (daemon === peer) broken ??= "the MOSS daemon went away";
+        peer.close(new Error(broken ?? "the MOSS daemon closed the connection"));
       });
       try {
-        await peer.request("protocol.hello", { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "bridge", token, clientName: "clover-bridge", agentSessionId: sessionId }, { timeoutMs: 60_000 });
+        await peer.request("protocol.hello", { protocolVersion: MOSS_PROTOCOL_VERSION, role: "bridge", token, clientName: "moss-bridge", agentSessionId: sessionId }, { timeoutMs: 60_000 });
         daemon = peer;
-        if (closed) broken ??= "the Clover daemon went away";
+        if (closed) broken ??= "the MOSS daemon went away";
         return;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -88,11 +88,11 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
       }
     }
   })();
-  ready.catch((err: unknown) => io.log(`clover bridge: not connected: ${err instanceof Error ? err.message : String(err)}`));
+  ready.catch((err: unknown) => io.log(`moss bridge: not connected: ${err instanceof Error ? err.message : String(err)}`));
 
   const fromDaemon = async (method: string, params: unknown): Promise<unknown> => {
     await ready.catch(() => {});
-    if (!daemon || broken) throw new Error(broken ?? "the bridge isn't connected to Clover");
+    if (!daemon || broken) throw new Error(broken ?? "the bridge isn't connected to MOSS");
     return daemon.request(method, params);
   };
   const toolList = async () => (tools ??= (await fromDaemon("bridge.tools", {})) as { tools: BridgeToolDef[]; instructions: string });
@@ -108,7 +108,7 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
           const asked = typeof p["protocolVersion"] === "string" ? p["protocolVersion"] : undefined;
           const version = asked && (MCP_LEGACY_VERSIONS as readonly string[]).includes(asked) ? asked : MCP_LEGACY_VERSIONS[0];
           const instructions = await toolList().then((t) => t.instructions, () => "");
-          return { protocolVersion: version, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "clover", version: VERSION }, ...(instructions ? { instructions } : {}) };
+          return { protocolVersion: version, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "moss", version: VERSION }, ...(instructions ? { instructions } : {}) };
         }
         case "ping":
           return {};
@@ -144,7 +144,7 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
           return { prompts: [] };
         default:
           // `server/discover` included: the 2026-07-28 client falls back to `initialize` (S5 §2).
-          throw new RpcError(RPC_METHOD_NOT_FOUND, `the Clover bridge doesn't serve ${method}`);
+          throw new RpcError(RPC_METHOD_NOT_FOUND, `the MOSS bridge doesn't serve ${method}`);
       }
     },
     onNotification: () => {},

@@ -6,7 +6,7 @@ export * from "./ndjson";
 export * from "./conn-writer";
 export * from "./cowork";
 
-// Clover's protocol (spec revision 17): the shared vocabulary, the roles, one file per area, and the index that
+// MOSS's protocol (spec revision 17): the shared vocabulary, the roles, one file per area, and the index that
 // gathers them. Names here never repeat one of the inherited exports above.
 export * from "./common";
 export * from "./strings";
@@ -21,4 +21,4 @@ export * from "./agents";
 export * from "./app";
 export * from "./browser";
 export * from "./usage";
-export * from "./clover";
+export * from "./moss";

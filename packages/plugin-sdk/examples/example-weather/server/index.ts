@@ -1,10 +1,10 @@
 // The Weather plugin's host half (`host.entry`): one command, /rain-alert, which sends the user a notification through
-// Clover's notifiers (`notify.send`, behind the `notify` capability the OK card names). Its forecasts come from its stdio
+// MOSS's notifiers (`notify.send`, behind the `notify` capability the OK card names). Its forecasts come from its stdio
 // server (stdio/forecast.mjs), which reaches the weather service through the plugin's own proxy.
 //
 // A notification is refused while an approval card waits, past 3 a minute or 20 an hour, and while the user has muted
 // this plugin on the Plugins page: the command says so instead of failing silently.
-import type { HostPluginApi } from "@waifucave/clover-plugin-sdk";
+import type { HostPluginApi } from "@waifucave/moss-plugin-sdk";
 
 let api: HostPluginApi | undefined;
 

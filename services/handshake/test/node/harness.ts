@@ -1,5 +1,5 @@
 // Starts test/node/serve.mjs from Bun and hands back the local handshake's origin. For other packages' end-to-end
-// tests (the web companion's); import it as "@waifucave/clover-service-handshake/harness".
+// tests (the web companion's); import it as "@waifucave/moss-service-handshake/harness".
 
 import { existsSync, rmdirSync } from "node:fs";
 import { dirname, join } from "node:path";

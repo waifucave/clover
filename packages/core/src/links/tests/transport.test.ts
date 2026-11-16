@@ -1,9 +1,9 @@
-// CloverLinkTransport over the in-memory wire. The first ten cases follow the LinkTransport conformance suite
+// MossLinkTransport over the in-memory wire. The first ten cases follow the LinkTransport conformance suite
 // (contracts/conformance/link-transport.ts) case by case; where the fake answers at once and a real transport has to
 // re-dial (after a heal), the case waits for the link instead. The rest pin what the real transport adds: pairing and
 // revocation at the door, one connection after both sides dial, re-dials, networkChanged, and the payload encoding.
 import { afterEach, describe, expect, test } from "bun:test";
-import type { LinkView } from "@waifucave/clover-protocol";
+import type { LinkView } from "@waifucave/moss-protocol";
 import { SystemClock } from "../../clock/system-clock";
 import { ContractError, isContractError } from "../../contracts/common";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
@@ -35,7 +35,7 @@ async function cluster(names: string[], opts: Parameters<typeof makeLinkCluster>
   return { ...c, t, id, key };
 }
 
-describe("CloverLinkTransport, the conformance cases", () => {
+describe("MossLinkTransport, the conformance cases", () => {
   test("a request reaches the peer's handler with a copy of its params, and the answer comes back", async () => {
     const c = await cluster(["studio", "laptop"]);
     c.t("laptop").handle("tree.stat", (params, from) => ({ path: (params as { path: string }).path, from }));
@@ -162,13 +162,13 @@ describe("CloverLinkTransport, the conformance cases", () => {
   });
 
   test("several daemons talk in one test; a relay path shows; network changes are counted; a closed peer is offline", async () => {
-    const c = await cluster(["studio", "desktop1", "laptop1"], { clock: new SystemClock(), transport: { relayLabel: () => "clover/relay-n0" } });
+    const c = await cluster(["studio", "desktop1", "laptop1"], { clock: new SystemClock(), transport: { relayLabel: () => "moss/relay-n0" } });
     const names = ["studio", "desktop1", "laptop1"];
     for (const n of names) c.t(n).handle("whoami", () => n);
     const answers = await Promise.all(names.slice(1).map(async (n) => (await c.t("studio").connect(c.id(n))).request("whoami", null)));
     expect(answers).toEqual(["desktop1", "laptop1"]);
     c.net.setPath(c.key("studio"), c.key("laptop1"), { kind: "relay", rttMs: 80, relay: "https://relay.test/" });
-    expect((await c.t("studio").connect(c.id("laptop1"))).view()).toMatchObject({ path: "relay", relay: "clover/relay-n0", rttMs: 80 });
+    expect((await c.t("studio").connect(c.id("laptop1"))).view()).toMatchObject({ path: "relay", relay: "moss/relay-n0", rttMs: 80 });
     c.t("studio").networkChanged();
     expect(c.t("studio").networkChanges).toBe(1);
     expect(c.devices.get("studio")!.endpoint.networkChanges).toBe(1);
@@ -178,7 +178,7 @@ describe("CloverLinkTransport, the conformance cases", () => {
   });
 });
 
-describe("CloverLinkTransport, beyond the contract's cases", () => {
+describe("MossLinkTransport, beyond the contract's cases", () => {
   test("a key that isn't paired is refused at the door, and connect refuses an unpaired device", async () => {
     const c = await cluster(["a", "b", "stranger"], { clock: new SystemClock(), pairAll: false });
     await c.pair("a", "b");

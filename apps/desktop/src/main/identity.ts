@@ -7,36 +7,36 @@ export type AppProfile = "dist" | "dev";
 
 export interface AppIdentity {
   profile: AppProfile;
-  /** The bundle id / AppUserModelID: `com.waifucave.clover` (dev: `.dev`). */
+  /** The bundle id / AppUserModelID: `com.waifucave.moss.code` (dev: `.dev`). */
   appId: string;
   /** The app's name, which also names its user-data folder, so dev and dist never share one. */
   productName: string;
 }
 
-/** `CLOVER_PROFILE=dev` is the dev app; anything else is the dist app (the daemon's own rule, `profile.ts`). */
+/** `MOSS_PROFILE=dev` is the dev app; anything else is the dist app (the daemon's own rule, `profile.ts`). */
 export function resolveAppProfile(env: Record<string, string | undefined>): AppProfile {
-  return env.CLOVER_PROFILE === "dev" ? "dev" : "dist";
+  return env.MOSS_PROFILE === "dev" ? "dev" : "dist";
 }
 
 export function appIdentity(profile: AppProfile): AppIdentity {
   return profile === "dev"
-    ? { profile, appId: "com.waifucave.clover.dev", productName: "Clover Dev" }
-    : { profile, appId: "com.waifucave.clover", productName: "Clover" };
+    ? { profile, appId: "com.waifucave.moss.code.dev", productName: "MOSS Code Dev" }
+    : { profile, appId: "com.waifucave.moss.code", productName: "MOSS" };
 }
 
-/** The daemon home this app's daemon uses: `CLOVER_HOME`, else `~/.clover` — the daemon's own rule
- *  (`clover-dir.ts`), which is why the dev scripts always set both `CLOVER_HOME` and `CLOVER_PROFILE`. */
+/** The daemon home this app's daemon uses: `MOSS_HOME`, else `~/.moss` — the daemon's own rule
+ *  (`moss-dir.ts`), which is why the dev scripts always set both `MOSS_HOME` and `MOSS_PROFILE`. */
 export function daemonHome(env: Record<string, string | undefined>, home: string = homedir()): string {
-  return env.CLOVER_HOME !== undefined && env.CLOVER_HOME !== "" ? env.CLOVER_HOME : join(home, ".clover");
+  return env.MOSS_HOME !== undefined && env.MOSS_HOME !== "" ? env.MOSS_HOME : join(home, ".moss");
 }
 
 export interface LaunchArgs {
-  /** `--clover-smoke`: start headless, draw the default shell, report what it is on stdout, and quit (the UI test). */
+  /** `--moss-smoke`: start headless, draw the default shell, report what it is on stdout, and quit (the UI test). */
   smoke: boolean;
-  /** `--clover-headless` (or the smoke run): no window is ever shown, no Dock icon, no tray, no focus taken; the
+  /** `--moss-headless` (or the smoke run): no window is ever shown, no Dock icon, no tray, no focus taken; the
    *  tests and local checks run this way (plan §8: nothing on the owner's screen). */
   headless: boolean;
-  /** `--clover-capture=<png>`: in a headless run, draw offscreen and save the main window's pixels there. */
+  /** `--moss-capture=<png>`: in a headless run, draw offscreen and save the main window's pixels there. */
   capture?: string;
   /** `--safe-mode`: only the app's own plugins (§5.8). */
   safeMode: boolean;
@@ -45,11 +45,11 @@ export interface LaunchArgs {
 }
 
 export function parseLaunchArgs(argv: readonly string[], env: Record<string, string | undefined> = {}): LaunchArgs {
-  const smoke = argv.includes("--clover-smoke");
-  const capture = argv.find((a) => a.startsWith("--clover-capture="))?.slice("--clover-capture=".length);
+  const smoke = argv.includes("--moss-smoke");
+  const capture = argv.find((a) => a.startsWith("--moss-capture="))?.slice("--moss-capture=".length);
   return {
     smoke,
-    headless: smoke || argv.includes("--clover-headless") || env.CLOVER_APP_HEADLESS === "1",
+    headless: smoke || argv.includes("--moss-headless") || env.MOSS_APP_HEADLESS === "1",
     ...(capture !== undefined && capture !== "" ? { capture } : {}),
     safeMode: argv.includes("--safe-mode"),
     quit: argv.includes("--quit"),
@@ -57,7 +57,7 @@ export function parseLaunchArgs(argv: readonly string[], env: Record<string, str
 }
 
 /** The line the smoke run prints, parsed back by the UI test. */
-export const SMOKE_PREFIX = "CLOVER_SMOKE ";
+export const SMOKE_PREFIX = "MOSS_SMOKE ";
 
 /** The UI session's partition: in memory, so layers keep nothing between runs (state is the core's, decision 77). */
-export const UI_PARTITION = "clover-ui";
+export const UI_PARTITION = "moss-ui";

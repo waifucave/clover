@@ -219,7 +219,7 @@ describe("activityFor — signal edges", () => {
 // ---------------------------------------------------------------------------------------------
 
 function makeStore(): { store: SessionStore; dir: string } {
-  const dir = mkdtempSync(join(tmpdir(), "clover-activity-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-activity-"));
   return { store: new SessionStore(dir), dir };
 }
 

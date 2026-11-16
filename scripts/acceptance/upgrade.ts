@@ -94,7 +94,7 @@ try {
       oldArgs.push("--skip-web-turns");
     }
     // An app that can't draw a card offscreen for the run's real press (before int/card-press): its cards go over RPC.
-    if (!readFileSync(join(tree, "apps", "desktop", "src", "main", "index.ts"), "utf8").includes("CLOVER_TEST_SEALED_PRESS")) {
+    if (!readFileSync(join(tree, "apps", "desktop", "src", "main", "index.ts"), "utf8").includes("MOSS_TEST_SEALED_PRESS")) {
       console.error("upgrade: the old tree's app can't take the real press: its run answers cards over RPC");
       oldArgs.push("--no-press");
     }

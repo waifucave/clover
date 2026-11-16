@@ -38,7 +38,7 @@ test("another bot's turn puts nothing on her line, and the path of a file never 
 });
 
 test("her manifest fills the island's point with it, and the tree still validates with no capability added", async () => {
-  const manifest = JSON.parse(readFileSync(join(ALPHA, "clover.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync(join(ALPHA, "moss.json"), "utf8"));
   expect(manifest.contributes["island.line"]).toEqual([{ id: "activity", handler: "islandLine" }]);
   expect(manifest.capabilities.some((c: string) => c.startsWith("call:"))).toBe(false);
   const tree = await validateTree(diskReader(ALPHA), { folderName: "alpha", bundled: true });

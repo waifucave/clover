@@ -1,7 +1,7 @@
 // A plugin's `net.fetch` to a public website outside its `network:` list (`network:public`, the plugin SDK's catalog:
-// any plugin may ask, its OK card's warning line "connects to any public website, through Clover's web safeguards, so
+// any plugin may ask, its OK card's warning line "connects to any public website, through MOSS's web safeguards, so
 // what you or your bots give it can leave your computer"): the web plugin's WebFetch, or any plugin that holds it. B's gate lets the host through only when the plugin's GRANTED set holds `network:public`
-// (daemon-host.ts `allowNetwork`); this is the fetch that then runs, with no key and Clover's web safeguards.
+// (daemon-host.ts `allowNetwork`); this is the fetch that then runs, with no key and MOSS's web safeguards.
 //
 // * No key, ever: a request that names an `auth` entry is refused (keys go only to the plugin's declared hosts, through
 //   the keyed fetch), and every request header that could carry one is dropped (`authorization`,
@@ -57,7 +57,7 @@ export function publicUrlRefusal(raw: string, added: readonly string[] = []): st
   if (url.username !== "" || url.password !== "") return "an address with a user name or password is refused";
   if (url.port !== "") return "a public website is reached on its default port only";
   const hit = checkDangerousDomain(url.toString(), added);
-  if (hit !== null) return `${url.hostname} is on the list of domains Clover never fetches`;
+  if (hit !== null) return `${url.hostname} is on the list of domains MOSS never fetches`;
   return undefined;
 }
 

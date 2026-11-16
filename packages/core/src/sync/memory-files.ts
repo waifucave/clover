@@ -1,5 +1,5 @@
 // A bot's memory folder on disk, as the memory sync reads and writes it (H-M3, the owner's decision: each bot's memory
-// is `home/memory` in its tree, `<Clover home>/bots/<bot>/memory/` here, synced across the user's computers).
+// is `home/memory` in its tree, `<MOSS home>/bots/<bot>/memory/` here, synced across the user's computers).
 //
 // * **Paths:** a synced path is relative to the bot's memory folder, `/` between names, Unicode NFC. Its key, which
 //   two computers compare it by, is every name folded (NFC, then case), as APFS and NTFS compare them, so `memory.md`
@@ -26,7 +26,7 @@ import { foldName } from "../tree/names";
 
 const NO_FOLLOW = constants.O_NOFOLLOW ?? 0;
 /** The prefix of the sync's own temporary files, which are never synced. */
-export const TEMP_PREFIX = ".clover-sync-";
+export const TEMP_PREFIX = ".moss-sync-";
 /** Files the OS makes that are never memory. */
 const JUNK = new Set([".ds_store", "thumbs.db", "desktop.ini"]);
 export const MAX_DEPTH = 16;

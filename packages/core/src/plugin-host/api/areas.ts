@@ -24,8 +24,8 @@
 //   so the app delivers it to that plugin's layer only (a listener can't cross the layer path), and a host half's
 //   `onData` listener directly. A plugin's terminals close when it stops or is removed (`forget`).
 import type { grantFiles } from "../../fence/plugin-grants";
-import { foldTitle, ROUTINE_FIRE_PAYLOAD_MAX } from "@waifucave/clover-plugin-sdk";
-import { topPluginIdOf, USAGE_METHODS, type BotView, type Caller, type DeviceView, type PlanReading, type SessionView } from "@waifucave/clover-protocol";
+import { foldTitle, ROUTINE_FIRE_PAYLOAD_MAX } from "@waifucave/moss-plugin-sdk";
+import { topPluginIdOf, USAGE_METHODS, type BotView, type Caller, type DeviceView, type PlanReading, type SessionView } from "@waifucave/moss-protocol";
 import type { UsageLedger } from "../../usage/ledger";
 import { listMemory, readMemory } from "../../bots/memory";
 import { botPaths } from "../../bots/paths";
@@ -47,7 +47,7 @@ export interface AreaServices {
   bots(): BotSide | undefined;
   node(): ComputerNode | undefined;
   links(): DeviceLinks | undefined;
-  /** The Clover Browser (the bundled Browser tool's `browser.*`), once the daemon's parts have started it. */
+  /** The MOSS Browser (the bundled Browser tool's `browser.*`), once the daemon's parts have started it. */
   browser?(): BrowserService | undefined;
   /** Sends a core event to the app's connections (a layer's terminal output). */
   emitToApp?(event: { type: string; [key: string]: unknown }): void;
@@ -57,7 +57,7 @@ export interface AreaServices {
   grants?(): ReturnType<typeof grantFiles> | undefined;
   /** `usage.*`: lane D's ledger (with the bot side) and this computer's plan readings, each absent where not running. */
   usage?(): { ledger?: Pick<UsageLedger, "rows" | "summary" | "watch">; plans?(): Promise<PlanReading[]> };
-  /** The Clover home (`memory.*` reads `<home>/bots/<bot>/memory/`). */
+  /** The MOSS home (`memory.*` reads `<home>/bots/<bot>/memory/`). */
   home?: string;
 }
 
@@ -81,12 +81,12 @@ export const EARLY_OUTPUT_BYTES = 1_000_000;
 /** A size in columns or rows, as the peer schema takes it: an integer from 2 to 1000. */
 const termSize = (v: unknown, fallback: number): number => (typeof v === "number" && Number.isFinite(v) ? Math.min(1000, Math.max(2, Math.round(v))) : fallback);
 
-/** A note's label (#334's review): one line, no control characters, never reading as Clover or the system, and
+/** A note's label (#334's review): one line, no control characters, never reading as MOSS or the system, and
  *  always the plugin's own: it starts with the plugin's id. */
 export function noteLabel(pluginId: string, raw: unknown): string {
   const clean = typeof raw === "string" ? raw.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100) : "";
   const folded = foldTitle(clean);
-  if (clean === "" || ["clover", "system", "waifucave"].some((w) => folded.includes(foldTitle(w)))) return pluginId;
+  if (clean === "" || ["moss", "system", "waifucave"].some((w) => folded.includes(foldTitle(w)))) return pluginId;
   return clean.startsWith(`${pluginId}`) ? clean : `${pluginId}: ${clean}`;
 }
 
@@ -385,7 +385,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     "computers.releaseHold": route(computers, "computers.releaseHold"),
     "computers.setUserWorking": route(computers, "computers.setUserWorking"),
     "computers.setActionRunning": route(computers, "computers.setActionRunning"),
-    "computers.cloverWindows": route(computers, "computers.cloverWindows"),
+    "computers.mossWindows": route(computers, "computers.mossWindows"),
     "computers.watch": (ctx, args) => {
       const listener = listenerArg<unknown>(args, 0);
       const registry = node().registry;
@@ -614,7 +614,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     },
   };
   return {
-    // The Browser tool's `browser.*` (bundled `clover` tree, `browser` capability): the browser read at each call.
+    // The Browser tool's `browser.*` (bundled `moss` tree, `browser` capability): the browser read at each call.
     handlers: { ...handlers, ...browserApiHandlers(() => s.browser?.()) },
     async forget(pluginId) {
       for (const [id, t] of [...terminals]) {

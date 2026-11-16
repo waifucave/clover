@@ -1,6 +1,6 @@
-// The daemon's `core.event` sender (C-M3 item 2; protocol rpc.ts `EventScope`, clover.ts `events.subscribe`). One
-// daemon-wide event goes to each Clover connection that may have it, and to no other:
-//   * its type is a known `core` event (`CLOVER_EVENTS`); a session event or an unknown type is never sent here;
+// The daemon's `core.event` sender (C-M3 item 2; protocol rpc.ts `EventScope`, moss.ts `events.subscribe`). One
+// daemon-wide event goes to each MOSS connection that may have it, and to no other:
+//   * its type is a known `core` event (`MOSS_EVENTS`); a session event or an unknown type is never sent here;
 //   * it parses with its schema, and what is sent is what parsed (a field the schema doesn't name never leaves);
 //   * the connection's role is one the event lists, and the connection subscribed to the event's area;
 //   * a plugin's connection (`layer`, `plugin-host`) also holds the event's capability, from the plugin registry
@@ -13,9 +13,9 @@
 //   * an event about one plugin (`PLUGIN_OWN_EVENTS`: its host half's `ui.send`, its store's changes) goes only to that
 //     plugin's own connections.
 // A connection whose send throws (it just closed) doesn't stop the others. Remote and web clients, which lane H's
-// link brings in as Clover connections, are routed the same way.
-import { CLOVER_EVENTS, CORE_EVENT_NOTIFICATION, PLUGIN_ROLES } from "@waifucave/clover-protocol";
-import type { CloverConn } from "./clover";
+// link brings in as MOSS connections, are routed the same way.
+import { MOSS_EVENTS, CORE_EVENT_NOTIFICATION, PLUGIN_ROLES } from "@waifucave/moss-protocol";
+import type { MossConn } from "./moss";
 
 /** Events that belong to one owner (a session's or a plugin's terminal, tab, call or watch), sent only with `to`. */
 export const OWNER_SCOPED_EVENTS: ReadonlySet<string> = new Set([
@@ -45,8 +45,8 @@ export interface CoreEventInput {
 }
 
 export interface CoreEventRouting {
-  connections(): Iterable<CloverConn>;
-  /** A plugin's granted capabilities (lane B's registry); undefined: none. The bundled tree's host asks for `clover`. */
+  connections(): Iterable<MossConn>;
+  /** A plugin's granted capabilities (lane B's registry); undefined: none. The bundled tree's host asks for `moss`. */
   pluginCapabilities?(pluginId: string): readonly string[] | undefined;
   /** Whether a plugin is on and in a running state (`grantsInForce`'s rule); a plugin's own settings changes go only
    *  to one that is. Absent: none is. */
@@ -58,24 +58,24 @@ export interface CoreEventRouting {
 
 export interface CoreEventOptions {
   /** Only these connections, among those the rules above allow. */
-  to?(conn: CloverConn): boolean;
+  to?(conn: MossConn): boolean;
   /** Of the plugins' connections (a layer, a host half), only those whose plugin this lets through; the app's and the
    *  other roles are untouched. An approval card's events use it: a plugin hears its own bot's cards. */
   forPlugin?(pluginId: string, capabilities: readonly string[]): boolean;
 }
 
-/** The plugin a plugin connection speaks for: a layer's own, an own host's, `clover` for the bundled tree's host; a
+/** The plugin a plugin connection speaks for: a layer's own, an own host's, `moss` for the bundled tree's host; a
  *  shared host has none. */
-function pluginOf(conn: CloverConn): string | undefined {
+function pluginOf(conn: MossConn): string | undefined {
   if (conn.role === "layer") return conn.caller.kind === "plugin" ? conn.caller.pluginId : undefined;
-  if (conn.hostProcess?.hostProcess === "clover") return "clover";
+  if (conn.hostProcess?.hostProcess === "moss") return "moss";
   if (conn.hostProcess?.hostProcess === "own") return conn.hostProcess.pluginId;
   return undefined;
 }
 
 /** Sends `event` as `core.event` to every connection that may have it; how many it went to. */
 export function sendCoreEvent(r: CoreEventRouting, event: CoreEventInput, opts: CoreEventOptions = {}): number {
-  const spec = CLOVER_EVENTS.get(event.type);
+  const spec = MOSS_EVENTS.get(event.type);
   if (spec === undefined || spec.scope !== "core") {
     r.log?.(`[core.event] not a core event, not sent: ${JSON.stringify(String(event.type).slice(0, 64))}`);
     return 0;

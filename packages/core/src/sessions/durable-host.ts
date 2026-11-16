@@ -10,7 +10,7 @@
 //   hasn't ended, rebuilding its status, its queue of inputs still waiting for a turn, its pending notes, its open
 //   questions and the client ids it has seen; an ended session's log is read only when asked for (a year of routine
 //   runs is tens of thousands of side threads). A session it restores is dormant: it has no driver until `open` is
-//   called again with the same id, which reattaches it and starts what waits. A meta written by a newer Clover stops
+//   called again with the same id, which reattaches it and starts what waits. A meta written by a newer MOSS stops
 //   the start rather than be skipped; a log whose meta was lost is picked up again by `open`, never written over.
 // * **A record is written before the state it changes.** If the disk refuses a record, the session is as it was: an
 //   input that couldn't be recorded is an error to its sender, and a turn that couldn't be recorded as started stays
@@ -60,7 +60,7 @@ import { join } from "node:path";
 import {
   clampSentAt, pluginIdToSegment, SessionView as SessionViewSchema, TRANSIENT_EVENT_TYPES,
   type Caller, type SessionFailure, type SessionKind, type SessionStatus, type SessionView, type TurnOrigin,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import { compareStamps, type Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -129,7 +129,7 @@ export const COPIED_GRANT_EVENT_TYPE = "session_grant_copied";
 /** The result a tool call gets when a restart or a takeover finds it with none (§3.1, §6.4). */
 export function interruptedCallOutput(ranOn?: string): string {
   return ranOn === undefined
-    ? "Interrupted: Clover stopped while this call ran. It was not run again; check its effects before you retry it."
+    ? "Interrupted: MOSS stopped while this call ran. It was not run again; check its effects before you retry it."
     : `Interrupted: this call may have run on ${ranOn}, which stopped answering while it ran. It was not run again here; its real outcome is posted once ${ranOn} is reachable.`;
 }
 
@@ -177,7 +177,7 @@ export type SessionSpecPatch = { computer?: string } & {
 };
 
 export interface DurableSessionHostOptions {
-  /** The Clover home: `~/.clover`, `~/.clover-dev`, or a test's temp home. */
+  /** The MOSS home: `~/.moss`, `~/.moss-dev`, or a test's temp home. */
   home: string;
   clock: Clock;
   /** Withdraws and cancels a session's cards; with `pending` and `watch`, also counts them for the needs-you marks. */
@@ -471,7 +471,7 @@ function isGrantRecord(r: Partial<SessionRecord>): boolean {
 function readMeta(path: string): SessionMeta | undefined {
   const v = readJson(path) as Partial<SessionMeta> | undefined;
   if (v !== undefined && typeof v.meta === "number" && v.meta > SESSION_META_VERSION) {
-    throw new ContractError("conflict", `${path} was written by a newer Clover (meta ${v.meta}); start that version, since this one would lose what it can't read`);
+    throw new ContractError("conflict", `${path} was written by a newer MOSS (meta ${v.meta}); start that version, since this one would lose what it can't read`);
   }
   if (v === undefined || v.meta !== SESSION_META_VERSION || typeof v.id !== "string" || typeof v.kind !== "string" || typeof v.computer !== "string" || typeof v.startedAt !== "number") return undefined;
   return v as SessionMeta;

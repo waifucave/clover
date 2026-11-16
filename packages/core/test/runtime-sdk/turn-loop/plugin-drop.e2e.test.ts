@@ -1,5 +1,5 @@
 // The drop end to end (the owner's ask on try 14c): a bot builds a plugin in its scratch and moves it into the plugins
-// folder with its shell; Clover indexes it once it settles and asks the OK at once, naming the bot; after the OK the bot
+// folder with its shell; MOSS indexes it once it settles and asks the OK at once, naming the bot; after the OK the bot
 // edits it in place with no card. Through the real embedded runtime (the scripted model), the real registry watching the
 // plugins folder, the real fence following its records, the bot's sandbox as the daemon draws it, and the Worker's host
 // protection as the daemon's embedded host draws it. Every other plugin stays refused to the bot, its plugin to another
@@ -8,12 +8,12 @@ import { afterAll, expect, setDefaultTimeout } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/moss-plugin-sdk";
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
 import { BotSessionDriver, botFileFence, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
-import { CloverFence } from "../../../src/fence/fence";
+import { MossFence } from "../../../src/fence/fence";
 import { botSandboxSettings } from "../../../src/fence/sandbox-settings";
 import { createEmbeddedSessionHost, EMBEDDED_SHUTDOWN_BUDGET_MS, type EmbeddedSessionHost } from "../../../src/runtime-sdk/embedded";
 import { RegistryCore, type OkCardRaiser } from "../../../src/registry/core";
@@ -32,7 +32,7 @@ afterAll(async () => {
 const control = (): TurnControl => ({ origin: "user", signal: new AbortController().signal, onFold: () => () => {}, record: () => {} }) as unknown as TurnControl;
 const user = (text: string): TurnInput => ({ from: "user", text, device: "d_1", sentAt: Date.now(), clientMessageId: crypto.randomUUID() });
 const results = (end: { text?: string }) => JSON.parse(end.text ?? "[]") as { name: string | null; isError: boolean; content: string }[];
-const manifest = (id: string) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } });
+const manifest = (id: string) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` } });
 /** Until `cond` holds: a bounded wait on the outcome, generous for a loaded machine (the watch can drop an event; the
  *  registry's catch-up look reads the change anyway, within its interval). */
 async function until(cond: () => boolean, what: string, ms = 30_000): Promise<void> {
@@ -40,33 +40,33 @@ async function until(cond: () => boolean, what: string, ms = 30_000): Promise<vo
   throw new Error(`never: ${what}`);
 }
 
-function context(cloverHome: string, bot: string): BotSessionContext & { bot: EffectiveBot } {
+function context(mossHome: string, bot: string): BotSessionContext & { bot: EffectiveBot } {
   const b: EffectiveBot = { id: bot, name: bot, instructions: `You are ${bot}.`, model: "winter-test/calls", modelFrom: "user", userLayer: [] };
   return {
-    bot: b, botId: bot, sessionId: `b_${bot}`, kind: "bot", computer: "Studio", paths: botPaths(cloverHome, bot),
+    bot: b, botId: bot, sessionId: `b_${bot}`, kind: "bot", computer: "Studio", paths: botPaths(mossHome, bot),
     caller: { kind: "session", sessionId: `b_${bot}`, sessionKind: "bot", bot },
     current: () => b, memoryBlock: () => "<memory>\nnothing yet\n</memory>", mayAct: () => true, whenMayAct: async () => {}, cacheCold: () => false,
   };
 }
 
 darwinTest("a bot moves its plugin in with its shell: found, its card names it, nothing runs; after the OK it edits it in place; nothing else opens", async () => {
-  const userHome = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-drop-e2e-")));
+  const userHome = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-drop-e2e-")));
   temps.push(userHome);
-  const cloverHome = join(userHome, ".clover");
-  const pluginsDir = join(cloverHome, "plugins");
+  const mossHome = join(userHome, ".moss");
+  const pluginsDir = join(mossHome, "plugins");
   // Another plugin already there (the user's), and Alpha's plugin built in her scratch.
   mkdirSync(join(pluginsDir, "fish-audio"), { recursive: true });
-  writeFileSync(join(pluginsDir, "fish-audio", "clover.json"), manifest("fish-audio"));
-  const scratch = botPaths(cloverHome, "alpha").scratch;
+  writeFileSync(join(pluginsDir, "fish-audio", "moss.json"), manifest("fish-audio"));
+  const scratch = botPaths(mossHome, "alpha").scratch;
   mkdirSync(join(scratch, "ws-greeter", "host"), { recursive: true });
-  writeFileSync(join(scratch, "ws-greeter", "clover.json"), manifest("ws-greeter"));
+  writeFileSync(join(scratch, "ws-greeter", "moss.json"), manifest("ws-greeter"));
   writeFileSync(join(scratch, "ws-greeter", "host", "index.ts"), "export const hello = 1;\n");
-  mkdirSync(botPaths(cloverHome, "luna").scratch, { recursive: true });
+  mkdirSync(botPaths(mossHome, "luna").scratch, { recursive: true });
 
   // The registry, watching the plugins folder, with the cards it raises.
   const raised: { id: string; card: string; treeHash: string; answered: (a: { approved: boolean }) => void }[] = [];
   const cards: OkCardRaiser = { raise: (req, answered) => { const card = `card_${raised.length + 1}`; raised.push({ id: req.id, card, treeHash: req.treeHash, answered }); return card; } };
-  const store = fileRegistryStore(join(cloverHome, "plugins-state"));
+  const store = fileRegistryStore(join(mossHome, "plugins-state"));
   let folders!: PluginFolders;
   const core = new RegistryCore({ catalog: catalogPointDecl, store, cards, onOk: (id, hash) => folders.okGiven(id, hash) });
   folders = new PluginFolders({ core, store, pluginsDir, settleMs: 300, catchUpMs: 500 });
@@ -75,17 +75,17 @@ darwinTest("a bot moves its plugin in with its shell: found, its card names it, 
   folders.start();
   closers.push(() => folders.stop());
   // The fence follows the records and the bots' pending drops; the embedded host opens the bots' plugins.
-  const fence = new CloverFence({ home: userHome, cloverHome, temp: join(userHome, "fence-temp") });
+  const fence = new MossFence({ home: userHome, mossHome, temp: join(userHome, "fence-temp") });
   closers.push(fence.followWorkshop(core, { pending: (bot) => folders.pendingDrops(bot) }));
   const workshopFolders = () => [...core.list().filter((r) => r.provenance.by === "bot").map((r) => r.folder), ...folders.pendingDrops().map((n) => join(pluginsDir, n))];
-  const host: EmbeddedSessionHost = createEmbeddedSessionHost({ home: cloverHome, workshopFolders });
+  const host: EmbeddedSessionHost = createEmbeddedSessionHost({ home: mossHome, workshopFolders });
   closers.push(() => host.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS));
   const allow: BotDriverDeps["canUseTool"] = () => async (_n, input) => ({ behavior: "allow", updatedInput: input as Record<string, unknown> });
   const driverFor = (bot: string) => {
-    const d = new BotSessionDriver(context(cloverHome, bot), {
-      home: cloverHome, spawn: (o) => host.spawn(o), canUseTool: allow, stopGraceMs: 5_000, log: () => {},
-      sandbox: (ctx) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { cloverHome: fence.cloverHome, userHome: fence.home, level: undefined, ownFolders: [ctx.paths.scratch, ctx.paths.root], pathFolders: [] }),
-      fileFence: botFileFence(fence, fence.cloverHome, "macos", userHome),
+    const d = new BotSessionDriver(context(mossHome, bot), {
+      home: mossHome, spawn: (o) => host.spawn(o), canUseTool: allow, stopGraceMs: 5_000, log: () => {},
+      sandbox: (ctx) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { mossHome: fence.mossHome, userHome: fence.home, level: undefined, ownFolders: [ctx.paths.scratch, ctx.paths.root], pathFolders: [] }),
+      fileFence: botFileFence(fence, fence.mossHome, "macos", userHome),
       pluginDrops: { folder: pluginsDir, dropped: (name, b) => void folders.dropped(name, b) },
     });
     closers.push(() => d.stop());
@@ -98,7 +98,7 @@ darwinTest("a bot moves its plugin in with its shell: found, its card names it, 
   // 1. Alpha's shell moves it in.
   const mv = await alpha.turn(user(`CALL Bash ${JSON.stringify({ command: `mv ${JSON.stringify(join(scratch, "ws-greeter"))} ${JSON.stringify(pluginsDir)}/`, description: "install by moving" })}`), control());
   expect(results(mv).find((r) => r.name === "Bash")?.content ?? "").not.toContain("Operation not permitted");
-  expect(existsSync(join(pluginsDir, "ws-greeter", "clover.json"))).toBe(true);
+  expect(existsSync(join(pluginsDir, "ws-greeter", "moss.json"))).toBe(true);
   await until(() => raised.some((r) => r.id === "ws-greeter"), "ws-greeter's card");
   expect(core.get("ws-greeter")).toMatchObject({ state: "found", provenance: { by: "bot", bot: "alpha" } });
   expect(folders.okText("ws-greeter", "macos").source).toContain("Built by Alpha");
@@ -129,7 +129,7 @@ darwinTest("a bot moves its plugin in with its shell: found, its card names it, 
 
   // 4. A background command that makes a folder after its call returned: nobody's, the ordinary found card.
   mkdirSync(join(scratch, "late-tool"), { recursive: true });
-  writeFileSync(join(scratch, "late-tool", "clover.json"), manifest("late-tool"));
+  writeFileSync(join(scratch, "late-tool", "moss.json"), manifest("late-tool"));
   await alpha.turn(user(`CALL Bash ${JSON.stringify({ command: `(sleep 2; mv ${JSON.stringify(join(scratch, "late-tool"))} ${JSON.stringify(pluginsDir)}/) > /dev/null 2>&1 &`, description: "later" })}`), control());
   await until(() => raised.some((r) => r.id === "late-tool"), "late-tool's card");
   expect(core.get("late-tool")!.provenance).toMatchObject({ by: "found" });

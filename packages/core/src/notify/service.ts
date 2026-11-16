@@ -11,18 +11,18 @@
 //      counted together; one past that is refused, with when to try again;
 //   4. then every active `notifiers` entry is handed a `notification` update: the title and body (cut to 120 and 400
 //      characters, on one line), and the sender as the registry knows it (its id, its manifest's name, whether it is
-//      the bundled `clover` tree's), never as the plugin said. The plugin's `session` isn't taken: no plugin names
+//      the bundled `moss` tree's), never as the plugin said. The plugin's `session` isn't taken: no plugin names
 //      where a click goes.
 // * **The notifiers** are called one update at a time each; while one's `notify` runs, a newer update replaces the
 //   one waiting (`NotifierUpdate.seq`), so a notifier may see gaps and always ends on the latest.
-// * **The desktop door** (`PluginApi.desktop`, the bundled `clover` tree's process only: the router refuses it to any
+// * **The desktop door** (`PluginApi.desktop`, the bundled `moss` tree's process only: the router refuses it to any
 //   other plugin) sends `app.notify` and `app.notify.close` to this computer's app. Its banners have no buttons: a
 //   click only brings the app forward. A banner shown for a plugin's notification is closed when a card arrives, and
 //   none is shown while one waits. Ids are kept apart per notifier plugin.
 //
 // * **The core's own updates** (`core`, fed by `core-updates.ts`): a bot's message (a turn it ended that the user didn't
 //   start), a card or a question that now waits, an agent that finished, go to the same notifiers as `kind` updates from
-//   sender `clover`, with the bot and session and no words. No mute, rate or waiting-card rule applies to them (a card's
+//   sender `moss`, with the bot and session and no words. No mute, rate or waiting-card rule applies to them (a card's
 //   own notice above all); `unseen` is how many of them this bot has put up since the user last answered in it.
 //
 // What it doesn't do yet (named in the capability matrix): a routine's result (`routine-result`) doesn't reach the
@@ -30,8 +30,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { NOTIFY_PER_HOUR, NOTIFY_PER_MINUTE, type NotifierUpdate } from "@waifucave/clover-plugin-sdk";
-import { APP_METHODS, topPluginIdOf } from "@waifucave/clover-protocol";
+import { NOTIFY_PER_HOUR, NOTIFY_PER_MINUTE, type NotifierUpdate } from "@waifucave/moss-plugin-sdk";
+import { APP_METHODS, topPluginIdOf } from "@waifucave/moss-protocol";
 import { handler, type MethodHandler } from "../rpc/handler";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
@@ -69,9 +69,9 @@ export function notifyMutesFile(home: string): string {
   return join(home, "settings", "notifications.json");
 }
 
-/** The plugins no mute reaches: the bundled `clover` tree and its children, Clover's own (the controller's ruling; lane
+/** The plugins no mute reaches: the bundled `moss` tree and its children, MOSS's own (the controller's ruling; lane
  *  B's door refuses the same). A bundled bot (`alpha`) is muted like any plugin: its `notify.send` notices are a bot's. */
-export const UNMUTABLE_TOP_IDS: readonly string[] = ["clover"];
+export const UNMUTABLE_TOP_IDS: readonly string[] = ["moss"];
 export const unmutable = (pluginId: string): boolean => UNMUTABLE_TOP_IDS.includes(topPluginIdOf(pluginId));
 
 export function readNotifyMutes(home: string): string[] {
@@ -105,7 +105,7 @@ export function notifyMuteMethods(o: { home: string }): Record<string, MethodHan
     [M.notifyMutes.name]: handler(M.notifyMutes, (_p, ctx) => (userOnly(ctx), { muted: readNotifyMutes(o.home) })),
     [M.notifySetMuted.name]: handler(M.notifySetMuted, ({ pluginId, muted }, ctx) => {
       userOnly(ctx);
-      if (unmutable(pluginId)) throw new ContractError("refused", `${pluginId} is part of Clover itself, whose notices can't be muted`);
+      if (unmutable(pluginId)) throw new ContractError("refused", `${pluginId} is part of MOSS itself, whose notices can't be muted`);
       writeNotifyMute(o.home, pluginId, muted);
       return { ok: true as const };
     }),
@@ -183,8 +183,8 @@ export class NotifyService {
     if (typeof n.title !== "string" || n.title.trim() === "") throw new ContractError("invalid", "notify.send needs a title");
     if (n.body !== undefined && typeof n.body !== "string") throw new ContractError("invalid", "a notification's body is text");
     const top = topPluginIdOf(pluginId);
-    // A plugin's mute is a plugin's alone: Clover's own notices (an approval card's above all) are never subject to one,
-    // and the bundled `clover` tree can't be muted (`unmutable`). Whoever routes the core's own updates
+    // A plugin's mute is a plugin's alone: MOSS's own notices (an approval card's above all) are never subject to one,
+    // and the bundled `moss` tree can't be muted (`unmutable`). Whoever routes the core's own updates
     // through the notifiers keeps them out of this check.
     const mutes = this.muted();
     if (mutes.includes(pluginId) || mutes.includes(top)) throw new ContractError("refused", `${pluginId}'s notifications are muted in Settings`);
@@ -205,13 +205,13 @@ export class NotifyService {
     const update: NotifierUpdate = {
       seq: ++this.#seq, kind: "notification", unseen: 0, at: now,
       notification: { title: notifyLine(n.title, NOTIFY_TITLE_MAX), ...(typeof n.body === "string" && notifyLine(n.body, NOTIFY_BODY_MAX) !== "" ? { body: notifyLine(n.body, NOTIFY_BODY_MAX) } : {}) },
-      sender: { pluginId, name, bundled: top === "clover" && record?.source === "bundled" },
+      sender: { pluginId, name, bundled: top === "moss" && record?.source === "bundled" },
     };
     this.#dispatch(update);
     return { ok: true };
   }
 
-  /** The core's own update for the notifiers (never a plugin's: the sender is Clover's, and no mute or rate holds it back).
+  /** The core's own update for the notifiers (never a plugin's: the sender is MOSS's, and no mute or rate holds it back).
    *  `unseen` counts this bot's updates since `answered(bot)`. */
   core(u: { kind: Exclude<NotifierUpdate["kind"], "notification">; bot?: string; session?: string; failed?: boolean }): void {
     const bot = u.bot ?? "";
@@ -221,7 +221,7 @@ export class NotifyService {
       seq: ++this.#seq, kind: u.kind, unseen, at: this.#o.clock.now(),
       ...(u.bot === undefined ? {} : { bot: u.bot }), ...(u.session === undefined ? {} : { session: u.session }),
       ...(u.failed === undefined ? {} : { failed: u.failed }),
-      sender: { pluginId: "clover", name: "Clover", bundled: true },
+      sender: { pluginId: "moss", name: "MOSS", bundled: true },
     });
   }
 
@@ -285,11 +285,11 @@ export class NotifyService {
     return `${pluginId}:${id}`.slice(0, 128);
   }
 
-  /** Whether `pluginId` may use the desktop door: the bundled `clover` tree's own process (the router's `where`) and a
+  /** Whether `pluginId` may use the desktop door: the bundled `moss` tree's own process (the router's `where`) and a
    *  plugin of that tree that contributes an active `notifiers` entry itself, never any other child of the tree (the
    *  model plugins, the web plugin, the rest share its process). */
   #isNotifier(ctx: { pluginId: string; process: string }): boolean {
-    if (ctx.process !== "clover" || topPluginIdOf(ctx.pluginId) !== "clover") return false;
+    if (ctx.process !== "moss" || topPluginIdOf(ctx.pluginId) !== "moss") return false;
     return this.#o.registry.entries("notifiers").some((e) => e.pluginId === ctx.pluginId && e.state === "active");
   }
 

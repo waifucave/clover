@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { compareVersions, IndexSchema, parseVersion, type IndexFile } from "@waifucave/clover-plugin-sdk";
+import { compareVersions, IndexSchema, parseVersion, type IndexFile } from "@waifucave/moss-plugin-sdk";
 import { ContractError } from "../../contracts/common";
 import { pinnedFetch, type PlatformFetch } from "../../plugin-host/pinned-fetch";
 import { emptyIndexesState, type IndexesStateFile, type LeftByRecord, type RegistryStore } from "../state";
@@ -212,7 +212,7 @@ export class IndexClient {
       throw new Error("it isn't JSON");
     }
     const r = IndexSchema.safeParse(parsed);
-    if (!r.success) throw new Error(`it isn't a plugin index Clover reads (${r.error.issues[0]?.message ?? "invalid"})`);
+    if (!r.success) throw new Error(`it isn't a plugin index MOSS reads (${r.error.issues[0]?.message ?? "invalid"})`);
     return r.data;
   }
 

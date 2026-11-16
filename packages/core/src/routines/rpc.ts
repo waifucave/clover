@@ -1,7 +1,7 @@
 // Lane D's routine methods (protocol sessions area): `routine.list`, `routine.runs`, `routine.runNow` and
 // `routine.webhookKey` (the user's only: a webhook key is shown once, then only a rotated one). Owner: lane D.
 // The list is this computer's routines; lane H's sync makes it the synced list every device shows (§8.5).
-import { SESSIONS_METHODS } from "@waifucave/clover-protocol";
+import { SESSIONS_METHODS } from "@waifucave/moss-protocol";
 import { handler, requireUser, type MethodHandler } from "../bots/rpc";
 import type { RoutineEngine } from "./engine";
 

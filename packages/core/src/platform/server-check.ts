@@ -1,7 +1,7 @@
 // Who serves this home's endpoint, checked before a client sends its token (E-M1's review; review S2, S3). E's
-// app is Electron, with no FFI, so it runs `clover-core daemon check-server --json --image <daemon binary>` (the
+// app is Electron, with no FFI, so it runs `moss-core daemon check-server --json --image <daemon binary>` (the
 // binary it already runs for `autostart`) and says hello only when it answers ok; then, on its own connection,
-// `protocol.prove` (ipc/clover.ts), which no other connection's answer can stand in for.
+// `protocol.prove` (ipc/moss.ts), which no other connection's answer can stand in for.
 // On every OS the check connects and asks the OS for the server's process, then requires:
 //   - its user is this user (macOS `getpeereid`, Linux `SO_PEERCRED`, Windows the server's token SID);
 //   - its executable is `image`, the daemon's binary;

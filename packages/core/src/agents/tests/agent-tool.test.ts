@@ -15,8 +15,8 @@ import { UserSelections } from "../acp/selections";
 import { MAX_OPEN_ASKS } from "../acp/session";
 import { secretReadPlaces } from "../../contracts/fence";
 import { AcpAgentBackend } from "../backend";
-import { bridgeCloverParts } from "../bridge/handlers";
-import { serveClover } from "../testing/clover-endpoint";
+import { bridgeMossParts } from "../bridge/handlers";
+import { serveMoss } from "../testing/moss-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import { AgentManager } from "../manager";
@@ -64,15 +64,15 @@ describe("Agent", () => {
     expect(n).toEqual({ from: "task-notification", agent: r.sessionId, backend: "fake", stopReason: "end_turn", text: "All 12 tests pass.", transcript: r.transcript });
 
     // The agent was handed the bridge as its one MCP server, and its essentials in the first prompt.
-    // Its name is `clover_` and a random suffix, new for each session (review 14).
-    expect(w.report("session")[0]).toMatchObject({ how: "new", servers: [expect.stringMatching(/^clover_[0-9a-f]{16}$/)], cwd: w.project });
+    // Its name is `moss_` and a random suffix, new for each session (review 14).
+    expect(w.report("session")[0]).toMatchObject({ how: "new", servers: [expect.stringMatching(/^moss_[0-9a-f]{16}$/)], cwd: w.project });
     expect(String(w.report("prompt")[0]!["text"])).toContain("SendMessage");
     expect(String(w.report("prompt")[0]!["text"])).toEndWith("Fix the tests.");
-    // Its environment came from the allow-list: nothing of Clover's.
-    expect((w.report("started")[0]!["env"] as string[]).filter((n) => /^CLOVER_/.test(n))).toEqual([]);
+    // Its environment came from the allow-list: nothing of MOSS's.
+    expect((w.report("started")[0]!["env"] as string[]).filter((n) => /^MOSS_/.test(n))).toEqual([]);
 
-    // The transcript: the wire with the token redacted, Clover's own record, and who the agent is.
-    const dir = join(w.cloverHome, "bots", "alpha", "agents", r.sessionId);
+    // The transcript: the wire with the token redacted, MOSS's own record, and who the agent is.
+    const dir = join(w.mossHome, "bots", "alpha", "agents", r.sessionId);
     const wire = readFileSync(join(dir, "acp.ndjson"), "utf8");
     expect(wire).toContain(REDACTED_TOKEN);
     expect(wire).toContain("session/prompt");
@@ -80,7 +80,7 @@ describe("Agent", () => {
     expect(calls).toMatchObject([{ type: "permission", toolKind: "execute", allowed: true, by: "level" }]);
     expect(JSON.parse(readFileSync(join(dir, "agent.json"), "utf8"))).toMatchObject({ backend: "fake", agentSessionId: "fake-session-1", root: "home/Studio/project1" });
     // The daemon's own record, in the fenced run folder, is what a reattach trusts.
-    expect(readAgentRecord(w.cloverHome, r.sessionId)).toMatchObject({ backend: "fake", bot: "alpha", parent: "s_alpha", root: "home/Studio/project1", agentSessionId: "fake-session-1" });
+    expect(readAgentRecord(w.mossHome, r.sessionId)).toMatchObject({ backend: "fake", bot: "alpha", parent: "s_alpha", root: "home/Studio/project1", agentSessionId: "fake-session-1" });
     // The live transcript is the session's own log.
     const log = w.host.history(r.sessionId).filter((x) => x.type === "driver").map((x) => (x as { event: { type: string } }).event.type);
     expect(log).toEqual(expect.arrayContaining(["agent_started", "agent_text", "agent_tool_call", "agent_tool_call_update"]));
@@ -91,8 +91,8 @@ describe("Agent", () => {
     const w = make({ script: [[{ say: "Done." }]] });
     const r = await w.delegate("Fix the tests.", { definition: { pluginId: "alpha", id: "study-buddy" } });
     expect(w.host.get(r.sessionId)).toMatchObject({ kind: "agent", definition: "alpha:study-buddy" });
-    expect(readAgentRecord(w.cloverHome, r.sessionId)).toMatchObject({ definition: "alpha:study-buddy" });
-    const dir = join(w.cloverHome, "bots", "alpha", "agents", r.sessionId);
+    expect(readAgentRecord(w.mossHome, r.sessionId)).toMatchObject({ definition: "alpha:study-buddy" });
+    const dir = join(w.mossHome, "bots", "alpha", "agents", r.sessionId);
     expect(JSON.parse(readFileSync(join(dir, "agent.json"), "utf8"))).toMatchObject({ definition: "alpha:study-buddy" });
     // One with no definition says none.
     const plain = await w.delegate("Again.", { root: "home/Studio/project1" });
@@ -110,7 +110,7 @@ describe("Agent", () => {
     expect(w.parentInputs("agent").map((x) => x.input)).toEqual([{ from: "agent", agent: r.sessionId, text: "Halfway: 6 of 12 fixed." }]);
     expect(w.report("mcp-result").map((x) => x["text"])).toEqual(["Sent.", JSON.stringify({ results: [], loaded: [] }, null, 2)]);
     expect(w.approvals.cards()).toEqual([]);
-    const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
+    const calls = readFileSync(join(w.mossHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
     expect(calls.trim().split("\n").map((l) => (JSON.parse(l) as { by: string }).by)).toEqual(["bridge", "bridge"]);
     // An agent's SendMessage to its own session is refused, as lane D's is (review 13).
     expect(isContractError(await w.manager.agentMessage(r.sessionId, "me?", r.sessionId).catch((e: unknown) => e), "refused")).toBe(true);
@@ -149,7 +149,7 @@ describe("Agent", () => {
     expect(w.approvals.rules()).toEqual([]);
   });
 
-  test("the user's own coding session still offers always, as Clover's own rule", async () => {
+  test("the user's own coding session still offers always, as MOSS's own rule", async () => {
     const w = make({ quirks: S5_CURSOR_QUIRKS, level: "ask", script: [[{ tool: { kind: "execute", title: "`make`", rawInput: { command: "make" } } }, { say: "Built." }]] });
     await w.manager.start({ caller: { kind: "user", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() }, backend: "fake", prompt: "Build it.", root: "home/Studio/project1" });
     const card = await waitFor(() => w.approvals.cards()[0], "a card");
@@ -185,7 +185,7 @@ describe("Agent", () => {
   test("a bot no one had when the agent started is covered too: the whole home is denied, and a request into it is refused", async () => {
     const w = make({ script: [[{ tool: { kind: "edit", title: "Edit notes", paths: [] } }, { say: "Done." }]] });
     // `latecomer` has no folder at the start; the home's denial and the request check still hold.
-    const late = join(w.cloverHome, "bots", "latecomer", "memory", "MEMORY.md");
+    const late = join(w.mossHome, "bots", "latecomer", "memory", "MEMORY.md");
     const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
     script.script[0]![0]!.tool.paths = [late];
     await Bun.write(w.agent.config, JSON.stringify(script));
@@ -194,8 +194,8 @@ describe("Agent", () => {
     w.backend.start = async (spec) => ((fence = spec.fence), start(spec));
     await w.delegate();
     expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("end_turn");
-    expect(fence!.denyRead).toContain(w.cloverHome);
-    expect(fence!.denyWrite).toContain(w.cloverHome);
+    expect(fence!.denyRead).toContain(w.mossHome);
+    expect(fence!.denyWrite).toContain(w.mossHome);
     expect(w.approvals.cards()).toEqual([]);
     expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
     // A bot's own Bash may work in its own memory (`ownMemory`); an agent's policy never carries it.
@@ -205,7 +205,7 @@ describe("Agent", () => {
   test("an agent never gets a bot's own memory: a policy that carries ownMemory is refused and the agent doesn't start", async () => {
     const w = make({ script: [[{ say: "never" }]] });
     const policy = w.fence.policy.bind(w.fence);
-    w.fence.policy = () => ({ ...policy(), ownMemory: join(w.cloverHome, "bots", "alpha", "memory") }) as ReturnType<typeof policy>;
+    w.fence.policy = () => ({ ...policy(), ownMemory: join(w.mossHome, "bots", "alpha", "memory") }) as ReturnType<typeof policy>;
     const r = await w.delegate();
     // The start fails at its first turn: the bot is told, and no agent process ever ran.
     const n = await waitFor(() => notification(w), "the notification");
@@ -218,7 +218,7 @@ describe("Agent", () => {
   test("an agent never gets a bot's open access (botAccess, the owner's ruling of November 9): refused, the agent doesn't start", async () => {
     const w = make({ script: [[{ say: "never" }]] });
     const policy = w.fence.policy.bind(w.fence);
-    w.fence.policy = () => ({ ...policy(), botAccess: { home: w.cloverHome, scratch: join(w.cloverHome, "scratch"), bots: join(w.cloverHome, "bots") } }) as ReturnType<typeof policy>;
+    w.fence.policy = () => ({ ...policy(), botAccess: { home: w.mossHome, scratch: join(w.mossHome, "scratch"), bots: join(w.mossHome, "bots") } }) as ReturnType<typeof policy>;
     const r = await w.delegate();
     const n = await waitFor(() => notification(w), "the notification");
     expect(n.stopReason).not.toBe("end_turn");
@@ -230,8 +230,8 @@ describe("Agent", () => {
   test("bots' memory is out of every agent's reach: denied to its sandbox, and a request into it refused without a card", async () => {
     const w = make({ script: [[{ tool: { kind: "read", title: "Read notes", paths: [] } }, { say: "Done." }]] });
     // Another bot's memory, under a folded name, and the delegating bot's own (which it doesn't have yet).
-    const other = join(w.cloverHome, "bots", "beta", "Memory", "notes.md");
-    mkdirSync(join(w.cloverHome, "bots", "beta", "Memory"), { recursive: true });
+    const other = join(w.mossHome, "bots", "beta", "Memory", "notes.md");
+    mkdirSync(join(w.mossHome, "bots", "beta", "Memory"), { recursive: true });
     const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
     script.script[0]![0]!.tool.paths = [other];
     await Bun.write(w.agent.config, JSON.stringify(script));
@@ -242,10 +242,10 @@ describe("Agent", () => {
     expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("end_turn");
     expect(w.approvals.cards()).toEqual([]);
     expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
-    const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
-    expect(calls).toContain('"by":"clover-home"');
-    expect(fence!.denyRead).toContain(w.cloverHome);
-    expect(fence!.denyWrite).toContain(w.cloverHome);
+    const calls = readFileSync(join(w.mossHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
+    expect(calls).toContain('"by":"moss-home"');
+    expect(fence!.denyRead).toContain(w.mossHome);
+    expect(fence!.denyWrite).toContain(w.mossHome);
   });
 
   test("the user's secret places are out of every agent's reads: a read of ~/.aws/credentials is refused without a card, even at automatic", async () => {
@@ -270,15 +270,15 @@ describe("Agent", () => {
     // Its own sandbox holds them too: what it reads by itself, never asking.
     expect(fence!.denyRead).toContain(join(w.userHome, ".aws"));
     expect(fence!.denyWrite).toContain(join(w.userHome, ".ssh"));
-    const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
+    const calls = readFileSync(join(w.mossHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
     expect(calls).toContain('"by":"secret-place"');
   });
 
   test("a request touching a fenced path outside the home is a card even at automatic; one into the home is refused", async () => {
     const w = make({ script: [[{ tool: { kind: "edit", title: "Edit settings", paths: [] } }, { tool: { kind: "edit", title: "Edit tools", paths: [] } }]] });
     // The paths are only known once the world exists: the script is rewritten with them. A development folder is a
-    // fenced item outside the Clover home.
-    const settings = join(w.cloverHome, "settings");
+    // fenced item outside the MOSS home.
+    const settings = join(w.mossHome, "settings");
     const dev = join(w.userHome, "dev-tools");
     mkdirSync(dev, { recursive: true });
     w.fence.addDevFolder(dev);
@@ -296,7 +296,7 @@ describe("Agent", () => {
     expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("stopped");
   });
 
-  test("the root folder: Clover's own home is refused, other computers and unknown backends too", async () => {
+  test("the root folder: MOSS's own home is refused, other computers and unknown backends too", async () => {
     const w = make();
     const err = (p: Promise<unknown>) => p.then(() => undefined, (e: unknown) => e);
     expect(isContractError(await err(w.delegate("x", { root: "home/Studio" })), "fenced")).toBe(true);
@@ -365,7 +365,7 @@ describe("the bot keeps control", () => {
     expect((await taskStop!.run({ id: "agent_nope" })).isError).toBe(true);
   });
 
-  test("TaskStop passes a task id that names none of Clover's agents on to the runtime's own TaskStop", async () => {
+  test("TaskStop passes a task id that names none of MOSS's agents on to the runtime's own TaskStop", async () => {
     const w = make({ script: [[{ wait: true }]] });
     const passed: string[] = [];
     const stopRuntimeTask = async (taskId: string) => {
@@ -505,13 +505,13 @@ describe("models and sessions", () => {
     await waitFor(() => host2.history("s_alpha").some((x) => x.type === "input" && x.input.from === "task-notification"), "the second notification");
     expect(w.report("session").map((x) => [x["how"], x["sessionId"]])).toEqual([["new", "fake-session-1"], ["load", "fake-session-1"]]);
     expect(w.report("session")[1]!["replayed"]).toBe(2);
-    const wire = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "acp.ndjson"), "utf8");
+    const wire = readFileSync(join(w.mossHome, "bots", "alpha", "agents", r.sessionId, "acp.ndjson"), "utf8");
     expect(wire).not.toContain("replay-0-");
     expect(wire).not.toContain("old reply");
     expect(tokens2.has(r.sessionId)).toBe(true);
     await host2.stop(r.sessionId);
     // A session that ended has no record left to reattach from.
-    expect(readAgentRecord(w.cloverHome, r.sessionId)).toBeUndefined();
+    expect(readAgentRecord(w.mossHome, r.sessionId)).toBeUndefined();
   });
 
   test("a reattach trusts the host and the daemon's record, never the bot's own agent.json (review 1, the E4 probe)", async () => {
@@ -519,9 +519,9 @@ describe("models and sessions", () => {
     const r = await w.delegate();
     await waitFor(() => notification(w), "the first notification");
     const view = w.host.get(r.sessionId)!;
-    // The bot rewrites agent.json in its own folder: the Clover home as the root, a raised level, another bot.
-    const file = join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "agent.json");
-    const forged = { ...(JSON.parse(readFileSync(file, "utf8")) as object), root: "home/Studio/.clover", rootPath: w.cloverHome, level: "automatic", bot: "beta", backend: "other" };
+    // The bot rewrites agent.json in its own folder: the MOSS home as the root, a raised level, another bot.
+    const file = join(w.mossHome, "bots", "alpha", "agents", r.sessionId, "agent.json");
+    const forged = { ...(JSON.parse(readFileSync(file, "utf8")) as object), root: "home/Studio/.moss", rootPath: w.mossHome, level: "automatic", bot: "beta", backend: "other" };
     writeFileSync(file, JSON.stringify(forged));
     // The agent's next process plays this turn: an edit of a file named relative to its root.
     const config = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: unknown[][] };
@@ -543,9 +543,9 @@ describe("models and sessions", () => {
     const r = await w.delegate();
     await waitFor(() => notification(w), "the first notification");
     const view = w.host.get(r.sessionId)!;
-    expect(readAgentRecord(w.cloverHome, r.sessionId)).toMatchObject({ backend: "fake", pluginId: "clover/agent-fake" });
+    expect(readAgentRecord(w.mossHome, r.sessionId)).toMatchObject({ backend: "fake", pluginId: "moss/agent-fake" });
     const started = w.report("started").length;
-    // Clover's own plugin is off and a third party's holds the id now.
+    // MOSS's own plugin is off and a third party's holds the id now.
     const { m2, host2 } = await restart(w, WELL_BEHAVED_QUIRKS, "someone/agents");
     host2.open({ id: r.sessionId, kind: "agent", bot: "alpha", parent: "s_alpha", computer: "Studio", backend: "fake", root: view.root! }, new FakeSessionDriver());
     expect(m2.reattach({ ...view, status: "idle" })).toBe(false);
@@ -555,20 +555,20 @@ describe("models and sessions", () => {
     expect(w.report("started")).toHaveLength(started);
   });
 
-  test("a record from before the plugin was kept reattaches only to Clover's own backend, and keeps it from then on", async () => {
+  test("a record from before the plugin was kept reattaches only to MOSS's own backend, and keeps it from then on", async () => {
     for (const bundled of [true, false]) {
       const w = make({ script: [[{ say: "first done" }]] });
       const r = await w.delegate();
       await waitFor(() => notification(w), "the first notification");
       const view = w.host.get(r.sessionId)!;
       // The record as an older daemon wrote it: no plugin.
-      const file = join(w.cloverHome, "run", "agents", `${r.sessionId}.json`);
+      const file = join(w.mossHome, "run", "agents", `${r.sessionId}.json`);
       const { pluginId: _p, ...old } = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
       writeFileSync(file, JSON.stringify(old));
-      const { m2 } = await restart(w, WELL_BEHAVED_QUIRKS, bundled ? "clover/agent-fake" : "someone/agents", bundled);
+      const { m2 } = await restart(w, WELL_BEHAVED_QUIRKS, bundled ? "moss/agent-fake" : "someone/agents", bundled);
       expect([bundled, m2.reattach({ ...view, status: "idle" })]).toEqual([bundled, bundled]);
-      if (bundled) expect(readAgentRecord(w.cloverHome, r.sessionId)).toMatchObject({ pluginId: "clover/agent-fake" });
-      else expect(readAgentRecord(w.cloverHome, r.sessionId)?.pluginId).toBeUndefined();
+      if (bundled) expect(readAgentRecord(w.mossHome, r.sessionId)).toMatchObject({ pluginId: "moss/agent-fake" });
+      else expect(readAgentRecord(w.mossHome, r.sessionId)?.pluginId).toBeUndefined();
       for (const f of afterRestart.splice(0)) await f();
       await w.close();
     }
@@ -583,14 +583,14 @@ describe("models and sessions", () => {
     expect(m2.reattach({ ...view, status: "idle", root: "home/Studio" })).toBe(false);
     expect(m2.reattach({ ...view, status: "idle", parent: "s_other" })).toBe(false);
     expect(m2.reattach({ ...view, status: "stopped" })).toBe(false);
-    rmSync(join(w.cloverHome, "run", "agents", `${r.sessionId}.json`));
+    rmSync(join(w.mossHome, "run", "agents", `${r.sessionId}.json`));
     expect(m2.reattach({ ...view, status: "idle" })).toBe(false);
   });
 });
 
 /** The daemon closes (every agent's process ends, its records stay) and a new one starts: a new host restored the
  *  bot's session (a fresh fake here), new tokens, a new manager. */
-async function restart(w: World, quirks: AgentQuirks, pluginId = "clover/agent-fake", bundled = false) {
+async function restart(w: World, quirks: AgentQuirks, pluginId = "moss/agent-fake", bundled = false) {
   await w.manager.close();
   expect(w.tokens.has(w.host.list({ kind: "agent" })[0]?.id ?? "")).toBe(false);
   const host2 = new FakeSessionHost({ clock: w.clock, approvals: w.approvals });
@@ -603,12 +603,12 @@ async function restart(w: World, quirks: AgentQuirks, pluginId = "clover/agent-f
     admissions: fakeAdmissions("protected"),
   });
   m2 = new AgentManager({
-    home: w.cloverHome, computer: "Studio", host: host2, approvals: w.approvals, tree: w.tree, fence: w.fence, backends: () => [backend2],
+    home: w.mossHome, computer: "Studio", host: host2, approvals: w.approvals, tree: w.tree, fence: w.fence, backends: () => [backend2],
     tokens: tokens2, bridge: { ...bridgeCommand(), socketPath: w.endpoint.socketPath }, watchdog: new StallWatchdog({ clock: w.clock }), clock: w.clock,
     levelOf: () => w.level,
   });
   w.endpoint.close();
-  const ep2 = serveClover(w.endpoint.socketPath, bridgeCloverParts(tokens2, m2.bridgeHandlers()));
+  const ep2 = serveMoss(w.endpoint.socketPath, bridgeMossParts(tokens2, m2.bridgeHandlers()));
   afterRestart.push(async () => {
     await m2.close();
     ep2.close();
@@ -628,7 +628,7 @@ describe("what never runs quietly", () => {
     await w.delegate();
     const card = await waitFor(() => w.approvals.cards()[0], "the OK card");
     expect(card).toMatchObject({ kind: "change", change: "agent-unsandboxed" });
-    expect(card.fields["title"]).toEqual({ type: "text", text: "Start an agent Clover hasn't tested?" });
+    expect(card.fields["title"]).toEqual({ type: "text", text: "Start an agent MOSS hasn't tested?" });
     // Every name it gets from the environment, and every one set for it, is on the card (#233's review).
     const rows = (card.fields["detail"] as { rows: { label: string; value: unknown }[] }).rows;
     expect(JSON.stringify(rows.find((r) => r.label === "Gets from your environment"))).toContain("PATH, HOME");
@@ -637,7 +637,7 @@ describe("what never runs quietly", () => {
     const frame = w.approvals.frameChannel(card.id)!;
     await w.approvals.answer(card.id, { optionId: deny.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" });
     const n = await waitFor(() => notification(w), "the notification");
-    expect(n.text).toContain("outside the versions Clover was tested with");
+    expect(n.text).toContain("outside the versions MOSS was tested with");
     expect(w.report("started")).toEqual([]);
   });
 
@@ -669,7 +669,7 @@ describe("what never runs quietly", () => {
 describe("check 2's minors", () => {
   test("a fenced path behind 200 harmless ones is still a card at automatic, and listed first (minor 1)", async () => {
     const w = make({ script: [[{ tool: { kind: "edit", title: "Edit many files", paths: [] } }]] });
-    // A fenced item outside the Clover home (one in it is refused outright): a development folder.
+    // A fenced item outside the MOSS home (one in it is refused outright): a development folder.
     const dev = join(w.userHome, "dev-tools");
     mkdirSync(dev, { recursive: true });
     w.fence.addDevFolder(dev);
@@ -872,7 +872,7 @@ describe("K-M2 review", () => {
     expect(w.report("started").length).toBe(before + 1);
     expect(w.report("session").map((x) => x["how"])).toEqual(["new", "resume"]);
     expect(w.tokens.ageOf(r.sessionId)).toBeLessThan(60 * 60_000);
-    expect(readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8")).toContain("token-renewed");
+    expect(readFileSync(join(w.mossHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8")).toContain("token-renewed");
   });
 
   test("start refuses a program other than the one admitted (should-fix 5)", async () => {
@@ -889,7 +889,7 @@ describe("K-M2 review", () => {
 });
 
 describe("a hostile agent (review 12)", () => {
-  test("client methods Clover didn't offer are refused, and the token never reaches the session's log", async () => {
+  test("client methods MOSS didn't offer are refused, and the token never reaches the session's log", async () => {
     const w = make({ script: [[{ clientCall: { method: "fs/read_text_file", params: { path: "/etc/hosts" } } }, { clientCall: { method: "terminal/create", params: { command: "id" } } }, { sayBridgeToken: true }]] });
     const r = await w.delegate();
     const n = await waitFor(() => notification(w), "the notification");
@@ -956,14 +956,14 @@ describe("the agent's own sandbox, and the OK for one without", () => {
     const w = make({ script: [[{ wait: true }]] });
     const r = await w.delegate();
     await waitFor(() => w.report("blocked").length > 0, "the agent to block");
-    const dir = join(w.cloverHome, "run", "agents", r.sessionId);
+    const dir = join(w.mossHome, "run", "agents", r.sessionId);
     const policy = JSON.parse(readFileSync(join(dir, "policy.json"), "utf8")) as { denyWrite: string[]; denyRead: string[] };
-    // The fenced set, and the whole Clover home (the owner's decision, #208's check 2).
+    // The fenced set, and the whole MOSS home (the owner's decision, #208's check 2).
     // (#234's fence already denies the whole home to every runner, so it is there once.)
     // And the user's secret places (SECRET_READ_PLACES), for reads and writes.
     const secrets = secretReadPlaces(process.platform === "darwin" ? "macos" : "linux", w.userHome).map((x) => x.path);
-    expect(policy.denyWrite).toEqual([...new Set([...w.fence.policy().denyWrite, w.cloverHome, ...secrets])]);
-    expect(policy.denyRead).toEqual([...new Set([...w.fence.policy().denyRead, w.cloverHome, ...secrets])]);
+    expect(policy.denyWrite).toEqual([...new Set([...w.fence.policy().denyWrite, w.mossHome, ...secrets])]);
+    expect(policy.denyRead).toEqual([...new Set([...w.fence.policy().denyRead, w.mossHome, ...secrets])]);
     // The setup folder is itself fenced: no bot or agent rewrites the agent's sandbox.
     expect(w.fence.touches([join(dir, "policy.json")])?.kind).toBe("run-folder");
     expect(w.report("started")[0]!["env"]).toContain("FAKE_SANDBOX_POLICY");
@@ -973,7 +973,7 @@ describe("the agent's own sandbox, and the OK for one without", () => {
     expect(existsSync(dir)).toBe(false);
   });
 
-  test("an agent with no sandbox Clover counts on starts only after the user's OK, asked once per version and computer", async () => {
+  test("an agent with no sandbox MOSS counts on starts only after the user's OK, asked once per version and computer", async () => {
     const w = make({ sandbox: "none", script: [[{ say: "one" }]] });
     const r = await w.delegate();
     const card = await waitFor(() => w.approvals.cards()[0], "the OK card");
@@ -1024,7 +1024,7 @@ describe("the agent methods", () => {
     expect(w.host.get(session)!.parent).toBeUndefined();
     await w.host.sendUser(session, { text: "Hi", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() });
     await waitFor(() => w.host.get(session)!.status === "idle" && w.report("prompt").length === 1, "the turn");
-    expect(existsSync(join(w.cloverHome, "agents", session, "acp.ndjson"))).toBe(true);
+    expect(existsSync(join(w.mossHome, "agents", session, "acp.ndjson"))).toBe(true);
     const bot = await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1" }, { caller: { kind: "session", sessionId: "s_alpha", sessionKind: "bot" } }).catch((e: unknown) => e);
     expect(isContractError(bot, "refused")).toBe(true);
     const { backends } = (await methods["agent.backends"]!({}, user)) as { backends: { id: string; computers: { installed: boolean; version?: string; marks: string[] }[] }[] };
@@ -1054,7 +1054,7 @@ describe("the plugins' tool.before hooks on an agent's permission requests (best
     ...NO_HOOKS,
     toolBefore: async (s, tool, input) => {
       seen.push({ kind: s.kind, ...(s.bot === undefined ? {} : { bot: s.bot }), name: tool.name, input });
-      // A guard written for Clover's own Bash: it sees an agent's execute request under that name.
+      // A guard written for MOSS's own Bash: it sees an agent's execute request under that name.
       return tool.name === "Bash" && String((input as { command?: string } | undefined)?.command ?? "").includes("rm -rf") ? { deny: "a plugin's guard said no", input } : { input };
     },
   });

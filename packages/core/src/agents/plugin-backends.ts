@@ -1,5 +1,5 @@
 // The ACP backends plugins contribute (spec §5.3 `agentBackends`, the controller's alignment for K-M3): every backend is
-// a plugin's entry, the bundled ones included (`plugins/clover/plugins/agent-<id>/`), and the core keeps only the ACP
+// a plugin's entry, the bundled ones included (`plugins/moss/plugins/agent-<id>/`), and the core keeps only the ACP
 // client, the manager, the OK and the sandbox logic. An entry names its quirks file (`quirks`), a JSON file in the
 // plugin's folder holding the backend's `AgentQuirks`, its read-only mode where it acts without asking, and where the
 // row comes from. A third-party plugin adds an ACP backend the same way and goes through the same OK.
@@ -10,13 +10,13 @@
 //   checked against the descriptor's shape; a file that fails leaves that backend out, with the reason logged.
 // * The program is the entry's `command` and `args`, on every OS (what the plugin's OK covers); on Windows the PATH
 //   lookup finds its `.exe` or `.cmd`. The file holds everything else about the backend.
-// * What the core grants by backend id stays with Clover's own plugin: a sandbox admitted for `cursor` (S8) or Claude
-//   Code's placement of plugin parts applies only when the entry is the bundled `clover/agent-<id>`, so another plugin
+// * What the core grants by backend id stays with MOSS's own plugin: a sandbox admitted for `cursor` (S8) or Claude
+//   Code's placement of plugin parts applies only when the entry is the bundled `moss/agent-<id>`, so another plugin
 //   that takes the id once the bundled one is off gets neither.
-// * Ids (#233's review): the core's own backends' ids (`clover-code`, `clover`) are never a plugin's; while Clover's
-//   bundled `clover/agent-<id>` is on, no other plugin's entry takes that id; among other plugins the first claim, in
+// * Ids (#233's review): the core's own backends' ids (`moss-code`, `moss`) are never a plugin's; while MOSS's
+//   bundled `moss/agent-<id>` is on, no other plugin's entry takes that id; among other plugins the first claim, in
 //   the registry's order, wins. Every entry left out is logged.
-// * A plugin that isn't Clover's own is taken at its word for nothing that loosens: its backend counts as acting
+// * A plugin that isn't MOSS's own is taken at its word for nothing that loosens: its backend counts as acting
 //   without asking (`unasked-actions`, so at read-only it needs a declared read-only mode or doesn't start), and its
 //   `envAllow` may not name anything that looks like a secret (the daemon's environment is passed by name).
 import { readFileSync, realpathSync } from "node:fs";
@@ -25,8 +25,8 @@ import { z } from "zod";
 import type { AgentBackend, AgentQuirks } from "../contracts/agent-backend";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 
-/** The bundled plugin that holds a backend's row: `clover/agent-<id>`. */
-export const bundledAgentPluginId = (id: string): string => `clover/agent-${id}`;
+/** The bundled plugin that holds a backend's row: `moss/agent-<id>`. */
+export const bundledAgentPluginId = (id: string): string => `moss/agent-${id}`;
 
 const Strings = z.array(z.string().max(4096)).max(256);
 const Mark = z.enum(["stores-plain-text", "passes-environment", "no-deny-list", "unsandboxed", "unasked-actions", "persists-model-choice"]);
@@ -113,8 +113,8 @@ export function readQuirksFile(folder: string, path: string): QuirksFile {
   return parsed.data as QuirksFile;
 }
 
-/** The core's own backends' ids: Clover's coding agent and lane A's in-process subagents. No plugin contributes them. */
-export const RESERVED_BACKEND_IDS: ReadonlySet<string> = new Set(["clover-code", "clover"]);
+/** The core's own backends' ids: MOSS's coding agent and lane A's in-process subagents. No plugin contributes them. */
+export const RESERVED_BACKEND_IDS: ReadonlySet<string> = new Set(["moss-code", "moss"]);
 
 /** Segments of an environment name (split at `_`, any case) that mark a secret. */
 const SECRET_SEGMENTS: ReadonlySet<string> = new Set([
@@ -156,7 +156,7 @@ export interface ContributedBackend {
   id: string;
   pluginId: string;
   name: string;
-  /** The bundled `clover/agent-<id>`: what the core grants by backend id applies. */
+  /** The bundled `moss/agent-<id>`: what the core grants by backend id applies. */
   bundled: boolean;
   file: QuirksFile;
   /** The entry's program and its ACP arguments. */
@@ -187,12 +187,12 @@ export function contributedBackends(registry: Pick<PluginRegistry, "entries" | "
       continue;
     }
     if (RESERVED_BACKEND_IDS.has(id)) {
-      log?.(`agents: ${c.pluginId}'s backend ${id} isn't offered: that id is one of Clover's own backends`);
+      log?.(`agents: ${c.pluginId}'s backend ${id} isn't offered: that id is one of MOSS's own backends`);
       continue;
     }
     const bundled = c.pluginId === bundledAgentPluginId(id) && record.provenance.by === "bundled";
-    if (!bundled && /^\s*clover/i.test(v.name ?? id)) {
-      log?.(`agents: ${c.pluginId}'s backend ${id} isn't offered: only Clover's own backends are named Clover`);
+    if (!bundled && /^\s*moss/i.test(v.name ?? id)) {
+      log?.(`agents: ${c.pluginId}'s backend ${id} isn't offered: only MOSS's own backends are named MOSS`);
       continue;
     }
     if (!bundled) {
@@ -209,13 +209,13 @@ export function contributedBackends(registry: Pick<PluginRegistry, "entries" | "
     const name = bundled ? (v.name ?? id) : `${v.name ?? id} (${c.pluginId})`;
     candidates.push({ id, pluginId: c.pluginId, name, bundled, file, command, quirks: quirksWithCommand(fileQuirks, command) });
   }
-  // One entry per id: Clover's bundled one while it is on, else the first claim.
+  // One entry per id: MOSS's bundled one while it is on, else the first claim.
   const out: ContributedBackend[] = [];
   const bundledIds = new Set(candidates.filter((c) => c.bundled).map((c) => c.id));
   const taken = new Map<string, string>();
   for (const c of candidates) {
     if (bundledIds.has(c.id) && !c.bundled) {
-      log?.(`agents: ${c.pluginId}'s backend ${c.id} isn't offered: Clover's own ${bundledAgentPluginId(c.id)} has that id`);
+      log?.(`agents: ${c.pluginId}'s backend ${c.id} isn't offered: MOSS's own ${bundledAgentPluginId(c.id)} has that id`);
       continue;
     }
     const first = taken.get(c.id);

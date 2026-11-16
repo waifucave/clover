@@ -17,7 +17,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import type { HostServedAdapter, ModelProvidersOption } from "@waifucave/clover-agent-sdk";
 import { createHostModelAdapterServer, createShippedAdapters, hostServedProviderAdapter, ProviderRequestError, type HostModelAdapter, type ModelAdapterDescription, type ProviderAdapter } from "@waifucave/clover-provider-runtime";
 import { loadCatalog, type WinterCatalog } from "@waifucave/clover-provider-catalog";
@@ -47,7 +47,7 @@ export interface ModelPluginRefusalView {
 export interface ModelPluginsOptions {
   registry: PluginRegistry;
   host: PluginHost;
-  /** The Clover home: the catalog file goes in `<home>/run/models/`. */
+  /** The MOSS home: the catalog file goes in `<home>/run/models/`. */
   home: string;
   /** After each rebuild (the daemon's: `modelCatalogMaybeChanged`, which tells the sessions when what they are given
    *  moved). */

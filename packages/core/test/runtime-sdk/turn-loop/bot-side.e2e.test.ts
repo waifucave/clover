@@ -27,12 +27,12 @@ async function until(what: string, fn: () => boolean, ms = 30_000): Promise<void
 
 describeWithEmbeddedRuntime("the bot side on the bot driver", (spawn) => {
   test("a bot's SendMessage reaches another bot's conversation, which answers in a turn of its own", async () => {
-    const home = tempDir("clover-a3-side-");
-    const root = tempDir("clover-a3-plugins-");
+    const home = tempDir("moss-a3-side-");
+    const root = tempDir("moss-a3-plugins-");
     temps.push(home, root);
     const model = { default: "winter-test/calls" };
-    const luna = writePlugin(root, "luna", { "clover.json": botManifest("luna", "Luna", { model }), "bot/instructions.md": "You are Luna." });
-    const sol = writePlugin(root, "sol", { "clover.json": botManifest("sol", "Sol", { model }), "bot/instructions.md": "You are Sol." });
+    const luna = writePlugin(root, "luna", { "moss.json": botManifest("luna", "Luna", { model }), "bot/instructions.md": "You are Luna." });
+    const sol = writePlugin(root, "sol", { "moss.json": botManifest("sol", "Sol", { model }), "bot/instructions.md": "You are Sol." });
     const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [...(await pluginFromFolder(luna)).inputs, ...(await pluginFromFolder(sol)).inputs] });
     let side: BotSide | undefined;
     const drivers = botDriverFactory({

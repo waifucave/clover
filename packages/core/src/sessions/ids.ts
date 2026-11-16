@@ -1,4 +1,4 @@
-// Clover's session ids and where each session's files live (spec §6.1 "User state lives outside the plugin folder",
+// MOSS's session ids and where each session's files live (spec §6.1 "User state lives outside the plugin folder",
 // §6.3, §8.5 "Transcripts"). Owner: lane D.
 //
 // A bot's main conversation has an id that follows from the bot's id alone (`b_<segment>`), so the bot finds the same
@@ -9,7 +9,7 @@
 // this event log.
 import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { isAnyPluginId, pluginIdToSegment, type SessionKind } from "@waifucave/clover-protocol";
+import { isAnyPluginId, pluginIdToSegment, type SessionKind } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 
 /** The prefix of a minted id, per kind. A bot's main conversation is never minted: it is `mainSessionIdFor(bot)`. */

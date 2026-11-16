@@ -1,0 +1,207 @@
+/* The archive: a page in the main area, below the title bar. The list of old sessions on the surface at the left, the
+   one picked reading on the right with the conversation part's own look. Every colour, face and size is a theme
+   token from lane B's catalog (`--moss-*`, listed in tokens.ts). */
+
+.cl-archive {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  color: var(--moss-color-text);
+  font-family: var(--moss-font-sans);
+  font-size: var(--moss-font-size-control);
+  line-height: var(--moss-font-line-tight);
+}
+
+.cl-archive button,
+.cl-archive input {
+  font: inherit;
+}
+
+.cl-archive :focus-visible {
+  outline: 2px solid var(--moss-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-archive__list {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 300px;
+  min-height: 0;
+  padding: var(--moss-space-m) var(--moss-space-s);
+  overflow-y: auto;
+  border-right: 1px solid var(--moss-color-hairline);
+}
+
+.cl-archive__head {
+  padding: 0 var(--moss-space-s) var(--moss-space-s);
+}
+
+.cl-archive__title {
+  margin: 0;
+  font-size: var(--moss-font-size-title);
+  font-weight: var(--moss-font-weight-medium);
+  line-height: var(--moss-font-line-body);
+}
+
+.cl-archive__intro,
+.cl-archive__note {
+  margin: var(--moss-space-xs) 0 var(--moss-space-m);
+  color: var(--moss-color-text-muted);
+  line-height: var(--moss-font-line-body);
+}
+
+.cl-archive__note {
+  padding: 0 var(--moss-space-s);
+}
+
+.cl-archive__search {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--moss-space-s);
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--moss-radius-medium);
+  background: var(--moss-color-raised);
+  color: var(--moss-color-text-muted);
+}
+
+.cl-archive__search:focus-within {
+  outline: 2px solid var(--moss-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-archive__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--moss-color-text);
+}
+
+.cl-archive__search-input::placeholder {
+  color: var(--moss-color-text-placeholder);
+}
+
+.cl-archive__search-input:focus-visible {
+  outline: none;
+}
+
+.cl-archive__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-archive__session {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--moss-space-s) 10px;
+  border: none;
+  border-radius: var(--moss-radius-medium);
+  background: transparent;
+  color: var(--moss-color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-archive__session:hover {
+  background: var(--moss-color-hover);
+}
+
+.cl-archive__session[aria-current="true"] {
+  background: var(--moss-color-selected);
+}
+
+.cl-archive__session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-archive__session-meta {
+  color: var(--moss-color-text-muted);
+  font-size: var(--moss-font-size-label);
+}
+
+.cl-archive__more {
+  align-self: flex-start;
+  height: 28px;
+  margin: var(--moss-space-s) var(--moss-space-s) 0;
+  padding: 0 var(--moss-space-m);
+  border: none;
+  border-radius: var(--moss-radius-small);
+  background: var(--moss-color-selected);
+  color: var(--moss-color-text);
+  cursor: pointer;
+}
+
+.cl-archive__more:hover {
+  background: var(--moss-color-hover);
+}
+
+.cl-archive__reader {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cl-archive__reader-head {
+  flex: none;
+  padding: var(--moss-space-m) var(--moss-space-xl) var(--moss-space-s);
+  border-bottom: 1px solid var(--moss-color-hairline);
+}
+
+.cl-archive__reader-title {
+  margin: 0;
+  font-size: var(--moss-font-size-body);
+  font-weight: var(--moss-font-weight-medium);
+  line-height: var(--moss-font-line-body);
+}
+
+.cl-archive__reader-meta,
+.cl-archive__reader-note {
+  margin: var(--moss-space-xs) 0 0;
+  color: var(--moss-color-text-muted);
+  font-size: var(--moss-font-size-label);
+}
+
+.cl-archive__transcript {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cl-archive__empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--moss-space-s);
+  color: var(--moss-color-text-muted);
+}
+
+.cl-archive__empty p {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-archive * {
+    transition: none;
+  }
+}

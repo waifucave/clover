@@ -1,5 +1,5 @@
 // Installing a plugin from an index (spec §5.1): the version the index lists (its newest, or the one named), downloaded
-// over https within a cap, unpacked by Clover's own reader (`unpack.ts`) into a staging folder, validated, and
+// over https within a cap, unpacked by MOSS's own reader (`unpack.ts`) into a staging folder, validated, and
 // installed only if its id and tree hash are the ones the index lists (the download must be what the index named). Like
 // every install, it then waits for its sealed OK card, which is what decides.
 import { join } from "node:path";
@@ -35,7 +35,7 @@ export async function installFromIndex(o: IndexInstallOptions): Promise<{ id: st
   }
 }
 
-/** Downloads a listed version and unpacks it into `stageDir/<id>` (Clover's own reader); the caller validates it. */
+/** Downloads a listed version and unpacks it into `stageDir/<id>` (MOSS's own reader); the caller validates it. */
 export async function stageIndexVersion(client: IndexClient, id: string, e: { version: string; url: string }, stageDir: string, signal?: AbortSignal): Promise<string> {
   let bytes: Uint8Array;
   try {

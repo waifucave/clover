@@ -2,7 +2,7 @@
 // loop calls `hooks` entries before and after a tool call, on messages in and out, at a turn's start and end, and
 // around compaction. A hook can block or adjust inputs and results, under time limits, but cannot replace the runtime
 // or skip approvals [D].
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 
 export const HOOK_EVENTS = [
   "tool.before", "tool.after", "message.in", "message.out", "turn.start", "turn.end", "compact.before", "compact.after",

@@ -1,5 +1,5 @@
 // The user's own choices that a delegation's choice overwrites (spike S5 edit 11, review 10): Cursor saves the model
-// a session sets as the user's own selection, so Clover keeps one record per backend and option of what the user had,
+// a session sets as the user's own selection, so MOSS keeps one record per backend and option of what the user had,
 // and sets it back when the last delegation that changed it ends.
 //
 // * One record per (backend, option), captured by the first delegation that changes the option while no other one
@@ -10,14 +10,14 @@
 //   crashed), the record stays, and the next session of that agent to open sets it back at once (`leftover`), whether
 //   or not it changes the option itself (check 2's minor 4).
 // * A record left by a crash gives way to a newer choice of the user's: when the next delegation finds the option at
-//   a value Clover didn't set, the user changed it since, and that value is captured instead.
+//   a value MOSS didn't set, the user changed it since, and that value is captured instead.
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 interface SelectionRecord {
   /** What the user had before a delegation changed it. */
   user: string;
-  /** The last value a delegation set, to tell a later change of the user's from Clover's own. */
+  /** The last value a delegation set, to tell a later change of the user's from MOSS's own. */
   ours?: string;
 }
 
@@ -37,7 +37,7 @@ export class UserSelections {
     const holders = this.#holders.get(key) ?? new Set();
     if (holders.size === 0) {
       const left = this.#read(key);
-      // A record left behind stands while the value is still Clover's; a value the user set since replaces it.
+      // A record left behind stands while the value is still MOSS's; a value the user set since replaces it.
       if (current !== undefined && (left === undefined || left.ours !== current)) this.#write(key, { user: current });
     }
     holders.add(holder);
@@ -45,7 +45,7 @@ export class UserSelections {
   }
 
   /** A session opened and found the option at `current`: the user's value to set back now, when a record was left
-   *  with no holder and the value is still the one Clover set. */
+   *  with no holder and the value is still the one MOSS set. */
   leftover(backend: string, option: string, current: string | undefined): string | undefined {
     const key = keyOf(backend, option);
     if ((this.#holders.get(key)?.size ?? 0) > 0) return undefined;

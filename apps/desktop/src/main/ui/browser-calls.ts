@@ -1,4 +1,4 @@
-// The Clover Browser from a component (browser-press, the coordinator's narrowing of F5): what a part's `browser.*` call
+// The MOSS Browser from a component (browser-press, the coordinator's narrowing of F5): what a part's `browser.*` call
 // is, by the main process's own reading of it (the core can't see a press, and must not trust a page's word).
 //
 // * LOOKING needs no press: the tab list (every owner's tabs, their addresses and titles), show and hide, the tab events
@@ -10,7 +10,7 @@
 //   `Input.*` among them), `browser.navigate`, `browser.open` for any owner (it takes an address: a signed-in navigation
 //   as the person), `browser.close` (it destroys the person's page state), a picture of any other tab, and any
 //   `browser.*` call this file doesn't know (fail closed for a future call). The press is the app's gesture rule
-//   (`frameGesture`, electron.ts's `clover:api` handler): the frame's own transient activation AND a key press or click
+//   (`frameGesture`, electron.ts's `moss:api` handler): the frame's own transient activation AND a key press or click
 //   the main process saw land IN that frame (lane G's per-frame record, `SendGate.takeIn`) within SEND_INPUT_WINDOW_MS,
 //   spent by the call. A press in another frame of the window unlocks nothing. One press, one acting call.
 // * A part kept in the background (`app.background`: a hidden window, no user in front of it) has no reach at all, and
@@ -29,7 +29,7 @@ const obj = (v: unknown): Record<string, unknown> => (v !== null && typeof v ===
 /** The calls that only look, whatever their arguments. */
 const LOOKING_CALLS: ReadonlySet<string> = new Set(["browser.tabs", "browser.show", "browser.hide", "browser.onCdpEvent"]);
 
-/** What a part's call on the `clover:api` door is to the Clover Browser. `showing(tab)`: whether the calling part is
+/** What a part's call on the `moss:api` door is to the MOSS Browser. `showing(tab)`: whether the calling part is
  *  showing that tab in its own view now. */
 export function browserReach(method: string, params: unknown, o: { showing?: (tab: string) => boolean } = {}): BrowserReach {
   const p = obj(params);
@@ -64,7 +64,7 @@ export function browserReach(method: string, params: unknown, o: { showing?: (ta
 /** Why a part's Browser call is refused, or undefined: it may go (a press, when it acts, taken by `takePress`). */
 export function browserRefusal(reach: BrowserReach, o: { background: boolean; takePress: () => boolean }): string | undefined {
   if (reach.kind === "none") return undefined;
-  if (o.background) return "a part kept in the background has no Clover Browser: a live view needs a part the user can see";
+  if (o.background) return "a part kept in the background has no MOSS Browser: a live view needs a part the user can see";
   if (reach.kind === "act" && !o.takePress()) return `${reach.why} goes only right after your own key press or click in this part`;
   return undefined;
 }
@@ -72,7 +72,7 @@ export function browserRefusal(reach: BrowserReach, o: { background: boolean; ta
 /** What the `browser` area tells (the tab changes; `daemon.ts` sends them to the layers of plugins holding `browser`). */
 export const BROWSER_AREA_EVENTS: ReadonlySet<string> = new Set(["tab_changed", "tab_closed"]);
 
-/** Whether a core event a plugin's connection heard is the Clover Browser's: a tab's change, or the value of a watch on a
+/** Whether a core event a plugin's connection heard is the MOSS Browser's: a tab's change, or the value of a watch on a
  *  `browser.*` call (`browserWatches`, noted as each opened). Such an event goes only to the plugin's documents the user
  *  can see, never to one kept in the background. */
 export function isBrowserEvent(params: unknown, browserWatches: ReadonlySet<string>): boolean {

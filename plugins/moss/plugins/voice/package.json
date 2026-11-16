@@ -1,0 +1,32 @@
+{
+  "name": "@waifucave/moss-plugin-voice",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "moss/voice: MOSS Voice (spec \u00a76.6), on general capabilities: its player is its own background part, its providers its own point, its settings its own.",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts",
+    "./player": "./src/player.ts",
+    "./levels": "./src/levels.ts",
+    "./client": "./client/index.tsx"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "21.0.4",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@waifucave/moss-plugin-sdk": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

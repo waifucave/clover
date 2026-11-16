@@ -23,8 +23,8 @@ import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { basename, dirname, join, posix, relative, sep } from "node:path";
-import { CLIENT_BARE_IMPORTS, MANIFEST_FILE, parseJsonc, validateTree } from "@waifucave/clover-plugin-sdk";
-import type { ValidationIssue } from "@waifucave/clover-protocol";
+import { CLIENT_BARE_IMPORTS, MANIFEST_FILE, parseJsonc, validateTree } from "@waifucave/moss-plugin-sdk";
+import type { ValidationIssue } from "@waifucave/moss-protocol";
 import { buildMachineStrings, buildPluginModule, builtModulePath, forbiddenIn, isRuntimeBuiltin, packageOfSpecifier, PluginBuildError, runtimeLoadProblems, type BuildSide, type Forbidden } from "./build";
 import { folderReader } from "./tree";
 
@@ -57,7 +57,7 @@ export interface ShipOptions {
   lockfile?: string;
   /** Downloads a prebuilt package's tarball. Default: `fetch`. */
   download?: (url: string) => Promise<Uint8Array>;
-  /** A bundled tree (`clover`, `alpha`): validated with the bundled names, its manifests marked `built: true`, and its
+  /** A bundled tree (`moss`, `alpha`): validated with the bundled names, its manifests marked `built: true`, and its
    *  natives' prebuilt packages always downloaded and checked against the lockfile (#271's ruling M2). */
   bundled?: boolean;
   /** A development build (the dev daemon's stage): a native's platform package may come from this checkout's install,
@@ -92,7 +92,7 @@ export interface ShippedPlugin {
 }
 
 /** Files and folders that never ship (lane M's release filter, plus sources and loader configs). */
-/** `gallery` is a part's CI-only story renderer (docs/clover-layout.md "A gallery"), never part of what runs. */
+/** `gallery` is a part's CI-only story renderer (docs/moss-layout.md "A gallery"), never part of what runs. */
 const LEFT_OUT_DIRS = new Set(["node_modules", ".git", "test", "tests", "__tests__", "gallery"]);
 const LEFT_OUT_FILE = /^(?:tsconfig.*\.json|bunfig\.toml|bun\.lockb?|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|\.DS_Store|\.env.*|.*\.(?:test|spec)\.[cm]?[jt]sx?|.*\.(?:[cm]?ts|tsx|jsx))$/;
 const CODE_FILE = /\.(?:[cm]?[jt]sx?)$/;
@@ -142,7 +142,7 @@ function scrubbed(e: unknown, roots: readonly (readonly [string, string])[]): un
 }
 
 function prepareOut(out: string | undefined): string {
-  if (out === undefined) return realpathSync(mkdtempSync(join(tmpdir(), "clover-ship-")));
+  if (out === undefined) return realpathSync(mkdtempSync(join(tmpdir(), "moss-ship-")));
   if (existsSync(out) && readdirSync(out).length > 0) throw new PluginBuildError([`${out} isn't empty; the built tree goes in a new folder`]);
   mkdirSync(out, { recursive: true });
   return realpathSync(out);
@@ -396,7 +396,7 @@ function writeRunPackage(src: string, out: string, unit: Unit, deps: Record<stri
   } catch {
     /* none: write one */
   }
-  const pkg: Json = { name: typeof own.name === "string" ? own.name : `clover-plugin-${unit.base === "" ? basename(src) : unit.base.split("/")[1]}` };
+  const pkg: Json = { name: typeof own.name === "string" ? own.name : `moss-plugin-${unit.base === "" ? basename(src) : unit.base.split("/")[1]}` };
   for (const k of ["version", "license"]) if (typeof own[k] === "string") pkg[k] = own[k];
   pkg.private = true;
   pkg.type = "module";
@@ -576,7 +576,7 @@ class NativeShipper {
     if (!["sha512", "sha384", "sha256"].includes(algo) || want === undefined) throw new PluginBuildError([`${p.name}@${p.version}: the lockfile has no integrity to check its download against`]);
     const got = createHash(algo).update(bytes).digest("base64");
     if (got !== want) throw new PluginBuildError([`${p.name}@${p.version}: the download from ${url} isn't what the lockfile pins (${algo} differs)`]);
-    const tmp = mkdtempSync(join(tmpdir(), "clover-ship-native-"));
+    const tmp = mkdtempSync(join(tmpdir(), "moss-ship-native-"));
     this.downloads.push(tmp);
     const dir = join(tmp, "package");
     for (const f of untarGz(bytes, `${p.name}@${p.version}`)) {

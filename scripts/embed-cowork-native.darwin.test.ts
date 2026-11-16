@@ -1,5 +1,5 @@
 // N2 S2 — the STANDALONE proof of `embed-cowork-native.sh` (the body of the build phase S7 adds), run the way Xcode runs the CU one:
-// BUILT_PRODUCTS_DIR=<mkdtemp>, CONTENTS_FOLDER_PATH=Clover.app/Contents, CONFIGURATION=Release, EXPANDED_CODE_SIGN_IDENTITY=- (ad-hoc:
+// BUILT_PRODUCTS_DIR=<mkdtemp>, CONTENTS_FOLDER_PATH=MOSS Code.app/Contents, CONFIGURATION=Release, EXPANDED_CODE_SIGN_IDENTITY=- (ad-hoc:
 // this proves the build phase; release.ts, wired by S7, checks the Developer ID team, the timestamp and that the stated requirements
 // are satisfied). Every input and output lives in a mkdtemp directory; no real identity, no Keychain, no notarization, no VM.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -49,7 +49,7 @@ function embed(r: Rig, over: Record<string, string> = {}, configuration = "Relea
       ...process.env,
       CONFIGURATION: configuration,
       BUILT_PRODUCTS_DIR: join(r.dir, "built"),
-      CONTENTS_FOLDER_PATH: "Clover.app/Contents",
+      CONTENTS_FOLDER_PATH: "MOSS Code.app/Contents",
       EXPANDED_CODE_SIGN_IDENTITY: "-",
       DEVELOPMENT_TEAM: COWORK_NATIVE_TEAM,
       COWORK_LAUNCHER_BINARY: r.launcher,
@@ -59,7 +59,7 @@ function embed(r: Rig, over: Record<string, string> = {}, configuration = "Relea
     },
   });
 }
-const dest = (r: Rig) => join(r.dir, "built", "Clover.app", COWORK_NATIVE_EMBED_RELATIVE);
+const dest = (r: Rig) => join(r.dir, "built", "MOSS Code.app", COWORK_NATIVE_EMBED_RELATIVE);
 
 function facts(path: string): SignedNativeFacts {
   const run = (cmd: string, args: string[]) => spawnSync(cmd, args, { encoding: "utf8" });
@@ -139,7 +139,7 @@ describe("embed-cowork-native.sh (the Cowork native pair's build phase, standalo
   test("COWORK_NATIVE=omit removes a stale pair and a stale pins file, embeds nothing and succeeds", () => {
     const r = rig();
     expect(embed(r).status).toBe(0); // a previous build left the pair behind
-    const pins = join(r.dir, "built", "Clover.app", "Contents", "Resources", "cowork-native-pins.json");
+    const pins = join(r.dir, "built", "MOSS Code.app", "Contents", "Resources", "cowork-native-pins.json");
     mkdirSync(join(pins, ".."), { recursive: true });
     writeFileSync(pins, "{}");
     expect(existsSync(dest(r))).toBe(true);

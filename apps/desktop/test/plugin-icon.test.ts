@@ -1,6 +1,6 @@
 // The Plugins page's icons for plugins `plugin.ui` doesn't show (off, found and waiting for their OK, no UI): a found
 // plugin's files are untrusted before its OK, so only a small still raster picture inside its folder, by its own header,
-// read through one descriptor, and only to a frame of the clover layer.
+// read through one descriptor, and only to a frame of the moss layer.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -98,7 +98,7 @@ describe("a picture an icon may be", () => {
 });
 
 function plugin(files: Record<string, Buffer | string>): string {
-  const root = mkdtempSync(join(tmpdir(), "clover-icon-"));
+  const root = mkdtempSync(join(tmpdir(), "moss-icon-"));
   temps.push(root);
   const folder = join(root, "tarot");
   mkdirSync(folder, { recursive: true });
@@ -144,14 +144,14 @@ describe("a plugin's icon, read and served", () => {
     expect(await pluginIconFile(async () => { throw new Error("not_found: tarot isn't installed"); }, "tarot")).toBeUndefined();
   });
 
-  test("the route's door: by the frame that asks — the clover layer's frame yes; no known frame, another layer's frame, or a forged host no", () => {
-    expect(iconRequest("clover", "clover-plugin://clover/_icon/tarot")).toBe("allow");
-    expect(iconRequest(undefined, "clover-plugin://clover/_icon/tarot")).toBe("refuse");
-    expect(iconRequest("tarot-panel", "clover-plugin://clover/_icon/tarot")).toBe("refuse");
-    expect(iconRequest("tarot-panel", "clover-plugin://tarot-panel/_icon/tarot")).toBe("refuse");
-    expect(iconRequest("clover", "clover-plugin://tarot-panel/_icon/tarot")).toBe("refuse");
+  test("the route's door: by the frame that asks — the moss layer's frame yes; no known frame, another layer's frame, or a forged host no", () => {
+    expect(iconRequest("moss", "moss-plugin://moss/_icon/tarot")).toBe("allow");
+    expect(iconRequest(undefined, "moss-plugin://moss/_icon/tarot")).toBe("refuse");
+    expect(iconRequest("tarot-panel", "moss-plugin://moss/_icon/tarot")).toBe("refuse");
+    expect(iconRequest("tarot-panel", "moss-plugin://tarot-panel/_icon/tarot")).toBe("refuse");
+    expect(iconRequest("moss", "moss-plugin://tarot-panel/_icon/tarot")).toBe("refuse");
     // Not this door's.
-    expect(iconRequest(undefined, "clover-plugin://clover/_t/tarot/a.png")).toBe("not-icon");
+    expect(iconRequest(undefined, "moss-plugin://moss/_t/tarot/a.png")).toBe("not-icon");
     expect(iconRequest(undefined, "not a url")).toBe("not-icon");
   });
 });

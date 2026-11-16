@@ -15,7 +15,7 @@
 import type { AgentEvent, AgentSession } from "../contracts/agent-backend";
 import { isContractError } from "../contracts/common";
 import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../contracts/session-host";
-import type { TurnOrigin } from "@waifucave/clover-protocol";
+import type { TurnOrigin } from "@waifucave/moss-protocol";
 
 export interface AgentDriverOptions {
   /** Starts the agent (or reattaches to it); called once, by the first turn. */
@@ -38,7 +38,7 @@ export type AgentLogEvent =
   | { type: "agent_text"; text: string }
   | { type: "agent_thought"; text: string }
   | { type: "agent_tool_call"; id: string; kind: string; title: string; status: string; rawInput?: unknown }
-  | { type: "agent_tool_call_update"; id: string; status: string; refused?: boolean; closedByClover?: boolean }
+  | { type: "agent_tool_call_update"; id: string; status: string; refused?: boolean; closedByMoss?: boolean }
   | { type: "agent_usage"; inputTokens: number; outputTokens: number }
   | { type: "agent_started"; agentSessionId: string };
 
@@ -172,7 +172,7 @@ export class AgentDriver implements SessionDriver {
 
   async #failStalled(): Promise<TurnEnd> {
     await this.#shutdown();
-    return { reason: "failed", failure: "stalled", text: "The agent made no progress for 10 minutes, so Clover stopped it." };
+    return { reason: "failed", failure: "stalled", text: "The agent made no progress for 10 minutes, so MOSS stopped it." };
   }
 
   async #fail(err: unknown): Promise<TurnEnd> {
@@ -254,7 +254,7 @@ class TextRuns {
         this.record({ type: "agent_tool_call", id: e.id, kind: e.kind, title: e.title, status: e.status, ...(e.rawInput === undefined ? {} : { rawInput: e.rawInput }) });
         return;
       case "tool_call_update":
-        this.record({ type: "agent_tool_call_update", id: e.id, status: e.status, ...(e.refused ? { refused: true } : {}), ...(e.closedByClover ? { closedByClover: true } : {}) });
+        this.record({ type: "agent_tool_call_update", id: e.id, status: e.status, ...(e.refused ? { refused: true } : {}), ...(e.closedByMoss ? { closedByMoss: true } : {}) });
         return;
       case "usage":
         this.record({ type: "agent_usage", inputTokens: e.inputTokens, outputTokens: e.outputTokens });

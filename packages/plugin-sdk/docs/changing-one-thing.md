@@ -1,6 +1,6 @@
 # Changing one thing
 
-You don't copy a page to change one part of it. Each change below is one entry in your plugin's `clover.json` under
+You don't copy a page to change one part of it. Each change below is one entry in your plugin's `moss.json` under
 `contributes`, or, for moving parts of a bot's tab, a few lines of layout. Spots and their shapes are in the SDK's
 catalog (`catalogs/spots.ts`); an entry's `spot` names one, and `key` names one cell of a keyed spot.
 
@@ -70,7 +70,7 @@ A `component` in a list spot adds itself beside the others. `order` places it (l
 (here, the bot).
 
 A small button under messages is a `conversation.message.action` data entry, not a `conversation.message.extra`
-component (which costs a frame per message for a plugin Clover doesn't ship). The conversation draws it in the reply's
+component (which costs a frame per message for a plugin MOSS doesn't ship). The conversation draws it in the reply's
 icon row; a press calls a handler in your host's `ui` table with `{ session, seq }`, which answers `{ ok: true }` or
 `{ note }`.
 
@@ -189,7 +189,7 @@ The bot names its model in its manifest; the stage draws it with the renderer in
 }
 ```
 
-Clover draws `vrm` and `live2d`; a renderer plugin adds a format (`avatar.formats`, and an `avatar` entry keyed by
+MOSS draws `vrm` and `live2d`; a renderer plugin adds a format (`avatar.formats`, and an `avatar` entry keyed by
 it; see `examples/example-pngtuber`). A bot with no layout of its own gets the shell's stock tab: the stage
 (`bot.stage`) on top, only when the bot has an avatar, and the conversation over the composer below it. That tab is
 drawn as `DEFAULT_TAB_LAYOUT` (the same parts in the same order) once anything rearranges it: the bot's own patch,

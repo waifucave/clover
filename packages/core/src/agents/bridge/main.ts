@@ -1,4 +1,4 @@
-// The bridge process's entry: `clover-core bridge` in the shipped daemon binary, `bun bridge/main.ts` from source.
+// The bridge process's entry: `moss-core bridge` in the shipped daemon binary, `bun bridge/main.ts` from source.
 // The binary's argv dispatch belongs to the daemon's entry (a question for lane M with C); `bridgeCommand()` says
 // which form this daemon hands agents.
 import { join } from "node:path";

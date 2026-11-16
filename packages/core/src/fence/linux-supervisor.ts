@@ -109,7 +109,7 @@ const O_WRONLY = 0o1, O_RDWR = 0o2, O_CREAT = 0o100, O_TRUNC = 0o1000, O_APPEND 
 const O_CLOEXEC = 0o2000000, O_EXCL = 0o200, O_PATH = 0o10000000;
 /** O_NOFOLLOW and therefore O_TMPFILE (`__O_TMPFILE|O_DIRECTORY`) differ by platform (i386 values on some ARM
  *  kernels): always take them from the platform's own constants, never hardcode them. Everything else above is
- *  universal across the platforms Clover ships (verified against both). */
+ *  universal across the platforms MOSS ships (verified against both). */
 const O_NOFOLLOW: number = fsConstants.O_NOFOLLOW as number;
 const O_TMPFILE: number = (0o20000000 | (fsConstants.O_DIRECTORY as number)) >>> 0;
 const AT_FDCWD = -100, AT_SYMLINK_NOFOLLOW = 0x100, AT_SYMLINK_FOLLOW = 0x400;

@@ -1,4 +1,4 @@
-// The Clover Browser's own policy (spec §12.1). Its webContents are its own: lane E's main process guards only the
+// The MOSS Browser's own policy (spec §12.1). Its webContents are its own: lane E's main process guards only the
 // app's windows, and asks `isBrowserContents` to tell them apart, so neither side touches the other's.
 //
 // Every browser partition's session is locked down, and its traffic pointed at the network filter (`network.ts`, R13),
@@ -18,7 +18,7 @@ import { isBrowserUrlAllowed } from "./contract";
 export const BROWSER_WEBRTC_POLICY = "disable_non_proxied_udp" as const;
 
 /** The viewport pages' partition: in memory, with no network at all. */
-export const VIEWPORT_PARTITION = "clover-browser-viewport";
+export const VIEWPORT_PARTITION = "moss-browser-viewport";
 
 /** Where the spellchecker would fetch a dictionary: loopback's discard port, so nothing is ever downloaded (E's netlogs
  *  found the dictionary fetched on Linux with the spellchecker off). */
@@ -146,7 +146,7 @@ function sessionOf(contents: WebContents): Session | undefined {
   }
 }
 
-/** A web page of the Clover Browser's: a tab, or a window a page opened. True from `web-contents-created` on, since
+/** A web page of the MOSS Browser's: a tab, or a window a page opened. True from `web-contents-created` on, since
  *  its session is locked down before it is made. */
 export function isBrowserTab(contents: WebContents): boolean {
   const session = sessionOf(contents);

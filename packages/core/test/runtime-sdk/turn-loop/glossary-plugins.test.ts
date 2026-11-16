@@ -15,7 +15,7 @@ const INSTRUCTIONS = "Start with OpenProject, then Timeline to see the clips. Ex
 const tools = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => ({ name: `${prefix}${i + 1}`, description: `Does ${prefix.toLowerCase()} step ${i + 1}\nMore detail that isn't the one line.`, load: "on-demand" as const, inputSchema: { type: "object" as const } }));
 
 function world() {
-  const folder = mkdtempSync(join(tmpdir(), "clover-a-glossary-"));
+  const folder = mkdtempSync(join(tmpdir(), "moss-a-glossary-"));
   dirs.push(folder);
   mkdirSync(join(folder, "skills", "cut"), { recursive: true });
   writeFileSync(join(folder, "skills", "cut", "SKILL.md"), "---\nname: rough-cut\ndescription: Make a rough cut\n---\nTrim the silences.\n");
@@ -54,7 +54,7 @@ describe("Glossary: a skills entry that names a folder", () => {
   // name the folders by a glob (`skills/*`). Each folder's SKILL.md is the skill, as `skills/*/SKILL.md` gives it.
   for (const value of ["skills/arrival-notes", "skills/arrival-notes/", "./skills/*", "skills/*/SKILL.md"]) {
     test(`${JSON.stringify(value)}: the skill is listed and loads`, async () => {
-      const folder = mkdtempSync(join(tmpdir(), "clover-d-glossary-folder-"));
+      const folder = mkdtempSync(join(tmpdir(), "moss-d-glossary-folder-"));
       dirs.push(folder);
       mkdirSync(join(folder, "skills", "arrival-notes", "scripts"), { recursive: true });
       writeFileSync(join(folder, "skills", "arrival-notes", "SKILL.md"), "---\nname: Arrival notes\ndescription: Notes on what arrived\n---\nARRIVAL-BODY\n");

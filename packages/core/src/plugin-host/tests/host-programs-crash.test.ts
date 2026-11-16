@@ -8,8 +8,8 @@ import { afterAll, expect } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import type { HostedStatus } from "../../contracts/plugin-host";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
@@ -41,7 +41,7 @@ export const cat = async (args) => {
 };
 `;
 const manifest = (id: string, version: string, programs: boolean) => JSON.stringify({
-  manifest: 1, id, name: id, version, engines: { clover: `^${PLUGIN_API_VERSION}` },
+  manifest: 1, id, name: id, version, engines: { moss: `^${PLUGIN_API_VERSION}` },
   host: { entry: "host/index.js", process: "own", ...(programs ? { programs: true } : {}) },
 });
 
@@ -69,10 +69,10 @@ darwinTest("picks never count as crashes or notices; a crash-stopped plugin star
   write(dirname(clip), { "clip.txt": "the picked clip" });
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const secrets = new MemorySecretStore();
-  const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 60_000 });
+  const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 60_000 });
   const clock = new FakeClock({ start: Date.now() });
   const lines: string[] = [];
-  const grants = new PluginGrants({ cloverHome: home, userHome });
+  const grants = new PluginGrants({ mossHome: home, userHome });
   const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, clock, userHome, log: (l) => lines.push(l), picked: (id) => grants.fencePaths(id) });
   const changed: Promise<void>[] = [];
   const offGrants = grants.watch((id) => void changed.push(ph.picksChanged(id)));
@@ -90,7 +90,7 @@ darwinTest("picks never count as crashes or notices; a crash-stopped plugin star
     await until(`${id} OK'd`, 10_000, () => (opened.registry.get(id)?.state !== "found" ? true : undefined));
   };
   const install = async (id: string, programs: boolean, broken: string | undefined) => {
-    write(join(home, "plugins", id), { "clover.json": manifest(id, "1.0.0", programs), "package.json": "{\"type\":\"module\"}", "host/index.js": CODE(broken) });
+    write(join(home, "plugins", id), { "moss.json": manifest(id, "1.0.0", programs), "package.json": "{\"type\":\"module\"}", "host/index.js": CODE(broken) });
     await opened.folders.installed(id, "bot", { bot: "alpha" });
     await approve(id, "bot");
   };
@@ -151,20 +151,20 @@ darwinTest("picks never count as crashes or notices; a crash-stopped plugin star
     //    starts again in a process without the programs fence, never the one it crashed in.
     await edit("reel", { "host/index.js": CODE("bug again") });
     await crashToStop("reel");
-    await edit("reel", { "clover.json": manifest("reel", "1.0.1", false), "host/index.js": CODE(undefined) });
+    await edit("reel", { "moss.json": manifest("reel", "1.0.1", false), "host/index.js": CODE(undefined) });
     await until("reel running without programs", 10_000, () => (ph.host.status("reel").state === "running" ? true : undefined));
-    expect((await cat("reel", join(home, "plugins", "reel", "clover.json"))).code).not.toBe(0);
+    expect((await cat("reel", join(home, "plugins", "reel", "moss.json"))).code).not.toBe(0);
 
     // 4. Crash-stopped without programs; the builder's fix adds them: that asks for the OK, and nothing starts before it.
     await install("mix", false, "bug");
     await crashToStop("mix");
-    await edit("mix", { "clover.json": manifest("mix", "1.0.1", true), "host/index.js": CODE(undefined) });
+    await edit("mix", { "moss.json": manifest("mix", "1.0.1", true), "host/index.js": CODE(undefined) });
     await until("mix's change waits for the OK", 10_000, () => (opened.registry.get("mix")?.state === "found" ? true : undefined));
     await Bun.sleep(300);
     expect(ph.host.status("mix").state).not.toBe("running");
     expect(lines.some((l) => l.includes("mix: its tree changed after the crash rules stopped it"))).toBe(false);
     await approve("mix", "bot");
-    expect(await cat("mix", join(home, "plugins", "mix", "clover.json"))).toMatchObject({ code: 0 });
+    expect(await cat("mix", join(home, "plugins", "mix", "moss.json"))).toMatchObject({ code: 0 });
     expect(ph.host.status("mix").crashes ?? 0).toBe(0);
   } finally {
     offGrants();

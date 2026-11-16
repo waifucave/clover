@@ -37,8 +37,8 @@
 // The driver of each session comes from `DriverFactory`: lane A's embedded runtime once A-M1 merges; tests use the
 // contracts' FakeSessionDriver.
 import {
-  CLOVER_ERR, type BotView, type Caller, type ChangeResult, type Level, type RoutineRunView, type SessionView, type Text, type TurnOrigin, type UserMessageInput,
-} from "@waifucave/clover-protocol";
+  MOSS_ERR, type BotView, type Caller, type ChangeResult, type Level, type RoutineRunView, type SessionView, type Text, type TurnOrigin, type UserMessageInput,
+} from "@waifucave/moss-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { PluginRegistry } from "../contracts/plugin-registry";
@@ -67,7 +67,7 @@ export interface EffectiveBot {
   /** Who chose the model: the user (the bot's user layer), the user's default model (the plugin named none, or one the
    *  user has no key for), or the bot's plugin, whose provider the user approves once (provider-consent.ts). */
   modelFrom: "user" | "default" | "plugin";
-  /** The plugin's model tag comes from Clover's own bundled plugin, as staged (`BotServiceOptions.bundledChoice`, once per load): it
+  /** The plugin's model tag comes from MOSS's own bundled plugin, as staged (`BotServiceOptions.bundledChoice`, once per load): it
    *  asks nothing, like the user's own choice. Only with `modelFrom: "plugin"`. */
   modelBundled?: true;
   effort?: string;
@@ -180,7 +180,7 @@ export interface BotServiceOptions {
    *  words the picker shows; `starting` is accepted (the session reopens on the plugins' catalog once it lands).
    *  Default: every model is offered. */
   modelOffer?(model: string): "offered" | "starting" | "absent";
-  /** What Clover's own bundled plugin chose for a bot, read from its manifest's bytes as staging verified them (the
+  /** What MOSS's own bundled plugin chose for a bot, read from its manifest's bytes as staging verified them (the
    *  daemon's: `source` `bundled`, its folder in the staged copy, the manifest's digest the staged one), or undefined
    *  for any other plugin. Asked once per bot load: a loaded model tag equal to the verified bytes' asks
    *  nothing, so the exemption holds for the tag the bot runs, whatever was on disk when the registry read it.
@@ -364,7 +364,7 @@ export class BotService {
   }
 
   /** A session's scratch folder here, made if missing, as a folder-tree path (§6.5; lane J's MCP router saves a
-   *  call's files there when it names no `saveTo`). Refused for a Clover home outside the user's home. */
+   *  call's files there when it names no `saveTo`). Refused for a MOSS home outside the user's home. */
   scratchFor(sessionId: string): string {
     const view = this.#o.host.get(sessionId);
     if (!view) throw new ContractError("not_found", `no session ${sessionId}`);
@@ -382,7 +382,7 @@ export class BotService {
 
   /** `bots.pause`: the user's switch for every bot and routine at once (§9.2). */
   async setPaused(paused: boolean, caller: Caller): Promise<void> {
-    if (caller.kind !== "user") throw new ContractError("refused", "only the user pauses or resumes the bots", { rpc: CLOVER_ERR.NOT_THE_USER });
+    if (caller.kind !== "user") throw new ContractError("refused", "only the user pauses or resumes the bots", { rpc: MOSS_ERR.NOT_THE_USER });
     if (!this.#o.gate.setPaused(paused, this.#o.clock.now())) return;
     this.#events.emit({ type: "bots_paused", ts: this.#o.clock.now(), paused });
     // Paused, what runs is held at its next tool call (the drivers read `mayAct`); resumed, it goes on, and what
@@ -436,9 +436,9 @@ export class BotService {
   /** `bot.setUserLayer`: only the user changes a bot's user layer (§6.1, §9.1). A change from a plugin's layer reaches
    *  this as the user only once the user approved its sealed card (lane C's `change: "core"` routing, §5.5). */
   async setUserLayer(id: string, patch: unknown, caller: Caller): Promise<ChangeResult> {
-    if (caller.kind === "session") throw new ContractError("refused", "a bot or an agent can't change a bot's user layer: it edits its plugin folder instead", { rpc: CLOVER_ERR.NOT_THE_USER });
-    if (caller.kind === "plugin") throw new ContractError("refused", "only the user changes a bot's user layer; a plugin's change goes to the user as a sealed card", { rpc: CLOVER_ERR.NOT_THE_USER });
-    if (caller.kind !== "user") throw new ContractError("refused", "only the user changes a bot's user layer", { rpc: CLOVER_ERR.NOT_THE_USER });
+    if (caller.kind === "session") throw new ContractError("refused", "a bot or an agent can't change a bot's user layer: it edits its plugin folder instead", { rpc: MOSS_ERR.NOT_THE_USER });
+    if (caller.kind === "plugin") throw new ContractError("refused", "only the user changes a bot's user layer; a plugin's change goes to the user as a sealed card", { rpc: MOSS_ERR.NOT_THE_USER });
+    if (caller.kind !== "user") throw new ContractError("refused", "only the user changes a bot's user layer", { rpc: MOSS_ERR.NOT_THE_USER });
     const live = this.#must(id);
     const parsed = parseUserLayerPatch(patch);
     const model = (patch as { model?: unknown } | null)?.model;
@@ -617,7 +617,7 @@ export class BotService {
     }
   }
 
-  /** The bot as loaded, with whether its tags are Clover's own bundled plugin's (asked once, at this load). */
+  /** The bot as loaded, with whether its tags are MOSS's own bundled plugin's (asked once, at this load). */
   #bundled(bot: PluginBot): PluginBot {
     if (bot.source !== "bundled" || this.#o.bundledChoice === undefined) return bot;
     let choice: BundledChoice | undefined;
@@ -753,7 +753,7 @@ export class BotService {
       modelFrom = "default";
       effort = layer.effort ?? fallback.effort;
     }
-    // Clover's own bundled plugin, as staged: what it chose asks nothing (the owner's ruling, revising #298/#311's).
+    // MOSS's own bundled plugin, as staged: what it chose asks nothing (the owner's ruling, revising #298/#311's).
     // Decided once per load (`#bundled`), against the verified bytes' own tags.
     const bundled = live.plugin.bundled;
     const avatar = layer.avatar ?? entry.avatar;

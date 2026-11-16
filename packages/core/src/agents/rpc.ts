@@ -5,7 +5,7 @@
 //
 // `session.setModel` for agents and coding sessions is lane D's method; D's handler calls `AgentManager.setModel`.
 import { randomUUID } from "node:crypto";
-import { AGENTS_METHODS, AgentDefView, ERR, type AgentBackendView, type BackendMark, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
+import { AGENTS_METHODS, AgentDefView, ERR, type AgentBackendView, type BackendMark, type Caller, type MethodSpec } from "@waifucave/moss-protocol";
 import type { z } from "zod";
 import type { AgentBackend } from "../contracts/agent-backend";
 import type { PluginRegistry } from "../contracts/plugin-registry";
@@ -115,7 +115,7 @@ export function lateAgentMethods(
   const names = [AGENTS_METHODS.agentBackends.name, AGENTS_METHODS.agentDefinitions.name, AGENTS_METHODS.agentStart.name];
   return Object.fromEntries(names.map((name) => [name, async (params: unknown, ctx: { caller: Caller }) => {
     const a = agents();
-    if (!a) throw new MethodError(ERR.RETRY, "Clover's agents aren't running on this computer yet: try again in a moment");
+    if (!a) throw new MethodError(ERR.RETRY, "MOSS's agents aren't running on this computer yet: try again in a moment");
     try {
       return await methodsOf(a)[name]!(params, ctx);
     } catch (err) {

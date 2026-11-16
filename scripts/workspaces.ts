@@ -1,13 +1,13 @@
-// The workspace packages, as CI and the root scripts see them (docs/clover-layout.md).
+// The workspace packages, as CI and the root scripts see them (docs/moss-layout.md).
 //
 //   bun scripts/workspaces.ts list [--json]                       every package the root `workspaces` globs find
 //   bun scripts/workspaces.ts run <script> [--os macos|linux|windows] [--skip <name>[,<name>…]]
 //                                                                 run `bun run <script>` in each package that has it
 //
 // `run` goes through the packages in path order, one at a time, every one even after a failure, and exits 1 if any
-// failed. For `test`, a package's `cloverCi` field in its package.json decides where CI runs it:
-//   "cloverCi": { "os": ["macos", "linux", "windows"] }   the OSes its tests support (default: all three)
-//   "cloverCi": { "ownJob": true }                         ci.yml runs its tests in a job of its own, never here
+// failed. For `test`, a package's `mossCi` field in its package.json decides where CI runs it:
+//   "mossCi": { "os": ["macos", "linux", "windows"] }   the OSes its tests support (default: all three)
+//   "mossCi": { "ownJob": true }                         ci.yml runs its tests in a job of its own, never here
 // Every other script runs wherever it is asked to.
 //
 // Before `run`, the install is checked against the manifests (`installGaps`): a package whose `workspace:` dependency
@@ -57,19 +57,19 @@ export function workspacePackages(root: string): WorkspacePackage[] {
       const pkg = JSON.parse(readFileSync(join(root, match), "utf8")) as {
         name?: string;
         scripts?: Record<string, string>;
-        cloverCi?: { os?: unknown; ownJob?: unknown };
+        mossCi?: { os?: unknown; ownJob?: unknown };
       };
       if (typeof pkg.name !== "string" || pkg.name === "") throw new Error(`${dir}/package.json has no name`);
-      const os = pkg.cloverCi?.os;
+      const os = pkg.mossCi?.os;
       if (os !== undefined && (!Array.isArray(os) || os.some((o) => !CI_OSES.includes(o as CiOs)))) {
-        throw new Error(`${dir}/package.json: cloverCi.os must list some of ${CI_OSES.join(", ")}`);
+        throw new Error(`${dir}/package.json: mossCi.os must list some of ${CI_OSES.join(", ")}`);
       }
       seen.set(dir, {
         name: pkg.name,
         dir,
         scripts: pkg.scripts ?? {},
         testOs: (os as CiOs[] | undefined) ?? CI_OSES,
-        ownJob: pkg.cloverCi?.ownJob === true,
+        ownJob: pkg.mossCi?.ownJob === true,
       });
     }
   }

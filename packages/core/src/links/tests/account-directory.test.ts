@@ -6,8 +6,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { verifyAccountToken } from "@waifucave/clover-service-shared/account-token";
-import { startSignInStub } from "@waifucave/clover-test-harness/signin-stub";
+import { verifyAccountToken } from "@waifucave/moss-service-shared/account-token";
+import { startSignInStub } from "@waifucave/moss-test-harness/signin-stub";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { Secret } from "../../contracts/secret-store";
 import { SystemClock } from "../../clock/system-clock";
@@ -45,7 +45,7 @@ async function stack() {
 
 async function daemon(s: Awaited<ReturnType<typeof stack>>, net: MemoryNetwork, name: string) {
   const store = new MemorySecretStore();
-  const home = mkdtempSync(join(tmpdir(), "clover-h-acctdir-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-h-acctdir-"));
   const { DeviceKey } = await import("../../identity/device-key");
   const key = await DeviceKey.loadOrCreate(store);
   const account = new AccountClient({ config: { authUrl: s.auth.url, anonKey: s.auth.anonKey, serviceUrl: s.service.url }, store, device: key, clock });
@@ -141,7 +141,7 @@ describe("the account channel", () => {
     const net = new MemoryNetwork();
     const make = async (name: string) => {
       const links = await startDeviceLinks({
-        home: mkdtempSync(join(tmpdir(), "clover-h-pairdir-")), store: new MemorySecretStore(), clock, self: { name }, wire: (k) => net.endpoint(k.publicKey),
+        home: mkdtempSync(join(tmpdir(), "moss-h-pairdir-")), store: new MemorySecretStore(), clock, self: { name }, wire: (k) => net.endpoint(k.publicKey),
         handshake: new HandshakeClient({ baseUrl: hs.url, clock }), mainComputer: { watchSleep: false, monotonic: () => performance.now() },
       });
       stops.push(() => links.close());

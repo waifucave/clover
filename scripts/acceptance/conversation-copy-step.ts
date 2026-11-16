@@ -19,11 +19,11 @@ import { fail, layerDocs, sleep, toAlphasTab, until, type ExampleCtx } from "./e
 
 export const CONVERSATION_COPY_STEP = "a folder-installed copy of the conversation, under another id and behind its OK card (reads your conversations, sends as you), takes the bundled one's place in Alpha's tab: it draws her turn, shows Try again on a failed turn, a click the page makes itself sends nothing, and one real click sends the user's message again through the app's door by its user.send, never its id";
 
-const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins", "clover", "plugins");
+const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins", "moss", "plugins");
 export const COPY_ID = "mirror-conversation";
 const COPY_NAME = "Mirror conversation";
 /** The bundled plugin the copy stands in for (switched off while the copy runs, on again after). */
-const BUNDLED = "clover/conversation";
+const BUNDLED = "moss/conversation";
 
 /** The OK card's plain lines for what the copy holds: the catalog's own `ok` words for its `conversation.read` and its
  *  `user.send` (read from the catalog, so a reworded line is still the one checked). */
@@ -32,7 +32,7 @@ export const COPY_OK_LINES: readonly string[] = ["conversation.read", "user.send
 /** The copy's manifest: the bundled one's, with an id and a name of its own and its client built to one module. Its
  *  capabilities and its spot's `declares` are the bundled plugin's own, so what it may do is what its OK card says. */
 export function copyManifest(): Record<string, unknown> {
-  const src = JSON.parse(readFileSync(join(PLUGINS, "conversation", "clover.json"), "utf8")) as Record<string, unknown> & { contributes: Record<string, unknown>; client: Record<string, unknown> };
+  const src = JSON.parse(readFileSync(join(PLUGINS, "conversation", "moss.json"), "utf8")) as Record<string, unknown> & { contributes: Record<string, unknown>; client: Record<string, unknown> };
   const { locales: _locales, ...contributes } = src.contributes;
   return { ...src, id: COPY_ID, name: COPY_NAME, client: { ...src.client, entry: "client/index.js" }, contributes };
 }
@@ -45,7 +45,7 @@ export async function buildCopy(root: string): Promise<string> {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(join(dir, "client"), { recursive: true });
   const manifest = copyManifest() as { client: { css?: string[] } };
-  writeFileSync(join(dir, "clover.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  writeFileSync(join(dir, "moss.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const css of manifest.client.css ?? []) copyFileSync(join(PLUGINS, "conversation", css), join(dir, css));
   const from = join(PLUGINS, "conversation", "client");
   const result = await Bun.build({
@@ -131,7 +131,7 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
     // A press in another frame is not the copy's (F2, read 52): a real click in the copy gives its page the user's activation,
     // then a real click on the window's own root (another frame, or none) is the latest press; the copy's call right after it is
     // refused, though its page still holds the activation, and the app logs that the press was not in the copy's frame.
-    const rootDoc = (await cdp.documents()).find((d) => d.url.startsWith("clover-core://app/") && !d.url.includes("?"));
+    const rootDoc = (await cdp.documents()).find((d) => d.url.startsWith("moss-core://app/") && !d.url.includes("?"));
     if (rootDoc === undefined) fail("no main window root to press on");
     const pressLines = () => ctx.appLog().split("\n").filter((l) => l.includes("press: a call from frame")).length;
     const linesBefore = pressLines();

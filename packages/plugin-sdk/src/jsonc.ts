@@ -1,4 +1,4 @@
-// JSON with comments and trailing commas, as `clover.json` and the other plugin files accept (spec §5.9).
+// JSON with comments and trailing commas, as `moss.json` and the other plugin files accept (spec §5.9).
 // Comments (`//` to the line's end, `/* … */`) and a comma before `}` or `]` are removed; everything else is JSON.
 
 export type JsoncResult =

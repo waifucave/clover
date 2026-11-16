@@ -1,6 +1,6 @@
 // FakeDeviceRegistry: devices with real Ed25519 keys made in memory (WebCrypto), so a test can sign a card answer as a
 // paired phone and have it checked as the real registry would. No key ever touches the disk or the OS store.
-import type { DeviceKind, Os } from "@waifucave/clover-protocol";
+import type { DeviceKind, Os } from "@waifucave/moss-protocol";
 import type { Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {

@@ -176,13 +176,13 @@ describe("what a decision rests on stays readable", () => {
   });
   test("tokens that would hide the words are refused: see-through text, a tiny size", () => {
     const page = fieldPage({ cardId: "card_x", token: "se_001abcdef", field: "summary", value: e, tokens: { "card.text": "#FFFFFF00", "card.muted": "rgba(0,0,0,0.1)", "card.font.size": "1px", "card.approve.text": "#0004" } });
-    expect(page).not.toContain("--clover-card-text:");
-    expect(page).not.toContain("--clover-card-muted:");
-    expect(page).not.toContain("--clover-card-font-size:");
-    expect(page).not.toContain("--clover-card-approve-text:");
+    expect(page).not.toContain("--moss-card-text:");
+    expect(page).not.toContain("--moss-card-muted:");
+    expect(page).not.toContain("--moss-card-font-size:");
+    expect(page).not.toContain("--moss-card-approve-text:");
     const ok = fieldPage({ cardId: "card_x", token: "se_001abcdef", field: "summary", value: e, tokens: { "card.text": "#F2F2F2", "card.font.size": "14px" } });
-    expect(ok).toContain("--clover-card-text: #F2F2F2;");
-    expect(ok).toContain("--clover-card-font-size: 14px;");
+    expect(ok).toContain("--moss-card-text: #F2F2F2;");
+    expect(ok).toContain("--moss-card-font-size: 14px;");
     expect(readable("card.font.size", "40px")).toBe(true);
     expect(readable("card.font.size", "90px")).toBe(false);
   });
@@ -217,7 +217,7 @@ describe("text colours are an allow-list", () => {
   test("a page given a see-through text colour leaves it out", () => {
     for (const v of ["transparent", "rgb(0,0,0,0)", "hsl(0 0% 0% / 0)", "currentcolor"]) {
       const page = fieldPage({ cardId: "card_x", token: "se_001abcdef", field: "summary", value: { type: "text", text: "x" }, tokens: { "card.text": v } });
-      expect(page, v).not.toContain("--clover-card-text:");
+      expect(page, v).not.toContain("--moss-card-text:");
     }
   });
 });

@@ -6,7 +6,7 @@
 //   message that starts it, and what folds in is pushed while the turn runs, so the runtime takes it after its next
 //   tool call (agent SDK 0.0.44's fold, `fold.ts`). A push the runtime didn't fold before its turn ended runs as the
 //   runtime's next turn, which the same host turn covers: the host turn ends once every push has been answered.
-// * **The transcript is the runtime's own,** under the Clover home, keyed by a backend id this driver keeps in
+// * **The transcript is the runtime's own,** under the MOSS home, keyed by a backend id this driver keeps in
 //   `<home>/sessions-runtime/<session>.json`; a new runtime (a restart, a rebuild) resumes it.
 // * **The harness owns the system prompt** (prompt.ts): rebuilt at the first turn, after every compaction, and when the
 //   cached prompt has expired (`cacheCold()`), each time by resuming the transcript under the new prompt. MCP servers
@@ -38,7 +38,7 @@ import { join } from "node:path";
 import { reservedMcpServerNames } from "../../capabilities/names";
 import { query as sdkQuery, requireBrand, type CanUseTool, type HookCallbackMatcher, type McpServerConfig, type Options, type Query, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
-import type { Os, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Os, TurnOrigin } from "@waifucave/moss-protocol";
 import type { Unsubscribe } from "../../contracts/common";
 import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../../contracts/session-host";
 import type { BotSessionContext } from "../../bots/service";
@@ -49,14 +49,14 @@ import { hostInputFoldedCount } from "../fold";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
 import { modelProviderKey } from "../model-plugins";
-import { cloverSessions } from "../sessions";
+import { mossSessions } from "../sessions";
 import { NO_HOOKS, turnOutcomeOf, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
 import { coreToolsServer, routedMcpServer, type BotMcpServer, type CallIds, type CoreToolDef, type McpRunner } from "./servers";
 import { formatTurnInput, TASK_NOTIFICATION_FRAME } from "./input";
 import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
-import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
+import { NAMESPACE_RE } from "@waifucave/moss-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
 import { partsServe } from "./only-backends";
 import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
@@ -88,12 +88,12 @@ interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?:
  *  in-process agents never run a command unsandboxed (the owner's ruling). */
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
 
-/** A bot-side session's sandbox (a bot, its side threads and routines, an in-process agent, Clover's coding agent as a
+/** A bot-side session's sandbox (a bot, its side threads and routines, an in-process agent, MOSS's coding agent as a
  *  bot's child): the host's, with `BOT_SANDBOX` set last, and the runtime's file tools held to the same write roots as
  *  the shell (agent SDK 0.0.77's `filesystem.enforceWriteRootsInFileTools`: a Write, Edit or NotebookEdit outside them
  *  runs only on a `canUseTool` allow of that exact, link-free path; a hard-linked file is refused). Hard-link writes
  *  are never allowed here, whatever the host's settings say. Its deny lists go to the runtime spelled so that none can
- *  make its file-tool check refuse every path (`runtimeDenyForms`: a secret place macOS keeps Clover out of, or a name
+ *  make its file-tool check refuse every path (`runtimeDenyForms`: a secret place macOS keeps MOSS out of, or a name
  *  under a file), each still denying the same place; `userHome` names the user's secret places. */
 export function botSandbox(sandbox: SandboxSettingsConfig, o: { userHome?: string; os?: Os } = {}): SandboxSettingsConfig {
   const { allowHardLinkWrites: _never, ...filesystem } = sandbox.filesystem ?? {};
@@ -146,7 +146,7 @@ export function withSecretReads(sandbox: SandboxSettingsConfig | undefined, fenc
   return { ...base, filesystem: { ...(base.filesystem ?? {}), denyRead: [...new Set([...(base.filesystem?.denyRead ?? []), ...places])] } };
 }
 
-/** The host's sandbox with the Clover home's key places (`BOT_KEY_PATHS`: credentials, the runtimes, the runtime's
+/** The host's sandbox with the MOSS home's key places (`BOT_KEY_PATHS`: credentials, the runtimes, the runtime's
  *  checkpoint store and image copies, …) in its `denyRead` too, when the session's file fence knows the home: the
  *  sandboxed shell can't read them either, as the file tools can't (`botReadDenied`). */
 export function withBotKeyReads(sandbox: SandboxSettingsConfig, fence: Pick<FileFence, "home"> | undefined): SandboxSettingsConfig {
@@ -158,7 +158,7 @@ export function withBotKeyReads(sandbox: SandboxSettingsConfig, fence: Pick<File
 }
 
 /** The daemon's fence for a bot's own Read, Glob and Grep: lane C's fence as the session meets it (`forCaller`), so
- *  inside the Clover home only its own folders are readable (`fileToolFenceRefusal`). */
+ *  inside the MOSS home only its own folders are readable (`fileToolFenceRefusal`). */
 export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?: Os, userHome?: string): (ctx: BotSessionContext) => FileFence {
   return (ctx) => {
     const own = fence.forCaller(ctx.caller);
@@ -167,7 +167,7 @@ export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?:
 }
 
 export interface BotDriverDeps {
-  /** The Clover home: this driver's state; the runtime's own home (`CLOVER_HOME`) and its transcripts are its store home under it (`storeHomeFor`). */
+  /** The MOSS home: this driver's state; the runtime's own home (`MOSS_HOME`) and its transcripts are its store home under it (`storeHomeFor`). */
   home: string;
   profile?: string;
   /** The embedded runtime's spawn hook (`createEmbeddedSessionHost().spawn`). */
@@ -226,7 +226,7 @@ export interface BotDriverDeps {
    *  out. Given, it must answer: undefined or a throw fails the turn, never "floor only". Whatever it says, a bot's
    *  commands run sandboxed (`BOT_SANDBOX`). */
   sandbox?(ctx: BotSessionContext): SandboxSettingsConfig | undefined;
-  /** The fence for the session's own Read, Glob and Grep (`fileToolFenceRefusal`): the Clover home's default-deny, as
+  /** The fence for the session's own Read, Glob and Grep (`fileToolFenceRefusal`): the MOSS home's default-deny, as
    *  its Bash meets it in `sandbox`. None without it. */
   fileFence?(ctx: BotSessionContext): FileFence | undefined;
   /** Extra environment for the runtime (never secrets). */
@@ -338,34 +338,34 @@ const PROMPT_HOLD_TIMEOUT_S = Math.floor(2_147_483_647 / 1000);
 /** The most times one host turn goes on after a core tool ended the runtime's turn (`CoreToolResult.endTurn`). */
 export const MAX_CONTINUATIONS = 4;
 
-/** A plugin id's top-level tree (`clover` for `clover/web`). */
+/** A plugin id's top-level tree (`moss` for `moss/web`). */
 const top = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
 
-/** Server names the agent runtime keeps for itself: its standing server's (the brand's `mcpServerName`, `clover`, which
+/** Server names the agent runtime keeps for itself: its standing server's (the brand's `mcpServerName`, `moss`, which
  *  the runtime refuses for any configured server and then exits before init) and the daemon's capability servers'
- *  (`clover__<key>`). A plugin server under one is left out of the session, never handed to the runtime. */
+ *  (`moss__<key>`). A plugin server under one is left out of the session, never handed to the runtime. */
 export function runtimeReservedServerNames(): ReadonlySet<string> {
   return new Set([requireBrand().mcpServerName, ...reservedMcpServerNames()]);
 }
 
 /** Names no tree but their own may take, installed or not: the bundled tree's. */
-export const RESERVED_SERVER_NAMES: readonly string[] = ["clover"];
+export const RESERVED_SERVER_NAMES: readonly string[] = ["moss"];
 
-/** Servers that share a name prefix (the bundled tree's children all read `mcp__clover__…`: the browser's, the web
+/** Servers that share a name prefix (the bundled tree's children all read `mcp__moss__…`: the browser's, the web
  *  plugin's) are one server to the runtime, with every tool; a tool name two of them give keeps the first, by plugin
  *  id, as the registry keeps a name (§6.7 "Tool names are unique"). Only one plugin tree may hold a name (§6.7: one
- *  enabled plugin per namespace): the name belongs to the plugin tree whose top-level id it is (`clover` for
- *  `mcp__clover__…`), else to the first tree by plugin id; a server of any other tree under it is left out, never merged
+ *  enabled plugin per namespace): the name belongs to the plugin tree whose top-level id it is (`moss` for
+ *  `mcp__moss__…`), else to the first tree by plugin id; a server of any other tree under it is left out, never merged
  *  in (`onRefused`), so no plugin can slip its tools under another's name. */
 export function mergedServers(servers: readonly BotMcpServer[], onRefused?: (s: BotMcpServer, holder: string) => void, reserved: Iterable<string> | ReadonlyMap<string, string> = RESERVED_SERVER_NAMES): BotMcpServer[] {
   const sorted = [...servers].sort((a, b) => (a.plugin < b.plugin ? -1 : a.plugin > b.plugin ? 1 : 0));
   // Who holds each name, compared without case: an installed tree's namespace is its own even when it gives no server
   // (`reserved`: name → the tree's top-level id; a plain name is its own tree's), else the tree whose top-level id is
-  // the name (`clover` holds `mcp__clover__…`), else the first by plugin id.
+  // the name (`moss` holds `mcp__moss__…`), else the first by plugin id.
   const holder = new Map<string, string>();
   for (const entry of reserved) {
     const [name, tree] = typeof entry === "string" ? [entry, entry] : entry;
-    // The first claim holds: `clover` stays the bundled tree's whatever another tree's id or namespace spells.
+    // The first claim holds: `moss` stays the bundled tree's whatever another tree's id or namespace spells.
     if (!holder.has(name.toLowerCase())) holder.set(name.toLowerCase(), tree);
   }
   const fixed = new Set(holder.keys());
@@ -495,7 +495,7 @@ export class BotSessionDriver implements SessionDriver {
 
   async #hasTranscript(id: string): Promise<boolean> {
     try {
-      await cloverSessions(this.#d.home).getSessionInfo(id);
+      await mossSessions(this.#d.home).getSessionInfo(id);
       return true;
     } catch {
       return false;
@@ -696,7 +696,7 @@ export class BotSessionDriver implements SessionDriver {
         // one (a read-only tool) has no later check (`#gatedCanUseTool`), so the gate is asked again here.
         const after = await this.#gate(signal);
         if (after !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: after } };
-        // The Clover home's default-deny for the session's own file tools, on the input a plugin's hook may have changed.
+        // The MOSS home's default-deny for the session's own file tools, on the input a plugin's hook may have changed.
         const changedInput = r.input !== input.tool_input && r.input !== null && typeof r.input === "object" && !Array.isArray(r.input);
         const fenced = this.#fileFenceRefusal({ tool_name: name, tool_input: changedInput ? r.input : input.tool_input });
         if (fenced !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: fenced } };
@@ -748,7 +748,7 @@ export class BotSessionDriver implements SessionDriver {
         try { this.#d.observe?.toolResult?.(this.#ctx, name, input.tool_response, input.tool_input); } catch { /* an observer never fails the call */ }
         // A core tool asked for the turn to end here (`#continueWith`): the runtime stops after this round, and `turn`
         // goes on in a new runtime turn.
-        const stop = this.#continueWith !== undefined ? { continue: false, stopReason: "Clover continues this turn under a changed sandbox." } : {};
+        const stop = this.#continueWith !== undefined ? { continue: false, stopReason: "MOSS continues this turn under a changed sandbox." } : {};
         if (result === input.tool_response) return stop;
         return { ...stop, hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
       }],
@@ -836,13 +836,13 @@ export class BotSessionDriver implements SessionDriver {
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
       // A plugin's skills and agent definitions reach the session its `scope` serves (`servesScope`: an `agents` plugin's
       // no bot's, an `own-bot` one's only its own bot's) and, for an agent's or a coding session, only from plugins whose
-      // `onlyBackends` name Clover's own backend, which runs it (only-backends.ts).
+      // `onlyBackends` name MOSS's own backend, which runs it (only-backends.ts).
       ...(this.#d.registry === undefined ? {} : { serves: (pluginId: string, entryScope?: unknown) => partsServe(this.#d.registry!, pluginId, { kind: ctx.kind, bot: bot.id }, entryScope) }),
       // What each plugin offers (its servers' tools and instructions), and its builder's own stopped plugins.
       servers: () => mergedServers(this.#mcpServers(), undefined, this.#reservedNames()),
       bot: bot.id,
     });
-    mcpServers.clover_core = coreToolsServer(() => [...others(), glossary]);
+    mcpServers.moss_core = coreToolsServer(() => [...others(), glossary]);
     // What the conversation shows of a plugin tool beside its real name (`runtime-sdk/tool-display.ts`): its title, by
     // the runtime's name, and what its successful result showed, by call id. Display only: the cards, the rules and
     // the reviewer read the served name, never these.
@@ -850,7 +850,7 @@ export class BotSessionDriver implements SessionDriver {
     const displays = new ToolDisplays();
     if (this.#d.mcp !== undefined) {
       for (const server of merged) {
-        if (server.server === "clover_core" || mcpServers[server.server] !== undefined) continue;
+        if (server.server === "moss_core" || mcpServers[server.server] !== undefined) continue;
         for (const t of server.tools) if (t.title !== undefined) titles.set(`mcp__${server.server}__${t.name}`, t.title);
         mcpServers[server.server] = routedMcpServer({
           server, runner: this.#d.mcp.runner, session: ctx.sessionId, as: ctx.caller, callIds: this.#callIdSource, displays,
@@ -898,7 +898,7 @@ export class BotSessionDriver implements SessionDriver {
       // call was already forced to the check by the PreToolUse hook above. Anything else (a side thread, a subagent,
       // the coding agent) keeps `BOT_SANDBOX`: its commands never leave it, and a call asking to is refused by its
       // approval check. Their commands never get launchd to start what the pause can't stop (F8). The user's secret
-      // places and the Clover home's key places are read-denied in it whatever the host gives (`withSecretReads`,
+      // places and the MOSS home's key places are read-denied in it whatever the host gives (`withSecretReads`,
       // `withBotKeyReads`): Read, Grep, Glob and the shell all meet them.
       sandbox: this.#ctx.kind === "bot"
         ? { ...botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence), this.#denyFormsHome()), ...BOT_CONVERSATION_SANDBOX }
@@ -1173,7 +1173,7 @@ export class BotSessionDriver implements SessionDriver {
    *  read throws (`#ensureOpen` fails the turn), never "unchanged". */
   #serversChanged(): boolean {
     if (this.#d.mcp === undefined || this.#builtServers === undefined) return false;
-    const now = ["clover_core", ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).map((x) => x.server).filter((n) => n !== "clover_core")].sort().join("\u0000");
+    const now = ["moss_core", ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).map((x) => x.server).filter((n) => n !== "moss_core")].sort().join("\u0000");
     if (now === this.#builtServers) return false;
     this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its MCP servers changed`);
     return true;
@@ -1323,7 +1323,7 @@ export class BotSessionDriver implements SessionDriver {
         break;
       }
       const before = end.usage;
-      end = await this.#runtimeTurn(inc, formatTurnInput({ from: "note", label: "Clover", text: note, by: { kind: "core" } }, this.#ctx.kind), ctl);
+      end = await this.#runtimeTurn(inc, formatTurnInput({ from: "note", label: "MOSS", text: note, by: { kind: "core" } }, this.#ctx.kind), ctl);
       if (before !== undefined) {
         end = { ...end, usage: { inputTokens: before.inputTokens + (end.usage?.inputTokens ?? 0), outputTokens: before.outputTokens + (end.usage?.outputTokens ?? 0), ...(end.usage?.contextTokens === undefined ? {} : { contextTokens: end.usage.contextTokens }) } };
       }

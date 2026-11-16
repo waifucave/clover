@@ -1,4 +1,4 @@
-// Clover's LinkTransport (spec §8.2 "One persistent link per device pair"; contracts/link-transport.ts): one long-lived
+// MOSS's LinkTransport (spec §8.2 "One persistent link per device pair"; contracts/link-transport.ts): one long-lived
 // link per device pair over an authenticated wire (iroh through the link sidecar, or the in-memory wire in tests).
 //
 // How a link works:
@@ -18,7 +18,7 @@
 //   failed within `failFastMs`; a request in flight when its connection drops fails `offline` (§9.1).
 // * A link re-dials by itself with backoff after a loss, and at once on `networkChanged` (S1: re-dial on every
 //   network change and wake, keep whichever connection answers first).
-import { peerTakesTreeCall, treeFeature, treeProtocolOf } from "@waifucave/clover-protocol";
+import { peerTakesTreeCall, treeFeature, treeProtocolOf } from "@waifucave/moss-protocol";
 import { type LinkPath, type LinkView, PEER_PROTOCOL_VERSION_RANGE } from "./versions";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { ContractError, isContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -119,7 +119,7 @@ function errorToWire(err: unknown): { code: string; message: string; detail?: un
   return { code: "failed", message: err instanceof Error ? err.message : String(err) };
 }
 
-export class CloverLinkTransport implements LinkTransport {
+export class MossLinkTransport implements LinkTransport {
   readonly self: string;
   readonly #o: ResolvedLinkOptions;
   readonly #links = new Map<string, PeerLink>();
@@ -340,7 +340,7 @@ function featuresOf(v: unknown): string[] {
 
 class PeerLink implements Link {
   readonly peer: string;
-  readonly #t: CloverLinkTransport;
+  readonly #t: MossLinkTransport;
   readonly sessions = new Set<Session>();
   #best: Session | undefined;
   #dialing: Promise<Session> | undefined;
@@ -356,7 +356,7 @@ class PeerLink implements Link {
   /** The highest connection sequence number seen or proposed with this peer. */
   lastSeq = 0;
 
-  constructor(peer: string, t: CloverLinkTransport) {
+  constructor(peer: string, t: MossLinkTransport) {
     this.peer = peer;
     this.#t = t;
   }
@@ -659,7 +659,7 @@ type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; time
 class Session {
   readonly conn: WireConn;
   readonly #link: PeerLink;
-  readonly #t: CloverLinkTransport;
+  readonly #t: MossLinkTransport;
   readonly #lanes = new Map<number, WireStream>();
   readonly #pending = new Map<number, Pending>();
   readonly #streams = new Set<SessionStream>();
@@ -680,7 +680,7 @@ class Session {
   /** The device that dialled this connection. */
   dialler: string;
 
-  constructor(conn: WireConn, link: PeerLink, t: CloverLinkTransport) {
+  constructor(conn: WireConn, link: PeerLink, t: MossLinkTransport) {
     this.conn = conn;
     this.#link = link;
     this.#t = t;

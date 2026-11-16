@@ -5,8 +5,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { catalogPointDecl } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { catalogPointDecl } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { agentPluginParts } from "../../agents/plugin-reach";
 import { FakePluginRegistry } from "../../contracts/fakes/plugin-registry";
 import type { Manifest } from "../../contracts/sdk-types";
@@ -18,7 +18,7 @@ const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 
 function mika() {
-  const folder = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-b-ownbot-"))), "mika");
+  const folder = join(realpathSync(mkdtempSync(join(tmpdir(), "moss-b-ownbot-"))), "mika");
   temps.push(dirname(folder));
   const files: Record<string, string> = {
     "skills/mine/SKILL.md": "---\nname: mine\ndescription: Mika's own\n---\nMine.\n",
@@ -36,8 +36,8 @@ function mika() {
       bot: { name: "Mika", instructions: "bot/instructions.md" },
       skills: [{ path: "skills/mine/SKILL.md", scope: "own-bot" }, "skills/shared/SKILL.md"],
       agents: [
-        { id: "helper", name: "Helper", backend: "clover-code", instructions: "agents/helper.md", scope: "own-bot" },
-        { id: "anyone", name: "Anyone", backend: "clover-code", instructions: "agents/anyone.md" },
+        { id: "helper", name: "Helper", backend: "moss-code", instructions: "agents/helper.md", scope: "own-bot" },
+        { id: "anyone", name: "Anyone", backend: "moss-code", instructions: "agents/anyone.md" },
       ],
       commands: [
         { name: "scene", description: "Scene", handler: "scene", scope: "own-bot" },

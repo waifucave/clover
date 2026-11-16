@@ -1,10 +1,10 @@
-// `clover-core code-agent` (K-M3b): Clover's coding agent for an outside ACP client (Zed and others), which starts this
+// `moss-core code-agent` (K-M3b): MOSS's coding agent for an outside ACP client (Zed and others), which starts this
 // as its agent server. A thin relay: it says hello on the daemon's endpoint as `cli` with the user's terminal token from
 // the secret store (never from its arguments or environment, and never written anywhere), opens one coding session for
 // the folder it was started in (`codeAgent.open`), then moves ACP lines between its stdio and that session, each
 // bounded (`CODE_AGENT_MAX_LINE`). The daemon runs the agent: no credential, setting or run home of the model's ever
 // crosses here. It exits when either side closes.
-import { CLOVER_PROTOCOL_VERSION, CODE_AGENT_LINE_NOTIFICATION, CODE_AGENT_MAX_LINE, encodeLine, LineDecoder, METHODS, NDJSON_MAX_LINE_BYTES } from "@waifucave/clover-protocol";
+import { MOSS_PROTOCOL_VERSION, CODE_AGENT_LINE_NOTIFICATION, CODE_AGENT_MAX_LINE, encodeLine, LineDecoder, METHODS, NDJSON_MAX_LINE_BYTES } from "@waifucave/moss-protocol";
 import { KeychainSecretStore } from "../../auth/secret-store";
 import { TOKEN_NAMES } from "../../auth/tokens";
 
@@ -25,13 +25,13 @@ export interface CodeAgentRelayOptions {
   say?: (text: string) => void;
 }
 
-const CLIENT_NAME = "clover-code-agent";
+const CLIENT_NAME = "moss-code-agent";
 /** The daemon's lines carry an ACP line inside a JSON string: room for it however it was escaped. */
 const FROM_DAEMON_MAX_BYTES = 8 * CODE_AGENT_MAX_LINE;
 /** A client line in UTF-8, at most four bytes a character. */
 const FROM_CLIENT_MAX_BYTES = 4 * CODE_AGENT_MAX_LINE;
 
-/** `clover-core code-agent`: runs the relay on the process's stdio and exits with its code. */
+/** `moss-core code-agent`: runs the relay on the process's stdio and exits with its code. */
 export async function codeAgentMain(endpoint: string): Promise<never> {
   process.exit(await runCodeAgentRelay({ endpoint }));
 }
@@ -48,7 +48,7 @@ export async function runCodeAgentRelay(o: CodeAgentRelayOptions): Promise<numbe
     token = undefined;
   }
   if (!token) {
-    say("clover-code-agent: Clover's sign-in for this computer's terminal wasn't found; start Clover once, then try again.");
+    say("moss-code-agent: MOSS's sign-in for this computer's terminal wasn't found; start MOSS once, then try again.");
     return 1;
   }
 
@@ -113,7 +113,7 @@ export async function runCodeAgentRelay(o: CodeAgentRelayOptions): Promise<numbe
           try {
             lines = decoder.push(chunk);
           } catch {
-            say("clover-code-agent: the daemon sent a line too long to relay; stopping.");
+            say("moss-code-agent: the daemon sent a line too long to relay; stopping.");
             return finish(1);
           }
           for (const line of lines) {
@@ -144,7 +144,7 @@ export async function runCodeAgentRelay(o: CodeAgentRelayOptions): Promise<numbe
       },
     });
   } catch {
-    say("clover-code-agent: Clover isn't running on this computer; start it, then try again.");
+    say("moss-code-agent: MOSS isn't running on this computer; start it, then try again.");
     return 1;
   }
   let next = 1;
@@ -161,9 +161,9 @@ export async function runCodeAgentRelay(o: CodeAgentRelayOptions): Promise<numbe
   });
 
   try {
-    await request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "cli", token, clientName: CLIENT_NAME });
+    await request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role: "cli", token, clientName: CLIENT_NAME });
   } catch (err) {
-    say(`clover-code-agent: Clover refused the connection: ${(err as { message: string }).message}`);
+    say(`moss-code-agent: MOSS refused the connection: ${(err as { message: string }).message}`);
     finish(1);
     return finished;
   }
@@ -171,7 +171,7 @@ export async function runCodeAgentRelay(o: CodeAgentRelayOptions): Promise<numbe
   try {
     await request("codeAgent.open", { cwd: o.cwd ?? process.cwd() });
   } catch (err) {
-    say(`clover-code-agent: Clover's coding agent couldn't start here: ${(err as { message: string }).message}`);
+    say(`moss-code-agent: MOSS's coding agent couldn't start here: ${(err as { message: string }).message}`);
     finish(1);
     return finished;
   }
@@ -186,18 +186,18 @@ export async function runCodeAgentRelay(o: CodeAgentRelayOptions): Promise<numbe
         try {
           got = lines.push(chunk);
         } catch {
-          say(`clover-code-agent: a message from the client was over ${CODE_AGENT_MAX_LINE} characters and can't be relayed; stopping.`);
+          say(`moss-code-agent: a message from the client was over ${CODE_AGENT_MAX_LINE} characters and can't be relayed; stopping.`);
           return finish(1);
         }
         for (const raw of got) {
           const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
           if (line.trim() === "") continue;
           if (line.length > CODE_AGENT_MAX_LINE) {
-            say(`clover-code-agent: a message from the client was over ${CODE_AGENT_MAX_LINE} characters and can't be relayed; stopping.`);
+            say(`moss-code-agent: a message from the client was over ${CODE_AGENT_MAX_LINE} characters and can't be relayed; stopping.`);
             return finish(1);
           }
           request("codeAgent.send", { line }).catch((err: { message: string }) => {
-            say(`clover-code-agent: Clover refused a message: ${err.message}; stopping.`);
+            say(`moss-code-agent: MOSS refused a message: ${err.message}; stopping.`);
             finish(1);
           });
         }

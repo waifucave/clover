@@ -1,18 +1,18 @@
 // The design-token catalog (spec §5.5 "Themes use design tokens first"): each token's name, type and default, with
 // `card.*` the set sealed approval frames take. The defaults are layer 1 of the theme stack, the look a part has with
-// no theme at all; they are the base theme's values (lane G), so the `clover` plugin's theme and a part with none
+// no theme at all; they are the base theme's values (lane G), so the `moss` plugin's theme and a part with none
 // agree. Tokens flow down: a plugin that dresses a smaller part uses the colours around it unless it sets its own.
 // Lane E's theme engine sets each as a CSS custom property inside the part a theme dresses (`cssProperty`).
 //
 // Names: dot-separated segments of lowercase letters and digits, each starting with a letter (`color.text.muted`).
-// The property is `--clover-` and the name with its dots as hyphens (`--clover-color-text-muted`); with no hyphen or
+// The property is `--moss-` and the name with its dots as hyphens (`--moss-color-text-muted`); with no hyphen or
 // capital inside a segment, two names never map to one property. `card.*` stays self-contained: a card value never
 // derives from another token, so restyling the accent never silently restyles approval cards.
 //
 // A plugin's own tokens live under the reserved group `plugin`: `plugin.<top-level id>.<name>` (`plugin.luna.glow`,
 // `plugin.mcp-blender.glow`), so no plugin id, however it is spelled, can name a catalog token, `card.*` included, and
 // no group the catalog adds later can meet one. The id may hold hyphens; they become underscores in the property
-// (`--clover-plugin-mcp_blender-glow`), so the name-to-property map stays one to one.
+// (`--moss-plugin-mcp_blender-glow`), so the name-to-property map stays one to one.
 //
 // Every value, a catalog token's or a plugin's own, passes `isSafeTokenValue` before it reaches CSS.
 //
@@ -104,7 +104,7 @@ export const TOKENS: readonly TokenInfo[] = [
   t("color.diff.removed.soft", "color", "#C2364F17", "#DA6F8024", "The tint behind a line a diff removes."),
   t("color.branch", "color", "#6F52C4", "#B19EDE", "A session's branch badge."),
   t("color.unread", "color", "#8A8A8A", "#848484", "The unread dot: a neutral grey."),
-  t("color.brand", "color", "#C2387A", "#FF7AB6", "Clover's mark: the one place the brand pink shows, since the accent follows the OS."),
+  t("color.brand", "color", "#C2387A", "#FF7AB6", "MOSS's mark: the one place the brand pink shows, since the accent follows the OS."),
   t("color.scrim", "color", "#00000033", "#00000080", "Behind a dialog."),
   t("color.focus", "color", "#2F6FDF", "#4180E3", "The keyboard focus ring.", "system"),
   // Messages.
@@ -266,15 +266,15 @@ export function isPluginTokenName(name: string, pluginTopId: string): boolean {
   return name.length <= 128 && name.startsWith(`${PLUGIN_TOKEN_GROUP}.${pluginTopId}.`) && PLUGIN_TOKEN_NAME_RE.test(name);
 }
 
-/** The CSS custom property a token sets: `color.text.muted` → `--clover-color-text-muted`. Dots become hyphens, and the
- *  hyphens a plugin id may hold become underscores (`plugin.mcp-blender.glow` → `--clover-plugin-mcp_blender-glow`), so
+/** The CSS custom property a token sets: `color.text.muted` → `--moss-color-text-muted`. Dots become hyphens, and the
+ *  hyphens a plugin id may hold become underscores (`plugin.mcp-blender.glow` → `--moss-plugin-mcp_blender-glow`), so
  *  the map is one to one. Throws for anything that is neither a catalog-grammar name nor a plugin token name. */
 export function cssProperty(name: string): string {
   if (name.length > 128 || !(TOKEN_NAME_RE.test(name) || PLUGIN_TOKEN_NAME_RE.test(name))) throw new Error(`not a token name: ${name}`);
-  return `--clover-${name.replace(/-/g, "_").replace(/\./g, "-")}`;
+  return `--moss-${name.replace(/-/g, "_").replace(/\./g, "-")}`;
 }
 
-/** `var(--clover-color-text-muted)`, for component styles. */
+/** `var(--moss-color-text-muted)`, for component styles. */
 export function cssVar(name: string): string {
   return `var(${cssProperty(name)})`;
 }
@@ -393,7 +393,7 @@ export const AUTO_INKS: Readonly<Record<string, AutoInk>> = {
 };
 
 /** Variables the frame sets for what sits inside it (lane F's request), never a theme: CSS custom properties named as
- *  tokens are (`--clover-frame-inset-top`), each a CSS length. */
+ *  tokens are (`--moss-frame-inset-top`), each a CSS length. */
 export const FRAME_VARIABLES: readonly { readonly name: string; readonly doc: string }[] = [
   { name: "frame.inset.top", doc: "The title bar's height: what `main`'s content keeps clear of at its top." },
   { name: "frame.window.controls", doc: "The room the window's own controls take at the title bar's start (80px on macOS by default; lane E sets it from `titlebar-area-x`)." },

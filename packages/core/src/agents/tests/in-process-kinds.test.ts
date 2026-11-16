@@ -1,18 +1,18 @@
-// A bot's children on Clover's own backends (the in-process `clover` and Clover's coding agent), on the real runtime,
+// A bot's children on MOSS's own backends (the in-process `moss` and MOSS's coding agent), on the real runtime,
 // judged by the real broker (the review on 5c89129a1; a regression row for the hole int/next had at f931fe76e, where
 // the in-process backend handed the runtime's tool names as the tool kind, so a child's Bash and Write went as "other":
 // the reviewer then a card at the default level, and allowed by the level with no card at automatic).
 //   * its command is a command: a card every time (no grant here), at the default level and at automatic;
 //   * its Writes are edits, and a run-later place is refused before any card;
 //   * every built-in tool the runtime offers a child is classified (an unknown one would card every time);
-//   * its Read, Grep and Glob of a secret place, the Clover home's denied paths and the checkpoint store return none of
+//   * its Read, Grep and Glob of a secret place, the MOSS home's denied paths and the checkpoint store return none of
 //     their content.
 import { afterEach, expect, setDefaultTimeout } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import { query as sdkQuery, type Options, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
-import { CloverApprovalBroker } from "../../approvals/broker";
+import { MossApprovalBroker } from "../../approvals/broker";
 import { pathsClassOnDisk } from "../../approvals/ordinary-paths";
 import type { ApprovalRequest } from "../../contracts/approval-broker";
 import { IN_PROCESS_BACKEND_ID, IN_PROCESS_TOOL_KINDS, inProcessAgentBackend } from "../../runtime-sdk/turn-loop/subagent-backend";
@@ -22,7 +22,7 @@ import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runt
 import { darwinTest } from "../../../test/helpers/darwin-only";
 import { inProcessBackend } from "../index";
 import { botChildFor } from "../bot-child";
-import { CLOVER_CODE_ID, CloverCodeBackend } from "../clover-code/backend";
+import { MOSS_CODE_ID, MossCodeBackend } from "../moss-code/backend";
 import { waitFor, World } from "./world";
 
 setDefaultTimeout(90_000);
@@ -34,7 +34,7 @@ const MODEL = "winter-test/calls";
 
 function baseOptionsFor(home: string, spawn: SpawnClaudeCodeProcess) {
   return (o: { model: string; effort?: string; cwd: string }): Options => {
-    const env: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", CLOVER_HOME: home };
+    const env: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", MOSS_HOME: home };
     const provider = testProviderNameFor(o.model);
     if (provider !== undefined) env["WINTER_TEST_PROVIDER"] = provider;
     return { brand: buildCoreBrand(undefined, home), model: o.model, cwd: o.cwd, env, spawnClaudeCodeProcess: spawn, settingSources: [] };
@@ -43,23 +43,23 @@ function baseOptionsFor(home: string, spawn: SpawnClaudeCodeProcess) {
 
 type Seen = { tool: string; effect: string; cardAlways: boolean; carded: boolean; allowed: boolean; by: string };
 
-/** A World with both of Clover's backends and the real broker; every card is answered no. */
+/** A World with both of MOSS's backends and the real broker; every card is answered no. */
 function worldWith(spawn: SpawnClaudeCodeProcess, level: Level) {
   const w = new World({
     level,
     extraBackends: (wire, self) => [
-      inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, userHome: self.userHome, sandboxReady: () => true }),
-      new CloverCodeBackend({
-        clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL, sandboxReady: () => true, baseOptions: baseOptionsFor(self.cloverHome, spawn), pause: { mayAct: () => true },
-        botChild: botChildFor({ cloverHome: self.cloverHome, userHome: self.userHome }),
+      inProcessBackend({ home: self.mossHome, spawn, defaultModel: () => MODEL }, { home: self.mossHome, userHome: self.userHome, sandboxReady: () => true }),
+      new MossCodeBackend({
+        clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL, sandboxReady: () => true, baseOptions: baseOptionsFor(self.mossHome, spawn), pause: { mayAct: () => true },
+        botChild: botChildFor({ mossHome: self.mossHome, userHome: self.userHome }),
       }),
     ],
   });
   world = w;
-  const broker = new CloverApprovalBroker({
+  const broker = new MossApprovalBroker({
     clock: w.clock, levels: () => level, localComputer: "Studio",
     reviewer: async () => "unavailable" as never,
-    pathClass: (paths) => pathsClassOnDisk(paths, { home: w.userHome, os: process.platform === "darwin" ? "macos" : "linux", cloverHome: w.cloverHome }),
+    pathClass: (paths) => pathsClassOnDisk(paths, { home: w.userHome, os: process.platform === "darwin" ? "macos" : "linux", mossHome: w.mossHome }),
   });
   const seen: Seen[] = [];
   (w.approvals as { request: (r: ApprovalRequest, o?: { signal?: AbortSignal }) => Promise<unknown> }).request = async (r, o) => {
@@ -86,8 +86,8 @@ const start = (w: World, backend: string, level: Level, prompt: string) => w.man
   backend, root: "home/Studio/project1", title: "Probe", model: MODEL, prompt,
 });
 
-describeWithEmbeddedRuntime("a bot's children on Clover's own backends, judged by the real broker", (spawn) => {
-  for (const backend of [IN_PROCESS_BACKEND_ID, CLOVER_CODE_ID]) for (const level of ["ask-risky", "automatic"] as const) {
+describeWithEmbeddedRuntime("a bot's children on MOSS's own backends, judged by the real broker", (spawn) => {
+  for (const backend of [IN_PROCESS_BACKEND_ID, MOSS_CODE_ID]) for (const level of ["ask-risky", "automatic"] as const) {
     darwinTest(`${backend} at ${level}: its command cards every time; its Writes are edits; a run-later place is refused before any card`, async () => {
       const { w, seen } = worldWith(spawn, level);
       const cmd = join(w.project, "cmd.txt");
@@ -116,8 +116,8 @@ describeWithEmbeddedRuntime("a bot's children on Clover's own backends, judged b
     const { w } = worldWith(spawn, "ask-risky");
     const tools: string[] = [];
     const backend = inProcessAgentBackend({
-      home: w.cloverHome, spawn, defaultModel: () => MODEL, pauseGateFor: () => ({ mayAct: () => true }), sandboxReady: () => true,
-      botChild: botChildFor({ cloverHome: w.cloverHome, userHome: w.userHome }),
+      home: w.mossHome, spawn, defaultModel: () => MODEL, pauseGateFor: () => ({ mayAct: () => true }), sandboxReady: () => true,
+      botChild: botChildFor({ mossHome: w.mossHome, userHome: w.userHome }),
       query: (args) => {
         const q = sdkQuery(args);
         const it = q[Symbol.asyncIterator].bind(q);
@@ -136,7 +136,7 @@ describeWithEmbeddedRuntime("a bot's children on Clover's own backends, judged b
     });
     const session = await backend.start({
       sessionId: "s_tools", bot: "alpha", root: w.project, model: MODEL,
-      bridge: { name: "clover_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
+      bridge: { name: "moss_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
       fence: { allowWrite: [join(w.root, "tmp")], denyWrite: [], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" },
     } as never);
     mkdirSync(join(w.root, "tmp"), { recursive: true });
@@ -151,14 +151,14 @@ describeWithEmbeddedRuntime("a bot's children on Clover's own backends, judged b
     expect(unclassified).toEqual([]);
   });
 
-  darwinTest("its Read, Grep and Glob of the secret places, the Clover home and the checkpoint store return none of their content", async () => {
+  darwinTest("its Read, Grep and Glob of the secret places, the MOSS home and the checkpoint store return none of their content", async () => {
     const { w } = worldWith(spawn, "automatic");
     const MARK = "the-child-must-never-see-this";
     const secrets = [
       join(w.userHome, ".aws", "credentials"),
       join(w.userHome, ".ssh", "id_ed25519"),
-      join(w.cloverHome, "bots", "beta", "memory", "MEMORY.md"),
-      join(w.cloverHome, "sdk", "file-history", "s_other", "notes.md"),
+      join(w.mossHome, "bots", "beta", "memory", "MEMORY.md"),
+      join(w.mossHome, "sdk", "file-history", "s_other", "notes.md"),
     ];
     for (const f of secrets) {
       mkdirSync(join(f, ".."), { recursive: true });
@@ -175,7 +175,7 @@ describeWithEmbeddedRuntime("a bot's children on Clover's own backends, judged b
     expect(JSON.stringify(history)).not.toContain(MARK);
     const events = history.flatMap((x) => (x.type === "driver" ? [(x as unknown as { event: Record<string, unknown> }).event] : []));
     const agentSessionId = events.find((e) => e["type"] === "agent_started")?.["agentSessionId"] as string;
-    const record = [...new Bun.Glob(`**/${agentSessionId}.jsonl`).scanSync({ cwd: w.cloverHome, absolute: true })];
+    const record = [...new Bun.Glob(`**/${agentSessionId}.jsonl`).scanSync({ cwd: w.mossHome, absolute: true })];
     expect(record.length).toBe(1);
     const results = readFileSync(record[0]!, "utf8");
     expect(results.match(/"type":"tool_result"/g)?.length).toBe(calls.length);

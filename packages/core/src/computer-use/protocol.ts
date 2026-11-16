@@ -4,8 +4,8 @@
 // never spawns it (TCC would attribute it to the parent) — it is launched through LaunchServices by bundle id.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CLOVER_TEAM_ID } from "../auth/app-token-acl";
-import type { CloverProfile } from "../profile";
+import { MOSS_TEAM_ID } from "../auth/app-token-acl";
+import type { MossProfile } from "../profile";
 
 /** The helper protocol this daemon speaks — `apple/ComputerUse/PROTOCOL.md`'s "Protocol version", the helper's
  *  `RPCWire.protocolVersion` and WinterKit's `ComputerUseHelperProtocol.version` (a repo test keeps them equal). */
@@ -34,26 +34,26 @@ export function helperVersionAtLeast(version: unknown, minimum: string = HELPER_
 }
 
 /** The helper's bundle id per profile: dist `com.winter.computeruse`, dev `com.winter.computeruse.dev`. */
-export function helperBundleIdFor(profile: CloverProfile): string {
+export function helperBundleIdFor(profile: MossProfile): string {
   return profile === "dev" ? "com.winter.computeruse.dev" : "com.winter.computeruse";
 }
 
 /** The helper app's display name per profile (its bundle's file name). */
-export function helperAppNameFor(profile: CloverProfile): string {
+export function helperAppNameFor(profile: MossProfile): string {
   return profile === "dev" ? "Winter Computer Use Dev.app" : "Winter Computer Use.app";
 }
 
 /**
  * WHERE the helper app is, so the daemon can launch it BY PATH (`open -g -a <path>` — spine, after L1a): a
  * bundle-id launch can resolve to any registered copy, a path cannot.
- *   - dist: `Clover.app/Contents/Helpers/Winter Computer Use.app` — `clover-core` lives in `Contents/MacOS`;
- *   - dev: `<repo>/dist/dev/Winter Computer Use Dev.app`, beside the signed dev daemon `dist/dev/clover-core`
+ *   - dist: `MOSS Code.app/Contents/Helpers/Winter Computer Use.app` — `moss-core` lives in `Contents/MacOS`;
+ *   - dev: `<repo>/dist/dev/Winter Computer Use Dev.app`, beside the signed dev daemon `dist/dev/moss-core`
  *     (built by `bun run dev:helper`); a daemon run from source under `bun` finds the repo from this file.
- * `$CLOVER_COMPUTER_USE_APP` overrides both (a test, an unusual layout). The helper is verified by its code
+ * `$MOSS_COMPUTER_USE_APP` overrides both (a test, an unusual layout). The helper is verified by its code
  * signature after it answers, so a wrong path can only fail, never impersonate it.
  */
-export function helperAppPathFor(profile: CloverProfile, env: NodeJS.ProcessEnv = process.env, execPath: string = process.execPath): string {
-  const override = env.CLOVER_COMPUTER_USE_APP;
+export function helperAppPathFor(profile: MossProfile, env: NodeJS.ProcessEnv = process.env, execPath: string = process.execPath): string {
+  const override = env.MOSS_COMPUTER_USE_APP;
   if (override !== undefined && override.trim().length > 0) return override;
   if (profile === "dist") return join(dirname(execPath), "..", "Helpers", helperAppNameFor("dist"));
   const compiled = typeof Bun !== "undefined" && (Bun.main.startsWith("/$bunfs/") || Bun.main.includes("/$bunfs/"));
@@ -61,13 +61,13 @@ export function helperAppPathFor(profile: CloverProfile, env: NodeJS.ProcessEnv 
   return fileURLToPath(new URL(`../../../../dist/dev/${helperAppNameFor("dev")}`, import.meta.url));
 }
 
-/** The designated requirement the daemon holds the helper to (identifier + Clover's team), checked on the
+/** The designated requirement the daemon holds the helper to (identifier + MOSS's team), checked on the
  *  pid the helper reports in `hello` (`helper-verify.ts`). */
-export function helperRequirementFor(profile: CloverProfile, teamId: string = CLOVER_TEAM_ID): string {
+export function helperRequirementFor(profile: MossProfile, teamId: string = MOSS_TEAM_ID): string {
   return `identifier "${helperBundleIdFor(profile)}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
 }
 
-/** `<CLOVER_HOME>/run/computer-use.sock` — created by the helper, mode 0600. */
+/** `<MOSS_HOME>/run/computer-use.sock` — created by the helper, mode 0600. */
 export function helperSocketPath(home: string): string {
   return join(home, "run", "computer-use.sock");
 }
@@ -112,17 +112,17 @@ export class HelperUnavailableError extends Error {
 export interface HelperProtocolMismatch {
   helperProtocol?: number;
   helperVersion?: string;
-  cloverProtocol: number;
+  mossProtocol: number;
   message: string;
 }
 
 /** The ONE sentence for a protocol mismatch, which side is out of date first; the fix is always the same. */
-export function helperProtocolMismatchMessage(helperProtocol: number | undefined, cloverProtocol: number = HELPER_PROTOCOL): string {
+export function helperProtocolMismatchMessage(helperProtocol: number | undefined, mossProtocol: number = HELPER_PROTOCOL): string {
   if (helperProtocol === undefined) {
-    return `Winter Computer Use speaks a different helper protocol than this Clover (${cloverProtocol}) — update Clover`;
+    return `Winter Computer Use speaks a different helper protocol than this MOSS (${mossProtocol}) — update MOSS`;
   }
-  const side = helperProtocol < cloverProtocol ? "too old" : "too new";
-  return `Winter Computer Use is ${side} for this Clover (it speaks helper protocol ${helperProtocol}, Clover speaks ${cloverProtocol}) — update Clover`;
+  const side = helperProtocol < mossProtocol ? "too old" : "too new";
+  return `Winter Computer Use is ${side} for this MOSS (it speaks helper protocol ${helperProtocol}, MOSS speaks ${mossProtocol}) — update MOSS`;
 }
 
 /** The helper answered, but speaks another protocol: a `helper_unavailable` that no retry can cure. Typed by
@@ -130,24 +130,24 @@ export function helperProtocolMismatchMessage(helperProtocol: number | undefined
 export class HelperProtocolMismatchError extends HelperUnavailableError {
   readonly reason = "protocol_mismatch" as const;
   readonly mismatch: HelperProtocolMismatch;
-  constructor(helperProtocol: number | undefined, helperVersion?: string, cloverProtocol: number = HELPER_PROTOCOL) {
-    const message = helperProtocolMismatchMessage(helperProtocol, cloverProtocol);
+  constructor(helperProtocol: number | undefined, helperVersion?: string, mossProtocol: number = HELPER_PROTOCOL) {
+    const message = helperProtocolMismatchMessage(helperProtocol, mossProtocol);
     super(message, false);
     this.name = "HelperProtocolMismatchError";
     this.mismatch = {
       ...(helperProtocol === undefined ? {} : { helperProtocol }),
       ...(helperVersion === undefined ? {} : { helperVersion }),
-      cloverProtocol, message,
+      mossProtocol, message,
     };
   }
 }
 
 /** The running helper is older than `HELPER_MIN_VERSION` and a relaunch did not bring a newer one: unusable until
- *  Clover (and so its helper) is updated — never retried. */
+ *  MOSS (and so its helper) is updated — never retried. */
 export class HelperOutdatedError extends HelperUnavailableError {
   readonly reason = "outdated" as const;
   constructor(readonly helperVersion: string | undefined, readonly minimum: string = HELPER_MIN_VERSION) {
-    super(`Winter Computer Use ${helperVersion ?? "(unknown version)"} is older than this Clover needs (${minimum} or later) — update Clover, or quit Winter Computer Use so its current version starts`, false);
+    super(`Winter Computer Use ${helperVersion ?? "(unknown version)"} is older than this MOSS needs (${minimum} or later) — update MOSS, or quit Winter Computer Use so its current version starts`, false);
     this.name = "HelperOutdatedError";
   }
 }
@@ -166,7 +166,7 @@ export interface TargetBindResult {
   /** What the bind had to do to reach a usable window (another Space, moved here, a new one opened). */
   detail?: string;
   /** helper 1.9.8: the window holds web content (an AXWebArea — WebKit or Chromium): its pages don't react to hover from
-   *  Clover's pointer while the app is in the background — said once per session per app. */
+   *  MOSS's pointer while the app is in the background — said once per session per app. */
   webContent?: boolean;
 }
 export interface TargetUseWindowResult { window: { id: number; title: string; frame: Rect }; detail?: string; webContent?: boolean }

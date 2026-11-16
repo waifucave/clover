@@ -1,13 +1,13 @@
-// `clover-core __verify-feed <update file>`: the update feed's signature check (packages/update-feed) inside the
+// `moss-core __verify-feed <update file>`: the update feed's signature check (packages/update-feed) inside the
 // daemon's own binary, against the key it carries, for a server's daemon updating itself (spec §3.1) and for
 // `build:daemon --smoke`. It reads the file and `<file>.sig` beside it, and answers before anything reads the file:
 // `feed: ok`, or `feed: refused (<reason>)` with exit 1.
 import { existsSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { SIGNATURE_SUFFIX, UPDATE_FEED_PUBLIC_KEY, verifyFeed } from "@waifucave/clover-update-feed";
+import { SIGNATURE_SUFFIX, UPDATE_FEED_PUBLIC_KEY, verifyFeed } from "@waifucave/moss-update-feed";
 
 export function runVerifyFeed(file: string | undefined, publicKey: string | null = UPDATE_FEED_PUBLIC_KEY): { code: number; line: string } {
-  if (file === undefined || !existsSync(file)) return { code: 2, line: "usage: clover-core __verify-feed <update file> (its signature beside it, <file>.sig)" };
+  if (file === undefined || !existsSync(file)) return { code: 2, line: "usage: moss-core __verify-feed <update file> (its signature beside it, <file>.sig)" };
   const sigFile = `${file}${SIGNATURE_SUFFIX}`;
   const signature = existsSync(sigFile) ? readFileSync(sigFile, "utf8") : undefined;
   // The name is part of what is signed: the file is checked as the update file its name says it is.

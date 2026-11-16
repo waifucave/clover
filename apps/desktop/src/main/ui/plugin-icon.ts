@@ -1,5 +1,5 @@
 // A plugin's own icon for the Plugins page's lists, for a plugin `plugin.ui` doesn't show (off, found and waiting for
-// its OK, or with no UI): `/_icon/<id>`, asked by a frame main bound to the clover tree's layer and no other. A found
+// its OK, or with no UI): `/_icon/<id>`, asked by a frame main bound to the moss tree's layer and no other. A found
 // plugin's files are untrusted content shown before its OK, so this route serves only what an <img> decodes as a small
 // still picture: the manifest's `icon`, a relative path inside the plugin's folder (links resolved, still inside), read
 // once through one descriptor (no link followed at the end, never blocking: a FIFO is refused, not waited on), a
@@ -7,7 +7,7 @@
 // ICON_MAX_SIDE pixels each way and not animated. Anything else is no icon (the puzzle).
 import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { isAbsolute, join, sep } from "node:path";
-import type { PLUGINS_METHODS } from "@waifucave/clover-protocol";
+import type { PLUGINS_METHODS } from "@waifucave/moss-protocol";
 
 /** The most an icon's file may be. */
 export const ICON_MAX_BYTES = 256 * 1024;
@@ -219,7 +219,7 @@ export async function pluginIconFile(get: (id: string) => Promise<IconSource>, i
   return type === undefined ? none("its icon isn't a still PNG, JPEG or WebP of at most 1024 px") : { data, type };
 }
 
-/** The route's door: `/_icon/` is answered only for a frame main bound to the clover tree's layer (by the frame that
+/** The route's door: `/_icon/` is answered only for a frame main bound to the moss tree's layer (by the frame that
  *  asks, never the URL's host); a request with no known frame, or from another layer's, is refused. Other paths aren't
  *  this door's. */
 export function iconRequest(frameLayer: string | undefined, url: string): "not-icon" | "allow" | "refuse" {
@@ -230,5 +230,5 @@ export function iconRequest(frameLayer: string | undefined, url: string): "not-i
     return "not-icon";
   }
   if (!u.pathname.startsWith("/_icon/")) return "not-icon";
-  return frameLayer === "clover" && u.host === "clover" ? "allow" : "refuse";
+  return frameLayer === "moss" && u.host === "moss" ? "allow" : "refuse";
 }

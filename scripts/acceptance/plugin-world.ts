@@ -1,6 +1,6 @@
 // The run's fake plugin index and npm registry (fake-exa.ts serves them by name, from `world`): publishing a version
 // writes its `.tar.gz` and the index or npm record that lists it, as an index author or `npm publish` would. The tree
-// hash an index lists is the one Clover computes for the unpacked folder (validatePluginFolder).
+// hash an index lists is the one MOSS computes for the unpacked folder (validatePluginFolder).
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,9 +15,9 @@ export const FAKE_INDEX_URL = `https://${FAKE_INDEX_HOST}/index.json`;
 /** A plugin version's files, by path. */
 export type Files = Record<string, string>;
 
-/** The tree hash Clover computes for these files as a plugin folder. */
+/** The tree hash MOSS computes for these files as a plugin folder. */
 export async function treeHashOf(files: Files): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "clover-acceptance-hash-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-acceptance-hash-"));
   try {
     for (const [path, text] of Object.entries(files)) {
       mkdirSync(dirname(join(dir, path)), { recursive: true });

@@ -1,7 +1,7 @@
 // The `computer` point end to end, against fakes (plan §4 J, M3; `cloud-support.ts` has the plugins, the fake host and
 // the fake Hetzner API), and the cloud computers on a node, run by the main computer alone.
 import { afterEach, describe, expect, test } from "bun:test";
-import { NOT_AVAILABLE_YET } from "@waifucave/clover-protocol";
+import { NOT_AVAILABLE_YET } from "@waifucave/moss-protocol";
 import { removeTemps, tempDir } from "../../src/bots/tests/fixtures";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { FakeLeaseAuthority } from "../../src/contracts/fakes/lease";
@@ -41,7 +41,7 @@ describe("the computer point", () => {
     expect(await point.sync()).toMatchObject({ created: ["Cloud1"], failed: [] });
     expect(cards).toEqual([{ kind: "cloud-create", name: "Cloud1", provider: "hetzner", size: "cx22", region: "fsn1", folder: "computer-cloud1" }]);
     const [server] = [...hetzner.servers.values()];
-    expect(server).toMatchObject({ name: "cloud1", server_type: "cx22", location: "fsn1", image: "ubuntu-24.04", labels: { "clover-computer": "computer-cloud1" } });
+    expect(server).toMatchObject({ name: "cloud1", server_type: "cx22", location: "fsn1", image: "ubuntu-24.04", labels: { "moss-computer": "computer-cloud1" } });
     expect(server!.user_data).toContain("169.254.169.254");
     expect(server!.user_data).not.toContain(TOKEN);
     expect(cloud.get("Cloud1")).toMatchObject({ serverId: String(server!.id), state: "created", folder: "computer-cloud1", label: "computer-cloud1" });

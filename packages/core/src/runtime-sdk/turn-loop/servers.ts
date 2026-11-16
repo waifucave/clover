@@ -3,7 +3,7 @@
 // Owner: lane A.
 //
 // * **Core tools** (`SendMessage`, `ListAgents` from lane D; `Agent`, `TaskStop` from lane K; `Glossary` here) come
-//   in lane K's neutral `CoreToolDef` shape and are served by one in-process server, `clover_core`, whose tools the
+//   in lane K's neutral `CoreToolDef` shape and are served by one in-process server, `moss_core`, whose tools the
 //   model sees under their plain names (the SDK's `toolNames`), preloaded (`anthropic/alwaysLoad`).
 // * **Plugin MCP servers** are served by one in-process server each, under the server's own name, so a tool reads
 //   `mcp__<server>__<Tool>`. Each call goes to `McpRouter.run` (J's `node.mcp.run`) as the session, with its call id
@@ -11,7 +11,7 @@
 //   A tool the manifest marks `preload` is loaded up front; the rest are on-demand, found through `Glossary`.
 // * The runtime's own copies of these names (`TaskStop`, `SendMessage`, `ListAgents`, `Agent`) are never offered to a
 //   bot's session (driver.ts leaves them out of `tools`), so the plain names never collide.
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import type { McpSdkServerConfigWithInstance, WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { isContractError } from "../../contracts/common";
 
@@ -37,7 +37,7 @@ export interface CoreToolResult {
 }
 
 /** The core tools' server name; never a plugin's (plugin ids can't hold `_`). */
-export const CORE_TOOLS_SERVER = "clover_core";
+export const CORE_TOOLS_SERVER = "moss_core";
 
 /** One MCP tool as the MCP host lists it (lane J's `McpToolDef`), with its loading (§6.7). */
 export interface BotMcpTool {

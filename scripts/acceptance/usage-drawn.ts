@@ -1,14 +1,14 @@
 // Row 4.19's drawing: the usage plugin's island tab and its Settings section, read as drawn on the real app (offscreen).
-// What a turn counted shows as "Today … N tokens" with a Clover row; an empty section says "No usage yet" or "Nothing used today".
+// What a turn counted shows as "Today … N tokens" with a MOSS row; an empty section says "No usage yet" or "Nothing used today".
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Cdp } from "./cdp";
 
-/** What is wrong with a drawn usage view's text, or undefined when it shows a day's tokens under Clover. */
+/** What is wrong with a drawn usage view's text, or undefined when it shows a day's tokens under MOSS. */
 export function usageDrawnProblem(text: string): string | undefined {
   if (/Nothing used today|No usage yet/.test(text)) return `it says it has no usage: ${JSON.stringify(text.replace(/\s+/g, " ").slice(0, 160))}`;
   if (!/Today/.test(text)) return `it has no Today group: ${JSON.stringify(text.replace(/\s+/g, " ").slice(0, 160))}`;
-  if (!/Clover/.test(text)) return `it has no Clover row: ${JSON.stringify(text.replace(/\s+/g, " ").slice(0, 160))}`;
+  if (!/MOSS/.test(text)) return `it has no MOSS row: ${JSON.stringify(text.replace(/\s+/g, " ").slice(0, 160))}`;
   if (!/\d[\d.,]*[kKmM]? tokens/.test(text)) return `it shows no token count: ${JSON.stringify(text.replace(/\s+/g, " ").slice(0, 160))}`;
   return undefined;
 }
@@ -17,12 +17,12 @@ export function usageDrawnProblem(text: string): string | undefined {
 export function settingsDrawnProblem(text: string): string | undefined {
   const flat = JSON.stringify(text.replace(/\s+/g, " ").slice(0, 200));
   if (/No usage yet/.test(text)) return `it says it has no usage: ${flat}`;
-  if (!/Clover/.test(text)) return `it has no Clover row: ${flat}`;
+  if (!/MOSS/.test(text)) return `it has no MOSS row: ${flat}`;
   if (!/\d[\d.,]*[kKmM]? in · \d[\d.,]*[kKmM]? out/.test(text)) return `it shows no "N in · M out" total: ${flat}`;
   return undefined;
 }
 
-const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/") || d.url.startsWith("clover-plugin://alpha"));
+const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url.startsWith("moss-plugin://moss/") || d.url.startsWith("moss-plugin://alpha"));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function until<T>(what: string, ms: number, probe: () => Promise<T | undefined>, hint?: () => Promise<string>): Promise<T> {
@@ -104,7 +104,7 @@ export function islandShooter(cdp: Cdp, dir: string, setAppearance?: (scheme: "d
 }
 
 export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promise<unknown>, thirdParty?: { label: string; words: string; say?: (line: { text?: string; progress?: number }) => Promise<unknown> }): Promise<string> {
-  const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("clover-plugin://clover/"));
+  const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("moss-plugin://moss/"));
   // A card on top rests small; the strip at the top opens the island (its tab dots live there).
   await shoot?.("1-closed-strip");
   await clickIn(cdp, "the island's strip", ".clv-strip[role=button]", undefined, 20_000);
@@ -162,7 +162,7 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
   const text = await until("the Usage tab's drawn text", 20_000, async () => {
     for (const d of await here()) {
       // The tab's entry is its own frame inside the panel: the text is read where it is drawn.
-      const v = await cdp.evaluate(d.session, `(() => { const t = document.body ? document.body.innerText : ''; return /Today/.test(t) && /Clover/.test(t) && /\\d[\\d.,]*[kKmM]? tokens|No usage yet/.test(t) && !/Waiting to use/.test(t) ? t : null; })()`).catch(() => null);
+      const v = await cdp.evaluate(d.session, `(() => { const t = document.body ? document.body.innerText : ''; return /Today/.test(t) && /MOSS/.test(t) && /\\d[\\d.,]*[kKmM]? tokens|No usage yet/.test(t) && !/Waiting to use/.test(t) ? t : null; })()`).catch(() => null);
       if (typeof v === "string" && v.trim() !== "") return v;
     }
     return undefined;
@@ -193,15 +193,15 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
   if (thirdParty !== undefined) {
     await choose(thirdParty.label);
     await until("the third-party tab's own words", 20_000, async () => {
-      // Its own plugin's layer draws it: a document of its own, not the island's or the clover tree's.
-      for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("clover-plugin://acceptance-tab/"))) {
+      // Its own plugin's layer draws it: a document of its own, not the island's or the moss tree's.
+      for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("moss-plugin://acceptance-tab/"))) {
         const v = await cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "");
         if (typeof v === "string" && v.includes(thirdParty.words)) return true;
       }
       return undefined;
     }, async () => {
       const seen: string[] = [];
-      for (const d of await cdp.documents()) if (/surface=island|clover-plugin:\/\/(acceptance-tab|clover)\//.test(d.url)) seen.push(`${d.url.slice(0, 55)}: ${String(await cdp.evaluate(d.session, "(() => { const p = document.querySelector('[role=tabpanel]'); return p ? 'PANEL ' + p.getAttribute('aria-label') + ' ' + p.innerHTML.replace(/\\s+/g, ' ').slice(0, 260) : (document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 80) : ''); })()").catch(() => "")).slice(0, 320)}`);
+      for (const d of await cdp.documents()) if (/surface=island|moss-plugin:\/\/(acceptance-tab|moss)\//.test(d.url)) seen.push(`${d.url.slice(0, 55)}: ${String(await cdp.evaluate(d.session, "(() => { const p = document.querySelector('[role=tabpanel]'); return p ? 'PANEL ' + p.getAttribute('aria-label') + ' ' + p.innerHTML.replace(/\\s+/g, ' ').slice(0, 260) : (document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 80) : ''); })()").catch(() => "")).slice(0, 320)}`);
       return seen.join(" | ");
     });
     await shoot?.("5-open-third-party");
@@ -242,12 +242,12 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
   return `${text}\n[devices] ${rows.slice(0, 300)}${lineNote}`;
 }
 
-/** The island's first line on the CLOSED strip (the owner's ruling: only when Clover isn't in front). The plugin's line is set,
+/** The island's first line on the CLOSED strip (the owner's ruling: only when MOSS isn't in front). The plugin's line is set,
  *  the open island is put away (the pointer leaves it), and the small pill under the strip must show the plugin's words; with
  *  the window in front it must go, with it back it must return. `front` is the test seam's say-so. Reads the island's own
  *  document(s) only, never the pointer's place for a card. */
 export async function islandStripLine(cdp: Cdp, deps: { say: (line: { text?: string; progress?: number }) => Promise<unknown>; front: (front: boolean) => void }): Promise<string> {
-  const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("clover-plugin://clover/"));
+  const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("moss-plugin://moss/"));
   const pill = async (): Promise<{ from: string; text: string; bar: string | null } | undefined> => {
     for (const d of await here()) {
       const v = await cdp.evaluate(d.session, `(() => { const r = document.querySelector('.clv-stripline[data-plugin="acceptance-tab"]'); if (!r) return null; const b = r.querySelector('[role=progressbar]'); return JSON.stringify({ from: r.querySelector('.clv-line-from')?.textContent ?? '', text: r.querySelector('.clv-line-text')?.textContent ?? '', bar: b ? b.getAttribute('aria-valuenow') : null }); })()`).catch(() => null);
@@ -298,22 +298,22 @@ export async function islandStripLineShown(cdp: Cdp): Promise<boolean> {
 export async function islandCardHolds(cdp: Cdp, holdMs = 5_000, beforeHover?: () => void): Promise<{ states: { at: number; sig: string }[]; review: boolean }> {
   const doc = await until("the island's card", 30_000, async () => {
     for (const d of await cdp.documents()) {
-      const v = await cdp.evaluate(d.session, "document.querySelector('.clover-card-review') !== null").catch(() => false);
+      const v = await cdp.evaluate(d.session, "document.querySelector('.moss-card-review') !== null").catch(() => false);
       if (v === true) return d;
     }
     return undefined;
   });
   // The card is born and rests before the pointer comes.
   await sleep(2_000);
-  const c = await cdp.centerOf(doc.session, "[data-clover-card]", undefined);
+  const c = await cdp.centerOf(doc.session, "[data-moss-card]", undefined);
   if (c === undefined) throw new Error("the island's card has no place to put the pointer on");
   beforeHover?.();
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: c.x, y: c.y }, doc.session);
   const probe = `(() => {
     const h = (s) => { const e = document.querySelector(s); return e ? Math.round(e.getBoundingClientRect().height * 10) / 10 : -1; };
-    const card = document.querySelector('[data-clover-card]');
+    const card = document.querySelector('[data-moss-card]');
     const shell = document.querySelector('.clv-card-shell');
-    return 'win=' + innerWidth + 'x' + innerHeight + ' card=' + h('[data-clover-card]') + ' hovered=' + (shell ? shell.getAttribute('data-hovered') : '-') + ' review=' + h('.clover-card-review');
+    return 'win=' + innerWidth + 'x' + innerHeight + ' card=' + h('[data-moss-card]') + ' hovered=' + (shell ? shell.getAttribute('data-hovered') : '-') + ' review=' + h('.moss-card-review');
   })()`;
   const states: { at: number; sig: string }[] = [];
   const t0 = Date.now();
@@ -322,14 +322,14 @@ export async function islandCardHolds(cdp: Cdp, holdMs = 5_000, beforeHover?: ()
     if (states.length === 0 || states[states.length - 1]!.sig !== sig) states.push({ at: Date.now() - t0, sig });
     await sleep(100);
   }
-  const review = (await cdp.evaluate(doc.session, "document.querySelector('.clover-card-review') !== null").catch(() => false)) === true;
+  const review = (await cdp.evaluate(doc.session, "document.querySelector('.moss-card-review') !== null").catch(() => false)) === true;
   return { states, review };
 }
 
 /** Whether any of the app's documents draws a plugin OK card's Review (the island's card, the only place it is drawn here). */
 export async function islandDrawsOkCard(cdp: Cdp): Promise<boolean> {
   for (const d of await cdp.documents()) {
-    if ((await cdp.evaluate(d.session, "document.querySelector('.clover-card-review') !== null").catch(() => false)) === true) return true;
+    if ((await cdp.evaluate(d.session, "document.querySelector('.moss-card-review') !== null").catch(() => false)) === true) return true;
   }
   return false;
 }

@@ -3,9 +3,9 @@
 //
 // The runtime's file-tool check (agent SDK 0.0.78 `hostCodePathAllowed`) resolves the session's every `denyRead` and
 // `denyWrite` entry to its real path, at each call, inside one `try`: an entry that fails to resolve for any reason but
-// "not there" (Bun's `realpathSync` opens the path, so macOS answers EPERM for a folder its privacy settings keep Clover
+// "not there" (Bun's `realpathSync` opens the path, so macOS answers EPERM for a folder its privacy settings keep MOSS
 // out of, such as `~/Library/Mail`, and EACCES for one without permission; ENOTDIR for a name under a file) makes the
-// check refuse EVERY path, whatever it is. The user's secret places are such folders on a Mac that hasn't given Clover
+// check refuse EVERY path, whatever it is. The user's secret places are such folders on a Mac that hasn't given MOSS
 // Full Disk Access, which is every Mac by default.
 //
 // So an entry handed to the runtime is spelled so that resolving it can't fail, and still denies the same place: one
@@ -17,7 +17,7 @@
 //   a file under it, and a link elsewhere into it are refused (a link's real path can't even be read: the check then
 //   refuses the call anyway). The shell's Seatbelt profile gets the same regex.
 // - The secret places always get it, on the place's own name (`~/Library/[mM][aA][iI][lL]`), so the place itself is
-//   never opened to check it, whether Clover is let in there now or later; any other entry only when it wouldn't
+//   never opened to check it, whether MOSS is let in there now or later; any other entry only when it wouldn't
 //   resolve now, on its last name. Either goes up a name while that spelling still wouldn't resolve (a guarded folder
 //   above it, or a file). Kept on the deepest name, the folder above keeps the runtime's ancestor fence: the shell
 //   can't rename `~/Library` away from under the place, as with the plain entry.
@@ -26,7 +26,7 @@
 // expands a glob by walking its folder at each command, and its folders have no such privacy settings.
 import { realpathSync } from "node:fs";
 import { posix } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import { secretReadPlaces } from "../contracts/fence";
 import { anyCase } from "./sandbox-settings";
 

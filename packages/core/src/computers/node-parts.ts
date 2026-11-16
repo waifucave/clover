@@ -17,11 +17,11 @@
 // * askUser, the calling computer's side (R1): another computer's card, raised as it is through the approval broker,
 //   and the device's signature that approved it handed back (`brokerAsker`). Without a broker (or one without `get`),
 //   none: such a call stays refused.
-// * Not here: the fence (the daemon's one CloverFence, passed in the node options, which the spawner is built on) and
+// * Not here: the fence (the daemon's one MossFence, passed in the node options, which the spawner is built on) and
 //   MCP (lane A's host).
-import type { Caller, Os, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Caller, Os, TurnOrigin } from "@waifucave/moss-protocol";
 import type { ReviewInput, ReviewVerdict } from "../agent/reviewer";
-import type { CloverApprovalRequest } from "../approvals/broker";
+import type { MossApprovalRequest } from "../approvals/broker";
 import { plainOf } from "../approvals/strings";
 import { createHash } from "node:crypto";
 import type { AnswerDevices, ApprovalBroker } from "../contracts/approval-broker";
@@ -35,7 +35,7 @@ import { hostOs } from "../tree/names";
 import { fencedExecutor } from "./fenced-executor";
 import type { ComputerNodeOptions } from "./node";
 
-/** Clover's own words for the paste card. */
+/** MOSS's own words for the paste card. */
 export const PASTE_CARD_TEXT = {
   title: "Paste several lines",
   what: "Paste these lines into the terminal? A shell runs each line as a command.",
@@ -51,7 +51,7 @@ export const PASTE_CARD_LINE_MAX = 4000;
 /** The broker's request for a paste of several lines into terminal `terminalId` on `computer`: a `confirm` card (always
  *  a card, never an "always", denied after 10 minutes unanswered), each line of the paste on its own, its hiding
  *  characters out. */
-export function pasteCardRequest(text: string, o: { computer: string; terminalId: string; origin?: TurnOrigin }): CloverApprovalRequest {
+export function pasteCardRequest(text: string, o: { computer: string; terminalId: string; origin?: TurnOrigin }): MossApprovalRequest {
   const lines = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n").map((l) => {
     const p = Array.from(plainOf(l));
     return p.length > PASTE_CARD_LINE_MAX ? `${p.slice(0, PASTE_CARD_LINE_MAX - 1).join("")}…` : p.join("");
@@ -130,17 +130,17 @@ export function nodeParts(o: {
   approvals?: Pick<ApprovalBroker, "request" | "get">;
   reviewer?: SafetyReviewer;
   /** Lane C's fenced process on this computer (`fencedSpawner({ fence })`) and the user's home: the node's Bash. */
-  bash?: { spawner: FencedSpawner; home: string; temp?: string; cloverHome?: string; os?: Os };
-  /** This computer's paired devices and its Clover home: the node takes another computer's signed answers. */
-  answers?: { devices: AnswerDevices; cloverHome: string; clock: Pick<Clock, "now"> };
+  bash?: { spawner: FencedSpawner; home: string; temp?: string; mossHome?: string; os?: Os };
+  /** This computer's paired devices and its MOSS home: the node takes another computer's signed answers. */
+  answers?: { devices: AnswerDevices; mossHome: string; clock: Pick<Clock, "now"> };
   log?: (line: string) => void;
 }): Pick<ComputerNodeOptions, "terminals" | "reviewer" | "cardRecord" | "executor" | "answers" | "askUser"> {
   const approvals = o.approvals;
   const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
   return {
     ...(approvals && typeof approvals.get === "function" ? { askUser: brokerAsker({ broker: approvals, ...(o.log ? { log: o.log } : {}) }) } : {}),
-    ...(o.answers ? { answers: { devices: o.answers.devices, ledger: new FileAnswerLedger(usedAnswersPath(o.answers.cloverHome), o.answers.clock), render: callCardRenderer(sha256) } } : {}),
-    ...(o.bash ? { executor: fencedExecutor({ spawner: o.bash.spawner, home: o.bash.home, ...(o.bash.temp === undefined ? {} : { temp: o.bash.temp }), ...(o.bash.cloverHome === undefined ? {} : { cloverHome: o.bash.cloverHome }), os: o.bash.os ?? hostOs() }) } : {}),
+    ...(o.answers ? { answers: { devices: o.answers.devices, ledger: new FileAnswerLedger(usedAnswersPath(o.answers.mossHome), o.answers.clock), render: callCardRenderer(sha256) } } : {}),
+    ...(o.bash ? { executor: fencedExecutor({ spawner: o.bash.spawner, home: o.bash.home, ...(o.bash.temp === undefined ? {} : { temp: o.bash.temp }), ...(o.bash.mossHome === undefined ? {} : { mossHome: o.bash.mossHome }), os: o.bash.os ?? hostOs() }) } : {}),
     terminals: approvals ? { confirmPaste: confirmPasteVia(approvals, o.computer) } : {},
     reviewer: peerReviewer(o.reviewer, o.log),
     // A broker (or a late-bound proxy for one) without `get` finds no card: a clean "no such card", not a TypeError.

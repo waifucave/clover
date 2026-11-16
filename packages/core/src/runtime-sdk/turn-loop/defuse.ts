@@ -14,7 +14,7 @@
 // Not read as a tag: whitespace between a name's letters (`<mes sage>`), which a model doesn't read as one either.
 // A `<` that opens no guarded name (`a < b`, `<messages>`, `<notebook>`) is left alone.
 
-import { lookalikeOf } from "@waifucave/clover-plugin-sdk/fold";
+import { lookalikeOf } from "@waifucave/moss-plugin-sdk/fold";
 
 /** The defused bracket. */
 export const DEFUSED_BRACKET = "‹";

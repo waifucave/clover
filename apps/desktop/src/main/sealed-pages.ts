@@ -1,5 +1,5 @@
 /** What a sealed frame's own page says. Each card's field and each button is a frame of its own from the app's sealed
- *  scheme (`clover-sealed://<card id>/<element>?<token>`, spec §5.5): the field inside it is the field's text in the
+ *  scheme (`moss-sealed://<card id>/<element>?<token>`, spec §5.5): the field inside it is the field's text in the
  *  part's own `card.*` tokens, or a button with the card's own label. The page carries everything the user sees; the
  *  plugin's page carries the frames alone, and what it says next to them is the plugin's own words, on its own OK.
  *  An escaped control character and a bidirectional mark show as visible escapes (§5.5 "Wherever a sealed field is
@@ -10,14 +10,14 @@
  * identifier another frame could use (the token is the frame's own; the scheme's other requests carry it in the URL,
  * where a parsable page sees only its own). */
 
-import type { TokenValue } from "@waifucave/clover-plugin-sdk";
+import type { TokenValue } from "@waifucave/moss-plugin-sdk";
 import type { SealedValue } from "./sealed";
 import type { CardSummary, PreviewBlock } from "./card-summary";
 
 /** What a sealed page says of a press, one word each: taken, or why not (the app logs it with the card's id). */
 /** How long a press waits for the visibility report it asks for (a new observer made at the press) before it is refused as not checked:
  *  well under half a second, so a press is never felt waiting; the report itself takes about a frame. */
-/** A test build's switch (`CLOVER_SMOKE_PIN_VISIBLE`, set by index.ts only in a test or acceptance build): the island button page's periodic verdict
+/** A test build's switch (`MOSS_SMOKE_PIN_VISIBLE`, set by index.ts only in a test or acceptance build): the island button page's periodic verdict
  *  stays "visible" once seen, so a press reaches the fresh-report check and not the page's older gate. Off in every real build. */
 export const pinVisible = { on: false };
 
@@ -73,7 +73,7 @@ function tokenCss(tokens: Readonly<Record<string, TokenValue>> | undefined): str
     const value = cssSafe(raw);
     if (value === undefined) continue;
     if (!readable(name, value)) continue;
-    lines.push(`  --clover-${name.replaceAll(".", "-")}: ${value};`);
+    lines.push(`  --moss-${name.replaceAll(".", "-")}: ${value};`);
   }
   return lines.length === 0 ? "" : `:root {\n${lines.join("\n")}\n}\n`;
 }
@@ -174,7 +174,7 @@ export function fieldPage(input: { cardId: string; token: string; field: string;
 /** A field page tells its own frame how tall its words are (`postMessage`, numbers only), so the part's frame fits the
  *  words and nothing sealed is cut unseen; the document that placed the frame learns a size, never a word. */
 const SIZE_SCRIPT = `(() => {
-  const send = () => { try { parent.postMessage({ cloverSealedSize: { height: Math.ceil(document.body.getBoundingClientRect().height) } }, "*"); } catch (e) { /* no parent */ } };
+  const send = () => { try { parent.postMessage({ mossSealedSize: { height: Math.ceil(document.body.getBoundingClientRect().height) } }, "*"); } catch (e) { /* no parent */ } };
   addEventListener("DOMContentLoaded", () => { new ResizeObserver(send).observe(document.body); send(); });
   addEventListener("load", send);
 })();`;
@@ -248,7 +248,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
 </button>
 <p class="state" data-state="waiting" role="status"></p>`;
   const script = `(() => {
-  const b = window.cloverSealed;
+  const b = window.mossSealed;
   if (b === undefined) return;
   let answering = false;
   // The whole button, uncovered (IOv2), since enough time to have been seen (S4).
@@ -289,7 +289,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   // The button's own size, for a part that gives a labelled button the room it takes (numbers only).
   // A reading of no size is no reading (the page is laid out in a frame that starts at nothing, and a first look can find the
   // button without a box): it is said again when the button takes its size, so the frame is never left at nothing.
-  const send = () => { const r = document.querySelector(".seal-button"); if (r === null) return; const q = r.getBoundingClientRect(); if (q.width <= 0 || q.height <= 0) return; try { parent.postMessage({ cloverSealedSize: { width: Math.ceil(q.width), height: Math.ceil(q.height) } }, "*"); } catch (e) { /* no parent */ } };
+  const send = () => { const r = document.querySelector(".seal-button"); if (r === null) return; const q = r.getBoundingClientRect(); if (q.width <= 0 || q.height <= 0) return; try { parent.postMessage({ mossSealedSize: { width: Math.ceil(q.width), height: Math.ceil(q.height) } }, "*"); } catch (e) { /* no parent */ } };
   window.addEventListener("DOMContentLoaded", () => { const r = document.querySelector(".seal-button"); if (r !== null) new ResizeObserver(send).observe(r); send(); });
   window.addEventListener("load", send);
   // A click inside the button only, the renderer's own handed-over press (a page's own dispatch's isTrusted reads
@@ -378,7 +378,7 @@ const GLYPHS = {
  *  preview of the change, and its buttons; the whole of what the card holds (every sealed field, verbatim) is one
  *  press away under "Show everything this approves", and a preview that leaves anything out says so. Any other card
  *  shows its fields in the core's own order. The buttons' answers ride the same frame channel as a part's
- *  (`clover:sealed-answer`), minted per option with the `own` element, and their own gates ride this page's checks
+ *  (`moss:sealed-answer`), minted per option with the `own` element, and their own gates ride this page's checks
  *  (S3's fix: a beat after shown, a trusted press in the button, and about the same visible-and-uncovered run). */
 export function ownCardPage(input: {
   cardId: string; token: string; origin: string; issuedAt: number; expiresAt: number | null;
@@ -443,7 +443,7 @@ export function ownCardPage(input: {
     ? `<section class="review" data-review="idle"><div class="review-row"><button type="button" class="review-button">${esc(REVIEW_BUTTON_TEXT)}</button><span class="review-note">${esc(REVIEW_NOTE_TEXT)}</span></div><h3 class="review-head" hidden>${esc(REVIEW_HEAD_TEXT)}</h3><pre class="review-report" role="status" aria-live="polite"></pre></section>`
     : "";
   const script = `(() => {
-  const b = window.cloverSealed;
+  const b = window.mossSealed;
   if (b === undefined) return;
   // About a second after the page is shown (showInactive): the 1 s wait restarts when the window is shown or moved,
   // never on mouse movement, and the pointer must have entered the window after it showed, so a timed "click here"
@@ -573,24 +573,24 @@ export const REVIEW_RUNNING_TEXT = "Reviewing… you can answer the card meanwhi
 export const REVIEW_FAILED_TEXT = "The review didn't finish.";
 export const REFUSED_TEXT = "Couldn't confirm — try again.";
 
-/** What a card says when Clover holds a different answer key for this desktop than the app has (one made by an
+/** What a card says when MOSS holds a different answer key for this desktop than the app has (one made by an
  *  earlier build or another app on this home): trying again can't help, so the card doesn't ask for it. */
-export const KEY_CHANGED_TEXT = "Couldn't confirm: this computer's answer key isn't the one Clover has for it, so answers from here can't be checked.";
+export const KEY_CHANGED_TEXT = "Couldn't confirm: this computer's answer key isn't the one MOSS has for it, so answers from here can't be checked.";
 
-/** What a card says when Clover couldn't take this desktop's answer key at all (its answers told nothing, again and
+/** What a card says when MOSS couldn't take this desktop's answer key at all (its answers told nothing, again and
  *  again): reconnecting starts a fresh registration, so the card says that may help. */
-export const KEY_FAULT_TEXT = "Couldn't confirm: Clover couldn't take this computer's key. Reconnecting may help: a reconnect registers it again.";
+export const KEY_FAULT_TEXT = "Couldn't confirm: MOSS couldn't take this computer's key. Reconnecting may help: a reconnect registers it again.";
 
 /** What a render window (`app.window.render`: a bot's AppScreenshot) gets where a card's sealed frame would be: the
  *  real page's layout with every word hidden and no script of its own, under a plain box that says "approval button"
  *  or "card field", so it takes the room the frame would and the picture shows where the card goes. It has no token,
- *  no answer bridge (the preload gives `cloverSealed` to `clover-sealed://card/` alone) and no visibility report: it
+ *  no answer bridge (the preload gives `mossSealed` to `moss-sealed://card/` alone) and no visibility report: it
  *  tells its frame its size (numbers only) and nothing else, so there is never a second live approval control. */
 export function placeholderPage(real: string, kind: "button" | "field"): string {
   const words = kind === "button" ? "approval button" : "card field";
   const size = kind === "button"
-    ? `const r = document.querySelector(".seal-button"); if (r === null) return; const q = r.getBoundingClientRect(); try { parent.postMessage({ cloverSealedSize: { width: Math.ceil(q.width), height: Math.ceil(q.height) } }, "*"); } catch (e) { /* no parent */ }`
-    : `try { parent.postMessage({ cloverSealedSize: { height: Math.ceil(document.body.getBoundingClientRect().height) } }, "*"); } catch (e) { /* no parent */ }`;
+    ? `const r = document.querySelector(".seal-button"); if (r === null) return; const q = r.getBoundingClientRect(); try { parent.postMessage({ mossSealedSize: { width: Math.ceil(q.width), height: Math.ceil(q.height) } }, "*"); } catch (e) { /* no parent */ }`
+    : `try { parent.postMessage({ mossSealedSize: { height: Math.ceil(document.body.getBoundingClientRect().height) } }, "*"); } catch (e) { /* no parent */ }`;
   const script = `(() => {
   const send = () => { ${size} };
   addEventListener("DOMContentLoaded", () => { new ResizeObserver(send).observe(document.body); send(); });
@@ -625,7 +625,7 @@ ${body}
 `;
 }
 
-/** The sealed pages' look: the card's own tokens first (a part's), then Clover's own base theme (light and dark) where
+/** The sealed pages' look: the card's own tokens first (a part's), then MOSS's own base theme (light and dark) where
  *  a token is not given, so a frame or the fallback card reads like the rest of the app. A diff's colours are the text
  *  colour mixed toward the mark's own, so they hold on the island's black as on a window's white. */
 const PAGE_CSS = `
@@ -640,10 +640,10 @@ const PAGE_CSS = `
 }
 html, body { margin: 0; background: transparent; }
 body {
-  font-family: var(--clover-card-font-family, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
-  font-size: var(--clover-card-font-size, 14px);
+  font-family: var(--moss-card-font-family, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
+  font-size: var(--moss-card-font-size, 14px);
   line-height: 1.38;
-  color: var(--clover-card-text, var(--seal-text));
+  color: var(--moss-card-text, var(--seal-text));
   padding: 0;
   overflow-wrap: anywhere;
 }
@@ -654,26 +654,26 @@ body {
 .ask .target { font-weight: 700 }
 .ask .by { font-weight: 700 }
 .always { margin: 0 0 8px; font-size: 0.92em; line-height: 1.35 }
-.ask .note, .always { color: var(--clover-card-muted, var(--seal-muted)); font-weight: 500 }
-.diff, .codeblock, .plainblock, .rowsblock { margin: 0; font-family: var(--seal-mono); font-size: 0.93em; line-height: 1.45; border-radius: 8px; padding: 6px 8px; background: color-mix(in srgb, var(--clover-card-text, var(--seal-text)) 8%, transparent); }
+.ask .note, .always { color: var(--moss-card-muted, var(--seal-muted)); font-weight: 500 }
+.diff, .codeblock, .plainblock, .rowsblock { margin: 0; font-family: var(--seal-mono); font-size: 0.93em; line-height: 1.45; border-radius: 8px; padding: 6px 8px; background: color-mix(in srgb, var(--moss-card-text, var(--seal-text)) 8%, transparent); }
 .plainblock { font-family: inherit }
 .line { display: flex; gap: 6px; white-space: pre-wrap; overflow-wrap: anywhere }
 .line .sign { flex: none; width: 1ch; opacity: 0.8 }
-.line.del { color: color-mix(in srgb, var(--clover-card-text, var(--seal-text)) 45%, #E5484D); background: color-mix(in srgb, #E5484D 14%, transparent) }
-.line.add { color: color-mix(in srgb, var(--clover-card-text, var(--seal-text)) 45%, #30A46C); background: color-mix(in srgb, #30A46C 14%, transparent) }
+.line.del { color: color-mix(in srgb, var(--moss-card-text, var(--seal-text)) 45%, #E5484D); background: color-mix(in srgb, #E5484D 14%, transparent) }
+.line.add { color: color-mix(in srgb, var(--moss-card-text, var(--seal-text)) 45%, #30A46C); background: color-mix(in srgb, #30A46C 14%, transparent) }
 .rowsblock { font-family: inherit }
 .row { display: flex; gap: 8px; }
-.row .k { flex: none; color: var(--clover-card-muted, var(--seal-muted)) }
+.row .k { flex: none; color: var(--moss-card-muted, var(--seal-muted)) }
 .row .v { min-width: 0; font-family: var(--seal-mono) }
-.label-line { margin: 0 0 4px; color: var(--clover-card-muted, var(--seal-muted)); font-size: 0.9em }
-.more { margin: 4px 0 0; color: var(--clover-card-muted, var(--seal-muted)); font-size: 0.9em }
+.label-line { margin: 0 0 4px; color: var(--moss-card-muted, var(--seal-muted)); font-size: 0.9em }
+.more { margin: 4px 0 0; color: var(--moss-card-muted, var(--seal-muted)); font-size: 0.9em }
 .more.shortened { font-style: italic }
 .seal-button {
   appearance: none;
-  border: 1px solid var(--clover-card-button-rim, transparent);
-  border-radius: var(--clover-card-button-radius, 10px);
-  background: var(--clover-card-approve-background, var(--seal-accent));
-  color: var(--clover-card-approve-text, var(--seal-accent-text));
+  border: 1px solid var(--moss-card-button-rim, transparent);
+  border-radius: var(--moss-card-button-radius, 10px);
+  background: var(--moss-card-approve-background, var(--seal-accent));
+  color: var(--moss-card-approve-text, var(--seal-accent-text));
   font: inherit;
   font-weight: 500;
   padding: 6px 14px;
@@ -689,12 +689,12 @@ body[data-answered="no"] .seal-button.glyph { outline: 2px solid #E5484D; outlin
 body:has(.seal-button.glyph) { overflow: hidden }
 body:has(.seal-button.glyph) .state { display: none }
 .seal-button:disabled { opacity: 0.5; cursor: wait }
-.seal-button.quiet { background: color-mix(in srgb, var(--clover-card-text, var(--seal-text)) 14%, transparent); color: var(--clover-card-text, var(--seal-text)) }
-.seal-title body, .seal-computer body, .seal-expires body, .seal-source body { font-size: 0.87em; font-weight: 600; color: var(--clover-card-muted, var(--seal-muted)) }
-.seal-deny .seal-button { background: var(--clover-card-deny-background, var(--seal-control)); color: var(--clover-card-deny-text, var(--seal-text)) }
+.seal-button.quiet { background: color-mix(in srgb, var(--moss-card-text, var(--seal-text)) 14%, transparent); color: var(--moss-card-text, var(--seal-text)) }
+.seal-title body, .seal-computer body, .seal-expires body, .seal-source body { font-size: 0.87em; font-weight: 600; color: var(--moss-card-muted, var(--seal-muted)) }
+.seal-deny .seal-button { background: var(--moss-card-deny-background, var(--seal-control)); color: var(--moss-card-deny-text, var(--seal-text)) }
 .seal-button[data-again] { animation: seal-again 600ms ease-out 2 }
 @keyframes seal-again { 0% { box-shadow: 0 0 0 0 var(--seal-muted, #8888) } 100% { box-shadow: 0 0 0 6px transparent } }
-.state { margin: 0; font-size: 0.85em; color: var(--clover-card-muted, var(--seal-muted)); min-height: 1.2em }
+.state { margin: 0; font-size: 0.85em; color: var(--moss-card-muted, var(--seal-muted)); min-height: 1.2em }
 .hidden { visibility: hidden }
 /* The app's own card. */
 /* The card is the window: a frameless transparent window holds one rounded card with a hairline rim, as the island's card is, in the

@@ -1,6 +1,6 @@
 # What a plugin can contribute, and what works
 
-Every kind of thing a Clover plugin can bring, whether it works end to end today, and what Alpha (`plugins/alpha`, the
+Every kind of thing a MOSS plugin can bring, whether it works end to end today, and what Alpha (`plugins/alpha`, the
 reference plugin) does with it. Alpha uses every kind that fits a bot for a real reason; the kinds she leaves out are
 named with why.
 
@@ -19,7 +19,7 @@ A head under review is named where it changes a row.
 | `bot` (name, instructions, greeting, model, effort) | works | Her name, her voice in words, her greeting, her default model. Her instructions have a section on her stage: when to use it, and that the notes pinned to it are data the user sees, never instructions. | — |
 | `bot.memory` (seeded memories) | works | `stage.md`, one memory in her own voice about her stage, indexed in her `MEMORY.md`. It shows in the user's memory list like any other: they can read, change or delete it. | — |
 | `skills` | works | `plan-my-day` and `explain-like-a-friend`, found through Glossary. | — |
-| `agents` (agent definitions) | works (head under review) | `study-buddy`, a researcher she hands reading work to (`Agent({ agent: "alpha:study-buddy", backend: "clover-code", … })`). The definition brings words only: its instructions go before her brief, and nothing else of it is taken. The backend, model, folder and computer are hers. The OK card names it, and adding or changing one asks again. The agent's row says whose definition and which backend it started from. On Clover's own sandboxed agents a start needs no card; on any other backend each start asks on a card. The acceptance run checks the no-card start and the report coming back. | — |
+| `agents` (agent definitions) | works (head under review) | `study-buddy`, a researcher she hands reading work to (`Agent({ agent: "alpha:study-buddy", backend: "moss-code", … })`). The definition brings words only: its instructions go before her brief, and nothing else of it is taken. The backend, model, folder and computer are hers. The OK card names it, and adding or changing one asks again. The agent's row says whose definition and which backend it started from. On MOSS's own sandboxed agents a start needs no card; on any other backend each start asks on a card. The acceptance run checks the no-card start and the report coming back. | — |
 | `locales` | works | English and Japanese for her UI strings, setting titles and command descriptions. | Bot instructions are in one language only. |
 | `commands` | works | `/scene`, `/mood` and `/outfit`, served by her host code. The composer's slash menu lists a plugin's commands with its name and runs one as the user; nothing of it reaches a bot (the examples' acceptance runs `/note` and `/rain-alert` from it). | — |
 | `settings` (string, number, boolean, enum, color, secret; scopes account, device, bot) | works | The starting scene (meadow by default), effects, reactions on or off, voice on or off, and a nickname for you, one per bot. Her server and her hooks both honour them. | A `bot` setting has no control on the Plugins page (it is one value per bot). |
@@ -30,7 +30,7 @@ A head under review is named where it changes a row.
 |---|---|---|---|
 | `host` code (`runtime: "bun"`) | works | Her stage's keeper: an MCP server, her hooks, her commands, and what her tab may call. It runs in her tree's own fenced plugin process, with no network and no capability (her tree declares none; a test holds it to that). | — |
 | `mcpServers` type `host` | works | Her `stage` server (`mcp__alpha-stage__*`): `set_expression`, `play_motion`, `set_scene`, `set_mood`, `toggle_outfit`, `pin_note`, `unpin_note`, `celebrate`, `stage_status`. Names come from whatever model her tab loaded; a wrong name is refused with a quoted list of the right ones. | — |
-| `mcpServers.*.contained` (display-only tools) | works | Every stage tool but `stage_status`. Each runs with no card at the default level, asks at "ask", and is refused at read-only. The acceptance run checks all three. They hold only because her whole tree reaches no network and reads at most Clover's own state. | — |
+| `mcpServers.*.contained` (display-only tools) | works | Every stage tool but `stage_status`. Each runs with no card at the default level, asks at "ask", and is refused at read-only. The acceptance run checks all three. They hold only because her whole tree reaches no network and reads at most MOSS's own state. | — |
 | `mcpServers.*.readOnly` (tools that only read) | works | `stage_status`: a read, so no card at every level that runs reads, read-only included. The acceptance run checks it at read-only. It holds only for the routed tool on the OK'd tree, and never where the tree reaches the network. | — |
 | `mcpServers` type `stdio` | works | None: her tools need no process of their own. | — |
 | `mcpServers` type `http` | no | None, and never for a reference plugin: a server that reaches the network can't skip the card. | Not served. |
@@ -53,7 +53,7 @@ A head under review is named where it changes a row.
 | `bot.avatar` and the `avatar` renderers (VRM, Live2D) | works | A placeholder VRM model today. Live2D from whatever model the user loads is lane E's next step; no model file of the owner's goes in the repo. |
 | `client` components, bot-tab spots (`bot.tab`, `bot.header`, `bot.stage`, `bot.side`, `conversation.message`, `tool.result` …) | works | Her stage component, which draws the stage document, and her transcript's styling: lane E's work in progress, not on `int/next` yet. |
 | `island.tab`, `app.surface`, `sidebar.bot`, `status`, `settings.section`, `panel` | works | Lane E's choice. A third-party island tab carries its plugin's name and can't raise the island. |
-| `island.line` | works | A plugin's handler (`points.call`, no capability) gives one line of plain text, an icon from the island's named set and a progress; the island draws it in its own style on the open Needs you tab (below the cards) and the first one on the closed strip, only when Clover isn't in front, with the plugin's name beside it, and decides count, order and how long it lasts. |
+| `island.line` | works | A plugin's handler (`points.call`, no capability) gives one line of plain text, an icon from the island's named set and a progress; the island draws it in its own style on the open Needs you tab (below the cards) and the first one on the closed strip, only when MOSS isn't in front, with the plugin's name beside it, and decides count, order and how long it lasts. |
 | `pill.target` | works | None: the pill already messages bots. |
 
 ## Third-party plugins: the SDK's examples
@@ -71,7 +71,7 @@ The pair shows one rule from both sides: a tool skips its card only when the who
 
 The columns are the four ways a plugin arrives:
 
-- **Bundled**: Clover's own tree and Alpha.
+- **Bundled**: MOSS's own tree and Alpha.
 - **Folder**: a third-party folder, the examples.
 - **Index**: installed from a signed index.
 - **Wrapped**: an MCP config, a skill folder, an agent file or a Claude Code plugin, with a manifest generated around it.
@@ -94,12 +94,12 @@ Each cell says what proves it:
 | Hooks with a `command` | test | — | same path | acc (fenced: no write outside, no undeclared host) |
 | `commands` from the slash menu | acc (Alpha) | acc (`/note`, `/rain-alert`) | same path | as skills |
 | `skills` through Glossary | acc | acc (`example-notes:tidy-up`) | same path | test |
-| `agents` (agent definitions) | acc (Alpha) | acc (`example-notes:tidier` on Clover's own agent, no card, its report back) | same path | test |
+| `agents` (agent definitions) | acc (Alpha) | acc (`example-notes:tidier` on MOSS's own agent, no card, its report back) | same path | test |
 | A bot in a child plugin, its theme and window skin | acc (Alpha) | acc (Notes keeper skins the window while its tab shows) | same path | — |
-| A bot's model, chosen by its plugin | acc (Alpha's: no card, Clover's own) | acc (Notes keeper's first turn asks once, `bot-provider`) | same path | — |
-| `client`: a page (`main`) and a sidebar entry | acc (the clover tree) | acc (TSX, its own layer connection, `host.call`, its synced store) | same path | — |
+| A bot's model, chosen by its plugin | acc (Alpha's: no card, MOSS's own) | acc (Notes keeper's first turn asks once, `bot-provider`) | same path | — |
+| `client`: a page (`main`) and a sidebar entry | acc (the moss tree) | acc (TSX, its own layer connection, `host.call`, its synced store) | same path | — |
 | `locales` | acc | acc (its page in its own words) | same path | — |
-| `settings`: its own page changes a plain one with no card | — (the clover tree's parts use `plugin.settings.*`) | acc (the page's order switch) | same path | same path |
+| `settings`: its own page changes a plain one with no card | — (the moss tree's parts use `plugin.settings.*`) | acc (the page's order switch) | same path | same path |
 | `settings`: the Plugins page's controls | acc | acc (Notes' order, from the detail, no card) | same path | same path |
 | A setting that feeds what it runs or reaches | test | test (the card names old and new) | same path | test (a command hook's environment carries every plain setting) |
 | A secret, through the app's own key dialog | acc | acc (`WEATHER_KEY`, never on a page) | same path | test |
@@ -126,9 +126,9 @@ What the pair found, and where it stands:
    its model, and the acceptance expects that one card.
 5. **`contained` and `readOnly` can't hold on a plugin that reaches the network or sends notifications.** By design:
    hence two examples, not one.
-6. **`clover plugin validate` said "its host code can reach any host" on a Mac whose fence holds it.** Fixed: validate
+6. **`moss plugin validate` said "its host code can reach any host" on a Mac whose fence holds it.** Fixed: validate
    says what this computer's OK card would say.
-7. **A window skin that misses Clover's own marks was dropped without a word at validation.** The example's first
+7. **A window skin that misses MOSS's own marks was dropped without a word at validation.** The example's first
    sidebar failed the attention mark on its selected row (2.79:1), and the app silently left the sidebar unskinned.
    Fixed: validate warns (`shell_dropped`) with the app's reason, by appearance. The example's colours now pass, and a
    test holds them to it.
@@ -163,10 +163,10 @@ yet". A class test (`plugin-host/tests/host-calls-served.test.ts`) fails when a 
 | `keys.*` | The core keeps no key store for plugins yet (its only caller, the forwarder, is parked) |
 | `commands.run` | A plugin doesn't run another plugin's command yet; the user does, from the composer |
 
-Approval cards: `approvals.pending` and `approvals.watch` are served to components only, with `approvals`: the cards that wait for the plugin's own bot (the bundled `clover` tree: all), ids and places, never their text. A host half has none.
+Approval cards: `approvals.pending` and `approvals.watch` are served to components only, with `approvals`: the cards that wait for the plugin's own bot (the bundled `moss` tree: all), ids and places, never their text. A host half has none.
 
-`browser` is any plugin's to ask for (the owner, 2026-11-15), with a warning line on its card: "drives the Clover Browser:
-a bot's own tab as its tool; its page sees every Clover Browser tab on this computer, its address, title and picture,
+`browser` is any plugin's to ask for (the owner, 2026-11-15), with a warning line on its card: "drives the MOSS Browser:
+a bot's own tab as its tool; its page sees every MOSS Browser tab on this computer, its address, title and picture,
 ones you opened yourself included, with no asking, and opens, closes and acts in tabs when you press its controls,
 signed in wherever you signed in there". F5 serves `browser.*` by the
 capability: a host half acts only for the session whose tool call it serves, while that call is open, on that session's
@@ -191,8 +191,8 @@ yet, so `"memory" in api` is false in this build).
 
 These are infrastructure kinds. A bot plugin faking one would be a special case:
 
-- **`models`, `voices`, `agentBackends`:** Clover's own model, voice and agent plugins bring these.
-- **`computerProviders`, `computer`, `relays`, `notifiers`, `companions`:** Clover's own plugins bring these too.
+- **`models`, `voices`, `agentBackends`:** MOSS's own model, voice and agent plugins bring these.
+- **`computerProviders`, `computer`, `relays`, `notifiers`, `companions`:** MOSS's own plugins bring these too.
 - **`helper` programs, plugin sign-ins, `secrets`, `network:<host>`:** Alpha needs none of them, and any network would cost her stage tools their no-card run.
 
 ## Gaps, in one list

@@ -1,7 +1,7 @@
 // The plan windows Codex sessions report while they run: the runtime's `rate_limit_event` frames (the agent SDK's
 // subscription-shaped quota report: a five-hour or seven-day window, its status, utilization and reset), which the
 // projector observes and never persists. The usage service reads them back as the Codex plan's fallback when the user's
-// own Codex install can't answer (`cloverCodexWindows`). Kept in memory, the latest report per window kind, since the
+// own Codex install can't answer (`mossCodexWindows`). Kept in memory, the latest report per window kind, since the
 // daemon started. Nothing is estimated and nothing is fetched from a provider. It becomes a `usage.sources` entry with
 // the rest of the readers.
 

@@ -15,8 +15,8 @@ import { readFileSync } from "node:fs";
 import {
   DEFAULT_TAB_LAYOUT, LayoutContributionSchema, LayoutFileSchema, LayoutSchema, applyLayoutPatch, contributionProblems, isLayoutPatch, parseJsonc, resolveLayoutFile,
   type Layout, type LayoutChange, type LayoutNode, type LayoutTarget,
-} from "@waifucave/clover-plugin-sdk";
-import type { LayoutView } from "@waifucave/clover-plugin-sdk/ui/bridge";
+} from "@waifucave/moss-plugin-sdk";
+import type { LayoutView } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { cleanCss, prefixedClass } from "./css";
 import { pluginFile } from "./files";
 import type { UiPlugin } from "./model";

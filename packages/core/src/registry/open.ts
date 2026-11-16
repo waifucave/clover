@@ -1,11 +1,11 @@
-// The registry as the daemon opens it: its records in `<cloverHome>/plugins-state/`, the plugins folder
-// `<cloverHome>/plugins/` watched with its settle, the app's bundled plugins, and OK cards through the approval
+// The registry as the daemon opens it: its records in `<mossHome>/plugins-state/`, the plugins folder
+// `<mossHome>/plugins/` watched with its settle, the app's bundled plugins, and OK cards through the approval
 // broker when there is one.
 import { randomBytes } from "node:crypto";
 import { basename, join } from "node:path";
 import { registerPluginLoadFolders } from "../runtime-sdk/plugin-load-folders";
-import { catalogPointDecl } from "@waifucave/clover-plugin-sdk";
-import type { Os } from "@waifucave/clover-protocol";
+import { catalogPointDecl } from "@waifucave/moss-plugin-sdk";
+import type { Os } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import type { SecretStore } from "../contracts/secret-store";
 import { codeFieldsFrom } from "./changes";
@@ -20,7 +20,7 @@ import { Leftovers } from "./leftovers";
 import { installStagingDir } from "./install-folder";
 
 export interface OpenRegistryOptions {
-  cloverHome: string;
+  mossHome: string;
   os: Os;
   /** The app's read-only plugin folders. */
   bundledDirs?: readonly string[];
@@ -106,14 +106,14 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
   const signing = o.secrets ? await registrySigning(o.secrets) : undefined;
   // A record that failed its check this run (a bad MAC, a counter rolled back): no plugin's leftovers are recorded.
   let untrusted = false;
-  const store = fileRegistryStore(join(o.cloverHome, "plugins-state"), {
+  const store = fileRegistryStore(join(o.mossHome, "plugins-state"), {
     ...(signing ?? {}),
     onTampered: (file) => {
       untrusted = true;
       o.log?.(basename(file) === "indexes.json"
         // The index records: none of them is a plugin's OK, which stays.
-        ? `plugins: ${file} was changed outside Clover, so it isn't trusted; the indexes you added, your pins and the records of updates are reset (plugins keep their OK)`
-        : `plugins: ${file} was changed outside Clover, so it isn't trusted; plugins ask for their OK again`);
+        ? `plugins: ${file} was changed outside MOSS, so it isn't trusted; the indexes you added, your pins and the records of updates are reset (plugins keep their OK)`
+        : `plugins: ${file} was changed outside MOSS, so it isn't trusted; plugins ask for their OK again`);
     },
   });
   const hostNetworkHeld = o.hostNetworkHeld ?? (o.os === "macos" && pluginFenceAvailable());
@@ -129,7 +129,7 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     platform: o.platform ?? thisPlatform(),
   });
   folders = new PluginFolders({
-    core: registry, store, pluginsDir: join(o.cloverHome, "plugins"),
+    core: registry, store, pluginsDir: join(o.mossHome, "plugins"),
     // A point's code fields from the catalog's declaration, or its declarer's; none at all counts as code whole.
     codeFieldsOf: (point) => codeFieldsFrom(catalogPointDecl(point) ?? registry.points().find((p) => p.name === point)?.decl),
     // A point's `fills` line, from its declarer, named by the declarer's own name (its fillers' OK cards show it).
@@ -149,20 +149,20 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
       ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}),
     });
     indexes.loadCached();
-    leftovers = new Leftovers({ home: o.cloverHome, ...(o.secrets ? { secrets: o.secrets } : {}), client: indexes, trusted: () => !untrusted, ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}) });
+    leftovers = new Leftovers({ home: o.mossHome, ...(o.secrets ? { secrets: o.secrets } : {}), client: indexes, trusted: () => !untrusted, ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}) });
     folders.setLeftovers(leftovers);
     // Built before the first scan: an update cut short between its renames is undone before any folder is read.
     updater = new PluginUpdater({
-      client: indexes, registry, folders, pluginsDir: join(o.cloverHome, "plugins"), stagingDir: installStagingDir(o.cloverHome), os: o.os,
+      client: indexes, registry, folders, pluginsDir: join(o.mossHome, "plugins"), stagingDir: installStagingDir(o.mossHome), os: o.os,
       adultConfirmed: () => registry.adultConfirmed, ...(io.rename ? { rename: io.rename } : {}), ...(o.log ? { log: o.log } : {}),
     });
   }
   // Where plugin code loads from, for the fence's `node_modules` denies (#234's check 5, K3): the development folders,
   // read live, and the bundled plugins.
-  const unregisterLoadFolders = registerPluginLoadFolders(o.cloverHome, () => [...(o.bundledDirs ?? []), ...folders!.devFolderPaths()]);
+  const unregisterLoadFolders = registerPluginLoadFolders(o.mossHome, () => [...(o.bundledDirs ?? []), ...folders!.devFolderPaths()]);
   folders.start();
   await folders.scan();
-  // An update whose new version waited for its card when Clover stopped: judged again now the folders are read.
+  // An update whose new version waited for its card when MOSS stopped: judged again now the folders are read.
   await updater?.resume();
   return {
     registry, folders, store, ...(indexes ? { indexes } : {}), ...(updater ? { updater } : {}), ...(leftovers ? { leftovers } : {}),

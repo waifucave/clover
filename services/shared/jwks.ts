@@ -15,7 +15,7 @@ export interface JwksEnv {
   ACCOUNT_JWKS?: string;
   ACCOUNT_JWKS_URL?: string;
   ACCOUNT_ISSUER: string;
-  /** A service binding to the account service (clover-accounts), asked for the JWKS URL's path first. */
+  /** A service binding to the account service (moss-accounts), asked for the JWKS URL's path first. */
   ACCOUNT_SERVICE?: { fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> };
 }
 

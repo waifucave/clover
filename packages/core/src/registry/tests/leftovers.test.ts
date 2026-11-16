@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -24,15 +24,15 @@ const APP = { caller: { kind: "user", client: "app" } } as never;
 
 /** A plugin folder `tarot` to install from, its text telling trees apart. */
 function source(text: string, id = "tarot"): string {
-  const dir = join(temp("clover-left-src-"), id);
+  const dir = join(temp("moss-left-src-"), id);
   mkdirSync(join(dir, "skills", "read"), { recursive: true });
-  writeFileSync(join(dir, "clover.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+  writeFileSync(join(dir, "moss.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` } }));
   writeFileSync(join(dir, "skills", "read", "SKILL.md"), `---\nname: read\ndescription: Reads\n---\n${text}\n`);
   return dir;
 }
 
 async function world() {
-  const home = temp("clover-left-");
+  const home = temp("moss-left-");
   let failDelete = false;
   // The credential store, whose deletes the test can make fail (the registry and the methods share it, as in the daemon).
   const secrets = new (class extends MemorySecretStore {
@@ -44,7 +44,7 @@ async function world() {
   const logs: string[] = [];
   const open = async () => {
     const opened = await openPluginRegistry({
-      cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50, log: (l) => logs.push(l),
+      mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50, log: (l) => logs.push(l),
       indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch: async () => { throw new Error("offline"); } },
     });
     return { opened, m: pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, secrets, indexes: opened.indexes! }) };
@@ -73,7 +73,7 @@ async function world() {
       await w.opened.folders.refresh(dirOf(id));
     },
     failDeletes: (v: boolean) => { failDelete = v; },
-    /** Clover stops and starts again on the same home. */
+    /** MOSS stops and starts again on the same home. */
     reopen: async () => {
       await Bun.sleep(100); // the write counters reach the secret store
       w.opened.close();
@@ -143,14 +143,14 @@ describe("what a plugin leaves when its folder goes by hand", () => {
     }
   });
 
-  test("records read as empty at start (changed outside Clover, an older copy put back) delete nothing, and record no leftovers that run", async () => {
+  test("records read as empty at start (changed outside MOSS, an older copy put back) delete nothing, and record no leftovers that run", async () => {
     const w = await world();
     try {
       for (const id of ["tarot", "nova", "luna"]) {
         await w.opened.registry.approve(id, (await w.install(source("one", id))).treeHash);
         await w.leave(id);
       }
-      // Changed outside Clover: the records fail their check.
+      // Changed outside MOSS: the records fail their check.
       writeFileSync(join(w.home, "plugins-state", "installed.json"), "{\"body\":\"{}\"}\n");
       await w.reopen();
       for (const id of ["tarot", "nova", "luna"]) expect([id, w.opened.registry.get(id)?.state, await w.has(id)]).toEqual([id, "found", KEPT]);
@@ -175,7 +175,7 @@ describe("what a plugin leaves when its folder goes by hand", () => {
       await w.leave("nova");
       writeFileSync(join(w.home, "plugins-state", "installed.json"), old);
       await w.reopen();
-      expect(w.logs.some((l) => l.includes("installed.json was changed outside Clover"))).toBe(true);
+      expect(w.logs.some((l) => l.includes("installed.json was changed outside MOSS"))).toBe(true);
       expect([await w.has("tarot"), await w.has("nova")]).toEqual([KEPT, KEPT]);
     } finally {
       w.opened.close();
@@ -216,8 +216,8 @@ describe("what a plugin leaves when its folder goes by hand", () => {
     const idx = (url: string, version = "1.0.0") => ({ ...at, index: { url, version } });
     expect(sameSource(idx("https://a.test/index.json"), idx("https://a.test/index.json", "2.0.0"))).toBe(true);
     expect(sameSource(idx("https://a.test/index.json"), idx("https://b.test/index.json"))).toBe(false);
-    expect(sameSource({ ...at, npm: { name: "clover-tarot", version: "1.0.0" } }, { ...at, npm: { name: "clover-tarot", version: "2.0.0" } })).toBe(true);
-    expect(sameSource({ ...at, npm: { name: "clover-tarot", version: "1.0.0" } }, idx("https://a.test/index.json"))).toBe(false);
+    expect(sameSource({ ...at, npm: { name: "moss-tarot", version: "1.0.0" } }, { ...at, npm: { name: "moss-tarot", version: "2.0.0" } })).toBe(true);
+    expect(sameSource({ ...at, npm: { name: "moss-tarot", version: "1.0.0" } }, idx("https://a.test/index.json"))).toBe(false);
     expect(sameSource(at, at)).toBe(false);
     expect(sameSource({ ...at, wrapped: { from: "mcp-config" } }, { ...at, wrapped: { from: "mcp-config" } })).toBe(false);
   });

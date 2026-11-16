@@ -6,23 +6,23 @@
 // the wrong computer. A search of the home folder never walks into the tree, since the tree sits outside it.
 import { constants as FS, promises as fsp } from "node:fs";
 import { join, posix } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { hostOs } from "./names";
 
-/** Where this computer's tree folder lives: `$XDG_RUNTIME_DIR/clover` on Linux, `/Users/Shared/clover-<uid>` on macOS
- *  (a user can't make folders in `/` or `/Volumes`, and `$TMPDIR` is cleaned), and `%ProgramData%\Clover\tree-<user>`
+/** Where this computer's tree folder lives: `$XDG_RUNTIME_DIR/moss` on Linux, `/Users/Shared/moss-<uid>` on macOS
+ *  (a user can't make folders in `/` or `/Volumes`, and `$TMPDIR` is cleaned), and `%ProgramData%\MOSS\tree-<user>`
  *  on Windows, outside the user's profile. */
 export function defaultTreeRoot(env: NodeJS.ProcessEnv = process.env, os: Os = hostOs()): string {
   if (os === "linux") {
     const run = env.XDG_RUNTIME_DIR;
     if (!run) throw new ContractError("invalid", "XDG_RUNTIME_DIR isn't set, so there's nowhere outside the home folder for the tree");
-    return posix.join(run, "clover");
+    return posix.join(run, "moss");
   }
-  if (os === "macos") return `/Users/Shared/clover-${process.getuid?.() ?? 0}`;
+  if (os === "macos") return `/Users/Shared/moss-${process.getuid?.() ?? 0}`;
   const data = env.ProgramData ?? env.PROGRAMDATA ?? "C:\\ProgramData";
   const user = (env.USERNAME ?? "user").replace(/[^A-Za-z0-9._-]/g, "_");
-  return `${data}\\Clover\\tree-${user}`;
+  return `${data}\\MOSS\\tree-${user}`;
 }
 
 export interface TreeRootOptions {
@@ -105,17 +105,17 @@ function Set-Closed($p, [bool]$denyCreate) {
   }
   $item.SetAccessControl($a)
 }
-Check-Owner $env:CLOVER_TREE_ROOT
-Check-Owner $env:CLOVER_TREE_HOME
-Set-Closed $env:CLOVER_TREE_ROOT $false
-Set-Closed $env:CLOVER_TREE_HOME ($env:CLOVER_TREE_MODE -eq 'closed')
+Check-Owner $env:MOSS_TREE_ROOT
+Check-Owner $env:MOSS_TREE_HOME
+Set-Closed $env:MOSS_TREE_ROOT $false
+Set-Closed $env:MOSS_TREE_HOME ($env:MOSS_TREE_MODE -eq 'closed')
 `;
 
 async function windowsAccess(root: string, homeDir: string, mode: "open" | "closed"): Promise<void> {
   const encoded = Buffer.from(WINDOWS_ACCESS, "utf16le").toString("base64");
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
-  Object.assign(env, { CLOVER_TREE_ROOT: root, CLOVER_TREE_HOME: homeDir, CLOVER_TREE_MODE: mode });
+  Object.assign(env, { MOSS_TREE_ROOT: root, MOSS_TREE_HOME: homeDir, MOSS_TREE_MODE: mode });
   const proc = Bun.spawn(["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded], {
     env, stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsHide: true,
   });
@@ -141,7 +141,7 @@ async function link(at: string, target: string, os: Os, fresh = false): Promise<
  *  list's deny, as they can take the folder over anyway. */
 export async function treeHomeWritable(root: string, os: Os = hostOs()): Promise<boolean> {
   if (os === "windows") {
-    const probe = join(root, "home", `.clover-probe-${process.pid}-${Date.now()}`);
+    const probe = join(root, "home", `.moss-probe-${process.pid}-${Date.now()}`);
     try {
       await fsp.mkdir(probe);
     } catch {

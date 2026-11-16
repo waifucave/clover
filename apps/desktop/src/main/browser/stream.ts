@@ -19,7 +19,7 @@ import type { StreamChunk, StreamCodec } from "./contract";
 import { BROWSER_WEBRTC_POLICY, prepareViewportSession, VIEWPORT_PARTITION } from "./session";
 import { HostTab, OffscreenTab, type BrowserTab } from "./tab";
 
-export const STREAM_CHANNEL = "clover-browser-stream";
+export const STREAM_CHANNEL = "moss-browser-stream";
 /** The rate a streamed tab paints at, and its frames are encoded at (S7: 30 fps for motion). */
 export const STREAM_FPS = 30;
 /** The bitrate a stream starts at when the daemon names none (S7: about 2.3 Mbit/s for 30 fps of motion). */

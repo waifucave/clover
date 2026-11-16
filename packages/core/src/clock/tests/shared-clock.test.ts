@@ -100,7 +100,7 @@ describe("the shared clock", () => {
     expect(s.status()).toMatchObject({ reference: "public", synced: false, offsetMs: 0 });
   });
 
-  test.skipIf(process.env.CLOVER_LIVE_TIME !== "1")("SNTP against the public servers (live; off by default)", async () => {
+  test.skipIf(process.env.MOSS_LIVE_TIME !== "1")("SNTP against the public servers (live; off by default)", async () => {
     const r = await new SntpTimeSource().sample();
     expect(Math.abs(r.offsetMs)).toBeLessThan(60_000);
   });

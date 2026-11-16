@@ -10,7 +10,7 @@ import { session as sessions, type Session } from "electron";
 import { proxyRoutes, readSystemProxy, type BrowserProxySetting, type RunCommand } from "./proxy";
 import type { UpstreamRoutes } from "./network";
 
-export const PAC_PARTITION = "clover-browser-pac";
+export const PAC_PARTITION = "moss-browser-pac";
 
 export const runCommand: RunCommand = (cmd, args) =>
   new Promise((resolve, reject) => {

@@ -1,7 +1,7 @@
 // The handshake's wire format v1 (services/handshake/PROTOCOL.md) as constants and shapes, shared by the service and
 // its clients. Plain TypeScript with no runtime dependencies: it runs in Workers, Bun and browsers alike.
 
-export const PREFIX = "clover-handshake-v1";
+export const PREFIX = "moss-handshake-v1";
 
 /** 16 random bytes, base64url: a pair or group id. */
 export const SCOPE_ID_RE = /^[A-Za-z0-9_-]{22}$/;
@@ -179,12 +179,12 @@ export function requestSigningString(method: string, pathAndQuery: string, t: nu
 }
 
 export function authorizationHeader(key: string, t: number, sig: string): string {
-  return `Clover-Sig key=${key}, t=${t}, sig=${sig}`;
+  return `MOSS-Sig key=${key}, t=${t}, sig=${sig}`;
 }
 
 export function parseAuthorization(value: string | null): { key: string; t: number; sig: string } | null {
   if (!value) return null;
-  const match = /^Clover-Sig key=([A-Za-z0-9_-]{43}), t=(\d{1,16}), sig=([A-Za-z0-9_-]{86})$/.exec(value);
+  const match = /^MOSS-Sig key=([A-Za-z0-9_-]{43}), t=(\d{1,16}), sig=([A-Za-z0-9_-]{86})$/.exec(value);
   if (!match) return null;
   const t = Number(match[2]);
   if (!Number.isSafeInteger(t)) return null;
@@ -198,4 +198,4 @@ export function boxAad(scope: string, from: string, to: string, kind: Kind, gen?
   return lines.join("\n");
 }
 
-export const BOX_INFO = "clover handshake v1 box";
+export const BOX_INFO = "moss handshake v1 box";

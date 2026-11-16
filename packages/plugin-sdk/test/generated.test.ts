@@ -14,7 +14,7 @@ describe("generated/", () => {
   });
 
   test("the manifest's schema takes any dotted contributes key and refuses others", () => {
-    const schema = JSON.parse(readFileSync(join(dir, "clover.schema.json"), "utf8"));
+    const schema = JSON.parse(readFileSync(join(dir, "moss.schema.json"), "utf8"));
     const contributes = schema.properties.contributes;
     expect(contributes.additionalProperties).toBe(false);
     const pattern = new RegExp(Object.keys(contributes.patternProperties)[0]!);

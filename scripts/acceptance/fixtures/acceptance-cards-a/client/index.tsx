@@ -1,7 +1,7 @@
 // The card fixture's page: places the first pending tool card of its own bot with the SDK's card kit, in a box of its
 // own, and says on data attributes which cards it was told of. The badge (always mounted in the sidebar) says the same, so
 // the run can tell "told of no card" from "not mounted".
-import { Card, useApprovals } from "@waifucave/clover-plugin-sdk/ui";
+import { Card, useApprovals } from "@waifucave/moss-plugin-sdk/ui";
 
 export function CardsMain() {
   const { cards } = useApprovals();

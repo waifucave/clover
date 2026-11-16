@@ -8,7 +8,7 @@
 // Its down and repeats are NOT handled in `before-input-event`: Chromium drops every key-up after a key-down the browser
 // handled (until the next key-down), so a binding consumed there could never hear its release. They go on to the focused
 // frame, where the app's preload keeps them from the page (`swallows`: a synchronous ask from its capture-phase keydown).
-import { canonicalChord, chordOfPress, type HoldPhase, type KeyPress, type KeyPlatform } from "@waifucave/clover-plugin-sdk";
+import { canonicalChord, chordOfPress, type HoldPhase, type KeyPress, type KeyPlatform } from "@waifucave/moss-plugin-sdk";
 import { liveCommands } from "./ui/composer-calls";
 
 /** Whether a press may run a plugin's command at all: not while a sealed frame (an approval or OK card, whose buttons and
@@ -16,7 +16,7 @@ import { liveCommands } from "./ui/composer-calls";
  *  goes where the focus is and no command runs. */
 export function keysMayRun(focus: { frameUrl: string | null | undefined; secureOpen: boolean }): boolean {
   if (focus.secureOpen) return false;
-  return !(typeof focus.frameUrl === "string" && focus.frameUrl.startsWith("clover-sealed://"));
+  return !(typeof focus.frameUrl === "string" && focus.frameUrl.startsWith("moss-sealed://"));
 }
 
 /** A bound key: its command, the command's plugin, and whether it asks for the release too. */

@@ -5,13 +5,13 @@
 //     daemon just before it starts the app through the OS. It works with every OS's way of starting the app
 //     (`open -g -a`, `systemctl --user start`, `schtasks /Run`), none of which passes arguments reliably. The app
 //     reads it once, deletes it, and honours it for 60 s. A start with no file (or an old one) is the user's.
-//     `--safe-mode` and `--clover-started-by=<who>` on the command line say the same, for the CLI and the tray.
+//     `--safe-mode` and `--moss-started-by=<who>` on the command line say the same, for the CLI and the tray.
 //     After the hello, `pair.status`'s `safeMode` is the daemon's word on it too (§5.8: three crashes in two minutes).
 //   * `<home>/run/app.token` — the `app` role's token, which the daemon mints when it starts and writes for the user
 //     alone (0600; on Windows, an ACL for the user only), inside the fence so no bot can read it (spec §9.1, as S8's
-//     `run/token`). `CLOVER_APP_TOKEN` overrides it for the dev scripts and the tests. The caller check (§3.1) is the
+//     `run/token`). `MOSS_APP_TOKEN` overrides it for the dev scripts and the tests. The caller check (§3.1) is the
 //     real guard; the token keeps another user's process out.
-import type { CloverHelloParams } from "@waifucave/clover-protocol";
+import type { MossHelloParams } from "@waifucave/moss-protocol";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
@@ -36,7 +36,7 @@ export function appTokenPath(home: string): string {
 export function readStartInfo(home: string, argv: readonly string[], now: number = Date.now()): StartInfo {
   let by: StartedBy = "user";
   let safeMode = argv.includes("--safe-mode");
-  const flag = argv.find((a) => a.startsWith("--clover-started-by="))?.slice("--clover-started-by=".length);
+  const flag = argv.find((a) => a.startsWith("--moss-started-by="))?.slice("--moss-started-by=".length);
   if (flag === "daemon" || flag === "login") by = flag;
   const file = startFilePath(home);
   if (existsSync(file)) {
@@ -54,7 +54,7 @@ export function readStartInfo(home: string, argv: readonly string[], now: number
   return { by, safeMode };
 }
 
-/** The dev overrides (`CLOVER_DAEMON_BIN`, `CLOVER_APP_TOKEN`) count only in a dev or unpackaged run: a packaged dist
+/** The dev overrides (`MOSS_DAEMON_BIN`, `MOSS_APP_TOKEN`) count only in a dev or unpackaged run: a packaged dist
  *  app finds its daemon in its own resources and its token in the daemon's run folder, whatever its environment. */
 export function devOverridesAllowed(input: { packaged: boolean; profile: string }): boolean {
   return !input.packaged || input.profile === "dev";
@@ -64,14 +64,14 @@ export function devOverridesAllowed(input: { packaged: boolean; profile: string 
 export function pairEnv(env: NodeJS.ProcessEnv, allowed: boolean): NodeJS.ProcessEnv {
   if (allowed) return env;
   const out = { ...env };
-  delete out.CLOVER_DAEMON_BIN;
-  delete out.CLOVER_APP_TOKEN;
+  delete out.MOSS_DAEMON_BIN;
+  delete out.MOSS_APP_TOKEN;
   return out;
 }
 
-/** The `app` token: `CLOVER_APP_TOKEN`, else the daemon's token file; undefined when there is none yet. */
+/** The `app` token: `MOSS_APP_TOKEN`, else the daemon's token file; undefined when there is none yet. */
 export function readAppToken(home: string, env: NodeJS.ProcessEnv): string | undefined {
-  const fromEnv = env.CLOVER_APP_TOKEN;
+  const fromEnv = env.MOSS_APP_TOKEN;
   if (fromEnv !== undefined && fromEnv !== "") return fromEnv;
   try {
     const t = readFileSync(appTokenPath(home), "utf8").trim();
@@ -83,12 +83,12 @@ export function readAppToken(home: string, env: NodeJS.ProcessEnv): string | und
 
 /** The app's hello (`protocol.hello`, lane B's roles file). `features` names what the app handles: the daemon's
  *  `app.show` and `app.quit`, plugin layers, and `app.window.capture` (`app.capture`), and `app.tab.*` (the browser). */
-export function appHello(token: string, version: string, protocolVersion: number): CloverHelloParams {
+export function appHello(token: string, version: string, protocolVersion: number): MossHelloParams {
   return {
     protocolVersion,
     role: "app",
     token,
-    clientName: `Clover ${version}`.slice(0, 128),
+    clientName: `MOSS ${version}`.slice(0, 128),
     features: ["app.show", "app.quit", "layers", "app.capture", "app.open", "app.render", "browser"],
   };
 }

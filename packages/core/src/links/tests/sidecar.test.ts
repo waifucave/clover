@@ -1,6 +1,6 @@
-// The link over real iroh: two `clover-link` sidecars on loopback (no relay, nothing leaves the machine), the
-// transport on top, and pairing through the pair ALPN. Runs when the sidecar is built: `CLOVER_LINK_BIN`, or
-// native/link's release build (CI's link job builds it, and sets CLOVER_LINK_REQUIRE_BINARY=1 so a missing one
+// The link over real iroh: two `moss-link` sidecars on loopback (no relay, nothing leaves the machine), the
+// transport on top, and pairing through the pair ALPN. Runs when the sidecar is built: `MOSS_LINK_BIN`, or
+// native/link's release build (CI's link job builds it, and sets MOSS_LINK_REQUIRE_BINARY=1 so a missing one
 // fails; locally `cargo build --release` in native/link). The restart's bookkeeping also runs against a fake sidecar
 // process, which needs no build.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -18,13 +18,13 @@ import { bundledLinkBinary } from "../sidecar-binary";
 import { PairingService } from "../pairing";
 import { followRegistry, pipeWriter, type SidecarProcess, SidecarWire, type SidecarWireOptions, spawnSidecar, INCOMING_STREAM_WINDOW, STREAM_WINDOW } from "../sidecar-wire";
 import { type DeviceLinks, startDeviceLinks } from "../node";
-import { CloverLinkTransport } from "../transport";
+import { MossLinkTransport } from "../transport";
 import { CLOSE_LOST, LIVE_STREAM_WINDOW, RESET_CONN_LOST, type WireConn, WireOffline, type WireStream } from "../wire";
 
-const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../../../native/link/target/release/clover-link");
+const BIN = process.env.MOSS_LINK_BIN ?? join(import.meta.dir, "../../../../../native/link/target/release/moss-link");
 const built = existsSync(BIN);
 // CI builds the sidecar before these run, and says so: there a missing binary fails the file instead of skipping it.
-if (!built && process.env.CLOVER_LINK_REQUIRE_BINARY === "1") throw new Error(`CLOVER_LINK_REQUIRE_BINARY=1, but there is no clover-link at ${BIN}`);
+if (!built && process.env.MOSS_LINK_REQUIRE_BINARY === "1") throw new Error(`MOSS_LINK_REQUIRE_BINARY=1, but there is no moss-link at ${BIN}`);
 const clock = new SystemClock();
 let stops: (() => unknown)[] = [];
 afterEach(async () => {
@@ -35,7 +35,7 @@ afterEach(async () => {
 async function device(name: string, extra: Partial<SidecarWireOptions> = {}) {
   const store = new MemorySecretStore();
   const key = await DeviceKey.loadOrCreate(store);
-  const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-sidecar-")), key, clock, self: { name } });
+  const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "moss-h-sidecar-")), key, clock, self: { name } });
   const wire = await SidecarWire.start({ binary: BIN, key, relay: "disabled", n0Lookup: false, bind: "127.0.0.1:0", ...extra });
   stops.push(() => wire.close());
   const report = await wire.settledReport();
@@ -54,7 +54,7 @@ async function allowEach(a: Dev, b: Dev): Promise<void> {
 }
 
 function transport(d: Dev, peers: Map<string, Dev>) {
-  const t = new CloverLinkTransport({
+  const t = new MossLinkTransport({
     self: d.key.id, wire: d.wire, registry: d.registry, clock,
     directory: { target: (id) => { const p = peers.get(id); return p ? { key: p.key.publicKey, direct: p.direct } : undefined; } },
   });
@@ -107,7 +107,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
   }, 30_000);
 
   test("the daemon's links over two sidecars: pair, link, and a restart under the same key", async () => {
-    const homes = [mkdtempSync(join(tmpdir(), "clover-h-sidecar-node-")), mkdtempSync(join(tmpdir(), "clover-h-sidecar-node-"))];
+    const homes = [mkdtempSync(join(tmpdir(), "moss-h-sidecar-node-")), mkdtempSync(join(tmpdir(), "moss-h-sidecar-node-"))];
     const stores = [new MemorySecretStore(), new MemorySecretStore()];
     // No handshake here: each daemon finds the other at its loopback address. n0's lookup stays off, so nothing
     // leaves the machine.
@@ -147,7 +147,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     const directory = { target: (id: string) => { const p = where.get(id); return p ? { key: p.key.publicKey, direct: p.localAddresses().direct } : undefined; } };
     const start = async (name: string) => {
       const l = await startDeviceLinks({
-        home: mkdtempSync(join(tmpdir(), "clover-h-sidecar-rev-")), store: new MemorySecretStore(), clock, self: { name }, directory,
+        home: mkdtempSync(join(tmpdir(), "moss-h-sidecar-rev-")), store: new MemorySecretStore(), clock, self: { name }, directory,
         sidecar: { binary: BIN, relay: "disabled", bind: "127.0.0.1:0", n0Lookup: false }, transport: { redialBackoffMs: [0, 200, 200, 200] },
       });
       where.set(l.key.id, l);
@@ -180,10 +180,10 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     const b = await device("Stranger");
     // The allow list follows A's registry, which pairs no one.
     stops.push(followRegistry(a.wire, a.registry));
-    a.wire.onIncoming("clover/link/1", () => {
+    a.wire.onIncoming("moss/link/1", () => {
       throw new Error("the sidecar let an unknown key through");
     });
-    const conn = await b.wire.dial({ key: a.key.publicKey, direct: a.direct }, { alpn: "clover/link/1", timeoutMs: 5000 }).catch((e: unknown) => e);
+    const conn = await b.wire.dial({ key: a.key.publicKey, direct: a.direct }, { alpn: "moss/link/1", timeoutMs: 5000 }).catch((e: unknown) => e);
     if (conn instanceof Error) return; // refused during the handshake
     const closed = await (conn as { closed: Promise<{ code: number }> }).closed;
     expect(closed.code).toBe(2);
@@ -204,7 +204,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     let since = 0;
     const theirs = new Bun.CryptoHasher("sha256");
     const finished = new Promise<WireStream>((resolve) => {
-      b.wire.onIncoming("clover/link/1", (conn) => conn.onStream((ws) => {
+      b.wire.onIncoming("moss/link/1", (conn) => conn.onStream((ws) => {
         ws.onData(async (c) => {
           if (!reading) await started;
           got += c.byteLength;
@@ -218,7 +218,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
         ws.onFin(() => resolve(ws));
       }));
     });
-    const conn = await a.wire.dial({ key: b.key.publicKey, direct: b.direct }, { alpn: "clover/link/1", timeoutMs: 5000 });
+    const conn = await a.wire.dial({ key: b.key.publicKey, direct: b.direct }, { alpn: "moss/link/1", timeoutMs: 5000 });
     const s = conn.openStream(0);
     const ours = new Bun.CryptoHasher("sha256");
     const base = crypto.getRandomValues(new Uint8Array(chunk));
@@ -307,12 +307,12 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     const b = await device("Laptop");
     await allowEach(a, b);
     const reset = new Promise<number>((resolve) => {
-      b.wire.onIncoming("clover/link/1", (conn) => conn.onStream((ws) => {
+      b.wire.onIncoming("moss/link/1", (conn) => conn.onStream((ws) => {
         ws.onData(() => new Promise<void>(() => undefined));
         ws.onReset(resolve);
       }));
     });
-    const conn = await a.wire.dial({ key: b.key.publicKey, direct: b.direct }, { alpn: "clover/link/1", timeoutMs: 5000 });
+    const conn = await a.wire.dial({ key: b.key.publicKey, direct: b.direct }, { alpn: "moss/link/1", timeoutMs: 5000 });
     const s = conn.openStream(0);
     const writes: Promise<unknown>[] = [];
     for (let i = 0; i < 32; i++) writes.push(s.write(new Uint8Array(256 * 1024)).then(() => "ok", (e: unknown) => e));
@@ -342,7 +342,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     const directory = { target: (id: string) => { const p = where.get(id); return p ? { key: p.key.publicKey, direct: p.localAddresses().direct } : undefined; } };
     const start = async (name: string, own: boolean) => {
       const l = await startDeviceLinks({
-        home: mkdtempSync(join(tmpdir(), "clover-h-sidecar-restart-")), store: new MemorySecretStore(), clock, self: { name }, directory,
+        home: mkdtempSync(join(tmpdir(), "moss-h-sidecar-restart-")), store: new MemorySecretStore(), clock, self: { name }, directory,
         sidecar: { binary: BIN, relay: "disabled", bind: "127.0.0.1:0", n0Lookup: false, ...(own ? { spawn } : {}) },
         transport: { redialBackoffMs: [0, 200, 500, 1000] },
       });
@@ -384,7 +384,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     const directory = { target: (id: string) => { const p = where.get(id); return p ? { key: p.key.publicKey, direct: p.localAddresses().direct } : undefined; } };
     const start = async (name: string) => {
       const l = await startDeviceLinks({
-        home: mkdtempSync(join(tmpdir(), "clover-h-sidecar-cc-")), store: new MemorySecretStore(), clock, self: { name }, directory,
+        home: mkdtempSync(join(tmpdir(), "moss-h-sidecar-cc-")), store: new MemorySecretStore(), clock, self: { name }, directory,
         sidecar: { binary: BIN, relay: "disabled", bind: "127.0.0.1:0", n0Lookup: false },
       });
       where.set(l.key.id, l);
@@ -545,14 +545,14 @@ describe("per-stream windows need a sidecar that has them (#288 N1)", () => {
       const key = await DeviceKey.loadOrCreate(new MemorySecretStore());
       let proc!: FakeSidecar;
       const wire = await SidecarWire.start({
-        binary: "clover-link", key, relay: "disabled", n0Lookup: false,
+        binary: "moss-link", key, relay: "disabled", n0Lookup: false,
         spawn: () => (proc = new FakeSidecar(toHex(key.publicKey), false, has ? { streamWindows: true } : {})),
       });
       stops.push(() => wire.close());
       expect(wire.streamWindows).toBe(has);
       const conns: WireConn[] = [];
-      wire.onIncoming("clover/link/1", (c) => conns.push(c));
-      proc.emit({ ev: "incoming", conn: 1, peerKey: toHex(new Uint8Array(32).fill(7)), alpn: "clover/link/1", path: { kind: "lan" } });
+      wire.onIncoming("moss/link/1", (c) => conns.push(c));
+      proc.emit({ ev: "incoming", conn: 1, peerKey: toHex(new Uint8Array(32).fill(7)), alpn: "moss/link/1", path: { kind: "lan" } });
       await waitFor(() => conns.length === 1);
       // An incoming stream starts small where the sidecar has windows; its header read, it's widened (as a lane is).
       const streams: WireStream[] = [];
@@ -608,7 +608,7 @@ describe("the link sidecar's restart (S6.1), against a fake process", () => {
     const logs: string[] = [];
     let failNext = false;
     const wire = await SidecarWire.start({
-      binary: "clover-link", key, relay: "disabled", n0Lookup: false, restartBackoffMs: [30, 150, 400],
+      binary: "moss-link", key, relay: "disabled", n0Lookup: false, restartBackoffMs: [30, 150, 400],
       onLog: (l) => logs.push(l),
       spawn: () => {
         const p = new FakeSidecar(toHex(key.publicKey), failNext);
@@ -627,8 +627,8 @@ describe("the link sidecar's restart (S6.1), against a fake process", () => {
 
     // A connection with a stream, and a dial in flight, when the process dies.
     const conns: WireConn[] = [];
-    wire.onIncoming("clover/link/1", (c) => conns.push(c));
-    procs[0]!.emit({ ev: "incoming", conn: 1, peerKey: toHex(peer), alpn: "clover/link/1", path: { kind: "lan" } });
+    wire.onIncoming("moss/link/1", (c) => conns.push(c));
+    procs[0]!.emit({ ev: "incoming", conn: 1, peerKey: toHex(peer), alpn: "moss/link/1", path: { kind: "lan" } });
     await waitFor(() => conns.length === 1);
     const streams: WireStream[] = [];
     conns[0]!.onStream((st) => streams.push(st));
@@ -636,7 +636,7 @@ describe("the link sidecar's restart (S6.1), against a fake process", () => {
     await waitFor(() => streams.length === 1);
     const resets: number[] = [];
     streams[0]!.onReset((c) => resets.push(c));
-    const inFlight = wire.dial({ key: peer, direct: ["127.0.0.1:9"] }, { alpn: "clover/link/1", timeoutMs: 5000 }).catch((e: unknown) => e);
+    const inFlight = wire.dial({ key: peer, direct: ["127.0.0.1:9"] }, { alpn: "moss/link/1", timeoutMs: 5000 }).catch((e: unknown) => e);
     await waitFor(() => procs[0]!.ops.some((o) => o.op === "dial"));
     let restarts = 0;
     wire.onRestart(() => restarts++);
@@ -648,7 +648,7 @@ describe("the link sidecar's restart (S6.1), against a fake process", () => {
     expect(resets).toEqual([RESET_CONN_LOST]);
     expect(await streams[0]!.write(new Uint8Array(1)).catch((e: unknown) => e)).toBeInstanceOf(WireOffline);
     // A dial made while it restarts waits for the new process.
-    const waiting = wire.dial({ key: peer, direct: ["127.0.0.1:9"] }, { alpn: "clover/link/1", timeoutMs: 5000 });
+    const waiting = wire.dial({ key: peer, direct: ["127.0.0.1:9"] }, { alpn: "moss/link/1", timeoutMs: 5000 });
     await waitFor(() => restarts === 1);
     expect(Date.now() - t0).toBeGreaterThanOrEqual(25);
     expect(procs.length).toBe(2);
@@ -682,7 +682,7 @@ describe("the link sidecar's restart (S6.1), against a fake process", () => {
     expect(procs[3]!.ops.at(-1)?.op).toBe("shutdown");
     await Bun.sleep(500);
     expect(procs.length).toBe(4);
-    expect(await wire.dial({ key: peer }, { alpn: "clover/link/1" }).catch((e: unknown) => e)).toBeInstanceOf(WireOffline);
+    expect(await wire.dial({ key: peer }, { alpn: "moss/link/1" }).catch((e: unknown) => e)).toBeInstanceOf(WireOffline);
   }, 20_000);
 });
 

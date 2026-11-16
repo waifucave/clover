@@ -3,7 +3,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/moss-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 
@@ -105,8 +105,8 @@ export interface SoakDaemon {
 
 /** A real daemon on a temp home whose default model is `model` (a `winter-test/…` double), with a harness client. */
 export async function startSoakDaemon(name: string, model: string): Promise<SoakDaemon> {
-  const home = mkdtempSync(join(tmpdir(), `clover-${name}-`));
-  const cwd = mkdtempSync(join(tmpdir(), `clover-${name}-cwd-`));
+  const home = mkdtempSync(join(tmpdir(), `moss-${name}-`));
+  const cwd = mkdtempSync(join(tmpdir(), `moss-${name}-cwd-`));
   writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model }, runtimes: { winterIdleTimeoutSec: 600 } }));
   const daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null });
   const client = await SoakClient.connect(daemon.socketPath);

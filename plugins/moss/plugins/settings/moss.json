@@ -1,0 +1,93 @@
+{
+  "manifest": 1,
+  "name": "Settings",
+  "description": "The settings window, with MOSS's own sections (account, devices, appearance, notifications, plugins, levels, bots), and the language chooser.",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "bots.read",
+    "computers.read",
+    "devices.read",
+    "logs.read",
+    "app.settings",
+    "tools.permissions",
+    "plugins.manage",
+    "account.read"
+  ],
+  "settings": {
+    "appearance.textSize": {
+      "type": "enum",
+      "title": {
+        "en": "Text size"
+      },
+      "options": [
+        "small",
+        "default",
+        "large"
+      ],
+      "default": "default"
+    },
+    "notifications.needsYou": {
+      "type": "boolean",
+      "title": {
+        "en": "Notify when a bot needs you"
+      },
+      "default": true
+    },
+    "notifications.agentDone": {
+      "type": "boolean",
+      "title": {
+        "en": "Notify when an agent finishes"
+      },
+      "default": true
+    },
+    "notifications.routineFailed": {
+      "type": "boolean",
+      "title": {
+        "en": "Notify when a routine fails"
+      },
+      "default": true
+    },
+    "notifications.sounds": {
+      "type": "boolean",
+      "title": {
+        "en": "Play sounds"
+      },
+      "default": false
+    }
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "main",
+        "key": "settings",
+        "component": "SettingsEntry",
+        "declares": {
+          "settings.section": {
+            "shape": "list",
+            "props": {},
+            "fields": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "icon": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "Sections plugins add after MOSS's own; each entry draws its page."
+          }
+        }
+      }
+    ]
+  }
+}

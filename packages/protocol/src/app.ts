@@ -1,4 +1,4 @@
-// Clover protocol area: the app and the pair (spec §3.1, §5.5, §5.8, §6.6). Owners: lane E (the app's side, the UI
+// MOSS protocol area: the app and the pair (spec §3.1, §5.5, §5.8, §6.6). Owners: lane E (the app's side, the UI
 // settings the app reads), lane C (the daemon's side of the pair, C-M1), lane D (voice), lane G (desktop
 // notifications), lane M (updates). Pinned by lane B at M0; spike S7 (lane L) measured the pair on all three OSes,
 // and spike S9 (lane E, layers) is still running, so the UI settings here are the least the spec needs.
@@ -36,7 +36,7 @@ export const UiSettings = z.object({
   /** Order and hidden entries of list spots; `shown`, entries the user keeps though a plugin's `hide` names them. On
    *  `bot.tab` (for one bot, or every bot), `hidden` is the layout patches the user switched off there (`<plugin>#<entry>`). */
   lists: z.array(z.object({ spot: utf16(128), bot: BotId.optional(), order: z.array(EntryRef).max(1000), hidden: z.array(EntryRef).max(1000), shown: z.array(EntryRef).max(1000).optional() })).max(1000),
-  /** The base theme for bot tabs and the global theme; unset means `clover`'s base theme (§5.5). */
+  /** The base theme for bot tabs and the global theme; unset means `moss`'s base theme (§5.5). */
   baseTheme: ThemeRef.optional(),
   globalTheme: ThemeRef.optional(),
   /** The user's own overrides, the top of the theme stack. They pass the same checks as any theme (review minor):
@@ -221,7 +221,7 @@ export const APP_METHODS = {
       ]),
     }),
     result: Ok,
-    doc: "The daemon asks the app to open a window or a place in it (a sign-in page, a card from the CLI's `clover open`).",
+    doc: "The daemon asks the app to open a window or a place in it (a sign-in page, a card from the CLI's `moss open`).",
   }),
   appPing: defineMethod({
     name: "app.ping", owner: "E", roles: ["app"], direction: "from-daemon",
@@ -246,7 +246,7 @@ export const APP_METHODS = {
   uiSet: defineMethod({
     name: "ui.set", owner: "E", roles: ["app", "layer"], userOnly: true, change: "core",
     params: z.object({ patch: UiSettings.partial() }), result: ChangeResult,
-    doc: "Changes the user's UI choices; from a layer other than `clover`'s it becomes a card (§5.5).",
+    doc: "Changes the user's UI choices; from a layer other than `moss`'s it becomes a card (§5.5).",
   }),
   userSend: defineMethod({
     /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a part's `useUserSend`

@@ -22,8 +22,8 @@ function recorder(answers: Array<[string | RegExp, boolean, string?]> = []) {
 const noFile: TaskXmlWriter = () => ({ path: "/tmp/task.xml", cleanup() {} });
 
 function spec(os: LoginSpec["os"]): LoginSpec {
-  const home = mkdtempSync(join(tmpdir(), "clover-live-"));
-  return { os, bin: "/opt/clover/clover-core", home: join(home, ".clover"), logsDir: join(home, "logs"), profile: "dist", homedir: home };
+  const home = mkdtempSync(join(tmpdir(), "moss-live-"));
+  return { os, bin: "/opt/moss/moss-core", home: join(home, ".moss"), logsDir: join(home, "logs"), profile: "dist", homedir: home };
 }
 
 describe("live login commands (recorded, never run)", () => {
@@ -48,37 +48,37 @@ describe("live login commands (recorded, never run)", () => {
   test("Linux enable starts now; disable never stops the running pair", async () => {
     const on = recorder();
     await liveLoginOsDeps(on.run, noFile).register(spec("linux"), { loginOn: true, tasks: [] });
-    expect(on.calls).toEqual(["systemctl --user daemon-reload", "systemctl --user enable --now clover-core.service"]);
+    expect(on.calls).toEqual(["systemctl --user daemon-reload", "systemctl --user enable --now moss-core.service"]);
     const off = recorder();
     await liveLoginOsDeps(off.run, noFile).register(spec("linux"), { loginOn: false, tasks: [] });
-    expect(off.calls).toEqual(["systemctl --user daemon-reload", "systemctl --user disable clover-core.service"]);
+    expect(off.calls).toEqual(["systemctl --user daemon-reload", "systemctl --user disable moss-core.service"]);
   });
 
   test("Linux query reads is-enabled's word, whatever its exit code", async () => {
     const q = async (out: string, ok: boolean) => liveLoginOsDeps(recorder([["systemctl --user is-enabled", ok, out]]).run, noFile).query(spec("linux"));
     expect(await q("enabled\n", true)).toBe("on");
     expect(await q("disabled\n", false)).toBe("off");
-    expect(await q("Failed to get unit file state for clover-core.service: No such file or directory\n", false)).toBe("absent");
+    expect(await q("Failed to get unit file state for moss-core.service: No such file or directory\n", false)).toBe("absent");
   });
 
   test("Windows registers each task from its XML, and remove ends and deletes both", async () => {
     const r = recorder();
     const deps = liveLoginOsDeps(r.run, noFile);
-    await deps.register(spec("win32"), { loginOn: true, tasks: [{ name: "\\Clover\\clover-core", xml: "<x/>" }, { name: "\\Clover\\clover-app", xml: "<y/>" }] });
+    await deps.register(spec("win32"), { loginOn: true, tasks: [{ name: "\\MOSS\\moss-core", xml: "<x/>" }, { name: "\\MOSS\\moss-app", xml: "<y/>" }] });
     expect(r.calls).toEqual([
-      "schtasks /Create /F /TN \\Clover\\clover-core /XML /tmp/task.xml",
-      "schtasks /Create /F /TN \\Clover\\clover-app /XML /tmp/task.xml",
+      "schtasks /Create /F /TN \\MOSS\\moss-core /XML /tmp/task.xml",
+      "schtasks /Create /F /TN \\MOSS\\moss-app /XML /tmp/task.xml",
     ]);
     const u = recorder();
     await liveLoginOsDeps(u.run, noFile).unregister(spec("win32"));
     expect(u.calls).toEqual([
-      "schtasks /End /TN \\Clover\\clover-core", "schtasks /Delete /F /TN \\Clover\\clover-core",
-      "schtasks /End /TN \\Clover\\clover-app", "schtasks /Delete /F /TN \\Clover\\clover-app",
+      "schtasks /End /TN \\MOSS\\moss-core", "schtasks /Delete /F /TN \\MOSS\\moss-core",
+      "schtasks /End /TN \\MOSS\\moss-app", "schtasks /Delete /F /TN \\MOSS\\moss-app",
     ]);
   });
 
   test("the Windows user's SID from whoami /user", async () => {
-    const r = recorder([["whoami /user", true, '"clover-c-win\\someone","S-1-5-21-1111-2222-3333-1001"\r\n']]);
+    const r = recorder([["whoami /user", true, '"moss-c-win\\someone","S-1-5-21-1111-2222-3333-1001"\r\n']]);
     expect(await windowsUserSid(r.run)).toBe("S-1-5-21-1111-2222-3333-1001");
     expect(await windowsUserSid(recorder([["whoami", false, ""]]).run)).toBeUndefined();
   });
@@ -97,13 +97,13 @@ describe("the OS's own stop, after the clean one", () => {
   test("SIGTERM through launchd or systemd (supervise forwards it); schtasks /End on Windows", async () => {
     const m = recorder();
     await stopThroughOs(spec("darwin"), m.run);
-    expect(m.calls.at(-1)).toMatch(/^launchctl kill SIGTERM gui\/\d+\/com\.waifucave\.clover\.core$/);
+    expect(m.calls.at(-1)).toMatch(/^launchctl kill SIGTERM gui\/\d+\/com\.waifucave\.moss\.core$/);
     const l = recorder();
     await stopThroughOs(spec("linux"), l.run);
-    expect(l.calls).toEqual(["systemctl --user stop clover-core.service"]);
+    expect(l.calls).toEqual(["systemctl --user stop moss-core.service"]);
     const w = recorder();
     await stopThroughOs(spec("win32"), w.run);
-    expect(w.calls).toEqual(["schtasks /End /TN \\Clover\\clover-core"]);
+    expect(w.calls).toEqual(["schtasks /End /TN \\MOSS\\moss-core"]);
   });
 });
 
@@ -112,7 +112,7 @@ describe("starting the daemon through the OS", () => {
     const s = spec("darwin");
     const kick = recorder();
     expect(await startDaemonThroughOs(s, kick.run)).toBe("started");
-    expect(kick.calls.at(-1)).toMatch(/^launchctl kickstart gui\/\d+\/com\.waifucave\.clover\.core$/);
+    expect(kick.calls.at(-1)).toMatch(/^launchctl kickstart gui\/\d+\/com\.waifucave\.moss\.core$/);
 
     const unloaded = recorder([["launchctl kickstart", false]]);
     expect(await startDaemonThroughOs(s, unloaded.run)).toBe("not-installed");
@@ -127,31 +127,31 @@ describe("starting the daemon through the OS", () => {
     expect(await startDaemonThroughOs(spec("linux"), recorder([["systemctl --user start", false]]).run)).toBe("not-installed");
     const w = recorder();
     expect(await startDaemonThroughOs(spec("win32"), w.run)).toBe("started");
-    expect(w.calls).toEqual(["schtasks /Run /TN \\Clover\\clover-core"]);
+    expect(w.calls).toEqual(["schtasks /Run /TN \\MOSS\\moss-core"]);
     expect(await startDaemonThroughOs(spec("win32"), recorder([["schtasks /Run", false]]).run)).toBe("failed");
     expect(await startDaemonThroughOs(spec("win32"), recorder([["schtasks", false]]).run)).toBe("not-installed");
   });
 });
 
 describe("the daemon's way to start the app", () => {
-  test("macOS: the bundle from CLOVER_APP, or the one the daemon's binary sits in", async () => {
-    expect(appBundleOf("/Applications/Clover.app/Contents/Resources/bin/clover-core")).toBe("/Applications/Clover.app");
-    expect(appBundleOf("/usr/local/bin/clover-core")).toBeNull();
-    const exists = (p: string) => p === "/Applications/Clover.app" || p === "/Users/u/Applications/Clover Dev.app";
-    const inside = await resolveAppLauncher({ os: "darwin", profile: "dist", execPath: "/Applications/Clover.app/Contents/MacOS/clover-core", env: {}, exists }, recorder().run);
-    expect(inside?.how).toBe("open -n -g -a /Applications/Clover.app");
+  test("macOS: the bundle from MOSS_APP, or the one the daemon's binary sits in", async () => {
+    expect(appBundleOf("/Applications/MOSS Code.app/Contents/Resources/bin/moss-core")).toBe("/Applications/MOSS Code.app");
+    expect(appBundleOf("/usr/local/bin/moss-core")).toBeNull();
+    const exists = (p: string) => p === "/Applications/MOSS Code.app" || p === "/Users/u/Applications/MOSS Code Dev.app";
+    const inside = await resolveAppLauncher({ os: "darwin", profile: "dist", execPath: "/Applications/MOSS Code.app/Contents/MacOS/moss-core", env: {}, exists }, recorder().run);
+    expect(inside?.how).toBe("open -n -g -a /Applications/MOSS Code.app");
     const r = recorder();
-    const named = await resolveAppLauncher({ os: "darwin", profile: "dev", execPath: "/x/clover-core", env: { CLOVER_APP: "/Users/u/Applications/Clover Dev.app" }, exists }, r.run);
+    const named = await resolveAppLauncher({ os: "darwin", profile: "dev", execPath: "/x/moss-core", env: { MOSS_APP: "/Users/u/Applications/MOSS Code Dev.app" }, exists }, r.run);
     expect(await named!.start()).toBe("started");
-    expect(r.calls).toEqual(["open -n -g -a /Users/u/Applications/Clover Dev.app"]);
-    expect(await resolveAppLauncher({ os: "darwin", profile: "dist", execPath: "/x/clover-core", env: {}, exists }, recorder().run)).toBeNull();
+    expect(r.calls).toEqual(["open -n -g -a /Users/u/Applications/MOSS Code Dev.app"]);
+    expect(await resolveAppLauncher({ os: "darwin", profile: "dist", execPath: "/x/moss-core", env: {}, exists }, recorder().run)).toBeNull();
   });
 
   test("Linux: only with the app's unit installed, and not before the graphical session", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-app-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-app-"));
     const none = await resolveAppLauncher({ os: "linux", profile: "dist", execPath: "/x", env: {}, homedir: home, exists: () => false }, recorder().run);
     expect(none).toBeNull();
-    const exists = (p: string) => p === "/usr/lib/systemd/user/clover-app.service";
+    const exists = (p: string) => p === "/usr/lib/systemd/user/moss-app.service";
     const early = recorder([["systemctl --user show-environment", true, "HOME=/home/u\nPATH=/usr/bin\n"]]);
     const l = await resolveAppLauncher({ os: "linux", profile: "dist", execPath: "/x", env: {}, homedir: home, exists }, early.run);
     expect(await l!.start()).toBe("not-ready");
@@ -159,7 +159,7 @@ describe("the daemon's way to start the app", () => {
     const up = recorder([["systemctl --user show-environment", true, "DISPLAY=:0\nHOME=/home/u\n"]]);
     const l2 = await resolveAppLauncher({ os: "linux", profile: "dist", execPath: "/x", env: {}, homedir: home, exists }, up.run);
     expect(await l2!.start()).toBe("started");
-    expect(up.calls.at(-1)).toBe("systemctl --user start clover-app.service");
+    expect(up.calls.at(-1)).toBe("systemctl --user start moss-app.service");
     expect(hasGraphicalSession("WAYLAND_DISPLAY=wayland-0\n")).toBe(true);
     expect(hasGraphicalSession("DISPLAY=\n")).toBe(false);
   });
@@ -169,6 +169,6 @@ describe("the daemon's way to start the app", () => {
     const r = recorder();
     const w = await resolveAppLauncher({ os: "win32", profile: "dist", execPath: "C:\\x", env: {} }, r.run);
     expect(await w!.start()).toBe("started");
-    expect(r.calls.at(-1)).toBe("schtasks /Run /TN \\Clover\\clover-app");
+    expect(r.calls.at(-1)).toBe("schtasks /Run /TN \\MOSS\\moss-app");
   });
 });

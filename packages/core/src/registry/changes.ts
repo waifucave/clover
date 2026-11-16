@@ -8,8 +8,8 @@
 // * waits alone (`card-styling`) when it changes only how the tree styles approval cards (§5.5);
 // * applies at once (`applies`) otherwise: themes, layouts, CSS, Markdown, assets.
 import { posix } from "node:path";
-import { MANIFEST_FILE, pluginParts, type Manifest, type ManifestReport, type TreeEntry, type TreeReport } from "@waifucave/clover-plugin-sdk";
-import { canonicalJson } from "@waifucave/clover-protocol";
+import { MANIFEST_FILE, pluginParts, type Manifest, type ManifestReport, type TreeEntry, type TreeReport } from "@waifucave/moss-plugin-sdk";
+import { canonicalJson } from "@waifucave/moss-protocol";
 
 /** What a change since the OK does (the fake's `FakePluginInput.change`). */
 export type ChangeKind = "asks-again" | "applies" | "card-styling";

@@ -7,7 +7,7 @@ import { fenceFolders, pluginFenceAvailable } from "../../src/registry/plugin-fe
 import { ensurePluginRunFiles, type PluginRunGuard } from "../../src/registry/plugin-run";
 
 function tmpDir(): string {
-  return mkdtempSync(join(tmpdir(), "clover-hook-runner-"));
+  return mkdtempSync(join(tmpdir(), "moss-hook-runner-"));
 }
 
 function mkPayload(overrides: Partial<HookEventPayload> = {}): HookEventPayload {
@@ -18,11 +18,11 @@ function mkSpec(overrides: Partial<HookSpec> = {}): HookSpec {
   return { pluginId: "demo", command: "true", cwd: tmpDir(), ...overrides };
 }
 
-/** A runner over its own temp Clover home, and where a hook of `demo` may write there: its own temp folder under the
+/** A runner over its own temp MOSS home, and where a hook of `demo` may write there: its own temp folder under the
  *  fence (its TMPDIR; it writes nowhere else, #345's review), else `dir`. */
 function runnerWritingTo(dir: string): { runner: HookRunner; writable: string } {
-  const home = mkdtempSync(join(tmpdir(), "clover-hook-home-"));
-  const guard: PluginRunGuard = { files: ensurePluginRunFiles(join(home, "run"), { cloverHome: home }) };
+  const home = mkdtempSync(join(tmpdir(), "moss-hook-home-"));
+  const guard: PluginRunGuard = { files: ensurePluginRunFiles(join(home, "run"), { mossHome: home }) };
   return { runner: new HookRunner(guard), writable: pluginFenceAvailable() ? fenceFolders(home, "demo", "hook-demo").tmp : dir };
 }
 
@@ -122,10 +122,10 @@ describe("HookRunner.run", () => {
     expect(result.reason).toBeDefined();
   });
 
-  test("(h) CLOVER_SESSION_ID/CLOVER_PLUGIN_ID/CLOVER_HOOK_EVENT are set in the child's env", async () => {
+  test("(h) MOSS_SESSION_ID/MOSS_PLUGIN_ID/MOSS_HOOK_EVENT are set in the child's env", async () => {
     const runner = new HookRunner();
     const result = await runner.run(
-      mkSpec({ pluginId: "plugin-x", command: 'printf "%s|%s|%s" "$CLOVER_SESSION_ID" "$CLOVER_PLUGIN_ID" "$CLOVER_HOOK_EVENT"' }),
+      mkSpec({ pluginId: "plugin-x", command: 'printf "%s|%s|%s" "$MOSS_SESSION_ID" "$MOSS_PLUGIN_ID" "$MOSS_HOOK_EVENT"' }),
       mkPayload({ sessionId: "sess-42", pluginId: "plugin-x", event: "turn-end" }),
     );
     expect(result.status).toBe("ok");

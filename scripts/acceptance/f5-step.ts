@@ -1,5 +1,5 @@
 // F5 on the app (the owner's general capabilities, 2026-11-15: no door checks a plugin's id), a clause of the Browser row:
-// `browser.*` and the terminal are served by capability. Three folder plugins, none of Clover's own:
+// `browser.*` and the terminal are served by capability. Three folder plugins, none of MOSS's own:
 // * `acc-surf`, holding `browser`, with a host MCP server whose `Surf` tool its manifest lists in `browserTools`: Alpha's
 //   call drives her own tab (open, read with no card; a click asks for the site, as the Browser tool's does).
 // * `acc-view`, holding `browser`, a live view nested in the main window (Alpha's composer, `composer.action` keyed `model`): from its own frame, with no press,
@@ -58,7 +58,7 @@ const REFUSED = "(e) => \"refused \" + (e && e.message ? e.message : String(e))"
 const VIEW_CLIENT = [
   "import { jsx } from \"react/jsx-runtime\";",
   "import { useEffect, useState } from \"react\";",
-  "import { usePluginApi } from \"@waifucave/clover-plugin-sdk/ui\";",
+  "import { usePluginApi } from \"@waifucave/moss-plugin-sdk/ui\";",
   "export function Go() {",
   "  const api = usePluginApi();",
   "  const [said, setSaid] = useState(\"\");",
@@ -88,7 +88,7 @@ const VIEW_CLIENT = [
 const BG_CLIENT = [
   "import { jsx } from \"react/jsx-runtime\";",
   "import { useEffect, useState } from \"react\";",
-  "import { usePluginApi } from \"@waifucave/clover-plugin-sdk/ui\";",
+  "import { usePluginApi } from \"@waifucave/moss-plugin-sdk/ui\";",
   "export function Bg() {",
   "  const api = usePluginApi();",
   "  const [said, setSaid] = useState(\"waiting\");",
@@ -104,7 +104,7 @@ const BG_CLIENT = [
 
 function write(dir: string, manifest: Record<string, unknown>, files: Record<string, string>): string {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "clover.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  writeFileSync(join(dir, "moss.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(join(dir, path, ".."), { recursive: true });
     writeFileSync(join(dir, path), text);
@@ -114,7 +114,7 @@ function write(dir: string, manifest: Record<string, unknown>, files: Record<str
 
 /** The three plugins' folders under `root`. */
 export function writeF5(root: string): { surf: string; view: string; term: string; bg: string } {
-  const engines = { clover: "^1.0.0" };
+  const engines = { moss: "^1.0.0" };
   const surf = write(join(root, F5_IDS.surf), {
     manifest: 1, id: F5_IDS.surf, name: "Acceptance surf", version: "1.0.0", engines, capabilities: ["browser"],
     host: { entry: "host/index.js", runtime: "bun" },
@@ -129,7 +129,7 @@ export function writeF5(root: string): { surf: string; view: string; term: strin
     manifest: 1, id: F5_IDS.view, name: "Acceptance view", version: "1.0.0", engines, capabilities: ["browser"],
     client: { entry: "client/index.js" },
     // A part nested in the main window, as a third party's panel is: its frame inside the shell's, which the press is credited
-    // to by its own document's report (lane E's `clover:press-seen`).
+    // to by its own document's report (lane E's `moss:press-seen`).
     contributes: { ui: [{ spot: "composer.action", key: "model", id: "go", component: "Go", title: "Acceptance view" }] },
   }, { "client/index.js": VIEW_CLIENT });
   const bg = write(join(root, F5_IDS.bg), {
@@ -158,7 +158,7 @@ export interface F5Seen {
  *  real one, the background part was refused, and the folder terminal opened and spoke, with its own write refused. */
 export function f5Wrong(s: F5Seen): string[] {
   const wrong: string[] = [];
-  if (!s.surfCard.includes(`says ${SURF_TOOL} drives the calling bot's own tab of the Clover Browser`)) wrong.push("acc-surf's OK card doesn't name its Browser tool with the warning");
+  if (!s.surfCard.includes(`says ${SURF_TOOL} drives the calling bot's own tab of the MOSS Browser`)) wrong.push("acc-surf's OK card doesn't name its Browser tool with the warning");
   if (!/surf opened tab_/.test(s.open.text)) wrong.push(`Surf didn't open Alpha's tab (${s.open.text.slice(0, 160)})`);
   if (s.open.cards.length > 0 || s.read.cards.length > 0) wrong.push(`looking raised a card (${[...s.open.cards, ...s.read.cards].join("; ")})`);
   if (!/Browser fixture home/.test(s.read.text)) wrong.push(`Surf didn't read the page (${s.read.text.slice(0, 160)})`);

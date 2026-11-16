@@ -33,7 +33,7 @@ export interface ProxyServer {
 }
 
 /** What the OS says, read explicitly: its PAC file's URL, or its servers per kind of URL, and the hosts that bypass
- *  them. `discoveryOnly` marks a system that asks for WPAD discovery, which Clover never does. */
+ *  them. `discoveryOnly` marks a system that asks for WPAD discovery, which MOSS never does. */
 export interface SystemProxy {
   pacUrl?: string;
   servers: Partial<Record<"http" | "https" | "socks", ProxyServer>>;
@@ -173,7 +173,7 @@ function v6Bits(ip: string): string | undefined {
 // -----------------------------------------------------------------------------------------------
 
 /** A PAC answer (`PROXY host:port; SOCKS5 host:port; DIRECT`, as `FindProxyForURL` and Chromium's `resolveProxy`
- *  give it) as routes. Entries Clover can't follow (QUIC) are skipped; an answer with none left refuses. */
+ *  give it) as routes. Entries MOSS can't follow (QUIC) are skipped; an answer with none left refuses. */
 export function parsePacResult(result: string): Upstream[] {
   const routes: Upstream[] = [];
   for (const entry of result.split(";")) {
@@ -273,7 +273,7 @@ export function parseScutil(out: string): SystemProxy {
 }
 
 /** Windows: `reg query` of the user's Internet Settings (`ProxyEnable`, `ProxyServer`, `ProxyOverride`,
- *  `AutoConfigURL`). The "detect settings automatically" flag is WPAD, which Clover never follows. */
+ *  `AutoConfigURL`). The "detect settings automatically" flag is WPAD, which MOSS never follows. */
 export function parseWindowsInternetSettings(out: string): SystemProxy {
   const value = (name: string): string | undefined => new RegExp(`^\\s*${name}\\s+REG_\\w+\\s+(.*)$`, "mi").exec(out)?.[1]?.trim();
   const pac = value("AutoConfigURL");
@@ -441,7 +441,7 @@ export function proxyRoutes(setting: BrowserProxySetting, o: ProxyRoutesOptions 
     const sys = await system();
     if (sys.discoveryOnly === true && !warned) {
       warned = true;
-      o.log?.("browser proxy: the system asks for proxy discovery (WPAD), which Clover never does; tabs connect directly");
+      o.log?.("browser proxy: the system asks for proxy discovery (WPAD), which MOSS never does; tabs connect directly");
     }
     if ((sys.bypassSimple === true && !host.includes(".") && !host.includes(":")) || bypassMatches(sys.bypass, host, port)) return [{ kind: "direct" }];
     if (sys.pacUrl !== undefined) {

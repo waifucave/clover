@@ -13,7 +13,7 @@
 //   the core stamps it, never the plugin.
 // * Everything that crosses is structured-clone data: the turn's request without its signal, the connection, the
 //   events. The plugin's key never does: the plugin reaches its provider through the core's keyed fetch (§5.4).
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { MODEL_ADAPTER_INTERFACE_VERSION, ProviderRequestError, type HostModelAdapter, type HostModelAdapterContext, type ModelAdapterDescription, type ProviderEvent, type TurnRequest } from "@waifucave/clover-provider-runtime";
 import { ContractError, isContractError } from "../../contracts/common";
 import type { PluginHost } from "../../contracts/plugin-host";
@@ -52,7 +52,7 @@ export function pluginFailure(err: unknown, name: string): unknown {
     return new ProviderRequestError({ code: "server", retryable: false, message: `The ${name} model plugin is stopped (${reason}), so this reply couldn't run. Turn it on in Settings → Plugins, then send again.` });
   }
   if (err.code === "failed" && /^the plugin crashed/.test(err.message)) {
-    return new ProviderRequestError({ code: "server", retryable: false, message: `The ${name} model plugin stopped during this reply (${reason}). Clover starts it again: send again to retry.` });
+    return new ProviderRequestError({ code: "server", retryable: false, message: `The ${name} model plugin stopped during this reply (${reason}). MOSS starts it again: send again to retry.` });
   }
   if (err.code === "not_installed" || err.code === "failed" || err.code === "refused" || err.code === "timeout") {
     return new ProviderRequestError({ code: "server", retryable: false, message: `The ${name} model plugin couldn't run this reply (${err.message}). Send again to retry, or check it in Settings → Plugins.` });

@@ -126,7 +126,7 @@ export async function sendWebPush(
       "content-type": "application/octet-stream",
       ttl: String(options.ttlSeconds),
       urgency: options.urgent ? "high" : "normal",
-      topic: "clover-updates",
+      topic: "moss-updates",
     },
     body,
     signal: AbortSignal.timeout(options.timeoutMs ?? PUSH_TIMEOUT_MS),

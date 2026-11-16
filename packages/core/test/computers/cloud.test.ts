@@ -35,7 +35,7 @@ class FakeProvider implements CloudProviderHandler {
   }
   #mine(a: { serverId: string; label: string }) {
     const v = this.vms.get(a.serverId);
-    if (v && v.label !== a.label) throw new Error(`${a.serverId} isn't the Clover computer ${a.label}`);
+    if (v && v.label !== a.label) throw new Error(`${a.serverId} isn't the MOSS computer ${a.label}`);
     return v;
   }
   async resize(a: { serverId: string; label: string; size: string }) {
@@ -69,7 +69,7 @@ class FakeAuthority implements CloudAuthority {
 const SHA = "a".repeat(64);
 const userData = ({ name, token }: { name: string; token: string }) => cloudInit({
   name, token, join: "join-ticket-for-tests",
-  daemon: { url: "https://example.invalid/clover-core-linux-x64.tar.gz", sha256: SHA },
+  daemon: { url: "https://example.invalid/moss-core-linux-x64.tar.gz", sha256: SHA },
   browser: { url: "https://example.invalid/chrome-headless-shell-linux64.zip", sha256: SHA },
 });
 const tokenIn = (y: string) => /pairing-token"?\n[^\n]*\n[^\n]*\n[^\n]*\n\s*content: "([A-Za-z0-9_-]+)"/.exec(y)?.[1];
@@ -120,7 +120,7 @@ describe("cloud computers", () => {
     expect(saved).toContain("srv-1");
     expect(saved).not.toContain(token);
     expect(JSON.parse(saved).tokens).toMatchObject([{ computer: "Cloud1", tenure: "group-1:1" }]);
-    // 0600 where the disk has POSIX modes. Windows has none: the file is in the Clover home, which the per-user ACL
+    // 0600 where the disk has POSIX modes. Windows has none: the file is in the MOSS home, which the per-user ACL
     // already keeps to this user, and it holds only the tokens' hashes.
     if (process.platform === "win32") expect(file.startsWith(home)).toBe(true);
     else expect(statSync(file).mode & 0o777).toBe(0o600);
@@ -365,7 +365,7 @@ describe("the official image", () => {
     const y = userData({ name: "Cloud1", token: "t".repeat(43) });
     expect(y.startsWith("#cloud-config\n")).toBe(true);
     expect(y).toContain(`sha256sum -c -`);
-    expect(y).toContain("loginctl enable-linger clover");
+    expect(y).toContain("loginctl enable-linger moss");
     for (const a of ["169.254.169.254", "fd00:ec2::254", "fd20:ce::254"]) expect(y).toContain(a);
     const lines = y.split("\n");
     const at = (s: string) => lines.findIndex((l) => l.includes(s));
@@ -375,12 +375,12 @@ describe("the official image", () => {
     expect(lines[at("bootcmd:") + 1]).toContain("nft -f -");
     // The first runcmd lines load it, keep it across boots and enable nftables, before any curl or systemctl --user.
     const run = at("runcmd:");
-    expect(lines.slice(run + 1, run + 5).join("\n")).toContain("nft -f /etc/nftables.d/clover-metadata.nft");
+    expect(lines.slice(run + 1, run + 5).join("\n")).toContain("nft -f /etc/nftables.d/moss-metadata.nft");
     expect(at("systemctl enable nftables")).toBeLessThan(at("curl "));
     expect(at("systemctl enable nftables")).toBeLessThan(at("systemctl --user"));
-    expect(at("nft -f /etc/nftables.d/clover-metadata.nft")).toBeLessThan(at("curl "));
+    expect(at("nft -f /etc/nftables.d/moss-metadata.nft")).toBeLessThan(at("curl "));
     // Reloading it is idempotent (no rule twice after a reboot).
-    expect(y).toContain("delete table inet clover_metadata");
+    expect(y).toContain("delete table inet moss_metadata");
     // Nothing a value carries can break out of its quoting.
     expect(() => userData({ name: "Cloud1\nruncmd:", token: "t".repeat(43) })).toThrow();
     expect(() => cloudInit({ name: "Cloud1", token: "t".repeat(43), join: "a\nb", daemon: { url: "https://x.invalid/a", sha256: SHA }, browser: { url: "https://x.invalid/b", sha256: SHA } })).toThrow();
@@ -390,7 +390,7 @@ describe("the official image", () => {
 
 describe("on the VM after pairing (#254, should-fix 6)", () => {
   test("the join ticket and the spent token are deleted; the name stays", () => {
-    const dir = mkdtempSync(join(tmpdir(), "lane-j-etc-clover-"));
+    const dir = mkdtempSync(join(tmpdir(), "lane-j-etc-moss-"));
     writeFileSync(join(dir, "name"), "Cloud1\n");
     writeFileSync(join(dir, "join"), "join-ticket-for-tests\n");
     writeFileSync(join(dir, "pairing-token"), `${"t".repeat(43)}\n`);

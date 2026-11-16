@@ -15,15 +15,15 @@
 // (3) TaskStop (another session's) on a session holding a pushed-but-pending steer: the steer is CLEARED
 //     (never reaches the model), the stopped turn ends aborted, and the cleared message is closed in the log
 //     after it (turn_started + an aborted turn_completed) — a resume owes nothing.
-// Needs a 0.0.44 binary: CLOVER_RUNTIME_EXECUTABLE (else the installed platform package, else skipped).
+// Needs a 0.0.44 binary: MOSS_RUNTIME_EXECUTABLE (else the installed platform package, else skipped).
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/moss-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { unconsumedUserMessages } from "../../src/runtime-sdk/clover-session";
+import { unconsumedUserMessages } from "../../src/runtime-sdk/moss-session";
 import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
@@ -82,8 +82,8 @@ describeWithEmbeddedRuntime("a message sent mid-turn is FOLDED into the running 
   let cwd: string;
 
   beforeAll(async () => {
-    home = realpathSync(mkdtempSync(join(tmpdir(), "clover-fold-e2e-")));
-    cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-fold-e2e-cwd-")));
+    home = realpathSync(mkdtempSync(join(tmpdir(), "moss-fold-e2e-")));
+    cwd = realpathSync(mkdtempSync(join(tmpdir(), "moss-fold-e2e-cwd-")));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "winter-test/calls" },

@@ -4,12 +4,12 @@
 // marketplace ("winter-legacy") with one plugin entry per converted id.
 //
 // COPIES, NEVER MOVES: the legacy `<home>/plugins/<id>` directory is left exactly as it was — a
-// downgrade to an older Clover still finds it there (spec §2.1/§8's own "originals kept for
-// downgrade" rule). Migration C (`clover migrate --sdk-home`, L3-owned) calls this function as its
+// downgrade to an older MOSS still finds it there (spec §2.1/§8's own "originals kept for
+// downgrade" rule). Migration C (`moss migrate --sdk-home`, L3-owned) calls this function as its
 // step 6; this module has no daemon-boot call site of its own.
 //
 // Field/event mapping (spec §5.1):
-//  - a legacy `clover-plugin.json`'s `contributes.mcpServers` becomes the converted plugin's own
+//  - a legacy `moss-plugin.json`'s `contributes.mcpServers` becomes the converted plugin's own
 //    `.mcp.json` (claude's own project-MCP shape, `{mcpServers: {<name>: {command,args?,env?}}}`);
 //    an EXISTING `.mcp.json` the legacy plugin already shipped is preserved and the manifest's own
 //    servers are overlaid onto it (manifest wins on a name clash — the pre-WS-21 daemon's own rule,
@@ -24,10 +24,10 @@
 //    directories are already claude-shaped (the same `skills/<name>/SKILL.md` layout WS-11 already
 //    used) and simply come along in the directory copy;
 //  - the narrowed extras (tier, permissions, contributes.{tools,shortcuts,tile,provider}, entry) are
-//    rewritten into a fresh `clover-plugin.json` at the converted plugin's root, dropping the four
+//    rewritten into a fresh `moss-plugin.json` at the converted plugin's root, dropping the four
 //    legacy `contributes` keys the new schema no longer carries (`agent/plugin-manifest.ts`);
 //  - a `.claude-plugin/plugin.json` (claude's own optional manifest, F15) is written from
-//    name/description/version/author so the plugin is recognizable without Clover's own extras file.
+//    name/description/version/author so the plugin is recognizable without MOSS's own extras file.
 //
 // Enabled state (spec §4.1's `plugins.enabled/disabled → enabledPlugins` row, deferred to this
 // lane — see `settings.ts`'s `MOVED_SETTINGS_KEYS` doc comment): a legacy plugin's enabled state was
@@ -64,7 +64,7 @@ const HOOK_EVENT_MAP: Record<string, string> = {
 
 interface LegacyMcpServer { name: string; command: string; args?: string[]; env?: Record<string, string> }
 interface LegacyHook { event: string; command: string; timeoutMs?: number }
-interface LegacyCloverManifest {
+interface LegacyMossManifest {
   id?: string; name?: string; description?: string; version?: string; author?: string;
   tier?: "capability" | "platform";
   permissions?: { exec?: boolean; tcc?: string[]; hardware?: string[] };
@@ -91,9 +91,9 @@ function isDirectory(path: string): boolean {
 }
 
 /** WS-24: the files a pre-WS-21 plugin directory could be recognized by — what that build's own
- *  `PluginStore` read out of `<home>/plugins/<id>` (its `clover-plugin.json`, a Tier-1 `plugin.json`, a
+ *  `PluginStore` read out of `<home>/plugins/<id>` (its `moss-plugin.json`, a Tier-1 `plugin.json`, a
  *  `.mcp.json`), plus claude's own manifest. A `skills/<name>/SKILL.md` counts too (`hasLegacySkill`). */
-const LEGACY_PLUGIN_MARKER_FILES: readonly string[] = ["clover-plugin.json", "plugin.json", join(".claude-plugin", "plugin.json"), ".mcp.json"];
+const LEGACY_PLUGIN_MARKER_FILES: readonly string[] = ["moss-plugin.json", "plugin.json", join(".claude-plugin", "plugin.json"), ".mcp.json"];
 
 function isFile(path: string): boolean {
   try { return statSync(path).isFile(); } catch { return false; }
@@ -128,9 +128,9 @@ export function legacyPluginIdsNamedInSettings(home: string): Set<string> {
  *  converts as before. */
 export function isLegacyPluginDir(path: string, namedInSettings: ReadonlySet<string> = new Set()): boolean {
   if (!isDirectory(path)) return false;
-  // A Clover plugin (its `clover.json`) is the current layout's, whatever else it ships (`.mcp.json`, `skills/`):
+  // A MOSS plugin (its `moss.json`) is the current layout's, whatever else it ships (`.mcp.json`, `skills/`):
   // never a legacy plugin, never converted, never a reason for Migration C.
-  if (isFile(join(path, "clover.json"))) return false;
+  if (isFile(join(path, "moss.json"))) return false;
   if (namedInSettings.has(basename(path))) return true;
   return LEGACY_PLUGIN_MARKER_FILES.some((f) => isFile(join(path, f))) || hasLegacySkill(path);
 }
@@ -151,15 +151,15 @@ function readJsonIfPresent<T>(path: string): T | undefined {
   try { return JSON.parse(readFileSync(path, "utf8")) as T; } catch { return undefined; }
 }
 
-/** Reads a legacy plugin's OWN metadata — `clover-plugin.json` (pre-WS-21 superset shape) preferred,
+/** Reads a legacy plugin's OWN metadata — `moss-plugin.json` (pre-WS-21 superset shape) preferred,
  *  `plugin.json` (Tier-1 metadata-only) as the fallback — WITHOUT going through
  *  `agent/plugin-manifest.ts#loadManifest` (that reader now applies the NARROWED schema, which
  *  silently drops `contributes.{skills,mcpServers,agents,hooks}` — exactly the fields this converter
- *  needs to read). No zod validation here: these files were already validated once, by the Clover
+ *  needs to read). No zod validation here: these files were already validated once, by the MOSS
  *  version that wrote them; a malformed one degrades to "no manifest" (metadata-only conversion)
  *  rather than failing the whole plugin. */
-function readLegacyManifest(dir: string): { manifest?: LegacyCloverManifest; meta?: LegacyPluginJson } {
-  const manifest = readJsonIfPresent<LegacyCloverManifest>(join(dir, "clover-plugin.json"));
+function readLegacyManifest(dir: string): { manifest?: LegacyMossManifest; meta?: LegacyPluginJson } {
+  const manifest = readJsonIfPresent<LegacyMossManifest>(join(dir, "moss-plugin.json"));
   if (manifest) return { manifest };
   const meta = readJsonIfPresent<LegacyPluginJson>(join(dir, "plugin.json"));
   return { meta };
@@ -213,7 +213,7 @@ function findEscapingSymlink(dir: string, boundary: string, visited: Set<string>
 
 /** Copies `<home>/plugins/<id>` into the converted plugin's install dir, then overlays the
  *  claude-shaped files this converter derives (`.claude-plugin/plugin.json`, `.mcp.json`,
- *  `hooks/hooks.json`, a narrowed `clover-plugin.json`) — the copy first so any file the legacy
+ *  `hooks/hooks.json`, a narrowed `moss-plugin.json`) — the copy first so any file the legacy
  *  plugin already shipped that this converter has no opinion about (skills/, agents/, other assets)
  *  comes along unchanged.
  *
@@ -236,9 +236,9 @@ function convertOnePlugin(legacyDir: string, targetDir: string, id: string): voi
   cpSync(realLegacyDir, targetDir, { recursive: true, dereference: true });
   const { manifest, meta } = readLegacyManifest(realLegacyDir);
 
-  // The legacy `clover-plugin.json`/`plugin.json` themselves are superseded by the files below —
+  // The legacy `moss-plugin.json`/`plugin.json` themselves are superseded by the files below —
   // remove the stale copies so a reader never finds two conflicting manifests.
-  for (const stale of ["clover-plugin.json", "plugin.json"]) {
+  for (const stale of ["moss-plugin.json", "plugin.json"]) {
     const p = join(targetDir, stale);
     if (existsSync(p)) rmSync(p);
   }
@@ -286,7 +286,7 @@ function convertOnePlugin(legacyDir: string, targetDir: string, id: string): voi
     if (Object.keys(contributes).length > 0) narrowed.contributes = contributes;
     if (manifest.entry) narrowed.entry = manifest.entry;
     if (manifest.signature) narrowed.signature = manifest.signature;
-    writeFileSync(join(targetDir, "clover-plugin.json"), `${JSON.stringify(narrowed, null, 2)}\n`);
+    writeFileSync(join(targetDir, "moss-plugin.json"), `${JSON.stringify(narrowed, null, 2)}\n`);
   }
 }
 
@@ -314,7 +314,7 @@ function readLegacyPluginSettings(home: string): { enabled: Set<string>; disable
  *  needed BEFORE conversion — post-merge fix round, finding 1 (Opus review): converting an
  *  enabled-but-unconsented plugin must install it DISABLED, never silently start running commands
  *  the user never approved. */
-function legacyRequiredConsentClasses(m: LegacyCloverManifest, opts: { shipsSkills: boolean }): Array<"exec" | "tcc" | "hardware"> {
+function legacyRequiredConsentClasses(m: LegacyMossManifest, opts: { shipsSkills: boolean }): Array<"exec" | "tcc" | "hardware"> {
   const classes: Array<"exec" | "tcc" | "hardware"> = [];
   const execNeeded = Boolean(m.entry) || Boolean(m.permissions?.exec)
     || Boolean(m.contributes?.mcpServers?.length) || Boolean(m.contributes?.hooks?.length) || opts.shipsSkills;
@@ -380,7 +380,7 @@ const CARRIED_LEGACY_CONSENT_CLASSES = ["tcc", "hardware"] as const;
  *  pre-fix record, but this converter runs AT conversion time, when it already knows exactly which
  *  install path + entry the plugin converted to, so it can write a record that's valid from the
  *  start rather than forcing a needless re-consent). `idToFingerprint` is built by the caller, off
- *  the SAME converted `targetDir` + freshly-written `clover-plugin.json` each id ended up with. */
+ *  the SAME converted `targetDir` + freshly-written `moss-plugin.json` each id ended up with. */
 function rekeyConsents(home: string, idToKey: Map<string, string>, idToFingerprint: Map<string, string>): void {
   const path = join(home, "settings.json");
   const raw = readJsonIfPresent<Record<string, unknown>>(path);
@@ -514,7 +514,7 @@ export async function convertLegacyPlugins(home: string): Promise<ConvertLegacyP
   const legacySettings = readLegacyPluginSettings(home);
   const idToKey = new Map<string, string>();
   // C1 fix round 2: a fingerprint per converted id, computed off the SAME `installed.installPath` +
-  // the freshly-written `clover-plugin.json` at that path (re-read via `loadManifest`, which this
+  // the freshly-written `moss-plugin.json` at that path (re-read via `loadManifest`, which this
   // converter's own `convertOnePlugin` already wrote) — `rekeyConsents` below needs this to write a
   // carried-forward consent record that reads as consented from the start (see its own doc).
   const idToFingerprint = new Map<string, string>();
@@ -585,7 +585,7 @@ export async function convertLegacyPlugins(home: string): Promise<ConvertLegacyP
   if (manifestEntries.length === 0) return result;
 
   writeFileSync(join(marketplaceDir, ".claude-plugin", "marketplace.json"), `${JSON.stringify({
-    name: LEGACY_MARKETPLACE_NAME, owner: { name: "clover" }, plugins: manifestEntries,
+    name: LEGACY_MARKETPLACE_NAME, owner: { name: "moss" }, plugins: manifestEntries,
   }, null, 2)}\n`);
 
   await addMarketplace(options, marketplaceDir);
@@ -634,7 +634,7 @@ export async function convertLegacyPlugins(home: string): Promise<ConvertLegacyP
  * itself returns richer per-plugin records (`{id, installPath, enabled}` / `{id, reason}`) that this
  * lane's own RPCs and tests use directly; this reshapes them into the migration step's plain form
  * without changing `convertLegacyPlugins`'s own return type. Wired in at the two real call sites
- * (`daemon.ts`'s boot hook, `cli/src/commands/migrate.ts`'s `clover migrate --sdk-home`), both via
+ * (`daemon.ts`'s boot hook, `cli/src/commands/migrate.ts`'s `moss migrate --sdk-home`), both via
  * `packages/core/src/index.ts`'s export of this function.
  */
 export async function convertLegacyPluginsForMigration(home: string): Promise<{ converted: string[]; unconvertible: { name: string; reason: string }[] }> {

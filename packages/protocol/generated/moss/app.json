@@ -1,0 +1,2635 @@
+{
+  "area": "app",
+  "owner": "E (with C, D, G, M)",
+  "methods": {
+    "app.open": {
+      "doc": "The user's own navigation of this computer's app from a terminal: shows a bot's tab, a plugin's page, Settings, Plugins, Archive or the coding side in the main window by the route its own sidebar uses, waits until it shows, and says where the window is and its frames; never shows, raises, focuses, moves or resizes a window, and never clicks or types in a page. A local user's CLI only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sealed": {
+                  "type": "string",
+                  "enum": [
+                    "card",
+                    "placeholder"
+                  ]
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.where": {
+      "doc": "Where this computer's app's main window is (the tab showing) and its frames, changing nothing. A local user's CLI only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sealed": {
+                  "type": "string",
+                  "enum": [
+                    "card",
+                    "placeholder"
+                  ]
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.window.open": {
+      "doc": "The daemon asks the app's main process for `app.open`'s answer (with a target) or `app.where`'s (without).",
+      "owner": "D",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sealed": {
+                  "type": "string",
+                  "enum": [
+                    "card",
+                    "placeholder"
+                  ]
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.window.render": {
+      "doc": "The daemon asks the app's main process to draw a place for a bot's AppScreenshot in a render window the user never sees (hidden, offscreen, no input, no sound, a card there a plain placeholder), or to capture the main window as it is (`window`, never while Settings shows), and answers with the picture.",
+      "owner": "D",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "size": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "integer",
+                "minimum": 320,
+                "maximum": 2560
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 240,
+                "maximum": 1640
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "size": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "png": {
+            "type": "string",
+            "maxLength": 7000000
+          },
+          "pixels": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "preview": {
+            "type": "object",
+            "properties": {
+              "png": {
+                "type": "string",
+                "maxLength": 7000000
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "png",
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sealed": {
+                  "type": "string",
+                  "enum": [
+                    "card",
+                    "placeholder"
+                  ]
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "console": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "plugin": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning"
+                  ]
+                },
+                "message": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "plugin",
+                "level",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "target",
+          "size",
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.capture": {
+      "doc": "The user's own look at what this computer's app draws: a window's picture (Electron's own capture of its page, never the screen) with its bounds, its display's scale and its frame list; never shows, raises or resizes a window. A local user's CLI only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._#/-]+$"
+          },
+          "image": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "window"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windows": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "bounds": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "width": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "scale": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "visible": {
+                  "type": "boolean"
+                },
+                "drawn": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "png": {
+                  "type": "string",
+                  "maxLength": 7000000
+                },
+                "pixels": {
+                  "type": "object",
+                  "properties": {
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "reduced": {
+                  "type": "boolean"
+                },
+                "views": {
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "bounds": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "width": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "composited": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "bounds",
+                      "visible",
+                      "composited"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "frames": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "origin": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "mount": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "surface": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "visibility": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "silent": {
+                        "type": "boolean"
+                      },
+                      "pid": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "sealed": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "placeholder"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "origin"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "bounds",
+                "scale",
+                "visible",
+                "drawn",
+                "views"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "windows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.window.capture": {
+      "doc": "The daemon asks the app's main process for `app.capture`'s answer, one window's picture at a time.",
+      "owner": "D",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._#/-]+$"
+          },
+          "image": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "window"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windows": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "bounds": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "width": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "scale": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "visible": {
+                  "type": "boolean"
+                },
+                "drawn": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "png": {
+                  "type": "string",
+                  "maxLength": 7000000
+                },
+                "pixels": {
+                  "type": "object",
+                  "properties": {
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "reduced": {
+                  "type": "boolean"
+                },
+                "views": {
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "bounds": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "width": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "composited": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "bounds",
+                      "visible",
+                      "composited"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "frames": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "origin": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "mount": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "surface": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "visibility": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "silent": {
+                        "type": "boolean"
+                      },
+                      "pid": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "sealed": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "placeholder"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "origin"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "bounds",
+                "scale",
+                "visible",
+                "drawn",
+                "views"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "windows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pair.status": {
+      "doc": "What would stop if this computer quit, for Quit's question (§3.1).",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 81,
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+            }
+          },
+          "routines": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "agents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "canHandOver": {
+            "type": "boolean"
+          },
+          "safeMode": {
+            "type": "boolean"
+          },
+          "updateReady": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "bots",
+          "routines",
+          "agents",
+          "canHandOver",
+          "safeMode"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pair.quit": {
+      "doc": "Quits the app and the daemon; with `handOver`, releases the lease first so another computer takes the bots.",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "handOver": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "handOver"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pair.exiting": {
+      "doc": "The app says it is leaving on purpose, so the daemon doesn't restart it (§3.1).",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "quit",
+              "update",
+              "restart"
+            ]
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.show": {
+      "doc": "The daemon asks the app to open a window or a place in it (a sign-in page, a card from the CLI's `moss open`).",
+      "owner": "E",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "what": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "window"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "bot"
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "bot"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "session"
+                  },
+                  "session": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "session"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "card"
+                  },
+                  "card": {
+                    "type": "string",
+                    "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "card"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "settings"
+                  },
+                  "section": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "item": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "url"
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "what"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.ping": {
+      "doc": "The pair's heartbeat (ruling R9): the app answers at once from its main process; a daemon that hears nothing for a while restarts it in safe mode (lane C).",
+      "owner": "E",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.quit": {
+      "doc": "The daemon tells the app it is stopping the pair (a Quit from the CLI, an update).",
+      "owner": "E",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "quit",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "layer.token": {
+      "doc": "A token for one plugin layer's connection (role `layer`), which the app's main process opens for it.",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "pluginId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "ui.settings": {
+      "doc": "The user's UI choices, which the app's plugin runtime applies.",
+      "owner": "E",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "picks": {
+            "maxItems": 10000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "spot": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "key": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "bot": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "entry": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 300,
+                      "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                      "minLength": 2
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "spot",
+                "entry"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "lists": {
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "spot": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "bot": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "order": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                    "minLength": 2
+                  }
+                },
+                "hidden": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                    "minLength": 2
+                  }
+                },
+                "shown": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                    "minLength": 2
+                  }
+                }
+              },
+              "required": [
+                "spot",
+                "order",
+                "hidden"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "baseTheme": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+            "minLength": 3
+          },
+          "globalTheme": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+            "minLength": 3
+          },
+          "overrides": {
+            "type": "object",
+            "properties": {
+              "tokens": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                }
+              },
+              "css": {
+                "type": "string",
+                "maxLength": 200000
+              }
+            },
+            "additionalProperties": false
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 35
+          },
+          "appearance": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ]
+          },
+          "textSize": {
+            "type": "string",
+            "enum": [
+              "small",
+              "default",
+              "large"
+            ]
+          },
+          "packs": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 81,
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+            }
+          }
+        },
+        "required": [
+          "picks",
+          "lists"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "ui.set": {
+      "doc": "Changes the user's UI choices; from a layer other than `moss`'s it becomes a card (§5.5).",
+      "owner": "E",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "layer"
+      ],
+      "userOnly": true,
+      "change": "core",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "patch": {
+            "type": "object",
+            "properties": {
+              "picks": {
+                "maxItems": 10000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "spot": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "key": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "bot": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "entry": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 300,
+                          "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                          "minLength": 2
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "spot",
+                    "entry"
+                  ]
+                }
+              },
+              "lists": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "spot": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "bot": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "order": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
+                      }
+                    },
+                    "hidden": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
+                      }
+                    },
+                    "shown": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
+                      }
+                    }
+                  },
+                  "required": [
+                    "spot",
+                    "order",
+                    "hidden"
+                  ]
+                }
+              },
+              "baseTheme": {
+                "type": "string",
+                "maxLength": 300,
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+                "minLength": 3
+              },
+              "globalTheme": {
+                "type": "string",
+                "maxLength": 300,
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+                "minLength": 3
+              },
+              "overrides": {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 300
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    }
+                  },
+                  "css": {
+                    "type": "string",
+                    "maxLength": 200000
+                  }
+                }
+              },
+              "language": {
+                "type": "string",
+                "maxLength": 35
+              },
+              "appearance": {
+                "type": "string",
+                "enum": [
+                  "light",
+                  "dark",
+                  "system"
+                ]
+              },
+              "textSize": {
+                "type": "string",
+                "enum": [
+                  "small",
+                  "default",
+                  "large"
+                ]
+              },
+              "packs": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "patch"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "user.send": {
+      "doc": "The user's own words from the Dispatch pill: to a bot or a session as the user's message, or to a `pill.target` entry's handler.",
+      "owner": "G",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "to": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "bot"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "session": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                    "minLength": 2
+                  }
+                },
+                "required": [
+                  "target"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "images": {
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "mediaType": {
+                  "type": "string",
+                  "enum": [
+                    "image/png",
+                    "image/jpeg",
+                    "image/webp"
+                  ]
+                },
+                "data": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 10000000
+                }
+              },
+              "required": [
+                "mediaType",
+                "data"
+              ]
+            }
+          },
+          "clientMessageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "to",
+          "text",
+          "clientMessageId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "notify.send": {
+      "doc": "A plugin sends the user a notification through the `notifiers` (§10).",
+      "owner": "G",
+      "direction": "to-daemon",
+      "roles": [
+        "layer"
+      ],
+      "capability": "notify",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notify.mutes": {
+      "doc": "The plugins whose notifications the user muted.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "muted": {
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 81,
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+            }
+          }
+        },
+        "required": [
+          "muted"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notify.setMuted": {
+      "doc": "Mutes or unmutes a plugin's notifications (`notify.send`); the user's own choice, never a plugin's.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pluginId",
+          "muted"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.notify": {
+      "doc": "A desktop notification for the bundled desktop notifier on this computer (`NotifierContext.desktop`); the same `id` replaces it.",
+      "owner": "G",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "urgent": {
+            "type": "boolean"
+          },
+          "silent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "shown"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.notify.close": {
+      "doc": "Closes one desktop notification, or every one the notifier showed.",
+      "owner": "G",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "update.status": {
+      "doc": "The app's and the daemon's version, the update waiting, if any, and whether the daemon is idle enough to install it (no turn in flight, no live runner, no pending approval).",
+      "owner": "M",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "available": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "channel": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "idle": {
+            "type": "boolean"
+          },
+          "busy": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        },
+        "required": [
+          "current",
+          "channel",
+          "ready",
+          "idle",
+          "busy"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "update.apply": {
+      "doc": "Installs the update once the daemon is between turns and no agent runs (§3.1): `now` when it is idle, else `when-idle`.",
+      "owner": "M",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "enum": [
+              "now",
+              "when-idle"
+            ]
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "events": {
+    "ui_settings_changed": {
+      "doc": "The user's UI choices changed, here or on another device.",
+      "owner": "E",
+      "scope": "core",
+      "roles": [
+        "app"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "ui_settings_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "settings": {
+            "type": "object",
+            "properties": {
+              "picks": {
+                "maxItems": 10000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "spot": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "key": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "bot": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "entry": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 300,
+                          "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                          "minLength": 2
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "spot",
+                    "entry"
+                  ]
+                }
+              },
+              "lists": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "spot": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "bot": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "order": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
+                      }
+                    },
+                    "hidden": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
+                      }
+                    },
+                    "shown": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
+                      }
+                    }
+                  },
+                  "required": [
+                    "spot",
+                    "order",
+                    "hidden"
+                  ]
+                }
+              },
+              "baseTheme": {
+                "type": "string",
+                "maxLength": 300,
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+                "minLength": 3
+              },
+              "globalTheme": {
+                "type": "string",
+                "maxLength": 300,
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+                "minLength": 3
+              },
+              "overrides": {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 300
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    }
+                  },
+                  "css": {
+                    "type": "string",
+                    "maxLength": 200000
+                  }
+                }
+              },
+              "language": {
+                "type": "string",
+                "maxLength": 35
+              },
+              "appearance": {
+                "type": "string",
+                "enum": [
+                  "light",
+                  "dark",
+                  "system"
+                ]
+              },
+              "textSize": {
+                "type": "string",
+                "enum": [
+                  "small",
+                  "default",
+                  "large"
+                ]
+              },
+              "packs": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              }
+            },
+            "required": [
+              "picks",
+              "lists"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "settings"
+        ]
+      }
+    },
+    "update_available": {
+      "doc": "An update was found or is ready to install.",
+      "owner": "M",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "update_available"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "at": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "version",
+          "ready"
+        ]
+      }
+    }
+  }
+}

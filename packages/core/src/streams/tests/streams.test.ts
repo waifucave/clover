@@ -5,8 +5,8 @@
 // handler that returns bytes, an async iterable, a ReadableStream, something else, or fails; the caller leaving stops
 // the handler's pump.
 import { describe, expect, test } from "bun:test";
-import { acceptStreams, catalogPointDecl, fromLayerWire, openStream, pointStream, toLayerWire, STREAM_BUFFER_MAX, STREAM_CHUNK_MAX, STREAM_META_MAX_BYTES, STREAM_WINDOW_MAX, STREAM_ACCEPTORS_PER_PLUGIN, STREAMS_OPEN_PER_PLUGIN, type Manifest, type StreamsTransport } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { acceptStreams, catalogPointDecl, fromLayerWire, openStream, pointStream, toLayerWire, STREAM_BUFFER_MAX, STREAM_CHUNK_MAX, STREAM_META_MAX_BYTES, STREAM_WINDOW_MAX, STREAM_ACCEPTORS_PER_PLUGIN, STREAMS_OPEN_PER_PLUGIN, type Manifest, type StreamsTransport } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { FakePluginRegistry } from "../../contracts/fakes/plugin-registry";
 import { ContractError, isContractError } from "../../contracts/common";
@@ -207,8 +207,8 @@ describe("streams: the hub", () => {
     const reader = accepting(host("tarot"), "deck");
     const w = opening(ui("tarot"), "deck");
     hub.close();
-    expect(reader.events.at(-1)).toEqual({ type: "aborted", id: w.id, reason: "Clover's plugins closed" });
-    expect(w.events.at(-1)).toEqual({ type: "aborted", id: w.id, reason: "Clover's plugins closed" });
+    expect(reader.events.at(-1)).toEqual({ type: "aborted", id: w.id, reason: "MOSS's plugins closed" });
+    expect(w.events.at(-1)).toEqual({ type: "aborted", id: w.id, reason: "MOSS's plugins closed" });
     expect(hub.size).toBe(0);
     expect(hub.acceptors).toBe(0);
   });
@@ -282,7 +282,7 @@ describe("streams: the hub", () => {
 // ---- through the real host runtime and the router ----
 
 const API = "^1.0.0";
-const manifest = (m: Partial<Manifest>): Manifest => ({ manifest: 1, name: "P", engines: { clover: API }, ...m }) as Manifest;
+const manifest = (m: Partial<Manifest>): Manifest => ({ manifest: 1, name: "P", engines: { moss: API }, ...m }) as Manifest;
 
 const until = async (cond: () => boolean, what: string, ms = 4000): Promise<void> => {
   const end = Date.now() + ms;

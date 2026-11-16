@@ -1,5 +1,5 @@
 {
-  "name": "@waifucave/clover-service-relay",
+  "name": "@waifucave/moss-service-relay",
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
@@ -13,7 +13,7 @@
     "@cloudflare/vitest-plugin": "1.4.8",
     "@cloudflare/workers-types": "5.20261023.1",
     "@types/node": "26.6.5",
-    "@waifucave/clover-plugin-relay-cloudflare": "workspace:*",
+    "@waifucave/moss-plugin-relay-cloudflare": "workspace:*",
     "typescript": "5.9.3",
     "vitest": "4.1.12",
     "wrangler": "4.153.0"

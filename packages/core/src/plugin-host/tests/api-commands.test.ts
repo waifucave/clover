@@ -6,8 +6,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -27,8 +27,8 @@ export const echo = async (args, ctx) => ({ said: args.text, by: ctx.caller.kind
 function plugin(home: string, id: string, o: { process?: "own"; capabilities: string[]; commands?: unknown[] }): void {
   const folder = join(home, "plugins", id);
   mkdirSync(join(folder, "host"), { recursive: true });
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({
-    manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({
+    manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
     host: { entry: "host/index.js", ...(o.process === undefined ? {} : { process: o.process }) }, capabilities: o.capabilities,
     ...(o.commands === undefined ? {} : { contributes: { commands: o.commands } }),
   }));
@@ -45,7 +45,7 @@ function approved(registry: { get(id: string): { state: string } | undefined; wa
 
 describe("commands.run in a real plugin host", () => {
   test("its own tree's commands with no capability; another plugin's with call:<id>; without it, refused; args checked first", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-commands-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-commands-")));
     temps.push(home);
     const echo = { name: "echo", description: "Says it back", handler: "echo", args: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } };
     plugin(home, "tools", { capabilities: [], commands: [echo] });
@@ -54,7 +54,7 @@ describe("commands.run in a real plugin host", () => {
     plugin(home, "nocap", { process: "own", capabilities: [] });
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
     try {
       for (const id of ["tools", "caller", "callerown", "nocap"]) {

@@ -19,8 +19,8 @@
 //   request answers its id with an error (the reason, never the URL's secret parts), so the caller isn't left waiting.
 //   `close` ends the session (a DELETE, best effort) and aborts what is in flight.
 // * **Limits:** a message is at most `HTTP_MCP_MESSAGE_MAX` bytes; a longer answer fails its request.
-import { parseInterpolation, interpolate } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { parseInterpolation, interpolate } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { McpChannel, PluginHost } from "../contracts/plugin-host";
 import type { Contribution, PluginRegistry } from "../contracts/plugin-registry";

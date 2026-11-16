@@ -378,12 +378,12 @@ describe("paths and origins", () => {
 
 describe("the statements", () => {
   test("are lane H's, byte for byte", () => {
-    // ["clover-account-v2 register", "acct", "dev", "k", "b", "n", "phone", null, 1793000000123] in deterministic CBOR.
+    // ["moss-account-v2 register", "acct", "dev", "k", "b", "n", "phone", null, 1793000000123] in deterministic CBOR.
     expect(Buffer.from(registerStatement("acct", { id: "dev", publicKey: "k", boxKey: "b", name: "n", kind: "phone" }, 1793000000123)).toString("hex")).toBe(
-      "89" + "781a" + Buffer.from("clover-account-v2 register").toString("hex") + "6461636374" + "63646576" + "616b" + "6162" + "616e" + "6570686f6e65" + "f6" + "1b000001a17720ca7b",
+      "89" + "781a" + Buffer.from("moss-account-v2 register").toString("hex") + "6461636374" + "63646576" + "616b" + "6162" + "616e" + "6570686f6e65" + "f6" + "1b000001a17720ca7b",
     );
     expect(new TextDecoder().decode(mintStatement("acct", "push.waifucave.com", "dev", 1793000000123))).toBe(
-      "clover-account-v1 mint\nacct\npush.waifucave.com\ndev\n1793000000123",
+      "moss-account-v1 mint\nacct\npush.waifucave.com\ndev\n1793000000123",
     );
   });
 });

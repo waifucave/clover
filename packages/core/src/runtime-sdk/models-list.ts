@@ -6,16 +6,16 @@
 // * **Every model of a provider plugin that is on,** signed in or not (`signedIn` says which), less blocked and
 //   vendor-retired rows and every row of a blocked provider: a picker never offers what `session.setModel` refuses.
 // * **Only models a session can run:** `llm` providers, and never a row a real turn would refuse tools on
-//   (`toolsRefusedFor`), since every Clover session offers tools.
+//   (`toolsRefusedFor`), since every MOSS session offers tools.
 // * **`plugin`** is the plugin that contributes the provider (the installed one's id from its install record, else the
-//   bundled `clover/model-<provider>`), and **`providerName`** the name its manifest gives (a `Text`, in the user's
+//   bundled `moss/model-<provider>`), and **`providerName`** the name its manifest gives (a `Text`, in the user's
 //   locale), else the catalog's.
 // * **With `session`,** only the models that session's runtime takes: an agent backend lists its own (lane K), a bot or
 //   a coding session on the embedded runtime the whole catalog. An unknown session is `not_found`.
 //
 // Owner: lane A. The method's spec is the protocol's (`SESSIONS_METHODS.modelsList`).
 import { z } from "zod";
-import { ModelListing, SESSIONS_METHODS, Text } from "@waifucave/clover-protocol";
+import { ModelListing, SESSIONS_METHODS, Text } from "@waifucave/moss-protocol";
 import type { WinterCatalog, WinterModelDescriptor } from "@waifucave/clover-provider-catalog";
 import { ContractError } from "../contracts/common";
 import { handler, type MethodHandler } from "../rpc/handler";

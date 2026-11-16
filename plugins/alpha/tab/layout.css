@@ -9,7 +9,7 @@
   --alpha-serif: "Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif;
   --alpha-shadow: rgba(10, 14, 40, 0.45);
   --alpha-gold: #d9b46a;
-  background: var(--clover-color-canvas);
+  background: var(--moss-color-canvas);
   min-height: 0;
   position: relative;
   isolation: isolate;
@@ -21,7 +21,7 @@
 
 .alpha-body { padding: 0; gap: 0; min-height: 0; }
 /* The stage cell: the figure's canvas is framed by her tokens (theme.css) and moves/scales when a panel opens. */
-.alpha-figure { --clover-avatar-framing: waist; --clover-avatar-crop: 0.56; --clover-avatar-headroom: 0.12; min-height: 0; overflow: hidden; transition: padding .55s cubic-bezier(.2,.7,.2,1); }
+.alpha-figure { --moss-avatar-framing: waist; --moss-avatar-crop: 0.56; --moss-avatar-headroom: 0.12; min-height: 0; overflow: hidden; transition: padding .55s cubic-bezier(.2,.7,.2,1); }
 /* A panel opens: she steps aside and gets smaller (her cell gives up room at the right and the top; the figure follows the cell). */
 .alpha-scene:has([data-panels-open]) .alpha-figure { padding: 34% 62% 0 0; }
 
@@ -32,9 +32,9 @@
 .alpha-pane { padding: 76px 3% 28px 0; box-sizing: border-box; display: flex; min-height: 0; }
 .alpha-sheet {
   flex: 1 1 auto;
-  background: var(--clover-plugin-alpha-pane-background, color-mix(in srgb, var(--clover-color-surface) 92%, transparent));
-  border: 1px solid var(--clover-plugin-alpha-pane-rim, color-mix(in srgb, var(--alpha-gold) 30%, transparent));
-  box-shadow: var(--clover-plugin-alpha-pane-shadow, 0 30px 80px -30px var(--alpha-shadow));
+  background: var(--moss-plugin-alpha-pane-background, color-mix(in srgb, var(--moss-color-surface) 92%, transparent));
+  border: 1px solid var(--moss-plugin-alpha-pane-rim, color-mix(in srgb, var(--alpha-gold) 30%, transparent));
+  box-shadow: var(--moss-plugin-alpha-pane-shadow, 0 30px 80px -30px var(--alpha-shadow));
   border-radius: 26px;
   overflow: hidden;
   min-height: 0;
@@ -97,9 +97,9 @@
 @container alpha-scene (max-width: 800px) {
   /* The band takes the tab's whole width: the row's own cross-axis (width) is stretched, so the stage's cell is as wide as the band and not as wide as the figure it holds (a figure with no intrinsic width, a Live2D canvas, left a stage 0 wide). */
   .alpha-body { align-self: stretch; height: 260px !important; flex: 0 0 260px !important; max-height: 260px; }
-  .alpha-figure { --clover-avatar-crop: 0.3; --clover-avatar-headroom: 0.04; padding: 60px 0 0 !important; }
+  .alpha-figure { --moss-avatar-crop: 0.3; --moss-avatar-headroom: 0.04; padding: 60px 0 0 !important; }
   .alpha-pane { flex: 1 1 100% !important; width: 100% !important; max-width: none !important; min-width: 0 !important; padding: 220px 14px 14px; }
-  .alpha-sheet { background: var(--clover-color-surface); border-radius: 22px; }
+  .alpha-sheet { background: var(--moss-color-surface); border-radius: 22px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .alpha-scene *, .alpha-scene *::before, .alpha-scene *::after { animation: none !important; transition: none !important; }

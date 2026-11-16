@@ -91,15 +91,15 @@ describe("app.window.capture", () => {
   });
 
   test("frames: origin, mount, size and visibility, asked with no user gesture; a silent frame is said so; no text", async () => {
-    const shell = frame("clover-core://app/?surface=main", [1280, 820, "visible"]);
-    const part = frame("clover-plugin://clover/?mount=ab12", [300, 200, "hidden"]);
-    const hung = frame("clover-plugin://acme/?mount=cd34", "hang");
+    const shell = frame("moss-core://app/?surface=main", [1280, 820, "visible"]);
+    const part = frame("moss-plugin://moss/?mount=ab12", [300, 200, "hidden"]);
+    const hung = frame("moss-plugin://acme/?mount=cd34", "hang");
     const page = contents(image({ width: 8, height: 4 }, [0, 0, 0, 255]), [shell, part, hung]);
     const r = (await captureWindows(deps([{ name: "main", win: window({ page }) }]), { window: "main", frames: true, image: false })).windows[0]!;
     expect(r.frames).toEqual([
-      { origin: "clover-core://app", surface: "main", width: 1280, height: 820, visibility: "visible", pid: 77 },
-      { origin: "clover-plugin://clover", mount: "ab12", width: 300, height: 200, visibility: "hidden", pid: 77 },
-      { origin: "clover-plugin://acme", mount: "cd34", silent: true, pid: 77 },
+      { origin: "moss-core://app", surface: "main", width: 1280, height: 820, visibility: "visible", pid: 77 },
+      { origin: "moss-plugin://moss", mount: "ab12", width: 300, height: 200, visibility: "hidden", pid: 77 },
+      { origin: "moss-plugin://acme", mount: "cd34", silent: true, pid: 77 },
     ]);
     expect([...shell.gestures, ...part.gestures, ...hung.gestures]).toEqual([false, false, false]);
     expect(r.png).toBeUndefined();
@@ -109,7 +109,7 @@ describe("app.window.capture", () => {
   test("all: every window, no pictures; an unknown name lists the ones there are", async () => {
     const a = contents(image({ width: 8, height: 4 }, [0, 0, 0, 255]));
     const b = contents(image({ width: 8, height: 4 }, [0, 0, 0, 255]));
-    const d = deps([{ name: "main", win: window({ page: a }) }, { name: surfaceName("clover/island#island"), win: window({ visible: false, page: b }) }]);
+    const d = deps([{ name: "main", win: window({ page: a }) }, { name: surfaceName("moss/island#island"), win: window({ visible: false, page: b }) }]);
     const all = await captureWindows(d, { window: "all" });
     expect(all.windows.map((w) => ({ name: w.name, drawn: w.drawn, png: w.png }))).toEqual([{ name: "main", drawn: true, png: undefined }, { name: "island", drawn: false, png: undefined }]);
     expect([a.captured, b.captured]).toEqual([[], []]);

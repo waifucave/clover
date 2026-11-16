@@ -39,10 +39,10 @@ A device's record:
 
 A registration and a mint are signed by the device's link key, Ed25519. `sig` is base64url, and `t` is the device's clock in milliseconds.
 
-A registration signs lane H's `clover-account-v2 register` statement: the deterministic CBOR (the core's `links/codec`: shortest heads, definite lengths) of the array
+A registration signs lane H's `moss-account-v2 register` statement: the deterministic CBOR (the core's `links/codec`: shortest heads, definite lengths) of the array
 
 ```
-["clover-account-v2 register", <account: the Supabase user id>, id, publicKey, boxKey, name, kind, os or null, t]
+["moss-account-v2 register", <account: the Supabase user id>, id, publicKey, boxKey, name, kind, os or null, t]
 ```
 
 with each device field exactly as the request carries it (`publicKey` in whichever base64 it was sent) and `t` a CBOR unsigned integer. It covers the whole record, so a session holder can't re-send a device's signature with another box key, name or kind.
@@ -50,7 +50,7 @@ with each device field exactly as the request carries it (`publicKey` in whichev
 A mint signs UTF-8 lines joined by `\n`:
 
 ```
-clover-account-v1 mint
+moss-account-v1 mint
 <account: the Supabase user id>
 <aud>
 <device id>
@@ -114,4 +114,4 @@ None yet: the web companion's page may reach only the handshake (its CSP). CORS 
 
 ## Testing against it
 
-`@waifucave/clover-service-accounts/harness`: `startAccountService({authUrl, anonKey, tokenTtlSeconds?})` runs the service on wrangler's local runtime against a sign-in stack such as lane M's stub. It answers `{url, issuer, jwks, stop}`, the same as the core's `startFakeAccountService`, with a signing key made in memory for the run.
+`@waifucave/moss-service-accounts/harness`: `startAccountService({authUrl, anonKey, tokenTtlSeconds?})` runs the service on wrangler's local runtime against a sign-in stack such as lane M's stub. It answers `{url, issuer, jwks, stop}`, the same as the core's `startFakeAccountService`, with a signing key made in memory for the run.

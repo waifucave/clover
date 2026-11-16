@@ -1,7 +1,7 @@
-// The Clover Browser in a real Electron (spec §12.1, lane L): bot tabs offscreen with no window, one shown through
+// The MOSS Browser in a real Electron (spec §12.1, lane L): bot tabs offscreen with no window, one shown through
 // the viewport without reloading, the person's selecting and copying through it, the app's own allow list and URL
 // rule, a page's windows and dialogs, and the screen-reader hybrid. CI ONLY, like the UI test: it shows a window, so
-// it needs both CI=true and CLOVER_UI_TESTS=1, which only the app job in .github/workflows/ci.yml sets (under xvfb
+// it needs both CI=true and MOSS_UI_TESTS=1, which only the app job in .github/workflows/ci.yml sets (under xvfb
 // on Linux). `test/browser/fixture-main.ts` does the driving; this file builds it, runs it and reads its answers.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { BROWSER_ASSETS } from "../src/main/browser/assets";
 
 const root = join(import.meta.dir, "..");
-const enabled = process.env.CI === "true" && process.env.CLOVER_UI_TESTS === "1";
+const enabled = process.env.CI === "true" && process.env.MOSS_UI_TESTS === "1";
 
 interface Step { name: string; ok: boolean; detail: unknown; ms: number }
 interface Result { platform: string; electron: string; steps: Step[]; fatal?: string }
@@ -27,23 +27,23 @@ async function build(dir: string): Promise<{ main: string; preload: string; html
   return { main: join(dir, "fixture-main.mjs"), preload: join(dir, "viewport-preload.cjs"), html };
 }
 
-describe.if(enabled)("the Clover Browser in Electron (CI only)", () => {
+describe.if(enabled)("the MOSS Browser in Electron (CI only)", () => {
   test("every step of the fixture passes", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-browser-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-browser-test-"));
     const built = await build(dir);
     const out = join(dir, "result.json");
     const electron = createRequire(join(root, "package.json"))("electron") as string;
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      CLOVER_BROWSER_TEST_OUT: out,
-      CLOVER_BROWSER_TEST_PRELOAD: built.preload,
-      CLOVER_BROWSER_TEST_HTML: built.html,
+      MOSS_BROWSER_TEST_OUT: out,
+      MOSS_BROWSER_TEST_PRELOAD: built.preload,
+      MOSS_BROWSER_TEST_HTML: built.html,
       ELECTRON_ENABLE_LOGGING: "1",
     };
-    // CI's other runs of the same fixture: Windows at 150 % and 200 % (CLOVER_BROWSER_TEST_SCALE), Linux on Wayland
-    // (CLOVER_BROWSER_TEST_ARGS="--ozone-platform=wayland", CLOVER_BROWSER_TEST_WAYLAND=1, under weston).
-    const extra = (process.env.CLOVER_BROWSER_TEST_ARGS ?? "").split(/\s+/).filter((a) => a !== "");
-    const scale = Number(process.env.CLOVER_BROWSER_TEST_SCALE ?? "") || undefined;
+    // CI's other runs of the same fixture: Windows at 150 % and 200 % (MOSS_BROWSER_TEST_SCALE), Linux on Wayland
+    // (MOSS_BROWSER_TEST_ARGS="--ozone-platform=wayland", MOSS_BROWSER_TEST_WAYLAND=1, under weston).
+    const extra = (process.env.MOSS_BROWSER_TEST_ARGS ?? "").split(/\s+/).filter((a) => a !== "");
+    const scale = Number(process.env.MOSS_BROWSER_TEST_SCALE ?? "") || undefined;
     if (scale !== undefined) extra.push(`--force-device-scale-factor=${scale}`);
     delete env.ELECTRON_RUN_AS_NODE;
     // Its own user-data folder, never the real app's; no proxy at start, as the app runs (lane E), and a net log of
@@ -57,7 +57,7 @@ describe.if(enabled)("the Clover Browser in Electron (CI only)", () => {
     expect(result.fatal).toBeUndefined();
     const failed = result.steps.filter((s) => !s.ok);
     expect(failed, `${JSON.stringify(failed, null, 2)}\n--- electron's output, last 3000 characters ---\n${output.slice(-3000)}`).toEqual([]);
-    expect(result.steps.length).toBeGreaterThanOrEqual(25 + (scale !== undefined ? 1 : 0) + (process.env.CLOVER_BROWSER_TEST_WAYLAND === "1" ? 1 : 0));
+    expect(result.steps.length).toBeGreaterThanOrEqual(25 + (scale !== undefined ? 1 : 0) + (process.env.MOSS_BROWSER_TEST_WAYLAND === "1" ? 1 : 0));
 
     // The net log: no WPAD or PAC lookup ran, and no spellchecker dictionary was fetched (lane E's netlogs found both).
     expect(existsSync(netlog), "no net log").toBe(true);

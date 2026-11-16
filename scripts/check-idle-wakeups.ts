@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// The daemon's IDLE cost, measured: how often an idle `clover-core` wakes the CPU.
+// The daemon's IDLE cost, measured: how often an idle `moss-core` wakes the CPU.
 //
 //   bun run check:idle-wakeups            # boots an isolated daemon, settles, measures 3 × 10 s, fails over 50/s
 //   bun run check:idle-wakeups --pid N    # measures an already-running process of yours instead (read-only)
@@ -11,9 +11,9 @@
 // WindowServer, and a Bun process with a 5 ms timer that the interrupt counter put at 174 wakeups a second), so it
 // passed whatever the daemon did. An idle Bun process measures 1 interrupt wakeup a second.
 //
-// ISOLATION. The booted daemon runs IN a child bun process on a temp CLOVER_HOME with a FILE secret store
+// ISOLATION. The booted daemon runs IN a child bun process on a temp MOSS_HOME with a FILE secret store
 // (`startDaemon({ secrets })`): every Keychain path in the daemon is gated on the profile's default home, and a
-// random throwaway CLOVER_KEYCHAIN_SERVICE is set besides (no CLOVER_PROFILE). It never touches ~/.clover*.
+// random throwaway MOSS_KEYCHAIN_SERVICE is set besides (no MOSS_PROFILE). It never touches ~/.moss*.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,7 +64,7 @@ async function main(): Promise<void> {
     report(await idleWakeups(pid, WINDOWS, WINDOW_S));
     return;
   }
-  const home = mkdtempSync(join(tmpdir(), "clover-idle-check-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-idle-check-"));
   const probe = join(home, "probe.ts");
   writeFileSync(probe, [
     `const { startDaemon } = await import(${JSON.stringify(join(CORE, "daemon.ts"))});`,
@@ -75,8 +75,8 @@ async function main(): Promise<void> {
     `process.on("SIGTERM", async () => { try { await d.stop(); } finally { process.exit(0); } });`,
   ].join("\n"));
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && k !== "CLOVER_PROFILE") env[k] = v;
-  Object.assign(env, { CLOVER_HOME: home, CLOVER_KEYCHAIN_SERVICE: `com.waifucave.clover.core.test-idle-${crypto.randomUUID().slice(0, 8)}`, CLOVER_LOGIN_SHELL_PATH: "off",
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && k !== "MOSS_PROFILE") env[k] = v;
+  Object.assign(env, { MOSS_HOME: home, MOSS_KEYCHAIN_SERVICE: `com.waifucave.moss.core.test-idle-${crypto.randomUUID().slice(0, 8)}`, MOSS_LOGIN_SHELL_PATH: "off",
     // Usage tracking (docs/claude/usage.md): inert — every root and executable none, the background plan beat and the
     // catch-up off (`USAGE_INERT` above, and the same in the environment), so the measurement never touches the
     // developer's own Codex / Claude Code / Antigravity / OpenCode files or binaries. The gate does NOT cover the beat

@@ -1,7 +1,7 @@
-// Clover protocol area: usage (spec §12 "Usage tracking", §5.8). Owner: lane D (`packages/core/src/usage/`); the
+// MOSS protocol area: usage (spec §12 "Usage tracking", §5.8). Owner: lane D (`packages/core/src/usage/`); the
 // island's Usage tab and the usage views are lane G's. Pinned by lane B at M0.
 //
-// The core counts Clover's own turns. Each computer reads its own apps' usage (Codex, Claude Code, OpenCode,
+// The core counts MOSS's own turns. Each computer reads its own apps' usage (Codex, Claude Code, OpenCode,
 // Antigravity) and syncs append-only rows to the main. The readers take only numbers, never content. Plugins with
 // `usage.read` read rows and plan readings.
 import { z } from "zod";
@@ -9,7 +9,7 @@ import { utf16 } from "./strings";
 import { BotId, ComputerName, Cursor, Empty, SessionId, Timestamp } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
-export const UsageSource = z.enum(["clover", "codex", "claude-code", "opencode", "antigravity"]);
+export const UsageSource = z.enum(["moss", "codex", "claude-code", "opencode", "antigravity"]);
 export type UsageSource = z.infer<typeof UsageSource>;
 
 export const UsageRow = z.object({
@@ -51,7 +51,7 @@ export const USAGE_METHODS = {
     name: "usage.rows", owner: "D", ...Read,
     params: z.object({
       since: Timestamp, until: Timestamp.optional(), computer: ComputerName.optional(), source: UsageSource.optional(),
-      /** One bot's rows, or one session's (§12: Clover's turns count per bot and per session). */
+      /** One bot's rows, or one session's (§12: MOSS's turns count per bot and per session). */
       bot: BotId.optional(), session: SessionId.optional(),
       cursor: Cursor.optional(), limit: z.number().int().min(1).max(10_000).optional(),
     }),

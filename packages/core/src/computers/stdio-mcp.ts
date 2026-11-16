@@ -26,7 +26,7 @@
 // * **Signals** go to its group only while its leader runs (a group id is reused only once the group is gone), and once
 //   more right after its exit, for what it left in the group.
 // * **A daemon that died** leaves its servers running (they are detached). Each start records its pid, start time and
-//   program under `run/stdio-mcp/`, and puts a random mark in the server's environment (`CLOVER_STDIO_RUN`), which
+//   program under `run/stdio-mcp/`, and puts a random mark in the server's environment (`MOSS_STDIO_RUN`), which
 //   every process it starts inherits. The next daemon, holding its lock, reaps before it starts any
 //   (`reapStdioMcpLeftovers`): a leader still running that leads its own group, runs the recorded program and started
 //   at the recorded time has its group killed (a live leader holds its group id, so it can't be another's); with the
@@ -40,7 +40,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
-import { parseInterpolation } from "@waifucave/clover-plugin-sdk";
+import { parseInterpolation } from "@waifucave/moss-plugin-sdk";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { McpChannel } from "../contracts/plugin-host";
 import type { Contribution, PluginRegistry } from "../contracts/plugin-registry";
@@ -72,12 +72,12 @@ export const STDIO_MCP_STDIN_MAX = 8 * 1024 * 1024;
 /** Messages a server may send in a second. */
 export const STDIO_MCP_MESSAGES_PER_SECOND = 10_000;
 /** The variable each start's mark is in (`reapStdioMcpLeftovers`). */
-export const STDIO_RUN_ENV = "CLOVER_STDIO_RUN";
+export const STDIO_RUN_ENV = "MOSS_STDIO_RUN";
 const STOP_GRACE_MS = 3_000;
 const STDERR_LINES = 50;
 const STDERR_LINE_MAX = 1_000;
 
-/** The names a server's process takes from Clover's own environment; everything else is its config's (`guardedMcpServer`
+/** The names a server's process takes from MOSS's own environment; everything else is its config's (`guardedMcpServer`
  *  sets PATH and the guard's), as the MCP stdio transport does. */
 const BASE_ENV = process.platform === "win32"
   ? ["APPDATA", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "PATH", "PROCESSOR_ARCHITECTURE", "SYSTEMDRIVE", "SYSTEMROOT", "TEMP", "USERNAME", "USERPROFILE", "PROGRAMFILES"]
@@ -367,7 +367,7 @@ export class StdioMcpLauncher {
   }
 
   #refuseIfStopped(pluginId: string): void {
-    if (this.#closed) throw new ContractError("closed", "Clover is stopping");
+    if (this.#closed) throw new ContractError("closed", "MOSS is stopping");
     const stopped = this.#crashes.get(pluginId)?.stopped;
     if (stopped !== undefined) throw new ContractError("plugin_stopped", `plugin stopped: ${stopped}`);
   }
@@ -387,7 +387,7 @@ export class StdioMcpLauncher {
     const spec = await this.#o.prepare(pluginId, server);
     if (this.#closed) {
       spec.release();
-      throw new ContractError("closed", "Clover is stopping");
+      throw new ContractError("closed", "MOSS is stopping");
     }
     const channel = this.#spawn(pluginId, server, spec, picks);
     if (picksKey(this.#o.picked?.(pluginId) ?? NO_PICKS) !== picksKey(picks)) void this.picksChanged(pluginId);
@@ -402,7 +402,7 @@ export class StdioMcpLauncher {
     }
     Object.assign(env, spec.config.env ?? {});
     // This start's mark: what it and every process it starts carry, so the next daemon knows them after a crash
-    // (`reapStdioMcpLeftovers`). Only the launcher's records hold it; Clover's own name, which no manifest may set.
+    // (`reapStdioMcpLeftovers`). Only the launcher's records hold it; MOSS's own name, which no manifest may set.
     const nonce = randomBytes(16).toString("hex");
     env[STDIO_RUN_ENV] = nonce;
     try {
@@ -616,9 +616,9 @@ interface StdioEntry {
 export function pluginStdioPrepare(o: {
   registry: Pick<PluginRegistry, "entries" | "get">;
   guard: PluginRunGuard;
-  /** `pluginDataFolder(cloverHome, id)`. */
+  /** `pluginDataFolder(mossHome, id)`. */
   dataDir: (pluginId: string) => string;
-  /** The plugin's own settings (`filePluginSettings(cloverHome).read(id)`): a device value wins over the account's. */
+  /** The plugin's own settings (`filePluginSettings(mossHome).read(id)`): a device value wins over the account's. */
   settings: (pluginId: string) => { account: Record<string, unknown>; device: Record<string, unknown> };
   /** The plugin's own secrets (`pluginHost.pluginSecrets.forPlugin(id)`). */
   secrets: (pluginId: string) => { get(name: string): Promise<{ value: Secret } | null> };
@@ -664,8 +664,8 @@ export function pluginStdioPrepare(o: {
 }
 
 /** `<home>/run/stdio-mcp`: one record per running server, for `reapStdioMcpLeftovers`. */
-export function stdioMcpRecordsDir(cloverHome: string): string {
-  return join(cloverHome, "run", "stdio-mcp");
+export function stdioMcpRecordsDir(mossHome: string): string {
+  return join(mossHome, "run", "stdio-mcp");
 }
 
 /** How far a process's start time may be from its record's (`ps` gives seconds; the record is written just after). */
@@ -846,7 +846,7 @@ export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: strin
     for (const r of records) o.log?.(`stdio MCP: ${labels.get(r.pid)} (pid ${r.pid}) may still run from a daemon before; Windows doesn't show its mark, so it was left alone`);
     return none;
   }
-  // The exact words to look for, built once: `CLOVER_STDIO_RUN=<nonce>` → nonce.
+  // The exact words to look for, built once: `MOSS_STDIO_RUN=<nonce>` → nonce.
   const marks = new Map(records.map((r) => [`${STDIO_RUN_ENV}=${r.nonce}`, r.nonce]));
   // Only processes started since the earliest of these starts can carry a mark (`seenProcesses`).
   const since = Math.min(...records.map((r) => r.startedAt)) - START_SLACK_MS;
@@ -877,9 +877,9 @@ export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: strin
 
 /** A server's stderr into its plugin's log (`logs/plugins/<id>.log`), through lane B's writer and its caps: the file's
  *  size (rotated past `maxBytes`), and lines per window (the rest counted and noted once). */
-export function stdioStderrLog(o: { cloverHome: string; log: (line: string) => void; now?: () => number; maxBytes?: number; perWindow?: number; windowMs?: number }): (pluginId: string, server: string, line: string) => void {
+export function stdioStderrLog(o: { mossHome: string; log: (line: string) => void; now?: () => number; maxBytes?: number; perWindow?: number; windowMs?: number }): (pluginId: string, server: string, line: string) => void {
   const write = pluginLogWriter({
-    dir: join(o.cloverHome, "logs", "plugins"), log: o.log, now: o.now ?? Date.now,
+    dir: join(o.mossHome, "logs", "plugins"), log: o.log, now: o.now ?? Date.now,
     ...(o.maxBytes === undefined ? {} : { maxBytes: o.maxBytes }), ...(o.perWindow === undefined ? {} : { perWindow: o.perWindow }), ...(o.windowMs === undefined ? {} : { windowMs: o.windowMs }),
   });
   return (pluginId, server, line) => write(pluginId, [`[mcp ${server}] ${line}`]);

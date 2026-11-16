@@ -1,17 +1,17 @@
-// `clover-core code-agent` on the daemon's side (K-M3b, code-agent/service.ts): the session an outside ACP client opens,
+// `moss-core code-agent` on the daemon's side (K-M3b, code-agent/service.ts): the session an outside ACP client opens,
 // what it may and may not reach, and whose answers allow its calls. The agent here is a stand-in that records what it
 // is fed and says what the test tells it to.
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import { isContractError } from "../../contracts/common";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { FakeFence } from "../../contracts/fakes/fence";
 import { FakeSessionHost } from "../../contracts/fakes/session-host";
 import { FakeTree } from "../../contracts/fakes/tree";
-import type { CodeAgentServeSpec } from "../clover-code/backend";
+import type { CodeAgentServeSpec } from "../moss-code/backend";
 import { CodeAgentService, type CodeAgentConnection } from "../code-agent/service";
 import { transcriptPaths } from "../transcript";
 
@@ -27,7 +27,7 @@ class StandIn {
   async detect() {
     return this.installed
       ? { installed: true, identityOk: true, versionOk: true, sandboxed: true }
-      : { installed: false, identityOk: true, versionOk: true, sandboxed: false, reason: "clover-code isn't available on Linux yet" };
+      : { installed: false, identityOk: true, versionOk: true, sandboxed: false, reason: "moss-code isn't available on Linux yet" };
   }
   async serve(spec: CodeAgentServeSpec, out: (line: string) => void) {
     this.spec = spec;
@@ -57,27 +57,27 @@ afterEach(() => {
 });
 
 function setup(o: { level?: Level } = {}) {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-ca-")));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-k-ca-")));
   temps.push(root);
   const userHome = join(root, "home");
-  const cloverHome = join(userHome, ".clover");
+  const mossHome = join(userHome, ".moss");
   const project = join(userHome, "project1");
   const dev = join(userHome, "dev-secrets");
-  for (const d of [project, cloverHome, dev, join(project, "sub")]) mkdirSync(d, { recursive: true });
+  for (const d of [project, mossHome, dev, join(project, "sub")]) mkdirSync(d, { recursive: true });
   const clock = new FakeClock();
   const host = new FakeSessionHost({ clock });
-  const fence = new FakeFence({ home: userHome, cloverHome, devFolders: [dev] });
+  const fence = new FakeFence({ home: userHome, mossHome, devFolders: [dev] });
   const tree = new FakeTree({ clock, computers: { Studio: { home: userHome } }, botComputer: () => "Studio" });
   const agent = new StandIn();
   let level: Level = o.level ?? "ask";
   const service = new CodeAgentService({
-    home: cloverHome, computer: "Studio", userHome, host, tree, fence, clock, backend: () => agent, levelOf: () => level,
+    home: mossHome, computer: "Studio", userHome, host, tree, fence, clock, backend: () => agent, levelOf: () => level,
   });
   const client: Msg[] = [];
   let ended = 0;
   const conn: CodeAgentConnection = { connId: 7, clientName: "Zed", toClient: (line) => void client.push(JSON.parse(line) as Msg), end: () => void ended++ };
   return {
-    root, userHome, cloverHome, project, dev, host, service, agent, client, conn,
+    root, userHome, mossHome, project, dev, host, service, agent, client, conn,
     ended: () => ended,
     setLevel: (l: Level) => { level = l; },
     send: (msg: Msg) => service.input(conn.connId, JSON.stringify({ jsonrpc: "2.0", ...msg })),
@@ -94,27 +94,27 @@ const ASK = (kind: string, rawInput: unknown) => ({
   ],
 });
 
-describe("Clover's coding agent for an outside ACP client (daemon side)", () => {
+describe("MOSS's coding agent for an outside ACP client (daemon side)", () => {
   test("the session is a direct coding session of the user's: listed, recorded, in the folder the client opened, fenced", async () => {
     const s = setup();
     const r = await s.service.open(s.conn, { cwd: s.project, model: "winter-test/calls" });
     const view = s.host.get(r.session)!;
-    expect(view).toMatchObject({ kind: "coding", computer: "Studio", backend: "clover-code", root: "home/Studio/project1", title: "From Zed", model: "winter-test/calls" });
+    expect(view).toMatchObject({ kind: "coding", computer: "Studio", backend: "moss-code", root: "home/Studio/project1", title: "From Zed", model: "winter-test/calls" });
     expect(view.bot).toBeUndefined();
     expect(s.service.bound(7)).toBe(true);
     // Recorded like any agent's session.
-    const record = JSON.parse(readFileSync(join(transcriptPaths(s.cloverHome, r.session).dir, "agent.json"), "utf8"));
-    expect(record).toMatchObject({ sessionId: r.session, backend: "clover-code", computer: "Studio", root: "home/Studio/project1" });
-    // The agent runs in the root, with the Clover home denied whole.
+    const record = JSON.parse(readFileSync(join(transcriptPaths(s.mossHome, r.session).dir, "agent.json"), "utf8"));
+    expect(record).toMatchObject({ sessionId: r.session, backend: "moss-code", computer: "Studio", root: "home/Studio/project1" });
+    // The agent runs in the root, with the MOSS home denied whole.
     expect(s.agent.spec!.root).toBe(s.project);
-    expect(s.agent.spec!.fence.denyRead).toContain(s.cloverHome);
-    expect(s.agent.spec!.fence.denyWrite).toContain(s.cloverHome);
+    expect(s.agent.spec!.fence.denyRead).toContain(s.mossHome);
+    expect(s.agent.spec!.fence.denyWrite).toContain(s.mossHome);
     // Lines cross both ways, and the transcript has them.
     s.send({ id: 1, method: "initialize", params: { protocolVersion: 1 } });
     expect(s.agent.fed[0]).toMatchObject({ id: 1, method: "initialize" });
     s.agent.say({ id: 1, result: { protocolVersion: 1 } });
     expect(s.client[0]).toMatchObject({ id: 1, result: { protocolVersion: 1 } });
-    const acp = readFileSync(join(transcriptPaths(s.cloverHome, r.session).dir, "acp.ndjson"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const acp = readFileSync(join(transcriptPaths(s.mossHome, r.session).dir, "acp.ndjson"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
     expect(acp.map((l) => l.dir)).toEqual(["out", "in"]);
   });
 
@@ -124,8 +124,8 @@ describe("Clover's coding agent for an outside ACP client (daemon side)", () => 
     expect(isContractError(await err("project1"), "invalid")).toBe(true);
     expect(isContractError(await err(join(s.userHome, "nothing")), "not_found")).toBe(true);
     expect(isContractError(await err(s.root), "refused")).toBe(true); // outside the user's home
-    expect(isContractError(await err(s.userHome), "refused")).toBe(true); // the home itself, which holds the Clover home
-    expect(isContractError(await err(s.cloverHome), "fenced")).toBe(true); // Clover's own folder
+    expect(isContractError(await err(s.userHome), "refused")).toBe(true); // the home itself, which holds the MOSS home
+    expect(isContractError(await err(s.mossHome), "fenced")).toBe(true); // MOSS's own folder
     expect(s.host.list({ kind: "coding" })).toEqual([]);
     // Not on this computer (Linux, Windows): refused with the reason, no session.
     s.agent.installed = false;
@@ -243,8 +243,8 @@ describe("Clover's coding agent for an outside ACP client (daemon side)", () => 
     s.setLevel("automatic");
     s.agent.say({ id: 11, method: "session/request_permission", params: ASK("edit", { file_path: file }) });
     expect(answerFed(11)).toEqual({ outcome: "selected", optionId: "a1" });
-    // At every level, the Clover home and the fenced set are refused, never asked about.
-    s.agent.say({ id: 12, method: "session/request_permission", params: ASK("edit", { file_path: join(s.cloverHome, "x") }) });
+    // At every level, the MOSS home and the fenced set are refused, never asked about.
+    s.agent.say({ id: 12, method: "session/request_permission", params: ASK("edit", { file_path: join(s.mossHome, "x") }) });
     expect(answerFed(12)).toEqual({ outcome: "selected", optionId: "r1" });
     s.agent.say({ id: 13, method: "session/request_permission", params: ASK("read", { file_path: join(s.dev, "key") }) });
     expect(answerFed(13)).toEqual({ outcome: "selected", optionId: "r1" });
@@ -274,7 +274,7 @@ describe("Clover's coding agent for an outside ACP client (daemon side)", () => 
     expect(s.service.bound(7)).toBe(false);
     expect(s.ended()).toBe(0);
     expect(() => s.service.input(7, "{}")).toThrow();
-    // Stopped from Clover: the agent and the connection end.
+    // Stopped from MOSS: the agent and the connection end.
     const s2 = setup();
     const b = await s2.service.open(s2.conn, { cwd: s2.project });
     await s2.host.stop(b.session);
@@ -287,13 +287,13 @@ describe("Clover's coding agent for an outside ACP client (daemon side)", () => 
     await Bun.sleep(10);
     expect(s3.host.get(c.session)!.status).toBe("stopped");
     expect(s3.ended()).toBe(1);
-    // A message from Clover's own surfaces is answered, never sent on.
+    // A message from MOSS's own surfaces is answered, never sent on.
     const s4 = setup();
     const d = await s4.service.open(s4.conn, { cwd: s4.project });
     await s4.host.sendUser(d.session, { text: "hi", device: "d", clientMessageId: "m1", sentAt: 1 });
     expect(s4.agent.fed).toEqual([]);
     expect(existsSync(s4.project)).toBe(true);
-    // Clover stopping (`createAgents().close`, INT #292 review S4): every relayed session ends, its agent and its
+    // MOSS stopping (`createAgents().close`, INT #292 review S4): every relayed session ends, its agent and its
     // connection with it, even when the server's doors closed first and the connection's own close never came.
     const s5 = setup();
     const e = await s5.service.open(s5.conn, { cwd: s5.project });

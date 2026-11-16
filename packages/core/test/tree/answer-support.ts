@@ -2,11 +2,11 @@
 // one plain card per method), and a phone that signs the user's approve for a card it is shown. The phone's key lives
 // in memory (lane B's FakeDevice); nothing touches the OS store.
 import { createHash, randomBytes } from "node:crypto";
-import { callBindingInput, cardAnswerSigningInput, cardHashInput, type Card, type CardContent, type SignedCardAnswer, type TreeTransferParams } from "@waifucave/clover-protocol";
+import { callBindingInput, cardAnswerSigningInput, cardHashInput, type Card, type CardContent, type SignedCardAnswer, type TreeTransferParams } from "@waifucave/moss-protocol";
 import type { AnswerDevices, CallCardRenderer } from "../../src/contracts/approval-broker";
 import { MemoryAnswerLedger } from "../../src/contracts/fakes/approval-broker";
 import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64, type FakeDevice } from "../../src/contracts/fakes/device-registry";
-import { TREE_TRANSFER } from "@waifucave/clover-protocol";
+import { TREE_TRANSFER } from "@waifucave/moss-protocol";
 import { transferBinding } from "../../src/contracts/tree";
 import type { AnswerAsker, NeedsAnswer } from "../../src/tree/judge";
 

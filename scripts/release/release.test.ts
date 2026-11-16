@@ -2,14 +2,14 @@
 // the release build's and the owner's publish step's plans, and the release workflow's limits (no secrets, nothing
 // published). Nothing here signs, builds or publishes.
 import { PLUGIN_BUN } from "../bundled-binaries";
-import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
+import { MOSS_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, main as buildMain, NOTARIZE_ENV, SIGN_ONLY_OUT, signOnlyOutputs, TEST_BUILD_OUT, testBuildArtifacts, isMachO, machOFiles, nativeIdentifier, packedMachO, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
+import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, main as buildMain, NOTARIZE_ENV, SIGN_ONLY_OUT, signOnlyOutputs, TEST_BUILD_OUT, testBuildArtifacts, isMachO, machOFiles, nativeIdentifier, packedMachO, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, MOSS_APP_REQUIREMENT, MOSS_APP_DEV_SIGNED_REQUIREMENT } from "./build";
 import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems, codesignDevArgs, teamRequirement,
@@ -39,7 +39,7 @@ const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 describe("the feed and the channels", () => {
   test("electron-builder writes for the GitHub feed, and a full release's files are copied for every channel it serves", () => {
     expect(builder.publish).toEqual(FEED);
-    const dir = mkdtempSync(join(tmpdir(), "clover-release-served-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-release-served-"));
     writeFileSync(join(dir, "latest-mac.yml"), "version: 1.2.3\n");
     writeFileSync(join(dir, "latest-linux-arm64.yml"), "version: 1.2.3\n");
     expect(writeServedCopies(dir, "latest", ["mac", "win", "linux-arm64"])).toEqual(["beta-mac.yml", "beta-linux-arm64.yml"]);
@@ -51,22 +51,22 @@ describe("the feed and the channels", () => {
   });
 
   test("the installers carry the names the cask, winget and the update files use", () => {
-    expect(builder.dmg.artifactName).toBe("Clover-${version}.${ext}");
-    expect(builder.mac.artifactName).toBe("Clover-${version}-mac.${ext}");
-    expect(builder.nsis.artifactName).toBe("Clover-Setup-${version}.${ext}");
-    expect(read("packaging/clover.rb.tmpl")).toContain("/releases/download/v#{version}/Clover-#{version}.dmg");
-    expect(installers("1.2.3", "mac")).toEqual(["Clover-1.2.3.dmg", "Clover-1.2.3-mac.zip"]);
-    expect(installers("1.2.3", "linux-arm64")).toEqual(["clover_1.2.3_arm64.deb", "clover-1.2.3.arm64.rpm", "Clover-1.2.3-arm64.AppImage"]);
-    expect(expectedArtifacts("1.2.3", "win", "latest")).toEqual(["Clover-Setup-1.2.3.exe", "latest.yml", "beta.yml", "clover-core-1.2.3-windows-x64.exe", "latest-core-windows-x64.yml", "beta-core-windows-x64.yml",
-      `clover-plugin-bun-${PLUGIN_BUN.version}-windows-x64.exe`, "latest-plugin-bun-windows-x64.yml", "beta-plugin-bun-windows-x64.yml",
-      "clover-plugins-1.2.3-windows-x64.tar.gz", "latest-plugins-windows-x64.yml", "beta-plugins-windows-x64.yml"]);
-    expect(pluginsArtifacts("1.2.3", "linux-arm64", "beta")).toEqual(["clover-plugins-1.2.3-linux-arm64.tar.gz", "beta-plugins-linux-arm64.yml"]);
-    expect(pluginBunArtifacts("linux-arm64", "beta")).toEqual([`clover-plugin-bun-${PLUGIN_BUN.version}-linux-arm64`, "beta-plugin-bun-linux-arm64.yml"]);
-    expect(coreArtifacts("1.2.3", "linux-arm64", "beta")).toEqual(["clover-core-1.2.3-linux-arm64", "beta-core-linux-arm64.yml"]);
+    expect(builder.dmg.artifactName).toBe("MOSS-Code-${version}.${ext}");
+    expect(builder.mac.artifactName).toBe("MOSS-Code-${version}-mac.${ext}");
+    expect(builder.nsis.artifactName).toBe("MOSS-Code-Setup-${version}.${ext}");
+    expect(read("packaging/moss.rb.tmpl")).toContain("/releases/download/v#{version}/MOSS-#{version}.dmg");
+    expect(installers("1.2.3", "mac")).toEqual(["MOSS-Code-1.2.3.dmg", "MOSS-Code-1.2.3-mac.zip"]);
+    expect(installers("1.2.3", "linux-arm64")).toEqual(["moss_1.2.3_arm64.deb", "moss-1.2.3.arm64.rpm", "MOSS-Code-1.2.3-arm64.AppImage"]);
+    expect(expectedArtifacts("1.2.3", "win", "latest")).toEqual(["MOSS-Code-Setup-1.2.3.exe", "latest.yml", "beta.yml", "moss-core-1.2.3-windows-x64.exe", "latest-core-windows-x64.yml", "beta-core-windows-x64.yml",
+      `moss-plugin-bun-${PLUGIN_BUN.version}-windows-x64.exe`, "latest-plugin-bun-windows-x64.yml", "beta-plugin-bun-windows-x64.yml",
+      "moss-plugins-1.2.3-windows-x64.tar.gz", "latest-plugins-windows-x64.yml", "beta-plugins-windows-x64.yml"]);
+    expect(pluginsArtifacts("1.2.3", "linux-arm64", "beta")).toEqual(["moss-plugins-1.2.3-linux-arm64.tar.gz", "beta-plugins-linux-arm64.yml"]);
+    expect(pluginBunArtifacts("linux-arm64", "beta")).toEqual([`moss-plugin-bun-${PLUGIN_BUN.version}-linux-arm64`, "beta-plugin-bun-linux-arm64.yml"]);
+    expect(coreArtifacts("1.2.3", "linux-arm64", "beta")).toEqual(["moss-core-1.2.3-linux-arm64", "beta-core-linux-arm64.yml"]);
   });
 
   test("a release builds from a fully clean checkout: an edit, a staged change or an untracked file anywhere refuses it", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-release-checkout-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-release-checkout-"));
     const git = (...args: string[]) => {
       const r = Bun.spawnSync(["git", ...args], { cwd: dir, env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } });
       if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
@@ -82,7 +82,7 @@ describe("the feed and the channels", () => {
     expect(checkoutCommit(dir)).toBe(head);
     // What the build writes is ignored: still clean.
     mkdirSync(join(dir, "dist"));
-    writeFileSync(join(dir, "dist", "clover-core"), "built");
+    writeFileSync(join(dir, "dist", "moss-core"), "built");
     expect(checkoutCommit(dir)).toBe(head);
     writeFileSync(join(dir, "packages", "core", "a.ts"), "export const x = 1;\n");
     expect(() => checkoutCommit(dir)).toThrow("fully clean checkout");
@@ -96,35 +96,35 @@ describe("the feed and the channels", () => {
   });
 
   test("the bundled plugins' release files: the app's resources/plugins packed, and an update file naming it", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-plugins-assets-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-plugins-assets-"));
     const plugins = join(dir, "resources", "plugins");
-    mkdirSync(join(plugins, "clover", "bin"), { recursive: true });
-    writeFileSync(join(plugins, "clover", "clover.json"), "{}");
-    writeFileSync(join(plugins, "clover", "bin", "run.sh"), "#!/bin/sh\n", { mode: 0o755 });
+    mkdirSync(join(plugins, "moss", "bin"), { recursive: true });
+    writeFileSync(join(plugins, "moss", "moss.json"), "{}");
+    writeFileSync(join(plugins, "moss", "bin", "run.sh"), "#!/bin/sh\n", { mode: 0o755 });
     const out = join(dir, "out");
     mkdirSync(out);
-    expect(writePluginsAssets(out, "1.2.3", "linux-x64", "latest", plugins)).toEqual(["clover-plugins-1.2.3-linux-x64.tar.gz", "latest-plugins-linux-x64.yml", "beta-plugins-linux-x64.yml"]);
-    const tarball = new Uint8Array(readFileSync(join(out, "clover-plugins-1.2.3-linux-x64.tar.gz")));
+    expect(writePluginsAssets(out, "1.2.3", "linux-x64", "latest", plugins)).toEqual(["moss-plugins-1.2.3-linux-x64.tar.gz", "latest-plugins-linux-x64.yml", "beta-plugins-linux-x64.yml"]);
+    const tarball = new Uint8Array(readFileSync(join(out, "moss-plugins-1.2.3-linux-x64.tar.gz")));
     const files = unpackTarball(tarball);
-    expect(files.map((f) => [f.path, f.executable])).toEqual([["clover/bin/run.sh", process.platform !== "win32"], ["clover/clover.json", false]]);
+    expect(files.map((f) => [f.path, f.executable])).toEqual([["moss/bin/run.sh", process.platform !== "win32"], ["moss/moss.json", false]]);
     const feed = parsePluginsFeed(readFileSync(join(out, "beta-plugins-linux-x64.yml"), "utf8"));
-    expect(feed).toEqual({ version: "1.2.3", file: "clover-plugins-1.2.3-linux-x64.tar.gz", sha512: sha512Base64(tarball), size: tarball.length });
-    expect(tarballFilesOf(plugins).map((f) => f.path)).toEqual(["clover/bin/run.sh", "clover/clover.json"]);
+    expect(feed).toEqual({ version: "1.2.3", file: "moss-plugins-1.2.3-linux-x64.tar.gz", sha512: sha512Base64(tarball), size: tarball.length });
+    expect(tarballFilesOf(plugins).map((f) => f.path)).toEqual(["moss/bin/run.sh", "moss/moss.json"]);
   });
 
   test("the daemon's release files: its binary and an update file naming it, for each channel served", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-core-assets-"));
-    const bin = join(dir, "built-clover-core");
+    const dir = mkdtempSync(join(tmpdir(), "moss-core-assets-"));
+    const bin = join(dir, "built-moss-core");
     writeFileSync(bin, "a daemon");
-    expect(writeCoreAssets(dir, "1.2.3", "mac", "latest", bin)).toEqual(["clover-core-1.2.3-darwin-arm64", "latest-core-darwin-arm64.yml", "beta-core-darwin-arm64.yml"]);
+    expect(writeCoreAssets(dir, "1.2.3", "mac", "latest", bin)).toEqual(["moss-core-1.2.3-darwin-arm64", "latest-core-darwin-arm64.yml", "beta-core-darwin-arm64.yml"]);
     const feed = parseCoreFeed(readFileSync(join(dir, "latest-core-darwin-arm64.yml"), "utf8"));
-    expect(feed).toEqual({ version: "1.2.3", file: "clover-core-1.2.3-darwin-arm64", sha512: sha512Base64(utf8("a daemon")), size: 8 });
+    expect(feed).toEqual({ version: "1.2.3", file: "moss-core-1.2.3-darwin-arm64", sha512: sha512Base64(utf8("a daemon")), size: 8 });
     expect(readFileSync(join(dir, "beta-core-darwin-arm64.yml"), "utf8")).toBe(readFileSync(join(dir, "latest-core-darwin-arm64.yml"), "utf8"));
     const at = (n: string) => (n === feed.file ? utf8("a daemon") : undefined);
     expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", at)).toEqual([]);
     expect(checkCoreFeed(formatCoreFeed(feed), "1.2.4", at)).toEqual(["it is for 1.2.3, not 1.2.4"]);
-    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", () => utf8("another"))).toEqual(["clover-core-1.2.3-darwin-arm64's sha512 doesn't match", "clover-core-1.2.3-darwin-arm64's size is 7, not 8"]);
-    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", () => undefined)).toEqual(["clover-core-1.2.3-darwin-arm64 is missing"]);
+    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", () => utf8("another"))).toEqual(["moss-core-1.2.3-darwin-arm64's sha512 doesn't match", "moss-core-1.2.3-darwin-arm64's size is 7, not 8"]);
+    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", () => undefined)).toEqual(["moss-core-1.2.3-darwin-arm64 is missing"]);
     expect(checkCoreFeed("version: 1.2.3\n", "1.2.3", at)).toHaveLength(1);
   });
 
@@ -139,9 +139,9 @@ describe("the feed and the channels", () => {
     expect(RESOURCE_BINARIES.map((b) => b.file)).toEqual(builder.extraResources[0].filter.filter((f: string) => !f.endsWith(".exe")));
     // Each its own identifier; only the core's is the core's.
     expect(new Set(RESOURCE_BINARIES.map((b) => b.identifier)).size).toBe(RESOURCE_BINARIES.length);
-    expect(RESOURCE_BINARIES.find((b) => b.file === "clover-plugin-bun")?.entitlements).toBe("scripts/clover-plugin-bun.entitlements");
-    expect(RESOURCE_BINARIES.find((b) => b.file === "clover-process-holder")?.entitlements).toBeUndefined();
-    expect(read("scripts/clover-core.entitlements")).toContain("com.apple.security.cs.allow-jit");
+    expect(RESOURCE_BINARIES.find((b) => b.file === "moss-plugin-bun")?.entitlements).toBe("scripts/moss-plugin-bun.entitlements");
+    expect(RESOURCE_BINARIES.find((b) => b.file === "moss-process-holder")?.entitlements).toBeUndefined();
+    expect(read("scripts/moss-core.entitlements")).toContain("com.apple.security.cs.allow-jit");
   });
 });
 
@@ -150,27 +150,27 @@ describe("update files", () => {
   const dmg = utf8("dmg bytes");
   const info = {
     version: "1.2.3",
-    files: [{ url: "Clover-1.2.3-mac.zip", sha512: sha512Base64(zip), size: zip.length }, { url: "Clover-1.2.3.dmg", sha512: sha512Base64(dmg), size: dmg.length, blockMapSize: 9 }],
-    path: "Clover-1.2.3-mac.zip",
+    files: [{ url: "MOSS-Code-1.2.3-mac.zip", sha512: sha512Base64(zip), size: zip.length }, { url: "MOSS-Code-1.2.3.dmg", sha512: sha512Base64(dmg), size: dmg.length, blockMapSize: 9 }],
+    path: "MOSS-Code-1.2.3-mac.zip",
     sha512: sha512Base64(zip),
     releaseDate: "2026-11-06T00:00:00.000Z",
   };
-  const files = new Map([["Clover-1.2.3-mac.zip", zip], ["Clover-1.2.3.dmg", dmg]]);
+  const files = new Map([["MOSS-Code-1.2.3-mac.zip", zip], ["MOSS-Code-1.2.3.dmg", dmg]]);
 
   test("round-trip, and check against the files they name", () => {
     const back = parseUpdateInfo(formatUpdateInfo(info));
     expect(back).toEqual(info);
     expect(checkUpdateInfo(back, "1.2.3", (n) => files.get(n))).toEqual([]);
     expect(checkUpdateInfo(back, "1.2.4", (n) => files.get(n))).toEqual(["it is for 1.2.3, not 1.2.4"]);
-    expect(checkUpdateInfo(back, "1.2.3", (n) => (n.endsWith(".dmg") ? utf8("other") : files.get(n)))).toEqual(["Clover-1.2.3.dmg's sha512 doesn't match", "Clover-1.2.3.dmg's size is 5, not 9"]);
-    expect(checkUpdateInfo(back, "1.2.3", () => undefined)).toEqual(["Clover-1.2.3-mac.zip is missing", "Clover-1.2.3.dmg is missing"]);
+    expect(checkUpdateInfo(back, "1.2.3", (n) => (n.endsWith(".dmg") ? utf8("other") : files.get(n)))).toEqual(["MOSS-Code-1.2.3.dmg's sha512 doesn't match", "MOSS-Code-1.2.3.dmg's size is 5, not 9"]);
+    expect(checkUpdateInfo(back, "1.2.3", () => undefined)).toEqual(["MOSS-Code-1.2.3-mac.zip is missing", "MOSS-Code-1.2.3.dmg is missing"]);
     expect(() => parseUpdateInfo("version: 1\n")).toThrow(/needs a version and files/);
   });
 
   test("a stapled dmg's entry is measured again, and its stale block map goes", () => {
     const stapled = utf8("dmg bytes, stapled");
-    const fresh = refreshEntry(info, "Clover-1.2.3.dmg", stapled);
-    expect(fresh.files[1]).toEqual({ url: "Clover-1.2.3.dmg", sha512: sha512Base64(stapled), size: stapled.length });
+    const fresh = refreshEntry(info, "MOSS-Code-1.2.3.dmg", stapled);
+    expect(fresh.files[1]).toEqual({ url: "MOSS-Code-1.2.3.dmg", sha512: sha512Base64(stapled), size: stapled.length });
     expect(fresh.files[0]).toEqual(info.files[0]);
     expect(fresh.sha512).toBe(info.sha512);
     expect(checkUpdateInfo(fresh, "1.2.3", (n) => (n.endsWith(".dmg") ? stapled : files.get(n)))).toEqual([]);
@@ -187,31 +187,31 @@ describe("macOS signing", () => {
 
   test("the resources' binaries: hardened runtime, a timestamp, their own identifiers, the daemon's JIT entitlements and none for the sidecar", () => {
     const [core, link] = RESOURCE_BINARIES;
-    expect(codesignArgs("x/clover-core", "ID", core.identifier, core.entitlements)).toEqual(
-      ["codesign", "--force", "--sign", "ID", "--options", "runtime", "--timestamp", "--identifier", "com.waifucave.clover.core", "--entitlements", "scripts/clover-core.entitlements", "x/clover-core"]);
-    expect(codesignArgs("x/clover-core", "ID", core.identifier, core.entitlements, { restrict: core.restrict })).toEqual(
-      ["codesign", "--force", "--sign", "ID", "--options", "runtime,restrict", "--timestamp", "--identifier", "com.waifucave.clover.core", "--entitlements", "scripts/clover-core.entitlements", "x/clover-core"]);
-    expect(codesignArgs("x/clover-link", "ID", link.identifier, link.entitlements)).not.toContain("--entitlements");
-    expect(notarizeArgs("C.dmg", "clover-notary")).toEqual(["xcrun", "notarytool", "submit", "C.dmg", "--keychain-profile", "clover-notary", "--wait"]);
+    expect(codesignArgs("x/moss-core", "ID", core.identifier, core.entitlements)).toEqual(
+      ["codesign", "--force", "--sign", "ID", "--options", "runtime", "--timestamp", "--identifier", "com.waifucave.moss.core", "--entitlements", "scripts/moss-core.entitlements", "x/moss-core"]);
+    expect(codesignArgs("x/moss-core", "ID", core.identifier, core.entitlements, { restrict: core.restrict })).toEqual(
+      ["codesign", "--force", "--sign", "ID", "--options", "runtime,restrict", "--timestamp", "--identifier", "com.waifucave.moss.core", "--entitlements", "scripts/moss-core.entitlements", "x/moss-core"]);
+    expect(codesignArgs("x/moss-link", "ID", link.identifier, link.entitlements)).not.toContain("--entitlements");
+    expect(notarizeArgs("C.dmg", "moss-notary")).toEqual(["xcrun", "notarytool", "submit", "C.dmg", "--keychain-profile", "moss-notary", "--wait"]);
   });
 
   test("codesign's report is read, and a signature notarization would refuse is named", () => {
     const signed = [
-      "Executable=/x/clover-core",
-      "Identifier=com.waifucave.clover.core",
+      "Executable=/x/moss-core",
+      "Identifier=com.waifucave.moss.core",
       "CodeDirectory v=20500 size=1 flags=0x10000(runtime) hashes=1+7 location=embedded",
       "Authority=Developer ID Application: Example Ltd (AB12CD34EF)",
       "Timestamp=6 Nov 2026 at 12:00:00",
       "TeamIdentifier=AB12CD34EF",
     ].join("\n");
     const sig = parseCodesignDisplay(signed);
-    expect(sig).toEqual({ identifier: "com.waifucave.clover.core", teamId: "AB12CD34EF", runtime: true, restrict: false, timestamped: true, adhoc: false });
-    expect(signatureProblems("clover-core", sig, "AB12CD34EF", "com.waifucave.clover.core")).toEqual([]);
-    expect(signatureProblems("clover-core", sig, "ZZZZZZZZZZ")).toEqual(["clover-core is signed by team AB12CD34EF, not ZZZZZZZZZZ"]);
-    const adhoc = parseCodesignDisplay("Identifier=clover-link\nCodeDirectory v=20400 size=1 flags=0x20002(adhoc,linker-signed) hashes=1\nSignature=adhoc\nTeamIdentifier=not set\n");
-    expect(signatureProblems("clover-link", adhoc, "AB12CD34EF", "com.waifucave.clover.link")).toEqual([
-      "clover-link is not signed with a Developer ID", "clover-link has no hardened runtime", "clover-link has no secure timestamp",
-      "clover-link's identifier is clover-link, not com.waifucave.clover.link",
+    expect(sig).toEqual({ identifier: "com.waifucave.moss.core", teamId: "AB12CD34EF", runtime: true, restrict: false, timestamped: true, adhoc: false });
+    expect(signatureProblems("moss-core", sig, "AB12CD34EF", "com.waifucave.moss.core")).toEqual([]);
+    expect(signatureProblems("moss-core", sig, "ZZZZZZZZZZ")).toEqual(["moss-core is signed by team AB12CD34EF, not ZZZZZZZZZZ"]);
+    const adhoc = parseCodesignDisplay("Identifier=moss-link\nCodeDirectory v=20400 size=1 flags=0x20002(adhoc,linker-signed) hashes=1\nSignature=adhoc\nTeamIdentifier=not set\n");
+    expect(signatureProblems("moss-link", adhoc, "AB12CD34EF", "com.waifucave.moss.core.link")).toEqual([
+      "moss-link is not signed with a Developer ID", "moss-link has no hardened runtime", "moss-link has no secure timestamp",
+      "moss-link's identifier is moss-link, not com.waifucave.moss.core.link",
     ]);
   });
 });
@@ -231,7 +231,7 @@ describe("the release build (scripts/release/build.ts)", () => {
   });
 
   test("unsigned unless --sign, whatever the environment holds; never publishing", () => {
-    const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example Ltd (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p", CSC_LINK: "x", WIN_CSC_LINK: "y", PATH: "/bin" };
+    const env = { MOSS_MAC_IDENTITY: "Developer ID Application: Example Ltd (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p", CSC_LINK: "x", WIN_CSC_LINK: "y", PATH: "/bin" };
     const unsigned = { os: "mac", channel: "latest", sign: false, signDev: false, dryRun: false } as const;
     expect(releaseBuilderArgs(unsigned, env)).toEqual(["electron-builder", "--mac", "dmg", "zip", "--arm64", "--publish", "never", "-c.publish.channel=latest"]);
     expect(builderEnv(unsigned, env)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
@@ -242,22 +242,22 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(() => builderIdentity("Example Ltd (AB12CD34EF)")).toThrow(/named in full/);
     expect(builderEnv(signed, env)).toBe(env);
     const win = { os: "win", channel: "beta", sign: true, signDev: false, dryRun: false } as const;
-    expect(releaseBuilderArgs(win, { CLOVER_WIN_PUBLISHER: "Example Ltd" })).toEqual(
+    expect(releaseBuilderArgs(win, { MOSS_WIN_PUBLISHER: "Example Ltd" })).toEqual(
       ["electron-builder", "--win", "nsis", "--x64", "--publish", "never", "-c.publish.channel=beta", "-c.win.forceCodeSigning=true", "-c.win.signtoolOptions.publisherName=Example Ltd"]);
     for (const a of [unsigned, signed, win]) expect(releaseBuilderArgs(a, env)).toContain("never");
   });
 
   test("--sign names what it misses, never a value", () => {
-    expect(signingInputs("mac", {})).toEqual({ missing: ["CLOVER_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"], problems: [] });
-    expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: "Apple Development: x (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p" }).problems).toHaveLength(1);
-    expect(signingInputs("win", { WIN_CSC_LINK: "secret-path" })).toEqual({ missing: ["WIN_CSC_KEY_PASSWORD", "CLOVER_WIN_PUBLISHER"], problems: [] });
+    expect(signingInputs("mac", {})).toEqual({ missing: ["MOSS_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"], problems: [] });
+    expect(signingInputs("mac", { MOSS_MAC_IDENTITY: "Apple Development: x (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p" }).problems).toHaveLength(1);
+    expect(signingInputs("win", { WIN_CSC_LINK: "secret-path" })).toEqual({ missing: ["WIN_CSC_KEY_PASSWORD", "MOSS_WIN_PUBLISHER"], problems: [] });
   });
 
-  test("a macOS release signs with Clover's team only: the Keychain items and plugin Bun's requirement name it", () => {
-    expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: `Developer ID Application: Clover (${CLOVER_TEAM_ID})`, APPLE_KEYCHAIN_PROFILE: "p" }).problems).toEqual([]);
-    expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: "Developer ID Application: Someone (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p" }).problems).toEqual([`CLOVER_MAC_IDENTITY is team AB12CD34EF, not Clover's ${CLOVER_TEAM_ID}: the core's Keychain items and plugin Bun's check would refuse what it signs`]);
-    expect(CLOVER_APP_REQUIREMENT).toBe(`identifier "com.waifucave.clover" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`);
-    expect(CLOVER_APP_DEV_SIGNED_REQUIREMENT).toBe(`identifier "com.waifucave.clover" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`);
+  test("a macOS release signs with MOSS's team only: the Keychain items and plugin Bun's requirement name it", () => {
+    expect(signingInputs("mac", { MOSS_MAC_IDENTITY: `Developer ID Application: MOSS (${MOSS_TEAM_ID})`, APPLE_KEYCHAIN_PROFILE: "p" }).problems).toEqual([]);
+    expect(signingInputs("mac", { MOSS_MAC_IDENTITY: "Developer ID Application: Someone (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p" }).problems).toEqual([`MOSS_MAC_IDENTITY is team AB12CD34EF, not MOSS's ${MOSS_TEAM_ID}: the core's Keychain items and plugin Bun's check would refuse what it signs`]);
+    expect(MOSS_APP_REQUIREMENT).toBe(`identifier "com.waifucave.moss.code" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "${MOSS_TEAM_ID}"`);
+    expect(MOSS_APP_DEV_SIGNED_REQUIREMENT).toBe(`identifier "com.waifucave.moss.code" and anchor apple generic and certificate leaf[subject.OU] = "${MOSS_TEAM_ID}"`);
   });
 
   // A test-marked build (scripts/test-build.ts): Developer ID signed, never notarized, into its own folder.
@@ -271,7 +271,7 @@ describe("the release build (scripts/release/build.ts)", () => {
     // --sign alone is unchanged: notarized.
     expect(parseReleaseBuildArgs(["--sign"], "darwin", "arm64").signOnly).toBeUndefined();
     const a = parseReleaseBuildArgs(["--sign", "--no-notarize"], "darwin", "arm64");
-    const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example (ABCDE12345)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "x", APPLE_API_KEY: "k", OTHER: "kept" };
+    const env = { MOSS_MAC_IDENTITY: "Developer ID Application: Example (ABCDE12345)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "x", APPLE_API_KEY: "k", OTHER: "kept" };
     const args = releaseBuilderArgs(a, env);
     expect(args).toContain("-c.mac.identity=Example (ABCDE12345)");
     expect(args).toContain("-c.mac.notarize=false");
@@ -287,21 +287,21 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(releaseBuilderArgs(parseReleaseBuildArgs(["--sign"], "darwin", "arm64"), env).some((x) => x.startsWith("-c.directories.output="))).toBe(false);
     const built = builderEnv(a, env);
     for (const k of NOTARIZE_ENV) expect(built[k]).toBeUndefined();
-    expect(built.CLOVER_MAC_IDENTITY).toBe(env.CLOVER_MAC_IDENTITY);
+    expect(built.MOSS_MAC_IDENTITY).toBe(env.MOSS_MAC_IDENTITY);
     expect(built.OTHER).toBe("kept");
     // The Developer ID alone: no notarytool profile.
-    expect(signingInputs("mac", {}, true).missing).toEqual(["CLOVER_MAC_IDENTITY"]);
+    expect(signingInputs("mac", {}, true).missing).toEqual(["MOSS_MAC_IDENTITY"]);
     // What it leaves: the dmg, the zip, the checksums, the commit (marked sign-only), and no update file of any kind.
-    expect(signOnlyOutputs("1.2.3")).toEqual(["Clover-1.2.3.dmg", "Clover-1.2.3-mac.zip", "SHA256SUMS-mac.txt", "BUILD-COMMIT-mac.txt"]);
-    expect(signOnlyOutputs("1.2.3").some((n) => n.endsWith(".yml") || n.endsWith(".blockmap") || n.startsWith("clover-"))).toBe(false);
+    expect(signOnlyOutputs("1.2.3")).toEqual(["MOSS-Code-1.2.3.dmg", "MOSS-Code-1.2.3-mac.zip", "SHA256SUMS-mac.txt", "BUILD-COMMIT-mac.txt"]);
+    expect(signOnlyOutputs("1.2.3").some((n) => n.endsWith(".yml") || n.endsWith(".blockmap") || n.startsWith("moss-"))).toBe(false);
   });
 
   test("--sign --no-notarize's dry run says it's signed, never notarized, with no update files", async () => {
     const lines: string[] = [];
     const log = console.log;
     console.log = (...x: unknown[]) => void lines.push(x.join(" "));
-    const saved = { id: process.env.CLOVER_MAC_IDENTITY, profile: process.env.APPLE_KEYCHAIN_PROFILE };
-    process.env.CLOVER_MAC_IDENTITY = `Developer ID Application: Example (${CLOVER_TEAM_ID})`;
+    const saved = { id: process.env.MOSS_MAC_IDENTITY, profile: process.env.APPLE_KEYCHAIN_PROFILE };
+    process.env.MOSS_MAC_IDENTITY = `Developer ID Application: Example (${MOSS_TEAM_ID})`;
     delete process.env.APPLE_KEYCHAIN_PROFILE;
     const testLines: string[] = [];
     try {
@@ -311,7 +311,7 @@ describe("the release build (scripts/release/build.ts)", () => {
       testLines.push(...lines.splice(mark));
     } finally {
       console.log = log;
-      if (saved.id === undefined) delete process.env.CLOVER_MAC_IDENTITY; else process.env.CLOVER_MAC_IDENTITY = saved.id;
+      if (saved.id === undefined) delete process.env.MOSS_MAC_IDENTITY; else process.env.MOSS_MAC_IDENTITY = saved.id;
       if (saved.profile !== undefined) process.env.APPLE_KEYCHAIN_PROFILE = saved.profile;
     }
     const text = lines.join("\n");
@@ -335,23 +335,23 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(() => parseReleaseBuildArgs(["--test-build"], "win32", "x64")).toThrow(/macOS/);
     expect(() => parseReleaseBuildArgs(["--test-build", "--os", "win", "--dry-run"], "darwin", "arm64")).toThrow(/macOS/);
     // The Developer ID alone: no notarytool profile.
-    expect(signingInputs("mac", {}, true).missing).toEqual(["CLOVER_MAC_IDENTITY"]);
-    expect(signingInputs("mac", {}).missing).toEqual(["CLOVER_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"]);
+    expect(signingInputs("mac", {}, true).missing).toEqual(["MOSS_MAC_IDENTITY"]);
+    expect(signingInputs("mac", {}).missing).toEqual(["MOSS_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"]);
     const a = parseReleaseBuildArgs(["--test-build"], "darwin", "arm64");
-    const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example (ABCDE12345)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "x", APPLE_API_KEY: "k", OTHER: "kept" };
+    const env = { MOSS_MAC_IDENTITY: "Developer ID Application: Example (ABCDE12345)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "x", APPLE_API_KEY: "k", OTHER: "kept" };
     const args = releaseBuilderArgs(a, env);
     expect(args).toContain("-c.mac.notarize=false");
     expect(args).not.toContain("-c.mac.notarize=true");
     expect(args).toContain("-c.mac.identity=Example (ABCDE12345)");
     expect(args).toContain(`-c.directories.output=${TEST_BUILD_OUT}`);
     // Its dmg and zip say TEST in their names; a real build's are unchanged.
-    expect(args).toContain("-c.dmg.artifactName=Clover-${version}-TEST.${ext}");
-    expect(args).toContain("-c.mac.artifactName=Clover-${version}-TEST-mac.${ext}");
-    expect(testBuildArtifacts("1.2.3")).toEqual({ dmg: "Clover-1.2.3-TEST.dmg", zip: "Clover-1.2.3-TEST-mac.zip" });
+    expect(args).toContain("-c.dmg.artifactName=MOSS-Code-${version}-TEST.${ext}");
+    expect(args).toContain("-c.mac.artifactName=MOSS-Code-${version}-TEST-mac.${ext}");
+    expect(testBuildArtifacts("1.2.3")).toEqual({ dmg: "MOSS-Code-1.2.3-TEST.dmg", zip: "MOSS-Code-1.2.3-TEST-mac.zip" });
     expect(TEST_BUILD_OUT).not.toBe("out/dist");
     const built = builderEnv(a, env);
     for (const k of NOTARIZE_ENV) expect(built[k]).toBeUndefined();
-    expect(built.CLOVER_MAC_IDENTITY).toBe(env.CLOVER_MAC_IDENTITY);
+    expect(built.MOSS_MAC_IDENTITY).toBe(env.MOSS_MAC_IDENTITY);
     expect(built.OTHER).toBe("kept");
     // A real signed build is unchanged: notarized, into out/dist.
     const real = releaseBuilderArgs(parseReleaseBuildArgs(["--sign"], "darwin", "arm64"), env);
@@ -371,67 +371,67 @@ describe("the release build (scripts/release/build.ts)", () => {
 
   const HASH_A = "A".repeat(40), HASH_B = "B".repeat(40), HASH_C = "C".repeat(40);
   const identities = [
-    `  1) ${HASH_A} "Developer ID Application: Clover (${CLOVER_TEAM_ID})"`,
+    `  1) ${HASH_A} "Developer ID Application: MOSS (${MOSS_TEAM_ID})"`,
     `  2) ${HASH_B} "Apple Development: Someone (PERSON1234)"`,
     `  3) ${HASH_C} "Apple Development: Other (OTHER12345)"`,
     "     3 valid identities found",
   ].join("\n");
   const subjects: Record<string, string> = {
-    [`Developer ID Application: Clover (${CLOVER_TEAM_ID})`]: `subject=UID=${CLOVER_TEAM_ID}, CN=Developer ID Application: Clover (${CLOVER_TEAM_ID}), OU=${CLOVER_TEAM_ID}, O=Clover, C=US`,
-    "Apple Development: Someone (PERSON1234)": `subject=UID=X, CN=Apple Development: Someone (PERSON1234), OU=${CLOVER_TEAM_ID}, O=Clover, C=US`,
+    [`Developer ID Application: MOSS (${MOSS_TEAM_ID})`]: `subject=UID=${MOSS_TEAM_ID}, CN=Developer ID Application: MOSS (${MOSS_TEAM_ID}), OU=${MOSS_TEAM_ID}, O=MOSS, C=US`,
+    "Apple Development: Someone (PERSON1234)": `subject=UID=X, CN=Apple Development: Someone (PERSON1234), OU=${MOSS_TEAM_ID}, O=MOSS, C=US`,
     "Apple Development: Other (OTHER12345)": "subject=UID=Y, CN=Apple Development: Other (OTHER12345), OU=ZZZZZZZZZZ, O=Elsewhere, C=US",
   };
   const subjectOf = (name: string) => subjects[name];
 
-  test("--sign-dev's identity: the Apple Development one of Clover's team, by its certificate's OU, named by SHA-1", () => {
+  test("--sign-dev's identity: the Apple Development one of MOSS's team, by its certificate's OU, named by SHA-1", () => {
     expect(devSigningIdentity({ identitiesOutput: identities, subjectOf })).toEqual({ hash: HASH_B, name: "Apple Development: Someone (PERSON1234)" });
     // Only a Developer ID of the team: that's --sign's (notarized), refused here.
     expect(() => devSigningIdentity({ identitiesOutput: identities.split("\n").filter((l) => !l.includes("Someone")).join("\n"), subjectOf })).toThrow(/--sign \(notarized\)/);
     // Another team's Apple Development certificate never counts.
     expect(() => devSigningIdentity({ identitiesOutput: identities.split("\n").filter((l) => l.includes("Other")).join("\n"), subjectOf })).toThrow(/no code-signing identity for team/);
     // The override is a SHA-1, nothing else.
-    expect(devSigningIdentity({ identitiesOutput: "", subjectOf, override: "d".repeat(40) })).toEqual({ hash: "D".repeat(40), name: "(CLOVER_MAC_DEV_IDENTITY)" });
+    expect(devSigningIdentity({ identitiesOutput: "", subjectOf, override: "d".repeat(40) })).toEqual({ hash: "D".repeat(40), name: "(MOSS_MAC_DEV_IDENTITY)" });
     expect(() => devSigningIdentity({ identitiesOutput: identities, subjectOf, override: "Apple Development: Someone" })).toThrow(/SHA-1/);
   });
 
   test("--sign-dev signs the resources with the team requirement and no timestamp, and electron-builder with the same identity, unnotarized", () => {
     const [core, link] = RESOURCE_BINARIES;
-    expect(teamRequirement(core.identifier, CLOVER_TEAM_ID)).toBe(`identifier "com.waifucave.clover.core" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`);
-    expect(codesignDevArgs("x/clover-core", HASH_B, core.identifier, CLOVER_TEAM_ID, core.entitlements)).toEqual([
-      "codesign", "--force", "--sign", HASH_B, "--options", "runtime", "--timestamp=none", "--identifier", "com.waifucave.clover.core",
-      `-r=designated => identifier "com.waifucave.clover.core" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`,
-      "--entitlements", "scripts/clover-core.entitlements", "x/clover-core"]);
-    expect(codesignDevArgs("x/clover-link", HASH_B, link.identifier, CLOVER_TEAM_ID)).not.toContain("--entitlements");
+    expect(teamRequirement(core.identifier, MOSS_TEAM_ID)).toBe(`identifier "com.waifucave.moss.core" and anchor apple generic and certificate leaf[subject.OU] = "${MOSS_TEAM_ID}"`);
+    expect(codesignDevArgs("x/moss-core", HASH_B, core.identifier, MOSS_TEAM_ID, core.entitlements)).toEqual([
+      "codesign", "--force", "--sign", HASH_B, "--options", "runtime", "--timestamp=none", "--identifier", "com.waifucave.moss.core",
+      `-r=designated => identifier "com.waifucave.moss.core" and anchor apple generic and certificate leaf[subject.OU] = "${MOSS_TEAM_ID}"`,
+      "--entitlements", "scripts/moss-core.entitlements", "x/moss-core"]);
+    expect(codesignDevArgs("x/moss-link", HASH_B, link.identifier, MOSS_TEAM_ID)).not.toContain("--entitlements");
     // A keychain for this build only: codesign looks there, and the search list isn't touched.
-    expect(codesignDevArgs("x/clover-link", HASH_B, link.identifier, CLOVER_TEAM_ID, undefined, "/s/dev.keychain-db").slice(-3)).toEqual(["--keychain", "/s/dev.keychain-db", "x/clover-link"]);
-    expect(() => codesignDevArgs("x", "Apple Development: Someone", core.identifier, CLOVER_TEAM_ID)).toThrow(/SHA-1/);
-    const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example Ltd (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "a", CSC_LINK: "x", PATH: "/bin" };
+    expect(codesignDevArgs("x/moss-link", HASH_B, link.identifier, MOSS_TEAM_ID, undefined, "/s/dev.keychain-db").slice(-3)).toEqual(["--keychain", "/s/dev.keychain-db", "x/moss-link"]);
+    expect(() => codesignDevArgs("x", "Apple Development: Someone", core.identifier, MOSS_TEAM_ID)).toThrow(/SHA-1/);
+    const env = { MOSS_MAC_IDENTITY: "Developer ID Application: Example Ltd (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "a", CSC_LINK: "x", PATH: "/bin" };
     const dev = parseReleaseBuildArgs(["--sign-dev"], "darwin", "arm64");
     expect(releaseBuilderArgs(dev, env, HASH_B)).toEqual(["electron-builder", "--mac", "dmg", "zip", "--arm64", "--publish", "never", "-c.publish.channel=beta",
       `-c.mac.identity=${HASH_B}`, "-c.mac.notarize=false", "-c.mac.timestamp=none"]);
     expect(() => releaseBuilderArgs(dev, env)).toThrow(/SHA-1/);
     // Nothing a Developer ID build or notarization would use reaches it.
     expect(builderEnv(dev, env)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
-    expect(builderEnv(dev, { ...env, CLOVER_MAC_DEV_KEYCHAIN: "/s/dev.keychain-db", CSC_KEYCHAIN: "/elsewhere" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_KEYCHAIN: "/s/dev.keychain-db" });
+    expect(builderEnv(dev, { ...env, MOSS_MAC_DEV_KEYCHAIN: "/s/dev.keychain-db", CSC_KEYCHAIN: "/elsewhere" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_KEYCHAIN: "/s/dev.keychain-db" });
     // An unsigned build drops any keychain it's handed.
-    expect(builderEnv(parseReleaseBuildArgs([], "darwin", "arm64"), { PATH: "/bin", CSC_KEYCHAIN: "/k", CLOVER_MAC_DEV_KEYCHAIN: "/k" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
+    expect(builderEnv(parseReleaseBuildArgs([], "darwin", "arm64"), { PATH: "/bin", CSC_KEYCHAIN: "/k", MOSS_MAC_DEV_KEYCHAIN: "/k" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
   });
 
   // codesign itself, with no identity and no keychain: an ad hoc signature takes the same arguments but the identity,
   // and records the designated requirement given, which the real team identity's signature carries the same way.
   darwinTest("codesign records --sign-dev's team requirement as the designated one, which compiles, and an unsigned-by-the-team copy fails it", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-sign-dev-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-sign-dev-"));
     try {
-      const bin = join(dir, "clover-plugin-bun");
+      const bin = join(dir, "moss-plugin-bun");
       writeFileSync(bin, readFileSync("/usr/bin/true"));
       const plugin = RESOURCE_BINARIES[2];
-      const args = codesignDevArgs(bin, HASH_B, plugin.identifier, CLOVER_TEAM_ID);
+      const args = codesignDevArgs(bin, HASH_B, plugin.identifier, MOSS_TEAM_ID);
       args[args.indexOf(HASH_B)] = "-";
       const signed = spawnSync(args[0]!, args.slice(1), { encoding: "utf8" });
       expect([signed.status, signed.stderr.replace(/^.*replacing existing signature\n/m, "")]).toEqual([0, ""]);
       const shown = spawnSync("codesign", ["-d", "-r-", bin], { encoding: "utf8" });
       const recorded = /^designated => (.+)$/m.exec(`${shown.stdout}${shown.stderr}`)?.[1]?.trim();
-      expect(recorded).toBe(teamRequirement(plugin.identifier, CLOVER_TEAM_ID));
+      expect(recorded).toBe(teamRequirement(plugin.identifier, MOSS_TEAM_ID));
       // The text compiles as a requirement (csreq), and this ad hoc copy doesn't meet it: only the team's identity does.
       expect(spawnSync("csreq", ["-r", `=${recorded}`, "-b", join(dir, "req.bin")]).status).toBe(0);
       expect(spawnSync("codesign", ["--verify", "--strict", `-R=${recorded}`, bin]).status).not.toBe(0);
@@ -443,38 +443,38 @@ describe("the release build (scripts/release/build.ts)", () => {
 
   test("a dev-signed binary is held to the signed build's checks but the timestamp", () => {
     const dev = parseCodesignDisplay([
-      "Identifier=com.waifucave.clover.core",
+      "Identifier=com.waifucave.moss.core",
       "CodeDirectory v=20500 size=1 flags=0x10000(runtime) hashes=1+7 location=embedded",
       "Authority=Apple Development: Someone (PERSON1234)",
       "Timestamp=none",
-      `TeamIdentifier=${CLOVER_TEAM_ID}`,
+      `TeamIdentifier=${MOSS_TEAM_ID}`,
     ].join("\n").replace("Timestamp=none\n", ""));
     expect(dev.timestamped).toBe(false);
-    expect(signatureProblems("clover-core", dev, CLOVER_TEAM_ID, "com.waifucave.clover.core", { dev: true })).toEqual([]);
-    expect(signatureProblems("clover-core", dev, CLOVER_TEAM_ID, "com.waifucave.clover.core")).toEqual(["clover-core has no secure timestamp"]);
+    expect(signatureProblems("moss-core", dev, MOSS_TEAM_ID, "com.waifucave.moss.core", { dev: true })).toEqual([]);
+    expect(signatureProblems("moss-core", dev, MOSS_TEAM_ID, "com.waifucave.moss.core")).toEqual(["moss-core has no secure timestamp"]);
     const adhoc = parseCodesignDisplay("Identifier=x\nCodeDirectory v=20400 size=1 flags=0x20002(adhoc,linker-signed) hashes=1\nSignature=adhoc\nTeamIdentifier=not set\n");
-    expect(signatureProblems("x", adhoc, CLOVER_TEAM_ID, undefined, { dev: true })).toEqual([`x is not signed with team ${CLOVER_TEAM_ID}'s identity`, "x has no hardened runtime"]);
+    expect(signatureProblems("x", adhoc, MOSS_TEAM_ID, undefined, { dev: true })).toEqual([`x is not signed with team ${MOSS_TEAM_ID}'s identity`, "x has no hardened runtime"]);
   });
 
   test("the daemon and the plugin Bun are signed with the restrict flag (their environment hidden); the others aren't asked it", () => {
-    expect(RESOURCE_BINARIES.filter((b) => b.restrict).map((b) => b.file)).toEqual(["clover-core", "clover-plugin-bun"]);
-    const bun = RESOURCE_BINARIES.find((b) => b.file === "clover-plugin-bun")!;
-    expect(codesignDevArgs("x/clover-plugin-bun", "A".repeat(40), bun.identifier, CLOVER_TEAM_ID, bun.entitlements, undefined, { restrict: bun.restrict })).toContain("runtime,restrict");
+    expect(RESOURCE_BINARIES.filter((b) => b.restrict).map((b) => b.file)).toEqual(["moss-core", "moss-plugin-bun"]);
+    const bun = RESOURCE_BINARIES.find((b) => b.file === "moss-plugin-bun")!;
+    expect(codesignDevArgs("x/moss-plugin-bun", "A".repeat(40), bun.identifier, MOSS_TEAM_ID, bun.entitlements, undefined, { restrict: bun.restrict })).toContain("runtime,restrict");
     const report = (flags: string) => parseCodesignDisplay([
-      "Identifier=com.waifucave.clover.core", `CodeDirectory v=20500 size=1 ${flags} hashes=1+7 location=embedded`,
+      "Identifier=com.waifucave.moss.core", `CodeDirectory v=20500 size=1 ${flags} hashes=1+7 location=embedded`,
       "Timestamp=6 Nov 2026 at 12:00:00", "TeamIdentifier=AB12CD34EF",
     ].join("\n"));
     const restricted = report("flags=0x10800(restrict,runtime)");
     expect([restricted.runtime, restricted.restrict]).toEqual([true, true]);
-    expect(signatureProblems("clover-core", restricted, "AB12CD34EF", "com.waifucave.clover.core", { restrict: true })).toEqual([]);
-    expect(signatureProblems("clover-core", report("flags=0x10000(runtime)"), "AB12CD34EF", "com.waifucave.clover.core", { restrict: true }))
-      .toEqual(["clover-core isn't signed with the restrict flag (its environment would be readable by any process of the user)"]);
+    expect(signatureProblems("moss-core", restricted, "AB12CD34EF", "com.waifucave.moss.core", { restrict: true })).toEqual([]);
+    expect(signatureProblems("moss-core", report("flags=0x10000(runtime)"), "AB12CD34EF", "com.waifucave.moss.core", { restrict: true }))
+      .toEqual(["moss-core isn't signed with the restrict flag (its environment would be readable by any process of the user)"]);
   });
 });
 
 describe("the bundled plugins' native code on a signed Mac build", () => {
   test("Mach-O files are found by their magic, any byte order, thin or universal; nothing else is", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-macho-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-macho-"));
     try {
       mkdirSync(join(dir, "p", "node_modules", "x"), { recursive: true });
       writeFileSync(join(dir, "p", "node_modules", "x", "addon.node"), new Uint8Array([0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0]));
@@ -507,8 +507,8 @@ describe("the bundled plugins' native code on a signed Mac build", () => {
   });
 
   test("each signs under its own identifier, from its path", () => {
-    expect(nativeIdentifier("clover/plugins/companion-web/node_modules/@node-datachannel/darwin-arm64/node_datachannel.node"))
-      .toBe("com.waifucave.clover.plugin.clover.plugins.companion.web.node.modules.node.datachannel.darwin.arm64.node.datachannel.node");
+    expect(nativeIdentifier("moss/plugins/companion-web/node_modules/@node-datachannel/darwin-arm64/node_datachannel.node"))
+      .toBe("com.waifucave.moss.core.plugin.moss.plugins.companion.web.node.modules.node.datachannel.darwin.arm64.node.datachannel.node");
   });
 
 });
@@ -546,7 +546,7 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     expect(p.problems).toEqual([]);
     const names = p.assets.map((a) => a.name);
     for (const os of RELEASE_OSES) for (const n of expectedArtifacts(version, os, "latest")) expect(names).toContain(n);
-    expect(names).toContain("Clover-1.2.3.dmg.blockmap");
+    expect(names).toContain("MOSS-Code-1.2.3.dmg.blockmap");
     expect(new Set(names).size).toBe(names.length);
   });
 
@@ -556,7 +556,7 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     const p = plan(apart, "beta");
     expect(p.commit).toBeUndefined();
     expect(p.problems.some((x) => x.startsWith("the builds come from different commits"))).toBe(true);
-    expect(() => draftReleaseArgs(p, "waifucave/clover")).toThrow(/no commit/);
+    expect(() => draftReleaseArgs(p, "waifucave/moss")).toThrow(/no commit/);
     const unsaid = builds("beta");
     unsaid.get("out/linux-x64")!.delete(buildCommitFile("linux-x64"));
     expect(plan(unsaid, "beta").problems).toContain("BUILD-COMMIT-linux-x64.txt is missing: the linux-x64 build doesn't say which commit it is");
@@ -666,18 +666,18 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
   test("a missing OS, a mismatched update file or a file in two folders stops it", () => {
     const dirs = builds("beta");
     dirs.delete("out/linux-arm64");
-    expect(plan(dirs, "beta").problems).toContain("clover_1.2.3_arm64.deb is missing");
+    expect(plan(dirs, "beta").problems).toContain("moss_1.2.3_arm64.deb is missing");
     const bad = builds("beta");
-    bad.get("out/win")!.set("Clover-Setup-1.2.3.exe", utf8("tampered"));
-    expect(plan(bad, "beta").problems).toContain("beta.yml: Clover-Setup-1.2.3.exe's sha512 doesn't match");
+    bad.get("out/win")!.set("MOSS-Code-Setup-1.2.3.exe", utf8("tampered"));
+    expect(plan(bad, "beta").problems).toContain("beta.yml: MOSS-Code-Setup-1.2.3.exe's sha512 doesn't match");
     const badCore = builds("beta");
-    badCore.get("out/linux-x64")!.set("clover-core-1.2.3-linux-x64", utf8("tampered"));
-    expect(plan(badCore, "beta").problems).toContain("beta-core-linux-x64.yml: clover-core-1.2.3-linux-x64's sha512 doesn't match");
+    badCore.get("out/linux-x64")!.set("moss-core-1.2.3-linux-x64", utf8("tampered"));
+    expect(plan(badCore, "beta").problems).toContain("beta-core-linux-x64.yml: moss-core-1.2.3-linux-x64's sha512 doesn't match");
     const badPlugins = builds("beta");
-    badPlugins.get("out/mac")!.set("clover-plugins-1.2.3-darwin-arm64.tar.gz", utf8("tampered"));
-    expect(plan(badPlugins, "beta").problems).toContain("beta-plugins-darwin-arm64.yml: clover-plugins-1.2.3-darwin-arm64.tar.gz's sha512 doesn't match");
+    badPlugins.get("out/mac")!.set("moss-plugins-1.2.3-darwin-arm64.tar.gz", utf8("tampered"));
+    expect(plan(badPlugins, "beta").problems).toContain("beta-plugins-darwin-arm64.yml: moss-plugins-1.2.3-darwin-arm64.tar.gz's sha512 doesn't match");
     const twice = builds("beta");
-    twice.get("out/win")!.set("Clover-1.2.3.dmg", utf8("x"));
+    twice.get("out/win")!.set("MOSS-Code-1.2.3.dmg", utf8("x"));
     expect(plan(twice, "beta").problems.some((x) => x.includes("is in both"))).toBe(true);
   });
 
@@ -705,11 +705,11 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
 
   test("the draft: tagged v<version>, a draft always, a pre-release on beta", () => {
     const p = plan(builds("beta"), "beta");
-    const args = draftReleaseArgs(p, "waifucave/clover");
+    const args = draftReleaseArgs(p, "waifucave/moss");
     expect(p.commit).toBe(COMMIT);
-    expect(args.slice(0, 9)).toEqual(["gh", "release", "create", "v1.2.3", "--repo", "waifucave/clover", "--target", COMMIT, "--draft"]);
+    expect(args.slice(0, 9)).toEqual(["gh", "release", "create", "v1.2.3", "--repo", "waifucave/moss", "--target", COMMIT, "--draft"]);
     expect(args).toContain("--prerelease");
-    expect(draftReleaseArgs(plan(builds("latest"), "latest"), "waifucave/clover")).not.toContain("--prerelease");
+    expect(draftReleaseArgs(plan(builds("latest"), "latest"), "waifucave/moss")).not.toContain("--prerelease");
     expect(args).not.toContain("--latest");
   });
 
@@ -724,7 +724,7 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     expect(promotedName("beta.yml")).toBe("latest.yml");
     expect(promotedName("beta-core-windows-x64.yml")).toBe("latest-core-windows-x64.yml");
     expect(() => promotedName("latest.yml")).toThrow();
-    expect(() => promotedName("clover-core-1.2.3-linux-x64")).toThrow();
+    expect(() => promotedName("moss-core-1.2.3-linux-x64")).toThrow();
   });
 });
 
@@ -770,7 +770,7 @@ describe("the update feed's key (scripts/release/feed-key.ts)", () => {
 
   test("--generate keeps the private half in the Keychain and writes only the public half into key.ts", async () => {
     const store = memoryStore();
-    const file = join(mkdtempSync(join(tmpdir(), "clover-feed-key-")), "key.ts");
+    const file = join(mkdtempSync(join(tmpdir(), "moss-feed-key-")), "key.ts");
     writeFileSync(file, `// the key\n${keyTs}`);
     const pub = await generate(store, file, null);
     const priv = store.items.get(`${FEED_KEY_ITEM.service}/${FEED_KEY_ITEM.name}`)!;
@@ -807,17 +807,17 @@ describe("the signed builds' checks", () => {
   test("entitlements are read from codesign's plist, and match the daemon's file exactly", () => {
     const xml = '<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/>\n<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>';
     expect(parseEntitlementKeys(xml)).toEqual(["com.apple.security.cs.allow-jit", "com.apple.security.cs.allow-unsigned-executable-memory"]);
-    expect(parseEntitlementKeys(read("scripts/clover-core.entitlements"))).toEqual(parseEntitlementKeys(xml));
-    expect(parseEntitlementKeys("Executable=/x/clover-link\n")).toEqual([]);
+    expect(parseEntitlementKeys(read("scripts/moss-core.entitlements"))).toEqual(parseEntitlementKeys(xml));
+    expect(parseEntitlementKeys("Executable=/x/moss-link\n")).toEqual([]);
   });
 
   test("Authenticode: Valid, by the publisher, or named", () => {
-    expect(authenticodeProblems("Clover.exe", "Valid|CN=Example Ltd, O=Example Ltd, C=GB\n", "Example Ltd")).toEqual([]);
-    expect(authenticodeProblems("Clover.exe", 'Valid|CN="Example, Ltd", O=x', "Example, Ltd")).toEqual([]);
-    expect(authenticodeProblems("clover-core.exe", "NotSigned|", "Example Ltd")).toEqual(["clover-core.exe's Authenticode signature is NotSigned, not Valid"]);
-    expect(authenticodeProblems("clover-link.exe", "Valid|CN=Someone Else", "Example Ltd")).toEqual(["clover-link.exe is signed by Someone Else, not Example Ltd"]);
+    expect(authenticodeProblems("MOSS Code.exe", "Valid|CN=Example Ltd, O=Example Ltd, C=GB\n", "Example Ltd")).toEqual([]);
+    expect(authenticodeProblems("MOSS Code.exe", 'Valid|CN="Example, Ltd", O=x', "Example, Ltd")).toEqual([]);
+    expect(authenticodeProblems("moss-core.exe", "NotSigned|", "Example Ltd")).toEqual(["moss-core.exe's Authenticode signature is NotSigned, not Valid"]);
+    expect(authenticodeProblems("moss-link.exe", "Valid|CN=Someone Else", "Example Ltd")).toEqual(["moss-link.exe is signed by Someone Else, not Example Ltd"]);
     expect(authenticodeProblems("x.exe", "", "Example Ltd")).toEqual(["x.exe's Authenticode signature is missing, not Valid"]);
-    expect(authenticodeCommand("C:\\a'b\\Clover.exe").at(-1)).toContain("-LiteralPath 'C:\\a''b\\Clover.exe'");
+    expect(authenticodeCommand("C:\\a'b\\MOSS Code.exe").at(-1)).toContain("-LiteralPath 'C:\\a''b\\MOSS Code.exe'");
   });
 });
 
@@ -826,7 +826,7 @@ const cat = (...parts: Uint8Array[]): Uint8Array<ArrayBuffer> => { const out = n
 describe("the name scan (scripts/release/name-scan.ts)", () => {
   test("fails closed without the owner's local guard", async () => {
     const { nameScan } = await import("./name-scan");
-    const home = mkdtempSync(join(tmpdir(), "clover-name-scan-home-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-name-scan-home-"));
     const r = nameScan([], [], home);
     expect(r.problems).toHaveLength(1);
     expect(r.problems[0]).toContain("can't cut a release");
@@ -834,8 +834,8 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
 
   test("opens every kind of asset, and what nests inside, without running anything", async () => {
     const { openerFor, TOOLS } = await import("./name-scan");
-    const names = ["Clover-1.dmg", "Clover-1-mac.zip", "Clover-Setup-1.exe", "clover_1_amd64.deb", "clover-1.x86_64.rpm", "Clover-1-x86_64.AppImage",
-      "data.tar.xz", "control.tar.zst", "x.tar", "app-64.7z", "a.gz", "Clover-1.dmg.blockmap", "b.br", "latest.yml", "clover-core.exe", "app.asar"];
+    const names = ["MOSS-Code-1.dmg", "MOSS-Code-1-mac.zip", "MOSS-Code-Setup-1.exe", "moss_1_amd64.deb", "moss-1.x86_64.rpm", "MOSS-Code-1-x86_64.AppImage",
+      "data.tar.xz", "control.tar.zst", "x.tar", "app-64.7z", "a.gz", "MOSS-Code-1.dmg.blockmap", "b.br", "latest.yml", "moss-core.exe", "app.asar"];
     expect(names.map(openerFor)).toEqual(["dmg", "zip", "nsis", "deb", "rpm", "appimage", "xz", "zst", "tar", "7z", "gz", "gz", "br", "raw", "raw", "asar"]);
     const more = ["hidden.tgz", "x.tbz", "x.bz2", "x.lz4", "x.lzma", "x.cab", "x.msi", "x.jar", "x.crx", "x.squashfs", "x.rar", "x.lz", "libx.a"];
     expect(more.map(openerFor)).toEqual(["gz", "bz2", "bz2", "lz4", "lzma", "cab", "msi", "zip", "crx", "squashfs", "rar", "lzip", "ar"]);
@@ -894,7 +894,7 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
     far.set([0x4d, 0x5a]);
     new DataView(far.buffer).setUint32(0x3c, 0x400, true);
     far.set([0x50, 0x45, 0, 0], 0x400);
-    const farDir = mkdtempSync(join(tmpdir(), "clover-name-pe-"));
+    const farDir = mkdtempSync(join(tmpdir(), "moss-name-pe-"));
     writeFileSync(join(farDir, "far.dll"), far);
     expect(formatOf(join(farDir, "far.dll"))).toBe("pe");
     far[0x400] = 0;
@@ -913,7 +913,7 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
     expect(appendedZip(cat(eocd(0), new Uint8Array(3)))).toBe(false);
     expect(appendedZip(new Uint8Array(30))).toBe(false);
     // A real zip behind other bytes, named .bin: known by its end, opened with 7z.
-    const dir = mkdtempSync(join(tmpdir(), "clover-name-appended-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-name-appended-"));
     writeFileSync(join(dir, "in.txt"), "inside");
     const zip = join(dir, "z.zip");
     expect(Bun.spawnSync(["bsdtar", "-a", "-cf", zip, "-C", dir, "in.txt"]).exitCode).toBe(0);
@@ -925,7 +925,7 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
 
   test("a known format must run to the file's last byte: tar, ar, 7z, zip and cab are measured by their own structure", async () => {
     const { arEnd, sevenZipEnd, tarEnd, trailingProblem } = await import("./name-scan");
-    const dir = mkdtempSync(join(tmpdir(), "clover-name-trailing-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-name-trailing-"));
     writeFileSync(join(dir, "in.txt"), "inside");
     const tar = join(dir, "a.tar");
     expect(Bun.spawnSync(["bsdtar", "-cf", tar, "-C", dir, "in.txt"]).exitCode).toBe(0);
@@ -973,7 +973,7 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
   test("bytes a decoder skips fail the scan: zstd and lz4 skippable frames, a gzip's extra field or comment", async () => {
     const { gzipEnd, lz4End, trailingProblem, zstdEnd } = await import("./name-scan");
     const enc = (t: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(t) as Uint8Array<ArrayBuffer>;
-    const dir = mkdtempSync(join(tmpdir(), "clover-name-skipped-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-name-skipped-"));
     const z = Bun.zstdCompressSync(enc("zstd words"));
     const hidden = Bun.gzipSync(enc("hidden PLANTED words"));
     const skip = (payload: Uint8Array): Uint8Array => { const h = new Uint8Array(8); new DataView(h.buffer).setUint32(0, 0x184d2a5a, true); new DataView(h.buffer).setUint32(4, payload.length, true); return cat(h, payload); };
@@ -1029,7 +1029,7 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
     const z = Bun.zstdCompressSync(enc("zstd words"));
     expect(appendedStreams(cat(raw, g1, z), tools).found).toEqual([{ offset: 5000 + g1.length, kind: "zst" }, { offset: 5000, kind: "gz" }]);
     // A zip after raw bytes: placed by its central directory.
-    const dir = mkdtempSync(join(tmpdir(), "clover-name-appended-streams-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-name-appended-streams-"));
     writeFileSync(join(dir, "in.txt"), "inside");
     expect(Bun.spawnSync(["bsdtar", "-a", "-cf", join(dir, "z.zip"), "-C", dir, "in.txt"]).exitCode).toBe(0);
     expect(appendedStreams(cat(raw, new Uint8Array(readFileSync(join(dir, "z.zip")))), tools).found).toEqual([{ offset: 5000, kind: "zip" }]);
@@ -1063,7 +1063,7 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
 
   test("reads every file, lists every path and link target, refuses an absolute link, and accepts only the shipped notices", async () => {
     const { walkTree } = await import("./name-scan");
-    const root = mkdtempSync(join(tmpdir(), "clover-name-walk-"));
+    const root = mkdtempSync(join(tmpdir(), "moss-name-walk-"));
     mkdirSync(join(root, "resources", "daemon"), { recursive: true });
     writeFileSync(join(root, "resources", "daemon", "srt-win.exe"), "x");
     writeFileSync(join(root, "resources", "daemon", "srt-win.THIRD_PARTY_NOTICES.txt"), "license");
@@ -1086,11 +1086,11 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
 describe("the privacy scrub", () => {
   test("the sidecar's build remaps the cargo home, the checkout and the home folder, after any flags already set", async () => {
     const { linkBuildEnv } = await import("../build-packages");
-    const env = linkBuildEnv({ HOME: "/Users/someone", RUSTFLAGS: "-C opt-level=3" }, "/Users/someone/Xcode projects/clover");
+    const env = linkBuildEnv({ HOME: "/Users/someone", RUSTFLAGS: "-C opt-level=3" }, "/Users/someone/Xcode projects/moss");
     // rustc takes the last match: the home folder first, the paths inside it after; a space stays inside its flag.
-    expect(env.CARGO_ENCODED_RUSTFLAGS!.split("\x1f")).toEqual(["-C", "opt-level=3", "--remap-path-prefix=/Users/someone=/home", "--remap-path-prefix=/Users/someone/.cargo=/cargo", "--remap-path-prefix=/Users/someone/Xcode projects/clover=/clover"]);
+    expect(env.CARGO_ENCODED_RUSTFLAGS!.split("\x1f")).toEqual(["-C", "opt-level=3", "--remap-path-prefix=/Users/someone=/home", "--remap-path-prefix=/Users/someone/.cargo=/cargo", "--remap-path-prefix=/Users/someone/Xcode projects/moss=/moss"]);
     expect(env.RUSTFLAGS).toBeUndefined();
-    expect(linkBuildEnv({ HOME: "/h", CARGO_HOME: "/c", CARGO_ENCODED_RUSTFLAGS: "-Cx\x1f-Cy" }, "/r").CARGO_ENCODED_RUSTFLAGS!.split("\x1f")).toEqual(["-Cx", "-Cy", "--remap-path-prefix=/h=/home", "--remap-path-prefix=/c=/cargo", "--remap-path-prefix=/r=/clover"]);
+    expect(linkBuildEnv({ HOME: "/h", CARGO_HOME: "/c", CARGO_ENCODED_RUSTFLAGS: "-Cx\x1f-Cy" }, "/r").CARGO_ENCODED_RUSTFLAGS!.split("\x1f")).toEqual(["-Cx", "-Cy", "--remap-path-prefix=/h=/home", "--remap-path-prefix=/c=/cargo", "--remap-path-prefix=/r=/moss"]);
   });
 });
 
@@ -1099,7 +1099,7 @@ describe("the name scan, end to end with a stand-in guard", () => {
     if (process.platform === "win32") return;
     const { nameScan } = await import("./name-scan");
     const { createPackage } = await import("@electron/asar");
-    const home = mkdtempSync(join(tmpdir(), "clover-name-scan-e2e-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-name-scan-e2e-"));
     const log = join(home, "read.log");
     mkdirSync(join(home, "norma-private", "git-hooks"), { recursive: true });
     // The stand-in reads what it's given and "finds" a hit in any file holding PLANTED.
@@ -1126,11 +1126,11 @@ describe("the name scan, end to end with a stand-in guard", () => {
     writeFileSync(join(tree, "padded.tar"), cat(new Uint8Array(readFileSync(tarFile)), Bun.gzipSync(enc("after the end"))));
     // A format it knows that doesn't open (an LZ4 frame header and nothing after) fails the scan, never read raw only.
     writeFileSync(join(tree, "junk.bin"), new Uint8Array([4, 0x22, 0x4d, 0x18, 1, 2, 3]));
-    const zip = join(home, "Clover-1.2.3-mac.zip");
+    const zip = join(home, "MOSS-Code-1.2.3-mac.zip");
     expect(Bun.spawnSync(["bsdtar", "-a", "-cf", zip, "-C", tree, "."]).exitCode).toBe(0);
     const r = nameScan([zip], [], home);
     const seen = readFileSync(log, "utf8");
-    expect(seen).toContain("Clover-1.2.3-mac.zip");
+    expect(seen).toContain("MOSS-Code-1.2.3-mac.zip");
     expect(seen).toContain("app.asar");
     expect(seen).toContain("inside-asar.txt");
     expect(seen).toMatch(/notes\.txt(\n|$)/);
@@ -1138,13 +1138,13 @@ describe("the name scan, end to end with a stand-in guard", () => {
     expect(seen).toContain("blob.bin.out");
     expect(seen).toContain("names.txt");
     expect(r.read).toBeGreaterThanOrEqual(8);
-    const hit = (where: string): boolean => r.problems.some((p) => p.includes(`found the owner's identity in Clover-1.2.3-mac.zip/${where}`));
+    const hit = (where: string): boolean => r.problems.some((p) => p.includes(`found the owner's identity in MOSS-Code-1.2.3-mac.zip/${where}`));
     expect(hit("notes.txt.gz")).toBe(true);
     expect(hit("hidden.tgz/hidden.tar")).toBe(true);
     expect(hit("blob.bin")).toBe(true);
     expect(hit("resources/app.asar/asar/lib/deeper.gz")).toBe(true);
     expect(r.problems.some((p) => p.startsWith("junk.bin ") && /lz4/.test(p) || p === "junk.bin doesn't open for the scan")).toBe(true);
-    expect(r.problems.some((p) => p.includes("found the owner's identity in Clover-1.2.3-mac.zip/carrier.dat (its appended gz)"))).toBe(true);
+    expect(r.problems.some((p) => p.includes("found the owner's identity in MOSS-Code-1.2.3-mac.zip/carrier.dat (its appended gz)"))).toBe(true);
     expect(r.problems.some((p) => /^padded\.tar has \d+ bytes after its tar archive's end$/.test(p))).toBe(true);
     // Nothing else failed to open: the asar, the tgz and the renamed gzip all did.
     expect(r.problems.filter((p) => p.startsWith("junk.bin ")).length).toBe(1);
@@ -1154,29 +1154,29 @@ describe("the name scan, end to end with a stand-in guard", () => {
 
 describe("no draft without the sealed core's proof, on the bytes that ship (#243 checks 4 and 5)", () => {
   const V = "1.2.3";
-  const CORE = ["Clover.app", "Contents", "Resources", "daemon", "clover-core"];
-  /** A `Clover.app` whose daemon/clover-core holds `core`, under `dir`. */
+  const CORE = ["MOSS Code.app", "Contents", "Resources", "daemon", "moss-core"];
+  /** A `MOSS Code.app` whose daemon/moss-core holds `core`, under `dir`. */
   const app = (dir: string, core: string) => {
     mkdirSync(join(dir, ...CORE.slice(0, -1)), { recursive: true });
     writeFileSync(join(dir, ...CORE), core);
   };
   /** A build folder: the unpacked app, the dmg and the zip (stand-ins: their contents are what the openers yield). */
   function build(o: { app?: string; zip?: string; dmg?: string; apps?: number } = {}) {
-    const dist = mkdtempSync(join(tmpdir(), "clover-publish-proof-"));
+    const dist = mkdtempSync(join(tmpdir(), "moss-publish-proof-"));
     for (let i = 0; i < (o.apps ?? 1); i++) app(join(dist, i === 0 ? "mac-arm64" : `mac-x${i}`), o.app ?? "core-A");
-    writeFileSync(join(dist, `Clover-${V}.dmg`), "dmg");
-    writeFileSync(join(dist, `Clover-${V}-mac.zip`), "zip");
+    writeFileSync(join(dist, `MOSS-Code-${V}.dmg`), "dmg");
+    writeFileSync(join(dist, `MOSS-Code-${V}-mac.zip`), "zip");
     const mounted: string[] = [];
     const openers: ShippedOpeners = {
       extractZip: (_zip, dest) => { app(dest, o.zip ?? o.app ?? "core-A"); return true; },
       mountDmg: (_dmg, mountpoint) => { app(mountpoint, o.dmg ?? o.app ?? "core-A"); mounted.push(mountpoint); return () => { mounted.splice(mounted.indexOf(mountpoint), 1); }; },
     };
-    return { dist, openers, mounted, unpacked: join(dist, "mac-arm64", ...CORE), dmg: { dir: dist, name: `Clover-${V}.dmg` } };
+    return { dist, openers, mounted, unpacked: join(dist, "mac-arm64", ...CORE), dmg: { dir: dist, name: `MOSS-Code-${V}.dmg` } };
   }
 
   test("the proof runs with --signed --require-proof on the zip's own copy in a private folder, never the build folder's file", () => {
     const b = build();
-    expect(sealProofCommand("/x/clover-core", "/repo").slice(1)).toEqual(["/repo/scripts/verify-sealed-core.ts", "--binary", "/x/clover-core", "--signed", "--require-proof"]);
+    expect(sealProofCommand("/x/moss-core", "/repo").slice(1)).toEqual(["/repo/scripts/verify-sealed-core.ts", "--binary", "/x/moss-core", "--signed", "--require-proof"]);
     const asked: string[] = [];
     expect(sealProofProblem(b.dmg, V, (c) => { asked.push(c); expect(readFileSync(c, "utf8")).toBe("core-A"); return true; }, b.openers)).toBeUndefined();
     expect(asked).toHaveLength(1);
@@ -1206,23 +1206,23 @@ describe("no draft without the sealed core's proof, on the bytes that ship (#243
   });
 
   test("a stale mac* folder in another --from folder is never what gets proven; none or two apps are refused", () => {
-    const stale = mkdtempSync(join(tmpdir(), "clover-publish-stale-"));
+    const stale = mkdtempSync(join(tmpdir(), "moss-publish-stale-"));
     app(join(stale, "mac-arm64"), "an old core");
     const b = build();
     const proven: string[] = [];
     expect(sealProofProblem(b.dmg, V, (c) => { proven.push(readFileSync(c, "utf8")); return true; }, b.openers)).toBeUndefined();
     expect(proven).toEqual(["core-A"]);
-    expect(sealProofProblem({ dir: join(stale, "nothing"), name: `Clover-${V}.dmg` }, V, () => true, b.openers)).toContain("can't be proven");
+    expect(sealProofProblem({ dir: join(stale, "nothing"), name: `MOSS-Code-${V}.dmg` }, V, () => true, b.openers)).toContain("can't be proven");
     const two = build({ apps: 2 });
-    expect(proveShippedMacCore(two.dist, V, () => true, two.openers)).toContain("exactly one mac*/Clover.app");
+    expect(proveShippedMacCore(two.dist, V, () => true, two.openers)).toContain("exactly one mac*/MOSS Code.app");
   });
 
-  test("a zip or a dmg whose clover-core differs is refused before any proof; a dmg that won't mount too", () => {
+  test("a zip or a dmg whose moss-core differs is refused before any proof; a dmg that won't mount too", () => {
     const never = () => { throw new Error("proved a core that doesn't match"); };
     const zip = build({ zip: "another core" });
-    expect(proveShippedMacCore(zip.dist, V, never, zip.openers)).toContain(`the clover-core in ${join(zip.dist, `Clover-${V}-mac.zip`)} is not the one`);
+    expect(proveShippedMacCore(zip.dist, V, never, zip.openers)).toContain(`the moss-core in ${join(zip.dist, `MOSS-Code-${V}-mac.zip`)} is not the one`);
     const dmg = build({ dmg: "another core" });
-    expect(proveShippedMacCore(dmg.dist, V, never, dmg.openers)).toContain(`the clover-core in ${join(dmg.dist, `Clover-${V}.dmg`)} is not the one`);
+    expect(proveShippedMacCore(dmg.dist, V, never, dmg.openers)).toContain(`the moss-core in ${join(dmg.dist, `MOSS-Code-${V}.dmg`)} is not the one`);
     expect(dmg.mounted).toEqual([]); // detached even when refused
     const b = build();
     expect(proveShippedMacCore(b.dist, V, never, { ...b.openers, mountDmg: () => undefined })).toContain("could not be mounted");

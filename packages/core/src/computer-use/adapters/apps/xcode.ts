@@ -55,14 +55,14 @@ async function readResult(scope: AdapterScope, workspace: string | undefined, id
   const result = await scope.applescript(appScript(scope.app.bundleId, [
     ...workspaceLines(scope, workspace),
     ...(id === undefined
-      ? ["set r to last scheme action result of d", "if r is missing value then return my cloverText(name of d)"]
+      ? ["set r to last scheme action result of d", "if r is missing value then return my mossText(name of d)"]
       : ["try", `  set r to scheme action result id ${text(id)} of d`, "on error", "  return \"REPLACED\"", "end try"]),
-    "set out to my cloverText(name of d) & cloverTAB & ((status of r) as text) & cloverTAB & ((completed of r) as text) & cloverTAB & my cloverText(error message of r) & cloverLF",
+    "set out to my mossText(name of d) & mossTAB & ((status of r) as text) & mossTAB & ((completed of r) as text) & mossTAB & my mossText(error message of r) & mossLF",
     "set k to 0",
     "repeat with e in (build errors of r)",
     "  set k to k + 1",
     "  if k > 20 then exit repeat",
-    "  set out to out & \"E\" & cloverTAB & my cloverText(message of e) & cloverLF",
+    "  set out to out & \"E\" & mossTAB & my mossText(message of e) & mossLF",
     "end repeat",
     "return out",
   ], { handlers: ["text"] }), { timeoutMs: 15_000 });
@@ -96,18 +96,18 @@ export const xcodeAdapter: AppAdapter = {
         const result = await scope.applescript(appScript(scope.app.bundleId, [
           "set boundName to \"\"",
           "try",
-          `  set boundName to my cloverText(name of document of window id ${scope.window()})`,
+          `  set boundName to my mossText(name of document of window id ${scope.window()})`,
           "end try",
           "set out to \"\"",
           "repeat with d in workspace documents",
           "  set act to \"\"",
           "  try",
-          "    set act to my cloverText(name of active scheme of d)",
+          "    set act to my mossText(name of active scheme of d)",
           "  end try",
-          "  set n to my cloverText(name of d)",
-          "  set out to out & \"W\" & cloverTAB & (n = boundName) & cloverTAB & act & cloverTAB & n & cloverLF",
+          "  set n to my mossText(name of d)",
+          "  set out to out & \"W\" & mossTAB & (n = boundName) & mossTAB & act & mossTAB & n & mossLF",
           "  repeat with s in (schemes of d)",
-          "    set out to out & \"S\" & cloverTAB & my cloverText(name of s) & cloverLF",
+          "    set out to out & \"S\" & mossTAB & my mossText(name of s) & mossLF",
           "  end repeat",
           "end repeat",
           "return out",
@@ -135,7 +135,7 @@ export const xcodeAdapter: AppAdapter = {
           ...workspaceLines(scope, workspace),
           // Keep THIS build's own result, by its id: never "the last result", which a later action replaces.
           "set r to build d",
-          "return \"WS:\" & my cloverText(name of d) & cloverTAB & my cloverText(id of r)",
+          "return \"WS:\" & my mossText(name of d) & mossTAB & my mossText(id of r)",
         ], { handlers: ["text"] }), { timeoutMs: 15_000 });
         noWorkspace(scope, started, workspace);
         const [wsPart, idPart] = (started ?? "").trim().split("\t");

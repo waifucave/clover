@@ -1,14 +1,14 @@
 import { registerHostStoragePolicyConsumer } from "./host-storage-fence";
-// P8b Task 16 — THE DRIVER TABLE: `sessionId → CloverSession`, and everything a Clover session needs
+// P8b Task 16 — THE DRIVER TABLE: `sessionId → MossSession`, and everything a MOSS session needs
 // assembled before a `winter` child can run it.
 //
-// `ipc/server.ts` routes by asking this table (see `CloverSessionDrivers`): a live driver wins; a
-// record that says "winter" with no live driver is resumed here; an ENGINE-ERA record (no Clover
+// `ipc/server.ts` routes by asking this table (see `MossSessionDrivers`): a live driver wins; a
+// record that says "winter" with no live driver is resumed here; an ENGINE-ERA record (no MOSS
 // transcript) and a record-less session are typed refusals in the IPC layer (P8b-22 / fix wave
 // F2) — since Task 17 there is no engine to fall back to. The table is built once in `daemon.ts`
 // (after the runtime spine has recovered and the router handle has run its directory recovery — a
 // projector is never constructed before that sweep) and shared with the IPC layer through
-// `IpcServerOptions.clover`.
+// `IpcServerOptions.moss`.
 //
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // THE CREATION TRANSACTION (WS-16 §6, P8b-14) — one record per session
@@ -22,13 +22,13 @@ import { registerHostStoragePolicyConsumer } from "./host-storage-fence";
 // only producer of a record without a backend id, for pre-8b rows.)
 //
 // There is no `leg` column (Task 16 finding); `sessionLegOf(record)` reads the leg off
-// `backendSessionId`, which is the same fact P8b-22's refusal needs ("a record whose Clover
+// `backendSessionId`, which is the same fact P8b-22's refusal needs ("a record whose MOSS
 // transcript does not exist").
 //
 // REFUSALS ARE TYPED AND NEVER FALL BACK (P8b-2). `assertAvailable(mode)` runs BEFORE the product
 // session row is minted, so an executable that cannot be resolved costs nothing but the reply; a
 // record write that fails after the row exists is rolled back by the caller (the row is deleted —
-// it was never announced to any client). Every refusal is a `CloverLegRefusal` whose `code` the IPC
+// it was never announced to any client). Every refusal is a `MossLegRefusal` whose `code` the IPC
 // layer forwards as the JSON-RPC error's `data.code`.
 import { UPDATE_RESTARTING_MESSAGE } from "../update/gate";
 import type { ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
@@ -46,7 +46,7 @@ import type { SecretStore } from "../auth/secret-store";
 import type { ApprovalBroker } from "../agent/approvals";
 import type { PermissionGate, SessionApprovalPolicy } from "../agent/gate";
 import type { QuestionBroker } from "../agent/questions";
-import { RETIRED_CAPABILITY_SERVER_KEYS, CLOVER_CAPABILITY_TOOLS, assertNoCapabilityCollision, capabilityServerName, reservedMcpServerNames, type CapabilityServerRecord, type CapabilitySession } from "../capabilities";
+import { RETIRED_CAPABILITY_SERVER_KEYS, MOSS_CAPABILITY_TOOLS, assertNoCapabilityCollision, capabilityServerName, reservedMcpServerNames, type CapabilityServerRecord, type CapabilitySession } from "../capabilities";
 import { createProjector, type Projector } from "../projector";
 import type { RuntimeSessionRecord, RuntimeSessionRecords } from "../runtime-state/records";
 import type { ProjectionCheckpoints } from "../runtime-state/checkpoints";
@@ -56,7 +56,7 @@ import type { SessionHub } from "../sessions/hub";
 import type { SessionStore } from "../sessions/store";
 import { mainTurnOpenInLog } from "../sessions/turn-origins";
 import { turnOriginIndexFor } from "../sessions/turn-origin-index";
-import { CLAUDE_FIRST_PARTY_PROVIDER_IDS, DEFAULT_PROVIDER, effortRefusalFor, effortToSpendForRole, ownProviderFor, permittedProviders, pinsFor, providerBaseUrlFor, sdkAllowRules, sdkDenyRules, cloverOptionsFromSettings, type Settings } from "../settings";
+import { CLAUDE_FIRST_PARTY_PROVIDER_IDS, DEFAULT_PROVIDER, effortRefusalFor, effortToSpendForRole, ownProviderFor, permittedProviders, pinsFor, providerBaseUrlFor, sdkAllowRules, sdkDenyRules, mossOptionsFromSettings, type Settings } from "../settings";
 import { d30DefaultModel } from "./advisor-reviewer";
 import { canUseToolFor, type BridgedApprovalRequest } from "./approval-bridge";
 import { elicitationHandlerFor, elicitationTurnTracker, type ElicitationBroker } from "./url-elicitation";
@@ -69,15 +69,15 @@ import { renderNoCredentialHint } from "./handoff";
 import { neutralSelectionRefusal, refusalDetailCategoryFor } from "./refusal-copy";
 import { legForNewSession, sessionLegOf, type SessionLeg } from "./leg";
 import { attachWinterSession } from "./messaging";
-import { buildCloverOptions, bypassAllowedAtSpawn, childSandboxConfigFor, permissionModeFor } from "./mode-options";
+import { buildMossOptions, bypassAllowedAtSpawn, childSandboxConfigFor, permissionModeFor } from "./mode-options";
 import { providerFor, rowForTag, testProviderNameFor, toolsRefusedFor } from "./provider-selection";
-import { splitTag, UNSTATED_TAG, isModelTag, CLOVER_TEST_PREFIX, type ModelTag } from "./model-tag";
-import { cloverSessions } from "./sessions";
+import { splitTag, UNSTATED_TAG, isModelTag, MOSS_TEST_PREFIX, type ModelTag } from "./model-tag";
+import { mossSessions } from "./sessions";
 import { canonicalCwd, storeProjectsDir, sdkHomeFor } from "../agent/paths";
 import { linkedRouterSupportsRunHome, disposeFailedRunHome } from "./run-home-support";
 import { isRetiredCatalogTag } from "../providers/catalog-role-problems";
-import { CLOVER_PEER_VERSIONS } from "./versions";
-import { cloverSystemPromptFor } from "./system-prompt";
+import { MOSS_PEER_VERSIONS } from "./versions";
+import { mossSystemPromptFor } from "./system-prompt";
 import { dispatchEffortFor } from "../agent/dispatch-config";
 import { loadUserAgentDefinitions, loadProjectAgentDefinitions, mergeAgentDefinitionTiers, type LoadedAgentDefinitions } from "../agent/agent-definitions";
 
@@ -86,7 +86,7 @@ function clearSession(sessionId: string): void { clearDiffSession(sessionId); }
 
 /**
  * Daemon settings surface batch 3: the ONE merge the incarnation builder calls — `<home>/agents/*.md`
- * (user tier) merged with a TRUSTED project's `<cwd>/.clover/agents/*.md` (project tier, trust-gated
+ * (user tier) merged with a TRUSTED project's `<cwd>/.moss/agents/*.md` (project tier, trust-gated
  * by `projectAgentDefinitions` itself — absent/untrusted degrades to the empty scan shape), project
  * winning by name (the SDK's own precedence, batch 3 item 1). A fresh scan on every call, same as
  * `loadUserAgentDefinitions` itself — no caching here either, so a new/edited/removed file reaches
@@ -103,11 +103,11 @@ function mergedAgentDefinitions(
 import type { AgentRegistry } from "../agent/bg-agent-registry";
 import type { ContextAssembler } from "../agent/context";
 import type { SkillStore } from "../agent/skills";
-import { startCloverSession, unconsumedUserMessages, withRunHome, withRuntimeVersion, withSessionMcpServers, type CompactOptions, type CloverChildrenSink, type CloverIncarnation, type CloverIncarnationShape, type CloverSession } from "./clover-session";
-import type { UserMessageFileRef, UserMessageImageRef } from "@waifucave/clover-protocol";
+import { startMossSession, unconsumedUserMessages, withRunHome, withRuntimeVersion, withSessionMcpServers, type CompactOptions, type MossChildrenSink, type MossIncarnation, type MossIncarnationShape, type MossSession } from "./moss-session";
+import type { UserMessageFileRef, UserMessageImageRef } from "@waifucave/moss-protocol";
 import { RunHomeError, type RunHome, type RunHomeErrorCode, type RunHomeFor, type RunHomeInput } from "./host";
 import { projectScopeTrusted, projectScopeRootFor, type RunHomeSessionFacts } from "./run-home-input";
-import { readCloverTasks } from "./tasks-reader";
+import { readMossTasks } from "./tasks-reader";
 import { keychainService } from "../profile";
 import type { McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { createHostCredentialBroker, sessionCredentialAllowlist, type HostCredentialBroker, type ProviderRefresher } from "./host-credentials";
@@ -116,21 +116,21 @@ import { COWORK_SESSION_UNSUPPORTED_CODE, isUnrunnableStoredMode, runnableModeOf
 import { type HostCodeAuthority } from "./host-code-broker";
 import { buildCoreBrand } from "./brand";
 
-export type CloverLegRefusalCode =
+export type MossLegRefusalCode =
   | "winter_executable_unavailable"   // P8b-2: no `winter` binary resolves (setting → env → bundle → home)
   | "embedded_runtime_unavailable"    // WS-23: chat/dispatch's embedded runtime refused (version lock, no host)
   | "winter_leg_unavailable"          // the router handle or the runtime spine did not construct
-  | "session_predates_winter_leg"     // P8b-22: the record has no Clover transcript to resume
+  | "session_predates_winter_leg"     // P8b-22: the record has no MOSS transcript to resume
   // `session_unrecorded` (fix wave F2) is minted by `ipc/server.ts` directly — a session with NO
   // record at all (phone-owned, `createSynced`) never reaches the table's own refusals.
   | "winter_session_ended"            // the driver said the store refused it for good
   | "not_supported_on_winter_leg"     // `session.compact` (SDK 0.0.4 carry)
   | "runtime_selection_refused"       // P8c-14: the router's selectRuntime refused this session's model
   // WS-23 (ruling R2): a session recorded on the retired official leg (`runtimeKind: "claude-agent"`)
-  // could not be moved onto the Clover leg at its resume. `data.reason` says why: `transcript-collision`
-  // (the Clover key already holds a copy), `transcript-move-refused` (a link, mkdir or rename the
+  // could not be moved onto the MOSS leg at its resume. `data.reason` says why: `transcript-collision`
+  // (the MOSS key already holds a copy), `transcript-move-refused` (a link, mkdir or rename the
   // filesystem refused), `repair-required` (already marked) or `claude-oauth`. Nothing is moved or
-  // opened, and the record keeps naming the old leg, until `clover doctor --repair
+  // opened, and the record keeps naming the old leg, until `moss doctor --repair
   // adopt-legacy-session` (finding `legacy-adoption-blocked`) clears it for the next resume.
   | "legacy_session_migration_refused"
   // The session's own working directory is gone (deleted, moved, unmounted) or is not a directory:
@@ -164,19 +164,19 @@ export type CloverLegRefusalCode =
  *
  * `statSync` follows symlinks, so a dangling link reads as missing (ENOENT), and a link to a directory
  * passes. Only the cwd the SESSION stored is checked — a cwd-less session runs in its daemon-owned temp
- * dir, which is Clover's own to create.
+ * dir, which is MOSS's own to create.
  */
-export function sessionCwdRefusal(cwd: string): CloverLegRefusal | undefined {
+export function sessionCwdRefusal(cwd: string): MossLegRefusal | undefined {
   let isDirectory: boolean;
   try {
     isDirectory = statSync(cwd).isDirectory();
   } catch (err) {
     const code = (err as { code?: unknown }).code;
     const what = code === "ENOENT" || code === "ENOTDIR" ? "no longer exists" : `can't be opened (${typeof code === "string" ? code : "unreadable"})`;
-    return new CloverLegRefusal("session_cwd_unavailable", `this session's working directory ${cwd} ${what} — restore it, or start a new session`);
+    return new MossLegRefusal("session_cwd_unavailable", `this session's working directory ${cwd} ${what} — restore it, or start a new session`);
   }
   if (!isDirectory) {
-    return new CloverLegRefusal("session_cwd_unavailable", `this session's working directory ${cwd} is not a directory — restore it, or start a new session`);
+    return new MossLegRefusal("session_cwd_unavailable", `this session's working directory ${cwd} is not a directory — restore it, or start a new session`);
   }
   return undefined;
 }
@@ -184,8 +184,8 @@ export function sessionCwdRefusal(cwd: string): CloverLegRefusal | undefined {
 /**
  * P8c-14: the public members of a live session driver the IPC layer and this table's own
  * `evict`/`list`/`endAll`/`runTurn` need. It was the intersection of the two legs' drivers; since
- * WS-23 `CloverSession` is the only implementation, and the interface stays as the narrow surface the
- * rest of the daemon is written against (`query` and friends remain `clover-session.ts`'s own).
+ * WS-23 `MossSession` is the only implementation, and the interface stays as the narrow surface the
+ * rest of the daemon is written against (`query` and friends remain `moss-session.ts`'s own).
  */
 export interface LegSession {
   readonly sessionId: string;
@@ -197,7 +197,7 @@ export interface LegSession {
   readonly resumed: boolean;
   readonly init: { sessionId?: string; model?: string; tools: string[] } | undefined;
   readonly turnRunning: boolean;
-  /** Background work the live child runs (see `CloverSession.backgroundRunning`). Optional so a test double need not
+  /** Background work the live child runs (see `MossSession.backgroundRunning`). Optional so a test double need not
    *  implement it (read as none). */
   readonly backgroundRunning?: boolean;
   backgroundDone?(): Promise<void>;
@@ -206,26 +206,26 @@ export interface LegSession {
   readonly done: Promise<void>;
   readonly pendingSends: readonly string[];
   readonly heldDeliveries: readonly string[];
-  /** `images`: see `CloverSession.send` — appended with `text` as written, the child given the paths. */
+  /** `images`: see `MossSession.send` — appended with `text` as written, the child given the paths. */
   send(text: string, clientName?: string, images?: readonly UserMessageImageRef[], files?: readonly UserMessageFileRef[]): Promise<{ seq: number; queued: boolean }>;
   steer(text: string, clientName?: string, images?: readonly UserMessageImageRef[], files?: readonly UserMessageFileRef[]): Promise<{ seq: number; injected: boolean }>;
   interrupt(opts?: { discardQueued?: boolean }): Promise<{ wasRunning: boolean; discarded?: number }>;
   /** Agent SDK 0.0.44: the live child folds a mid-turn push into its running turn — see
-   *  `CloverSession.foldsQueuedInput`. Optional so a test double need not implement it (read as false). */
+   *  `MossSession.foldsQueuedInput`. Optional so a test double need not implement it (read as false). */
   readonly foldsQueuedInput?: boolean;
-  /** WS-23 (reasoning-state): compact the live child now, on its own model -- see `CloverSession.compact`. */
+  /** WS-23 (reasoning-state): compact the live child now, on its own model -- see `MossSession.compact`. */
   compact(opts?: CompactOptions): Promise<{ retainedCount: number }>;
   /** WS-23 review r1 I-5: hold what arrives for the TARGET while a provider switch replaces this
-   *  child -- see `CloverSession.beginHandoff`. Optional so a test double need not implement it. */
+   *  child -- see `MossSession.beginHandoff`. Optional so a test double need not implement it. */
   beginHandoff?(work: () => Promise<void>): Promise<{ heldTurns: number }>;
   readonly handoffPending?: boolean;
   setModel(model?: string): Promise<void>;
   setPolicy(policy: SessionApprovalPolicy): Promise<void>;
-  /** WS-25: see `CloverSession.mcpServerNamesFor` (optional so a test double need not implement it). */
+  /** WS-25: see `MossSession.mcpServerNamesFor` (optional so a test double need not implement it). */
   mcpServerNamesFor?(serverUrl: string): string[];
-  /** WS-27: see `CloverSession.mcpServerNames` (optional so a test double need not implement it). */
+  /** WS-27: see `MossSession.mcpServerNames` (optional so a test double need not implement it). */
   mcpServerNames?(): string[];
-  /** WS-25: see `CloverSession.reconnectMcpServer` (optional so a test double need not implement it). */
+  /** WS-25: see `MossSession.reconnectMcpServer` (optional so a test double need not implement it). */
   reconnectMcpServer?(name: string): Promise<void>;
   end(): Promise<void>;
   deliver(text: string): void;
@@ -233,7 +233,7 @@ export interface LegSession {
   idle(): Promise<void>;
 }
 
-export class CloverLegRefusal extends Error {
+export class MossLegRefusal extends Error {
   /**
    * `reason` (WS-19, W19-7) is the refusal's own sub-classification, additive beside `code` and
    * carried through to `error.data.reason` by `ipc/server.ts` — the same slot `session.setModel`'s
@@ -241,9 +241,9 @@ export class CloverLegRefusal extends Error {
    * situations, and a client that wants to say "you have no key for DeepSeek" rather than "the model
    * could not be selected" needs to tell them apart without string-matching the message.
    */
-  constructor(readonly code: CloverLegRefusalCode, message: string, readonly reason?: string) {
+  constructor(readonly code: MossLegRefusalCode, message: string, readonly reason?: string) {
     super(message);
-    this.name = "CloverLegRefusal";
+    this.name = "MossLegRefusal";
   }
 }
 
@@ -272,7 +272,7 @@ export function refusalMayBeCredentialShaped(reason: string): boolean {
 
 /**
  * WS-21: the user tier's rules, read live from `sdk/settings.json` at every incarnation (claude grammar,
- * verbatim — see `CloverOptionsInput.userAllow`). `userAllow` is omitted when the key is absent, so an
+ * verbatim — see `MossOptionsInput.userAllow`). `userAllow` is omitted when the key is absent, so an
  * untouched home's `Options` are byte-identical to before.
  */
 function userRulesFrom(home: string, runHomeApplied: boolean): { userAllow?: readonly string[]; userDeny: readonly string[] } {
@@ -283,13 +283,13 @@ function userRulesFrom(home: string, runHomeApplied: boolean): { userAllow?: rea
 }
 
 /** The capability server KEYS (`sessions`, `browser`, …) of the servers one incarnation built — the record
- *  is keyed by server name, `clover__<key>`. A name of any other shape is not a capability server. */
+ *  is keyed by server name, `moss__<key>`. A name of any other shape is not a capability server. */
 export function capabilityKeysOf(capabilities: CapabilityServerRecord): ReadonlySet<string> {
   const prefix = capabilityServerName("");
   return new Set(Object.keys(capabilities).filter((name) => name.startsWith(prefix) && name.length > prefix.length).map((name) => name.slice(prefix.length)));
 }
 
-const unrunnableModeRefusal = (raw: string | null | undefined): CloverLegRefusal => new CloverLegRefusal(COWORK_SESSION_UNSUPPORTED_CODE, unrunnableModeMessage(raw));
+const unrunnableModeRefusal = (raw: string | null | undefined): MossLegRefusal => new MossLegRefusal(COWORK_SESSION_UNSUPPORTED_CODE, unrunnableModeMessage(raw));
 
 /** The narrowed `SessionMode` a stored `mode` column resolves to (absent = code, as everywhere).
  *
@@ -304,8 +304,8 @@ export const modeOf = (raw: string | null | undefined): SessionMode => {
   return mode;
 };
 
-/** Clover's effort strings that are also the SDK's `EffortLevel`. `none` is the wire's "unset" and
- *  `ultra` is Clover-only (a client-side selector the engine translates); neither crosses here. */
+/** MOSS's effort strings that are also the SDK's `EffortLevel`. `none` is the wire's "unset" and
+ *  `ultra` is MOSS-only (a client-side selector the engine translates); neither crosses here. */
 const SDK_EFFORTS: ReadonlySet<string> = new Set(["low", "medium", "high", "xhigh", "max"]);
 const sdkEffortOf = (raw: string | undefined): EffortLevel | undefined => (raw !== undefined && SDK_EFFORTS.has(raw) ? (raw as EffortLevel) : undefined);
 
@@ -317,8 +317,8 @@ const sdkEffortOf = (raw: string | undefined): EffortLevel | undefined => (raw !
  *  - the session's OWN effort first, verbatim (explicit — the child refuses it typed when unsupported);
  *  - else dispatch's role effort on a dispatch session, else the daemon default
  *    (`provider.reasoningEffort`), each IMPLICIT and therefore mapped onto `model`'s own vocabulary;
- *  - `sdkEffortOf` last, which drops `"none"` and Clover's `ultra` tier — neither is an SDK
- *    `EffortLevel`, and "no effort sent" is what both already mean on the Clover leg.
+ *  - `sdkEffortOf` last, which drops `"none"` and MOSS's `ultra` tier — neither is an SDK
+ *    `EffortLevel`, and "no effort sent" is what both already mean on the MOSS leg.
  */
 function spendEffortFor(settings: Settings | null | undefined, mode: SessionMode, model: string, liveEffort: string | undefined): EffortLevel | undefined {
   // A STALE session effort is not an explicit choice for THIS model: it was picked for the model the
@@ -343,18 +343,18 @@ function noteStaleEffortOnce(model: string, effort: string): void {
   console.error(`session effort '${effort}' is not selectable on '${model}' — spending the default effort instead`);
 }
 
-export interface CloverLegDeps {
+export interface MossLegDeps {
   home: string;
   /** M-M2: true while the update gate is closing for a restart (`update/gate.ts`): no new turn starts then. */
   updateClosing?: () => boolean;
-  /** `CLOVER_PROFILE` for the child (`""` on dist). */
+  /** `MOSS_PROFILE` for the child (`""` on dist). */
   profile?: string;
   /** THE LIVE settings holder. */
   settings: () => Settings | null | undefined;
   /** Monotonic host-owned trust/settings mutation epoch; never a runtime-supplied revision. */
   hostAuthorityRevision?: () => unknown;
   runtime: WinterRuntimeSdk | undefined;
-  /** 8a's repositories; undefined when the spine is offline (the Clover leg then refuses). */
+  /** 8a's repositories; undefined when the spine is offline (the MOSS leg then refuses). */
   records: RuntimeSessionRecords | undefined;
   checkpoints: ProjectionCheckpoints | undefined;
   store: SessionStore;
@@ -369,14 +369,14 @@ export interface CloverLegDeps {
   outDirOf: (sessionId: string) => string;
   /** The memory key the LIVE memory path files this cwd under (relocation-aware). */
   memoryKeyOf: (cwd: string) => string;
-  /** Task 17 Step 0(a): the daemon's ONE `ContextAssembler` — Clover's system prompt per mode,
-   *  composed per incarnation (hot: CLOVER.md, memory, the output style are re-read on resume).
-   *  Absent (a harness without one) ⇒ no `systemPrompt` and the child runs Clover's own.
+  /** Task 17 Step 0(a): the daemon's ONE `ContextAssembler` — MOSS's system prompt per mode,
+   *  composed per incarnation (hot: MOSS.md, memory, the output style are re-read on resume).
+   *  Absent (a harness without one) ⇒ no `systemPrompt` and the child runs MOSS's own.
    *  (`"memoryDirFor"` stays in the pick for the daemon's own wiring, which hands the same instance
    *  elsewhere; this file calls only `assemble`.) */
   assembler?: Pick<ContextAssembler, "assemble" | "memoryDirFor">;
   /**
-   * Lane B (2026-09-22): the user's SAVED allow rules for a session at `cwd` — Clover's raw rule
+   * Lane B (2026-09-22): the user's SAVED allow rules for a session at `cwd` — MOSS's raw rule
    * strings, trust-gated (`mode-options.ts`'s `persistedAllowRulesFor`, wired by `daemon.ts` over the
    * live settings, the project-settings resolver, the rules store and the trust store). Read at EVERY
    * incarnation on BOTH legs, so a rule saved from a card reaches the next child with no restart.
@@ -384,7 +384,7 @@ export interface CloverLegDeps {
    */
   persistedAllowRules?: (cwd: string) => readonly string[];
   /** Task 17 (P8b-15): the persisted child roster (`createPersistedChildren` over 8a's
-   *  `runtime_children`). A Clover child is registered under the spawning `tool_use.id` with NO
+   *  `runtime_children`). A MOSS child is registered under the spawning `tool_use.id` with NO
    *  local abort (its process is the session's), fed `progress()` on every frame of its thread, and
    *  completed from the spawning call's `tool_result`. */
   children?: AgentRegistry;
@@ -393,7 +393,7 @@ export interface CloverLegDeps {
   /**
    * Daemon settings surface (2026-09-17 plan, item 3): fired best-effort, fire-and-forget, once per
    * incarnation, with whatever `Query.supportedAgents()` answers for THIS session's live child
-   * (`clover-session.ts`'s `open()`, right after the query is created). This is the ONLY place a
+   * (`moss-session.ts`'s `open()`, right after the query is created). This is the ONLY place a
    * built-in-agent-type list can come from, and it must NOT be read off
    * `system/init.agents` in the projector, which serves a different purpose (the projector's job is
    * turning wire frames into `SessionEvent`s, not caching a daemon-wide fact). Absent from a test
@@ -406,7 +406,7 @@ export interface CloverLegDeps {
   /** The usage DB (`docs/claude/usage.md`): each model's share of a projected turn (the projector's `onTurnUsage`). */
   onTurnUsage?: (sessionId: string, usage: { sourceId: string; rows: import("../projector/terminal").TurnModelUsageRow[] }) => void;
   /**
-   * Fix wave (review row 4): Clover's `SessionTitler` — P8b-10 keeps it on Clover's OWN provider
+   * Fix wave (review row 4): MOSS's `SessionTitler` — P8b-10 keeps it on MOSS's OWN provider
    * layer (never `sdk.query()`). Fired fire-and-forget after every MAIN-thread `turn_completed`
    * that is not an error terminal, which is exactly where the engine fired it (`engine.ts`'s two
    * depth-0 completion sites: `void this.cfg.titler.maybeTitle(sessionId)` right after the
@@ -415,14 +415,14 @@ export interface CloverLegDeps {
    */
   titler?: { maybeTitle(sessionId: string): Promise<void> };
   /** Any OTHER MCP servers merged into a session's record. Fix wave (review row 7): the daemon
-   *  fills this with Clover's CONFIGURED servers — `settings.mcpServers` + a trusted project's
+   *  fills this with MOSS's CONFIGURED servers — `settings.mcpServers` + a trusted project's
    *  `.mcp.json` — as SDK stdio configs (`runtime-sdk/external-mcp.ts`), read live per incarnation.
    *  Plugin-contributed tools (`tool.register`) are NOT here: they are registry entries, not server
-   *  configs, and stay the `clover__external` capability carry. A key colliding with a daemon-owned
-   *  `clover__<key>` server refuses the session typed (`assertNoCapabilityCollision`). */
+   *  configs, and stay the `moss__external` capability carry. A key colliding with a daemon-owned
+   *  `moss__<key>` server refuses the session typed (`assertNoCapabilityCollision`). */
   extraMcpServers?: (session: CapabilitySession) => Record<string, McpServerConfig>;
   /**
-   * Daemon settings surface batch 3 (item 1): a TRUSTED project's `<cwd>/.clover/agents/*.md`
+   * Daemon settings surface batch 3 (item 1): a TRUSTED project's `<cwd>/.moss/agents/*.md`
    * (`agent/agent-definitions.ts`'s `loadProjectAgentDefinitions`) — trust-gated by the CALLER
    * (daemon.ts wires this exactly like `extraMcpServers` above: a closure over the daemon's own
    * `TrustStore`, returning the empty scan shape outright for an untrusted `cwd`). Absent from a
@@ -434,7 +434,7 @@ export interface CloverLegDeps {
    * 2026-09-18 (agent SDK 0.0.17): the USER-ADDED half of the dangerous-domain floor for a project,
    * `settings.permissions.dangerousDomains.added` through the PROJECT-settings overlay — the same
    * `dangerousDomainsAdded` closure `daemon.ts` already hands the `Search` and `browser`
-   * tools, wired here verbatim so the floor a Clover CHILD honours through
+   * tools, wired here verbatim so the floor a MOSS CHILD honours through
    * `Options.web.blockedDomains` is the identical list the daemon's own tools honour.
    *
    * Absent (every test double that does not care) ⇒ the shipped list alone, which is the same
@@ -457,7 +457,7 @@ export interface CloverLegDeps {
    *  `onElicitation` is set, and the SDK declines every elicitation deterministically. */
   elicitations?: ElicitationBroker;
   /**
-   * SendMessage / ListAgents / TaskStop between Clover sessions (agent SDK 0.0.39's `Options.hostMessaging`): the daemon's
+   * SendMessage / ListAgents / TaskStop between MOSS sessions (agent SDK 0.0.39's `Options.hostMessaging`): the daemon's
    * `SessionMessaging` (`agent/session-messaging.ts`), read LIVE at every call so a handler built before
    * the daemon finished wiring still answers once it has. Absent (or not yet built): the handler
    * answers a retryable `unavailable` and ListAgents lists no sessions.
@@ -465,12 +465,12 @@ export interface CloverLegDeps {
   sessionMessaging?: () => { handlerFor(callerSessionId: string, incarnation?: string): NonNullable<Options["hostMessaging"]> } | undefined;
   /**
    * P8c-14 (integration round 2): lane 3's `sessionHooksFor(...)` module — this file never imports
-   * it, only threads its result through: `.clover` goes into every incarnation's
-   * `buildCloverOptions({..., hooks})` call (TYPED as `Options["hooks"]`, the exact type
-   * `mode-options.ts`'s `CloverOptionsInput.hooks` needs). WS-23: the `.official` half is gone with
+   * it, only threads its result through: `.moss` goes into every incarnation's
+   * `buildMossOptions({..., hooks})` call (TYPED as `Options["hooks"]`, the exact type
+   * `mode-options.ts`'s `MossOptionsInput.hooks` needs). WS-23: the `.official` half is gone with
    * the leg it fed.
    */
-  hooksFor?: (session: CapabilitySession) => { clover?: Options["hooks"] };
+  hooksFor?: (session: CapabilitySession) => { moss?: Options["hooks"] };
   /** Trusted controller override for current policy and immutable Workflow workers.
    * Otherwise built from prepared host settings and the installed SDK evaluator. */
   hostCodeAuthorityFor?: (sessionId: string, backendSessionId: string) => HostCodeAuthority | undefined;
@@ -515,13 +515,13 @@ export interface CloverLegDeps {
   pluginMcpServers?: () => Record<string, McpServerConfig>;
   /**
    * WS-21 (spec §4.3): the daemon's `TrustStore.isTrusted`. An approval card offers "Allow … in this
-   * project" only for a trusted project (the answer is saved to its `.clover/settings.local.json`, a tier
+   * project" only for a trusted project (the answer is saved to its `.moss/settings.local.json`, a tier
    * the runtimes read for a trusted project alone). Absent (a test double): offered as before.
    */
   isTrusted?: (dir: string) => boolean;
 }
 
-export interface CloverSessionDrivers {
+export interface MossSessionDrivers {
   /** P8b-13: the leg a NEW session of this mode is created on, from the live settings. */
   legForNewSession(mode: SessionMode): SessionLeg;
   /** The leg an EXISTING session runs on, from its record; undefined when it has no record. */
@@ -535,12 +535,12 @@ export interface CloverSessionDrivers {
    *  provider's catalog rows and how its adapter is served), so a child whose provider changed since is replaced
    *  (`evictSessionsForModelCatalog`). Undefined without a live driver. Optional so a test double need not implement it. */
   modelProviderKeyOf?(sessionId: string): { provider: string; key: string } | undefined;
-  /** Refuse (typed) unless a Clover-leg session of this mode could be created right now. Runs
+  /** Refuse (typed) unless a MOSS-leg session of this mode could be created right now. Runs
    *  BEFORE the product row is minted, so a refusal costs nothing. */
   assertAvailable(mode: SessionMode): void;
   /** The creation transaction, for a session row that already exists: ask the router for the
    *  selection (`runtime.selectRuntimeFor`), persist the record (fresh backend uuid), start the driver,
-   *  register it. Throws `CloverLegRefusal`. */
+   *  register it. Throws `MossLegRefusal`. */
   create(sessionId: string): Promise<LegSession>;
   /** The live driver, if any. */
   get(sessionId: string): LegSession | undefined;
@@ -548,16 +548,16 @@ export interface CloverSessionDrivers {
    *  has no record yet, resumed otherwise), `send`, then wait until nothing is in flight. */
   runTurn(sessionId: string, text: string, clientName: string): Promise<void>;
   /** A live driver, or a resumed one when the record says "winter" — or "official", which is adopted
-   *  onto the Clover leg first (`adoptLegacyRecord`); undefined ⇒ no transcript to resume (an
+   *  onto the MOSS leg first (`adoptLegacyRecord`); undefined ⇒ no transcript to resume (an
    *  engine-era or record-less session — the IPC layer refuses typed). */
   ensure(sessionId: string): Promise<LegSession | undefined>;
   /**
    * WS-23 (ruling R2): move a record the retired official leg wrote (`runtimeKind: "claude-agent"`)
-   * onto the Clover leg, WITHOUT opening anything — the transcript re-keyed to the Clover cwd key, then
+   * onto the MOSS leg, WITHOUT opening anything — the transcript re-keyed to the MOSS cwd key, then
    * `runtimeKind`/`selection` rewritten. The same step `resume()` runs first; `session.setModel` calls it
-   * too, so a model change on a not-yet-resumed legacy session lands on a Clover record rather than
+   * too, so a model change on a not-yet-resumed legacy session lands on a MOSS record rather than
    * being refused for disagreeing with one. Returns the (possibly re-read) record; a record that is not
-   * a legacy one comes back untouched. Throws a typed `CloverLegRefusal`
+   * a legacy one comes back untouched. Throws a typed `MossLegRefusal`
    * (`legacy_session_migration_refused`) and moves nothing on a collision or a `repair-required`
    * transcript. SYNCHRONOUS — sqlite and same-volume renames only — so `ensure()`'s no-await window
    * holds. Optional so a test double need not implement it.
@@ -587,7 +587,7 @@ export interface CloverSessionDrivers {
  * holds its mail forever; with it a parked (`resumable`) session answers the honest `unavailable`
  * and is never cold-resumed behind the daemon's back.
  *
- * The directory address carries the BACKEND id; the 8a record is the hop back to Clover's session,
+ * The directory address carries the BACKEND id; the 8a record is the hop back to MOSS's session,
  * whose stored policy is the fact the class is derived from — `permissionModeFor(policy)` →
  * `classifyPermissionMode`, the same 1:1 map the session's own `Options.permissionMode` took.
  */
@@ -624,8 +624,8 @@ export function bridgeProjectTrustedFor(isTrusted: (dir: string) => boolean, cwd
 
 /** The driver's three child moments → the persisted roster's doors. `agentId` = `threadId` = the
  *  spawning `tool_use.id` (the cross-lane contract `capability-parity.test.ts` pins). No `name`:
- *  Clover children are addressed by id, and two children may share a description. */
-export function childrenSinkFor(registry: AgentRegistry, sessionId: string, log: (line: string) => void): CloverChildrenSink {
+ *  MOSS children are addressed by id, and two children may share a description. */
+export function childrenSinkFor(registry: AgentRegistry, sessionId: string, log: (line: string) => void): MossChildrenSink {
   return {
     started(child) {
       const res = registry.register({ agentId: child.threadId, sessionId, threadId: child.threadId });
@@ -690,7 +690,7 @@ export function rekeyTranscriptToCwd(
 
 /**
  * Round 4, minor 3: the `runHomeFor` a run-home router calls for ITS OWN cold resume (a message delivered to
- * an exited Clover session) — the one incarnation that never passes through `resume()`. The cwd is
+ * an exited MOSS session) — the one incarnation that never passes through `resume()`. The cwd is
  * canonicalized, like every other run-home input (L2 O-1), and the same lazy re-key runs first, so that path
  * finds the history too. (The router's run home check compares this cwd with the one it resumes on: that one
  * is the directory row's, written from an incarnation's own `Options.cwd`, canonical since L2 O-1 — for a
@@ -701,7 +701,7 @@ export function coldResumeRunHomeFor(deps: {
   home: string;
   store: Pick<SessionStore, "meta" | "dirs">;
   records: RuntimeSessionRecords | undefined;
-  runHome: NonNullable<CloverLegDeps["runHome"]>;
+  runHome: NonNullable<MossLegDeps["runHome"]>;
   log: (line: string) => void;
 }): RunHomeFor {
   return async (ctx) => {
@@ -721,15 +721,15 @@ export function coldResumeRunHomeFor(deps: {
   };
 }
 
-export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDrivers {
+export function createMossSessionDrivers(deps: MossLegDeps): MossSessionDrivers {
   const drivers = new Map<string, LegSession>();
   /** An evicted driver still ending (`evict`): the session's next driver waits for it before its first open. */
   const evictedPredecessors = new Map<string, Promise<void>>();
-  /** Per live Clover-leg child: the provider its `runtimes.advisorModel` pin names when that is ANOTHER
+  /** Per live MOSS-leg child: the provider its `runtimes.advisorModel` pin names when that is ANOTHER
    *  provider (set at every incarnation's options build) — `advisorProviderOf`, read by
    *  `evictSessionsForCredential`. */
   const advisorProviders = new Map<string, string>();
-  /** Per live Clover-leg child: its provider and what the model plugins gave it for that provider (`modelProviderKeyOf`). */
+  /** Per live MOSS-leg child: its provider and what the model plugins gave it for that provider (`modelProviderKeyOf`). */
   const modelCatalogKeys = new Map<string, { provider: string; key: string }>();
   const log = deps.log ?? ((): void => {});
   const unregisterStoragePolicyConsumer = registerHostStoragePolicyConsumer(async () => {
@@ -749,11 +749,11 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
         refreshed = true;
       };
       const held = session.beginHandoff ? await session.beginHandoff(work) : (await work(), { heldTurns: 0 });
-      if (!refreshed) throw new CloverLegRefusal("winter_leg_unavailable", "host storage policy refresh remains pending");
+      if (!refreshed) throw new MossLegRefusal("winter_leg_unavailable", "host storage policy refresh remains pending");
       if (mode === "code" && held.heldTurns > 0) await session.open(); // replay held work on refreshed Options/run home
     }));
   });
-  const sdkVersion = CLOVER_PEER_VERSIONS.winterAgentSdk;
+  const sdkVersion = MOSS_PEER_VERSIONS.winterAgentSdk;
   // WS-25 §7: ONE broker for the whole table — its generation registry and its refresh single-flights are
   // per item, not per session, so two sessions asking for the same Console bearer share one `ant` run.
   const hostCredentials = deps.hostCredentials ?? createHostCredentialBroker({
@@ -772,14 +772,14 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
 
   /** The spine half of `assertAvailable`: the handle and 8a's repositories exist. */
   const assertSpine = (): void => {
-    if (deps.runtime === undefined) throw new CloverLegRefusal("winter_leg_unavailable", "the Clover runtime handle did not construct on this daemon (a packaging fault — see the boot log); sessions cannot be created until it does");
-    if (deps.records === undefined || deps.checkpoints === undefined) throw new CloverLegRefusal("winter_leg_unavailable", "runtime-state is offline on this daemon; the Clover leg needs its records and checkpoints");
+    if (deps.runtime === undefined) throw new MossLegRefusal("winter_leg_unavailable", "the MOSS runtime handle did not construct on this daemon (a packaging fault — see the boot log); sessions cannot be created until it does");
+    if (deps.records === undefined || deps.checkpoints === undefined) throw new MossLegRefusal("winter_leg_unavailable", "runtime-state is offline on this daemon; the MOSS leg needs its records and checkpoints");
     // R.1: on a run-home build every record and store path is under `sdk/` (`storeProjectsDir`), and only
     // a run home points a child there — a driver table built WITHOUT run-home deps would launch children on
     // `<home>` while recording `sdk/` transcript paths the child never writes. Refused, typed, before any
     // record is written (production always wires both: `daemon.ts`'s `runHomeDeps`).
     if (deps.runHome === undefined && linkedRouterSupportsRunHome()) {
-      throw new CloverLegRefusal("run_home_required", "this build applies per-run homes, but the session driver was constructed without run-home dependencies — no child can be launched on the layout its records name");
+      throw new MossLegRefusal("run_home_required", "this build applies per-run homes, but the session driver was constructed without run-home dependencies — no child can be launched on the layout its records name");
     }
   };
 
@@ -788,7 +788,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     const hook = deps.runtime!.spawnHookFor(mode);
     // WS-23: the refusal carries its own code — a binary that does not resolve (code) or an embedded
     // runtime that refused (chat, dispatch). Forwarded as-is, never re-described as the other.
-    if (hook instanceof Error) throw new CloverLegRefusal(hook.code, hook.message);
+    if (hook instanceof Error) throw new MossLegRefusal(hook.code, hook.message);
   };
 
   /** The 8a record, read WITHOUT letting a store failure out of `legOf`/`ensure`: a records store
@@ -801,47 +801,47 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     }
   };
 
-  /** The Clover leg's fallback for a cwd-less session: its per-session temp dir (the CC-parity
+  /** The MOSS leg's fallback for a cwd-less session: its per-session temp dir (the CC-parity
    *  $TMPDIR — the directory the child actually runs in, so its transcript key names it). 8a's
    *  boot backfill uses `home` for a pre-8b row instead (`migrations/backfill.ts`) — that shape
    *  is the surviving truth for engine-ERA records, which nothing here writes any more. */
-  // WS-21 (L2 O-1): the CANONICAL path — the Clover child keys its transcript by realpath(cwd), the router
+  // WS-21 (L2 O-1): the CANONICAL path — the MOSS child keys its transcript by realpath(cwd), the router
   // by the cwd it is given; every Options.cwd, run-home input and recorded transcript key derives from this.
-  const cloverCwdOf = (sessionId: string, cwd: string | null | undefined): string => canonicalCwd(cwd ?? deps.tmpDirOf(sessionId));
+  const mossCwdOf = (sessionId: string, cwd: string | null | undefined): string => canonicalCwd(cwd ?? deps.tmpDirOf(sessionId));
 
   /**
-   * Round 3/4: the lazy canonical-cwd re-key (`rekeyTranscriptToCwd`), keyed by the cwd the Clover child
-   * runs in (`cloverCwdOf`). WS-23: the retired official leg keyed a cwd-less session by its first working
+   * Round 3/4: the lazy canonical-cwd re-key (`rekeyTranscriptToCwd`), keyed by the cwd the MOSS child
+   * runs in (`mossCwdOf`). WS-23: the retired official leg keyed a cwd-less session by its first working
    * directory instead (`dirs[0]`), so adopting one of its records moves the transcript here too.
    */
   const rekeyForCanonicalCwd = (sessionId: string, record: RuntimeSessionRecord, onMove?: (result: TranscriptMoveResult) => void): RuntimeSessionRecord => {
     if (deps.records === undefined) return record;
     let cwd: string;
-    try { cwd = cloverCwdOf(sessionId, deps.store.meta(sessionId).cwd); } catch { return record; }
+    try { cwd = mossCwdOf(sessionId, deps.store.meta(sessionId).cwd); } catch { return record; }
     return rekeyTranscriptToCwd({ home: deps.home, records: deps.records, log }, sessionId, record, cwd, onMove);
   };
 
   /**
    * WS-23 (ruling R2) — THE LAZY ADOPTION of a record the retired official leg wrote. See
-   * `CloverSessionDrivers.adoptLegacyRecord` for the contract; the WHY of each step:
+   * `MossSessionDrivers.adoptLegacyRecord` for the contract; the WHY of each step:
    *
-   *  - Nothing new is needed to READ the history. The Clover runtime resumes transcripts the `claude`
+   *  - Nothing new is needed to READ the history. The MOSS runtime resumes transcripts the `claude`
    *    binary wrote (it reads claude's entry shapes), and a resume needs only the transcript file and a
-   *    lease, never a Clover producer record — the same file the retired handoff barrier reused
+   *    lease, never a MOSS producer record — the same file the retired handoff barrier reused
    *    unchanged when it moved a session between the two legs.
    *  - `repair-required` refuses BEFORE anything moves: that flag means the canonical transcript is
-   *    not proven (a quarantined working copy, an earlier collision), and opening a Clover child on it
+   *    not proven (a quarantined working copy, an earlier collision), and opening a MOSS child on it
    *    would append to a history nobody has reconciled.
    *  - The re-key runs next, and a collision (both keys hold the session) or a refused move leaves the
    *    record marked `repair-required` by `rekeyTranscriptToCwd` — refused here too, with the record
    *    still naming `claude-agent`, so every later resume refuses the same way rather than opening on
-   *    whichever copy the Clover key happens to hold.
+   *    whichever copy the MOSS key happens to hold.
    *  - Only then are `runtimeKind`/`selection` rewritten — the same two fields (plus the credential
    *    locator) the retired handoff's `confirmInit` patched when a session moved legs. Provider, model,
    *    family and auth family are the session's own and carry over verbatim: a `console/*` record stays
    *    a Console session, and whether its credential can serve a turn is `beforeTurn`'s typed question,
-   *    exactly as for any Clover session.
-   *  - A `claude-oauth` selection is refused: that credential family never routed to the Clover runtime
+   *    exactly as for any MOSS session.
+   *  - A `claude-oauth` selection is refused: that credential family never routed to the MOSS runtime
    *    (D28), and claude.ai subscription auth never shipped, so no such record should exist — but if one
    *    does, a typed refusal is the only honest answer.
    *
@@ -852,19 +852,19 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     const records = deps.records;
     if (record === undefined || records === undefined || record.runtimeKind !== "claude-agent" || record.backendSessionId === undefined) return record;
     const refuse = (reason: string, why: string): never => {
-      log(`legacy session ${sessionId} not adopted onto the Clover leg (${reason})`);
-      throw new CloverLegRefusal(
+      log(`legacy session ${sessionId} not adopted onto the MOSS leg (${reason})`);
+      throw new MossLegRefusal(
         "legacy_session_migration_refused",
-        `session ${sessionId} was created on the retired official Claude runtime and cannot move to Clover's runtime: ${why}`,
+        `session ${sessionId} was created on the retired official Claude runtime and cannot move to MOSS's runtime: ${why}`,
         reason,
       );
     };
     if (record.selection.authFamily === "claude-oauth") {
-      refuse("claude-oauth", "it was authorised with a Claude subscription login, which Clover's runtime does not use — start a new session");
+      refuse("claude-oauth", "it was authorised with a Claude subscription login, which MOSS's runtime does not use — start a new session");
     }
-    // The one remedy for all three: `clover doctor` names the session (`legacy-adoption-blocked`) and
+    // The one remedy for all three: `moss doctor` names the session (`legacy-adoption-blocked`) and
     // `--repair adopt-legacy-session` clears it; the next resume then adopts it.
-    const remedy = `quit Clover, then run \`clover doctor\` and \`clover doctor --repair adopt-legacy-session --session ${sessionId}\``;
+    const remedy = `quit MOSS, then run \`moss doctor\` and \`moss doctor --repair adopt-legacy-session --session ${sessionId}\``;
     if (record.transcriptHealth === "repair-required") {
       refuse("repair-required", `its transcript is marked repair-required, so its history is not proven — ${remedy}`);
     }
@@ -873,13 +873,13 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     const moved = recordOf(sessionId);
     if (moved === undefined) return undefined;
     if (moved.transcriptHealth === "repair-required") {
-      // Fix round 1 (minor 2): a COLLISION (the Clover key already holds a copy) and a REFUSED move (a
+      // Fix round 1 (minor 2): a COLLISION (the MOSS key already holds a copy) and a REFUSED move (a
       // link in the way, a directory or rename the filesystem refused) are different problems.
       const refusedMove = (move as TranscriptMoveResult | undefined)?.kind === "refused";
       if (refusedMove) {
-        refuse("transcript-move-refused", `its transcript could not be moved to the key Clover reads it from (${(move as Extract<TranscriptMoveResult, { kind: "refused" }>).reason}) — fix that, then ${remedy}`);
+        refuse("transcript-move-refused", `its transcript could not be moved to the key MOSS reads it from (${(move as Extract<TranscriptMoveResult, { kind: "refused" }>).reason}) — fix that, then ${remedy}`);
       }
-      refuse("transcript-collision", `the key Clover reads its transcript from already holds another copy of it — compare the two, then ${remedy} with \`--keep recorded\` or \`--keep canonical\` (the other copy is moved to quarantine, never deleted)`);
+      refuse("transcript-collision", `the key MOSS reads its transcript from already holds another copy of it — compare the two, then ${remedy} with \`--keep recorded\` or \`--keep canonical\` (the other copy is moved to quarantine, never deleted)`);
     }
     const authRef = credentialRefFor(moved.selection.providerId, deps.home);
     try {
@@ -890,7 +890,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
           runtimeKind: "winter-agent",
           sdkVersion,
           engineVersion: sdkVersion,
-          reason: "adopted onto the Clover runtime at its next resume: the official claude runtime this session was created on is retired (WS-23)",
+          reason: "adopted onto the MOSS runtime at its next resume: the official claude runtime this session was created on is retired (WS-23)",
           decidedAt: new Date().toISOString(),
         },
         authRef: authRef?.kind === "keychain" ? `keychain:${authRef.account}` : undefined,
@@ -899,25 +899,25 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
         engineVersion: sdkVersion,
       });
     } catch (err) {
-      throw new CloverLegRefusal("winter_leg_unavailable", `the runtime record for ${sessionId} could not be moved to the Clover leg (${err instanceof Error ? err.name : "unknown"})`);
+      throw new MossLegRefusal("winter_leg_unavailable", `the runtime record for ${sessionId} could not be moved to the MOSS leg (${err instanceof Error ? err.name : "unknown"})`);
     }
-    log(`legacy session ${sessionId} adopted onto the Clover leg (${moved.selection.providerId}, transcript kept)`);
+    log(`legacy session ${sessionId} adopted onto the MOSS leg (${moved.selection.providerId}, transcript kept)`);
     return recordOf(sessionId);
   };
 
   /** The facts every incarnation of a session needs, assembled once per driver. */
-  const assemble = (sessionId: string, backendSessionId: string): CloverSession => {
+  const assemble = (sessionId: string, backendSessionId: string): MossSession => {
     const runtime = deps.runtime!;
     const records = deps.records!;
     const checkpoints = deps.checkpoints!;
     const meta = deps.store.meta(sessionId);
     const mode = modeOf(meta.mode);
-    const cwd = cloverCwdOf(sessionId, meta.cwd);
+    const cwd = mossCwdOf(sessionId, meta.cwd);
     const home = deps.home;
 
     // The capability server keys the CURRENT incarnation built (set in `optionsFor`, read per call): only
-    // their `mcp__clover__<key>__*` names are the daemon's own on a live call (`tool-names.ts`'s
-    // `hostToolNameFor` `liveKeys`). Empty until the first incarnation is assembled — nothing is Clover's then.
+    // their `mcp__moss__<key>__*` names are the daemon's own on a live call (`tool-names.ts`'s
+    // `hostToolNameFor` `liveKeys`). Empty until the first incarnation is assembled — nothing is MOSS's then.
     let liveCapabilityKeys: ReadonlySet<string> = new Set<string>();
     const canUseTool = canUseToolFor({
       sessionId, mode, origin: meta.origin, home, cwd,
@@ -933,8 +933,8 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       approvals: deps.approvals, questions: deps.questions, gate: deps.gate,
       emit: (event) => { deps.hub.append(sessionId, event); },
       threadId: "main",
-      // P8c-14 (integration round 2): `ExitPlanMode` on the Clover leg now answers through the
-      // controller-wired plan bridge (see `CloverLegDeps.planBridge`'s own doc comment).
+      // P8c-14 (integration round 2): `ExitPlanMode` on the MOSS leg now answers through the
+      // controller-wired plan bridge (see `MossLegDeps.planBridge`'s own doc comment).
       ...(deps.planBridge === undefined ? {} : { planBridge: deps.planBridge }),
       ...(deps.connectors === undefined ? {} : { connectors: deps.connectors }),
     });
@@ -962,7 +962,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // (the Mac freezes it with the turn) — cancel it rather than park the server's request until the
       // card's timeout. Only THAT turn's cards (`elicitationTurnTracker`).
       elicitationTurns?.observe(event as { type: string; threadId?: string });
-      // The engine's titling moment, reproduced at the ONE place every persisted Clover-leg event
+      // The engine's titling moment, reproduced at the ONE place every persisted MOSS-leg event
       // passes: after the main thread's `turn_completed` is in the log (so `maybeTitle`'s read of
       // the first user/assistant pair sees a complete turn). ON AN ERROR TERMINAL TOO (2026-09-19):
       // a chat whose FIRST turn fails — a usage limit, a refused model — used to stay untitled for
@@ -979,7 +979,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       return stamped;
     };
 
-    const optionsFor = async (inc: CloverIncarnationShape) => {
+    const optionsFor = async (inc: MossIncarnationShape) => {
       // FIRST, before the spawn hook, the credential probes or the run home: a session whose own
       // working directory is gone refuses typed here rather than dying at spawn (`sessionCwdRefusal`).
       // Every incarnation passes this — create, resume, and a send that re-opens a resumable session —
@@ -995,9 +995,9 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       const runHomeApplied = deps.runHome !== undefined;
       const settings = deps.settings();
       const hook = runtime.spawnHookFor(mode);
-      if (hook instanceof Error) throw new CloverLegRefusal(hook.code, hook.message);
+      if (hook instanceof Error) throw new MossLegRefusal(hook.code, hook.message);
       // Both credential probes, together: the provider inventory (`CredentialPresence`) and the ONE
-      // tool key whose presence changes the tool SURFACE (0.0.17 — see `CloverOptionsInput`'s
+      // tool key whose presence changes the tool SURFACE (0.0.17 — see `MossOptionsInput`'s
       // `exaKeyPresent`). Independent Keychain reads, so they are issued in parallel, and re-issued at
       // EVERY incarnation: adding or removing the Exa key must reach a session's next turn with no
       // daemon restart, which is what `credentials.ts`'s eviction closes for the live child.
@@ -1012,7 +1012,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // the `winter-test/*` doubles); every other mode is the per-session override, else the
       // daemon's configured provider model, else (no settings loaded at all — no agent provider
       // configured) `DEFAULT_PROVIDER.model`, the same ultimate fallback `pinsFor` itself falls
-      // back through for a null `settings`. `buildCloverOptions` below requires a real `ModelTag`,
+      // back through for a null `settings`. `buildMossOptions` below requires a real `ModelTag`,
       // never `undefined` — there is always a real spawn boundary to cross even on a freshly
       // installed, unconfigured daemon.
       //
@@ -1043,14 +1043,14 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // when unsupported). `sdkEffortOf` then drops `"none"`/`ultra` on every path alike, so a role's
       // stored `"none"` is spent exactly as a session's is: the request carries no effort.
       const effort = spendEffortFor(settings, mode, model, live.effort);
-      // WS-20: `model` is ALWAYS a provider-qualified tag now (or the clover-test escape hatch) —
+      // WS-20: `model` is ALWAYS a provider-qualified tag now (or the moss-test escape hatch) —
       // `providerFor` names exactly its provider, no inventory-order tie-break, no "router's decided
       // provider" hotfix needed (that hotfix existed only because a BARE id could be ambiguous).
       // 2026-09-17 field report: an EXISTING record gets the same typed refusal `create()` gives a fresh
       // one — 0.114.1 resumed a dispatch session with `model: "unstated"` and no provider, and the
       // child's own "a bare model id needs a provider" was all the user saw.
       if (model === UNSTATED_TAG) {
-        throw new CloverLegRefusal(
+        throw new MossLegRefusal(
           "runtime_selection_refused",
           `this ${mode} session has no runnable model: its pin resolves to no known slot for this daemon's own provider (${ownProviderFor(settings)}) — set settings.pins.dispatch explicitly, or pick a default model whose provider serves it`,
           "pin-unstated",
@@ -1068,7 +1068,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // Fix wave item 2 (measured against a real child): `local: true` is a DELIBERATE
       // compatibility decision, not an oversight — the SAME one `providers/runtime-provider.ts`'s
       // own `createOpenAiCompatibleRuntimeProvider` already makes for the identical setting.
-      // Without it the Clover runtime's own endpoint policy refuses a loopback/private-address
+      // Without it the MOSS runtime's own endpoint policy refuses a loopback/private-address
       // base URL outright, which silently breaks every real self-hosted/LAN endpoint (Ollama, LM
       // Studio, a local gateway) even though a BYO provider has never had an endpoint allowlist.
       //
@@ -1088,12 +1088,12 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
         model,
         // (`exaKeyPresent` is no longer a capability input: `Search` is the agent SDK's built-in, so
         // the key decides one door only — which of `Search`/`WebSearch` `Options.tools` names, in
-        // `buildCloverOptions` below — and the prompt that names it.)
+        // `buildMossOptions` below — and the prompt that names it.)
       };
       const capabilities = deps.buildSessionCapabilities(capSession);
       const capabilityKeys = capabilityKeysOf(capabilities);
       liveCapabilityKeys = capabilityKeys;
-      // Clover's own voice (Step 0(a)): the engine's `primaryDir`/`cwd`/`additionalWorkDirs` inputs,
+      // MOSS's own voice (Step 0(a)): the engine's `primaryDir`/`cwd`/`additionalWorkDirs` inputs,
       // read live so a resume sees the session's current directories.
       let primary: string | undefined = live.cwd ?? undefined;
       let extraDirs: string[] = [];
@@ -1105,7 +1105,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // WS-21 (L4 request 2): the daemon hands no skills or plugin views to a child any more — the run
       // folder carries the skills and both runtimes load plugins natively (`enabledPlugins`); the old
       // skills-only plugin-view handover (`SkillStore.childSkillSurface`) is retired.
-      const systemPrompt = deps.assembler === undefined ? undefined : cloverSystemPromptFor(deps.assembler, {
+      const systemPrompt = deps.assembler === undefined ? undefined : mossSystemPromptFor(deps.assembler, {
         mode, origin: live.origin, primary, cwd: primary ?? deps.tmpDirOf(sessionId),
         outDir: deps.outDirOf(sessionId), extraDirs, effort: live.effort,
         // THE SECOND READER of this one probe, and the reason it is threaded rather than re-derived:
@@ -1121,27 +1121,27 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       });
       // P8b-36 obligation: any other server merged into the same record must not shadow a
       // daemon-owned one. Since the fix wave the configured user/project MCP servers ARE merged
-      // here, so the guard is live: a `settings.mcpServers` key spelled `clover__browser` refuses
+      // here, so the guard is live: a `settings.mcpServers` key spelled `moss__browser` refuses
       // this session TYPED (the message names the server) rather than handing the model a
-      // `browser` that is not Clover's under Clover's name. The user fixes the key; settings are hot.
+      // `browser` that is not MOSS's under MOSS's name. The user fixes the key; settings are hot.
       // WS-21 (L3.4): on a run-home incarnation the configured servers (user, local, trusted project) are
-      // the run folder's `.clover.json`; only the daemon's capability servers ride `Options.mcpServers`.
+      // the run folder's `.moss.json`; only the daemon's capability servers ride `Options.mcpServers`.
       const extra = runHomeApplied ? {} : (deps.extraMcpServers?.(capSession) ?? {});
-      // The RETIRED server names too (`clover__research`, `clover__web`): their old tool spellings still
+      // The RETIRED server names too (`moss__research`, `moss__web`): their old tool spellings still
       // strip to the host's own NETWORK-class names (`tool-names.ts`), so a configured server must not
       // take one.
       try { assertNoCapabilityCollision(extra, [...Object.keys(capabilities), ...RETIRED_CAPABILITY_SERVER_KEYS.map((k) => capabilityServerName(k))]); } catch (err) {
-        throw new CloverLegRefusal("winter_leg_unavailable", err instanceof Error ? err.message : String(err));
+        throw new MossLegRefusal("winter_leg_unavailable", err instanceof Error ? err.message : String(err));
       }
       // WS-25/27: the fold this incarnation's child will have — on a run-home incarnation the configured servers
       // ride the run folder (plugins load natively there), the configured servers win a name as the runtime's
       // own precedence has it; otherwise it is `extra`. Reported AT ONCE (WS-27), before the credential probes'
       // awaits below and the spawn, so a remove or a rename in that window already sees these names as in use
-      // (`CloverSession.mcpServerNames`).
+      // (`MossSession.mcpServerNames`).
       const configuredMcp = runHomeApplied ? { ...(deps.pluginMcpServers?.() ?? {}), ...(deps.extraMcpServers?.(capSession) ?? {}) } : extra;
       inc.noteMcpServers?.(Object.keys(configuredMcp));
       // P8d-8 (D30), computed ONCE (review Minor fix): `runtimes.advisorModel` when the user set
-      // one, else Clover's own D30 default for this session's model family.
+      // one, else MOSS's own D30 default for this session's model family.
       //
       // WS-20: `runtimes.advisorModel` stays a PLAIN, deliberately unvalidated string at the schema
       // level (settings.ts's own doc comment — "blank-is-absent must never invalidate the file");
@@ -1150,11 +1150,11 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // this is the one OTHER place that must not trust it blindly — `isModelTag` degrades an
       // invalid stored value to "unset", falling through to the same D30 default an absent value
       // already gets, rather than handing a malformed string to the spawn boundary.
-      const rawAdvisorModel = cloverOptionsFromSettings(settings).advisorModel;
+      const rawAdvisorModel = mossOptionsFromSettings(settings).advisorModel;
       const pinnedAdvisor = rawAdvisorModel !== undefined && isModelTag(rawAdvisorModel) ? rawAdvisorModel : undefined;
       let advisorModel = pinnedAdvisor ?? d30DefaultModel(model);
       // D3 (2026-09-22) + review M2: a pin on ANOTHER provider now runs there, on that provider's own
-      // credential (`buildCloverOptions` sends the full tag + its `authRef`), so the `pins.research`
+      // credential (`buildMossOptions` sends the full tag + its `authRef`), so the `pins.research`
       // digest rule below applies to it IN FULL, for the same reason — a stated advisor that cannot run
       // makes every `advisor` call a typed refusal, while the family default keeps the tool working.
       // The pin is therefore not stated, and the D30 default is (one line naming the setting), when:
@@ -1166,7 +1166,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       //   - it is cross-provider and that provider's slot is EMPTY.
       // A same-provider pin needs no probe: the session's own turn cannot run without that credential.
       advisorProviders.delete(sessionId);
-      if (pinnedAdvisor !== undefined && pinnedAdvisor !== UNSTATED_TAG && !pinnedAdvisor.startsWith(CLOVER_TEST_PREFIX)) {
+      if (pinnedAdvisor !== undefined && pinnedAdvisor !== UNSTATED_TAG && !pinnedAdvisor.startsWith(MOSS_TEST_PREFIX)) {
         const advisorProviderId = splitTag(pinnedAdvisor).providerId;
         const crossProvider = advisorProviderId !== selection?.providerId;
         // Whole-branch review (minor d): the provider a CREDENTIAL write must also reach this child for
@@ -1199,7 +1199,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       //                             session's own model always has one (`beforeTurn` refuses first),
       //                             so the digest runs there instead — a little more expensive, and
       //                             the tool works.
-      //   the session's own tag     nothing to state: that IS the SDK's default (`buildCloverOptions`
+      //   the session's own tag     nothing to state: that IS the SDK's default (`buildMossOptions`
       //                             drops this one itself, since it holds both tags).
       //   an excluded first-party login (the reserved `cc`, which has no slot; `console` is an
       //                             ordinary digest route since the WS-23 live-gate fix).
@@ -1223,13 +1223,13 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // whose absence WITHDREW THE TOOL: the child advertises `WebFetch` only while its digest model
       // resolves, so a hand-edited `pins.research` naming a model no catalog row carries — the zod
       // schema checks the tag's SHAPE only, and `settings.setModelRole`'s catalog check guards just
-      // that one door — made `WebFetch` disappear from every Clover session, chat included, where the
+      // that one door — made `WebFetch` disappear from every MOSS session, chat included, where the
       // base prompt still names it. Same NON-throwing catalog membership test the RPC door runs
       // (`rowForTag`, the `assertCatalogBackedTag` family), and a miss drops the pin exactly like a
       // missing credential does. `winter-test/*` is excluded by construction: it is not a catalog
-      // provider at all, and `buildCloverOptions` drops it independently.
+      // provider at all, and `buildMossOptions` drops it independently.
       const digestOffCatalog = researchPin !== UNSTATED_TAG && researchPin !== model
-        && !researchPin.startsWith(CLOVER_TEST_PREFIX) && rowForTag(researchPin) === undefined;
+        && !researchPin.startsWith(MOSS_TEST_PREFIX) && rowForTag(researchPin) === undefined;
       const digestModel = researchPin !== UNSTATED_TAG && researchPin !== model && digestUsable && !digestOffCatalog
         ? researchPin
         : undefined;
@@ -1248,7 +1248,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       if (digestModel !== undefined && selection !== undefined && digestProviderId !== undefined && digestProviderId !== selection.providerId) {
         deps.log?.(`pins.research: this session runs on ${selection.providerId} and its WebFetch digest runs on ${digestProviderId} — that provider's own credential pays for it`);
       }
-      const options = buildCloverOptions({
+      const options = buildMossOptions({
         mode,
         policy: live.approvalPolicy,
         origin: live.origin,
@@ -1256,7 +1256,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
         home,
         profile: deps.profile,
         cwd,
-        // R.3 I-4: the other working directories get the sandbox's any-depth `.clover/<kind>` fence too.
+        // R.3 I-4: the other working directories get the sandbox's any-depth `.moss/<kind>` fence too.
         extraDirs,
         outputsDir: deps.outDirOf(sessionId),
         model,
@@ -1267,21 +1267,21 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
         spawn: hook,
         canUseTool,
         abort: inc.abort,
-        capabilityTools: CLOVER_CAPABILITY_TOOLS,
+        capabilityTools: MOSS_CAPABILITY_TOOLS,
         reservedMcpServerNames: [...reservedMcpServerNames()],
         capabilities: { ...extra, ...capabilities } as CapabilityServerRecord,
         ...(connection === undefined ? {} : { connection }),
         resume: inc.resume,
         // P8c-14 (integration round 2): lane 3's hooks facade (`hooks.ts`'s `sessionHooksFor`).
-        ...(deps.hooksFor === undefined ? {} : { hooks: deps.hooksFor({ ...capSession, capabilityKeys }).clover }),
+        ...(deps.hooksFor === undefined ? {} : { hooks: deps.hooksFor({ ...capSession, capabilityKeys }).moss }),
         // P8d-8 (D30): a LIVE read at every incarnation — `runtimes.advisorModel` when the user set
-        // one, else Clover's own D30 default for this session's model family (`advisor-reviewer.ts`'s
+        // one, else MOSS's own D30 default for this session's model family (`advisor-reviewer.ts`'s
         // `d30DefaultModel`), so `Options.advisor.model` is ALWAYS explicit rather than depending on
         // the child's own internal default resolution (the M5 gap this task diagnosed). Computed
-        // ONCE (review Minor fix) — the prior form called both `cloverOptionsFromSettings` and
+        // ONCE (review Minor fix) — the prior form called both `mossOptionsFromSettings` and
         // `d30DefaultModel` twice for the identical value.
         ...(advisorModel === undefined ? {} : { advisorModel }),
-        // 0.0.17's `Options.web`, assembled in `buildCloverOptions` from these three pure inputs —
+        // 0.0.17's `Options.web`, assembled in `buildMossOptions` from these three pure inputs —
         // see `webOptionsFor` there for what each one decides. `dangerousDomainsAdded` is the project
         // overlay-aware getter the daemon's own web tools already read, so the child's floor and the
         // daemon's are provably the same list.
@@ -1291,7 +1291,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
         // Daemon settings surface (2026-09-17 plan, item 3): a FRESH scan of `<home>/agents/*.md`
         // at every incarnation (never cached here or in `loadUserAgentDefinitions` itself) — a
         // new/edited/removed file reaches THIS session's very next incarnation, no daemon restart.
-        // `buildCloverOptions` itself stays pure/no-I/O (its own doc comment); this is the ONE
+        // `buildMossOptions` itself stays pure/no-I/O (its own doc comment); this is the ONE
         // caller that does the read, exactly where every other per-incarnation live read (advisor
         // model, system prompt, connection override) already happens.
         //
@@ -1301,7 +1301,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
         // over user, by name) instead of the user tier alone winning outright.
         // WS-21 (L3.4): on a run-home incarnation the agents are the run folder's (copies, spec §3.3).
         ...(runHomeApplied ? {} : { agents: mergedAgentDefinitions(home, cwd, deps.projectAgentDefinitions) }),
-        // Lane B: the user's SAVED allow rules, live and trust-gated (`CloverLegDeps.persistedAllowRules`).
+        // Lane B: the user's SAVED allow rules, live and trust-gated (`MossLegDeps.persistedAllowRules`).
         ...(runHomeApplied || deps.persistedAllowRules === undefined ? {} : { persistedAllow: deps.persistedAllowRules(cwd) }),
         // WS-21: the user tier's allow and deny rules, read live from `sdk/settings.json` (claude grammar).
         ...userRulesFrom(home, runHomeApplied),
@@ -1309,8 +1309,8 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       });
       // WS-25 §7 (prompt-free credentials): the child asks THIS process for every Keychain credential
       // (`hostCredentials: true` on the wire, set by the SDK because the handler exists) and builds no
-      // Keychain store of its own — so it never raises the consent prompt a child reading clover-core's
-      // items did. Attached HERE, not in `buildCloverOptions` (which stays pure and serializable): the
+      // Keychain store of its own — so it never raises the consent prompt a child reading moss-core's
+      // items did. Attached HERE, not in `buildMossOptions` (which stays pure and serializable): the
       // allowlist is read off the FINAL options, so a ref the builder dropped (an unusable advisor or
       // digest pin) is not answerable either. The configured MCP servers are passed separately because a
       // run-home incarnation's `options.mcpServers` carries only the capability servers (`extra` is
@@ -1342,13 +1342,13 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // session) live in `SessionMessaging`.
       if (deps.sessionMessaging !== undefined) options.hostMessaging = hostMessagingFor(sessionId, deps.sessionMessaging);
       // WS-25: the same fold, kept with the incarnation (a symbol key — never on the wire), so a sign-in
-      // door can ask a live session which of its servers sit at a URL (`CloverSession.mcpServerNamesFor`).
+      // door can ask a live session which of its servers sit at a URL (`MossSession.mcpServerNamesFor`).
       withSessionMcpServers(options, configuredMcp);
       // The runtime version this child will run (a configured binary may predate the pin): what the session
       // may assume of it — whether it folds a mid-turn push (`fold.ts`'s `runtimeFolds`).
       withRuntimeVersion(options, hook.runtimeVersion);
-      // WS-21 (spec §3.1): LAST, so a refusal above never leaves a run folder behind. The router's Clover
-      // overload reads `options.runtime.runHome` and applies it synchronously; `CloverSession` disposes it
+      // WS-21 (spec §3.1): LAST, so a refusal above never leaves a run folder behind. The router's MOSS
+      // overload reads `options.runtime.runHome` and applies it synchronously; `MossSession` disposes it
       // when the incarnation ends (or at once, if the open fails before the child iterates).
       let runHome: RunHome | undefined;
       if (deps.runHome !== undefined)
@@ -1373,14 +1373,14 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       }
     };
 
-    const projectorFor = (inc: CloverIncarnation): Projector =>
+    const projectorFor = (inc: MossIncarnation): Projector =>
       createProjector({
         sessionId, mode,
         generation: inc.generation,
         winterSessionId: sessionId,
         runtimeKind: "winter-agent",
         nextSeq: () => deps.store.lastSeq(sessionId) + (++claimedInBatch),
-        priorTodos: () => readCloverTasks(deps.store, sessionId),
+        priorTodos: () => readMossTasks(deps.store, sessionId),
         // C2 (lane C, 2026-09-22): a card the child abandoned (an interrupt's `[interrupted]` result)
         // is withdrawn before that result lands — this SDK never cancels the pending `canUseTool`.
         onToolResults: (callIds) => { for (const callId of callIds) canUseTool.withdrawPending(callId); },
@@ -1393,9 +1393,9 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
         },
       });
 
-    // WS-21: `cloverSessions` reads this build's store home (`storeHomeFor`) — see `sessions.ts`.
+    // WS-21: `mossSessions` reads this build's store home (`storeHomeFor`) — see `sessions.ts`.
     const hasTranscript = async (): Promise<boolean> => {
-      try { await cloverSessions(home).getSessionInfo(backendSessionId); return true; } catch { return false; }
+      try { await mossSessions(home).getSessionInfo(backendSessionId); return true; } catch { return false; }
     };
 
     /**
@@ -1406,7 +1406,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
      * `session.dispatch` perform — so refusing there made a credential-less home unable to create
      * ANY session at all. A fresh install has no key yet, and the Mac app dispatches a session at
      * launch, so that is the "orb Enter silently no-op'd" class of failure, not a safety win. The
-     * thing that must not happen is a TURN against a provider Clover holds no credential for, and
+     * thing that must not happen is a TURN against a provider MOSS holds no credential for, and
      * `beforeTurn` is the one place every turn passes — still strictly BEFORE the child is spawned
      * (it runs ahead of `send`/`steer`'s own `open()`), so it is never a vendor 401 mid-turn.
      *
@@ -1415,7 +1415,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
      * doors, and it fires on EVERY incarnation's first turn — a fresh create, a resume after an idle
      * reap, a resume after a daemon restart.
      *
-     * WS-20: a model is ALWAYS a provider-qualified tag now (or the clover-test escape hatch), so
+     * WS-20: a model is ALWAYS a provider-qualified tag now (or the moss-test escape hatch), so
      * `providerFor` names exactly one provider — there is no more "ambiguous bare id served by
      * several inventory providers" case to narrow around, and this gate ALWAYS runs for a real
      * tag. `local-none` providers (Ollama, LM Studio, a local gateway — anything whose catalog
@@ -1425,7 +1425,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     const beforeTurn = async (): Promise<void> => {
       // M-M2: the daemon is about to restart for an update; nothing is appended, and sending again after it works.
       // The gate's own check (`UpdateGate.beforeTurn`, which the bots' host shares), as the driver's typed refusal.
-      if (deps.updateClosing?.() === true) throw new CloverLegRefusal("daemon_shutting_down", UPDATE_RESTARTING_MESSAGE, "update-restarting");
+      if (deps.updateClosing?.() === true) throw new MossLegRefusal("daemon_shutting_down", UPDATE_RESTARTING_MESSAGE, "update-restarting");
       const live = deps.store.meta(sessionId);
       const settings = deps.settings();
       const model = mode === "dispatch" ? (live.model ?? pinsFor(settings).dispatch) : (live.model ?? settings?.provider?.model);
@@ -1438,10 +1438,10 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // tag gets the same answer, earlier and typed: the daemon never sets the child's
       // `provider.allowUnlisted`, so the child refused every unlisted model anyway.
       if (isRetiredCatalogTag(model)) {
-        throw new CloverLegRefusal("runtime_selection_refused", `${model} is not in this build's model catalog — switch this session to another model`, "model-not-in-catalog");
+        throw new MossLegRefusal("runtime_selection_refused", `${model} is not in this build's model catalog — switch this session to another model`, "model-not-in-catalog");
       }
       // WS-24 (pickers lane, fix round 1): a row `toolsRefusedFor` says would refuse a real turn's
-      // tools cannot be run here — a Clover session of ANY mode always offers tools — the daemon's
+      // tools cannot be run here — a MOSS session of ANY mode always offers tools — the daemon's
       // own MCP capability surface at minimum. `toolsRefusedFor` mirrors the FOUR adapter families
       // (anthropic, google, vertex, bedrock) that actually throw on a non-`"native"` row, plus any
       // row whose non-`"native"` evidence is confidently stated regardless of adapter — never the
@@ -1458,23 +1458,23 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // never disagree about which rows a session can actually run tools on.
       const row = rowForTag(model);
       if (row !== undefined && toolsRefusedFor(row)) {
-        throw new CloverLegRefusal("runtime_selection_refused", `${model} cannot call tools, and this session needs them — switch this session to another model`, "no-tool-calling");
+        throw new MossLegRefusal("runtime_selection_refused", `${model} cannot call tools, and this session needs them — switch this session to another model`, "no-tool-calling");
       }
       const selection = providerFor(model, deps.home);
       if (selection === undefined) return;
       const credentials = await credentialPresenceFrom(deps.secrets);
       if (apiKeyProviderIsUnauthenticated(selection.providerId, credentials.byProvider[selection.providerId] !== undefined)) {
-        throw new CloverLegRefusal("runtime_selection_refused", missingCredentialDetail(selection.providerId), "no-credential");
+        throw new MossLegRefusal("runtime_selection_refused", missingCredentialDetail(selection.providerId), "no-credential");
       }
     };
 
-    const session = startCloverSession({
+    const session = startMossSession({
       sessionId, backendSessionId, mode, runtime,
       options: optionsFor,
       beforeTurn,
       ...(deps.updateClosing ? { updateClosing: deps.updateClosing } : {}),
       spawnRefusal: () => (shuttingDown ? shutdownRefusal() : undefined),
-      endedWhileOpeningRefusal: () => new CloverLegRefusal(SESSION_REPLACED, "this session's runtime was replaced while it was starting; send again"),
+      endedWhileOpeningRefusal: () => new MossLegRefusal(SESSION_REPLACED, "this session's runtime was replaced while it was starting; send again"),
       projector: projectorFor,
       append,
       broadcast: (event) => { deps.hub.broadcastTransient(sessionId, event); },
@@ -1498,7 +1498,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
         return { unconsumed: unconsumedUserMessages(events), danglingTurn: mainTurnOpenInLog(events) };
       },
       ...(evictedPredecessors.has(sessionId) ? { predecessorDone: evictedPredecessors.get(sessionId)! } : {}),
-      idleTimeoutMs: deps.idleTimeoutMs ?? (() => cloverOptionsFromSettings(deps.settings()).idleTimeoutSec * 1000),
+      idleTimeoutMs: deps.idleTimeoutMs ?? (() => mossOptionsFromSettings(deps.settings()).idleTimeoutSec * 1000),
       ...(deps.endGraceMs === undefined ? {} : { endGraceMs: deps.endGraceMs }),
       log,
     });
@@ -1506,8 +1506,8 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     return session;
   };
 
-  /** `selection.reason` is what `clover doctor` and the app render for "why is this session on that
-   *  runtime" — it narrates a FACT, never a flag: since Task 17 the Clover leg is the only leg
+  /** `selection.reason` is what `moss doctor` and the app render for "why is this session on that
+   *  runtime" — it narrates a FACT, never a flag: since Task 17 the MOSS leg is the only leg
    *  (fix wave F12 retired the "settings.runtimes.winterLeg.<mode> is on" wording, which named a
    *  setting that no longer decides anything). */
   const selectionFor = (mode: SessionMode, model: string | undefined, providerId: string, authFamily: RuntimeSelection["authFamily"]): RuntimeSelection => ({
@@ -1517,13 +1517,13 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     family: "winter",
     authFamily,
     sdkVersion,
-    reason: `created as a ${mode} session on the Clover leg (the only leg since Phase 8b)`,
+    reason: `created as a ${mode} session on the MOSS leg (the only leg since Phase 8b)`,
     decidedAt: new Date().toISOString(),
   });
 
   /**
    * P8c-14: the router's decision for a NEW session, or `undefined` when the selector must not be
-   * consulted at all. FOUR deliberate bail-outs, each preserving today's Clover-only behaviour
+   * consulted at all. FOUR deliberate bail-outs, each preserving today's MOSS-only behaviour
    * byte-for-byte rather than risking a regression on a case the selector was never meant to judge:
    *
    *   1. No `selectRuntimeFor` on the handle — a partial test double (`session-driver.test.ts`'s
@@ -1531,8 +1531,8 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
    *   2. `winter-test/<name>` — the double-selection convention (`testProviderNameFor`): it is
    *      chosen by env var, never by the catalog, and the listing has no row for it AT ALL, so
    *      `selectRuntime` refuses every such session outright (measured) — exactly the models every
-   *      existing Clover e2e creates.
-   *   3. `meta.model` unset — the session named no model of its own. Today's Clover path resolves
+   *      existing MOSS e2e creates.
+   *   3. `meta.model` unset — the session named no model of its own. Today's MOSS path resolves
    *      one LATER, inside `optionsFor`, from `settings.provider.model` live at OPEN time; asking
    *      the selector to judge an as-yet-undecided model is not what P8c-12 means by "decides the
    *      leg for a session", and the router refuses an empty `requested` unconditionally (measured)
@@ -1552,7 +1552,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
    * another provider (D13's own "never a substitution").
    *
    * WS-23: the router is told there is no official runtime (`hasClaudePeer: false`, `create.ts`), so
-   * a Claude model selects the Clover runtime like every other family. An answer naming any other
+   * a Claude model selects the MOSS runtime like every other family. An answer naming any other
    * runtime would be a router this daemon cannot serve, and is refused typed rather than recorded.
    */
   const decideRuntime = async (mode: SessionMode, model: string | undefined): Promise<RuntimeSelection | undefined> => {
@@ -1563,7 +1563,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     if (isSelectionRefusal(decided)) throw await refusalForSelection(decided, model);
     if (decided.runtimeKind !== "winter-agent") {
       deps.log?.(`selectRuntimeFor chose ${decided.runtimeKind} for ${model}, which this daemon no longer hosts — refused`);
-      throw new CloverLegRefusal("runtime_selection_refused", neutralSelectionRefusal(model), "runtime-unavailable");
+      throw new MossLegRefusal("runtime_selection_refused", neutralSelectionRefusal(model), "runtime-unavailable");
     }
     return decided;
   };
@@ -1578,7 +1578,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
    *     the SAME hint `session.setModel` has rendered since D1-7 (`handoff.ts`); `session.create`
    *     simply never rendered it, so a user creating a Claude session with no Anthropic credential
    *     got the bare one-sentence detail and no way in. Only the Claude family produces this list.
-   *  2. Outside that family the router has no alternatives to offer — but CLOVER knows exactly which
+   *  2. Outside that family the router has no alternatives to offer — but MOSS knows exactly which
    *     provider this model resolves to and whether its slot is empty, so it answers with its own
    *     door hint naming that provider. This is the `deepseek`/`zai`/`openrouter` case the derived
    *     inventory made reachable: without it the user gets the router's honest but unhelpful "every
@@ -1593,7 +1593,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
    * The credential probe happens ONLY on this path (a refusal), never on the hot create path, which
    * has already done its own.
    */
-  const refusalForSelection = async (refusal: { reason: string; detail: string; alternatives?: readonly SelectionAlternative[] }, model: string): Promise<CloverLegRefusal> => {
+  const refusalForSelection = async (refusal: { reason: string; detail: string; alternatives?: readonly SelectionAlternative[] }, model: string): Promise<MossLegRefusal> => {
     // THE RAW DETAIL GOES TO THE LOG, AS A CATEGORY, AND NOWHERE ELSE (whole-branch review MAJOR 2).
     // `session.setModel` has scrubbed this class since D1 fix round 4; `session.create` handed it
     // through verbatim, and `session.create` is REMOTE-ALLOWED, so router-internal wording (runtime
@@ -1605,10 +1605,10 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // The hint is the ONE refusal text that is actionable, and it is built HERE out of the
       // router's structured `alternatives` — never out of `detail`, whose prefix is now dropped.
       const hint = renderNoCredentialHint(refusal.alternatives);
-      return new CloverLegRefusal("runtime_selection_refused", `${neutral} ${hint}`, "no-credential");
+      return new MossLegRefusal("runtime_selection_refused", `${neutral} ${hint}`, "no-credential");
     }
     if (!refusalMayBeCredentialShaped(refusal.reason)) {
-      return new CloverLegRefusal("runtime_selection_refused", neutral, refusal.reason);
+      return new MossLegRefusal("runtime_selection_refused", neutral, refusal.reason);
     }
     try {
       // WS-20: `providerFor` always names exactly one provider (a tag is never ambiguous) — the
@@ -1618,15 +1618,15 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       const selection = providerFor(model, deps.home);
       if (selection !== undefined
           && apiKeyProviderIsUnauthenticated(selection.providerId, credentials.byProvider[selection.providerId] !== undefined)) {
-        return new CloverLegRefusal("runtime_selection_refused", missingCredentialDetail(selection.providerId), "no-credential");
+        return new MossLegRefusal("runtime_selection_refused", missingCredentialDetail(selection.providerId), "no-credential");
       }
     } catch { /* a store that will not answer must not turn one refusal into a different one */ }
-    return new CloverLegRefusal("runtime_selection_refused", neutral, refusal.reason);
+    return new MossLegRefusal("runtime_selection_refused", neutral, refusal.reason);
   };
 
   /** Set by `beginShutdown()` (`daemon.stop()`, first): nothing is created, resumed or spawned after it. */
   let shuttingDown = false;
-  const shutdownRefusal = (): CloverLegRefusal => new CloverLegRefusal("daemon_shutting_down", "Clover is shutting down; no session can start now");
+  const shutdownRefusal = (): MossLegRefusal => new MossLegRefusal("daemon_shutting_down", "MOSS is shutting down; no session can start now");
   function assertNotShuttingDown(): void {
     if (shuttingDown) throw shutdownRefusal();
   }
@@ -1650,7 +1650,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     // refuses typed if it went away in between.
     assertSpine();
     const records = deps.records!;
-    const cwd = cloverCwdOf(sessionId, meta.cwd);
+    const cwd = mossCwdOf(sessionId, meta.cwd);
 
     const decided = await decideRuntime(mode, meta.model);
 
@@ -1673,7 +1673,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     // a record naming the "unstated" pseudo-provider and BEFORE the child would ever be handed the
     // literal string "unstated" as its model.
     if (effectiveTag === UNSTATED_TAG) {
-      throw new CloverLegRefusal(
+      throw new MossLegRefusal(
         "runtime_selection_refused",
         `dispatch has no runnable model: pins.dispatch resolves to no known slot for this daemon's own provider (${ownProviderFor(settings)}) — set settings.pins.dispatch explicitly to a tag naming a provider this daemon can serve, or configure settings.provider.model to a provider whose catalog serves the terra slot`,
         "pin-unstated",
@@ -1721,16 +1721,16 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       });
       records.transition(sessionId, "ready");
     } catch (err) {
-      throw new CloverLegRefusal("winter_leg_unavailable", `the runtime record for ${sessionId} could not be written (${err instanceof Error ? err.name : "unknown"})`);
+      throw new MossLegRefusal("winter_leg_unavailable", `the runtime record for ${sessionId} could not be written (${err instanceof Error ? err.name : "unknown"})`);
     }
     const session = assemble(sessionId, backendSessionId);
     try {
       await session.open();
     } catch (err) {
       drivers.delete(sessionId);
-      if (err instanceof CloverLegRefusal) throw err;
-      if (err instanceof RunHomeError) throw new CloverLegRefusal(err.code, err.message);
-      throw new CloverLegRefusal("winter_leg_unavailable", `the winter child for ${sessionId} could not be started (${err instanceof Error ? err.name : "unknown"})`);
+      if (err instanceof MossLegRefusal) throw err;
+      if (err instanceof RunHomeError) throw new MossLegRefusal(err.code, err.message);
+      throw new MossLegRefusal("winter_leg_unavailable", `the winter child for ${sessionId} could not be started (${err instanceof Error ? err.name : "unknown"})`);
     }
     return session;
   };
@@ -1749,7 +1749,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     assertNotShuttingDown();
     refuseUnrunnableMode(sessionId);   // before adoption / re-keying move a transcript for a session that can never run
     assertSpine();
-    // WS-23 (R2): a record the retired official leg wrote is adopted onto the Clover leg first — its
+    // WS-23 (R2): a record the retired official leg wrote is adopted onto the MOSS leg first — its
     // transcript re-keyed, its runtime kind and selection rewritten — or refused typed, having moved
     // nothing (`adoptLegacyRecord`). Synchronous, like everything up to `drivers.set` (n7).
     const recorded = sessionLegOf(recordOf(sessionId)) === "official" ? adoptLegacyRecord(sessionId) : recordOf(sessionId);
@@ -1757,7 +1757,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     // Round 3: the transcript is where the child will look BEFORE it opens (synchronous — n7).
     const record = recorded !== undefined && leg === "winter" ? rekeyForCanonicalCwd(sessionId, recorded) : recorded;
     if (leg !== "winter" || record?.backendSessionId === undefined) {
-      throw new CloverLegRefusal("session_predates_winter_leg", `session ${sessionId} predates the Clover leg (it has no Clover transcript); start a new session`);
+      throw new MossLegRefusal("session_predates_winter_leg", `session ${sessionId} predates the MOSS leg (it has no MOSS transcript); start a new session`);
     }
     const mode = modeOf(deps.store.meta(sessionId).mode);
     assertAvailable(mode);
@@ -1766,15 +1766,15 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       await session.open();
     } catch (err) {
       drivers.delete(sessionId);
-      if (err instanceof CloverLegRefusal) throw err;
-      if ((err as { code?: unknown })?.code === "winter_session_ended") throw new CloverLegRefusal("winter_session_ended", (err as Error).message);
-      throw new CloverLegRefusal("winter_leg_unavailable", `the winter child for ${sessionId} could not be resumed (${err instanceof Error ? err.name : "unknown"})`);
+      if (err instanceof MossLegRefusal) throw err;
+      if ((err as { code?: unknown })?.code === "winter_session_ended") throw new MossLegRefusal("winter_session_ended", (err as Error).message);
+      throw new MossLegRefusal("winter_leg_unavailable", `the winter child for ${sessionId} could not be resumed (${err instanceof Error ? err.name : "unknown"})`);
     }
     return session;
   };
 
   /** P8c-14: a leg the table can resume a driver on — `official` included, because `resume()` adopts
-   *  such a record onto the Clover leg before it opens (WS-23). */
+   *  such a record onto the MOSS leg before it opens (WS-23). */
   const isResumableLeg = (leg: SessionLeg | undefined): boolean => leg === "winter" || leg === "official";
 
   return {
@@ -1810,7 +1810,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       if (session === undefined) return;
       // The driver left the table BEFORE its child is gone, so a resume racing this eviction builds a new
       // driver at once: that driver's first open waits for THIS one's iteration to close its books
-      // (`CloverSessionDeps.predecessorDone`, bounded), so it never reads the log — and closes a turn as
+      // (`MossSessionDeps.predecessorDone`, bounded), so it never reads the log — and closes a turn as
       // dangling — while the old child's own terminal is still on its way.
       const ended = session.end().catch((err: unknown) => { log(`evicting ${sessionId}: end failed (${err instanceof Error ? err.name : "unknown"})`); });
       const ending = ended.then(() => session.done.catch(() => {}));
@@ -1830,14 +1830,14 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
 }
 
 /** `Options.hostMessaging` for one session over a LIVE (late-bound) `SessionMessaging`. */
-function hostMessagingFor(sessionId: string, messaging: NonNullable<CloverLegDeps["sessionMessaging"]>): NonNullable<Options["hostMessaging"]> {
+function hostMessagingFor(sessionId: string, messaging: NonNullable<MossLegDeps["sessionMessaging"]>): NonNullable<Options["hostMessaging"]> {
   // One per incarnation (`optionsFor` builds it for each): the runtime's message ids restart with every
   // child, so the delivery dedupe is scoped to this one.
   const incarnation = randomUUID();
   return {
     send: async (request, opts) => {
       const live = messaging();
-      if (live === undefined) return { status: "unavailable", reason: "Clover is still starting; try again in a moment", retryable: true };
+      if (live === undefined) return { status: "unavailable", reason: "MOSS is still starting; try again in a moment", retryable: true };
       return live.handlerFor(sessionId, incarnation).send(request, opts);
     },
     list: async (request, opts) => {
@@ -1847,7 +1847,7 @@ function hostMessagingFor(sessionId: string, messaging: NonNullable<CloverLegDep
     // TaskStop on a session id (`host_session_stop`).
     stop: async (request, opts) => {
       const handler = messaging()?.handlerFor(sessionId, incarnation);
-      if (handler?.stop === undefined) return { status: "unavailable", reason: "Clover is still starting; try again in a moment" };
+      if (handler?.stop === undefined) return { status: "unavailable", reason: "MOSS is still starting; try again in a moment" };
       return handler.stop(request, opts);
     },
   };

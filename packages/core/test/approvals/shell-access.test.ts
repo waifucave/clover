@@ -7,8 +7,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameS
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Card, Level, Os } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker, type CloverApprovalRequest } from "../../src/approvals/broker";
+import type { Card, Level, Os } from "@waifucave/moss-protocol";
+import { MossApprovalBroker, type MossApprovalRequest } from "../../src/approvals/broker";
 import { botApprovalCheck, CORE_TOOL_RULES } from "../../src/approvals/bot-check";
 import { pathsClassOnDisk } from "../../src/approvals/ordinary-paths";
 import { NETWORK_UNSUPPORTED, REQUEST_ACCESS_TOOL, requestAccessTool, validHost } from "../../src/approvals/request-access";
@@ -16,7 +16,7 @@ import { SandboxGrants, sandboxGrantsFile } from "../../src/approvals/sandbox-gr
 import type { ApprovalRequest, Reviewer } from "../../src/contracts/approval-broker";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import type { BotSessionContext } from "../../src/bots/service";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { anyCase, botSandboxSettings, CONTROL, denyRegex, rootCovered, shellRunLaterDenies } from "../../src/fence/sandbox-settings";
 import { GIT_IN_SANDBOX, folderHolds, holdsLine } from "../../src/approvals/request-access";
 import { secretReadPlaces } from "../../src/contracts/fence";
@@ -26,22 +26,22 @@ const os: Os = process.platform === "darwin" ? "macos" : process.platform === "w
 
 function world() {
   const user = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-shell-")));
-  const clover = join(user, ".clover");
-  for (const d of [clover, join(user, "Documents"), join(user, "Projects", "app"), join(user, ".aws"), join(clover, "scratch", "luna")]) mkdirSync(d, { recursive: true });
-  const classOf = (paths: readonly string[]) => pathsClassOnDisk(paths, { home: user, os, cloverHome: clover, pathFolders: [join(user, "bin")] });
+  const moss = join(user, ".moss");
+  for (const d of [moss, join(user, "Documents"), join(user, "Projects", "app"), join(user, ".aws"), join(moss, "scratch", "luna")]) mkdirSync(d, { recursive: true });
+  const classOf = (paths: readonly string[]) => pathsClassOnDisk(paths, { home: user, os, mossHome: moss, pathFolders: [join(user, "bin")] });
   const ctx = {
-    botId: "luna", sessionId: "s1", computer: "Studio", paths: { scratch: join(clover, "scratch", "luna") },
+    botId: "luna", sessionId: "s1", computer: "Studio", paths: { scratch: join(moss, "scratch", "luna") },
     caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
   } as unknown as BotSessionContext;
-  return { user, clover, classOf, ctx };
+  return { user, moss, classOf, ctx };
 }
 
 function brokerAt(level: Level, reviewer?: Reviewer) {
-  return new CloverApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio", ...(reviewer === undefined ? {} : { reviewer }) });
+  return new MossApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio", ...(reviewer === undefined ? {} : { reviewer }) });
 }
 
 /** The next card, answered with `optionId` through the app's sealed frame. */
-function answerNext(b: CloverApprovalBroker, optionId: string): Promise<Card> {
+function answerNext(b: MossApprovalBroker, optionId: string): Promise<Card> {
   return new Promise((resolve) => {
     const off = b.watch((e) => {
       if (e.type !== "requested") return;
@@ -88,12 +88,12 @@ describe("RequestAccess", () => {
     expect(again.endTurn).toBeUndefined();
   });
 
-  test("a sensitive folder is refused with no card: a dot-folder, the Clover home, a PATH folder, outside the home", async () => {
+  test("a sensitive folder is refused with no card: a dot-folder, the MOSS home, a PATH folder, outside the home", async () => {
     const w = world();
     const broker = brokerAt("ask-risky");
     const grants = new SandboxGrants({ isOrdinary: (f) => w.classOf([f]) === "ordinary" });
     const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky", os: "macos" }, w.ctx, () => "user");
-    for (const folder of [join(w.user, ".aws"), w.clover, join(w.user, "bin"), "/etc", w.user, join(w.user, "Projects", "app", ".git")]) {
+    for (const folder of [join(w.user, ".aws"), w.moss, join(w.user, "bin"), "/etc", w.user, join(w.user, "Projects", "app", ".git")]) {
       const r = await tool.run({ folder, why: "x" });
       expect([folder, r.isError, r.text]).toEqual([folder, true, expect.stringContaining("never get write access")]);
     }
@@ -104,7 +104,7 @@ describe("RequestAccess", () => {
   test("declined: nothing granted, no new turn; read only refuses; \"always\" keeps it for the bot, across conversations and restarts", async () => {
     const w = world();
     const broker = brokerAt("ask-risky");
-    const grants = new SandboxGrants({ home: w.clover, isOrdinary: (f) => w.classOf([f]) === "ordinary" });
+    const grants = new SandboxGrants({ home: w.moss, isOrdinary: (f) => w.classOf([f]) === "ordinary" });
     const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky", os: "macos" }, w.ctx, () => "user");
     const no = answerNext(broker, "deny");
     const declined = await tool.run({ folder: join(w.user, "Projects", "app"), why: "build" });
@@ -119,10 +119,10 @@ describe("RequestAccess", () => {
     expect(grants.folders("s9", "luna")).toEqual([join(w.user, "Projects", "app")]);
     expect(grants.folders("s9", "sol")).toEqual([]);
     // Kept in the fenced rules folder, owner-only, and read back.
-    const file = sandboxGrantsFile(w.clover);
+    const file = sandboxGrantsFile(w.moss);
     expect(JSON.parse(readFileSync(file, "utf8")).grants).toMatchObject([{ bot: "luna", folder: join(w.user, "Projects", "app") }]);
     if (os !== "windows") expect(statSync(file).mode & 0o777).toBe(0o600);
-    const reborn = new SandboxGrants({ home: w.clover, isOrdinary: (f) => w.classOf([f]) === "ordinary" });
+    const reborn = new SandboxGrants({ home: w.moss, isOrdinary: (f) => w.classOf([f]) === "ordinary" });
     expect(reborn.folders("s10", "luna")).toEqual([join(w.user, "Projects", "app")]);
     // A granted folder swapped for a link since (to a sensitive place) is dropped, never followed.
     renameSync(join(w.user, "Projects", "app"), join(w.user, "Projects", "app-moved"));
@@ -147,13 +147,13 @@ describe("RequestAccess", () => {
     expect(broker.cards()).toHaveLength(0);
   });
 
-  test("never a socket or Clover's run/ folder: core.sock, the run folder, a socket in an ordinary folder, a file", async () => {
+  test("never a socket or MOSS's run/ folder: core.sock, the run folder, a socket in an ordinary folder, a file", async () => {
     const w = world();
-    mkdirSync(join(w.clover, "run"), { recursive: true });
+    mkdirSync(join(w.moss, "run"), { recursive: true });
     const server = createServer(() => {});
     const sock = join(w.user, "Documents", "agent.sock");
     await new Promise<void>((resolve) => server.listen(sock, resolve));
-    const core = join(w.clover, "run", "core.sock");
+    const core = join(w.moss, "run", "core.sock");
     const coreServer = createServer(() => {});
     await new Promise<void>((resolve) => coreServer.listen(core, resolve));
     writeFileSync(join(w.user, "Documents", "notes.txt"), "n");
@@ -161,7 +161,7 @@ describe("RequestAccess", () => {
       const broker = brokerAt("ask-risky");
       const grants = new SandboxGrants({ isOrdinary: (f) => w.classOf([f]) === "ordinary" });
       const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky", os: "macos" }, w.ctx, () => "user");
-      for (const folder of [core, join(w.clover, "run"), sock, join(w.user, "Documents", "notes.txt"), "/var/run/docker.sock", "/var/run"]) {
+      for (const folder of [core, join(w.moss, "run"), sock, join(w.user, "Documents", "notes.txt"), "/var/run/docker.sock", "/var/run"]) {
         const r = await tool.run({ folder, why: "x" });
         expect([folder, r.isError]).toEqual([folder, true]);
       }
@@ -181,12 +181,12 @@ describe("RequestAccess", () => {
 describe("the conversation's sandbox", () => {
   test("granted folders join the write roots under the fence's denies; no network, at any level", () => {
     const w = world();
-    const fence = new CloverFence({ os, home: w.user, cloverHome: w.clover, temp: join(w.user, "tmp") });
+    const fence = new MossFence({ os, home: w.user, mossHome: w.moss, temp: join(w.user, "tmp") });
     const policy = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" } as never).policy();
-    const plain = botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level: "ask-risky" });
+    const plain = botSandboxSettings(policy, { mossHome: w.moss, userHome: w.user, level: "ask-risky" });
     expect(plain.filesystem?.allowWrite).not.toContain(join(w.user, "Documents"));
     expect(plain.network).toBeUndefined();
-    const granted = botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level: "ask-risky", grantedWrite: [join(w.user, "Documents")] });
+    const granted = botSandboxSettings(policy, { mossHome: w.moss, userHome: w.user, level: "ask-risky", grantedWrite: [join(w.user, "Documents")] });
     expect(granted.filesystem?.allowWrite).toContain(join(w.user, "Documents"));
     // Every deny still holds, and the new root's git hooks are denied too.
     expect(granted.filesystem?.denyWrite).toEqual(expect.arrayContaining(plain.filesystem?.denyWrite ?? []));
@@ -194,7 +194,7 @@ describe("the conversation's sandbox", () => {
     if (os === "macos") expect(granted.filesystem?.denyWrite).toContain("/**/*.[gG][iI][tT]");
     // Never a network key, at any level: the runtime then denies the whole network, unix sockets included.
     for (const level of ["read-only", "ask", "ask-risky", "accept-edits", "automatic"] as const) {
-      const at = botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level, grantedWrite: [join(w.user, "Documents")] });
+      const at = botSandboxSettings(policy, { mossHome: w.moss, userHome: w.user, level, grantedWrite: [join(w.user, "Documents")] });
       expect([level, "network" in at, "allowUnsandboxedCommands" in at]).toEqual([level, false, false]);
     }
   });
@@ -206,15 +206,15 @@ describe("the shell's write roots at accept edits (the coordinator's ruling on s
     for (const d of ["Desktop", "Downloads", "Library/Preferences", ".config/git", "Applications", "bin"]) mkdirSync(join(w.user, d), { recursive: true });
     writeFileSync(join(w.user, "notes.txt"), "x");
     symlinkSync(join(w.user, ".config"), join(w.user, "Linked"));
-    const fence = new CloverFence({ os, home: w.user, cloverHome: w.clover, temp: join(w.user, "tmp") });
+    const fence = new MossFence({ os, home: w.user, mossHome: w.moss, temp: join(w.user, "tmp") });
     const policy = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" } as never).policy();
-    const draw = (level: Level) => botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level, pathFolders: [join(w.user, "bin")] }).filesystem?.allowWrite ?? [];
+    const draw = (level: Level) => botSandboxSettings(policy, { mossHome: w.moss, userHome: w.user, level, pathFolders: [join(w.user, "bin")] }).filesystem?.allowWrite ?? [];
     const accept = draw("accept-edits");
     // (The fence's temp folder sits in this test's home; it is a root of its own at every level.)
-    const top = accept.filter((r) => r.startsWith(`${w.user}/`) && !r.startsWith(`${w.clover}/`) && r !== w.clover && r !== join(w.user, "tmp"));
+    const top = accept.filter((r) => r.startsWith(`${w.user}/`) && !r.startsWith(`${w.moss}/`) && r !== w.moss && r !== join(w.user, "tmp"));
     expect(top.sort()).toEqual(["Desktop", "Documents", "Downloads", "Projects"].map((d) => join(w.user, d)));
     expect(accept).not.toContain(w.user);
-    // Fully automatic: the home as before (its entries, the Clover home's way written out).
+    // Fully automatic: the home as before (its entries, the MOSS home's way written out).
     const auto = draw("automatic");
     expect(auto).toContain(join(w.user, "notes.txt"));
     expect(auto).toContain(join(w.user, "Library"));
@@ -227,9 +227,9 @@ describe("a git directory by its content, whatever its name (the review's item o
     const bare = join(w.user, "Projects", "app", "mirror");
     for (const d of ["objects", "refs/heads"]) mkdirSync(join(bare, d), { recursive: true });
     writeFileSync(join(bare, "HEAD"), "ref: refs/heads/main\n");
-    const fence = new CloverFence({ os, home: w.user, cloverHome: w.clover, temp: join(w.user, "tmp") });
+    const fence = new MossFence({ os, home: w.user, mossHome: w.moss, temp: join(w.user, "tmp") });
     const policy = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" } as never).policy();
-    const deny = botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level: "ask-risky", grantedWrite: [join(w.user, "Projects", "app")] }).filesystem?.denyWrite ?? [];
+    const deny = botSandboxSettings(policy, { mossHome: w.moss, userHome: w.user, level: "ask-risky", grantedWrite: [join(w.user, "Projects", "app")] }).filesystem?.denyWrite ?? [];
     expect(rootCovered(join(bare, "hooks", "pre-commit"), deny, os)).toBe(true);
     expect(rootCovered(bare, deny, os)).toBe(true);
     expect(rootCovered(join(w.user, "Projects", "app", "src.ts"), deny, os)).toBe(false);
@@ -241,13 +241,13 @@ describe("a git directory by its content, whatever its name (the review's item o
 describe("the link race's interim", () => {
   test("while a background command runs, a file tool's write inside the shell's folders isn't contained (the bot's own folders too)", async () => {
     const w = world();
-    const requests: CloverApprovalRequest[] = [];
-    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+    const requests: MossApprovalRequest[] = [];
+    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
     let live = false;
     const roots = [w.ctx.paths.scratch, join(w.user, "Documents")];
-    const fence = new CloverFence({ os, home: w.user, cloverHome: w.clover, temp: join(w.user, "tmp") });
+    const fence = new MossFence({ os, home: w.user, mossHome: w.moss, temp: join(w.user, "tmp") });
     const check = botApprovalCheck(recorder, {
-      fence, cloverHome: w.clover, levelOf: () => "ask-risky", home: w.user, liveShell: () => live, shellRoots: () => roots,
+      fence, mossHome: w.moss, levelOf: () => "ask-risky", home: w.user, liveShell: () => live, shellRoots: () => roots,
     });
     const call = async (path: string) => {
       requests.length = 0;
@@ -268,8 +268,8 @@ describe("the link race's interim", () => {
 
   test("the broker: a not-contained edit of an ordinary file goes to the reviewer, then a card", async () => {
     let reviewed = 0;
-    const b = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "ask-risky", localComputer: "Studio", pathClass: () => "ordinary", reviewer: async () => { reviewed++; return "unavailable"; } });
-    const edit = (over: Partial<CloverApprovalRequest>): CloverApprovalRequest => ({ kind: "tool", bot: "luna", origin: "user", computers: ["Studio"], effect: "edit", paths: ["/Users/k/Documents/a"], fields: {}, ...over });
+    const b = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "ask-risky", localComputer: "Studio", pathClass: () => "ordinary", reviewer: async () => { reviewed++; return "unavailable"; } });
+    const edit = (over: Partial<MossApprovalRequest>): MossApprovalRequest => ({ kind: "tool", bot: "luna", origin: "user", computers: ["Studio"], effect: "edit", paths: ["/Users/k/Documents/a"], fields: {}, ...over });
     expect(await b.request(edit({}))).toEqual({ allowed: true, by: "level", level: "ask-risky" });
     const card = answerNext(b, "deny");
     expect(await b.request(edit({ notContained: true }))).toMatchObject({ allowed: false, by: "card" });
@@ -282,11 +282,11 @@ describe("the run-later denies under every root (the review's blocker on 408d1c8
   const levels = ["ask-risky", "accept-edits", "automatic"] as const;
   const setup = () => {
     const w = world();
-    const fence = new CloverFence({ os, home: w.user, cloverHome: w.clover, temp: join(w.user, "tmp") });
+    const fence = new MossFence({ os, home: w.user, mossHome: w.moss, temp: join(w.user, "tmp") });
     const policy = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" } as never).policy();
-    const own = [w.ctx.paths.scratch, join(w.clover, "scratch")];
+    const own = [w.ctx.paths.scratch, join(w.moss, "scratch")];
     const draw = (level: Level, extra: { grantedWrite?: string[]; pathFolders?: string[] } = {}) =>
-      botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level, ownFolders: own, ...extra });
+      botSandboxSettings(policy, { mossHome: w.moss, userHome: w.user, level, ownFolders: own, ...extra });
     return { w, own, draw };
   };
 
@@ -300,13 +300,13 @@ describe("the run-later denies under every root (the review's blocker on 408d1c8
     }
   });
 
-  test("every shared run-later name is denied, whole, in any letter case; *.app and .clover too", () => {
+  test("every shared run-later name is denied, whole, in any letter case; *.app and .moss too", () => {
     const { w, draw } = setup();
     for (const level of levels) {
       const deny = draw(level, { grantedWrite: [join(w.user, "Projects", "app")] }).filesystem?.denyWrite ?? [];
       const covers = (p: string) => rootCovered(p, deny, os);
       const app = join(w.user, "Projects", "app");
-      for (const name of [".git", ".GIT", "x.git", ".vscode", ".idea", ".claude", ".husky", ".githooks", ".mcp.json", ".envrc", ".gitmodules", ".ripgreprc", ".zshrc", "Tool.app", ".clover"]) {
+      for (const name of [".git", ".GIT", "x.git", ".vscode", ".idea", ".claude", ".husky", ".githooks", ".mcp.json", ".envrc", ".gitmodules", ".ripgreprc", ".zshrc", "Tool.app", ".moss"]) {
         if (os !== "macos" && name !== name.toLowerCase() && name !== "Tool.app") continue;
         expect([level, name, covers(join(app, "deep", "er", name, "inside"))]).toEqual([level, name, true]);
         expect([level, name, covers(join(app, name))]).toEqual([level, name, true]);
@@ -324,7 +324,7 @@ describe("the run-later denies under every root (the review's blocker on 408d1c8
     const { w, draw } = setup();
     const deny = draw("automatic", { grantedWrite: [join(w.user, "Projects", "app")] }).filesystem?.denyWrite ?? [];
     for (const n of runtimeCwd) expect([n, rootCovered(join(w.user, "Projects", "app", n), deny, os)]).toEqual([n, true]);
-    expect(rootCovered(join(w.user, "Projects", "app", ".clover", "commands"), deny, os)).toBe(true);
+    expect(rootCovered(join(w.user, "Projects", "app", ".moss", "commands"), deny, os)).toBe(true);
   });
 
   test("PATH folders under a root are denied by path; the fixed ones too", () => {
@@ -346,7 +346,7 @@ describe("the run-later denies under every root (the review's blocker on 408d1c8
     }
   });
 
-  test("a root with a control character, or one that holds the Clover home, is never drawn", () => {
+  test("a root with a control character, or one that holds the MOSS home, is never drawn", () => {
     const { w, draw } = setup();
     const odd = join(w.user, "Projects", "a\nb");
     const s = draw("ask-risky", { grantedWrite: [odd, w.user] });
@@ -361,7 +361,7 @@ describe("the run-later denies under every root (the review's blocker on 408d1c8
     expect(denyRegex(g, "macos").test("/r/a/b/.GiT/hooks/x")).toBe(true);
     expect(denyRegex(g, "macos").test("/r/a/.github")).toBe(false);
     expect(anyCase(".git", "linux")).toBe(".git");
-    expect(shellRunLaterDenies([], { userHome: "/u", cloverHome: "/u/.clover", os: "linux", pathFolders: [] })).toEqual([]);
+    expect(shellRunLaterDenies([], { userHome: "/u", mossHome: "/u/.moss", os: "linux", pathFolders: [] })).toEqual([]);
   });
 });
 
@@ -392,13 +392,13 @@ describe("RequestAccess looks down before its card, and refuses what is never gi
     for (let i = 0; i < 60; i++) for (let j = 0; j < 90; j++) mkdirSync(join(big, `d${i}`, `e${j}`), { recursive: true });
     const h = folderHolds(big, []);
     expect(h.complete).toBe(false);
-    expect(holdsLine(h)).toContain("more than Clover looked through");
+    expect(holdsLine(h)).toContain("more than MOSS looked through");
     // It promises only what is held by name; what the look didn't reach is said plainly.
     expect(holdsLine(h)).not.toContain("whatever git repositories");
     expect(holdsLine(h)).toContain("isn't protected");
   });
 
-  test("never given, with no card: ~, ~/Applications, ~/Library, a PATH folder or one holding one, a folder holding the Clover home, a hidden character, Linux", async () => {
+  test("never given, with no card: ~, ~/Applications, ~/Library, a PATH folder or one holding one, a folder holding the MOSS home, a hidden character, Linux", async () => {
     const w = world();
     const broker = brokerAt("ask-risky");
     const grants = new SandboxGrants({ isOrdinary: () => true });
@@ -406,18 +406,18 @@ describe("RequestAccess looks down before its card, and refuses what is never gi
     mkdirSync(join(go, "bin"), { recursive: true });
     const odd = join(w.user, "Projects", "a\u202Eb");
     mkdirSync(odd, { recursive: true });
-    const deps = { broker, grants, pathClass: () => "ordinary" as const, home: w.user, levelOf: () => "ask-risky" as const, os: "macos" as const, cloverHome: w.clover, pathFolders: () => [join(go, "bin")] };
+    const deps = { broker, grants, pathClass: () => "ordinary" as const, home: w.user, levelOf: () => "ask-risky" as const, os: "macos" as const, mossHome: w.moss, pathFolders: () => [join(go, "bin")] };
     const tool = requestAccessTool(deps, w.ctx, () => "user");
     for (const folder of [w.user, join(w.user, "Applications"), join(w.user, "Library"), join(go, "bin"), go, odd]) {
       mkdirSync(folder, { recursive: true });
       const r = await tool.run({ folder, why: "x" });
       expect([folder, r.isError]).toEqual([folder, true]);
     }
-    // A folder that holds the Clover home (the home's parent here is the user's home itself; a deeper one too).
+    // A folder that holds the MOSS home (the home's parent here is the user's home itself; a deeper one too).
     const parent = join(w.user, "outer");
-    const nested = requestAccessTool({ ...deps, cloverHome: join(parent, "x", ".clover") }, w.ctx, () => "user");
+    const nested = requestAccessTool({ ...deps, mossHome: join(parent, "x", ".moss") }, w.ctx, () => "user");
     mkdirSync(parent, { recursive: true });
-    expect((await nested.run({ folder: parent, why: "x" })).text).toContain("Clover's own folder");
+    expect((await nested.run({ folder: parent, why: "x" })).text).toContain("MOSS's own folder");
     const linux = requestAccessTool({ ...deps, os: "linux" as const }, w.ctx, () => "user");
     expect((await linux.run({ folder: join(w.user, "Documents"), why: "x" })).text).toContain("On Linux");
     expect(broker.cards()).toHaveLength(0);
@@ -428,7 +428,7 @@ describe("RequestAccess looks down before its card, and refuses what is never gi
 describe("the grants' lifetime", () => {
   test("a removed bot's grants go, kept and per conversation; a bot made later with its id inherits none; a conversation's end forgets its own", () => {
     const w = world();
-    const grants = new SandboxGrants({ home: w.clover, isOrdinary: () => true });
+    const grants = new SandboxGrants({ home: w.moss, isOrdinary: () => true });
     const docs = join(w.user, "Documents"), app = join(w.user, "Projects", "app");
     grants.grantFolder("s1", "luna", docs, false);
     grants.grantFolder("s1", "luna", app, true);
@@ -438,7 +438,7 @@ describe("the grants' lifetime", () => {
     expect(grants.folders("s1", "nova")).toEqual([]);
     grants.forgetBot("luna");
     expect(grants.folders("s1", "luna")).toEqual([]);
-    expect(new SandboxGrants({ home: w.clover, isOrdinary: () => true }).folders("s9", "luna")).toEqual([]);
+    expect(new SandboxGrants({ home: w.moss, isOrdinary: () => true }).folders("s9", "luna")).toEqual([]);
     expect(grants.folders("s2", "sol")).toEqual([docs]);
     grants.forgetSession("s2");
     expect(grants.folders("s2", "sol")).toEqual([]);

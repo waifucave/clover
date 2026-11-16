@@ -1,6 +1,6 @@
 // The link protocol's versions (spec §14.2 item 22: links negotiate a protocol version and support one release
 // back). The dialler's `peer.hello` names its version; the acceptor answers with the one both speak.
-export type { LinkPath, LinkView } from "@waifucave/clover-protocol";
+export type { LinkPath, LinkView } from "@waifucave/moss-protocol";
 
 const CURRENT = 1;
 const OLDEST = 1;

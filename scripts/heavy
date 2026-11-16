@@ -15,15 +15,15 @@
 #                                       heavy jobs wait before taking a slot, and the packaged run itself starts once
 #                                       the jobs already in slots have ended (a busy machine breaks its frame timing),
 #                                       not counting a slot whose job is itself queued for the lock (it can't end first).
-#                                       The command runs with CLOVER_HEAVY_EXCLUSIVE set to the holder's pid: what it
+#                                       The command runs with MOSS_HEAVY_EXCLUSIVE set to the holder's pid: what it
 #                                       starts through heavy (a build, a nested watch or run.ts) runs under the same
 #                                       hold, never waiting on it. The lock is a directory made with mkdir, holding the
 #                                       holder's pid, what it runs and its kind; a holder that is gone is taken over by
 #                                       the next one that looks.
 #
-# A job runs with the checkout's pinned Bun first on PATH (scripts/pinned-bun; CLOVER_PINNED_BUN=0 turns that off).
+# A job runs with the checkout's pinned Bun first on PATH (scripts/pinned-bun; MOSS_PINNED_BUN=0 turns that off).
 # HEAVY_SLOTS (default 8) sets the number of slots, HEAVY_DIR where they live (default: the user cache folder's
-# clover-heavy), HEAVY_POLL_SECONDS how often a waiting heavy looks again (default 5). A slot is a directory made
+# moss-heavy), HEAVY_POLL_SECONDS how often a waiting heavy looks again (default 5). A slot is a directory made
 # with mkdir (atomic), holding the pid of the heavy that took it and what it runs; a slot whose heavy is gone is
 # freed by the next one that looks.
 set -u
@@ -34,9 +34,9 @@ case "$poll" in ''|*[!0-9]*|0) echo "heavy: HEAVY_POLL_SECONDS must be a positiv
 if [ -n "${HEAVY_DIR:-}" ]; then
   dir="$HEAVY_DIR"
 elif [ "$(uname -s)" = "Darwin" ]; then
-  dir="$HOME/Library/Caches/clover-heavy"
+  dir="$HOME/Library/Caches/moss-heavy"
 else
-  dir="${XDG_CACHE_HOME:-$HOME/.cache}/clover-heavy"
+  dir="${XDG_CACHE_HOME:-$HOME/.cache}/moss-heavy"
 fi
 mkdir -p "$dir"
 
@@ -69,9 +69,9 @@ holder() { # the exclusive lock's holder, as "pid kind: what", or nothing when i
   reap "$lock"
   [ -d "$lock" ] && printf '%s %s: %s' "$(cat "$lock/pid" 2>/dev/null)" "$(cat "$lock/kind" 2>/dev/null)" "$(cat "$lock/what" 2>/dev/null)"
 }
-# Whether this process runs under the lock's current holder (CLOVER_HEAVY_EXCLUSIVE names it, and it still holds it).
+# Whether this process runs under the lock's current holder (MOSS_HEAVY_EXCLUSIVE names it, and it still holds it).
 under_hold() {
-  [ -n "${CLOVER_HEAVY_EXCLUSIVE:-}" ] && [ -d "$lock" ] && [ "$(cat "$lock/pid" 2>/dev/null)" = "$CLOVER_HEAVY_EXCLUSIVE" ] && kill -0 "$CLOVER_HEAVY_EXCLUSIVE" 2>/dev/null
+  [ -n "${MOSS_HEAVY_EXCLUSIVE:-}" ] && [ -d "$lock" ] && [ "$(cat "$lock/pid" 2>/dev/null)" = "$MOSS_HEAVY_EXCLUSIVE" ] && kill -0 "$MOSS_HEAVY_EXCLUSIVE" 2>/dev/null
 }
 
 if [ "${1:-}" = "--status" ]; then
@@ -98,10 +98,10 @@ fi
 
 # The Bun the checkout you run in pins goes first on PATH, so a heavy job runs on the Bun CI tests whatever other
 # Bun the machine has: that checkout's scripts/pinned-bun fetches it on first use. A checkout without one keeps
-# PATH as it is, and so does CLOVER_PINNED_BUN=0.
+# PATH as it is, and so does MOSS_PINNED_BUN=0.
 top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-if [ "${CLOVER_PINNED_BUN:-1}" != "0" ] && [ -n "$top" ] && [ -f "$top/.bun-version" ] && [ -x "$top/scripts/pinned-bun" ]; then
-  bundir="$("$top/scripts/pinned-bun" --dir)" || { echo "heavy: no pinned Bun (above); CLOVER_PINNED_BUN=0 runs on PATH's bun" >&2; exit 1; }
+if [ "${MOSS_PINNED_BUN:-1}" != "0" ] && [ -n "$top" ] && [ -f "$top/.bun-version" ] && [ -x "$top/scripts/pinned-bun" ]; then
+  bundir="$("$top/scripts/pinned-bun" --dir)" || { echo "heavy: no pinned Bun (above); MOSS_PINNED_BUN=0 runs on PATH's bun" >&2; exit 1; }
   PATH="$bundir:$PATH"; export PATH
 fi
 
@@ -119,7 +119,7 @@ if $exclusive; then
   # is marked waiting, so a packaged holder waiting for the slots to empty doesn't wait on it (the two waited on each
   # other for good: M's 38 minutes).
   slotmark=""
-  if [ -n "${CLOVER_HEAVY_SLOT:-}" ] && [ -d "$CLOVER_HEAVY_SLOT" ]; then slotmark="$CLOVER_HEAVY_SLOT/waiting-exclusive"; echo $$ > "$slotmark"; fi
+  if [ -n "${MOSS_HEAVY_SLOT:-}" ] && [ -d "$MOSS_HEAVY_SLOT" ]; then slotmark="$MOSS_HEAVY_SLOT/waiting-exclusive"; echo $$ > "$slotmark"; fi
   trap 'rm -f "$queue/$ticket"; [ -n "$slotmark" ] && rm -f "$slotmark"' EXIT
   trap 'exit 130' INT TERM HUP
   until [ "$(first_ticket)" = "$ticket" ] && mkdir "$lock" 2>/dev/null; do
@@ -154,7 +154,7 @@ if $exclusive; then
       sleep "$poll"; waited=$((waited + poll))
     done
   fi
-  export CLOVER_HEAVY_EXCLUSIVE=$$
+  export MOSS_HEAVY_EXCLUSIVE=$$
   echo "heavy: exclusive ($(cat "$lock/kind")): $*" >&2
   "$@"
   exit $?
@@ -187,5 +187,5 @@ trap 'rm -rf "$slot"' EXIT
 trap 'exit 130' INT TERM HUP
 echo "heavy: slot ${slot##*slot}: $*" >&2
 # The job knows its slot: an exclusive run it starts marks the slot waiting while it queues (above).
-export CLOVER_HEAVY_SLOT="$slot"
+export MOSS_HEAVY_SLOT="$slot"
 "$@"

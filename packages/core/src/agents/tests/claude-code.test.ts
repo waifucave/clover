@@ -1,6 +1,6 @@
-// What Clover places in Claude Code (spec §9.3): the plugins' skills, agent definitions and command hooks, as one
+// What MOSS places in Claude Code (spec §9.3): the plugins' skills, agent definitions and command hooks, as one
 // local Claude Code plugin per session in the fenced run folder, with every hook run through the shim that drops an
-// allow. Whether Claude Code itself loads them through the adapter is a live gate; these check what Clover writes.
+// allow. Whether Claude Code itself loads them through the adapter is a live gate; these check what MOSS writes.
 import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -12,7 +12,7 @@ import type { PluginParts } from "../placement";
 import { waitFor, World } from "./world";
 
 setDefaultTimeout(60_000);
-const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-cc-")));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-k-cc-")));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 let world: World | undefined;
 afterEach(async () => {
@@ -41,17 +41,17 @@ function parts(): PluginParts {
 describe("placing plugins' parts in Claude Code", () => {
   test("skills, agents and hooks become one local Claude Code plugin, every hook through the shim", () => {
     const dir = join(root, "setup-1");
-    const r = placeInClaudeCode(parts(), { dir, shim: { command: "/opt/clover/clover-core", args: ["hook-shim"] } });
+    const r = placeInClaudeCode(parts(), { dir, shim: { command: "/opt/moss/moss-core", args: ["hook-shim"] } });
     const plugin = join(dir, CLAUDE_PLUGIN_FOLDER);
     expect(r.meta).toEqual({ claudeCode: { options: { plugins: [{ type: "local", path: plugin }] } } });
     expect(r.placed).toEqual({ skills: ["pdf"], agents: ["reviewer"], hooks: ["guard", "after"], skipped: [{ id: "broken", why: "no SKILL.md" }, { id: "out", why: "none of its events has a Claude Code hook" }] });
-    expect(JSON.parse(readFileSync(join(plugin, ".claude-plugin", "plugin.json"), "utf8")).name).toBe("clover");
+    expect(JSON.parse(readFileSync(join(plugin, ".claude-plugin", "plugin.json"), "utf8")).name).toBe("moss");
     expect(readFileSync(join(plugin, "skills", "pdf", "scripts", "read.py"), "utf8")).toContain("pdf");
     expect(readFileSync(join(plugin, "agents", "reviewer.md"), "utf8")).toContain("Reviews diffs");
     const hooks = JSON.parse(readFileSync(join(plugin, "hooks", "hooks.json"), "utf8")).hooks;
     expect(Object.keys(hooks).sort()).toEqual(["PreToolUse", "SessionStart", "Stop"]);
     expect(hooks.PreToolUse[0].matcher).toBe("^Bash$|^mcp__.*$");
-    expect(hooks.PreToolUse[0].hooks[0]).toEqual({ type: "command", command: "/opt/clover/clover-core hook-shim --timeout 3000 -- /opt/acme/guard --strict 'it'\\''s'", timeout: 8 });
+    expect(hooks.PreToolUse[0].hooks[0]).toEqual({ type: "command", command: "/opt/moss/moss-core hook-shim --timeout 3000 -- /opt/acme/guard --strict 'it'\\''s'", timeout: 8 });
     expect(hooks.SessionStart[0].matcher).toBe("compact");
   });
 
@@ -66,7 +66,7 @@ describe("placing plugins' parts in Claude Code", () => {
     symlinkSync(join(root), join(skill, "everything"));
     const dir = join(root, "setup-links");
     const parts: PluginParts = { skills: [{ name: "linked", pluginId: "acme/docs", dir: skill }], agents: [], hooks: [] };
-    const r = placeInClaudeCode(parts, { dir, shim: { command: "/opt/clover/clover-core", args: ["hook-shim"] } });
+    const r = placeInClaudeCode(parts, { dir, shim: { command: "/opt/moss/moss-core", args: ["hook-shim"] } });
     const placed = join(dir, CLAUDE_PLUGIN_FOLDER, "skills", "linked");
     expect(r.placed.skills).toEqual(["linked"]);
     expect(readFileSync(join(placed, "notes", "ok.md"), "utf8")).toBe("fine\n");
@@ -75,7 +75,7 @@ describe("placing plugins' parts in Claude Code", () => {
     expect(r.placed.skipped.map((x) => x.id).sort()).toEqual(["linked/everything", "linked/notes/theirs.md"]);
     expect(r.placed.skipped.every((x) => x.why === "a symbolic link, never placed")).toBe(true);
     // Placed again with nothing: the folder is written afresh, the skill gone.
-    placeInClaudeCode({ skills: [], agents: [], hooks: [] }, { dir, shim: { command: "/opt/clover/clover-core", args: ["hook-shim"] } });
+    placeInClaudeCode({ skills: [], agents: [], hooks: [] }, { dir, shim: { command: "/opt/moss/moss-core", args: ["hook-shim"] } });
     expect(existsSync(placed)).toBe(false);
   });
 
@@ -84,7 +84,7 @@ describe("placing plugins' parts in Claude Code", () => {
     const r = placeInClaudeCode({ skills: [], agents: [], hooks: [
       { id: "rel", pluginId: "acme/guard", on: ["tool.before"], command: "guard" },
       { id: "long", pluginId: "acme/guard", on: ["tool.before"], command: "/opt/acme/guard", timeoutMs: 10 * 60_000 },
-    ] }, { dir, shim: { command: "/opt/clover/clover-core", args: ["hook-shim"] } });
+    ] }, { dir, shim: { command: "/opt/moss/moss-core", args: ["hook-shim"] } });
     expect(r.placed.skipped).toEqual([{ id: "rel", why: "its command isn't an absolute path" }]);
     const hooks = JSON.parse(readFileSync(join(dir, CLAUDE_PLUGIN_FOLDER, "hooks", "hooks.json"), "utf8")).hooks;
     expect(hooks.PreToolUse[0].hooks[0].command).toContain(`--timeout ${MAX_HOOK_TIMEOUT_MS} --`);
@@ -179,7 +179,7 @@ describe("a delegation to a backend that places parts", () => {
     }));
     const r = await w.delegate();
     await waitFor(() => w.report("blocked").length > 0, "the agent to block");
-    const plugin = join(w.cloverHome, "run", "agents", r.sessionId, CLAUDE_PLUGIN_FOLDER);
+    const plugin = join(w.mossHome, "run", "agents", r.sessionId, CLAUDE_PLUGIN_FOLDER);
     expect(existsSync(join(plugin, "skills", "pdf", "SKILL.md"))).toBe(true);
     // The sandbox writer's _meta and the placement's are merged.
     expect(w.report("session")[0]!["meta"]).toMatchObject({ claudeCode: { options: { plugins: [{ type: "local", path: plugin }] } }, fakeSandbox: {} });
@@ -200,7 +200,7 @@ describe("a delegation to a backend that places parts", () => {
     }));
     const r = await w.delegate();
     await waitFor(() => w.report("blocked").length > 0, "the agent to block");
-    const plugin = join(w.cloverHome, "run", "agents", r.sessionId, CLAUDE_PLUGIN_FOLDER);
+    const plugin = join(w.mossHome, "run", "agents", r.sessionId, CLAUDE_PLUGIN_FOLDER);
     expect(existsSync(join(plugin, "skills", "pdf", "SKILL.md"))).toBe(true);
     expect(existsSync(join(plugin, "hooks", "hooks.json"))).toBe(false);
     expect(logs.some((l) => l.includes("plugin command hook(s) not placed"))).toBe(true);

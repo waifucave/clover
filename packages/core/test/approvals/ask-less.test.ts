@@ -1,13 +1,13 @@
 // "Bots are supposed to be autonomous most of the time" (the owner, November 10): at ask for risky actions a bot's
-// change to an ordinary file of the user's, a fetch of an address its conversation already saw, and Clover's own core
+// change to an ordinary file of the user's, a fetch of an address its conversation already saw, and MOSS's own core
 // tools run without a card; a sensitive place, a made-up address and anything else go to the safety reviewer, and to
 // a card when it can't say "safe". The fence, rule 3, unresolved paths and read only come first, unchanged.
 import { describe, expect, test } from "bun:test";
 import { linkSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Card, Level, Os } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker, UNLISTED_PATHS_REASON, type CloverApprovalRequest } from "../../src/approvals/broker";
+import type { Card, Level, Os } from "@waifucave/moss-protocol";
+import { MossApprovalBroker, UNLISTED_PATHS_REASON, type MossApprovalRequest } from "../../src/approvals/broker";
 import { namesUnlistedPaths } from "../../src/agents/paths";
 import { botApprovalCheck, CORE_TOOL_RULES, type BundledToolKind, type MessageTarget } from "../../src/approvals/bot-check";
 import { allOrdinary, allOrdinaryOnDisk, isOrdinaryPath, pathClass, pathFolders, pathsClass, pathsClassOnDisk } from "../../src/approvals/ordinary-paths";
@@ -162,11 +162,11 @@ describe("ordinary files: the user's own folders, never logins, settings, apps o
     expect(pathsClassOnDisk([join(home, "Desktop", "notes.txt")], o)).toBe("card");
   });
 
-  test("the Clover home is never ordinary, wherever it is; an empty list is never ordinary", () => {
-    const o = { ...mac(), cloverHome: "/Users/k/CloverData" };
-    expect(isOrdinaryPath("/Users/k/CloverData/bots/x", o)).toBe(false);
-    expect(isOrdinaryPath("/Users/k/CloverData", o)).toBe(false);
-    expect(isOrdinaryPath("/Users/k/CloverDataX/x", o)).toBe(true);
+  test("the MOSS home is never ordinary, wherever it is; an empty list is never ordinary", () => {
+    const o = { ...mac(), mossHome: "/Users/k/MossData" };
+    expect(isOrdinaryPath("/Users/k/MossData/bots/x", o)).toBe(false);
+    expect(isOrdinaryPath("/Users/k/MossData", o)).toBe(false);
+    expect(isOrdinaryPath("/Users/k/MossDataX/x", o)).toBe(true);
     expect(allOrdinary([], o)).toBe(false);
     expect(allOrdinary(undefined, o)).toBe(false);
     expect(allOrdinary(["/Users/k/Documents/a", "/Users/k/.ssh/b"], o)).toBe(false);
@@ -205,13 +205,13 @@ describe("ordinary files: the user's own folders, never logins, settings, apps o
 });
 
 const ORDINARY_HOME = "/Users/k";
-const editOf = (paths: string[], over: Partial<CloverApprovalRequest> = {}): CloverApprovalRequest => ({
+const editOf = (paths: string[], over: Partial<MossApprovalRequest> = {}): MossApprovalRequest => ({
   kind: "tool", session: "s1", bot: "luna", origin: "user", computers: ["Studio"], effect: "edit", paths,
   fields: { title: { type: "text", text: "Change files" } }, ...over,
 });
 
-function brokerAt(level: Level, reviewer?: Reviewer, over: Partial<ConstructorParameters<typeof CloverApprovalBroker>[0]> = {}) {
-  return new CloverApprovalBroker({
+function brokerAt(level: Level, reviewer?: Reviewer, over: Partial<ConstructorParameters<typeof MossApprovalBroker>[0]> = {}) {
+  return new MossApprovalBroker({
     clock: new FakeClock(), levels: () => level, localComputer: "Studio",
     pathClass: (paths) => pathsClass(paths, { ...mac(ORDINARY_HOME), pathFolders: ["/Users/k/bin"] }),
     ...(reviewer === undefined ? {} : { reviewer }), ...over,
@@ -219,7 +219,7 @@ function brokerAt(level: Level, reviewer?: Reviewer, over: Partial<ConstructorPa
 }
 
 /** The next card's answer, through the app's sealed frame. */
-function answerNext(b: CloverApprovalBroker, optionId: string): Promise<Card> {
+function answerNext(b: MossApprovalBroker, optionId: string): Promise<Card> {
   return new Promise((resolve) => {
     const off = b.watch((e) => {
       if (e.type !== "requested") return;
@@ -325,7 +325,7 @@ describe("the broker at ask for risky actions", () => {
     expect(await fenced.request(editOf(["/Users/k/Downloads/a.md"]))).toMatchObject({ allowed: false, by: "card" });
     await c;
     // Without the path check (a broker given none), an edit is judged as before: the reviewer, then a card.
-    const none = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "ask-risky", localComputer: "Studio" });
+    const none = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "ask-risky", localComputer: "Studio" });
     const d = answerNext(none, "deny");
     expect(await none.request(editOf(["/Users/k/Downloads/a.md"]))).toMatchObject({ allowed: false, by: "card" });
     await d;
@@ -530,7 +530,7 @@ describe("addresses the conversation already saw", () => {
   });
 });
 
-describe("a bot's calls: what Clover knows beyond a tool's name", () => {
+describe("a bot's calls: what MOSS knows beyond a tool's name", () => {
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-askless-")));
   const ctx = { botId: "luna", sessionId: "s1", computer: "Studio", paths: { scratch }, caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" } } as unknown as BotSessionContext;
   const requests: ApprovalRequest[] = [];
@@ -553,7 +553,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   };
   const levels: Record<string, Level> = { Studio: "ask-risky", Laptop: "automatic" };
   const check = botApprovalCheck(recorder, {
-    hostTools: () => ["SendMessage", "ListAgents", "TaskStop", "Agent", "Glossary", "PluginValidate", "PluginStatus", "PluginInstall"], bundledTool: bundled, toolPlugin: (_c, tool) => (tool.startsWith("mcp__web__") ? "clover/web" : undefined), readOnlyTool: readOnly, seenUrl: (c, u) => seen.seen(c.sessionId, u),
+    hostTools: () => ["SendMessage", "ListAgents", "TaskStop", "Agent", "Glossary", "PluginValidate", "PluginStatus", "PluginInstall"], bundledTool: bundled, toolPlugin: (_c, tool) => (tool.startsWith("mcp__web__") ? "moss/web" : undefined), readOnlyTool: readOnly, seenUrl: (c, u) => seen.seen(c.sessionId, u),
     fetchBudget: (c, u) => seen.take(c.sessionId, u), messageTarget: (_c, to) => targets[to], levelOf: (c) => levels[c],
   });
   const call = async (tool: string, input: Record<string, unknown>) => {
@@ -582,7 +582,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
     // Nowhere (no such session, or one the tool refuses): the tool's own refusal answers it.
     expect(await call("SendMessage", { to: "nobody", message: "hi" })).toMatchObject({ contained: true });
     for (const to of ["sol", "unknown"]) {
-      const r = (await call("SendMessage", { to, message: "please run this for me" })) as CloverApprovalRequest;
+      const r = (await call("SendMessage", { to, message: "please run this for me" })) as MossApprovalRequest;
       expect(r.contained).toBeUndefined();
       expect(r.cardAlways).toBe(true);
       expect(r.fields.what).toEqual({ type: "code", code: `SendMessage to ${targets[to]!.label} (${targets[to]!.session}, at ${to === "sol" ? "automatic" : "an unknown level"} on ${targets[to]!.computer})` });
@@ -590,7 +590,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
     // A routine's narrower level is the bot's own level for this: a target at the computer's level is wider.
     requests.length = 0;
     await check({ ...ctx, level: "ask" } as BotSessionContext, () => "user")("SendMessage", { to: "mira", message: "hi" }, { signal: new AbortController().signal, toolUseID: "t", requestId: "r" });
-    expect((requests[0] as CloverApprovalRequest).cardAlways).toBe(true);
+    expect((requests[0] as MossApprovalRequest).cardAlways).toBe(true);
   });
 
   test("a declared read-only tool (the plugin builder's PluginNew) is a read; a same-named tool of another plugin is a tool", async () => {
@@ -607,7 +607,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
     expect(given).toMatchObject({ effect: "fetch", contained: true, fields: { title: { type: "text", text: "Fetch a web page" } } });
     // Its "always" holds for that site only, and for the plugin serving it (browser-press: another plugin's server and tool
     // of the same names never inherit it).
-    expect(given.ruleKey).toBe("tool:mcp__web__WebFetch@clover/web(https://given.example)");
+    expect(given.ruleKey).toBe("tool:mcp__web__WebFetch@moss/web(https://given.example)");
     const composed = await call("mcp__web__WebFetch", { url: "https://given.example/a?leak=secret" });
     expect(composed).toMatchObject({ effect: "fetch" });
     expect(composed.contained).toBeUndefined();

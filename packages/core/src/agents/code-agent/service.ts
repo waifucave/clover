@@ -1,17 +1,17 @@
-// `clover-core code-agent` on the daemon's side (K-M3b; the controller's rulings A and B on it): Clover's coding agent
-// for an outside ACP client (Zed and others). The client starts `clover-core code-agent`, a thin relay (relay.ts) that
+// `moss-core code-agent` on the daemon's side (K-M3b; the controller's rulings A and B on it): MOSS's coding agent
+// for an outside ACP client (Zed and others). The client starts `moss-core code-agent`, a thin relay (relay.ts) that
 // says hello on the daemon's endpoint as `cli` with the user's terminal token, so the caller check counts it as the
 // user only from outside every sandbox and escape floor. Its one `codeAgent.open { cwd }` binds the connection to one
 // session here; after it the connection takes only `codeAgent.send`, and the session ends with the connection.
 //
-// * **The session** is a direct coding session of the user's: recorded (its transcript under the Clover home, like any
+// * **The session** is a direct coding session of the user's: recorded (its transcript under the MOSS home, like any
 //   agent's) and listed (a `coding` session on the host). Its root is the folder the client opened, which must be a
 //   folder of this computer's tree under the fence; the agent runs with the sandbox and the fenced set denied, as for
-//   any clover-code session. The bots' pause doesn't hold it.
+//   any moss-code session. The bots' pause doesn't hold it.
 // * **Its permission requests** go to the outside client, within this computer's level for the user: what the level
 //   allows or refuses is answered here, without asking; only what it would ask about reaches the client, and never with
 //   an "always" (nothing is saved from the client's answers, so the broker's saved rules and their floors are never
-//   bypassed). A request touching the Clover home or the fenced set is refused here at every level.
+//   bypassed). A request touching the MOSS home or the fenced set is refused here at every level.
 // * **The client's own reach is narrowed:** no MCP server it names is started (none runs inside the daemon for it), a
 //   session's folder stays inside the root, one ACP session per connection, and no mode that skips asking unless the
 //   level allows it.
@@ -22,7 +22,7 @@ import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, relative, sep } from "node:path";
 import { pathsOf, readPermissionOptions, type JsonRpcMessage } from "@waifucave/clover-agent-sdk/acp";
-import { CODE_AGENT_MAX_LINE, type Level } from "@waifucave/clover-protocol";
+import { CODE_AGENT_MAX_LINE, type Level } from "@waifucave/moss-protocol";
 import { levelDecision } from "../../contracts/approval-broker";
 import type { Clock } from "../../contracts/clock";
 import { ContractError } from "../../contracts/common";
@@ -30,16 +30,16 @@ import type { Fence } from "../../contracts/fence";
 import type { SessionDriver, SessionHost, TurnEnd } from "../../contracts/session-host";
 import type { Tree } from "../../contracts/tree";
 import { homeTreePath } from "../../bots/paths";
-import { CLOVER_CODE_ID, type CloverCodeBackend, type CodeAgentServed } from "../clover-code/backend";
+import { MOSS_CODE_ID, type MossCodeBackend, type CodeAgentServed } from "../moss-code/backend";
 import { effectOf } from "../manager";
 import { agentPolicyOf, homeReach, withHomeDenied } from "../memory";
 import { agentPaths } from "../paths";
 import { AgentTranscript, type AgentRecordFile } from "../transcript";
-import type { CodeAgentDoor } from "../../ipc/clover";
+import type { CodeAgentDoor } from "../../ipc/moss";
 import { toMethodError } from "../../rpc/handler";
 
 export interface CodeAgentServiceOptions {
-  /** The Clover home: the session's transcript goes under it. */
+  /** The MOSS home: the session's transcript goes under it. */
   home: string;
   /** This computer's name in the folder tree. */
   computer: string;
@@ -49,8 +49,8 @@ export interface CodeAgentServiceOptions {
   tree: Pick<Tree, "resolve">;
   fence: Pick<Fence, "checkAgentRoot" | "policy" | "touches">;
   clock: Pick<Clock, "now">;
-  /** Clover's coding agent on this computer, when it is there. */
-  backend(): Pick<CloverCodeBackend, "serve" | "detect"> | undefined;
+  /** MOSS's coding agent on this computer, when it is there. */
+  backend(): Pick<MossCodeBackend, "serve" | "detect"> | undefined;
   /** This computer's level for the user (§9.1); read-only when it isn't known. */
   levelOf?(computer: string): Level | undefined;
   log?(line: string): void;
@@ -123,14 +123,14 @@ export class CodeAgentService {
 
   async #open(conn: CodeAgentConnection, p: { cwd: string; model?: string; effort?: string }): Promise<{ session: string }> {
     const backend = this.#o.backend();
-    if (!backend) throw new ContractError("not_installed", "Clover's coding agent isn't on this computer");
+    if (!backend) throw new ContractError("not_installed", "MOSS's coding agent isn't on this computer");
     const detected = await backend.detect();
-    if (!detected.installed) throw new ContractError("not_installed", detected.reason ?? "Clover's coding agent isn't available on this computer");
+    if (!detected.installed) throw new ContractError("not_installed", detected.reason ?? "MOSS's coding agent isn't available on this computer");
     const { root, treePath } = this.#root(p.cwd);
     const id = `agent_${randomBytes(9).toString("base64url")}`;
     const transcript = new AgentTranscript(this.#o.home, id);
     const record: AgentRecordFile = {
-      v: 1, sessionId: id, backend: CLOVER_CODE_ID, computer: this.#o.computer, root: treePath, startedAt: this.#o.clock.now(),
+      v: 1, sessionId: id, backend: MOSS_CODE_ID, computer: this.#o.computer, root: treePath, startedAt: this.#o.clock.now(),
       ...(p.model === undefined ? {} : { model: p.model }), ...(p.effort === undefined ? {} : { effort: p.effort }),
     };
     transcript.writeRecord(record);
@@ -141,11 +141,11 @@ export class CodeAgentService {
         root,
         ...(p.model === undefined ? {} : { model: p.model }),
         ...(p.effort === undefined ? {} : { effort: p.effort }),
-        // The Clover home is out of its reach, whole, as for every agent (#208's check 2).
+        // The MOSS home is out of its reach, whole, as for every agent (#208's check 2).
         fence: withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home),
       }, (line) => this.#fromAgent(relay, line));
       this.#o.host.open({
-        id, kind: "coding", computer: this.#o.computer, backend: CLOVER_CODE_ID, root: treePath, title: `From ${conn.clientName}`,
+        id, kind: "coding", computer: this.#o.computer, backend: MOSS_CODE_ID, root: treePath, title: `From ${conn.clientName}`,
         ...(p.model === undefined ? {} : { model: p.model }), ...(p.effort === undefined ? {} : { effort: p.effort }),
       }, this.#driver(relay));
     } catch (err) {
@@ -183,9 +183,9 @@ export class CodeAgentService {
     if (relay) void this.#close(relay, "the client's connection closed", { end: false });
   }
 
-  /** Clover is stopping: every relayed session ends, its client's connection with it (INT, #292 review S4: the daemon
+  /** MOSS is stopping: every relayed session ends, its client's connection with it (INT, #292 review S4: the daemon
    *  closes the server's doors before the agents, so a connection's own close never reaches this). */
-  async closeAll(reason = "Clover is stopping"): Promise<void> {
+  async closeAll(reason = "MOSS is stopping"): Promise<void> {
     await Promise.all([...this.#relays.values()].map((relay) => this.#close(relay, reason)));
   }
 
@@ -227,7 +227,7 @@ export class CodeAgentService {
         if (relay.opening !== undefined) return refuse("a session is already being opened on this connection");
         // A new session only as the connection's first; a resume or load only of the one this connection was handed.
         if (method === "session/new" ? relay.acpSession !== undefined : named === undefined || named !== relay.acpSession) {
-          return refuse("this connection serves one session, the one it opened; start Clover's coding agent again for another");
+          return refuse("this connection serves one session, the one it opened; start MOSS's coding agent again for another");
         }
         const cwd = str(params["cwd"]);
         const real = cwd === undefined ? relay.root : this.#real(cwd);
@@ -254,7 +254,7 @@ export class CodeAgentService {
   #holdMode(relay: Relay): void {
     if (relay.mode !== "acceptEdits" || this.#modeOk("acceptEdits") || relay.acpSession === undefined || !relay.served) return;
     relay.mode = "default";
-    const own = `clover-mode-${++this.#ownSeq}`;
+    const own = `moss-mode-${++this.#ownSeq}`;
     relay.own.add(own);
     const set = { jsonrpc: "2.0", id: own, method: "session/set_mode", params: { sessionId: relay.acpSession, modeId: "default" } };
     relay.transcript.wire("out", set as unknown as JsonRpcMessage, false, this.#o.clock.now());
@@ -322,8 +322,8 @@ export class CodeAgentService {
     };
     const resolved = agentPaths(pathsOf(toolCall, toolCall?.["rawInput"]), relay.root);
     if (resolved.over) return answer(false, "too-many-paths");
-    // The Clover home and the fenced set: refused at every level, never asked about.
-    if (resolved.paths.some((p) => homeReach(this.#o.home, p, relay.root) === "inside")) return answer(false, "clover-home");
+    // The MOSS home and the fenced set: refused at every level, never asked about.
+    if (resolved.paths.some((p) => homeReach(this.#o.home, p, relay.root) === "inside")) return answer(false, "moss-home");
     if (resolved.paths.some((p) => this.#o.fence.touches([p]) !== null)) return answer(false, "fenced");
     const verdict = levelDecision(this.#level(), effectOf(kind));
     if (verdict === "allow") return answer(true, "level");
@@ -344,16 +344,16 @@ export class CodeAgentService {
   #driver(relay: Relay): SessionDriver {
     return {
       canFold: false,
-      // The client drives it: a message from Clover's own surfaces is answered, never sent on.
+      // The client drives it: a message from MOSS's own surfaces is answered, never sent on.
       turn: async (): Promise<TurnEnd> => ({ reason: "refusal", text: `This session is driven from ${relay.conn.clientName}: message it there.` }),
-      // The user's interrupt from Clover cancels the client's running prompt.
+      // The user's interrupt from MOSS cancels the client's running prompt.
       interrupt: async () => {
         if (relay.acpSession === undefined || relay.closed) return;
         const cancel = { jsonrpc: "2.0", method: "session/cancel", params: { sessionId: relay.acpSession } };
         relay.transcript.wire("out", cancel as unknown as JsonRpcMessage, false, this.#o.clock.now());
         relay.served?.feed(JSON.stringify(cancel));
       },
-      // Stopped from Clover: the agent and the connection end.
+      // Stopped from MOSS: the agent and the connection end.
       stop: async () => this.#close(relay, "stopped", { host: false }),
     };
   }
@@ -384,11 +384,11 @@ export class CodeAgentService {
     if (real === undefined) throw new ContractError("not_found", `the folder ${cwd} isn't there`);
     const userHome = this.#real(this.#o.userHome ?? homedir()) ?? (this.#o.userHome ?? homedir());
     const treePath = homeTreePath({ userHome, computer: this.#o.computer, dir: real });
-    if (treePath === undefined) throw new ContractError("refused", "Clover's coding agent works in a folder of your home folder on this computer");
+    if (treePath === undefined) throw new ContractError("refused", "MOSS's coding agent works in a folder of your home folder on this computer");
     const loc = this.#o.tree.resolve(treePath);
     if (loc.area !== "home" || loc.computer !== this.#o.computer) throw new ContractError("refused", `${treePath} isn't a folder of this computer`);
     const verdict = this.#o.fence.checkAgentRoot(loc.path);
-    if (!verdict.allowed) throw new ContractError("fenced", `an agent's root may not hold Clover's own folders (${verdict.reason})`, { path: verdict.path });
+    if (!verdict.allowed) throw new ContractError("fenced", `an agent's root may not hold MOSS's own folders (${verdict.reason})`, { path: verdict.path });
     return { root: this.#real(loc.path) ?? loc.path, treePath };
   }
 
@@ -413,7 +413,7 @@ function within(root: string, path: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel) && !rel.split(sep).includes(".."));
 }
 
-/** The service as the daemon's endpoint takes it (`CloverServerDeps.codeAgent`): its refusals as JSON-RPC errors. */
+/** The service as the daemon's endpoint takes it (`MossServerDeps.codeAgent`): its refusals as JSON-RPC errors. */
 export function codeAgentDoor(service: CodeAgentService): CodeAgentDoor {
   return {
     open: async (conn, p) => {

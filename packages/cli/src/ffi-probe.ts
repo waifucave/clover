@@ -1,4 +1,4 @@
-// `clover-core __ffi-probe`: bun:ffi inside the compiled daemon, on each OS it ships for. The agents' bridge checks a
+// `moss-core __ffi-probe`: bun:ffi inside the compiled daemon, on each OS it ships for. The agents' bridge checks a
 // connecting process's pid with getsockopt through bun:ffi (K-M1), as the Keychain and Cowork's descriptor channel
 // do on macOS. This asks the C library (kernel32 on Windows) for this process's pid and compares it with
 // `process.pid`. It touches no home, no Keychain and no daemon; `build:daemon --smoke` runs it on every CI machine.
@@ -38,7 +38,7 @@ export function runFfiProbe(platform: NodeJS.Platform = process.platform): { ok:
  */
 export async function runPeerPidProbe(platform: NodeJS.Platform = process.platform): Promise<{ ok: boolean; line: string }> {
   if (platform === "win32") return { ok: peerPidOf(0) === null, line: "peer-pid: none on Windows (lane C's job-object check), as expected" };
-  const dir = mkdtempSync(join(tmpdir(), "clover-peer-pid-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-peer-pid-"));
   const path = join(dir, "s");
   let seen: number | null | undefined;
   const server = Bun.listen({ unix: path, socket: { open: (s) => { seen = peerPidOf((s as unknown as { fd: number }).fd); }, data() {} } });

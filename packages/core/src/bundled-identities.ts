@@ -1,13 +1,13 @@
-// The binaries Clover ships beside its core, and the code identities they are signed under: one source, shared by the
+// The binaries MOSS ships beside its core, and the code identities they are signed under: one source, shared by the
 // core's runtime checks (`registry/plugin-run.ts`'s `pluginBun`) and lane M's packaging and signing (#244), so the
 // requirement the core checks and the signature the release makes can't drift apart.
-/** The Apple developer team Clover's apps and shipped binaries are signed by (`apple/Winter/project.yml`'s
+/** The Apple developer team MOSS's apps and shipped binaries are signed by (`apple/Winter/project.yml`'s
  *  `DEVELOPMENT_TEAM`). This module imports nothing, so scripts and the guard's checks read it anywhere. */
-export const CLOVER_TEAM_ID = "37N77U9RSZ";
+export const MOSS_TEAM_ID = "37N77U9RSZ";
 
-/** The Clover app's bundle identifier per profile: the packaged app (`apps/desktop/electron-builder.yml`'s `appId`) and
+/** The MOSS app's bundle identifier per profile: the packaged app (`apps/desktop/electron-builder.yml`'s `appId`) and
  *  the dev app (`apps/desktop/src/main/identity.ts`; `bun run dev:app` signs its Electron copy under it). */
-export const CLOVER_APP_IDENTIFIER = { dist: "com.waifucave.clover", dev: "com.waifucave.clover.dev" } as const;
+export const MOSS_APP_IDENTIFIER = { dist: "com.waifucave.moss.code", dev: "com.waifucave.moss.code.dev" } as const;
 
 /** A Developer ID Application leaf: Apple's Developer ID intermediate (OID 1.2.840.113635.100.6.2.6) under the anchor,
  *  and the leaf's Developer ID Application extension (1.2.840.113635.100.6.1.13). An Apple Development certificate of
@@ -15,26 +15,26 @@ export const CLOVER_APP_IDENTIFIER = { dist: "com.waifucave.clover", dev: "com.w
 export const DEVELOPER_ID_CLAUSES = "certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13]";
 
 /** The code requirement the process on the other end of an `app` connection must satisfy on macOS (the caller check,
- *  `platform/peer-signature.ts`): the profile's app identifier, Apple's chain, Clover's team, and for the dist app a
+ *  `platform/peer-signature.ts`): the profile's app identifier, Apple's chain, MOSS's team, and for the dist app a
  *  Developer ID leaf (`developerId`, on by default for dist). Dev keeps Apple's chain and the team, which an Apple
  *  Development identity of the team meets. Unsigned, ad hoc or another team's code never passes. */
-export function appRequirement(profile: "dist" | "dev", team: string = CLOVER_TEAM_ID, developerId: boolean = profile === "dist"): string {
+export function appRequirement(profile: "dist" | "dev", team: string = MOSS_TEAM_ID, developerId: boolean = profile === "dist"): string {
   if (!/^[A-Z0-9]{10}$/.test(team)) throw new Error(`not a team identifier: ${team}`);
-  return `identifier "${CLOVER_APP_IDENTIFIER[profile]}" and anchor apple generic${developerId ? ` and ${DEVELOPER_ID_CLAUSES}` : ""} and certificate leaf[subject.OU] = "${team}"`;
+  return `identifier "${MOSS_APP_IDENTIFIER[profile]}" and anchor apple generic${developerId ? ` and ${DEVELOPER_ID_CLAUSES}` : ""} and certificate leaf[subject.OU] = "${team}"`;
 }
 
 /** The Bun plugin code runs on (#234's check 5, K1): its own binary, never the core's, so no Keychain item's access
- *  list (which names `clover-core` alone) lets plugin code in. */
-export const PLUGIN_BUN_FILE = "clover-plugin-bun";
-export const PLUGIN_BUN_IDENTIFIER = { dist: "com.waifucave.clover.plugin-bun", dev: "com.waifucave.clover.plugin-bun.dev" } as const;
+ *  list (which names `moss-core` alone) lets plugin code in. */
+export const PLUGIN_BUN_FILE = "moss-plugin-bun";
+export const PLUGIN_BUN_IDENTIFIER = { dist: "com.waifucave.moss.core.plugin-bun", dev: "com.waifucave.moss.core.plugin-bun.dev" } as const;
 
 /** The process holder (lane A's seam, lane M's startup check), beside the core. */
-export const PROCESS_HOLDER_FILE = "clover-process-holder";
-export const PROCESS_HOLDER_IDENTIFIER = { dist: "com.waifucave.clover.process-holder", dev: "com.waifucave.clover.process-holder.dev" } as const;
+export const PROCESS_HOLDER_FILE = "moss-process-holder";
+export const PROCESS_HOLDER_IDENTIFIER = { dist: "com.waifucave.moss.core.process-holder", dev: "com.waifucave.moss.core.process-holder.dev" } as const;
 
-/** The designated requirement a shipped plugin Bun must satisfy on macOS: Apple's anchor, Clover's team, its own
- *  identifier. Nothing but a binary Clover's team signed under that identifier passes it. */
-export function pluginBunRequirement(team: string = CLOVER_TEAM_ID): string {
+/** The designated requirement a shipped plugin Bun must satisfy on macOS: Apple's anchor, MOSS's team, its own
+ *  identifier. Nothing but a binary MOSS's team signed under that identifier passes it. */
+export function pluginBunRequirement(team: string = MOSS_TEAM_ID): string {
   if (!/^[A-Z0-9]{10}$/.test(team)) throw new Error(`not a team identifier: ${team}`);
   return `anchor apple generic and identifier "${PLUGIN_BUN_IDENTIFIER.dist}" and certificate leaf[subject.OU] = "${team}"`;
 }

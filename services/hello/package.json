@@ -1,5 +1,5 @@
 {
-  "name": "@waifucave/clover-service-hello",
+  "name": "@waifucave/moss-service-hello",
   "version": "0.0.0",
   "private": true,
   "description": "The layout's example Cloudflare Worker and the emulator's smoke test. Never deployed.",
@@ -11,6 +11,6 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260730.1",
-    "@waifucave/clover-test-harness": "workspace:*"
+    "@waifucave/moss-test-harness": "workspace:*"
   }
 }

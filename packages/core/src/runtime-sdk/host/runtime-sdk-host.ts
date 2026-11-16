@@ -20,7 +20,7 @@
 // persists selections itself, `create.ts`'s `selectRuntimeFor`), and capability servers merged into
 // every query (each session carries its own `mcpServers`). `sdk` stays a parameter so a test can hand
 // in a fake SDK and see exactly what the host passes it.
-import * as cloverSdk from "@waifucave/clover-agent-sdk";
+import * as mossSdk from "@waifucave/clover-agent-sdk";
 import type { BrandProfile, Options, Query } from "@waifucave/clover-agent-sdk";
 import type { ContinuityEndpoint, MessageOrigin } from "@waifucave/clover-provider-runtime";
 
@@ -40,7 +40,7 @@ import { defaultEndpointResolver } from "./default-endpoint-resolver";
 import { sdkHomeOf, type RunHome, type RunHomeFor, type RunHomeOutcome } from "./run-home/types";
 
 /** The agent SDK as the host uses it: its module namespace. Production passes nothing (the real one). */
-export type HostSdk = typeof cloverSdk;
+export type HostSdk = typeof mossSdk;
 
 /** `Options` plus where the run home rides (Contract A: `options.runtime.runHome`). */
 export interface HostQueryOptions extends Options {
@@ -100,7 +100,7 @@ export interface RuntimeSdkHost {
 }
 
 export function createRuntimeSdkHost(opts: RuntimeSdkHostOptions): RuntimeSdkHost {
-  const sdk = opts.sdk ?? cloverSdk;
+  const sdk = opts.sdk ?? mossSdk;
   const resolved = sdk.resolveBrand(opts.brand);
   if (!resolved.ok) throw new sdk.InvalidBrandError(resolved.reason);
   const brand = resolved.brand;

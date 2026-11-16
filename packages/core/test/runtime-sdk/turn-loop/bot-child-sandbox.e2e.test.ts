@@ -10,10 +10,10 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Level, Os } from "@waifucave/clover-protocol";
+import type { Level, Os } from "@waifucave/moss-protocol";
 import type { AgentPermissionAsk, AgentStartSpec } from "../../../src/contracts/agent-backend";
 import type { SandboxPolicy } from "../../../src/contracts/fence";
-import { CloverFence } from "../../../src/fence/fence";
+import { MossFence } from "../../../src/fence/fence";
 import { botSandboxSettings, rootCovered } from "../../../src/fence/sandbox-settings";
 import { botChildFor, botChildSandboxSettings } from "../../../src/agents/bot-child";
 import { botChildPolicy } from "../../../src/agents/manager";
@@ -26,33 +26,33 @@ const temps: string[] = [];
 afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true }); });
 const os: Os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
 
-/** A temp user home with the Clover home, a temp folder and a project holding a repository, a bare repository not
+/** A temp user home with the MOSS home, a temp folder and a project holding a repository, a bare repository not
  *  named `*.git`, and a PATH folder. */
 function world() {
-  const user = realpathSync(mkdtempSync(join(tmpdir(), "clover-bot-child-")));
+  const user = realpathSync(mkdtempSync(join(tmpdir(), "moss-bot-child-")));
   temps.push(user);
-  const clover = join(user, ".clover");
+  const moss = join(user, ".moss");
   const temp = join(user, "tmp");
   const proj = join(user, "Projects", "app");
-  const scratch = join(clover, "scratch", "alpha");
-  for (const d of [clover, temp, scratch, join(proj, ".git", "hooks"), join(proj, "mirror", "objects"), join(proj, "mirror", "refs", "heads"), join(proj, "mirror", "hooks"), join(proj, "bin")]) mkdirSync(d, { recursive: true });
+  const scratch = join(moss, "scratch", "alpha");
+  for (const d of [moss, temp, scratch, join(proj, ".git", "hooks"), join(proj, "mirror", "objects"), join(proj, "mirror", "refs", "heads"), join(proj, "mirror", "hooks"), join(proj, "bin")]) mkdirSync(d, { recursive: true });
   writeFileSync(join(proj, ".git", "HEAD"), "ref: refs/heads/main\n");
   writeFileSync(join(proj, ".git", "config"), "[core]\n\tbare = false\n");
   writeFileSync(join(proj, "mirror", "HEAD"), "ref: refs/heads/main\n");
-  const fence = new CloverFence({ os, home: user, cloverHome: clover, temp });
+  const fence = new MossFence({ os, home: user, mossHome: moss, temp });
   // The child's policy as the manager draws it for a bot's agent.
-  const childPolicy: SandboxPolicy = withSecretsDenied(withHomeDenied(botChildPolicy(agentPolicyOf(fence.policy()), proj, user), clover), user, os);
+  const childPolicy: SandboxPolicy = withSecretsDenied(withHomeDenied(botChildPolicy(agentPolicyOf(fence.policy()), proj, user), moss), user, os);
   const botPolicy = fence.forCaller({ kind: "session", sessionId: "b_alpha", sessionKind: "bot", bot: "alpha" } as never).policy();
   const pathFolders = [join(proj, "bin")];
-  return { user, clover, temp, proj, scratch, fence, childPolicy, botPolicy, pathFolders };
+  return { user, moss, temp, proj, scratch, fence, childPolicy, botPolicy, pathFolders };
 }
 
 describe("a bot's child's sandbox, by its bot's builder", () => {
   for (const level of ["ask-risky", "accept-edits", "automatic"] as const satisfies readonly Level[]) {
     test(`at ${level}: every bot deny bearing on the child's roots is the child's too; its write roots are never wider`, () => {
       const w = world();
-      const bot = botSandboxSettings(w.botPolicy, { cloverHome: w.clover, userHome: w.user, level, grantedWrite: [w.proj], ownFolders: [w.scratch], pathFolders: w.pathFolders });
-      const child = botChildSandboxSettings(w.childPolicy, { cloverHome: w.clover, userHome: w.user, os, root: w.proj, level, pathFolders: () => w.pathFolders });
+      const bot = botSandboxSettings(w.botPolicy, { mossHome: w.moss, userHome: w.user, level, grantedWrite: [w.proj], ownFolders: [w.scratch], pathFolders: w.pathFolders });
+      const child = botChildSandboxSettings(w.childPolicy, { mossHome: w.moss, userHome: w.user, os, root: w.proj, level, pathFolders: () => w.pathFolders });
       const childDeny = child.filesystem?.denyWrite ?? [];
       const childRoots = [w.proj, ...(child.filesystem?.allowWrite ?? [])];
       const bears = (p: string) => childRoots.some((r) => rootCovered(p, [r], os) || rootCovered(r, [p], os));
@@ -70,7 +70,7 @@ describe("a bot's child's sandbox, by its bot's builder", () => {
       for (const d of bot.filesystem?.denyWrite ?? []) {
         // A kept folder's pin holds that folder's own entry where the home is written out entry by entry; the child's
         // roots are never renamed by it (their parents aren't its roots).
-        if (d.endsWith("/.clover-kept-folder")) continue;
+        if (d.endsWith("/.moss-kept-folder")) continue;
         for (const p of probesOf(d)) {
           if (!bears(p)) continue;
           if (!rootCovered(p, childDeny, os) && !childDeny.some((c) => !c.includes("*") && rootCovered(c, [p], os))) missing.push(`${d} (as ${p})`);
@@ -85,7 +85,7 @@ describe("a bot's child's sandbox, by its bot's builder", () => {
       // Never wider: the child's write roots are among its bot's (with the root granted).
       for (const r of child.filesystem?.allowWrite ?? []) expect([r, (bot.filesystem?.allowWrite ?? []).includes(r)]).toEqual([r, true]);
       // The run-later places under its root are denied (the runtime writes the root whatever the roots say).
-      for (const p of [".husky/pre-commit", ".claude/settings.json", ".git/hooks/pre-commit", "mirror/hooks/post-checkout", "bin/tool", ".vscode/tasks.json", ".clover/settings.json"]) {
+      for (const p of [".husky/pre-commit", ".claude/settings.json", ".git/hooks/pre-commit", "mirror/hooks/post-checkout", "bin/tool", ".vscode/tasks.json", ".moss/settings.json"]) {
         expect([p, rootCovered(join(w.proj, p), childDeny, os)]).toEqual([p, true]);
       }
       expect(rootCovered(join(w.proj, "src", "main.ts"), childDeny, os)).toBe(false);
@@ -97,12 +97,12 @@ describeWithEmbeddedRuntime("a bot's child on the real runtime, its cwd the proj
   darwinTest("its commands never make a run-later file, every card answered yes; its Write to one is refused with no card", async () => {
     const w = world();
     const backend = inProcessAgentBackend({
-      home: w.clover, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => ({ mayAct: () => true }), sandboxReady: () => true,
-      botChild: botChildFor({ cloverHome: w.clover, userHome: w.user, pathFolders: () => w.pathFolders }),
+      home: w.moss, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => ({ mayAct: () => true }), sandboxReady: () => true,
+      botChild: botChildFor({ mossHome: w.moss, userHome: w.user, pathFolders: () => w.pathFolders }),
     });
     const spec: AgentStartSpec & { level: Level } = {
       sessionId: "s_child", bot: "alpha", root: w.proj, model: "winter-test/calls", level: "ask-risky",
-      bridge: { name: "clover_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
+      bridge: { name: "moss_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
       fence: w.childPolicy,
     };
     const session = await backend.start(spec);

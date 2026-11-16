@@ -9,7 +9,7 @@
 // contents: the bundled diff panel's OK lists both, a third-party layer with `conversation.read` alone is refused.
 import { readdirSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
-import { CLOVER_ERR, SESSIONS_METHODS, type SessionDiff, type SessionView } from "@waifucave/clover-protocol";
+import { MOSS_ERR, SESSIONS_METHODS, type SessionDiff, type SessionView } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { handler, MethodError, type MethodHandler } from "../rpc/handler";
 import { folderDiff } from "./diff";
@@ -29,7 +29,7 @@ export interface SessionPanelDeps {
   length(id: string): number;
   /** A tree path as a folder on this computer, or why it isn't one (another computer's, not in the tree). */
   localFolder(root: string): { path: string } | { reason: string };
-  /** The Clover home, where the outputs folders are. */
+  /** The MOSS home, where the outputs folders are. */
   home: string;
   /** A model tag's context window, when the catalog knows it. */
   contextWindowOf?(model: string): number | undefined;
@@ -60,7 +60,7 @@ export function sessionPanelMethods(deps: SessionPanelDeps): Record<string, Meth
   return {
     [M.sessionDiff.name]: handler(M.sessionDiff, async ({ id }, ctx): Promise<SessionDiff> => {
       if (ctx.caller.kind === "plugin" && !(deps.grantsOf?.(ctx.caller.pluginId) ?? []).includes(DIFF_PLUGIN_CAPABILITY)) {
-        throw new MethodError(CLOVER_ERR.CAPABILITY_REFUSED, `${M.sessionDiff.name} needs the capability ${DIFF_PLUGIN_CAPABILITY} as well, which ${ctx.caller.pluginId}'s OK doesn't list`);
+        throw new MethodError(MOSS_ERR.CAPABILITY_REFUSED, `${M.sessionDiff.name} needs the capability ${DIFF_PLUGIN_CAPABILITY} as well, which ${ctx.caller.pluginId}'s OK doesn't list`);
       }
       const v = viewOf(id);
       const none = (notice: string): SessionDiff => ({ base: "", target: "working tree", targets: [], files: [], notice });

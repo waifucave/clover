@@ -10,7 +10,7 @@
 import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
-import { DEFAULT_LEVEL, type Level } from "@waifucave/clover-protocol";
+import { DEFAULT_LEVEL, type Level } from "@waifucave/moss-protocol";
 import type { AnswerDevices } from "../../src/contracts/approval-broker";
 import type { Fence } from "../../src/contracts/fence";
 import { MemoryAnswerLedger } from "../../src/contracts/fakes/approval-broker";
@@ -60,7 +60,7 @@ export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0])
   const addComputer = (name: string, c: FakeTreeComputer): void => {
     self ??= name;
     const home = toDisk(c.home);
-    const botsRoot = toDisk(c.botsRoot ?? `${c.home}/.clover/bots`);
+    const botsRoot = toDisk(c.botsRoot ?? `${c.home}/.moss/bots`);
     mkdirSync(home, { recursive: true });
     const fence = c.fence;
     const state: TreeComputer = { name, aliases: c.aliases ?? [], online: c.online ?? true, level: c.level ?? DEFAULT_LEVEL, home, botsRoot, os: hostOs() };

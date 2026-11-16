@@ -1,11 +1,11 @@
-// Reads that never follow a link (F-M3's review), and the tree's one path to the Clover home. The user's own file
+// Reads that never follow a link (F-M3's review), and the tree's one path to the MOSS home. The user's own file
 // viewers read with `noFollow`: a link a runner planted anywhere on the way, a folder swapped for one between two
 // calls, or a handle whose real path isn't the path walked, is refused, here or on another computer.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { COMPUTERS_METHODS } from "@waifucave/clover-protocol";
+import { COMPUTERS_METHODS } from "@waifucave/moss-protocol";
 import { LocalHolder } from "../../src/tree/holder";
 import { hostOs } from "../../src/tree/names";
 import { CoreTree, type TreeComputer } from "../../src/tree/tree";
@@ -23,19 +23,19 @@ afterEach(() => {
   for (const t of temps.splice(0)) rmSync(t, { recursive: true, force: true });
 });
 
-function holder(o: { cloverHome?: (root: string) => string; fdRealPath?: (fd: number, path: string) => string | null; afterLstat?: (real: string) => void } = {}) {
+function holder(o: { mossHome?: (root: string) => string; fdRealPath?: (fd: number, path: string) => string | null; afterLstat?: (real: string) => void } = {}) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "lane-j-nofollow-")));
   temps.push(root);
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
-  const cloverHome = o.cloverHome ? o.cloverHome(root) : join(home, ".clover");
-  mkdirSync(cloverHome, { recursive: true });
+  const mossHome = o.mossHome ? o.mossHome(root) : join(home, ".moss");
+  mkdirSync(mossHome, { recursive: true });
   const h = new LocalHolder({
-    clock: { now: () => Date.now() }, name: () => "Studio", home, cloverHome, botsRoot: join(cloverHome, "bots"), os: hostOs(),
+    clock: { now: () => Date.now() }, name: () => "Studio", home, mossHome, botsRoot: join(mossHome, "bots"), os: hostOs(),
     ...(o.fdRealPath ? { fdRealPath: o.fdRealPath } : {}),
     ...(o.afterLstat ? { afterLstat: o.afterLstat } : {}),
   });
-  return { h, root, home, cloverHome };
+  return { h, root, home, mossHome };
 }
 
 describe("noFollow", () => {
@@ -177,24 +177,24 @@ describe("the read-denied items", () => {
       const studio = await cluster.add("Studio");
       const laptop = await cluster.add("Laptop1");
       await cluster.join();
-      mkdirSync(join(laptop.cloverHome, "run"), { recursive: true });
-      writeFileSync(join(laptop.cloverHome, "run", "core.json"), "{\"token\":\"not-a-secret\"}");
-      writeFileSync(join(laptop.cloverHome, "notes.md"), "fine");
+      mkdirSync(join(laptop.mossHome, "run"), { recursive: true });
+      writeFileSync(join(laptop.mossHome, "run", "core.json"), "{\"token\":\"not-a-secret\"}");
+      writeFileSync(join(laptop.mossHome, "notes.md"), "fine");
       const CORE = { kind: "core" } as const;
       for (const [tree, as] of [[laptop.node.tree, USER], [laptop.node.tree, CORE], [studio.node.tree, USER]] as const) {
-        expect(await code(tree.read("home/Laptop1/.clover/run/core.json", { as }))).toBe("fenced");
-        expect(await code(tree.read("home/Laptop1/.clover/run/core.json", { as, noFollow: true }))).toBe("fenced");
-        expect(await code(tree.stat("home/Laptop1/.clover/run/core.json", { as }))).toBe("fenced");
-        expect(await code(tree.list("home/Laptop1/.clover/run", { as }))).toBe("fenced");
+        expect(await code(tree.read("home/Laptop1/.moss/run/core.json", { as }))).toBe("fenced");
+        expect(await code(tree.read("home/Laptop1/.moss/run/core.json", { as, noFollow: true }))).toBe("fenced");
+        expect(await code(tree.stat("home/Laptop1/.moss/run/core.json", { as }))).toBe("fenced");
+        expect(await code(tree.list("home/Laptop1/.moss/run", { as }))).toBe("fenced");
         if (tree === laptop.node.tree) {
-          expect((await tree.list("home/Laptop1/.clover", { as })).map((e) => e.path)).not.toContain("home/Laptop1/.clover/run");
-          expect(await tree.glob("**/*", { as, cwd: "home/Laptop1/.clover" })).not.toContain("home/Laptop1/.clover/run/core.json");
-          expect(await tree.read("home/Laptop1/.clover/notes.md", { as })).toEqual(utf8("fine"));
+          expect((await tree.list("home/Laptop1/.moss", { as })).map((e) => e.path)).not.toContain("home/Laptop1/.moss/run");
+          expect(await tree.glob("**/*", { as, cwd: "home/Laptop1/.moss" })).not.toContain("home/Laptop1/.moss/run/core.json");
+          expect(await tree.read("home/Laptop1/.moss/notes.md", { as })).toEqual(utf8("fine"));
         } else {
-          // Through another computer the call is a peer's, and #234's home default-deny refuses a peer the whole Clover
+          // Through another computer the call is a peer's, and #234's home default-deny refuses a peer the whole MOSS
           // home, its listing and the rest of it included.
-          expect(await code(tree.list("home/Laptop1/.clover", { as }))).toBe("fenced");
-          expect(await code(tree.read("home/Laptop1/.clover/notes.md", { as }))).toBe("fenced");
+          expect(await code(tree.list("home/Laptop1/.moss", { as }))).toBe("fenced");
+          expect(await code(tree.read("home/Laptop1/.moss/notes.md", { as }))).toBe("fenced");
         }
       }
     } finally {
@@ -203,23 +203,23 @@ describe("the read-denied items", () => {
   });
 });
 
-describe("home/<Computer>/.clover", () => {
-  test("is this computer's Clover home wherever it is on disk (the dev profile's ~/.clover-dev, CLOVER_HOME)", async () => {
-    const { h, home, cloverHome } = holder({ cloverHome: (root) => join(root, "elsewhere", ".clover-dev") });
-    await h.write("home/Studio/.clover/outputs/s_1/week.md", utf8("# Week\n"), { as: USER });
-    expect(await h.read("home/Studio/.clover/outputs/s_1/week.md", { as: USER, noFollow: true })).toEqual(utf8("# Week\n"));
-    expect((await h.list("home/Studio/.clover/outputs/s_1", { as: USER })).map((s) => s.path)).toEqual(["home/Studio/.clover/outputs/s_1/week.md"]);
-    expect(Bun.file(join(cloverHome, "outputs", "s_1", "week.md")).size).toBeGreaterThan(0);
-    // Nothing went to `<home>/.clover`.
-    expect(await Bun.file(join(home, ".clover", "outputs", "s_1", "week.md")).exists()).toBe(false);
+describe("home/<Computer>/.moss", () => {
+  test("is this computer's MOSS home wherever it is on disk (the dev profile's ~/.moss-dev, MOSS_HOME)", async () => {
+    const { h, home, mossHome } = holder({ mossHome: (root) => join(root, "elsewhere", ".moss-dev") });
+    await h.write("home/Studio/.moss/outputs/s_1/week.md", utf8("# Week\n"), { as: USER });
+    expect(await h.read("home/Studio/.moss/outputs/s_1/week.md", { as: USER, noFollow: true })).toEqual(utf8("# Week\n"));
+    expect((await h.list("home/Studio/.moss/outputs/s_1", { as: USER })).map((s) => s.path)).toEqual(["home/Studio/.moss/outputs/s_1/week.md"]);
+    expect(Bun.file(join(mossHome, "outputs", "s_1", "week.md")).size).toBeGreaterThan(0);
+    // Nothing went to `<home>/.moss`.
+    expect(await Bun.file(join(home, ".moss", "outputs", "s_1", "week.md")).exists()).toBe(false);
   });
 
-  test("the tree resolves it, and names a real path in it, from the computer's own Clover home", () => {
-    const c: TreeComputer = { name: "Studio", aliases: [], online: true, level: "automatic", home: "/Users/me", os: "macos", botsRoot: "/Users/me/.clover-dev/bots" };
+  test("the tree resolves it, and names a real path in it, from the computer's own MOSS home", () => {
+    const c: TreeComputer = { name: "Studio", aliases: [], online: true, level: "automatic", home: "/Users/me", os: "macos", botsRoot: "/Users/me/.moss-dev/bots" };
     const tree = new CoreTree({ directory: { self: () => "Studio", get: (n) => (n === "Studio" ? c : undefined) }, holder: () => { throw new Error("unused"); }, botComputer: () => undefined });
-    expect(tree.resolve("home/Studio/.clover/outputs/s_1/week.md").path).toBe("/Users/me/.clover-dev/outputs/s_1/week.md");
+    expect(tree.resolve("home/Studio/.moss/outputs/s_1/week.md").path).toBe("/Users/me/.moss-dev/outputs/s_1/week.md");
     expect(tree.resolve("home/Studio/notes.md").path).toBe("/Users/me/notes.md");
-    expect(tree.toTreePath("Studio", "/Users/me/.clover-dev/outputs/s_1/week.md")).toBe("home/Studio/.clover/outputs/s_1/week.md");
+    expect(tree.toTreePath("Studio", "/Users/me/.moss-dev/outputs/s_1/week.md")).toBe("home/Studio/.moss/outputs/s_1/week.md");
     expect(tree.toTreePath("Studio", "/Users/me/notes.md")).toBe("home/Studio/notes.md");
   });
 });

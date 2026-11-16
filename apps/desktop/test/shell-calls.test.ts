@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ShellState } from "@waifucave/clover-plugin-sdk";
+import type { ShellState } from "@waifucave/moss-plugin-sdk";
 import { cleanReport, hearsShell, ownsShownBot, providedNow, routeShell } from "../src/main/ui/shell-calls";
 
 const state = (over: Partial<ShellState> = {}): ShellState => ({

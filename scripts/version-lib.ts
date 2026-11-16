@@ -7,7 +7,7 @@ export const ROOT = join(import.meta.dir, "..");
 // Winter Phase 9c (P9c-2): the rebrand-scale version scheme. Groups are (major)(feature, always
 // 3 digits)(patch, always 1 digit) — e.g. "0.111.0". The pre-rename Norma scheme (`#.#.###`, e.g.
 // "0.2.014") deliberately no longer matches: `norma-final` carries its own copy of this file on
-// its own branch and stays on the old scheme; this tree is Clover-only from here on.
+// its own branch and stays on the old scheme; this tree is MOSS-only from here on.
 export const FORMAT = /^(\d+)\.(\d{3})\.(\d)$/;
 
 /** Pure half of `readCanonical` — the exact string a real VERSION file's content should already
@@ -71,8 +71,8 @@ const PKGS = ["cli", "core", "protocol", "plugin-sdk"];
 /** M-M0: other stamped package.jsons, by repo path — the desktop app, whose version electron-builder reads. */
 const OTHER_PKG_DIRS = ["apps/desktop"];
 
-/** The generated Info.plists (in apple/Winter/Support) that carry CLOVER's version: Winter Headless's (the old Mac app's left the repo). */
-export const CLOVER_INFO_PLISTS = ["WinterHeadless-Info.plist"] as const;
+/** The generated Info.plists (in apple/Winter/Support) that carry MOSS's version: Winter Headless's (the old Mac app's left the repo). */
+export const MOSS_INFO_PLISTS = ["WinterHeadless-Info.plist"] as const;
 
 /** Stamp the canonical version into every source. Returns the files written. */
 export function stampAll(v: string): string[] {
@@ -99,12 +99,12 @@ export function stampAll(v: string): string[] {
   // 3. apple: project.yml is the XcodeGen source of truth; the Info.plists are the
   //    git-tracked generated mirrors that builds actually read (INFOPLIST_FILE) until the
   //    next `xcodegen generate`. Stamp ALL of them so a sync never needs xcodegen installed.
-  //    Every unmarked version line in project.yml is Clover's. The Winter Computer Use helper's lines carry
+  //    Every unmarked version line in project.yml is MOSS's. The Winter Computer Use helper's lines carry
   //    its OWN version (apple/ComputerUse/VERSION, semver), so they are marked and skipped here, and stamped —
   //    with its generated Info.plist — by `syncHelperVersion` instead.
   const yml = join(ROOT, "apple", "Winter", "project.yml");
   put(yml, stampProjectYml(readFileSync(yml, "utf8"), v));
-  for (const name of CLOVER_INFO_PLISTS) {
+  for (const name of MOSS_INFO_PLISTS) {
     const plist = join(ROOT, "apple", "Winter", "Support", name);
     put(plist, stampInfoPlist(readFileSync(plist, "utf8"), v));
   }
@@ -112,7 +112,7 @@ export function stampAll(v: string): string[] {
   return files;
 }
 
-/** Every Clover `CFBundleShortVersionString:` / `CFBundleVersion:` in project.yml, not just the first — all but
+/** Every MOSS `CFBundleShortVersionString:` / `CFBundleVersion:` in project.yml, not just the first — all but
  *  the helper's, which are marked `# apple/ComputerUse/VERSION` (its own version: `syncHelperVersion`). */
 export function stampProjectYml(yml: string, v: string): string {
   return yml

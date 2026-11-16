@@ -9,7 +9,7 @@
 //   onTurnEnd             the hook: counts Notes keeper's turns (own-bot: it sees no other bot's)
 //   note                  the /note command, which runs as the user
 //   ui.list               what the page reads: the notes and the turn count
-import type { HostModule, McpServerTransport, HostPluginApi } from "@waifucave/clover-plugin-sdk";
+import type { HostModule, McpServerTransport, HostPluginApi } from "@waifucave/moss-plugin-sdk";
 import { Notes } from "./notes";
 
 let notes: Notes | undefined;

@@ -40,7 +40,7 @@ export function fakeAvatar(o: { catalogue?: AvatarCatalogue; answer?: (cue: Avat
 }
 
 export const MODEL: AvatarCatalogue = {
-  format: "live2d", renderer: "clover/live2d", capabilities: ["expressions", "motions", "outfits", "lookat", "pace"],
+  format: "live2d", renderer: "moss/live2d", capabilities: ["expressions", "motions", "outfits", "lookat", "pace"],
   expressions: ["smile", "love"], motions: ["wave"], outfits: [{ name: "hat", on: false }],
 };
 

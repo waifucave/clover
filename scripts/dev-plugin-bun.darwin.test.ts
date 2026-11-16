@@ -9,12 +9,12 @@ import { fileURLToPath } from "node:url";
 import { DEV_PLUGIN_BUN_IDENTIFIER, devPluginBunSignArgs, signedFacts } from "./dev-daemon-lib";
 
 // The release copy's entitlements (bundled-binaries.ts's PLUGIN_BUN_ENTITLEMENTS), which dev:daemon signs its copy with.
-const ENTITLEMENTS = join(dirname(fileURLToPath(import.meta.url)), "clover-plugin-bun.entitlements");
+const ENTITLEMENTS = join(dirname(fileURLToPath(import.meta.url)), "moss-plugin-bun.entitlements");
 
 test("a copy of the pinned Bun, signed as the dev plugin Bun, carries its identifier and still runs", () => {
-  const dir = mkdtempSync(join(tmpdir(), "clover-dev-plugin-bun-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-dev-plugin-bun-"));
   try {
-    const bun = join(dir, "clover-plugin-bun");
+    const bun = join(dir, "moss-plugin-bun");
     copyFileSync(realpathSync(process.execPath), bun);
     chmodSync(bun, 0o755);
     const signed = spawnSync("codesign", devPluginBunSignArgs(bun, ENTITLEMENTS), { encoding: "utf8" });

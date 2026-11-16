@@ -1,7 +1,7 @@
 // The hold clause's page: a button to press and hold, and `window.__holdSend(to, text)` the run calls later (no click of the
 // page's own and no activation behind it): it sends the user's words with `useUserSend` and writes what came of it.
 import { useEffect } from "react";
-import { useUserSend } from "@waifucave/clover-plugin-sdk/ui";
+import { useUserSend } from "@waifucave/moss-plugin-sdk/ui";
 
 export function HoldApp() {
   const send = useUserSend();

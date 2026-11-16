@@ -5,11 +5,11 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { API_CALLS, COMPONENT_CALLS, listenerArgOf, type ApiCallInfo } from "@waifucave/clover-plugin-sdk";
-import { allowedMethods, AnyPluginId, CLOVER_ERR, CLOVER_EVENTS, CLOVER_METHODS, TopPluginId, type Caller } from "@waifucave/clover-protocol";
+import { API_CALLS, COMPONENT_CALLS, listenerArgOf, type ApiCallInfo } from "@waifucave/moss-plugin-sdk";
+import { allowedMethods, AnyPluginId, MOSS_ERR, MOSS_EVENTS, MOSS_METHODS, TopPluginId, type Caller } from "@waifucave/moss-protocol";
 import { PLUGIN_OWN_EVENTS } from "../../ipc/core-events";
 import { pointsApi } from "../api/points";
-import { capabilityRefusal } from "../../auth/clover-caller";
+import { capabilityRefusal } from "../../auth/moss-caller";
 import { commandsApi } from "../../commands/views";
 import { grantsInForce, type PluginRecord } from "../../contracts/plugin-registry";
 import { mayRunCommand, runCommand, type RunnableCommand } from "../../registry/commands";
@@ -21,7 +21,7 @@ const USER: Caller = { kind: "user", client: "app" };
 
 /** The params keys of a method that name a plugin (an `AnyPluginId` or `TopPluginId`, optional or not). */
 function pluginIdKeys(method: string): string[] {
-  const shape = (CLOVER_METHODS.get(method)!.params as unknown as { shape?: Record<string, unknown> }).shape ?? {};
+  const shape = (MOSS_METHODS.get(method)!.params as unknown as { shape?: Record<string, unknown> }).shape ?? {};
   const isId = (t: unknown): boolean => {
     let s = t as { _def?: { innerType?: unknown } } | undefined;
     for (let i = 0; i < 3 && s !== undefined; i++) {
@@ -35,15 +35,15 @@ function pluginIdKeys(method: string): string[] {
 
 describe("a layer's methods that need a capability", () => {
   const layer = [...allowedMethods("layer")];
-  const gated = layer.filter((m) => CLOVER_METHODS.get(m)!.capability !== undefined && CLOVER_METHODS.get(m)!.capability !== "call:*");
+  const gated = layer.filter((m) => MOSS_METHODS.get(m)!.capability !== undefined && MOSS_METHODS.get(m)!.capability !== "call:*");
 
   test("each is refused for a plugin whose OK doesn't grant it, and runs for one whose does; the user's call isn't a plugin's", () => {
     expect(gated.length).toBeGreaterThan(30);
     for (const m of gated) {
-      const cap = CLOVER_METHODS.get(m)!.capability!;
-      expect([m, capabilityRefusal("layer", plugin("x"), m, [])?.code]).toEqual([m, CLOVER_ERR.CAPABILITY_REFUSED]);
-      expect([m, capabilityRefusal("layer", plugin("x"), m, undefined)?.code]).toEqual([m, CLOVER_ERR.CAPABILITY_REFUSED]);
-      expect([m, capabilityRefusal("layer", plugin("x"), m, ["something.else"])?.code]).toEqual([m, CLOVER_ERR.CAPABILITY_REFUSED]);
+      const cap = MOSS_METHODS.get(m)!.capability!;
+      expect([m, capabilityRefusal("layer", plugin("x"), m, [])?.code]).toEqual([m, MOSS_ERR.CAPABILITY_REFUSED]);
+      expect([m, capabilityRefusal("layer", plugin("x"), m, undefined)?.code]).toEqual([m, MOSS_ERR.CAPABILITY_REFUSED]);
+      expect([m, capabilityRefusal("layer", plugin("x"), m, ["something.else"])?.code]).toEqual([m, MOSS_ERR.CAPABILITY_REFUSED]);
       expect([m, capabilityRefusal("layer", plugin("x"), m, [cap])]).toEqual([m, null]);
       // The app's own connection, and a CLI's, are the user's or a session's: not this gate's.
       expect([m, capabilityRefusal("app", USER, m, [])]).toEqual([m, null]);
@@ -59,7 +59,7 @@ describe("a layer's methods that need a capability", () => {
 const LAYER_TARGETS: Record<string, string> = {
   // `call:*`: the handler checks the command's plugin against the caller (`mayRunCommand`, below).
   "command.run": "call:<target>",
-  // A capability that covers every plugin by its own definition ("Read Clover's logs and every plugin's").
+  // A capability that covers every plugin by its own definition ("Read MOSS's logs and every plugin's").
   "plugin.logs": "logs.read",
   // The user's changes: from a layer, each ends in the user's sealed card (layer-change-methods.test.ts).
   "plugin.setEnabled": "card",
@@ -76,7 +76,7 @@ const LAYER_TARGETS: Record<string, string> = {
   "routine.list": "routines.read",
   "usage.rows": "usage.read",
   "usage.summary": "usage.read",
-  // The hello names the plugin the layer token was minted for; another id is refused (clover-connections.test.ts).
+  // The hello names the plugin the layer token was minted for; another id is refused (moss-connections.test.ts).
   "protocol.hello": "token",
 };
 
@@ -99,7 +99,7 @@ describe("a layer's methods that take another plugin as their target", () => {
     const takes = [...allowedMethods("layer")].filter((m) => m === "command.run" || pluginIdKeys(m).length > 0).sort();
     expect(takes).toEqual(Object.keys(LAYER_TARGETS).sort());
     for (const [m, how] of Object.entries(LAYER_TARGETS)) {
-      const spec = CLOVER_METHODS.get(m)!;
+      const spec = MOSS_METHODS.get(m)!;
       if (how === "card") expect([m, spec.userOnly === true && spec.change !== undefined]).toEqual([m, true]);
       else if (how === "call:<target>") expect([m, spec.capability]).toEqual([m, "call:*"]);
       else if (how === "token") expect(m).toBe("protocol.hello");
@@ -192,7 +192,7 @@ describe("command.run, from every route a plugin has", () => {
 
 describe("what a layer hears and reads of other plugins", () => {
   test("every core event a layer is sent with no capability is its own plugin's (PLUGIN_OWN_EVENTS): no page hears another plugin's state", () => {
-    const open = [...CLOVER_EVENTS].filter(([, s]) => (s.roles as readonly string[]).includes("layer") && s.capability === undefined).map(([t]) => t).sort();
+    const open = [...MOSS_EVENTS].filter(([, s]) => (s.roles as readonly string[]).includes("layer") && s.capability === undefined).map(([t]) => t).sort();
     expect(open.filter((t) => !PLUGIN_OWN_EVENTS.has(t))).toEqual([]);
     // The points watch is one of them: the point's name, to the declaring tree's own connections only.
     expect(open).toContain("plugin_point_changed");
@@ -214,7 +214,7 @@ describe("what a layer hears and reads of other plugins", () => {
     expect(await read("luna")).toEqual([{ pluginId: "tarot", entryId: "fool", value: { id: "fool", title: "The Fool" } }]);
     expect(await read("luna/page")).toEqual([{ pluginId: "tarot", entryId: "fool", value: { id: "fool", title: "The Fool" } }]);
     // A contributor, or any other plugin's page, reads none of it.
-    for (const other of ["tarot", "vn-composer", "clover/plugin-index"]) await expect(read(other)).rejects.toMatchObject({ code: "refused" });
+    for (const other of ["tarot", "vn-composer", "moss/plugin-index"]) await expect(read(other)).rejects.toMatchObject({ code: "refused" });
     // The declarer stopped, or turned off, its page's connection still open: it reads nothing either. The router
     // refuses a plugin that isn't live before any handler; the points handler checks the reader again itself (a host's
     // `points.watch` re-reads long after the call that set it up).
@@ -255,7 +255,7 @@ const OWN_CALLS: Record<string, string> = {
   "avatar.cue": "a cue to its own bot's figure, judged by the core against the renderer's capabilities and names (`avatar.control`)",
   "avatar.catalogue": "its own bot's figure's catalogue (`avatar.read`)",
   "avatar.box": "its own bot's figure's box (`avatar.read`)",
-  "avatar.report": "the bundled stage's report of the renderer it drew for a bot (`avatar.report`, the `clover` tree only)",
+  "avatar.report": "the bundled stage's report of the renderer it drew for a bot (`avatar.report`, the `moss` tree only)",
   "confirm": "a question to the user on the app's own sealed card naming the plugin; the answer only",
   "confirmCard": "the same, with the card's id",
   "plugins.install": "an install through the user's door, behind its OK card naming the plugin (`plugins.install`)",
@@ -269,22 +269,22 @@ describe("plugin.layer.call, as a class", () => {
     expect(calls).toEqual(Object.keys(API_CALLS).filter((p) => comp(p) && listenerArgOf(p) === undefined).sort());
     expect(watches).toEqual(Object.keys(API_CALLS).filter((p) => comp(p) && listenerArgOf(p) !== undefined).sort());
     expect([...calls, ...watches].sort()).toEqual([...COMPONENT_CALLS].sort());
-    // The table's own-plugin calls are among them; host-only, own-process and clover-process members never are.
+    // The table's own-plugin calls are among them; host-only, own-process and moss-process members never are.
     for (const call of Object.keys(OWN_CALLS)) expect([call, layerCallRefusal(call)]).toEqual([call, undefined]);
     for (const call of ["secrets.get", "keys.open", "desktop.show", "ui.send", "storage.synced.set", "routines.fire", "computers.takeHold", "files.path"]) expect(layerCallRefusal(call)).toMatch(/host code/);
     expect(layerCallRefusal("browser.onCdpEvent", true)).toBeUndefined();
     expect(layerCallRefusal("nope.nothing")).toMatch(/isn't a call of the plugin API/);
     for (const method of ["plugin.layer.call", "plugin.layer.watch"]) {
-      const shape = (CLOVER_METHODS.get(method)!.params as unknown as { shape: Record<string, unknown> }).shape;
+      const shape = (MOSS_METHODS.get(method)!.params as unknown as { shape: Record<string, unknown> }).shape;
       expect(Object.keys(shape).sort()).toEqual(["args", "call"]);
       expect(pluginIdKeys(method)).toEqual([]);
-      expect(CLOVER_METHODS.get(method)!.capability).toBeUndefined();
-      expect(CLOVER_METHODS.get(method)!.roles).toEqual(["layer"]);
+      expect(MOSS_METHODS.get(method)!.capability).toBeUndefined();
+      expect(MOSS_METHODS.get(method)!.roles).toEqual(["layer"]);
     }
   });
 
   test("every call the SDK's layer makes through it, and every layer-callable avatar call the catalog lists, is accepted by its params", () => {
-    const params = CLOVER_METHODS.get("plugin.layer.call")!.params as unknown as { safeParse(v: unknown): { success: boolean } };
+    const params = MOSS_METHODS.get("plugin.layer.call")!.params as unknown as { safeParse(v: unknown): { success: boolean } };
     // What the layer's own code sends: each `plugin.layer.call` with a literal `call`.
     const src = readFileSync(join(import.meta.dir, "../../../../plugin-sdk/src/ui/index.tsx"), "utf8");
     const sent = [...src.matchAll(/"plugin\.layer\.call",\s*\{\s*call:\s*"([^"]+)"/g)].map((m) => m[1]!);

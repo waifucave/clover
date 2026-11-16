@@ -1,6 +1,6 @@
-// `@waifucave/clover-plugin-sdk` (spec §5.6): JSON Schemas and TypeScript types for the manifest, theme, layout,
+// `@waifucave/moss-plugin-sdk` (spec §5.6): JSON Schemas and TypeScript types for the manifest, theme, layout,
 // locale and index formats; the catalogs of spots, points, tokens, hooks and capabilities; the plugin API (§5.4) and
-// the UI API (§5.5) as declarations; and the validation `clover plugin validate` runs. One source: the zod schemas in
+// the UI API (§5.5) as declarations; and the validation `moss plugin validate` runs. One source: the zod schemas in
 // `manifest/` and `formats/` give the types, the validation and the JSON Schemas in `generated/`.
 //
 // `src/ui/` is lane E's: the UI API's implementation. The inherited Tier-2 API (`createPlugin`) stays exported until

@@ -1,36 +1,36 @@
-# Clover on Linux: the package repositories
+# MOSS on Linux: the package repositories
 
-Clover ships a deb and an rpm (the main Linux packages, with the AppArmor profile Electron needs on Ubuntu) and an AppImage. The deb and the rpm also come from Clover's own repositories, so they update with the system's package manager. Both repositories are signed with one OpenPGP Ed25519 key, the Clover packages key; its public half is `packaging/linux/clover-archive-keyring.asc`, served at `https://packages.waifucave.com/clover-archive-keyring.asc`.
+MOSS ships a deb and an rpm (the main Linux packages, with the AppArmor profile Electron needs on Ubuntu) and an AppImage. The deb and the rpm also come from MOSS's own repositories, so they update with the system's package manager. Both repositories are signed with one OpenPGP Ed25519 key, the MOSS packages key; its public half is `packaging/linux/moss-archive-keyring.asc`, served at `https://packages.waifucave.com/moss-archive-keyring.asc`.
 
 The repositories' address, `https://packages.waifucave.com`, is not final: hosting is the owner's decision. `REPO_BASE_URL` in `scripts/release/linux-repo.ts` is the one place that names it, and `linux-repo.test.ts` holds these lines to it.
 
 ## apt (Debian, Ubuntu)
 
 ```sh
-curl -fsSL https://packages.waifucave.com/clover-archive-keyring.asc | sudo tee /etc/apt/keyrings/clover.asc > /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/clover.asc] https://packages.waifucave.com/apt stable main" | sudo tee /etc/apt/sources.list.d/clover.list
-sudo apt update && sudo apt install clover
+curl -fsSL https://packages.waifucave.com/moss-archive-keyring.asc | sudo tee /etc/apt/keyrings/moss.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/moss.asc] https://packages.waifucave.com/apt stable main" | sudo tee /etc/apt/sources.list.d/moss.list
+sudo apt update && sudo apt install moss
 ```
 
 For the beta suite, the source line is:
 
 ```sh
-echo "deb [signed-by=/etc/apt/keyrings/clover.asc] https://packages.waifucave.com/apt beta main" | sudo tee /etc/apt/sources.list.d/clover.list
+echo "deb [signed-by=/etc/apt/keyrings/moss.asc] https://packages.waifucave.com/apt beta main" | sudo tee /etc/apt/sources.list.d/moss.list
 ```
 
 ## dnf (Fedora, RHEL)
 
 ```sh
-sudo tee /etc/yum.repos.d/clover.repo <<'EOF'
-[clover]
-name=Clover (stable)
+sudo tee /etc/yum.repos.d/moss.repo <<'EOF'
+[moss]
+name=MOSS (stable)
 baseurl=https://packages.waifucave.com/rpm/stable/$basearch
 enabled=1
 repo_gpgcheck=1
 gpgcheck=0
-gpgkey=https://packages.waifucave.com/clover-archive-keyring.asc
+gpgkey=https://packages.waifucave.com/moss-archive-keyring.asc
 EOF
-sudo dnf install clover
+sudo dnf install moss
 ```
 
 The repository's metadata is signed and lists each package's SHA-256 (`repo_gpgcheck=1`), so dnf checks every package through it; the packages carry no signature of their own (`gpgcheck=0`). For beta, replace `stable` with `beta` in `baseurl`.
@@ -43,4 +43,4 @@ The repository's metadata is signed and lists each package's SHA-256 (`repo_gpgc
 
 apt's Release is valid for 30 days (`Valid-Until`, `RELEASE_VALID_DAYS`): within that window the repository must be signed and uploaded again, even with no new release, or apt stops accepting it. That needs no CI run: on the owner's Mac, `linux-repo.ts refresh --dir <the signed tree>` rewrites only `Date` and `Valid-Until` in each suite's Release (every hash it lists still holds) and signs the tree again, then `upload` sends it. For now that is the owner's hand step; whether the window grows or the refresh is automated is the owner's decision, still open.
 
-The key is made once, by the owner: `linux-repo.ts key --generate` keeps the private half in the login Keychain and writes the public half to `clover-archive-keyring.asc`, to commit. `key --check` confirms they match. The private half is never written anywhere else.
+The key is made once, by the owner: `linux-repo.ts key --generate` keeps the private half in the login Keychain and writes the public half to `moss-archive-keyring.asc`, to commit. `key --check` confirms they match. The private half is never written anywhere else.

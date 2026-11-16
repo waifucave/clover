@@ -26,14 +26,14 @@ test("a target's address follows Target.targetInfoChanged after it attached as a
   const cdp = await Cdp.connect(server.port!);
   const send = (m: object) => socket!.send(JSON.stringify(m));
   send({ method: "Target.attachedToTarget", params: { sessionId: "S1", targetInfo: { targetId: "T1", type: "page", url: "about:blank" } } });
-  send({ method: "Target.attachedToTarget", params: { sessionId: "S2", targetInfo: { targetId: "T2", type: "page", url: "clover-core://app/" } } });
+  send({ method: "Target.attachedToTarget", params: { sessionId: "S2", targetInfo: { targetId: "T2", type: "page", url: "moss-core://app/" } } });
   await Bun.sleep(50);
   expect(cdp.frames.get("S1")?.url).toBe("about:blank");
-  send({ method: "Target.targetInfoChanged", params: { targetInfo: { targetId: "T1", type: "page", url: "clover-core://app/?surface=island" } } });
+  send({ method: "Target.targetInfoChanged", params: { targetInfo: { targetId: "T1", type: "page", url: "moss-core://app/?surface=island" } } });
   await Bun.sleep(50);
-  expect(cdp.frames.get("S1")?.url).toBe("clover-core://app/?surface=island");
+  expect(cdp.frames.get("S1")?.url).toBe("moss-core://app/?surface=island");
   // Another target's change touches only its own.
-  expect(cdp.frames.get("S2")?.url).toBe("clover-core://app/");
-  expect([...cdp.frames.values()].find((f) => f.type === "page" && f.url.startsWith("clover-core://app/?surface=island"))?.session).toBe("S1");
+  expect(cdp.frames.get("S2")?.url).toBe("moss-core://app/");
+  expect([...cdp.frames.values()].find((f) => f.type === "page" && f.url.startsWith("moss-core://app/?surface=island"))?.session).toBe("S1");
   cdp.close();
 });

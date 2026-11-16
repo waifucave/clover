@@ -1,7 +1,7 @@
 // The OK as a card through the approval broker (spec §5.1, §5.6; C's ApprovalBroker): a `plugin-ok` card with the OK's
 // text from the built-in tables, a checkbox per child, and approve or deny. It never expires (rule 6): only the user's
 // deny refuses the plugin. The card's id comes from the broker's `requested` event, which names the plugin.
-import type { SealedValue } from "@waifucave/clover-protocol";
+import type { SealedValue } from "@waifucave/moss-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { OkCardRaiser } from "./core";
 import { ContractError } from "../contracts/common";

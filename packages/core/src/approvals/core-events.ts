@@ -1,10 +1,10 @@
 // The broker's cards as `core.event`s (C-M3 item 2; protocol approvals.ts): `card_requested` with the sealed card for
 // the app and remote clients, `card_pending` (the card without its text) for plugins with `approvals`, and
-// `card_resolved` for all three. The sender (`CloverServer.coreEvent`) then routes each by role, area and capability.
+// `card_resolved` for all three. The sender (`MossServer.coreEvent`) then routes each by role, area and capability.
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import { cardMetaOf } from "../contracts/approval-broker";
 import type { Unsubscribe } from "../contracts/common";
-import { topPluginIdOf } from "@waifucave/clover-protocol";
+import { topPluginIdOf } from "@waifucave/moss-protocol";
 import type { CoreEventInput, CoreEventOptions } from "../ipc/core-events";
 
 /** Who hears a card: a plugin holding `approvals.all` (what the island, the pill and the window's own parts hold: every card), and the

@@ -1,9 +1,9 @@
 // Contract: ComputerRegistry (spec §5.4 `computers.read` and `computers.control`, §5.5 "A click counts only while …",
 // §9.1 computers and levels, §9.2 cloud computers and "Sharing rules"). Owner: lane J.
 //
-// A computer is any device running clover-core that the user connected. The registry keeps each one's name, OS,
+// A computer is any device running moss-core that the user connected. The registry keeps each one's name, OS,
 // display, installed ACP agents and approval level, and, for computer use, its holds, the user-working mark, whether
-// an action is running, and where Clover's own windows are. Holds and the mark are the core's; plugins with
+// an action is running, and where MOSS's own windows are. Holds and the mark are the core's; plugins with
 // `computers.control` take and release them through the plugin API.
 //
 // What it promises:
@@ -22,7 +22,7 @@
 // * The user-working mark lifts only on the user's message or a card answer, never on a release (as computer-use
 //   helper 1.22.0 does).
 // * While an action runs on a computer, a click on a sealed card there doesn't count (§5.5).
-import { callBindingInput, cardHashInput, UNATTENDED_CARD_TIMEOUT_MS, type CloverWindow, type ComputerView, type HoldTarget, type HoldView, type Level, type SignedCardAnswer } from "@waifucave/clover-protocol";
+import { callBindingInput, cardHashInput, UNATTENDED_CARD_TIMEOUT_MS, type MossWindow, type ComputerView, type HoldTarget, type HoldView, type Level, type SignedCardAnswer } from "@waifucave/moss-protocol";
 import type { AnswerLedger, CardRecord } from "./approval-broker";
 import type { Unsubscribe } from "./common";
 
@@ -108,9 +108,9 @@ export interface ComputerRegistry {
   userWorking(computer: string): string[];
   setActionRunning(computer: string, running: boolean): void;
   isActionRunning(computer: string): boolean;
-  /** The app reports where Clover's windows are; a computer-use plugin must not act on them (§5.5). */
-  setCloverWindows(computer: string, windows: CloverWindow[]): void;
-  cloverWindows(computer: string): CloverWindow[];
+  /** The app reports where MOSS's windows are; a computer-use plugin must not act on them (§5.5). */
+  setMossWindows(computer: string, windows: MossWindow[]): void;
+  mossWindows(computer: string): MossWindow[];
   watch(fn: (change: ComputerChange) => void): Unsubscribe;
 }
 

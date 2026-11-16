@@ -1,6 +1,6 @@
 // Winter Phase 8d — `runRuntimesProbe` runs outside a daemon (`{ execPath, home, env }`), so this
-// exercises it against REAL files on disk in a mkdtemp tree — fake, non-Mach-O `clover`/`ant`
-// "binaries" (chmod'd text files, since the probe NEVER spawns either — M2). No real clover build, no
+// exercises it against REAL files on disk in a mkdtemp tree — fake, non-Mach-O `moss`/`ant`
+// "binaries" (chmod'd text files, since the probe NEVER spawns either — M2). No real moss build, no
 // Keychain, no real home.
 //
 // P9a fix wave (M1 collateral): the ONE seam it does carry, `resolvePlatformPackageBin`, is
@@ -40,16 +40,16 @@ function goodVersionsJson(overrides: Partial<Record<string, unknown>> = {}): str
 
 const GOOD_ANT_VERSIONS = JSON.stringify({ schema: 1, tag: "v1.32.0", checksums: { antPreSign: "c".repeat(64) }, stagedAt: "2026-09-25T00:00:00Z" });
 
-/** Builds `<resources>/clover-core` + `<resources>/runtimes/{clover,VERSIONS.json,ant/{ant,VERSIONS.json}}`
- *  under a fresh mkdtemp "Resources" dir, returns the `execPath` (the `clover-core` path) a real
- *  daemon would report. `clover`/`ant` are plain chmod'd files (the probe must never spawn either). */
+/** Builds `<resources>/moss-core` + `<resources>/runtimes/{moss,VERSIONS.json,ant/{ant,VERSIONS.json}}`
+ *  under a fresh mkdtemp "Resources" dir, returns the `execPath` (the `moss-core` path) a real
+ *  daemon would report. `moss`/`ant` are plain chmod'd files (the probe must never spawn either). */
 function bundleFixture(opts: { versionsJson?: string | null; ant?: boolean } = {}): { execPath: string; resources: string } {
   const resources = tempDir("runtimes-probe-resources-");
-  const execPath = join(resources, "clover-core");
+  const execPath = join(resources, "moss-core");
   writeFileSync(execPath, "not a real daemon\n");
   const runtimesDir = join(resources, "runtimes");
   mkdirSync(runtimesDir, { recursive: true });
-  writeFileSync(join(runtimesDir, "winter"), "fake clover, never spawned\n");
+  writeFileSync(join(runtimesDir, "winter"), "fake moss, never spawned\n");
   chmodSync(join(runtimesDir, "winter"), 0o755);
   if (opts.versionsJson !== null) writeFileSync(join(runtimesDir, "VERSIONS.json"), opts.versionsJson ?? goodVersionsJson());
   if (opts.ant !== false) {
@@ -63,13 +63,13 @@ function bundleFixture(opts: { versionsJson?: string | null; ant?: boolean } = {
 }
 
 describe("runRuntimesProbe (P8d-1 bundle layout, real fs, no daemon)", () => {
-  test("a fully staged bundle: clover and ant resolve via 'bundle', ok=true, both records parsed", async () => {
+  test("a fully staged bundle: moss and ant resolve via 'bundle', ok=true, both records parsed", async () => {
     const { execPath } = bundleFixture();
     const home = tempDir("runtimes-probe-home-");
     const result = await runRuntimesProbe({ execPath, home, env: {} });
 
-    expect(result.clover.source).toBe("bundle");
-    expect(result.clover.executable).toBe(true);
+    expect(result.moss.source).toBe("bundle");
+    expect(result.moss.executable).toBe(true);
     expect(result.versions?.winterAgentSdk).toBe(REQUIRED_WINTER_AGENT_SDK);
     expect(result.antVersions?.tag).toBe("v1.32.0");
     expect(result.ok).toBe(true);
@@ -92,61 +92,61 @@ describe("runRuntimesProbe (P8d-1 bundle layout, real fs, no daemon)", () => {
     expect(result.ant.path).toBeUndefined();
     expect(result.ant.executable).toBe(false);
     expect(result.antVersions).toBeUndefined();
-    expect(result.clover.source).toBe("bundle");
+    expect(result.moss.source).toBe("bundle");
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
   });
 
-  test("nothing staged anywhere → clover is refused (no bundle, no home), errors name what was tried, never a throw", async () => {
+  test("nothing staged anywhere → moss is refused (no bundle, no home), errors name what was tried, never a throw", async () => {
     const home = tempDir("runtimes-probe-home-empty-");
-    const execPath = join(tempDir("runtimes-probe-resources-empty-"), "clover-core");
+    const execPath = join(tempDir("runtimes-probe-resources-empty-"), "moss-core");
     const result = await runRuntimesProbe({ execPath, home, env: {}, resolvePlatformPackageBin: () => undefined });
 
-    expect(result.clover.path).toBeUndefined();
-    expect(result.clover.executable).toBe(false);
+    expect(result.moss.path).toBeUndefined();
+    expect(result.moss.executable).toBe(false);
     expect(result.errors.some((e) => e.includes("winter runtime executable not found"))).toBe(true);
     expect(result.ok).toBe(false);
   }, 15_000);
 
-  test("clover resolves through the HOME rung", async () => {
-    const home = tempDir("runtimes-probe-home-clover-");
+  test("moss resolves through the HOME rung", async () => {
+    const home = tempDir("runtimes-probe-home-moss-");
     mkdirSync(join(home, "runtimes", "bin"), { recursive: true });
     writeFileSync(join(home, "runtimes", "bin", "winter"), "fake\n");
     chmodSync(join(home, "runtimes", "bin", "winter"), 0o755);
-    const execPath = join(tempDir("runtimes-probe-resources-homeclover-"), "clover-core");
+    const execPath = join(tempDir("runtimes-probe-resources-homemoss-"), "moss-core");
 
     const result = await runRuntimesProbe({ execPath, home, env: {} });
-    expect(result.clover.source).toBe("home");
-    expect(result.clover.executable).toBe(true);
+    expect(result.moss.source).toBe("home");
+    expect(result.moss.executable).toBe(true);
     expect(result.ok).toBe(true);
   }, 15_000);
 
-  test("the env override wins for clover, and a leftover CLOVER_CLAUDE_EXECUTABLE is ignored", async () => {
+  test("the env override wins for moss, and a leftover MOSS_CLAUDE_EXECUTABLE is ignored", async () => {
     const { execPath: unusedExecPath } = bundleFixture();
-    const envClover = join(tempDir("runtimes-probe-env-clover-"), "clover-env");
-    writeFileSync(envClover, "fake\n");
-    chmodSync(envClover, 0o755);
+    const envMoss = join(tempDir("runtimes-probe-env-moss-"), "moss-env");
+    writeFileSync(envMoss, "fake\n");
+    chmodSync(envMoss, 0o755);
 
     const home = tempDir("runtimes-probe-home-env-");
     const result = await runRuntimesProbe({
       execPath: unusedExecPath,
       home,
-      env: { CLOVER_RUNTIME_EXECUTABLE: envClover, CLOVER_CLAUDE_EXECUTABLE: "/nowhere/claude" },
+      env: { MOSS_RUNTIME_EXECUTABLE: envMoss, MOSS_CLAUDE_EXECUTABLE: "/nowhere/claude" },
     });
-    expect(result.clover.path).toBe(envClover);
-    expect(result.clover.source).toBe("env");
-    expect(result.clover.executable).toBe(true);
+    expect(result.moss.path).toBe(envMoss);
+    expect(result.moss.source).toBe("env");
+    expect(result.moss.executable).toBe(true);
     expect(JSON.stringify(result)).not.toContain("/nowhere/claude");
   });
 
-  test("a MISMATCHED runtimes record: the error names it, never a silent pass — and clover still resolves", async () => {
+  test("a MISMATCHED runtimes record: the error names it, never a silent pass — and moss still resolves", async () => {
     const { execPath } = bundleFixture({ versionsJson: goodVersionsJson({ winterRuntimeSdk: "0.0.999" }) });
     const home = tempDir("runtimes-probe-home-mismatch-");
     const result = await runRuntimesProbe({ execPath, home, env: {} });
 
     expect(result.versions).toBeUndefined();
     expect(result.errors.some((e) => e.includes("0.0.999"))).toBe(true);
-    expect(result.clover.source).toBe("bundle");
+    expect(result.moss.source).toBe("bundle");
   });
 
   test("no runtimes record at all: versions omitted, never an error by itself", async () => {
@@ -158,11 +158,11 @@ describe("runRuntimesProbe (P8d-1 bundle layout, real fs, no daemon)", () => {
     expect(result.ok).toBe(true);
   });
 
-  test("never spawns clover (M2): a clover 'binary' that is not a valid executable format still reports executable=true (X_OK only) with no crash", async () => {
+  test("never spawns moss (M2): a moss 'binary' that is not a valid executable format still reports executable=true (X_OK only) with no crash", async () => {
     const { execPath } = bundleFixture();
     const home = tempDir("runtimes-probe-home-neverspawn-");
     const result = await runRuntimesProbe({ execPath, home, env: {} });
-    expect(result.clover.executable).toBe(true);
-    expect(result.clover.signature === undefined || typeof result.clover.signature === "string").toBe(true);
+    expect(result.moss.executable).toBe(true);
+    expect(result.moss.signature === undefined || typeof result.moss.signature === "string").toBe(true);
   });
 });

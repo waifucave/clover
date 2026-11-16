@@ -13,7 +13,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
 import type { GlobalAgentMessage } from "@waifucave/clover-agent-sdk/messaging";
-import * as clover from "@waifucave/clover-agent-sdk";
+import * as moss from "@waifucave/clover-agent-sdk";
 import { createRuntimeSdkHost } from "../../src/runtime-sdk/host";
 import type { RuntimeDirectoryEntry, SerializedRuntimeAddress } from "../../src/runtime-sdk/host";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";
@@ -24,7 +24,7 @@ import { SessionStore } from "../../src/sessions/store";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { attachWinterSession } from "../../src/runtime-sdk/messaging";
 import type { WinterRuntimeSdk } from "../../src/runtime-sdk/create";
-import { CLOVER_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
+import { MOSS_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
 import { ISO, withTempHome } from "./support";
 
 const ADDR = (id: string): SerializedRuntimeAddress => serializeRuntimeAddress(buildSessionAddress(id)) as SerializedRuntimeAddress;
@@ -41,7 +41,7 @@ const entry = (id: string, displayName: string): RuntimeDirectoryEntry => ({
   generation: 1,
   selection: {
     runtimeKind: "winter-agent", providerId: "openai", modelRef: "openai/gpt-5.6-sol", family: "openai",
-    authFamily: "api-key", sdkVersion: CLOVER_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: ISO(),
+    authFamily: "api-key", sdkVersion: MOSS_PEER_VERSIONS.winterAgentSdk, reason: "test", decidedAt: ISO(),
   },
   backendSessionId: id,
   capabilities: { message: true, resume: true, notifyWhenIdle: true, reply: true },
@@ -102,7 +102,7 @@ describe("recovery step 10 — directory.recover() over the 8a store", () => {
       try {
         const directoryStore = createSqliteRuntimeDirectoryStore(rs);
         const sdk = createRuntimeSdkHost({
-          sdk: clover,
+          sdk: moss,
           brand: CORE_BRAND,
           directoryStore,
           home,

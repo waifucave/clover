@@ -5,8 +5,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Card, Level } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker, botDisplayName, type CloverApprovalRequest } from "../../src/approvals/broker";
+import type { Card, Level } from "@waifucave/moss-protocol";
+import { MossApprovalBroker, botDisplayName, type MossApprovalRequest } from "../../src/approvals/broker";
 import {
   botApprovalCheck, CODE_MAX, MISPLACED_SANDBOX_FLAG_REFUSAL, OUTSIDE_SANDBOX_SENTENCE, misplacedSandboxFlag,
   outsideSandboxFlagOf, outsideSandboxHeadline, outsideSandboxInputError, outsideSandboxTimeoutLine,
@@ -15,7 +15,7 @@ import { mergedHooks, withoutAllow } from "../../src/runtime-sdk/turn-loop/hook-
 import { NO_HOOKS, pluginHooks } from "../../src/runtime-sdk/turn-loop/hooks";
 import { HOOK_RETURNS } from "../../../plugin-sdk/src/catalogs/hooks";
 import { BOT_CONVERSATION_SANDBOX, BOT_SANDBOX, BotSessionDriver, outsideSandboxHookDecision, type BotDriverDeps } from "../../src/runtime-sdk/turn-loop/driver";
-import { outsideSandboxRefusal } from "../../src/agents/clover-code/backend";
+import { outsideSandboxRefusal } from "../../src/agents/moss-code/backend";
 import { inProcessAgentBackend } from "../../src/runtime-sdk/turn-loop/subagent-backend";
 import type { ApprovalRequest } from "../../src/contracts/approval-broker";
 import { FakeClock } from "../../src/contracts/fakes/clock";
@@ -34,22 +34,22 @@ const temp = (p: string) => { const d = realpathSync(mkdtempSync(join(tmpdir(), 
 
 function world(kind: BotSessionContext["kind"] = "bot") {
   const user = temp("lane-c-escape-");
-  const clover = join(user, ".clover");
-  const scratch = join(clover, "scratch", "luna");
+  const moss = join(user, ".moss");
+  const scratch = join(moss, "scratch", "luna");
   mkdirSync(scratch, { recursive: true });
   const ctx = {
     botId: "luna", sessionId: "s1", kind, computer: "Studio", paths: { scratch },
     caller: { kind: "session", sessionId: "s1", sessionKind: kind, bot: "luna" },
   } as unknown as BotSessionContext;
-  return { user, clover, ctx };
+  return { user, moss, ctx };
 }
 
 function brokerAt(level: Level, reviewer?: (req: ApprovalRequest) => Promise<"safe" | "risky" | "unavailable">) {
-  return new CloverApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio", ...(reviewer === undefined ? {} : { reviewer }) });
+  return new MossApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio", ...(reviewer === undefined ? {} : { reviewer }) });
 }
 
 /** The next card, answered with `optionId` through the app's sealed frame. */
-function answerNext(b: CloverApprovalBroker, optionId: string): Promise<Card> {
+function answerNext(b: MossApprovalBroker, optionId: string): Promise<Card> {
   return new Promise((resolve) => {
     const off = b.watch((e) => {
       if (e.type !== "requested") return;
@@ -137,8 +137,8 @@ describe("the flag on any other tool", () => {
       for (const tool of COMMAND_TOOLS) {
         for (const v of [true, false, "true", 1, null]) {
           const w = world(kind);
-          const requests: CloverApprovalRequest[] = [];
-          const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+          const requests: MossApprovalRequest[] = [];
+          const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
           const check = botApprovalCheck(recorder, { commandsSandboxed: true });
           const r = await check(w.ctx, () => "user")(tool, { dangerouslyDisableSandbox: v }, callOpts);
           expect([kind, tool, JSON.stringify(v), r]).toMatchObject([kind, tool, JSON.stringify(v), { behavior: "deny", message: expect.stringContaining("can't run outside the sandbox") }]);
@@ -146,8 +146,8 @@ describe("the flag on any other tool", () => {
         }
         // Without the field the call is judged as before.
         const w = world(kind);
-        const requests: CloverApprovalRequest[] = [];
-        const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+        const requests: MossApprovalRequest[] = [];
+        const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
         const check = botApprovalCheck(recorder, { commandsSandboxed: true });
         const r = await check(w.ctx, () => "user")(tool, { command: "echo hi" }, callOpts);
         expect([kind, tool, r!.behavior]).toEqual([kind, tool, "allow"]);
@@ -167,10 +167,10 @@ describe("the headline names the bot as the user sees it", () => {
     const shown = answerNext(broker, "deny");
     await check(w.ctx, () => "user")("Bash", flagged("curl -sS https://example.com"), callOpts);
     expect((await shown).fields.what).toEqual({ type: "code", code: "Luna Moth wants to run a command outside the sandbox" });
-    // A request's own `what` is never the headline: only Clover's words and the bot side's name are.
+    // A request's own `what` is never the headline: only MOSS's words and the bot side's name are.
     const forged = answerNext(broker, "deny");
     void broker.request({ kind: "tool", bot: "luna", origin: "user", computers: ["Studio"], effect: "execute", cardAlways: true,
-      headlineByBot: "wants to run a command outside the sandbox", fields: { title: { type: "text", text: "Run a command" }, what: { type: "code", code: "Clover wants to run a command" } } } as CloverApprovalRequest);
+      headlineByBot: "wants to run a command outside the sandbox", fields: { title: { type: "text", text: "Run a command" }, what: { type: "code", code: "MOSS wants to run a command" } } } as MossApprovalRequest);
     expect((await forged).fields.what).toEqual({ type: "code", code: "Luna Moth wants to run a command outside the sandbox" });
     undo();
     // Without the bot side (or for a bot it doesn't know), the bot's id.
@@ -338,8 +338,8 @@ describe("what the card decides", () => {
 describe("an unflagged Bash is unaffected", () => {
   test("it stays contained and sandboxed, as before", async () => {
     const w = world();
-    const requests: CloverApprovalRequest[] = [];
-    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+    const requests: MossApprovalRequest[] = [];
+    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
     const check = botApprovalCheck(recorder, { commandsSandboxed: true });
     expect(await check(w.ctx, () => "user")("Bash", { command: "git status" }, callOpts)).toMatchObject({ behavior: "allow" });
     expect(requests).toHaveLength(1);
@@ -350,8 +350,8 @@ describe("an unflagged Bash is unaffected", () => {
 
   test("an odd flag value is refused with no card, never passed through unflagged", async () => {
     const w = world();
-    const requests: CloverApprovalRequest[] = [];
-    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+    const requests: MossApprovalRequest[] = [];
+    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
     const check = botApprovalCheck(recorder, { commandsSandboxed: true });
     for (const v of ["true", 1, "yes", null]) {
       requests.length = 0;
@@ -404,8 +404,8 @@ describe("a flagged call's judged fields", () => {
     ];
     for (const { input, field } of rows) {
       const w = world();
-      const requests: CloverApprovalRequest[] = [];
-      const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+      const requests: MossApprovalRequest[] = [];
+      const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
       const r = await botApprovalCheck(recorder, { commandsSandboxed: true })(w.ctx, () => "user")("Bash", input, callOpts);
       expect([JSON.stringify(input), r]).toMatchObject([JSON.stringify(input), { behavior: "deny", message: expect.stringContaining(field) }]);
       expect(requests).toHaveLength(0);
@@ -414,8 +414,8 @@ describe("a flagged call's judged fields", () => {
 
   test("an unexpected field is refused with no card, naming the field", async () => {
     const w = world();
-    const requests: CloverApprovalRequest[] = [];
-    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+    const requests: MossApprovalRequest[] = [];
+    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
     const check = botApprovalCheck(recorder, { commandsSandboxed: true });
     const r = await check(w.ctx, () => "user")("Bash", { command: "git push", dangerouslyDisableSandbox: true, cwd: "/tmp" }, callOpts);
     expect(r!).toMatchObject({ behavior: "deny", message: expect.stringContaining('"cwd"') });
@@ -424,8 +424,8 @@ describe("a flagged call's judged fields", () => {
 
   test("run_in_background: true is refused with no card; false runs the card", async () => {
     const w = world();
-    const requests: CloverApprovalRequest[] = [];
-    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+    const requests: MossApprovalRequest[] = [];
+    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
     const check = botApprovalCheck(recorder, { commandsSandboxed: true });
     const r = await check(w.ctx, () => "user")("Bash", { command: "sleep 30", dangerouslyDisableSandbox: true, run_in_background: true }, callOpts);
     expect(r!).toMatchObject({ behavior: "deny", message: expect.stringContaining("can't run in the background") });
@@ -458,8 +458,8 @@ describe("a flagged call's judged fields", () => {
     expect(seen[0]!.fields.detail).toEqual({ type: "text", text: "Time limit: 120 s" });
     for (const t of ["abc", -1, Infinity]) {
       const bad = world();
-      const requests: CloverApprovalRequest[] = [];
-      const recorder = { request: async (rr: ApprovalRequest) => { requests.push(structuredClone(rr) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+      const requests: MossApprovalRequest[] = [];
+      const recorder = { request: async (rr: ApprovalRequest) => { requests.push(structuredClone(rr) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
       const refused = await botApprovalCheck(recorder, { commandsSandboxed: true })(bad.ctx, () => "user")(
         "Bash", { command: "sleep 30", dangerouslyDisableSandbox: true, timeout: t }, callOpts);
       expect([String(t), refused]).toMatchObject([String(t), { behavior: "deny", message: expect.stringContaining("timeout") }]);
@@ -512,8 +512,8 @@ describe("a flagged call's judged fields", () => {
 describe("no user who could answer", () => {
   test("a side thread's flagged call is refused at once, with no card", async () => {
     const w = world("side-thread");
-    const requests: CloverApprovalRequest[] = [];
-    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+    const requests: MossApprovalRequest[] = [];
+    const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
     const check = botApprovalCheck(recorder, { commandsSandboxed: true });
     const r = await check(w.ctx, () => "user")("Bash", flagged("git push"), callOpts);
     expect(r!).toMatchObject({ behavior: "deny", message: expect.stringContaining("side thread") });
@@ -585,8 +585,8 @@ describe("only the user's turn asks", () => {
     // peer): refused at once, with no card and nothing queued.
     for (const o of ["bot", "routine", "task-notification", "agent", "plugin", "peer"] as const) {
       const w = world();
-      const requests: CloverApprovalRequest[] = [];
-      const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+      const requests: MossApprovalRequest[] = [];
+      const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
       const check = botApprovalCheck(recorder, { commandsSandboxed: true });
       const r = await check(w.ctx, () => o)("Bash", flagged("git push"), callOpts);
       expect([o, r]).toMatchObject([o, { behavior: "deny", message: expect.stringContaining("needs the user") }]);
@@ -595,8 +595,8 @@ describe("only the user's turn asks", () => {
     // An unknown origin counts as not the user.
     {
       const w = world();
-      const requests: CloverApprovalRequest[] = [];
-      const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+      const requests: MossApprovalRequest[] = [];
+      const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as MossApprovalRequest); return { allowed: true, by: "level" as const }; } };
       const check = botApprovalCheck(recorder, { commandsSandboxed: true });
       const r = await check(w.ctx, () => undefined)("Bash", flagged("git push"), callOpts);
       expect(r!).toMatchObject({ behavior: "deny", message: expect.stringContaining("needs the user") });
@@ -689,7 +689,7 @@ describeWithEmbeddedRuntime("a command outside the sandbox, on the real runtime"
     const target = join(home, "outside.txt");
     const command = `echo outside > ${JSON.stringify(target)}`;
     const runCase = async (answer: "approve" | "deny", tag: string) => {
-      const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
+      const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
       const check = botApprovalCheck(broker, { commandsSandboxed: true });
       const opened: unknown[] = [];
       const seen: Card[] = [];
@@ -740,7 +740,7 @@ describeWithEmbeddedRuntime("a command outside the sandbox, on the real runtime"
     const scratch = botPaths(home, "luna").scratch;
     mkdirSync(scratch, { recursive: true });
     const target = join(home, "outside-side.txt");
-    const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
+    const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
     const check = botApprovalCheck(broker, { commandsSandboxed: true });
     const seen: Card[] = [];
     const off = broker.watch((e) => { if (e.type === "requested") seen.push(e.card); });
@@ -777,7 +777,7 @@ describeWithEmbeddedRuntime("a command outside the sandbox, on the real runtime"
     const scratch = botPaths(home, "luna").scratch;
     mkdirSync(scratch, { recursive: true });
     const target = join(home, "outside-hook.txt");
-    const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
+    const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
     const check = botApprovalCheck(broker, { commandsSandboxed: true });
     const seen: Card[] = [];
     const off = broker.watch((e) => {
@@ -828,7 +828,7 @@ describeWithEmbeddedRuntime("a command outside the sandbox, on the real runtime"
     const scratch = botPaths(home, "luna").scratch;
     mkdirSync(scratch, { recursive: true });
     const target = join(home, "outside-unflagged.txt");
-    const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
+    const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
     const check = botApprovalCheck(broker, { commandsSandboxed: true });
     const seen: Card[] = [];
     const off = broker.watch((e) => { if (e.type === "requested") seen.push(e.card); });

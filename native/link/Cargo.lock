@@ -257,7 +257,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "clover-link"
+name = "moss-link"
 version = "0.0.0"
 dependencies = [
  "anyhow",

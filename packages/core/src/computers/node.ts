@@ -4,7 +4,7 @@
 // link (lane H's `LinkTransport`); tests build several on the fake link, each on its own temp home.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import type { AnswerDevices, AnswerLedger, CallCardRenderer, CardRecord } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
@@ -44,8 +44,8 @@ export interface ComputerNodeOptions {
   self: { name: string; device: string; os?: Os; hasDisplay?: boolean; agents?: string[] };
   /** The user's home folder: `home/<this computer>/`. */
   home: string;
-  /** The Clover home: the bots' folders (`bots/`) and this computer's own entry (`levels/computer.json`). */
-  cloverHome: string;
+  /** The MOSS home: the bots' folders (`bots/`) and this computer's own entry (`levels/computer.json`). */
+  mossHome: string;
   fence?: Pick<Fence, "check" | "fencedSet">;
   /** The paired devices (lane H): the computers in the tree and the only devices served (review minor 1). */
   devices: DeviceRegistry;
@@ -91,7 +91,7 @@ export interface ComputerNodeOptions {
      *  scope here): another computer's server is listed only when this gives its plugin and name the same key, and its
      *  scope is cut to this record's. Left out, nothing from another computer is listed. */
     known?: KnownMcpPlugin;
-    /** This computer's ticks (default: `levels/mcp-servers.json` under the Clover home). */
+    /** This computer's ticks (default: `levels/mcp-servers.json` under the MOSS home). */
     ticks?: McpTicks;
     /** Told after any change to this computer's ticks (an install, Mirror, the user's tick or untick): the host lists
      *  its servers again, so a server unticked here stops at once and one ticked here starts. */
@@ -156,7 +156,7 @@ export interface ComputerNode {
 }
 
 /** The fenced items that are folders, by kind (lane C's layout names files and folders alike). Two folder kinds also
- *  name files, listed by their place in the Clover home (`fence/layout.ts`): those are never made as folders, only the
+ *  name files, listed by their place in the MOSS home (`fence/layout.ts`): those are never made as folders, only the
  *  folder that holds them (INT, for lane J: the daemon's fence reaches the node with #292, and a home's
  *  `settings.json` made as a folder broke the settings, or crashed the start where the file was there). */
 const FENCED_FOLDER_KINDS = new Set(["settings", "levels", "saved-rules", "connector-permissions", "trust", "user-layers", "plugin-oks", "plugin-data", "run-folder"]);
@@ -165,11 +165,11 @@ const FENCED_FILES_OF_FOLDER_KINDS: Readonly<Record<string, readonly string[]>> 
   trust: ["trust.json"],
 };
 
-/** Makes Clover's fenced folders under its home if they aren't there yet, and the folders that hold its fenced files,
+/** Makes MOSS's fenced folders under its home if they aren't there yet, and the folders that hold its fenced files,
  *  so a name in another case finds them on disk (review B1: the folded fence is the guard; this is the second). */
-export function makeFencedFolders(cloverHome: string, fence: Pick<Fence, "fencedSet">): void {
+export function makeFencedFolders(mossHome: string, fence: Pick<Fence, "fencedSet">): void {
   const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
-  const home = norm(cloverHome);
+  const home = norm(mossHome);
   for (const item of fence.fencedSet()) {
     const p = norm(item.path);
     if (!p.startsWith(`${home}/`)) continue;
@@ -178,29 +178,29 @@ export function makeFencedFolders(cloverHome: string, fence: Pick<Fence, "fenced
     const isFolder = FENCED_FOLDER_KINDS.has(item.kind) && !(FENCED_FILES_OF_FOLDER_KINDS[item.kind] ?? []).includes(relative);
     const folder = isFolder ? rest : rest.slice(0, -1);
     if (folder.length === 0) continue;
-    mkdirSync(join(cloverHome, ...folder), { recursive: true, mode: 0o700 });
+    mkdirSync(join(mossHome, ...folder), { recursive: true, mode: 0o700 });
   }
 }
 
 export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const os = o.self.os ?? hostOs();
-  if (o.fence) makeFencedFolders(o.cloverHome, o.fence);
+  if (o.fence) makeFencedFolders(o.mossHome, o.fence);
   const registry = new CoreComputerRegistry({
     clock: o.clock,
     self: { name: o.self.name, device: o.self.device, os, hasDisplay: o.self.hasDisplay ?? true, agents: o.self.agents ?? [] },
-    store: o.store ?? new FileSelfStateStore(selfStatePath(o.cloverHome)),
+    store: o.store ?? new FileSelfStateStore(selfStatePath(o.mossHome)),
     ...(o.answers ? { devices: o.answers.devices, ledger: o.answers.ledger, render: o.answers.render } : {}),
     // A card raises a level only through the broker's own record (`cardRecord`; without it, none does), once: the
     // ids used are kept on disk under the home, so a restart doesn't make a card new again.
     ...(o.cardRecord ? { cardRecord: o.cardRecord } : {}),
-    cardLedger: new FileAnswerLedger(usedCardsPath(o.cloverHome), o.clock),
+    cardLedger: new FileAnswerLedger(usedCardsPath(o.mossHome), o.clock),
   });
-  const botsRoot = join(o.cloverHome, "bots");
+  const botsRoot = join(o.mossHome, "bots");
   const bots = o.bots ?? (() => []);
   const fence = o.lease ? leaseFence(o.lease) : undefined;
   if (!o.lease) o.log?.("computers: no lease yet (no group): acts between computers carry no fencing token, and none is judged");
   // J-M2: the local MCP servers ticked here, and which computers run each (spec §9.1).
-  const ticks: McpTicks = o.mcp?.ticks ?? new FileMcpTicks(mcpTicksPath(o.cloverHome), () => {}, (line) => o.log?.(`computers: ${line}`));
+  const ticks: McpTicks = o.mcp?.ticks ?? new FileMcpTicks(mcpTicksPath(o.mossHome), () => {}, (line) => o.log?.(`computers: ${line}`));
   const localServers = () => o.mcp?.localServers?.() ?? [];
   // The one-time migration's snapshot: what this run lists at the node's start, once, whether or not it is empty
   // (`adopt` does nothing once there's a record). Never a bundled plugin's server, which runs by rule. What it ticks
@@ -298,7 +298,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     aliases: () => registry.self().aliases,
     home: o.home,
     botsRoot,
-    cloverHome: o.cloverHome,
+    mossHome: o.mossHome,
     runsBot: (bot) => bots().includes(bot),
     os,
     level: () => registry.self().level,
@@ -440,7 +440,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     const c = o.cloud;
     const authority = leaseAuthority(o.lease);
     const vms = new CloudComputers({
-      clock: o.clock, store: new FileCloudStateStore(o.cloverHome), provider: pluginProviders(c.plugins, c.host), providerIds: () => providerIds(c.plugins),
+      clock: o.clock, store: new FileCloudStateStore(o.mossHome), provider: pluginProviders(c.plugins, c.host), providerIds: () => providerIds(c.plugins),
       authority, confirm: c.confirm, userData: c.userData, isPaired: (name) => registry.get(name) !== undefined,
       ...(c.makeMain ? { makeMain: c.makeMain } : {}), ...(o.log ? { log: o.log } : {}),
     });

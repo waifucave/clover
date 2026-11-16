@@ -7,7 +7,7 @@ import { hasShellHazards, splitPipeline } from "../../src/agent/shell-scan";
 import { Settings } from "../../src/settings";
 
 // SP-approvals Task 1: the CC-grammar allow-rules store (project + global, hot, append API).
-// Every test uses a fresh mkdtemp'd directory — never ~/.clover (project rule, see CLAUDE.md).
+// Every test uses a fresh mkdtemp'd directory — never ~/.moss (project rule, see CLAUDE.md).
 
 function tmpDir(prefix: string): string {
   return realpathSync(mkdtempSync(join(tmpdir(), prefix)));
@@ -389,42 +389,42 @@ describe("ruleMatches — shell-hazard guard (SP-approvals T1 review)", () => {
 
 describe("PermissionRules.decision", () => {
   test("global rule (via the injected thunk) allows regardless of projectRoot, including null", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const pr = new PermissionRules({ globalAllow: () => ["Computer"], cloverHome });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const pr = new PermissionRules({ globalAllow: () => ["Computer"], mossHome });
     expect(pr.decision(call("computer", { action: "screenshot" }), null)).toBe("allow");
   });
 
   test("no matching rule anywhere -> null", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const pr = new PermissionRules({ globalAllow: () => [], cloverHome });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const pr = new PermissionRules({ globalAllow: () => [], mossHome });
     expect(pr.decision(call("bash", { command: "rm -rf /" }), null)).toBeNull();
   });
 
   test("does NOT seed a default Computer-allow rule itself (Task 3's daemon getter owns that fallback)", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     expect(pr.decision(call("computer", { action: "screenshot" }), null)).toBeNull();
   });
 
   test("project file allows in its own root; null in a different root", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    const other = tmpDir("clover-permrules-other-");
-    mkdirSync(join(root, ".clover"), { recursive: true });
-    writeFileSync(join(root, ".clover", "permissions.local.json"), JSON.stringify({ allow: ["Bash(git status:*)"] }));
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    const other = tmpDir("moss-permrules-other-");
+    mkdirSync(join(root, ".moss"), { recursive: true });
+    writeFileSync(join(root, ".moss", "permissions.local.json"), JSON.stringify({ allow: ["Bash(git status:*)"] }));
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     expect(pr.decision(call("bash", { command: "git status" }), root)).toBe("allow");
     expect(pr.decision(call("bash", { command: "git status" }), other)).toBeNull();
     expect(pr.decision(call("bash", { command: "git status" }), null)).toBeNull();
   });
 
   test("malformed project JSON: null decision, prior good rules kept (last good, not wiped)", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    const file = join(root, ".clover", "permissions.local.json");
-    mkdirSync(join(root, ".clover"), { recursive: true });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    const file = join(root, ".moss", "permissions.local.json");
+    mkdirSync(join(root, ".moss"), { recursive: true });
     writeFileSync(file, JSON.stringify({ allow: ["Bash(git status:*)"] }));
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     expect(pr.decision(call("bash", { command: "git status" }), root)).toBe("allow"); // read once, good
 
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
@@ -442,12 +442,12 @@ describe("PermissionRules.decision", () => {
   });
 
   test("oversized project file (>64KB) is ignored (no prior good -> null)", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    mkdirSync(join(root, ".clover"), { recursive: true });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    mkdirSync(join(root, ".moss"), { recursive: true });
     const huge = JSON.stringify({ allow: ["Bash(git status:*)"], pad: "x".repeat(70 * 1024) });
-    writeFileSync(join(root, ".clover", "permissions.local.json"), huge);
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    writeFileSync(join(root, ".moss", "permissions.local.json"), huge);
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
     try {
       expect(pr.decision(call("bash", { command: "git status" }), root)).toBeNull();
@@ -458,12 +458,12 @@ describe("PermissionRules.decision", () => {
   });
 
   test("hot: an out-of-band rewrite with a newer mtime is picked up next call (mtime-checked, no watcher)", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    const file = join(root, ".clover", "permissions.local.json");
-    mkdirSync(join(root, ".clover"), { recursive: true });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    const file = join(root, ".moss", "permissions.local.json");
+    mkdirSync(join(root, ".moss"), { recursive: true });
     writeFileSync(file, JSON.stringify({ allow: [] }));
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     expect(pr.decision(call("bash", { command: "git status" }), root)).toBeNull();
 
     writeFileSync(file, JSON.stringify({ allow: ["Bash(git status:*)"] }));
@@ -473,8 +473,8 @@ describe("PermissionRules.decision", () => {
   });
 
   test("unknown/garbage rule strings are ignored and warned about only once", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const pr = new PermissionRules({ globalAllow: () => ["Nope(x)", "Bash(git status:*)"], cloverHome });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const pr = new PermissionRules({ globalAllow: () => ["Nope(x)", "Bash(git status:*)"], mossHome });
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
     try {
       expect(pr.decision(call("bash", { command: "git status" }), null)).toBe("allow"); // the valid rule still works
@@ -486,11 +486,11 @@ describe("PermissionRules.decision", () => {
   });
 
   test("a non-Bash parenthesized rule is rejected like any other unparseable rule (warn once, never matches)", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
+    const mossHome = tmpDir("moss-permrules-home-");
     // A RELATIVE Edit(...) value, not absolute — SP-policies Task 4 gives an ABSOLUTE Edit(<path>)
     // legitimate (but non-silencing) meaning, so it no longer exercises this "unparseable" path;
     // see the "Edit(/path)" describe block below for that case.
-    const pr = new PermissionRules({ globalAllow: () => ["Edit(etc/passwd:*)"], cloverHome });
+    const pr = new PermissionRules({ globalAllow: () => ["Edit(etc/passwd:*)"], mossHome });
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
     try {
       expect(pr.decision(call("write", { path: "/etc/passwd", content: "x" }), null)).toBeNull();
@@ -502,8 +502,8 @@ describe("PermissionRules.decision", () => {
   });
 
   test("SP-approvals T1 review: a global Bash prefix rule never lets a shell-hazard command through decision()", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const pr = new PermissionRules({ globalAllow: () => ["Bash(git push:*)"], cloverHome });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const pr = new PermissionRules({ globalAllow: () => ["Bash(git push:*)"], mossHome });
     expect(pr.decision(call("bash", { command: "git push origin main" }), null)).toBe("allow"); // sanity: the rule DOES work normally
     expect(pr.decision(call("bash", { command: "git push ; rm -rf /" }), null)).toBeNull();
     expect(pr.decision(call("bash", { command: "git push\nrm -rf /" }), null)).toBeNull();
@@ -514,19 +514,19 @@ describe("PermissionRules.decision", () => {
   // `WebFetch(domain:...)` rules ride the SAME decision()/rulesFor() paths, both scopes.
   describe("WebFetch(domain:...) rules (SP-approvals T10)", () => {
     test("a global WebFetch(domain:...) rule allows a matching web_fetch call (incl. a subdomain), null for a different host", () => {
-      const cloverHome = tmpDir("clover-permrules-home-");
-      const pr = new PermissionRules({ globalAllow: () => ["WebFetch(domain:pastebin.com)"], cloverHome });
+      const mossHome = tmpDir("moss-permrules-home-");
+      const pr = new PermissionRules({ globalAllow: () => ["WebFetch(domain:pastebin.com)"], mossHome });
       expect(pr.decision(call("web_fetch", { url: "https://pastebin.com/x" }), null)).toBe("allow");
       expect(pr.decision(call("web_fetch", { url: "https://raw.pastebin.com/x" }), null)).toBe("allow");
       expect(pr.decision(call("web_fetch", { url: "https://example.com/x" }), null)).toBeNull();
     });
 
     test("a project-scoped WebFetch(domain:...) rule also works (the card never offers this scope, but the store/grammar is generic)", () => {
-      const cloverHome = tmpDir("clover-permrules-home-");
-      const root = tmpDir("clover-permrules-proj-");
-      mkdirSync(join(root, ".clover"), { recursive: true });
-      writeFileSync(join(root, ".clover", "permissions.local.json"), JSON.stringify({ allow: ["WebFetch(domain:transfer.sh)"] }));
-      const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+      const mossHome = tmpDir("moss-permrules-home-");
+      const root = tmpDir("moss-permrules-proj-");
+      mkdirSync(join(root, ".moss"), { recursive: true });
+      writeFileSync(join(root, ".moss", "permissions.local.json"), JSON.stringify({ allow: ["WebFetch(domain:transfer.sh)"] }));
+      const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
       expect(pr.decision(call("web_fetch", { url: "https://transfer.sh/f" }), root)).toBe("allow");
       expect(pr.decision(call("web_fetch", { url: "https://transfer.sh/f" }), null)).toBeNull(); // no project scope, no match
     });
@@ -534,11 +534,11 @@ describe("PermissionRules.decision", () => {
 });
 
 describe("PermissionRules.append", () => {
-  test("creates <root>/.clover/permissions.local.json on first use and dedupes", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
-    const file = join(root, ".clover", "permissions.local.json");
+  test("creates <root>/.moss/permissions.local.json on first use and dedupes", () => {
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
+    const file = join(root, ".moss", "permissions.local.json");
     expect(existsSync(file)).toBe(false);
 
     pr.append("Bash(git push:*)", "project", root);
@@ -551,36 +551,36 @@ describe("PermissionRules.append", () => {
   });
 
   test("an appended project rule is immediately visible to decision() on the same instance", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     expect(pr.decision(call("bash", { command: "git push origin main" }), root)).toBeNull();
     pr.append("Bash(git push:*)", "project", root);
     expect(pr.decision(call("bash", { command: "git push origin main" }), root)).toBe("allow");
   });
 
-  test("throws RuleAppendError when the project root is inside (or equal to) cloverHome", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const nested = join(cloverHome, "some-project");
+  test("throws RuleAppendError when the project root is inside (or equal to) mossHome", () => {
+    const mossHome = tmpDir("moss-permrules-home-");
+    const nested = join(mossHome, "some-project");
     mkdirSync(nested, { recursive: true });
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     expect(() => pr.append("Bash(rm:*)", "project", nested)).toThrow(RuleAppendError);
-    expect(() => pr.append("Bash(rm:*)", "project", cloverHome)).toThrow(RuleAppendError); // equal, not just nested
+    expect(() => pr.append("Bash(rm:*)", "project", mossHome)).toThrow(RuleAppendError); // equal, not just nested
   });
 
-  test("a sibling directory that merely shares a string prefix with cloverHome is NOT guarded", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const sibling = `${cloverHome}-sibling`;
+  test("a sibling directory that merely shares a string prefix with mossHome is NOT guarded", () => {
+    const mossHome = tmpDir("moss-permrules-home-");
+    const sibling = `${mossHome}-sibling`;
     mkdirSync(sibling, { recursive: true });
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     expect(() => pr.append("Bash(git push:*)", "project", sibling)).not.toThrow();
   });
 
-  test("global append writes into <cloverHome>/settings.json permissions.allow, preserving other keys", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const settingsPath = join(cloverHome, "settings.json");
+  test("global append writes into <mossHome>/settings.json permissions.allow, preserving other keys", () => {
+    const mossHome = tmpDir("moss-permrules-home-");
+    const settingsPath = join(mossHome, "settings.json");
     writeFileSync(settingsPath, JSON.stringify({ schemaVersion: 2, provider: { type: "codex-oauth", model: "gpt-5.6-sol" } }));
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
 
     pr.append("Computer", "global", null);
     const onDisk = JSON.parse(readFileSync(settingsPath, "utf8"));
@@ -594,11 +594,11 @@ describe("PermissionRules.append", () => {
   });
 
   test("global append round-trips through the real Settings zod schema", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    writeFileSync(join(cloverHome, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const mossHome = tmpDir("moss-permrules-home-");
+    writeFileSync(join(mossHome, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     pr.append("Bash(git push:*)", "global", null);
-    const onDisk = JSON.parse(readFileSync(join(cloverHome, "settings.json"), "utf8"));
+    const onDisk = JSON.parse(readFileSync(join(mossHome, "settings.json"), "utf8"));
     expect(() => Settings.parse(onDisk)).not.toThrow();
     expect(Settings.parse(onDisk).permissions?.allow).toEqual(["Bash(git push:*)"]);
   });
@@ -606,11 +606,11 @@ describe("PermissionRules.append", () => {
 
 describe("PermissionRules.rulesFor", () => {
   test("reflects global (thunk) + project (disk) rules; project is empty for a null root", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    mkdirSync(join(root, ".clover"), { recursive: true });
-    writeFileSync(join(root, ".clover", "permissions.local.json"), JSON.stringify({ allow: ["Bash(git status:*)"] }));
-    const pr = new PermissionRules({ globalAllow: () => ["Computer"], cloverHome });
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    mkdirSync(join(root, ".moss"), { recursive: true });
+    writeFileSync(join(root, ".moss", "permissions.local.json"), JSON.stringify({ allow: ["Bash(git status:*)"] }));
+    const pr = new PermissionRules({ globalAllow: () => ["Computer"], mossHome });
     expect(pr.rulesFor(root)).toEqual({ global: ["Computer"], project: ["Bash(git status:*)"] });
     expect(pr.rulesFor(null)).toEqual({ global: ["Computer"], project: [] });
   });
@@ -633,7 +633,7 @@ describe("Edit(/path) path-scoped rule (SP-policies)", () => {
   test("editPathRules returns absolute paths from global+project, deduped; path-less Edit contributes nothing", () => {
     const rules = new PermissionRules({
       globalAllow: () => ["Edit(/tmp/a)", "Edit", "Bash(ls:*)"],
-      cloverHome: "/nope",
+      mossHome: "/nope",
     });
     expect(rules.editPathRules(null).sort()).toEqual(["/tmp/a"]);
   });
@@ -663,29 +663,29 @@ describe("BashUnsandboxed rule — disjoint from Bash (SP-policies)", () => {
 });
 
 // SP-policies whole-branch review residual — rules-store symlink indirection.
-// The store's write guard blocks writes to a path containing `.clover/permissions.local.json`, but
+// The store's write guard blocks writes to a path containing `.moss/permissions.local.json`, but
 // an agent that can create a symlink (sandboxed `ln -s`, needing NO Edit/write grant) could first
-// make `<root>/.clover` a symlink to a decoy dir it CAN write, plant `permissions.local.json` there
-// (a path with no `.clover` in it — the write guard never flags it), and the hot reader would then
+// make `<root>/.moss` a symlink to a decoy dir it CAN write, plant `permissions.local.json` there
+// (a path with no `.moss` in it — the write guard never flags it), and the hot reader would then
 // FOLLOW the symlink and mint allow-rules with no human approval card, self-escalating this very
 // session (rules are hot-read). The generic close: the reader (projectRulesFor) AND the human-card
-// writer (appendProject) refuse to TRUST a symlinked `.clover` or a symlinked rules file. lstat
+// writer (appendProject) refuse to TRUST a symlinked `.moss` or a symlinked rules file. lstat
 // never follows the final symlink, so it sees the link itself; a real dir / real file passes.
-describe("PermissionRules — symlinked .clover is never trusted (SP-policies review residual)", () => {
-  test("read path (repro): a symlinked `.clover` pointing at a decoy dir mints NO rules, warned once", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    const decoy = tmpDir("clover-permrules-decoy-");
-    // Reachable as root/.clover/permissions.local.json ONLY by following the planted symlink.
+describe("PermissionRules — symlinked .moss is never trusted (SP-policies review residual)", () => {
+  test("read path (repro): a symlinked `.moss` pointing at a decoy dir mints NO rules, warned once", () => {
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    const decoy = tmpDir("moss-permrules-decoy-");
+    // Reachable as root/.moss/permissions.local.json ONLY by following the planted symlink.
     writeFileSync(join(decoy, "permissions.local.json"), JSON.stringify({ allow: ["Bash(rm:*)"] }));
-    symlinkSync(decoy, join(root, ".clover"));
+    symlinkSync(decoy, join(root, ".moss"));
 
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
     try {
-      // BEFORE fix this returned "allow" (the hole); AFTER fix the symlinked `.clover` is ignored.
+      // BEFORE fix this returned "allow" (the hole); AFTER fix the symlinked `.moss` is ignored.
       expect(pr.decision(call("bash", { command: "rm -rf /" }), root)).toBeNull();
-      expect(errSpy).toHaveBeenCalled(); // warned about the symlinked .clover
+      expect(errSpy).toHaveBeenCalled(); // warned about the symlinked .moss
       const after = errSpy.mock.calls.length;
       pr.decision(call("bash", { command: "rm -rf /" }), root); // warn-once: no second warning for this root
       expect(errSpy.mock.calls.length).toBe(after);
@@ -694,15 +694,15 @@ describe("PermissionRules — symlinked .clover is never trusted (SP-policies re
     }
   });
 
-  test("read path: a real `.clover` dir but a symlinked permissions.local.json FILE is ignored too", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    const decoy = tmpDir("clover-permrules-decoy-");
+  test("read path: a real `.moss` dir but a symlinked permissions.local.json FILE is ignored too", () => {
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    const decoy = tmpDir("moss-permrules-decoy-");
     writeFileSync(join(decoy, "x.json"), JSON.stringify({ allow: ["Bash(rm:*)"] }));
-    mkdirSync(join(root, ".clover"), { recursive: true });
-    symlinkSync(join(decoy, "x.json"), join(root, ".clover", "permissions.local.json"));
+    mkdirSync(join(root, ".moss"), { recursive: true });
+    symlinkSync(join(decoy, "x.json"), join(root, ".moss", "permissions.local.json"));
 
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
     try {
       expect(pr.decision(call("bash", { command: "rm -rf /" }), root)).toBeNull();
@@ -712,46 +712,46 @@ describe("PermissionRules — symlinked .clover is never trusted (SP-policies re
     }
   });
 
-  test("write path: append refuses to write THROUGH a symlinked `.clover` (throws, plants nothing in the decoy)", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    const decoy = tmpDir("clover-permrules-decoy-");
-    symlinkSync(decoy, join(root, ".clover"));
+  test("write path: append refuses to write THROUGH a symlinked `.moss` (throws, plants nothing in the decoy)", () => {
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    const decoy = tmpDir("moss-permrules-decoy-");
+    symlinkSync(decoy, join(root, ".moss"));
 
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     expect(() => pr.append("Bash(ls:*)", "project", root)).toThrow(RuleAppendError);
     // Nothing was written through the symlink into the decoy dir.
     expect(existsSync(join(decoy, "permissions.local.json"))).toBe(false);
   });
 
-  test("write path: append refuses a symlinked permissions.local.json FILE too, leaving it untouched (real .clover dir)", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
-    const decoy = tmpDir("clover-permrules-decoy-");
-    mkdirSync(join(root, ".clover"), { recursive: true });
-    const file = join(root, ".clover", "permissions.local.json");
+  test("write path: append refuses a symlinked permissions.local.json FILE too, leaving it untouched (real .moss dir)", () => {
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
+    const decoy = tmpDir("moss-permrules-decoy-");
+    mkdirSync(join(root, ".moss"), { recursive: true });
+    const file = join(root, ".moss", "permissions.local.json");
     symlinkSync(join(decoy, "planted.json"), file);
 
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     expect(() => pr.append("Bash(ls:*)", "project", root)).toThrow(RuleAppendError);
     expect(lstatSync(file).isSymbolicLink()).toBe(true); // untouched — NOT replaced by a real file
   });
 
-  test("no-regression: a NORMAL real-dir `.clover` still reads its rules; a fresh root still mkdirs + writes on append", () => {
-    const cloverHome = tmpDir("clover-permrules-home-");
-    const root = tmpDir("clover-permrules-proj-");
+  test("no-regression: a NORMAL real-dir `.moss` still reads its rules; a fresh root still mkdirs + writes on append", () => {
+    const mossHome = tmpDir("moss-permrules-home-");
+    const root = tmpDir("moss-permrules-proj-");
     // real dir + real file still works
-    mkdirSync(join(root, ".clover"), { recursive: true });
-    writeFileSync(join(root, ".clover", "permissions.local.json"), JSON.stringify({ allow: ["Bash(git status:*)"] }));
-    const pr = new PermissionRules({ globalAllow: () => undefined, cloverHome });
+    mkdirSync(join(root, ".moss"), { recursive: true });
+    writeFileSync(join(root, ".moss", "permissions.local.json"), JSON.stringify({ allow: ["Bash(git status:*)"] }));
+    const pr = new PermissionRules({ globalAllow: () => undefined, mossHome });
     expect(pr.decision(call("bash", { command: "git status" }), root)).toBe("allow");
 
-    // fresh root with no `.clover` yet: append mkdirs + writes fine, then decision sees it
-    const fresh = tmpDir("clover-permrules-fresh-");
+    // fresh root with no `.moss` yet: append mkdirs + writes fine, then decision sees it
+    const fresh = tmpDir("moss-permrules-fresh-");
     expect(pr.decision(call("bash", { command: "git push origin main" }), fresh)).toBeNull();
     pr.append("Bash(git push:*)", "project", fresh);
-    expect(existsSync(join(fresh, ".clover", "permissions.local.json"))).toBe(true);
-    expect(lstatSync(join(fresh, ".clover")).isDirectory()).toBe(true); // a real dir, created normally
+    expect(existsSync(join(fresh, ".moss", "permissions.local.json"))).toBe(true);
+    expect(lstatSync(join(fresh, ".moss")).isDirectory()).toBe(true); // a real dir, created normally
     expect(pr.decision(call("bash", { command: "git push origin main" }), fresh)).toBe("allow");
   });
 });

@@ -7,7 +7,7 @@
 //   - a file is written to a fresh temporary name (created exclusively, never through a link) and renamed into place,
 //     so a planted link at the name is replaced, never followed, and no reader sees half a file;
 //   - before a process or a worker starts from a file, the file is read once more (never through a link) and its
-//     SHA-256 compared with the text Clover wrote; a changed file refuses the start.
+//     SHA-256 compared with the text MOSS wrote; a changed file refuses the start.
 // The remaining limit: a process of the same user can still swap a file in the moment between that check and the
 // exec (or the Worker's own read of it). Closing that needs the bytes handed over without a path, which Bun's
 // `--preload` and `new Worker(path)` don't take.
@@ -78,13 +78,13 @@ export function writeRunFile(path: string, text: string): void {
 export function checkRunFiles(checks: readonly RunFileCheck[], what: string): void {
   for (const c of checks) {
     const bytes = readRunFile(c.path);
-    if (bytes === undefined) throw new Error(`${what}: ${c.path} isn't a regular file Clover wrote (missing, or a link); it doesn't start`);
-    if (sha256Hex(bytes) !== c.sha256) throw new Error(`${what}: ${c.path} changed since Clover wrote it (its SHA-256 differs); it doesn't start`);
+    if (bytes === undefined) throw new Error(`${what}: ${c.path} isn't a regular file MOSS wrote (missing, or a link); it doesn't start`);
+    if (sha256Hex(bytes) !== c.sha256) throw new Error(`${what}: ${c.path} changed since MOSS wrote it (its SHA-256 differs); it doesn't start`);
   }
 }
 
-/** The argv form of a check, `--clover-check=<sha256>:<path>`, which the host process reads (never the environment). */
-export const RUN_CHECK_ARG = "--clover-check=";
+/** The argv form of a check, `--moss-check=<sha256>:<path>`, which the host process reads (never the environment). */
+export const RUN_CHECK_ARG = "--moss-check=";
 
 export function runCheckArgs(checks: readonly RunFileCheck[]): string[] {
   return checks.map((c) => `${RUN_CHECK_ARG}${c.sha256}:${c.path}`);

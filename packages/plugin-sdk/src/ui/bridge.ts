@@ -1,5 +1,5 @@
 // The channel between a plugin layer and the app's main process (spec §5.5), as the layer's preload exposes it on
-// `window.cloverLayer`. Lane E's runtime is both ends: the app's main process (apps/desktop/src/main/ui) answers, and
+// `window.mossLayer`. Lane E's runtime is both ends: the app's main process (apps/desktop/src/main/ui) answers, and
 // the UI API (`index.tsx`) calls. A plugin's components never see it; they use `<Spot>`, the hooks and the plugin
 // API.
 //
@@ -47,7 +47,7 @@ export interface MountInfo {
   /** The part's resolved tokens, by name (its tab's theme, plus what dresses it). */
   tokens: Readonly<Record<string, TokenValue>>;
   context: MountContext;
-  /** The plugin's client module, served from this layer's origin; absent for the `clover` layer, whose modules come
+  /** The plugin's client module, served from this layer's origin; absent for the `moss` layer, whose modules come
    *  with the runtime. */
   module?: string;
   /** The plugin's stylesheets, served from this layer's origin. */
@@ -58,7 +58,7 @@ export interface MountInfo {
   /** The document's root is a bot's tab (its bot), or is dressed by a style entry: the sheets' scopes find it so. */
   tab?: string;
   styled?: boolean;
-  /** The document's strings: its plugin's keys (`<top-level id>.…`; `clover.…` for the `clover` layer and the core),
+  /** The document's strings: its plugin's keys (`<top-level id>.…`; `moss.…` for the `moss` layer and the core),
    *  in the user's language (§5.5). */
   strings?: StringTable;
   /** How long a frame of this document's stays away from the screen before it sleeps, when the app sets it (a test or
@@ -220,11 +220,11 @@ export type LayerMessage =
   /** What an avatar frame says about its model and figure, to its parent only (`cleanAvatarUp`). */
   | { type: "avatar-up"; child: string; message: AvatarUp }
   /** An act of the window a bot's own frame asked for through `shell.*` (main checked the capability, the user's press and whose tab shows), to the main
-   *  window's `clover` shell only. */
+   *  window's `moss` shell only. */
   | { type: "shell-act"; act: ShellAct }
   /** Where the window is now (`ShellState`), to the frames of the plugin whose bot's tab shows that hold `shell.read`. */
   | { type: "shell-state"; state: ShellState }
-  /** Which essential handles the shown bot's own controls offer (`shell.provide`), to the `clover` shell only. */
+  /** Which essential handles the shown bot's own controls offer (`shell.provide`), to the `moss` shell only. */
   | { type: "shell-provides"; sidebar: boolean; drag: boolean }
   /** The window got the focus back after the core's own overlay: restore the element that had it (S9). */
   | { type: "focus-returned" }
@@ -257,7 +257,7 @@ export interface Rect {
 /** What a surface window (the island, the pill) asks of the core: to show or hide, its size or its whole place on
  *  the screen, and where it takes clicks (elsewhere clicks pass through to whatever is under it). `bounds` is in screen
  *  CSS pixels and wins over `width` and `height`; the core keeps it on the surface's display (a plugin outside the
- *  `clover` tree, inside the work area and 800 × 600). With neither, the core places the window by its surface (the
+ *  `moss` tree, inside the work area and 800 × 600). With neither, the core places the window by its surface (the
  *  island at the top centre, the pill at the bottom centre). */
 export interface SurfaceRequest {
   visible?: boolean;
@@ -288,21 +288,21 @@ export type OpenTarget =
  *  those alone, so the part that claims a file gets `{ path, name }` and one that claims a message `{ session, seq }`,
  *  and reads either through its own plugin API. */
 export interface DragOffer {
-  type: "text/plain" | "text/uri-list" | "application/x-clover-file" | "application/x-clover-message";
+  type: "text/plain" | "text/uri-list" | "application/x-moss-file" | "application/x-moss-message";
   data: unknown;
 }
 
 /** The drag's data type that carries a grant token from the core. */
-export const DRAG_GRANT_TYPE = "application/x-clover-grant";
+export const DRAG_GRANT_TYPE = "application/x-moss-grant";
 
 /** A value handed across a frame's edge in place of a function: the core routes calls back to the parent. */
 export interface CallbackMarker {
-  "$clover.callback": string;
+  "$moss.callback": string;
 }
 
-export const CALLBACK_KEY = "$clover.callback";
+export const CALLBACK_KEY = "$moss.callback";
 
-/** The bridge the preload puts on `window.cloverLayer`. */
+/** The bridge the preload puts on `window.mossLayer`. */
 /** What `shell.*` acts come to, as the shell applies them. */
 export type ShellAct =
   | { kind: "sidebar"; collapsed?: boolean }
@@ -322,7 +322,7 @@ export interface LayerBridge {
   /** Binds this document to its mount, once. */
   describe(): Promise<MountInfo>;
   /** Resolves a spot that the part `mount` (this document's, or an inline part in it) declares. `hints.session` (the
-   *  kind of session the part shows, for `when.session`) is heard from the `clover` layer only. */
+   *  kind of session the part shows, for `when.session`) is heard from the `moss` layer only. */
   resolve(mount: string, spot: string, key?: string, hints?: { session?: string; entry?: string; bot?: string }): Promise<SpotView>;
   /** A spot the part declares, as its entries, in the spot's order. */
   entries(mount: string, spot: string, key?: string, bot?: string, session?: string): Promise<readonly SpotEntryView[]>;
@@ -354,16 +354,16 @@ export interface LayerBridge {
   surface(request: SurfaceRequest): void;
   /** This document's surface window's environment (only the document a surface window's root placed). */
   surfaceEnvironment(): Promise<SurfaceEnvironment | undefined>;
-  /** Opens a place in the main window for the part `mount` (the `clover` tree's parts only, in 1.111.1). */
+  /** Opens a place in the main window for the part `mount` (the `moss` tree's parts only, in 1.111.1). */
   open(mount: string, target: OpenTarget): Promise<void>;
-  /** Where the part `mount`'s native view `name` goes (the Clover Browser's live view): its rect in this document's
+  /** Where the part `mount`'s native view `name` goes (the MOSS Browser's live view): its rect in this document's
    *  viewport, null when it has no place; `used` when the person just used it (ruling R8: the view the person used
    *  last gets the live view). */
   viewFrame(mount: string, name: string, rect: Rect | null, used?: boolean): void;
   /** Where a web page part's view goes, in this document's viewport (null: hidden). Only the document that placed
    *  the web part places its view. */
   webFrame(mount: string, rect: Rect | null): void;
-  /** The `clover` layer only: the session the window shows now (null: none), so a desktop notification for it is held
+  /** The `moss` layer only: the session the window shows now (null: none), so a desktop notification for it is held
    *  back while the app is in front. */
   activeSession(mount: string, session: string | null): void;
   /** The shell only: the press that just came to the window was on an element that declares `-webkit-app-region: drag`.
@@ -377,14 +377,14 @@ export interface LayerBridge {
   /** `PluginApi.shell` from a component: the window's state and apps, or an act of the window's own. Main checks the plugin's capability, that a bot of
    *  the plugin shows its tab, and for an act the user's own key press or click in this frame. */
   shell(mount: string, method: ShellMethod, args?: unknown): Promise<unknown>;
-  /** The `clover` shell only: where the window is now (and its sidebar's app buttons); main keeps it for the plugin frames that read it. */
+  /** The `moss` shell only: where the window is now (and its sidebar's app buttons); main keeps it for the plugin frames that read it. */
   shellReport(mount: string, report: { state: ShellState; apps: readonly ShellApp[]; account?: ShellAccount }): void;
   /** A plugin-API call to the core, on this part's own plugin's connection (the daemon checks it as that plugin). */
   api(mount: string, method: string, params?: unknown): Promise<unknown>;
   /** A key press or paste in a terminal's own element (`TerminalApi.input`): the core writes only what it derives
    *  from the input it saw come to the window (a key press's bytes; a paste through the paste door). */
   terminalInput(mount: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
-  /** The user's own words from a `clover` surface's part, inside the key press or click that sends (`useUserSend`):
+  /** The user's own words from a `moss` surface's part, inside the key press or click that sends (`useUserSend`):
    *  the core carries them to the daemon as `user.send` only after it saw that input come to this window. */
   userSend(mount: string, to: UserSendTarget, message: { text: string; images?: readonly { mediaType: string; data: Uint8Array }[] }): Promise<{ seq?: number }>;
   /** Offers data for a drag from the part `mount`: a token to put in the drag's `DRAG_GRANT_TYPE`. */
@@ -404,6 +404,6 @@ export interface LayerBridge {
 
 declare global {
   interface Window {
-    cloverLayer?: LayerBridge;
+    mossLayer?: LayerBridge;
   }
 }

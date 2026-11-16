@@ -14,9 +14,9 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { z } from "zod";
 import {
-  BotId, CLOVER_ERR, ComputerName, DEVICES_METHODS, ERR, IMAGE_REFERENCE_INVALID, SESSIONS_METHODS, SessionId, utf16,
+  BotId, MOSS_ERR, ComputerName, DEVICES_METHODS, ERR, IMAGE_REFERENCE_INVALID, SESSIONS_METHODS, SessionId, utf16,
   type BotView, type Caller, type ChangeResult, type MemoryEntry, type MethodSpec, type SessionView, type UserMessageImageRef,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import type { DeviceRegistry } from "../contracts/device-registry";
 import { verifyUserMessage } from "../contracts/session-host";
 import { StageImageRefusal, stageSessionImage, validateImageRefs } from "../agent/stage-image";
@@ -53,7 +53,7 @@ export interface SessionsMethodsDeps {
   setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
   /** The bot side's questions (questions.ts): `session.answer` resolves the one waiting. Without it, none waits. */
   questions?: Pick<BotQuestions, "answer">;
-  /** The registry whose `avatar.formats` entries say what an avatar import takes; without it, Clover's own two. */
+  /** The registry whose `avatar.formats` entries say what an avatar import takes; without it, MOSS's own two. */
   registry?: Pick<PluginRegistry, "entries">;
 }
 
@@ -90,7 +90,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
     return StagedImages.key(id, caller.client, caller.device);
   };
   /** A message's images (§6.6 "attachments"), each held to the inherited rules (staged for this session, or the user's
-   *  own image file, never inside the Clover home). A client on this computer names either; a client off it (the
+   *  own image file, never inside the MOSS home). A client on this computer names either; a client off it (the
    *  phone) names only images it staged itself through `session.stageImage` in this session, never a file of its own. */
   const checkedImages = (caller: UserCaller, id: string, text: string, images: readonly UserMessageImageRef[] | undefined): UserMessageImageRef[] | undefined => {
     if (images === undefined || images.length === 0) return undefined;
@@ -101,7 +101,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       }
     }
     try {
-      return validateImageRefs(id, text, images, { cloverHome: deps.home });
+      return validateImageRefs(id, text, images, { mossHome: deps.home });
     } catch (err) {
       if (err instanceof StageImageRefusal) throw new MethodError(err.internal ? ERR.INTERNAL : ERR.INVALID_PARAMS, err.message, { code: err.code, ...(err.n === undefined ? {} : { n: err.n }) });
       throw new MethodError(ERR.INTERNAL, "the message's images couldn't be checked", { code: IMAGE_REFERENCE_INVALID });
@@ -315,7 +315,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
     // shows the question (`conversation.post`); never a session's, so no bot answers its own or another's.
     [M.sessionAnswer.name]: handler(M.sessionAnswer, async ({ id, callId, answers, notes }, ctx) => {
       const caller = ctx.caller;
-      if (caller.kind !== "user" && caller.kind !== "plugin") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user, or a plugin showing the question, answers it");
+      if (caller.kind !== "user" && caller.kind !== "plugin") throw new MethodError(MOSS_ERR.NOT_THE_USER, "only the user, or a plugin showing the question, answers it");
       reachable(id);
       const by = caller.kind === "user" ? "user" : `plugin:${caller.pluginId}`;
       const outcome = deps.questions?.answer(id, callId, answers, by, notes)
@@ -428,7 +428,7 @@ export function peerSessionMethods(deps: PeerSessionMethodsDeps): Record<string,
   };
   return {
     [PEER_SESSION_DELIVER]: async (raw, ctx) => {
-      if (ctx.caller.kind !== "peer") throw new MethodError(CLOVER_ERR.ROLE_REFUSED, `${PEER_SESSION_DELIVER} comes only from another computer over the link`);
+      if (ctx.caller.kind !== "peer") throw new MethodError(MOSS_ERR.ROLE_REFUSED, `${PEER_SESSION_DELIVER} comes only from another computer over the link`);
       const parsed = PeerSessionDeliverParams.safeParse(raw);
       if (!parsed.success) throw new MethodError(ERR.INVALID_PARAMS, `${PEER_SESSION_DELIVER}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "params"}: ${i.message}`).join("; ")}`);
       try {
@@ -446,7 +446,7 @@ export function peerSessionMethods(deps: PeerSessionMethodsDeps): Record<string,
       }
     },
     [P.name]: handler(P, async ({ id, message, device, sentAt }, ctx) => {
-      if (ctx.caller.kind !== "peer") throw new MethodError(CLOVER_ERR.ROLE_REFUSED, "peer.session.send comes only from another computer over the link");
+      if (ctx.caller.kind !== "peer") throw new MethodError(MOSS_ERR.ROLE_REFUSED, "peer.session.send comes only from another computer over the link");
       refuseWhileUpdating(deps.updateGate);
       const relayedBy = ctx.caller.device;
       // Only a bot's main conversation this computer runs takes a relayed message: never an agent, a side thread or a

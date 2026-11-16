@@ -1,13 +1,13 @@
 // A small world for the Agent tool's end-to-end tests: one computer ("Studio") with a temp home, lane B's fakes for
 // everything that isn't lane K's (the session host, the approval broker, the tree, the fence, the clock), and lane
-// K's real parts: the manager, the ACP backend launching the scripted agent, the bridge's tokens, lane C's Clover server
-// serving the bridge role (testing/clover-endpoint.ts), the
+// K's real parts: the manager, the ACP backend launching the scripted agent, the bridge's tokens, lane C's MOSS server
+// serving the bridge role (testing/moss-endpoint.ts), the
 // real bridge process, the watchdog. A bot "alpha" has its main session `s_alpha` to delegate from.
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentBackend, AgentEvent, AgentQuirks } from "../../contracts/agent-backend";
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { FakeFence } from "../../contracts/fakes/fence";
@@ -18,8 +18,8 @@ import type { SessionRecord } from "../../contracts/session-host";
 import { UserSelections } from "../acp/selections";
 import { AcpAgentBackend, type AcpBackendOptions } from "../backend";
 import type { PluginPartsSource } from "../placement";
-import { bridgeCloverParts } from "../bridge/handlers";
-import { serveClover, type TestCloverEndpoint } from "../testing/clover-endpoint";
+import { bridgeMossParts } from "../bridge/handlers";
+import { serveMoss, type TestMossEndpoint } from "../testing/moss-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import type { BridgeToolSource } from "../bridge/tools";
@@ -63,7 +63,7 @@ export interface WorldOptions {
   /** The watchdog's wall clock, to age a running command past its limit. */
   wallNow?: () => number;
   table?: ProcessTableReader;
-  /** The scripted agent's sandbox: admitted by default, or one Clover can't count on (so it needs the OK). */
+  /** The scripted agent's sandbox: admitted by default, or one MOSS can't count on (so it needs the OK). */
   sandbox?: "protected" | "none";
   oks?: AgentOks;
   /** The plugins' parts for every session, and the backend's placement of them (Claude Code's). */
@@ -85,7 +85,7 @@ export interface WorldOptions {
   pause?: AgentPauseGate;
   /** The bridge tokens' life, on the world's clock. */
   tokenTtlMs?: number;
-  /** More backends beside the scripted one (Clover's coding agent), given the manager's wire. */
+  /** More backends beside the scripted one (MOSS's coding agent), given the manager's wire. */
   /** Whether the bot holds its agent's root (a grant covering it): the manager's `childCommandsHeld`. */
   childCommandsHeld?: (child: { bot: string; parent?: string; rootPath: string; level: Level | undefined }) => boolean;
   extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>, world: World) => AgentBackend[];
@@ -115,7 +115,7 @@ export async function waitFor<T>(fn: () => T | undefined | false | Promise<T | u
 export class World {
   readonly root: string;
   readonly userHome: string;
-  readonly cloverHome: string;
+  readonly mossHome: string;
   readonly project: string;
   readonly clock = new FakeClock();
   readonly fence: FakeFence;
@@ -126,7 +126,7 @@ export class World {
   readonly tokens: BridgeTokens;
   readonly watchdog: StallWatchdog;
   readonly manager: AgentManager;
-  readonly endpoint: TestCloverEndpoint;
+  readonly endpoint: TestMossEndpoint;
   readonly backend: AcpAgentBackend;
   readonly agent: FakeAgentRun;
   level: Level;
@@ -141,18 +141,18 @@ export class World {
 
   constructor(o: WorldOptions = {}) {
     this.computer = o.computer ?? "Studio";
-    this.root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-")));
+    this.root = realpathSync(mkdtempSync(join(tmpdir(), "moss-k-")));
     this.userHome = join(this.root, "home");
-    this.cloverHome = join(this.userHome, ".clover");
+    this.mossHome = join(this.userHome, ".moss");
     this.project = join(this.userHome, "project1");
     mkdirSync(this.project, { recursive: true });
-    mkdirSync(this.cloverHome, { recursive: true });
+    mkdirSync(this.mossHome, { recursive: true });
     this.level = o.level ?? "automatic";
     // The fence's temp folder is the world's own: the default, /tmp, holds the world's folders when the machine's temp is /tmp (Linux), and a
     // bot's agent's sandbox takes out every write root that holds its folder, leaving it no temp to write.
     const fenceTemp = join(this.root, "fence-temp");
     mkdirSync(fenceTemp, { recursive: true });
-    this.fence = new FakeFence({ home: this.userHome, cloverHome: this.cloverHome, temp: fenceTemp });
+    this.fence = new FakeFence({ home: this.userHome, mossHome: this.mossHome, temp: fenceTemp });
     const others = Object.fromEntries(Object.entries(o.otherComputers ?? {}).map(([name, home]) => [name, { home }]));
     this.tree = new FakeTree({ clock: this.clock, computers: { ...others, [this.computer]: { home: this.userHome } }, botComputer: () => "Studio" });
     this.approvals = new FakeApprovalBroker({ clock: this.clock, levels: () => this.level, fence: () => this.fence });
@@ -169,7 +169,7 @@ export class World {
     const sock = socketPath(this.root);
     let manager!: AgentManager;
     this.backend = new AcpAgentBackend({
-      id: "fake", pluginId: "clover/agent-fake", quirks, clock: this.clock,
+      id: "fake", pluginId: "moss/agent-fake", quirks, clock: this.clock,
       command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, this.agent.config], acpArgs: ["acp"] },
       wire: (id) => manager.wire(id),
       admissions: fakeAdmissions(o.sandbox ?? "protected", o.modeFloor),
@@ -179,7 +179,7 @@ export class World {
     });
     const extra = o.extraBackends?.((id) => manager.wire(id), this) ?? [];
     manager = new AgentManager({
-      home: this.cloverHome, userHome: this.userHome, computer: this.computer, host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
+      home: this.mossHome, userHome: this.userHome, computer: this.computer, host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
       backends: () => [this.backend, ...extra], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock, ...(o.bridgeServerName ? { serverName: o.bridgeServerName } : {}) }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),
@@ -195,7 +195,7 @@ export class World {
       ...(o.pause ? { pause: o.pause } : {}),
     });
     this.manager = manager;
-    this.endpoint = serveClover(sock, bridgeCloverParts(this.tokens, manager.bridgeHandlers()));
+    this.endpoint = serveMoss(sock, bridgeMossParts(this.tokens, manager.bridgeHandlers()));
   }
 
   /** What the scripted agent process reported. */

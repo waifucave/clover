@@ -11,7 +11,7 @@ import { DeviceKey } from "../device-key";
 const PROD_HANDSHAKE = "https://handshake.waifucave.com";
 
 function home(file?: unknown): string {
-  const dir = mkdtempSync(join(tmpdir(), "clover-account-config-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-account-config-"));
   if (file !== undefined) writeFileSync(join(dir, ACCOUNT_CONFIG_FILE), typeof file === "string" ? file : JSON.stringify(file));
   return dir;
 }
@@ -108,10 +108,10 @@ describe("the account settings", () => {
 
   test("the environment overrides in dev and test builds only; a release build ignores it", () => {
     const env = {
-      CLOVER_ACCOUNT_AUTH_URL: "http://127.0.0.1:54321",
-      CLOVER_ACCOUNT_ANON_KEY: "dev-anon",
-      CLOVER_ACCOUNT_SERVICE_URL: "http://localhost:8787",
-      CLOVER_HANDSHAKE_URL: "http://[::1]:8788",
+      MOSS_ACCOUNT_AUTH_URL: "http://127.0.0.1:54321",
+      MOSS_ACCOUNT_ANON_KEY: "dev-anon",
+      MOSS_ACCOUNT_SERVICE_URL: "http://localhost:8787",
+      MOSS_HANDSHAKE_URL: "http://[::1]:8788",
     };
     const file = { authUrl: "https://abc.supabase.co", anonKey: "file-anon" };
     const dev = resolveAccountConfig({ home: home(file), env, distBuild: false, log: quiet });

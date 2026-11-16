@@ -1,0 +1,3 @@
+// The SDK's mouth levels from speech (exported from `@waifucave/moss-plugin-sdk/ui`), which this renderer maps onto its
+// mouth morphs: kept by these names for the files that import them here.
+export { LipSync, SpeechRing, frameSource, ringSource, analyserSource, bufferSource, speechFrames, PushedSpeech, MAX_FRAME_SECONDS, visemeWeights, MouthSmoother, VISEMES, SHUT, SILENCE_RMS, FULL_RMS, DARK_HZ, BRIGHT_HZ, clamp01, rmsOf, spectralCentroidOf, FFT_SIZE, type LipSyncSource, type SpeechFeatureSource, type SpeechFeatures, type AnalyserLike, type VisemeWeights, type SpeechFeed, type SpeechFrame } from "@waifucave/moss-plugin-sdk/ui";

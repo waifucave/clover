@@ -186,7 +186,7 @@ const HOW_YOU_WORK = [
 ].join("\n");
 
 function whoBlock(i: HarnessPromptInput): string {
-  const who = `You are ${defuseTags(i.bot.name).slice(0, 200)}, a bot in Clover, the user's personal assistant app.`;
+  const who = `You are ${defuseTags(i.bot.name).slice(0, 200)}, a bot in MOSS, the user's personal assistant app.`;
   if (i.kind === "side-thread") {
     return `${who} This is a side thread of your conversation${i.routine !== undefined ? `, running the routine ${JSON.stringify(defuseTags(i.routine).slice(0, 200))}` : ""}: work on it, then end with a short result, which is posted into your main conversation with the user.`;
   }

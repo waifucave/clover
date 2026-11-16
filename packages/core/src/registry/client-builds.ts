@@ -8,7 +8,7 @@
 //   refused or invalid, never at scan time. Built when it turns so; a development folder, whose tree changes with each
 //   edit, rebuilds each time its tree hash changes. A tree that moves on while a build runs: that build is killed and
 //   its result dropped.
-// * The child: the plugin Bun (`pluginBun`) running Clover's builder bundle, with Clover's bunfig, `--no-env-file`,
+// * The child: the plugin Bun (`pluginBun`) running MOSS's builder bundle, with MOSS's bunfig, `--no-env-file`,
 //   `--no-macros`, an empty staging folder as its working folder, an environment of its own (no variable of the
 //   daemon's), and on macOS the plugin fence: reads the plugin's real folder, the bundle, its Bun and the bunfig;
 //   writes the staging folder only; no network, no other program, no native code but Bun's. Elsewhere there is no
@@ -23,7 +23,7 @@
 // * Backlog: on Linux and Windows the child runs unfenced today; it goes under those platforms' plugin fences when they
 //   ship.
 // * The cache: `<home>/cache/plugin-builds/<id>/<tree hash>/index.js` (a child's id with `/` written `--`), renamed
-//   into place whole. Plugins can't reach it (the plugin fence denies the Clover home), and bots neither read nor write
+//   into place whole. Plugins can't reach it (the plugin fence denies the MOSS home), and bots neither read nor write
 //   it. It is never trusted across runs: the folder is emptied when the daemon starts, and a plugin's builds go when it
 //   is removed or its tree changes. What was built is held here, with the module's SHA-256, which the app checks before
 //   it serves the file, so a file changed on disk after the build is never served.
@@ -54,8 +54,8 @@ export interface ClientBuildRecord { base: string; file: string; sha256: string 
 
 /** The builder bundle's source entry, and its embedded file's name in a compiled core. */
 export const CLIENT_BUILDER_ENTRY = fileURLToPath(new URL("./client-build-main.ts", import.meta.url));
-export const CLIENT_BUILDER_BUNDLE_FILE = "clover-plugin-builder.bundle";
-const EMBEDDED_BUILDER = /^clover-plugin-builder(?:-[a-z0-9]+)?\.bundle$/;
+export const CLIENT_BUILDER_BUNDLE_FILE = "moss-plugin-builder.bundle";
+const EMBEDDED_BUILDER = /^moss-plugin-builder(?:-[a-z0-9]+)?\.bundle$/;
 
 /** The builder bundle's text: a compiled core's embedded one, or built from source. A compiled core without it can't
  *  build clients (its sources aren't there). */
@@ -73,9 +73,9 @@ export async function builderBundleText(o: { compiled?: boolean } = {}): Promise
 export type ClientBuildRunner = (job: ClientBuildJob, signal: AbortSignal) => Promise<ClientBuildResult>;
 
 /** The child: the plugin Bun running the builder bundle, fenced where there is a fence, killed past the bounds. */
-export function childRunner(o: { cloverHome: string; userHome?: string; bun?: string; timeoutMs?: number; maxRssBytes?: number; watchEveryMs?: number; fence?: boolean; log?: (line: string) => void }): ClientBuildRunner {
+export function childRunner(o: { mossHome: string; userHome?: string; bun?: string; timeoutMs?: number; maxRssBytes?: number; watchEveryMs?: number; fence?: boolean; log?: (line: string) => void }): ClientBuildRunner {
   let bundle: Promise<{ path: string; sha256: string }> | undefined;
-  const runDir = join(o.cloverHome, "run");
+  const runDir = join(o.mossHome, "run");
   const ready = () => (bundle ??= (async () => {
     const text = await builderBundleText();
     const dir = join(runDir, "plugin-builder");
@@ -88,11 +88,11 @@ export function childRunner(o: { cloverHome: string; userHome?: string; bun?: st
     const { path } = await ready();
     const stoppedEarly: ClientBuildResult = { ok: false, message: "the build was stopped: the plugin changed" };
     if (signal.aborted) return stoppedEarly;
-    const files = ensurePluginRunFiles(runDir, { cloverHome: o.cloverHome });
-    const bun = o.bun ?? pluginBun(o.cloverHome);
+    const files = ensurePluginRunFiles(runDir, { mossHome: o.mossHome });
+    const bun = o.bun ?? pluginBun(o.mossHome);
     const cmd = [bun, `--config=${files.bunfig}`, "--no-env-file", "--no-macros", path];
     const fence: PluginFenceInput = {
-      cloverHome: o.cloverHome, userHome: o.userHome ?? homedir(),
+      mossHome: o.mossHome, userHome: o.userHome ?? homedir(),
       // The bundle's own folder (it holds only the bundle; Bun reads the folder of what it runs).
       read: [job.root, dirname(path), files.bunfig, bun, dirname(bun)], write: [job.outDir], exec: "plugin", execs: [bun], fork: false, network: "none", noNativeCode: true,
     };
@@ -145,18 +145,18 @@ export function childRunner(o: { cloverHome: string; userHome?: string; bun?: st
 }
 
 /** The folder of one plugin's builds (a child's id with `/` written `--`). */
-export function pluginBuildsDir(cloverHome: string, id: string): string {
-  return join(clientBuildsRoot(cloverHome), id.replace("/", "--"));
+export function pluginBuildsDir(mossHome: string, id: string): string {
+  return join(clientBuildsRoot(mossHome), id.replace("/", "--"));
 }
-export function clientBuildsRoot(cloverHome: string): string {
-  return join(cloverHome, "cache", "plugin-builds");
+export function clientBuildsRoot(mossHome: string): string {
+  return join(mossHome, "cache", "plugin-builds");
 }
 
 /** The tree hash as a folder name (`sha256:<hex>` → `<hex>`), and the builder's version with it. */
 const hashDir = (treeHash: string) => `${treeHash.replace(/^sha256:/, "").replace(/[^a-zA-Z0-9]/g, "")}-v${CLIENT_BUILDER_VERSION}`;
 
 export interface ClientBuildsOptions {
-  cloverHome: string;
+  mossHome: string;
   registry: Pick<PluginRegistry, "list" | "get" | "watch"> & {
     setBuildFailure(id: string, treeHash: string, reason: string | null): void;
     /** A tree that changed while the plugin's state didn't (a development folder's edit): `watch` doesn't name it. */
@@ -197,9 +197,9 @@ export class ClientBuilds {
 
   constructor(o: ClientBuildsOptions) {
     this.#o = o;
-    this.#run = o.run ?? childRunner({ cloverHome: o.cloverHome, ...(o.userHome !== undefined ? { userHome: o.userHome } : {}), ...(o.log !== undefined ? { log: o.log } : {}) });
+    this.#run = o.run ?? childRunner({ mossHome: o.mossHome, ...(o.userHome !== undefined ? { userHome: o.userHome } : {}), ...(o.log !== undefined ? { log: o.log } : {}) });
     // Never trusted across runs: what an earlier run left goes.
-    rmSync(clientBuildsRoot(o.cloverHome), { recursive: true, force: true });
+    rmSync(clientBuildsRoot(o.mossHome), { recursive: true, force: true });
     const stopWatch = o.registry.watch(() => this.#sync());
     const stopTrees = o.registry.watchTrees?.(() => this.#sync());
     this.#stop = () => {
@@ -285,7 +285,7 @@ export class ClientBuilds {
     const abort = new AbortController();
     this.#jobs.set(id, { treeHash, abort });
     this.#running++;
-    const dir = pluginBuildsDir(this.#o.cloverHome, id);
+    const dir = pluginBuildsDir(this.#o.mossHome, id);
     const staging = join(dir, `.staging-${crypto.randomUUID()}`);
     let result: ClientBuildResult;
     try {

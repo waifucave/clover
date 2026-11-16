@@ -223,7 +223,7 @@ export function stepsFor(platform: string, opts: { all?: boolean; section?: Step
  *  for the owner at their own terminal, never an agent, CI or a pipe. */
 export function refusal(env: Record<string, string | undefined>, isTty: boolean): string | undefined {
   if (env.CI !== undefined && env.CI !== "" && env.CI !== "false") return "this is the owner's live gate; it opens windows and is never run in CI";
-  if (env.CLAUDECODE !== undefined || env.CLAUDE_CODE_ENTRYPOINT !== undefined || env.CLOVER_AGENT !== undefined) return "this is the owner's live gate; an agent never runs it";
+  if (env.CLAUDECODE !== undefined || env.CLAUDE_CODE_ENTRYPOINT !== undefined || env.MOSS_AGENT !== undefined) return "this is the owner's live gate; an agent never runs it";
   if (!isTty) return "this asks you questions and needs a terminal";
   return undefined;
 }
@@ -295,7 +295,7 @@ export function renderChecklist(): string {
     "bun run scripts/browser-live-gate.ts [--section <name>] [--out <folder>] [--all]",
     "```",
     "",
-    "It builds a small app that shows one window, serves a fixture page on loopback, and walks you through the steps for that OS. For some steps it measures by itself (the page's token across show and hide, composition events, wheel and pinch events, the frame rate, the display's scale, whether a new tab went to the screen-reader host) and then asks you. Answer `p` (pass), `f` (fail) or `s` (skip), and add a note. Your answers go to `browser-live-gate.json` in the run folder (printed when it starts; `--out` chooses it). Nothing else is written: no Clover home, no Keychain, no account.",
+    "It builds a small app that shows one window, serves a fixture page on loopback, and walks you through the steps for that OS. For some steps it measures by itself (the page's token across show and hide, composition events, wheel and pinch events, the frame rate, the display's scale, whether a new tab went to the screen-reader host) and then asks you. Answer `p` (pass), `f` (fail) or `s` (skip), and add a note. Your answers go to `browser-live-gate.json` in the run folder (printed when it starts; `--out` chooses it). Nothing else is written: no MOSS home, no Keychain, no account.",
     "",
     "It refuses to run in CI, under an agent, or without a terminal.",
     "",

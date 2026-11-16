@@ -89,7 +89,7 @@ describe("disposeRuntime", () => {
 
 describe("readWranglerConfig", () => {
   const dirWith = (config: string, file = "wrangler.jsonc"): string => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-wrangler-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-wrangler-"));
     writeFileSync(join(dir, file), config);
     return dir;
   };
@@ -104,7 +104,7 @@ describe("readWranglerConfig", () => {
     expect(() => readWranglerConfig(dirWith('{ "main": "a.ts", "compatibility_date": "2026-07-01", "queues": {} }'))).toThrow(/does not support queues/);
     expect(() => readWranglerConfig(dirWith('{ "main": "a.ts" }'))).toThrow(/compatibility_date/);
     expect(() => readWranglerConfig(dirWith('{ "main": "a.ts", "compatibility_date": "2026-07-01", "durable_objects": { "bindings": [{ "name": "X", "class_name": "X", "script_name": "other" }] } }'))).toThrow(/another Worker/);
-    expect(() => readWranglerConfig(mkdtempSync(join(tmpdir(), "clover-wrangler-")))).toThrow(/no wrangler/);
+    expect(() => readWranglerConfig(mkdtempSync(join(tmpdir(), "moss-wrangler-")))).toThrow(/no wrangler/);
   });
 
   test("maps Durable Objects, with SQLite where a migration says so", () => {

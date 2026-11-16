@@ -1,0 +1,44 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "moss.devices.title": "Devices",
+    "moss.devices.summary": "{online} of {count} online",
+    "moss.devices.none": "No devices yet",
+    "moss.devices.manage": "Manage devices",
+    "moss.devices.computers": "Computers",
+    "moss.devices.others": "Phones and browsers",
+    "moss.devices.groupMeta": "{online} of {count} online",
+    "moss.devices.thisDevice": "this device",
+    "moss.devices.main": "main",
+    "moss.devices.running": "Running",
+    "moss.devices.kind.desktop": "Computer",
+    "moss.devices.kind.server": "Server",
+    "moss.devices.kind.cloud": "Cloud computer",
+    "moss.devices.kind.phone": "Phone",
+    "moss.devices.kind.browser": "Browser",
+    "moss.devices.notLinked": "Not linked",
+    "moss.devices.direct": "Direct",
+    "moss.devices.sameNetwork": "Same network",
+    "moss.devices.viaRelay": "Through a relay",
+    "moss.devices.viaRelayNamed": "Through {relay}",
+    "moss.devices.roundTrip": "{ms} ms round trip",
+    "moss.devices.lastViaRelay": "Last linked through {relay}",
+    "moss.devices.neverSeen": "Never seen",
+    "moss.devices.seenNow": "Seen just now",
+    "moss.devices.seenMinutes": {
+      "one": "Seen 1 min ago",
+      "other": "Seen {count} min ago"
+    },
+    "moss.devices.seenHours": {
+      "one": "Seen 1 h ago",
+      "other": "Seen {count} h ago"
+    },
+    "moss.devices.seenYesterday": "Seen yesterday",
+    "moss.devices.seenDays": {
+      "one": "Seen 1 day ago",
+      "other": "Seen {count} days ago"
+    },
+    "moss.devices.seenOn": "Seen {date}"
+  }
+}

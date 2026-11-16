@@ -1,5 +1,5 @@
-//! `clover-link`: clover-core's link sidecar (spec §8.2; spike S1 chose iroh over a sidecar). One iroh endpoint per
-//! device, keyed by the device's link key, which clover-core hands over on stdin, never in arguments, the environment
+//! `moss-link`: moss-core's link sidecar (spec §8.2; spike S1 chose iroh over a sidecar). One iroh endpoint per
+//! device, keyed by the device's link key, which moss-core hands over on stdin, never in arguments, the environment
 //! or a file. The core drives it over stdin and stdout; the link protocol itself (hello, lanes, requests, streams)
 //! lives in the core (`packages/core/src/links/transport.ts`), and this process only carries connections and streams.
 //! If it exits, the core starts it again with the same `init` and re-dials (§8.3; `sidecar-wire.ts`).
@@ -65,7 +65,7 @@ const T_JSON: u8 = 0;
 const T_DATA: u8 = 1;
 const T_CREDIT: u8 = 2;
 const MAX_FRAME: usize = 16 * 1024 * 1024 + 16;
-const LINK_ALPN: &str = "clover/link/1";
+const LINK_ALPN: &str = "moss/link/1";
 const CLOSE_UNPAIRED: u32 = 2;
 const CLOSE_REVOKED: u32 = 3;
 const RESET_ABORTED: u32 = 1;

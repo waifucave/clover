@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   useApprovals, useComposerHost, useDrag, useKept, useMenu, useOpen, useQuestions, useSurface, useSurfaceEnvironment, useUserSend, useViewFrame,
-} from "@waifucave/clover-plugin-sdk/ui";
+} from "@waifucave/moss-plugin-sdk/ui";
 
 type Item = { id?: string; kind?: string; text?: string; at?: number; name?: string; calls?: unknown[]; result?: unknown };
 

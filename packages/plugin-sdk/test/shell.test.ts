@@ -71,7 +71,7 @@ describe("a theme's shell block", () => {
     expect(onDark.dropped.find((d) => d.group === "accent")?.why).toContain("the surface");
   });
 
-  test("Clover's own marks stay visible: attention, danger, the stock accent and the focus ring reach 3:1 on the bar", () => {
+  test("MOSS's own marks stay visible: attention, danger, the stock accent and the focus ring reach 3:1 on the bar", () => {
     expect(resolveShell({ tokens: bar }, "light", "#FFFFFF").dropped).toEqual([]);
     // A bar the attention mark vanishes on.
     const dim = resolveShell({ tokens: { ...bar, bar: "#E4D2F7", "bar.text": "#221A33" } }, "light", "#FFFFFF");

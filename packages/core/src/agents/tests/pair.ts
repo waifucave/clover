@@ -1,11 +1,11 @@
 // Two computers for the agent suite (K-M3, remote.ts): Studio runs the bot "alpha", Laptop runs the agents it places
 // there, joined by lane B's fake link, each with a test fence over its own view of the lease and Studio with a pause
 // switch. `make` registers the pair for `closePair` (the suite's afterEach).
-import type { FencingToken, FenceVerdict } from "@waifucave/clover-protocol";
+import type { FencingToken, FenceVerdict } from "@waifucave/moss-protocol";
 import { FakeLinkNetwork } from "../../contracts/fakes/link-transport";
 import type { Clock } from "../../contracts/clock";
 import type { LinkTransport } from "../../contracts/link-transport";
-import type { LinkView } from "@waifucave/clover-protocol";
+import type { LinkView } from "@waifucave/moss-protocol";
 import type { AgentPauseGate } from "../manager";
 import { AgentPeers } from "../remote";
 import type { ActFence } from "../../tree/fencing";
@@ -103,11 +103,11 @@ export function make(o: { a?: WorldOptions; b?: WorldOptions; graceMs?: number; 
   const computer = (name: string) => (devices[name] ? { device: devices[name]!, online: true } : undefined);
   const mayCall = (d: string) => d === STUDIO || d === LAPTOP || d === OTHER;
   const peersA = new AgentPeers(a.manager, {
-    transport: wrapA(o.heldWatchA ? o.heldWatchA.wrap(net.endpoint(STUDIO)) : net.endpoint(STUDIO)), computer, mayCall, fence: fenceA, pause: pauseA, clock: a.clock, home: a.cloverHome,
+    transport: wrapA(o.heldWatchA ? o.heldWatchA.wrap(net.endpoint(STUDIO)) : net.endpoint(STUDIO)), computer, mayCall, fence: fenceA, pause: pauseA, clock: a.clock, home: a.mossHome,
     ...(o.graceMs ? { linkGraceMs: o.graceMs } : {}),
   });
   const peersB = new AgentPeers(b.manager, {
-    transport: o.heldWatchB ? o.heldWatchB.wrap(net.endpoint(LAPTOP)) : net.endpoint(LAPTOP), computer, mayCall, fence: fenceB, clock: b.clock, home: b.cloverHome,
+    transport: o.heldWatchB ? o.heldWatchB.wrap(net.endpoint(LAPTOP)) : net.endpoint(LAPTOP), computer, mayCall, fence: fenceB, clock: b.clock, home: b.mossHome,
     ...(o.graceMsB ? { linkGraceMs: o.graceMsB } : {}), ...(o.outboxBytes ? { outboxBytes: o.outboxBytes } : {}),
     ...(o.resyncBaseMs ? { resyncBaseMs: o.resyncBaseMs } : {}),
   });

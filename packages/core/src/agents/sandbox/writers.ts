@@ -1,12 +1,12 @@
 // The fenced set in each agent's own sandbox format (spec §9.3 "The fence reaches agents through their own settings";
-// spike S8 §8.3). The session's `SandboxPolicy` (the manager's `withHomeDenied(agentPolicyOf(…))`, so the whole Clover
+// spike S8 §8.3). The session's `SandboxPolicy` (the manager's `withHomeDenied(agentPolicyOf(…))`, so the whole MOSS
 // home is denied) in, the backend's own settings out, nothing written to the user's own config. A writer reads the disk
 // only to add each denial's real path beside the one it was given.
 //
 // Admission is separate (admission.ts): a writer here does not make a backend "protected". Its rows stay `unverified`
 // until the live gates in `live-gates.ts` pass for the exact backend, OS and version.
 //
-// * **Codex** (`codex-acp`, which drives the user's own `codex app-server`): a permissions profile, `clover`, handed in
+// * **Codex** (`codex-acp`, which drives the user's own `codex app-server`): a permissions profile, `moss`, handed in
 //   `CODEX_CONFIG` (JSON merged into the session's config, S5 §3) and made the default with `default_permissions`. The
 //   user's `CODEX_HOME` and login are untouched. Its filesystem table is the shape S8's Codex probe passed with
 //   (`":root" = "read"`, write folders `"write"`, denied folders `"deny"`), and its network is off.
@@ -22,10 +22,10 @@
 //   and `.mcp.json` in the root and every folder above it up to the home.
 //
 // Pattern items (`<home>/bots/*/memory`) are written as literal folders: dropped where a literal denial already holds
-// them (the Clover home does, for an agent), and otherwise widened to the folder above their first `*`. Widening only
+// them (the MOSS home does, for an agent), and otherwise widened to the folder above their first `*`. Widening only
 // denies more, so a vendor's glob support is never relied on.
 import { dirname, isAbsolute, join, relative } from "node:path";
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import { secretReadPlaces, type SandboxPolicy } from "../../contracts/fence";
 
@@ -34,8 +34,8 @@ import type { ModeFloor } from "../acp/session";
 import { agentPolicyOf, fileToolDenials, realPathOf } from "../memory";
 import type { SandboxContext, SandboxWriter } from "./admission";
 
-/** The Codex permissions profile Clover's writer names. */
-export const CODEX_PROFILE = "clover";
+/** The Codex permissions profile MOSS's writer names. */
+export const CODEX_PROFILE = "moss";
 
 /** A policy's denials with every pattern item written as a literal folder (see above). */
 export function literalDenials(policy: SandboxPolicy): { denyRead: string[]; denyWrite: string[] } {
@@ -88,7 +88,7 @@ function checked(policy: SandboxPolicy): SandboxPolicy {
   return p;
 }
 
-/** The writable folders: the policy's, or the session's root where the policy names none (as clover-code does). */
+/** The writable folders: the policy's, or the session's root where the policy names none (as moss-code does). */
 function writable(policy: SandboxPolicy, root: string): string[] {
   return policy.allowWrite.length > 0 ? policy.allowWrite.map(trimEnd) : [root];
 }
@@ -141,7 +141,7 @@ function foldKey(path: string): string {
 /** Codex's permissions profile for the policy: `:root` readable, the write folders writable, write-denied folders
  *  read-only, read-denied folders denied outright; no network. A path keeps its strictest access, and an entry inside
  *  a stricter folder is left out: a more specific entry must never reopen what a folder above it closes (a read-only
- *  `credentials` inside the denied Clover home would make it readable where the most specific entry wins). */
+ *  `credentials` inside the denied MOSS home would make it readable where the most specific entry wins). */
 export function codexProfile(policy: SandboxPolicy, ctx: Pick<SandboxContext, "root" | "home" | "env">): { filesystem: Record<string, "read" | "write" | "deny">; network: { enabled: false } } {
   const p = checked(policy);
   const { denyRead, denyWrite } = writerDenials(p, ctx);
@@ -166,9 +166,9 @@ export function codexProfile(policy: SandboxPolicy, ctx: Pick<SandboxContext, "r
 
 const STRICTNESS = { write: 0, read: 1, deny: 2 } as const;
 
-/** Codex's mode floor: an allow-list of the modes the live gates showed keep the clover profile, empty until they run.
+/** Codex's mode floor: an allow-list of the modes the live gates showed keep the moss profile, empty until they run.
  *  Codex's modes are sandbox presets of its own and may replace the profile (its plain read-only sandbox reads the
- *  whole disk, the Clover home included), so no mode is counted on unchecked, and there is no fallback to switch to:
+ *  whole disk, the MOSS home included), so no mode is counted on unchecked, and there is no fallback to switch to:
  *  failing closed, a Codex session the writer serves is refused at its start, and its read-only switch is never made,
  *  until B2 and B3 pass in a mode and it is listed here. */
 export const CODEX_MODE_FLOOR: ModeFloor = { allowed: [] };

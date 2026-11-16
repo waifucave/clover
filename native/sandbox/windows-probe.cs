@@ -5,7 +5,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public static class CloverLaunchProbe {
+public static class MossLaunchProbe {
     [StructLayout(LayoutKind.Sequential)] struct SIDATTR { public IntPtr Sid; public uint Attributes; }
     [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct SI {
         public int cb; public string reserved, desktop, title;
@@ -45,7 +45,7 @@ public static class CloverLaunchProbe {
     // Well-known Restricted Code SID, for compatibility only; not a per-session identity.
     public const string RestrictSid = "S-1-5-12";
     public static string AppSid(string name) {
-        IntPtr sid; int hr=CreateAppContainerProfile(name,name,"Clover isolated spike",IntPtr.Zero,0,out sid);
+        IntPtr sid; int hr=CreateAppContainerProfile(name,name,"MOSS isolated spike",IntPtr.Zero,0,out sid);
         if(hr<0) { hr=DeriveAppContainerSidFromAppContainerName(name,out sid); if(hr<0) Marshal.ThrowExceptionForHR(hr); }
         try { return new System.Security.Principal.SecurityIdentifier(sid).Value; } finally { FreeSid(sid); }
     }
@@ -79,7 +79,7 @@ public static class CloverLaunchProbe {
                     try { Marshal.WriteIntPtr(ptr,acl); Check(SetTokenInformation(token,6,ptr,IntPtr.Size)); } finally { Marshal.FreeHGlobal(ptr); }
                     if(mode.StartsWith("desktop")) {
                         SA sa=new SA(); sa.size=Marshal.SizeOf(typeof(SA)); sa.sd=sd;
-                        string name="clover_spike_"+Guid.NewGuid().ToString("N");
+                        string name="moss_spike_"+Guid.NewGuid().ToString("N");
                         desktop=CreateDesktop(name,IntPtr.Zero,IntPtr.Zero,0,0x10000000,ref sa);
                         Check(desktop!=IntPtr.Zero); si.desktop=name;
                     }

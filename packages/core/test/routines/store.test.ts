@@ -5,22 +5,22 @@ import { join } from "node:path";
 import { openRoutineStore, type RoutineStore } from "../../src/routines/store";
 
 function makeStore(): { store: RoutineStore; dir: string } {
-  const dir = mkdtempSync(join(tmpdir(), "clover-routines-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-routines-"));
   return { store: openRoutineStore(join(dir, "routines.db")), dir };
 }
 
-// P9b-12: the standalone default path bypassed the home resolver (hardcoded `~/.clover`) before
-// this fix — a CLOVER_HOME override must move it with everything else.
+// P9b-12: the standalone default path bypassed the home resolver (hardcoded `~/.moss`) before
+// this fix — a MOSS_HOME override must move it with everything else.
 describe("openRoutineStore — default path", () => {
-  test("lands under CLOVER_HOME when called with no path", () => {
-    const saved = process.env.CLOVER_HOME;
-    const home = mkdtempSync(join(tmpdir(), "clover-routines-home-"));
+  test("lands under MOSS_HOME when called with no path", () => {
+    const saved = process.env.MOSS_HOME;
+    const home = mkdtempSync(join(tmpdir(), "moss-routines-home-"));
     try {
-      process.env.CLOVER_HOME = home;
+      process.env.MOSS_HOME = home;
       openRoutineStore().close();
       expect(existsSync(join(home, "routines.db"))).toBe(true);
     } finally {
-      if (saved === undefined) delete process.env.CLOVER_HOME; else process.env.CLOVER_HOME = saved;
+      if (saved === undefined) delete process.env.MOSS_HOME; else process.env.MOSS_HOME = saved;
     }
   });
 });
@@ -183,7 +183,7 @@ describe("RoutineStore — recordDefer backoff progression", () => {
 
 describe("openRoutineStore — path handling", () => {
   test("creates the parent directory for an injected path", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-routines-parent-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-routines-parent-"));
     const nested = join(dir, "nested", "sub", "routines.db");
     const store = openRoutineStore(nested);
     const routine = store.create({ spec: "every 1h", prompt: "a" });

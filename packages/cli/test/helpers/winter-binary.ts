@@ -1,7 +1,7 @@
 // Fix wave 2 (CLI): the SAME contract core's e2e proofs use, re-exported — never a second copy of
 // the env logic. Since Phase 8b every `session.create` spawns a `winter` child (P8b-2: no binary ⇒
 // a typed refusal, never a fallback), so a CLI test that creates a session needs the built binary:
-// `CLOVER_RUNTIME_EXECUTABLE` unset ⇒ SKIP (a local run without a build); `CLOVER_RUNTIME_REQUIRE_BINARY=1`
+// `MOSS_RUNTIME_EXECUTABLE` unset ⇒ SKIP (a local run without a build); `MOSS_RUNTIME_REQUIRE_BINARY=1`
 // (CI) ⇒ a missing binary FAILS at import, so CI can never go green by skipping the proof.
 import { test } from "bun:test";
 import { winterExecutableForTests } from "../../../core/test/helpers/winter-binary";
@@ -9,7 +9,7 @@ import { winterExecutableForTests } from "../../../core/test/helpers/winter-bina
 export { describeWithWinterBinary, winterExecutableForTests } from "../../../core/test/helpers/winter-binary";
 
 /** `test` when the binary is available, `test.skip` when it is not (and a throw under
- *  `CLOVER_RUNTIME_REQUIRE_BINARY=1`, at import). For files that mix session-creating tests with
+ *  `MOSS_RUNTIME_REQUIRE_BINARY=1`, at import). For files that mix session-creating tests with
  *  ones a bare daemon can serve, so the latter keep running without a build. */
-export const CLOVER_BIN = winterExecutableForTests();
-export const testWithCloverBinary: typeof test = CLOVER_BIN ? test : (test.skip as unknown as typeof test);
+export const MOSS_BIN = winterExecutableForTests();
+export const testWithMossBinary: typeof test = MOSS_BIN ? test : (test.skip as unknown as typeof test);

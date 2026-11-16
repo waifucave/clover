@@ -10,7 +10,7 @@ import type {
   HookCallback,
   HookJSONOutput,
 } from "@waifucave/clover-agent-sdk";
-import type { NewSessionEvent } from "@waifucave/clover-protocol";
+import type { NewSessionEvent } from "@waifucave/moss-protocol";
 import { randomUUID, createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
@@ -78,7 +78,7 @@ export interface HostCodeContext {
   workflow?: {
     command: { file: string; args: string[] };
     home?: string;
-    cloverHome?: string;
+    mossHome?: string;
   };
 }
 export interface HostCodeDrainEvidence {
@@ -196,10 +196,10 @@ export function installedHostCodeAdapter(): HostCodeSdkAdapter | undefined {
   };
 }
 export const HOST_CODE_BINDING: unique symbol = Symbol(
-  "clover.hostCodeBinding",
+  "moss.hostCodeBinding",
 );
 const HOST_CODE_RESOLVED_SPAWN: unique symbol = Symbol(
-  "clover.hostCodeResolvedSpawn",
+  "moss.hostCodeResolvedSpawn",
 );
 /** Trusted executable/env resolver. Floor application happens AFTER this callback, before the one actual spawn. */
 export function withResolvedHostCodeSpawn(
@@ -247,7 +247,7 @@ export interface HostCodeBinding {
     | {
         command: { file: string; args: string[] };
         home?: string;
-        cloverHome?: string;
+        mossHome?: string;
       }
     | undefined;
 }
@@ -402,7 +402,7 @@ export class HostCodeExecutionService {
   }
   enroll(input: {
     options: Options;
-    /** Explicit Clover-owned worker/bridge operation; never inferred from storage activation. */
+    /** Explicit MOSS-owned worker/bridge operation; never inferred from storage activation. */
     ownedBridge?: true;
     sessionId: string;
     backendSessionId: string;
@@ -677,9 +677,9 @@ export class HostCodeExecutionService {
             writableRoots: hostCodeWritableRoots(binding!),
             home: canonicalEnv.HOME ?? binding!.home,
             // The SDK's own field (C0 review S4): its sandbox reads `winterHome`, whatever the brand, and fences the
-            // brand's dot-dirs (`.clover`), not its own default's.
-            winterHome: canonicalEnv.CLOVER_HOME,
-            storeHome: canonicalEnv.CLOVER_STORE_HOME,
+            // brand's dot-dirs (`.moss`), not its own default's.
+            winterHome: canonicalEnv.MOSS_HOME,
+            storeHome: canonicalEnv.MOSS_STORE_HOME,
             brand: CORE_BRAND,
           });
           const limits = this.adapter!.executionLimits(call.name, effectiveCall.input);

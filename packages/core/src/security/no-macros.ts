@@ -1,4 +1,4 @@
-// No Bun macros in a process that runs code Clover didn't write (#289, and its Worker follow-up). A macro (an import
+// No Bun macros in a process that runs code MOSS didn't write (#289, and its Worker follow-up). A macro (an import
 // `with { type: "macro" }`) runs its module's code while the file importing it is transpiled. `--no-macros`, a bunfig's
 // `macros = false`, BUN_OPTIONS and a Worker's execArgv hold a process's MAIN thread only: on Bun 1.4.4 a Worker runs a
 // macro whatever its process was started with (measured), and a compiled binary takes no Bun flag at run time anyway.
@@ -24,7 +24,7 @@ import { createRequire } from "node:module";
 export const MACRO_IMPORTER = /^macro:?\/\//;
 
 /** The refusal's text after the path, kept so lane B's generated guard can paste it in. */
-export const MACRO_REFUSAL_SUFFIX = ': a Bun macro (an import with { type: "macro" }) runs code while its file loads, and Clover runs none';
+export const MACRO_REFUSAL_SUFFIX = ': a Bun macro (an import with { type: "macro" }) runs code while its file loads, and MOSS runs none';
 
 /** The refusal for a macro's module at `path`. */
 export function macroRefusal(path: string): string {
@@ -40,7 +40,7 @@ let installed = false;
 export function installNoMacrosGuard(fail: (message: string) => never = (message) => { throw new Error(message); }): void {
   if (installed) return;
   Bun.plugin({
-    name: "clover-no-macros",
+    name: "moss-no-macros",
     setup(build) {
       build.onResolve({ filter: /.*/ }, (args) => {
         if (MACRO_IMPORTER.test(args.importer ?? "")) fail(macroRefusal(args.path));

@@ -128,7 +128,7 @@ function setup(opts: { policyFor?: (o: TabOwner) => AddressPolicy; idleMs?: numb
   const chunks: { stream: string; chunk: StreamChunk }[] = [];
   let installs = 0;
   let pops = 0;
-  const dir = mkdtempSync(join(tmpdir(), "clover-headless-port-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-headless-port-"));
   const headless = new HeadlessBrowser({
     dir,
     computer: "Server",
@@ -172,7 +172,7 @@ describe("profiles and flags", () => {
     expect(profileName(alpha)).toBe("bot-alpha");
     expect(profileName(luna)).toBe("bot-pack--luna");
     expect(profileName({ kind: "user" })).toBe("user");
-    expect(profileName({ kind: "plugin", plugin: "clover/browser-view" })).toBe("plugin-clover--browser-view");
+    expect(profileName({ kind: "plugin", plugin: "moss/browser-view" })).toBe("plugin-moss--browser-view");
     expect(profileName({ kind: "session", session: "sess_1" })).toBe(partitionFor({ kind: "session", session: "sess_1" }).slice("persist:".length));
     expect(profileName({ kind: "session", session: "sess_1" })).toMatch(/^session-[0-9a-f]{32}$/);
     expect(() => profileName({ kind: "bot", bot: "../x" })).toThrow(BrowserError);
@@ -213,15 +213,15 @@ describe("profiles and flags", () => {
   });
 
   test("Windows: the browser's environment is the system's few variables and a home of its own, System32 on the path", () => {
-    const env = windowsBrowserEnv("C:\\clover\\browser", { SystemRoot: "C:\\Windows", PATH: "C:\\tools;C:\\Windows", ANTHROPIC_API_KEY: "sk-test", USERNAME: "me", ProgramData: "C:\\ProgramData", TEMP: "C:\\Users\\me\\Temp" });
+    const env = windowsBrowserEnv("C:\\moss\\browser", { SystemRoot: "C:\\Windows", PATH: "C:\\tools;C:\\Windows", ANTHROPIC_API_KEY: "sk-test", USERNAME: "me", ProgramData: "C:\\ProgramData", TEMP: "C:\\Users\\me\\Temp" });
     expect(env).toEqual({
       SystemRoot: "C:\\Windows", windir: "C:\\Windows", SystemDrive: "C:", ComSpec: "C:\\Windows\\System32\\cmd.exe", PATH: "C:\\Windows\\System32",
-      TEMP: "C:\\clover\\browser\\home\\Temp", TMP: "C:\\clover\\browser\\home\\Temp", LOCALAPPDATA: "C:\\clover\\browser\\home\\LocalAppData",
-      APPDATA: "C:\\clover\\browser\\home\\AppData", USERPROFILE: "C:\\clover\\browser\\home", ProgramData: "C:\\ProgramData",
+      TEMP: "C:\\moss\\browser\\home\\Temp", TMP: "C:\\moss\\browser\\home\\Temp", LOCALAPPDATA: "C:\\moss\\browser\\home\\LocalAppData",
+      APPDATA: "C:\\moss\\browser\\home\\AppData", USERPROFILE: "C:\\moss\\browser\\home", ProgramData: "C:\\ProgramData",
     });
-    expect(windowsBrowserDirs(env)).toEqual(["C:\\clover\\browser\\home\\Temp", "C:\\clover\\browser\\home\\LocalAppData", "C:\\clover\\browser\\home\\AppData", "C:\\clover\\browser\\home"]);
+    expect(windowsBrowserDirs(env)).toEqual(["C:\\moss\\browser\\home\\Temp", "C:\\moss\\browser\\home\\LocalAppData", "C:\\moss\\browser\\home\\AppData", "C:\\moss\\browser\\home"]);
     // browserEnv picks it on win32 and the POSIX one elsewhere.
-    expect(browserEnv("C:\\clover\\browser", { SystemRoot: "C:\\Windows" }, "win32")).toMatchObject({ USERPROFILE: "C:\\clover\\browser\\home" });
+    expect(browserEnv("C:\\moss\\browser", { SystemRoot: "C:\\Windows" }, "win32")).toMatchObject({ USERPROFILE: "C:\\moss\\browser\\home" });
     expect(browserEnv("/h/browser", { PATH: "/usr/bin" }, "linux")).toHaveProperty("XDG_CONFIG_HOME");
   });
 
@@ -398,7 +398,7 @@ describe("HeadlessBrowser as the core's AppTabPort", () => {
     b.emit("Fetch.requestPaused", { requestId: "r1", request: { url: "file:///etc/passwd" }, resourceType: "Document" });
     b.emit("Fetch.requestPaused", { requestId: "r2", request: { url: "https://example.com/a.js" }, resourceType: "Script" });
     b.emit("Fetch.requestPaused", { requestId: "r3", request: { url: "chrome://settings" } });
-    b.emit("Fetch.requestPaused", { requestId: "r4", request: { url: "clover-plugin://x/y" } });
+    b.emit("Fetch.requestPaused", { requestId: "r4", request: { url: "moss-plugin://x/y" } });
     expect(b.sent("Fetch.failRequest").map((c) => c.params)).toEqual([
       { requestId: "r1", errorReason: "BlockedByClient" }, { requestId: "r3", errorReason: "BlockedByClient" }, { requestId: "r4", errorReason: "BlockedByClient" },
     ]);

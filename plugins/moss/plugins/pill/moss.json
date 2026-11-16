@@ -1,0 +1,51 @@
+{
+  "manifest": 1,
+  "name": "Dispatch pill",
+  "description": "A pill at the bottom of the screen for messaging a bot from anywhere: it grows as you type, shows the bot at work, and turns into its questions and approvals. Plugins add other targets to it.",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "capabilities": [
+    "approvals",
+    "approvals.all",
+    "bots.read",
+    "overlay",
+    "tray",
+    "user.send"
+  ],
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "contributes": {
+    "locales": [{ "lang": "en", "file": "locales/en.json" }],
+    "ui": [
+      {
+        "spot": "app.tray",
+        "id": "put-away",
+        "title": "Dispatch Pill",
+        "toggles": "pill"
+      },
+      {
+        "spot": "app.surface",
+        "id": "pill",
+        "component": "PillApp",
+        "title": "Dispatch pill",
+        "window": {
+          "type": "overlay",
+          "alwaysOnTop": true,
+          "transparent": true,
+          "front": "steps-aside",
+          "summon": ["tap"],
+          "placement": {
+            "macos": "bottom-center",
+            "windows": "bottom-center",
+            "linux": "bottom-center"
+          }
+        },
+        "declares": {
+          "pill.target": { "shape": "list", "props": { "type": "object", "properties": {} } }
+        }
+      }
+    ]
+  }
+}

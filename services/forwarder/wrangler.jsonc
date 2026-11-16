@@ -10,7 +10,7 @@
   // harness (local); src/identity.ts says what each one does and which may be rotated.
   //
   // Observability stays off: webhook URLs may carry a routine's key as ?key=, and Workers Logs would keep it.
-  "name": "clover-forwarder-local",
+  "name": "moss-forwarder-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
@@ -48,13 +48,13 @@
   ],
   "env": {
     "production": {
-      "name": "clover-forwarder",
+      "name": "moss-forwarder",
       "workers_dev": false,
       "observability": { "enabled": false },
       "routes": [{ "pattern": "hooks.waifucave.com", "custom_domain": true }],
       // The account service's keys go through this binding: a Worker can't fetch another Worker's route on its own
       // zone. ACCOUNT_JWKS_URL is the path asked for, and the fallback.
-      "services": [{ "binding": "ACCOUNT_SERVICE", "service": "clover-accounts" }],
+      "services": [{ "binding": "ACCOUNT_SERVICE", "service": "moss-accounts" }],
       "vars": {
         // waifucave's account service (services/accounts): its issuer and its keys' URL.
         "ACCOUNT_ISSUER": "https://waifucave.com/auth",

@@ -32,20 +32,20 @@ describe("an agent on another computer", () => {
     const n = await waitFor(() => notification(p.a), "the task notification");
     expect(n).toEqual({ from: "task-notification", agent: r.sessionId, backend: "fake", stopReason: "end_turn", text: "All 12 tests pass.", transcript: `bots/alpha/agents/${r.sessionId}/acp.ndjson` });
     // The agent ran on Laptop, in Laptop's folder, with Laptop's bridge.
-    expect(p.b.report("session")[0]).toMatchObject({ how: "new", cwd: p.b.project, servers: [expect.stringMatching(/^clover_[0-9a-f]{16}$/)] });
+    expect(p.b.report("session")[0]).toMatchObject({ how: "new", cwd: p.b.project, servers: [expect.stringMatching(/^moss_[0-9a-f]{16}$/)] });
     // Studio wrote the transcript from what Laptop streamed: the wire with Laptop's token redacted, the permission
     // Laptop's level answered, and who the agent is.
-    const dir = join(p.a.cloverHome, "bots", "alpha", "agents", r.sessionId);
+    const dir = join(p.a.mossHome, "bots", "alpha", "agents", r.sessionId);
     await waitFor(() => existsSync(join(dir, "calls.ndjson")) && readFileSync(join(dir, "acp.ndjson"), "utf8").includes("All 12 tests pass"), "the streamed transcript");
     const wire = readFileSync(join(dir, "acp.ndjson"), "utf8");
     expect(wire).toContain("session/prompt");
     expect(wire).toContain(REDACTED_TOKEN);
     expect(readFileSync(join(dir, "calls.ndjson"), "utf8")).toContain('"by":"level"');
     expect(JSON.parse(readFileSync(join(dir, "agent.json"), "utf8"))).toMatchObject({ backend: "fake", computer: "Laptop", root: "home/Laptop/project1", agentSessionId: "fake-session-1" });
-    expect(readAgentRecord(p.a.cloverHome, r.sessionId)).toMatchObject({ computer: "Laptop", bot: "alpha", parent: "s_alpha", agentSessionId: "fake-session-1" });
+    expect(readAgentRecord(p.a.mossHome, r.sessionId)).toMatchObject({ computer: "Laptop", bot: "alpha", parent: "s_alpha", agentSessionId: "fake-session-1" });
     // Laptop keeps no transcript and no record of its own: the bot's folder is Studio's.
-    expect(existsSync(join(p.b.cloverHome, "bots", "alpha", "agents", r.sessionId))).toBe(false);
-    expect(readAgentRecord(p.b.cloverHome, r.sessionId)).toBeUndefined();
+    expect(existsSync(join(p.b.mossHome, "bots", "alpha", "agents", r.sessionId))).toBe(false);
+    expect(readAgentRecord(p.b.mossHome, r.sessionId)).toBeUndefined();
     // The live transcript is Studio's session log.
     const log = p.a.host.history(r.sessionId).filter((x) => x.type === "driver").map((x) => (x as { event: { type: string } }).event.type);
     expect(log).toEqual(expect.arrayContaining(["agent_started", "agent_text", "agent_tool_call", "agent_tool_call_update"]));
@@ -155,11 +155,11 @@ describe("an agent on another computer", () => {
     const host = new FakeSessionHost({ clock: p.a.clock, approvals: p.a.approvals });
     host.open({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, new FakeSessionDriver());
     const manager = new AgentManager({
-      home: p.a.cloverHome, computer: "Studio", host, approvals: p.a.approvals, tree: p.a.tree, fence: p.a.fence, backends: () => [],
+      home: p.a.mossHome, computer: "Studio", host, approvals: p.a.approvals, tree: p.a.tree, fence: p.a.fence, backends: () => [],
       tokens: new BridgeTokens(), bridge: { ...bridgeCommand(), socketPath: join(p.a.root, "unused.sock") }, watchdog: new StallWatchdog({ clock: p.a.clock }), clock: p.a.clock,
     });
     const devices: Record<string, string> = { Laptop: LAPTOP };
-    const peers = new AgentPeers(manager, { transport: p.net.endpoint(STUDIO), computer: (n) => (devices[n] ? { device: devices[n]!, online: true } : undefined), mayCall: () => true, fence: p.fenceA, clock: p.a.clock, home: p.a.cloverHome });
+    const peers = new AgentPeers(manager, { transport: p.net.endpoint(STUDIO), computer: (n) => (devices[n] ? { device: devices[n]!, online: true } : undefined), mayCall: () => true, fence: p.fenceA, clock: p.a.clock, home: p.a.mossHome });
     try {
       expect(manager.reattach(view)).toBe(true);
       expect(host.get(r.sessionId)).toMatchObject({ computer: "Laptop", kind: "agent", bot: "alpha" });
@@ -187,10 +187,10 @@ describe("an agent on another computer", () => {
     const host = new FakeSessionHost({ clock: p.a.clock, approvals: p.a.approvals });
     host.open({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, new FakeSessionDriver());
     const manager = new AgentManager({
-      home: p.a.cloverHome, computer: "Studio", host, approvals: p.a.approvals, tree: p.a.tree, fence: p.a.fence, backends: () => [],
+      home: p.a.mossHome, computer: "Studio", host, approvals: p.a.approvals, tree: p.a.tree, fence: p.a.fence, backends: () => [],
       tokens: new BridgeTokens(), bridge: { ...bridgeCommand(), socketPath: join(p.a.root, "unused.sock") }, watchdog: new StallWatchdog({ clock: p.a.clock }), clock: p.a.clock,
     });
-    const peers = new AgentPeers(manager, { transport: p.net.endpoint(STUDIO), computer: (n) => (n === "Laptop" ? { device: LAPTOP, online: true } : undefined), mayCall: () => true, fence: p.fenceA, clock: p.a.clock, home: p.a.cloverHome });
+    const peers = new AgentPeers(manager, { transport: p.net.endpoint(STUDIO), computer: (n) => (n === "Laptop" ? { device: LAPTOP, online: true } : undefined), mayCall: () => true, fence: p.fenceA, clock: p.a.clock, home: p.a.mossHome });
     try {
       expect(manager.reattach({ ...view, status: "idle" })).toBe(true);
       // The old turn reaches its next call while the link is still cut: held (a dropped link holds the device's agents).
@@ -431,7 +431,7 @@ describe("an agent on another computer", () => {
   });
 
   test("a daemon's base orders by its home's boot counter: a clock stepped back across a restart still gives a newer one", () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-k-boot-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-k-boot-"));
     const realNow = Date.now;
     try {
       const boot = (b: string) => Number(b.slice(0, b.indexOf("-")));
@@ -456,7 +456,7 @@ describe("an agent on another computer", () => {
   });
 
   test("the boot counter never goes back: loose formats and an empty file are broken, never below the last base, and it stays at its cap", () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-k-boot2-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-k-boot2-"));
     try {
       const boot = (b: string) => Number(b.slice(0, b.indexOf("-")));
       const files = bootFiles(home);
@@ -496,19 +496,19 @@ describe("an agent on another computer", () => {
     // The link drops meanwhile: Laptop holds Studio's agents until Studio's new daemon gives its state.
     p.net.partition(STUDIO, LAPTOP);
     await waitFor(() => p.peersB.peerPaused(STUDIO), "Laptop holding Studio's agents");
-    writeFileSync(bootFiles(p.a.cloverHome).counter, "");
-    writeFileSync(bootFiles(p.a.cloverHome).lastBase, "");
+    writeFileSync(bootFiles(p.a.mossHome).counter, "");
+    writeFileSync(bootFiles(p.a.mossHome).lastBase, "");
     const realNow = Date.now;
     Date.now = () => realNow() - 86_400_000;
     const host = new FakeSessionHost({ clock: p.a.clock, approvals: p.a.approvals });
     host.open({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, new FakeSessionDriver());
     const manager = new AgentManager({
-      home: p.a.cloverHome, computer: "Studio", host, approvals: p.a.approvals, tree: p.a.tree, fence: p.a.fence, backends: () => [],
+      home: p.a.mossHome, computer: "Studio", host, approvals: p.a.approvals, tree: p.a.tree, fence: p.a.fence, backends: () => [],
       tokens: new BridgeTokens(), bridge: { ...bridgeCommand(), socketPath: join(p.a.root, "unused.sock") }, watchdog: new StallWatchdog({ clock: p.a.clock }), clock: p.a.clock,
     });
     let peers: AgentPeers | undefined;
     try {
-      peers = new AgentPeers(manager, { transport: p.net.endpoint(STUDIO), computer: (n) => (n === "Laptop" ? { device: LAPTOP, online: true } : undefined), mayCall: () => true, fence: p.fenceA, clock: p.a.clock, home: p.a.cloverHome });
+      peers = new AgentPeers(manager, { transport: p.net.endpoint(STUDIO), computer: (n) => (n === "Laptop" ? { device: LAPTOP, online: true } : undefined), mayCall: () => true, fence: p.fenceA, clock: p.a.clock, home: p.a.mossHome });
       Date.now = realNow;
       const before = peers.epochFor(LAPTOP);
       expect(Number(before.slice(0, before.indexOf("-")))).toBeLessThan(Number(p.peersA.epochFor(LAPTOP).split("-")[0]));
@@ -540,7 +540,7 @@ describe("an agent on another computer", () => {
     const p = make({ b: { script: [[{ say: "First." }], [{ say: "never" }]] } });
     const r = await delegate(p);
     await waitFor(() => notification(p.a), "the first turn's end");
-    expect(readAgentRecord(p.a.cloverHome, r.sessionId)).toMatchObject({ pluginId: "clover/agent-fake" });
+    expect(readAgentRecord(p.a.mossHome, r.sessionId)).toMatchObject({ pluginId: "moss/agent-fake" });
     // Laptop restarts, and another plugin holds the backend's id there now.
     await p.b.manager.close();
     (p.b.backend as unknown as { pluginId: string }).pluginId = "someone/agents";
@@ -559,7 +559,7 @@ describe("an agent on another computer", () => {
       const p = make({ b: { script: [[{ say: "Working." }, { wait: true }, { say: "AFTER-REOPEN" }, { tool: { kind: "execute", title: "npm test", rawInput: { command: "npm test" } } }]] } });
       const r = await delegate(p);
       await waitFor(() => blockedOn(p.b, "wait"), "the agent at work");
-      const dir = join(p.a.cloverHome, "bots", "alpha", "agents", r.sessionId);
+      const dir = join(p.a.mossHome, "bots", "alpha", "agents", r.sessionId);
       const studio = await p.net.endpoint(STUDIO).connect(LAPTOP);
       const before = readFileSync(join(dir, "acp.ndjson"), "utf8").length;
       if (wakeFirst) proceed(p.b);
@@ -615,7 +615,7 @@ describe("an agent on another computer", () => {
     const p = make({ b: { script: [[{ say: "Working." }, { wait: true }]] } });
     const r = await delegate(p);
     await waitFor(() => blockedOn(p.b, "wait"), "the agent at work");
-    const dir = join(p.a.cloverHome, "bots", "alpha", "agents", r.sessionId);
+    const dir = join(p.a.mossHome, "bots", "alpha", "agents", r.sessionId);
     const laptop = await p.net.endpoint(LAPTOP).connect(STUDIO);
     const names = ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf", "isPrototypeOf", "toLocaleString", "__defineGetter__"];
     for (const file of names) laptop.notify("agent.transcript", { id: r.sessionId, turn: 1, file, text: "x".repeat(1024), fence: p.fenceA.token() });
@@ -623,7 +623,7 @@ describe("an agent on another computer", () => {
     laptop.notify("agent.transcript", { id: r.sessionId, turn: 1, file: "calls.ndjson", text: "{\"mark\":1}\n", fence: p.fenceA.token() });
     await waitFor(() => existsSync(join(dir, "calls.ndjson")) && readFileSync(join(dir, "calls.ndjson"), "utf8").includes("mark"), "the real line");
     for (const file of names) expect(existsSync(join(dir, file))).toBe(false);
-    const t = new AgentTranscript(p.a.cloverHome, r.sessionId, "alpha");
+    const t = new AgentTranscript(p.a.mossHome, r.sessionId, "alpha");
     for (const file of names) expect(t.appendFromPeer(file, "x")).toBe(false);
   });
 
@@ -631,7 +631,7 @@ describe("an agent on another computer", () => {
     const p = make({ b: { script: [[{ say: "Done." }]] } });
     const r = await delegate(p);
     await waitFor(() => notification(p.a), "the turn's end");
-    const dir = join(p.a.cloverHome, "bots", "alpha", "agents", r.sessionId);
+    const dir = join(p.a.mossHome, "bots", "alpha", "agents", r.sessionId);
     const laptop = await p.net.endpoint(LAPTOP).connect(STUDIO);
     laptop.notify("agent.transcript", { id: r.sessionId, turn: 1, file: "calls.ndjson", text: "{\"late\":1}\n", fence: p.fenceA.token() });
     laptop.notify("agent.event", { id: r.sessionId, turn: 1, event: { type: "agent_text", text: "late" }, fence: p.fenceA.token() });
@@ -647,7 +647,7 @@ describe("an agent on another computer", () => {
     p.net.partition(STUDIO, LAPTOP);
     const n = await waitFor(() => notification(p.a), "the turn ended at the grace");
     expect(n.stopReason).not.toBe("end_turn");
-    const dir = join(p.a.cloverHome, "bots", "alpha", "agents", r.sessionId);
+    const dir = join(p.a.mossHome, "bots", "alpha", "agents", r.sessionId);
     const sizes = () => ["acp.ndjson", "calls.ndjson"].map((f) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f)).length : 0));
     const before = { files: sizes(), log: p.a.host.history(r.sessionId).length };
     // Back: Studio interrupts that turn there, closed, before its pause state lets anything go on.
@@ -715,7 +715,7 @@ describe("an agent on another computer", () => {
     await p.a.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Go on." });
     await waitFor(() => p.a.parentInputs("task-notification").length === 2, "the next turn's end");
     expect((p.a.parentInputs("task-notification")[1]!.input as { text: string }).text).toBe("new");
-    const dir = join(p.a.cloverHome, "bots", "alpha", "agents", r.sessionId);
+    const dir = join(p.a.mossHome, "bots", "alpha", "agents", r.sessionId);
     expect(readFileSync(join(dir, "acp.ndjson"), "utf8")).not.toContain("OLD-LINE");
     expect(JSON.stringify(p.a.host.history(r.sessionId))).not.toContain("OLD-LINE");
   });
@@ -747,7 +747,7 @@ describe("an agent on another computer", () => {
     await Bun.sleep(800);
     p.net.heal(STUDIO, LAPTOP);
     await waitFor(() => notification(p.a), "the turn's end");
-    const dir = join(p.a.cloverHome, "bots", "alpha", "agents", r.sessionId);
+    const dir = join(p.a.mossHome, "bots", "alpha", "agents", r.sessionId);
     const calls = readFileSync(join(dir, "calls.ndjson"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
     expect(calls.filter((c) => c["type"] === "stream-truncated")).toEqual([expect.objectContaining({ by: "outbox" })]);
     const events = p.a.host.history(r.sessionId).filter((x) => x.type === "driver").map((x) => (x as { event: Record<string, unknown> }).event);
@@ -760,7 +760,7 @@ describe("an agent on another computer", () => {
     const p = make({ b: { script: [[{ say: "Working." }, { wait: true }]] } });
     const r = await delegate(p);
     await waitFor(() => blockedOn(p.b, "wait"), "the agent at work");
-    const dir = join(p.a.cloverHome, "bots", "alpha", "agents", r.sessionId);
+    const dir = join(p.a.mossHome, "bots", "alpha", "agents", r.sessionId);
     const laptop = await p.net.endpoint(LAPTOP).connect(STUDIO);
     const other = await p.net.endpoint(OTHER).connect(STUDIO);
     const fence = p.fenceA.token();
@@ -775,6 +775,6 @@ describe("an agent on another computer", () => {
     await waitFor(() => existsSync(join(dir, "calls.ndjson")) && readFileSync(join(dir, "calls.ndjson"), "utf8").includes("stream-refused"), "the refused line's record");
     expect(readFileSync(join(dir, "calls.ndjson"), "utf8")).not.toContain("forged");
     expect(readFileSync(join(dir, "agent.json"), "utf8")).not.toContain("forged");
-    expect(existsSync(join(p.a.cloverHome, "bots", "alpha", "agents", "agent_unknown123"))).toBe(false);
+    expect(existsSync(join(p.a.mossHome, "bots", "alpha", "agents", "agent_unknown123"))).toBe(false);
   });
 });

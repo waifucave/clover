@@ -1,4 +1,4 @@
-// The Clover home's read denial for a runner's Bash (`homeDenyRead`): every name in a folder on the way to a kept one,
+// The MOSS home's read denial for a runner's Bash (`homeDenyRead`): every name in a folder on the way to a kept one,
 // but the kept names, denied by pattern (bounded, and live for names made later), plus the names that matter.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -19,7 +19,7 @@ const temp = (prefix: string) => {
 describe("namesOtherThan: every name in a folder but the kept ones, listed as they are at each build", () => {
   for (const platform of ["linux", "darwin"] as const) {
     test(`on ${platform}: the kept name and what is in it are readable; every other name there is denied; one made later at the next build`, () => {
-      const dir = temp("clover-names-");
+      const dir = temp("moss-names-");
       const there = ["s_ab12", "s_ab13", "s_ab1", "s_a", "s", "s_ab12x", "s_ab12.bak", "t_ab12", "0", "Z", "_x", ".hidden", "-dash", "s_ab12-1", "x", "☃snow"];
       for (const n of there) mkdirSync(join(dir, n));
       const list = namesOtherThan(dir, ["s_ab12"], platform);
@@ -37,14 +37,14 @@ describe("namesOtherThan: every name in a folder but the kept ones, listed as th
   }
 
   test("names fold on a Mac: another case of the kept name is the kept name there, and another name on Linux", () => {
-    const dir = temp("clover-names-case-");
+    const dir = temp("moss-names-case-");
     mkdirSync(join(dir, "S_AB12"));
     expect(namesOtherThan(dir, ["s_ab12"], "darwin")).toEqual([]);
     expect(namesOtherThan(dir, ["s_ab12"], "linux")).toEqual([join(dir, "S_AB12")]);
   });
 
   test("bounded: past LITERAL_MAX names a folder falls back to the pattern form, bounded by the kept names", () => {
-    const dir = temp("clover-names-many-");
+    const dir = temp("moss-names-many-");
     for (let i = 0; i < 500; i++) mkdirSync(join(dir, `s_${i.toString(16).padStart(12, "0")}`));
     expect(namesOtherThan(dir, ["s_0123456789ab"], "linux")).toHaveLength(500);
     expect(LITERAL_MAX).toBeGreaterThanOrEqual(1000);
@@ -56,7 +56,7 @@ describe("namesOtherThan: every name in a folder but the kept ones, listed as th
   });
 
   test("the pattern form lists a name that leaves the kept ones at a letter no pattern spells", () => {
-    const dir = temp("clover-names-odd-");
+    const dir = temp("moss-names-odd-");
     for (const n of ["☃snow", "s_a☃", "s_ab12☃", "plain"]) mkdirSync(join(dir, n));
     const list = patternsOtherThan(dir, ["s_ab12"], "linux");
     expect(list).toContain(join(dir, "☃snow"));
@@ -69,7 +69,7 @@ describe("namesOtherThan: every name in a folder but the kept ones, listed as th
 
 describe("homeDenyRead", () => {
   test("kept folders, the way to them walked name by name, an `only` folder inside a kept one, extra denies", () => {
-    const h = temp("clover-home-deny-");
+    const h = temp("moss-home-deny-");
     for (const d of ["sessions", "outputs/s_1", "outputs/s_2", "sdk/projects/-p/memory", "sdk/projects/-q", "bots/a/memory", "sdk/skills/a"]) mkdirSync(join(h, d), { recursive: true });
     const list = homeDenyRead({
       home: h, platform: "linux",
@@ -85,7 +85,7 @@ describe("homeDenyRead", () => {
   });
 
   test("the names that matter are the fenced set's on this OS, and the secret store's files on every OS", () => {
-    const h = temp("clover-home-named-");
+    const h = temp("moss-home-named-");
     for (const p of [...homeNamedDenials(h, "macos"), ...homeNamedDenials(h, "linux")]) expect(p.startsWith(`${h}/`)).toBe(true);
     for (const os of ["macos", "linux"] as const) {
       for (const n of ["sessions", "sessions-runtime", "run", "credentials", "secrets.enc", "secrets.key", "secrets.key.cred"]) expect(homeNamedDenials(h, os)).toContain(join(h, n));

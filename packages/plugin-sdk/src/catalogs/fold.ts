@@ -1,6 +1,6 @@
-// The name fold (spec §5.5's reserved titles; #179, #187, #264): what Clover compares a name a plugin gives with, so
-// one that reads as Clover's own or a bot's is refused. No dependencies: a client imports it from
-// `@waifucave/clover-plugin-sdk/fold` without pulling in zod or the catalogs.
+// The name fold (spec §5.5's reserved titles; #179, #187, #264): what MOSS compares a name a plugin gives with, so
+// one that reads as MOSS's own or a bot's is refused. No dependencies: a client imports it from
+// `@waifucave/moss-plugin-sdk/fold` without pulling in zod or the catalogs.
 
 /** Letters from other scripts that read as Latin ones (a short table after Unicode's confusables, UTS #39), and the
  *  digits and strokes that read as letters. */

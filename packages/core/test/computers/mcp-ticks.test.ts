@@ -6,14 +6,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FileMcpTicks, mcpTicksMigratedPath, mcpTicksPath } from "../../src/computers/mcp-ticks";
 import { placementFields, type McpResult, type McpServerPlacement } from "../../src/computers/mcp";
 import { answersFor, makePhone } from "../tree/answer-support";
 import { Cluster, until } from "../tree/cluster-support";
 
 const temp = (prefix: string) => mkdtempSync(join(tmpdir(), prefix));
-/** A Clover home whose ticks record exists already (an earlier run's). */
+/** A MOSS home whose ticks record exists already (an earlier run's). */
 const ranBefore = (home: string) => {
   mkdirSync(join(home, "levels"), { recursive: true });
   writeFileSync(mcpTicksPath(home), JSON.stringify({ plugins: {}, servers: {} }));
@@ -80,7 +80,7 @@ describe("a bundled plugin's per-computer server (the controller's ruling, 2026-
         fields: () => ({}),
         call: async (): Promise<McpResult> => ({ content: [] }),
         scratch: () => "home/Studio",
-        localServers: () => [{ server: "browser", plugin: "clover/browser", bundled: true }, { server: "blender", plugin: "acme/blender" }],
+        localServers: () => [{ server: "browser", plugin: "moss/browser", bundled: true }, { server: "blender", plugin: "acme/blender" }],
         ticks,
       }),
     });
@@ -180,7 +180,7 @@ describe("the node's migration", () => {
     });
     expect(studio.node.mcpComputers("blender")).toEqual(["Studio"]);
     await until(() => refreshed === 1, 2000, "the host to hear of the migration's ticks");
-    expect(existsSync(mcpTicksPath(studio.cloverHome))).toBe(true);
+    expect(existsSync(mcpTicksPath(studio.mossHome))).toBe(true);
     // Once: later listings change nothing.
     studio.node.mcpComputers("blender");
     await new Promise((r) => setTimeout(r, 20));
@@ -201,7 +201,7 @@ describe("the node's migration", () => {
     installed = true;
     // Its install flow didn't tick it here (this test plays none): the migration doesn't either.
     expect(studio.node.mcpComputers("blender")).toEqual([]);
-    expect(existsSync(mcpTicksPath(studio.cloverHome))).toBe(false);
+    expect(existsSync(mcpTicksPath(studio.mossHome))).toBe(false);
     // Its install flow does.
     studio.node.mcpTicks.installed("acme/blender");
     expect(studio.node.mcpComputers("blender")).toEqual(["Studio"]);

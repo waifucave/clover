@@ -21,7 +21,7 @@ import { Database } from "bun:sqlite";
 import { closeSync, constants, existsSync, fstatSync, mkdirSync, mkdtempSync, openSync, readSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import { seedMemory } from "../bots/memory";
 import { botPaths } from "../bots/paths";
 import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
@@ -30,7 +30,7 @@ import { routineFilePath } from "./engine";
 import { mintRoutineId, serializeRoutine } from "./file";
 import { parseSpec } from "./spec";
 
-/** Winter's approval policies (SP-policies) as Clover's levels. */
+/** Winter's approval policies (SP-policies) as MOSS's levels. */
 export const WINTER_POLICY_LEVELS: Readonly<Record<string, Level>> = {
   plan: "read-only", ask: "ask", "dont-ask": "ask-risky", "accept-edits": "accept-edits", auto: "ask-risky", bypass: "automatic",
 };
@@ -76,14 +76,14 @@ function slug(text: string, taken: Set<string>): string {
   return name;
 }
 
-export function migrateWinter(o: { winterHome: string; cloverHome: string; bot?: string; memories?: boolean; warn?: (m: string) => void }): WinterMigration {
+export function migrateWinter(o: { winterHome: string; mossHome: string; bot?: string; memories?: boolean; warn?: (m: string) => void }): WinterMigration {
   const bot = o.bot ?? "alpha";
   const out: WinterMigration = { routines: [], skipped: [], memories: 0 };
-  const markerFile = join(transcriptsDir(o.cloverHome), "routines", "migrated-winter.json");
+  const markerFile = join(transcriptsDir(o.mossHome), "routines", "migrated-winter.json");
   const done = ((readJson(markerFile) as Record<string, string> | undefined) ?? {});
   const db = join(o.winterHome, "routines.db");
   if (existsSync(db)) {
-    const scratch = mkdtempSync(join(tmpdir(), "clover-winter-routines-"));
+    const scratch = mkdtempSync(join(tmpdir(), "moss-winter-routines-"));
     let conn: Database | undefined;
     try {
       const copy = join(scratch, "routines.db");
@@ -102,7 +102,7 @@ export function migrateWinter(o: { winterHome: string; cloverHome: string; bot?:
         }
         const firstLine = row.prompt.split("\n").find((l) => l.trim() !== "")?.trim() ?? "Winter routine";
         const name = firstLine.length > 60 ? `${firstLine.slice(0, 59)}…` : firstLine;
-        const file = routineFilePath(o.cloverHome, bot, slug(`winter-${name}`, taken));
+        const file = routineFilePath(o.mossHome, bot, slug(`winter-${name}`, taken));
         if (existsSync(file)) {
           out.skipped.push({ winterId: row.id, why: `${file} is there already` });
           continue;
@@ -131,9 +131,9 @@ export function migrateWinter(o: { winterHome: string; cloverHome: string; bot?:
   if (o.memories !== false) {
     const from = winterAssistantMemoryDirs(o.winterHome).find((d) => existsSync(d));
     if (from !== undefined) {
-      const to = botPaths(o.cloverHome, bot).memory;
+      const to = botPaths(o.mossHome, bot).memory;
       mkdirSync(to, { recursive: true });
-      out.memories = seedMemory(from, to, { base: o.cloverHome, ...(o.warn === undefined ? {} : { warn: o.warn }) });
+      out.memories = seedMemory(from, to, { base: o.mossHome, ...(o.warn === undefined ? {} : { warn: o.warn }) });
     }
   }
   return out;

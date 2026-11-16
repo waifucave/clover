@@ -2,7 +2,7 @@ import { join } from "node:path";
 import {
   findFiles, kindOfMinutes, percentOf, resetMs, runOutside, scanLinesBackward, shortStr, staleness, timeOf, tokenCount,
   type FoundFile, type Outside, type PlanWindow, type UsagePlanReading, type UsageRecord,
-} from "@waifucave/clover-plugin-sdk/usage-source";
+} from "@waifucave/moss-plugin-sdk/usage-source";
 
 // The user's own Codex install (spec §12 "Usage sources") — READ ONLY, and only what is needed:
 //
@@ -224,7 +224,7 @@ export const CODEX_APP_SERVER_TIMEOUT_MS = 8_000;
 export async function codexPlanFromAppServer(outside: Outside, opts: { timeoutMs?: number; version?: string; now: () => number }):
   Promise<{ reading?: UsagePlanReading; failure?: string }> {
   const input = [
-    { id: 1, method: "initialize", params: { clientInfo: { name: "clover", title: "Clover", version: opts.version ?? "0" }, capabilities: null } },
+    { id: 1, method: "initialize", params: { clientInfo: { name: "moss", title: "MOSS", version: opts.version ?? "0" }, capabilities: null } },
     { method: "initialized" },
     { id: 2, method: "account/rateLimits/read", params: { excludeResetCreditDetails: true } },
   ].map((m) => JSON.stringify(m)).join("\n") + "\n";

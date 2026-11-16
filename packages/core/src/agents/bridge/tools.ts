@@ -5,7 +5,7 @@
 //
 // Plugin tools come from lane B's registry (B-M2: the plugins scoped to `agents` or `both`); until then the source
 // is empty, and `BridgeToolSource` is the seam it plugs into.
-import type { Level, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Level, TurnOrigin } from "@waifucave/moss-protocol";
 
 export interface BridgeToolDef {
   name: string;
@@ -43,7 +43,7 @@ export interface AgentSessionFacts {
   id: string;
   /** `agent` for a bot's delegation, `coding` for a session the user started. */
   kind: "agent" | "coding";
-  /** The backend's id (`clover-code`, `clover`, `claude-code`, `codex`, …). */
+  /** The backend's id (`moss-code`, `moss`, `claude-code`, `codex`, …). */
   backend: string;
   bot?: string;
   computer: string;
@@ -85,7 +85,7 @@ export const SEND_MESSAGE: BridgeToolDef = {
 export const GLOSSARY: BridgeToolDef = {
   name: "Glossary",
   description: [
-    "Look up the skills, tools and agents Clover's plugins offer you, and load one by name.",
+    "Look up the skills, tools and agents MOSS's plugins offer you, and load one by name.",
     "`query` searches by words and returns names with one-line descriptions; `load` returns a skill's full",
     "instructions or a tool's input schema. Use it before a task a skill may cover.",
   ].join(" "),
@@ -112,15 +112,15 @@ export function bridgeOwnTools(bot: string | undefined): readonly BridgeToolDef[
 export function bridgeInstructions(a: { bot?: string; serverName: string }): string {
   if (a.bot === undefined) {
     return [
-      "You are working with the user in Clover, in a coding session they drive.",
-      `The MCP server "${a.serverName}" gives you Glossary, to look up and load the skills and tools Clover's plugins offer you.`,
+      "You are working with the user in MOSS, in a coding session they drive.",
+      `The MCP server "${a.serverName}" gives you Glossary, to look up and load the skills and tools MOSS's plugins offer you.`,
     ].join(" ");
   }
   const who = `the bot "${a.bot}"`;
   return [
-    `You are working on a task from ${who} in Clover, as a background agent.`,
+    `You are working on a task from ${who} in MOSS, as a background agent.`,
     `Your final reply is delivered to ${who} when you finish, together with this session's transcript.`,
     `The MCP server "${a.serverName}" gives you SendMessage, to send ${who} progress or a question while you work, and`,
-    "Glossary, to look up and load the skills and tools Clover's plugins offer you.",
+    "Glossary, to look up and load the skills and tools MOSS's plugins offer you.",
   ].join(" ");
 }

@@ -78,16 +78,16 @@ describe("sizes", () => {
   test("a body over 16 KiB is refused before it is read", async () => {
     const { pair, a } = await registeredPair();
     const big = new Uint8Array(16 * 1024 + 1);
-    const response = await worker(new Request(`${ORIGIN}/v1/pairs/${pair}/messages`, { method: "POST", body: big, headers: { authorization: `Clover-Sig key=${a.key}, t=${Date.now()}, sig=${"A".repeat(86)}` } }));
+    const response = await worker(new Request(`${ORIGIN}/v1/pairs/${pair}/messages`, { method: "POST", body: big, headers: { authorization: `MOSS-Sig key=${a.key}, t=${Date.now()}, sig=${"A".repeat(86)}` } }));
     expect(response.status).toBe(413);
   });
 });
 
 describe("cross-origin", () => {
   test("the web companion's origin gets CORS; others don't", async () => {
-    const allowed = await worker(new Request(`${ORIGIN}/v1/pairs`, { method: "OPTIONS", headers: { origin: "https://clover.test", "access-control-request-method": "POST" } }));
+    const allowed = await worker(new Request(`${ORIGIN}/v1/pairs`, { method: "OPTIONS", headers: { origin: "https://moss.test", "access-control-request-method": "POST" } }));
     expect(allowed.status).toBe(204);
-    expect(allowed.headers.get("access-control-allow-origin")).toBe("https://clover.test");
+    expect(allowed.headers.get("access-control-allow-origin")).toBe("https://moss.test");
     expect(allowed.headers.get("access-control-allow-headers")).toBe("authorization, content-type");
 
     const denied = await worker(new Request(`${ORIGIN}/v1/pairs`, { method: "OPTIONS", headers: { origin: "https://evil.test" } }));
@@ -95,9 +95,9 @@ describe("cross-origin", () => {
 
     const { pair, a, c } = await registeredPair(client());
     await c.pair(pair, a).get();
-    const answer = await worker(new Request(`${ORIGIN}/v1/pairs/${pair}`, { headers: { origin: "https://clover.test" } }));
+    const answer = await worker(new Request(`${ORIGIN}/v1/pairs/${pair}`, { headers: { origin: "https://moss.test" } }));
     expect(answer.status).toBe(401);
-    expect(answer.headers.get("access-control-allow-origin")).toBe("https://clover.test");
+    expect(answer.headers.get("access-control-allow-origin")).toBe("https://moss.test");
     const other = await worker(new Request(`${ORIGIN}/v1/pairs/${pair}`, { headers: { origin: "https://evil.test" } }));
     expect(other.headers.get("access-control-allow-origin")).toBeNull();
   });

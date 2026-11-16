@@ -1,16 +1,16 @@
 // The Linux packages (plan §4 M1): the deb and the rpm, the main ones, which install the AppArmor profile Electron's
 // sandbox needs on Ubuntu, and the AppImage, the fallback (spec §4). Each holds the desktop app, and the daemon,
-// clover-core, with its link sidecar, clover-link (native/link, lane H), beside it in its resources/daemon/, where
+// moss-core, with its link sidecar, moss-link (native/link, lane H), beside it in its resources/daemon/, where
 // E-M1's app starts the daemon and the daemon its sidecar. The dmg and the Windows installer come with E-M1's app;
 // signing and updates are M2.
 //
 //   bun scripts/build-packages.ts [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--channel latest|beta] [--check] [--dry-run]
 //
 // Linux only: electron-builder makes the deb and the rpm with fpm, and the rpm needs rpmbuild (`apt-get install rpm`).
-// An architecture builds on its own machine (CI runs one job per architecture): clover-link is Rust with ring's C,
+// An architecture builds on its own machine (CI runs one job per architecture): moss-link is Rust with ring's C,
 // and cargo builds it for the machine it is on. It:
 //   1. stages the bundled plugins (the committed files under plugins/) and measures them, then builds the daemon for
-//      linux-<arch> (scripts/build-daemon.ts) with that manifest compiled in, and clover-link (`cargo build --release
+//      linux-<arch> (scripts/build-daemon.ts) with that manifest compiled in, and moss-link (`cargo build --release
 //      --locked`)
 //   2. stages both in apps/desktop/out/daemon/, where electron-builder.yml's extraResources picks them up
 //   3. builds the app (apps/desktop's `build`) once, and packages it: electron-builder --linux <formats> --<arch>
@@ -51,7 +51,7 @@ function listOf<T extends string>(flag: string, value: string | undefined, allow
 }
 
 /** `hostArch` is this machine's (`process.arch`), passed in so the parse stays pure. Another machine's architecture
- *  is refused but for --dry-run: clover-link builds for the machine it is on. */
+ *  is refused but for --dry-run: moss-link builds for the machine it is on. */
 export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string): BuildPackagesArgs {
   let arches: LinuxArch[] | undefined;
   let formats: LinuxFormat[] = [...LINUX_FORMATS];
@@ -73,7 +73,7 @@ export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string
     arches = [hostArch as LinuxArch];
   }
   const foreign = arches.filter((a) => a !== hostArch);
-  if (!dryRun && foreign.length > 0) throw new Error(`this machine is ${hostArch}: build ${foreign.join(", ")} on ${foreign.length === 1 ? "a machine" : "machines"} of ${foreign.length === 1 ? "that architecture" : "those architectures"} (clover-link, the link sidecar, builds for the machine it is on)`);
+  if (!dryRun && foreign.length > 0) throw new Error(`this machine is ${hostArch}: build ${foreign.join(", ")} on ${foreign.length === 1 ? "a machine" : "machines"} of ${foreign.length === 1 ? "that architecture" : "those architectures"} (moss-link, the link sidecar, builds for the machine it is on)`);
   return { arches, formats, channel, check, dryRun };
 }
 
@@ -94,12 +94,12 @@ export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxForm
 
 /** The link sidecar's build (native/link), relative to the repo root: one for this machine. */
 export const LINK_BUILD = ["cargo", "build", "--release", "--locked", "--manifest-path", "native/link/Cargo.toml"] as const;
-export const LINK_OUTPUT = "native/link/target/release/clover-link";
+export const LINK_OUTPUT = "native/link/target/release/moss-link";
 
 /**
  * The privacy scrub for the sidecar's build: a Rust binary keeps the absolute paths of the sources it was built from
  * (for panic messages), which on the owner's Mac name their home folder. They are remapped to fixed names: the
- * home folder to /home, the cargo home to /cargo, the checkout to /clover. Any RUSTFLAGS already set come first.
+ * home folder to /home, the cargo home to /cargo, the checkout to /moss. Any RUSTFLAGS already set come first.
  */
 export function linkBuildEnv(env: Record<string, string | undefined>, root: string): Record<string, string | undefined> {
   const home = env.HOME ?? env.USERPROFILE;
@@ -108,7 +108,7 @@ export function linkBuildEnv(env: Record<string, string | undefined>, root: stri
   const remaps = [
     ...(home === undefined ? [] : [`--remap-path-prefix=${home}=/home`]),
     ...(cargoHome === undefined ? [] : [`--remap-path-prefix=${cargoHome}=/cargo`]),
-    `--remap-path-prefix=${root}=/clover`,
+    `--remap-path-prefix=${root}=/moss`,
   ];
   // CARGO_ENCODED_RUSTFLAGS, one flag per 0x1f: a path with a space (the owner's checkout has one) stays one flag.
   // Flags already set (either form) come first; RUSTFLAGS is then dropped, as cargo would ignore it.
@@ -120,15 +120,15 @@ export function linkBuildEnv(env: Record<string, string | undefined>, root: stri
 /** What a package must hold: the daemon, its link sidecar beside it, the AppArmor profile in the app's resources, and
  *  each bundled top-level plugin's manifest in resources/plugins (the registry's `bundledDirs`). */
 export const REQUIRED_FILES = [
-  "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/daemon/clover-plugin-bun",
-  "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover",
-  "/opt/Clover/resources/plugins/clover/clover.json", "/opt/Clover/resources/plugins/alpha/clover.json",
+  "/opt/moss-code/resources/daemon/moss-core", "/opt/moss-code/resources/daemon/moss-link", "/opt/moss-code/resources/daemon/moss-plugin-bun",
+  "/opt/moss-code/resources/apparmor-profile", "/opt/moss-code/moss-code",
+  "/opt/moss-code/resources/plugins/moss/moss.json", "/opt/moss-code/resources/plugins/alpha/moss.json",
 ] as const;
-/** What its after-install script must do: link `clover` to the daemon's command line (packaging/linux/after-install.sh). */
-export const AFTER_INSTALL_MARK = "/opt/Clover/resources/daemon/clover-core";
+/** What its after-install script must do: link `moss` to the daemon's command line (packaging/linux/after-install.sh). */
+export const AFTER_INSTALL_MARK = "/opt/moss-code/resources/daemon/moss-core";
 
 /** The executables a package runs as root's files: the app, the daemon and the sidecar, `rwxr-xr-x root root`. */
-export const EXECUTABLES = ["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/daemon/clover-plugin-bun"] as const;
+export const EXECUTABLES = ["/opt/moss-code/moss-code", "/opt/moss-code/resources/daemon/moss-core", "/opt/moss-code/resources/daemon/moss-link", "/opt/moss-code/resources/daemon/moss-plugin-bun"] as const;
 
 export interface PackageEntry {
   mode: string;
@@ -138,8 +138,8 @@ export interface PackageEntry {
 }
 
 /**
- * One package's long file listing, parsed: `dpkg-deb -c` (`-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/clover`)
- * or `rpm -qlvp` (`-rwxr-xr-x 1 root root 100 Nov  5 12:00 /opt/Clover/clover`). A link's ` -> target` is dropped.
+ * One package's long file listing, parsed: `dpkg-deb -c` (`-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/moss-code/moss-code`)
+ * or `rpm -qlvp` (`-rwxr-xr-x 1 root root 100 Nov  5 12:00 /opt/moss-code/moss-code`). A link's ` -> target` is dropped.
  */
 export function parseListing(format: "deb" | "rpm", listing: string): PackageEntry[] {
   const line = format === "deb"
@@ -228,7 +228,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   // `plugins`: this architecture's bundled plugins, built and measured into the manifest its daemon carries.
   const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch; plugins?: LinuxArch }> = [
     { say: "the app", cmd: ["bun", "scripts/build.ts", "--release"], cwd: desktop },
-    { say: "the link sidecar, clover-link", cmd: [...LINK_BUILD], cwd: root },
+    { say: "the link sidecar, moss-link", cmd: [...LINK_BUILD], cwd: root },
   ];
   for (const arch of args.arches) {
     steps.push({ say: `the bundled plugins for linux-${arch}, built (lane B's buildPluginForShipping) and measured`, cmd: [], cwd: root, plugins: arch });
@@ -269,14 +269,14 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       if (s.stage !== undefined) {
         rmSync(staged, { recursive: true, force: true });
         mkdirSync(staged, { recursive: true });
-        copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "clover-core"));
-        copyFileSync(join(root, ...LINK_OUTPUT.split("/")), join(staged, "clover-link"));
-        chmodSync(join(staged, "clover-link"), 0o755);
+        copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "moss-core"));
+        copyFileSync(join(root, ...LINK_OUTPUT.split("/")), join(staged, "moss-link"));
+        chmodSync(join(staged, "moss-link"), 0o755);
         // Plain Bun for plugins, beside the core (scripts/bundled-binaries.ts); the package gate before packaging.
         const target = daemonTargetFor(s.stage);
         const built = dirname(join(root, ...daemonOutput(target).split("/")));
         for (const f of bundledFiles(target)) if (existsSync(join(built, f))) { copyFileSync(join(built, f), join(staged, f)); chmodSync(join(staged, f), 0o755); }
-        const gate = [...bundledBinaryProblems(staged, target), ...sealProblems(new Uint8Array(readFileSync(join(staged, "clover-core")))).map((p) => `the seal: ${p}`)];
+        const gate = [...bundledBinaryProblems(staged, target), ...sealProblems(new Uint8Array(readFileSync(join(staged, "moss-core")))).map((p) => `the seal: ${p}`)];
         if (gate.length > 0) { console.error(`build-packages: the package gate: ${gate.join("; ")}`); return 1; }
       }
       const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
@@ -302,7 +302,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   // The daemon for a server's own update: each architecture's binary as its release file, with its update files.
   for (const a of args.arches) writeCoreAssets(outDir, version, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(root, ...daemonOutput(daemonTargetFor(a)).split("/")));
   // Plain Bun for plugins, for a server install on this architecture (scripts/bundled-binaries.ts).
-  for (const a of args.arches) writePluginBunAssets(outDir, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(dirname(join(root, ...daemonOutput(daemonTargetFor(a)).split("/"))), "clover-plugin-bun"));
+  for (const a of args.arches) writePluginBunAssets(outDir, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(dirname(join(root, ...daemonOutput(daemonTargetFor(a)).split("/"))), "moss-plugin-bun"));
   // A full release serves beta users too: its update files under the beta names.
   writeServedCopies(outDir, args.channel, args.arches.map((a) => (a === "x64" ? "linux-x64" : "linux-arm64")));
   // The commit these packages are of, for the owner's release step (scripts/release/publish.ts).

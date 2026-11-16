@@ -13,7 +13,7 @@
 // * It names the plugin that stopped, a child entry by its own id: `PluginStatus <id>` shows that plugin's own log.
 //   A child's provenance is its tree's (the folder read gives every entry the top's), so its builder is the tree's.
 // * The door is the bots' own (`BotService.deliverTo`, SendMessage's): the bot's main conversation, wherever it runs
-//   here; the input is Clover's `notice` (a note that starts a turn, origin `plugin`), so the turn runs at the bot's
+//   here; the input is MOSS's `notice` (a note that starts a turn, origin `plugin`), so the turn runs at the bot's
 //   own level and nothing it asks counts as the user's.
 import type { Unsubscribe } from "../contracts/common";
 import { isCrashStop, type HostedStatus } from "../contracts/plugin-host";

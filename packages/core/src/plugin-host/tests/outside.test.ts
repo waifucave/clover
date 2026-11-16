@@ -7,8 +7,8 @@ import { afterAll, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -51,22 +51,22 @@ export const pid = async () => process.pid;
 function plugin(home: string, id: string, host: Record<string, unknown>, version = "1.0.0"): void {
   const root = join(home, "plugins", id);
   mkdirSync(join(root, "host"), { recursive: true });
-  writeFileSync(join(root, "clover.json"), JSON.stringify({ manifest: 1, id, name: id, version, engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own", ...host } }));
+  writeFileSync(join(root, "moss.json"), JSON.stringify({ manifest: 1, id, name: id, version, engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own", ...host } }));
   writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
   writeFileSync(join(root, "host", "index.js"), HOST);
 }
 
-test("the folders it names: in the user's home, never the whole home or the Clover home; a program by name on the PATH", () => {
+test("the folders it names: in the user's home, never the whole home or the MOSS home; a program by name on the PATH", () => {
   const userHome = temp("cf-out-user-");
-  const cloverHome = join(userHome, ".clover");
+  const mossHome = join(userHome, ".moss");
   mkdirSync(join(userHome, "Notes"), { recursive: true });
-  mkdirSync(cloverHome, { recursive: true });
+  mkdirSync(mossHome, { recursive: true });
   const rec = (read: string[]) => ({ manifest: { host: { outside: { read } } } }) as never;
-  expect(outsideReadFolders(rec(["~/Notes"]), { userHome, cloverHome })).toEqual([join(userHome, "Notes")]);
-  expect(outsideReadFolders(rec(["~/.clover", "~/.clover/secrets", "~"]), { userHome, cloverHome })).toEqual([]);
-  expect(outsideReadFolders(rec([userHome]), { userHome, cloverHome })).toEqual([]);
+  expect(outsideReadFolders(rec(["~/Notes"]), { userHome, mossHome })).toEqual([join(userHome, "Notes")]);
+  expect(outsideReadFolders(rec(["~/.moss", "~/.moss/secrets", "~"]), { userHome, mossHome })).toEqual([]);
+  expect(outsideReadFolders(rec([userHome]), { userHome, mossHome })).toEqual([]);
   // A folder that holds the home (the reviewer's read 44: `/Users` opened the whole home) is never opened.
-  expect(outsideReadFolders(rec([join(userHome, ".."), "/"]), { userHome, cloverHome })).toEqual([]);
+  expect(outsideReadFolders(rec([join(userHome, ".."), "/"]), { userHome, mossHome })).toEqual([]);
   expect(expandUserPath("~/a/b", "/Users/x")).toBe("/Users/x/a/b");
   const bin = temp("cf-out-bin-");
   writeFileSync(join(bin, "probe"), "#!/bin/sh\necho hi\n");
@@ -77,34 +77,34 @@ test("the folders it names: in the user's home, never the whole home or the Clov
   expect(findProgram("/bin/cat", undefined)).toBe("/bin/cat");
 });
 
-test("\"of yours\": a program in Clover's folder, the plugin's own or one it can write is refused, by its path or on the PATH; never run in Clover's folder", async () => {
+test("\"of yours\": a program in MOSS's folder, the plugin's own or one it can write is refused, by its path or on the PATH; never run in MOSS's folder", async () => {
   const userHome = temp("cf-out-user-");
-  const cloverHome = join(userHome, ".clover");
-  const own = join(cloverHome, "plugins", "gitter");
+  const mossHome = join(userHome, ".moss");
+  const own = join(mossHome, "plugins", "gitter");
   const picked = temp("cf-out-picked-");
   const bin = temp("cf-out-bin-");
-  const cloverBin = join(cloverHome, "bin");
-  for (const d of [own, cloverBin, picked, bin]) mkdirSync(d, { recursive: true });
+  const mossBin = join(mossHome, "bin");
+  for (const d of [own, mossBin, picked, bin]) mkdirSync(d, { recursive: true });
   const exe = (dir: string, name: string) => {
     writeFileSync(join(dir, name), "#!/bin/sh\necho ran\n");
     chmodSync(join(dir, name), 0o755);
     return join(dir, name);
   };
-  const inClover = exe(cloverBin, "tool");
+  const inMoss = exe(mossBin, "tool");
   const inOwn = exe(own, "tool");
   const inPick = exe(picked, "tool");
   exe(bin, "tool");
-  const programs = [inClover, inOwn, inPick, "tool"];
-  const api = outsideApi({ userHome, cloverHome, path: () => `${cloverBin}:${bin}`, writable: () => [picked] });
+  const programs = [inMoss, inOwn, inPick, "tool"];
+  const api = outsideApi({ userHome, mossHome, path: () => `${mossBin}:${bin}`, writable: () => [picked] });
   const ctx = { pluginId: "gitter", record: { manifest: { host: { outside: { programs } } }, folder: own } } as never;
   const run = (args: unknown[]) => (api["outside.run"] as (c: unknown, a: unknown[]) => Promise<{ code: number; stdout: string }>)(ctx, args);
   const refused = async (args: unknown[]) => { try { await run(args); return "ran"; } catch (e) { return (e as Error).message; } };
-  for (const p of [inClover, inOwn, inPick]) expect(await refused([p])).toContain("isn't a program of yours");
-  // A bare name skips the PATH folder inside Clover's home and finds the user's own.
-  expect(findProgram("tool", `${cloverBin}:${bin}`, [cloverHome])).toBe(join(bin, "tool"));
+  for (const p of [inMoss, inOwn, inPick]) expect(await refused([p])).toContain("isn't a program of yours");
+  // A bare name skips the PATH folder inside MOSS's home and finds the user's own.
+  expect(findProgram("tool", `${mossBin}:${bin}`, [mossHome])).toBe(join(bin, "tool"));
   expect(await run(["tool"])).toMatchObject({ code: 0, stdout: "ran\n" });
-  // Run in the user's home by default; never in Clover's folder.
-  expect(await refused(["tool", [], { cwd: cloverBin }])).toContain("Clover's own folder");
+  // Run in the user's home by default; never in MOSS's folder.
+  expect(await refused(["tool", [], { cwd: mossBin }])).toContain("MOSS's own folder");
   expect(await run(["tool", [], { cwd: bin }])).toMatchObject({ code: 0 });
 });
 
@@ -129,20 +129,20 @@ test("a tree that names programs outside its sandbox has no card-free tool: read
   expect(lists("gitter", () => true)).toEqual([false, false, false, false, false]);
 });
 
-test("a named folder that holds the user's home or Clover's, or lies in Clover's, is refused with why: at install and when its folder is read", async () => {
+test("a named folder that holds the user's home or MOSS's, or lies in MOSS's, is refused with why: at install and when its folder is read", async () => {
   const { validatePluginFolder } = await import("../../registry/validate");
   const { readPluginFolder } = await import("../../registry/folders");
   const { installStaged } = await import("../../registry/install-folder");
   const top = temp("cf-out-homes-");
   const userHome = join(top, "user");
-  const cloverHome = join(userHome, ".clover");
-  mkdirSync(join(cloverHome, "plugins"), { recursive: true });
+  const mossHome = join(userHome, ".moss");
+  mkdirSync(join(mossHome, "plugins"), { recursive: true });
   mkdirSync(join(userHome, "Notes"), { recursive: true });
-  const homes = { userHome, cloverHome };
+  const homes = { userHome, mossHome };
   const write = (name: string, read: string[]) => {
     const dir = join(top, "src", name);
     mkdirSync(join(dir, "host"), { recursive: true });
-    writeFileSync(join(dir, "clover.json"), JSON.stringify({ manifest: 1, id: name, name, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own", outside: { read } } }));
+    writeFileSync(join(dir, "moss.json"), JSON.stringify({ manifest: 1, id: name, name, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own", outside: { read } } }));
     writeFileSync(join(dir, "package.json"), "{\"type\":\"module\"}");
     writeFileSync(join(dir, "host", "index.js"), "export async function start() {}\n");
     return dir;
@@ -150,14 +150,14 @@ test("a named folder that holds the user's home or Clover's, or lies in Clover's
   const codes = async (dir: string) => (await validatePluginFolder(dir, { os: "macos", homes })).issues.filter((i) => i.severity === "error").map((i) => `${i.code}: ${i.message}`);
   expect(await codes(write("fine", ["~/Notes"]))).toEqual([]);
   expect(await codes(write("holder", [top]))).toEqual([`outside_folder_home: "${top}" holds your whole home folder, so it isn't a folder it may read outside its sandbox: name the folder inside your home that it needs`]);
-  expect((await codes(write("cloverish", ["~/.clover/plugins"])))[0]).toContain("is inside Clover's own folder");
+  expect((await codes(write("mossish", ["~/.moss/plugins"])))[0]).toContain("is inside MOSS's own folder");
   // The registry reads it as invalid, with why.
   const read = await readPluginFolder(write("holder2", [userHome]), { source: "local", homes });
   expect(read.inputs[0]!.invalid).toContain("holds your whole home folder");
   // And an install is refused with the words.
-  const refused = await installStaged(write("holder3", [top]), { pluginsDir: join(cloverHome, "plugins"), stagingDir: join(top, "staging"), os: "macos", taken: () => false }).then(() => "installed", (e: Error) => e.message);
+  const refused = await installStaged(write("holder3", [top]), { pluginsDir: join(mossHome, "plugins"), stagingDir: join(top, "staging"), os: "macos", taken: () => false }).then(() => "installed", (e: Error) => e.message);
   expect(refused).toContain("isn't valid");
-  expect(refused).toMatch(/holds (your whole home folder|Clover's own folder)/);
+  expect(refused).toMatch(/holds (your whole home folder|MOSS's own folder)/);
 });
 
 darwinDescribe("programs and folders outside the sandbox (P5)", () => {
@@ -178,7 +178,7 @@ darwinDescribe("programs and folders outside the sandbox (P5)", () => {
     plugin(home, "usage", { outside: { read: ["~/.codex", "~/.claude", "~/.config", "~/Library"] } });
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome, log: () => undefined });
     try {
       const { card } = await opened.registry.installed("usage", "app");
@@ -218,7 +218,7 @@ darwinDescribe("programs and folders outside the sandbox (P5)", () => {
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     const lines: string[] = [];
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome, log: (l) => lines.push(l) });
     try {
       const cards: Record<string, string> = {};
@@ -231,7 +231,7 @@ darwinDescribe("programs and folders outside the sandbox (P5)", () => {
       };
       for (const id of ["reader", "plain"]) await approve(id);
       // Its OK card names each, with its warning; the plain one's names neither.
-      expect(cards.reader).toContain(`It runs this program of yours outside Clover's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network): ${probe}.`);
+      expect(cards.reader).toContain(`It runs this program of yours outside MOSS's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network): ${probe}.`);
       expect(cards.reader).toContain("It reads this folder of yours outside its sandbox: ~/Notes.");
       expect(cards.plain).not.toContain("outside");
       type Read = { ok: boolean; text?: string; err?: string };
@@ -298,13 +298,13 @@ test("an update or a bot's edit that changes what it names outside its sandbox w
 });
 
 test("with no user home named, a program runs in an empty stand-in folder, never the real home", async () => {
-  const cloverHome = temp("cf-out-clover-");
+  const mossHome = temp("cf-out-moss-");
   const bin = temp("cf-out-bin-");
   writeFileSync(join(bin, "where"), "#!/bin/sh\npwd -P\n");
   chmodSync(join(bin, "where"), 0o755);
-  const api = outsideApi({ cloverHome, path: () => bin });
+  const api = outsideApi({ mossHome, path: () => bin });
   const ctx = { pluginId: "p", record: { manifest: { host: { outside: { programs: ["where"] } } } } } as never;
   const r = (await api["outside.run"]!(ctx, ["where"])) as { stdout: string };
-  expect(r.stdout.trim()).toBe(realpathSync(join(tmpdir(), "clover-no-user-home")));
+  expect(r.stdout.trim()).toBe(realpathSync(join(tmpdir(), "moss-no-user-home")));
   expect(r.stdout.trim()).not.toBe(realpathSync(homedir()));
 });

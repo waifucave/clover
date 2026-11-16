@@ -30,7 +30,7 @@
 //   install, and no answer typed anywhere else, is the OK. Switching a found plugin on is a sensitive change (§5.5): it
 //   raises the same card and never loads the plugin directly. Switching on a plugin the user OK'd and only switched off
 //   applies at once. The switch is refused (`refused`) for a blocked, refused or invalid plugin, and switching the
-//   bundled `clover` plugin off is refused: it would turn off Settings itself.
+//   bundled `moss` plugin off is refused: it would turn off Settings itself.
 // * Only one enabled plugin may use a namespace (§6.7): a later one, by the synced list's order, stays off and says
 //   whose it is.
 // * The OK is bound to the tree the card showed (review S7): `approve` refuses with `changed` when the folder's tree
@@ -47,9 +47,9 @@
 //   is built by the registry into a cached ES module whose only bare imports are `CLIENT_BARE_IMPORTS`, rebuilt when
 //   the tree hash changes, and the view's `clientEntry` names that module; a build that fails leaves the plugin
 //   `invalid` with the bundler's message.
-// * Entry ids and titles a spot reserves (`island.tab`'s Needs you) are the bundled `clover` tree's alone (lane G's review, R12):
+// * Entry ids and titles a spot reserves (`island.tab`'s Needs you) are the bundled `moss` tree's alone (lane G's review, R12):
 //   another plugin's such entry is refused. An always-on-top surface is any plugin's with the `overlay` capability (F4).
-import type { PluginProvenance, PluginState, PluginSummary, ValidationIssue } from "@waifucave/clover-protocol";
+import type { PluginProvenance, PluginState, PluginSummary, ValidationIssue } from "@waifucave/moss-protocol";
 import type { Unsubscribe } from "./common";
 import type { CoreEntries, Manifest, PointDecl } from "./sdk-types";
 
@@ -141,7 +141,7 @@ export interface PluginRegistry {
   points(): RegisteredPoint[];
   /** The user's switch (§5.1). On a found plugin it raises the sealed OK card (`{ applied: false, card }`) and loads
    *  nothing; on a plugin OK'd and switched off it applies. Rejects `refused` for a blocked, refused or invalid plugin,
-   *  and for switching the bundled `clover` plugin off. With `part: "app"`, only the plugin's parts beside its bot
+   *  and for switching the bundled `moss` plugin off. With `part: "app"`, only the plugin's parts beside its bot
    *  (§5.5): the bot and the plugin's own switch stay; refused for a plugin with no such parts. */
   setEnabled(id: string, enabled: boolean, opts?: { part?: "app" }): Promise<SwitchResult>;
   /** A plugin installed into the folder (`plugin.install`), from anywhere: found, with its sealed OK card raised at once

@@ -1,12 +1,12 @@
 // RPC and events over links, for remote clients (plan §4 H, M2; spec §10 "What a remote client may do is core", "The
 // Swift Gateway in the Mac app, which connects to the daemon as `remote`, moves into the daemon in C4"). A paired phone
-// speaks the same Clover protocol it would on the daemon's socket, over a stream on its persistent link: requests
+// speaks the same MOSS protocol it would on the daemon's socket, over a stream on its persistent link: requests
 // and their answers, the daemon's own requests, and the events its role may see.
 //
-// * **The door:** a stream labelled `clover/rpc/1` from a paired, unrevoked phone (role `remote`) or browser (role
+// * **The door:** a stream labelled `moss/rpc/1` from a paired, unrevoked phone (role `remote`) or browser (role
 //   `web`). A computer is refused: computers speak `peer.*` and `sync.*`, never a client role.
 // * **The hello:** the client's first message is `protocol.hello`. The link already proved the device, so the core mints
-//   the role's token for that device itself (lane C's `CloverTokens`, `{role, device}`) and passes the hello to lane C's
+//   the role's token for that device itself (lane C's `MossTokens`, `{role, device}`) and passes the hello to lane C's
 //   server, which applies the role's allow list and `userOnly` to every request after it, as on the socket.
 // * **The wire:** each stream chunk is one JSON-RPC message, UTF-8. What lane C's server writes (answers, the daemon's
 //   requests, `event` and `core.event` notifications) goes back the same way.
@@ -14,23 +14,23 @@
 //   whose role may receive them and that subscribed to their area (`events.subscribe`), from `coreEvents` when the
 //   daemon passes it (lane C routes them otherwise).
 // * **Ending:** the stream's end, a revocation or the link's loss closes the connection (`closed`).
-import { allowedEvents, CLOVER_EVENTS, type CloverHelloResult, type CloverRole } from "@waifucave/clover-protocol";
+import { allowedEvents, MOSS_EVENTS, type MossHelloResult, type MossRole } from "@waifucave/moss-protocol";
 import type { Unsubscribe } from "../contracts/common";
 import type { LinkStream, LinkTransport } from "../contracts/link-transport";
 import type { FileDeviceRegistry } from "../devices/registry";
 
-export const REMOTE_RPC_LABEL = "clover/rpc/1";
+export const REMOTE_RPC_LABEL = "moss/rpc/1";
 
-/** The connection lane C's server keeps (`CloverConn`), as far as the door needs it. */
+/** The connection lane C's server keeps (`MossConn`), as far as the door needs it. */
 export interface RemoteConn {
   readonly connId: number;
-  readonly role: CloverRole;
+  readonly role: MossRole;
   readonly areas: Set<string>;
 }
 
-/** Lane C's `CloverServer` and `CloverTokens`, as far as the door needs them. */
+/** Lane C's `MossServer` and `MossTokens`, as far as the door needs them. */
 export interface RemoteRpcServer {
-  hello(socket: object, connId: number, params: unknown, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: RemoteConn; result: CloverHelloResult }>;
+  hello(socket: object, connId: number, params: unknown, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: RemoteConn; result: MossHelloResult }>;
   handle(conn: RemoteConn, method: string, params: unknown): Promise<unknown>;
   closed(conn: RemoteConn | null, socket: object): void;
   response?(conn: RemoteConn, msg: { id?: unknown }): void;
@@ -67,7 +67,7 @@ export function mountRemoteClients(o: RemoteClientsOptions): Unsubscribe {
   const next = o.nextConnId ?? (() => ++counter);
   const live = new Set<{ conn: RemoteConn; send(msg: unknown): void }>();
   const offEvents = o.coreEvents?.((event) => {
-    const spec = CLOVER_EVENTS.get(event.type);
+    const spec = MOSS_EVENTS.get(event.type);
     if (!spec || spec.scope !== "core") return;
     for (const c of live) {
       if (!c.conn.areas.has(spec.area) || !allowedEvents(c.conn.role).has(event.type)) continue;

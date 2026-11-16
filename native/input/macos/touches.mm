@@ -1,4 +1,4 @@
-// Clover's trackpad-touch add-on for macOS (native/input), for the four-finger tap that puts the Dispatch pill away (the old
+// MOSS's trackpad-touch add-on for macOS (native/input), for the four-finger tap that puts the Dispatch pill away (the old
 // app's gesture, ported from apple/Winter/Sources/Gesture/MultitouchTrigger.swift). It reads the trackpad's touches and
 // nothing else: no keyboard, no pointer, no events posted, no window, no file. `start(onFrame)` registers a contact-frame
 // callback on every multitouch device and calls `onFrame(timeSeconds, [id, x, y, id, x, y, …])` on the app's main thread
@@ -164,7 +164,7 @@ static napi_value Start(napi_env env, napi_callback_info info) {
   napi_value ok = nullptr;
   if (argc < 1 || gSink != nullptr) { napi_get_boolean(env, false, &ok); return ok; }
   napi_value name = nullptr;
-  napi_create_string_utf8(env, "clover-touches", 14, &name);
+  napi_create_string_utf8(env, "moss-touches", 14, &name);
   if (napi_create_threadsafe_function(env, argv[0], nullptr, name, 0, 1, nullptr, nullptr, nullptr, deliver, &gSink) != 0) {
     gSink = nullptr;
     napi_get_boolean(env, false, &ok);

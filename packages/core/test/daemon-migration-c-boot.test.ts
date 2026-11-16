@@ -33,7 +33,7 @@ afterEach(async () => {
   setRunHomeSupportForTests(undefined);
 });
 
-const parentDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-boot-")));
+const parentDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "moss-migc-boot-")));
 
 function seedOldLayout(home: string): void {
   mkdirSync(join(home, "projects", "-Users-x-app", "memory"), { recursive: true });
@@ -53,12 +53,12 @@ async function boot(home: string, parent: string): Promise<RunningDaemon> {
   });
 }
 
-/** What a home the current layout's daemon already ran holds (14e, before the current-layout marker): a Clover plugin
+/** What a home the current layout's daemon already ran holds (14e, before the current-layout marker): a MOSS plugin
  *  that ships an MCP config and a skill, and a botless agent's transcript in `agents/`, as the writer makes it. */
 function seedCurrentHome(home: string, session = "agent-1"): void {
   const plugin = join(home, "plugins", "reel");
   mkdirSync(join(plugin, "skills", "x"), { recursive: true });
-  writeFileSync(join(plugin, "clover.json"), JSON.stringify({ id: "reel", name: "Reel", version: "1.0.0" }));
+  writeFileSync(join(plugin, "moss.json"), JSON.stringify({ id: "reel", name: "Reel", version: "1.0.0" }));
   writeFileSync(join(plugin, ".mcp.json"), JSON.stringify({ mcpServers: {} }));
   writeFileSync(join(plugin, "skills", "x", "SKILL.md"), "---\nname: x\n---\n");
   writeTranscript(home, session);
@@ -89,16 +89,16 @@ async function migratedTheOldWay(home: string): Promise<void> {
   writeFileSync(migrationCManifestPath(home), JSON.stringify(m, null, 2));
 }
 
-function treeHolder(cloverHome: string): LocalHolder {
+function treeHolder(mossHome: string): LocalHolder {
   const allowAll = { check: () => ({ allowed: true as const }), fencedSet: () => [] };
-  return new LocalHolder({ clock: { now: () => Date.now() }, name: () => "Studio", home: dirname(cloverHome), os: hostOs(), cloverHome, botsRoot: join(cloverHome, "bots"), runsBot: () => true, fence: allowAll });
+  return new LocalHolder({ clock: { now: () => Date.now() }, name: () => "Studio", home: dirname(mossHome), os: hostOs(), mossHome, botsRoot: join(mossHome, "bots"), runsBot: () => true, fence: allowAll });
 }
 
 describe("Migration C at boot (run-home router)", () => {
   test("a home an earlier build migrated (agents a link to sdk/agents): the boot makes agents a real folder, its transcripts come back and a new one is written and read through the tree; the second boot does nothing", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     await migratedTheOldWay(home);
     // Before: the writer refuses the link, so a botless agent's transcript is lost.
     writeTranscript(home, "lost");
@@ -116,8 +116,8 @@ describe("Migration C at boot (run-home router)", () => {
     writeTranscript(home, "agent-3");
     expect(existsSync(join(home, "agents", "agent-3", "agent.json"))).toBe(true);
     const as = { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" } as const;
-    expect(await treeHolder(home).read("home/Studio/.clover/agents/agent-1/agent.json", { as })).toMatchObject({ encoding: "utf8" });
-    expect(await treeHolder(home).read("home/Studio/.clover/agents/agent-3/calls.ndjson", { as })).toMatchObject({ encoding: "utf8" });
+    expect(await treeHolder(home).read("home/Studio/.moss/agents/agent-1/agent.json", { as })).toMatchObject({ encoding: "utf8" });
+    expect(await treeHolder(home).read("home/Studio/.moss/agents/agent-3/calls.ndjson", { as })).toMatchObject({ encoding: "utf8" });
     await daemon.stop();
     daemon = undefined;
     const before = readFileSync(migrationCManifestPath(home), "utf8");
@@ -128,7 +128,7 @@ describe("Migration C at boot (run-home router)", () => {
 
   test("the agents-link repair resumes after a crash, and a rollback after it puts each definition back into the real folder beside the transcripts", async () => {
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     await migratedTheOldWay(home);
     // A crash after the intent and the unlink, before the folder was made.
     const m = JSON.parse(readFileSync(migrationCManifestPath(home), "utf8")) as MigrationCManifest;
@@ -147,7 +147,7 @@ describe("Migration C at boot (run-home router)", () => {
 
   test("a rollback caught between the repair's intent and its unlink finishes the repair first: each definition back in a real agents folder beside the transcripts", async () => {
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     await migratedTheOldWay(home);
     const m = JSON.parse(readFileSync(migrationCManifestPath(home), "utf8")) as MigrationCManifest;
     m.moved = [...m.moved.filter((mv) => mv.from !== "agents"), { from: "agents/reviewer.md", to: "sdk/agents/reviewer.md" }];
@@ -163,7 +163,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("the repair: an empty folder in sdk/agents stays where it is, unrecorded; the definitions' reader finds them in sdk/agents", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     await migratedTheOldWay(home);
     mkdirSync(join(home, "sdk", "agents", "empty"));
     expect(repairAgentsLink(home, () => undefined)).toEqual({ transcripts: ["agent-1", "agent-2"] });
@@ -178,7 +178,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("the repair refuses when sdk/agents is itself a link, or the manifest names something that isn't one folder", async () => {
     for (const bad of ["sdk-link", "manifest"] as const) {
       const parent = parentDir();
-      const home = join(parent, ".clover");
+      const home = join(parent, ".moss");
       await migratedTheOldWay(home);
       if (bad === "sdk-link") {
         renameSync(join(home, "sdk", "agents"), join(parent, "moved-agents"));
@@ -196,7 +196,7 @@ describe("Migration C at boot (run-home router)", () => {
   });
 
   for (const evidence of [true, false]) {
-    test(`an earlier build's home with a bot's half-written plugin drop (skills/x/SKILL.md, no clover.json) on a non-default home: ${evidence ? "a run-home build's record there → marked current, boots" : "no record → still refused"}`, async () => {
+    test(`an earlier build's home with a bot's half-written plugin drop (skills/x/SKILL.md, no moss.json) on a non-default home: ${evidence ? "a run-home build's record there → marked current, boots" : "no record → still refused"}`, async () => {
       setRunHomeSupportForTests(true);
       const parent = parentDir();
       const home = join(parent, "custom-home");
@@ -223,7 +223,7 @@ describe("Migration C at boot (run-home router)", () => {
 
   test("a home rolled back for an older build is not evidence of the current layout, record or not", () => {
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     mkdirSync(join(home, "migration", "c"), { recursive: true });
     writeFileSync(builtinSkillsRecordPath(home), "{}\n");
     writeFileSync(join(home, "migration", "c", "manifest.rolled-back.json"), "{}\n");
@@ -232,7 +232,7 @@ describe("Migration C at boot (run-home router)", () => {
 
   test("a link at agents that Migration C didn't make is left alone", async () => {
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     await migratedTheOldWay(home);
     unlinkSync(join(home, "agents"));
     mkdirSync(join(parent, "elsewhere"));
@@ -244,10 +244,10 @@ describe("Migration C at boot (run-home router)", () => {
   });
 
   for (const which of ["default", "non-default"] as const) {
-    test(`a home the current layout already ran (${which}): a clover.json plugin with .mcp.json and a skill, agent transcripts — boots twice, never migrated or refused, and is marked current`, async () => {
+    test(`a home the current layout already ran (${which}): a moss.json plugin with .mcp.json and a skill, agent transcripts — boots twice, never migrated or refused, and is marked current`, async () => {
       setRunHomeSupportForTests(true);
       const parent = parentDir();
-      const home = join(parent, which === "default" ? ".clover" : "custom-home");
+      const home = join(parent, which === "default" ? ".moss" : "custom-home");
       seedCurrentHome(home);
       expect(oldLayoutMarkers(home)).toEqual([]); // the predicates themselves, with no marker
       daemon = await boot(home, parent);
@@ -261,14 +261,14 @@ describe("Migration C at boot (run-home router)", () => {
       expect(lstatSync(join(home, "agents")).isSymbolicLink()).toBe(false);
       expect(existsSync(join(home, "agents", "agent-1", "agent.json"))).toBe(true);
       expect(existsSync(join(home, "agents", "agent-2", "calls.ndjson"))).toBe(true);
-      expect(existsSync(join(home, "plugins", "reel", "clover.json"))).toBe(true);
+      expect(existsSync(join(home, "plugins", "reel", "moss.json"))).toBe(true);
       expect(existsSync(join(home, "sdk", "plugins", "marketplaces"))).toBe(false);
     });
   }
 
   test("a marked home is never the old layout, whatever it holds later", () => {
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     mkdirSync(join(home, "migration", "c"), { recursive: true });
     writeFileSync(migrationCCurrentLayoutPath(home), "x\n");
     seedOldLayout(home);
@@ -278,7 +278,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("an old home with agent definitions AND transcripts migrates once: the definitions into sdk/agents, the transcripts stay in a real agents/ (no link), and a rollback puts the definitions back", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     seedOldLayout(home);
     seedCurrentHome(home);
     writeFileSync(join(home, "agents", "reviewer.md"), "---\nname: reviewer\n---\n");
@@ -289,7 +289,7 @@ describe("Migration C at boot (run-home router)", () => {
     expect(existsSync(join(home, "sdk", "agents", "reviewer.md"))).toBe(true);
     expect(existsSync(join(home, "agents", "reviewer.md"))).toBe(false);
     expect(existsSync(join(home, "agents", "agent-1", "agent.json"))).toBe(true);
-    expect(existsSync(join(home, "plugins", "reel", "clover.json"))).toBe(true);
+    expect(existsSync(join(home, "plugins", "reel", "moss.json"))).toBe(true);
     // a botless agent's transcript is still written after the migration
     writeTranscript(home, "agent-3");
     expect(existsSync(join(home, "agents", "agent-3", "agent.json"))).toBe(true);
@@ -302,7 +302,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("a rollback puts each agent definition back beside the transcripts", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     seedOldLayout(home);
     writeTranscript(home, "agent-1");
     writeFileSync(join(home, "agents", "reviewer.md"), "---\nname: reviewer\n---\n");
@@ -319,7 +319,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("an old home whose sdk/agents already has content but no clash migrates (the agents folder is moved entry by entry)", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     seedOldLayout(home);
     writeTranscript(home, "agent-1");
     mkdirSync(join(home, "sdk", "agents"), { recursive: true });
@@ -332,7 +332,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("the default home in the old layout migrates: phase 1 at boot, phase 2 at the late site, then boots", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     seedOldLayout(home);
     daemon = await boot(home, parent);
     expect(lstatSync(join(home, "projects")).isSymbolicLink()).toBe(true);
@@ -348,7 +348,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("a preflight refusal on the default home refuses BOOT, typed, and moves nothing", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     seedOldLayout(home);
     mkdirSync(join(home, "sdk", "projects"), { recursive: true });
     writeFileSync(join(home, "sdk", "projects", "stray.jsonl"), "x"); // sdk/ already has content
@@ -368,7 +368,7 @@ describe("Migration C at boot (run-home router)", () => {
     let caught: unknown;
     try { daemon = await boot(home, parent); } catch (err) { caught = err; }
     expect((caught as MigrationCRefused).code).toBe("sdk_home_migration_required");
-    expect((caught as Error).message).toContain("clover migrate --sdk-home --home");
+    expect((caught as Error).message).toContain("moss migrate --sdk-home --home");
     expect(lstatSync(join(home, "projects")).isSymbolicLink()).toBe(false);
   });
 
@@ -408,19 +408,19 @@ describe("Migration C at boot (run-home router)", () => {
     expect((readSdkSettings(home) as Record<string, any>).permissions.allow).toEqual(["Bash(ls)"]);
   });
 
-  test("the dev profile's default home (~/.clover-dev, by homedirOverride) migrates the same way", async () => {
+  test("the dev profile's default home (~/.moss-dev, by homedirOverride) migrates the same way", async () => {
     setRunHomeSupportForTests(true);
-    const prior = process.env.CLOVER_PROFILE;
-    process.env.CLOVER_PROFILE = "dev";
+    const prior = process.env.MOSS_PROFILE;
+    process.env.MOSS_PROFILE = "dev";
     try {
       const parent = parentDir();
-      const home = join(parent, ".clover-dev");
+      const home = join(parent, ".moss-dev");
       seedOldLayout(home);
       daemon = await boot(home, parent);
       expect(lstatSync(join(home, "projects")).isSymbolicLink()).toBe(true);
       expect(migrationCState(home)).toMatchObject({ kind: "parsed", manifest: { status: "complete" } });
     } finally {
-      if (prior === undefined) delete process.env.CLOVER_PROFILE; else process.env.CLOVER_PROFILE = prior;
+      if (prior === undefined) delete process.env.MOSS_PROFILE; else process.env.MOSS_PROFILE = prior;
     }
   });
 
@@ -428,7 +428,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("a home left phase1-complete whose phase 2 cannot finish refuses BOOT (no socket, no session), and says why", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     seedOldLayout(home);
     mkdirSync(join(home, "runtimes", "claude-config", "projects", "-Users-x-app"), { recursive: true });
     writeFileSync(join(home, "runtimes", "claude-config", "projects", "-Users-x-app", "s-official.jsonl"), '{"type":"user"}\n');
@@ -506,14 +506,14 @@ describe("Migration C at boot (run-home router)", () => {
 
   for (const spool of [true, false]) test(`round 4: a crashed official resume's staging root is reconciled BEFORE the re-key — its tail reaches the canonical transcript, no orphan (${spool ? "phase 2 at the late site" : "no spool: phase 2 must still wait for the sweep"})`, async () => {
     setRunHomeSupportForTests(true);
-    const scanBefore = process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT;
-    const scan = realpathSync(mkdtempSync(join(tmpdir(), "clover-r4-scan-")));
-    process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT = scan;
+    const scanBefore = process.env.MOSS_CLAUDE_RESUME_SCAN_ROOT;
+    const scan = realpathSync(mkdtempSync(join(tmpdir(), "moss-r4-scan-")));
+    process.env.MOSS_CLAUDE_RESUME_SCAN_ROOT = scan;
     try {
       const parent = parentDir();
-      const home = join(parent, ".clover");
+      const home = join(parent, ".moss");
       seedOldLayout(home);
-      const real = realpathSync(mkdtempSync(join(tmpdir(), "clover-r4-real-")));
+      const real = realpathSync(mkdtempSync(join(tmpdir(), "moss-r4-real-")));
       const link = join(parent, "proj-link");
       symlinkSync(real, link);
       const rawKey = transcriptProjectKey(link);
@@ -541,7 +541,7 @@ describe("Migration C at boot (run-home router)", () => {
         transcript_health, compatibility_level, conformance_corpus_version, version_provenance, created_at, updated_at, state, selection_json)
         VALUES (?, 'claude-agent', ?, 'anthropic', 'anthropic/claude-x', ?, ?, ?, ?, 'clean', 'agent-state', 'c1', 'recorded', 't', 't', 'idle', ?)`,
         [sid, B, join(home, "projects", rawKey), rawKey, rawKey, rawKey, JSON.stringify({ runtimeKind: "claude-agent", providerId: "anthropic", modelRef: "anthropic/claude-x", family: "claude", authFamily: "api-key", reason: "r", decidedAt: "t" })]);
-      rs.db.run("INSERT INTO directory_entries (address, entry_json, updated_at) VALUES (?, ?, 't')", [`clover://session/${sid}`, JSON.stringify({ objectKind: "session", configDir: staging })]);
+      rs.db.run("INSERT INTO directory_entries (address, entry_json, updated_at) VALUES (?, ?, 't')", [`moss://session/${sid}`, JSON.stringify({ objectKind: "session", configDir: staging })]);
       rs.close();
       daemon = await startDaemon({
         home, secrets: new FileSecretStore(join(parent, "secrets")), agentProvider: null,
@@ -553,14 +553,14 @@ describe("Migration C at boot (run-home router)", () => {
       expect(existsSync(join(home, "sdk", "projects", rawKey, `${B}.jsonl`))).toBe(false);   // no orphan
       expect(existsSync(staging)).toBe(false);
     } finally {
-      if (scanBefore === undefined) delete process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT; else process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT = scanBefore;
+      if (scanBefore === undefined) delete process.env.MOSS_CLAUDE_RESUME_SCAN_ROOT; else process.env.MOSS_CLAUDE_RESUME_SCAN_ROOT = scanBefore;
     }
   });
 
   test("router 0.0.11 (no run homes): the old layout is left exactly as it is", async () => {
     setRunHomeSupportForTests(false);
     const parent = parentDir();
-    const home = join(parent, ".clover");
+    const home = join(parent, ".moss");
     seedOldLayout(home);
     daemon = await boot(home, parent);
     expect(lstatSync(join(home, "projects")).isSymbolicLink()).toBe(false);

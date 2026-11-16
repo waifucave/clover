@@ -6,8 +6,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -29,8 +29,8 @@ export const runs = async (args, ctx) => tried(() => ctx.api.routines.runs(args.
 function plugin(home: string, id: string, o: { process?: "own"; capabilities: string[] }): void {
   const folder = join(home, "plugins", id);
   mkdirSync(join(folder, "host"), { recursive: true });
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({
-    manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({
+    manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
     host: { entry: "host/index.js", ...(o.process === undefined ? {} : { process: o.process }) }, capabilities: o.capabilities,
   }));
   writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
@@ -46,7 +46,7 @@ function approved(registry: { get(id: string): { state: string } | undefined; wa
 
 describe("routines.* in a real plugin host", () => {
   test("a bot plugin sees its own bot's routines and runs with no capability; routines.read sees every bot's; nothing else", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-routines-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-routines-")));
     temps.push(home);
     for (const bot of ["luna", "sol", "gone"]) {
       const path = routineFilePath(home, bot, "brief");
@@ -75,7 +75,7 @@ describe("routines.* in a real plugin host", () => {
     plugin(home, "nosy", { process: "own", capabilities: [] });
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({
       home, computer: "Studio", registry: opened.registry, secrets, fence: false,
       areas: { bots: () => ({ routines: engine, bots: { has: (id: string) => id === "luna" || id === "sol" } }) as unknown as BotSide, node: () => undefined, links: () => undefined },

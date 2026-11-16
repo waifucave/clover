@@ -22,14 +22,14 @@ export interface DevDaemonPlan {
   /** The dev binary, relative to the repo root, with `/`. */
   binary: string;
   /** The build, or undefined with `--no-build`: `compile:core` redirected to `tmp` (relative to `packages/cli`),
-   *  then, on macOS only, signed (the Keychain's partition lists need Clover's team; Linux and Windows have none). */
+   *  then, on macOS only, signed (the Keychain's partition lists need MOSS's team; Linux and Windows have none). */
   build: { command: string; tmp: string; sign: boolean } | undefined;
   /** `--transition`: the one-time Keychain hand-over, macOS only. */
   transition: boolean;
   /** What the binary runs: `daemon run` unless told otherwise. */
   args: string[];
   /** Set for the binary on top of the caller's environment (the runtime executables are resolved at run time). */
-  env: { CLOVER_HOME: string; CLOVER_PROFILE: "dev" };
+  env: { MOSS_HOME: string; MOSS_PROFILE: "dev" };
   dryRun: boolean;
 }
 
@@ -47,9 +47,9 @@ export function devDaemonPlan(input: { argv: readonly string[]; env: NodeJS.Proc
   if (flags.has("--transition") && passthrough.length > 0) throw new Error("--transition takes no other arguments");
   if (flags.has("--transition") && os !== "macos") throw new Error("--transition is macOS-only: it moves the dev Keychain items from bun to the signed binary, and on Linux and Windows the dev binary is not signed, so its items are already its own");
   const home = devDaemonHome(input.env, input.userHome);
-  const binary = os === "windows" ? "dist/dev/clover-core.exe" : "dist/dev/clover-core";
+  const binary = os === "windows" ? "dist/dev/moss-core.exe" : "dist/dev/moss-core";
   // The temp output sits beside the binary, so the rename into place is atomic; on Windows it keeps the .exe.
-  const tmp = os === "windows" ? `../../dist/dev/clover-core.${input.pid}.tmp.exe` : `../../dist/dev/clover-core.${input.pid}.tmp`;
+  const tmp = os === "windows" ? `../../dist/dev/moss-core.${input.pid}.tmp.exe` : `../../dist/dev/moss-core.${input.pid}.tmp`;
   return {
     os,
     home,
@@ -57,7 +57,7 @@ export function devDaemonPlan(input: { argv: readonly string[]; env: NodeJS.Proc
     build: flags.has("--no-build") ? undefined : { command: devCompileCommand(input.compileCoreScript, tmp), tmp, sign: os === "macos" },
     transition: flags.has("--transition"),
     args: passthrough.length > 0 || flags.has("--cli") ? passthrough : ["daemon", "run"],
-    env: { CLOVER_HOME: home, CLOVER_PROFILE: "dev" },
+    env: { MOSS_HOME: home, MOSS_PROFILE: "dev" },
     dryRun: flags.has("--dry-run"),
   };
 }
@@ -69,42 +69,42 @@ export function describeDevDaemonPlan(plan: DevDaemonPlan): string[] {
   else {
     lines.push(`  build    (in packages/cli) ${plan.build.command}`);
     lines.push(`  seal     scripts/seal-bun-doors.ts: Bun's BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT*, BUN_CONFIG_VERBOSE_FETCH and NODE_PATH doors closed (not on Windows), then the byte check`);
-    if (plan.os === "macos") lines.push(`  beside   ${dirname(plan.binary)}/clover-process-holder, signed under its own .dev identifier (scripts/bundled-binaries.ts); plugin Bun's dev copy goes in the dev home's bin/, where pluginBun() checks it`);
+    if (plan.os === "macos") lines.push(`  beside   ${dirname(plan.binary)}/moss-process-holder, signed under its own .dev identifier (scripts/bundled-binaries.ts); plugin Bun's dev copy goes in the dev home's bin/, where pluginBun() checks it`);
     lines.push(plan.build.sign
-      ? `  sign     codesign as ${DEV_DAEMON_IDENTIFIER} with Clover's team, then the __keychain-ffi-probe, then rename to ${plan.binary}`
+      ? `  sign     codesign as ${DEV_DAEMON_IDENTIFIER} with MOSS's team, then the __keychain-ffi-probe, then rename to ${plan.binary}`
       : `  sign     none (the dev binary is unsigned on ${plan.os}); rename to ${plan.binary}`);
   }
   if (plan.transition) lines.push(`  then     the one-time dev Keychain transition, and exit`);
   else lines.push(`  run      ${plan.binary} ${plan.args.join(" ")}`.trimEnd());
-  lines.push(`  env      CLOVER_HOME=${plan.env.CLOVER_HOME} CLOVER_PROFILE=${plan.env.CLOVER_PROFILE}, and CLOVER_RUNTIME_EXECUTABLE / CLOVER_ANT_EXECUTABLE when found`);
+  lines.push(`  env      MOSS_HOME=${plan.env.MOSS_HOME} MOSS_PROFILE=${plan.env.MOSS_PROFILE}, and MOSS_RUNTIME_EXECUTABLE / MOSS_ANT_EXECUTABLE when found`);
   return lines;
 }
 
-/** The dev daemon's code-signing identifier: stable, so its designated requirement (identifier + Clover's
+/** The dev daemon's code-signing identifier: stable, so its designated requirement (identifier + MOSS's
  *  team certificate) survives every rebuild and the Keychain keeps trusting it. Distinct from the dist
- *  binary's (`clover-core`), which is signed in the app bundle. */
-export const DEV_DAEMON_IDENTIFIER = "com.waifucave.clover.core.dev";
+ *  binary's (`moss-core`), which is signed in the app bundle. */
+export const DEV_DAEMON_IDENTIFIER = "com.waifucave.moss.core.dev";
 
 /** The dev link sidecar's identifier (macOS): its own `.dev` one, never the dev core's, which the dev Keychain items
- *  trust; the packaged one is `com.waifucave.clover.link` (release/lib.ts). */
-export const DEV_LINK_IDENTIFIER = "com.waifucave.clover.link.dev";
+ *  trust; the packaged one is `com.waifucave.moss.core.link` (release/lib.ts). */
+export const DEV_LINK_IDENTIFIER = "com.waifucave.moss.core.link.dev";
 
-/** Where the dev daemon's link sidecar comes from and goes: lane H's `clover-link`, built for this machine
+/** Where the dev daemon's link sidecar comes from and goes: lane H's `moss-link`, built for this machine
  *  (`cargo build --release --locked`, as the packages build it), copied beside the dev core, where the daemon looks
  *  for it (`bundledLinkBinary`). Without it the dev daemon runs local-only. */
 export function devLinkSidecarPlan(o: { repoRoot: string; binary: string; platform?: NodeJS.Platform; linkBuild: readonly string[]; linkOutput: string }): { build: string[]; cargoArgs: string[]; from: string; to: string; sign: boolean } {
   const platform = o.platform ?? process.platform;
   // The packages' command is a cargo one; the dev script runs it on the cargo it finds (PATH or ~/.cargo/bin).
   if (o.linkBuild[0] !== "cargo") throw new Error(`the link sidecar's build command isn't cargo's: ${o.linkBuild.join(" ")}`);
-  const file = platform === "win32" ? "clover-link.exe" : "clover-link";
+  const file = platform === "win32" ? "moss-link.exe" : "moss-link";
   const from = join(o.repoRoot, ...o.linkOutput.split("/")) + (platform === "win32" ? ".exe" : "");
   return { build: [...o.linkBuild], cargoArgs: o.linkBuild.slice(1), from, to: join(dirname(o.binary), file), sign: platform === "darwin" };
 }
 
 /**
- * The dev daemon's designated requirement, stated rather than derived: its identifier and Clover's team
+ * The dev daemon's designated requirement, stated rather than derived: its identifier and MOSS's team
  * (the certificate's OU), under Apple's anchor. The derived one would name the signing certificate's common
- * name, which changes with the person or the certificate type; this one holds for any Clover-team
+ * name, which changes with the person or the certificate type; this one holds for any MOSS-team
  * certificate, so the Keychain keeps trusting every rebuild whoever signs it.
  */
 export function devDaemonRequirement(teamId: string): string {
@@ -115,14 +115,14 @@ export function devDaemonRequirement(teamId: string): string {
  *  access list (which names the core alone) lets plugin code in. */
 export const DEV_PLUGIN_BUN_IDENTIFIER = PLUGIN_BUN_IDENTIFIER.dev;
 
-/** Where the dev daemon's plugin Bun goes (#234's check 6, L2): `<dev Clover home>/bin/clover-plugin-bun[.exe]`, inside
+/** Where the dev daemon's plugin Bun goes (#234's check 6, L2): `<dev MOSS home>/bin/moss-plugin-bun[.exe]`, inside
  *  the home no runner writes, where `pluginBun()` looks for it in the dev profile. */
 export function devPluginBunPath(devHome: string, platform: NodeJS.Platform = process.platform): string {
   return join(devHome, "bin", platform === "win32" ? `${PLUGIN_BUN_FILE}.exe` : PLUGIN_BUN_FILE);
 }
 
 /** The ad-hoc signature the dev plugin Bun gets on macOS: its own identifier, the hardened runtime with `restrict` (as
- *  a release signs it) and the release copy's entitlements (`scripts/clover-plugin-bun.entitlements`,
+ *  a release signs it) and the release copy's entitlements (`scripts/moss-plugin-bun.entitlements`,
  *  bundled-binaries.ts's `PLUGIN_BUN_ENTITLEMENTS`). */
 export function devPluginBunSignArgs(path: string, entitlements: string): string[] {
   return ["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", RESTRICTED_SIGN_OPTIONS, "--timestamp=none", "--entitlements", entitlements, path];
@@ -135,7 +135,7 @@ export function devPluginBunStale(o: { exists: boolean; stamp: string | undefine
 }
 
 /** `compile:core`'s own output, which the `verify:*` gates overwrite — the dev daemon is never built there. */
-const COMPILE_CORE_OUTFILE = "--outfile ../../dist/clover-core";
+const COMPILE_CORE_OUTFILE = "--outfile ../../dist/moss-core";
 
 /**
  * `packages/cli/package.json`'s `compile:core` script with only its output path changed, so the dev daemon is
@@ -158,10 +158,10 @@ export interface SigningIdentity {
  * cannot say), preferring "Apple Development" (a development build) over "Developer ID Application".
  * Returned by its SHA-1 hash, never a name, so two same-named certificates cannot make `codesign` guess.
  * `subjectOf(name)` answers a certificate's subject line (`security find-certificate -c <name> -p |
- * openssl x509 -noout -subject`); injected so this stays pure. `override` (`$CLOVER_DEV_SIGN_IDENTITY`) wins.
+ * openssl x509 -noout -subject`); injected so this stays pure. `override` (`$MOSS_DEV_SIGN_IDENTITY`) wins.
  */
 export function resolveDevSigningIdentity(input: { identitiesOutput: string; teamId: string; subjectOf: (name: string) => string | undefined; override?: string }): SigningIdentity {
-  if (input.override !== undefined && input.override.trim() !== "") return { hash: input.override.trim(), name: "(CLOVER_DEV_SIGN_IDENTITY)" };
+  if (input.override !== undefined && input.override.trim() !== "") return { hash: input.override.trim(), name: "(MOSS_DEV_SIGN_IDENTITY)" };
   const candidates: SigningIdentity[] = [];
   for (const line of input.identitiesOutput.split("\n")) {
     const m = /\b([0-9A-Fa-f]{40})\s+"([^"]+)"/.exec(line);
@@ -173,21 +173,21 @@ export function resolveDevSigningIdentity(input: { identitiesOutput: string; tea
   const rank = (name: string): number => (name.startsWith("Apple Development:") ? 0 : name.startsWith("Developer ID Application:") ? 1 : 2);
   candidates.sort((a, b) => rank(a.name) - rank(b.name));
   const chosen = candidates[0];
-  if (chosen === undefined) throw new Error(`no code-signing identity for team ${input.teamId} in this keychain (security find-identity -v -p codesigning) — create one in Xcode, or set CLOVER_DEV_SIGN_IDENTITY`);
+  if (chosen === undefined) throw new Error(`no code-signing identity for team ${input.teamId} in this keychain (security find-identity -v -p codesigning) — create one in Xcode, or set MOSS_DEV_SIGN_IDENTITY`);
   return chosen;
 }
 
 /**
- * The dev daemon's home: `$CLOVER_HOME`, else `~/.clover-dev`. Refused by real path (links followed): Clover's dist
- * home `~/.clover`, and every other install's home (`other-installs.ts` names them), or anything inside one.
+ * The dev daemon's home: `$MOSS_HOME`, else `~/.moss-dev`. Refused by real path (links followed): MOSS's dist
+ * home `~/.moss`, and every other install's home (`other-installs.ts` names them), or anything inside one.
  */
 export function devDaemonHome(env: NodeJS.ProcessEnv, home: string = homedir()): string {
-  const chosen = resolve(env.CLOVER_HOME ?? join(home, ".clover-dev"));
+  const chosen = resolve(env.MOSS_HOME ?? join(home, ".moss-dev"));
   const real = realPathOf(chosen);
-  const dist = realPathOf(join(home, ".clover"));
-  if (real === dist || real.startsWith(dist + sep)) throw new Error(`refusing to run a dev daemon on ${chosen} — that is Clover's dist home, not the dev profile's`);
+  const dist = realPathOf(join(home, ".moss"));
+  if (real === dist || real.startsWith(dist + sep)) throw new Error(`refusing to run a dev daemon on ${chosen} — that is MOSS's dist home, not the dev profile's`);
   const other = otherInstallHome(chosen, home);
-  if (other !== undefined) throw new Error(`refusing to run a dev daemon on ${chosen} — that is ${other.what}, which Clover never touches`);
+  if (other !== undefined) throw new Error(`refusing to run a dev daemon on ${chosen} — that is ${other.what}, which MOSS never touches`);
   return chosen;
 }
 

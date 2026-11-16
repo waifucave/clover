@@ -1,0 +1,18 @@
+{
+  "manifest": 1,
+  "id": "usage-antigravity",
+  "name": "Antigravity usage",
+  "description": "Your Antigravity plan windows for the Usage tab, from its own program: `agy -p /usage`. It runs that one program as you and reads nothing of Antigravity's sign-in.",
+  "engines": { "moss": "^1.0.0" },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun",
+    "process": "own",
+    "outside": { "programs": ["agy"] }
+  },
+  "contributes": {
+    "usage.sources": [
+      { "id": "antigravity", "name": "Antigravity", "handler": "source", "provides": ["plan"], "planEveryMs": 300000 }
+    ]
+  }
+}

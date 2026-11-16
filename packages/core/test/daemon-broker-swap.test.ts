@@ -1,12 +1,12 @@
 // The broker swap on a real daemon (the daemon integration lane, C-M3): the daemon's one approval broker raises its cards
-// as `core.event`s to the app (lane C's `approvalCoreEvents` through the Clover server), and the device links' sensitive
+// as `core.event`s to the app (lane C's `approvalCoreEvents` through the MOSS server), and the device links' sensitive
 // changes ask on that broker once the parts are up. Fakes only where their lanes use them: H's in-memory network and
 // D's plugin registry and drivers; the app is a socket that says the app's hello with this run's token.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/clover-protocol";
+import { MOSS_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/moss-protocol";
 import { catalogPointDecl } from "../../plugin-sdk/src/catalogs/index";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { Drivers } from "../src/bots/tests/fixtures";
@@ -22,7 +22,7 @@ afterEach(async () => {
   daemon = undefined;
 });
 
-/** A raw Clover connection: requests by id, and every notification the daemon sends. */
+/** A raw MOSS connection: requests by id, and every notification the daemon sends. */
 async function rpc(path: string) {
   const decoder = new LineDecoder();
   const pending = new Map<number, (m: Record<string, unknown>) => void>();
@@ -55,8 +55,8 @@ const eventsOf = (notes: Array<{ method: string; params: Record<string, unknown>
 /** A daemon with links (a packaged daemon has public time beside them; a source run is local-only), the app connected,
  *  and a card raised on its broker: the app hears card_requested, then card_resolved. */
 async function cardsReachTheApp(publicTime: { sample(): Promise<{ offsetMs: number; rttMs: number }> } | null): Promise<void> {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-int-swap-")));
-  const home = join(root, "clover-home");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-int-swap-")));
+  const home = join(root, "moss-home");
   const userHome = join(root, "home");
   mkdirSync(join(userHome, "project1"), { recursive: true });
   const net = new MemoryNetwork();
@@ -73,19 +73,19 @@ async function cardsReachTheApp(publicTime: { sample(): Promise<{ offsetMs: numb
       agents: false,
     },
   });
-  await daemon.cloverParts.ready;
+  await daemon.mossParts.ready;
   // With public time, the shared clock has taken its (fractional) offset before the card is raised.
-  const shared = daemon.cloverParts.links()!.clock as unknown as { status?: () => { synced?: boolean } };
+  const shared = daemon.mossParts.links()!.clock as unknown as { status?: () => { synced?: boolean } };
   for (let i = 0; publicTime !== null && i < 300 && shared.status?.().synced !== true; i++) await Bun.sleep(10);
   if (publicTime !== null) expect(shared.status?.().synced).toBe(true);
   const app = await rpc(daemon.socketPath);
-  const hello = await app.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] });
+  const hello = await app.request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] });
   expect(hello["error"]).toBeUndefined();
   expect((await app.request("events.subscribe", { areas: ["approvals"] }))["error"]).toBeUndefined();
 
   // A card on the daemon's broker: a terminal's paste of several lines (lane J's node, bound to the broker in #292).
-  const node = daemon.cloverParts.node()!;
-  const broker = daemon.cloverParts.broker()!;
+  const node = daemon.mossParts.node()!;
+  const broker = daemon.mossParts.broker()!;
   const { terminalId } = await node.terminals.open({ computer: "Studio", cwd: "home/Studio/project1", cols: 80, rows: 24 });
   const pasted = node.terminals.write(terminalId, "echo one\necho two\n", { paste: true }).catch((e: Error) => e);
   for (let i = 0; i < 300 && eventsOf(app.notes, "card_requested").length === 0; i++) await Bun.sleep(10);

@@ -5,9 +5,9 @@
 // Three fields the resolver needs are not in `UiPluginView` yet (asked of lane B): `source` (rule 6, "a plugin the
 // user installed, over a bundled one"), `enabledAt` (rule 7, "the most recently enabled") and `capabilities` (`needs`).
 // Until they are, `readUiPlugins` takes them from `plugin.list` and the plugin's detail when given, and otherwise
-// falls back to: bundled for the `clover` tree and `alpha`, the order the daemon listed them in, and no capabilities.
-import { UiPluginView as UiPluginViewSchema, type AvatarFormatView, type UiPluginView } from "@waifucave/clover-protocol";
-import { SPOTS } from "@waifucave/clover-plugin-sdk";
+// falls back to: bundled for the `moss` tree and `alpha`, the order the daemon listed them in, and no capabilities.
+import { UiPluginView as UiPluginViewSchema, type AvatarFormatView, type UiPluginView } from "@waifucave/moss-protocol";
+import { SPOTS } from "@waifucave/moss-plugin-sdk";
 
 /** Where a plugin came from, as the resolver's rule 6 sees it. */
 export type UiSource = "bundled" | "installed" | "dev";
@@ -43,7 +43,7 @@ export interface TabPatch {
 
 /** One `ui` entry of one plugin, as the runtime mounts it. */
 export interface UiEntry {
-  /** The plugin it belongs to: a child counts as its own plugin (`clover/composer`). */
+  /** The plugin it belongs to: a child counts as its own plugin (`moss/composer`). */
   pluginId: string;
   /** `<id defaults to the spot>`. */
   id: string;
@@ -71,7 +71,7 @@ export interface UiEntry {
 
 export interface UiPlugin {
   id: string;
-  /** Its top-level plugin: `clover` for `clover/composer`. */
+  /** Its top-level plugin: `moss` for `moss/composer`. */
   topId: string;
   /** The layer it renders in: its origin label (§5.5). */
   layer: string;
@@ -142,16 +142,16 @@ export function patchScope(plugin: Pick<UiPlugin, "isBot" | "id" | "bots">, t: T
 }
 
 /** The plugins whose UI runs in safe mode (§5.8): only the app's own. */
-export const SAFE_MODE_PLUGINS: readonly string[] = ["clover", "alpha"];
+export const SAFE_MODE_PLUGINS: readonly string[] = ["moss", "alpha"];
 
 export function topIdOf(pluginId: string): string {
   return pluginId.split("/")[0]!;
 }
 
-/** A plugin's layer origin label: everything under `clover` shares `clover`; any other child writes its `/` as `--`
+/** A plugin's layer origin label: everything under `moss` shares `moss`; any other child writes its `/` as `--`
  *  (§5.1, §5.5). */
 export function layerOf(pluginId: string): string {
-  return topIdOf(pluginId) === "clover" ? "clover" : pluginId.replace(/\//g, "--");
+  return topIdOf(pluginId) === "moss" ? "moss" : pluginId.replace(/\//g, "--");
 }
 
 export interface UiPluginExtras {
@@ -282,7 +282,7 @@ function fromView(v: Record<string, unknown>): UiPluginExtras {
 
 /** The daemon's `plugin.ui` list as the runtime uses it. `extras` fills what the view lacks (see the header). Each view
  *  is checked against lane B's schema, and its layer is the app's own reckoning (`layerOf`), never the daemon's word:
- *  a view whose label disagrees is refused, so no plugin can claim the trusted `clover` layer. */
+ *  a view whose label disagrees is refused, so no plugin can claim the trusted `moss` layer. */
 export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record<string, UiPluginExtras>> = {}, log: (line: string) => void = () => {}): UiPlugin[] {
   const checked: UiPluginView[] = [];
   for (const raw of views) {
@@ -351,7 +351,7 @@ export function withTabPatches(plugins: readonly UiPlugin[], log: (line: string)
     let layout = bot.entries.find((e) => e.spot === "bot.tab" && e.layout !== undefined);
     if (layout === undefined) {
       if (bot.entries.some((e) => e.spot === "bot.tab" && e.kind !== "style")) return bot;
-      const replaced = plugins.some((p) => p.id !== bot.id && p.topId !== "clover" && p.entries.some((e) => {
+      const replaced = plugins.some((p) => p.id !== bot.id && p.topId !== "moss" && p.entries.some((e) => {
         if (e.spot !== "bot.tab" || (e.kind !== "component" && e.kind !== "web")) return false;
         const scope = p.isBot ? [p.id] : p.bots !== "all" ? p.bots : e.key !== undefined ? [e.key] : e.when?.bot === undefined ? "all" : typeof e.when.bot === "string" ? [e.when.bot] : e.when.bot;
         return scope === "all" || scope.some((b) => b === bot.id || (b.endsWith("*") && bot.id.startsWith(b.slice(0, -1))));

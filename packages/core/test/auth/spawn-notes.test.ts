@@ -9,7 +9,7 @@
 // thread of the sandbox shim's process; the shim is noted by `runCommand`).
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { tmpdir } from "node:os";
-import { SessionProcesses } from "../../src/auth/clover-caller";
+import { SessionProcesses } from "../../src/auth/moss-caller";
 import { runCapture } from "../../src/agents/backend";
 import { launchContained } from "../../src/agents/process/launch";
 import { runCommand } from "../../src/fence/spawn";

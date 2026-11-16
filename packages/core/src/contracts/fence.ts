@@ -4,14 +4,14 @@
 // A core fence keeps bots' tools, and agents' commands through their own sandboxes, away from the files that hold
 // settings, levels, credentials and bots' user layers, on every OS. The installed plugins folder is fenced too (#197):
 // bots get plugins in through `plugin.install`'s OK card and develop them in development folders. The rest of the
-// Clover home is default-deny for every tool and runner, with per-caller ways in: a bot writes its own routines as
+// MOSS home is default-deny for every tool and runner, with per-caller ways in: a bot writes its own routines as
 // files (`routines/<bot>/`), and the app asks before running a routine at a raised level. The fence judges only what
 // models drive (a bot's tools, an agent's requests, a plugin's `files` calls); the user's own actions never ask it.
 //
 // One Fence per computer: each computer fences its own home, and the folder tree asks the fence of the computer that
 // holds the files (§9.1 "Approvals follow the files"). Paths are absolute and canonical on that computer; the real
 // implementation canonicalizes per OS (case, symlinks, junctions, 8.3 names, hard-link aliases), the fake is POSIX.
-import { isAnyPluginId, type Caller, type Os } from "@waifucave/clover-protocol";
+import { isAnyPluginId, type Caller, type Os } from "@waifucave/moss-protocol";
 import { isInside, type Unsubscribe } from "./common";
 
 /** The fenced set (§9.1), plus the files that hold secrets on Windows and Linux (§8.5). */
@@ -56,7 +56,7 @@ export const FENCED_KINDS = [
   "transcripts",
   /** The usage ledger (`<home>/usage/`, lane C). */
   "usage",
-  /** The Clover Browser's partitions, cookies and logins included (`<userData>/Partitions/`, lanes C and L): denied for
+  /** The MOSS Browser's partitions, cookies and logins included (`<userData>/Partitions/`, lanes C and L): denied for
    *  reading too. */
   "browser-profiles",
   /** The login item that starts the daemon at login (lane C): macOS's LaunchAgents plist and its parked copy, Linux's
@@ -104,15 +104,15 @@ export type FenceOp =
 export type FenceVerdict =
   | { allowed: true }
   /** `alias`: a Windows name the disk reads as another file, a stream (`settings.json::$DATA`) or an 8.3 short name
-   *  (`CLOVER~1`), refused wherever it is. */
-  | { allowed: false; reason: FencedKind | "clover-home" | "alias"; path: string };
+   *  (`MOSS~1`), refused wherever it is. */
+  | { allowed: false; reason: FencedKind | "moss-home" | "alias"; path: string };
 
 /** What a sandbox needs to hold the fence for one command runner: Bash (PowerShell on Windows), and each agent's own
  *  sandbox, whose format lane K writes from these arrays (Claude Code's deny rules, Codex's settings, §9.3). */
 export interface SandboxPolicy {
   /** Commands may write here: the home and temp folders (§9.1), less `denyWrite`. */
   allowWrite: string[];
-  /** Paths, and globs whose `*` segment is any one name. The whole Clover home is in both lists for every runner
+  /** Paths, and globs whose `*` segment is any one name. The whole MOSS home is in both lists for every runner
    *  (the home default-deny, the controller's ruling on #197's follow-up); the `own…` folders below are the only ways
    *  back in. */
   denyWrite: string[];
@@ -140,14 +140,14 @@ export interface SandboxPolicy {
    *     `memory-x` is not inside `memory`), a glob's `*` one whole name;
    *  2. unlinking or renaming an `own…` folder itself, or any folder that holds one, is denied;
    *  3. inside `ownMemory`, `ownOutputs`, `ownScratch`, `ownRoutines` and `ownPluginData`, reading and writing pass; `ownBot` and the `own…` folders
-   *     themselves, reading. An `own…` folder is carved out of the denies that hold it (the Clover home, `bots`,
+   *     themselves, reading. An `own…` folder is carved out of the denies that hold it (the MOSS home, `bots`,
    *     the memory pattern): those are read as "everything there but the runner's own folders", never as a deny an
    *     allow re-opens. A deny strictly inside an `own…` folder still denies there: a DENY always wins over an
    *     ALLOW, whatever the order or how specific each is (the controller's ruling), so no allow ever re-opens
    *     `sessions/`, the secrets or `run/`;
-   *  4. otherwise `denyWrite` and `denyRead` deny, the Clover home included.
+   *  4. otherwise `denyWrite` and `denyRead` deny, the MOSS home included.
    *  Linux's Landlock can't put an allow inside a deny, so lane C's Linux sandbox needs its own way to meet this order
-   *  (for example: leave the Clover home out of its grants and grant the `own…` folders alone). */
+   *  (for example: leave the MOSS home out of its grants and grant the `own…` folders alone). */
   ownMemory?: string;
   /** The workshop (`FenceContext.workshop`): `<home>/plugins/<id>` for each plugin the runner's bot built, for its main
    *  conversation and side threads alone: read and write strictly inside, as `ownScratch` (the folders themselves never
@@ -162,7 +162,7 @@ export interface SandboxPolicy {
    *  leaves them free). */
   holdLinks?: string[];
   /** A bot's own conversation and side threads (the owner's ruling of November 9, over the one of November 6): open
-   *  access to the Clover home, escalation blocked. They READ everything in `home` but what `denyRead` names inside
+   *  access to the MOSS home, escalation blocked. They READ everything in `home` but what `denyRead` names inside
    *  it (the secrets, `run/`, the credential and API-key copies: `BOT_READ_DENIED`), and WRITE strictly inside any
    *  bot's folder in `scratch` and any bot's `memory` in `bots` (the owner's amendment) as well as their own folders;
    *  the folders themselves are never written over. Carved out of the home deny like the `own…` folders: a deny
@@ -173,7 +173,7 @@ export interface SandboxPolicy {
   closedDoors: string[];
   /** Never reachable from a command, approved escapes included: the cloud metadata address first (§9.2). */
   blockedAddresses: string[];
-  /** Today's sandboxed Bash has no network (spike S8 read it from source); lane C settles Clover's (S8 item 1). */
+  /** Today's sandboxed Bash has no network (spike S8 read it from source); lane C settles MOSS's (S8 item 1). */
   network: "none" | "filtered";
 }
 
@@ -192,7 +192,7 @@ export interface FenceContext {
    *  installed from its scratch with `PluginInstall` on the user's OK card, whose install record says
    *  `provenance {by: "bot", bot}` for it. Its main conversation and side threads write strictly inside
    *  `<home>/plugins/<id>/` for each (never the folder itself, never a `.git` in it). Filled by the fence from the
-   *  registry's records (`CloverFence` `workshopOf`) for a bot caller alone; ignored for any other caller. */
+   *  registry's records (`MossFence` `workshopOf`) for a bot caller alone; ignored for any other caller. */
   workshop?: readonly string[];
 }
 
@@ -203,7 +203,7 @@ export function fenceContextFor(caller: Caller): FenceContext {
   if (caller.kind === "user" || caller.kind === "core") return { user: true };
   if (caller.kind === "plugin") return isAnyPluginId(caller.pluginId) ? { pluginId: caller.pluginId } : {};
   if (caller.kind !== "session") return {};
-  // A delegated agent (an ACP agent a bot started, the bridge's caller) gets no way into the Clover home, its own
+  // A delegated agent (an ACP agent a bot started, the bridge's caller) gets no way into the MOSS home, its own
   // outputs included (the controller's ruling on #234's review, F4): its work comes back through its report.
   if (caller.sessionKind === "agent") return {};
   const own = { sessionId: caller.sessionId };
@@ -216,9 +216,9 @@ export function fenceContextFor(caller: Caller): FenceContext {
 }
 
 /** The memory folder a context's bot owns, or undefined without a valid bot id. */
-export function ownMemoryOf(ctx: FenceContext | undefined, cloverHome: string): string | undefined {
+export function ownMemoryOf(ctx: FenceContext | undefined, mossHome: string): string | undefined {
   if (ctx?.memoryOf === undefined || !isAnyPluginId(ctx.memoryOf)) return undefined;
-  return `${cloverHome.replace(/[\\/]+$/, "")}/bots/${ctx.memoryOf.replace("/", "--")}/memory`;
+  return `${mossHome.replace(/[\\/]+$/, "")}/bots/${ctx.memoryOf.replace("/", "--")}/memory`;
 }
 
 type OwnFolder = "ownOutputs" | "ownScratch" | "ownBot" | "ownRoutines" | "ownPluginData" | "ownMemory" | "ownPlugins";
@@ -244,12 +244,12 @@ export function insideWorkshop(path: string, pluginsRoot: string, ctx: FenceCont
 }
 
 /** The `own…` folders of a runner's policy for a context (the home default-deny's allows). */
-export function ownFoldersOf(ctx: FenceContext | undefined, cloverHome: string): Pick<SandboxPolicy, OwnFolder> {
-  const home = cloverHome.replace(/[\\/]+$/, "");
+export function ownFoldersOf(ctx: FenceContext | undefined, mossHome: string): Pick<SandboxPolicy, OwnFolder> {
+  const home = mossHome.replace(/[\\/]+$/, "");
   const out: Pick<SandboxPolicy, OwnFolder> = {};
   if (folderName(ctx?.sessionId)) out.ownOutputs = `${home}/outputs/${ctx!.sessionId}`;
   if (ctx?.pluginId !== undefined && isAnyPluginId(ctx.pluginId)) out.ownPluginData = `${home}/plugin-data/${ctx.pluginId.replace("/", "--")}`;
-  const memory = ownMemoryOf(ctx, cloverHome);
+  const memory = ownMemoryOf(ctx, mossHome);
   if (memory !== undefined) {
     const bot = ctx!.memoryOf!.replace("/", "--");
     out.ownScratch = `${home}/scratch/${bot}`;
@@ -264,7 +264,7 @@ export function ownFoldersOf(ctx: FenceContext | undefined, cloverHome: string):
 
 /** Where a plugin's code could load a dependency it doesn't ship from (#234's check 4, H1): `node_modules` in each
  *  folder plugin code loads from and in every folder above it, to the root, by the real paths given. A bare import a
- *  plugin doesn't ship walks those folders, and a file without an extension there skips Clover's load guard (measured
+ *  plugin doesn't ship walks those folders, and a file without an extension there skips MOSS's load guard (measured
  *  on Bun 1.4.4), so no runner may write them: they are in every policy's `denyWrite` and `check` refuses writes there,
  *  on every OS. `folders` are the plugins folder, the development folders and any other folder plugin code loads
  *  from; `~/node_modules` is the one that matters today. */
@@ -357,7 +357,7 @@ export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unli
         && !innerDeny(`/${segs.slice(0, b.length + 2).join("/")}`)) return true;
     }
   }
-  // 4. The denies, the Clover home included.
+  // 4. The denies, the MOSS home included.
   if (op === "read") return !policy.denyRead.some((d) => under(realPath, d));
   if (policy.denyWrite.some((d) => under(realPath, d))) return false;
   return policy.allowWrite.some((a) => under(realPath, a));
@@ -375,12 +375,12 @@ function segmentsOf(path: string): string[] {
   return out;
 }
 
-/** Where a path sits against the `bot-memory` and `sessions-runtime` patterns under the Clover home. */
-export function patternItemAt(path: string, cloverHome: string, os?: Os):
+/** Where a path sits against the `bot-memory` and `sessions-runtime` patterns under the MOSS home. */
+export function patternItemAt(path: string, mossHome: string, os?: Os):
   | { kind: "bot-memory"; folder: string; root: string; inside: boolean }
   | { kind: "sessions-runtime"; name: string | undefined; root: string }
   | undefined {
-  const home = segmentsOf(cloverHome);
+  const home = segmentsOf(mossHome);
   const segs = segmentsOf(path);
   const same = (a: string, b: string) => foldName(a, os) === foldName(b, os);
   if (segs.length < home.length + 1 || !home.every((h, i) => same(h, segs[i]!))) return undefined;
@@ -406,12 +406,12 @@ export function isBotCaller(ctx: FenceContext | undefined): boolean {
   return ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf);
 }
 
-/** What a bot still can't read in the Clover home, beyond the read-denied kinds (`run/`, the secrets file and its
+/** What a bot still can't read in the MOSS home, beyond the read-denied kinds (`run/`, the secrets file and its
  *  key, the browser profiles): the credential index, the runtimes' store (the Console profile), the SDK's own config
  *  copy and the run folders' generated configs, which carry API keys and MCP servers' secrets, and the plugins' own
  *  data (a plugin's tokens may sit there; its own code alone reaches it). Relative to the home. */
 export const BOT_READ_DENIED: readonly (readonly string[])[] = [
-  ["credentials"], ["runtimes"], ["sdk", ".clover.json"], ["cache", "runs"], ["sdk", "cache", "runs"], ["plugin-data"],
+  ["credentials"], ["runtimes"], ["sdk", ".moss.json"], ["cache", "runs"], ["sdk", "cache", "runs"], ["plugin-data"],
   // The headless browser's profiles (cookies and saved sign-ins: #355's review).
   ["browser"],
   // The secrets file and its keys by name on every OS (macOS's are in the Keychain, but a file store may be there too).
@@ -450,10 +450,10 @@ export function callerReaches(item: Pick<FencedPath, "deny" | "bot">, ctx: Fence
 /** A name that can name one folder: no `.` or `..`, no separator (for a session id or a bot id as a folder). Exported for the OS sandboxes, which enforce the same rule when granting `own…` folders. */
 export const folderName = (s: string | undefined) => s !== undefined && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(s) && !/^\.+$/.test(s);
 
-/** Whether a tool or runner may reach a path inside the Clover home (the home default-deny): only the per-caller
+/** Whether a tool or runner may reach a path inside the MOSS home (the home default-deny): only the per-caller
  *  allows, by pattern. A path outside the home is the other rules' to judge. */
-export function homeAllows(path: string, writes: boolean, ctx: FenceContext | undefined, cloverHome: string, os?: Os): boolean {
-  const home = segmentsOf(cloverHome);
+export function homeAllows(path: string, writes: boolean, ctx: FenceContext | undefined, mossHome: string, os?: Os): boolean {
+  const home = segmentsOf(mossHome);
   const segs = segmentsOf(path);
   const same = (a: string, b: string) => foldName(a, os) === foldName(b, os);
   if (segs.length < home.length || !home.every((h, i) => same(h, segs[i]!))) return true; // not in the home
@@ -491,9 +491,9 @@ function ownsPluginData(folder: string, ctx: FenceContext | undefined, os?: Os):
 }
 
 /** Whether a path is strictly inside its caller's own `plugin-data/<id>/` (the `plugin-data` kind lets it in there). */
-function insideOwnPluginData(path: string, ctx: FenceContext | undefined, cloverHome: string | undefined, os?: Os): boolean {
-  if (cloverHome === undefined || ctx?.pluginId === undefined) return false;
-  const home = segmentsOf(cloverHome);
+function insideOwnPluginData(path: string, ctx: FenceContext | undefined, mossHome: string | undefined, os?: Os): boolean {
+  if (mossHome === undefined || ctx?.pluginId === undefined) return false;
+  const home = segmentsOf(mossHome);
   const segs = segmentsOf(path);
   if (segs.length < home.length + 3 || !home.every((h, i) => foldName(h, os) === foldName(segs[i]!, os))) return false;
   return foldName(segs[home.length]!, os) === foldName("plugin-data", os) && ownsPluginData(segs[home.length + 1]!, ctx, os);
@@ -512,7 +512,7 @@ export interface Fence {
   /** One file operation by a bot, an agent or a plugin. A write, delete or move is refused inside a fenced item and
    *  on any folder that holds one (renaming an ancestor moves the item); a read only inside a read-denied item. Names
    *  compare folded on every OS (`foldName`), whether or not the item exists yet, and a name that isn't ASCII where
-   *  Clover names things under its home is refused (`nonAsciiAlias`). */
+   *  MOSS names things under its home is refused (`nonAsciiAlias`). */
   /** `ctx` is the caller's reach for `caller` items (`forCaller` passes it); without it they are refused. A write,
    *  delete or move inside `pluginLoadDenies` (a `node_modules` above a folder plugin code loads from) is refused as
    *  `plugins` for every caller but the user. */
@@ -520,7 +520,7 @@ export interface Fence {
   /** The first fenced item any of `paths` reaches, for any access: an agent's request touching one is always a card,
    *  at every level (§9.3). */
   touches(paths: readonly string[]): FencedPath | null;
-  /** `Agent` refuses a root folder inside the Clover home or holding it, inside or holding any fenced item, or inside or
+  /** `Agent` refuses a root folder inside the MOSS home or holding it, inside or holding any fenced item, or inside or
    *  holding a development folder (§5.6, §9.3; #197's check 3): coding agents run unsandboxed, so a root there would let
    *  one edit an OK'd plugin, settings or a plugin's data. */
   checkAgentRoot(root: string): FenceVerdict;
@@ -549,8 +549,8 @@ export const CLOUD_METADATA_ADDRESSES: readonly string[] = ["169.254.169.254", "
 
 /** One name as a case-folding file system could compare it: Unicode NFC, then upper case and back to lower, then NFC
  *  again. The round trip folds what lower case alone leaves: the long s (`ſettings` opens `settings` on APFS and NTFS),
- *  the dotless i, the Kelvin sign, and ß to ss. On Windows the trailing dots and spaces Win32 drops go too (`.clover.`
- *  opens `.clover`). Folding more than a disk does only refuses more. The fence folds on every OS: Linux has
+ *  the dotless i, the Kelvin sign, and ß to ss. On Windows the trailing dots and spaces Win32 drops go too (`.moss.`
+ *  opens `.moss`). Folding more than a disk does only refuses more. The fence folds on every OS: Linux has
  *  case-folding ext4 folders and mounted APFS, NTFS and exFAT homes (#179's review, F1). One function for every lane
  *  that compares names against the fenced set: the fence, the tree's holders, the core's own checks. */
 export function foldName(name: string, os?: Os): string {
@@ -574,14 +574,14 @@ const namesOf = (path: string): string[] => path.replace(/\\/g, "/").split("/").
 const sameFolded = (a: readonly string[], b: readonly string[], os?: Os): boolean =>
   a.length === b.length && a.every((n, i) => foldName(n, os) === foldName(b[i]!, os));
 
-/** The second wall (#179's review, F1): a name that isn't ASCII, where Clover names things itself, is refused, whatever
- *  a file system might fold it to. That is the Clover home's own top level and any folder under it that holds a fenced
- *  item (`plugins-state/` for `plugins-state/oks`). Clover never names one of those in another script, so a name there
+/** The second wall (#179's review, F1): a name that isn't ASCII, where MOSS names things itself, is refused, whatever
+ *  a file system might fold it to. That is the MOSS home's own top level and any folder under it that holds a fenced
+ *  item (`plugins-state/` for `plugins-state/oks`). MOSS never names one of those in another script, so a name there
  *  could only be an attempt at an alias by a rule this fold doesn't know. A bot's memory note or a plugin's asset may
  *  still have any name: those folders hold no fenced item. */
-export function nonAsciiAlias(path: string, set: readonly FencedPath[], cloverHome: string, os?: Os): boolean {
+export function nonAsciiAlias(path: string, set: readonly FencedPath[], mossHome: string, os?: Os): boolean {
   const names = namesOf(path);
-  const home = namesOf(cloverHome);
+  const home = namesOf(mossHome);
   if (names.length <= home.length || !sameFolded(names.slice(0, home.length), home, os)) return false;
   const holders = set.map((item) => namesOf(item.path));
   for (let depth = home.length; depth < names.length; depth++) {
@@ -593,7 +593,7 @@ export function nonAsciiAlias(path: string, set: readonly FencedPath[], cloverHo
 }
 
 /** A Windows name that may be another file's (lane J's rules, shared here by #179's review, check 2): an alternate data
- *  stream (`a.json:x`, `a.json::$DATA`), which opens the file itself, or an 8.3 short name (`CLOVER~1`), which the disk
+ *  stream (`a.json:x`, `a.json::$DATA`), which opens the file itself, or an 8.3 short name (`MOSS~1`), which the disk
  *  answers to without listing it. A drive (`C:`) as the first name is neither.
  *
  *  This judges a path as written. The real Windows fence (lane C) first canonicalises the paths it is handed, as the OS
@@ -636,15 +636,15 @@ export function pythonSiteDirNames(listLib: () => string[]): string[] {
 export interface JudgeOptions {
   /** The computer's OS, for its folding rules (`foldName`). */
   os?: Os;
-  /** The Clover home, for the second wall (`nonAsciiAlias`). */
-  cloverHome?: string;
+  /** The MOSS home, for the second wall (`nonAsciiAlias`). */
+  mossHome?: string;
   /** Who the operation is for, for `caller` items (`forCaller`); none reaches none of them. */
   caller?: FenceContext;
 }
 
 /** The verdict for `op` against a fenced set; the fake and any implementation share it. Names compare folded
- *  (`foldName`) on every OS, and with `cloverHome` a name that isn't ASCII where Clover names things is refused as
- *  `clover-home` (`nonAsciiAlias`). */
+ *  (`foldName`) on every OS, and with `mossHome` a name that isn't ASCII where MOSS names things is refused as
+ *  `moss-home` (`nonAsciiAlias`). */
 export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions = {}): FenceVerdict {
   const writes = op.op === "write" || op.op === "delete" || op.op === "move";
   const paths = op.op === "move" ? [op.path, op.to] : [op.path];
@@ -652,7 +652,7 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
   if (o.os === "windows") for (const path of paths) if (windowsAlias(path) !== undefined) return { allowed: false, reason: "alias", path };
   for (const path of paths) {
     // The pattern items first (#197's check 4): by where the path is, whatever list of bots or sessions is known.
-    const pattern = o.cloverHome === undefined ? undefined : patternItemAt(path, o.cloverHome, o.os);
+    const pattern = o.mossHome === undefined ? undefined : patternItemAt(path, o.mossHome, o.os);
     if (pattern?.kind === "bot-memory") {
       // `bots/` and `bots/<x>` hold memory: never deleted, moved or written over. Inside `bots/<x>/memory`, only its bot.
       if (!pattern.inside && writes) return { allowed: false, reason: "bot-memory", path: pattern.root };
@@ -668,7 +668,7 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
     for (const item of set) {
       if (item.deny === "caller") continue; // judged by its pattern above
       // A plugin's own data folder is its own (the controller's ruling): inside it, `plugin-data` lets that plugin in.
-      if (item.kind === "plugin-data" && insideOwnPluginData(path, o.caller, o.cloverHome, o.os)) continue;
+      if (item.kind === "plugin-data" && insideOwnPluginData(path, o.caller, o.mossHome, o.os)) continue;
       // A bot's workshop (`FenceContext.workshop`): inside a plugin it built, `plugins` lets its own sessions write.
       if (item.kind === "plugins" && insideWorkshop(path, item.path, o.caller, o.os)) continue;
       if (writes) {
@@ -678,21 +678,21 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
       }
     }
   }
-  // Last, above what's fenced by kind: the Clover home is default-deny for every tool and runner (the controller's
+  // Last, above what's fenced by kind: the MOSS home is default-deny for every tool and runner (the controller's
   // ruling on #197's follow-up): only its own session's outputs, its bot's scratch and routines, its bot's own folder
   // (read) and memory (read and write), and a plugin's own data folder let it in.
-  if (o.cloverHome !== undefined && !o.caller?.user) {
+  if (o.mossHome !== undefined && !o.caller?.user) {
     for (const path of paths) {
-      if (!homeAllows(path, writes, o.caller, o.cloverHome, o.os)) {
-        const at = patternItemAt(path, o.cloverHome, o.os);
+      if (!homeAllows(path, writes, o.caller, o.mossHome, o.os)) {
+        const at = patternItemAt(path, o.mossHome, o.os);
         if (at !== undefined) return { allowed: false, reason: at.kind, path: at.root };
-        return { allowed: false, reason: "clover-home", path: o.cloverHome };
+        return { allowed: false, reason: "moss-home", path: o.mossHome };
       }
     }
   }
-  if (o.cloverHome !== undefined) {
+  if (o.mossHome !== undefined) {
     for (const path of paths) {
-      if (nonAsciiAlias(path, set, o.cloverHome, o.os)) return { allowed: false, reason: "clover-home", path: o.cloverHome };
+      if (nonAsciiAlias(path, set, o.mossHome, o.os)) return { allowed: false, reason: "moss-home", path: o.mossHome };
     }
   }
   return { allowed: true };
@@ -864,7 +864,7 @@ const CREDENTIAL_CLASS: Readonly<Record<string, SecretClass>> = {
  *  Left readable on purpose: `~/.gitconfig` and `~/.config/git/config` (git stops with a fatal error when its global
  *  config exists and can't be read, and "use git read commands" must work). A token written into a global gitconfig
  *  (a URL with a password, `[http] extraHeader`) is a known residual, and so are a project's own `.env` files (the
- *  coordinator's ruling: bots work in projects). The Clover home's sessions and other bots'
+ *  coordinator's ruling: bots work in projects). The MOSS home's sessions and other bots'
  *  memories stay readable to bots (the owner's open-access ruling of November 9); its keys are `BOT_READ_DENIED`. */
 export const SECRET_READ_PLACES: readonly SecretPlace[] = [
   ...CREDENTIAL_FILES.map((path): SecretPlace => ({ path, cls: CREDENTIAL_CLASS[path] ?? "a package registry's token" })),

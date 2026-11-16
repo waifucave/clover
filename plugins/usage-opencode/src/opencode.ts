@@ -1,4 +1,4 @@
-import { runOutside, shortStr, tokenCount, type Outside, type UsageRecord } from "@waifucave/clover-plugin-sdk/usage-source";
+import { runOutside, shortStr, tokenCount, type Outside, type UsageRecord } from "@waifucave/moss-plugin-sdk/usage-source";
 
 // The user's own OpenCode (spec §12 "Usage sources") — tokens and cost only (its plan limits live on its web console, so
 // there is no plan slot). OpenCode reports itself: `opencode stats --standalone --days N --models --cost --json`
@@ -44,7 +44,7 @@ const money = (v: unknown): number => (typeof v === "number" && Number.isFinite(
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** PURE: the answer's per-model totals and active dates; undefined when it is not a stats answer. OpenCode's `input`
- *  excludes cache reads and writes (they are their own counts) — Clover's normalized shape as it stands. */
+ *  excludes cache reads and writes (they are their own counts) — MOSS's normalized shape as it stands. */
 export function parseOpencodeStats(text: string): OpencodeStats | undefined {
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch {

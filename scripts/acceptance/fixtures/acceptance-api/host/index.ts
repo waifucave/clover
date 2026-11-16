@@ -110,7 +110,7 @@ async function probe(a: Api): Promise<string> {
     const listed = (await within<{ holds: { id: string }[] }>(a.computers.holds(name))).holds.some((h) => h.id === taken.hold!.id);
     await within(a.computers.setActionRunning(name, true));
     await within(a.computers.setActionRunning(name, false));
-    const windows = await within(a.computers.cloverWindows(name));
+    const windows = await within(a.computers.mossWindows(name));
     await within(a.computers.setUserWorking(name, true, { kind: "app", app: "AcceptanceApiNoSuchMark" }));
     await within(a.computers.releaseHold(taken.hold.id));
     const left = (await within<{ holds: { id: string }[] }>(a.computers.holds(name))).holds.some((h) => h.id === taken.hold!.id);

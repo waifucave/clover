@@ -16,7 +16,7 @@ function ticketKey(relayKey: string): Promise<CryptoKey> {
   if (derived?.relayKey !== relayKey) {
     derived = {
       relayKey,
-      key: crypto.subtle.importKey("raw", utf8(`clover-relay-v1 ticket|${relayKey}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]),
+      key: crypto.subtle.importKey("raw", utf8(`moss-relay-v1 ticket|${relayKey}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]),
     };
   }
   return derived.key;

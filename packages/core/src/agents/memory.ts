@@ -1,17 +1,17 @@
-// The Clover home is out of every agent's reach (the owner's decision on bots' memory, then #208's check 2): an ACP or
-// delegated agent, the delegating bot's own included, can't read or write anything in the Clover home. Not a list of
+// The MOSS home is out of every agent's reach (the owner's decision on bots' memory, then #208's check 2): an ACP or
+// delegated agent, the delegating bot's own included, can't read or write anything in the MOSS home. Not a list of
 // what holds a bot's memory or its conversations (memory, the runtimes' transcript stores, the sessions' event logs, the
 // diffs, the scratch and output folders, the runtime's own state), which kept missing some: the whole home, by default.
 // The manager already refuses a root inside it, and the daemon writes everything an agent leaves there (its transcript,
 // its record). Nothing is carved out: no agent's command or tool has been shown to need a path in the home.
 //
-// The home goes into every agent's sandbox as a read and write denial, and into clover-code's file tools as deny rules
+// The home goes into every agent's sandbox as a read and write denial, and into moss-code's file tools as deny rules
 // and a check of each path as it really is (a link from the root into the home is refused too); a permission request
 // that touches it is refused without a card, whatever the level. A bot's own memory (`ownMemory`) is a bot runner's,
 // never an agent's.
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import { isInsideFolded, secretReadPlaces, type SandboxPolicy } from "../contracts/fence";
 import { ContractError } from "../contracts/common";
 
@@ -22,21 +22,21 @@ export function agentPolicyOf(policy: SandboxPolicy): SandboxPolicy {
   if ((policy as SandboxPolicy & { ownMemory?: unknown }).ownMemory !== undefined) {
     throw new ContractError("refused", "an agent's sandbox may never carry a bot's own memory (ownMemory), so the agent wasn't started");
   }
-  // Nor a bot's open access to the Clover home (`botAccess`, the owner's ruling of November 9): bots' only.
+  // Nor a bot's open access to the MOSS home (`botAccess`, the owner's ruling of November 9): bots' only.
   if ((policy as SandboxPolicy & { botAccess?: unknown }).botAccess !== undefined) {
-    throw new ContractError("refused", "an agent's sandbox may never carry a bot's open access to the Clover home (botAccess), so the agent wasn't started");
+    throw new ContractError("refused", "an agent's sandbox may never carry a bot's open access to the MOSS home (botAccess), so the agent wasn't started");
   }
   return policy;
 }
 
-/** The policy with the whole Clover home denied to an agent, for reads and writes. */
+/** The policy with the whole MOSS home denied to an agent, for reads and writes. */
 export function withHomeDenied(policy: SandboxPolicy, home: string): SandboxPolicy {
   const add = (list: readonly string[]) => (list.includes(home) ? [...list] : [...list, home]);
   return { ...policy, denyRead: add(policy.denyRead), denyWrite: add(policy.denyWrite) };
 }
 
 /** The policy with the user's secret places (`SECRET_READ_PLACES`) denied to an agent, for reads and writes: its
- *  sandbox (each writer's denials, and Clover's coding agent's runtime sandbox) holds them out of its commands and file
+ *  sandbox (each writer's denials, and MOSS's coding agent's runtime sandbox) holds them out of its commands and file
  *  tools. Unchanged without a user's home. */
 export function withSecretsDenied(policy: SandboxPolicy, userHome: string | undefined, os: Os): SandboxPolicy {
   if (userHome === undefined) return policy;
@@ -62,7 +62,7 @@ export function realPathOf(path: string, cwd: string): string {
   }
 }
 
-/** How a path, as written or as it really is, reaches the Clover home: inside it, holding it (a search from there would
+/** How a path, as written or as it really is, reaches the MOSS home: inside it, holding it (a search from there would
  *  walk into it), or not at all. */
 export function homeReach(home: string, path: string, cwd: string, os?: Os): "inside" | "holds" | undefined {
   let realHome = home;

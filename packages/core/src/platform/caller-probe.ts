@@ -9,7 +9,7 @@
 //            connection's server end among the daemon's own handles and asks it
 //            (GetNamedPipeClientProcessId); NtQueryInformationProcess's parent; the token's
 //            IsTokenRestricted and TokenIsAppContainer
-// Mapping the result onto B's `Caller` (user, a session's command, the `clover` plugin host or
+// Mapping the result onto B's `Caller` (user, a session's command, the `moss` plugin host or
 // another) is the wiring step once B's roles are in.
 import { readFileSync, readlinkSync } from "node:fs";
 import { callerFloorVerdict, type FloorVerdict, type SandboxProbe } from "./sandbox-floor";

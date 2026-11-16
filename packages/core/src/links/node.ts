@@ -32,11 +32,11 @@ import { HandshakeDirectory } from "./handshake-directory";
 import { PairingService, type PairingRendezvous } from "./pairing";
 import { mountRenameRequests, shareDeviceUpdates } from "./relay";
 import { allowListsOf, followRegistry, SidecarWire, type SidecarWireOptions } from "./sidecar-wire";
-import { CloverLinkTransport, type LinkTransportOptions, type PeerDirectory } from "./transport";
+import { MossLinkTransport, type LinkTransportOptions, type PeerDirectory } from "./transport";
 import type { DialTarget, WireEndpoint } from "./wire";
 
 export interface DeviceLinksOptions {
-  /** The Clover home: the registry lives in `devices/` there. */
+  /** The MOSS home: the registry lives in `devices/` there. */
   home: string;
   /** The device registry as soon as it is open, before the wire, the directories or the account: what is this device's
    *  own (its app's answer key) is served from then on, never waiting on a link or the network. */
@@ -85,7 +85,7 @@ export interface DeviceLinks {
   boxKey: BoxKey;
   registry: FileDeviceRegistry;
   wire: WireEndpoint;
-  transport: CloverLinkTransport;
+  transport: MossLinkTransport;
   pairing: PairingService;
   directory?: HandshakeDirectory;
   accountDirectory?: AccountDirectory;
@@ -117,7 +117,7 @@ export interface DeviceLinks {
  *  computer's lease, whose fencing token goes on every act it asks of another computer and judges every act asked of
  *  it (J-M3's `lease` option, required since lane J's #237: `null` with no main computer here, "no group yet"). */
 export function computerNodeLinks(l: DeviceLinks): {
-  transport: CloverLinkTransport; devices: FileDeviceRegistry; self: { name: string; device: string }; memoryChanged?: (bot: string, rel: string) => void;
+  transport: MossLinkTransport; devices: FileDeviceRegistry; self: { name: string; device: string }; memoryChanged?: (bot: string, rel: string) => void;
   lease: Lease | null;
 } {
   const self = l.registry.self();
@@ -181,7 +181,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
   };
   await readNet().catch(() => undefined);
 
-  let transport!: CloverLinkTransport;
+  let transport!: MossLinkTransport;
   const directory = o.handshake
     ? new HandshakeDirectory({
       registry, store: o.store, client: o.handshake, clock: o.clock,
@@ -224,7 +224,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     selfMapping: () => mapping,
     peerMapping: (peer) => (accountDirectory?.covers(peer) ? accountDirectory.mapping(peer) : (directory?.mapping(peer) ?? "unknown")),
   });
-  transport = new CloverLinkTransport({
+  transport = new MossLinkTransport({
     self: key.id, wire, registry, directory: peers, clock: o.clock, planner,
     // The hello carries the newest lease epoch this device has seen; a newer one from a peer makes it read the record.
     epoch: () => main?.lease.highestEpoch() ?? 0,

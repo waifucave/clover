@@ -1,4 +1,4 @@
-// The fence's per-caller rules (B's contract `contracts/fence.ts`: the Clover home is default-deny for every tool
+// The fence's per-caller rules (B's contract `contracts/fence.ts`: the MOSS home is default-deny for every tool
 // runner; only the core and the user's own surfaces reach it. The only allows, each per caller and matched by
 // pattern):
 // 1. a session's own `outputs/<session>/**`, read and write;
@@ -7,16 +7,16 @@
 // 3. the owning bot's own `bots/<x>/**`, read only, and its `bots/<x>/memory/**`, read and write (`ownMemory`). It
 //    still can't delete or move the memory folder;
 // 4. a plugin's own `plugin-data/<id>/**`, read and write, for that plugin's own code alone.
-// Everything else under the Clover home is denied: projects, sdk, sessions, transcripts, diffs, cache, logs and other
+// Everything else under the MOSS home is denied: projects, sdk, sessions, transcripts, diffs, cache, logs and other
 // bots' folders. The verdict itself is B's shared `judge`; this module only names the caller's places for the OS
 // sandboxes, which can't nest an allow inside the home deny.
 import { lstatSync, mkdirSync } from "node:fs";
 import { join as hostJoin, posix } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import { ownFoldersOf, type FenceContext } from "../contracts/fence";
 import { botSegment } from "../sessions/ids";
 
-/** The caller's places under the Clover home, for one sandboxed command: the folders the sandbox denies outright
+/** The caller's places under the MOSS home, for one sandboxed command: the folders the sandbox denies outright
  *  (`bots`, `sessions-runtime`) and the caller's own ways back in (B's `ownFoldersOf`). */
 export interface CallerPlaces {
   /** `<home>/bots`: never listed by a runner; only the owning bot's folder reads. */
@@ -44,11 +44,11 @@ export interface CallerPlaces {
   readonly botAccess: { home: string; scratch: string; bots: string } | null;
 }
 
-export function callerPlaces(cloverHome: string, _os: Os, ctx?: FenceContext): CallerPlaces {
-  const own = ownFoldersOf(ctx, cloverHome);
+export function callerPlaces(mossHome: string, _os: Os, ctx?: FenceContext): CallerPlaces {
+  const own = ownFoldersOf(ctx, mossHome);
   return {
-    bots: posix.join(cloverHome, "bots"),
-    runtime: posix.join(cloverHome, "sessions-runtime"),
+    bots: posix.join(mossHome, "bots"),
+    runtime: posix.join(mossHome, "sessions-runtime"),
     ownBot: own.ownBot ?? null,
     ownMemory: own.ownMemory ?? null,
     ownOutputs: own.ownOutputs ?? null,
@@ -56,16 +56,16 @@ export function callerPlaces(cloverHome: string, _os: Os, ctx?: FenceContext): C
     ownRoutines: own.ownRoutines ?? null,
     ownPluginData: own.ownPluginData ?? null,
     ownPlugins: own.ownPlugins ?? [],
-    botAccess: own.ownMemory !== undefined ? { home: cloverHome, scratch: posix.join(cloverHome, "scratch"), bots: posix.join(cloverHome, "bots") } : null,
+    botAccess: own.ownMemory !== undefined ? { home: mossHome, scratch: posix.join(mossHome, "scratch"), bots: posix.join(mossHome, "bots") } : null,
   };
 }
 
 /** Makes a bot's folders when the bot is made (#205's S6), `bots/<bot>/memory` included, refusing any part of the way
  *  that is a link (a leftover or a planted one), so nothing written there later lands elsewhere. Lane D calls it at
  *  creation; writes there go through `openChecked`. */
-export function makeBotFolders(cloverHome: string, bot: string): { root: string; memory: string } {
-  const root = hostJoin(cloverHome, "bots", botSegment(bot));
-  let at = cloverHome;
+export function makeBotFolders(mossHome: string, bot: string): { root: string; memory: string } {
+  const root = hostJoin(mossHome, "bots", botSegment(bot));
+  let at = mossHome;
   for (const part of ["bots", botSegment(bot), "memory"]) {
     at = hostJoin(at, part);
     let st: ReturnType<typeof lstatSync> | undefined;

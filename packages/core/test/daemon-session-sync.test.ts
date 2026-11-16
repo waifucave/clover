@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionView } from "@waifucave/clover-protocol";
+import type { SessionView } from "@waifucave/moss-protocol";
 import type { ApprovalDecision, ApprovalRequest } from "../src/contracts/approval-broker";
 import type { SessionRecord } from "../src/contracts/session-host";
 import { COPIED_GRANT_EVENT, copiedRecord, sinkWithoutCopiedGrants } from "../src/daemon-session-sync";

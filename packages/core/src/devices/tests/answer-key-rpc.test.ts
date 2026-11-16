@@ -6,13 +6,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_ERR, ERR, type Caller } from "@waifucave/clover-protocol";
+import { MOSS_ERR, ERR, type Caller } from "@waifucave/moss-protocol";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { DeviceKey } from "../../identity/device-key";
 import { toBase64 } from "../../identity/bytes";
 import { generateEd25519 } from "../../identity/keys";
-import { CloverApprovalBroker } from "../../approvals/broker";
+import { MossApprovalBroker } from "../../approvals/broker";
 import { answerKeyRotateStatement, answerKeyStatement, FileDeviceRegistry } from "../registry";
 import { ANSWER_KEY_ROTATION_CARD_MS, devicesMethods, type DevicesMethodsDeps } from "../rpc";
 
@@ -29,8 +29,8 @@ async function waitFor(cond: () => boolean, ms = 5_000): Promise<void> {
 async function make() {
   const key = await DeviceKey.loadOrCreate(new MemorySecretStore());
   const clock = new FakeClock();
-  const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-ak-")), key, clock, self: { name: "Studio", os: "macos" } });
-  const broker = new CloverApprovalBroker({ clock });
+  const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "moss-h-ak-")), key, clock, self: { name: "Studio", os: "macos" } });
+  const broker = new MossApprovalBroker({ clock });
   let rotation: DevicesMethodsDeps["answerKeyRotation"] = () => ({ broker, computer: "Studio" });
   const m = devicesMethods({ registry, clock, answerKeyRotation: () => rotation?.() } as unknown as DevicesMethodsDeps);
   /** The app's call replacing `from` with `to`: `to`'s registration, and `handOver`'s signature over the rotation. */
@@ -191,8 +191,8 @@ describe("device.answerKey.set", () => {
 
   test("only the app's user sets it: not the terminal, not a session", async () => {
     const { registry, set, code } = await make();
-    expect(await code(set(generateEd25519(), { kind: "user", client: "cli" }))).toBe(CLOVER_ERR.NOT_THE_USER);
-    expect(await code(set(generateEd25519(), { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "alpha" }))).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect(await code(set(generateEd25519(), { kind: "user", client: "cli" }))).toBe(MOSS_ERR.NOT_THE_USER);
+    expect(await code(set(generateEd25519(), { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "alpha" }))).toBe(MOSS_ERR.NOT_THE_USER);
     expect(registry.self().answerKey).toBeUndefined();
   });
 

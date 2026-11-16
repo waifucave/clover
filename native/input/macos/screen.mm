@@ -1,4 +1,4 @@
-// Clover's screen add-on for macOS (native/input, lane E): what Electron's `screen` doesn't say about each display,
+// MOSS's screen add-on for macOS (native/input, lane E): what Electron's `screen` doesn't say about each display,
 // for the island's place beside the camera housing (spec §5.5, lane G's ask): the safe area's top inset and the two
 // auxiliary areas either side of the housing (NSScreen, macOS 12 and later). It reads them and nothing else: no input,
 // no events, no state.

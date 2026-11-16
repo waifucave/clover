@@ -1,4 +1,4 @@
-import { SessionEvent, type SessionActivity, type UserMessageFileRef, type UserMessageImageRef } from "@waifucave/clover-protocol";
+import { SessionEvent, type SessionActivity, type UserMessageFileRef, type UserMessageImageRef } from "@waifucave/moss-protocol";
 import type { SessionStore, EventInput } from "./store";
 
 /** Default bound on `SessionHub`'s last-emitted-activity memo (see `emitActivity`). Sessions are
@@ -171,7 +171,7 @@ export class SessionHub {
    *
    *  `attachedCount` above answers "can a `fanOut` reach anyone at all", which is the NECESSARY
    *  condition for delivering a `panel_command`. It is not the sufficient one: a session held only by
-   *  the phone's gateway or by a `clover` terminal has a positive count and no browser anywhere, so
+   *  the phone's gateway or by a `moss` terminal has a positive count and no browser anywhere, so
    *  every command for it would be dispatched and then time out on its full deadline. The browser
    *  tool needs the identities to tell those apart and refuse immediately instead (spec §3,
    *  "unavailability is honest and fast").
@@ -242,7 +242,7 @@ export class SessionHub {
    *
    *  Deliberately NOT conditioned on `attachedCount > 0`, even though `fanOut` to an empty set is a
    *  no-op today: that would bake "nobody is listening" into the memo, and the next global fan-out
-   *  path (T9's `clover agents` roster is the plan's own candidate, on the `session_titled`
+   *  path (T9's `moss agents` roster is the plan's own candidate, on the `session_titled`
    *  `onGlobalEvent` precedent) would then silently miss every change made while a session sat
    *  unattached. The contract here is about the STATE changing, not about who hears it. **T9 built
    *  exactly that path** (below), which is what turned the note into a live requirement.
@@ -252,7 +252,7 @@ export class SessionHub {
    *      connection, which is not a harness conn and so is unreachable from the global path. T4
    *      allowlisted this type for remote deliberately (`REMOTE_STREAM_EVENT_TYPES`); routing
    *      global-only would have cut the phone off it while the allowlist still claimed otherwise.
-   *    - `onGlobalEvent`: every authed HARNESS conn, attached or not. That is the half `clover
+   *    - `onGlobalEvent`: every authed HARNESS conn, attached or not. That is the half `moss
    *      agents` needs — its whole subject is sessions nobody has open, which by definition have no
    *      attachments for `fanOut` to reach.
    *  The overlap (a harness attached to THIS session) is removed at the global sink via

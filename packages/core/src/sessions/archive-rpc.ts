@@ -2,7 +2,7 @@
 // archive view but never become a bot's history; the app's archive view, §5.5). Owner: lane D.
 //
 // They are this daemon's own inherited session store (code, chat and dispatch sessions, as the previous app kept them
-// in this home): Clover never reads another install's home (other-installs.ts). Read-only here, and the user's alone.
+// in this home): MOSS never reads another install's home (other-installs.ts). Read-only here, and the user's alone.
 //
 // * `archive.list`: the top-level sessions, newest activity first (a dispatch session's children are its own), matched
 //   by `query` against the title, the first message and the project folder, paged by a `cursor` naming the last one
@@ -11,7 +11,7 @@
 // * `archive.history`: a session's events as the store keeps them, oldest first, a page at a time (`cursor`: the seq
 //   the next page starts after). The store finds the page by bisecting the log (`readRange`), so a page never parses
 //   the lines before it, and a page stops at a byte budget well under one request line (NDJSON_MAX_LINE_BYTES).
-import { NDJSON_MAX_LINE_BYTES, SESSIONS_METHODS, type ArchivedSessionView } from "@waifucave/clover-protocol";
+import { NDJSON_MAX_LINE_BYTES, SESSIONS_METHODS, type ArchivedSessionView } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import type { SessionRow, SessionStore } from "./store";

@@ -1,0 +1,29 @@
+{
+  "manifest": 1,
+  "id": "acceptance-hold",
+  "name": "Acceptance hold",
+  "description": "The hold clause's own fixture: one overlay surface with a big button. The run presses and holds it with a real press, releases, and has the page send the user's words afterwards (user.send after a hold), once; with no release the same send is refused.",
+  "version": "0.0.1",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "capabilities": ["overlay", "user.send"],
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "app.surface",
+        "id": "hold",
+        "component": "HoldApp",
+        "title": "Acceptance hold",
+        "window": {
+          "type": "overlay",
+          "alwaysOnTop": true,
+          "placement": { "macos": "bottom-center", "windows": "bottom-center", "linux": "bottom-center" }
+        }
+      }
+    ]
+  }
+}

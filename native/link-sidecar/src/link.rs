@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use crate::Args;
 
-pub const ALPN: &[u8] = b"clover/s1/bench/1";
+pub const ALPN: &[u8] = b"moss/s1/bench/1";
 
 /// What the labs vary on top of each stack's own defaults.
 #[derive(Clone, Debug)]
@@ -136,7 +136,7 @@ impl Cc {
 
 // ---------------------------------------------------------------------------------------------
 // quinn TLS: a self-signed Ed25519 certificate per device, pinned by its SHA-256 on the dialling
-// side. Clover's device keys are Ed25519 too (spec §8.1), so this is the shape a plain-QUIC link
+// side. MOSS's device keys are Ed25519 too (spec §8.1), so this is the shape a plain-QUIC link
 // would take. The spike pins only the server; production would add client certificates.
 // ---------------------------------------------------------------------------------------------
 
@@ -249,7 +249,7 @@ impl Endpoint {
         match kind {
             Kind::Quinn => {
                 let key = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
-                let cert = rcgen::CertificateParams::new(vec!["clover-device".to_string()])?.self_signed(&key)?;
+                let cert = rcgen::CertificateParams::new(vec!["moss-device".to_string()])?.self_signed(&key)?;
                 let cert_der = cert.der().clone();
                 let cert_sha256 = ring::digest::digest(&ring::digest::SHA256, cert_der.as_ref()).as_ref().to_vec();
                 let key_der = rustls::pki_types::PrivateKeyDer::Pkcs8(key.serialize_der().into());
@@ -384,7 +384,7 @@ impl Endpoint {
                 // quinn dials one address per connection, so race one attempt per candidate.
                 let mut set = tokio::task::JoinSet::new();
                 for addr in addrs {
-                    let connecting = ep.connect_with(client_config.clone(), *addr, "clover-device")?;
+                    let connecting = ep.connect_with(client_config.clone(), *addr, "moss-device")?;
                     set.spawn(async move { connecting.await });
                 }
                 let mut last_err = None;
@@ -429,7 +429,7 @@ impl Endpoint {
         }
     }
 
-    /// What clover-core would call when the OS reports a network change: quinn moves to a fresh
+    /// What moss-core would call when the OS reports a network change: quinn moves to a fresh
     /// socket (active migration), iroh re-checks its interfaces and paths.
     pub async fn network_changed(&self) -> Result<()> {
         match self {

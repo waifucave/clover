@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, type ProtocolSdkMessage } from "@waifucave/clover-agent-sdk";
-import { ApprovalRequestedEvent, ApprovalResolvedEvent, type ApprovalPolicy, type SessionEvent } from "@waifucave/clover-protocol";
+import { ApprovalRequestedEvent, ApprovalResolvedEvent, type ApprovalPolicy, type SessionEvent } from "@waifucave/moss-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";
 import { PermissionGate } from "../../src/agent/gate";

@@ -13,7 +13,7 @@ import type { HelperNotification } from "../../src/computer-use/protocol";
 import { FakeHelper, FakeHelperError } from "./fake-helper";
 import { darwinTest } from "../helpers/darwin-only";
 
-const home = () => mkdtempSync(join(tmpdir(), "clover-cu-client-"));
+const home = () => mkdtempSync(join(tmpdir(), "moss-cu-client-"));
 
 function client(fake: FakeHelper, extra: Partial<ConstructorParameters<typeof HelperClient>[0]> = {}) {
   const notes: HelperNotification[] = [];
@@ -62,12 +62,12 @@ describe("the helper client: the minimum helper version (the desktop-switch ruli
     expect(err).toBeInstanceOf(HelperOutdatedError);
     expect(err).toBeInstanceOf(HelperUnavailableError);
     expect((err as HelperOutdatedError).retryable).toBe(false);
-    expect((err as Error).message).toContain("1.6.0 is older than this Clover needs (1.7.0 or later) — update Clover");
+    expect((err as Error).message).toContain("1.6.0 is older than this MOSS needs (1.7.0 or later) — update MOSS");
     expect(fake.terminated).toHaveLength(1);
     expect(c.connected).toBe(false);
-    // Settings → Computer Use shows the same "update Clover" state.
+    // Settings → Computer Use shows the same "update MOSS" state.
     const st = await c.status();
-    expect(st.protocolMismatch?.message).toContain("update Clover");
+    expect(st.protocolMismatch?.message).toContain("update MOSS");
     expect(st.version).toBe("1.6.0");
   });
 
@@ -82,7 +82,7 @@ describe("the helper client: the minimum helper version (the desktop-switch ruli
 });
 
 describe("the helper client", () => {
-  test("identities: per-profile bundle id, a stated DR with Clover's team, the socket under run/", () => {
+  test("identities: per-profile bundle id, a stated DR with MOSS's team, the socket under run/", () => {
     expect(helperBundleIdFor("dist")).toBe("com.winter.computeruse");
     expect(helperBundleIdFor("dev")).toBe("com.winter.computeruse.dev");
     expect(helperRequirementFor("dev", "TEAM")).toBe('identifier "com.winter.computeruse.dev" and anchor apple generic and certificate leaf[subject.OU] = "TEAM"');
@@ -100,10 +100,10 @@ describe("the helper client", () => {
     expect(c.version).toBe("1.7.0");
   });
 
-  test("the helper app's path: dist inside Clover.app's Helpers, dev beside the dev daemon, an env override", () => {
-    expect(helperAppPathFor("dist", {}, "/Applications/Clover.app/Contents/MacOS/clover-core")).toBe("/Applications/Clover.app/Contents/Helpers/Winter Computer Use.app");
+  test("the helper app's path: dist inside MOSS Code.app's Helpers, dev beside the dev daemon, an env override", () => {
+    expect(helperAppPathFor("dist", {}, "/Applications/MOSS Code.app/Contents/MacOS/moss-core")).toBe("/Applications/MOSS Code.app/Contents/Helpers/Winter Computer Use.app");
     expect(helperAppPathFor("dev", {})).toMatch(/\/dist\/dev\/Winter Computer Use Dev\.app$/);
-    expect(helperAppPathFor("dist", { CLOVER_COMPUTER_USE_APP: "/tmp/X.app" })).toBe("/tmp/X.app");
+    expect(helperAppPathFor("dist", { MOSS_COMPUTER_USE_APP: "/tmp/X.app" })).toBe("/tmp/X.app");
     expect(helperAppNameFor("dev")).toBe("Winter Computer Use Dev.app");
   });
 
@@ -156,7 +156,7 @@ describe("the helper client", () => {
   });
 
   describe("protocol compatibility at hello (apple/ComputerUse/PROTOCOL.md)", () => {
-    test("a helper that refuses our number with an OLDER one of its own: too old — update Clover, typed, never retried", async () => {
+    test("a helper that refuses our number with an OLDER one of its own: too old — update MOSS, typed, never retried", async () => {
       const fake = new FakeHelper();
       fake.handlers.hello = () => { throw new FakeHelperError("protocol_mismatch", "this helper speaks protocol 0, not 1", { expected: 0, helperVersion: "0.9.0" }); };
       const { c } = client(fake);
@@ -166,16 +166,16 @@ describe("the helper client", () => {
       expect(err.code).toBe("helper_unavailable");
       expect(err.reason).toBe("protocol_mismatch");
       expect(err.retryable).toBe(false);
-      expect(err.message).toBe("Winter Computer Use is too old for this Clover (it speaks helper protocol 0, Clover speaks 1) — update Clover");
-      expect(err.mismatch).toEqual({ helperProtocol: 0, helperVersion: "0.9.0", cloverProtocol: 1, message: err.message });
+      expect(err.message).toBe("Winter Computer Use is too old for this MOSS (it speaks helper protocol 0, MOSS speaks 1) — update MOSS");
+      expect(err.mismatch).toEqual({ helperProtocol: 0, helperVersion: "0.9.0", mossProtocol: 1, message: err.message });
       expect(c.connected).toBe(false);
     });
 
-    test("a helper that is NEWER: too new — update Clover", async () => {
+    test("a helper that is NEWER: too new — update MOSS", async () => {
       const fake = new FakeHelper();
       fake.handlers.hello = () => { throw new FakeHelperError("protocol_mismatch", "this helper speaks protocol 2, not 1", { expected: 2, helperVersion: "2.0.0" }); };
       const err = (await client(fake).c.ensure().catch((e: unknown) => e)) as HelperProtocolMismatchError;
-      expect(err.message).toBe("Winter Computer Use is too new for this Clover (it speaks helper protocol 2, Clover speaks 1) — update Clover");
+      expect(err.message).toBe("Winter Computer Use is too new for this MOSS (it speaks helper protocol 2, MOSS speaks 1) — update MOSS");
     });
 
     test("a hello RESULT in another protocol is the same typed mismatch; one that names none says so", async () => {
@@ -185,7 +185,7 @@ describe("the helper client", () => {
       expect(err).toBeInstanceOf(HelperProtocolMismatchError);
       expect(err.mismatch.helperProtocol).toBe(2);
       expect(err.mismatch.helperVersion).toBe("1.7.0");
-      expect(helperProtocolMismatchMessage(undefined)).toBe("Winter Computer Use speaks a different helper protocol than this Clover (1) — update Clover");
+      expect(helperProtocolMismatchMessage(undefined)).toBe("Winter Computer Use speaks a different helper protocol than this MOSS (1) — update MOSS");
       const unreadable = new FakeHelper();
       unreadable.handlers.hello = () => { throw new FakeHelperError("protocol_mismatch", "the first request must be hello"); };
       const e2 = (await client(unreadable).c.ensure().catch((e: unknown) => e)) as HelperProtocolMismatchError;
@@ -199,14 +199,14 @@ describe("the helper client", () => {
       await c.ensure().catch(() => undefined);
       const st = await c.status();
       expect(st.running).toBe(true);
-      expect(st.protocolMismatch?.message).toContain("too new for this Clover");
-      expect(st.protocolMismatch?.cloverProtocol).toBe(HELPER_PROTOCOL);
+      expect(st.protocolMismatch?.message).toContain("too new for this MOSS");
+      expect(st.protocolMismatch?.mossProtocol).toBe(HELPER_PROTOCOL);
       fake.running = false; // the incompatible helper idle-quit: still incompatible, no longer running
       const quit = await c.status();
       expect(quit.running).toBe(false);
-      expect(quit.protocolMismatch?.message).toContain("too new for this Clover");
+      expect(quit.protocolMismatch?.message).toContain("too new for this MOSS");
       fake.running = true;
-      fake.helloProtocol = HELPER_PROTOCOL; // Clover was updated (or the helper)
+      fake.helloProtocol = HELPER_PROTOCOL; // MOSS was updated (or the helper)
       const ok = await c.status();
       expect(ok.protocolMismatch).toBeUndefined();
       expect(ok.running).toBe(true);

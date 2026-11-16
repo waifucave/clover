@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { LinkView } from "@waifucave/clover-protocol";
+import type { LinkView } from "@waifucave/moss-protocol";
 import type { Link, LinkPriority, LinkStream, LinkTransport } from "../../src/contracts/link-transport";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import type { AppTabCommand, StreamChunk, TabView } from "../../src/browser/contract";
@@ -351,7 +351,7 @@ describe("TabStreams", () => {
     const n6 = app.commands.length;
     streams.appGone();
     await flush();
-    expect(transport.streams[5]!.written.at(-1)).toEqual({ kind: "ended", reason: "failed", message: "the Clover app stopped" });
+    expect(transport.streams[5]!.written.at(-1)).toEqual({ kind: "ended", reason: "failed", message: "the MOSS app stopped" });
     expect(transport.streams[5]!.ended).toBe(true);
     expect(app.commands.length).toBe(n6);
     expect(ended.map((e) => e.reason)).toEqual(["stopped", "closed", "gone", "gone", "failed", "failed"]);

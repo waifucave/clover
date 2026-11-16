@@ -1,14 +1,14 @@
-// `clover-core __verify-feed`: the update feed's check in the daemon's binary, with a throwaway key.
+// `moss-core __verify-feed`: the update feed's check in the daemon's binary, with a throwaway key.
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
+import { generateFeedKey, signFeed } from "@waifucave/moss-update-feed";
 import { runVerifyFeed } from "../src/verify-feed";
 
 describe("__verify-feed", () => {
   test("passes a file signed by the feed key, and refuses a changed one, an unsigned one or any without a key", () => {
-    const dir = mkdtempSync(join(tmpdir(), "clover-verify-feed-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-verify-feed-"));
     const key = generateFeedKey();
     const file = join(dir, "latest-linux.yml");
     const bytes = new TextEncoder().encode("version: 1.2.3\nfiles: []\n");

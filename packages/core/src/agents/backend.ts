@@ -14,10 +14,10 @@
 //   session's setup folder. Every other agent, and one outside its tested versions, starts only after the user's OK
 //   (sandbox/oks.ts, asked by the manager).
 import { spawn } from "node:child_process";
-import { noteSpawned } from "../auth/clover-caller";
+import { noteSpawned } from "../auth/moss-caller";
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import type { Level, Os } from "@waifucave/clover-protocol";
+import type { Level, Os } from "@waifucave/moss-protocol";
 import type { AgentPauseGate } from "./manager";
 import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import type { AgentBackend, AgentDetection, AgentQuirks, AgentStartSpec, BridgeServer } from "../contracts/agent-backend";
@@ -49,7 +49,7 @@ export interface BackendCommand {
 export interface AcpBackendOptions {
   id: string;
   pluginId: string;
-  /** Clover's own bundled `clover/agent-<id>` entry (what the core grants by id applies). */
+  /** MOSS's own bundled `moss/agent-<id>` entry (what the core grants by id applies). */
   bundled?: boolean;
   /** Its `agentBackends` entry's name, for Settings. */
   name?: string;
@@ -196,7 +196,7 @@ export class AcpAgentBackend implements AgentBackend {
     const d = await this.detect();
     if (!d.installed || !d.path) throw new ContractError("not_installed", d.reason ?? `${this.id} isn't installed on this computer`);
     if (!d.identityOk) throw new ContractError("refused", d.reason ?? `${d.path} isn't ${this.id}'s program`);
-    // The program Clover admitted, not another one that took its place since (K-M2 review 5).
+    // The program MOSS admitted, not another one that took its place since (K-M2 review 5).
     if (spec.admitted) {
       const a = spec.admitted;
       if (d.path !== a.path || d.version !== a.version || (a.sha256 !== undefined && (await programHash(d.path)) !== a.sha256)) {

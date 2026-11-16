@@ -3,7 +3,7 @@
 // makes the handshake unreachable from one device, as a main that loses the internet would see. Without an account
 // (`account: false`) the lease is the account-less devices' group's record at the handshake (item 85), which acts the
 // same; `byUser` marks the user's own takeover.
-import type { LeaseView } from "@waifucave/clover-protocol";
+import type { LeaseView } from "@waifucave/moss-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import type { Lease, LeaseState } from "../lease";

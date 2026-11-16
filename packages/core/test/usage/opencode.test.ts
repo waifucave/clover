@@ -24,7 +24,7 @@ function service(over: Partial<LegacyServiceDeps> & { clock: { now: number } }) 
   const { clock, ...rest } = over;
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-    claudeExecutable: () => undefined, cloverCodexWindows: () => [],  ingestEveryMs: 0, now: () => clock.now,
+    claudeExecutable: () => undefined, mossCodexWindows: () => [],  ingestEveryMs: 0, now: () => clock.now,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...rest,
   });
@@ -295,7 +295,7 @@ describe("OpenCode in the usage DB", () => {
       const db = new UsageDb(join(home, "usage", "usage.db"));
       return { db, svc: new UsageService({
         db, pricer, tracking: () => ({ codex: false, claudeCode: false, antigravity: false, opencode: true }), codexExecutable: () => undefined,
-        claudeExecutable: () => undefined, cloverCodexWindows: () => [],  ingestEveryMs: 0,
+        claudeExecutable: () => undefined, mossCodexWindows: () => [],  ingestEveryMs: 0,
         now: () => clock.now, opencodeExecutable: () => fake.path, opencodeSpawnBudget: 5,
       }) };
     };

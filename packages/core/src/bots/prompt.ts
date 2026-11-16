@@ -22,7 +22,7 @@ export const MEMORY_INDEX_MAX_BYTES = 25_000;
  *  safely: a link at its name or on the way (one the bot planted toward another bot's memory included), a folder
  *  swapped for a link, a file with a second name (`readOwnFile`, the fence review). */
 export function readMemoryIndex(paths: BotPaths): { text: string; cut: boolean } | undefined {
-  // The Clover home, which no bot writes: `<home>/bots/<bot>` is `paths.root`.
+  // The MOSS home, which no bot writes: `<home>/bots/<bot>` is `paths.root`.
   const home = dirname(dirname(paths.root));
   const read = readOwnFile(home, join(paths.memory, MEMORY_INDEX), { maxBytes: MEMORY_INDEX_MAX_BYTES + 4 });
   if (!read.ok) return undefined;

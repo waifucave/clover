@@ -1,8 +1,8 @@
-import { shortStr, tokenCount, type UsageRecord } from "@waifucave/clover-plugin-sdk/usage-source";
+import { shortStr, tokenCount, type UsageRecord } from "@waifucave/moss-plugin-sdk/usage-source";
 
 // Claude Code's own long-term usage cache (`docs/claude/usage.md`): `<claude config dir>/stats-cache.json`, the file
 // behind its `/stats` command. Claude Code deletes old transcripts (30 days by default); this cache keeps per-day,
-// per-model totals after they are gone. Clover backfills ONLY what its transcript rows lack, on the days whose transcripts
+// per-model totals after they are gone. MOSS backfills ONLY what its transcript rows lack, on the days whose transcripts
 // may be gone (`StatsCoverage`).
 //
 // What the numbers mean (read from Claude Code 2.1.293's bundled code; cache `version` 5, `dailyModelTokensVersion` 5):
@@ -12,10 +12,10 @@ import { shortStr, tokenCount, type UsageRecord } from "@waifucave/clover-plugin
 //    kinds with the model's all-time ratios. A v5 rebuild recomputes the days from the transcripts still on disk, so
 //    the file's coverage starts at its last rebuild, not at `firstSessionDate`.
 //  - `modelUsage[model]` = all-time sums of the four kinds; `costUSD` is not accrued by that code (it stays 0). Every
-//    synthetic row is priced by Clover's catalog (one basis with the transcript rows); a positive `costUSD` is used only
+//    synthetic row is priced by MOSS's catalog (one basis with the transcript rows); a positive `costUSD` is used only
 //    for a model the catalog cannot price, shared out by tokens.
 //  - Claude Code counts a streamed message once per transcript line (no message-id dedupe), so its totals run HIGHER
-//    than Clover's deduped transcript rows. Each import calibrates against the days both cover (see `calibration`).
+//    than MOSS's deduped transcript rows. Each import calibrates against the days both cover (see `calibration`).
 //
 // PRIVACY: the file also holds session counts, hour histograms and `longestSession` (a session id). Only
 // `dailyModelTokens`, `modelUsage`, `lastComputedDate` and `dailyModelTokensVersion` are read; everything else is
@@ -61,7 +61,7 @@ const modelName = (v: string): string | undefined => {
 const money = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** PURE: the three keys Clover uses, validated; undefined when the text is not a stats cache (corrupt, wrong shape). */
+/** PURE: the three keys MOSS uses, validated; undefined when the text is not a stats cache (corrupt, wrong shape). */
 export function parseClaudeStats(text: string): ClaudeStats | undefined {
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch { return undefined; }
@@ -113,24 +113,24 @@ export function splitByRatios(total: number, m: ClaudeStatsModel | undefined): {
 
 export interface RealDayTotal { model: string; day: string; all: number; io: number }
 
-/** Claude Code's default transcript retention (its `cleanupPeriodDays`). Clover never reads the user's Claude Code
+/** Claude Code's default transcript retention (its `cleanupPeriodDays`). MOSS never reads the user's Claude Code
  *  settings (that file can hold secrets): a shorter setting leaves some emptied days counted as complete, a longer one
  *  has a few complete days estimated (their shortfall only, never the whole day). */
 export const CLAUDE_TRANSCRIPT_RETENTION_DAYS = 30;
-/** With no day both cover, Claude Code's per-line figures are scaled by this: Clover's deduped totals ÷ Claude Code's over
+/** With no day both cover, Claude Code's per-line figures are scaled by this: MOSS's deduped totals ÷ Claude Code's over
  *  26 complete days measured in October 2026 (single days 0.39–0.70). */
 export const CLAUDE_STATS_FALLBACK_CALIBRATION = 0.53;
 /** An estimate is re-calibrated while fewer shared days than this back it; from then on it is kept as made. */
 export const CLAUDE_STATS_SETTLED_DAYS = 7;
 
-/** Which days Clover's transcript rows may NOT hold in full. */
+/** Which days MOSS's transcript rows may NOT hold in full. */
 export interface StatsCoverage {
   /** The earliest transcript-derived day; undefined = no transcripts at all (every day is history). */
   firstTranscriptDay?: string;
-  /** The last day Claude Code's cleanup may have emptied before Clover FIRST read the transcripts: the UTC day of (the
+  /** The last day Claude Code's cleanup may have emptied before MOSS FIRST read the transcripts: the UTC day of (the
    *  first pass − the retention). Every day after it was read while all of its transcripts were still on disk. */
   partialThrough?: string;
-  /** Spans (inclusive) whose transcripts may have gone while Clover was not reading them: no complete pass for longer
+  /** Spans (inclusive) whose transcripts may have gone while MOSS was not reading them: no complete pass for longer
    *  than the retention (the daemon not running, Claude Code tracking switched off). */
   gaps: ReadonlyArray<readonly [string, string]>;
 }
@@ -146,7 +146,7 @@ export function isPartialDay(c: StatsCoverage, day: string): boolean {
 const comparable = (c: StatsCoverage, day: string): boolean => !isPartialDay(c, day) && day !== c.firstTranscriptDay;
 
 /**
- * PURE: the calibration — Clover's deduped transcript totals ÷ Claude Code's own totals over the SAME (model, day) pairs
+ * PURE: the calibration — MOSS's deduped transcript totals ÷ Claude Code's own totals over the SAME (model, day) pairs
  * both have tokens for, on COMPLETE days only (a day whose transcripts are partly gone would drag it down), within the
  * last `CLAUDE_STATS_OVERLAP_DAYS`, before today, computed by Claude Code. Per model once the model's own pairs span
  * `CLAUDE_STATS_SETTLED_DAYS` (a day or two of one model is noise: 0.30 measured against 0.43 messages per transcript
@@ -185,7 +185,7 @@ export function calibration(stats: ClaudeStats, real: readonly RealDayTotal[], c
   return { byModel, global: Math.min(1, T / S), days: days.size };
 }
 
-/** Clover's estimate of one model's partial day: what the day held in all, deduped — kept in the usage DB, so it outlives
+/** MOSS's estimate of one model's partial day: what the day held in all, deduped — kept in the usage DB, so it outlives
  *  Claude Code's cache listing the day. */
 export interface StatsEstimate {
   /** Claude Code's figure for the day in all four kinds — the largest it has listed (a rebuild of its cache from the
@@ -210,7 +210,7 @@ export interface StatsPlanInput {
   coverage: StatsCoverage;
   /** Today, UTC. */
   today: string;
-  /** Clover's transcript totals per model per day since `overlapFromDay` (the calibration's side). */
+  /** MOSS's transcript totals per model per day since `overlapFromDay` (the calibration's side). */
   real: readonly RealDayTotal[];
   overlapFromDay: string;
 }
@@ -261,7 +261,7 @@ export function refreshEstimates(prev: ReadonlyMap<string, StatsEstimate>, input
 
 /**
  * PURE: the synthetic rows — for each estimate on a still-partial day, what the transcripts left of it lack: the
- * calibrated figure minus Clover's own transcript tokens for that model and day (`real`, keyed like the estimates), when
+ * calibrated figure minus MOSS's own transcript tokens for that model and day (`real`, keyed like the estimates), when
  * positive. So a day is never counted twice, and a complete day is never touched. The shortfall is split by the model's
  * all-time ratios; the cost is the catalog's list price of the split (the same basis as every transcript row), else —
  * for a model the catalog cannot price — Claude Code's own cost per token if it kept one, else unknown.

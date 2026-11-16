@@ -13,8 +13,8 @@ import { join } from "node:path";
 import type { IndexFetch } from "../../registry/indexes/client";
 import { tgz } from "../../registry/indexes/tests/tar-fixture";
 import { validatePluginFolder } from "../../registry/validate";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import { PLUGINS_METHODS, type Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import { PLUGINS_METHODS, type Caller } from "@waifucave/moss-protocol";
 import { measureBundledTree } from "../../bundled-plugins-dir";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -29,27 +29,27 @@ import { pluginUi } from "../ui";
 setDefaultTimeout(60_000);
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
-const ENGINES = { clover: `^${PLUGIN_API_VERSION}` };
+const ENGINES = { moss: `^${PLUGIN_API_VERSION}` };
 const APP: Caller = { kind: "user", client: "app" };
 const INDEX_URL = "https://plugins.example.test/index.json";
 
 function plugin(folder: string, manifest: Record<string, unknown>): void {
   mkdirSync(folder, { recursive: true });
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({ manifest: 1, version: "1.0.0", engines: ENGINES, ...manifest }));
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({ manifest: 1, version: "1.0.0", engines: ENGINES, ...manifest }));
 }
 
 async function world() {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-layer-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-b-layer-")));
   temps.push(home);
-  // Clover's own tree holds `plugins.install`; this third party didn't ask for it, so it doesn't hold it.
+  // MOSS's own tree holds `plugins.install`; this third party didn't ask for it, so it doesn't hold it.
   const root = join(home, "resources", "plugins");
-  plugin(join(root, "clover"), { id: "clover", name: "Clover", capabilities: ["plugins.install"] });
+  plugin(join(root, "moss"), { id: "moss", name: "MOSS", capabilities: ["plugins.install"] });
   const staged = stageBundledPlugins({ root, manifest: measureBundledTree(root), out: stagedBundledDir(home) });
   plugin(join(home, "plugins", "deck"), { id: "deck", name: "Deck" });
   // What a component asks to install: Tarot, listed in an index the user added (served by a fake fetch, as a download).
   plugin(join(home, "downloads", "tarot"), { id: "tarot", name: "Tarot" });
   const tarotManifest = JSON.stringify({ manifest: 1, version: "1.0.0", engines: ENGINES, id: "tarot", name: "Tarot" });
-  const files = new Map<string, Uint8Array>([["https://plugins.example.test/tarot-1.0.0.tgz", tgz([{ path: "clover.json", data: tarotManifest }])]]);
+  const files = new Map<string, Uint8Array>([["https://plugins.example.test/tarot-1.0.0.tgz", tgz([{ path: "moss.json", data: tarotManifest }])]]);
   const hash = (await validatePluginFolder(join(home, "downloads", "tarot"))).treeHash!;
   files.set(INDEX_URL, new TextEncoder().encode(JSON.stringify({ index: 1, name: "Index", plugins: [{ id: "tarot", versions: [{ version: "1.0.0", hash, url: "https://plugins.example.test/tarot-1.0.0.tgz" }] }] })));
   const fetch: IndexFetch = async (url, max) => {
@@ -60,7 +60,7 @@ async function world() {
   };
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const secrets = new MemorySecretStore();
-  const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50, indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch } });
+  const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50, indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch } });
   opened.indexes!.add(INDEX_URL);
   await opened.indexes!.refresh();
   let door: ComponentInstallDoor | undefined;
@@ -133,12 +133,12 @@ describe("plugins.install from a component", () => {
   test("installs through the user's door: the plugin lands found, nothing runs, and its OK card says which plugin asked", async () => {
     const w = await world();
     try {
-      const r = await w.own("clover", "plugins.install", [{ from: "index", id: "tarot" }]);
+      const r = await w.own("moss", "plugins.install", [{ from: "index", id: "tarot" }]);
       const got = r.result as { id: string; state: string; card?: string };
       expect([got.id, got.state, typeof got.card]).toEqual(["tarot", "found", "string"]);
       const card = w.broker.cards().find((c) => c.id === got.card)!;
-      expect(JSON.stringify(card.fields)).toContain("Clover wants to add Tarot.");
-      expect(w.opened.registry.get("tarot")).toMatchObject({ state: "found", provenance: { by: "plugin", plugin: "clover" } });
+      expect(JSON.stringify(card.fields)).toContain("MOSS wants to add Tarot.");
+      expect(w.opened.registry.get("tarot")).toMatchObject({ state: "found", provenance: { by: "plugin", plugin: "moss" } });
       // Its OK applies it, as any install's.
       await w.answer(card.id, "approve");
       await until(() => (w.opened.registry.get("tarot")?.state !== "found" ? true : undefined), "tarot OK'd");
@@ -155,7 +155,7 @@ describe("plugins.install from a component", () => {
       for (const got of [await error(w.own("deck", "plugins.install", [fromIndex])), await error(w.viaApp("deck", "plugins.install", [fromIndex]))]) {
         expect(got?.message).toBe("plugins.install needs the capability plugins.install, which this plugin's OK doesn't list");
       }
-      expect((await error(w.own("clover", "plugins.install", [{ from: "nowhere" }])))?.message).toContain("plugins.install takes a source");
+      expect((await error(w.own("moss", "plugins.install", [{ from: "nowhere" }])))?.message).toContain("plugins.install takes a source");
       expect(w.opened.registry.get("tarot")).toBeUndefined();
     } finally {
       await w.close();
@@ -168,7 +168,7 @@ describe("plugins.install from a component", () => {
       const folder = { from: "folder", path: join(w.home, "downloads", "tarot") };
       const wrap = { from: "wrap", kind: "mcp-config", value: JSON.stringify({ mcpServers: { x: { command: "/bin/echo" } } }) };
       for (const source of [folder, wrap]) {
-        expect((await error(w.own("clover", "plugins.install", [source])))?.message).toBe("a plugin can add plugins only from an index or npm");
+        expect((await error(w.own("moss", "plugins.install", [source])))?.message).toBe("a plugin can add plugins only from an index or npm");
       }
       expect(w.opened.registry.get("tarot")).toBeUndefined();
       expect(w.opened.registry.list().filter((r) => r.provenance.by === "plugin")).toEqual([]);
@@ -184,7 +184,7 @@ describe("plugins.install from a component", () => {
   test("a host half can't install: plugins.install is a component's call only", async () => {
     const w = await world();
     try {
-      const got = await error(w.ph.gate({ pluginId: "clover", process: "clover", path: "plugins.install", args: [{ from: "index", id: "tarot" }], caller: { kind: "plugin", pluginId: "clover" } }));
+      const got = await error(w.ph.gate({ pluginId: "moss", process: "moss", path: "plugins.install", args: [{ from: "index", id: "tarot" }], caller: { kind: "plugin", pluginId: "moss" } }));
       expect(got?.message).toBe("plugins.install exists only in components");
     } finally {
       await w.close();

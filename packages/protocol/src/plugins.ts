@@ -1,9 +1,9 @@
-// Clover protocol area: plugins (spec §5.1–§5.6, §5.9, §6.8). Owner: lane B (plan §4: the registry B-M1, the plugin
+// MOSS protocol area: plugins (spec §5.1–§5.6, §5.9, §6.8). Owner: lane B (plan §4: the registry B-M1, the plugin
 // host and its API B-M2, getting plugins in B-M3).
 //
-// The registry's view for clients (Settings, the plugin index browser, `clover plugin …`), commands for any client
+// The registry's view for clients (Settings, the plugin index browser, `moss plugin …`), commands for any client
 // (`command.list`, `command.run`, §5.4), and the plugin host's channel to the daemon (§5.2). A plugin's own manifest,
-// formats and catalogs are the plugin SDK's (`@waifucave/clover-plugin-sdk`); here a manifest travels as JSON.
+// formats and catalogs are the plugin SDK's (`@waifucave/moss-plugin-sdk`); here a manifest travels as JSON.
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
@@ -19,7 +19,7 @@ import { coreEvent, defineEvent, defineMethod } from "./rpc";
 /** What Settings shows for each plugin, with the reason (§5.1 "States"). */
 export const PLUGIN_STATES = ["found", "refused", "invalid", "off", "waiting", "running", "stopped"] as const;
 export const PluginState = z.enum(PLUGIN_STATES);
-/** The reason the registry gives a plugin of Clover's own that this build can't run yet (its manifest's
+/** The reason the registry gives a plugin of MOSS's own that this build can't run yet (its manifest's
  *  `availability: { status: "not-yet" }`): its state is `off`, and it can't be switched. */
 export const NOT_AVAILABLE_YET = "not available in this build yet";
 export type PluginState = z.infer<typeof PluginState>;
@@ -40,7 +40,7 @@ export const PluginProvenance = z.object({
   bot: BotId.optional(),
   /** `by: "plugin"`: the plugin whose component asked for the install (`plugins.install`); its OK card names it. */
   plugin: AnyPluginId.optional(),
-  /** A plugin the core generated around a bare item: what it was, and the parts of it Clover has no point for yet,
+  /** A plugin the core generated around a bare item: what it was, and the parts of it MOSS has no point for yet,
    *  which stay in the folder unused and which the OK names (§5.1). The core's own record, never the manifest's.
    *  `network: "any"`: the owner's ruling for a server the user brought (2026-11-10, §5.3): its local servers and hooks
    *  reach any host, fenced for files as any plugin, until its manifest declares `network:` hosts, when it is held to
@@ -64,7 +64,7 @@ export type PluginProvenance = z.infer<typeof PluginProvenance>;
 export const PluginClass = z.enum(["data", "web", "code"]);
 export type PluginClass = z.infer<typeof PluginClass>;
 
-/** One finding of the plugin SDK's validator (`validateManifest`, `clover plugin validate --json`). `refuses` says
+/** One finding of the plugin SDK's validator (`validateManifest`, `moss plugin validate --json`). `refuses` says
  *  what the finding stops: the whole plugin, one contribution (a key of `contributes`), one entry of it, or nothing
  *  (a warning). `path` is a JSON pointer into the file. */
 export const ValidationIssue = z.object({
@@ -284,7 +284,7 @@ export const UiPluginView = z.object({
   bot: z.object({ name: Text, theme: utf16(4096).optional(), layout: utf16(4096).optional(), userLayout: utf16(4096).optional(), avatar: z.object({ file: utf16(4096, 1), format: utf16(32, 1) }).optional() }).optional(),
   /** The model formats this plugin draws (its `avatar.formats`): what the app serves of a bot's model files, by kind. */
   avatarFormats: z.array(AvatarFormatView).max(16).optional(),
-  /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `clover` shares `clover`. */
+  /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `moss` shares `moss`. */
   layer: utf16(128),
   /** Its picture for lists (the Plugins page): the manifest's `icon` (svg, png or webp), else a bot's avatar portrait;
    *  a file in its folder, which the app serves as an image only (`/_t/`). */
@@ -383,7 +383,7 @@ export const PLUGINS_METHODS = {
     /** Switching a `found` plugin on is a sensitive change (§5.5; F-M2's review, S2): it raises the plugin's sealed OK
      *  card (`{ applied: false, card }`) and never loads it directly, from any caller. Switching on a plugin the user
      *  OK'd and only switched off applies at once. Refused for a refused or invalid plugin, and for switching
-     *  the bundled `clover` plugin off (it would turn off Settings itself). */
+     *  the bundled `moss` plugin off (it would turn off Settings itself). */
     name: "plugin.setEnabled", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({
       id: AnyPluginId, enabled: z.boolean(),
@@ -447,7 +447,7 @@ export const PLUGINS_METHODS = {
     name: "plugin.grant.add", owner: "A", roles: ["app"], userOnly: true,
     params: z.object({ pluginId: AnyPluginId, token: GrantToken, path: utf16(4096, 1), kind: GrantKind, access: GrantAccess }),
     result: z.object({ grant: PluginGrantView }),
-    doc: "The app's main process registers a file or folder the user picked in a plugin's page (lane G's pickers), before the page gets its token: that plugin alone then reaches exactly it (§5.4). Refused, with a sentence to show, for the whole disk or home folder, Clover's own folder, a secret place, a fenced place, or a folder holding one.",
+    doc: "The app's main process registers a file or folder the user picked in a plugin's page (lane G's pickers), before the page gets its token: that plugin alone then reaches exactly it (§5.4). Refused, with a sentence to show, for the whole disk or home folder, MOSS's own folder, a secret place, a fenced place, or a folder holding one.",
   }),
   pluginGrantRemove: defineMethod({
     name: "plugin.grant.remove", owner: "A", roles: ["app"], userOnly: true,
@@ -572,7 +572,7 @@ export const PLUGINS_METHODS = {
       pluginId: AnyPluginId,
       /** The model a review sends the plugin's files to (the `reviewer.model` role's), by its tag. */
       model: utf16(200).optional(),
-      /** Plain text, Clover's own last line saying it is a model's reading of the plugin's files. */
+      /** Plain text, MOSS's own last line saying it is a model's reading of the plugin's files. */
       report: utf16(6000).optional(),
       why: utf16(400).optional(),
     }),
@@ -787,12 +787,12 @@ export const PLUGINS_METHODS = {
 
   // -----------------------------------------------------------------------------------------------
   // The plugin host's channel (§5.2). One connection per plugin-host process, over the pipe the daemon started it
-  // with and bound by its token to that process (`HostProcess`): the bundled `clover` tree's, the shared one every
+  // with and bound by its token to that process (`HostProcess`): the bundled `moss` tree's, the shared one every
   // other plugin's host halves share, and a Node or native plugin's own (the owner's answer to S4). The plugin host
   // speaks only this channel (review S3): a host half's plugin-API calls all go through `pluginHost.api`, whose
   // `pluginId` the host stamps from its own worker table (the worker that sent the call, never a value a worker
   // gives). The daemon refuses a call naming a plugin it didn't start in that connection's process
-  // (`CLOVER_ERR.PROCESS_REFUSED`: a third-party worker presenting a `clover/*` id), checks it against the plugin
+  // (`MOSS_ERR.PROCESS_REFUSED`: a third-party worker presenting a `moss/*` id), checks it against the plugin
   // SDK's `API_CALLS`, the one gate, then acts as that plugin: the fence's `as`, a `plugin_message`'s `from`, a hold's
   // owner. A watch's values come back as `pluginHost.deliver`;
   // streams go by `pluginHost.chunk` (to the daemon) and `pluginHost.feed` (to a call's handler). Lane B fills in the
@@ -876,7 +876,7 @@ export const PLUGINS_METHODS = {
       stream: z.boolean().optional(),
       timeoutMs: z.number().int().min(1).max(600_000).optional(),
       /** The open call it was made while serving (R7): the `callId` of a `pluginHost.invoke`, or the id the daemon put
-       *  on an MCP request (`_meta["clover/invocation"]`, which the host takes off before the plugin sees it). Stamped
+       *  on an MCP request (`_meta["moss/invocation"]`, which the host takes off before the plugin sees it). Stamped
        *  by the host from the handler's own context, never from the plugin. The daemon binds the caller from its own
        *  record of that call, so the call acts as that call's session, and refuses an id that isn't an open call to
        *  this plugin. Absent: the call acts as the plugin. */
@@ -1047,12 +1047,12 @@ export const PLUGINS_EVENTS = {
   }),
   pluginFound: defineEvent({
     type: "plugin_found", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.watch", schema: PluginFoundEvent,
-    fixture: { type: "plugin_found", ts: 1781270000000, id: "luna", folder: "/Users/me/.clover/plugins/luna", card: "card_0a1b2c3d" },
+    fixture: { type: "plugin_found", ts: 1781270000000, id: "luna", folder: "/Users/me/.moss/plugins/luna", card: "card_0a1b2c3d" },
     doc: "A new folder in the plugins directory waits for the user's OK.",
   }),
   pluginAuthChanged: defineEvent({
     type: "plugin_auth_changed", owner: "A", roles: ["app", "cli"], schema: PluginAuthChangedEvent,
-    fixture: { type: "plugin_auth_changed", ts: 1781270000000, id: "clover/model-openai", auth: { index: 0, method: "api-key", secret: "openai", state: "signed-in" } },
+    fixture: { type: "plugin_auth_changed", ts: 1781270000000, id: "moss/model-openai", auth: { index: 0, method: "api-key", secret: "openai", state: "signed-in" } },
     doc: "One of a plugin's sign-ins changed state.",
   }),
   pluginUiChanged: defineEvent({

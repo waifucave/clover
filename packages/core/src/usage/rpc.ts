@@ -1,11 +1,11 @@
-// Lane D's methods of the protocol's usage area (packages/protocol/src/usage.ts): Clover's own rows, per bot and per
+// Lane D's methods of the protocol's usage area (packages/protocol/src/usage.ts): MOSS's own rows, per bot and per
 // session (`usageMethods`), and the user's own apps' plan readings (`usagePlansMethods`, over the inherited usage
 // service's readers). Owner: lane D.
-import { USAGE_METHODS } from "@waifucave/clover-protocol";
+import { USAGE_METHODS } from "@waifucave/moss-protocol";
 import { handler, type MethodHandler } from "../bots/rpc";
 import type { UsageLedger } from "./ledger";
 import { planWindowKey, staleness, type PlanReading as ServicePlanReading } from "./plan";
-import type { PlanReading as WirePlanReading } from "@waifucave/clover-protocol";
+import type { PlanReading as WirePlanReading } from "@waifucave/moss-protocol";
 
 export function usageMethods(deps: { ledger: UsageLedger }): Record<string, MethodHandler> {
   const M = USAGE_METHODS;

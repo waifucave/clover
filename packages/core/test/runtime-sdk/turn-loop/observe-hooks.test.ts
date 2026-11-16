@@ -2,7 +2,7 @@
 // session (`hearReply`), never inline and never counted as rewriting replies, so the replies keep streaming; what an
 // observer answers is ignored on every event, and one that fails or answers a deny never refuses anything.
 import { expect, test } from "bun:test";
-import { hookOkLines, PLUGIN_API_VERSION, validateManifest } from "@waifucave/clover-plugin-sdk";
+import { hookOkLines, PLUGIN_API_VERSION, validateManifest } from "@waifucave/moss-plugin-sdk";
 import type { InvokeRequest } from "../../../src/contracts/plugin-host";
 import type { Contribution } from "../../../src/contracts/plugin-registry";
 import { pluginHooks, type HookSession } from "../../../src/runtime-sdk/turn-loop/hooks";
@@ -70,7 +70,7 @@ test("an observer's deny or crash refuses nothing; it hears the event after the 
 
 test("the OK card says an observer sees, never that it changes", () => {
   const m = (observe: boolean) => validateManifest({
-    manifest: 1, id: "voice-x", name: "Voice X", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    manifest: 1, id: "voice-x", name: "Voice X", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
     host: { entry: "host/index.js" },
     contributes: { hooks: [{ id: "hear", on: ["message.out", "turn.end"], handler: "hear", ...(observe ? { observe: true } : {}) }] },
   });

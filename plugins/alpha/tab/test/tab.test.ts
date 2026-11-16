@@ -1,15 +1,15 @@
-// Alpha's tab look, as data: a theme on top of Clover's base theme (spec §5.5), its CSS, its layout, and the
+// Alpha's tab look, as data: a theme on top of MOSS's base theme (spec §5.5), its CSS, its layout, and the
 // files they name. Alpha's own manifest is lane D's; the spec's example (§5.9) names `tab/theme.json`,
 // `tab/layout.json` and `assets/alpha.vrm`, and this checks those are here and sound.
 
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
-import { BASE_THEME, TOKENS, checkTheme, contrast, readTheme, resolveTokens, tokensFor } from "../../../clover/plugins/base-theme/src/index";
+import { BASE_THEME, TOKENS, checkTheme, contrast, readTheme, resolveTokens, tokensFor } from "../../../moss/plugins/base-theme/src/index";
 import { checkThemeCss } from "../../../../packages/plugin-sdk/src/ui/theme-lint/css";
 import { resolveShell, SHELL_GROUPS, SHELL_SHAPE_NAMES } from "../../../../packages/plugin-sdk/src/formats/shell";
-import { SHELL_GROUPS as LINT_GROUPS } from "../../../clover/plugins/base-theme/src/theme";
-import { BOT_TAB_SPOTS, checkLayout } from "../../../clover/plugins/base-theme/src/layout-check";
+import { SHELL_GROUPS as LINT_GROUPS } from "../../../moss/plugins/base-theme/src/theme";
+import { BOT_TAB_SPOTS, checkLayout } from "../../../moss/plugins/base-theme/src/layout-check";
 import theme from "../theme.json" with { type: "json" };
 import layout from "../layout.json" with { type: "json" };
 
@@ -177,7 +177,7 @@ describe("Alpha's shell skin: the window wears the meadow while her tab shows", 
 describe("her pane: the conversation's and the composer's own style entries", () => {
   const paneCss = readFileSync(join(ALPHA, "tab/pane.css"), "utf8");
   const paneTheme = JSON.parse(readFileSync(join(TAB, "pane.json"), "utf8")) as { css: string; tokens: Record<string, string>; dark: { tokens: Record<string, string> } };
-  const manifest = JSON.parse(readFileSync(join(ALPHA, "clover.json"), "utf8")) as { contributes: { ui: { spot: string; style?: string }[] } };
+  const manifest = JSON.parse(readFileSync(join(ALPHA, "moss.json"), "utf8")) as { contributes: { ui: { spot: string; style?: string }[] } };
 
   test("the manifest dresses the conversation and the composer with pane.json, and nothing else with it", () => {
     const styled = manifest.contributes.ui.filter((e) => e.style !== undefined).map((e) => [e.spot, e.style]);
@@ -233,7 +233,7 @@ describe("her pane's sealed approval cards: no other layer lies over them", () =
     expect(names.indexOf("alpha-roomrow")).toBeLessThan(names.indexOf("alpha-panerow"));
     // The panels' cell grows to fill its layer (so an open panel has its room) and stays in flow: closed, it lies beneath
     // the pane; the shell's panels box, positioned and drawn only while a panel is open, is what paints in front.
-    const shellCss = readFileSync(join(ALPHA, "../clover/plugins/shell/client/styles.css"), "utf8");
+    const shellCss = readFileSync(join(ALPHA, "../moss/plugins/shell/client/styles.css"), "utf8");
     expect(shellCss).toMatch(/\.cl-chrome-panels \{[^}]*position: relative;/);
     expect(shellCss).toMatch(/\.cl-chrome-panels:empty \{\s*display: none;/);
     // The top strip is its 64 px and no more; the pane's transcript starts below it at every width (76 px wide, 72 px mid,
@@ -257,7 +257,7 @@ describe("the narrow band's stage", () => {
     expect(narrow).toMatch(/\.alpha-body \{[^}]*align-self: stretch;[^}]*height: 260px !important;/);
     expect(narrow).not.toMatch(/\.alpha-body \{[^}]*align-self: (flex-start|center|flex-end)/);
     // The stage asks for the narrow crop there, and her figure starts under the 64 px top band, so her controls never sit over her head.
-    expect(narrow).toMatch(/\.alpha-figure \{[^}]*--clover-avatar-crop: 0\.3;[^}]*--clover-avatar-headroom: 0\.04;[^}]*padding: 60px 0 0 !important;/);
+    expect(narrow).toMatch(/\.alpha-figure \{[^}]*--moss-avatar-crop: 0\.3;[^}]*--moss-avatar-headroom: 0\.04;[^}]*padding: 60px 0 0 !important;/);
     // The pane covers the band's foot (where the figure stops and the stage's credit plate sits), so nothing is drawn half under her grass.
     const paneTop = Number(/\.alpha-pane \{[^}]*padding: (\d+)px/.exec(narrow)![1]);
     expect(paneTop).toBeLessThan(260 - 32);

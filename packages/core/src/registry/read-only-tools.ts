@@ -6,7 +6,7 @@
 // (`readOnlyReachesNetwork`: an http server, a `network:` grant anywhere in the tree, a wrapper's network grant, or no
 // plugin fence on this computer). A change to the list asks for the OK again (`changes.ts`), and a tool a server merely
 // calls read-only at run time never is. The display-only ones (`contained`) hold to every one of those conditions, and
-// besides, the tree holds no capability beyond reading Clover's own state (`CONTAINED_TOOL_CAPABILITIES`); a hit is a
+// besides, the tree holds no capability beyond reading MOSS's own state (`CONTAINED_TOOL_CAPABILITIES`); a hit is a
 // contained call (effect `other`), never a read. One tool is on one list at most.
 //
 // The build's own copy (R1, the owner's "no door checks a plugin's id", 2026-11-15): a plugin of the staged,
@@ -14,14 +14,14 @@
 // thing "bundled" means. So the builder's `readOnly` PluginNew and the web plugin's `webSearch`/`webFetch` hold from their
 // manifests, never from a plugin id the core names.
 //
-// The web tools (`webSearch`, `webFetch`): a call is judged as a web search or a page fetch, as Clover's own web plugin's
+// The web tools (`webSearch`, `webFetch`): a call is judged as a web search or a page fetch, as MOSS's own web plugin's
 // are. They hold for a top-level plugin on the tree the user OK'd (the card names them, with a warning), or for the
 // build's copy; never a dev folder.
 //
 // None of the lists holds for a tree that names programs it runs outside its sandbox (`host.outside.programs`, P5),
 // the build's copy's included (`treeRunsOutside`): every tool of it asks as any tool does.
-import { containedToolsHold, readOnlyReachesNetwork } from "@waifucave/clover-plugin-sdk";
-import { topPluginIdOf } from "@waifucave/clover-protocol";
+import { containedToolsHold, readOnlyReachesNetwork } from "@waifucave/moss-plugin-sdk";
+import { topPluginIdOf } from "@waifucave/moss-protocol";
 import { grantsInForce, type PluginRegistry } from "../contracts/plugin-registry";
 import { pluginFenceAvailable } from "./plugin-fence";
 
@@ -95,7 +95,7 @@ export function pluginToolReadOnly(registry: Pick<PluginRegistry, "get" | "list"
 
 /**
  * Whether a call to `tool` on `server` of `pluginId` is a contained call: a display-only tool (`McpServerSchema.contained`)
- * on the tree the user OK'd, where its tree can't reach the network and holds no capability beyond reading Clover's
+ * on the tree the user OK'd, where its tree can't reach the network and holds no capability beyond reading MOSS's
  * state (`containedToolsHold`). The call's arguments are data the bot hands the plugin, which may keep them in its own
  * data: that is why no network anywhere in the tree is a hard condition, and why the capabilities are bounded.
  *

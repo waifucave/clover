@@ -1,9 +1,9 @@
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import type { HandlerContext } from "@waifucave/clover-plugin-sdk";
+import type { HandlerContext } from "@waifucave/moss-plugin-sdk";
 import {
   fileKey, readFiles, runOutside, type FileCursor, type Outside, type UsageIngestArgs, type UsageIngestReply, type UsagePlanArgs, type UsagePlanReply, type UsageRecord,
-} from "@waifucave/clover-plugin-sdk/usage-source";
+} from "@waifucave/moss-plugin-sdk/usage-source";
 import {
   CLAUDE_USAGE_TIMEOUT_MS, claudeCodeRecordOf, claudeCodeTranscripts, claudePlanFromCli, claudeSubscriptionType, readCapped,
 } from "./claude-code";

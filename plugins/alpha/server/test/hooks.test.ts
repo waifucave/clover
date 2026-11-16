@@ -8,7 +8,7 @@ import { stageHooks, toolLabel } from "../hooks";
 import { StageStore } from "../store";
 import { ALPHA, fakeApi } from "./fakes";
 
-const manifest = JSON.parse(readFileSync(join(ALPHA, "clover.json"), "utf8"));
+const manifest = JSON.parse(readFileSync(join(ALPHA, "moss.json"), "utf8"));
 
 test("every hook only observes: it returns nothing, and none is on an event whose return could steer", async () => {
   const f = fakeApi();

@@ -52,7 +52,7 @@ export async function pluginFromFolder(dir: string, opts: { bundled?: boolean } 
 }
 
 const temps: string[] = [];
-export function tempDir(prefix = "clover-d-"): string {
+export function tempDir(prefix = "moss-d-"): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   temps.push(dir);
   return dir;
@@ -123,7 +123,7 @@ export async function boot(opts: {
   /** Ask for a provider the bot's plugin chose, as the daemon does (provider-consent.ts); by default the fixture's
    *  bots hold every provider already, so a test about something else never meets the card. */
   askProvider?: boolean;
-  /** The daemon's test of Clover's own bundled plugin (service.ts `bundledChoice`); none by default, so nothing is. */
+  /** The daemon's test of MOSS's own bundled plugin (service.ts `bundledChoice`); none by default, so nothing is. */
   bundledChoice?: BotSideOptions["bundledChoice"];
 }): Promise<Boot & { side: BotSide; shutdown(): Promise<void> }> {
   const clock = opts.clock ?? new FakeClock();
@@ -148,7 +148,7 @@ export async function boot(opts: {
     ...(opts.routines === undefined ? {} : { routines: opts.routines }),
     ...(opts.onSessionEnded === undefined ? {} : { onSessionEnded: opts.onSessionEnded }),
     ...(opts.updateGate === undefined ? {} : { updateGate: opts.updateGate }),
-    assetUrl: (pluginId, path) => `clover-asset://${pluginId.replace("/", "--")}/${path}`,
+    assetUrl: (pluginId, path) => `moss-asset://${pluginId.replace("/", "--")}/${path}`,
     warn: (m) => warnings.push(m),
   });
   await side.start();

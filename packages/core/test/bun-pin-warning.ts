@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-if (process.env.CLOVER_BUN_PIN_WARNED !== "1") {
+if (process.env.MOSS_BUN_PIN_WARNED !== "1") {
   let pinned: string | undefined;
   try {
     pinned = readFileSync(join(import.meta.dir, "..", "..", "..", ".bun-version"), "utf8").trim();
@@ -13,7 +13,7 @@ if (process.env.CLOVER_BUN_PIN_WARNED !== "1") {
     // Not in a checkout: nothing to compare against.
   }
   if (pinned !== undefined && pinned !== Bun.version) {
-    process.env.CLOVER_BUN_PIN_WARNED = "1";
+    process.env.MOSS_BUN_PIN_WARNED = "1";
     console.warn(`warning: this is Bun ${Bun.version}, but .bun-version pins ${pinned} (CI's): run tests with scripts/pinned-bun test … or through scripts/heavy`);
   }
 }

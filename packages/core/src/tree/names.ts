@@ -3,14 +3,14 @@
 //
 // A holder resolves every tree path on its own disk and asks its fence about the real path it lands on. realpath
 // gives the canonical form of what exists (the stored case on macOS, long names on Windows), but a name that doesn't
-// exist yet has none: `.clover/LEVELS/computer.json` is typed, not stored. APFS and NTFS ignore case by default and
-// APFS ignores Unicode normalisation, so on those disks that name *is* `.clover/levels/computer.json` once made. The
+// exist yet has none: `.moss/LEVELS/computer.json` is typed, not stored. APFS and NTFS ignore case by default and
+// APFS ignores Unicode normalisation, so on those disks that name *is* `.moss/levels/computer.json` once made. The
 // fence's own compare is exact, so the holder asks it twice: once as is, and once with both sides folded (`foldPath`
 // on the path and on every fenced item), and refuses what either refuses. The fold runs on every OS: on a
-// case-sensitive disk `.clover/LEVELS` is another folder, which the fold refuses at no cost, and it covers ext4's
+// case-sensitive disk `.moss/LEVELS` is another folder, which the fold refuses at no cost, and it covers ext4's
 // case-folding folders and FAT or NTFS volumes mounted on Linux. Links' own names and 8.3 short names are handled where
 // the holder reads them (`holder.ts`).
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { foldName as contractFold, foldPath as contractFoldPath } from "../contracts/fence";
 
@@ -21,7 +21,7 @@ export function hostOs(platform: NodeJS.Platform = process.platform): Os {
 
 /** One name, folded: lane B's shared fold (`contracts/fence.ts`), the one the fence itself uses: Unicode NFC, then case
  *  (upper then lower, so the Kelvin sign and the long s fold too), and on Windows the trailing dots and spaces Win32
- *  drops (`.clover.` opens `.clover`). */
+ *  drops (`.moss.` opens `.moss`). */
 export function foldName(name: string, os: Os): string {
   return contractFold(name, os);
 }
@@ -55,7 +55,7 @@ export function checkSegment(segment: string, os: Os): void {
   if (WINDOWS_RESERVED.test(segment)) throw new ContractError("invalid", `"${segment}" is a device name on Windows`);
 }
 
-/** Whether `name` could be a Windows 8.3 short name (`CLOVER~1`), which the disk answers to without listing it. */
+/** Whether `name` could be a Windows 8.3 short name (`MOSS~1`), which the disk answers to without listing it. */
 export function mayBeShortName(name: string, os: Os): boolean {
   return os === "windows" && name.includes("~");
 }

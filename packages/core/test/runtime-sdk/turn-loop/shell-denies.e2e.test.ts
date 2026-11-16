@@ -1,6 +1,6 @@
 // A bot's sandboxed shell and what it must never change (stage 2, lane C).
 //
-// A bot's shell commands run inside an OS sandbox whose settings Clover draws
+// A bot's shell commands run inside an OS sandbox whose settings MOSS draws
 // (`botSandboxSettings`). Under every write root (the granted folder, the bot's
 // own folders, and at the wider levels the home's entries) the shell must never
 // write anything that runs later outside the sandbox (a `.git` folder or file,
@@ -31,7 +31,7 @@ import type { TurnControl, TurnInput } from "../../../src/contracts/session-host
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
 import { BotSessionDriver, botFileFence, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
-import { CloverFence } from "../../../src/fence/fence";
+import { MossFence } from "../../../src/fence/fence";
 import { botSandboxSettings } from "../../../src/fence/sandbox-settings";
 import { PROJECT_DENIES, PROJECT_WHOLE_DENIES } from "../../../src/registry/plugin-fence";
 import { SECRET_READ_PLACES } from "../../../src/contracts/fence";
@@ -114,14 +114,14 @@ const WHOLE_ENTRY: Record<string, string> = {
   ".claude": "commands/foo.md",
   ".husky": "pre-commit",
   ".githooks": "pre-commit",
-  ".clover": "rules/x.md",
+  ".moss": "rules/x.md",
 };
 
 interface Fixture {
   proj: string;
   bin: string;
   scratch: string;
-  cloverHome: string;
+  mossHome: string;
   novaMemory: string;
   awsCreds: string;
   netrc: string;
@@ -267,14 +267,14 @@ function buildProbes(fx: Fixture, scratch: string, caseInsensitive: boolean): { 
   } else {
     skipped.push("r-case-git", "r-case-hooks");
   }
-  // Outside every write root: the temp home itself and the Clover home's own
+  // Outside every write root: the temp home itself and the MOSS home's own
   // files. Another bot's *memory* is writable on purpose (the fence's owner's
   // amendment: a bot writes every bot's memory), so that row is an allowed
   // control; its agents' folder is not.
   probes.push(one("r-home-direct", `printf 'x' > ${q(fx.direct)}`));
   probes.push(one("a-nova-memory", `printf 'x' >> ${q(fx.novaMemory)}`));
   probes.push(one("r-nova-agents", `printf 'x' >> ${q(join(dirname(fx.novaMemory), "..", "agents", "x"))}`));
-  probes.push(one("r-home-settings", `printf 'x' >> ${q(join(fx.cloverHome, "settings.json"))}`));
+  probes.push(one("r-home-settings", `printf 'x' >> ${q(join(fx.mossHome, "settings.json"))}`));
   // Reads the sandbox also denies: fake secrets in the temp home.
   probes.push(readProbe("rd-aws", fx.awsCreds));
   probes.push(readProbe("rd-netrc", fx.netrc));
@@ -284,7 +284,7 @@ function buildProbes(fx: Fixture, scratch: string, caseInsensitive: boolean): { 
 
 describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must never change)", (spawn) => {
   darwinTest("granted, own and home roots: refused writes land nowhere, allowed writes land, secret reads show nothing", async () => {
-    const userDir = realpathSync(mkdtempSync(join(tmpdir(), "clover-shell-denies-")));
+    const userDir = realpathSync(mkdtempSync(join(tmpdir(), "moss-shell-denies-")));
     temps.push(userDir);
     const home = join(userDir, "c");
     const t = join(userDir, "t");
@@ -298,7 +298,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
       proj: join(userDir, "proj"),
       bin: join(userDir, "proj", "bin"),
       scratch,
-      cloverHome: home,
+      mossHome: home,
       novaMemory: join(home, "bots", "nova", "memory", "MEMORY.md"),
       awsCreds: join(userDir, ".aws", "credentials"),
       netrc: join(userDir, ".netrc"),
@@ -319,13 +319,13 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
     mkdirSync(join(home, "bots", "nova", "agents"), { recursive: true });
     writeFileSync(join(home, "settings.json"), "{}\n");
 
-    const fence = new CloverFence({ home: userDir, cloverHome: home, temp: t });
+    const fence = new MossFence({ home: userDir, mossHome: home, temp: t });
     let level: "ask-risky" | "accept-edits" | "automatic" = "ask-risky";
     let granted: string[] = [fx.proj];
     let lastSettings: { allowWrite?: readonly string[]; denyWrite?: readonly string[]; denyRead?: readonly string[] } | undefined;
     const sandbox = (ctx: BotSessionContext) => {
       const s = botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
-        cloverHome: home, userHome: userDir, level, grantedWrite: granted,
+        mossHome: home, userHome: userDir, level, grantedWrite: granted,
         ownFolders: [ctx.paths.scratch, ctx.paths.root], pathFolders: [fx.bin],
       });
       lastSettings = { allowWrite: s.filesystem?.allowWrite, denyWrite: s.filesystem?.denyWrite, denyRead: s.filesystem?.denyRead };
@@ -345,7 +345,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
     try {
       const phases = [
         // The temp "home" is never a write root, at any level: it holds the
-        // Clover home, so the settings leave it out (fail closed), and a write
+        // MOSS home, so the settings leave it out (fail closed), and a write
         // directly into it is refused even at automatic.
         { tag: "ask-risky", level: "ask-risky" as const, granted: [fx.proj] },
         { tag: "automatic", level: "automatic" as const, granted: [fx.proj] },
@@ -399,7 +399,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
           denyWrite: lastSettings?.denyWrite?.length ?? -1,
           denyRead: lastSettings?.denyRead?.length ?? -1,
         });
-        // Fail closed: no drawn root may hold the Clover home (the temp home
+        // Fail closed: no drawn root may hold the MOSS home (the temp home
         // holds it), so the home itself is left out of the write roots even
         // when it is the granted folder (automatic-home phase).
         if (phase.tag === "accept-edits") {
@@ -559,7 +559,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
             default: break;
           }
           if (name === "r-home-direct") {
-            // Fail closed at every level and grant: the home holds the Clover
+            // Fail closed at every level and grant: the home holds the MOSS
             // home, so the rendered settings must leave it out (asserted on the
             // settings below), and the write is refused.
             if (exitOf(name) === "0") return fail("home write exited 0");
@@ -628,7 +628,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
   // rule in bot-check.ts is bypassed); refusals below come from the file-fence
   // hook or the runtime's own path check.
   darwinTest("a leftover child cannot redirect a later Write; the no-child control", async () => {
-    const userDir = realpathSync(mkdtempSync(join(tmpdir(), "clover-shell-leftover-")));
+    const userDir = realpathSync(mkdtempSync(join(tmpdir(), "moss-shell-leftover-")));
     temps.push(userDir);
     const home = join(userDir, "c");
     const t = join(userDir, "t");
@@ -649,9 +649,9 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
     // the reset never writes through it into the outside file (which would read as an escape).
     const resetX = () => { rmSync(x, { force: true }); writeFileSync(x, "plain", { flag: "wx" }); };
 
-    const fence = new CloverFence({ home: userDir, cloverHome: home, temp: t });
+    const fence = new MossFence({ home: userDir, mossHome: home, temp: t });
     const sandbox = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
-      cloverHome: home, userHome: userDir, level: "ask-risky", grantedWrite: [proj],
+      mossHome: home, userHome: userDir, level: "ask-risky", grantedWrite: [proj],
       ownFolders: [ctx.paths.scratch, ctx.paths.root], pathFolders: [],
     });
     const driver = new BotSessionDriver(context(home, "winter-test/calls"),

@@ -1,7 +1,7 @@
 {
-  "name": "Clover",
-  "short_name": "Clover",
-  "description": "Your Clover computers, from the browser.",
+  "name": "MOSS",
+  "short_name": "MOSS",
+  "description": "Your MOSS computers, from the browser.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

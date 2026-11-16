@@ -3,11 +3,11 @@
 // unsandboxed, must never follow it). Owner: lane D. Lane C's `readOwnFile` / `refuseLinksIn` (#224, on lane/c-m2b)
 // and `openChecked` (#205) take this one's place once they land on main. This one is stricter than C's today (review
 // S1): it opens without blocking, refuses a file with a second name (a hard link) and caps the size, and it reads as the
-// core from the Clover home down (the routine engine reads every bot's routines), where C's checks one caller's folders.
+// core from the MOSS home down (the routine engine reads every bot's routines), where C's checks one caller's folders.
 // The swap keeps all of that: lane C is asked to take O_NONBLOCK, the hard-link check and the size cap into its helper,
 // so the swap changes nothing.
 //
-// * Every folder from `base` (a folder the bot can't change, such as the Clover home) down to the file must be a real
+// * Every folder from `base` (a folder the bot can't change, such as the MOSS home) down to the file must be a real
 //   folder, not a link.
 // * The file is opened without following a link at its name (`O_NOFOLLOW`) and without waiting (`O_NONBLOCK`, so a
 //   named pipe the bot planted is opened at once and refused, never read from: a read would freeze the daemon's event

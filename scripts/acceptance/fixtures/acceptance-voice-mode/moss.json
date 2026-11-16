@@ -1,0 +1,49 @@
+{
+  "manifest": 1,
+  "id": "acceptance-voice-mode",
+  "name": "Acceptance voice mode",
+  "description": "The acceptance run's second speaking plugin, installed from a folder: it speaks through a background part of its own, which takes the device's speech turn (device/speech) before it sounds, so it never talks over MOSS Voice. It fills MOSS Voice's modes point (one at a time, titled Voice): picked in Settings it is the voice, says each reply its own way (a tone) and writes down push-to-talk as words that say how many bytes reached it. Its commands: `chime` has its part play a short tone, `report` says what it said, what it heard and when it held the turn.",
+  "version": "0.0.1",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "capabilities": [
+    "audio"
+  ],
+  "contributes": {
+    "moss.voice.modes": [
+      {
+        "id": "acceptance-voice-mode",
+        "name": "Acceptance voice mode",
+        "reply": "reply",
+        "hear": "hear"
+      }
+    ],
+    "ui": [
+      {
+        "spot": "app.background",
+        "id": "speaker",
+        "component": "Speaker"
+      }
+    ],
+    "commands": [
+      {
+        "name": "chime",
+        "description": "Has its background part play a short tone, in the device's speech turn.",
+        "handler": "chime"
+      },
+      {
+        "name": "report",
+        "description": "What it said, and the spans its part held the device's speech turn.",
+        "handler": "report"
+      }
+    ]
+  }
+}

@@ -7,7 +7,7 @@
 //   its own card for the call, compares hashes, checks the option, the device's answer key (item 91: a desktop's
 //   app-held key, never the link key), the time, and claims the card once (`verifySignedAnswer`).
 import { createHash } from "node:crypto";
-import { type Caller, DEVICES_METHODS, peerCallVerdict } from "@waifucave/clover-protocol";
+import { type Caller, DEVICES_METHODS, peerCallVerdict } from "@waifucave/moss-protocol";
 import {
   type AnswerDevices, type AnswerLedger, type CallCardRenderer, type SignedAnswerVerdict, verifySignedAnswer,
 } from "../contracts/approval-broker";

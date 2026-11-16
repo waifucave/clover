@@ -37,7 +37,7 @@ export interface PlanWindow {
   windowKey?: string;
 }
 
-/** A status-only window (no percentage): what Clover's own sessions reported about a provider's limits. */
+/** A status-only window (no percentage): what MOSS's own sessions reported about a provider's limits. */
 export interface PlanStatusWindow {
   rateLimitType?: string;
   status: string;
@@ -65,7 +65,7 @@ export interface UsagePlanArgs {
   now: number;
   /** The last good reading the core kept for this source (`keep`), for a ladder's "newer of the two". */
   kept?: UsagePlanReading;
-  /** What Clover's own sessions reported about limits, by name (`"codex-oauth"`): data the source may use as a last rung. */
+  /** What MOSS's own sessions reported about limits, by name (`"codex-oauth"`): data the source may use as a last rung. */
   reports: Readonly<Record<string, readonly PlanStatusWindow[]>>;
   /** What the source gave back last time (`state`); undefined the first time. */
   state?: unknown;
@@ -99,7 +99,7 @@ export interface UsageRecord {
   mode?: string;
   provider?: string;
   model: string;
-  /** Tokens in Clover's shape: `input` EXCLUDES cache reads and writes. */
+  /** Tokens in MOSS's shape: `input` EXCLUDES cache reads and writes. */
   input: number;
   output: number;
   cacheRead: number;

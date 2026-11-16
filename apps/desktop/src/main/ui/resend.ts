@@ -7,7 +7,7 @@
 //
 // The call itself is a `gesture` entry: one key press or click the main process saw, spent per call. Main also lets one
 // call per session be under way at a time, so a second click while the first is on its way is refused.
-import { displayText } from "@waifucave/clover-plugin-sdk/plain";
+import { displayText } from "@waifucave/moss-plugin-sdk/plain";
 import type { TreeRoute } from "./tree-calls";
 
 const SESSION_RE = /^[A-Za-z0-9._:-]{1,128}$/;

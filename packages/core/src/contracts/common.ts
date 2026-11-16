@@ -4,7 +4,7 @@
 // the tests in `tests/` pin each fake's behaviour, so a lane can build against the fake and trust it to act as the real
 // implementation will. The real implementations live in their owners' folders and pass the same tests where a test
 // is not about the fake itself. After the spine merges, a contract changes only through the controller (plan §3).
-import { CLOVER_ERR } from "@waifucave/clover-protocol";
+import { MOSS_ERR } from "@waifucave/moss-protocol";
 
 export type Unsubscribe = () => void;
 
@@ -54,14 +54,14 @@ export const CONTRACT_ERROR_CODES = [
 ] as const;
 export type ContractErrorCode = (typeof CONTRACT_ERROR_CODES)[number];
 
-/** The JSON-RPC error code each contract failure travels as, where the protocol has one (`CLOVER_ERR`). */
+/** The JSON-RPC error code each contract failure travels as, where the protocol has one (`MOSS_ERR`). */
 export const RPC_ERROR_OF: Partial<Record<ContractErrorCode, number>> = {
-  computer_offline: CLOVER_ERR.COMPUTER_OFFLINE,
-  plugin_stopped: CLOVER_ERR.PLUGIN_STOPPED,
-  not_installed: CLOVER_ERR.NOT_INSTALLED,
-  bot_asleep: CLOVER_ERR.BOT_ASLEEP,
-  fenced: CLOVER_ERR.FENCED,
-  not_main: CLOVER_ERR.NOT_MAIN,
+  computer_offline: MOSS_ERR.COMPUTER_OFFLINE,
+  plugin_stopped: MOSS_ERR.PLUGIN_STOPPED,
+  not_installed: MOSS_ERR.NOT_INSTALLED,
+  bot_asleep: MOSS_ERR.BOT_ASLEEP,
+  fenced: MOSS_ERR.FENCED,
+  not_main: MOSS_ERR.NOT_MAIN,
 };
 
 /** A contract's typed failure. Its message and detail never hold a secret's value. */

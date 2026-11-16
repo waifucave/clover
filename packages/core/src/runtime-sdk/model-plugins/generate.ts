@@ -4,7 +4,7 @@
 //   scripts/pinned-bun packages/core/src/runtime-sdk/model-plugins/generate.ts --write  # rewrite the folders
 //
 // `test/runtime-sdk/model-plugins/bundled.test.ts` runs the check in the core suite, so CI fails while the committed plugins and the catalog
-// disagree. Only `clover.json` and `catalog.json` are generated; a code plugin's `host/`, `package.json` and the
+// disagree. Only `moss.json` and `catalog.json` are generated; a code plugin's `host/`, `package.json` and the
 // rest are hand-written and left alone. A provider that leaves the catalog leaves a folder the check reports as
 // stale; `--write` removes its two generated files.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -13,7 +13,7 @@ import { GENERIC_ENDPOINT_ADAPTERS, loadCatalog, modelPluginForProvider, setting
 import { API_KEY_SECRET, BUNDLED_CHILDREN_DIR, CODE_PLUGINS, keyPlacementFor, modelPluginFolder, type AuthEntry } from "./bundled";
 
 /** The files one provider's plugin holds, by path inside its folder. */
-export type GeneratedFiles = Record<"clover.json" | "catalog.json", string>;
+export type GeneratedFiles = Record<"moss.json" | "catalog.json", string>;
 
 /**
  * Characters a reader can't see (bidi controls, zero-width ones, tags, variation selectors, the shell gallery's own
@@ -34,7 +34,7 @@ const json = (value: unknown): string => `${escapeHidden(JSON.stringify(value, n
 function declarativeAuth(authKinds: readonly string[], protocol: keyof typeof GENERIC_ENDPOINT_ADAPTERS, name: string): AuthEntry[] {
   if (!authKinds.includes("api-key")) return [];
   const placement = keyPlacementFor(protocol);
-  return [{ method: "api-key", secret: API_KEY_SECRET, help: `Your ${name} API key. Clover keeps it in your credential store and adds it to ${name}'s requests itself.`, ...(placement !== undefined ? { placement } : {}) }];
+  return [{ method: "api-key", secret: API_KEY_SECRET, help: `Your ${name} API key. MOSS keeps it in your credential store and adds it to ${name}'s requests itself.`, ...(placement !== undefined ? { placement } : {}) }];
 }
 
 /** A URL's authority when it takes labels from settings (`${setting:resource}.services.ai.azure.com`). */
@@ -72,13 +72,13 @@ export function modelPluginFiles(catalog: WinterCatalog, providerId: string): Ge
       manifest: 1,
       name,
       description: `${name}'s models, through its own adapter. Generated from the SDK's catalog; its host module is hand-written.`,
-      engines: { clover: "^1.0.0" },
+      engines: { moss: "^1.0.0" },
       host: { entry: "host/index.ts", runtime: "bun", ...(code.process !== undefined ? { process: code.process } : {}) },
       capabilities: code.capabilities,
       contributes: { models: [{ provider: providerId, name, catalog: "catalog.json", auth: code.auth, adapter: entry.adapter }] },
     };
   }
-  return { "clover.json": json(manifest), "catalog.json": json(file) };
+  return { "moss.json": json(manifest), "catalog.json": json(file) };
 }
 
 /** Every provider's plugin files, by folder name. */
@@ -107,7 +107,7 @@ export function checkModelPlugins(dir: string = BUNDLED_CHILDREN_DIR, catalog: W
   }
   for (const folder of existsSync(dir) ? readdirSync(dir) : []) {
     if (!folder.startsWith("model-") || generated.has(folder)) continue;
-    for (const file of ["clover.json", "catalog.json"]) if (existsSync(join(dir, folder, file))) drift.push({ folder, file, problem: "stale" });
+    for (const file of ["moss.json", "catalog.json"]) if (existsSync(join(dir, folder, file))) drift.push({ folder, file, problem: "stale" });
   }
   return drift;
 }

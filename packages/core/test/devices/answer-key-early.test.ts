@@ -8,7 +8,7 @@ import { generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, type Caller, type WritableSocket } from "@waifucave/clover-protocol";
+import { MOSS_PROTOCOL_VERSION, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, type Caller, type WritableSocket } from "@waifucave/moss-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { answerKeyMethods, MethodError } from "../../src/devices/rpc";
@@ -23,7 +23,7 @@ function keyFor(device: string): { publicKey: string; signature: string; private
   const k = generateKeyPairSync("ed25519");
   const der = k.publicKey.export({ format: "der", type: "spki" });
   const publicKey = Buffer.from(der.subarray(der.length - 32)).toString("base64");
-  return { publicKey, privateKey: k.privateKey, signature: sign(null, Buffer.from(`clover/answer-key/1\n${device}\n${publicKey}\nnone`), k.privateKey).toString("base64") };
+  return { publicKey, privateKey: k.privateKey, signature: sign(null, Buffer.from(`moss/answer-key/1\n${device}\n${publicKey}\nnone`), k.privateKey).toString("base64") };
 }
 
 describe("answerKeyMethods before the registry opens", () => {
@@ -74,7 +74,7 @@ async function connect(path: string) {
 
 describe.skipIf(process.platform === "win32")("a real daemon whose links are still starting", () => {
   test("device.answerKey.set takes the app's key while the links wait on their wire; device.list isn't served yet", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-akearly-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-akearly-"));
     let release!: () => void;
     const held = new Promise<void>((r) => { release = r; });
     daemon = await startDaemon({
@@ -85,12 +85,12 @@ describe.skipIf(process.platform === "win32")("a real daemon whose links are sti
         // The wire (the sidecar, on a real start) holds the links back: the registry is already open.
         wire: async (key) => { await held; return new MemoryNetwork().endpoint(key.publicKey); },
       },
-      parts: { userHome: mkdtempSync(join(tmpdir(), "clover-akearly-user-")) },
+      parts: { userHome: mkdtempSync(join(tmpdir(), "moss-akearly-user-")) },
     });
     const c = await connect(daemon.socketPath);
     try {
       const token = readFileSync(join(home, "run", "app.token"), "utf8").trim();
-      const hello = await c.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token, clientName: "early", features: [] });
+      const hello = await c.request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role: "app", token, clientName: "early", features: [] });
       const device = (hello.result as { device: string }).device;
       expect(typeof device).toBe("string");
       const k = keyFor(device);
@@ -133,7 +133,7 @@ describe.skipIf(process.platform === "win32")("a real daemon whose links are sti
       let rotated: Awaited<ReturnType<typeof c.request>> | undefined;
       for (let i = 0; i < 200; i++) {
         const at = Date.now();
-        const handOver = sign(null, Buffer.from(`clover/answer-key-rotate/1\n${device}\n${k.publicKey}\n${other.publicKey}\n${at}`), k.privateKey).toString("base64");
+        const handOver = sign(null, Buffer.from(`moss/answer-key-rotate/1\n${device}\n${k.publicKey}\n${other.publicKey}\n${at}`), k.privateKey).toString("base64");
         rotated = await c.request("device.answerKey.set", { publicKey: other.publicKey, signature: other.signature, held: "none", rotation: { from: k.publicKey, at, signature: handOver } });
         if (rotated.error?.code !== ERR.RETRY) break;
         await Bun.sleep(50);

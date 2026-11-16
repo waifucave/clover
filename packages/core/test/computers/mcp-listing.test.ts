@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FileMcpTicks, mcpTicksPath } from "../../src/computers/mcp-ticks";
 import { kindServed, MCP_LIST_MAX_BYTES, MCP_LIST_MAX_TOOLS, MCP_LIST_SCHEMA_MAX_BYTES, MCP_LIST_SERVER_TEXT_MAX, parseMcpList, RemoteMcpListings, servedKinds, type KnownMcpPlugin, type McpListing } from "../../src/computers/mcp-listing";
 import type { DeviceChange, DeviceRegistry } from "../../src/contracts/device-registry";
@@ -15,7 +15,7 @@ import { answersFor, makePhone } from "../tree/answer-support";
 import { Cluster, until } from "../tree/cluster-support";
 
 const temp = (prefix: string) => mkdtempSync(join(tmpdir(), prefix));
-/** A Clover home whose ticks record exists already (an earlier run's). */
+/** A MOSS home whose ticks record exists already (an earlier run's). */
 const ranBefore = (home: string) => {
   mkdirSync(join(home, "levels"), { recursive: true });
   writeFileSync(mcpTicksPath(home), JSON.stringify({ plugins: {}, servers: {} }));
@@ -50,7 +50,7 @@ describe("parseMcpList", () => {
     expect(older).toHaveLength(1);
     expect(newer).toEqual(older);
     // A claim of being bundled, or another exposed name, changes nothing: the key and the record are this computer's.
-    expect(parseMcpList({ servers: [entry("blender", { exposed: "clover", bundled: true })] }, ["blender"], known)).toEqual(older);
+    expect(parseMcpList({ servers: [entry("blender", { exposed: "moss", bundled: true })] }, ["blender"], known)).toEqual(older);
     // Malformed, they leave the server out, as any malformed field does.
     expect(parseMcpList({ servers: [entry("blender", { bundled: "yes" })] }, ["blender"], known)).toEqual([]);
   });
@@ -300,10 +300,10 @@ describe("a local server another computer runs", () => {
     const laptop = cluster.computers.get("Laptop1")!;
     await until(() => laptop.node.mcpRemoteServers("bot")[0]?.computers?.length === 2, 5000, "Laptop1 to list blender on both");
     const s = laptop.node.mcpRemoteServers("bot")[0]!;
-    // The tool has its own `computer` field, so the placement's is `cloverComputer`.
-    expect((s.tools[0]!.inputSchema.properties as Record<string, { enum?: string[] }>).cloverComputer!.enum).toEqual([...s.computers!]);
-    expect(s.tools[0]!.inputSchema.required).toEqual(["cloverComputer"]);
-    const r = await laptop.node.mcp!.run("blender", "Render", { cloverComputer: "Mini", computer: "x" }, { session: "s_alpha", as: BOT, callId: "c1" });
+    // The tool has its own `computer` field, so the placement's is `mossComputer`.
+    expect((s.tools[0]!.inputSchema.properties as Record<string, { enum?: string[] }>).mossComputer!.enum).toEqual([...s.computers!]);
+    expect(s.tools[0]!.inputSchema.required).toEqual(["mossComputer"]);
+    const r = await laptop.node.mcp!.run("blender", "Render", { mossComputer: "Mini", computer: "x" }, { session: "s_alpha", as: BOT, callId: "c1" });
     expect(r.computer).toBe("Mini");
     expect(calls).toEqual(['Mini {"computer":"x"}']);
   }, 30_000);

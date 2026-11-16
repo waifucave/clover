@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { source } from "../host/index";
 
-const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "clover.json"), "utf8")) as {
+const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "moss.json"), "utf8")) as {
   id: string; host: { process: string; outside: { programs: string[]; read?: string[] } };
   contributes: { "usage.sources": Array<{ id: string; handler: string; provides: string[] }> };
 };

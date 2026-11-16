@@ -1,4 +1,4 @@
-// The in-process backends on another computer (K-M3, remote.ts, #240's review 4): Clover's coding agent and lane A's
+// The in-process backends on another computer (K-M3, remote.ts, #240's review 4): MOSS's coding agent and lane A's
 // in-process subagents hold their own tool calls, read-only ones too, at a `PreToolUse` hook. Run on Laptop for a bot
 // on Studio, they hold on the session's combined pause (`AcpStartSpec.pause`): Laptop's own switch, and Studio's
 // forwarded one, which a dropped link turns on. Their sandbox is Seatbelt's, so these run on macOS only (lane C's Linux
@@ -12,7 +12,7 @@ import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
 import { IN_PROCESS_BACKEND_ID } from "../../runtime-sdk/turn-loop/subagent-backend";
 import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
 import { botChildFor } from "../bot-child";
-import { CLOVER_CODE_ID, CloverCodeBackend } from "../clover-code/backend";
+import { MOSS_CODE_ID, MossCodeBackend } from "../moss-code/backend";
 import { inProcessBackend } from "../index";
 import { darwinTest } from "../../../test/helpers/darwin-only";
 import { closePair, LAPTOP, make, notification, OTHER, STUDIO, type Pair } from "./pair";
@@ -25,7 +25,7 @@ const MODEL = "winter-test/calls";
 
 function baseOptionsFor(home: string, spawn: SpawnClaudeCodeProcess) {
   return (o: { model: string; effort?: string; cwd: string }): Options => {
-    const env: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", CLOVER_HOME: home };
+    const env: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", MOSS_HOME: home };
     const provider = testProviderNameFor(o.model);
     if (provider !== undefined) env["WINTER_TEST_PROVIDER"] = provider;
     return { brand: buildCoreBrand(undefined, home), model: o.model, cwd: o.cwd, env, spawnClaudeCodeProcess: spawn, settingSources: [] };
@@ -37,8 +37,8 @@ function pairWithInProcess(spawn: SpawnClaudeCodeProcess, sandboxReady?: () => b
   return make({
     b: {
       extraBackends: (wire, self) => [
-        new CloverCodeBackend({ clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL, baseOptions: (x) => baseOptionsFor(self.cloverHome, spawn)(x), botChild: botChildFor({ cloverHome: self.cloverHome, userHome: self.userHome }), ...ready }),
-        inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, userHome: self.userHome, ...ready }),
+        new MossCodeBackend({ clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL, baseOptions: (x) => baseOptionsFor(self.mossHome, spawn)(x), botChild: botChildFor({ mossHome: self.mossHome, userHome: self.userHome }), ...ready }),
+        inProcessBackend({ home: self.mossHome, spawn, defaultModel: () => MODEL }, { home: self.mossHome, userHome: self.userHome, ...ready }),
       ],
     },
   });
@@ -46,7 +46,7 @@ function pairWithInProcess(spawn: SpawnClaudeCodeProcess, sandboxReady?: () => b
 
 /** Whether the Read ran on Laptop: its result ("read me") is in the runtime's own record of the session there. */
 function readRan(p: Pair): boolean {
-  for (const f of new Bun.Glob("**/*.jsonl").scanSync({ cwd: p.b.cloverHome, absolute: true })) {
+  for (const f of new Bun.Glob("**/*.jsonl").scanSync({ cwd: p.b.mossHome, absolute: true })) {
     try {
       if (readFileSync(f, "utf8").includes("read me")) return true;
     } catch {
@@ -67,7 +67,7 @@ async function start(p: Pair, backend: string) {
 }
 
 describeWithEmbeddedRuntime("the in-process backends on another computer", (spawn) => {
-  for (const backend of [CLOVER_CODE_ID, IN_PROCESS_BACKEND_ID]) {
+  for (const backend of [MOSS_CODE_ID, IN_PROCESS_BACKEND_ID]) {
     test(`${backend}: on a computer without its sandbox, a delegation there is refused at once, saying why`, async () => {
       const p = pairWithInProcess(spawn, () => false);
       const t0 = Date.now();

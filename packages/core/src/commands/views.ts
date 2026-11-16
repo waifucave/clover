@@ -6,8 +6,8 @@
 // * `point.list`: the core's points (the plugin SDK's `CORE_POINTS`, declared by `core`) and every point a plugin
 //   declares, with its declaring entry, its occupants (active entries) and its waiting ones. A second declarer of a
 //   point that isn't a UI spot is listed too, inactive, so Settings can offer the choice (§5.4).
-import { CORE_POINTS, WELL_KNOWN_POINT_NAMES, resolveKeys } from "@waifucave/clover-plugin-sdk";
-import { PLUGINS_METHODS, type Caller, type CommandView, type OneAtATimeView, type PointView } from "@waifucave/clover-protocol";
+import { CORE_POINTS, WELL_KNOWN_POINT_NAMES, resolveKeys } from "@waifucave/moss-plugin-sdk";
+import { PLUGINS_METHODS, type Caller, type CommandView, type OneAtATimeView, type PointView } from "@waifucave/moss-protocol";
 import type { Contribution, PluginRegistry } from "../contracts/plugin-registry";
 import { CORE_SPOTS } from "../contracts/plugin-registry";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
@@ -78,8 +78,8 @@ export function pointViews(registry: Pick<PluginRegistry, "entries" | "points">)
       ...(isObject(decl?.fields) ? { fields: decl.fields } : {}),
       ...(isObject(decl?.props) ? { props: decl.props } : {}),
       ...(p.active ? listed(p.name) : { occupants: [], waiting: [] }),
-      // Filling a point a bundled plugin declares, a well-known one, replaces UI Clover ships (§6.8).
-      replacesShipped: WELL_KNOWN_POINT_NAMES.has(p.name) && p.declaredBy !== "core" && p.declaredBy.pluginId.split("/")[0] === "clover",
+      // Filling a point a bundled plugin declares, a well-known one, replaces UI MOSS ships (§6.8).
+      replacesShipped: WELL_KNOWN_POINT_NAMES.has(p.name) && p.declaredBy !== "core" && p.declaredBy.pluginId.split("/")[0] === "moss",
       private: decl?.private === true,
       ...(typeof decl?.deprecated === "string" ? { deprecated: decl.deprecated } : {}),
       ...(typeof decl?.doc === "string" ? { doc: decl.doc } : {}),

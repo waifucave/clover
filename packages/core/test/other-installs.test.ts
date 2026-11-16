@@ -1,4 +1,4 @@
-// The other installs on this machine (src/other-installs.ts): a Clover daemon never runs on their homes. Every case
+// The other installs on this machine (src/other-installs.ts): a MOSS daemon never runs on their homes. Every case
 // uses a stand-in user home under the test's temp root; the real one is never named.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -12,13 +12,13 @@ import { installDaemonLogFile } from "../src/daemon-log-file";
 import { assertNotOtherInstallHome, otherInstallHome, OtherInstallHomeRefused, OTHER_INSTALL_HOMES, OTHER_INSTALL_KEYCHAIN_SERVICES, realPathOf } from "../src/other-installs";
 
 function fakeUserHome(): string {
-  const user = mkdtempSync(join(tmpdir(), "clover-fake-user-"));
+  const user = mkdtempSync(join(tmpdir(), "moss-fake-user-"));
   for (const o of OTHER_INSTALL_HOMES) mkdirSync(join(user, o.dir));
   return user;
 }
 
 describe("other installs' homes", () => {
-  test("each one, and anything inside it, is refused; Clover's own homes and others are not", () => {
+  test("each one, and anything inside it, is refused; MOSS's own homes and others are not", () => {
     const user = fakeUserHome();
     expect(OTHER_INSTALL_HOMES.map((o) => o.dir)).toEqual([".winter", ".winter-dev", LEGACY_HOME_DIR, LEGACY_DEV_HOME_DIR]);
     expect(OTHER_INSTALL_KEYCHAIN_SERVICES.map((o) => o.service)).toEqual(["com.winter.core", "com.winter.core.dev", LEGACY_KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE_DEV]);
@@ -27,13 +27,13 @@ describe("other installs' homes", () => {
       expect(otherInstallHome(join(user, o.dir, "nested", "home"), user)?.what).toBe(o.what);
       expect(() => assertNotOtherInstallHome(join(user, o.dir), user)).toThrow(OtherInstallHomeRefused);
     }
-    for (const fine of [".clover", ".clover-dev", ".winterish", "projects/.winter-notes"]) expect(otherInstallHome(join(user, fine), user)).toBeUndefined();
-    expect(otherInstallHome(join(tmpdir(), "clover-home-x"), user)).toBeUndefined();
+    for (const fine of [".moss", ".moss-dev", ".winterish", "projects/.winter-notes"]) expect(otherInstallHome(join(user, fine), user)).toBeUndefined();
+    expect(otherInstallHome(join(tmpdir(), "moss-home-x"), user)).toBeUndefined();
   });
 
   test("by real path: a link that leads into one is refused, and a home that does not exist yet too", () => {
     const user = fakeUserHome();
-    const link = join(mkdtempSync(join(tmpdir(), "clover-link-")), "looks-harmless");
+    const link = join(mkdtempSync(join(tmpdir(), "moss-link-")), "looks-harmless");
     symlinkSync(join(user, ".winter"), link);
     expect(otherInstallHome(link, user)?.what).toContain("live Winter");
     expect(otherInstallHome(join(link, "not", "there", "yet"), user)?.what).toContain("live Winter");
@@ -42,8 +42,8 @@ describe("other installs' homes", () => {
 
   // C0 check (B1): an install whose home is itself a link is refused by the link and by where it leads.
   test("a home that is itself a link: refused by its link, its target, and anything inside the target", () => {
-    const user = mkdtempSync(join(tmpdir(), "clover-fake-user-"));
-    const drive = mkdtempSync(join(tmpdir(), "clover-external-drive-"));
+    const user = mkdtempSync(join(tmpdir(), "moss-fake-user-"));
+    const drive = mkdtempSync(join(tmpdir(), "moss-external-drive-"));
     mkdirSync(join(drive, "winter-dev"));
     symlinkSync(join(drive, "winter-dev"), join(user, ".winter-dev"));
     const what = OTHER_INSTALL_HOMES.find((o) => o.dir === ".winter-dev")!.what;
@@ -53,16 +53,16 @@ describe("other installs' homes", () => {
     expect(otherInstallHome(join(drive, "elsewhere"), user)).toBeUndefined();
   });
 
-  // C0 check (B1): `resolveCloverHome()` refuses too, so every caller is covered (the CLI's daemon-less writers among
+  // C0 check (B1): `resolveMossHome()` refuses too, so every caller is covered (the CLI's daemon-less writers among
   // them). Run in a child with a stand-in user home: Bun reads the user's home once, at start.
-  test("resolveCloverHome refuses another install's home, and a link to one", () => {
+  test("resolveMossHome refuses another install's home, and a link to one", () => {
     const user = fakeUserHome();
-    const link = join(mkdtempSync(join(tmpdir(), "clover-link-")), "home");
+    const link = join(mkdtempSync(join(tmpdir(), "moss-link-")), "home");
     symlinkSync(join(user, ".winter"), link);
-    const resolveIn = (cloverHome: string) => spawnSync("bun", ["-e", `import { resolveCloverHome } from ${JSON.stringify(join(import.meta.dir, "..", "src", "clover-dir.ts"))}; try { console.log(resolveCloverHome()); } catch (err) { console.log(err.name + ": " + err.message); }`], { env: { ...process.env, HOME: user, CLOVER_HOME: cloverHome }, encoding: "utf8" }).stdout.trim();
+    const resolveIn = (mossHome: string) => spawnSync("bun", ["-e", `import { resolveMossHome } from ${JSON.stringify(join(import.meta.dir, "..", "src", "moss-dir.ts"))}; try { console.log(resolveMossHome()); } catch (err) { console.log(err.name + ": " + err.message); }`], { env: { ...process.env, HOME: user, MOSS_HOME: mossHome }, encoding: "utf8" }).stdout.trim();
     for (const o of OTHER_INSTALL_HOMES) expect(resolveIn(join(user, o.dir))).toStartWith("OtherInstallHomeRefused: ");
     expect(resolveIn(link)).toContain("the live Winter install's home");
-    const own = join(user, ".clover");
+    const own = join(user, ".moss");
     expect(resolveIn(own)).toBe(own);
   }, 30_000);
 
@@ -70,7 +70,7 @@ describe("other installs' homes", () => {
     const user = fakeUserHome();
     for (const o of OTHER_INSTALL_HOMES) {
       const home = join(user, o.dir);
-      await expect(startDaemon({ home, secrets: new FileSecretStore(join(mkdtempSync(join(tmpdir(), "clover-secrets-")), "s")), userHomeForTests: user })).rejects.toThrow(OtherInstallHomeRefused);
+      await expect(startDaemon({ home, secrets: new FileSecretStore(join(mkdtempSync(join(tmpdir(), "moss-secrets-")), "s")), userHomeForTests: user })).rejects.toThrow(OtherInstallHomeRefused);
       expect(readdirSync(home)).toEqual([]);
     }
   });

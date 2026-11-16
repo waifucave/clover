@@ -16,7 +16,7 @@ import { z } from "zod";
 import {
   COMPUTERS_METHODS, FencingToken, Level, SessionId, SignedCardAnswer, TreePath,
   type Caller, type FileStat,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";

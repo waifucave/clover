@@ -1,6 +1,6 @@
 // What Alpha's frames share about her: the bot's own record and what her main conversation has been doing (for "right now" and the day's tally).
 import { useEffect, useState } from "react";
-import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
+import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 import { seenFolder, type Seen } from "./seen";
 
 export { GLYPH, NOW, type Seen } from "./seen";
@@ -50,7 +50,7 @@ export function useSeen(session: string | undefined): Seen {
 /** Dark when the tab's own surface token is: the window's appearance reaches a frame as tokens. */
 export function useDark(): boolean {
   const read = () => {
-    const v = getComputedStyle(document.documentElement).getPropertyValue("--clover-color-surface").trim();
+    const v = getComputedStyle(document.documentElement).getPropertyValue("--moss-color-surface").trim();
     const m = /^#([0-9a-f]{6})/i.exec(v);
     if (m === null) return window.matchMedia?.("(prefers-color-scheme: dark)").matches === true;
     const n = parseInt(m[1]!, 16);

@@ -11,9 +11,9 @@
 //
 // `window` is the user's main window as it is now (app.capture's picture), refused while Settings shows there; a
 // hidden or minimised window is "not drawn". Settings itself is never a target.
-import type { AppRenderResult, AppWindowRenderParams, CapturedWindow } from "@waifucave/clover-protocol";
-import type { ShellState } from "@waifucave/clover-plugin-sdk";
-import type { ShellAct } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { AppRenderResult, AppWindowRenderParams, CapturedWindow } from "@waifucave/moss-protocol";
+import type { ShellState } from "@waifucave/moss-plugin-sdk";
+import type { ShellAct } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { OPEN_TARGETS, planOpen } from "./open";
 
 export const RENDER_TARGETS = "app:<plugin id or page key>, bot:<id>, plugins, archive, code, window";

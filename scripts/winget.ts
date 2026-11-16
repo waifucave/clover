@@ -1,4 +1,4 @@
-// winget's three manifests for a Clover release, rendered from packaging/winget/*.yaml.tmpl (plan §4 M1). Each
+// winget's three manifests for a MOSS release, rendered from packaging/winget/*.yaml.tmpl (plan §4 M1). Each
 // release fills in its version, the Windows installer's URL and SHA-256, and the release date; submitting them to
 // microsoft/winget-pkgs is the release pipeline's (M2). The installer they point at comes with E-M1's app.
 import { readdirSync, readFileSync } from "node:fs";
@@ -18,7 +18,7 @@ export const WINGET_DIR = join("packaging", "winget");
 
 /** The release's installer URL for a version (electron-builder's NSIS artifact, published on the GitHub release). */
 export function wingetInstallerUrl(version: string): string {
-  return `https://github.com/waifucave/clover/releases/download/v${version}/Clover-Setup-${version}.exe`;
+  return `https://github.com/waifucave/moss/releases/download/v${version}/MOSS-Code-Setup-${version}.exe`;
 }
 
 /** Every manifest, by file name (the template's name without `.tmpl`), with the release's values in. */

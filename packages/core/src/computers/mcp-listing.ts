@@ -25,8 +25,8 @@
 // * This computer's own listing wins: a server its host lists is never filled from another's (lane A's
 //   `PluginMcp.servers`), and the router asks the host first (`node.ts`).
 import { z } from "zod";
-import { AnyPluginId, utf16 } from "@waifucave/clover-protocol";
-import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
+import { AnyPluginId, utf16 } from "@waifucave/moss-protocol";
+import { NAMESPACE_RE } from "@waifucave/moss-plugin-sdk";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { DeviceRegistry } from "../contracts/device-registry";
 import type { LinkTransport } from "../contracts/link-transport";

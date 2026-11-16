@@ -1,5 +1,5 @@
 // The daemon's named pipe on Windows, made safe to dial (from E-M1's review). Anyone could otherwise
-// create `\\.\pipe\clover-core-<id>` first and collect what the app sends it.
+// create `\\.\pipe\moss-core-<id>` first and collect what the app sends it.
 //   - The first instance is created with FILE_FLAG_FIRST_PIPE_INSTANCE: libuv, under Bun.listen, does
 //     that already (measured: the bit shows in the first instance's handle), so a daemon whose name is
 //     taken fails to listen and exits, rather than sharing the name with a squatter.

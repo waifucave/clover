@@ -2,7 +2,7 @@
 // main returns"; §8.5 "the refresher"). Owner: lane H.
 //
 // The main computer renews a short lease through the waifucave handshake (metadata only). Another computer takes over
-// only after the lease lapses, and only a computer running clover-core can. Events carry the lease epoch, which rises
+// only after the lease lapses, and only a computer running moss-core can. Events carry the lease epoch, which rises
 // with each new holder, so late events from an earlier lease are recognized (§8.5 "Transcripts"). The holder is also
 // the refresher, the one device that refreshes rotating logins.
 //
@@ -27,7 +27,7 @@
 //   the handshake, which members admit one another to when they pair, so a takeover works as with an account. Only a
 //   computer that can reach neither the handshake nor the last holder over any link leaves taking over to the user
 //   (§6.4, `{ byUser: true }`).
-import { fenceVerdict, type FenceVerdict, type FenceView, type FencingToken, type LeaseView } from "@waifucave/clover-protocol";
+import { fenceVerdict, type FenceVerdict, type FenceView, type FencingToken, type LeaseView } from "@waifucave/moss-protocol";
 import type { Unsubscribe } from "./common";
 
 export type LeaseState = LeaseView;

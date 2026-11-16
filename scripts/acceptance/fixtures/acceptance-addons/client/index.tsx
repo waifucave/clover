@@ -2,7 +2,7 @@
 // plugin's own question card from the component (`confirmCard`), and says what came back: `data-answer` is "yes <card>"
 // or "no <card>", or "refused: <why>".
 import { useState } from "react";
-import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
+import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 
 export function AddonsAsk() {
   const api = usePluginApi();

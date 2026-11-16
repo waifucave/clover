@@ -25,14 +25,14 @@ export type SettingMove =
   | { from: { botField: string; key: string }; plugin: string; scope: "bot"; key: string; when?: string; value?: string; with?: string };
 
 export const SETTINGS_MOVED_TO_PLUGINS: readonly SettingMove[] = [
-  // Speaking replies left the core for Clover Voice (F1): its switch, and each bot's voice.
-  { from: { ui: ["voice", "speakReplies"] }, plugin: "clover/voice", scope: "account", key: "speakReplies" },
+  // Speaking replies left the core for MOSS Voice (F1): its switch, and each bot's voice.
+  { from: { ui: ["voice", "speakReplies"] }, plugin: "moss/voice", scope: "account", key: "speakReplies" },
   // A provider picked before providers were their plugins' own: Fish Audio's entry was the only one, and it is
   // Fish Audio's plugin's.
-  { from: { botField: "voice", key: "provider" }, when: "fish-audio", value: "clover/fish-audio", with: "provider", plugin: "clover/voice", scope: "bot", key: "providerPlugin" },
-  { from: { botField: "voice", key: "provider" }, plugin: "clover/voice", scope: "bot", key: "provider" },
-  { from: { botField: "voice", key: "voice" }, plugin: "clover/voice", scope: "bot", key: "voice" },
-  { from: { botField: "voice", key: "model" }, plugin: "clover/voice", scope: "bot", key: "model" },
+  { from: { botField: "voice", key: "provider" }, when: "fish-audio", value: "moss/fish-audio", with: "provider", plugin: "moss/voice", scope: "bot", key: "providerPlugin" },
+  { from: { botField: "voice", key: "provider" }, plugin: "moss/voice", scope: "bot", key: "provider" },
+  { from: { botField: "voice", key: "voice" }, plugin: "moss/voice", scope: "bot", key: "voice" },
+  { from: { botField: "voice", key: "model" }, plugin: "moss/voice", scope: "bot", key: "model" },
 ];
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);

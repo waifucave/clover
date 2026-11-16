@@ -48,7 +48,7 @@ describe("held scripts", () => {
       expect(() => refuseHeldScript(name, (c) => { code = c; throw new Error("exited"); }, (l) => lines.push(l))).toThrow("exited");
       expect(code).toBe(1);
       expect(lines).toEqual([heldScriptRefusal(name)]);
-      expect(lines[0]).toContain(`refuses to run in the Clover repo until ${h.until}: `);
+      expect(lines[0]).toContain(`refuses to run in the MOSS repo until ${h.until}: `);
     }
     expect(HELD_SCRIPTS["dev:helper"].until).toBe("opensky");
     expect(HELD_SCRIPTS["dev:headless"].until).toBe("opensky");

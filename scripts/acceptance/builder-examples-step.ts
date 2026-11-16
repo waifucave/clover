@@ -1,5 +1,5 @@
 // The plugin builder's examples (checklist 5.4), each installed on the real app and its UI drawn. The builder's skill
-// (plugins/clover/plugins/plugin-builder/skills/plugin-examples) holds 15 examples; each validates and loads in the unit
+// (plugins/moss/plugins/plugin-builder/skills/plugin-examples) holds 15 examples; each validates and loads in the unit
 // tests, and this row installs every one from a folder (its files written under the run's temp folder, `plugin.install`
 // over RPC, its `plugin-ok` OK card approved: ex-tool's pressed in the window), reaches running or enabled, and then, in
 // the window, sees each part drawn by its own layer:
@@ -13,7 +13,7 @@
 // window's document again, so the checks wait until that has settled. Each is removed afterwards (the fillers first).
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { readExamples, type Example } from "../../plugins/clover/plugins/plugin-builder/test/examples";
+import { readExamples, type Example } from "../../plugins/moss/plugins/plugin-builder/test/examples";
 import { callTurn, fail, frames, leave, treeDocs, until, type ExampleCtx } from "./example-steps";
 import { clickShown, drawn, drawnInSettings, openSidebarEntry, reloadsSettled } from "./window-open";
 
@@ -65,7 +65,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   rmSync(dir, { recursive: true, force: true });
 
   // The app up and told of cards before the first one comes (its island's layer connected).
-  await until("the app's island connected to the core", 30_000, () => (ctx.appLog().includes("layers: clover/island's layer connected to the core") ? true : undefined));
+  await until("the app's island connected to the core", 30_000, () => (ctx.appLog().includes("layers: moss/island's layer connected to the core") ? true : undefined));
   await new Promise((r) => setTimeout(r, 2_000));
 
   // 1. Every example installed from its folder and OK'd.
@@ -77,7 +77,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     if (installed.id !== id) fail(`${id} installed as ${installed.id}`);
     const card = await until(`${id}'s OK card`, 60_000, async () => (await cardsNow(ctx)).find((c) => c.kind === "plugin-ok" && c.pluginId === id));
     const text = JSON.stringify((await rpc.request<{ card: unknown }>("card.get", { id: card.id })).card);
-    const name = (JSON.parse(examples.get(id)!.files["clover.json"]!) as { name: string }).name;
+    const name = (JSON.parse(examples.get(id)!.files["moss.json"]!) as { name: string }).name;
     if (!text.includes(name)) fail(`${id}'s OK card doesn't name it (${name}): ${text.slice(0, 300)}`);
     if (id === "ex-tool") await ctx.pressCard(`${id}'s OK card`, (c) => c.id === card.id);
     else await ctx.approveCard(card.id);
@@ -163,13 +163,13 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const fill = await until("ex-fit's frame measured against its column", 20_000, async () => {
       for (const d of await treeDocs(cdp)) {
         const v = await cdp.evaluate(d.session, `(() => {
-          const f = [...document.querySelectorAll('iframe[data-clover-fill]')].find((e) => /^ex-fit(?!-)/.test(e.getAttribute('data-clover-entry') || ''));
+          const f = [...document.querySelectorAll('iframe[data-moss-fill]')].find((e) => /^ex-fit(?!-)/.test(e.getAttribute('data-moss-entry') || ''));
           if (!f) return null;
           let col = f.parentElement;
           while (col && getComputedStyle(col).display === 'contents') col = col.parentElement;
           const main = f.closest('.cl-window__main');
           const r = f.getBoundingClientRect();
-          return JSON.stringify({ frame: Math.round(r.height), col: col ? Math.round(col.clientHeight - parseFloat(getComputedStyle(col).paddingTop || '0') - parseFloat(getComputedStyle(col).paddingBottom || '0')) : 0, colBox: col ? col.clientHeight + ' ' + getComputedStyle(col).padding + ' ' + col.className : '', main: main ? Math.round(main.getBoundingClientRect().height) : 0, entry: f.getAttribute('data-clover-entry') });
+          return JSON.stringify({ frame: Math.round(r.height), col: col ? Math.round(col.clientHeight - parseFloat(getComputedStyle(col).paddingTop || '0') - parseFloat(getComputedStyle(col).paddingBottom || '0')) : 0, colBox: col ? col.clientHeight + ' ' + getComputedStyle(col).padding + ' ' + col.className : '', main: main ? Math.round(main.getBoundingClientRect().height) : 0, entry: f.getAttribute('data-moss-entry') });
         })()`).catch(() => null);
         if (typeof v === "string") return JSON.parse(v) as { frame: number; col: number; colBox: string; main: number; entry: string };
       }

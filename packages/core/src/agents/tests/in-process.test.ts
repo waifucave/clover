@@ -1,5 +1,5 @@
-// Lane A's in-process subagents (`clover`, A-M3) as the core registers them (`inProcessBackend`, K-M3): every
-// delegation gets the pause gate, and the whole Clover home is out of its reach, by the manager's fence for its Bash
+// Lane A's in-process subagents (`moss`, A-M3) as the core registers them (`inProcessBackend`, K-M3): every
+// delegation gets the pause gate, and the whole MOSS home is out of its reach, by the manager's fence for its Bash
 // sandbox and as private folders for its file tools, as #208 asks of every agent backend.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -31,7 +31,7 @@ function make(spawn: Parameters<Parameters<typeof describeWithEmbeddedRuntime>[1
   let w!: World;
   w = new World({
     ...o,
-    extraBackends: (_wire, self) => [inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, userHome: self.userHome, sandboxReady: SANDBOX_READY, ...(o.pause ? { pause: o.pause } : {}) })],
+    extraBackends: (_wire, self) => [inProcessBackend({ home: self.mossHome, spawn, defaultModel: () => MODEL }, { home: self.mossHome, userHome: self.userHome, sandboxReady: SANDBOX_READY, ...(o.pause ? { pause: o.pause } : {}) })],
   });
   world = w;
   return w;
@@ -40,7 +40,7 @@ function make(spawn: Parameters<Parameters<typeof describeWithEmbeddedRuntime>[1
 const notification = (w: World) => w.parentInputs("task-notification")[0]?.input as { stopReason?: string; text?: string } | undefined;
 
 test("the delegating bot's pause reaches every tool call, and with no switch the gate is open, never missing", async () => {
-  const root = mkdtempSync(join(tmpdir(), "clover-k-inproc-"));
+  const root = mkdtempSync(join(tmpdir(), "moss-k-inproc-"));
   try {
     let paused = false;
     const listeners = new Set<() => void>();
@@ -110,19 +110,19 @@ describeWithEmbeddedRuntime("the in-process subagents, as the core registers the
     expect(existsSync(join(documents, "pwned-cwd.txt"))).toBe(false);
   });
 
-  test("the Clover home is out of reach: a direct Read, a Read through a link from the root, Bash cat and searches", async () => {
+  test("the MOSS home is out of reach: a direct Read, a Read through a link from the root, Bash cat and searches", async () => {
     const w = make(spawn);
     const MARK = "the-bot-remembers-a-secret";
     const files = [
-      join(w.cloverHome, "bots", "alpha", "memory", "MEMORY.md"),
-      join(w.cloverHome, "transcripts", "beta", "s_beta.jsonl"),
-      join(w.cloverHome, "diffs", "s_beta", "1.diff"),
-      join(w.cloverHome, "sdk", "file-history", "s_beta", "MEMORY.md"),
-      join(w.cloverHome, "sessions", "bots", "s_beta.jsonl"),
-      join(w.cloverHome, "bots", "beta", "agents", "agent_other", "acp.ndjson"),
+      join(w.mossHome, "bots", "alpha", "memory", "MEMORY.md"),
+      join(w.mossHome, "transcripts", "beta", "s_beta.jsonl"),
+      join(w.mossHome, "diffs", "s_beta", "1.diff"),
+      join(w.mossHome, "sdk", "file-history", "s_beta", "MEMORY.md"),
+      join(w.mossHome, "sessions", "bots", "s_beta.jsonl"),
+      join(w.mossHome, "bots", "beta", "agents", "agent_other", "acp.ndjson"),
       // The file secret store's file (Linux and Windows), and another session's log.
-      join(w.cloverHome, "secrets.enc"),
-      join(w.cloverHome, "sessions", "s_gamma.jsonl"),
+      join(w.mossHome, "secrets.enc"),
+      join(w.mossHome, "sessions", "s_gamma.jsonl"),
     ];
     const links: string[] = [];
     for (const [i, f] of files.entries()) {
@@ -132,14 +132,14 @@ describeWithEmbeddedRuntime("the in-process subagents, as the core registers the
       symlinkSync(f, link);
       links.push(link);
     }
-    symlinkSync(join(w.cloverHome, "transcripts"), join(w.project, "link-dir"));
+    symlinkSync(join(w.mossHome, "transcripts"), join(w.project, "link-dir"));
     const calls = files.flatMap((f, i) => [
       `${i === 0 ? "" : "+"}CALL Read {"file_path":${JSON.stringify(f)}}`,
       `+CALL Read {"file_path":${JSON.stringify(links[i])}}`,
       `+CALL Bash {"command":${JSON.stringify(`cat '${f}' '${links[i]}'`)}}`,
     ]);
     calls.push(`+CALL Grep {"pattern":"remembers","path":${JSON.stringify(join(w.project, "link-dir"))}}`);
-    calls.push(`+CALL Glob {"pattern":${JSON.stringify(`${w.cloverHome}/**/*.jsonl`)}}`);
+    calls.push(`+CALL Glob {"pattern":${JSON.stringify(`${w.mossHome}/**/*.jsonl`)}}`);
     const r = await w.manager.start({
       caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
       backend: IN_PROCESS_BACKEND_ID, root: "home/Studio/project1", title: "Probe",
@@ -153,7 +153,7 @@ describeWithEmbeddedRuntime("the in-process subagents, as the core registers the
     expect(JSON.stringify(history)).not.toContain(MARK);
     // What each call really returned is in the runtime's own record of the session: none of it is the home's.
     const agentSessionId = events.find((e) => e["type"] === "agent_started")?.["agentSessionId"] as string;
-    const record = [...new Bun.Glob(`**/${agentSessionId}.jsonl`).scanSync({ cwd: w.cloverHome, absolute: true })];
+    const record = [...new Bun.Glob(`**/${agentSessionId}.jsonl`).scanSync({ cwd: w.mossHome, absolute: true })];
     expect(record.length).toBe(1);
     const results = readFileSync(record[0]!, "utf8");
     if (process.env["LANE_K_DUMP"]) await Bun.write(process.env["LANE_K_DUMP"], results);
@@ -184,15 +184,15 @@ describeWithEmbeddedRuntime("the in-process subagents, as the core registers the
     await waitFor(() => w.host.get(r.sessionId)?.status === "idle" || notification(w), "the turn's end");
     await Bun.sleep(300);
     expect(existsSync(file)).toBe(false);
-    const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
+    const calls = readFileSync(join(w.mossHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
     expect(calls).toContain('"by":"cancelled"');
   });
 
   test("createAgents offers it beside the ACP backends", async () => {
     const w = make(spawn);
     const agents = createAgents({
-      home: w.cloverHome, computer: "mac", socketPath: join(w.root, "x.sock"), host: w.host, approvals: w.approvals, tree: w.tree, fence: w.fence, clock: w.clock,
-      inProcess: { home: w.cloverHome, spawn, defaultModel: () => MODEL },
+      home: w.mossHome, computer: "mac", socketPath: join(w.root, "x.sock"), host: w.host, approvals: w.approvals, tree: w.tree, fence: w.fence, clock: w.clock,
+      inProcess: { home: w.mossHome, spawn, defaultModel: () => MODEL },
     });
     try {
       const b = agents.backends().find((x) => x.id === IN_PROCESS_BACKEND_ID);

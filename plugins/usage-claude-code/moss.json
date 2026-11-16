@@ -1,0 +1,18 @@
+{
+  "manifest": 1,
+  "id": "usage-claude-code",
+  "name": "Claude Code usage",
+  "description": "Your Claude Code plan windows and token counts for the Usage tab: it runs `claude` as you to ask Claude Code for its own plan windows and plan name, and reads the numbers in its session transcripts and its own `/stats` cache. It reads nothing of Claude Code's sign-in, and not ~/.claude.json.",
+  "engines": { "moss": "^1.0.0" },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun",
+    "process": "own",
+    "outside": { "programs": ["claude"], "read": ["~/.claude/projects", "~/.claude/stats-cache.json"] }
+  },
+  "contributes": {
+    "usage.sources": [
+      { "id": "claude-code", "name": "Claude Code", "handler": "source", "provides": ["plan", "usage"], "planEveryMs": 300000 }
+    ]
+  }
+}

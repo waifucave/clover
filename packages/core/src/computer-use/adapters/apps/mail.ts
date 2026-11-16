@@ -60,14 +60,14 @@ export const mailAdapter: AppAdapter = {
           ...mailboxLines(mailbox),
           ...(o.unread === true
             ? ["set ms to (messages of mb whose read status is false)"]
-            : ["set total to count of messages of mb", "if total = 0 then return \"\"", `set ms to (messages 1 thru (my cloverMin(${limit}, total)) of mb)`]),
-          "set n to my cloverMin(count of ms, " + String(limit) + ")",
+            : ["set total to count of messages of mb", "if total = 0 then return \"\"", `set ms to (messages 1 thru (my mossMin(${limit}, total)) of mb)`]),
+          "set n to my mossMin(count of ms, " + String(limit) + ")",
           "set out to \"\"",
           "repeat with i from 1 to n",
           "  set m to item i of ms",
           // One message Mail can't read (moved or deleted meanwhile) is skipped, never the whole list's failure.
           "  try",
-          "    set out to out & (id of m) & cloverTAB & (read status of m) & cloverTAB & my cloverISO(date received of m) & cloverTAB & my cloverText(name of mailbox of m) & cloverTAB & my cloverText(sender of m) & cloverTAB & my cloverText(subject of m) & cloverLF",
+          "    set out to out & (id of m) & mossTAB & (read status of m) & mossTAB & my mossISO(date received of m) & mossTAB & my mossText(name of mailbox of m) & mossTAB & my mossText(sender of m) & mossTAB & my mossText(subject of m) & mossLF",
           "  end try",
           "end repeat",
           "return out",

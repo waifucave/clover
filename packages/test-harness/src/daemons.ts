@@ -1,4 +1,4 @@
-// Daemons in a test (plan §3): each a real `clover-core` daemon, in this test process, on its own temp home with
+// Daemons in a test (plan §3): each a real `moss-core` daemon, in this test process, on its own temp home with
 // a file secret store in that home — so it reads nothing of the machine's — and a fake app client to drive it.
 // Several of them make a cluster; a cluster's daemons are joined by a `HarnessLink`.
 //
@@ -9,7 +9,7 @@
 // fake's adapter will implement `HarnessLink` — nothing else in the harness changes.
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { FileSecretStore, startDaemon, type RunningDaemon, type SecretStore } from "@waifucave/clover-core";
+import { FileSecretStore, startDaemon, type RunningDaemon, type SecretStore } from "@waifucave/moss-core";
 import { FakeAppClient, type FakeAppClientOptions } from "./app-client";
 import { makeTempHome, type TempHome } from "./homes";
 

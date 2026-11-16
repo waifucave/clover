@@ -1,6 +1,6 @@
 // How an external agent's permission request is shown to the plugins' `tool.before` hooks (the manager): under the
-// tool name Clover's own sessions use, so a guard written for `Bash`, `Write` or `Edit` sees the same act from a coding
-// agent, with ACP's own kind kept beside it as `acpKind`. A kind with no Clover tool keeps its own name.
+// tool name MOSS's own sessions use, so a guard written for `Bash`, `Write` or `Edit` sees the same act from a coding
+// agent, with ACP's own kind kept beside it as `acpKind`. A kind with no MOSS tool keeps its own name.
 //
 // * `execute` → `Bash` (an argv `command`, as some agents send it, joined into one string beside the original).
 // * `edit` → `Write` when the request carries a whole file's `content` and no `old_string`, else `Edit`.

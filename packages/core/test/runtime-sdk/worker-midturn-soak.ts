@@ -11,7 +11,7 @@
 // After each round every process the tools started must be gone (no session child outlives its Worker).
 // Prints one JSON line: rounds, leaked processes, live Workers left, and RSS readings (start, a quarter in,
 // halfway, the end, the peak) so the test can hold the daemon's memory to a plateau under a budget.
-import { METHODS } from "@waifucave/clover-protocol";
+import { METHODS } from "@waifucave/moss-protocol";
 import { budgetMeter, mb, memory, perMeter, startSoakDaemon, type MemoryReading } from "./soak-support";
 
 const rounds = Number(process.env["SOAK_ROUNDS"] ?? "150");
@@ -51,7 +51,7 @@ try {
     const t0 = Date.now();
     while (toolProcesses().length < 2 && Date.now() - t0 < 20_000) await Bun.sleep(20);
     if (toolProcesses().length > 0) toolsSeen++;
-    const session = daemon.clover.get(sessionId);
+    const session = daemon.moss.get(sessionId);
     switch (i % 3) {
       case 0: {
         const interrupted = client.call(METHODS.sessionInterrupt, { sessionId }).catch(() => undefined);

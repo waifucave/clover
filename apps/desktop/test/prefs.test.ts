@@ -31,8 +31,8 @@ describe("the app's own choices", () => {
   });
   test("surfaces put away are kept by ref; the old pillHidden applies once to the surface a tray toggle names, then clears", () => {
     const file = join(dir, "prefs2.json");
-    writePrefs(file, { ...DEFAULT_PREFS, hiddenSurfaces: ["clover/pill#pill"] });
-    expect(readPrefs(file).hiddenSurfaces).toEqual(["clover/pill#pill"]);
+    writePrefs(file, { ...DEFAULT_PREFS, hiddenSurfaces: ["moss/pill#pill"] });
+    expect(readPrefs(file).hiddenSurfaces).toEqual(["moss/pill#pill"]);
     // A file from before (only `pillHidden`) hides the surface that carries a toggle, whatever plugin that is, and no other.
     writeFileSync(join(dir, "old.json"), JSON.stringify({ pillHidden: true, fourFingerTap: true }));
     const old = readPrefs(join(dir, "old.json"));

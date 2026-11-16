@@ -4,8 +4,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync as makeTemp, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { layerApiCall, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import { PLUGINS_METHODS } from "@waifucave/clover-protocol";
+import { layerApiCall, PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import { PLUGINS_METHODS } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -30,11 +30,11 @@ const ctx = { caller: { kind: "core" } } as never;
 
 describe("plugin.ui and plugin.layer.api", () => {
   test("views carry the real tree hash, files, grants and entries; a component's calls go through the ui side of the gate", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b2-ui-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b2-ui-"));
     const folder = join(home, "plugins", "tarot");
     const files: Record<string, string> = {
-      "clover.json": JSON.stringify({
-        manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+      "moss.json": JSON.stringify({
+        manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
         host: { entry: "host/index.js" }, client: { entry: "client/index.js", css: ["client/index.css"] },
         contributes: { themes: [{ id: "night", file: "themes/night.json" }], locales: [{ lang: "fr", file: "locales/fr.json" }] },
       }),
@@ -56,7 +56,7 @@ describe("plugin.ui and plugin.layer.api", () => {
     }
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const events: { type: string; [k: string]: unknown }[] = [];
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, emit: (e) => events.push(e) });
     const ui = pluginUi({ registry: opened.registry, router: ph.gate, emit: (e) => events.push(e) });
@@ -227,8 +227,8 @@ describe("plugin.ui and plugin.layer.api", () => {
     }
   });
 
-  test("layers: the whole clover tree shares `clover`; any other id writes `/` as `--`", () => {
-    expect([layerOf("clover"), layerOf("clover/island"), layerOf("luna"), layerOf("luna/tarot-panel"), layerOf("cloverish")]).toEqual(["clover", "clover", "luna", "luna--tarot-panel", "cloverish"]);
+  test("layers: the whole moss tree shares `moss`; any other id writes `/` as `--`", () => {
+    expect([layerOf("moss"), layerOf("moss/island"), layerOf("luna"), layerOf("luna/tarot-panel"), layerOf("mossish")]).toEqual(["moss", "moss", "luna", "luna--tarot-panel", "mossish"]);
   });
 
   test("a renderer's avatar.formats reach the view: its kinds, the extensions that pick it, the finder; a size over the format's ceiling is clamped, a renderer with no UI still shows", () => {

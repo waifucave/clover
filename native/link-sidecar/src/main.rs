@@ -1,15 +1,15 @@
-//! clover-link-sidecar: the S1 transport spike's native half (lane H, M0).
+//! moss-link-sidecar: the S1 transport spike's native half (lane H, M0).
 //!
 //! ```text
-//! clover-link-sidecar local-bench --transport quinn|iroh [--cc cubic|bbr|newreno] [--quick]
-//! clover-link-sidecar serve --transport quinn|iroh --bind 0.0.0.0:47000 --info-file f.json
-//! clover-link-sidecar bench --info-file f.json --connect ip:port --profile name
-//! clover-link-sidecar ping --info-file f.json --connect ip:port --duration-s 12 --interval-ms 50
-//! clover-link-sidecar punch --transport quinn|iroh --name a|b --port P --stun ip:port --rendezvous dir
-//! clover-link-sidecar stun-server --bind 0.0.0.0:3478
-//! clover-link-sidecar stun-query --server stun.cloudflare.com:3478 [--server2 stun.l.google.com:19302]
-//! clover-link-sidecar relay-server --bind-ip 203.0.113.50 --metrics-file m.json   (feature relay-server)
-//! clover-link-sidecar ipc
+//! moss-link-sidecar local-bench --transport quinn|iroh [--cc cubic|bbr|newreno] [--quick]
+//! moss-link-sidecar serve --transport quinn|iroh --bind 0.0.0.0:47000 --info-file f.json
+//! moss-link-sidecar bench --info-file f.json --connect ip:port --profile name
+//! moss-link-sidecar ping --info-file f.json --connect ip:port --duration-s 12 --interval-ms 50
+//! moss-link-sidecar punch --transport quinn|iroh --name a|b --port P --stun ip:port --rendezvous dir
+//! moss-link-sidecar stun-server --bind 0.0.0.0:3478
+//! moss-link-sidecar stun-query --server stun.cloudflare.com:3478 [--server2 stun.l.google.com:19302]
+//! moss-link-sidecar relay-server --bind-ip 203.0.113.50 --metrics-file m.json   (feature relay-server)
+//! moss-link-sidecar ipc
 //! ```
 //!
 //! The QUIC commands take `--gso on|off`, `--stream-window <bytes>`, `--initial-rtt-ms <ms>` and,
@@ -97,7 +97,7 @@ pub fn emit(check: &str, body: Value) {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: clover-link-sidecar <local-bench|serve|bench|ping|punch|stun-server|stun-query|relay-server|ipc> [options]");
+    eprintln!("usage: moss-link-sidecar <local-bench|serve|bench|ping|punch|stun-server|stun-query|relay-server|ipc> [options]");
     std::process::exit(2)
 }
 

@@ -24,7 +24,7 @@
 // but can't be read as the switch reads as paused (review S3). The bot service moves it (`bots.pause`).
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { SessionKind } from "@waifucave/clover-protocol";
+import type { SessionKind } from "@waifucave/moss-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import { writeJsonAtomic } from "../sessions/atomic-file";
 import type { MainComputer } from "./main-computer";

@@ -2,10 +2,10 @@
 // implementation `make` builds; `tests/computer-registry.test.ts` runs it against FakeComputerRegistry, and the lane that writes the real
 // one runs it there through a harness with the same drivers. What it pins:
 // names and aliases, levels, holds, the user-working
-// mark, the action-running signal and Clover's windows.
+// mark, the action-running signal and MOSS's windows.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { callBindingInput, cardHashInput, type Card, type Level } from "@waifucave/clover-protocol";
+import { callBindingInput, cardHashInput, type Card, type Level } from "@waifucave/moss-protocol";
 import type { CardRecord } from "../approval-broker";
 import { isContractError } from "../common";
 import { CARD_PROOF_MAX_AGE_MS, holdsOverlap, levelRaiseCall, type ComputerChange } from "../computer-registry";
@@ -158,7 +158,7 @@ export function runComputerRegistryConformance(make: ComputerRegistryFactory): v
       expect(isContractError(err(() => reg.takeHold({ computer: "Laptop1", target: { kind: "app", app: "Excel" }, pluginId: "opensky" })), "computer_offline")).toBe(true);
     });
 
-    test("the action-running signal and Clover's windows, per computer", () => {
+    test("the action-running signal and MOSS's windows, per computer", () => {
       const reg = setup();
       const changes: ComputerChange[] = [];
       reg.watch((c) => changes.push(c));
@@ -168,9 +168,9 @@ export function runComputerRegistryConformance(make: ComputerRegistryFactory): v
       expect(reg.isActionRunning("Laptop1")).toBe(false);
       reg.setActionRunning("Studio", false);
       expect(changes).toEqual([{ type: "action-running", computer: "Studio", running: true }, { type: "action-running", computer: "Studio", running: false }]);
-      reg.setCloverWindows("Studio", [{ id: "main", x: 0, y: 0, width: 800, height: 600 }]);
-      expect(reg.cloverWindows("Studio")).toEqual([{ id: "main", x: 0, y: 0, width: 800, height: 600 }]);
-      expect(reg.cloverWindows("Laptop1")).toEqual([]);
+      reg.setMossWindows("Studio", [{ id: "main", x: 0, y: 0, width: 800, height: 600 }]);
+      expect(reg.mossWindows("Studio")).toEqual([{ id: "main", x: 0, y: 0, width: 800, height: 600 }]);
+      expect(reg.mossWindows("Laptop1")).toEqual([]);
     });
   });
 }

@@ -4,8 +4,8 @@
 // is the plugin API's `shell.*` (the window's own state and acts, each act the user's own press): nothing here is special-cased for Alpha by the app, and
 // another bot's plugin can draw its own the same way.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
-import type { ShellState } from "@waifucave/clover-plugin-sdk";
+import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
+import type { ShellState } from "@waifucave/moss-plugin-sdk";
 import { useStageState } from "./stage-store";
 import { DARK_SCENES } from "./backdrop";
 import { useDark } from "./live";
@@ -16,7 +16,7 @@ const FONT = 'var(--alpha-display, ui-rounded, "SF Pro Rounded", "Hiragino Maru 
 const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinking it over", asleep: "Asleep on another computer", paused: "Paused" };
 
 const CSS = `
-html, body { background: transparent !important; margin: 0; overflow: hidden; font-family: var(--clover-font-family, system-ui, sans-serif); color: var(--clover-color-text, #221A33); -webkit-font-smoothing: antialiased; }
+html, body { background: transparent !important; margin: 0; overflow: hidden; font-family: var(--moss-font-family, system-ui, sans-serif); color: var(--moss-color-text, #221A33); -webkit-font-smoothing: antialiased; }
 .ac { --glass: rgba(255,253,247,.72); --edge: rgba(27,34,71,.12); --ink: #1B2247; --soft: #465078; --accent: #8C6A28; --wash: rgba(27,34,71,.07);
   box-sizing: border-box; height: 64px; display: flex; align-items: center; gap: 10px; padding: 14px 64px 0 ${EDGE_PX}px; user-select: none; }
 .ac[data-dark] { --glass: rgba(16,22,52,.66); --edge: rgba(255,255,255,.12); --ink: #EEF0FB; --soft: #B9BFDC; --accent: #D9B46A; --wash: rgba(255,255,255,.09); }

@@ -1,0 +1,44 @@
+/* MOSS Voice's chip on a bot's stage (`bot.stage.action`): bottom right of the stage, shown on hover and while the bot
+   speaks. */
+.cl-bot-stage__chip {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font: 14px/1 var(--moss-font-family, system-ui, sans-serif);
+  color: var(--moss-color-text-muted, #6B6046);
+  background: var(--moss-color-surface, #FFFDF6);
+  border: 1px solid var(--moss-color-hairline, #E9DDBA);
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+.cl-bot-stage:hover .cl-bot-stage__chip,
+.cl-bot-stage__chip:focus-visible,
+.cl-bot-stage__chip[data-voice="speaking"] { opacity: 1; }
+.cl-bot-stage__chip[data-voice="speaking"] { color: var(--moss-color-accent-text, #8A5A12); }
+
+/* The hold-to-talk button in the composer's row (its own `composer.action` entry), drawn like the composer's icon buttons. */
+.cl-voice-talk { display: inline-flex; align-items: center; gap: 6px; }
+.cl-voice-talk__button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--moss-radius-medium, 8px);
+  background: transparent;
+  color: var(--moss-color-text-secondary, #6B6046);
+  cursor: pointer;
+}
+.cl-voice-talk__button:hover { background: var(--moss-color-hover, rgba(0, 0, 0, 0.05)); color: var(--moss-color-text, #2A2418); }
+.cl-voice-talk__button[aria-pressed="true"] { background: var(--moss-color-accent-soft, #F6E7C8); color: var(--moss-color-accent-text, #8A5A12); }
+.cl-voice-talk__status, .cl-voice-talk__note { font: 12px/1.3 var(--moss-font-family, system-ui, sans-serif); color: var(--moss-color-text-secondary, #6B6046); }

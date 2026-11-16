@@ -16,7 +16,7 @@ afterEach(async () => {
   stops = [];
 });
 
-async function daemon(net: MemoryNetwork, name: string, home = mkdtempSync(join(tmpdir(), "clover-h-node-")), store = new MemorySecretStore()) {
+async function daemon(net: MemoryNetwork, name: string, home = mkdtempSync(join(tmpdir(), "moss-h-node-")), store = new MemorySecretStore()) {
   const links = await startDeviceLinks({ home, store, clock, self: { name, os: "macos" }, wire: (key) => net.endpoint(key.publicKey) });
   stops.push(() => links.close());
   return { links, home, store };
@@ -55,7 +55,7 @@ describe("the daemon's links", () => {
     const hooks = new Set<() => Promise<void> | void>();
     const updateGate = { beforeRestart: (fn: () => Promise<void> | void) => (hooks.add(fn), () => void hooks.delete(fn)) };
     const links = await startDeviceLinks({
-      home: mkdtempSync(join(tmpdir(), "clover-h-node-")), store: new MemorySecretStore(), clock, self: { name: "Studio", os: "macos" },
+      home: mkdtempSync(join(tmpdir(), "moss-h-node-")), store: new MemorySecretStore(), clock, self: { name: "Studio", os: "macos" },
       wire: (key) => net.endpoint(key.publicKey), updateGate,
     });
     expect(hooks.size).toBe(1);
@@ -69,7 +69,7 @@ describe("the daemon's links", () => {
     expect(lease!.state().scope).toBeUndefined();
     // Without a main computer here (no group yet), the node is told so: `null`, never left out (lane J's #237).
     const bare = await startDeviceLinks({
-      home: mkdtempSync(join(tmpdir(), "clover-h-node-")), store: new MemorySecretStore(), clock, self: { name: "Bare", os: "macos" },
+      home: mkdtempSync(join(tmpdir(), "moss-h-node-")), store: new MemorySecretStore(), clock, self: { name: "Bare", os: "macos" },
       wire: (key) => net.endpoint(key.publicKey), mainComputer: false,
     });
     stops.push(() => bare.close());

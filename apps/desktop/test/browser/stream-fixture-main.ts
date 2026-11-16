@@ -10,10 +10,10 @@ import type { AddressInfo } from "node:net";
 import { createBrowserHost, isBrowserContents, isBrowserTab, PERSON_POLICY, type BrowserHost, type TabView } from "../../src/main/browser/index";
 import type { AppTabEvent, StreamChunk } from "../../src/main/browser/contract";
 
-const out = process.env.CLOVER_BROWSER_TEST_OUT ?? "";
-const viewportAssets = { preload: process.env.CLOVER_BROWSER_TEST_PRELOAD ?? "", html: process.env.CLOVER_BROWSER_TEST_HTML ?? "" };
-const streamAssets = { preload: process.env.CLOVER_STREAM_TEST_PRELOAD ?? "", html: process.env.CLOVER_STREAM_TEST_HTML ?? "" };
-const viewerHtml = process.env.CLOVER_STREAM_TEST_VIEWER ?? "";
+const out = process.env.MOSS_BROWSER_TEST_OUT ?? "";
+const viewportAssets = { preload: process.env.MOSS_BROWSER_TEST_PRELOAD ?? "", html: process.env.MOSS_BROWSER_TEST_HTML ?? "" };
+const streamAssets = { preload: process.env.MOSS_STREAM_TEST_PRELOAD ?? "", html: process.env.MOSS_STREAM_TEST_HTML ?? "" };
+const viewerHtml = process.env.MOSS_STREAM_TEST_VIEWER ?? "";
 
 /** A red block that stays (the colour the viewer checks), on white, and below it eight bands of colour gradients
  *  that change every frame: the encoder spends about its whole target on them (2.8 Mbit/s at 2.5 in the headless
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
   const host: BrowserHost = createBrowserHost({ ...opts, screenReader: { override: false } });
   await host.start();
   // The other device's viewer: a page that is never shown, decoding with WebCodecs (a file: page, a secure context).
-  const viewer = new BrowserWindow({ show: false, webPreferences: { partition: "clover-stream-test-viewer", sandbox: true, contextIsolation: false, offscreen: true, backgroundThrottling: false } });
+  const viewer = new BrowserWindow({ show: false, webPreferences: { partition: "moss-stream-test-viewer", sandbox: true, contextIsolation: false, offscreen: true, backgroundThrottling: false } });
   await viewer.loadFile(viewerHtml);
   const bot = { kind: "bot" as const, bot: "alpha" };
   let tab!: TabView;

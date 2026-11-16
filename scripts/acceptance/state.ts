@@ -14,7 +14,7 @@ export interface KeptState {
   /** The tree (commit) or app that made the state, for the tables. */
   made: string;
   target: "source" | "packaged";
-  /** The keychain service the run's items are under (`CLOVER_KEYCHAIN_SERVICE`). */
+  /** The keychain service the run's items are under (`MOSS_KEYCHAIN_SERVICE`). */
   service: string;
   /** The run's dummy model key (for the fake provider; never a real key). */
   key: string;
@@ -27,7 +27,7 @@ export interface KeptState {
   /** Why there is no `needsYou`: the old build's own Settings step didn't pass (its status and detail). Absent with
    *  no `needsYou`, the record is missing on the harness's side, and the upgrade step fails. */
   needsYouMissing?: string;
-  /** Whether the run's app kept its answer key in the run's file (`CLOVER_TEST_ANSWER_KEY`; a build before it keeps
+  /** Whether the run's app kept its answer key in the run's file (`MOSS_TEST_ANSWER_KEY`; a build before it keeps
    *  it in memory only): an upgrade's app then registers the same key, and its cards are pressed for real. */
   answerKeyKept?: boolean;
   /** The "Always allow" the run gave on its plugin tool call's card (the Echo call): the tool it named. The upgrade
@@ -39,15 +39,15 @@ export interface KeptState {
 
 /** Where the kept things live under the state dir. */
 export function statePaths(dir: string): { home: string; user: string; keychain: string } {
-  // The Clover home inside the user home (`<user>/.clover`), as on the owner's Mac; a state dir an older harness made
+  // The MOSS home inside the user home (`<user>/.moss`), as on the owner's Mac; a state dir an older harness made
   // keeps its sibling `home` (the upgrade pair's old half may be an older tree's run).
   const user = join(dir, "user");
   const sibling = join(dir, "home");
-  const home = existsSync(sibling) && !existsSync(join(user, ".clover")) ? sibling : join(user, ".clover");
+  const home = existsSync(sibling) && !existsSync(join(user, ".moss")) ? sibling : join(user, ".moss");
   return { home, user, keychain: join(dir, "kc", "acceptance.keychain-db") };
 }
 
-/** The test app's kept answer key (`CLOVER_TEST_ANSWER_KEY`): a file beside the run's throwaway keychain file. */
+/** The test app's kept answer key (`MOSS_TEST_ANSWER_KEY`): a file beside the run's throwaway keychain file. */
 export function answerKeyFileFor(keychain: string): string {
   return join(dirname(keychain), "answer-key");
 }
@@ -81,7 +81,7 @@ export function readState(dir: string): KeptState {
   const s = raw as Partial<KeptState> | null;
   if (s === null || typeof s !== "object" || s.v !== 1) throw new Error(`${file} isn't a v1 state file`);
   if (s.target !== "source" && s.target !== "packaged") throw new Error(`${file} names no target`);
-  if (typeof s.service !== "string" || !/^com\.waifucave\.clover\.core\.test\./.test(s.service)) throw new Error(`${file}'s keychain service isn't a test service`);
+  if (typeof s.service !== "string" || !/^com\.waifucave\.moss\.core\.test\./.test(s.service)) throw new Error(`${file}'s keychain service isn't a test service`);
   if (typeof s.key !== "string" || !s.key.startsWith("sk-ant-acceptance-dummy-")) throw new Error(`${file}'s key isn't the run's dummy`);
   if (typeof s.made !== "string") throw new Error(`${file} doesn't say what made it`);
   for (const k of ["session", "pluginId"] as const) if (s[k] !== undefined && typeof s[k] !== "string") throw new Error(`${file}'s ${k} isn't a string`);
@@ -116,7 +116,7 @@ export function settingsWithFake(existing: string | undefined, fakeUrl: string, 
 }
 
 /** The daemon's lines that say it distrusts state an earlier build signed (the registry's MAC, the device key). */
-export const DISTRUST = /[^\n]*(?:was changed outside Clover|belongs to another device key|isn't trusted)[^\n]*/;
+export const DISTRUST = /[^\n]*(?:was changed outside MOSS|belongs to another device key|isn't trusted)[^\n]*/;
 
 /** The full run's steps the upgrade's OLD half (`--keep-state`) must pass: the ones whose state the new half reads (the
  *  app paired, the key, the conversation, the approved plugin and its tool's "Always" rule, a daemon that boots again

@@ -113,12 +113,12 @@ describe("appearance and the fallback order", () => {
     expect(isValueForToken("color.focus", SYSTEM_ACCENT) && isValueForToken("island.accept", SYSTEM_ACCENT) && isValueForToken("pill.accept", SYSTEM_ACCENT)).toBe(true);
     expect(isValueForToken("pill.accept.text", AUTO_INK)).toBe(true);
     // The frame's variables are the shell's: no theme sets them.
-    expect(FRAME_VARIABLES.map((v) => cssProperty(v.name))).toEqual(["--clover-frame-inset-top", "--clover-frame-window-controls", "--clover-frame-window-controls-end"]);
+    expect(FRAME_VARIABLES.map((v) => cssProperty(v.name))).toEqual(["--moss-frame-inset-top", "--moss-frame-window-controls", "--moss-frame-window-controls-end"]);
     expect(isValueForToken("frame.inset.top", "45px")).toBe(false);
     expect(systemAccentFromOs("blue")).toBeUndefined();
     // A theme file may say so.
     const files = new Map([
-      ["clover.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
+      ["moss.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
       ["t.json", JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.accent": "system", "color.accent.glyph": "auto", "color.text": "system" } })],
     ]);
     const r = await validateTree({ readText: (p) => files.get(p), exists: (p) => files.has(p), listDirs: () => [] }, { folderName: "luna" });
@@ -127,24 +127,24 @@ describe("appearance and the fallback order", () => {
 
   test("a window skin the app would drop a group of is a warning at validation, by appearance, with the app's reason", async () => {
     const files = (barPaint: string) => new Map([
-      ["clover.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
+      ["moss.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
       ["t.json", JSON.stringify({ theme: 1, name: "Luna", appearance: "light", tokens: { "color.surface": "#FFFDF6" }, shell: { tokens: { bar: barPaint, "bar.text": "#221A33", "bar.rule": "#C9BDEB" } } })],
     ]);
     const check = async (barPaint: string) => {
       const f = files(barPaint);
       return (await validateTree({ readText: (p) => f.get(p), exists: (p) => f.has(p), listDirs: () => [] }, { folderName: "luna" })).issues;
     };
-    // Clover's attention mark on a bar this tinted is under 3:1 (a light-only theme: the dark appearance isn't checked, as
+    // MOSS's attention mark on a bar this tinted is under 3:1 (a light-only theme: the dark appearance isn't checked, as
     // the app doesn't skin it).
     const weak = await check("#E4D2F7");
     expect(weak.map((i) => [i.severity, i.code, i.file, i.path])).toEqual([["warning", "shell_dropped", "t.json", "/shell"]]);
-    expect(weak[0]!.message).toMatch(/^in light appearance the window doesn't use its bar group: Clover's attention mark on the bar is \d\.\d\d:1; it needs 3:1$/);
+    expect(weak[0]!.message).toMatch(/^in light appearance the window doesn't use its bar group: MOSS's attention mark on the bar is \d\.\d\d:1; it needs 3:1$/);
     expect(await check("#F6F2FF")).toEqual([]);
   });
 
   test("the sidebar's old shell names still load, are ignored, and each is a warning: Bots doesn't offer the sidebar", async () => {
     const files = new Map([
-      ["clover.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
+      ["moss.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
       ["t.json", JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.surface": "#FFFDF6" }, shell: { tokens: { bar: "#F6F2FF", "bar.text": "#221A33", "bar.rule": "#C9BDEB", "sidebar.mode": "none" }, dark: { tokens: { "sidebar.mode": "none", sidebar: "#16132B" } } } })],
     ]);
     const issues = (await validateTree({ readText: (p) => files.get(p), exists: (p) => files.has(p), listDirs: () => [] }, { folderName: "luna" })).issues;
@@ -212,7 +212,7 @@ describe("what a plugin's CSS may load", () => {
       "%2e%2e/%2e%2e/secret", "../../secret", "..\\..\\secret", ".%2E/.%2e/secret", "/tab/a.png", "//evil.example/a.png",
       "https://evil.example/a.png", "HTTPS://evil.example/a.png", "ht\ttps://evil.example/a.png", "data:image/png;base64,AAAA",
       "file:///etc/passwd", "javascript:alert(1)", "a%2fb.png", "a%5cb.png", "%zz.png", "", "  ",
-      "https://plugin.clover.invalid/__plugin__/x.png",
+      "https://plugin.moss.invalid/__plugin__/x.png",
     ];
     for (const raw of refused) expect([raw, resolveCssUrl(raw, "tab/theme.css").ok]).toEqual([raw, false]);
     // A string in image-set() is a URL like any other.
@@ -367,7 +367,7 @@ describe("a patch from another plugin to a bot's tab", () => {
 
 describe("locale format 1", () => {
   test("keys start with a plugin id and a dot; plural forms need `other`", () => {
-    expect(LocaleSchema.safeParse({ locale: 1, lang: "pt-BR", strings: { "luna.hi": "Oi {name}", "clover.items": { one: "{n} item", other: "{n} itens" } } }).success).toBe(true);
+    expect(LocaleSchema.safeParse({ locale: 1, lang: "pt-BR", strings: { "luna.hi": "Oi {name}", "moss.items": { one: "{n} item", other: "{n} itens" } } }).success).toBe(true);
     expect(LocaleSchema.safeParse({ locale: 1, lang: "pt-BR", strings: { hello: "Oi" } }).success).toBe(false);
     expect(LocaleSchema.safeParse({ locale: 1, lang: "pt-BR", strings: { "luna.items": { one: "1" } } }).success).toBe(false);
     expect(placeholdersOf("Hi {name}, {count} new")).toEqual(["name", "count"]);
@@ -393,7 +393,7 @@ describe("the tree hash", () => {
   const entries = [
     { path: "host/index.ts", executable: false, sha256: H("1") },
     { path: "bin/run", executable: true, sha256: H("2") },
-    { path: "clover.json", executable: false, sha256: H("3") },
+    { path: "moss.json", executable: false, sha256: H("3") },
     { path: "assets/.DS_Store", executable: false, sha256: H("4") },
     { path: ".git/HEAD", executable: false, sha256: H("5") },
     { path: "plugins/tarot/Thumbs.db", executable: false, sha256: H("6") },
@@ -401,7 +401,7 @@ describe("the tree hash", () => {
 
   test("is SHA-256 over sorted lines of path, executable bit and the file's SHA-256 (§5.1)", async () => {
     const input = treeHashInput(entries);
-    expect(input).toBe(`bin/run\tx\t${H("2")}\nclover.json\t-\t${H("3")}\nhost/index.ts\t-\t${H("1")}\n`);
+    expect(input).toBe(`bin/run\tx\t${H("2")}\nmoss.json\t-\t${H("3")}\nhost/index.ts\t-\t${H("1")}\n`);
     const want = createHash("sha256").update(input).digest("hex");
     expect(await treeHash(entries)).toBe(`sha256:${want}`);
     expect(await sha256Hex("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");

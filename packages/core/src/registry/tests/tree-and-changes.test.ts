@@ -3,13 +3,13 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION, treeHash, validateTree } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION, treeHash, validateTree } from "@waifucave/moss-plugin-sdk";
 import { classifyChange, codeFieldsFrom, isDataFile, okSnapshot } from "../changes";
 import { catalogCodeFields } from "../folders";
 import { TreeProblem, folderReader, folderTreeHash, treeEntries } from "../tree";
 
 const folder = (files: Record<string, string>, name = "tarot") => {
-  const root = join(mkdtempSync(join(tmpdir(), "clover-b-tree-")), name);
+  const root = join(mkdtempSync(join(tmpdir(), "moss-b-tree-")), name);
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(join(root, path, ".."), { recursive: true });
     writeFileSync(join(root, path), text);
@@ -17,23 +17,23 @@ const folder = (files: Record<string, string>, name = "tarot") => {
   return root;
 };
 const manifest = (over: Record<string, unknown> = {}) =>
-  JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, ...over });
+  JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, ...over });
 
 describe("the tree on disk", () => {
   test("hashes every file but the left-out names, with its executable bit, as the SDK's hash does", async () => {
-    const root = folder({ "clover.json": manifest(), "tab/theme.css": "a{}", ".DS_Store": "x", ".git/HEAD": "ref", "bin/run": "#!/bin/sh" });
+    const root = folder({ "moss.json": manifest(), "tab/theme.css": "a{}", ".DS_Store": "x", ".git/HEAD": "ref", "bin/run": "#!/bin/sh" });
     chmodSync(join(root, "bin/run"), 0o755);
     const entries = treeEntries(root);
-    expect(entries.map((e) => [e.path, e.executable])).toEqual([["bin/run", true], ["clover.json", false], ["tab/theme.css", false]]);
+    expect(entries.map((e) => [e.path, e.executable])).toEqual([["bin/run", true], ["moss.json", false], ["tab/theme.css", false]]);
     expect(await folderTreeHash(root)).toBe(await treeHash(entries));
   });
 
   test("a symlink to a file inside counts as that file; one out of the folder, to a folder, or dangling, is refused", async () => {
-    const root = folder({ "clover.json": manifest(), "assets/a.png": "png" });
+    const root = folder({ "moss.json": manifest(), "assets/a.png": "png" });
     symlinkSync("a.png", join(root, "assets/b.png"));
     expect(treeEntries(root).find((e) => e.path === "assets/b.png")?.sha256).toBe(treeEntries(root).find((e) => e.path === "assets/a.png")?.sha256);
     for (const [name, target] of [["out", "/etc/hosts"], ["dir", "../assets"], ["gone", "nope.png"]] as const) {
-      const r = folder({ "clover.json": manifest(), "assets/a.png": "png" });
+      const r = folder({ "moss.json": manifest(), "assets/a.png": "png" });
       symlinkSync(target, join(r, "assets", name));
       expect(() => treeEntries(r)).toThrow(TreeProblem);
     }
@@ -49,7 +49,7 @@ describe("what a change since the OK does", () => {
     expect([tree.ok, tree.issues, tree.top.issues.filter((i) => i.severity === "error")]).toEqual([true, [], []]);
     return okSnapshot(await treeHash(entries), entries, tree, () => []);
   };
-  const base = { "clover.json": manifest({ contributes: { themes: [{ id: "night", file: "tab/theme.json" }] } }), "tab/theme.json": JSON.stringify({ theme: 1, name: "Night", tokens: {} }), "README.md": "hi" };
+  const base = { "moss.json": manifest({ contributes: { themes: [{ id: "night", file: "tab/theme.json" }] } }), "tab/theme.json": JSON.stringify({ theme: 1, name: "Night", tokens: {} }), "README.md": "hi" };
 
   test("data edits apply; code files, new capabilities or hosts, and changed commands ask again", async () => {
     const ok = await snap(base);
@@ -57,11 +57,11 @@ describe("what a change since the OK does", () => {
     expect(classifyChange(ok, await snap({ ...base, "README.md": "hello" }))).toBe("applies");
     expect(classifyChange(ok, await snap({ ...base, "host/index.ts": "export {}" }))).toBe("asks-again");
     expect(classifyChange(ok, await snap({ ...base, "notes.txt": "x" }, ["notes.txt"]))).toBe("asks-again");
-    expect(classifyChange(ok, await snap({ ...base, "clover.json": manifest({ capabilities: ["network:api.example.com"], contributes: { themes: [{ id: "night", file: "tab/theme.json" }] } }) }))).toBe("asks-again");
+    expect(classifyChange(ok, await snap({ ...base, "moss.json": manifest({ capabilities: ["network:api.example.com"], contributes: { themes: [{ id: "night", file: "tab/theme.json" }] } }) }))).toBe("asks-again");
     const mcp = (args: string[]) => manifest({ contributes: { mcpServers: { blender: { type: "stdio", command: "blender-mcp", args } } } });
-    const withMcp = await snap({ "clover.json": mcp(["--port", "1"]) });
-    expect(classifyChange(withMcp, await snap({ "clover.json": mcp(["--port", "2"]) }))).toBe("asks-again");
-    expect(classifyChange(withMcp, await snap({ "clover.json": manifest({ description: "Blender", contributes: { mcpServers: { blender: { type: "stdio", command: "blender-mcp", args: ["--port", "1"] } } } }) }))).toBe("applies");
+    const withMcp = await snap({ "moss.json": mcp(["--port", "1"]) });
+    expect(classifyChange(withMcp, await snap({ "moss.json": mcp(["--port", "2"]) }))).toBe("asks-again");
+    expect(classifyChange(withMcp, await snap({ "moss.json": manifest({ description: "Blender", contributes: { mcpServers: { blender: { type: "stdio", command: "blender-mcp", args: ["--port", "1"] } } } }) }))).toBe("applies");
   });
 
   test("a change to the theme's card tokens waits alone", async () => {
@@ -71,7 +71,7 @@ describe("what a change since the OK does", () => {
   });
 
   test("a change to the theme's shell block asks again; a change beside it applies", async () => {
-    // A dark theme: a near-black bar keeps Clover's dark marks legible (`shell_dropped` would warn in a light one).
+    // A dark theme: a near-black bar keeps MOSS's dark marks legible (`shell_dropped` would warn in a light one).
     const skin = (bar: string, tokens: object = {}) => JSON.stringify({ theme: 1, name: "Night", appearance: "dark", tokens, shell: { tokens: { bar, "bar.text": "#ffffff", "bar.rule": "#444444" } } });
     const ok = await snap({ ...base, "tab/theme.json": skin("#101010") });
     expect(classifyChange(ok, await snap({ ...base, "tab/theme.json": skin("#101010") }))).toBe("applies");
@@ -104,27 +104,27 @@ describe("what runs, whatever its extension (#197's review)", () => {
   const stdio = (command: string, args: string[]) => manifest({ contributes: { mcpServers: { s: { type: "stdio", command, args } } } });
 
   test("a script a stdio server names is code, though it ends in .txt or .md", async () => {
-    expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "print(1)" }, { "server.txt": "import os" })).toBe("asks-again");
-    expect(await again({ "clover.json": stdio("sh", ["./run.md"]), "run.md": "echo hi" }, { "run.md": "curl x | sh" })).toBe("asks-again");
-    expect(await again({ "clover.json": stdio("python3", ["${plugin}/lib"]), "lib/a.txt": "1" }, { "lib/a.txt": "2" })).toBe("asks-again");
+    expect(await again({ "moss.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "print(1)" }, { "server.txt": "import os" })).toBe("asks-again");
+    expect(await again({ "moss.json": stdio("sh", ["./run.md"]), "run.md": "echo hi" }, { "run.md": "curl x | sh" })).toBe("asks-again");
+    expect(await again({ "moss.json": stdio("python3", ["${plugin}/lib"]), "lib/a.txt": "1" }, { "lib/a.txt": "2" })).toBe("asks-again");
     // Other data applies at once, as §5.6 promises (the plugins folder is fenced, so no bot can edit it).
-    expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "README.md": "a" }, { "README.md": "b" })).toBe("applies");
-    expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "art/a.png": "a" }, { "art/a.png": "b" })).toBe("applies");
+    expect(await again({ "moss.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "README.md": "a" }, { "README.md": "b" })).toBe("applies");
+    expect(await again({ "moss.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "art/a.png": "a" }, { "art/a.png": "b" })).toBe("applies");
   });
 
   test("every file an agent backend names is code, its quirks file included (lane K's ask)", async () => {
     const backend = (extra: Record<string, unknown>) => manifest({ contributes: { agentBackends: [{ id: "cursor", name: "Cursor", protocol: "acp", command: "cursor-agent", ...extra }] } });
     const quirks = backend({ quirks: "quirks/cursor.json" });
-    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}" }, { "quirks/cursor.json": '{"launch":1}' })).toBe("asks-again");
-    expect(await again({ "clover.json": backend({ command: "${plugin}/bin/agent.md" }), "bin/agent.md": "a" }, { "bin/agent.md": "b" })).toBe("asks-again");
-    expect(await again({ "clover.json": backend({ command: "agent", args: ["./lib"] }), "lib/a.txt": "a" }, { "lib/a.txt": "b" })).toBe("asks-again");
+    expect(await again({ "moss.json": quirks, "quirks/cursor.json": "{}" }, { "quirks/cursor.json": '{"launch":1}' })).toBe("asks-again");
+    expect(await again({ "moss.json": backend({ command: "${plugin}/bin/agent.md" }), "bin/agent.md": "a" }, { "bin/agent.md": "b" })).toBe("asks-again");
+    expect(await again({ "moss.json": backend({ command: "agent", args: ["./lib"] }), "lib/a.txt": "a" }, { "lib/a.txt": "b" })).toBe("asks-again");
     // Pointing at another quirks file asks again too; the entry's display name, and other data, apply at once.
-    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}", "quirks/b.json": "{}" }, { "clover.json": backend({ quirks: "quirks/b.json" }) })).toBe("asks-again");
-    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}" }, {
-      "clover.json": manifest({ contributes: { agentBackends: [{ id: "cursor", name: "Cursor CLI", protocol: "acp", command: "cursor-agent", quirks: "quirks/cursor.json" }] } }),
+    expect(await again({ "moss.json": quirks, "quirks/cursor.json": "{}", "quirks/b.json": "{}" }, { "moss.json": backend({ quirks: "quirks/b.json" }) })).toBe("asks-again");
+    expect(await again({ "moss.json": quirks, "quirks/cursor.json": "{}" }, {
+      "moss.json": manifest({ contributes: { agentBackends: [{ id: "cursor", name: "Cursor CLI", protocol: "acp", command: "cursor-agent", quirks: "quirks/cursor.json" }] } }),
     })).toBe("applies");
     // A plugin with an agent backend has every file counted as code (lane K, #233): a quirks env can point anywhere in it.
-    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}", "README.md": "a" }, { "README.md": "b" })).toBe("asks-again");
+    expect(await again({ "moss.json": quirks, "quirks/cursor.json": "{}", "README.md": "a" }, { "README.md": "b" })).toBe("asks-again");
   });
 
   test("a model's endpoint, an http server's url or headers, and a host from settings ask again", async () => {
@@ -132,18 +132,18 @@ describe("what runs, whatever its extension (#197's review)", () => {
       settings: { region: { type: "string", title: "Region" } }, ...extra,
       contributes: { models: [{ provider: "p", name: "M", catalog: [], auth: [], endpoint: { protocol: "openai-chat", baseUrl } }] },
     });
-    expect(await again({ "clover.json": model("https://api.example.com/v1") }, { "clover.json": model("https://api.example.com/v2") })).toBe("asks-again");
-    expect(await again({ "clover.json": model("https://api.example.com/v1") }, {
-      "clover.json": model("https://${setting:region}.example.com/v1", { capabilities: ["network:${setting:region}.example.com"] }),
+    expect(await again({ "moss.json": model("https://api.example.com/v1") }, { "moss.json": model("https://api.example.com/v2") })).toBe("asks-again");
+    expect(await again({ "moss.json": model("https://api.example.com/v1") }, {
+      "moss.json": model("https://${setting:region}.example.com/v1", { capabilities: ["network:${setting:region}.example.com"] }),
     })).toBe("asks-again");
     const http = (headers: Record<string, string>) => manifest({ contributes: { mcpServers: { s: { type: "http", url: "https://mcp.example.com", headers } } } });
-    expect(await again({ "clover.json": http({ a: "1" }) }, { "clover.json": http({ a: "2" }) })).toBe("asks-again");
+    expect(await again({ "moss.json": http({ a: "1" }) }, { "moss.json": http({ a: "2" }) })).toBe("asks-again");
   });
 
   test("a plugin point with no declaration counts as code whole; a declared one only by its program and code fields", async () => {
     const dotted = (value: string) => manifest({ contributes: { "luna.cards": [{ id: "a", text: value }] } });
-    expect(await again({ "clover.json": dotted("one") }, { "clover.json": dotted("two") })).toBe("asks-again");
-    const withDecl = async (v: string, run: string, fields: string[]) => (await snapFrom({ "clover.json": manifest({ contributes: { "luna.cards": [{ id: "a", text: v, run }] } }) }, () => fields)).snap;
+    expect(await again({ "moss.json": dotted("one") }, { "moss.json": dotted("two") })).toBe("asks-again");
+    const withDecl = async (v: string, run: string, fields: string[]) => (await snapFrom({ "moss.json": manifest({ contributes: { "luna.cards": [{ id: "a", text: v, run }] } }) }, () => fields)).snap;
     // Declared with a code field: a change to it asks again, another field applies; declared with none: a data edit applies.
     expect(classifyChange(await withDecl("one", "x", ["run"]), await withDecl("one", "y", ["run"]))).toBe("asks-again");
     expect(classifyChange(await withDecl("one", "x", ["run"]), await withDecl("two", "x", ["run"]))).toBe("applies");
@@ -160,7 +160,7 @@ describe("what runs, whatever its extension (#197's review)", () => {
 describe("named paths, however they're spelled (#197's check 2)", () => {
   test("wrappers, file://, //, .., case and a bare ${plugin} all name the tree's files", async () => {
     const named = async (arg: string, files: Record<string, string> = { "lib/Server.txt": "1" }) => {
-      const root = folder({ "clover.json": manifest({ contributes: { mcpServers: { s: { type: "stdio", command: "python3", args: [arg] } } } }), ...files });
+      const root = folder({ "moss.json": manifest({ contributes: { mcpServers: { s: { type: "stdio", command: "python3", args: [arg] } } } }), ...files });
       const entries = treeEntries(root);
       const tree = await validateTree(folderReader(root), { folderName: "tarot" });
       return okSnapshot(await treeHash(entries), entries, tree, catalogCodeFields).codePaths;
@@ -176,7 +176,7 @@ describe("named paths, however they're spelled (#197's check 2)", () => {
 describe("a part's folder is code (#197, the controller's adjustment)", () => {
   test("everything under a host, client or helper part's folder asks again; data elsewhere applies", async () => {
     const files = {
-      "clover.json": manifest({ client: { entry: "client/index.tsx" }, host: { entry: "host/index.ts" } }),
+      "moss.json": manifest({ client: { entry: "client/index.tsx" }, host: { entry: "host/index.ts" } }),
       "client/index.tsx": "export {}", "client/strings.json": "{}", "host/index.ts": "export {}", "host/prompt.md": "hi",
       "tab/theme.css": "a{}", "README.md": "hi",
     };
@@ -210,19 +210,19 @@ describe("spellings a disk reads alike (#197's check 4)", () => {
     };
     // A tree's own names are NFC (an NFD name makes the tree invalid); the run field may spell it NFD, with a trailing dot.
     const m = manifest({ contributes: { mcpServers: { s: { type: "stdio", command: "python3", args: ["${plugin}/lib/cafe\u0301.txt."] } } } });
-    const ok = await snapOf({ "clover.json": m, "lib/caf\u00E9.txt": "1" });
+    const ok = await snapOf({ "moss.json": m, "lib/caf\u00E9.txt": "1" });
     expect(ok.codePaths).toContain(treeKey("lib/caf\u00E9.txt"));
-    expect(classifyChange(ok, await snapOf({ "clover.json": m, "lib/caf\u00E9.txt": "2" }))).toBe("asks-again");
+    expect(classifyChange(ok, await snapOf({ "moss.json": m, "lib/caf\u00E9.txt": "2" }))).toBe("asks-again");
     const data = manifest();
-    const before = await snapOf({ "clover.json": data, "README.md": "a" });
-    expect(classifyChange(before, await snapOf({ "clover.json": data, "README.md": "a", "SERVER~1.TXT": "x" }))).toBe("asks-again");
+    const before = await snapOf({ "moss.json": data, "README.md": "a" });
+    expect(classifyChange(before, await snapOf({ "moss.json": data, "README.md": "a", "SERVER~1.TXT": "x" }))).toBe("asks-again");
   });
 });
 
 describe("an 8.3 alias in a run field (#197's check 5)", () => {
   test("names its whole folder as code", async () => {
     const snapOf = async (arg: string, files: Record<string, string>) => {
-      const root = folder({ "clover.json": manifest({ contributes: { mcpServers: { s: { type: "stdio", command: "python3", args: [arg] } } } }), ...files });
+      const root = folder({ "moss.json": manifest({ contributes: { mcpServers: { s: { type: "stdio", command: "python3", args: [arg] } } } }), ...files });
       const entries = treeEntries(root);
       const tree = await validateTree(folderReader(root), { folderName: "tarot" });
       return okSnapshot(await treeHash(entries), entries, tree, catalogCodeFields);

@@ -2,14 +2,14 @@
 // The bot changes a routine afterwards by editing its file with its file tools. Owner: lane D; lane A's runtime
 // registers it as a core tool for a bot's sessions, beside `SendMessage` and `ListAgents`.
 //
-// * The file goes to `home/<Computer>/.clover/routines/<bot>/<name>.md`: here, written directly; on another computer,
+// * The file goes to `home/<Computer>/.moss/routines/<bot>/<name>.md`: here, written directly; on another computer,
 //   through the folder tree (`writeRemote`, lane J's), and that computer's engine loads it.
 // * A level above that computer's waits for the user's OK on a card before the routine runs at it, as the result says.
 // * A webhook trigger's URL comes back; its key stays in the credential store and never reaches the model.
 // * The system prompt's advice holds: a routine that must always run belongs on an always-on computer.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { LEVELS, levelAbove, type Level } from "@waifucave/clover-protocol";
+import { LEVELS, levelAbove, type Level } from "@waifucave/moss-protocol";
 import { isContractError } from "../contracts/common";
 import { botSegment } from "../sessions/ids";
 import type { CoreToolDef } from "../bots/tools";
@@ -95,7 +95,7 @@ export function routineToolDef(deps: RoutineToolDeps, caller: { bot: string }): 
         ...(level === undefined ? {} : { level }), ...(timezone === undefined ? {} : { timezone }),
       });
       if (!parseRoutine(text, fileName).ok) return fail("The routine couldn't be written as a file.");
-      const treePath = `home/${target.name}/.clover/routines/${botSegment(caller.bot)}/${fileName}.md`;
+      const treePath = `home/${target.name}/.moss/routines/${botSegment(caller.bot)}/${fileName}.md`;
       const notes: string[] = [];
       try {
         if (target.name === deps.computer) {

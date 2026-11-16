@@ -5,10 +5,10 @@ import type { RequestOptions } from "node:http";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
+import { generateFeedKey, signFeed } from "@waifucave/moss-update-feed";
 import { FeedRefused, feedFileOf, IDLE_POLL_MS, INSTALL_QUIT_MS, InstallGate, installKindOf, parseUpdateConfig, unknownReleaseYml, writeInstallMarker, updatesItself, verifyingExecutor, VerifiedGitHubProvider, type InstallGateDeps } from "../src/main/updater";
 
-const FEED = "version: 1.2.3\nfiles:\n  - url: Clover-1.2.3-mac.zip\n    sha512: abc\n    size: 10\npath: Clover-1.2.3-mac.zip\nsha512: abc\nreleaseDate: '2026-11-06T00:00:00.000Z'\n";
+const FEED = "version: 1.2.3\nfiles:\n  - url: MOSS-Code-1.2.3-mac.zip\n    sha512: abc\n    size: 10\npath: MOSS-Code-1.2.3-mac.zip\nsha512: abc\nreleaseDate: '2026-11-06T00:00:00.000Z'\n";
 
 /** An executor answering from a table of paths (anything else is a 404), logging what was asked. */
 function fakeExecutor(files: Record<string, string>) {
@@ -26,26 +26,26 @@ function fakeExecutor(files: Record<string, string>) {
 
 describe("the app's updates", () => {
   test("an update file is known by its name; the release list and the download are not", () => {
-    expect(feedFileOf("/waifucave/clover/releases/download/v1.2.3/latest-mac.yml")).toBe("latest-mac.yml");
-    expect(feedFileOf("/waifucave/clover/releases/download/v1.2.3/beta-linux-arm64.yml?x=1")).toBe("beta-linux-arm64.yml");
-    expect(feedFileOf("/waifucave/clover/releases/download/v1.2.3/latest.yml")).toBe("latest.yml");
-    expect(feedFileOf("/waifucave/clover/releases.atom")).toBeUndefined();
-    expect(feedFileOf("/waifucave/clover/releases/download/v1.2.3/Clover-1.2.3-mac.zip")).toBeUndefined();
+    expect(feedFileOf("/waifucave/moss/releases/download/v1.2.3/latest-mac.yml")).toBe("latest-mac.yml");
+    expect(feedFileOf("/waifucave/moss/releases/download/v1.2.3/beta-linux-arm64.yml?x=1")).toBe("beta-linux-arm64.yml");
+    expect(feedFileOf("/waifucave/moss/releases/download/v1.2.3/latest.yml")).toBe("latest.yml");
+    expect(feedFileOf("/waifucave/moss/releases.atom")).toBeUndefined();
+    expect(feedFileOf("/waifucave/moss/releases/download/v1.2.3/MOSS-Code-1.2.3-mac.zip")).toBeUndefined();
     expect(feedFileOf("/x/latest-mac.yml.sig")).toBeUndefined();
     expect(feedFileOf(undefined)).toBeUndefined();
   });
 
   test("a signed update file reads; a changed one, one under another name or one without its .sig is refused", async () => {
     const key = generateFeedKey();
-    const path = "/waifucave/clover/releases/download/v1.2.3/latest-mac.yml";
+    const path = "/waifucave/moss/releases/download/v1.2.3/latest-mac.yml";
     const good = fakeExecutor({ [path]: FEED, [`${path}.sig`]: signFeed("latest-mac.yml", new TextEncoder().encode(FEED), key.privateKey) });
     const ex = verifyingExecutor(good, key.publicKey);
     expect(await ex.request({ path }, undefined)).toBe(FEED);
     expect(good.asked).toEqual([path, `${path}.sig`]);
     // Anything but an update file passes through untouched, with no .sig asked for.
-    const other = fakeExecutor({ "/waifucave/clover/releases.atom": "<feed/>" });
-    expect(await verifyingExecutor(other, key.publicKey).request({ path: "/waifucave/clover/releases.atom" }, undefined)).toBe("<feed/>");
-    expect(other.asked).toEqual(["/waifucave/clover/releases.atom"]);
+    const other = fakeExecutor({ "/waifucave/moss/releases.atom": "<feed/>" });
+    expect(await verifyingExecutor(other, key.publicKey).request({ path: "/waifucave/moss/releases.atom" }, undefined)).toBe("<feed/>");
+    expect(other.asked).toEqual(["/waifucave/moss/releases.atom"]);
 
     const refused = async (files: Record<string, string>, publicKey: string | null = key.publicKey): Promise<string> => {
       try {
@@ -67,12 +67,12 @@ describe("the app's updates", () => {
   test("electron-updater's own GitHub provider reads its update file through the check", async () => {
     const key = generateFeedKey();
     const sig = signFeed("latest-mac.yml", new TextEncoder().encode(FEED), key.privateKey);
-    const atom = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><id>1</id><link rel="alternate" type="text/html" href="https://github.com/waifucave/clover/releases/tag/v1.2.3"/><title>v1.2.3</title><content>notes</content></entry></feed>';
-    const release = "/waifucave/clover/releases/download/v1.2.3/latest-mac.yml";
+    const atom = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><id>1</id><link rel="alternate" type="text/html" href="https://github.com/waifucave/moss/releases/tag/v1.2.3"/><title>v1.2.3</title><content>notes</content></entry></feed>';
+    const release = "/waifucave/moss/releases/download/v1.2.3/latest-mac.yml";
     const make = (files: Record<string, string>) => {
-      const ex = fakeExecutor({ "/waifucave/clover/releases.atom": atom, "/waifucave/clover/releases/latest": JSON.stringify({ tag_name: "v1.2.3" }), ...files });
+      const ex = fakeExecutor({ "/waifucave/moss/releases.atom": atom, "/waifucave/moss/releases/latest": JSON.stringify({ tag_name: "v1.2.3" }), ...files });
       const provider = new VerifiedGitHubProvider(
-        { provider: "github", owner: "waifucave", repo: "clover" } as never,
+        { provider: "github", owner: "waifucave", repo: "moss" } as never,
         { channel: null, allowPrerelease: false, currentVersion: "1.0.0", fullChangelog: false } as never,
         { executor: ex, platform: "darwin", isUseMultipleRangeRequest: false } as never,
       );
@@ -86,13 +86,13 @@ describe("the app's updates", () => {
     const bad = make({ [release]: FEED.replace("abc", "abd"), [`${release}.sig`]: sig });
     await expect(bad.provider.getLatestVersion()).rejects.toThrow(/refused: bad signature/);
     // Built with the key the app carries, the provider checks with it.
-    const carried = new VerifiedGitHubProvider({ provider: "github", owner: "waifucave", repo: "clover" } as never, { channel: null } as never, { executor: fakeExecutor({}), platform: "darwin" } as never);
+    const carried = new VerifiedGitHubProvider({ provider: "github", owner: "waifucave", repo: "moss" } as never, { channel: null } as never, { executor: fakeExecutor({}), platform: "darwin" } as never);
     expect((carried as unknown as { executor: { request: unknown } }).executor.request).toBeFunction();
   });
 
   test("the publish settings come from app-update.yml; only a GitHub feed is taken", () => {
-    expect(parseUpdateConfig("owner: waifucave\nrepo: clover\nprovider: github\nchannel: beta\nupdaterCacheDirName: clover-updater\n")).toEqual({ owner: "waifucave", repo: "clover", channel: "beta" });
-    expect(parseUpdateConfig("owner: waifucave\nrepo: clover\nprovider: github\n")).toEqual({ owner: "waifucave", repo: "clover", channel: "latest" });
+    expect(parseUpdateConfig("owner: waifucave\nrepo: moss\nprovider: github\nchannel: beta\nupdaterCacheDirName: moss-updater\n")).toEqual({ owner: "waifucave", repo: "moss", channel: "beta" });
+    expect(parseUpdateConfig("owner: waifucave\nrepo: moss\nprovider: github\n")).toEqual({ owner: "waifucave", repo: "moss", channel: "latest" });
     expect(parseUpdateConfig("provider: generic\nurl: https://example.com\n")).toBeUndefined();
     expect(parseUpdateConfig("provider: github\nowner: waifucave\n")).toBeUndefined();
   });
@@ -102,15 +102,15 @@ describe("the app's updates", () => {
     expect(updatesItself(true, "darwin", {})).toBe(true);
     expect(updatesItself(true, "win32", {})).toBe(true);
     expect(updatesItself(true, "linux", {})).toBe(false);
-    expect(updatesItself(true, "linux", { APPIMAGE: "/home/u/Clover.AppImage" })).toBe(true);
+    expect(updatesItself(true, "linux", { APPIMAGE: "/home/u/MOSS-Code.AppImage" })).toBe(true);
   });
 
   test("the install marker says the app's (a deb or rpm on Linux): a home the app runs never self-updates", () => {
     expect(installKindOf("darwin", {})).toBe("app");
     expect(installKindOf("win32", {})).toBe("app");
-    expect(installKindOf("linux", { APPIMAGE: "/home/u/Clover.AppImage" })).toBe("app");
+    expect(installKindOf("linux", { APPIMAGE: "/home/u/MOSS-Code.AppImage" })).toBe("app");
     expect(installKindOf("linux", {})).toBe("package");
-    const home = join(mkdtempSync(join(tmpdir(), "clover-app-marker-")), "home");
+    const home = join(mkdtempSync(join(tmpdir(), "moss-app-marker-")), "home");
     writeInstallMarker(home, "app", () => {});
     expect(JSON.parse(readFileSync(join(home, "install.json"), "utf8"))).toEqual({ kind: "app" });
     writeInstallMarker(home, "package", () => {});
@@ -244,14 +244,14 @@ describe("the app's updates", () => {
 
   test("any .yml from a release's downloads that isn't an update file's name is refused before it is fetched", async () => {
     for (const name of ["latest-linux-ia32.yml", "latest-linux-arm.yml", "alpha-mac.yml", "rc.yml", "latest-core-linux-x64.yml"]) {
-      const path = `/waifucave/clover/releases/download/v1.2.3/${name}`;
+      const path = `/waifucave/moss/releases/download/v1.2.3/${name}`;
       expect(unknownReleaseYml(path)).toBe(name);
       const ex = fakeExecutor({ [path]: FEED });
       await expect(verifyingExecutor(ex, generateFeedKey().publicKey).request({ path }, undefined)).rejects.toThrow(/refused: bad name/);
       expect(ex.asked).toEqual([]);
     }
-    expect(unknownReleaseYml("/waifucave/clover/releases/download/v1.2.3/latest-mac.yml")).toBeUndefined();
-    expect(unknownReleaseYml("/waifucave/clover/releases/download/v1.2.3/Clover-1.2.3-mac.zip")).toBeUndefined();
-    expect(unknownReleaseYml("/waifucave/clover/releases.atom")).toBeUndefined();
+    expect(unknownReleaseYml("/waifucave/moss/releases/download/v1.2.3/latest-mac.yml")).toBeUndefined();
+    expect(unknownReleaseYml("/waifucave/moss/releases/download/v1.2.3/MOSS-Code-1.2.3-mac.zip")).toBeUndefined();
+    expect(unknownReleaseYml("/waifucave/moss/releases.atom")).toBeUndefined();
   });
 });

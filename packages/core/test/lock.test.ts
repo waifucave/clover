@@ -8,7 +8,7 @@ import { resolveEndpoint } from "../src/platform/transport";
 /** A run directory: its lock, and its endpoint as the daemon resolves it (a socket file on
  *  macOS/Linux, a named pipe on Windows). */
 function tmpRun(): { lockPath: string; socketPath: string } {
-  const d = mkdtempSync(join(tmpdir(), "clover-lock-"));
+  const d = mkdtempSync(join(tmpdir(), "moss-lock-"));
   return { lockPath: join(d, "core.lock"), socketPath: resolveEndpoint(d).path };
 }
 const windows = process.platform === "win32";
@@ -108,7 +108,7 @@ describe("acquireLock", () => {
     writeFileSync(p.socketPath, "");
     lock.release();
     expect(existsSync(p.socketPath)).toBe(false);
-    const pipe = "\\\\.\\pipe\\clover-core-deadbeefdeadbeef";
+    const pipe = "\\\\.\\pipe\\moss-core-deadbeefdeadbeef";
     const second = await acquireLock(p.lockPath, pipe, fast);
     second.release(); // must not try to unlink a pipe name
   });

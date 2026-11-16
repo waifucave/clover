@@ -6,13 +6,13 @@
 // 1. The computer is this one, or another of the user's (K-M3, remote.ts): there the other computer's manager runs the
 //    agent, and this one keeps its session, transcript and task notification. The root folder must be on the computer
 //    that runs it. Vendor clouds are listed but not started yet.
-// 2. The root is a folder-tree path, resolved to a real path here; the fence refuses a root that holds the Clover home
+// 2. The root is a folder-tree path, resolved to a real path here; the fence refuses a root that holds the MOSS home
 //    or a development folder (`checkAgentRoot`, §9.3).
 // 3. A new bridge token, the transcript folder, the daemon's own record (records.ts), and a session opened in the
 //    host with an `AgentDriver`. The task is delivered as the session's first input, so `start` returns at once and
 //    the agent starts in its first turn.
 // 4. In that first turn, before anything launches: an agent that isn't sandboxed, or is outside its tested versions,
-//    needs the user's OK, which comes with K-M2's card; until then it isn't started (review 2, §9.3 [D] "Clover never
+//    needs the user's OK, which comes with K-M2's card; until then it isn't started (review 2, §9.3 [D] "MOSS never
 //    quietly runs an unsandboxed agent"). At read-only, an agent that acts without asking starts in its read-only
 //    mode or not at all (§9.3 [P], item 78).
 // 5. The agent's permission requests go to the ApprovalBroker (level, then card), answered `allow_once` or
@@ -20,22 +20,22 @@
 //    answered at once (S5 edit 7), and one touching a fenced path is always a card (the broker's rules 2 and 3). Its
 //    paths are resolved against the root, with their real paths, before the broker sees them (review 8).
 //    Before the broker, the plugins' `tool.before` hooks see each request (`hooks`, the bots' own; best effort): a deny
-//    is the request's `reject_once`. The request is shown under Clover's tool names (`acp-hook-call.ts`: execute →
+//    is the request's `reject_once`. The request is shown under MOSS's tool names (`acp-hook-call.ts`: execute →
 //    Bash, edit → Edit or Write, …), its ACP kind kept as `acpKind`. A plugin's hooks do not govern what an external coding agent does inside its own
-//    session: they see only the calls it asks Clover about, never the ones it runs without asking, and they can't
-//    change its input (an agent's own call isn't Clover's to rewrite). They can refuse starting one: the bot's
+//    session: they see only the calls it asks MOSS about, never the ones it runs without asking, and they can't
+//    change its input (an agent's own call isn't MOSS's to rewrite). They can refuse starting one: the bot's
 //    `Agent` call, with the backend named, meets `tool.before` like any of the bot's calls. In-process delegations
-//    (`clover`) run the hooks in their own runtime (subagent-backend.ts), so they aren't run twice here.
+//    (`moss`) run the hooks in their own runtime (subagent-backend.ts), so they aren't run twice here.
 // 6. A reattach after a restart trusts the host's view and the daemon's own record, never the bot's folder, and
 //    checks the root again (review 1).
 //
-// The bridge's server name is `clover_` and a random suffix, new for each session (review 14), so no MCP server of
+// The bridge's server name is `moss_` and a random suffix, new for each session (review 14), so no MCP server of
 // the user's own can share it. The bridge's methods land here too: `SendMessage` from an agent folds into its bot's
 // conversation (§9.3), and only into another session of the same bot.
 import { randomBytes } from "node:crypto";
 import { readFileSync, realpathSync, rmSync } from "node:fs";
 import { extname, isAbsolute, join, relative } from "node:path";
-import type { Level, Os, SealedValue, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Level, Os, SealedValue, SessionView, TurnOrigin } from "@waifucave/moss-protocol";
 import type { AgentBackend, AgentPermissionAnswer, AgentPermissionAsk, AgentSession } from "../contracts/agent-backend";
 import { type ActionEffect, type ApprovalBroker, type ApprovalRequest, acpOutcomeFor } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
@@ -70,10 +70,10 @@ const hostOsOf = (): "macos" | "windows" | "linux" => (process.platform === "dar
 
 /** The in-process backend's id (`IN_PROCESS_BACKEND_ID`, subagent-backend.ts): its delegations run the plugins' hooks
  *  in their own runtime. Named here, not imported, so the manager doesn't load the embedded runtime's modules. */
-export const HOOKED_IN_RUNTIME_BACKEND = "clover";
+export const HOOKED_IN_RUNTIME_BACKEND = "moss";
 
 export interface AgentManagerOptions {
-  /** The Clover home: transcripts go under `<home>/bots/<bot>/agents/`. */
+  /** The MOSS home: transcripts go under `<home>/bots/<bot>/agents/`. */
   home: string;
   /** The plugins' turn hooks (the bots' `pluginHooks`), read at each request (`HookSource`): an agent's permission
    *  requests meet `tool.before` before the broker; refused while the hooks are expected and not up; straight to the
@@ -144,7 +144,7 @@ export interface AgentSessionHooks {
   reattach(views: SessionView[]): void;
 }
 
-/** Who asks for an agent: a bot from one of its sessions, or the user (a coding session, `clover code`). */
+/** Who asks for an agent: a bot from one of its sessions, or the user (a coding session, `moss code`). */
 export type AgentCaller =
   | { kind: "bot"; bot: string; session: string; origin: TurnOrigin; level?: Level }
   | { kind: "user"; device: string; sentAt?: number; clientMessageId: string };
@@ -169,7 +169,7 @@ export interface AgentRequest {
 
 interface Entry {
   id: string;
-  /** Admitted with a sandbox Clover counts on, at a tested version (`#admit`): its commands are held by that sandbox
+  /** Admitted with a sandbox MOSS counts on, at a tested version (`#admit`): its commands are held by that sandbox
    *  (no unsandboxed command, its writes to the agent's root), so at ask for risky actions one runs without asking (R5). */
   sandboxHeld?: boolean;
   backend: AgentBackend;
@@ -243,7 +243,7 @@ export interface RemoteAgentEntry {
 const PARTS_SETTLE_MS = 250;
 
 /** The bridge's server name starts with this; a random suffix follows, new for each session. */
-export const BRIDGE_SERVER_PREFIX = "clover_";
+export const BRIDGE_SERVER_PREFIX = "moss_";
 const MAX_CARD_CODE = 60_000;
 
 export class AgentManager {
@@ -264,7 +264,7 @@ export class AgentManager {
     this.#o = opts;
     this.#oks = opts.oks ?? new MemoryAgentOks();
     // The ruling (K-M2 review 4): the moment the switch says paused, a busy agent that acts without asking is cancelled,
-    // since Clover can't hold what it isn't asked about. Without `watch`, it is cancelled at its next tool call.
+    // since MOSS can't hold what it isn't asked about. Without `watch`, it is cancelled at its next tool call.
     this.#unpause = opts.pause?.watch?.(() => {
       if (opts.pause!.mayAct()) return;
       for (const e of this.#entries.values()) this.#cancelForPause(e);
@@ -350,7 +350,7 @@ export class AgentManager {
     return this.#o.bridge.serverName ?? `${BRIDGE_SERVER_PREFIX}${randomBytes(8).toString("hex")}`;
   }
 
-  /** A root's real path: a folder in this computer's home that holds none of Clover's own folders, resolved ONCE here
+  /** A root's real path: a folder in this computer's home that holds none of MOSS's own folders, resolved ONCE here
    *  (every link followed) and used everywhere after: the backend's working folder, the folders its sandbox's denies are
    *  drawn under, the bot's root checks and whether the bot holds it (the review's blocker on cb5bac9a6: the tree's
    *  join is lexical, and a link inside a granted folder would otherwise stand for a folder outside it). A root whose
@@ -358,7 +358,7 @@ export class AgentManager {
   #rootPath(root: string): string {
     const asked = this.#rootAsAsked(root);
     const verdict = this.#o.fence.checkAgentRoot(asked);
-    if (!verdict.allowed) throw new ContractError("fenced", `an agent's root may not hold Clover's own folders (${verdict.reason})`, { path: verdict.path });
+    if (!verdict.allowed) throw new ContractError("fenced", `an agent's root may not hold MOSS's own folders (${verdict.reason})`, { path: verdict.path });
     let real: string;
     try {
       real = realpathSync.native(asked);
@@ -367,7 +367,7 @@ export class AgentManager {
     }
     if (real !== asked) {
       const where = this.#o.fence.checkAgentRoot(real);
-      if (!where.allowed) throw new ContractError("fenced", `an agent's root may not hold Clover's own folders (${where.reason})`, { path: where.path });
+      if (!where.allowed) throw new ContractError("fenced", `an agent's root may not hold MOSS's own folders (${where.reason})`, { path: where.path });
     }
     return real;
   }
@@ -409,7 +409,7 @@ export class AgentManager {
     // there, are settled before a cloud backend ships, by the agent suite's live gates. Until then it is listed, never
     // started.
     if (backend.quirks.placement !== "local") {
-      throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which doesn't start yet: whether Clover's bridge reaches a cloud session, and what the root folder means there, are still to be settled`);
+      throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which doesn't start yet: whether MOSS's bridge reaches a cloud session, and what the root folder means there, are still to be settled`);
     }
     const rootPath = this.#rootPath(req.root);
     // A root a bot names (model text) holds to `botRootRefusal`: a folder of the user's own, never their whole home.
@@ -612,7 +612,7 @@ export class AgentManager {
     if (!backend) return refuse(`no backend named ${view.backend}`);
     // Another plugin that took the id since (the bundled one switched off, a third party's on) never gets the session:
     // its program would see the agent's session id and root. The session ends, saying why.
-    // A record from before the plugin was kept goes on only with Clover's own backend (the bundled `clover/agent-<id>`,
+    // A record from before the plugin was kept goes on only with MOSS's own backend (the bundled `moss/agent-<id>`,
     // or a core one), and keeps it from now on.
     const own = (backend as { bundled?: boolean }).bundled === true || (backend as { inProcess?: boolean }).inProcess === true;
     if (daemon.pluginId === undefined && own) {
@@ -847,9 +847,9 @@ export class AgentManager {
     const why: string[] = [];
     if (!d.sandboxed) {
       const detail = d.versionOk ? d.reason?.replace(/^no sandbox: /, "") : undefined;
-      why.push(`it has no sandbox Clover can count on here${detail ? ` (${detail})` : ""}`);
+      why.push(`it has no sandbox MOSS can count on here${detail ? ` (${detail})` : ""}`);
     }
-    if (!d.versionOk) why.push(`its version ${d.version ?? "(unknown)"} is outside the versions Clover was tested with`);
+    if (!d.versionOk) why.push(`its version ${d.version ?? "(unknown)"} is outside the versions MOSS was tested with`);
     const admitted = { path: d.path ?? "", ...(d.version === undefined ? {} : { version: d.version }) };
     e.sandboxHeld = why.length === 0;
     if (why.length === 0) return admitted;
@@ -884,7 +884,7 @@ export class AgentManager {
         env: { [BRIDGE_ENV.token]: e.token, [BRIDGE_ENV.session]: e.id, [BRIDGE_ENV.socket]: this.#o.bridge.socketPath },
         tools: e.bridgeTools,
       },
-      // The Clover home is out of every agent's reach (the owner's decision, #208's check 2): denied to its sandbox
+      // The MOSS home is out of every agent's reach (the owner's decision, #208's check 2): denied to its sandbox
       // whole, for reads and writes.
       // The user's secret places too (`SECRET_READ_PLACES`), so an agent's own commands and file tools read none.
       // An agent a bot started writes with its commands no more than its bot does: not the user's home (a bot's own
@@ -896,7 +896,7 @@ export class AgentManager {
       // A backend that holds its own tool calls (the in-process ones, which ask nothing for a read) holds on this.
       ...(this.#gateFor(e) === undefined ? {} : { pause: this.#gateFor(e)! }),
       admitted,
-      // A backend inside the daemon (Clover's coding agent) gets the bridge in-process: its calls check the session's
+      // A backend inside the daemon (MOSS's coding agent) gets the bridge in-process: its calls check the session's
       // token is still live, as the socket's do.
       ...((e.backend as { inProcess?: boolean }).inProcess === true
         ? { inProcessBridge: await inProcessBridgeServer(this.bridgeHandlers(), { name: e.serverName, sessionId: e.id, live: () => this.#o.tokens.has(e.id) }) }
@@ -952,10 +952,10 @@ export class AgentManager {
       computers: [e.computer],
       effect: "other",
       fields: {
-        title: { type: "text", text: sandboxed ? "Start an agent Clover hasn't tested?" : "Start an agent without a sandbox?" },
+        title: { type: "text", text: sandboxed ? "Start an agent MOSS hasn't tested?" : "Start an agent without a sandbox?" },
         what: { type: "text", text: sandboxed
-          ? "This version of the agent is outside the ones Clover was tested with, so its sandbox may not hold. While it runs, it could read Clover's logins and approve its own cards."
-          : "This agent has no sandbox Clover can count on here. While it runs, it could read Clover's logins and approve its own cards." },
+          ? "This version of the agent is outside the ones MOSS was tested with, so its sandbox may not hold. While it runs, it could read MOSS's logins and approve its own cards."
+          : "This agent has no sandbox MOSS can count on here. While it runs, it could read MOSS's logins and approve its own cards." },
         computer: { type: "text", text: e.computer },
         source: { type: "rows", rows: [
           { label: "Agent", value: sealedText(e.backend.id, 4000) },
@@ -991,15 +991,15 @@ export class AgentManager {
     // The token never reaches a card, and the fence sees each path as it really is (reviews 8 and 9).
     const resolved = agentPaths(raw.paths, e.rootPath);
     if (resolved.over) {
-      // More paths than Clover checks: refused without a card, never let through unchecked (check 2's minor 1).
+      // More paths than MOSS checks: refused without a card, never let through unchecked (check 2's minor 1).
       e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "too-many-paths", paths: raw.paths.length });
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
-    // Anything in the Clover home (a bot's memory, its conversations, the runtime's state), as written or through a link:
+    // Anything in the MOSS home (a bot's memory, its conversations, the runtime's state), as written or through a link:
     // refused without a card, at every level (the owner's decision, #208's check 2).
     if (resolved.paths.some((p) => homeReach(this.#o.home, p, e.rootPath) === "inside")) {
-      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "clover-home" });
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "moss-home" });
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
@@ -1041,7 +1041,7 @@ export class AgentManager {
           id: e.id, kind: bot === undefined ? "coding" : "agent", computer: e.computer, ...(bot === undefined ? {} : { bot }), backend: e.backend.id,
           caller: { kind: "session", sessionId: e.id, sessionKind: bot === undefined ? "coding" : "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
         };
-        // Under Clover's tool names (execute → Bash, edit → Edit or Write, …), ACP's own kind kept as `acpKind`.
+        // Under MOSS's tool names (execute → Bash, edit → Edit or Write, …), ACP's own kind kept as `acpKind`.
         const call = acpHookCall(raw);
         const verdict = await hooks.toolBefore(session, { name: call.name, callId: raw.toolCallId }, call.input, signal);
         if (verdict.deny !== undefined) {
@@ -1072,7 +1072,7 @@ export class AgentManager {
       computers: [e.computer],
       ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }),
       effect,
-      // R5: a command of an agent whose sandbox Clover admitted runs inside it (never unsandboxed), so it is contained.
+      // R5: a command of an agent whose sandbox MOSS admitted runs inside it (never unsandboxed), so it is contained.
       ...(e.sandboxHeld === true && effect === "execute" ? { contained: true } : {}),
       paths: ask.paths,
       // No rule from a bot's agent's card (the adversarial review): its request carries its bot's id, so an "always" saved
@@ -1136,7 +1136,7 @@ export class AgentManager {
    *  child's drawn denies and the path classes when `childRunsLater` is given. True on any doubt. */
   #childRunsLater(e: Entry, path: string): boolean {
     try {
-      if (this.#o.userHome !== undefined && runLaterByName(path, { os: hostOsOf(), userHome: this.#o.userHome, cloverHome: this.#o.home })) return true;
+      if (this.#o.userHome !== undefined && runLaterByName(path, { os: hostOsOf(), userHome: this.#o.userHome, mossHome: this.#o.home })) return true;
       if (this.#o.childRunsLater === undefined || e.bot === undefined) return false;
       const fence = withSecretsDenied(withHomeDenied(botChildPolicy(agentPolicyOf(this.#o.fence.policy()), e.rootPath, this.#o.userHome), this.#o.home), this.#o.userHome, hostOsOf());
       return this.#o.childRunsLater({ bot: e.bot, rootPath: e.rootPath, level: this.#levelOf(e), fence }, path);
@@ -1145,7 +1145,7 @@ export class AgentManager {
     }
   }
 
-  /** Whether `backend` is one of Clover's own sandboxed coding agents (`clover`, `clover-code`) here: the id is a
+  /** Whether `backend` is one of MOSS's own sandboxed coding agents (`moss`, `moss-code`) here: the id is a
    *  reserved one (no plugin's backend may take it), it resolves to that backend, and the backend says it is installed,
    *  its own, at a tested version and sandboxed. A bot starts one with no card (the controller's ruling); any other
    *  backend asks on a card at each start. */
@@ -1304,7 +1304,7 @@ export function effectOf(toolKind: string): ActionEffect {
   return EFFECTS[toolKind] ?? "other";
 }
 
-/** The key a card's "always" saves as Clover's own rule (S5 edit 5): a command exactly, or an MCP tool, each under the
+/** The key a card's "always" saves as MOSS's own rule (S5 edit 5): a command exactly, or an MCP tool, each under the
  *  agent's backend, so an agent's rule never covers a bot's own tool of the same name, or the reverse (review 4), and
  *  each written so no two calls share a key (check 2's minor 2). */
 export function ruleKeyOf(backend: string, ask: AgentPermissionAsk): string | undefined {
@@ -1428,7 +1428,7 @@ export function botRootRefusalOnDisk(rootPath: string, userHome: string | undefi
 /** Why a root a bot named can't be an agent's (undefined when it can): it must be a folder strictly inside the user's
  *  home (never the home itself, `/`, or anything outside it), not a hidden folder or one inside one (`~/.ssh`,
  *  `~/.config`), not `~/Library` (macOS) or inside it, and neither inside nor holding any of the user's secret places.
- *  The fence's `checkAgentRoot` has already refused the Clover home (every bot's folder is in it), a development folder
+ *  The fence's `checkAgentRoot` has already refused the MOSS home (every bot's folder is in it), a development folder
  *  and every fenced item. With no user home known, a bot starts no agent. */
 export function botRootRefusal(rootPath: string, userHome: string | undefined, os: Os): string | undefined {
   if (userHome === undefined) return "can't be checked: this computer's home isn't known";

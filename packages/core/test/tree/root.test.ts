@@ -22,7 +22,7 @@ describe("the tree folder", () => {
     mkdirSync(join(home, "project"), { recursive: true });
     writeFileSync(join(home, "project", "a.txt"), "native");
     const root = join(base, "tree");
-    const botsRoot = join(home, ".clover", "bots");
+    const botsRoot = join(home, ".moss", "bots");
     await ensureTreeRoot({ root, self: "Studio", home, botsRoot });
     expect(readFileSync(join(root, "home", "Studio", "project", "a.txt"), "utf8")).toBe("native");
     expect(readdirSync(join(root, "home"))).toEqual(["Studio"]);
@@ -47,7 +47,7 @@ describe("the tree folder", () => {
     const home = join(base, "home");
     mkdirSync(home, { recursive: true });
     const root = join(base, "tree");
-    await ensureTreeRoot({ root, self: "Studio", home, botsRoot: join(home, ".clover", "bots") });
+    await ensureTreeRoot({ root, self: "Studio", home, botsRoot: join(home, ".moss", "bots") });
     const acl = async (p: string) => {
       const script = `$a = Get-Acl -LiteralPath $env:P; 'protected=' + $a.AreAccessRulesProtected; foreach ($r in $a.Access) { $r.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value + ' ' + $r.AccessControlType + ' ' + $r.FileSystemRights }; 'me=' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value`;
       const proc = Bun.spawn(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script], { env: { ...process.env, P: p }, stdout: "pipe", stderr: "pipe", windowsHide: true });
@@ -62,7 +62,7 @@ describe("the tree folder", () => {
     expect(h[0]).toBe("protected=True");
     expect(h.some((l) => l.startsWith("S-1-1-0 Deny"))).toBe(true);
     // Made again (a rename), it stays closed.
-    await ensureTreeRoot({ root, self: "Studio-2", home, botsRoot: join(home, ".clover", "bots") });
+    await ensureTreeRoot({ root, self: "Studio-2", home, botsRoot: join(home, ".moss", "bots") });
     expect(readdirSync(join(root, "home"))).toEqual(["Studio-2"]);
     const again = await acl(join(root, "home"));
     expect(again[0]).toBe("protected=True");
@@ -72,9 +72,9 @@ describe("the tree folder", () => {
   });
 
   test("where it lives on each OS, outside every home folder", () => {
-    expect(defaultTreeRoot({ XDG_RUNTIME_DIR: "/run/user/1000" }, "linux")).toBe("/run/user/1000/clover");
+    expect(defaultTreeRoot({ XDG_RUNTIME_DIR: "/run/user/1000" }, "linux")).toBe("/run/user/1000/moss");
     expect(isContractError((() => { try { defaultTreeRoot({}, "linux"); } catch (e) { return e; } })(), "invalid")).toBe(true);
-    expect(defaultTreeRoot({}, "macos")).toMatch(/^\/Users\/Shared\/clover-\d+$/);
-    expect(defaultTreeRoot({ ProgramData: "C:\\ProgramData", USERNAME: "me" }, "windows")).toBe("C:\\ProgramData\\Clover\\tree-me");
+    expect(defaultTreeRoot({}, "macos")).toMatch(/^\/Users\/Shared\/moss-\d+$/);
+    expect(defaultTreeRoot({ ProgramData: "C:\\ProgramData", USERNAME: "me" }, "windows")).toBe("C:\\ProgramData\\MOSS\\tree-me");
   });
 });

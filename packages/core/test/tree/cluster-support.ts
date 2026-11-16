@@ -1,5 +1,5 @@
 // Several computers in one test, joined by lane B's fake link (plan §3): each its own `startComputerNode` on its own
-// temp home and Clover home, with a FakeFence over its real paths, a device list pairing it with the others (lane B's
+// temp home and MOSS home, with a FakeFence over its real paths, a device list pairing it with the others (lane B's
 // fake, keys in memory) and a plain Bash executor (tests only: the daemon's executor is the runtime's sandboxed Bash).
 import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,7 +22,7 @@ export interface TestComputer {
   device: string;
   /** The home folder's real path: `home/<name>/`. */
   home: string;
-  cloverHome: string;
+  mossHome: string;
   node: ComputerNode;
   bots: string[];
   /** The fence the node was given (lane B's fake, over the computer's real paths). */
@@ -157,8 +157,8 @@ export class Cluster {
       this.#keys.set(device, { publicKey: made.device.publicKey, devices: mine });
     }
     const home = join(this.#root, name, "home");
-    const cloverHome = join(home, ".clover");
-    mkdirSync(cloverHome, { recursive: true });
+    const mossHome = join(home, ".moss");
+    mkdirSync(mossHome, { recursive: true });
     const bots: string[] = [];
     const answers = opts.answers?.(name);
     const askUser = opts.askUser?.(name);
@@ -168,13 +168,13 @@ export class Cluster {
     const lease = opts.lease?.(name);
     const cloud = opts.cloud?.(name);
     const memoryChanged = opts.memoryChanged?.(name);
-    const fence = posixFence(new FakeFence({ os: hostOs(), home: posix(home), cloverHome: posix(cloverHome) }));
+    const fence = posixFence(new FakeFence({ os: hostOs(), home: posix(home), mossHome: posix(mossHome) }));
     const node = startComputerNode({
       clock,
       transport: this.net.endpoint(device),
       self: { name, device, os: hostOs() },
       home,
-      cloverHome,
+      mossHome,
       fence,
       executor: shellExecutor,
       bots: () => bots,
@@ -188,7 +188,7 @@ export class Cluster {
       ...(cloud ? { cloud } : {}),
       ...(memoryChanged ? { memoryChanged } : {}),
     });
-    const c: TestComputer = { name, device, home, cloverHome, node, bots, fence };
+    const c: TestComputer = { name, device, home, mossHome, node, bots, fence };
     this.computers.set(name, c);
     return c;
   }

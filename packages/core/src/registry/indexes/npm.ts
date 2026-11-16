@@ -6,14 +6,14 @@
 //   `latest` tag. Ranges aren't resolved: what installs is the version the user saw.
 // * Its tarball: https, the download limits, and its `dist.integrity` (SHA-512, npm's own record of the bytes) checked
 //   before it is unpacked; a package without one isn't installed (a SHA-1 `shasum` alone isn't enough).
-// * Unpacked by Clover's own reader (`unpack.ts`, npm's `package/` folder as its root) and validated as any install.
+// * Unpacked by MOSS's own reader (`unpack.ts`, npm's `package/` folder as its root) and validated as any install.
 //
 // Its OK card decides, as for every source; its updates are offered, applied on the user's click (`update.ts`).
 import { createHash } from "node:crypto";
 import { readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
-import { MANIFEST_FILE } from "@waifucave/clover-plugin-sdk";
-import { SemverVersion, TopPluginId } from "@waifucave/clover-protocol";
+import { MANIFEST_FILE } from "@waifucave/moss-plugin-sdk";
+import { SemverVersion, TopPluginId } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import { installStaged, newStage, type InstallTarget } from "../install-folder";
 import { INDEX_MAX_BYTES, type IndexClient } from "./client";
@@ -44,7 +44,7 @@ interface NpmMeta {
 export function npmVersionOf(meta: unknown, name: string, version?: string): { version: string; tarball: string; sha512: string } {
   const m = meta as NpmMeta;
   const v = version ?? m["dist-tags"]?.latest;
-  if (v === undefined || !SemverVersion.safeParse(v).success) throw new ContractError("not_found", `${name} has no ${version === undefined ? "latest version" : `version ${version}`} Clover can install`);
+  if (v === undefined || !SemverVersion.safeParse(v).success) throw new ContractError("not_found", `${name} has no ${version === undefined ? "latest version" : `version ${version}`} MOSS can install`);
   const dist = m.versions?.[v]?.dist;
   if (dist === undefined) throw new ContractError("not_found", `${name} ${v} isn't on npm`);
   if (typeof dist.tarball !== "string" || !dist.tarball.startsWith("https://")) throw new ContractError("invalid", `${name} ${v} has no https tarball`);

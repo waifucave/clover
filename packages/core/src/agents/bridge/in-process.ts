@@ -1,15 +1,15 @@
-// The bridge for an agent that runs inside the daemon (Clover's coding agent, `clover-code`): the same tools the stdio
+// The bridge for an agent that runs inside the daemon (MOSS's coding agent, `moss-code`): the same tools the stdio
 // bridge serves (`SendMessage`, `Glossary`, the plugin tools in the agent's scope), as an in-process MCP server the
 // embedded runtime calls directly. There is no bridge process to start, so there is no socket hello and no pid to bind:
 // the server is made for one session and calls that session's handlers, and each call checks the session's token is
-// still live (revoked at the agent's stop or exit), as the socket's `bridgeCloverParts` does.
+// still live (revoked at the agent's stop or exit), as the socket's `bridgeMossParts` does.
 import { randomUUID } from "node:crypto";
 import type { McpSdkServerConfigWithInstance, WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import type { BridgeHandlers } from "./handlers";
 import { listedBridgeTool, type BridgeToolDef } from "./tools";
 
 export interface InProcessBridgeOptions {
-  /** The server's name: the session's bridge server name (`clover_<id>`), as the stdio bridge's. */
+  /** The server's name: the session's bridge server name (`moss_<id>`), as the stdio bridge's. */
   name: string;
   sessionId: string;
   /** The session's token is still live; once it isn't, every call is refused. */

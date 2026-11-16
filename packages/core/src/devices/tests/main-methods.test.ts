@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { SystemClock } from "../../clock/system-clock";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -40,7 +40,7 @@ async function waitFor(cond: () => boolean, ms = 8_000): Promise<void> {
 async function daemon(net: MemoryNetwork, hs: { url: string }, name: string) {
   const store = new MemorySecretStore();
   const links = await startDeviceLinks({
-    home: mkdtempSync(join(tmpdir(), "clover-h-main-")), store, clock, self: { name }, wire: (k) => net.endpoint(k.publicKey),
+    home: mkdtempSync(join(tmpdir(), "moss-h-main-")), store, clock, self: { name }, wire: (k) => net.endpoint(k.publicKey),
     handshake: new HandshakeClient({ baseUrl: hs.url, clock }),
     mainComputer: { watchSleep: false, monotonic: () => performance.now(), log: (l: string) => void notes.push(`${Date.now() % 100_000} ${name} ${l}`) },
   });

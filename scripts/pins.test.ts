@@ -77,7 +77,7 @@ describe("packages/core/package.json's SDK pins agree with versions.ts's REQUIRE
   test("winter-agent-sdk", () => {
     const range = CORE_PACKAGE_JSON.dependencies?.["@waifucave/clover-agent-sdk"];
     expect(range).toBeDefined();
-    // A-M1: until `@waifucave/clover-*` is published the SDK is a local link (`bun link` in a clover-sdk
+    // A-M1: until `@waifucave/moss-*` is published the SDK is a local link (`bun link` in a clover-sdk
     // checkout); the version the pin names is then the linked package's own.
     expect(range!.startsWith("link:") ? linkedVersion("@waifucave/clover-agent-sdk") : bareVersion(range!)).toBe(REQUIRED_WINTER_AGENT_SDK);
   });

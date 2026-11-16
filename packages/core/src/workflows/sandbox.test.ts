@@ -8,7 +8,7 @@ import { sandboxAvailable as agentSandboxAvailable } from "../agent/sandbox";
 import { darwinDescribe } from "../../test/helpers/darwin-only";
 
 function realTmp(): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), "clover-wf-sb-")));
+  return realpathSync(mkdtempSync(join(tmpdir(), "moss-wf-sb-")));
 }
 
 describe("buildWorkflowSeatbeltProfile", () => {
@@ -45,7 +45,7 @@ describe("buildWorkflowSeatbeltProfile", () => {
     // Its OWN symlink, so the raw and the resolved spellings differ wherever this runs -- the system temp dir is a
     // symlink only on a stock macOS ($TMPDIR under /var), and a temp dir that is already real (a CI image, a TMPDIR
     // under /private/tmp) made the "raw form must not appear" check below fail for a reason unrelated to the code.
-    const resolvedDir = realpathSync(mkdtempSync(join(tmpdir(), "clover-wf-sb-")));
+    const resolvedDir = realpathSync(mkdtempSync(join(tmpdir(), "moss-wf-sb-")));
     const rawDir = `${resolvedDir}-link`;
     symlinkSync(resolvedDir, rawDir);
     const rawSelf = join(rawDir, "fake-bun");
@@ -109,7 +109,7 @@ import { writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { connect } from "node:net";
 function probeWrite() {
-  try { writeFileSync("/tmp/clover-wf-sandbox-test-escape.txt", "x"); return "ALLOWED"; }
+  try { writeFileSync("/tmp/moss-wf-sandbox-test-escape.txt", "x"); return "ALLOWED"; }
   catch (e) { return "DENIED:" + (e && e.code || e); }
 }
 function probeExec() {
@@ -136,7 +136,7 @@ function probeNet() {
 d("buildWorkflowSeatbeltProfile: real sandbox-exec containment (integration)", () => {
   test("bun boots to completion under the profile (exit 0) AND write/exec/net are all denied inside it", () => {
     const bun = process.execPath; // the running bun binary — same shape as the runtime's self-spawn
-    const probeFile = "/tmp/clover-wf-sandbox-test-escape.txt";
+    const probeFile = "/tmp/moss-wf-sandbox-test-escape.txt";
     try {
       const profile = buildWorkflowSeatbeltProfile(bun);
       const r = spawnSync("/usr/bin/sandbox-exec", ["-p", profile, bun, "-e", PROBE_SCRIPT], {

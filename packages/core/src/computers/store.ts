@@ -1,17 +1,17 @@
 // Where this computer keeps its own entry: its level and old names (§9.1, §8.5: levels stay on each computer). The
-// file sits in the Clover home's `levels/` folder, which the fence keeps from bots (the `levels` kind, lane C's
+// file sits in the MOSS home's `levels/` folder, which the fence keeps from bots (the `levels` kind, lane C's
 // layout), and is written whole through a temporary file, so a crash never leaves half of it.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { LEVELS, COMPUTER_NAME_RE, type Level } from "@waifucave/clover-protocol";
+import { LEVELS, COMPUTER_NAME_RE, type Level } from "@waifucave/moss-protocol";
 import type { AnswerLedger } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { CARD_PROOF_MAX_AGE_MS } from "../contracts/computer-registry";
 import type { SelfState, SelfStateStore } from "./registry";
 
-/** `<Clover home>/levels/computer.json`. */
-export function selfStatePath(cloverHome: string): string {
-  return join(cloverHome, "levels", "computer.json");
+/** `<MOSS home>/levels/computer.json`. */
+export function selfStatePath(mossHome: string): string {
+  return join(mossHome, "levels", "computer.json");
 }
 
 export class FileSelfStateStore implements SelfStateStore {
@@ -44,15 +44,15 @@ export class FileSelfStateStore implements SelfStateStore {
   }
 }
 
-/** `<Clover home>/levels/used-cards.json`: in the fenced `levels/` folder, so a bot can't wipe it to use a card twice. */
-export function usedCardsPath(cloverHome: string): string {
-  return join(cloverHome, "levels", "used-cards.json");
+/** `<MOSS home>/levels/used-cards.json`: in the fenced `levels/` folder, so a bot can't wipe it to use a card twice. */
+export function usedCardsPath(mossHome: string): string {
+  return join(mossHome, "levels", "used-cards.json");
 }
 
-/** `<Clover home>/levels/used-answers.json`: the card ids of the signed answers this computer took as proof (another
+/** `<MOSS home>/levels/used-answers.json`: the card ids of the signed answers this computer took as proof (another
  *  computer's call, a raise from elsewhere), in the same fenced folder. */
-export function usedAnswersPath(cloverHome: string): string {
-  return join(cloverHome, "levels", "used-answers.json");
+export function usedAnswersPath(mossHome: string): string {
+  return join(mossHome, "levels", "used-answers.json");
 }
 
 /** The most card ids kept; past it (after pruning) a claim is refused, never a used id forgotten. */

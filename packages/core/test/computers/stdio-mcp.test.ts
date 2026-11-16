@@ -53,7 +53,7 @@ if (mode !== "no-read") process.stdin.on("data", (c) => {
         continue;
       }
       if (name === "Big") { process.stdout.write("x".repeat(5000)); continue; }
-      if (name === "Env") { out({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: JSON.stringify({ key: process.env.KEY_FILE ? require("node:fs").readFileSync(process.env.KEY_FILE, "utf8") : null, cwd: process.cwd(), leak: process.env.CLOVER_TEST_LEAK ?? null }) }] } }); continue; }
+      if (name === "Env") { out({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: JSON.stringify({ key: process.env.KEY_FILE ? require("node:fs").readFileSync(process.env.KEY_FILE, "utf8") : null, cwd: process.cwd(), leak: process.env.MOSS_TEST_LEAK ?? null }) }] } }); continue; }
       out({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: JSON.stringify(m.params.arguments) }] } });
     }
   }
@@ -315,7 +315,7 @@ describe("bounds and signals", () => {
   test("its stderr goes to the plugin's log with lane B's caps, each line marked with its server", () => {
     const home = temp("lane-j-stdio-log-");
     let now = 0;
-    const write = stdioStderrLog({ cloverHome: home, log: () => {}, now: () => now, perWindow: 2, windowMs: 1000 });
+    const write = stdioStderrLog({ mossHome: home, log: () => {}, now: () => now, perWindow: 2, windowMs: 1000 });
     write("acme/tools", "echo", "one");
     write("acme/tools", "echo", "two");
     write("acme/tools", "echo", "three");
@@ -389,7 +389,7 @@ describe("a daemon that died", () => {
     const records = join(temp("lane-j-stdio-rec-"), "run", "stdio-mcp");
     mkdirSync(records, { recursive: true });
     const nonce = randomBytes(16).toString("hex");
-    const ours = await startOrphan({ CLOVER_STDIO_RUN: nonce });
+    const ours = await startOrphan({ MOSS_STDIO_RUN: nonce });
     writeFileSync(join(records, `${ours.leader}.json`), JSON.stringify({ pid: ours.leader, startedAt: Date.now() - 2_000, nonce, exe: process.execPath, pluginId: "acme/tools", server: "echo" }));
     // The stranger: its leader is gone too, its child carries no mark, and a record names that leader's pid.
     const stranger = await startOrphan({});
@@ -427,7 +427,7 @@ describe("a daemon that died", () => {
         dir: records,
         seen: async (marks) => {
           // The reaper hands over only the exact words it looks for.
-          expect([...marks.keys()]).toEqual([`CLOVER_STDIO_RUN=${nonce}`]);
+          expect([...marks.keys()]).toEqual([`MOSS_STDIO_RUN=${nonce}`]);
           return [
             { pid: process.pid, pgid: process.pid, started: Date.now() - 1_000, program: process.execPath, marked: nonce },
             { pid: process.ppid, pgid: 4242, started: Date.now(), marked: nonce },
@@ -469,7 +469,7 @@ describe("pluginStdioPrepare", () => {
       entries: () => [{ point: "mcpServers", pluginId: "acme", ref: "mcpServers/keyed", entryId: "keyed", value: entry, state: "active" as const }],
       get: (id: string) => (id === "acme" ? ({ folder: root } as never) : undefined),
     };
-    const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], fence: false as const };
+    const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { mossHome: home }), shared: [], fence: false as const };
     const asked: string[] = [];
     const prepare = pluginStdioPrepare({
       registry, guard, secretFiles: new PluginSecretFiles(home),
@@ -477,7 +477,7 @@ describe("pluginStdioPrepare", () => {
       settings: () => ({ account: { mode: "ignored" }, device: { mode: "ok" } }),
       secrets: () => ({ get: async (name: string) => { asked.push(name); return name === "API_KEY" ? { value: { reveal: () => "sk-test-value" } as never } : null; } }),
     });
-    process.env.CLOVER_TEST_LEAK = "should-not-pass";
+    process.env.MOSS_TEST_LEAK = "should-not-pass";
     const launcher = new StdioMcpLauncher({ prepare, stopGraceMs: 500, sleep: async () => {} });
     try {
       const folder = join(secretFilesFolder(home, "acme"), "keyed");
@@ -500,7 +500,7 @@ describe("pluginStdioPrepare", () => {
       await expect(launcher.openMcp("acme", "missing")).rejects.toMatchObject({ code: "not_installed" });
       expect(readFileSync(join(root, "server.js"), "utf8")).toBe(SERVER);
     } finally {
-      delete process.env.CLOVER_TEST_LEAK;
+      delete process.env.MOSS_TEST_LEAK;
       await launcher.close();
     }
   });
@@ -533,7 +533,7 @@ process.stdin.on("data", (c) => {
 
 describe("a wrapped plugin's stdio server (the owner's ruling of 2026-11-10: lane B's grant on its install record)", () => {
   // The fence is macOS's sandbox here: on the macOS job (darwinTest), skipped on Linux.
-  darwinTest("with the grant it reaches a host straight; a Clover-native plugin's, under the same fence, doesn't", async () => {
+  darwinTest("with the grant it reaches a host straight; a MOSS-native plugin's, under the same fence, doesn't", async () => {
     const home = temp("lane-j-stdio-wrap-");
     const hits: number[] = [];
     const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { open(s) { hits.push(1); s.end(); }, data() {} } });
@@ -549,7 +549,7 @@ describe("a wrapped plugin's stdio server (the owner's ruling of 2026-11-10: lan
     const registry = { entries: () => entries, get: (id: string) => (folders[id] === undefined ? undefined : ({ folder: folders[id] } as never)) };
     // B's guard as the daemon builds it: the fence on, no tree proxy here (a native plugin then reaches no host at all),
     // and the grant read by plugin id (B's `openNetwork`, from the install record).
-    const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], fence: { userHome: temp("lane-j-stdio-wrap-user-") }, openNetwork: (id: string) => id === "wrapped" };
+    const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { mossHome: home }), shared: [], fence: { userHome: temp("lane-j-stdio-wrap-user-") }, openNetwork: (id: string) => id === "wrapped" };
     const prepare = pluginStdioPrepare({
       registry, guard, secretFiles: new PluginSecretFiles(home), dataDir: (id) => join(home, "plugin-data", id),
       settings: () => ({ account: {}, device: {} }), secrets: () => ({ get: async () => null }),

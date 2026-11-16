@@ -5,13 +5,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatString, translate, type LocaleValue } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { formatString, translate, type LocaleValue } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { layerOf, readUiPlugins, type UiPlugin } from "../src/main/ui/model";
 import { StringStore, normalizeLang, stringTable, textIn } from "../src/main/ui/strings";
 
 let n = 0;
 function plugin(id: string, tables: Record<string, Record<string, LocaleValue>>, extra: Record<string, unknown> = {}): UiPlugin {
-  const dir = mkdtempSync(join(tmpdir(), "clover-strings-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-strings-"));
   const locales = Object.entries(tables).map(([lang, strings]) => {
     writeFileSync(join(dir, `${lang}.json`), JSON.stringify({ locale: 1, lang, strings }));
     return { lang, file: `${lang}.json` };
@@ -19,7 +19,7 @@ function plugin(id: string, tables: Record<string, Record<string, LocaleValue>>,
   return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${String(++n).padStart(64, "0")}`, layer: layerOf(id), assetBase: dir, ui: [], themes: [], locales, bots: "all", ...extra }] as never, { [id]: { enabledAt: n, ...(extra.isBot === true ? { isBot: true } : {}) } })[0]!;
 }
 
-const builtIn = { en: { "clover.core.hello": "Hello", "clover.card.approve": "Approve" } };
+const builtIn = { en: { "moss.core.hello": "Hello", "moss.card.approve": "Approve" } };
 const table = (plugins: UiPlugin[], lang: string, owner: string, more: Partial<Parameters<typeof stringTable>[1]> = {}) => stringTable(new StringStore(), { plugins, lang, builtIn, ...more }, owner);
 
 describe("a document's table", () => {
@@ -39,35 +39,35 @@ describe("a document's table", () => {
 
   test("a plugin's own table beats a pack's in a language; a pack in the user's language beats the plugin's English", () => {
     const luna = plugin("luna", { en: { "luna.a": "own-en", "luna.b": "own-en-b" }, fr: { "luna.a": "own-fr" } });
-    const pack = plugin("french-pack", { fr: { "luna.a": "pack-fr", "luna.b": "pack-fr-b", "clover.core.hello": "Bonjour" } });
+    const pack = plugin("french-pack", { fr: { "luna.a": "pack-fr", "luna.b": "pack-fr-b", "moss.core.hello": "Bonjour" } });
     const t = table([luna, pack], "fr", "luna");
     expect(t.strings).toEqual({ "luna.a": "own-fr", "luna.b": "pack-fr-b" });
     // A pack translates the core too.
-    expect(table([luna, pack], "fr", "clover").strings["clover.core.hello"]).toBe("Bonjour");
+    expect(table([luna, pack], "fr", "moss").strings["moss.core.hello"]).toBe("Bonjour");
   });
 
   test("between two packs, the user's pick for the language, else the first enabled", () => {
-    const first = plugin("pack-one", { de: { "clover.core.hello": "Hallo (1)" } });
-    const second = plugin("pack-two", { de: { "clover.core.hello": "Hallo (2)" } });
-    expect(table([second, first], "de", "clover").strings["clover.core.hello"]).toBe("Hallo (1)");
-    expect(table([first, second], "de", "clover", { packs: { de: "pack-two" } }).strings["clover.core.hello"]).toBe("Hallo (2)");
+    const first = plugin("pack-one", { de: { "moss.core.hello": "Hallo (1)" } });
+    const second = plugin("pack-two", { de: { "moss.core.hello": "Hallo (2)" } });
+    expect(table([second, first], "de", "moss").strings["moss.core.hello"]).toBe("Hallo (1)");
+    expect(table([first, second], "de", "moss", { packs: { de: "pack-two" } }).strings["moss.core.hello"]).toBe("Hallo (2)");
   });
 
   test("a bot's plugin translates only its own keys; a child in its folder can be the pack", () => {
-    const bot = plugin("luna", { es: { "luna.hi": "hola", "clover.core.hello": "Hola (bot)" } }, { isBot: true });
-    const child = plugin("luna/pack", { es: { "clover.core.hello": "Hola (child)" } });
-    expect(table([bot], "es", "clover").strings["clover.core.hello"]).toBe("Hello");
+    const bot = plugin("luna", { es: { "luna.hi": "hola", "moss.core.hello": "Hola (bot)" } }, { isBot: true });
+    const child = plugin("luna/pack", { es: { "moss.core.hello": "Hola (child)" } });
+    expect(table([bot], "es", "moss").strings["moss.core.hello"]).toBe("Hello");
     expect(table([bot], "es", "luna").strings["luna.hi"]).toBe("hola");
-    expect(table([bot, child], "es", "clover").strings["clover.core.hello"]).toBe("Hola (child)");
+    expect(table([bot, child], "es", "moss").strings["moss.core.hello"]).toBe("Hola (child)");
   });
 
-  test("sealed cards' strings come only from the built-in tables and the clover tree's; else English", () => {
-    const pack = plugin("sneaky-pack", { it: { "clover.card.approve": "Nega", "clover.core.hello": "Ciao" } });
-    const t = table([pack], "it", "clover");
-    expect(t.strings["clover.card.approve"]).toBe("Approve");
-    expect(t.strings["clover.core.hello"]).toBe("Ciao");
-    const clover = plugin("clover/locales-it", { it: { "clover.card.approve": "Approva" } });
-    expect(table([pack, clover], "it", "clover").strings["clover.card.approve"]).toBe("Approva");
+  test("sealed cards' strings come only from the built-in tables and the moss tree's; else English", () => {
+    const pack = plugin("sneaky-pack", { it: { "moss.card.approve": "Nega", "moss.core.hello": "Ciao" } });
+    const t = table([pack], "it", "moss");
+    expect(t.strings["moss.card.approve"]).toBe("Approve");
+    expect(t.strings["moss.core.hello"]).toBe("Ciao");
+    const moss = plugin("moss/locales-it", { it: { "moss.card.approve": "Approva" } });
+    expect(table([pack, moss], "it", "moss").strings["moss.card.approve"]).toBe("Approva");
   });
 
   test("a broken locale file is skipped", () => {

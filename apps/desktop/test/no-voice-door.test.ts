@@ -1,4 +1,4 @@
-// F1 (the owner's ruling of 2026-11-15: no infrastructure in the core or the app that only one plugin uses): voice is Clover
+// F1 (the owner's ruling of 2026-11-15: no infrastructure in the core or the app that only one plugin uses): voice is MOSS
 // Voice's, a plugin built on general capabilities, and nothing of the platform names it. No file, protocol method,
 // capability, core point, plugin API call, device turn or code identifier of the core, the app, the plugin SDK or the protocol
 // says "voice"; prose may (a doc string, an error's words). The scan reads the sources, not the tests, with each exemption
@@ -6,8 +6,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { CLOVER_METHODS } from "@waifucave/clover-protocol";
-import { API_CALLS, CAPABILITIES, CORE_CONTRIBUTION_KEYS, CORE_POINTS, DEVICE_TURNS, LISTENER_ARGS } from "@waifucave/clover-plugin-sdk";
+import { MOSS_METHODS } from "@waifucave/moss-protocol";
+import { API_CALLS, CAPABILITIES, CORE_CONTRIBUTION_KEYS, CORE_POINTS, DEVICE_TURNS, LISTENER_ARGS } from "@waifucave/moss-plugin-sdk";
 
 const ROOT = join(import.meta.dir, "..", "..", "..");
 const DIRS = ["packages/core/src", "apps/desktop/src", "packages/plugin-sdk/src", "packages/protocol/src"] as const;
@@ -15,12 +15,12 @@ const VOICE = /voice/i;
 
 /** Files that may name it, and why. */
 const EXEMPT: Readonly<Record<string, string>> = {
-  "packages/core/src/migration/settings-moved-to-plugins.ts": "the one-time move's data rows: where a home's old voice settings were, and Clover Voice's keys they move to",
+  "packages/core/src/migration/settings-moved-to-plugins.ts": "the one-time move's data rows: where a home's old voice settings were, and MOSS Voice's keys they move to",
   "packages/plugin-sdk/src/manifest/schema.ts": "the `contributes.bot.voice` shim: an old manifest's field, accepted and ignored",
   "packages/plugin-sdk/src/manifest/validate.ts": "the same shim's `bot_voice` warning, which says where a bot's default voice goes now",
-  "apps/desktop/src/layer/clover/ids.ts": "the build's own bundled plugins, by id",
-  "apps/desktop/src/layer/clover/index.ts": "the build's own bundled plugins' code, by id",
-  "packages/core/src/runtime-sdk/host/run-home/settings.ts": "the agent runtime's own settings keys (its `voice`, `voiceEnabled`), not Clover's",
+  "apps/desktop/src/layer/moss/ids.ts": "the build's own bundled plugins, by id",
+  "apps/desktop/src/layer/moss/index.ts": "the build's own bundled plugins' code, by id",
+  "packages/core/src/runtime-sdk/host/run-home/settings.ts": "the agent runtime's own settings keys (its `voice`, `voiceEnabled`), not MOSS's",
   "apps/desktop/src/main/browser/screen-reader.ts": "macOS's VoiceOver, a screen reader",
   "packages/core/src/identity/wordlist.ts": "a list of words for names, one of which is the word itself",
 };
@@ -69,7 +69,7 @@ describe("nothing of the platform names voice", () => {
 
   test("no protocol method, capability, core point, manifest key, plugin API call or device turn", () => {
     const names = [
-      ...[...CLOVER_METHODS.keys()].map((m) => `method ${m}`),
+      ...[...MOSS_METHODS.keys()].map((m) => `method ${m}`),
       ...CAPABILITIES.map((c) => `capability ${c.name}`),
       ...CORE_POINTS.map((p) => `core point ${p.name}`),
       ...CORE_CONTRIBUTION_KEYS.map((k) => `manifest key ${k}`),

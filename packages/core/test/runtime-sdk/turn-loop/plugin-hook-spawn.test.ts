@@ -1,11 +1,11 @@
 // A plugin's command hook runs under ITS PLUGIN's fence (#414's review), never the hooked session's: the plugin's tree
-// to read, its own data and temp folders to write, nothing else of the Clover home, and the session's project folders
+// to read, its own data and temp folders to write, nothing else of the MOSS home, and the session's project folders
 // readable (writable with `project.write`). The macOS cases run the real Seatbelt door.
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import type { Contribution } from "../../../src/contracts/plugin-registry";
 import type { FencedRun } from "../../../src/fence/spawn";
 import { ensurePluginRunFiles } from "../../../src/registry/plugin-run";
@@ -22,7 +22,7 @@ afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true
 function world() {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "hookfence-")));
   temps.push(base);
-  const home = join(base, "clover");
+  const home = join(base, "moss");
   const userHome = join(base, "user");
   const root = join(home, "plugins", "acme", "guard");
   const project = join(userHome, "proj");
@@ -34,7 +34,7 @@ function world() {
   writeFileSync(join(home, "bots", "luna", "memory", "notes.md"), "luna's");
   writeFileSync(join(home, "plugin-data", "other", "x"), "other's");
   writeFileSync(join(project, "a.txt"), "before\n");
-  const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], fence: { userHome } };
+  const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { mossHome: home }), shared: [], fence: { userHome } };
   return { home, userHome, root, project, guard };
 }
 
@@ -42,7 +42,7 @@ const run = (command: string): FencedRun => ({ command, cwd: "/ignored", env: { 
 
 describe("a plugin hook's door", () => {
   test("refuses a run that names no plugin, a plugin with no folder here, and on macOS a run with the fence off", async () => {
-    const guard = { files: { guard: "/nowhere/guard.js", bin: "/nowhere", cloverHome: "/nowhere" } as never, fence: false as const };
+    const guard = { files: { guard: "/nowhere/guard.js", bin: "/nowhere", mossHome: "/nowhere" } as never, fence: false as const };
     const linux = pluginHookSpawner({ guard, platform: "linux", pluginRoot: () => undefined });
     expect(await linux.run({ ...run("true"), who: { caller } })).toMatchObject({ kind: "refused", reason: expect.stringContaining("names no plugin") });
     expect(await linux.run(run("true"))).toMatchObject({ kind: "refused", reason: expect.stringContaining("no folder") });
@@ -51,7 +51,7 @@ describe("a plugin hook's door", () => {
     expect(await mac.run(run("true"))).toMatchObject({ kind: "refused", reason: expect.stringContaining("sandbox-exec") });
   });
 
-  darwinTest("its plugin's fence, not the bot's: tree read, own data and temp written, no Clover home, no bot folders, the project read and written only with project.write", async () => {
+  darwinTest("its plugin's fence, not the bot's: tree read, own data and temp written, no MOSS home, no bot folders, the project read and written only with project.write", async () => {
     const w = world();
     const q = JSON.stringify;
     // A daemon socket, listening: a hook must not reach it, nor the app's token. The fence denies every connect
@@ -63,9 +63,9 @@ describe("a plugin hook's door", () => {
     const listener = Bun.listen({ unix: sock, socket: { data() {}, open(s) { s.end(); } } });
     const probe = [
       `cat ${q(join(w.root, "guard.sh"))} >/dev/null 2>&1 && echo tree=ok || echo tree=denied`,
-      `echo x > "$CLOVER_PLUGIN_DATA/f" 2>/dev/null && echo data=ok || echo data=denied`,
+      `echo x > "$MOSS_PLUGIN_DATA/f" 2>/dev/null && echo data=ok || echo data=denied`,
       `echo x > "$TMPDIR/f" 2>/dev/null && echo tmp=ok || echo tmp=denied`,
-      `[ -n "$CLOVER_PLUGIN_DATA" ] && [ "$CLAUDE_PLUGIN_DATA" = "$CLOVER_PLUGIN_DATA" ] && echo datavar=ok || echo datavar=missing`,
+      `[ -n "$MOSS_PLUGIN_DATA" ] && [ "$CLAUDE_PLUGIN_DATA" = "$MOSS_PLUGIN_DATA" ] && echo datavar=ok || echo datavar=missing`,
       `[ "$(pwd -P)" = ${q(w.root)} ] && echo cwd=root || echo cwd=other`,
       `cat ${q(join(w.home, "secrets.enc"))} >/dev/null 2>&1 && echo secrets=ok || echo secrets=denied`,
       `cat ${q(join(w.home, "plugin-data", "other", "x"))} >/dev/null 2>&1 && echo otherdata=ok || echo otherdata=denied`,

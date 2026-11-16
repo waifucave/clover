@@ -9,7 +9,7 @@
   // never in this file: `wrangler secret put RELAY_KEY` (production) or the test harness (local).
   //
   // Observability stays off: nothing about the user's traffic should be kept.
-  "name": "clover-relay-local",
+  "name": "moss-relay-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
@@ -33,12 +33,12 @@
   ],
   "env": {
     "production": {
-      "name": "clover-relay",
+      "name": "moss-relay",
       "workers_dev": true,
       "observability": { "enabled": false },
       "vars": {
         // The relay page sets this to the address the Worker is deployed at.
-        "RELAY_ORIGIN": "https://clover-relay.example.workers.dev",
+        "RELAY_ORIGIN": "https://moss-relay.example.workers.dev",
         "TICKET_HOURS": "24"
       },
       "durable_objects": {

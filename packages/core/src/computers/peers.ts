@@ -4,12 +4,12 @@
 // a computer whose link is down is offline, and answers "computer offline" at once (§9.1).
 //
 // The computers and their names come only from the device list (lane H's `DeviceRegistry`, `computer` on each record
-// that runs clover-core); a hello from a device that isn't on it is ignored, and a revoked device leaves the tree at
+// that runs moss-core); a hello from a device that isn't on it is ignored, and a revoked device leaves the tree at
 // once. `computer.hello` is lane J's addition to the protocol (requested of lane B).
 import { z } from "zod";
-import { ComputerName, FencingToken, isComputerOs, Level, Os, SignedCardAnswer, levelAbove, type ComputerView } from "@waifucave/clover-protocol";
+import { ComputerName, FencingToken, isComputerOs, Level, Os, SignedCardAnswer, levelAbove, type ComputerView } from "@waifucave/moss-protocol";
 import { checkActFence, fenceParam, type ActFence } from "../tree/fencing";
-import { utf16 } from "@waifucave/clover-protocol";
+import { utf16 } from "@waifucave/moss-protocol";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { CallCardRenderer } from "../contracts/approval-broker";
 import { needsAnswer, withAnswer, type AnswerAsker } from "../tree/judge";
@@ -233,7 +233,7 @@ export class ComputerPeers {
     this.#helloed.emit(from);
   }
 
-  /** A device on the list that runs clover-core is a computer in the tree, offline until its link comes up. */
+  /** A device on the list that runs moss-core is a computer in the tree, offline until its link comes up. */
   #fromDevice(d: DeviceRecord): void {
     const { registry } = this.#o;
     if (!d.runsCore || d.revokedAt !== undefined || d.id === registry.self().device) return;

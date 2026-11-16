@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Clover locale",
+  "title": "MOSS locale",
   "description": "Locale format 1: a string table for one language (spec §5.5).",
   "type": "object",
   "properties": {

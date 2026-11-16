@@ -4,16 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
-import { makeDaemonRoutineRunner, UPDATE_RETRY_MS, type CloverTurnRunner } from "../../src/routines/runner";
+import { makeDaemonRoutineRunner, UPDATE_RETRY_MS, type MossTurnRunner } from "../../src/routines/runner";
 import { classifyResult } from "../../src/projector/errors";
 
 function makeHome(): string {
-  return mkdtempSync(join(tmpdir(), "clover-routine-runner-"));
+  return mkdtempSync(join(tmpdir(), "moss-routine-runner-"));
 }
 
 /** The driver table's headless door, faked over the real hub: the driver appends the `user_message`
  *  itself (P8b-39) and then the scripted "turn" writes what a child would have. */
-const cloverOver = (hub: SessionHub, turn: (sessionId: string) => Promise<void>): CloverTurnRunner => ({
+const mossOver = (hub: SessionHub, turn: (sessionId: string) => Promise<void>): MossTurnRunner => ({
   async runTurn(sessionId, text, clientName) {
     hub.append(sessionId, { type: "user_message", sessionId, threadId: "main", text, clientName });
     await turn(sessionId);
@@ -27,17 +27,17 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
     const seen: Array<{ sessionId: string; text: string; clientName: string }> = [];
     const runner = makeDaemonRoutineRunner({
       store, hub,
-      clover: {
+      moss: {
         async runTurn(sessionId, text, clientName) {
           seen.push({ sessionId, text, clientName });
           hub.append(sessionId, { type: "user_message", sessionId, threadId: "main", text, clientName });
-          hub.append(sessionId, { type: "assistant_message", sessionId, threadId: "main", text: "done on clover" });
+          hub.append(sessionId, { type: "assistant_message", sessionId, threadId: "main", text: "done on moss" });
           hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "end_turn", inputTokens: 1, outputTokens: 1 });
         },
       },
     });
     const result = await runner.runHeadless({ prompt: "check inbox", policy: "auto", cwd: "/tmp/proj", origin: "routine/r9" });
-    expect(result).toMatchObject({ ok: true, resultText: "done on clover" });
+    expect(result).toMatchObject({ ok: true, resultText: "done on moss" });
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({ text: "check inbox", clientName: "routine" });
     const log = store.read(seen[0]!.sessionId);
@@ -52,10 +52,10 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
     const slept: number[] = [];
     const runner = makeDaemonRoutineRunner({
       store, hub, sleep: async (ms) => { slept.push(ms); },
-      clover: {
+      moss: {
         async runTurn(sessionId, text, clientName) {
           tries++;
-          if (refusals-- > 0) throw Object.assign(new Error("Clover is restarting for an update"), { code: "daemon_shutting_down", reason: "update-restarting" });
+          if (refusals-- > 0) throw Object.assign(new Error("MOSS is restarting for an update"), { code: "daemon_shutting_down", reason: "update-restarting" });
           hub.append(sessionId, { type: "user_message", sessionId, threadId: "main", text, clientName });
           hub.append(sessionId, { type: "assistant_message", sessionId, threadId: "main", text: "after the gate" });
           hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "end_turn", inputTokens: 1, outputTokens: 1 });
@@ -67,9 +67,9 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
     expect(slept).toEqual([UPDATE_RETRY_MS, UPDATE_RETRY_MS]);
     const other = makeDaemonRoutineRunner({
       store, hub, sleep: async () => { throw new Error("never waits"); },
-      clover: { async runTurn() { throw Object.assign(new Error("Clover is shutting down"), { code: "daemon_shutting_down" }); } },
+      moss: { async runTurn() { throw Object.assign(new Error("MOSS is shutting down"), { code: "daemon_shutting_down" }); } },
     });
-    expect(await other.runHeadless({ prompt: "p", policy: "auto", cwd: "/tmp", origin: "routine/v" })).toMatchObject({ ok: false, error: "Clover is shutting down" });
+    expect(await other.runHeadless({ prompt: "p", policy: "auto", cwd: "/tmp", origin: "routine/v" })).toMatchObject({ ok: false, error: "MOSS is shutting down" });
   });
 
   test("no runtime configured (agent disabled): fails cleanly, no session left dangling on the happy path", async () => {
@@ -87,7 +87,7 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
     const hub = new SessionHub(store);
     let sawSessionId: string | undefined;
     let sawPrompt: string | undefined;
-    const clover = cloverOver(hub, async (sessionId) => {
+    const moss = mossOver(hub, async (sessionId) => {
         sawSessionId = sessionId;
         const events = store.read(sessionId);
         const userMsg = events.find((e) => e.type === "user_message");
@@ -95,7 +95,7 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
         hub.append(sessionId, { type: "assistant_message", sessionId, threadId: "main", text: "3 unread emails" });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "end_turn", inputTokens: 10, outputTokens: 5 });
     });
-    const runner = makeDaemonRoutineRunner({ store, hub, clover });
+    const runner = makeDaemonRoutineRunner({ store, hub, moss });
 
     const result = await runner.runHeadless({ prompt: "check inbox", policy: "auto", cwd: "/tmp/proj", origin: "routine/r1" });
 
@@ -126,11 +126,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
   test("quota error: an agent_error whose message starts with HTTP 429 maps to quotaLimited", async () => {
     const store = new SessionStore(makeHome());
     const hub = new SessionHub(store);
-    const clover = cloverOver(hub, async (sessionId) => {
+    const moss = mossOver(hub, async (sessionId) => {
         hub.append(sessionId, { type: "agent_error", sessionId, threadId: "main", message: "HTTP 429 — rate limited" });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "error", inputTokens: 0, outputTokens: 0 });
     });
-    const runner = makeDaemonRoutineRunner({ store, hub, clover });
+    const runner = makeDaemonRoutineRunner({ store, hub, moss });
 
     const result = await runner.runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r2" });
     expect(result.ok).toBe(false);
@@ -145,11 +145,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
   test("quota error via structured code: agent_error.code === \"rate_limit\" maps to quotaLimited even with a message that does NOT start with HTTP 429", async () => {
     const store = new SessionStore(makeHome());
     const hub = new SessionHub(store);
-    const clover = cloverOver(hub, async (sessionId) => {
+    const moss = mossOver(hub, async (sessionId) => {
         hub.append(sessionId, { type: "agent_error", sessionId, threadId: "main", message: "rate limited, try later", code: "rate_limit" });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "error", inputTokens: 0, outputTokens: 0 });
     });
-    const runner = makeDaemonRoutineRunner({ store, hub, clover });
+    const runner = makeDaemonRoutineRunner({ store, hub, moss });
 
     const result = await runner.runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r5" });
     expect(result.ok).toBe(false);
@@ -160,11 +160,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
   test("a non-rate_limit code (e.g. \"auth\") is NOT quotaLimited, even if the message happens to start with HTTP 429", async () => {
     const store = new SessionStore(makeHome());
     const hub = new SessionHub(store);
-    const clover = cloverOver(hub, async (sessionId) => {
+    const moss = mossOver(hub, async (sessionId) => {
         hub.append(sessionId, { type: "agent_error", sessionId, threadId: "main", message: "HTTP 429 — actually an auth error", code: "auth" });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "error", inputTokens: 0, outputTokens: 0 });
     });
-    const runner = makeDaemonRoutineRunner({ store, hub, clover });
+    const runner = makeDaemonRoutineRunner({ store, hub, moss });
 
     const result = await runner.runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r6" });
     expect(result.ok).toBe(false);
@@ -182,11 +182,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
       } as never);
       const store = new SessionStore(makeHome());
       const hub = new SessionHub(store);
-      const clover = cloverOver(hub, async (sessionId) => {
+      const moss = mossOver(hub, async (sessionId) => {
         hub.append(sessionId, { type: "agent_error", sessionId, threadId: "main", message: classified.message, code: classified.code });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "error", inputTokens: 0, outputTokens: 0 });
       });
-      const result = await makeDaemonRoutineRunner({ store, hub, clover }).runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r7" });
+      const result = await makeDaemonRoutineRunner({ store, hub, moss }).runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r7" });
       expect(result.ok).toBe(false);
       expect(result.quotaLimited).toBe(quota ? true : undefined);
       expect(result.error).toBe(classified.message);
@@ -196,11 +196,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
   test("non-quota error: an agent_error NOT starting with HTTP 429 is a plain error (not quotaLimited)", async () => {
     const store = new SessionStore(makeHome());
     const hub = new SessionHub(store);
-    const clover = cloverOver(hub, async (sessionId) => {
+    const moss = mossOver(hub, async (sessionId) => {
         hub.append(sessionId, { type: "agent_error", sessionId, threadId: "main", message: "tool crashed" });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "error", inputTokens: 0, outputTokens: 0 });
     });
-    const runner = makeDaemonRoutineRunner({ store, hub, clover });
+    const runner = makeDaemonRoutineRunner({ store, hub, moss });
 
     const result = await runner.runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r3" });
     expect(result.ok).toBe(false);
@@ -208,11 +208,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
     expect(result.error).toBe("tool crashed");
   });
 
-  test("clover.runTurn throwing surfaces as a plain error result, never rejects", async () => {
+  test("moss.runTurn throwing surfaces as a plain error result, never rejects", async () => {
     const store = new SessionStore(makeHome());
     const hub = new SessionHub(store);
-    const clover = cloverOver(hub, async () => { throw new Error("runtime exploded"); });
-    const runner = makeDaemonRoutineRunner({ store, hub, clover });
+    const moss = mossOver(hub, async () => { throw new Error("runtime exploded"); });
+    const runner = makeDaemonRoutineRunner({ store, hub, moss });
 
     const result = await runner.runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r4" });
     expect(result.ok).toBe(false);

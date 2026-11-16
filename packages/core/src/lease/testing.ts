@@ -2,7 +2,7 @@
 // clock. Each device gets a `MainLease` over it (`lease(device)`), with its own wall-clock offset; `cutOff` makes the
 // service unreachable from one device. The record's changes are pushed to every device, as the service's socket
 // pushes them. It doubles as the harness the contracts' Lease conformance suite drives (`runLeaseConformance`).
-import type { LeaseView } from "@waifucave/clover-protocol";
+import type { LeaseView } from "@waifucave/moss-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { LeaseOp } from "../links/handshake";

@@ -11,7 +11,7 @@
 //   (its `lib` holds the packages). Never a `.git` folder or an `.env` file: the fence denies them inside everything
 //   opened (`readDenies`), and a named file that is one is refused.
 // * Never the user's home or a folder above it, never one of its big folders whole (Documents, Desktop, Downloads,
-//   Library…), never a folder that is or holds a secret place (`SECRET_READ_PLACES`, `CREDENTIAL_FILES`) or the Clover
+//   Library…), never a folder that is or holds a secret place (`SECRET_READ_PLACES`, `CREDENTIAL_FILES`) or the MOSS
 //   home, and never one inside a secret place. A walk up stops below the first folder it may not open.
 // * A file it may not open is named on the card as unreadable (`wrapped.unreadable`), with how to fix it.
 // * The fence re-checks each recorded path at every start (`wrapperReads`): one that is now refused, gone, or a link
@@ -19,7 +19,7 @@
 import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { topPluginIdOf } from "@waifucave/clover-protocol";
+import { topPluginIdOf } from "@waifucave/moss-protocol";
 import { CREDENTIAL_FILES, secretReadPlaces } from "../contracts/fence";
 import type { PluginRecord } from "../contracts/plugin-registry";
 import { TOOL_READ_DIRS } from "./plugin-fence";
@@ -39,8 +39,8 @@ export const isGitOrEnv = (name: string): boolean => name === ".git" || /^\.env(
 export interface WrapHomes {
   /** The user's home (tests pass a temp one). */
   user: string;
-  /** The Clover home: never opened. */
-  clover: string;
+  /** The MOSS home: never opened. */
+  moss: string;
   os: "macos" | "windows" | "linux";
 }
 
@@ -65,9 +65,9 @@ function secretPlaces(h: WrapHomes): string[] {
 export function wrapReadRefused(folder: string, h: WrapHomes): string | undefined {
   const f = real(folder);
   const user = real(h.user);
-  const clover = real(h.clover);
+  const moss = real(h.moss);
   if (within(user, f)) return "it is your home folder or holds it";
-  if (within(f, clover) || within(clover, f)) return "it is Clover's own folder or holds it";
+  if (within(f, moss) || within(moss, f)) return "it is MOSS's own folder or holds it";
   // Outside the home the fence doesn't close it: nothing to open, and nothing refused.
   if (!within(f, user)) return undefined;
   for (const w of WRAP_READS_NEVER_WHOLE) if (f === join(user, w)) return `it is your whole ${w} folder`;
@@ -78,10 +78,10 @@ export function wrapReadRefused(folder: string, h: WrapHomes): string | undefine
   return undefined;
 }
 
-/** Whether a path is in a place the fence closes (the user's home, the Clover home), outside the installs it reads. */
+/** Whether a path is in a place the fence closes (the user's home, the MOSS home), outside the installs it reads. */
 function closed(p: string, h: WrapHomes): boolean {
   const user = real(h.user);
-  if (!within(p, user) && !within(p, real(h.clover))) return false;
+  if (!within(p, user) && !within(p, real(h.moss))) return false;
   return !TOOL_READ_DIRS.some((d) => within(p, join(user, d)));
 }
 
@@ -119,7 +119,7 @@ function opensFor(file: string, isDir: boolean, h: WrapHomes): { paths: string[]
 }
 
 /** A stdio server's closed files: the paths to open (read-only) and the files that can't be, each with why. */
-export function wrapReads(server: { command: string; args?: readonly string[] }, h: WrapHomes = { user: homedir(), clover: join(homedir(), ".clover"), os: "macos" }): { reads: string[]; unreadable: { path: string; why: string }[] } {
+export function wrapReads(server: { command: string; args?: readonly string[] }, h: WrapHomes = { user: homedir(), moss: join(homedir(), ".moss"), os: "macos" }): { reads: string[]; unreadable: { path: string; why: string }[] } {
   const reads: string[] = [];
   const unreadable: { path: string; why: string }[] = [];
   for (const named of namedPaths(server.command, server.args ?? [])) {

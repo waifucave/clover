@@ -9,7 +9,7 @@
 //   hooks; at most STAGE_MAX_BYTES serialized and STAGE_WRITES_PER_SECOND writes a second (`StageStore`).
 // * `stage.catalog` (CATALOG_KEY): the names the loaded model has (expressions, motions, outfit toggles), which her
 //   tab hands the server through `host.call("setCatalog", …)` once it has loaded the model; the server checks it and
-//   writes it. Names only, never the model's files: they aren't Clover's to ship (spec §6.6).
+//   writes it. Names only, never the model's files: they aren't MOSS's to ship (spec §6.6).
 // * `stage.scenes` (SCENES_KEY): the scenes she has, her own and the ones other plugins add through her
 //   `alpha.scenes` point, written by the server.
 // Her tab hears each change of `stage` as `host.on("stage")`, and of any key as `storage.synced.watch`.

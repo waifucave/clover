@@ -1,0 +1,18 @@
+{
+  "manifest": 1,
+  "id": "usage-opencode",
+  "name": "OpenCode usage",
+  "description": "Your OpenCode token counts and cost for the Usage tab, from its own program: `opencode stats`. It runs that one program as you and reads none of OpenCode's files.",
+  "engines": { "moss": "^1.0.0" },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun",
+    "process": "own",
+    "outside": { "programs": ["opencode"] }
+  },
+  "contributes": {
+    "usage.sources": [
+      { "id": "opencode", "name": "OpenCode", "handler": "source", "provides": ["usage"] }
+    ]
+  }
+}

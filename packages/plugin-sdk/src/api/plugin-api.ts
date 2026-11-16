@@ -13,11 +13,11 @@
 // overrides (another service origin, say) are the plugin's own settings, never environment variables, which the
 // plugin host doesn't pass on.
 import {
-  type BotView, type Caller, type CardMeta, type CommandView, type ComputerView, type CloverWindow, type DeviceView, type FileStat, type HostProcess,
+  type BotView, type Caller, type CardMeta, type CommandView, type ComputerView, type MossWindow, type DeviceView, type FileStat, type HostProcess,
   type HoldTarget, type HoldView, type InstallSource, type MemoryEntry, type PlanReading, type PluginState, type RoutineRunView, type RoutineView,
   type Screenshot, type SessionView, type TabOwner, type TabView, type UsageRow, type Viewport, BUNDLED_ROOT_PLUGIN,
   topPluginIdOf,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 
 import type { AvatarApi, AvatarReport } from "../catalogs/avatar-cues";
 
@@ -94,7 +94,7 @@ export interface NotifierHandler {
 }
 
 /** A notifier's context. `desktop` is the local app's notifications on the computer the notifier runs on (lane G's
- *  ask: a `runsOn: "each"` notifier reaches its own computer's app), present only for the bundled `clover` tree's
+ *  ask: a `runsOn: "each"` notifier reaches its own computer's app), present only for the bundled `moss` tree's
  *  notifiers; the core sends them as `app.notify`. The same calls are `PluginApi.desktop` in that tree's process. */
 export interface NotifierContext extends HandlerContext {
   readonly desktop?: DesktopNotifications;
@@ -136,10 +136,10 @@ export interface NotifierUpdate {
   /** For `kind: "routine-result"`: whether the run failed (an error, a timeout, a refusal, stopped or cut off), so a
    *  notifier can leave out the ones that went well (lane G's `routineFailed`). */
   failed?: boolean;
-  /** Who the update is from, always (#179's review): `clover` (name "Clover") for the core's own (a message, a card, a
+  /** Who the update is from, always (#179's review): `moss` (name "MOSS") for the core's own (a message, a card, a
    *  question, a routine's result, an agent finishing, its own notices), or the plugin that called `notify.send`, by id
-   *  and name (lane G's ask). `bundled` is false for a plugin outside the bundled `clover` tree: a notifier shows its
-   *  notification marked as a plugin's ("Home, a plugin: …"), never as Clover's or a bot's, so no plugin named like a
+   *  and name (lane G's ask). `bundled` is false for a plugin outside the bundled `moss` tree: a notifier shows its
+   *  notification marked as a plugin's ("Home, a plugin: …"), never as MOSS's or a bot's, so no plugin named like a
    *  bot ("Luna") speaks as one. */
   sender: { pluginId: string; name: string; bundled: boolean };
 }
@@ -247,9 +247,9 @@ export interface CompanionHandler {
 }
 
 /** What `register` takes in place of a routine's key: base64url (no padding) of SHA-256 over
- *  `clover hook key v1|<key>`, as the waifucave forwarder's service stores it. */
+ *  `moss hook key v1|<key>`, as the waifucave forwarder's service stores it. */
 export async function webhookKeyHash(key: string): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`clover hook key v1|${key}`)));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`moss hook key v1|${key}`)));
   let bin = "";
   for (const b of digest) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -444,7 +444,7 @@ export type KeyedFetchErrorCode = (typeof KEYED_FETCH_ERROR_CODES)[number];
 
 /** The `auth` name that adds this computer's waifucave account token (lane H mints it), the key to every computer
  *  (§8.1). No manifest may name a secret `waifucave`. The rules:
- *  * only plugins of the `clover` tree may use it (the forwarder, push), and only from the `clover` process, which the
+ *  * only plugins of the `moss` tree may use it (the forwarder, push), and only from the `moss` process, which the
  *    core decides from the install record (the owner's answer to S4); for any other it is no entry of theirs
  *    (`unknown_auth`);
  *  * only `https://` URLs on a `waifucave.com` host in the plugin's `network:` capabilities (`mayUseWaifucaveAuth`);
@@ -465,7 +465,7 @@ export const WAIFUCAVE_DOMAIN = "waifucave.com";
  *  exact origins, `http` allowed (`http://127.0.0.1:8787`); the core's own setting, never a plugin's. */
 export type WaifucaveTarget = { domain: string } | { origins: readonly string[] };
 
-/** Whether a plugin may fetch `url` with `auth: "waifucave"`: a `clover` plugin, calling from the `clover` process
+/** Whether a plugin may fetch `url` with `auth: "waifucave"`: a `moss` plugin, calling from the `moss` process
  *  (`from`, the process its connection is bound to; a component is `ui`). Its `network:` capability is checked as for
  *  any fetch. */
 export function mayUseWaifucaveAuth(
@@ -474,7 +474,7 @@ export function mayUseWaifucaveAuth(
   from: HostProcess | "ui",
   target: WaifucaveTarget = { domain: WAIFUCAVE_DOMAIN },
 ): boolean {
-  if (from !== "clover" || topPluginIdOf(pluginId) !== BUNDLED_ROOT_PLUGIN) return false;
+  if (from !== "moss" || topPluginIdOf(pluginId) !== BUNDLED_ROOT_PLUGIN) return false;
   let u: URL;
   try {
     u = new URL(url);
@@ -497,8 +497,8 @@ export interface SecretsApi {
 /** Key pairs the core keeps for a plugin on this computer, whose private halves never leave the core: in the secret
  *  store, never synced, one set per computer, kept when the plugin is removed (as its data folder is) until `delete`.
  *  For a host half that must receive what was sealed to this computer, as the waifucave forwarder does, without
- *  holding a secret a worker could leak. Only from the `clover` process (the owner's answer to S4): the core honours
- *  `open` there alone, so the other calls are the `clover` tree's too, since a pair no one can open with is no use. */
+ *  holding a secret a worker could leak. Only from the `moss` process (the owner's answer to S4): the core honours
+ *  `open` there alone, so the other calls are the `moss` tree's too, since a pair no one can open with is no use. */
 export interface KeysApi {
   /** The named X25519 key pair's public key (32 bytes, raw), made on first use. */
   publicKey(name: string): Promise<Uint8Array>;
@@ -577,7 +577,7 @@ export interface TriggerHandler {
   disarm(args: { routine: string; type: string }, ctx: HandlerContext): Promise<void> | void;
 }
 
-/** `computers.read` gives the registry; `computers.control` gives holds, the user-working mark, Clover's own windows
+/** `computers.read` gives the registry; `computers.control` gives holds, the user-working mark, MOSS's own windows
  *  and the action signal (§9.2), whose OK says "controls the screen and input of your computers". */
 export interface ComputersApi {
   list(): Promise<ComputerView[]>;
@@ -591,10 +591,10 @@ export interface ComputersApi {
   setUserWorking(computer: string, on: boolean, target?: HoldTarget): Promise<void>;
   /** For the bound session too, as `takeHold` is. */
   setActionRunning(computer: string, running: boolean): Promise<void>;
-  cloverWindows(computer: string): Promise<CloverWindow[]>;
+  mossWindows(computer: string): Promise<MossWindow[]>;
 }
 
-/** The stage's own call (bundled `clover` tree, components only): which renderer drew a bot's figure, what its model has
+/** The stage's own call (bundled `moss` tree, components only): which renderer drew a bot's figure, what its model has
  *  and where it stands; `undefined` clears it. */
 export interface AvatarReportApi {
   report(bot: string, report: AvatarReport | undefined): Promise<void>;
@@ -608,7 +608,7 @@ export interface DevicesApi {
 }
 
 /** `approvals`: which cards are pending and where, never their text, and only the cards of the plugin's own bot (the
- *  bundled `clover` tree: all). A component places one with the UI API's `<Card id>` and its parts. `watch` hands the
+ *  bundled `moss` tree: all). A component places one with the UI API's `<Card id>` and its parts. `watch` hands the
  *  whole pending list each time it changes. */
 export interface ApprovalsApi {
   pending(): Promise<CardMeta[]>;
@@ -643,7 +643,7 @@ export interface FilesApi {
    *  `files.path(token)` (lane A's) for the real path to hand its own process (ffmpeg). An open grant is read-only; a save grant is
    *  write on that one file (and reads it); a folder picked for writing carries read too. The core keeps the grants
    *  (`plugin.grant.add/remove/list`, app role) until the user removes one in Settings or the plugin is removed, and refuses
-   *  places no plugin may hold (the Clover home, secrets, the plugins folder, the user's home itself) with a reason. */
+   *  places no plugin may hold (the MOSS home, secrets, the plugins folder, the user's home itself) with a reason. */
   pickOpen?(opts?: { multiple?: boolean; filters?: FilePickFilter[] }): Promise<FilePickResult>;
   pickFolder?(opts?: { forWriting?: boolean }): Promise<FilePickResult>;
   pickSave?(opts?: { suggestedName?: string; filters?: FilePickFilter[] }): Promise<FilePickResult>;
@@ -664,7 +664,7 @@ export type FilePickResult = { grants: FileGrant[] } | { cancelled: true };
 
 /** `terminal`: the user's terminals on their computers (lane F's request; lane J's PTY), for the component that draws
  *  one. Any plugin may ask for it (the owner, 2026-11-15); its OK warns that it runs commands as the user outside
- *  Clover's sandbox, and a computer at read-only never opens one for a plugin (`refused`). Components only.
+ *  MOSS's sandbox, and a computer at read-only never opens one for a plugin (`refused`). Components only.
  *  What reaches a terminal is not written by the component: lane E's runtime derives it from trusted input events.
  *  `input` takes the `keydown` or `paste` event itself; a trusted key press becomes its bytes, and a trusted paste goes
  *  through the paste door, which takes the clipboard's text, brackets it when the program turned bracketed paste on,
@@ -773,7 +773,7 @@ export interface TerminalInputEvent {
   readonly isTrusted: boolean;
 }
 
-/** `browser`: the Clover Browser's API (§12.1); DevTools calls pass only allowlisted domains. */
+/** `browser`: the MOSS Browser's API (§12.1); DevTools calls pass only allowlisted domains. */
 /** A plugin's calls carry the plugin as their caller, or, while it serves a tool call, that call's session (R7).
  *
  *  Whose tabs a call may open (#179's review, S1): acting as itself, a plugin opens tabs only in its own partition
@@ -814,7 +814,7 @@ export interface UsageApi {
 }
 
 /** Logs: the last `lines` lines (default 200, at most 2,000), and each line from now on. A plugin's own tree's (its own
- *  id or a child's, as its Settings page shows them) with no capability; with `logs.read`, Clover's own (`"core"`) and
+ *  id or a child's, as its Settings page shows them) with no capability; with `logs.read`, MOSS's own (`"core"`) and
  *  any other plugin's. */
 export interface LogsApi {
   read(source: "core" | { plugin: string }, opts?: { lines?: number }): Promise<string[]>;
@@ -974,7 +974,7 @@ export interface PluginApi {
   readonly secrets?: SecretsApi;
   /** In host halves: the programs its manifest names, run outside the sandbox (P5). */
   readonly outside?: OutsideApi;
-  /** The `clover` process's per-computer keys: the plugin's own X25519 pairs, whose private half stays in the core. */
+  /** The `moss` process's per-computer keys: the plugin's own X25519 pairs, whose private half stays in the core. */
   readonly keys?: KeysApi;
   readonly settings: SettingsApi;
   /** A sealed card that says it comes from this plugin, with its name, id and source and the text; returns only the
@@ -1001,7 +1001,7 @@ export interface PluginApi {
   /** Components only, with `approvals`: the cards that wait for this plugin's own bot, without their text. */
   readonly approvals?: ApprovalsApi;
   readonly files?: FilesApi;
-  /** The bundled `clover` tree's host halves only (its Browser tool, for the session a tool call serves): `tabs`, `open`,
+  /** The bundled `moss` tree's host halves only (its Browser tool, for the session a tool call serves): `tabs`, `open`,
    *  `close`, `navigate`, `screenshot`, `cdp` (the tool's own nine DevTools methods) and `caller`. `show`, `hide`,
    *  `onCdpEvent` and `watch` are the person's panel's (a component's), not a host half's; a third-party plugin's `browser` isn't served. */
   readonly browser?: NotYet<BrowserApi, "show" | "hide" | "onCdpEvent" | "watch">;
@@ -1009,16 +1009,16 @@ export interface PluginApi {
   readonly shell?: Partial<ShellApi>;
   /** Components only. */
   readonly terminal?: TerminalApi;
-  /** Components only, of the bundled `clover` tree. */
+  /** Components only, of the bundled `moss` tree. */
   readonly plugins?: PluginsApi;
   /** `usage.read`: the usage rows and plan readings, read-only. */
   readonly usage?: UsageApi;
-  /** Its own tree's logs with no capability; Clover's and every other plugin's with `logs.read`. */
+  /** Its own tree's logs with no capability; MOSS's and every other plugin's with `logs.read`. */
   readonly logs: LogsApi;
   readonly notify?: NotifyApi;
   /** `avatar.read`, `avatar.control`: the plugin's own bot's figure, each call by its capability. */
   readonly avatar?: Partial<AvatarApi> & Partial<AvatarReportApi>;
-  /** Only the bundled `clover` tree's process: this computer's desktop notifications, for its notifier. */
+  /** Only the bundled `moss` tree's process: this computer's desktop notifications, for its notifier. */
   readonly desktop?: DesktopNotifications;
   /** One-at-a-time queues the platform runs (§5.4 "Turns"): its own turns, another plugin's it offers, the device's. */
   readonly turns: TurnsApi;

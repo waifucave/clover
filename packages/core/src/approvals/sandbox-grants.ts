@@ -22,7 +22,7 @@ interface KeptGrant {
 }
 
 export interface SandboxGrantsOptions {
-  /** Clover's home: kept grants are saved under its rules folder. Without it they last as long as the daemon. */
+  /** MOSS's home: kept grants are saved under its rules folder. Without it they last as long as the daemon. */
   home?: string;
   /** Whether a folder is (still) one shell commands may be given: R1's ordinary class. */
   isOrdinary: (folder: string) => boolean;

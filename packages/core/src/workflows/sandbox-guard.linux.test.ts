@@ -78,7 +78,7 @@ describe("linuxConfinementState with a given probe", () => {
 
 /** Runs a probe that prints `keychainSandboxState()`, directly or through the SDK's launcher. */
 function runProbe(confined: boolean): { code: number; out: string; err: string } {
-  const dir = mkdtempSync(join(tmpdir(), "clover-linux-guard-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-linux-guard-"));
   temps.push(dir);
   const probeFile = join(dir, "probe.ts");
   // The state, and (pinning that the launcher's filter refuses the call whatever the domain) an AF_INET socket's answer.

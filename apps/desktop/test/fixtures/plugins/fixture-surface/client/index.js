@@ -2,7 +2,7 @@
 // headless run never shows it), and asks the core for a menu, whose answer it draws.
 import { jsx } from "react/jsx-runtime";
 import { useEffect, useState } from "react";
-import { useMenu, useSurface } from "@waifucave/clover-plugin-sdk/ui";
+import { useMenu, useSurface } from "@waifucave/moss-plugin-sdk/ui";
 
 export function FixtureSurface() {
   const surface = useSurface();

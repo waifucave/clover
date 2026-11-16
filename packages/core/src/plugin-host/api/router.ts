@@ -1,6 +1,6 @@
 // The plugin API's router in the core (spec §5.4 "The plugin API" and "Capabilities"; the PluginHost contract's
 // `ApiRouter`). Every call a plugin's host half makes comes here, after `guardApiRouter` has checked that the plugin
-// runs in the process the call came from and that a `clover`-only call came from the `clover` process (S4).
+// runs in the process the call came from and that a `moss`-only call came from the `moss` process (S4).
 //
 // The router is the one capability gate (fails closed):
 // * a path that isn't in the plugin SDK's `API_CALLS` doesn't exist (`refused`), whatever the plugin declared;
@@ -15,8 +15,8 @@
 //
 // The handlers get the caller the core bound (R7): the session whose tool call the plugin is serving, or the plugin
 // itself, and never anything the plugin wrote.
-import { apiCallAllowed, API_CALLS, withImplied, type ApiCallInfo, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
-import type { Caller, HostProcess } from "@waifucave/clover-protocol";
+import { apiCallAllowed, API_CALLS, withImplied, type ApiCallInfo, type ApiCallPath } from "@waifucave/moss-plugin-sdk";
+import type { Caller, HostProcess } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import type { ApiRouter } from "../../contracts/plugin-host";
 import { RUNNING_STATES, type PluginRecord, type PluginRegistry } from "../../contracts/plugin-registry";
@@ -136,7 +136,7 @@ function refusal(path: ApiCallPath, process: HostProcess | "ui", target?: { plug
   if (info.where === "ui" && process !== "ui") return `${path} exists only in components`;
   if (process === "ui" && info.where !== "both" && info.where !== "ui") return `${path} exists only in a plugin's host code`;
   if (info.where === "own" && process !== "own") return `${path} exists only in a process of the plugin's own`;
-  if (info.where === "clover" && process !== "clover") return `${path} exists only in the clover plugin host`;
+  if (info.where === "moss" && process !== "moss") return `${path} exists only in the moss plugin host`;
   const capability = info.capability === "call:*" ? `call:${target?.plugin ?? "<plugin>"}` : info.capability === "network:*" ? `network:${target?.host ?? "<host>"}` : info.capability;
   return `${path} needs the capability ${capability}, which this plugin's OK doesn't list`;
 }

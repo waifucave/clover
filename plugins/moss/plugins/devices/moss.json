@@ -1,0 +1,14 @@
+{
+  "manifest": 1,
+  "name": "Devices",
+  "description": "Your computers, phones and browsers, one quiet row each, as a tab of the island.",
+  "engines": { "moss": "^1.0.0" },
+  "capabilities": ["devices.read", "shell.control"],
+  "client": { "entry": "client/index.tsx" },
+  "contributes": {
+    "locales": [{ "lang": "en", "file": "locales/en.json" }],
+    "ui": [
+      { "spot": "island.tab", "id": "devices", "component": "DevicesTabEntry", "title": "Devices", "order": 900, "attention": "never" }
+    ]
+  }
+}

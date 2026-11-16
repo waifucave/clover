@@ -1,13 +1,13 @@
-// `clover plugin new <template>` (spec §5.6): the starting points a plugin begins from. Each writes an ordinary plugin
+// `moss plugin new <template>` (spec §5.6): the starting points a plugin begins from. Each writes an ordinary plugin
 // folder, nothing more: a manifest, the files it names, and a README saying what to change. Every template is checked
-// by `clover plugin validate` in the SDK's tests. None asks for a capability or a project's files, and none carries a
+// by `moss plugin validate` in the SDK's tests. None asks for a capability or a project's files, and none carries a
 // secret: those are the author's to add when the plugin needs them. Only the model template reaches the network: its
 // example endpoint (`api.example.com`) shows as a network host on the OK card, as the real endpoint will.
 //
 // Templates: a bot, a theme, a tool (an MCP server in the plugin's own host code), a UI part, a model (a compatible
 // endpoint, no code), a trigger for routine files, and a point other plugins fill.
 
-import { BUNDLED_BOT_PLUGIN, BUNDLED_ROOT_PLUGIN, PLUGIN_ID_MAX, PLUGIN_ID_MIN, PLUGIN_ID_RE, isPluginId } from "@waifucave/clover-protocol";
+import { BUNDLED_BOT_PLUGIN, BUNDLED_ROOT_PLUGIN, PLUGIN_ID_MAX, PLUGIN_ID_MIN, PLUGIN_ID_RE, isPluginId } from "@waifucave/moss-protocol";
 import { isReservedPluginName } from "../catalogs/spots";
 
 /** What a template is filled in with. */
@@ -31,11 +31,11 @@ export const TEMPLATE_ID_RE = PLUGIN_ID_RE;
 /** The longest name a template writes, in UTF-16 code units: a tab label and a card title, not a paragraph. */
 export const TEMPLATE_NAME_MAX = 80;
 
-/** Why `id` can't start a plugin, or undefined when it can: the protocol's id rule, and never an id Clover ships
+/** Why `id` can't start a plugin, or undefined when it can: the protocol's id rule, and never an id MOSS ships
  *  (`validate` refuses those as `id_reserved`, so `new` never writes one). */
 export function templateIdProblem(id: string): string | undefined {
   if (!isPluginId(id)) return `"${id}" isn't a plugin id: a letter first, then lowercase letters, digits and single hyphens, ${PLUGIN_ID_MIN} to ${PLUGIN_ID_MAX} characters`;
-  if (id === BUNDLED_ROOT_PLUGIN || id === BUNDLED_BOT_PLUGIN) return `"${id}" is one of the plugins Clover ships: pick another folder name`;
+  if (id === BUNDLED_ROOT_PLUGIN || id === BUNDLED_BOT_PLUGIN) return `"${id}" is one of the plugins MOSS ships: pick another folder name`;
   return undefined;
 }
 
@@ -47,7 +47,7 @@ export function cleanTemplateName(name: string): string {
 
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
-const readme = (name: string, body: string): string => `# ${name}\n\n${body}\n\nCheck it with \`clover plugin validate\`, and try it on this computer with \`clover plugin dev .\`.\n`;
+const readme = (name: string, body: string): string => `# ${name}\n\n${body}\n\nCheck it with \`moss plugin validate\`, and try it on this computer with \`moss plugin dev .\`.\n`;
 
 /** A model row's capability evidence, as the provider's own documentation states it (provider-catalog's shape). */
 const evidence = (value: unknown) => ({ value, source: "official-doc", confidence: "declared" });
@@ -61,20 +61,20 @@ export const PLUGIN_TEMPLATES: Readonly<Record<string, PluginTemplate>> = {
   bot: {
     description: "A bot: its name and instructions, which you edit in bot/instructions.md.",
     files: ({ id, name }) => ({
-      "clover.json": json({
-        manifest: 1, id, name, description: `${name}, a bot.`, engines: { clover: "^1.0.0" },
+      "moss.json": json({
+        manifest: 1, id, name, description: `${name}, a bot.`, engines: { moss: "^1.0.0" },
         contributes: { bot: { name, instructions: "bot/instructions.md" } },
       }),
       "bot/instructions.md": `You are ${name}. Say who you are and how you help, in a few short paragraphs.\n`,
-      "README.md": readme(name, "A bot. Its instructions are in `bot/instructions.md`; its manifest, `clover.json`, can also give it a model, an avatar and a theme, and a default voice on Clover Voice's point `clover.voice.defaults` (the user's own choice wins). What it adds to the UI is inside the bot (only its own tab, and only what Bots offers there) unless an entry says `\"app\": true`: that part is beside the bot, shows anywhere, and comes under a switch of its own. A tool, skill or command with `\"scope\": \"own-bot\"` is this bot's alone."),
+      "README.md": readme(name, "A bot. Its instructions are in `bot/instructions.md`; its manifest, `moss.json`, can also give it a model, an avatar and a theme, and a default voice on MOSS Voice's point `moss.voice.defaults` (the user's own choice wins). What it adds to the UI is inside the bot (only its own tab, and only what Bots offers there) unless an entry says `\"app\": true`: that part is beside the bot, shows anywhere, and comes under a switch of its own. A tool, skill or command with `\"scope\": \"own-bot\"` is this bot's alone."),
     }),
   },
 
   theme: {
     description: "A theme: token values for the app's colours, in light and dark.",
     files: ({ id, name }) => ({
-      "clover.json": json({
-        manifest: 1, id, name, description: `${name}, a theme.`, engines: { clover: "^1.0.0" },
+      "moss.json": json({
+        manifest: 1, id, name, description: `${name}, a theme.`, engines: { moss: "^1.0.0" },
         contributes: { themes: [{ id, file: "theme.json" }] },
       }),
       "theme.json": json({
@@ -89,14 +89,14 @@ export const PLUGIN_TEMPLATES: Readonly<Record<string, PluginTemplate>> = {
   tool: {
     description: "A tool: an MCP server in the plugin's own host code, with one tool, `hello`.",
     files: ({ id, name }) => ({
-      "clover.json": json({
-        manifest: 1, id, name, description: `${name}, a tool.`, engines: { clover: "^1.0.0" },
+      "moss.json": json({
+        manifest: 1, id, name, description: `${name}, a tool.`, engines: { moss: "^1.0.0" },
         host: { entry: "host/index.ts", runtime: "bun" },
         contributes: { mcpServers: { tools: { type: "host", tools: { hello: "preload" } } } },
       }),
-      "host/index.ts": `// ${name}'s host half: one MCP server, \`tools\`, served on the in-process transport Clover hands it. It speaks
+      "host/index.ts": `// ${name}'s host half: one MCP server, \`tools\`, served on the in-process transport MOSS hands it. It speaks
 // MCP's JSON-RPC directly, so the plugin ships no dependency. Its key here is the one under \`contributes.mcpServers\`.
-import type { HostModule, McpServerTransport } from "@waifucave/clover-plugin-sdk";
+import type { HostModule, McpServerTransport } from "@waifucave/moss-plugin-sdk";
 
 const TOOLS = [
   {
@@ -130,7 +130,7 @@ export const mcp: HostModule["mcp"] = {
   },
 };
 `,
-      "README.md": readme(name, "A tool. Its MCP server, `tools`, is in `host/index.ts`, with one tool, `hello`; list each tool you add under `contributes.mcpServers.tools` in `clover.json`. It asks for no network and no files: add `network` or a capability to the manifest only when a tool needs one, and the OK card will say so."),
+      "README.md": readme(name, "A tool. Its MCP server, `tools`, is in `host/index.ts`, with one tool, `hello`; list each tool you add under `contributes.mcpServers.tools` in `moss.json`. It asks for no network and no files: add `network` or a capability to the manifest only when a tool needs one, and the OK card will say so."),
     }),
   },
 
@@ -139,21 +139,21 @@ export const mcp: HostModule["mcp"] = {
     files: ({ id, name }) => {
       const component = `${pascal(id)}Section`;
       return {
-        "clover.json": json({
-          manifest: 1, id, name, description: `${name}, a part of the app.`, engines: { clover: "^1.0.0" },
+        "moss.json": json({
+          manifest: 1, id, name, description: `${name}, a part of the app.`, engines: { moss: "^1.0.0" },
           client: { entry: "client/index.ts" },
           contributes: { ui: [{ spot: "settings.section", id: "section", component, title: name }] },
         }),
         "client/index.ts": `// ${name}'s client half: the components its manifest's \`ui\` entries name. React comes from the layer, through
 // the plugin SDK, so the plugin ships none of its own.
-import { createElement as h, useT } from "@waifucave/clover-plugin-sdk/ui";
+import { createElement as h, useT } from "@waifucave/moss-plugin-sdk/ui";
 
 export function ${component}() {
   const t = useT();
   return h("p", null, t(${JSON.stringify(`Hello from ${name}.`)}));
 }
 `,
-        "README.md": readme(name, "A UI part: a section of Settings, drawn by the component in `client/index.ts`. Its `ui` entry in `clover.json` says which spot it fills; the catalog lists the spots."),
+        "README.md": readme(name, "A UI part: a section of Settings, drawn by the component in `client/index.ts`. Its `ui` entry in `moss.json` says which spot it fills; the catalog lists the spots."),
       };
     },
   },
@@ -161,18 +161,18 @@ export function ${component}() {
   model: {
     description: "A model: a provider's compatible endpoint, with no code, signed in with an API key.",
     files: ({ id, name }) => ({
-      "clover.json": json({
-        manifest: 1, id, name, description: `${name}'s models, on its compatible endpoint.`, engines: { clover: "^1.0.0" },
+      "moss.json": json({
+        manifest: 1, id, name, description: `${name}'s models, on its compatible endpoint.`, engines: { moss: "^1.0.0" },
         contributes: {
           models: [{
             provider: id, name, catalog: "catalog.json",
-            auth: [{ method: "api-key", secret: "api-key", help: `Your ${name} API key. Clover keeps it in your credential store.` }],
+            auth: [{ method: "api-key", secret: "api-key", help: `Your ${name} API key. MOSS keeps it in your credential store.` }],
             endpoint: { protocol: "openai-chat", baseUrl: "https://api.example.com/v1" },
           }],
         },
       }),
-      // The catalog file Clover reads (provider-catalog's model-plugin format): `catalog: 1` and one row per model. The
-      // provider's own facts (its protocol, how it signs in) come from the `models` entry in `clover.json`.
+      // The catalog file MOSS reads (provider-catalog's model-plugin format): `catalog: 1` and one row per model. The
+      // provider's own facts (its protocol, how it signs in) come from the `models` entry in `moss.json`.
       "catalog.json": json({
         catalog: 1,
         rows: [{
@@ -183,11 +183,11 @@ export function ${component}() {
           toolCalling: evidence("native"), nativeTools: evidence(true),
         }],
       }),
-      "README.md": readme(name, `A model provider. Put the provider's endpoint in \`clover.json\` (\`endpoint.baseUrl\`, and the protocol it speaks), and its models in \`catalog.json\`. Clover asks for the API key when someone signs in. The endpoint's host is the plugin's network: the example's \`api.example.com\` shows as a network host on the OK card, so put the provider's own there.
+      "README.md": readme(name, `A model provider. Put the provider's endpoint in \`moss.json\` (\`endpoint.baseUrl\`, and the protocol it speaks), and its models in \`catalog.json\`. MOSS asks for the API key when someone signs in. The endpoint's host is the plugin's network: the example's \`api.example.com\` shows as a network host on the OK card, so put the provider's own there.
 
 Each row of \`catalog.json\` is one model, and every field in the example is required:
 
-- \`key\`: \`<provider>/<model id>\`, the provider being the \`provider\` of the \`models\` entry in \`clover.json\`.
+- \`key\`: \`<provider>/<model id>\`, the provider being the \`provider\` of the \`models\` entry in \`moss.json\`.
 - \`providerId\`: that provider. \`upstreamId\`: the model's id as the endpoint takes it (the key's second half).
 - \`displayName\`: the name the model picker shows.
 - \`canonicalModelId\`: the model's own identity (often the same as \`upstreamId\`). \`modelFamily\`: \`"other"\`.
@@ -205,8 +205,8 @@ The last four are evidence: \`{ "value": …, "source": "official-doc", "confide
   trigger: {
     description: "A trigger for routine files: `every: <minutes>` fires a routine on a fixed interval.",
     files: ({ id, name }) => ({
-      "clover.json": json({
-        manifest: 1, id, name, description: `${name}: a trigger for routine files.`, engines: { clover: "^1.0.0" },
+      "moss.json": json({
+        manifest: 1, id, name, description: `${name}: a trigger for routine files.`, engines: { moss: "^1.0.0" },
         host: { entry: "host/index.ts", runtime: "bun" },
         contributes: {
           triggers: [{
@@ -218,7 +218,7 @@ The last four are evidence: \`{ "value": …, "source": "official-doc", "confide
       }),
       "host/index.ts": `// ${name}'s host half: the handler its \`triggers\` entry names. A routine file that uses the trigger arms it with
 // its fields (\`arm\`); it then runs the routine every \`every\` minutes (\`api.routines.fire\`) until the routine is
-// disarmed. Clover arms it again whenever this host half starts, so \`arm\` replaces what it had for a routine.
+// disarmed. MOSS arms it again whenever this host half starts, so \`arm\` replaces what it had for a routine.
 
 // The API \`start\` is given: what the plugin does later, from a timer, it does as itself (a call's own \`ctx.api\` ends
 // with the call).
@@ -260,8 +260,8 @@ export const ${camel(id)} = {
     files: ({ id, name }) => {
       const component = `${pascal(id)}Section`;
       return {
-        "clover.json": json({
-          manifest: 1, id, name, description: `${name}: a point other plugins fill.`, engines: { clover: "^1.0.0" },
+        "moss.json": json({
+          manifest: 1, id, name, description: `${name}: a point other plugins fill.`, engines: { moss: "^1.0.0" },
           client: { entry: "client/index.ts" },
           contributes: {
             ui: [{
@@ -278,7 +278,7 @@ export const ${camel(id)} = {
         }),
         "client/index.ts": `// ${name}'s client half: a Settings section listing what other plugins add to its point, \`${id}.items\`. React
 // comes from the layer, through the plugin SDK, so the plugin ships none of its own.
-import { createElement as h, useEffect, usePluginApi, useState } from "@waifucave/clover-plugin-sdk/ui";
+import { createElement as h, useEffect, usePluginApi, useState } from "@waifucave/moss-plugin-sdk/ui";
 
 interface Item {
   id: string;
@@ -312,6 +312,6 @@ export function templateFiles(template: string, input: TemplateInput): { files: 
   const name = cleanTemplateName(input.name);
   if (name === "") return { error: "a plugin's name needs a letter or a digit, not only spaces or control characters" };
   if (name.length > TEMPLATE_NAME_MAX) return { error: `a plugin's name is at most ${TEMPLATE_NAME_MAX} characters` };
-  if (isReservedPluginName(name)) return { error: `"${name}" is a name only Clover's own plugins have` };
+  if (isReservedPluginName(name)) return { error: `"${name}" is a name only MOSS's own plugins have` };
   return { files: t.files({ id: input.id, name }) };
 }

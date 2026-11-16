@@ -1,0 +1,58 @@
+{
+  "manifest": 1,
+  "name": "Bot editor",
+  "description": "Edit a bot: its name, your instructions, its model, theme and layout, kept as your own layer over its plugin's. Other plugins add their own sections, such as the avatar's and the voice's.",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "bots.read",
+    "approvals",
+    "approvals.all",
+    "bots.edit",
+    "plugins.read"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "main",
+        "key": "bot-editor",
+        "component": "BotEditorEntry",
+        "declares": {
+          "bot.editor.section": {
+            "shape": "list",
+            "context": [
+              "bot"
+            ],
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object"
+                }
+              }
+            },
+            "fields": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "icon": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "Sections plugins add to a bot's editor, each for the bot it is given (the avatar's is the character plugin's)."
+          }
+        }
+      }
+    ]
+  }
+}

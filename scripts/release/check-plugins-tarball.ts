@@ -3,7 +3,7 @@
 // daemon itself reports (`__bundled-manifest`, run as a server's self-update runs it: self-update.ts's
 // `runBundledManifest`, PATH alone).
 //
-//   bun scripts/release/check-plugins-tarball.ts <clover-core-…> <clover-plugins-…tar.gz>
+//   bun scripts/release/check-plugins-tarball.ts <moss-core-…> <moss-plugins-…tar.gz>
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { formatBundledManifest } from "../../packages/core/src/bundled-plugins-dir";
@@ -21,7 +21,7 @@ export function tarballManifestSha256(gz: Uint8Array): { sha256: string; files: 
 export async function main(argv: readonly string[]): Promise<number> {
   const [binary, tarball] = argv;
   if (binary === undefined || tarball === undefined || argv.length !== 2) {
-    console.error("usage: check-plugins-tarball <clover-core binary> <clover-plugins tarball>");
+    console.error("usage: check-plugins-tarball <moss-core binary> <moss-plugins tarball>");
     return 2;
   }
   const said = await runBundledManifest(binary);

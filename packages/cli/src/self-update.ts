@@ -1,5 +1,5 @@
 // A server's daemon updating itself (spec §3.1, plan §4 M-M2). Only a server install does (`<home>/install.json` says
-// `server`, written by `clover-core server install`, whose binary lives at `<home>/bin/daemon/clover-core`); the app updates
+// `server`, written by `moss-core server install`, whose binary lives at `<home>/bin/daemon/moss-core`); the app updates
 // itself and the daemon inside it, and a deb or rpm updates through apt or dnf.
 //
 // Every few hours the daemon reads its update file from this repository's newest release its channel allows
@@ -12,12 +12,12 @@
 //   4. the bundled plugins that version ships (plugins-install.ts): the new binary is asked which manifest it carries
 //      (`__bundled-manifest`, the same environment and limit), and that version's tarball, checked as the binary is,
 //      must measure to it; it waits as `<home>/bin/plugins.new`
-// The checked binary waits beside the old one (`clover-core.new`) until the daemon is idle (the update gate,
+// The checked binary waits beside the old one (`moss-core.new`) until the daemon is idle (the update gate,
 // src/update/gate.ts in core). Then the gate closes (no new turn starts), the steps before a restart run (the lease
 // renews), idle is checked again, `.new` is checked again (its SHA-512 and size, just before it is used), the old
-// binary is renamed `clover-core.old` and the new one takes its name (and `plugins.new`, measured again, takes
+// binary is renamed `moss-core.old` and the new one takes its name (and `plugins.new`, measured again, takes
 // `plugins`' place, the old folder kept as `plugins.old`), and only then the daemon drains and exits with
-// UPDATE_RESTART_EXIT_CODE, which `clover-core supervise` answers by starting it at once. A swap that fails before the
+// UPDATE_RESTART_EXIT_CODE, which `moss-core supervise` answers by starting it at once. A swap that fails before the
 // drain leaves the daemon running on the old binary, the gate open, and that version waiting out a back-off.
 //
 // Downloads are bounded: an update file or a signature at most 64 KiB, the binary at most its signed size. All of these
@@ -35,9 +35,9 @@ import { realOps, syncDir, syncFile, type DurableOps } from "./durable";
 import { PluginsLock, swapPluginsIn, treeManifestSha256 } from "./plugins-install";
 import {
   coreBinaryFile, coreFeedFile, parseCoreFeed, SIGNATURE_SUFFIX, verifyFeed, type CoreFeed, type CoreTarget, type FeedChannel,
-} from "@waifucave/clover-update-feed";
+} from "@waifucave/moss-update-feed";
 
-export const UPDATE_REPO = "waifucave/clover";
+export const UPDATE_REPO = "waifucave/moss";
 export const SELF_UPDATE_CHECK_MS = 4 * 60 * 60 * 1000;
 /** How long the new binary's `--version` may take. */
 export const VERSION_CHECK_MS = 10_000;
@@ -254,7 +254,7 @@ export function superviseTarget(execPath: string, exists: (p: string) => boolean
   const m = /^(.*)\.old\.exe$/i.exec(execPath) ?? /^(.*)\.old$/.exec(execPath);
   if (m === null) return execPath;
   const bin = execPath.toLowerCase().endsWith(".old.exe") ? `${m[1]}.exe` : m[1]!;
-  return basename(dirname(bin)) === "daemon" && /^clover-core(\.exe)?$/i.test(basename(bin)) && exists(bin) ? bin : execPath;
+  return basename(dirname(bin)) === "daemon" && /^moss-core(\.exe)?$/i.test(basename(bin)) && exists(bin) ? bin : execPath;
 }
 
 /** The binary a swap sets aside for a rollback: `<bin>.old`, or on Windows (`.exe`) `<name>.old.exe`, which cmd.exe
@@ -268,7 +268,7 @@ export function badBinary(bin: string): string {
   return bin.endsWith(".exe") ? `${bin.slice(0, -4)}.bad.exe` : `${bin}.bad`;
 }
 
-/** A server's bundled plugins folder for its binary `bin` (`<home>/bin/daemon/clover-core` → `<home>/bin/plugins`), or
+/** A server's bundled plugins folder for its binary `bin` (`<home>/bin/daemon/moss-core` → `<home>/bin/plugins`), or
  *  undefined for any other layout. */
 export function pluginsDirOf(bin: string): string | undefined {
   return basename(dirname(bin)) === "daemon" ? join(dirname(dirname(bin)), "plugins") : undefined;
@@ -357,7 +357,7 @@ export async function readCapped(body: ReadableStream<Uint8Array> | null, maxByt
 
 export const httpFetch: Fetcher = async (url, opts) => {
   try {
-    const r = await fetch(url, { headers: { "User-Agent": "clover-core", ...(opts.accept ? { Accept: opts.accept } : {}) }, redirect: "follow", signal: AbortSignal.timeout(5 * 60_000) });
+    const r = await fetch(url, { headers: { "User-Agent": "moss-core", ...(opts.accept ? { Accept: opts.accept } : {}) }, redirect: "follow", signal: AbortSignal.timeout(5 * 60_000) });
     if (!r.ok) return undefined;
     const declared = Number(r.headers.get("content-length") ?? NaN);
     if (Number.isFinite(declared) && declared > opts.maxBytes) {
@@ -422,7 +422,7 @@ interface Release { tag_name: string; draft: boolean; prerelease: boolean; asset
 
 export interface SelfUpdaterDeps {
   home: string;
-  /** The installed binary (`<home>/bin/daemon/clover-core`), the one replaced. */
+  /** The installed binary (`<home>/bin/daemon/moss-core`), the one replaced. */
   bin: string;
   version: string;
   target: CoreTarget;
@@ -618,9 +618,9 @@ export class SelfUpdater {
     syncFile(staged);
     syncDir(dirname(staged));
     const said = await (this.d.runVersion ?? runVersion)(staged);
-    if (said !== `clover ${feed.version}`) {
+    if (said !== `moss ${feed.version}`) {
       rmSync(staged, { force: true });
-      return { kind: "refused", why: `${feed.file}'s --version said ${said === undefined ? "nothing (it failed or ran over 10 s)" : JSON.stringify(said.slice(0, 80))}, not clover ${feed.version}` };
+      return { kind: "refused", why: `${feed.file}'s --version said ${said === undefined ? "nothing (it failed or ran over 10 s)" : JSON.stringify(said.slice(0, 80))}, not moss ${feed.version}` };
     }
     // 4. The bundled plugins that version ships, against the manifest the new binary carries.
     if (this.d.plugins !== undefined) {

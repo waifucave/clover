@@ -1,13 +1,13 @@
 [package]
-name = "clover-link-sidecar"
+name = "moss-link-sidecar"
 version = "0.0.0"
 edition = "2021"
 publish = false
 license = "Apache-2.0"
-description = "Spike S1 prototype: quinn and iroh peers, a STUN responder, and a stdio sidecar for clover-core"
+description = "Spike S1 prototype: quinn and iroh peers, a STUN responder, and a stdio sidecar for moss-core"
 
 [[bin]]
-name = "clover-link-sidecar"
+name = "moss-link-sidecar"
 path = "src/main.rs"
 
 [dependencies]
@@ -33,7 +33,7 @@ iroh-relay = { version = "=1.4.1", default-features = false, features = ["tls-ri
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
-# A local iroh relay for the netns lab: `clover-link-sidecar relay-server`.
+# A local iroh relay for the netns lab: `moss-link-sidecar relay-server`.
 relay-server = ["iroh-relay/server"]
 
 [profile.release]

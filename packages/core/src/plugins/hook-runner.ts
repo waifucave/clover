@@ -1,9 +1,9 @@
-import { hookReadsStdinAsScript } from "@waifucave/clover-plugin-sdk";
-import { noteSpawned } from "../auth/clover-caller";
+import { hookReadsStdinAsScript } from "@waifucave/moss-plugin-sdk";
+import { noteSpawned } from "../auth/moss-caller";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, type PluginRunGuard } from "../registry/plugin-run";
+import { mossSharedRoots, ensurePluginRunFiles, guardedPluginEnv, type PluginRunGuard } from "../registry/plugin-run";
 import { fencedSpawn, pluginFenceAvailable, toolFence, type ProjectAccess } from "../registry/plugin-fence";
 /**
  * HookRunner — pure process mechanics for ONE plugin hook invocation (Phase 4f design §Protocol,
@@ -19,7 +19,7 @@ import { fencedSpawn, pluginFenceAvailable, toolFence, type ProjectAccess } from
  */
 
 /** One hook, resolved to something directly spawnable — plugin id (for env/logging), the shell
- *  command from clover-plugin.json, the plugin's directory (cwd), and an optional per-hook
+ *  command from moss-plugin.json, the plugin's directory (cwd), and an optional per-hook
  *  timeout override (falls back to `DEFAULT_TIMEOUT_MS` below). */
 export interface HookSpec {
   pluginId: string;
@@ -114,7 +114,7 @@ export class HookRunner {
   private guard: PluginRunGuard | undefined;
   private readonly projectFor: ((pluginId: string, sessionId: string) => ProjectAccess | undefined) | undefined;
 
-  /** `guard`: Clover's run files for plugin processes (the daemon's, in its run folder). Without it the runner writes
+  /** `guard`: MOSS's run files for plugin processes (the daemon's, in its run folder). Without it the runner writes
    *  its own into a fresh private temp folder on first use: a hook never runs unguarded (#234, F2).
    *  `projectFor`: the session's project folders for a hook of a plugin, and whether the plugin holds `project.write`
    *  (the controller's ruling after #345): readable always, writable with it, under the fence. */
@@ -125,8 +125,8 @@ export class HookRunner {
 
   private guardFor(): PluginRunGuard {
     if (this.guard === undefined) {
-      const home = mkdtempSync(join(tmpdir(), "clover-hooks-"));
-      this.guard = { files: ensurePluginRunFiles(join(home, "run"), { cloverHome: home }) };
+      const home = mkdtempSync(join(tmpdir(), "moss-hooks-"));
+      this.guard = { files: ensurePluginRunFiles(join(home, "run"), { mossHome: home }) };
     }
     return this.guard;
   }
@@ -135,7 +135,7 @@ export class HookRunner {
     const startTime = Date.now(); // for the stream-read deadline below (remaining timeout budget)
     let proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
     // Its stdin is the event's payload (prompts, tool results): a command that would read it as a script never runs
-    // (`hookReadsStdinAsScript`, the manifest rule for Clover's own hooks).
+    // (`hookReadsStdinAsScript`, the manifest rule for MOSS's own hooks).
     const reads = hookReadsStdinAsScript(spec.command);
     if (reads !== undefined) return { status: "error", stdout: "", reason: `${reads}; a hook's stdin is its input, never a script` };
     try {
@@ -146,13 +146,13 @@ export class HookRunner {
       const proxy = open ? undefined : guard.proxyFor?.(spec.pluginId);
       const project = guard.fence !== false && pluginFenceAvailable() ? this.projectFor?.(spec.pluginId, payload.sessionId) : undefined;
       const fenced = guard.fence !== false && pluginFenceAvailable()
-        ? toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}`, ...(project !== undefined ? { project } : {}), ...(proxy !== undefined ? { proxyPort: proxy.port } : {}), ...(open ? { openNetwork: true } : {}), ...(guard.picked ? { picked: guard.picked(spec.pluginId) } : {}) })
+        ? toolFence({ files: guard.files, shared: guard.shared ?? mossSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}`, ...(project !== undefined ? { project } : {}), ...(proxy !== undefined ? { proxyPort: proxy.port } : {}), ...(open ? { openNetwork: true } : {}), ...(guard.picked ? { picked: guard.picked(spec.pluginId) } : {}) })
         : undefined;
-      // A `bun` the hook's command starts runs with Clover's config and load guard, held to the plugin's folder.
+      // A `bun` the hook's command starts runs with MOSS's config and load guard, held to the plugin's folder.
       // The hook's `bun` is the plugin Bun (#234's check 5, K1): its folder comes first on the PATH.
       const hookEnv = guardedPluginEnv(
         {
-          ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event,
+          ...process.env, MOSS_SESSION_ID: payload.sessionId, MOSS_PLUGIN_ID: spec.pluginId, MOSS_HOOK_EVENT: payload.event,
           ...(fenced !== undefined ? { ...fenced.env, ...(proxy?.env ?? {}) } : {}),
           PATH: [this.guardFor().files.bin, process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter),
         },

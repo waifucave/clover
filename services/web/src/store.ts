@@ -3,7 +3,7 @@
 
 import type { CompanionStore, PairRecord } from "./app";
 
-const DB = "clover-companion";
+const DB = "moss-companion";
 const STORE = "pairs";
 
 function open(): Promise<IDBDatabase> {

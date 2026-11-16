@@ -6,7 +6,7 @@ import { OTHER_INSTALL_HOMES } from "../../other-installs";
 
 /*
  * The Coordination directory and what lives beside the admission ledger (N2 S7B part 1). Everything here is host-side state that must outlive a
- * Clover home and must not be copied with one: the ledger, the installation id, the launcher's retained receipts and the launch journal.
+ * MOSS home and must not be copied with one: the ledger, the installation id, the launcher's retained receipts and the launch journal.
  *
  * No function here reads `process.env` or the real home directory: the caller passes `CoordinationPathInputs` (the same two inputs
  * `coordinationLedgerPath` takes), so a test names a temp directory and nothing else is reachable.
@@ -43,12 +43,12 @@ export function ensurePrivateDirectory(path: string): void {
   if (realpathSync(path) !== path) fail("directory_path_alias");
 }
 
-/** No path with a home's name as a component, in any case (volumes are case-insensitive): Clover's (`.clover*`) and the
+/** No path with a home's name as a component, in any case (volumes are case-insensitive): MOSS's (`.moss*`) and the
  *  other installs' that share the machine (`other-installs.ts`) — the kept Swift launcher refuses the live install's own
  *  name the same way. The daemon refuses before it creates anything. */
-const REFUSED_HOME_PREFIXES: readonly string[] = [".clover", ...OTHER_INSTALL_HOMES.map((o) => o.dir.toLowerCase())];
-export function assertOutsideCloverHomes(path: string): void {
-  for (const component of path.split("/")) if (REFUSED_HOME_PREFIXES.some((p) => component.toLowerCase().startsWith(p))) fail("path_inside_clover_home");
+const REFUSED_HOME_PREFIXES: readonly string[] = [".moss", ...OTHER_INSTALL_HOMES.map((o) => o.dir.toLowerCase())];
+export function assertOutsideMossHomes(path: string): void {
+  for (const component of path.split("/")) if (REFUSED_HOME_PREFIXES.some((p) => component.toLowerCase().startsWith(p))) fail("path_inside_moss_home");
 }
 
 /** `path` with its deepest existing ancestor resolved through symlinks (the rest, which does not exist yet, appended as written). */
@@ -61,10 +61,10 @@ function canonicalizeExisting(path: string): string {
     rest = join(basename(existing), rest); existing = parent;
   }
 }
-/** The Coordination directory must be disjoint from the Clover home: not the home, not inside it (a home wipe or copy would take the ledger, receipts and journal with it), not above it. The name-based `.clover*` refusal above is not enough: the home can be anywhere. */
+/** The Coordination directory must be disjoint from the MOSS home: not the home, not inside it (a home wipe or copy would take the ledger, receipts and journal with it), not above it. The name-based `.moss*` refusal above is not enough: the home can be anywhere. */
 export function assertDisjointFromHome(directory: string, home: string): void {
   const a = canonicalizeExisting(directory), b = canonicalizeExisting(home);
-  if (a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)) fail("path_inside_clover_home");
+  if (a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)) fail("path_inside_moss_home");
 }
 
 const INSTALLATION_ID = /^inst-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

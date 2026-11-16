@@ -5,7 +5,7 @@
 // can't: the slack a real socket adds before backpressure shows. Used by `stream-loopback.test.ts` and
 // `stream-measure.ts loopback`. Nothing here is part of the product.
 import { connect, createServer, type Server, type Socket } from "node:net";
-import type { LinkView } from "@waifucave/clover-protocol";
+import type { LinkView } from "@waifucave/moss-protocol";
 import type { Link, LinkPriority, LinkStream } from "../../src/contracts/link-transport";
 import type { AppTabCommand, StreamChunk, TabView } from "../../src/browser/contract";
 import type { AppTabPort } from "../../src/browser/service";

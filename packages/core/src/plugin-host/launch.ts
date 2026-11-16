@@ -2,11 +2,11 @@
 // `pluginBunLaunch` gives the command and the guarded environment), with the link on fd 3, a pipe only the daemon and
 // that process hold. The process's stdout and stderr are never read as messages; their lines go to `onOutput` (the
 // plugin host's own log).
-import { noteSpawned } from "../auth/clover-caller";
+import { noteSpawned } from "../auth/moss-caller";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { writeHostBundles } from "./bundles";
-import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, pluginBun, pluginHostBunFlags, pluginRunFileChecks, type PluginRunFiles } from "../registry/plugin-run";
+import { mossSharedRoots, ensurePluginRunFiles, guardedPluginEnv, pluginBun, pluginHostBunFlags, pluginRunFileChecks, type PluginRunFiles } from "../registry/plugin-run";
 import { checkRunFiles, runCheckArgs, type RunFileCheck } from "./run-file";
 import { fdLink, LINK_LINE_MAX, linesOf, streamPeer, type RpcPeer } from "./link";
 
@@ -16,27 +16,27 @@ export { writeHostBundles } from "./bundles";
 export const HOST_PROCESS_ENTRY = fileURLToPath(new URL("./process-main.ts", import.meta.url));
 
 
-/** How a plugin-host process starts, guarded (#234's run files, B-M2's host mode): the plugin Bun with Clover's flags and
- *  the host's own guard (`files.hostGuard`), which only these arguments name, so its own thread runs Clover's bundle
- *  unpinned while every worker it starts gets the plugin guard, pinned to its own plugin's folder (`cloverPluginRoot`),
+/** How a plugin-host process starts, guarded (#234's run files, B-M2's host mode): the plugin Bun with MOSS's flags and
+ *  the host's own guard (`files.hostGuard`), which only these arguments name, so its own thread runs MOSS's bundle
+ *  unpinned while every worker it starts gets the plugin guard, pinned to its own plugin's folder (`mossPluginRoot`),
  *  and the worker bundle beside the guard. No environment variable makes a process a host (#322's review, B1). */
-export async function hostProcessLaunch(o: { runDir: string; computer: string; base: Readonly<Record<string, string | undefined>>; shared?: readonly string[]; cloverHome: string; onOutput?: (line: string) => void }): Promise<HostProcessLaunch> {
-  const files = ensurePluginRunFiles(o.runDir, { cloverHome: o.cloverHome });
+export async function hostProcessLaunch(o: { runDir: string; computer: string; base: Readonly<Record<string, string | undefined>>; shared?: readonly string[]; mossHome: string; onOutput?: (line: string) => void }): Promise<HostProcessLaunch> {
+  const files = ensurePluginRunFiles(o.runDir, { mossHome: o.mossHome });
   const bundles = await writeHostBundles(dirname(files.guard));
-  const env = guardedPluginEnv(o.base, { pluginRoot: dirname(files.guard), files, shared: o.shared ?? cloverSharedRoots() });
-  delete env.CLOVER_PLUGIN_ROOT;
+  const env = guardedPluginEnv(o.base, { pluginRoot: dirname(files.guard), files, shared: o.shared ?? mossSharedRoots() });
+  delete env.MOSS_PLUGIN_ROOT;
   // The flags are in the arguments: BUN_OPTIONS would preload the plugin guard into the host's own thread too (the
   // host's guard sets it for each worker).
   delete env.BUN_OPTIONS;
-  env.CLOVER_PLUGIN_WORKER = bundles.worker;
-  env.CLOVER_COMPUTER = o.computer;
-  // What each start runs from, by the SHA-256 of the text Clover wrote (#312's review, S1): the host process's own
+  env.MOSS_PLUGIN_WORKER = bundles.worker;
+  env.MOSS_COMPUTER = o.computer;
+  // What each start runs from, by the SHA-256 of the text MOSS wrote (#312's review, S1): the host process's own
   // files, checked by `spawnHostProcess` immediately before it starts it, and each worker's, which the host checks
   // before every Worker (in its arguments, never its environment).
   const workerChecks: RunFileCheck[] = [{ path: bundles.worker, sha256: bundles.sha256.worker }, ...pluginRunFileChecks(files)];
   const checks: RunFileCheck[] = [{ path: bundles.host, sha256: bundles.sha256.host }, ...pluginRunFileChecks(files, { host: true })];
-  const bun = pluginBun(files.cloverHome);
-  const shared = o.shared ?? cloverSharedRoots();
+  const bun = pluginBun(files.mossHome);
+  const shared = o.shared ?? mossSharedRoots();
   return {
     cmd: [bun, ...pluginHostBunFlags(files), bundles.host, ...runCheckArgs(workerChecks)],
     env,
@@ -48,7 +48,7 @@ export async function hostProcessLaunch(o: { runDir: string; computer: string; b
 }
 
 export interface HostProcessLaunch {
-  /** The command: the plugin Bun and its flags, then the host bundle, then the worker's checks (`--clover-check=`). */
+  /** The command: the plugin Bun and its flags, then the host bundle, then the worker's checks (`--moss-check=`). */
   cmd: readonly string[];
   env: Record<string, string>;
   /** The files this start runs from (the host bundle, the host guard, the guard, the bunfig) and their SHA-256s:
@@ -57,7 +57,7 @@ export interface HostProcessLaunch {
   /** What every host process reads besides its plugin's tree, under the fence: the run files, the shared packages and
    *  its Bun (`cmd[0]`, the one program it runs). */
   reads?: readonly string[];
-  /** Clover's run files it was made from (the spawn trampoline's Bun and file, under the fence). */
+  /** MOSS's run files it was made from (the spawn trampoline's Bun and file, under the fence). */
   files?: Pick<PluginRunFiles, "guard" | "bin" | "bunfig">;
   /** Where it starts (the run folder, under the fence); the daemon's own folder otherwise. */
   cwd?: string;
@@ -73,7 +73,7 @@ export const HOST_KILL_GRACE_MS = 2_000;
  *  (a new session, `setsid`) has left the group, and isn't reached. On Windows the process alone is ended. */
 export function spawnHostProcess(o: HostProcessLaunch & { graceMs?: number }): { peer: RpcPeer; pid: number | undefined; kill(): void } {
   const group = process.platform !== "win32";
-  // Last thing before the start: the files it runs from hold what Clover wrote (a plugin can write the run folder).
+  // Last thing before the start: the files it runs from hold what MOSS wrote (a plugin can write the run folder).
   checkRunFiles(o.checks ?? [], "the plugin host");
   // Through Bun.spawn: a node:child_process spawn with a descriptor past 2 is refused in Bun code (lane C's S7 finding,
   // `test/platform/child-process-stdio.test.ts`). `detached` makes the child its group's leader.

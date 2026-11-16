@@ -1,7 +1,7 @@
 // `handler`'s `link` option: a method of the plugin-host link keeps the contract's error, its `detail` included (the
 // keyed fetch's own code rides there), where the public RPC's mapping gives a JSON-RPC code and drops the detail.
 import { describe, expect, test } from "bun:test";
-import { PLUGINS_METHODS } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS } from "@waifucave/moss-protocol";
 import { ContractError } from "../../src/contracts/common";
 import { errorToWire } from "../../src/plugin-host/link";
 import { handler, MethodError } from "../../src/rpc/handler";

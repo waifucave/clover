@@ -75,9 +75,9 @@ export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): vo
 
     test("invalid and stopped plugins say why, and contribute nothing", () => {
       const reg = make({
-        plugins: [{ ...webhook, invalid: "needs a newer Clover (plugin API ^2.0.0)" }],
+        plugins: [{ ...webhook, invalid: "needs a newer MOSS (plugin API ^2.0.0)" }],
       });
-      expect(reg.get("webhook")).toMatchObject({ state: "invalid", reason: "needs a newer Clover (plugin API ^2.0.0)", manifest: undefined });
+      expect(reg.get("webhook")).toMatchObject({ state: "invalid", reason: "needs a newer MOSS (plugin API ^2.0.0)", manifest: undefined });
       expect(reg.entries("triggers")).toEqual([]);
       const ok = make({ plugins: [webhook] });
       ok.setStopped("webhook", "crashed 3 times in 10 minutes");
@@ -197,7 +197,7 @@ export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): vo
         plugins: [
           { ...webhook, approved: false },
           { ...island },
-          { id: "clover", manifest: m({ name: "Clover" }), source: "bundled" },
+          { id: "moss", manifest: m({ name: "MOSS" }), source: "bundled" },
           { id: "bad", manifest: m({ name: "Bad" }), invalid: "no manifest format" },
           { id: "no", manifest: m({ name: "No" }), approved: false },
         ],
@@ -212,14 +212,14 @@ export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): vo
       expect(reg.get("island")?.state).toBe("off");
       expect(await reg.setEnabled("island", true)).toEqual({ applied: true });
       expect(reg.get("island")?.state).toBe("running");
-      // Refused: refused and invalid plugins, either way, and switching Clover's own plugin off.
+      // Refused: refused and invalid plugins, either way, and switching MOSS's own plugin off.
       await reg.refuse("no");
-      for (const [id, on] of [["bad", true], ["bad", false], ["no", true], ["no", false], ["clover", false]] as const) {
+      for (const [id, on] of [["bad", true], ["bad", false], ["no", true], ["no", false], ["moss", false]] as const) {
         const code = await reg.setEnabled(id, on).then(() => "ok", (e: { code?: string }) => e.code);
         expect([id, on, code]).toEqual([id, on, "refused"]);
       }
-      expect(await reg.setEnabled("clover", true)).toEqual({ applied: true });
-      expect(reg.get("clover")?.state).toBe("running");
+      expect(await reg.setEnabled("moss", true)).toEqual({ applied: true });
+      expect(reg.get("moss")?.state).toBe("running");
     });
   });
 

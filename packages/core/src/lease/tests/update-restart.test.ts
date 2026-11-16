@@ -48,7 +48,7 @@ describe("an update's restart", () => {
     const service = new MemoryLeaseService(clock, { minTtlSec: 0 });
     const studio = c.devices.get("Studio")!;
     const laptop = c.devices.get("Laptop")!;
-    const studioHome = mkdtempSync(join(tmpdir(), "clover-h-update-"));
+    const studioHome = mkdtempSync(join(tmpdir(), "moss-h-update-"));
     const start = (d: typeof studio, home: string): MainComputerHandle => {
       const scope = service.scope(d.id);
       const mc = startMainComputer({
@@ -59,7 +59,7 @@ describe("an update's restart", () => {
       return mc;
     };
     let main = start(studio, studioHome);
-    const other = start(laptop, mkdtempSync(join(tmpdir(), "clover-h-update-")));
+    const other = start(laptop, mkdtempSync(join(tmpdir(), "moss-h-update-")));
     await studio.transport.connect(laptop.id);
     await main.coordinator.chooseSelf();
     await waitFor(() => service.record.holder === studio.id && main.lease.canAct() && other.choice.current() === studio.id);

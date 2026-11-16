@@ -5,8 +5,8 @@
 // * a host half: it acts only for the session whose tool call it is serving (a Browser tool), on that session's own
 //   tab, as below. It never acts for the person.
 // * a component: it acts for the person, as a live view does: it lists the tabs of every owner on this computer (the
-//   bots', the sessions' and the person's own in the Clover Browser), opens one for an owner it names, navigates, shows
-//   one in a view, reads a picture of it and hears its page events. The Clover Browser's tabs are signed in wherever the
+//   bots', the sessions' and the person's own in the MOSS Browser), opens one for an owner it names, navigates, shows
+//   one in a view, reads a picture of it and hears its page events. The MOSS Browser's tabs are signed in wherever the
 //   person signed in there, so one OK on `browser` gives a component that. The person's other browsers (Chrome, Safari)
 //   are never reached from here.
 //
@@ -19,7 +19,7 @@
 // * DevTools only through the tool's own short list (`TOOL_CDP_METHODS`): the nine methods the tool calls, nothing
 //   wider, whatever the core's wider allow list passes for the browser view.
 // * nothing of a network filter's is loosened: a bot's tab still reaches no loopback or private address (network.ts).
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import type { ApiCallContext, ApiHandlers } from "../plugin-host/api/router";
 import { ContractError } from "../contracts/common";
 import type { TabOwner, TabView, Screenshot } from "./contract";
@@ -91,7 +91,7 @@ export function ownerOfSession(c: SessionCaller): TabOwner {
 }
 
 function failNotRunning(): never {
-  throw new ContractError("refused", "the Clover Browser isn't running on this computer");
+  throw new ContractError("refused", "the MOSS Browser isn't running on this computer");
 }
 
 function failure(e: unknown): never {

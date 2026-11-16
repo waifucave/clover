@@ -4,7 +4,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Caller, HostProcess } from "@waifucave/clover-protocol";
+import type { Caller, HostProcess } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import { SystemClock } from "../../clock/system-clock";
 import { CorePluginHost, type HostedRecord } from "../core-host";
@@ -41,7 +41,7 @@ export const mcp = {
 `;
 
 function plugin(): string {
-  const folder = mkdtempSync(join(tmpdir(), "clover-b2-proc-"));
+  const folder = mkdtempSync(join(tmpdir(), "moss-b2-proc-"));
   mkdirSync(join(folder, "host"));
   writeFileSync(join(folder, "host", "index.js"), HOST_JS);
   writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
@@ -64,7 +64,7 @@ function realHost(o: { logs?: string[][] } = {}) {
     connect: (process: HostProcess) => {
       let peer = links.get(process);
       if (peer === undefined || peer.closed) {
-        const p = spawnHostProcess({ cmd: [globalThis.process.execPath, HOST_PROCESS_ENTRY], env: { ...(globalThis.process.env as Record<string, string>), CLOVER_COMPUTER: "Studio" } });
+        const p = spawnHostProcess({ cmd: [globalThis.process.execPath, HOST_PROCESS_ENTRY], env: { ...(globalThis.process.env as Record<string, string>), MOSS_COMPUTER: "Studio" } });
         processes.push(p);
         links.set(process, (peer = p.peer));
       }
@@ -228,7 +228,7 @@ describe("the process's streams", () => {
 describe("a guarded plugin-host process (per-worker folders)", () => {
   test("each worker is held to its own plugin's folder: another plugin's file, or a nested worker claiming the host, is refused", async () => {
     const { hostProcessLaunch } = await import("../launch");
-    const base = mkdtempSync(join(tmpdir(), "clover-b2-guard-"));
+    const base = mkdtempSync(join(tmpdir(), "moss-b2-guard-"));
     const make = (name: string, js: string) => {
       const folder = join(base, "plugins", name);
       mkdirSync(join(folder, "host"), { recursive: true });
@@ -241,12 +241,12 @@ describe("a guarded plugin-host process (per-worker folders)", () => {
 export const own = async () => (await import("./helper.js")).x;
 export const steal = async () => (await import(${JSON.stringify(join(b, "host", "index.js"))})).secret();
 export const nested = () => new Promise((resolve) => {
-  const w = new Worker(URL.createObjectURL(new Blob([\`import(${JSON.stringify(join(b, "host", "index.js"))}).then(() => postMessage("loaded"), (e) => postMessage("refused: " + e.message));\`])), { env: { CLOVER_PLUGIN_HOST: "1" } });
+  const w = new Worker(URL.createObjectURL(new Blob([\`import(${JSON.stringify(join(b, "host", "index.js"))}).then(() => postMessage("loaded"), (e) => postMessage("refused: " + e.message));\`])), { env: { MOSS_PLUGIN_HOST: "1" } });
   w.onmessage = (e) => { resolve(e.data); w.terminate(); };
 });
 `);
     writeFileSync(join(a, "host", "helper.js"), "export const x = 41 + 1;\n");
-    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [], cloverHome: base });
+    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [], mossHome: base });
     const p = spawnHostProcess(launch);
     processes.push(p);
     const records = new Map<string, HostedRecord>([
@@ -266,7 +266,7 @@ export const nested = () => new Promise((resolve) => {
   // start (a static import) and later (a dynamic one), and the macro's code never runs.
   test("a plugin with a macro import is refused at load, and the macro never runs", async () => {
     const { hostProcessLaunch } = await import("../launch");
-    const base = mkdtempSync(join(tmpdir(), "clover-b2-macro-"));
+    const base = mkdtempSync(join(tmpdir(), "moss-b2-macro-"));
     const ran = join(base, "macro-ran");
     const make = (name: string, files: Record<string, string>) => {
       const folder = join(base, "plugins", name);
@@ -281,7 +281,7 @@ export const nested = () => new Promise((resolve) => {
       "index.js": `export const fine = () => "fine";\nexport const late = async () => (await import("./late.js")).value;\n`,
       "late.js": `import { leak } from "./mac.js" with { type: "macro" };\nexport const value = leak();\n`,
     });
-    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [], cloverHome: base });
+    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [], mossHome: base });
     expect(launch.cmd).toContain("--no-macros");
     const p = spawnHostProcess(launch);
     processes.push(p);
@@ -306,13 +306,13 @@ describe.skipIf(process.platform === "win32")("what a plugin starts ends with it
   const gone = async (pid: number) => { for (let i = 0; i < 100 && alive(pid); i++) await Bun.sleep(50); return !alive(pid); };
   const start = async () => {
     const { hostProcessLaunch } = await import("../launch");
-    const base = mkdtempSync(join(tmpdir(), "clover-b2-group-"));
+    const base = mkdtempSync(join(tmpdir(), "moss-b2-group-"));
     const folder = join(base, "plugins", "spawner");
     mkdirSync(join(folder, "host"), { recursive: true });
     writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
     // A child that ignores SIGTERM, so only the SIGKILL after the grace ends it.
     writeFileSync(join(folder, "host", "index.js"), `export const spawn = () => Bun.spawn(["/bin/sh", "-c", "trap '' TERM; while :; do sleep 1; done"], { stdio: ["ignore", "ignore", "ignore"] }).pid;\n`);
-    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [], cloverHome: base });
+    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [], mossHome: base });
     const p = spawnHostProcess({ ...launch, graceMs: 300 });
     processes.push(p);
     const records = new Map<string, HostedRecord>([["spawner", { id: "spawner", source: "local", folder, entry: "host/index.js", dataFolder: join(base, "data") }]]);

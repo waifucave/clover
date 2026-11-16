@@ -4,7 +4,7 @@
 // (`pageNavigates`, a link or a redirect), or DevTools' `Page.navigate`.
 import {
   AGENT_VIEWPORT, isBrowserUrlAllowed, isCdpMethodAllowed, type Caller, type Screenshot, type TabOwner, type TabView, type Viewport,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, isInside, Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
@@ -38,7 +38,7 @@ export class FakeBrowser implements BrowserApi {
   constructor(opts: { clock: Clock; computer?: string; scratchOf?: (bot: string) => string }) {
     this.#clock = opts.clock;
     this.computer = opts.computer ?? "Studio";
-    this.#scratchOf = opts.scratchOf ?? ((bot) => `/Users/me/.clover/scratch/${bot.replace("/", "--")}`);
+    this.#scratchOf = opts.scratchOf ?? ((bot) => `/Users/me/.moss/scratch/${bot.replace("/", "--")}`);
   }
 
   /** Scripts a DevTools method's answer; unscripted allowed methods answer `{}`. */

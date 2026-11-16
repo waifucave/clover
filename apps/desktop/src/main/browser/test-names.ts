@@ -1,5 +1,5 @@
 // A test build's names for the acceptance run's own fixture site (called only from a branch gated on a test or acceptance
-// build, so a release build has none of it). `CLOVER_TEST_BROWSER_NAMES` is `name=port;name=port`: each name resolves to
+// build, so a release build has none of it). `MOSS_TEST_BROWSER_NAMES` is `name=port;name=port`: each name resolves to
 // one address of the PUBLIC kind (so every rule of the network filter judges it as it would any web address: a bot's tab
 // is held to public addresses, and a name that resolved to loopback itself would be refused), and a connection to that
 // address is dialled to the fixture server on this computer's loopback at the port named. Every other name resolves and

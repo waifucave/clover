@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PluginDetail } from "@waifucave/clover-protocol";
+import { PluginDetail } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -28,9 +28,9 @@ const SKILL = "---\nname: PDF Tools!\ndescription: \"Fill and merge PDFs\"\nallo
 const AGENT = "---\nname: code-reviewer\ndescription: Reviews a diff for bugs\ntools: Read, Grep\nmodel: sonnet\n---\nYou review code.\n";
 
 async function world() {
-  const home = temp("clover-wrap-");
+  const home = temp("moss-wrap-");
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-  const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+  const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
   const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
   const call = (name: string, params: unknown, ctx = APP) => m[name]!(params, ctx);
   const install = (kind: string, value: string, ctx = APP) => call("plugin.install", { source: { from: "wrap", kind, value } }, ctx) as Promise<{ id: string; state: string; card?: string }>;
@@ -42,14 +42,14 @@ describe("wrapping a skill folder or an agent file", () => {
   test("a skill folder becomes skill-<name>: copied as-is under skills/, listed, recorded as wrapped, waiting for its OK", async () => {
     const w = await world();
     try {
-      const src = join(temp("clover-wrap-src-"), "pdf");
+      const src = join(temp("moss-wrap-src-"), "pdf");
       mkdirSync(join(src, "scripts"), { recursive: true });
       writeFileSync(join(src, "SKILL.md"), SKILL);
       writeFileSync(join(src, "scripts", "merge.sh"), "#!/bin/sh\npdftk \"$@\"\n", { mode: 0o755 });
       const r = await w.install("skill-folder", src);
       expect([r.id, r.state]).toEqual(["skill-pdf-tools", "found"]);
       const dest = join(w.home, "plugins", "skill-pdf-tools");
-      const manifest = JSON.parse(readFileSync(join(dest, "clover.json"), "utf8"));
+      const manifest = JSON.parse(readFileSync(join(dest, "moss.json"), "utf8"));
       expect(manifest).toMatchObject({ manifest: 1, id: "skill-pdf-tools", name: "PDF Tools!", description: "Fill and merge PDFs", contributes: { skills: ["skills/pdf-tools"] }, generated: { from: "skill-folder", by: "user" } });
       expect(readFileSync(join(dest, "skills", "pdf-tools", "SKILL.md"), "utf8")).toBe(SKILL);
       expect(readFileSync(join(dest, "skills", "pdf-tools", "scripts", "merge.sh"), "utf8")).toContain("pdftk");
@@ -58,7 +58,7 @@ describe("wrapping a skill folder or an agent file", () => {
       expect(detail.provenance).toMatchObject({ by: "user-app", wrapped: { from: "skill-folder" } });
       const card = w.broker.cards().find((c) => c.id === r.card)!;
       expect(card).toMatchObject({ kind: "plugin-ok", pluginId: "skill-pdf-tools" });
-      expect(JSON.stringify(card)).toContain("Clover made this plugin around a skill folder (SKILL.md)");
+      expect(JSON.stringify(card)).toContain("MOSS made this plugin around a skill folder (SKILL.md)");
       // The same skill again: its own plugin, a number added.
       expect((await w.install("skill-folder", src, CLI)).id).toBe("skill-pdf-tools-2");
       expect(readdirSync(join(w.home, "run", "plugin-install"))).toEqual([]);
@@ -70,16 +70,16 @@ describe("wrapping a skill folder or an agent file", () => {
   test("an agent file becomes agent-<name>: the file as-is under agents/, listed", async () => {
     const w = await world();
     try {
-      const file = join(temp("clover-wrap-agent-"), "reviewer.md");
+      const file = join(temp("moss-wrap-agent-"), "reviewer.md");
       writeFileSync(file, AGENT);
       const r = await w.install("agent-file", file);
       expect(r.id).toBe("agent-code-reviewer");
       const dest = join(w.home, "plugins", "agent-code-reviewer");
-      expect(JSON.parse(readFileSync(join(dest, "clover.json"), "utf8"))).toMatchObject({ id: "agent-code-reviewer", name: "code-reviewer", contributes: { agents: ["agents/code-reviewer.md"] }, generated: { from: "agent-file" } });
+      expect(JSON.parse(readFileSync(join(dest, "moss.json"), "utf8"))).toMatchObject({ id: "agent-code-reviewer", name: "code-reviewer", contributes: { agents: ["agents/code-reviewer.md"] }, generated: { from: "agent-file" } });
       expect(readFileSync(join(dest, "agents", "code-reviewer.md"), "utf8")).toBe(AGENT);
       expect(PluginDetail.parse(((await w.call("plugin.get", { id: "agent-code-reviewer" })) as { plugin: unknown }).plugin).provenance.wrapped).toEqual({ from: "agent-file" });
       // No front matter: the file's name names it.
-      const plain = join(temp("clover-wrap-agent-"), "Triage Bot.md");
+      const plain = join(temp("moss-wrap-agent-"), "Triage Bot.md");
       writeFileSync(plain, "You sort issues.\n");
       expect((await w.install("agent-file", plain)).id).toBe("agent-triage-bot");
     } finally {
@@ -90,14 +90,14 @@ describe("wrapping a skill folder or an agent file", () => {
   test("refused, nothing left behind: no SKILL.md, a folder that's a plugin already, a link out of the item, a file that isn't Markdown, a missing path", async () => {
     const w = await world();
     try {
-      const base = temp("clover-wrap-bad-");
+      const base = temp("moss-wrap-bad-");
       const none = join(base, "none");
       mkdirSync(none);
       writeFileSync(join(none, "README.md"), "no skill here");
       const plugin = join(base, "plugin");
       mkdirSync(plugin);
       writeFileSync(join(plugin, "SKILL.md"), SKILL);
-      writeFileSync(join(plugin, "clover.json"), JSON.stringify({ manifest: 1, id: "plugin", name: "P" }));
+      writeFileSync(join(plugin, "moss.json"), JSON.stringify({ manifest: 1, id: "plugin", name: "P" }));
       const leaky = join(base, "leaky");
       mkdirSync(leaky);
       writeFileSync(join(leaky, "SKILL.md"), SKILL);

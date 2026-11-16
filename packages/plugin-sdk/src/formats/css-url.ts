@@ -95,7 +95,7 @@ export type CssUrlVerdict =
   | { ok: false; reason: string };
 
 // A base no request ever reaches: the plugin's folder is `/__plugin__/` under an origin of its own.
-const ORIGIN = "https://plugin.clover.invalid";
+const ORIGIN = "https://plugin.moss.invalid";
 const ROOT = "/__plugin__/";
 
 /** Resolves one URL from a plugin's CSS file (`cssFile`, a path in the plugin's folder) as a browser would, and keeps

@@ -17,7 +17,7 @@
 //     computer that runs that bot sends it; from another session of the bot (a side thread, which may run elsewhere),
 //     never another bot's main conversation.
 // * Computers are named by their tree name (`DeviceRecord.computer`), as lane D's main computer names them.
-import { DEVICES_METHODS, type RoutineView, type SessionView } from "@waifucave/clover-protocol";
+import { DEVICES_METHODS, type RoutineView, type SessionView } from "@waifucave/moss-protocol";
 import { mainSessionIdFor, SESSION_ID_PREFIX } from "../sessions/ids";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";

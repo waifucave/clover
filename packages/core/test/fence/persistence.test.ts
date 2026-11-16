@@ -1,6 +1,6 @@
 // The #301 review's ruling: the places where a file runs later outside any sandbox (shell start files, login items,
 // SSH's rc and keys, autostart, the Windows Startup folder and PowerShell profiles) and the coding agents' sandbox
-// settings are write-denied to every runner (Clover's fence: its policy, which part 2's Seatbelt and bwrap, the agents'
+// settings are write-denied to every runner (MOSS's fence: its policy, which part 2's Seatbelt and bwrap, the agents'
 // sandbox and lane K's writers take; the approval broker refuses a bot's or an agent's write there without a card), and
 // a code session the user drives asks for them (the protected card, no "always"; a typed deny in chat; its sandboxed
 // Bash can't write them).
@@ -11,12 +11,12 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, win32 } from "node:path";
 import { buildMandatoryFloorProfile } from "@waifucave/clover-agent-sdk";
 import { botApprovalCheck } from "../../src/approvals/bot-check";
-import { CloverApprovalBroker } from "../../src/approvals/broker";
+import { MossApprovalBroker } from "../../src/approvals/broker";
 import type { BotSessionContext } from "../../src/bots/service";
 import type { ApprovalRequest } from "../../src/contracts/approval-broker";
 import { agentConfigPaths, autoRunEntries, autoRunPaths } from "../../src/contracts/fence";
 import { FakeClock } from "../../src/contracts/fakes/clock";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { GIT_CONFIG_READ_CAP, expandWindowsEnv, gitConfiguredDirs, parseRegValue, readGitConfigFile, runLaterExtras, runLaterExtrasFrom, stampOf } from "../../src/fence/run-later";
 import { persistenceLinkHolds, persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
 import { fenceContextFor } from "../../src/contracts/fence";
@@ -24,7 +24,7 @@ import { fencedSpawner } from "../../src/fence/fenced-process";
 import { makeHolderFolders } from "../../src/fence/holder-folders";
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
-import type { NewSessionEvent } from "@waifucave/clover-protocol";
+import type { NewSessionEvent } from "@waifucave/moss-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
 import { QuestionBroker } from "../../src/agent/questions";
@@ -126,12 +126,12 @@ describe("the shared list", () => {
  *  behind a seam (`canonical` and `linksOf` cover the path's own spelling and links, not these), so these cases get 30 s. */
 const SAMPLE_TIMEOUT_MS = 30_000;
 
-describe("Clover's fence: every runner refused, on every OS", () => {
+describe("MOSS's fence: every runner refused, on every OS", () => {
   for (const os of ["macos", "linux", "windows"] as const) {
     test(os, () => {
       const s = SAMPLES[os];
       const path = os === "windows" ? win32 : posix;
-      const fence = new CloverFence({ os, home: s.home, cloverHome: path.join(s.home, ".clover"), canonical: (p) => path.normalize(p) });
+      const fence = new MossFence({ os, home: s.home, mossHome: path.join(s.home, ".moss"), canonical: (p) => path.normalize(p) });
       const deny = fence.policy().denyWrite;
       for (const rel of s.auto) {
         const p = path.join(s.home, rel);
@@ -156,8 +156,8 @@ describe("bots and agents: their writes there are refused without a card, at eve
     test(os, async () => {
       const s = SAMPLES[os];
       const path = os === "windows" ? win32 : posix;
-      const fence = new CloverFence({ os, home: s.home, cloverHome: path.join(s.home, ".clover"), canonical: (p) => path.normalize(p) });
-      const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", fence: () => fence });
+      const fence = new MossFence({ os, home: s.home, mossHome: path.join(s.home, ".moss"), canonical: (p) => path.normalize(p) });
+      const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", fence: () => fence });
       const req = (kind: "tool" | "agent-permission", effect: ApprovalRequest["effect"], p: string): ApprovalRequest => ({
         kind, session: "s1", bot: "luna", origin: "user", computers: ["Studio"], effect, paths: [p], fields: { title: { type: "text", text: "Write a file" } },
       });
@@ -173,17 +173,17 @@ describe("bots and agents: their writes there are refused without a card, at eve
 
   test("a bot's Write tool is told why", async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-bot-home-")));
-    const fence = new CloverFence({ os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux", home, cloverHome: join(home, ".clover") });
-    const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", fence: () => fence });
+    const fence = new MossFence({ os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux", home, mossHome: join(home, ".moss") });
+    const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", fence: () => fence });
     const ctx = { sessionId: "s1", botId: "luna", computer: "Studio", paths: { root: home } } as unknown as BotSessionContext;
-    const check = botApprovalCheck(broker, { home: join(home, ".clover") })(ctx, () => "user");
+    const check = botApprovalCheck(broker, { home: join(home, ".moss") })(ctx, () => "user");
     const r = await check("Write", { file_path: join(home, ".bashrc"), content: "curl x | sh" }, { signal: new AbortController().signal, toolUseID: "t1" } as Parameters<typeof check>[2]);
     expect(r).toMatchObject({ behavior: "deny", message: expect.stringContaining("no bot writes there") });
   });
 });
 
 describe("a code session the user drives: asks, never silently writes", () => {
-  const H = "/Users/x/.clover";
+  const H = "/Users/x/.moss";
   const me = join(tmpdir(), "lane-c-persistence-home"); // never the real home: nothing here touches it
   const rules = protectedPathsFor(H, null, { cwd: "/", userHome: me });
   const pick = (paths: string[]) => paths.filter((p) => /zshrc$|bashrc$|authorized_keys$|config\.toml$|LaunchAgents$|autostart$|Startup$|opencode$/.test(p));
@@ -211,7 +211,7 @@ describe("a code session the user drives: asks, never silently writes", () => {
     const events: NewSessionEvent[] = [];
     const canUse = canUseToolFor({
       sessionId: "s1", mode: "code", policy: "auto", approvals, questions: new QuestionBroker(), gate: new PermissionGate(),
-      emit: (e) => { events.push(e); }, log: { info: () => {}, error: () => {} }, now: () => 1, home: "/Users/x/.clover", cwd: "/",
+      emit: (e) => { events.push(e); }, log: { info: () => {}, error: () => {} }, now: () => 1, home: "/Users/x/.moss", cwd: "/",
     });
     const target = join(homedir(), ".zshrc"); // a string: the bridge only reads where it would lead
     for (const id of ["t1", "t2"]) {
@@ -245,7 +245,7 @@ describe("git's included config files, on this computer's real fence", () => {
     writeFileSync(join(home, ".gitconfig"), `[include]\n\tpath = ~/.gitconfig.local\n[includeIf "gitdir:~/w/"]\n\tpath = w/work.inc\n`);
     writeFileSync(join(home, "w", "work.inc"), "[user]\n\tname = me\n");
     const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
-    const fence = new CloverFence({ os, home, cloverHome: join(home, ".clover") });
+    const fence = new MossFence({ os, home, mossHome: join(home, ".moss") });
     for (const p of [join(home, ".gitconfig.local"), join(home, "w", "work.inc")]) {
       expect([p, fence.check({ op: "write", path: p })]).toMatchObject([p, { allowed: false, reason: "login-start" }]);
       expect(persistencePaths(home)).toContain(p);
@@ -258,7 +258,7 @@ describe("git's includes are read again when the config changes, without a resta
   test("an include the user adds later is held from the next look; unchanged, nothing is read again", () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-gitinc-late-")));
     const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
-    const fence = new CloverFence({ os, home, cloverHome: join(home, ".clover") });
+    const fence = new MossFence({ os, home, mossHome: join(home, ".moss") });
     const local = join(home, ".gitconfig.local");
     expect(fence.check({ op: "write", path: local })).toEqual({ allowed: true });
     const first = runLaterExtras(os, home);
@@ -285,7 +285,7 @@ describe("git's includes are read again when the config changes, without a resta
     symlinkSync(join(dot, "gitconfig"), join(home, ".gitconfig"));
     symlinkSync(join(dot, "local.inc"), join(home, ".gitconfig.local"));
     const os = process.platform === "darwin" ? "macos" : "linux";
-    const fence = new CloverFence({ os, home, cloverHome: join(home, ".clover") });
+    const fence = new MossFence({ os, home, mossHome: join(home, ".moss") });
     // The hooks folder the linked config names, the file the linked include leads to, and what it includes in turn.
     for (const p of [join(home, ".githooks", "pre-commit"), join(dot, "local.inc"), join(home, "deeper.inc"), join(dot, "gitconfig")]) {
       expect([p, fence.check({ op: "write", path: p }).allowed]).toEqual([p, false]);
@@ -374,11 +374,11 @@ darwinDescribe("Seatbelt, live", () => {
     const run = (profile: string, [script, a, b]: readonly [string, string, string]) =>
       spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", script, "sh", a, b], { encoding: "utf8" }).status === 0;
     // The fence's own profile, for a coding session.
-    const fence = new CloverFence({ os: "macos", home, cloverHome: at(".clover"), temp: at("tmp") });
+    const fence = new MossFence({ os: "macos", home, mossHome: at(".moss"), temp: at("tmp") });
     const ctx = fenceContextFor({ kind: "session", sessionId: "c1", sessionKind: "coding" });
     const policy = fence.policy(ctx);
     expect(policy.holdLinks).toEqual(expect.arrayContaining([at(".gitconfig"), at("dotfiles", "gitconfig"), at(".config", "git")]));
-    const fenceProfile = macFenceProfile({ policy, cloverHome: at(".clover"), home, perUserTemp: null, caller: callerPlaces(at(".clover"), "macos", ctx) });
+    const fenceProfile = macFenceProfile({ policy, mossHome: at(".moss"), home, perUserTemp: null, caller: callerPlaces(at(".moss"), "macos", ctx) });
     for (const s of swaps) expect([s[1], run(fenceProfile, s)]).toEqual([s[1], false]);
     intact();
     expect(run(fenceProfile, ['printf x > "$1"', at("dotfiles", "notes.md"), ""])).toBe(true);
@@ -407,11 +407,11 @@ darwinDescribe("Seatbelt, live", () => {
     symlinkSync(at("a", "b", "c", "gitconfig"), at(".gitconfig.local")); // an include path's chain, deep
     writeFileSync(at(".gitconfig.real-include"), "");
     writeFileSync(at("real", "gitconfig"), "[user]\n\tname = me\n[include]\n\tpath = ~/.gitconfig.local\n");
-    const fence = new CloverFence({ os: "macos", home, cloverHome: at(".clover"), temp: at("tmp") });
+    const fence = new MossFence({ os: "macos", home, mossHome: at(".moss"), temp: at("tmp") });
     const ctx = fenceContextFor({ kind: "session", sessionId: "c1", sessionKind: "coding" });
     const policy = fence.policy(ctx);
     expect(policy.holdLinks).toEqual(expect.arrayContaining([at("dotfiles", "gitconfig"), at("a", "b", "c", "gitconfig")]));
-    const profile = macFenceProfile({ policy, cloverHome: at(".clover"), home, perUserTemp: null, caller: callerPlaces(at(".clover"), "macos", ctx) });
+    const profile = macFenceProfile({ policy, mossHome: at(".moss"), home, perUserTemp: null, caller: callerPlaces(at(".moss"), "macos", ctx) });
     const run = (script: string, ...args: string[]) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", script, "sh", ...args], { encoding: "utf8" }).status === 0;
     // The review's run: rename ~/dotfiles away, put a link to a project folder in its place, write a config there.
     writeFileSync(at("project", "gitconfig"), "[core]\n\tfsmonitor = evil\n");
@@ -437,7 +437,7 @@ darwinDescribe("Seatbelt, live", () => {
   test("a fresh home: the missing holder folders are made before a run, so a first `mkdir -p ~/.config/gh` works, and they still can't be renamed (#392's review)", async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-fresh-home-")));
     mkdirSync(join(home, "project"));
-    const fence = new CloverFence({ os: "macos", home, cloverHome: join(home, ".clover"), temp: join(home, "tmp") });
+    const fence = new MossFence({ os: "macos", home, mossHome: join(home, ".moss"), temp: join(home, "tmp") });
     mkdirSync(join(home, "tmp"));
     expect(existsSync(join(home, ".config"))).toBe(false);
     const run = (command: string) => fencedSpawner({ fence, processHolder: null }).run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "c1", sessionKind: "coding" } } });
@@ -455,21 +455,21 @@ darwinDescribe("Seatbelt, live", () => {
     mkdirSync(join(home, "elsewhere"));
     symlinkSync(join(home, "elsewhere"), join(home, "linked"));
     const made = makeHolderFolders([join(home, ".config", "git"), join(home, "Library", "LaunchAgents", "x.plist"),
-      join(home, "linked", "deep", "x", "config"), join(home, ".clover", "a", "b"), join(home, "bots", "*", "memory")], [home], join(home, ".clover"),
+      join(home, "linked", "deep", "x", "config"), join(home, ".moss", "a", "b"), join(home, "bots", "*", "memory")], [home], join(home, ".moss"),
       [join(home, ".claude", "settings.json"), join(home, ".config", "opencode", "opencode.json")]);
     expect(made.sort()).toEqual([join(home, ".config"), join(home, "Library"), join(home, "Library", "LaunchAgents")].sort());
     expect(existsSync(join(home, ".config", "git"))).toBe(false); // the item itself
     expect(existsSync(join(home, ".claude"))).toBe(false); // an agent's folder would look like an install
     expect(existsSync(join(home, ".config", "opencode"))).toBe(false);
     expect(existsSync(join(home, "elsewhere", "deep"))).toBe(false); // never through a link
-    expect(existsSync(join(home, ".clover", "a"))).toBe(false);
+    expect(existsSync(join(home, ".moss", "a"))).toBe(false);
     expect(statSync(join(home, ".config")).mode & 0o777).toBe(0o777 & ~process.umask());
   });
 
   test("a link loop on the way to ~/.gitconfig: the fence holds it under its own name, and a run isn't thrown out (#392's review)", async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-loop-")));
     symlinkSync(join(home, ".gitconfig"), join(home, ".gitconfig")); // a loop
-    const fence = new CloverFence({ os: "macos", home, cloverHome: join(home, ".clover"), temp: join(home, "tmp") });
+    const fence = new MossFence({ os: "macos", home, mossHome: join(home, ".moss"), temp: join(home, "tmp") });
     const policy = fence.policy(fenceContextFor({ kind: "session", sessionId: "c1", sessionKind: "coding" }));
     expect(policy.denyWrite).toContain(join(home, ".gitconfig"));
     mkdirSync(join(home, "project"), { recursive: true });

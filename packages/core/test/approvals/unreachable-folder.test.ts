@@ -1,15 +1,15 @@
-// A bot's Write to a folder this computer's privacy settings keep Clover out of (the owner's try 14: Alpha's Write of a new
+// A bot's Write to a folder this computer's privacy settings keep MOSS out of (the owner's try 14: Alpha's Write of a new
 // file on his Desktop came back "Error: protected host path access refused", twice, with no card). The runtime's file
 // tools resolve each path before they act and fail closed when a folder on the way can't be looked into (agent SDK
 // `hostCodePathAllowed`: a resolution error other than "not there" refuses, whenever the session has deny lists, as every
-// bot's has since stage 2). macOS answers EPERM there for a Desktop, Documents or Downloads folder Clover hasn't been let
-// into; a folder without search permission answers EACCES, which this test uses. Clover now refuses such a call up front,
+// bot's has since stage 2). macOS answers EPERM there for a Desktop, Documents or Downloads folder MOSS hasn't been let
+// into; a folder without search permission answers EACCES, which this test uses. MOSS now refuses such a call up front,
 // with no card, telling the bot to ask the user to allow it or to save elsewhere. Every other ordinary folder goes on.
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import { botApprovalCheck, unreachableFolder } from "../../src/approvals/bot-check";
 import type { BotSessionContext } from "../../src/bots/service";
 import { darwinTest } from "../helpers/darwin-only";
@@ -22,7 +22,7 @@ afterAll(() => {
   }
 });
 
-/** A user's home shaped like a real one, its Clover home inside, and Alpha's check at a level (`home`: the check knows
+/** A user's home shaped like a real one, its MOSS home inside, and Alpha's check at a level (`home`: the check knows
  *  the user's home, and so their secret places, as the daemon's does). */
 function world(level: Level | undefined, o: { home?: boolean } = {}) {
   const user = realpathSync(mkdtempSync(join(tmpdir(), "unreachable-home-")));
@@ -30,11 +30,11 @@ function world(level: Level | undefined, o: { home?: boolean } = {}) {
   for (const d of ["Desktop", "Downloads", "Documents", "Library/Application Support", "Library/Mail", ".config", ".ssh"]) mkdirSync(join(user, d), { recursive: true });
   writeFileSync(join(user, "Downloads", "story.md"), "once");
   writeFileSync(join(user, "Documents", "notes.md"), "once");
-  const clover = join(user, ".clover");
-  const scratch = join(clover, "scratch", "alpha");
+  const moss = join(user, ".moss");
+  const scratch = join(moss, "scratch", "alpha");
   mkdirSync(scratch, { recursive: true });
   const ctx = {
-    botId: "alpha", sessionId: "s1", computer: "Studio", level, paths: { scratch, root: join(clover, "bots", "alpha") },
+    botId: "alpha", sessionId: "s1", computer: "Studio", level, paths: { scratch, root: join(moss, "bots", "alpha") },
     caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "alpha" },
   } as unknown as BotSessionContext;
   const asked: string[] = [];
@@ -44,7 +44,7 @@ function world(level: Level | undefined, o: { home?: boolean } = {}) {
   return { user, call, asked };
 }
 
-describe("a file tool's path in a folder Clover is kept out of", () => {
+describe("a file tool's path in a folder MOSS is kept out of", () => {
   test("the folder is found on the way to a new file and to an existing one; a missing file or folder is no such folder", () => {
     const { user } = world(undefined);
     chmodSync(join(user, "Desktop"), 0o000);
@@ -69,8 +69,8 @@ describe("a file tool's path in a folder Clover is kept out of", () => {
       for (const input of [{ file_path: join(user, "Desktop", "hello_world.md"), content: "hi" }]) {
         const r = await call("Write", input) as { behavior: string; message?: string };
         expect(r.behavior).toBe("deny");
-        expect(r.message).toContain(`doesn't let Clover into ${join(user, "Desktop")}`);
-        expect(r.message).toContain("Ask the user to allow Clover there");
+        expect(r.message).toContain(`doesn't let MOSS into ${join(user, "Desktop")}`);
+        expect(r.message).toContain("Ask the user to allow MOSS there");
         expect(r.message).not.toContain("protected host path");
       }
       const read = await call("Read", { file_path: join(user, "Desktop", "old.md") }) as { behavior: string };
@@ -82,7 +82,7 @@ describe("a file tool's path in a folder Clover is kept out of", () => {
   });
 
   // ~/Library/Mail is a secret place on macOS only (the check reads the host's own OS), so on Linux and Windows it is an ordinary unreachable folder.
-  darwinTest("a secret place Clover can't look into is refused as a secret place, never as a folder to ask the user to let Clover into", async () => {
+  darwinTest("a secret place MOSS can't look into is refused as a secret place, never as a folder to ask the user to let MOSS into", async () => {
     const { user, call, asked } = world(undefined, { home: true });
     chmodSync(join(user, "Library", "Mail"), 0o000);
     try {
@@ -92,7 +92,7 @@ describe("a file tool's path in a folder Clover is kept out of", () => {
       ] as const) {
         const r = await call(tool, input as Record<string, unknown>) as { behavior: string; message?: string };
         expect([tool, r.behavior]).toEqual([tool, "deny"]);
-        expect([tool, r.message ?? ""]).toEqual([tool, expect.not.stringContaining("Ask the user to allow Clover there")]);
+        expect([tool, r.message ?? ""]).toEqual([tool, expect.not.stringContaining("Ask the user to allow MOSS there")]);
         expect([tool, r.message ?? ""]).toEqual([tool, expect.stringContaining("mail and messages")]);
       }
       expect(asked).toEqual([]);
@@ -101,7 +101,7 @@ describe("a file tool's path in a folder Clover is kept out of", () => {
     }
   });
 
-  test("every folder Clover may look into goes on as before: Downloads and Documents, a new file and an existing one", async () => {
+  test("every folder MOSS may look into goes on as before: Downloads and Documents, a new file and an existing one", async () => {
     const { user, call } = world(undefined);
     for (const [tool, input] of [
       ["Write", { file_path: join(user, "Downloads", "new.md"), content: "hi" }],
@@ -111,7 +111,7 @@ describe("a file tool's path in a folder Clover is kept out of", () => {
       ["Write", { file_path: join(user, "Desktop", "hello_world.md"), content: "hi" }],
     ] as const) {
       const r = await call(tool, input as Record<string, unknown>) as { behavior: string; message?: string };
-      expect([tool, r.message ?? ""]).toEqual([tool, expect.not.stringContaining("doesn't let Clover into")]);
+      expect([tool, r.message ?? ""]).toEqual([tool, expect.not.stringContaining("doesn't let MOSS into")]);
     }
   });
 });

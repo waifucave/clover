@@ -1,4 +1,4 @@
-// The Clover Browser in the app's main process (spec §12.1, lane L; the owner's decisions 92–94). The daemon drives
+// The MOSS Browser in the app's main process (spec §12.1, lane L; the owner's decisions 92–94). The daemon drives
 // it (`app.tab.open`, `app.tab.command`, `app.tab.list`) and it reports back (`browser.report`, `browser.hold`); the
 // transport is lane E's always-on pair. Lane E's runtime also tells it where each browser view's frame is
 // (`setView`), so the person sees a tab there without it reloading.

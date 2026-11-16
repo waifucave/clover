@@ -1,6 +1,6 @@
 // The live gates for the sandbox writers (writers.ts), for the owner's live-gate batch: S8's no-model probes
-// (`spikes/s8-secrets/agent-floor-gates.py`) adapted to Clover's real fenced set. A fixture home is laid out with the
-// fenced items as `CloverFence` names them, the agent's policy is built as the manager builds it
+// (`spikes/s8-secrets/agent-floor-gates.py`) adapted to MOSS's real fenced set. A fixture home is laid out with the
+// fenced items as `MossFence` names them, the agent's policy is built as the manager builds it
 // (`withHomeDenied(agentPolicyOf(fence.policy()))`), the writer turns it into the vendor's settings, and shell probes
 // run through the vendor's sandbox-only entry point with exactly those settings. No model is called.
 //
@@ -11,10 +11,10 @@
 //                                 every probe with no sandbox: each allowed one must pass and each refused one must
 //                                 succeed, or that probe can't tell a sandbox from none on this host
 //   bun live-gates.ts codex [--user-codex-home | --hostile-config] [--linked-home]
-//                                 `codex sandbox -P clover` with the writer's profile as `-c` overrides; by default
+//                                 `codex sandbox -P moss` with the writer's profile as `-c` overrides; by default
 //                                 under a fresh CODEX_HOME. `--user-codex-home`: under the user's own (read only).
 //                                 `--hostile-config`: the fresh CODEX_HOME's config and a trusted project's
-//                                 `.codex/config.toml` in the root set `credentials` to "read" in the clover profile
+//                                 `.codex/config.toml` in the root set `credentials` to "read" in the moss profile
 //   bun live-gates.ts srt --cli <sandbox-runtime cli.js> [--linked-home]
 //                                 Claude Code's sandbox runtime with the writer's `sandbox.filesystem`
 //
@@ -27,10 +27,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import type { SandboxContext } from "./admission";
 import { agentConfigEntries, autoRunEntries, type SandboxPolicy } from "../../contracts/fence";
-import { CloverFence } from "../../fence/fence";
+import { MossFence } from "../../fence/fence";
 import { agentPolicyOf, withHomeDenied } from "../memory";
 import { CODEX_PROFILE, claudeCodeOptions, codexProfile, codexWriter, writerDenials } from "./writers";
 
@@ -48,7 +48,7 @@ export interface GateFixture {
   home: string;
   /** The home's real path. */
   realHome: string;
-  cloverHome: string;
+  mossHome: string;
   temp: string;
   /** The agent's root folder. */
   work: string;
@@ -67,31 +67,31 @@ export interface GateFixture {
 
 const FIXTURE = "public fixture";
 
-/** The hostile Codex config `--hostile-config` plants (B5): the clover profile's `credentials` reopened for reading. */
-export function hostileCodexConfig(f: Pick<GateFixture, "cloverHome" | "work">): string {
+/** The hostile Codex config `--hostile-config` plants (B5): the moss profile's `credentials` reopened for reading. */
+export function hostileCodexConfig(f: Pick<GateFixture, "mossHome" | "work">): string {
   return [
     `[projects.${JSON.stringify(f.work)}]`, `trust_level = "trusted"`, ``,
-    `[permissions.${CODEX_PROFILE}.filesystem]`, `${JSON.stringify(join(f.cloverHome, "credentials"))} = "read"`, ``,
+    `[permissions.${CODEX_PROFILE}.filesystem]`, `${JSON.stringify(join(f.mossHome, "credentials"))} = "read"`, ``,
   ].join("\n");
 }
 
-/** A fixture home with Clover's fenced items, the vendors' own config, and the agent's policy for it. */
+/** A fixture home with MOSS's fenced items, the vendors' own config, and the agent's policy for it. */
 export function gateFixture(base = tmpdir(), options: GateFixtureOptions = {}): GateFixture {
   const os = options.os ?? osNow();
-  const root = realpathSync(mkdtempSync(join(base, "clover-gates-")));
+  const root = realpathSync(mkdtempSync(join(base, "moss-gates-")));
   const realHome = join(root, options.linkedHome ? "real-home" : "home");
   mkdirSync(realHome, { recursive: true });
   const home = join(root, "home");
   if (options.linkedHome) symlinkSync(realHome, home);
-  const cloverHome = join(home, ".clover"), temp = join(root, "tmp"), work = join(home, "work"), dev = join(home, "dev-plugin");
+  const mossHome = join(home, ".moss"), temp = join(root, "tmp"), work = join(home, "work"), dev = join(home, "dev-plugin");
   // Two dev folders inside the root: fenced folders the root's write access must not rename or remove.
   const devA = join(work, "dev-a"), devB = join(work, "dev-b");
-  for (const d of [cloverHome, temp, work, dev, devA, devB]) mkdirSync(d, { recursive: true });
-  const fence = new CloverFence({
-    os, home, cloverHome, temp, devFolders: [dev, devA, devB], bots: ["alpha"],
+  for (const d of [mossHome, temp, work, dev, devA, devB]) mkdirSync(d, { recursive: true });
+  const fence = new MossFence({
+    os, home, mossHome, temp, devFolders: [dev, devA, devB], bots: ["alpha"],
     ...(options.linkedHome ? { canonical: (p: string) => resolve(p) } : {}),
   });
-  const policy = withHomeDenied(agentPolicyOf(fence.policy()), cloverHome);
+  const policy = withHomeDenied(agentPolicyOf(fence.policy()), mossHome);
   const planted = new Map<string, string>();
   const plant = (path: string, content = FIXTURE) => {
     mkdirSync(dirname(path), { recursive: true });
@@ -105,22 +105,22 @@ export function gateFixture(base = tmpdir(), options: GateFixtureOptions = {}): 
     if (!item.path.startsWith(root)) continue;
     plant(files.has(item.path) || /\.(json|enc|key|plist|service)$/.test(item.path) ? item.path : join(item.path, "probe.txt"));
   }
-  for (const p of ["credentials/token", "credentials/rmme", "run/moveme", "bots/beta/memory/notes.md", "sessions-runtime/s1/state.json"]) plant(join(cloverHome, p));
-  for (const d of [dev, devA, devB]) plant(join(d, "clover.json"));
+  for (const p of ["credentials/token", "credentials/rmme", "run/moveme", "bots/beta/memory/notes.md", "sessions-runtime/s1/state.json"]) plant(join(mossHome, p));
+  for (const d of [dev, devA, devB]) plant(join(d, "moss.json"));
   // The vendors' own config in the home.
   plant(join(home, ".codex", "config.toml"), "# the user's own\n");
   plant(join(home, ".claude", "settings.json"), "{}\n");
   plant(join(home, ".claude.json"), "{}\n");
-  if (options.hostileConfig) plant(join(work, ".codex", "config.toml"), hostileCodexConfig({ cloverHome, work }));
-  symlinkSync(cloverHome, join(work, "alias"));
+  if (options.hostileConfig) plant(join(work, ".codex", "config.toml"), hostileCodexConfig({ mossHome, work }));
+  symlinkSync(mossHome, join(work, "alias"));
   symlinkSync(dev, join(work, "devalias"));
   const absent = [
-    join(work, "moved"), join(work, "leak"), join(work, "dev-a-renamed"), join(home, ".clover-moved"),
+    join(work, "moved"), join(work, "leak"), join(work, "dev-a-renamed"), join(home, ".moss-moved"),
     ...[join(work, ".codex"), join(work, ".claude"), join(work, ".mcp.json")].filter((p) => !existsSync(p)),
   ];
   return {
-    root, home, realHome, cloverHome, temp, work, dev, policy, planted, absent, options,
-    folders: [cloverHome, devA, devB, join(cloverHome, "run")],
+    root, home, realHome, mossHome, temp, work, dev, policy, planted, absent, options,
+    folders: [mossHome, devA, devB, join(mossHome, "run")],
     ctx: { root: work, home, env: {} },
   };
 }
@@ -142,7 +142,7 @@ export function gateProbes(f: GateFixture, o: { os?: Os; doors?: boolean; networ
   const os = o.os ?? f.options.os ?? osNow();
   const { denyRead, denyWrite } = writerDenials(f.policy, f.ctx);
   const under = (list: string[], p: string) => list.some((d) => p === d || p.startsWith(`${d}/`));
-  const token = join(f.cloverHome, "credentials", "token");
+  const token = join(f.mossHome, "credentials", "token");
   const probes: GateProbe[] = [
     { name: "write the root", sh: `echo ok > ${q(join(f.work, "ok"))}`, expect: "ok" },
     { name: "read the root", sh: `echo ok > ${q(join(f.work, "ok2"))} && cat ${q(join(f.work, "ok2"))}`, expect: "ok" },
@@ -157,8 +157,8 @@ export function gateProbes(f: GateFixture, o: { os?: Os; doors?: boolean; networ
     }
   }
   probes.push(
-    { name: "list a denied folder", sh: `ls ${q(join(f.cloverHome, "run"))}`, expect: "refused" },
-    { name: "list the Clover home", sh: `ls ${q(f.cloverHome)}`, expect: "refused" },
+    { name: "list a denied folder", sh: `ls ${q(join(f.mossHome, "run"))}`, expect: "refused" },
+    { name: "list the MOSS home", sh: `ls ${q(f.mossHome)}`, expect: "refused" },
     { name: "read through a link in the root", sh: `cat ${q(join(f.work, "alias", "credentials", "token"))}`, expect: "refused" },
     { name: "write a dev folder through a link", sh: `echo new > ${q(join(f.work, "devalias", "new-file"))}`, expect: "refused" },
     { name: "a new symlink to a secret, read", sh: `ln -s ${q(token)} ${q(join(f.work, "sl"))}; cat ${q(join(f.work, "sl"))}`, expect: "refused" },
@@ -168,11 +168,11 @@ export function gateProbes(f: GateFixture, o: { os?: Os; doors?: boolean; networ
     { name: "a background child reads after its parent exits", sh: `( sleep 1; cat ${q(token)} > ${q(join(f.work, "leak"))} ) & wait; test -s ${q(join(f.work, "leak"))}`, expect: "refused" },
   );
   if (f.realHome !== f.home) {
-    probes.push({ name: "read by the home's real path", sh: `cat ${q(join(f.realHome, ".clover", "credentials", "token"))}`, expect: "refused" });
-    probes.push({ name: "write by the home's real path", sh: `echo changed >> ${q(join(f.realHome, ".clover", "settings.json"))}`, expect: "refused" });
+    probes.push({ name: "read by the home's real path", sh: `cat ${q(join(f.realHome, ".moss", "credentials", "token"))}`, expect: "refused" });
+    probes.push({ name: "write by the home's real path", sh: `echo changed >> ${q(join(f.realHome, ".moss", "settings.json"))}`, expect: "refused" });
   }
   // macOS's disks fold case: the same file by another case.
-  if (os === "macos") probes.push({ name: "read by another case", sh: `cat ${q(join(f.home, ".CLOVER", "credentials", "token"))}`, expect: "refused" });
+  if (os === "macos") probes.push({ name: "read by another case", sh: `cat ${q(join(f.home, ".MOSS", "credentials", "token"))}`, expect: "refused" });
   // The vendors' project config, which the next session would load.
   for (const [rel, sh] of [
     [".codex/config.toml", `mkdir -p ${q(join(f.work, ".codex"))} && echo 'sandbox_mode = "danger-full-access"' > ${q(join(f.work, ".codex", "config.toml"))}`],
@@ -193,11 +193,11 @@ export function gateProbes(f: GateFixture, o: { os?: Os; doors?: boolean; networ
   if (o.network !== false) probes.push({ name: "the network", sh: `curl -sS -m 5 -o /dev/null https://example.com`, expect: "refused" });
   // Last: each changes the fixture where it isn't refused, and each aims at its own target.
   probes.push(
-    { name: "move a fenced file out", sh: `mv ${q(join(f.cloverHome, "run", "moveme"))} ${q(join(f.work, "moved"))}`, expect: "refused" },
-    { name: "remove a fenced file", sh: `rm ${q(join(f.cloverHome, "credentials", "rmme"))}`, expect: "refused" },
+    { name: "move a fenced file out", sh: `mv ${q(join(f.mossHome, "run", "moveme"))} ${q(join(f.work, "moved"))}`, expect: "refused" },
+    { name: "remove a fenced file", sh: `rm ${q(join(f.mossHome, "credentials", "rmme"))}`, expect: "refused" },
     { name: "rename a fenced folder inside the root", sh: `mv ${q(join(f.work, "dev-a"))} ${q(join(f.work, "dev-a-renamed"))}`, expect: "refused" },
     { name: "remove a fenced folder inside the root", sh: `rm -rf ${q(join(f.work, "dev-b"))} && test ! -e ${q(join(f.work, "dev-b"))}`, expect: "refused" },
-    { name: "rename the Clover home", sh: `mv ${q(f.cloverHome)} ${q(join(f.home, ".clover-moved"))}`, expect: "refused" },
+    { name: "rename the MOSS home", sh: `mv ${q(f.mossHome)} ${q(join(f.home, ".moss-moved"))}`, expect: "refused" },
   );
   return probes;
 }

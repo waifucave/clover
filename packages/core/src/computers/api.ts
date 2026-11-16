@@ -9,7 +9,7 @@
 // * `files.*` is the tree, called as the plugin: fenced by the computer that holds the files (§5.4). A code session's
 //   Files panel (lane F's `panel-files`, the owner's item 88) lists, reads and watches under the session's folder
 //   with these, plus `files.watch` (lane J's addition, requested of lane B).
-import type { Caller, ComputerView, HoldTarget, HoldView } from "@waifucave/clover-protocol";
+import type { Caller, ComputerView, HoldTarget, HoldView } from "@waifucave/moss-protocol";
 import { ContractError, isContractError, type Unsubscribe } from "../contracts/common";
 import type { ComputerRegistry } from "../contracts/computer-registry";
 import { mayRelease, type HoldRouter } from "./holds";
@@ -79,7 +79,7 @@ export function computersApiRoutes(registry: ComputerRegistry, holds?: HoldRoute
     "computers.setActionRunning": async ([computer, running]) => {
       registry.setActionRunning(must(s(computer, "computer")).name, running === true);
     },
-    "computers.cloverWindows": async ([computer]) => registry.cloverWindows(must(s(computer, "computer")).name),
+    "computers.mossWindows": async ([computer]) => registry.mossWindows(must(s(computer, "computer")).name),
   };
 }
 

@@ -1,5 +1,5 @@
 {
-  "name": "clover-monorepo",
+  "name": "moss-monorepo",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,7 +8,7 @@
   "scripts": {
     "test": "pnpm -r --workspace-concurrency=1 test",
     "test:workspaces": "bun scripts/workspaces.ts run test",
-    "protocol:generate": "pnpm --filter @waifucave/clover-protocol generate",
+    "protocol:generate": "pnpm --filter @waifucave/moss-protocol generate",
     "version:sync": "bun run scripts/sync-version.ts",
     "version:bump": "bun run scripts/bump-version.ts",
     "version:bump:feature": "bun run scripts/bump-version.ts --feature",

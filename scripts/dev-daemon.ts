@@ -1,50 +1,50 @@
 /**
- * The DEV daemon: a compiled `clover-core` on the dev profile (`~/.clover-dev`, secret service
- * `com.waifucave.clover.core.dev`), on macOS, Linux and Windows.
+ * The DEV daemon: a compiled `moss-core` on the dev profile (`~/.moss-dev`, secret service
+ * `com.waifucave.moss.core.dev`), on macOS, Linux and Windows.
  *
- *   bun run dev:daemon                     build, then `daemon run` on ~/.clover-dev (dev profile)
+ *   bun run dev:daemon                     build, then `daemon run` on ~/.moss-dev (dev profile)
  *   bun run dev:daemon --dry-run [...]     print what the other flags would do, and stop: nothing built or started
  *
- * Every run but --dry-run also makes `<dev home>/bin/clover-plugin-bun` when it's missing, the pinned Bun changed, or
+ * Every run but --dry-run also makes `<dev home>/bin/moss-plugin-bun` when it's missing, the pinned Bun changed, or
  * the copy there isn't the one recorded: a copy of that Bun, ad-hoc signed on macOS as
- * `com.waifucave.clover.plugin-bun.dev` (hardened runtime, bun-jit.entitlements), its digest recorded beside it, which
+ * `com.waifucave.moss.core.plugin-bun.dev` (hardened runtime, bun-jit.entitlements), its digest recorded beside it, which
  * the dev daemon runs plugin code on, never on its own binary (#234's checks 5 and 6).
- *   bun run dev:daemon --no-build          reuse dist/dev/clover-core (clover-core.exe on Windows) as it is
+ *   bun run dev:daemon --no-build          reuse dist/dev/moss-core (moss-core.exe on Windows) as it is
  *   bun run dev:daemon --transition        macOS: build, sign, then the ONE-TIME Keychain transition, then exit
- *   bun run dev:daemon <clover args>       run any other verb through the dev binary (e.g. `credentials list`)
- *   bun scripts/dev-daemon.ts --no-build --cli [args]   exactly `clover-core [args]` (no args = the TUI) —
- *                                          what the `clover-dev` wrapper runs, so it gets the pre-start check
+ *   bun run dev:daemon <moss args>       run any other verb through the dev binary (e.g. `credentials list`)
+ *   bun scripts/dev-daemon.ts --no-build --cli [args]   exactly `moss-core [args]` (no args = the TUI) —
+ *                                          what the `moss-dev` wrapper runs, so it gets the pre-start check
  *
  * Build, every OS: `packages/cli`'s own `compile:core`, output redirected to a temp file beside the binary
  * (`dev-daemon-lib.ts`'s `devCompileCommand`), sealed like a release (`seal-bun-doors.ts`: Bun's BUN_BE_BUN,
  * BUN_OPTIONS, BUN_INSPECT* and NODE_PATH doors closed; without the dist define, so the env overrides of the runtime
  * ladder still work here), then an atomic rename to `dist/dev/` — never over the running dev
- * daemon's file in place, and never at `dist/clover-core`, which the `verify:*` gates rebuild. Linux and Windows
+ * daemon's file in place, and never at `dist/moss-core`, which the `verify:*` gates rebuild. Linux and Windows
  * stop there: the binary is unsigned, and its secrets go to the Secret Service or Credential Manager under the dev
  * service, which no partition list guards.
  *
  * macOS also signs it (WS-27). Keychain items take their partition list from their CREATOR
  * (`auth/app-token-acl.ts`'s header). A dev daemon run as Homebrew `bun` creates its items as bun's team, so
- * Clover Dev is asked once per pairing token. A `clover-core` signed by Clover's team (`CLOVER_TEAM_ID`) under the
- * stable identifier `com.waifucave.clover.core.dev` creates them as Clover's team — Clover Dev (same team) reads
- * them silently — and its designated requirement, STATED at signing (`identifier "com.waifucave.clover.core.dev"
+ * MOSS Code Dev is asked once per pairing token. A `moss-core` signed by MOSS's team (`MOSS_TEAM_ID`) under the
+ * stable identifier `com.waifucave.moss.core.dev` creates them as MOSS's team — MOSS Code Dev (same team) reads
+ * them silently — and its designated requirement, STATED at signing (`identifier "com.waifucave.moss.core.dev"
  * and anchor apple generic and certificate leaf[subject.OU] = "<team>"`, `dev-daemon-lib.ts`), survives every
- * rebuild and any Clover-team certificate. The signing is `codesign --identifier com.waifucave.clover.core.dev
- * --options runtime,restrict --entitlements scripts/clover-core.entitlements -r=<the stated requirement>` (the dist
+ * rebuild and any MOSS-team certificate. The signing is `codesign --identifier com.waifucave.moss.core.dev
+ * --options runtime,restrict --entitlements scripts/moss-core.entitlements -r=<the stated requirement>` (the dist
  * posture: the hardened runtime needs allow-unsigned-executable-memory for bun:ffi), then a check of the
  * signature's team and the binary's own `__keychain-ffi-probe`, before the rename.
  *
- * Identity (macOS): `security find-identity -v -p codesigning`, the one whose certificate's OU is Clover's team
- * (Apple Development preferred over Developer ID Application), by hash. `CLOVER_DEV_SIGN_IDENTITY` overrides.
+ * Identity (macOS): `security find-identity -v -p codesigning`, the one whose certificate's OU is MOSS's team
+ * (Apple Development preferred over Developer ID Application), by hash. `MOSS_DEV_SIGN_IDENTITY` overrides.
  *
- * Environment handed to the binary: `CLOVER_PROFILE=dev`, `CLOVER_HOME` (default `~/.clover-dev`; the dist
+ * Environment handed to the binary: `MOSS_PROFILE=dev`, `MOSS_HOME` (default `~/.moss-dev`; the dist
  * home and every other install's are refused), and — because a compiled binary can neither `require` its way to
- * the npm platform package nor search `$PATH` for `ant` — `CLOVER_RUNTIME_EXECUTABLE` and `CLOVER_ANT_EXECUTABLE`
+ * the npm platform package nor search `$PATH` for `ant` — `MOSS_RUNTIME_EXECUTABLE` and `MOSS_ANT_EXECUTABLE`
  * resolved here under bun, unless already set.
  *
  * THE TRANSITION (macOS, `--transition`, once, with the dev daemon stopped): the existing dev items were created by
  * `bun`, and the compiled binary's first read of each would prompt. This script — running under `bun`, their
- * creator — reads each value and hands it over a pipe to `dist/dev/clover-core __dev-keychain-adopt`, which
+ * creator — reads each value and hands it over a pipe to `dist/dev/moss-core __dev-keychain-adopt`, which
  * re-creates the item as itself (shadow, delete, add, read back; `auth/dev-keychain-transition.ts`). It is
  * crash-safe and idempotent: if interrupted, run it again; until it has run, this script refuses to start the
  * signed binary on the default dev home. It is ONE-WAY: afterwards a `bun`-run dev CLI or
@@ -56,10 +56,10 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CLOVER_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
+import { MOSS_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
 import { DEV_KEYCHAIN_SERVICE, oldCreatorStillOwnsItems, transitionDevKeychain } from "../packages/core/src/auth/dev-keychain-transition";
 import { keychainUnlocked } from "../packages/core/src/auth/keychain-ffi";
-import { isDefaultCloverHome } from "../packages/core/src/clover-dir";
+import { isDefaultMossHome } from "../packages/core/src/moss-dir";
 import { pluginBunDigest } from "../packages/core/src/registry/plugin-run";
 import { buildDevBundledPlugins, devBundledDir } from "../packages/core/src/registry/bundled-stage";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
@@ -72,7 +72,7 @@ import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, 
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI_DIR = join(REPO_ROOT, "packages", "cli");
-const ENTITLEMENTS = join(REPO_ROOT, "scripts", "clover-core.entitlements");
+const ENTITLEMENTS = join(REPO_ROOT, "scripts", "moss-core.entitlements");
 
 function die(message: string): never {
   console.error(`dev:daemon: ${message}`);
@@ -87,8 +87,8 @@ function run(cmd: string, args: string[], opts: { cwd?: string } = {}): { status
 function devSigningIdentity(): { name: string; hash: string } {
   return resolveDevSigningIdentity({
     identitiesOutput: run("security", ["find-identity", "-v", "-p", "codesigning"]).stdout,
-    teamId: CLOVER_TEAM_ID,
-    override: process.env.CLOVER_DEV_SIGN_IDENTITY,
+    teamId: MOSS_TEAM_ID,
+    override: process.env.MOSS_DEV_SIGN_IDENTITY,
     subjectOf: (name) => {
       const pem = run("security", ["find-certificate", "-c", name, "-p"]).stdout;
       if (pem === "") return undefined;
@@ -102,7 +102,7 @@ function devSigningIdentity(): { name: string; hash: string } {
 function signForKeychain(tmp: string): void {
   const identity = devSigningIdentity();
   console.error(`dev:daemon: signing identity ${identity.name}`);
-  const requirement = devDaemonRequirement(CLOVER_TEAM_ID);
+  const requirement = devDaemonRequirement(MOSS_TEAM_ID);
   const signed = run("codesign", ["--force", "--sign", identity.hash, "--identifier", DEV_DAEMON_IDENTIFIER, "--options", RESTRICTED_SIGN_OPTIONS, "--timestamp=none", "--entitlements", ENTITLEMENTS, `-r=designated => ${requirement}`, tmp]);
   if (signed.status !== 0) die(`codesign failed: ${signed.stderr.trim()}`);
   // The stated requirement is the one recorded, and the signature satisfies it.
@@ -112,8 +112,8 @@ function signForKeychain(tmp: string): void {
   const satisfied = run("codesign", ["--verify", "--strict", `-R=${requirement}`, tmp]);
   if (satisfied.status !== 0) die(`the signature does not satisfy ${requirement}: ${satisfied.stderr.trim()}`);
   const facts = signedFacts(run("codesign", ["-dv", tmp]).stderr);
-  if (facts.teamId !== CLOVER_TEAM_ID || facts.identifier !== DEV_DAEMON_IDENTIFIER || !facts.runtime) {
-    die(`the signature is not what the Keychain needs (team ${facts.teamId ?? "none"}, identifier ${facts.identifier ?? "none"}, hardened runtime ${facts.runtime}) — expected team ${CLOVER_TEAM_ID}, ${DEV_DAEMON_IDENTIFIER}`);
+  if (facts.teamId !== MOSS_TEAM_ID || facts.identifier !== DEV_DAEMON_IDENTIFIER || !facts.runtime) {
+    die(`the signature is not what the Keychain needs (team ${facts.teamId ?? "none"}, identifier ${facts.identifier ?? "none"}, hardened runtime ${facts.runtime}) — expected team ${MOSS_TEAM_ID}, ${DEV_DAEMON_IDENTIFIER}`);
   }
   // The macOS seal (`DYLD_*` names, seal-bun-doors.ts) holds only under the hardened runtime (checked above) and with
   // no allow-dyld-environment-variables entitlement.
@@ -146,11 +146,11 @@ function build(build: NonNullable<DevDaemonPlan["build"]>, binary: string): void
   }
 }
 
-/** The plugin Bun the dev daemon runs plugin code on (#234's checks 5 and 6): `<dev home>/bin/clover-plugin-bun`, inside
+/** The plugin Bun the dev daemon runs plugin code on (#234's checks 5 and 6): `<dev home>/bin/moss-plugin-bun`, inside
  *  the home no runner writes, a copy of the pinned Bun this script runs on, ad-hoc signed on macOS as
- *  `com.waifucave.clover.plugin-bun.dev` (hardened runtime, the release copy's `clover-plugin-bun.entitlements`, so a
+ *  `com.waifucave.moss.core.plugin-bun.dev` (hardened runtime, the release copy's `moss-plugin-bun.entitlements`, so a
  *  plugin's native addon or FFI runs in dev as it does shipped), never the core's identity. Its digest
- *  (macOS: its cdhash) goes beside it as `clover-plugin-bun.digest`, which the daemon's `pluginBun()` checks on start and
+ *  (macOS: its cdhash) goes beside it as `moss-plugin-bun.digest`, which the daemon's `pluginBun()` checks on start and
  *  whenever the file changes. Made again when the pinned Bun changed (a source stamp beside it) or the copy there isn't
  *  the one recorded (swapped), through a temp file and a rename, so a running plugin keeps its binary. */
 function stageDevPluginBun(home: string): void {
@@ -199,7 +199,7 @@ function stageDevPluginBun(home: string): void {
  * fall back to process-group tracking, which a packaged build never does (its package gate).
  */
 async function buildBundled(dir: string, sign: boolean): Promise<void> {
-  stageLinkSidecar(join(dir, "clover-core"), sign, true);
+  stageLinkSidecar(join(dir, "moss-core"), sign, true);
   if (hostTarget() !== "darwin-arm64") return;
   if (holderSource(REPO_ROOT) === undefined) {
     console.error(`dev:daemon: no ${HOLDER_FILE} (the installed agent runtime has no native/process-holder.c before SDK 0.0.70): a bot's commands fall back to process-group tracking`);
@@ -226,14 +226,14 @@ function stageLinkSidecar(binary: string, sign: boolean, build: boolean): void {
   if (build) {
     const cargo = Bun.which("cargo") ?? (existsSync(join(homedir(), ".cargo", "bin", "cargo")) ? join(homedir(), ".cargo", "bin", "cargo") : null);
     if (cargo === null) {
-      console.error("dev:daemon: no cargo, so no clover-link beside the dev core: it runs local-only, without links to other devices");
+      console.error("dev:daemon: no cargo, so no moss-link beside the dev core: it runs local-only, without links to other devices");
       return;
     }
-    console.error("dev:daemon: building the link sidecar (clover-link)…");
+    console.error("dev:daemon: building the link sidecar (moss-link)…");
     const built = run(cargo, plan.cargoArgs, { cwd: REPO_ROOT });
     if (built.status !== 0 || !existsSync(plan.from)) die(`the link sidecar didn't build (exit ${built.status}): ${built.stderr.trim().split("\n").slice(-3).join(" ")}`);
   } else if (!existsSync(plan.from)) {
-    console.error(`dev:daemon: no built clover-link at ${plan.from} (--no-build builds none), so ${existsSync(plan.to) ? `the one already beside the dev core stays` : "the dev core runs local-only, without links to other devices"}`);
+    console.error(`dev:daemon: no built moss-link at ${plan.from} (--no-build builds none), so ${existsSync(plan.to) ? `the one already beside the dev core stays` : "the dev core runs local-only, without links to other devices"}`);
     return;
   }
   // Beside the dev core, by a rename, so a running dev daemon's sidecar is never written in place.
@@ -245,7 +245,7 @@ function stageLinkSidecar(binary: string, sign: boolean, build: boolean): void {
     const r = run("codesign", ["--force", "--sign", identity.hash, "--identifier", DEV_LINK_IDENTIFIER, "--options", "runtime", "--timestamp=none", tmp]);
     if (r.status !== 0) {
       rmSync(tmp, { force: true });
-      die(`codesign of clover-link failed: ${r.stderr.trim()}`);
+      die(`codesign of moss-link failed: ${r.stderr.trim()}`);
     }
   }
   renameSync(tmp, plan.to);
@@ -255,15 +255,15 @@ function stageLinkSidecar(binary: string, sign: boolean, build: boolean): void {
 function devEnv(plan: DevDaemonPlan): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, ...plan.env };
   // A test preload's override has no business here (and a default home ignores it anyway).
-  delete env.CLOVER_KEYCHAIN_SERVICE;
-  if (!env.CLOVER_RUNTIME_EXECUTABLE) {
-    const clover = resolvePlatformPackageWinter();
-    if (clover !== undefined) env.CLOVER_RUNTIME_EXECUTABLE = clover;
-    else console.error("dev:daemon: no `clover` runtime found (npm platform package) — code sessions will refuse until CLOVER_RUNTIME_EXECUTABLE is set");
+  delete env.MOSS_KEYCHAIN_SERVICE;
+  if (!env.MOSS_RUNTIME_EXECUTABLE) {
+    const moss = resolvePlatformPackageWinter();
+    if (moss !== undefined) env.MOSS_RUNTIME_EXECUTABLE = moss;
+    else console.error("dev:daemon: no `moss` runtime found (npm platform package) — code sessions will refuse until MOSS_RUNTIME_EXECUTABLE is set");
   }
-  if (!env.CLOVER_ANT_EXECUTABLE) {
+  if (!env.MOSS_ANT_EXECUTABLE) {
     const ant = Bun.which("ant");
-    if (ant !== null) env.CLOVER_ANT_EXECUTABLE = ant;
+    if (ant !== null) env.MOSS_ANT_EXECUTABLE = ant;
   }
   return env;
 }
@@ -299,8 +299,8 @@ async function main(): Promise<void> {
   // loads them from the dev stage, through a private copy of its verified bytes, as a release loads its own.
   {
     const sources = join(REPO_ROOT, "plugins");
-    const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "clover.json"))).sort();
-    const built = await buildDevBundledPlugins({ sources, ids, cloverHome: home });
+    const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "moss.json"))).sort();
+    const built = await buildDevBundledPlugins({ sources, ids, mossHome: home });
     console.error(`dev:daemon: bundled plugins ${built.built.join(", ")} built into ${devBundledDir(home)} (${built.ms} ms)`);
   }
   const env = devEnv(plan);
@@ -320,7 +320,7 @@ async function main(): Promise<void> {
 
   // macOS, before the transition: every item on the dev home is bun's, and the signed binary's first read of each
   // would prompt: refuse and say what to run. (Only the default dev home holds the dev service's items.)
-  if (plan.os === "macos" && isDefaultCloverHome(home, "dev") && keychainUnlocked(null) && oldCreatorStillOwnsItems({ keychain: null, service: DEV_KEYCHAIN_SERVICE })) {
+  if (plan.os === "macos" && isDefaultMossHome(home, "dev") && keychainUnlocked(null) && oldCreatorStillOwnsItems({ keychain: null, service: DEV_KEYCHAIN_SERVICE })) {
     die("the dev Keychain items still belong to bun — stop any bun-run dev daemon, then run `bun run dev:daemon --transition` once");
   }
 

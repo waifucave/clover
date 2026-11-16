@@ -1,4 +1,4 @@
-// The Clover Browser's API in the core (spec §12.1; plan §4 L, M1). Plugins with `browser`, and the browser view, call
+// The MOSS Browser's API in the core (spec §12.1; plan §4 L, M1). Plugins with `browser`, and the browser view, call
 // these through lane B's `browser.*` methods; on a desktop the tabs themselves live in the app's Electron, which this
 // service drives with `app.tab.open`, `app.tab.command` and `app.tab.list`, and which reports back with
 // `browser.report`. The transport between the two is lane E's (the always-on pair); this file only needs the
@@ -166,7 +166,7 @@ export interface BrowserServiceOptions {
   now?: () => number;
 }
 
-const NO_APP = "the Clover app isn't running on this computer, so neither is its browser; it starts again by itself";
+const NO_APP = "the MOSS app isn't running on this computer, so neither is its browser; it starts again by itself";
 
 export class BrowserService {
   private readonly entries = new Map<string, Entry>();

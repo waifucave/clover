@@ -1,15 +1,15 @@
 // The plugin API's served areas on the app (lane A, try 15's gate: one clause per area): a folder-installed plugin's
-// host tool, called by the bot, reads its own log (no capability) and is refused Clover's (no `logs.read`); reads the
+// host tool, called by the bot, reads its own log (no capability) and is refused MOSS's (no `logs.read`); reads the
 // usage rows (`usage.read`), Alpha's memory (`memory.read`) and the routines (`routines.read`); runs its own command
 // and is refused another plugin's (no `call:`); takes and lets go of the device's speech turn and opens a push-to-talk
-// watch (`audio`); and is refused the clover tree's keys. Then the rest of each area's members (try 15's gate): the
+// watch (`audio`); and is refused the moss tree's keys. Then the rest of each area's members (try 15's gate): the
 // commands list with its own command on it, a memory file of Alpha's read, the runs of a routine the run wrote for
 // Alpha, the plan readings and a usage watch, its own log followed (a line it writes heard), and the computers (list,
-// watch, a hold on a made-up app taken, listed and released, the action signal on and off, Clover's windows, the
+// watch, a hold on a made-up app taken, listed and released, the action signal on and off, MOSS's windows, the
 // user-working mark on a made-up app; `computers.read` and `computers.control`). Kept apart from run.ts (which starts a run when loaded) so the
 // verdict can be unit-tested.
 
-export const API_AREAS_STEP = "the plugin API's served areas: a folder-installed plugin's tool reads its own log, the usage rows, Alpha's memory and the routines, runs its own command, takes the device's speech turn; Clover's log, another plugin's command and the clover tree's keys are refused; it lists the commands, reads a memory file, reads a routine's runs, the plan readings and a usage watch, follows its own log, and takes, lists and releases a hold, signals an action, reads Clover's windows and marks the user working; an own-process plugin reads its stored key with secrets.get";
+export const API_AREAS_STEP = "the plugin API's served areas: a folder-installed plugin's tool reads its own log, the usage rows, Alpha's memory and the routines, runs its own command, takes the device's speech turn; MOSS's log, another plugin's command and the moss tree's keys are refused; it lists the commands, reads a memory file, reads a routine's runs, the plan readings and a usage watch, follows its own log, and takes, lists and releases a hold, signals an action, reads MOSS's windows and marks the user working; an own-process plugin reads its stored key with secrets.get";
 
 /** The probe's answer, `acceptance-api-pong k=v …`, as pairs. */
 export function apiProbePairs(text: string): Record<string, string> {
@@ -26,20 +26,20 @@ export function apiProbeWrong(said: Record<string, string>): string[] {
     if (v === undefined || !ok(v)) wrong.push(`${k}: ${what} (got ${v ?? "nothing"})`);
   };
   want("own-log", (v) => v === "read", "its own log, with the line it just wrote");
-  want("core-log", (v) => v.startsWith("refused:"), "Clover's log refused without logs.read");
+  want("core-log", (v) => v.startsWith("refused:"), "MOSS's log refused without logs.read");
   want("usage", (v) => /^rows:\d+$/.test(v), "the usage rows");
   want("memory", (v) => /^alpha:\d+$/.test(v), "Alpha's memory listed");
   want("routines", (v) => /^listed:\d+$/.test(v), "the routines listed");
   want("own-command", (v) => v.startsWith("pong_by_"), "its own command run");
   want("other-command", (v) => v.startsWith("refused:"), "another plugin's command refused without call:");
   want("speech-turn", (v) => v === "taken", "the device's speech turn taken and let go");
-  want("keys", (v) => v.startsWith("refused:"), "the clover tree's keys refused");
+  want("keys", (v) => v.startsWith("refused:"), "the moss tree's keys refused");
   want("commands-list", (v) => /^listed:\d+:own$/.test(v), "the commands list, its own command on it");
   want("memory-read", (v) => v === "read:text", "a memory file of Alpha's read");
   want("routines-runs", (v) => /^runs:\d+$/.test(v), "the runs of the routine the run wrote for Alpha");
   want("usage-plans", (v) => /^plans:\d+$/.test(v), "the plan readings");
   want("usage-watch", (v) => v === "watched", "a usage watch opened and closed");
   want("logs-follow", (v) => v === "heard", "its own log followed, the line it wrote heard");
-  want("computers", (v) => v === "held:listed:windows-list:released-yes", "a hold taken, listed and released, the action signal, Clover's windows and the user-working mark");
+  want("computers", (v) => v === "held:listed:windows-list:released-yes", "a hold taken, listed and released, the action signal, MOSS's windows and the user-working mark");
   return wrong;
 }

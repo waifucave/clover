@@ -5,16 +5,16 @@ import { resolveEndpoint, homePipeId, isPipe, WINDOWS_PIPE_PREFIX } from "../../
 describe("resolveEndpoint", () => {
   test("a Unix socket under the run directory on macOS and Linux", () => {
     for (const os of ["darwin", "linux"] as const) {
-      const e = resolveEndpoint("/home/x/.clover/run", os);
+      const e = resolveEndpoint("/home/x/.moss/run", os);
       expect(e.kind).toBe("unix");
-      expect(e.path).toBe(join("/home/x/.clover/run", "core.sock"));
+      expect(e.path).toBe(join("/home/x/.moss/run", "core.sock"));
       expect(e.listen).toEqual({ unix: e.path });
       expect(isPipe(e.path)).toBe(false);
     }
   });
 
   test("a named pipe in the pipe namespace on Windows, not a file under the run directory", () => {
-    const e = resolveEndpoint("C:\\Users\\x\\.clover\\run", "win32");
+    const e = resolveEndpoint("C:\\Users\\x\\.moss\\run", "win32");
     expect(e.kind).toBe("pipe");
     expect(e.path.startsWith(WINDOWS_PIPE_PREFIX)).toBe(true);
     expect(e.path).not.toContain("run");
@@ -23,8 +23,8 @@ describe("resolveEndpoint", () => {
   });
 
   test("one pipe name per home: dev and dist run directories differ", () => {
-    const dist = resolveEndpoint("/home/x/.clover/run", "win32").path;
-    const dev = resolveEndpoint("/home/x/.clover-dev/run", "win32").path;
+    const dist = resolveEndpoint("/home/x/.moss/run", "win32").path;
+    const dev = resolveEndpoint("/home/x/.moss-dev/run", "win32").path;
     expect(dist).not.toBe(dev);
   });
 

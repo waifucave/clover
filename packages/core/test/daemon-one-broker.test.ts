@@ -1,4 +1,4 @@
-// The daemon's one CloverFence and one approval broker (the daemon integration lane): the computer node, the bot side
+// The daemon's one MossFence and one approval broker (the daemon integration lane): the computer node, the bot side
 // and the agents go through the same two, made in daemon-parts.ts. Here the node's half: the broker exists once the
 // node runs (agents or not), a terminal's paste of several lines asks on that broker's card (lane J's `nodeParts`,
 // bound late), and the node keeps the fence's folders. Fakes only where their lanes use them: H's in-memory network and
@@ -13,7 +13,7 @@ import { Drivers } from "../src/bots/tests/fixtures";
 import { FakePluginRegistry } from "../src/contracts/fakes/plugin-registry";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { MemoryNetwork } from "../src/links/memory-wire";
-import { CloverApprovalBroker } from "../src/approvals/broker";
+import { MossApprovalBroker } from "../src/approvals/broker";
 import { SystemClock } from "../src/clock/system-clock";
 import type { ApprovalRequest } from "../src/contracts/approval-broker";
 import { lateBroker } from "../src/daemon-parts";
@@ -27,9 +27,9 @@ afterEach(async () => {
 });
 
 test("one broker and one fence: the node's paste card asks on the daemon's broker, and its fenced folders are made", async () => {
-  let driversFence: { home: string; cloverHome: string } | undefined;
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-int-broker-")));
-  const home = join(root, "clover-home");
+  let driversFence: { home: string; mossHome: string } | undefined;
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-int-broker-")));
+  const home = join(root, "moss-home");
   const userHome = join(root, "home");
   mkdirSync(join(userHome, "project1"), { recursive: true });
   const net = new MemoryNetwork();
@@ -47,15 +47,15 @@ test("one broker and one fence: the node's paste card asks on the daemon's broke
       agents: false,
     },
   });
-  await daemon.cloverParts.ready;
-  const broker = daemon.cloverParts.broker();
+  await daemon.mossParts.ready;
+  const broker = daemon.mossParts.broker();
   // The broker runs with the node, agents or not.
   expect(broker).toBeDefined();
-  const node = daemon.cloverParts.node()!;
+  const node = daemon.mossParts.node()!;
   // The bots' drivers get the parts' one fence, over the parts' user home (never a second fence over the real home).
   expect(driversFence?.home).toBe(userHome);
-  expect(driversFence?.cloverHome).toBe(home);
-  // The node holds the daemon's fence: its fenced folders under the Clover home are there.
+  expect(driversFence?.mossHome).toBe(home);
+  // The node holds the daemon's fence: its fenced folders under the MOSS home are there.
   expect(existsSync(join(home, "connectors"))).toBe(true);
   // A folder kind's files stay files: settings.json and trust.json are never made as folders.
   expect(existsSync(join(home, "trust.json"))).toBe(false);
@@ -73,12 +73,12 @@ test("one broker and one fence: the node's paste card asks on the daemon's broke
 });
 
 test("the late-bound broker forwards request and get (a raise's card is read back through get: J's #342 fails closed without it)", async () => {
-  let bound: CloverApprovalBroker | undefined;
+  let bound: MossApprovalBroker | undefined;
   const late = lateBroker(() => bound);
   const req = { kind: "change", change: "computer-level", origin: "user", computers: ["Studio"], effect: "other", fields: { title: { type: "text", text: "Raise" } } } as unknown as ApprovalRequest;
   await expect(late.request(req)).rejects.toThrow(/aren't up on this computer yet/);
   expect(late.get("card_x")).toBeUndefined();
-  bound = new CloverApprovalBroker({ clock: new SystemClock(), levels: () => "ask" });
+  bound = new MossApprovalBroker({ clock: new SystemClock(), levels: () => "ask" });
   let cardId: string | undefined;
   const decided = late.request(req, { onCard: (id) => (cardId = id) });
   for (let i = 0; i < 100 && cardId === undefined; i++) await Bun.sleep(1);

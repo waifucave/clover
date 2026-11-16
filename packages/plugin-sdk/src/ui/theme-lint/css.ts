@@ -1,4 +1,4 @@
-// A lint for a plugin's theme or part CSS (any theme, any part's stylesheet; `@waifucave/clover-plugin-sdk/ui/testing`),
+// A lint for a plugin's theme or part CSS (any theme, any part's stylesheet; `@waifucave/moss-plugin-sdk/ui/testing`),
 // holding it to spec §5.5's rules before the app's cleaner ever sees it:
 //
 //   1. The cleaner's limits: no `@import`, and only the at-rules it keeps — @media, @supports, @container,

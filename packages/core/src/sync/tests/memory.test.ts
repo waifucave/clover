@@ -59,7 +59,7 @@ async function world(names: string[], opts: { limits?: Record<string, Partial<Me
   const computers = new Map<string, Computer>();
   for (const n of names) {
     const d = c.devices.get(n)!;
-    const home = mkdtempSync(join(tmpdir(), "clover-h-memory-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-h-memory-"));
     stops.push(() => rmSync(home, { recursive: true, force: true }));
     const box = BoxKey.generate();
     const store = new MemorySecretStore();
@@ -356,7 +356,7 @@ describe("a bot's memory across computers", () => {
     const w = await world(["Studio", "Laptop"]);
     await w.linkAll();
     const laptop = w.at("Laptop");
-    const outside = mkdtempSync(join(tmpdir(), "clover-h-outside-"));
+    const outside = mkdtempSync(join(tmpdir(), "moss-h-outside-"));
     stops.push(() => rmSync(outside, { recursive: true, force: true }));
     writeFileSync(join(outside, "target.md"), "not memory\n");
     const root = botPaths(laptop.home, BOT).memory;
@@ -513,7 +513,7 @@ describe("#232's review: poisoned keys, pinned vectors, a revoked writer's entri
     stops.push(() => c.close());
     const [studio, laptop] = [c.devices.get("Studio")!, c.devices.get("Laptop")!];
     const start = async (d: ClusterDevice, seed?: (home: string, store: MemorySecretStore) => Promise<void>) => {
-      const home = mkdtempSync(join(tmpdir(), "clover-h-late-"));
+      const home = mkdtempSync(join(tmpdir(), "moss-h-late-"));
       stops.push(() => rmSync(home, { recursive: true, force: true }));
       const store = new MemorySecretStore();
       await seed?.(home, store);
@@ -591,9 +591,9 @@ describe("#232's review: poisoned keys, pinned vectors, a revoked writer's entri
   });
 
   test("S1: a folder swapped for a link right before a write's rename or a removal's unlink is caught", () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-h-swap-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-h-swap-"));
     stops.push(() => rmSync(home, { recursive: true, force: true }));
-    const outside = mkdtempSync(join(tmpdir(), "clover-h-swap-out-"));
+    const outside = mkdtempSync(join(tmpdir(), "moss-h-swap-out-"));
     stops.push(() => rmSync(outside, { recursive: true, force: true }));
     const root = botPaths(home, BOT).memory;
     writeMemoryFile(home, root, ["sub", "keep.md"], new TextEncoder().encode("mine"));
@@ -612,7 +612,7 @@ describe("#232's review: poisoned keys, pinned vectors, a revoked writer's entri
 
   // A case-sensitive disk only (APFS and NTFS fold case by default, so the two names can't both be made there).
   const caseSensitive = (() => {
-    const d = mkdtempSync(join(tmpdir(), "clover-h-case-"));
+    const d = mkdtempSync(join(tmpdir(), "moss-h-case-"));
     try {
       writeFileSync(join(d, "a"), "");
       return !existsSync(join(d, "A"));
@@ -637,11 +637,11 @@ describe("memory paths and files", () => {
     const a = memoryPath("People/Zoë.md");
     const b = memoryPath("people/zoe\u0308.MD");
     expect("key" in a && "key" in b && a.key === b.key).toBe(true);
-    for (const bad of ["..", "a/..", "/x", "C:x", "a\\b", "a/./b", "x.md.", "x ", ".clover-sync-abc", ".DS_Store"]) expect(memoryPath(bad)).toHaveProperty("refused");
+    for (const bad of ["..", "a/..", "/x", "C:x", "a\\b", "a/./b", "x.md.", "x ", ".moss-sync-abc", ".DS_Store"]) expect(memoryPath(bad)).toHaveProperty("refused");
   });
 
   test("a write lands on the name the disk already has, and removing never follows a link", () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-h-memfiles-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-h-memfiles-"));
     stops.push(() => rmSync(home, { recursive: true, force: true }));
     const root = botPaths(home, BOT).memory;
     writeMemoryFile(home, root, ["MEMORY.md"], new TextEncoder().encode("one"));

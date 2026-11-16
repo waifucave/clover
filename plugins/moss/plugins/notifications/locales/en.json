@@ -1,0 +1,28 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "moss.notifications.aBot": "A bot",
+    "moss.notifications.fallbackTitle": "MOSS",
+    "moss.notifications.aPlugin": "A plugin",
+    "moss.notifications.plugin": "Plugin “{plugin}”",
+    "moss.notifications.fromPlugin": "{from}: {title}",
+    "moss.notifications.message": "Sent you a message",
+    "moss.notifications.card": "Needs your OK",
+    "moss.notifications.question": "Has a question for you",
+    "moss.notifications.routine": "A routine finished",
+    "moss.notifications.agent": "An agent finished",
+    "moss.notifications.unseen": {
+      "one": "1 unseen",
+      "other": "{count} unseen"
+    },
+    "moss.notifications.setting.needsYou": "When a bot needs you",
+    "moss.notifications.setting.needsYou.detail": "An approval or a question waiting for your answer.",
+    "moss.notifications.setting.agentDone": "When an agent finishes",
+    "moss.notifications.setting.agentDone.detail": "An agent a bot started has finished its work.",
+    "moss.notifications.setting.routineFailed": "When a routine fails",
+    "moss.notifications.setting.routineFailed.detail": "A routine that ran on its own didn't finish.",
+    "moss.notifications.setting.sounds": "Play sounds",
+    "moss.notifications.setting.sounds.detail": "Let your computer play its notification sound. Off, the banners show silently."
+  }
+}

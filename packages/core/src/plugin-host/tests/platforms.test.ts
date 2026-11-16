@@ -7,7 +7,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -24,8 +24,8 @@ const ELSEWHERE = HERE === "windows-x64" ? "linux-x64" : "windows-x64";
 function plugin(home: string, id: string, platforms: string[]): void {
   const folder = join(home, "plugins", id);
   mkdirSync(join(folder, "host"), { recursive: true });
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({
-    manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, platforms,
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({
+    manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` }, platforms,
     host: { entry: "host/index.js", start: "each" },
     contributes: { mcpServers: { tools: { type: "host" } } },
   }));
@@ -35,13 +35,13 @@ function plugin(home: string, id: string, platforms: string[]): void {
 
 describe("a plugin's platforms", () => {
   test("left out here: installed behind its usual card, then off here saying why, never started, its tools not offered", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b-platforms-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b-platforms-"));
     temps.push(home);
     plugin(home, "elsewhere", [ELSEWHERE]);
     plugin(home, "here", [HERE, ELSEWHERE]);
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets });
     try {
       for (const id of ["elsewhere", "here"]) {

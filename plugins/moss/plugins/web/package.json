@@ -1,0 +1,23 @@
+{
+  "name": "@waifucave/moss-plugin-web",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "moss/web: mcp__moss__WebSearch and mcp__moss__WebFetch, the bots' web tools (spec §6.7).",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@waifucave/clover-web": "0.0.77"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@waifucave/moss-plugin-sdk": "workspace:*",
+    "typescript": "5.9.3"
+  }
+}

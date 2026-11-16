@@ -31,7 +31,7 @@ const COMMAND = { name: "active", description: "Says which deck mode is active a
 
 function write(dir: string, manifest: Record<string, unknown>): string {
   mkdirSync(join(dir, "host"), { recursive: true });
-  writeFileSync(join(dir, "clover.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  writeFileSync(join(dir, "moss.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   writeFileSync(join(dir, "package.json"), "{\"type\":\"module\"}\n");
   writeFileSync(join(dir, "host", "index.js"), HOST);
   return dir;
@@ -39,7 +39,7 @@ function write(dir: string, manifest: Record<string, unknown>): string {
 
 /** The declarer and its three fillers, as folders under `root`, in the order the row installs them. */
 export function writeActiveOne(root: string): { deck: string; one: string; two: string; three: string } {
-  const engines = { clover: "^1.0.0" };
+  const engines = { moss: "^1.0.0" };
   const host = { entry: "host/index.js", runtime: "bun" };
   const deck = write(join(root, ACTIVE_IDS.deck), {
     manifest: 1, id: ACTIVE_IDS.deck, name: "Acceptance deck", version: "1.0.0", engines,

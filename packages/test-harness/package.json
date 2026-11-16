@@ -1,8 +1,8 @@
 {
-  "name": "@waifucave/clover-test-harness",
+  "name": "@waifucave/moss-test-harness",
   "version": "0.0.0",
   "private": true,
-  "description": "Clover's test harness: temp homes, throwaway secret stores, several daemons in one test, a fake app client, and local stand-ins for the outside services.",
+  "description": "MOSS's test harness: temp homes, throwaway secret stores, several daemons in one test, a fake app client, and local stand-ins for the outside services.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
@@ -21,8 +21,8 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@waifucave/clover-core": "workspace:*",
-    "@waifucave/clover-protocol": "workspace:*",
+    "@waifucave/moss-core": "workspace:*",
+    "@waifucave/moss-protocol": "workspace:*",
     "miniflare": "4.20260730.0"
   },
   "devDependencies": {

@@ -30,7 +30,7 @@ import { describeWithEmbeddedRuntime } from "./helpers/embedded-runtime";
 
 const SENTINEL = "A3-SENTINEL-app-model-keys-5e0d71c2";
 const MODEL = "deepseek/deepseek-v4-pro";
-const DEEPSEEK = { id: "clover/model-deepseek", source: "bundled", manifest: { contributes: { models: [{ provider: "deepseek", auth: [{ method: "api-key", secret: "api-key" }] }] } } } as unknown as PluginRecord;
+const DEEPSEEK = { id: "moss/model-deepseek", source: "bundled", manifest: { contributes: { models: [{ provider: "deepseek", auth: [{ method: "api-key", secret: "api-key" }] }] } } } as unknown as PluginRecord;
 const USER = { caller: { kind: "user", client: "app" } } as never;
 
 const temps: string[] = [];
@@ -68,7 +68,7 @@ function filesUnder(dir: string): { path: string; text: string }[] {
 
 describeWithEmbeddedRuntime("the app's model keys", (spawn) => {
   test("plugin.auth.signIn, then models.list signed in, hasKeyFor yes without a restart, and a bot turn reaching the provider with the key", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a3-keys-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-a3-keys-")));
     temps.push(home);
     const auth: string[] = [];
     fake = await startFake({

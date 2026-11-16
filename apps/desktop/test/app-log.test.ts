@@ -18,11 +18,11 @@ describe("the app's log", () => {
   test("lines go to <home>/logs/app.log, one line each, with the time, in a private file", () => {
     const home = mkdtempSync(join(tmpdir(), "app-log-"));
     const log = new AppLog(appLogPath(home));
-    log.write("layer: clover/composer: a layer doesn't call session.send", new Date("2026-11-10T10:00:00Z"));
+    log.write("layer: moss/composer: a layer doesn't call session.send", new Date("2026-11-10T10:00:00Z"));
     log.write("two\nlines");
     const lines = readFileSync(join(home, "logs", "app.log"), "utf8").trim().split("\n");
     expect(lines.length).toBe(2);
-    expect(lines[0]).toBe("2026-11-10T10:00:00.000Z layer: clover/composer: a layer doesn't call session.send");
+    expect(lines[0]).toBe("2026-11-10T10:00:00.000Z layer: moss/composer: a layer doesn't call session.send");
     expect(lines[1]).toContain("two lines");
     expect(privateTo(home, join(home, "logs", "app.log"))).toBe(true);
   });

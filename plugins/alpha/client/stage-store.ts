@@ -3,7 +3,7 @@
 // `storage.synced.watch` as the fallback), never settings. Only her server writes it; a component calls her server with
 // `host.call` (`setCatalog`).
 import { useEffect, useState } from "react";
-import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
+import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 import { EMPTY_STAGE, readStage, type StageState } from "./stage-doc";
 
 export { EMPTY_STAGE, MOODS, readStage } from "./stage-doc";

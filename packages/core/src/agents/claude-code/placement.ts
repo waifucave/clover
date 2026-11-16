@@ -1,10 +1,10 @@
-// What Clover places in Claude Code for one session (spec §9.3): the plugins' skills in its skills folder, their agent
-// definitions in its agents folder, and their command hooks in its settings through Clover's shim (hook-shim.ts).
+// What MOSS places in Claude Code for one session (spec §9.3): the plugins' skills in its skills folder, their agent
+// definitions in its agents folder, and their command hooks in its settings through MOSS's shim (hook-shim.ts).
 //
-// None of it touches the user's own Claude Code setup (`~/.claude`, the project's `.claude/`): Clover writes one local
+// None of it touches the user's own Claude Code setup (`~/.claude`, the project's `.claude/`): MOSS writes one local
 // Claude Code plugin per session into the session's setup folder, inside the fenced run folder, and hands it to the
 // Claude adapter at `session/new` as `_meta.claudeCode.options.plugins` (the Claude Agent SDK's local plugins). Claude
-// Code still loads what the user installed in it, as it would outside Clover (§9.3). That the adapter passes the
+// Code still loads what the user installed in it, as it would outside MOSS (§9.3). That the adapter passes the
 // option through, and Claude Code loads skills, agents and hooks from it, is a live gate (plan §10).
 //
 // Hook events map onto Claude Code's: `tool.before` → `PreToolUse`, `tool.after` → `PostToolUse`, `message.in` and
@@ -38,7 +38,7 @@ export function shellQuote(arg: string): string {
   return /^[A-Za-z0-9_./:=@%+-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Clover tool patterns (`*` any run of characters) as one Claude Code matcher; undefined for every tool. */
+/** MOSS tool patterns (`*` any run of characters) as one Claude Code matcher; undefined for every tool. */
 export function matcherOf(tools: readonly string[] | undefined): string | undefined {
   if (!tools || tools.length === 0 || tools.includes("*")) return undefined;
   return tools.map((t) => `^${t.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`).join("|");
@@ -57,10 +57,10 @@ export const MAX_HOOK_TIMEOUT_MS = 60_000;
 export function placeInClaudeCode(parts: PluginParts, ctx: { dir: string; shim: { command: string; args: readonly string[] } }): PlacementResult {
   const root = join(ctx.dir, CLAUDE_PLUGIN_FOLDER);
   // Written afresh each time: a skill, agent or hook of a plugin turned off or removed since is never left behind. The
-  // folder is Clover's own, per session, in the fenced run folder: never the user's `~/.claude` or a project's.
+  // folder is MOSS's own, per session, in the fenced run folder: never the user's `~/.claude` or a project's.
   rmSync(root, { recursive: true, force: true });
   mkdirSync(join(root, ".claude-plugin"), { recursive: true, mode: 0o700 });
-  writeFileSync(join(root, ".claude-plugin", "plugin.json"), `${JSON.stringify({ name: "clover", version: "0.0.0", description: "Skills, agents and hooks from Clover's plugins, for this session." }, null, 2)}\n`);
+  writeFileSync(join(root, ".claude-plugin", "plugin.json"), `${JSON.stringify({ name: "moss", version: "0.0.0", description: "Skills, agents and hooks from MOSS's plugins, for this session." }, null, 2)}\n`);
   const placed: PlacementResult["placed"] = { skills: [], agents: [], hooks: [], skipped: [] };
 
   for (const s of parts.skills) {

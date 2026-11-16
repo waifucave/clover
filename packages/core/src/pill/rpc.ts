@@ -1,5 +1,5 @@
 // `user.send` (packages/protocol/src/app.ts): the user's own words from the Dispatch pill, which the app's main process
-// carries for a `clover` surface's `useUserSend` inside the key press or click that sent (#179's review, S2). Owner:
+// carries for a `moss` surface's `useUserSend` inside the key press or click that sent (#179's review, S2). Owner:
 // lane G. The protocol lets only the `app` role call it, and only as the user (`userOnly`); the handler checks the
 // caller again, since a plugin's or a bot's call must never count as the user's (§3.1, §9.1).
 //
@@ -8,7 +8,7 @@
 // on another computer refuse the same way. Its pictures are staged first, each named in the text as `[Image #n]`.
 // To a `pill.target` entry, the words go to the entry's handler (`PillTargetHandler.send`) through the plugin host,
 // as the plugin's own: the call is the plugin's, never the user's, so nothing it does with them counts as the user.
-import { APP_METHODS, CLOVER_ERR, ERR } from "@waifucave/clover-protocol";
+import { APP_METHODS, MOSS_ERR, ERR } from "@waifucave/moss-protocol";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { ContractError } from "../contracts/common";
@@ -58,7 +58,7 @@ export function userSendMethods(deps: UserSendMethodsDeps): Record<string, Metho
       if ("target" in to) {
         const entry = deps.targets === undefined ? undefined : targetEntry(deps.targets.registry, to.target);
         if (deps.targets === undefined || entry === undefined) {
-          throw new MethodError(CLOVER_ERR.NOT_INSTALLED, `no pill.target entry ${to.target} is installed and active`);
+          throw new MethodError(MOSS_ERR.NOT_INSTALLED, `no pill.target entry ${to.target} is installed and active`);
         }
         if (images !== undefined && images.length > 0) throw new MethodError(ERR.INVALID_PARAMS, "a pill.target entry takes words only");
         await deps.targets.host.invoke({

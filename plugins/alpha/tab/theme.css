@@ -3,7 +3,7 @@
    tool cards or the composer; what is left is the figure's framing on her stage and the strip of her own stage tools.
    Filters, opacity and rotation are kept out (a sealed approval card must stay visible). */
 
-/* The figure's framing is the renderer's own: a 3D or Live2D figure reads --clover-avatar-framing / -crop / -headroom (layout.css, on the
+/* The figure's framing is the renderer's own: a 3D or Live2D figure reads --moss-avatar-framing / -crop / -headroom (layout.css, on the
    stage cell) and frames what it draws, so the canvas is exactly the stage's box (the renderer's own style). It was once drawn larger
    than the stage and shifted so the stage's edge cropped her; that fitted the whole model canvas into an oversized box, and a model with
    a big canvas came out huge and low, over her room's tools. */
@@ -17,7 +17,7 @@
 
 /* Her stage tools: one strip, a chip per tool (glyph + the tool's own words), in mixed runs too. */
 .cl-conv-tools__chips { gap: 6px 8px; }
-.cl-conv-chip { font-family: var(--alpha-display); font-size: 13px; font-weight: 550; padding: 2px 10px 2px 8px; border-radius: 14px; background: color-mix(in srgb, var(--clover-color-accent) 14%, var(--clover-color-raised)); border-color: color-mix(in srgb, var(--clover-color-accent) 45%, var(--clover-color-hairline)); }
+.cl-conv-chip { font-family: var(--alpha-display); font-size: 13px; font-weight: 550; padding: 2px 10px 2px 8px; border-radius: 14px; background: color-mix(in srgb, var(--moss-color-accent) 14%, var(--moss-color-raised)); border-color: color-mix(in srgb, var(--moss-color-accent) 45%, var(--moss-color-hairline)); }
 .cl-conv-chip::before { content: "✦"; font-size: 12px; }
 .cl-conv-chip[data-tool="set-scene"]::before { content: "🌄"; }
 .cl-conv-chip[data-tool="set-mood"]::before { content: "🎨"; }
@@ -33,7 +33,7 @@
 .cl-chrome-panels {
   flex: 1 1 auto; pointer-events: auto;
   border-radius: 30px; overflow: hidden;
-  background: color-mix(in srgb, var(--clover-color-surface) 94%, transparent);
-  border: 1px solid color-mix(in srgb, var(--clover-color-hairline-raised) 65%, transparent);
+  background: color-mix(in srgb, var(--moss-color-surface) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--moss-color-hairline-raised) 65%, transparent);
   box-shadow: 0 28px 70px -26px var(--alpha-shadow);
 }

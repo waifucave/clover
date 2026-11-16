@@ -24,7 +24,7 @@ import type { StreamChunk } from "./contract";
 
 export interface StartBrowserOptions {
   computer: string;
-  /** The Clover home; the headless shell keeps its install and profiles under `<home>/browser/`. */
+  /** The MOSS home; the headless shell keeps its install and profiles under `<home>/browser/`. */
   home: string;
   /** The app's port while the app is connected (desktops). */
   app?: () => AppTabPort | undefined;

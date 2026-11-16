@@ -22,12 +22,12 @@
 // * `noFollow` (a `stat` or a `read` for the user's own file viewers, F-M3's review): no link is followed anywhere on
 //   the way, from the area's root down (on Windows no reparse point either), the file is opened without following
 //   one, and the opened file's real path, read back from its handle, must be the path walked (`nofollow.ts`).
-// * `home/<this computer>/.clover/` is this computer's Clover home wherever it is on disk (`~/.clover-dev` for the dev
-//   profile, `CLOVER_HOME`): the tree's one path to it, which the spec's `home/<Computer>/.clover/…` paths name.
+// * `home/<this computer>/.moss/` is this computer's MOSS home wherever it is on disk (`~/.moss-dev` for the dev
+//   profile, `MOSS_HOME`): the tree's one path to it, which the spec's `home/<Computer>/.moss/…` paths name.
 // * A bot's memory (the owner's ruling for J-M3): `home/memory/` in a bot's own sessions is that bot's
-//   `<Clover home>/bots/<bot>/memory/` here, on every computer that runs the core (lane H keeps the copies in sync,
+//   `<MOSS home>/bots/<bot>/memory/` here, on every computer that runs the core (lane H keeps the copies in sync,
 //   so a write lands here even while another computer is off). Every bot reaches every bot's memory, read and write:
-//   the owner's ruling of November 9 (and its amendment) opens the Clover home to bots through the tree (read
+//   the owner's ruling of November 9 (and its amendment) opens the MOSS home to bots through the tree (read
 //   everything; write any bot's memory and scratch, and their own routines and outputs; secrets, `run/` and writes to
 //   permission, trust, settings and plugin files stay blocked). The fence's `homeAllows` (lane C) decides all of a
 //   bot's reach; the tree adds no deny of its own for a bot. Coding sessions, agents, plugins and another computer
@@ -41,7 +41,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath, 
 import {
   DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment,
   type Caller, type FileStat, type Level, type Os, type SignedCardAnswer, type TurnOrigin,
-} from "@waifucave/clover-protocol";
+} from "@waifucave/moss-protocol";
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
@@ -106,16 +106,16 @@ export interface LocalHolderOptions {
   aliases?: () => readonly string[];
   /** The home folder: `home/<name>/` is it. */
   home: string;
-  /** Where the bots this computer runs keep their folders (`<Clover home>/bots`). */
+  /** Where the bots this computer runs keep their folders (`<MOSS home>/bots`). */
   botsRoot?: string;
   /** Whether this computer runs `bot` (its `bots/<bot>/` lives here). */
   runsBot?: (bot: string) => boolean;
   os?: Os;
   /** This computer's fence. Calls for the user and the core never ask it. */
   fence?: Pick<Fence, "check" | "fencedSet" | "contextFor">;
-  /** The Clover home, where a fenced caller may make no name that isn't ASCII (B-M1's contract review): a name the
+  /** The MOSS home, where a fenced caller may make no name that isn't ASCII (B-M1's contract review): a name the
    *  disk folds where no fold here does can't reach a fenced item. */
-  cloverHome?: string;
+  mossHome?: string;
   /** This computer's level, which a peer's change is judged at. */
   level?: () => Level;
   /** What checks a peer's signed answer: the paired devices, this computer's ledger of used card ids, and its own
@@ -145,11 +145,11 @@ export function memoryBotOf(as: Caller): string | undefined {
   return as.kind === "session" && as.bot !== undefined && (as.sessionKind === "bot" || as.sessionKind === "side-thread") ? as.bot : undefined;
 }
 
-/** The name in `home/<this computer>/` that is this computer's Clover home, wherever it is on disk. */
-export const CLOVER_HOME_NAME = ".clover";
+/** The name in `home/<this computer>/` that is this computer's MOSS home, wherever it is on disk. */
+export const MOSS_HOME_NAME = ".moss";
 
 interface Located {
-  area: "home" | "bot" | "clover" | "memory";
+  area: "home" | "bot" | "moss" | "memory";
   /** The area's real root. */
   root: string;
   segments: string[];
@@ -206,7 +206,7 @@ function realOrNearest(path: string): { real: string; exact: boolean } {
 export class LocalHolder implements Holder {
   readonly os: Os;
   readonly #o: LocalHolderOptions;
-  #cloverHomeReal: string | undefined;
+  #mossHomeReal: string | undefined;
   #botsRootReal: string | undefined;
   readonly #answers: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   readonly watches: FolderWatches;
@@ -572,7 +572,7 @@ export class LocalHolder implements Holder {
     if (!parts) throw new ContractError("invalid", `${path} isn't in the folder tree (home/<Computer>/… or bots/<bot>/…)`);
     const segments = parts.rest === "" ? [] : parts.rest.split("/");
     for (const s of segments) checkSegment(s, this.os);
-    // Lane B's alias rule (#187): on Windows a stream (`a.json::$DATA`) or a short 8.3 name (`CLOVER~1`) is another
+    // Lane B's alias rule (#187): on Windows a stream (`a.json::$DATA`) or a short 8.3 name (`MOSS~1`) is another
     // file's name, refused wherever it is, for every caller. `checkSegment` and the listed-name check stay as walls.
     if (this.os === "windows") {
       const alias = windowsAlias(segments.join("/"));
@@ -587,9 +587,9 @@ export class LocalHolder implements Holder {
     if (parts.area === "home") {
       const names = [this.#o.name(), ...(this.#o.aliases?.() ?? [])];
       if (!names.includes(parts.name)) throw new ContractError("not_found", `${parts.name} isn't this computer`);
-      // `.clover` is this computer's Clover home, wherever it is on disk.
-      if (this.#o.cloverHome !== undefined && segments.length > 0 && foldName(segments[0]!, this.os) === CLOVER_HOME_NAME) {
-        return { area: "clover", root: this.#o.cloverHome, segments: segments.slice(1), treePath };
+      // `.moss` is this computer's MOSS home, wherever it is on disk.
+      if (this.#o.mossHome !== undefined && segments.length > 0 && foldName(segments[0]!, this.os) === MOSS_HOME_NAME) {
+        return { area: "moss", root: this.#o.mossHome, segments: segments.slice(1), treePath };
       }
       return { area: "home", root: this.#o.home, segments, treePath };
     }
@@ -936,7 +936,7 @@ export class LocalHolder implements Holder {
       }
     }
     if (op.op === "write" || op.op === "delete" || op.op === "move") {
-      for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) this.#asciiUnderCloverHome(p);
+      for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) this.#asciiUnderMossHome(p);
     }
     const verdict = this.#check(op, as);
     if (!verdict.allowed) {
@@ -976,7 +976,7 @@ export class LocalHolder implements Holder {
   }
 
   /** The bots' folder's real path. Kept only once the folder exists: before that, its nearest folder that does is
-   *  resolved and the rest joined on, every time, so a Clover home behind a symlink compares right both before and
+   *  resolved and the rest joined on, every time, so a MOSS home behind a symlink compares right both before and
    *  after `bots/` is made (#254's review, should-fix 7). */
   #botsRoot(): string {
     if (this.#botsRootReal !== undefined) return this.#botsRootReal;
@@ -1003,20 +1003,20 @@ export class LocalHolder implements Holder {
     return names[1] !== foldName(MEMORY_FOLDER, this.os);
   }
 
-  /** Lane B's second wall (`nonAsciiAlias`): a name that isn't ASCII where Clover names things under its home (its top
+  /** Lane B's second wall (`nonAsciiAlias`): a name that isn't ASCII where MOSS names things under its home (its top
    *  level, and any folder there that holds a fenced item) is refused, whatever a disk might fold it to. A bot's memory
    *  notes and a plugin's assets may have any name. */
-  #asciiUnderCloverHome(real: string): void {
-    if (!this.#o.cloverHome) return;
+  #asciiUnderMossHome(real: string): void {
+    if (!this.#o.mossHome) return;
     // The home's real path, as the paths it is compared with are (`/var` is `/private/var` on a Mac).
-    let home = this.#cloverHomeReal;
+    let home = this.#mossHomeReal;
     if (home === undefined) {
-      const r = realOrNearest(this.#o.cloverHome);
-      if (r.exact) this.#cloverHomeReal = r.real;
+      const r = realOrNearest(this.#o.mossHome);
+      if (r.exact) this.#mossHomeReal = r.real;
       home = r.real;
     }
     if (nonAsciiAlias(real, this.#o.fence?.fencedSet() ?? [], home, this.os)) {
-      throw new ContractError("fenced", `names Clover keeps under its home are ASCII; ${basename(real)} isn't`, { computer: this.#o.name(), reason: "clover-home" });
+      throw new ContractError("fenced", `names MOSS keeps under its home are ASCII; ${basename(real)} isn't`, { computer: this.#o.name(), reason: "moss-home" });
     }
   }
 
@@ -1031,7 +1031,7 @@ export class LocalHolder implements Holder {
     if (!plain.allowed) return plain;
     const fold = (p: string) => foldPath(p, this.os);
     const set = fence.fencedSet().map((item) => ({ ...item, path: fold(item.path) }));
-    // The caller here too, for the workshop alone: without the Clover home the pattern items and the home's own allows
+    // The caller here too, for the workshop alone: without the MOSS home the pattern items and the home's own allows
     // aren't judged in this pass (the plain one above did).
     const folded = fenceJudge(set, op.op === "move" ? { ...op, path: fold(op.path), to: fold(op.to) } : { ...op, path: fold(op.path) }, { os: this.os, caller: ctx });
     if (folded.allowed) return folded;

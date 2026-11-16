@@ -1,4 +1,4 @@
-// `@waifucave/clover-plugin-sdk/ui`: the UI API that a plugin's React components use (spec §5.5), implementing lane
+// `@waifucave/moss-plugin-sdk/ui`: the UI API that a plugin's React components use (spec §5.5), implementing lane
 // B's declarations (`../api/ui-api.ts`). Each layer loads one copy, shared by every component in it: the app maps the
 // bare specifier to the layer's own copy, beside React's.
 //
@@ -11,7 +11,7 @@ import {
   Component, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
   type CSSProperties, type ErrorInfo, type ReactNode,
 } from "react";
-import type { CardMeta } from "@waifucave/clover-protocol";
+import type { CardMeta } from "@waifucave/moss-protocol";
 import type { TokenValue } from "../catalogs/tokens";
 import { cssProperty } from "../catalogs/tokens";
 import { COMPONENT_CALLS, fromLayerWire, listenerArgOf, toLayerWire } from "../catalogs/layer-calls";
@@ -33,7 +33,7 @@ export { AvatarControlHub, avatarBoxFromRect, cleanAvatarCue, type AvatarState }
 // Mouth levels from speech, for any avatar renderer (./mouth): the five vowel weights from the `avatar` spot's speech feed.
 export { LipSync, SpeechRing, frameSource, ringSource, analyserSource, bufferSource, speechFrames, PushedSpeech, MAX_FRAME_SECONDS, visemeWeights, MouthSmoother, VISEMES, SHUT, SILENCE_RMS, FULL_RMS, DARK_HZ, BRIGHT_HZ, clamp01, rmsOf, spectralCentroidOf, FFT_SIZE, type LipSyncSource, type SpeechFeatureSource, type SpeechFeatures, type AnalyserLike, type VisemeWeights } from "./mouth";
 // What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
-// React of its own (`clover plugin new`'s UI and point templates do).
+// React of its own (`moss plugin new`'s UI and point templates do).
 export { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";
 export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
 
@@ -76,7 +76,7 @@ export const SLEEP_AFTER_MS = 60_000;
 let runtime: Runtime | undefined;
 
 function rt(): Runtime {
-  if (runtime === undefined) throw new Error("the Clover UI runtime isn't set up in this document");
+  if (runtime === undefined) throw new Error("the MOSS UI runtime isn't set up in this document");
   return runtime;
 }
 
@@ -132,7 +132,7 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
     }
     if (m.type === "rect-query") {
       // The menu broker asks where a child frame is in this document's viewport.
-      const el = typeof document === "undefined" ? undefined : Array.from(document.querySelectorAll("iframe[data-clover-mount]")).find((f) => f.getAttribute("data-clover-mount") === m.child);
+      const el = typeof document === "undefined" ? undefined : Array.from(document.querySelectorAll("iframe[data-moss-mount]")).find((f) => f.getAttribute("data-moss-mount") === m.child);
       const b = el?.getBoundingClientRect();
       r.bridge.rectReply(m.id, b === undefined ? null : { x: b.x, y: b.y, width: b.width, height: b.height });
     }
@@ -141,7 +141,7 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
   trackFocus();
 }
 
-/** Hears the core's messages to this document (app commands such as `open-settings`). For the `clover` layer's own
+/** Hears the core's messages to this document (app commands such as `open-settings`). For the `moss` layer's own
  *  parts; not in lane B's declarations. */
 export function useLayerMessage(listener: (m: LayerMessage) => void): void {
   const ref = useRef(listener);
@@ -205,7 +205,7 @@ export function decodeProps(props: unknown, call: (id: string, args: unknown[]) 
   return out;
 }
 
-/** CSS custom properties for a set of tokens (`color.text` → `--clover-color-text`). */
+/** CSS custom properties for a set of tokens (`color.text` → `--moss-color-text`). */
 export function tokenStyle(tokens: Readonly<Record<string, TokenValue>>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [name, value] of Object.entries(tokens)) {
@@ -245,7 +245,7 @@ const AvatarSpeechContext = createContext<AvatarSpeech>(NO_SPEECH);
 /** The receivers of this document's framed `avatar` renderers, by mount (`LayerRoot`). */
 const receivedSpeech = new Map<string, ReceivedSpeech>();
 
-/** For the stage (the `clover` layer's character part, or whatever plays the bot's speech): the feed the `avatar`
+/** For the stage (the `moss` layer's character part, or whatever plays the bot's speech): the feed the `avatar`
  *  spot's renderers under it lip-sync to. A renderer in this document reads it with `useAvatarSpeech`; a renderer in a
  *  frame of its own gets its frames sent on, numbers only, while the frame can be seen. Not for plugins. */
 export function AvatarSpeechProvider({ feed, speaking, children }: { feed: SpeechFeed | undefined; speaking: boolean; children?: ReactNode }) {
@@ -253,7 +253,7 @@ export function AvatarSpeechProvider({ feed, speaking, children }: { feed: Speec
   return <AvatarSpeechContext.Provider value={value}>{children}</AvatarSpeechContext.Provider>;
 }
 
-/** In an `avatar` renderer: the speech of the bot it draws, to move its mouth by. The same in the `clover` layer and in
+/** In an `avatar` renderer: the speech of the bot it draws, to move its mouth by. The same in the `moss` layer and in
  *  a plugin's own frame: `feed.subscribe` hands frames `{ t, rms, centroid }` (loudness 0–1 and brightness in Hz, on the
  *  audio clock, a little ahead of when they play), `feed.now()` is that clock now, and `speaking` says whether the bot
  *  speaks. Only numbers reach a plugin's frame: no audio, no text. */
@@ -297,7 +297,7 @@ export interface AvatarControl {
 const NO_CONTROL: AvatarControl = { onCue: () => () => undefined, setCatalogue: () => undefined, setBox: () => undefined };
 
 /** In an `avatar` renderer: receive the bot plugin's cues and publish the model's catalogue and the figure's box. The
- *  same in the `clover` layer and in a plugin's own frame. Outside the stage it does nothing. */
+ *  same in the `moss` layer and in a plugin's own frame. Outside the stage it does nothing. */
 export function useAvatarControl(): AvatarControl {
   const hub = useContext(AvatarControlContext);
   return useMemo<AvatarControl>(() => (hub === undefined ? NO_CONTROL : {
@@ -344,13 +344,13 @@ function FramedSpeech({ mount, children }: { mount: string; children: ReactNode 
 /** The document's strings, as the core last sent them. */
 const StringsContext = createContext<StringTable>(EMPTY_STRINGS);
 
-/** What the `clover` layer tells the core about the parts under it: the kind of session they show (`when.session`).
- *  Heard from the `clover` layer only. Not for plugins. */
+/** What the `moss` layer tells the core about the parts under it: the kind of session they show (`when.session`).
+ *  Heard from the `moss` layer only. Not for plugins. */
 export const SpotHints = createContext<{ session?: string }>({});
 
 function usePart(): Part {
   const part = useContext(PartContext);
-  if (part === null) throw new Error("a Clover UI hook ran outside a mounted entry");
+  if (part === null) throw new Error("a MOSS UI hook ran outside a mounted entry");
   return part;
 }
 
@@ -363,7 +363,7 @@ class PartBoundary extends Component<{ name: string; children: ReactNode }, { fa
     console.error(`the part ${this.props.name} stopped`, error, info.componentStack);
   }
   override render(): ReactNode {
-    if (this.state.failed) return <div className="clover-part-stopped" role="status" data-clover-stopped={this.props.name}>This part stopped.</div>;
+    if (this.state.failed) return <div className="moss-part-stopped" role="status" data-moss-stopped={this.props.name}>This part stopped.</div>;
     return this.props.children;
   }
 }
@@ -408,9 +408,9 @@ export function LayerRoot({ info }: { info: MountInfo }) {
   useLayoutEffect(() => {
     // The document is the part: its themes' sheets are scoped to it by these marks.
     const root = document.documentElement;
-    root.setAttribute("data-clover-part", info.mount);
-    if (info.tab !== undefined) root.setAttribute("data-clover-tab", info.tab);
-    if (info.styled === true) root.setAttribute("data-clover-styled", "");
+    root.setAttribute("data-moss-part", info.mount);
+    if (info.tab !== undefined) root.setAttribute("data-moss-tab", info.tab);
+    if (info.styled === true) root.setAttribute("data-moss-styled", "");
   }, [info.mount, info.tab, info.styled]);
   useLayoutEffect(() => applySheets(sheets), [sheets]);
   useEffect(() => {
@@ -428,12 +428,12 @@ export function LayerRoot({ info }: { info: MountInfo }) {
   }, [tokens]);
   // The spot this document fills, for the base sheet: a page in `main` or `panel` fills the column it is given and scrolls in itself.
   useLayoutEffect(() => {
-    document.documentElement.setAttribute("data-clover-spot", info.spot);
+    document.documentElement.setAttribute("data-moss-spot", info.spot);
   }, [info.spot]);
   useEffect(() => {
     // The core sizes the frame: report the content's height as it changes (the bottom of the part's own elements, so
     // a part that fills its frame reports the frame, and a small one its own size).
-    const host = document.getElementById("clover-root") ?? document.body;
+    const host = document.getElementById("moss-root") ?? document.body;
     let frame = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let last = -1;
@@ -482,7 +482,7 @@ export function LayerRoot({ info }: { info: MountInfo }) {
   }), [info, tokens]);
   const component = info.component === undefined ? undefined : findComponent(mod, info.component);
   if (component === undefined) {
-    return mod === undefined && r.load !== undefined ? null : <div className="clover-part-missing" role="status">This part has no component {info.component}.</div>;
+    return mod === undefined && r.load !== undefined ? null : <div className="moss-part-missing" role="status">This part has no component {info.component}.</div>;
   }
   const view = <EntryView part={part} component={component} props={props} />;
   return (
@@ -497,13 +497,13 @@ export function LayerRoot({ info }: { info: MountInfo }) {
 export function applySheets(sheets: readonly ThemeSheet[], doc: Document = document): void {
   const head = doc.head;
   const old = new Map<string, HTMLStyleElement>();
-  for (const el of Array.from(head.querySelectorAll<HTMLStyleElement>("style[data-clover-sheet]"))) old.set(el.getAttribute("data-clover-sheet") ?? "", el);
+  for (const el of Array.from(head.querySelectorAll<HTMLStyleElement>("style[data-moss-sheet]"))) old.set(el.getAttribute("data-moss-sheet") ?? "", el);
   for (const s of sheets) {
     let el = old.get(s.id);
     old.delete(s.id);
     if (el === undefined) {
       el = doc.createElement("style");
-      el.setAttribute("data-clover-sheet", s.id);
+      el.setAttribute("data-moss-sheet", s.id);
     }
     if (el.textContent !== s.css) el.textContent = s.css;
     head.appendChild(el);
@@ -528,7 +528,7 @@ export type SpotProps = Omit<SpotElementProps, "key" | "spotKey" | "entry"> & {
   only?: string;
   /** What shows where nothing fills the spot (lane F's: a panel's placeholder). */
   fallback?: ReactNode;
-  /** The bot whose tab shows, for the spots that offer `when.bot` outside a bot's tab (`sidebar`, `bar`): heard from the `clover` layer only. */
+  /** The bot whose tab shows, for the spots that offer `when.bot` outside a bot's tab (`sidebar`, `bar`): heard from the `moss` layer only. */
   forBot?: string;
 };
 
@@ -539,7 +539,7 @@ export function Spot({ name, spotKey, entry: entryRef, only, props, fallback, fo
   const hints = useContext(SpotHints);
   const r = rt();
   const [view, setView] = useState<SpotView | undefined>(undefined);
-  // A panel's `when.session` is the kind of session the shell shows it for: the `clover` layer says so in the props it gives the spot (the main process heeds it from that layer only).
+  // A panel's `when.session` is the kind of session the shell shows it for: the `moss` layer says so in the props it gives the spot (the main process heeds it from that layer only).
   const propKind = name === "panel" ? (props as { sessionKind?: unknown } | undefined)?.sessionKind : undefined;
   const session = hints.session ?? (typeof propKind === "string" ? propKind : undefined);
   const resolve = useCallback(() => {
@@ -565,11 +565,11 @@ export function Spot({ name, spotKey, entry: entryRef, only, props, fallback, fo
     if (shown.current.length > 0) r.bridge.release(shown.current);
   }, [r]);
   if (view === undefined || view.hidden || view.items.length === 0) {
-    // `data-clover-pending`: not resolved yet (a host that holds a tab until it is drawn reads it, the shell's KeptTab).
-    return <div data-clover-spot={name} data-clover-key={spotKey} data-clover-empty={view?.hidden ? "hidden" : view?.undeclared ? "waiting" : ""} data-clover-pending={view === undefined ? "" : undefined} style={{ display: "contents" }}>{view !== undefined && !view.hidden ? fallback : null}</div>;
+    // `data-moss-pending`: not resolved yet (a host that holds a tab until it is drawn reads it, the shell's KeptTab).
+    return <div data-moss-spot={name} data-moss-key={spotKey} data-moss-empty={view?.hidden ? "hidden" : view?.undeclared ? "waiting" : ""} data-moss-pending={view === undefined ? "" : undefined} style={{ display: "contents" }}>{view !== undefined && !view.hidden ? fallback : null}</div>;
   }
   return (
-    <div data-clover-spot={name} data-clover-key={spotKey} data-clover-conflict={view.conflict ? "" : undefined} style={{ display: "contents" }}>
+    <div data-moss-spot={name} data-moss-key={spotKey} data-moss-conflict={view.conflict ? "" : undefined} style={{ display: "contents" }}>
       {view.items.map((item) => <SpotItemView key={item.mount} item={item} parent={part} spot={name} spotKey={view.key} props={props} />)}
     </div>
   );
@@ -599,7 +599,7 @@ function WebPart({ item }: { item: Extract<SpotItem, { kind: "web" }> }) {
     };
     return trackRect(el, measure, () => bridge.webFrame(item.mount, null));
   }, [el, item.mount]);
-  return <div ref={setEl} className="clover-web-part" data-clover-entry={item.ref} data-clover-web={item.mount} style={{ display: "block", width: "100%", height: "100%", minHeight: 120 }} />;
+  return <div ref={setEl} className="moss-web-part" data-moss-entry={item.ref} data-moss-web={item.mount} style={{ display: "block", width: "100%", height: "100%", minHeight: 120 }} />;
 }
 
 /** Calls `measure` whenever an element may have moved or changed size (its resizes, the window's, any scroll, the
@@ -662,14 +662,14 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
     r.bridge.setProps(item.mount, encoded);
   }, [spot, props, item.mount, r]);
   const own = tokens !== parent.tokens ? tokenStyle(tokens) : undefined;
-  const marks = { "data-clover-entry": item.ref, "data-clover-part": item.mount, "data-clover-tab": item.tab, "data-clover-styled": item.styled === true ? "" : undefined };
+  const marks = { "data-moss-entry": item.ref, "data-moss-part": item.mount, "data-moss-tab": item.tab, "data-moss-styled": item.styled === true ? "" : undefined };
   if (item.layout !== undefined) {
     // A bot's layout: data the runtime draws as the tab's part, its spots the part's own. A layout's root fills the
     // place it is in, so it gets a box of its own (the theme's `contain` reaches it). Its spots get the tab's own props (the
     // bot and the session): the conversation and the composer in it are the tab's, and read them.
     const layout = item.layout;
     return (
-      <div {...marks} data-clover-layout-part="" style={{ display: "flex", flexDirection: "column", flex: "1 1 auto", minHeight: 0, height: "100%", ...own }}>
+      <div {...marks} data-moss-layout-part="" style={{ display: "flex", flexDirection: "column", flex: "1 1 auto", minHeight: 0, height: "100%", ...own }}>
         <PartContext.Provider value={part}>
           <PartBoundary name={item.ref}>
             <LayoutRoot layout={layout} renderSpot={(spot, key) => <Spot name={spot} props={props as Record<string, unknown> | undefined} {...(key !== undefined ? { spotKey: key } : {})} />} />
@@ -679,7 +679,7 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
     );
   }
   const component = findComponent(r.modules.get(item.pluginId), item.component);
-  if (component === undefined) return <div className="clover-part-missing" role="status" data-clover-entry={item.ref}>This part has no component {item.component}.</div>;
+  if (component === undefined) return <div className="moss-part-missing" role="status" data-moss-entry={item.ref}>This part has no component {item.component}.</div>;
   return (
     <div {...marks} style={{ display: "contents", ...own }}>
       <EntryView part={part} component={component} props={props} />
@@ -837,7 +837,7 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
   }, [item.mount, r]);
   if (gone !== undefined) {
     return (
-      <div className="clover-part-stopped" role="status" data-clover-entry={item.ref} data-clover-gone={gone}>
+      <div className="moss-part-stopped" role="status" data-moss-entry={item.ref} data-moss-gone={gone}>
         This part stopped.{" "}
         <button type="button" onClick={() => void r.bridge.reload(item.mount).then((next) => {
           if (next !== undefined) {
@@ -851,7 +851,7 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
   }
   if (asleep) {
     // Keeps its place while it sleeps, so nothing around it moves.
-    return <div ref={setEl} data-clover-entry={item.ref} data-clover-asleep="" style={{ display: "block", width: "100%", ...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` }) }} />;
+    return <div ref={setEl} data-moss-entry={item.ref} data-moss-asleep="" style={{ display: "block", width: "100%", ...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` }) }} />;
   }
   return (
     <iframe
@@ -859,15 +859,15 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
       key={url}
       src={url}
       title={item.ref}
-      data-clover-entry={item.ref}
-      data-clover-layer={item.layer}
-      data-clover-mount={item.mount}
+      data-moss-entry={item.ref}
+      data-moss-layer={item.layer}
+      data-moss-mount={item.mount}
       // Its document has drawn (its first size report since this URL loaded): a host holding a tab until it is drawn reads it.
-      data-clover-drawn={drawnUrl === url ? "" : undefined}
-      // A plugin's own isolated frame, and the `clover` layer's frames, which pass the permission down to a plugin page placed inside them.
-      allow={[item.isolated === true || item.layer === "clover" ? "cross-origin-isolated" : "", item.microphone === true ? "microphone" : ""].filter((a) => a !== "").join("; ")}
+      data-moss-drawn={drawnUrl === url ? "" : undefined}
+      // A plugin's own isolated frame, and the `moss` layer's frames, which pass the permission down to a plugin page placed inside them.
+      allow={[item.isolated === true || item.layer === "moss" ? "cross-origin-isolated" : "", item.microphone === true ? "microphone" : ""].filter((a) => a !== "").join("; ")}
       referrerPolicy="no-referrer"
-      data-clover-fill={fill ? "" : undefined}
+      data-moss-fill={fill ? "" : undefined}
       style={{ display: "block", border: 0, width: "100%", ...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` }), colorScheme: "light dark", background: "transparent" }}
     />
   );
@@ -877,7 +877,7 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
 // Hooks and the later parts
 // -------------------------------------------------------------------------------------------------
 
-/** Where the part is (its tab's bot, the surface, the OS, the window's material, safe mode). For the `clover` layer's
+/** Where the part is (its tab's bot, the surface, the OS, the window's material, safe mode). For the `moss` layer's
  *  own parts; not in lane B's declarations. */
 export function useMountContext(): MountContext {
   const context = usePart().context;
@@ -922,7 +922,7 @@ function subscribe(mount: string, pluginId: string, area: string): void {
   void rt().bridge.api(mount, "events.subscribe", { areas: [area] }).catch(() => areas.delete(area));
 }
 
-/** `terminal` (components of the bundled `clover` tree): what reaches a terminal the core derives from the trusted
+/** `terminal` (components of the bundled `moss` tree): what reaches a terminal the core derives from the trusted
  *  key press or paste the part hands over; output comes as `terminal_output` on the plugin's own connection. */
 function terminalApi(mount: string, pluginId: string): NonNullable<PluginApi["terminal"]> {
   const api = <T,>(method: string, params: unknown) => rt().bridge.api(mount, method, params) as Promise<T>;
@@ -1250,7 +1250,7 @@ export function usePluginApi(): PluginApi {
           return () => { live = false; off(); };
         },
       } as unknown as PluginApi["approvals"],
-      // The Clover Browser, for the bundled browser panel (the core's `browser.*` methods on this plugin's own connection,
+      // The MOSS Browser, for the bundled browser panel (the core's `browser.*` methods on this plugin's own connection,
       // which serve that one plugin and the capability gate checks): the person's tabs, placed in a view and navigated. A
       // listener can't cross a call, so `watch` hears the core's `tab_changed` and `tab_closed` events instead.
       browser: {
@@ -1285,7 +1285,7 @@ export function usePluginApi(): PluginApi {
         },
       } as unknown as PluginApi["browser"],
       // The plugin's own bot's figure (`avatar.read`, `avatar.control`), through the core, which judges each cue; the stage's
-      // own `report` (bundled `clover` tree only). The watch hears the core's `clover.avatar.changed` message for this plugin.
+      // own `report` (bundled `moss` tree only). The watch hears the core's `moss.avatar.changed` message for this plugin.
       avatar: {
         cue: (cue: unknown, opts?: unknown) => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.cue", args: opts === undefined ? [cue] : [cue, opts] }).then((r) => r.result),
         catalogue: () => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.catalogue", args: [] }).then((r) => r.result),
@@ -1295,7 +1295,7 @@ export function usePluginApi(): PluginApi {
           subscribe(part.mount, part.entry.pluginId, "plugins");
           return onApiEvent(part.entry.pluginId, (method, params) => {
             const e = params as { type?: unknown; pluginId?: unknown; event?: unknown; value?: unknown } | undefined;
-            if (method === "core.event" && e?.type === "plugin_ui_message" && e.pluginId === part.entry.pluginId && e.event === "clover.avatar.changed") listener(e.value);
+            if (method === "core.event" && e?.type === "plugin_ui_message" && e.pluginId === part.entry.pluginId && e.event === "moss.avatar.changed") listener(e.value);
           });
         },
       } as unknown as PluginApi["avatar"],
@@ -1455,7 +1455,7 @@ export function useSurfaceEnvironment(): SurfaceEnvironment | undefined {
   return env;
 }
 
-/** Opens a place in the main window (Settings at a section and an item, a bot's tab): for the `clover` tree's parts,
+/** Opens a place in the main window (Settings at a section and an item, a bot's tab): for the `moss` tree's parts,
  *  such as the island's Usage and Devices tabs. Not in lane B's declarations yet. */
 export function useOpen(): (target: OpenTarget) => Promise<void> {
   const part = usePart();
@@ -1465,7 +1465,7 @@ export function useOpen(): (target: OpenTarget) => Promise<void> {
 /** How often a placed native view's frame is measured again, besides its resizes (a move with no resize). */
 export const VIEW_FRAME_POLL_MS = 250;
 
-/** Places a native view the core draws over this part (the Clover Browser's live view, `name` "browser"): the ref
+/** Places a native view the core draws over this part (the MOSS Browser's live view, `name` "browser"): the ref
  *  callback goes on the element the view should cover, and the core keeps the view on it as it moves, resizes, hides
  *  or goes. The core clips the view to this part's own frame, and only a plugin with the `browser` capability places
  *  one. With two parts placing the same view, the one the person used last has it (ruling R8). Not in lane B's
@@ -1512,7 +1512,7 @@ export function useDrag(): { offer(offer: DragOffer): Promise<string | undefined
 
 /** A spot this part declares, as its entries in the spot's order, kept current (lane B's `useSpotEntries`): for a part
  *  that draws one at a time with `<Spot entry>` (the island's tabs, the pill's targets). */
-export function useSpotEntries(name: string, spotKey?: string, forProps?: string | { readonly bot?: unknown; /** The kind of session the part shows (`when.session`): the `clover` layer's say, heeded by the main process from that layer only. */ readonly forSessionKind?: unknown }): { readonly entries: readonly SpotEntryView[]; /** False until the first answer: an empty list before it is not yet the spot's answer (a window document that loads again starts so). */ readonly loaded: boolean; subscribe(listener: () => void): Unsubscribe } {
+export function useSpotEntries(name: string, spotKey?: string, forProps?: string | { readonly bot?: unknown; /** The kind of session the part shows (`when.session`): the `moss` layer's say, heeded by the main process from that layer only. */ readonly forSessionKind?: unknown }): { readonly entries: readonly SpotEntryView[]; /** False until the first answer: an empty list before it is not yet the spot's answer (a window document that loads again starts so). */ readonly loaded: boolean; subscribe(listener: () => void): Unsubscribe } {
   const part = usePart();
   // The bot whose tab shows, by id or as the props a `<Spot>` there is given (`{ bot }`, a reference or an id): the spots a bot's own entries fill.
   const b = typeof forProps === "string" ? forProps : forProps?.bot;
@@ -1607,7 +1607,7 @@ function shellApi(mount: string): NonNullable<PluginApi["shell"]> {
   };
 }
 
-/** For the `clover` shell: tells the core where the window is, for the plugin frames that read it (`shell.state`). */
+/** For the `moss` shell: tells the core where the window is, for the plugin frames that read it (`shell.state`). */
 export function useShellReport(): (report: { state: ShellState; apps: readonly ShellApp[]; account?: ShellAccount }) => void {
   const part = usePart();
   return useCallback((report) => rt().bridge.shellReport(part.mount, report), [part.mount]);
@@ -1634,7 +1634,7 @@ export function useUserSend(): ((to: UserSendTarget, message: string | { text: s
 
 /** What the `composer` spot hands the entry the core mounted there (spec §5.5, lane E): the models its session can
  *  switch to, a model switch, and interrupt and stop. Each acting call counts only inside the user's own key press or
- *  click. On a bot's main conversation a model switch changes a user layer: the `clover` layer's entry changes it
+ *  click. On a bot's main conversation a model switch changes a user layer: the `moss` layer's entry changes it
  *  directly, any other plugin's ends in the sealed card the core raises for it. Undefined outside that spot. */
 export interface ComposerHost {
   models(): Promise<{ models: { id: string; name?: string; providerName?: string; efforts?: string[] }[]; default?: string }>;
@@ -1714,18 +1714,18 @@ export function useCore(): CoreClient | undefined {
  *  can't be stored or read is plain state.
  *
  *  Where it lives: the window's session storage (never `localStorage`), per plugin and key, as JSON. Session storage is
- *  per origin, and every plugin's layer is its own origin (`clover-plugin://<layer>/`): a third-party part's `useKept`
- *  is in its layer's store and can't read the shell's or the composer's, and theirs (the clover layer's) can't be read
- *  by a third-party page. It goes when the window closes; Clover writes none of it to disk (what Chromium does with a
- *  session's storage is its own, and Clover keeps no session to restore). The `clover.kept:<plugin>:` prefix is a
+ *  per origin, and every plugin's layer is its own origin (`moss-plugin://<layer>/`): a third-party part's `useKept`
+ *  is in its layer's store and can't read the shell's or the composer's, and theirs (the moss layer's) can't be read
+ *  by a third-party page. It goes when the window closes; MOSS writes none of it to disk (what Chromium does with a
+ *  session's storage is its own, and MOSS keeps no session to restore). The `moss.kept:<plugin>:` prefix is a
  *  namespace among one layer's plugins, not a boundary: keep in it only the user's place and their own unsent words.
  *  A draft there (the composer's, keyed by its conversation's id only) may hold something pasted, a secret even: it is
  *  no more exposed than the text field it is typed in, which the same document already holds. */
 export function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
   const part = useContext(PartContext);
-  const pluginId = part?.entry.pluginId ?? "clover";
+  const pluginId = part?.entry.pluginId ?? "moss";
   const scope = part !== null && runtime !== undefined ? runtime.testKeptScope?.(part.mount) ?? "" : "";
-  const storeKey = `clover.kept:${scope}${pluginId}:${key}`;
+  const storeKey = `moss.kept:${scope}${pluginId}:${key}`;
   const read = (k: string): T => {
     try {
       const raw = globalThis.sessionStorage?.getItem(k);
@@ -1791,7 +1791,7 @@ export function useWindowDrag(): void {
   }, [part.mount]);
 }
 
-/** The session this window shows (the `clover` layer's shell says so; the core refuses it from any other layer): a
+/** The session this window shows (the `moss` layer's shell says so; the core refuses it from any other layer): a
  *  desktop notification for it waits while the app is in front. Not in lane B's declarations. */
 export function useActiveSession(session: string | undefined): void {
   const part = usePart();
@@ -1877,7 +1877,7 @@ function SealedFrame({ mount, cardId, kind, name, look, lines, size, tokens, fon
   useEffect(() => {
     const on = (event: MessageEvent) => {
       if (frame.current === null || event.source !== frame.current.contentWindow) return;
-      const said = (event.data as { cloverSealedSize?: { width?: unknown; height?: unknown } } | null)?.cloverSealedSize;
+      const said = (event.data as { mossSealedSize?: { width?: unknown; height?: unknown } } | null)?.mossSealedSize;
       if (said === null || typeof said !== "object" || said === undefined) return;
       const n = (v: unknown, max: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.min(Math.ceil(v), max) : undefined);
       const width = n(said.width, 1200);
@@ -1917,7 +1917,7 @@ function SealedFrame({ mount, cardId, kind, name, look, lines, size, tokens, fon
     style.width = box.width ?? 0;
     style.height = box.height ?? 0;
   }
-  return <iframe ref={frame} src={src} onLoad={() => setLoaded(true)} data-clover-sealed={`${kind}:${name}`} data-clover-sealed-state={`${loaded ? "loaded" : "pending"}${box.height === undefined ? "" : byPage.current ? " said" : " fallback"}`} style={style} title={kind === "field" ? `card field ${name}` : `card button ${name}`} referrerPolicy="no-referrer" sandbox={undefined} />;
+  return <iframe ref={frame} src={src} onLoad={() => setLoaded(true)} data-moss-sealed={`${kind}:${name}`} data-moss-sealed-state={`${loaded ? "loaded" : "pending"}${box.height === undefined ? "" : byPage.current ? " said" : " fallback"}`} style={style} title={kind === "field" ? `card field ${name}` : `card button ${name}`} referrerPolicy="no-referrer" sandbox={undefined} />;
 }
 
 /** A pixel size from a `card.font.size` token ("15px"), or the stylesheet's own 14. */
@@ -1937,7 +1937,7 @@ export function Card({ id, tokens, className, children }: CardElementProps) {
     ? Object.fromEntries(Object.entries(part.tokens).filter(([name, v]) => name.startsWith("card.") && typeof v === "string"))
     : Object.fromEntries(Object.entries(tokens).filter(([name, v]) => name.startsWith("card.")));
   return (
-    <div data-clover-card={id} className={className}>
+    <div data-moss-card={id} className={className}>
       <CardOwner.Provider value={{ mount: part.mount, cardId: id, tokens: given }}>{children as never}</CardOwner.Provider>
       <CardReview mount={part.mount} cardId={id} />
     </div>
@@ -1953,9 +1953,9 @@ function CardReview({ mount, cardId }: { mount: string; cardId: string }) {
   return (
     <button
       type="button"
-      className="clover-card-review"
-      data-clover-card-review={opened}
-      title="Opens this card in Clover's own window, where a model can read the plugin's files and say what it finds"
+      className="moss-card-review"
+      data-moss-card-review={opened}
+      title="Opens this card in MOSS's own window, where a model can read the plugin's files and say what it finds"
       onClick={() => {
         setOpened("opening");
         void rt().bridge.cardPage!(mount, cardId).then((ok) => setOpened(ok ? "idle" : "no"), () => setOpened("no"));

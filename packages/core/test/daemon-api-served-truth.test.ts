@@ -5,11 +5,11 @@
 //
 // Two fixtures, each walked on both sides:
 // - a third party holding every capability a third party may hold, its host half in a process of its own;
-// - a child of the bundled `clover` tree (`clover/truth`, staged as the dev stage `<home>/run/dev-bundled/` a daemon
-//   with its own store reads), holding every capability, its host half in the `clover` process: the
-//   `clover`-process members (`keys.*`, `desktop.*`) are called for real.
+// - a child of the bundled `moss` tree (`moss/truth`, staged as the dev stage `<home>/run/dev-bundled/` a daemon
+//   with its own store reads), holding every capability, its host half in the `moss` process: the
+//   `moss`-process members (`keys.*`, `desktop.*`) are called for real.
 // On each side:
-// - host members (`host`, `own`, `clover`, `both`) are called by its host half, as the app's page would reach it
+// - host members (`host`, `own`, `moss`, `both`) are called by its host half, as the app's page would reach it
 //   (`host.call` through `plugin.layer.api`);
 // - component members (`ui`, `both`) are called through the SDK's own component API (`usePluginApi`, the code a plugin's
 //   page runs), its bridge routed as the app's main process routes it: the pickers to main's dialog, every other call
@@ -25,8 +25,8 @@ import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { allowedMethods, CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/clover-protocol";
-import { API_CALLS, CAPABILITIES, PLUGIN_API_VERSION, type ApiCallInfo } from "@waifucave/clover-plugin-sdk";
+import { allowedMethods, MOSS_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/moss-protocol";
+import { API_CALLS, CAPABILITIES, PLUGIN_API_VERSION, type ApiCallInfo } from "@waifucave/moss-plugin-sdk";
 import { catalogPointDecl } from "../../plugin-sdk/src/catalogs/index";
 import { configureLayer, usePluginApi } from "../../plugin-sdk/src/ui/index";
 // @ts-expect-error: the SDK's own React (the instance its hooks dispatch through), which this package doesn't type
@@ -48,7 +48,7 @@ afterEach(async () => {
   daemon = undefined;
 });
 
-/** A raw Clover connection: requests by id, and every notification the daemon sends. */
+/** A raw MOSS connection: requests by id, and every notification the daemon sends. */
 async function rpc(path: string) {
   const decoder = new LineDecoder();
   const pending = new Map<number, (m: Record<string, unknown>) => void>();
@@ -96,7 +96,7 @@ const ARGS: Record<string, unknown[]> = {
   "memory.list": ["alpha"], "memory.read": ["alpha", "MEMORY.md"],
   "bots.get": ["alpha"], "bots.watch": [FN], "routines.runs": ["r_none"], "routines.fire": ["r_none", "schedule"],
   "computers.get": ["Studio"], "computers.watch": [FN], "computers.holds": ["Studio"], "computers.takeHold": ["Studio", { kind: "app", app: "com.example.none" }],
-  "computers.releaseHold": ["h_none"], "computers.setUserWorking": ["Studio", false], "computers.setActionRunning": ["Studio", false], "computers.cloverWindows": ["Studio"],
+  "computers.releaseHold": ["h_none"], "computers.setUserWorking": ["Studio", false], "computers.setActionRunning": ["Studio", false], "computers.mossWindows": ["Studio"],
   "devices.watch": [FN], "approvals.watch": [FN],
   "files.stat": ["home/Studio/truth.txt"], "files.readText": ["home/Studio/truth.txt"], "files.readBytes": ["home/Studio/truth.txt"],
   "files.write": ["home/Studio/truth.txt", "truth"], "files.list": ["home/Studio"], "files.remove": ["home/Studio/truth-none.txt"],
@@ -176,11 +176,11 @@ function componentApi(part: { mount: string; pluginId: string }): Record<string,
   }
 }
 
-const BUNDLED = "clover/truth";
+const BUNDLED = "moss/truth";
 
 darwinTest("every API member the catalog lists is served where it says, on the daemon's own composition", async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-api-truth-")));
-  const home = join(root, "clover-home");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-api-truth-")));
+  const home = join(root, "moss-home");
   const userHome = join(root, "home");
   mkdirSync(userHome, { recursive: true });
   writeFileSync(join(userHome, "truth.txt"), "truth\n");
@@ -192,28 +192,28 @@ darwinTest("every API member the catalog lists is served where it says, on the d
   mkdirSync(join(folder, "host"), { recursive: true });
   const all = CAPABILITIES.map((c) => c.name).filter((n) => !n.includes("*"));
   const manifest = (caps: string[]) => ({
-    manifest: 1, id: PLUGIN, name: "Truth", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    manifest: 1, id: PLUGIN, name: "Truth", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
     host: { entry: "host/index.js", process: "own" },
     capabilities: [...caps, "network:truth.invalid", `call:${PLUGIN}`],
   });
   writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
   writeFileSync(join(folder, "host", "index.js"), HOST_JS);
-  writeFileSync(join(folder, "clover.json"), JSON.stringify(manifest(all)));
+  writeFileSync(join(folder, "moss.json"), JSON.stringify(manifest(all)));
   const checked = await validatePluginFolder(folder, { os: "macos" });
   const keptOut = all.filter((c) => checked.issues.some((i) => i.severity === "error" && i.message.includes(c)));
-  if (keptOut.length > 0) writeFileSync(join(folder, "clover.json"), JSON.stringify(manifest(all.filter((c) => !keptOut.includes(c)))));
+  if (keptOut.length > 0) writeFileSync(join(folder, "moss.json"), JSON.stringify(manifest(all.filter((c) => !keptOut.includes(c)))));
   const again = await validatePluginFolder(folder, { os: "macos" });
   expect(again.issues.filter((i) => i.severity === "error")).toEqual([]);
-  // The bundled child: the dev stage a daemon with its own store reads (`devBundledSource`), the `clover` tree with one
-  // child holding every capability, its host half in the `clover` process.
+  // The bundled child: the dev stage a daemon with its own store reads (`devBundledSource`), the `moss` tree with one
+  // child holding every capability, its host half in the `moss` process.
   const devRoot = join(home, "run", "dev-bundled", "plugins");
-  mkdirSync(join(devRoot, "clover"), { recursive: true });
-  writeFileSync(join(devRoot, "clover", "clover.json"), JSON.stringify({ manifest: 1, id: "clover", name: "Clover", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
-  const child = join(devRoot, "clover", "plugins", "truth");
+  mkdirSync(join(devRoot, "moss"), { recursive: true });
+  writeFileSync(join(devRoot, "moss", "moss.json"), JSON.stringify({ manifest: 1, id: "moss", name: "MOSS", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` } }));
+  const child = join(devRoot, "moss", "plugins", "truth");
   mkdirSync(join(child, "host"), { recursive: true });
-  writeFileSync(join(child, "clover.json"), JSON.stringify({
-    manifest: 1, name: "Truth (bundled)", engines: { clover: `^${PLUGIN_API_VERSION}` },
-    host: { entry: "host/index.js" }, capabilities: [...all.filter((c) => !c.includes("<")), "network:truth.invalid", "call:clover"],
+  writeFileSync(join(child, "moss.json"), JSON.stringify({
+    manifest: 1, name: "Truth (bundled)", engines: { moss: `^${PLUGIN_API_VERSION}` },
+    host: { entry: "host/index.js" }, capabilities: [...all.filter((c) => !c.includes("<")), "network:truth.invalid", "call:moss"],
   }));
   writeFileSync(join(child, "package.json"), JSON.stringify({ type: "module" }));
   writeFileSync(join(child, "host", "index.js"), HOST_JS);
@@ -233,9 +233,9 @@ darwinTest("every API member the catalog lists is served where it says, on the d
       agents: false,
     },
   });
-  await daemon.cloverParts.ready;
+  await daemon.mossParts.ready;
   const app = await rpc(daemon.socketPath);
-  expect((await app.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] }))["error"]).toBeUndefined();
+  expect((await app.request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] }))["error"]).toBeUndefined();
   // A component's watch values go to its own layer connection alone: the app's connection, subscribed to every area,
   // never hears one.
   expect((await app.request("events.subscribe", { areas: ["plugins", "computers", "sessions"] }))["error"]).toBeUndefined();
@@ -246,7 +246,7 @@ darwinTest("every API member the catalog lists is served where it says, on the d
   const stateOf = async (id: string) => ((await app.request("plugin.get", { id }))["result"] as { plugin: { state: string } } | undefined)?.plugin.state;
   for (let i = 0; i < 300 && (await stateOf(PLUGIN)) === undefined; i++) await Bun.sleep(10);
   const switched = (await app.request("plugin.setEnabled", { id: PLUGIN, enabled: true }))["result"] as { applied: boolean; card: string };
-  const broker = daemon.cloverParts.broker()!;
+  const broker = daemon.mossParts.broker()!;
   for (let i = 0; i < 300 && broker.cards().find((c) => c.id === switched.card) === undefined; i++) await Bun.sleep(10);
   const okCard = broker.cards().find((c) => c.id === switched.card)!;
   expect(await broker.answer(okCard.id, { optionId: "approve", hash: okCard.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(okCard.id)!, input: "click", at: Date.now() } }, { role: "app" })).toBe("accepted");
@@ -265,18 +265,18 @@ darwinTest("every API member the catalog lists is served where it says, on the d
   const entries = Object.entries(API_CALLS) as [string, ApiCallInfo][];
   const wrong: string[] = [];
   const notChecked: string[] = [];
-  /** Every answer, written where `CLOVER_TRUTH_DUMP` says (to read what each member answered). */
+  /** Every answer, written where `MOSS_TRUTH_DUMP` says (to read what each member answered). */
   const seen: { path: string; where: string; a: Answer }[] = [];
   const layerMethods = allowedMethods("layer");
   const PICKS = new Set(["files.pickOpen", "files.pickFolder", "files.pickSave"]);
 
   /** One fixture's walk, both sides. */
   const walk = async (pluginId: string) => {
-    const bundled = pluginId.startsWith("clover/");
+    const bundled = pluginId.startsWith("moss/");
     // The host half: each host member through `host.call` (`plugin.layer.api`), as the app's page reaches it.
     for (const [path, info] of entries) {
       if (info.where === "ui") continue;
-      if (info.where === "clover" && !bundled) { notChecked.push(`${path} [${pluginId}] (host, the bundled clover process only: the bundled fixture calls it)`); continue; }
+      if (info.where === "moss" && !bundled) { notChecked.push(`${path} [${pluginId}] (host, the bundled moss process only: the bundled fixture calls it)`); continue; }
       const r = await app.request("plugin.layer.api", { pluginId, call: "host.call", args: ["api", { path, args: ARGS[path] ?? [] }, { timeoutMs: 20_000 }] });
       const a: Answer = r["error"] !== undefined ? { error: `host.call failed: ${JSON.stringify(r["error"]).slice(0, 300)}` } : (r["result"] as { result: Answer }).result;
       const why = verdict(path, info, a);
@@ -288,7 +288,7 @@ darwinTest("every API member the catalog lists is served where it says, on the d
     // layer connection's notifications relayed to the page as the app relays them.
     const { token } = (await app.request("layer.token", { pluginId }))["result"] as { token: string };
     const layer = await rpc(daemon!.socketPath);
-    const hello = await layer.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "layer", token, clientName: "test-layer", pluginId });
+    const hello = await layer.request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role: "layer", token, clientName: "test-layer", pluginId });
     expect(hello["error"]).toBeUndefined();
     const pageListeners = new Set<(m: unknown) => void>();
     layer.onNotification((method, params) => { for (const l of pageListeners) l({ type: "api-event", pluginId, method, params }); });
@@ -370,7 +370,7 @@ darwinTest("every API member the catalog lists is served where it says, on the d
     clearInterval(denier);
     app.close();
   }
-  if (process.env.CLOVER_TRUTH_DUMP) writeFileSync(process.env.CLOVER_TRUTH_DUMP, seen.map((x) => `${x.where}\t${x.path}\t${JSON.stringify(x.a).slice(0, 300)}`).join("\n"));
+  if (process.env.MOSS_TRUTH_DUMP) writeFileSync(process.env.MOSS_TRUTH_DUMP, seen.map((x) => `${x.where}\t${x.path}\t${JSON.stringify(x.a).slice(0, 300)}`).join("\n"));
   if (notChecked.length > 0) console.log(`not checked on the third party (the bundled fixture's): ${notChecked.join("; ")}`);
   expect(wrong).toEqual([]);
   expect(appHeard).toEqual([]);

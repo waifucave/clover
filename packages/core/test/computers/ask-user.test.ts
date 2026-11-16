@@ -5,8 +5,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cardAnswerSigningInput, cardContentInput, type Caller, type Card, type CardContent } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker } from "../../src/approvals/broker";
+import { cardAnswerSigningInput, cardContentInput, type Caller, type Card, type CardContent } from "@waifucave/moss-protocol";
+import { MossApprovalBroker } from "../../src/approvals/broker";
 import { deviceProofVerifier, verifySignedAnswer, type ApprovalBroker, type ApprovalEvent } from "../../src/contracts/approval-broker";
 import { FakeApprovalBroker, MemoryAnswerLedger } from "../../src/contracts/fakes/approval-broker";
 import { FakeClock } from "../../src/contracts/fakes/clock";
@@ -29,7 +29,7 @@ async function world(kind: "fake" | "real") {
   const phone = await makeFakePhone();
   await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "terminal" });
   const opts = { clock, verify: deviceProofVerifier(registry) };
-  const broker: ApprovalBroker = kind === "fake" ? new FakeApprovalBroker(opts) : new CloverApprovalBroker(opts);
+  const broker: ApprovalBroker = kind === "fake" ? new FakeApprovalBroker(opts) : new MossApprovalBroker(opts);
   const shown: Card[] = [];
   /** How the phone answers each card it is shown: an option, a sealed frame's click, or nothing. */
   let answer: "approve" | "deny" | "frame" | "none" = "approve";
@@ -105,17 +105,17 @@ for (const kind of ["fake", "real"] as const) {
       expect(w.shown).toHaveLength(0);
     });
 
-    test("a card that doesn't open with Clover's line naming the holder is never raised (the stage 1 review)", async () => {
+    test("a card that doesn't open with MOSS's line naming the holder is never raised (the stage 1 review)", async () => {
       const w = await world(kind);
       const ask = brokerAsker({ broker: w.broker });
       const card = render({ computer: "Laptop1", method: "tree.write", params: WRITE })!;
       // The holder's own words in the first line, the line missing, or naming another computer: refused, nothing shown.
-      expect(await ask(needFor("Laptop1", "tree.write", WRITE, { ...card, fields: { ...card.fields, title: { type: "text", text: "Clover: routine update, approve" } } }), { as: BOT })).toBeNull();
+      expect(await ask(needFor("Laptop1", "tree.write", WRITE, { ...card, fields: { ...card.fields, title: { type: "text", text: "MOSS: routine update, approve" } } }), { as: BOT })).toBeNull();
       const { title: _title, ...untitled } = card.fields;
       expect(await ask(needFor("Laptop1", "tree.write", WRITE, { ...card, fields: untitled }), { as: BOT })).toBeNull();
       expect(await ask(needFor("Laptop1", "tree.write", WRITE, { ...card, fields: { ...card.fields, title: { type: "text", text: "Studio asks you to approve this" } } }), { as: BOT })).toBeNull();
       expect(w.shown).toHaveLength(0);
-      // With the line, raised as it is: the first line is Clover's, the rest the holder's.
+      // With the line, raised as it is: the first line is MOSS's, the rest the holder's.
       expect(await ask(needFor("Laptop1", "tree.write", WRITE, card), { as: BOT })).not.toBeNull();
       expect(w.shown[0]!.fields.title).toEqual({ type: "text", text: "Laptop1 asks you to approve this" });
     });

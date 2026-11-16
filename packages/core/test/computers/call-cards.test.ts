@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { callBindingInput, cardContentInput, type SignedCardAnswer } from "@waifucave/clover-protocol";
+import { callBindingInput, cardContentInput, type SignedCardAnswer } from "@waifucave/moss-protocol";
 import { runCallCardTableConformance } from "../../src/contracts/conformance/approval-broker";
 import { CALL_CARD_CODE_MAX, callCardRenderer } from "../../src/computers/call-cards";
 import { nodeParts } from "../../src/computers/node-parts";
@@ -99,7 +99,7 @@ describe("the node's answers: a signed answer is fresh, and counts once, across 
 
   test("nodeParts builds the answers: the devices given, a ledger on disk, these tables", () => {
     const home = temp("lane-j-answers-");
-    const parts = nodeParts({ computer: () => "Studio", answers: { devices: { get: () => undefined, verifyAnswer: async () => false }, cloverHome: home, clock: { now: () => Date.now() } } });
+    const parts = nodeParts({ computer: () => "Studio", answers: { devices: { get: () => undefined, verifyAnswer: async () => false }, mossHome: home, clock: { now: () => Date.now() } } });
     expect(parts.answers!.ledger.claim("card_abcdefgh")).toBe(true);
     expect(new FileAnswerLedger(usedAnswersPath(home), { now: () => Date.now() }).claim("card_abcdefgh")).toBe(false);
     expect(Object.keys((JSON.parse(readFileSync(usedAnswersPath(home), "utf8")) as { used: object }).used)).toEqual(["card_abcdefgh"]);

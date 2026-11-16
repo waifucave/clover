@@ -1,0 +1,43 @@
+{
+  "manifest": 1,
+  "name": "Island",
+  "description": "What needs you, at the top of the screen: requests grow from the top centre, and an island with tabs for what waits, your usage and your devices.",
+  "engines": { "moss": "^1.0.0" },
+  "capabilities": ["approvals", "approvals.all", "bots.read", "overlay"],
+  "client": { "entry": "client/index.tsx" },
+  "contributes": {
+    "locales": [{ "lang": "en", "file": "locales/en.json" }],
+    "ui": [
+      {
+        "spot": "app.surface",
+        "id": "island",
+        "component": "IslandApp",
+        "title": "Island",
+        "window": {
+          "type": "overlay",
+          "alwaysOnTop": true,
+          "transparent": true,
+          "cards": true,
+          "placement": { "macos": "top-center", "windows": "top-center", "linux": "top-center" }
+        },
+        "declares": {
+          "island.tab": {
+            "shape": "list",
+            "props": { "type": "object", "properties": { "expanded": { "type": "boolean" } } }
+          },
+          "island.line": {
+            "shape": "list",
+            "fields": {
+              "type": "object",
+              "required": ["id", "handler"],
+              "properties": {
+                "id": { "type": "string" },
+                "handler": { "type": "string", "format": "handler" }
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

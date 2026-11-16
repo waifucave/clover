@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 async function setup() {
-  const home = mkdtempSync(join(tmpdir(), "clover-links-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-links-"));
   const fake: FakeDaemon = await startFakeDaemon({ home });
   const pair = new Pair({ endpoint: daemonEndpoint(home), hello: () => appHello(readAppToken(home, {})!, "0.0.0-test", 1), prove: { pid: process.pid } });
   await pair.start();
@@ -28,22 +28,22 @@ async function setup() {
   });
   cleanup.push(() => links.closeAll(), () => pair.stop(), () => fake.close(), () => rmSync(home, { recursive: true, force: true }));
   // The plugins the app's last `plugin.ui` list shows.
-  links.closeGone(new Set(["clover/panel-terminal", "vn"]));
+  links.closeGone(new Set(["moss/panel-terminal", "vn"]));
   return { home, links, events };
 }
 
 describe("a layer's connection to the core", () => {
   test("opened for its plugin: a layer token, the daemon's proof, then a hello as that plugin's layer", async () => {
     const { home, links, events } = await setup();
-    expect(await links.call("clover/panel-terminal", "terminal.open", { computer: "Laptop", cols: 80, rows: 24 })).toEqual({ terminalId: "term_1" });
+    expect(await links.call("moss/panel-terminal", "terminal.open", { computer: "Laptop", cols: 80, rows: 24 })).toEqual({ terminalId: "term_1" });
     const calls = readCalls(home).filter((c) => c.event === "request");
     expect(calls.map((c) => c.method)).toEqual(["protocol.prove", "protocol.hello", "layer.token", "protocol.prove", "protocol.hello", "terminal.open"]);
     expect(calls[4]).toMatchObject({ role: "layer" });
     // The output it subscribed to comes back on that connection, for that plugin.
     await new Promise((r) => setTimeout(r, 50));
-    expect(events).toContainEqual({ pluginId: "clover/panel-terminal", method: "core.event", params: expect.objectContaining({ type: "terminal_output", terminalId: "term_1" }) });
+    expect(events).toContainEqual({ pluginId: "moss/panel-terminal", method: "core.event", params: expect.objectContaining({ type: "terminal_output", terminalId: "term_1" }) });
     // One connection per plugin: the next call reuses it.
-    await links.call("clover/panel-terminal", "terminal.resize", { terminalId: "term_1", cols: 100, rows: 30 });
+    await links.call("moss/panel-terminal", "terminal.resize", { terminalId: "term_1", cols: 100, rows: 30 });
     expect(readCalls(home).filter((c) => c.method === "layer.token")).toHaveLength(1);
   });
 
@@ -52,15 +52,15 @@ describe("a layer's connection to the core", () => {
     expect(LAYER_METHODS.has("terminal.write")).toBe(true);
     for (const m of ["layer.token", "user.send", "app.quit", "pair.quit", "plugin.auth.signIn"]) {
       expect(LAYER_METHODS.has(m)).toBe(false);
-      await expect(links.call("clover/panel-terminal", m, {})).rejects.toThrow(`a layer doesn't call ${m}`);
+      await expect(links.call("moss/panel-terminal", m, {})).rejects.toThrow(`a layer doesn't call ${m}`);
     }
   });
 
   test("terminal.write goes only from the main process's own path: the general door refuses it, the app's really own way (the key and the paste checks onward) doesn't", async () => {
     const { home, links } = await setup();
-    await expect(links.call("clover/panel-terminal", "terminal.write", { terminalId: "t1", data: "whoami" })).rejects.toThrow("terminal.write goes only from the main process");
+    await expect(links.call("moss/panel-terminal", "terminal.write", { terminalId: "t1", data: "whoami" })).rejects.toThrow("terminal.write goes only from the main process");
     // The main process's own door: `terminalInput`'s own bytes.
-    await links.hand("clover/panel-terminal", "terminal.write", { terminalId: "t1", data: "no" });
+    await links.hand("moss/panel-terminal", "terminal.write", { terminalId: "t1", data: "no" });
     expect(readCalls(home).some((c) => c.method === "terminal.write")).toBe(true);
   });
 
@@ -79,25 +79,25 @@ describe("a plugin that no longer shows UI", () => {
   test("its connection closes, and only its; its next call, once it's back, opens a fresh one", async () => {
     const { home, links } = await setup();
     await links.call("vn", "bot.list", {}).catch(() => undefined);
-    await links.call("clover/panel-terminal", "terminal.open", { computer: "Laptop", cols: 80, rows: 24 });
+    await links.call("moss/panel-terminal", "terminal.open", { computer: "Laptop", cols: 80, rows: 24 });
     const tokens = () => readCalls(home).filter((c) => c.method === "layer.token").length;
     expect(tokens()).toBe(2);
     // vn is off: its connection closes; the terminal panel, still shown, keeps its own.
-    expect(links.closeGone(new Set(["clover/panel-terminal"]))).toEqual(["vn"]);
-    await links.call("clover/panel-terminal", "terminal.resize", { terminalId: "term_1", cols: 100, rows: 30 });
+    expect(links.closeGone(new Set(["moss/panel-terminal"]))).toEqual(["vn"]);
+    await links.call("moss/panel-terminal", "terminal.resize", { terminalId: "term_1", cols: 100, rows: 30 });
     expect(tokens()).toBe(2);
-    expect(links.closeGone(new Set(["clover/panel-terminal"]))).toEqual([]);
+    expect(links.closeGone(new Set(["moss/panel-terminal"]))).toEqual([]);
     // Still off (not in the list): it can't open its connection again; no layer token asked.
     await expect(links.call("vn", "bot.list", {})).rejects.toThrow("vn shows no UI now");
     expect(tokens()).toBe(2);
     // Back on, in the next list: a fresh connection.
-    links.closeGone(new Set(["clover/panel-terminal", "vn"]));
+    links.closeGone(new Set(["moss/panel-terminal", "vn"]));
     await links.call("vn", "bot.list", {}).catch(() => undefined);
     expect(tokens()).toBe(3);
   });
 
   test("before any plugin.ui list, no plugin gets a connection", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-links-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-links-"));
     const fake: FakeDaemon = await startFakeDaemon({ home });
     const links = new LayerLinks({ appClient: () => undefined, dial: () => dial(daemonEndpoint(home)), appToken: () => undefined, pid: process.pid, appVersion: "0.0.0-test", onEvent: () => {}, log: () => {} });
     cleanup.push(() => fake.close(), () => rmSync(home, { recursive: true, force: true }));
@@ -128,12 +128,12 @@ describe("a plugin's own events, latest-wins", () => {
     const box = new OwnEventMailbox((p, e) => got.push([p, e]), 5);
     const cue = (part: string, on: boolean) => ({ type: "plugin_ui_message", event: AVATAR_CUE_EVENT, value: { bot: "alpha", cue: { type: "outfit", part, on } } });
     const cues = [cue("lilac-dress", false), cue("yellow-raincoat", false), cue("navy-uniform", true)];
-    for (const c of cues) box.offer("clover", c);
+    for (const c of cues) box.offer("moss", c);
     box.offer("alpha", { type: "plugin_ui_message", event: AVATAR_CHANGED_EVENT, value: { kind: "catalogue", catalogue: { outfits: [] } } });
     box.offer("alpha", { type: "plugin_ui_message", event: AVATAR_CHANGED_EVENT, value: { kind: "box", box: { canvas: { width: 1, height: 1 } } } });
     box.offer("alpha", { type: "plugin_ui_message", event: AVATAR_CHANGED_EVENT, value: { kind: "box", box: { canvas: { width: 2, height: 2 } } } });
     box.flush();
-    expect(got.filter(([p]) => p === "clover").map(([, e]) => e)).toEqual(cues);
+    expect(got.filter(([p]) => p === "moss").map(([, e]) => e)).toEqual(cues);
     expect<unknown>(got.filter(([p]) => p === "alpha").map(([, e]) => (e as { value: unknown }).value)).toEqual([{ kind: "catalogue", catalogue: { outfits: [] } }, { kind: "box", box: { canvas: { width: 2, height: 2 } } }]);
   });
 });

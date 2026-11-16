@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { LEGACY_LAUNCHD_LABEL } from "@waifucave/clover-core";
+import { LEGACY_LAUNCHD_LABEL } from "@waifucave/moss-core";
 import { migrateFromLaunchdAgent, launchdLabel } from "../src/launchd";
 
 // C-M1 retired this file's own LaunchAgent installer (`installDaemon`, `renderPlist`, …): login start
-// is core's `platform/login/` behind `clover autostart`, tested in packages/core/test/platform/. What
+// is core's `platform/login/` behind `moss autostart`, tested in packages/core/test/platform/. What
 // stays here is the teardown of the historical pre-rename agent and the profile label.
 
 describe("migrateFromLaunchdAgent", () => {
@@ -41,11 +41,11 @@ describe("migrateFromLaunchdAgent", () => {
   // The historical agent's label (`LEGACY_LAUNCHD_LABEL`, `legacy-names.ts`) is NOT today's CURRENT
   // dist label (`launchdLabel("dist")`): the rename made those two strings different again after
   // briefly (and only textually) colliding. This teardown must keep targeting the pre-rename
-  // literal regardless of CLOVER_PROFILE, or of the product's own name — imported, never
+  // literal regardless of MOSS_PROFILE, or of the product's own name — imported, never
   // hardcoded (the residue test forbids the legacy literal outside `legacy-names.ts`).
-  test("keeps the historical literal label regardless of CLOVER_PROFILE", async () => {
-    const prev = process.env.CLOVER_PROFILE;
-    process.env.CLOVER_PROFILE = "dev";
+  test("keeps the historical literal label regardless of MOSS_PROFILE", async () => {
+    const prev = process.env.MOSS_PROFILE;
+    process.env.MOSS_PROFILE = "dev";
     let bootoutLabel: string | undefined;
     try {
       await migrateFromLaunchdAgent({
@@ -56,7 +56,7 @@ describe("migrateFromLaunchdAgent", () => {
         remove: () => {},
       });
     } finally {
-      if (prev === undefined) delete process.env.CLOVER_PROFILE; else process.env.CLOVER_PROFILE = prev;
+      if (prev === undefined) delete process.env.MOSS_PROFILE; else process.env.MOSS_PROFILE = prev;
     }
     expect(bootoutLabel).toBe(LEGACY_LAUNCHD_LABEL);
     expect(bootoutLabel).not.toBe(launchdLabel("dist"));
@@ -92,7 +92,7 @@ describe("migrateFromLaunchdAgent", () => {
 
 describe("launchd profile label", () => {
   test("label derives from profile, dist literal unchanged", () => {
-    expect(launchdLabel("dist")).toBe("com.waifucave.clover.core");
-    expect(launchdLabel("dev")).toBe("com.waifucave.clover.core.dev");
+    expect(launchdLabel("dist")).toBe("com.waifucave.moss.core");
+    expect(launchdLabel("dev")).toBe("com.waifucave.moss.core.dev");
   });
 });

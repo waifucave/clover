@@ -8,7 +8,7 @@
 //   its call's id until the call ends, then rejects `closed` (#179's review, S1); a `host` MCP server's API calls carry
 //   the id of the `tools/call` they were made while serving (an `AsyncLocalStorage` scope over its `onmessage`), and
 //   a call made outside any carries none and acts as the plugin.
-// * The core's id on an MCP request (`_meta["clover/invocation"]`) is taken off before the plugin's server sees it.
+// * The core's id on an MCP request (`_meta["moss/invocation"]`) is taken off before the plugin's server sees it.
 // * A listener (a watch's) stays here: the daemon gets `{ "$listener": true }`, answers with a subscription, and
 //   delivers values with `pluginHost.deliver`; the watch returns its `Unsubscribe` at once, as the SDK types say.
 // * Streams: a handler's async iterable goes back value by value (`pluginHost.chunk`, in order), its return value as
@@ -17,14 +17,14 @@
 // Modules come from `load`: in a plugin-host process, the plugin's built entry in its own worker; in the conformance
 // harness, modules a test defines.
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { Caller, HostProcess } from "@waifucave/clover-protocol";
+import type { Caller, HostProcess } from "@waifucave/moss-protocol";
 // What a host half's `api` has (the catalog's rule), shared with the contracts' fake host.
 import { apiHas, apiMemberValue, isDataFolder } from "./api-members";
 export { apiHas, apiMember, HARMLESS_KEYS, isDataFolder } from "./api-members";
 import { ContractError } from "../contracts/common";
 import { MCP_INVOCATION_META, resolveHandler } from "../contracts/plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../contracts/sdk-types";
-import { acceptStreams, openStream, pointStream, STREAM_CHUNK_MAX, type StreamsTransport } from "@waifucave/clover-plugin-sdk/streams";
+import { acceptStreams, openStream, pointStream, STREAM_CHUNK_MAX, type StreamsTransport } from "@waifucave/moss-plugin-sdk/streams";
 import { LISTENER_ARG } from "./api-channel";
 import type { RpcPeer } from "./link";
 import { WorkerFetches } from "./fetch-worker";
@@ -72,7 +72,7 @@ export interface InvokeParams {
 
 interface Running {
   module: HostModule;
-  /** `api.plugin`, as plain data (J's review: a callable proxy there broke `initialize` in clover/browser). */
+  /** `api.plugin`, as plain data (J's review: a callable proxy there broke `initialize` in moss/browser). */
   self: Readonly<{ id: string; namespace: string; version: string; computer: string; device?: string }>;
   /** `api.storage.dataFolder`: its data folder's path, as data (`<home>/plugin-data/<id>`, made before it starts). */
   dataFolder: string;
@@ -122,7 +122,7 @@ export interface HostRuntimeOptions {
 }
 
 /** The plugin-API call a rejection came from (`settings.get`), on the error a plugin's API call rejects with. */
-export const API_CALL_OF = Symbol.for("clover.pluginApiCall");
+export const API_CALL_OF = Symbol.for("moss.pluginApiCall");
 
 /** A failed plugin-API call's error, marked with the call: a plugin that doesn't await or catch it gets a line in its
  *  log naming the call (worker-main.ts), and its worker goes on. A failed call is the call's failure, never the
@@ -487,7 +487,7 @@ export class HostRuntime {
         } else if (e.type === "extended" && granted !== undefined && typeof e.until === "number") granted.until = e.until;
         else if (e.type === "ended") {
           finish();
-          if (granted === undefined) reject(apiFailure(new ContractError("cancelled", `${String(name)}: the take ended before its turn (its plugin stopped, or Clover closed)`), "turns.take"));
+          if (granted === undefined) reject(apiFailure(new ContractError("cancelled", `${String(name)}: the take ended before its turn (its plugin stopped, or MOSS closed)`), "turns.take"));
           else if (e.reason === "limit" || e.reason === "stopped") lostWith(e.reason);
         }
         try {

@@ -8,7 +8,7 @@ import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
 import type { UsageTracking } from "../../src/usage/service";
-import { readNewLines } from "@waifucave/clover-plugin-sdk/usage-source";
+import { readNewLines } from "@waifucave/moss-plugin-sdk/usage-source";
 import { stat } from "node:fs/promises";
 import { newService } from "./sources-harness";
 import {

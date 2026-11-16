@@ -45,7 +45,7 @@ export async function childStep(ctx: ExampleCtx, session: string): Promise<strin
     done.push(`its tool ${ping.called} answered "kids-pong"${ping.cards.length > 0 ? ` after ${ping.cards.length} card(s)` : " with no card"}`);
 
     // Its page, from its own sidebar button: drawn in a frame of the child's layer.
-    const layerDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://acceptance-kids"));
+    const layerDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith("moss-plugin://acceptance-kids"));
     let lastPress = 0;
     const page = await until("its page drawn in a frame of its own layer", 60_000, async () => {
       for (const d of await layerDocs()) {
@@ -82,10 +82,10 @@ export async function notifyStep(ctx: ExampleCtx, session: string): Promise<stri
   const { rpc } = ctx;
   const done: string[] = [];
   const banners = (id: string) => [...ctx.appLog().matchAll(SHOWN)].filter((m) => m[1] === id).length;
-  const ID = "clover/notifications:message:alpha";
+  const ID = "moss/notifications:message:alpha";
   try {
     await install(ctx);
-    if ((await stateOf(ctx, "clover/notifications")) !== "running") fail(`the desktop notifier is ${String(await stateOf(ctx, "clover/notifications"))}`);
+    if ((await stateOf(ctx, "moss/notifications")) !== "running") fail(`the desktop notifier is ${String(await stateOf(ctx, "moss/notifications"))}`);
     // The user's own turn: no banner for it.
     const before = banners(ID);
     await ctx.turn(session, "hello", 60_000);
@@ -96,7 +96,7 @@ export async function notifyStep(ctx: ExampleCtx, session: string): Promise<stri
     // is her message to the user.
     const ran = await rpc.request<{ result: { sent?: boolean } }>("command.run", { name: "acceptance-kids.nudge", args: { session } }, 30_000);
     if (ran.result?.sent !== true) fail(`the command answered ${JSON.stringify(ran)}`);
-    const notifierLog = async () => `the notifier's log: ${((await rpc.request<{ lines: string[] }>("plugin.logs", { id: "clover/notifications", lines: 12 }).catch(() => ({ lines: ["(unreadable)"] }))).lines.join(" | ") || "empty")}; the app log has ${[...ctx.appLog().matchAll(SHOWN)].map((m) => m[1]).join(", ") || "no notify lines"}`;
+    const notifierLog = async () => `the notifier's log: ${((await rpc.request<{ lines: string[] }>("plugin.logs", { id: "moss/notifications", lines: 12 }).catch(() => ({ lines: ["(unreadable)"] }))).lines.join(" | ") || "empty")}; the app log has ${[...ctx.appLog().matchAll(SHOWN)].map((m) => m[1]).join(", ") || "no notify lines"}`;
     await until(`the desktop notifier asked to show ${ID}`, 60_000, async () => (banners(ID) > before ? true : undefined), notifierLog);
     done.push(`the child's command made Alpha's turn (not the user's); when it ended the desktop notifier was asked to show ${ID} (the headless app showed none and said so)`);
     return done.join("; ");

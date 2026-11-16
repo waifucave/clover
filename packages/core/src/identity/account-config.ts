@@ -5,10 +5,10 @@
 //     are the device key and the box key.
 //
 // The settings come from, in order:
-//   1. The environment (`CLOVER_ACCOUNT_*`, `CLOVER_HANDSHAKE_URL`), in dev and test builds only. A release build
-//      ignores them and says so once (`build-kind.ts`): anything that can start `clover-core` could otherwise point the
+//   1. The environment (`MOSS_ACCOUNT_*`, `MOSS_HANDSHAKE_URL`), in dev and test builds only. A release build
+//      ignores them and says so once (`build-kind.ts`): anything that can start `moss-core` could otherwise point the
 //      device's sign-in and its device key's statements at a server of its choosing.
-//   2. `<clover home>/account.json`, read strictly: an unknown key (a token or secret put there by mistake included)
+//   2. `<moss home>/account.json`, read strictly: an unknown key (a token or secret put there by mistake included)
 //      refuses the whole file, which is then not used. A release build takes from it only the settings production
 //      leaves unset (today the sign-in project's, `authUrl` and `anonKey`, both public), never the account service or
 //      the handshake, and says once that it did; once production has them all, a release build ignores the file.
@@ -27,7 +27,7 @@ import type { PairingRendezvous } from "../links/pairing";
 import { AccountClient, type AccountConfig } from "./account";
 import { DeviceKey } from "./device-key";
 
-/** The file in the Clover home. */
+/** The file in the MOSS home. */
 export const ACCOUNT_CONFIG_FILE = "account.json";
 
 /** The account service's production origin (services/accounts/PROTOCOL.md, "Where it lives"). */
@@ -35,11 +35,11 @@ export const PRODUCTION_ACCOUNT_SERVICE = "https://waifucave.com/auth";
 
 /** The settings, and the environment variable that overrides each in dev and test builds. */
 export const ACCOUNT_SETTINGS = {
-  authUrl: "CLOVER_ACCOUNT_AUTH_URL",
-  anonKey: "CLOVER_ACCOUNT_ANON_KEY",
-  serviceUrl: "CLOVER_ACCOUNT_SERVICE_URL",
-  emailSignInUrl: "CLOVER_ACCOUNT_EMAIL_SIGN_IN_URL",
-  handshakeUrl: "CLOVER_HANDSHAKE_URL",
+  authUrl: "MOSS_ACCOUNT_AUTH_URL",
+  anonKey: "MOSS_ACCOUNT_ANON_KEY",
+  serviceUrl: "MOSS_ACCOUNT_SERVICE_URL",
+  emailSignInUrl: "MOSS_ACCOUNT_EMAIL_SIGN_IN_URL",
+  handshakeUrl: "MOSS_HANDSHAKE_URL",
 } as const;
 
 export type AccountSetting = keyof typeof ACCOUNT_SETTINGS;
@@ -69,7 +69,7 @@ export interface ResolvedAccountConfig {
 }
 
 export interface ResolveAccountConfigOptions {
-  /** The Clover home, where `account.json` lives. */
+  /** The MOSS home, where `account.json` lives. */
   home: string;
   env?: Record<string, string | undefined>;
   /** Tests only. The daemon never passes this, and nothing derives it from the environment: it defaults to the

@@ -1,5 +1,5 @@
 {
-  "name": "@waifucave/clover-core",
+  "name": "@waifucave/moss-core",
   "version": "0.124.0",
   "private": true,
   "license": "Apache-2.0",
@@ -16,8 +16,8 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@waifucave/clover-protocol": "workspace:*",
-    "@waifucave/clover-plugin-sdk": "workspace:*",
+    "@waifucave/moss-protocol": "workspace:*",
+    "@waifucave/moss-plugin-sdk": "workspace:*",
     "@waifucave/clover-agent-sdk": "0.0.80",
     "@waifucave/clover-agent-runtime": "0.0.80",
     "@waifucave/clover-provider-catalog": "0.0.80",
@@ -27,13 +27,13 @@
   },
   "devDependencies": {
     "@waifucave/clover-provider-conformance": "0.0.80",
-    "@waifucave/clover-service-shared": "workspace:*",
-    "@waifucave/clover-test-harness": "workspace:*"
+    "@waifucave/moss-service-shared": "workspace:*",
+    "@waifucave/moss-test-harness": "workspace:*"
   },
   "optionalDependencies": {
     "@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55"
   },
-  "cloverCi": {
+  "mossCi": {
     "os": [
       "macos"
     ],

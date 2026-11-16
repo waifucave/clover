@@ -1,9 +1,9 @@
 {
-  "name": "@waifucave/clover-service-push",
+  "name": "@waifucave/moss-service-push",
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "waifucave push: content-free \"you have N updates\" pushes to the user's phones (APNs) and browsers (Web Push), for the clover/push notifier.",
+  "description": "waifucave push: content-free \"you have N updates\" pushes to the user's phones (APNs) and browsers (Web Push), for the moss/push notifier.",
   "type": "module",
   "scripts": {
     "test": "vitest run",

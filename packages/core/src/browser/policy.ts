@@ -1,4 +1,4 @@
-// What the Clover Browser's API lets through, decided in the core before anything reaches the app (spec §12.1).
+// What the MOSS Browser's API lets through, decided in the core before anything reaches the app (spec §12.1).
 // The app checks again where it can (its own allow list on each tab's debugger, and each partition's session
 // refusing schemes), so a bug on one side never opens the door alone.
 import { createHash } from "node:crypto";

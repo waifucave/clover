@@ -14,7 +14,7 @@ import { dirname } from "node:path";
 const inside = (p: string, root: string) => p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
 
 /** Makes the missing folders strictly between a writable root (`roots`) and each item (for an `agentOwned` one, its
- *  folder's parent), outside `skip` (the Clover home, which the core lays out itself). POSIX only; returns the folders
+ *  folder's parent), outside `skip` (the MOSS home, which the core lays out itself). POSIX only; returns the folders
  *  it made. */
 export function makeHolderFolders(items: readonly string[], roots: readonly string[], skip?: string, agentOwned: readonly string[] = []): string[] {
   if (process.platform === "win32") return [];

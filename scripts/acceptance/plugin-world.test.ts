@@ -1,5 +1,5 @@
 // The run's fake plugin index and npm registry, as the daemon's pinned fetch reaches them through the source seam
-// (fake-exa.ts searchOnlySeam with a plugin world): an index lists what was published, with the tree hash Clover
+// (fake-exa.ts searchOnlySeam with a plugin world): an index lists what was published, with the tree hash MOSS
 // computes; the download is that tarball; npm's record names an https tarball with a SHA-512 integrity that matches.
 import { afterAll, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
@@ -12,13 +12,13 @@ import { npmPackageUrl, npmVersionOf } from "../../packages/core/src/registry/in
 import { searchOnlySeam } from "./fake-exa";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm, treeHashOf } from "./plugin-world";
 
-const world = mkdtempSync(join(tmpdir(), "clover-acceptance-world-"));
+const world = mkdtempSync(join(tmpdir(), "moss-acceptance-world-"));
 afterAll(() => rmSync(world, { recursive: true, force: true }));
 const refused: string[] = [];
 const fetchVia = httpsFetch(5_000, pinnedFetch(searchOnlySeam({ calls: [], handle: async () => new Response("no") } as never, (h) => refused.push(h), world)));
-const files = (v: string) => ({ "clover.json": JSON.stringify({ manifest: 1, id: "acceptance-indexed", name: "Indexed", version: v, engines: { clover: "^1.0.0" } }) });
+const files = (v: string) => ({ "moss.json": JSON.stringify({ manifest: 1, id: "acceptance-indexed", name: "Indexed", version: v, engines: { moss: "^1.0.0" } }) });
 
-test("the fake index lists each version published, with Clover's tree hash and its download", async () => {
+test("the fake index lists each version published, with MOSS's tree hash and its download", async () => {
   await publishIndexVersion(world, "acceptance-indexed", "1.0.0", files("1.0.0"));
   await publishIndexVersion(world, "acceptance-indexed", "1.1.0", files("1.1.0"));
   const index = JSON.parse(new TextDecoder().decode(await fetchVia(FAKE_INDEX_URL, 1_000_000)));

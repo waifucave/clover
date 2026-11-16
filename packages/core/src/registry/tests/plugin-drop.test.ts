@@ -1,5 +1,5 @@
-// The drop (the owner's ask on try 14c: "the bot can also just move them to the plugins location and clover would index
-// it automatically and ask the ok"). A folder that appears in the plugins folder while Clover runs is read once its tree
+// The drop (the owner's ask on try 14c: "the bot can also just move them to the plugins location and moss would index
+// it automatically and ask the ok"). A folder that appears in the plugins folder while MOSS runs is read once its tree
 // has settled and asked about at once with the sealed OK card; a bot's session that made it is named as its builder (the
 // same "Built by" card as `PluginInstall`, and the workshop's edit rights after the OK); one nobody claimed is an ordinary
 // found plugin. A folder already there at start keeps its card on the user's switch. A card always shows the tree as last
@@ -12,7 +12,7 @@ setDefaultTimeout(90_000);
 import { cpSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/moss-plugin-sdk";
 import { RegistryCore, type OkCardRaiser } from "../core";
 import { validatePluginFolder } from "../validate";
 import { PluginFolders, builtByText } from "../folders";
@@ -24,7 +24,7 @@ afterEach(() => { for (const s of stops.splice(0)) s(); });
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 
 const SETTLE = 200;
-const manifest = (id: string) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } });
+const manifest = (id: string) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` } });
 function write(dir: string, files: Record<string, string>): void {
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -34,9 +34,9 @@ function write(dir: string, files: Record<string, string>): void {
 
 interface Raised { id: string; treeHash: string; card: string; answered: (a: { approved: boolean }) => void; signal?: AbortSignal }
 
-/** A Clover home whose registry runs and watches its plugins folder, with the cards it raises. */
+/** A MOSS home whose registry runs and watches its plugins folder, with the cards it raises. */
 function world(before: Record<string, Record<string, string>> = {}, bundled: Record<string, Record<string, string>> = {}) {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-drop-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-drop-")));
   temps.push(home);
   const pluginsDir = join(home, "plugins");
   mkdirSync(pluginsDir, { recursive: true });
@@ -76,7 +76,7 @@ test("a bot's folder moved into the plugins folder: found, its OK card raised at
   const w = world();
   await w.start();
   const scratch = join(w.home, "scratch", "alpha", "xtool");
-  write(scratch, { "clover.json": manifest("xtool"), "README.md": "xtool" });
+  write(scratch, { "moss.json": manifest("xtool"), "README.md": "xtool" });
   // The bot's session made it (the driver's before/after look at its shell call claims the name).
   renameSync(scratch, join(w.pluginsDir, "xtool"));
   expect(w.folders.dropped("xtool", "alpha")).toBe(true);
@@ -93,11 +93,11 @@ test("a bot's folder moved into the plugins folder: found, its OK card raised at
   expect(w.core.get("xtool")!.okHash).toBe(w.core.get("xtool")!.treeHash);
 });
 
-test("a folder the user drops while Clover runs: an ordinary found plugin with its card at once; one there at start waits for the switch", async () => {
-  const w = world({ old: { "clover.json": manifest("old") } });
+test("a folder the user drops while MOSS runs: an ordinary found plugin with its card at once; one there at start waits for the switch", async () => {
+  const w = world({ old: { "moss.json": manifest("old") } });
   await w.start();
   expect(w.core.get("old")).toMatchObject({ state: "found" });
-  write(join(w.pluginsDir, "mine"), { "clover.json": manifest("mine") });
+  write(join(w.pluginsDir, "mine"), { "moss.json": manifest("mine") });
   await until(() => w.live().some((r) => r.id === "mine"), "mine's card");
   expect(w.core.get("mine")).toMatchObject({ state: "found", provenance: { by: "found" } });
   expect(w.folders.okText("mine", "macos").source).not.toBe(builtByText("Alpha"));
@@ -122,13 +122,13 @@ test("a copy that takes longer than the settle time: no card before its manifest
     await Bun.sleep(SETTLE);
   }
   expect(w.raised.filter((r) => r.id === "slow")).toEqual([]);
-  write(dest, { "clover.json": manifest("slow") });
+  write(dest, { "moss.json": manifest("slow") });
   await until(() => w.live().some((r) => r.id === "slow"), "slow's card");
   expect(w.core.get("slow")!.provenance).toMatchObject({ by: "bot", bot: "alpha" });
   // The manifest first and the rest slowly: whatever was asked on the way, the one card left waiting is the whole tree.
   const later = join(w.pluginsDir, "later");
   mkdirSync(later, { recursive: true });
-  write(later, { "clover.json": manifest("later") });
+  write(later, { "moss.json": manifest("later") });
   for (let i = 0; i < 6; i++) {
     write(later, { [`part${i}.txt`]: "x".repeat(1000) });
     await Bun.sleep(SETTLE / 2);
@@ -144,7 +144,7 @@ test("a copy that takes longer than the settle time: no card before its manifest
 test("a folder that changes while its card waits: the old card goes, a new one shows the new tree, and an OK of the old tree applies nothing", async () => {
   const w = world();
   await w.start();
-  write(join(w.pluginsDir, "moving"), { "clover.json": manifest("moving"), "a.txt": "1" });
+  write(join(w.pluginsDir, "moving"), { "moss.json": manifest("moving"), "a.txt": "1" });
   await until(() => w.live().some((r) => r.id === "moving"), "the first card");
   const first = w.live().find((r) => r.id === "moving")!;
   write(join(w.pluginsDir, "moving"), { "a.txt": "2" });
@@ -158,18 +158,18 @@ test("a folder that changes while its card waits: the old card goes, a new one s
 });
 
 test("a name another bot claimed too is nobody's; a name the records hold already isn't a drop", async () => {
-  const w = world({ old: { "clover.json": manifest("old") } });
+  const w = world({ old: { "moss.json": manifest("old") } });
   await w.start();
   expect(w.folders.dropped("old", "alpha")).toBe(false);
   expect(w.folders.dropped("both", "alpha")).toBe(true);
   expect(w.folders.dropped("both", "luna")).toBe(false);
   expect(w.folders.dropped("both", "alpha")).toBe(false);
-  write(join(w.pluginsDir, "both"), { "clover.json": manifest("both") });
+  write(join(w.pluginsDir, "both"), { "moss.json": manifest("both") });
   await until(() => w.live().some((r) => r.id === "both"), "both's card");
   expect(w.core.get("both")!.provenance).toMatchObject({ by: "found" });
   // A copy of a folder, `cp -R`, the same as a move.
   const src = join(w.home, "scratch", "alpha", "copied");
-  write(src, { "clover.json": manifest("copied") });
+  write(src, { "moss.json": manifest("copied") });
   cpSync(src, join(w.pluginsDir, "copied"), { recursive: true });
   w.folders.dropped("copied", "alpha");
   await until(() => w.live().some((r) => r.id === "copied"), "copied's card");
@@ -177,13 +177,13 @@ test("a name another bot claimed too is nobody's; a name the records hold alread
 });
 
 test("a folder named like a bundled plugin (a bot's mv, or the user's copy) is not a plugin: ignored with a log line, no card, the bundled one stays", async () => {
-  const w = world({}, { alpha: { "clover.json": manifest("alpha") } });
+  const w = world({}, { alpha: { "moss.json": manifest("alpha") } });
   await w.start();
   expect(w.core.get("alpha")).toMatchObject({ provenance: { by: "bundled" } });
   const bundledHash = w.core.get("alpha")!.treeHash;
   // A bot's `mv` of a folder it named `alpha`.
   const scratch = join(w.home, "scratch", "alpha", "alpha");
-  write(scratch, { "clover.json": manifest("alpha"), "README.md": "not the bundled one" });
+  write(scratch, { "moss.json": manifest("alpha"), "README.md": "not the bundled one" });
   renameSync(scratch, join(w.pluginsDir, "alpha"));
   expect(w.folders.dropped("alpha", "alpha")).toBe(false);
   // The user's copy of one named like another bundled id behaves the same; nothing is read for either. Its read is

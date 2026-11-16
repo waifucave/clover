@@ -9,9 +9,9 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { fenceContextFor, policyAllows, type FenceOp } from "../../src/contracts/fence";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
 import { botSandboxSettings, KEPT_FOLDER_PIN, sandboxSettingsOf } from "../../src/fence/sandbox-settings";
@@ -28,8 +28,8 @@ const CODING: Caller = { kind: "session", sessionId: "s_code", sessionKind: "cod
 const PLUGIN: Caller = { kind: "plugin", pluginId: "luna-cutter" };
 
 const HOME = "/Users/me";
-const CLOVER = `${HOME}/.clover`;
-const CUTTER = `${CLOVER}/plugins/luna-cutter`;
+const MOSS = `${HOME}/.moss`;
+const CUTTER = `${MOSS}/plugins/luna-cutter`;
 
 /** The registry's install records: luna built `luna-cutter`; `fish-audio` came from an index. */
 function records(built: { id: string; bot?: string }[]) {
@@ -46,12 +46,12 @@ function records(built: { id: string; bot?: string }[]) {
 }
 
 function fence(os: "macos" | "linux" = "macos") {
-  const f = new CloverFence({ os, home: HOME, cloverHome: CLOVER, temp: "/tmp", canonical: (p) => p });
+  const f = new MossFence({ os, home: HOME, mossHome: MOSS, temp: "/tmp", canonical: (p) => p });
   const reg = records([{ id: "luna-cutter", bot: "luna" }, { id: "fish-audio" }, { id: "sol-tool", bot: "sol" }]);
   f.followWorkshop(reg);
   return { f, reg };
 }
-const may = (f: CloverFence, as: Caller, op: FenceOp) => f.forCaller(as).check(op).allowed;
+const may = (f: MossFence, as: Caller, op: FenceOp) => f.forCaller(as).check(op).allowed;
 
 describe("the workshop: a bot writes inside the plugins it built", () => {
   test("its main conversation and side threads write, remove and move inside its plugin", () => {
@@ -64,7 +64,7 @@ describe("the workshop: a bot writes inside the plugins it built", () => {
       // Its own dependencies inside its plugin (a `bun install` there).
       expect(may(f, as, { op: "write", path: `${CUTTER}/node_modules/x/index.js` })).toBe(true);
       // In another case, on a disk that folds names.
-      expect(may(f, as, { op: "write", path: `${CLOVER}/Plugins/Luna-Cutter/src/x.ts` })).toBe(true);
+      expect(may(f, as, { op: "write", path: `${MOSS}/Plugins/Luna-Cutter/src/x.ts` })).toBe(true);
       // Reads, as before (a bot reads the home).
       expect(may(f, as, { op: "read", path: `${CUTTER}/src/main.ts` })).toBe(true);
     }
@@ -73,13 +73,13 @@ describe("the workshop: a bot writes inside the plugins it built", () => {
   test("never the plugin's folder itself, a .git in it, another plugin, the plugins folder or a node_modules above it", () => {
     const { f } = fence();
     for (const op of [
-      { op: "delete", path: CUTTER }, { op: "write", path: CUTTER }, { op: "move", path: CUTTER, to: `${CLOVER}/plugins/elsewhere` },
-      { op: "move", path: `${CLOVER}/scratch/luna/x`, to: CUTTER },
+      { op: "delete", path: CUTTER }, { op: "write", path: CUTTER }, { op: "move", path: CUTTER, to: `${MOSS}/plugins/elsewhere` },
+      { op: "move", path: `${MOSS}/scratch/luna/x`, to: CUTTER },
       { op: "write", path: `${CUTTER}/.git/config` }, { op: "write", path: `${CUTTER}/.git/hooks/pre-commit` }, { op: "write", path: `${CUTTER}/sub/.GIT/HEAD` },
-      { op: "write", path: `${CLOVER}/plugins/fish-audio/index.ts` }, { op: "write", path: `${CLOVER}/plugins/sol-tool/index.ts` },
-      { op: "write", path: `${CLOVER}/plugins/new.json` }, { op: "delete", path: `${CLOVER}/plugins` },
-      { op: "write", path: `${CLOVER}/plugins/node_modules/evil/index.js` }, { op: "write", path: `${CLOVER}/node_modules/evil/index.js` },
-      { op: "write", path: `${CLOVER}/plugins-state/installed.json` },
+      { op: "write", path: `${MOSS}/plugins/fish-audio/index.ts` }, { op: "write", path: `${MOSS}/plugins/sol-tool/index.ts` },
+      { op: "write", path: `${MOSS}/plugins/new.json` }, { op: "delete", path: `${MOSS}/plugins` },
+      { op: "write", path: `${MOSS}/plugins/node_modules/evil/index.js` }, { op: "write", path: `${MOSS}/node_modules/evil/index.js` },
+      { op: "write", path: `${MOSS}/plugins-state/installed.json` },
       // Out of the plugin through `..`: judged where it lands.
       { op: "write", path: `${CUTTER}/../fish-audio/index.ts` },
     ] as FenceOp[]) {
@@ -93,7 +93,7 @@ describe("the workshop: a bot writes inside the plugins it built", () => {
       expect([as, may(f, as, { op: "write", path: `${CUTTER}/src/main.ts` })]).toEqual([as, false]);
     }
     // Sol's own plugin is Sol's.
-    expect(may(f, SOL, { op: "write", path: `${CLOVER}/plugins/sol-tool/index.ts` })).toBe(true);
+    expect(may(f, SOL, { op: "write", path: `${MOSS}/plugins/sol-tool/index.ts` })).toBe(true);
   });
 
   test("the records decide, read at each check: a removed plugin or a changed record closes it", () => {
@@ -108,11 +108,11 @@ describe("the workshop: a bot writes inside the plugins it built", () => {
     // registry indexes and asks the OK for (plugin-drop tests); an existing folder no record names stays refused below.
     reg.set([]);
     expect(may(f, LUNA, { op: "write", path: `${CUTTER}/a.ts` })).toBe(true);
-    const bare = new CloverFence({ os: "macos", home: HOME, cloverHome: CLOVER, temp: "/tmp", canonical: (p) => p });
+    const bare = new MossFence({ os: "macos", home: HOME, mossHome: MOSS, temp: "/tmp", canonical: (p) => p });
     expect(may(bare, LUNA, { op: "write", path: `${CUTTER}/a.ts` })).toBe(true);
     // An id that isn't a plugin id never builds a way in.
-    const odd = new CloverFence({ os: "macos", home: HOME, cloverHome: CLOVER, temp: "/tmp", canonical: (p) => p, workshopOf: () => ["..", "../settings", ""] });
-    expect(may(odd, LUNA, { op: "write", path: `${CLOVER}/settings.json` })).toBe(false);
+    const odd = new MossFence({ os: "macos", home: HOME, mossHome: MOSS, temp: "/tmp", canonical: (p) => p, workshopOf: () => ["..", "../settings", ""] });
+    expect(may(odd, LUNA, { op: "write", path: `${MOSS}/settings.json` })).toBe(false);
     expect(odd.policy(fenceContextFor(LUNA)).ownPlugins).toBeUndefined();
   });
 
@@ -121,21 +121,21 @@ describe("the workshop: a bot writes inside the plugins it built", () => {
       const { f } = fence(os);
       const policy = f.forCaller(LUNA).policy();
       expect(policy.ownPlugins).toEqual([CUTTER]);
-      expect(f.forCaller(SOL).policy().ownPlugins).toEqual([`${CLOVER}/plugins/sol-tool`]);
+      expect(f.forCaller(SOL).policy().ownPlugins).toEqual([`${MOSS}/plugins/sol-tool`]);
       for (const as of [LUNA_AGENT, CODING, PLUGIN]) expect(f.forCaller(as).policy().ownPlugins).toBeUndefined();
       expect(policyAllows(policy, "write", `${CUTTER}/src/a.ts`, os)).toBe(true);
       expect(policyAllows(policy, "write", `${CUTTER}/.git/config`, os)).toBe(false);
       expect(policyAllows(policy, "rename", CUTTER, os)).toBe(false);
       expect(policyAllows(policy, "unlink", CUTTER, os)).toBe(false);
-      expect(policyAllows(policy, "write", `${CLOVER}/plugins/fish-audio/a.ts`, os)).toBe(false);
+      expect(policyAllows(policy, "write", `${MOSS}/plugins/fish-audio/a.ts`, os)).toBe(false);
       // The bot's Bash sandbox (the runtime's settings): the plugin kept, its own entry pinned, the plugins folder's
       // other entries still denied.
-      const disk: Record<string, string[]> = { [`${CLOVER}/plugins`]: ["luna-cutter", "fish-audio", "sol-tool"], [CLOVER]: ["plugins", "scratch", "bots"] };
-      const fs = sandboxSettingsOf(policy, CLOVER, { list: (d) => disk[d] ?? [], plain: () => true, file: () => false }).filesystem!;
+      const disk: Record<string, string[]> = { [`${MOSS}/plugins`]: ["luna-cutter", "fish-audio", "sol-tool"], [MOSS]: ["plugins", "scratch", "bots"] };
+      const fs = sandboxSettingsOf(policy, MOSS, { list: (d) => disk[d] ?? [], plain: () => true, file: () => false }).filesystem!;
       expect(fs.allowWrite).toContain(CUTTER);
       expect(fs.denyWrite).toContain(`${CUTTER}/${KEPT_FOLDER_PIN}`);
-      expect(fs.denyWrite).toContain(`${CLOVER}/plugins/fish-audio`);
-      expect(fs.denyWrite).not.toContain(`${CLOVER}/plugins`);
+      expect(fs.denyWrite).toContain(`${MOSS}/plugins/fish-audio`);
+      expect(fs.denyWrite).not.toContain(`${MOSS}/plugins`);
     }
   });
 });
@@ -148,28 +148,28 @@ afterAll(() => {
   }
 });
 
-/** A user's home on this disk, its Clover home with Luna's plugin and another, and the fence following their records. */
+/** A user's home on this disk, its MOSS home with Luna's plugin and another, and the fence following their records. */
 function onDisk() {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "workshop-home-")));
   const t = { dir: home, locked: [] as string[] };
   temps.push(t);
-  const clover = join(home, ".clover");
-  for (const d of ["plugins/luna-cutter/src", "plugins/fish-audio", "scratch/luna", "bots/luna/memory", "Desktop", "Library/Mail/V10"]) mkdirSync(join(d.startsWith("Desktop") || d.startsWith("Library") ? home : clover, d), { recursive: true });
-  writeFileSync(join(clover, "plugins/luna-cutter/manifest.json"), "{}");
-  writeFileSync(join(clover, "plugins/fish-audio/manifest.json"), "{}");
-  const f = new CloverFence({ home, cloverHome: clover, temp: join(home, "fence-temp") });
+  const moss = join(home, ".moss");
+  for (const d of ["plugins/luna-cutter/src", "plugins/fish-audio", "scratch/luna", "bots/luna/memory", "Desktop", "Library/Mail/V10"]) mkdirSync(join(d.startsWith("Desktop") || d.startsWith("Library") ? home : moss, d), { recursive: true });
+  writeFileSync(join(moss, "plugins/luna-cutter/manifest.json"), "{}");
+  writeFileSync(join(moss, "plugins/fish-audio/manifest.json"), "{}");
+  const f = new MossFence({ home, mossHome: moss, temp: join(home, "fence-temp") });
   f.followWorkshop(records([{ id: "luna-cutter", bot: "luna" }, { id: "fish-audio" }]));
-  return { home, clover, f, cutter: join(clover, "plugins", "luna-cutter"), lock: (rel: string) => { chmodSync(join(home, rel), 0o000); t.locked.push(join(home, rel)); } };
+  return { home, moss, f, cutter: join(moss, "plugins", "luna-cutter"), lock: (rel: string) => { chmodSync(join(home, rel), 0o000); t.locked.push(join(home, rel)); } };
 }
 
 describe("the workshop on the holder (every computer's tree)", () => {
   test("Luna's sessions write, move and remove inside its plugin through the tree; the folder, a .git and another plugin refuse", async () => {
-    const { home, clover, f, cutter } = onDisk();
+    const { home, moss, f, cutter } = onDisk();
     const h = new LocalHolder({
-      clock: { now: () => Date.now() }, name: () => "Studio", home, os: hostOs(), cloverHome: clover, botsRoot: join(clover, "bots"),
+      clock: { now: () => Date.now() }, name: () => "Studio", home, os: hostOs(), mossHome: moss, botsRoot: join(moss, "bots"),
       runsBot: (b) => b === "luna" || b === "sol", fence: f,
     });
-    const at = (rel: string) => `home/Studio/.clover/plugins/luna-cutter/${rel}`;
+    const at = (rel: string) => `home/Studio/.moss/plugins/luna-cutter/${rel}`;
     const utf8 = (text: string) => ({ encoding: "utf8" as const, text });
     const code = async (p: Promise<unknown>) => ((await p.then(() => undefined, (e: unknown) => e)) as { code?: string } | undefined)?.code ?? "ok";
     for (const as of [LUNA, LUNA_SIDE]) {
@@ -180,8 +180,8 @@ describe("the workshop on the holder (every computer's tree)", () => {
       expect(existsSync(join(cutter, "src/index.ts"))).toBe(false);
     }
     expect(await code(h.write(at(".git/config"), utf8("x"), { as: LUNA }))).toBe("fenced");
-    expect(await code(h.remove("home/Studio/.clover/plugins/luna-cutter", { as: LUNA, recursive: true }))).toBe("fenced");
-    expect(await code(h.write("home/Studio/.clover/plugins/fish-audio/index.ts", utf8("x"), { as: LUNA }))).toBe("fenced");
+    expect(await code(h.remove("home/Studio/.moss/plugins/luna-cutter", { as: LUNA, recursive: true }))).toBe("fenced");
+    expect(await code(h.write("home/Studio/.moss/plugins/fish-audio/index.ts", utf8("x"), { as: LUNA }))).toBe("fenced");
     for (const as of [SOL, LUNA_AGENT, CODING]) expect([as, await code(h.write(at("src/x.ts"), utf8("x"), { as }))]).toEqual([as, "fenced"]);
     expect(existsSync(join(cutter, "manifest.json"))).toBe(true);
   });
@@ -199,39 +199,39 @@ async function runtimeCheck(): Promise<(path: string, access: "read" | "write", 
 }
 
 darwinDescribe("the workshop in the sandboxes, on a Mac", () => {
-  test("the bot's file tools, as the runtime checks them, with ~/Library/Mail closed to Clover: inside its plugin yes; .git, the pin and another plugin no", async () => {
+  test("the bot's file tools, as the runtime checks them, with ~/Library/Mail closed to MOSS: inside its plugin yes; .git, the pin and another plugin no", async () => {
     const allowed = await runtimeCheck();
-    const { home, clover, f, cutter, lock } = onDisk();
+    const { home, moss, f, cutter, lock } = onDisk();
     lock("Library/Mail");
-    const drawn = botSandboxSettings(f.forCaller(LUNA).policy(), { cloverHome: clover, userHome: home, level: undefined, ownFolders: [join(clover, "scratch", "luna")], pathFolders: [] });
+    const drawn = botSandboxSettings(f.forCaller(LUNA).policy(), { mossHome: moss, userHome: home, level: undefined, ownFolders: [join(moss, "scratch", "luna")], pathFolders: [] });
     expect(drawn.filesystem!.allowWrite).toContain(cutter);
     const s = botSandbox(drawn, { userHome: home, os: "macos" });
     expect(allowed(join(cutter, "src", "main.ts"), "write", s)).toBe(true);
     expect(allowed(join(home, "Desktop", "a.md"), "write", s)).toBe(true);
-    for (const p of [join(cutter, ".git", "config"), join(cutter, KEPT_FOLDER_PIN), join(clover, "plugins", "fish-audio", "x.ts"), join(home, "Library/Mail/V10/x")]) {
+    for (const p of [join(cutter, ".git", "config"), join(cutter, KEPT_FOLDER_PIN), join(moss, "plugins", "fish-audio", "x.ts"), join(home, "Library/Mail/V10/x")]) {
       expect([p, allowed(p, "write", s)]).toEqual([p, false]);
     }
   });
 
   darwinTest("the fenced process's profile (a bot's Bash on a computer it doesn't run on), live under sandbox-exec", () => {
-    const { home, clover, f, cutter } = onDisk();
+    const { home, moss, f, cutter } = onDisk();
     const ctx = f.contextFor(LUNA);
     const policy = f.policy(ctx);
-    const profile = macFenceProfile({ cloverHome: clover, home, perUserTemp: null, caller: callerPlaces(clover, "macos", ctx), policy });
+    const profile = macFenceProfile({ mossHome: moss, home, perUserTemp: null, caller: callerPlaces(moss, "macos", ctx), policy });
     const sh = (script: string, ...args: string[]) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", script, "sh", ...args], { encoding: "utf8" });
     const made = sh('printf x > "$1/a.ts" && mkdir "$1/lib" && printf y > "$1/lib/b.ts"', join(cutter, "src")); expect([made.status, made.stderr]).toEqual([0, ""]);
     expect(readFileSync(join(cutter, "src", "a.ts"), "utf8")).toBe("x");
     expect(readFileSync(join(cutter, "src", "lib", "b.ts"), "utf8")).toBe("y");
     expect(sh('mkdir "$1"', join(cutter, ".git")).status).not.toBe(0);
     expect(existsSync(join(cutter, ".git"))).toBe(false);
-    expect(sh('mv "$1" "$2"', cutter, join(clover, "plugins", "moved")).status).not.toBe(0);
+    expect(sh('mv "$1" "$2"', cutter, join(moss, "plugins", "moved")).status).not.toBe(0);
     // `rm -rf` empties it (its insides are the bot's) but the folder itself stays.
     expect(sh('rm -rf "$1"', cutter).status).not.toBe(0);
     expect(existsSync(cutter)).toBe(true);
-    expect(sh('printf x > "$1"', join(clover, "plugins", "fish-audio", "x.ts")).status).not.toBe(0);
+    expect(sh('printf x > "$1"', join(moss, "plugins", "fish-audio", "x.ts")).status).not.toBe(0);
     // Sol's sandbox reaches none of it.
     const solCtx = f.contextFor(SOL);
-    const solProfile = macFenceProfile({ cloverHome: clover, home, perUserTemp: null, caller: callerPlaces(clover, "macos", solCtx), policy: f.policy(solCtx) });
+    const solProfile = macFenceProfile({ mossHome: moss, home, perUserTemp: null, caller: callerPlaces(moss, "macos", solCtx), policy: f.policy(solCtx) });
     expect(spawnSync("/usr/bin/sandbox-exec", ["-p", solProfile, "/bin/sh", "-c", 'printf x > "$1"', "sh", join(cutter, "b.ts")]).status).not.toBe(0);
     expect(existsSync(join(cutter, "b.ts"))).toBe(false);
   });

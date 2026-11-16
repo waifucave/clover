@@ -1,6 +1,6 @@
 # Computer use (ComputerV2)
 
-> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-clover` tag, before the Clover rename (C0). Where it describes code that C0 renamed, read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*` and `~/.winter` as `~/.clover`. For Clover itself, [the spec](../clover-spec.md) is the source of truth, then [the plan](../clover-plan.md).
+> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-moss` tag, before the MOSS rename (C0). Where it describes code that C0 renamed, read `winter-core` as `moss-core`, `WINTER_*` as `MOSS_*` and `~/.winter` as `~/.moss`. For MOSS itself, [the spec](../moss-spec.md) is the source of truth, then [the plan](../moss-plan.md).
 
 *Read this before touching `packages/core/src/computer-use/`, the `computer_v2` capability, the helper client, the app adapters or Settings → Computer Use. Browser tabs, Phase 3, WebMCP, Winter for Chrome: [computer-use-browsers.md](./computer-use-browsers.md); Winter Headless: [headless.md](./headless.md); wake triggers: [Wake triggers](#wake-triggers-computer-usewakes); the guardian, the focus blip and "never move the user's view": [Focus, the guardian and the user's view](#focus-the-guardian-and-the-users-view).*
 

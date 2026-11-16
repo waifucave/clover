@@ -14,11 +14,11 @@ describe("dialling the daemon safely (E-M1's review)", () => {
   });
 
   test("a server is ours only with the same user and, when given, the same binary", () => {
-    const s = { pid: 9, userSid: "S-1-5-21-1-2-3-1001", image: "C:\\\\Clover\\\\daemon\\\\clover-core.exe" };
+    const s = { pid: 9, userSid: "S-1-5-21-1-2-3-1001", image: "C:\\\\MOSS\\\\daemon\\\\moss-core.exe" };
     expect(isOurDaemon(s, { userSid: "s-1-5-21-1-2-3-1001" })).toBe(true);
-    expect(isOurDaemon(s, { userSid: s.userSid, image: "c:\\\\clover\\\\daemon\\\\CLOVER-CORE.EXE" })).toBe(true);
+    expect(isOurDaemon(s, { userSid: s.userSid, image: "c:\\\\moss\\\\daemon\\\\MOSS-CORE.EXE" })).toBe(true);
     expect(isOurDaemon(s, { userSid: "S-1-5-21-9" })).toBe(false);
-    expect(isOurDaemon(s, { userSid: s.userSid, image: "C:\\\\Temp\\\\clover-core.exe" })).toBe(false);
+    expect(isOurDaemon(s, { userSid: s.userSid, image: "C:\\\\Temp\\\\moss-core.exe" })).toBe(false);
     expect(isOurDaemon(null, { userSid: s.userSid })).toBe(false);
   });
 
@@ -33,7 +33,7 @@ describe("dialling the daemon safely (E-M1's review)", () => {
   });
 
   test.skipIf(process.platform !== "win32")("Windows: first instance only, an owner-only DACL, and the server's identity from the client", async () => {
-    const path = resolveEndpoint(mkdtempSync(join(tmpdir(), "clover-pipe-"))).path;
+    const path = resolveEndpoint(mkdtempSync(join(tmpdir(), "moss-pipe-"))).path;
     const sid = (await windowsUserSid(bunRunner))!;
     expect(currentUserSid()).toBe(sid); // the daemon's own read, with no child process
     const server = Bun.listen({ unix: path, socket: { data() {} } });

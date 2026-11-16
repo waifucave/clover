@@ -3,7 +3,7 @@
 // (test/spots.test.ts).
 //
 // A cell is one spot, or one key of a keyed spot. For a cell the resolver:
-//   * finds the entries that may fill it: the plugin is running (only `clover` and `alpha` in safe mode), its `when`
+//   * finds the entries that may fill it: the plugin is running (only `moss` and `alpha` in safe mode), its `when`
 //     holds in the cell's context, its plugin has every capability the spot `needs`, and its key covers the cell's
 //     (an exact key, then a `*` pattern, then an entry with no key: "an entry with no `key` fills every key that has
 //     no entry of its own");
@@ -18,7 +18,7 @@
 // "The smaller part": the part a plugin dresses is the smallest spot holding all its entries in that tab, a child
 // counting as its own plugin (a send-button plugin dresses the button, a bot's tab look the whole tab, a shell the
 // app). The spots form a tree: the catalog's declarations, and each plugin's `declares` under the spot its entry fills.
-import { ADDED_KEY, SAME_ON_EVERY_TAB, SPOTS, isAddedKey, keyMatches, spotInfo } from "@waifucave/clover-plugin-sdk";
+import { ADDED_KEY, SAME_ON_EVERY_TAB, SPOTS, isAddedKey, keyMatches, spotInfo } from "@waifucave/moss-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type PointDeclaration, type UiEntry, type UiPlugin } from "./model";
 
 export type Os = "macos" | "windows" | "linux";
@@ -248,7 +248,7 @@ export interface CellResult {
   /** In a list spot, entries a plugin's `hide` took out (and which), for Settings to offer back. */
   hiddenByPlugin: { entry: Candidate; by: Candidate }[];
   skipped: Skipped[];
-  /** The entries that lost a single or keyed cell, best first: what a winner may place inside itself with `<Spot entry>` (a bot's own panel around Clover's stock one). */
+  /** The entries that lost a single or keyed cell, best first: what a winner may place inside itself with `<Spot entry>` (a bot's own panel around MOSS's stock one). */
   runnersUp: Candidate[];
   /** Which rule decided the winner over the runner-up, 1–7; 0 when there was no contest or a key decided; 8 for a full
    *  tie, settled by plugin id. */
@@ -295,10 +295,10 @@ export function rank(cands: readonly Candidate[], cellNode: string, input: Resol
   const prefer = input.ctx.prefer?.[cellNode] ?? input.ctx.prefer?.[cellNode.replace(/\[.*$/, "")] ?? [];
   const facts = new Map<Candidate, number[]>();
   // A bot's own plugin's entry for a spot of its own tab (no layout naming it) takes the spot from the shipped stock one
-  // (the `clover` tree's), though a plugin that fills one spot alone is a smaller part than the bot's whole tab.
-  const ownHere = cands.some((c) => c.plugin.isBot && c.plugin.topId !== "clover" && input.ctx.bot === c.plugin.id && c.entry.kind !== "style");
+  // (the `moss` tree's), though a plugin that fills one spot alone is a smaller part than the bot's whole tab.
+  const ownHere = cands.some((c) => c.plugin.isBot && c.plugin.topId !== "moss" && input.ctx.bot === c.plugin.id && c.entry.kind !== "style");
   for (const c of cands) {
-    const stock = ownHere && c.plugin.topId === "clover" && c.plugin.source === "bundled";
+    const stock = ownHere && c.plugin.topId === "moss" && c.plugin.source === "bundled";
     const part = stock ? undefined : partOf(c.plugin, cellNode, input, tree);
     const preferAt = prefer.findIndex((r) => refNames(r, c.entry));
     facts.set(c, [

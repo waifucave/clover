@@ -1,7 +1,7 @@
-// Clover's hook shim (spec §9.3 "Hooks", §5.3 "What each event may return"): a plugin's command hook, placed in
+// MOSS's hook shim (spec §9.3 "Hooks", §5.3 "What each event may return"): a plugin's command hook, placed in
 // Claude Code's own settings for Claude Code's own tools, runs through this, never directly. The shim runs the hook
 // with Claude Code's input on stdin and passes its answer on, except that **an allow is dropped**: `tool.before` may
-// deny, ask or replace the input, never allow, so a plugin can't approve its way past Clover's levels and cards.
+// deny, ask or replace the input, never allow, so a plugin can't approve its way past MOSS's levels and cards.
 //
 // * Exit code 2 (Claude Code's "block") passes through with its stderr: a deny.
 // * JSON output passes only an allow-list of keys (`dropAllow`): deny and ask decisions, `updatedInput`,
@@ -12,7 +12,7 @@
 // * A hook runs as its own process group (a job object on Windows), ended when it exits or times out, so nothing it
 //   started outlives it.
 //
-// `clover-core hook-shim --timeout <ms> -- <command> [args…]` in the shipped binary; `bun hook-shim.ts …` from source.
+// `moss-core hook-shim --timeout <ms> -- <command> [args…]` in the shipped binary; `bun hook-shim.ts …` from source.
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { AgentJob } from "../../platform/win-job";
@@ -95,7 +95,7 @@ export function runHook(command: string, args: readonly string[], input: string,
       child = spawn(plan.file, plan.args, { stdio: ["pipe", "pipe", "pipe"], env, windowsHide: true, detached: posix, windowsVerbatimArguments: plan.verbatim });
       if (job && child.pid) job.assign(child.pid);
     } catch (err) {
-      resolve({ code: 0, stdout: "", stderr: `clover hook shim: the hook didn't start (${err instanceof Error ? err.message : String(err)}); skipped\n` });
+      resolve({ code: 0, stdout: "", stderr: `moss hook shim: the hook didn't start (${err instanceof Error ? err.message : String(err)}); skipped\n` });
       return;
     }
     let stdout = "";
@@ -119,7 +119,7 @@ export function runHook(command: string, args: readonly string[], input: string,
     };
     const timer = setTimeout(() => {
       killAll();
-      finish({ code: 0, stdout: "", stderr: `clover hook shim: the hook ran past ${timeoutMs} ms; skipped\n` });
+      finish({ code: 0, stdout: "", stderr: `moss hook shim: the hook ran past ${timeoutMs} ms; skipped\n` });
     }, timeoutMs);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -129,14 +129,14 @@ export function runHook(command: string, args: readonly string[], input: string,
     child.stderr.on("data", (c: string) => {
       if (stderr.length < 100_000) stderr += c;
     });
-    child.on("error", (err) => finish({ code: 0, stdout: "", stderr: `clover hook shim: the hook didn't start (${err.message}); skipped\n` }));
+    child.on("error", (err) => finish({ code: 0, stdout: "", stderr: `moss hook shim: the hook didn't start (${err.message}); skipped\n` }));
     child.on("close", (code) => {
       // A hook that exits leaves nothing behind either: what it started in the background goes with it (K-M2 check 2).
       killAll();
       // Exit 2 is Claude Code's block: a deny, passed on with its reason. Any other failure skips the hook.
       if (code === 2) finish({ code: 2, stdout: "", stderr });
       else if (code === 0) finish({ code: 0, stdout: dropAllow(stdout), stderr });
-      else finish({ code: 0, stdout: "", stderr: `clover hook shim: the hook exited ${code}; skipped\n${stderr}` });
+      else finish({ code: 0, stdout: "", stderr: `moss hook shim: the hook exited ${code}; skipped\n${stderr}` });
     });
     child.stdin.on("error", () => {});
     child.stdin.end(input);
@@ -156,7 +156,7 @@ export function parseShimArgs(argv: readonly string[]): { timeoutMs: number; com
 export async function hookShimMain(argv: readonly string[]): Promise<number> {
   const parsed = parseShimArgs(argv);
   if (!parsed) {
-    process.stderr.write("clover hook shim: usage: hook-shim [--timeout <ms>] -- <command> [args…]\n");
+    process.stderr.write("moss hook shim: usage: hook-shim [--timeout <ms>] -- <command> [args…]\n");
     return 0;
   }
   const chunks: Buffer[] = [];

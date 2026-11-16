@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describeOk, OK_LINE_MAX, PLUGIN_API_VERSION, readOnlyOkLines, READ_ONLY_OK_MAX_LINES, validateManifest } from "@waifucave/clover-plugin-sdk";
+import { describeOk, OK_LINE_MAX, PLUGIN_API_VERSION, readOnlyOkLines, READ_ONLY_OK_MAX_LINES, validateManifest } from "@waifucave/moss-plugin-sdk";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -15,7 +15,7 @@ import { pluginToolReadOnly } from "../read-only-tools";
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 const tempHome = () => {
-  const d = realpathSync(mkdtempSync(join(tmpdir(), "clover-ro-")));
+  const d = realpathSync(mkdtempSync(join(tmpdir(), "moss-ro-")));
   temps.push(d);
   return d;
 };
@@ -23,16 +23,16 @@ const tempHome = () => {
 type Server = Record<string, unknown>;
 const STDIO: Server = { type: "stdio", command: "bin/notes" };
 const manifest = (readOnly?: string[], o: { id?: string; server?: Server; capabilities?: string[] } = {}) => JSON.stringify({
-  manifest: 1, id: o.id ?? "notes", name: "Notes", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  manifest: 1, id: o.id ?? "notes", name: "Notes", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
   ...(o.capabilities ? { capabilities: o.capabilities } : {}),
   contributes: { mcpServers: { notes: { ...(o.server ?? STDIO), ...(readOnly ? { readOnly } : {}) } } },
 });
 const write = (dir: string, text: string) => {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "clover.json"), text);
+  writeFileSync(join(dir, "moss.json"), text);
 };
 const open = (home: string, extra: { bundledDirs?: string[] } = {}) =>
-  openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50, sandboxed: true, ...extra });
+  openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50, sandboxed: true, ...extra });
 const FENCED = { fenced: true };
 
 describe("read-only MCP tools", () => {
@@ -50,10 +50,10 @@ describe("read-only MCP tools", () => {
       expect(reg.get("notes")!.state).toBe("running");
       expect(["search", "read_note", "delete_note"].map((t) => pluginToolReadOnly(reg, "notes", "notes", t, FENCED))).toEqual([true, true, false]);
       expect(pluginToolReadOnly(reg, "notes", "other", "search", FENCED)).toBe(false);
-      // Where Clover's fence doesn't hold plugin processes, a stdio server can reach the network: no skip.
+      // Where MOSS's fence doesn't hold plugin processes, a stdio server can reach the network: no skip.
       expect(pluginToolReadOnly(reg, "notes", "notes", "search", { fenced: false })).toBe(false);
       // A wider list is a change that asks again: until the new OK, nothing is read-only.
-      writeFileSync(join(dir, "clover.json"), manifest(["search", "read_note", "delete_note"]));
+      writeFileSync(join(dir, "moss.json"), manifest(["search", "read_note", "delete_note"]));
       await opened.folders.refresh(dir);
       expect(reg.get("notes")!.state).toBe("found");
       expect(pluginToolReadOnly(reg, "notes", "notes", "delete_note", FENCED)).toBe(false);
@@ -61,7 +61,7 @@ describe("read-only MCP tools", () => {
       await reg.approve("notes", reg.get("notes")!.treeHash!);
       expect(pluginToolReadOnly(reg, "notes", "notes", "delete_note", FENCED)).toBe(true);
       // Taking the list away asks again too.
-      writeFileSync(join(dir, "clover.json"), manifest());
+      writeFileSync(join(dir, "moss.json"), manifest());
       await opened.folders.refresh(dir);
       expect(reg.get("notes")!.state).toBe("found");
     } finally {
@@ -106,16 +106,16 @@ describe("read-only MCP tools", () => {
     // A child plugin's network grant counts for its tree.
     write(join(home, "plugins", "pack"), manifest(["search"], { id: "pack" }));
     write(join(home, "plugins", "pack", "plugins", "fetcher"), JSON.stringify({ manifest: 1, name: "Fetcher", version: "1.0.0", capabilities: ["network:api.example.com"] }));
-    // network:public is for Clover's own tree only: its web child's grant counts for the whole tree.
+    // network:public is for MOSS's own tree only: its web child's grant counts for the whole tree.
     const bundled = join(home, "bundled");
-    write(join(bundled, "clover"), manifest(["search"], { id: "clover" }));
-    write(join(bundled, "clover", "plugins", "web"), JSON.stringify({ manifest: 1, name: "Web", version: "1.0.0", capabilities: ["network:public"] }));
+    write(join(bundled, "moss"), manifest(["search"], { id: "moss" }));
+    write(join(bundled, "moss", "plugins", "web"), JSON.stringify({ manifest: 1, name: "Web", version: "1.0.0", capabilities: ["network:public"] }));
     const opened = await open(home, { bundledDirs: [bundled] });
     try {
       const reg = opened.registry;
-      expect([reg.get("clover")?.state, reg.get("clover/web")?.reason ?? reg.get("clover/web")?.state, reg.get("clover/web")?.capabilities]).toEqual(["running", "running", ["network:public"]]);
-      expect(pluginToolReadOnly(reg, "clover", "notes", "search", FENCED)).toBe(false);
-      expect(opened.folders.okText("clover", "macos", false, true).lines).toContain("Its server notes says one tool only reads, but it can reach the network, so it still asks before running.");
+      expect([reg.get("moss")?.state, reg.get("moss/web")?.reason ?? reg.get("moss/web")?.state, reg.get("moss/web")?.capabilities]).toEqual(["running", "running", ["network:public"]]);
+      expect(pluginToolReadOnly(reg, "moss", "notes", "search", FENCED)).toBe(false);
+      expect(opened.folders.okText("moss", "macos", false, true).lines).toContain("Its server notes says one tool only reads, but it can reach the network, so it still asks before running.");
       // A wrapper the user brought, with its install record's network grant.
       write(join(home, "plugins", "wrapped-notes"), manifest(["search"], { id: "wrapped-notes" }));
       await opened.folders.installed("wrapped-notes", "user-app", { wrapped: { from: "mcp-config", network: "any" } });

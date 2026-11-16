@@ -1,5 +1,5 @@
 // The macOS end-to-end audit's HIGH finding: one bot turn made a home un-bootable. The embedded runtime ran with
-// `CLOVER_HOME` on the Clover home itself, so it wrote its transcript in the OLD layout (`<home>/projects/...`), which
+// `MOSS_HOME` on the MOSS home itself, so it wrote its transcript in the OLD layout (`<home>/projects/...`), which
 // the next boot read as a home Migration C hadn't run on: a non-default home refused to boot ("migration C … old
 // layout", daemon.ts), and the default home would migrate again at every boot. The core also looks for the transcript
 // in the store home (`<home>/sdk`), so a restart never resumed it.
@@ -54,7 +54,7 @@ function context(home: string): BotSessionContext {
 describeWithEmbeddedRuntime("a bot turn keeps the home in the new layout", (spawn) => {
   test("boot, one bot turn, restart: the daemon boots clean, Migration C neither refuses nor runs, and the session resumes", async () => {
     setRunHomeSupportForTests(true);
-    const parent = realpathSync(mkdtempSync(join(tmpdir(), "clover-a3-layout-")));
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), "moss-a3-layout-")));
     temps.push(parent);
     // Not the profile's default home: an old-layout home here refuses to boot.
     const home = join(parent, "server-home");
@@ -73,8 +73,8 @@ describeWithEmbeddedRuntime("a bot turn keeps the home in the new layout", (spaw
     const query: typeof sdkQuery = (args) => {
       const o = args.options as { resume?: string; sessionId?: string; env?: Record<string, string> };
       opened.push({ ...(o.resume === undefined ? {} : { resume: o.resume }), ...(o.sessionId === undefined ? {} : { sessionId: o.sessionId }) });
-      // The runtime's home is the store home, never the Clover home.
-      expect(o.env?.CLOVER_HOME).toBe(join(home, "sdk"));
+      // The runtime's home is the store home, never the MOSS home.
+      expect(o.env?.MOSS_HOME).toBe(join(home, "sdk"));
       return sdkQuery(args);
     };
     const deps = { home, spawn, query, canUseTool: () => async (_n: string, input: unknown) => ({ behavior: "allow" as const, updatedInput: input as Record<string, unknown> }), sandbox: () => ({ enabled: false }), stopGraceMs: 5_000, log: () => {} };

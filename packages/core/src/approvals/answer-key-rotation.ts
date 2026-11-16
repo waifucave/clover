@@ -12,7 +12,7 @@
 //
 // What the card says comes from this table; the keys show as short fingerprints in a code field.
 import { createHash } from "node:crypto";
-import type { AnswerKeyHolder, TurnOrigin } from "@waifucave/clover-protocol";
+import type { AnswerKeyHolder, TurnOrigin } from "@waifucave/moss-protocol";
 import { boundCardRecord, callBindingOf, type ApprovalBroker, type CallRequestBinding } from "../contracts/approval-broker";
 import type { DeviceRecord } from "../contracts/device-registry";
 import { answerKeyRotateStatement, answerKeyStatement, type FileDeviceRegistry } from "../devices/registry";

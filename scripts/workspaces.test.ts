@@ -1,4 +1,4 @@
-// scripts/workspaces.ts: which packages CI's per-OS run takes, by their `cloverCi` fields.
+// scripts/workspaces.ts: which packages CI's per-OS run takes, by their `mossCi` fields.
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,16 +25,16 @@ describe("scripts/workspaces.ts", () => {
   test("this repo: core and cli test in their own jobs, everything else on every OS unless it says otherwise", () => {
     const packages = workspacePackages(join(import.meta.dir, ".."));
     const byName = new Map(packages.map((p) => [p.name, p]));
-    expect(byName.get("@waifucave/clover-core")?.ownJob).toBe(true);
-    expect(byName.get("@waifucave/clover-cli")?.ownJob).toBe(true);
-    expect(plan(packages, "test", { os: "linux" }).map((p) => p.name)).not.toContain("@waifucave/clover-core");
-    for (const name of ["@waifucave/clover-protocol", "@waifucave/clover-plugin-sdk", "@waifucave/clover-test-harness", "@waifucave/clover-desktop", "@waifucave/clover-service-hello"]) {
+    expect(byName.get("@waifucave/moss-core")?.ownJob).toBe(true);
+    expect(byName.get("@waifucave/moss-cli")?.ownJob).toBe(true);
+    expect(plan(packages, "test", { os: "linux" }).map((p) => p.name)).not.toContain("@waifucave/moss-core");
+    for (const name of ["@waifucave/moss-protocol", "@waifucave/moss-plugin-sdk", "@waifucave/moss-test-harness", "@waifucave/moss-desktop", "@waifucave/moss-service-hello"]) {
       expect(plan(packages, "test", { os: "windows" }).map((p) => p.name)).toContain(name);
     }
   });
 
   test("an install older than the manifests stops a run with the fix: a workspace: dependency with no link", () => {
-    const root = mkdtempSync(join(tmpdir(), "clover-ws-"));
+    const root = mkdtempSync(join(tmpdir(), "moss-ws-"));
     try {
       writeFileSync(join(root, "package.json"), JSON.stringify({ name: "root", workspaces: ["packages/*"] }));
       for (const [name, deps] of [["sdk", {}], ["cli", { "@w/sdk": "workspace:*", "left-pad": "^1.0.0" }]] as const) {
@@ -55,7 +55,7 @@ describe("scripts/workspaces.ts", () => {
   });
 
   test("an install older than the lockfile stops a run with the fix: a registry package at another version than it pins", () => {
-    const root = mkdtempSync(join(tmpdir(), "clover-ws-"));
+    const root = mkdtempSync(join(tmpdir(), "moss-ws-"));
     try {
       writeFileSync(join(root, "package.json"), JSON.stringify({ name: "root", workspaces: ["packages/*"] }));
       mkdirSync(join(root, "packages", "core"), { recursive: true });

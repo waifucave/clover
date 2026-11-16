@@ -1,6 +1,6 @@
 // C0 review S6: scripts kept in this repo for reference that must not run from it yet. Each one builds, registers or
 // publishes Winter's own artifacts under Winter's identities: the Computer Use and Headless helpers wait for opensky
-// (spec §4), and Clover's release pipeline is built in C7 (spec §12). Each script calls `refuseHeldScript` before it
+// (spec §4), and MOSS's release pipeline is built in C7 (spec §12). Each script calls `refuseHeldScript` before it
 // reads an argument or touches anything; the lane that takes a script over removes its call.
 export type HeldScript = "dev:helper" | "dev:headless" | "release" | "tap:publish";
 
@@ -23,13 +23,13 @@ export const HELD_SCRIPTS: Readonly<Record<HeldScript, { file: string; until: "o
   "tap:publish": {
     file: "scripts/publish-tap.ts",
     until: "C7",
-    why: "it publishes casks to the Homebrew tap, which must not happen before Clover's own release pipeline",
+    why: "it publishes casks to the Homebrew tap, which must not happen before MOSS's own release pipeline",
   },
 };
 
 export function heldScriptRefusal(name: HeldScript): string {
   const h = HELD_SCRIPTS[name];
-  return `${name} refuses to run in the Clover repo until ${h.until}: ${h.why}`;
+  return `${name} refuses to run in the MOSS repo until ${h.until}: ${h.why}`;
 }
 
 /** Prints why `name` may not run here and exits 1; it never returns. Typed `void`, not `never`, so a call at a

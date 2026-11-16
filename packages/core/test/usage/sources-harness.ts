@@ -18,13 +18,13 @@ const PLUGINS = join(import.meta.dir, "../../../../plugins");
 
 /** The entry a bundled plugin's manifest declares (what the registry would hand the core). */
 export function bundledEntry(folder: string, over: Partial<UsageSourceEntry> = {}): UsageSourceEntry {
-  const m = JSON.parse(readFileSync(join(PLUGINS, folder, "clover.json"), "utf8")) as { contributes: Record<string, Array<{ id: string; name?: string; handler: string; provides: Array<"plan" | "usage">; planEveryMs?: number }>> };
+  const m = JSON.parse(readFileSync(join(PLUGINS, folder, "moss.json"), "utf8")) as { contributes: Record<string, Array<{ id: string; name?: string; handler: string; provides: Array<"plan" | "usage">; planEveryMs?: number }>> };
   const e = m.contributes["usage.sources"]![0]!;
   return { pluginId: folder, id: e.id, name: e.name ?? e.id, handler: e.handler, provides: e.provides, ...(e.planEveryMs === undefined ? {} : { planEveryMs: e.planEveryMs }), ...over };
 }
 
 export function programsOf(folder: string): string[] {
-  const m = JSON.parse(readFileSync(join(PLUGINS, folder, "clover.json"), "utf8")) as { host: { outside?: { programs?: string[] } } };
+  const m = JSON.parse(readFileSync(join(PLUGINS, folder, "moss.json"), "utf8")) as { host: { outside?: { programs?: string[] } } };
   return m.host.outside?.programs ?? [];
 }
 
@@ -42,7 +42,7 @@ export interface LegacyServiceDeps extends Partial<UsageServiceDeps> {
   claudeExecutable?: () => string | undefined;
   agyExecutable?: () => string | undefined;
   opencodeExecutable?: () => string | undefined;
-  cloverCodexWindows?: () => PlanStatusWindow[];
+  mossCodexWindows?: () => PlanStatusWindow[];
   codexAppServerEveryMs?: number;
   claudeCliEveryMs?: number;
   agyCliEveryMs?: number;
@@ -62,13 +62,13 @@ export interface LegacyServiceDeps extends Partial<UsageServiceDeps> {
   present?: Array<"codex" | "claude-code" | "antigravity" | "opencode">;
 }
 
-const none = (): string => join(mkdtempSync(join(tmpdir(), "clover-usage-nowhere-")), "absent");
+const none = (): string => join(mkdtempSync(join(tmpdir(), "moss-usage-nowhere-")), "absent");
 
 /** The port over the real source handlers. `calls` records every call (source, method). */
 export function sourcePort(o: LegacyServiceDeps): UsageSourcePort & { calls: Array<{ id: string; method: string }> } {
   const calls: Array<{ id: string; method: string }> = [];
   const cache = new Map<string, string>();
-  const bins = mkdtempSync(join(tmpdir(), "clover-usage-path-"));
+  const bins = mkdtempSync(join(tmpdir(), "moss-usage-path-"));
   const exes: Record<Exe, (() => string | undefined) | undefined> = {
     codex: o.codexExecutable, claude: o.claudeExecutable, agy: o.agyExecutable, opencode: o.opencodeExecutable,
   };
@@ -87,8 +87,8 @@ export function sourcePort(o: LegacyServiceDeps): UsageSourcePort & { calls: Arr
     }
     return dir;
   };
-  const cloverHome = mkdtempSync(join(tmpdir(), "clover-usage-clover-"));
-  const userHome = mkdtempSync(join(tmpdir(), "clover-usage-user-"));
+  const mossHome = mkdtempSync(join(tmpdir(), "moss-usage-moss-"));
+  const userHome = mkdtempSync(join(tmpdir(), "moss-usage-user-"));
   const entries: Record<string, UsageSourceEntry> = {
     codex: bundledEntry("usage-codex", { planEveryMs: o.codexAppServerEveryMs ?? o.fallbackEveryMs ?? 60_000 }),
     "claude-code": bundledEntry("usage-claude-code", { planEveryMs: o.claudeCliEveryMs ?? 300_000 }),
@@ -98,7 +98,7 @@ export function sourcePort(o: LegacyServiceDeps): UsageSourcePort & { calls: Arr
   const folderOf: Record<string, string> = { codex: "usage-codex", "claude-code": "usage-claude-code", antigravity: "usage-antigravity", opencode: "usage-opencode" };
   const ctxFor = (id: string) => {
     const run = outsideApi({
-      cloverHome, userHome,
+      mossHome, userHome,
       path: () => (["codex", "claude", "agy", "opencode"] as const).map(pathDir).filter((d): d is string => d !== undefined).join(":"),
     })["outside.run"]!;
     const ctx = { pluginId: folderOf[id]!, record: { folder: join(PLUGINS, folderOf[id]!), manifest: { host: { outside: { programs: programsOf(folderOf[id]!) } } } } };
@@ -141,11 +141,11 @@ export function sourcePort(o: LegacyServiceDeps): UsageSourcePort & { calls: Arr
 export function legacyDeps(o: LegacyServiceDeps): UsageServiceDeps & { port: ReturnType<typeof sourcePort> } {
   const port = sourcePort(o);
   const {
-    codexHome: _a, claudeHome: _b, codexExecutable: _c, claudeExecutable: _d, agyExecutable: _e, opencodeExecutable: _f, cloverCodexWindows, codexAppServerEveryMs: _g,
+    codexHome: _a, claudeHome: _b, codexExecutable: _c, claudeExecutable: _d, agyExecutable: _e, opencodeExecutable: _f, mossCodexWindows, codexAppServerEveryMs: _g,
     claudeCliEveryMs: _h, agyCliEveryMs: _i, appServerTimeoutMs: _j, claudeCliTimeoutMs: _k, agyCliTimeoutMs: _l, agyTimeoutBackoffMs: _m, opencodeEveryMs: _n,
     opencodeSpawnBudget: _o, opencodeTimeoutMs: _p, fileBudgetBytes: _q, maxLineBytes: _r, claudeStatsMaxBytes: _s, fallbackEveryMs: _u, present: _t, ...deps
   } = o;
-  return { ...deps, sources: port, reports: () => ({ "codex-oauth": cloverCodexWindows?.() ?? [] }), port };
+  return { ...deps, sources: port, reports: () => ({ "codex-oauth": mossCodexWindows?.() ?? [] }), port };
 }
 
 /** The real service, built from the OLD option names (`codexExecutable`, `claudeHome`, …) over the source plugins. */

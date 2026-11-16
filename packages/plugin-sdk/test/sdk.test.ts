@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConnWriter, encodeLine, LineDecoder, METHODS, PROTOCOL_VERSION, ERR, type WritableSocket } from "@waifucave/clover-protocol";
+import { ConnWriter, encodeLine, LineDecoder, METHODS, PROTOCOL_VERSION, ERR, type WritableSocket } from "@waifucave/moss-protocol";
 import { backoffDelayMs, createPlugin } from "../src/index";
 
 // -------------------------------------------------------------------------------------------
@@ -206,7 +206,7 @@ describe("createPlugin().serve()", () => {
 
   beforeEach(() => {
     cleanups = [];
-    tmpDir = mkdtempSync(join(tmpdir(), "clover-plugin-sdk-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "moss-plugin-sdk-"));
     sockPath = join(tmpDir, "plugin.sock");
   });
   afterEach(() => {
@@ -388,28 +388,28 @@ describe("createPlugin().serve()", () => {
   });
 
   test("serve() rejects when socketPath/token/pluginId cannot be resolved (no opts, no env)", async () => {
-    const savedSocket = process.env.CLOVER_SOCKET;
-    const savedToken = process.env.CLOVER_PLUGIN_TOKEN;
-    const savedId = process.env.CLOVER_PLUGIN_ID;
-    delete process.env.CLOVER_SOCKET;
-    delete process.env.CLOVER_PLUGIN_TOKEN;
-    delete process.env.CLOVER_PLUGIN_ID;
+    const savedSocket = process.env.MOSS_SOCKET;
+    const savedToken = process.env.MOSS_PLUGIN_TOKEN;
+    const savedId = process.env.MOSS_PLUGIN_ID;
+    delete process.env.MOSS_SOCKET;
+    delete process.env.MOSS_PLUGIN_TOKEN;
+    delete process.env.MOSS_PLUGIN_ID;
     cleanups.push(() => {
-      if (savedSocket !== undefined) process.env.CLOVER_SOCKET = savedSocket;
-      if (savedToken !== undefined) process.env.CLOVER_PLUGIN_TOKEN = savedToken;
-      if (savedId !== undefined) process.env.CLOVER_PLUGIN_ID = savedId;
+      if (savedSocket !== undefined) process.env.MOSS_SOCKET = savedSocket;
+      if (savedToken !== undefined) process.env.MOSS_PLUGIN_TOKEN = savedToken;
+      if (savedId !== undefined) process.env.MOSS_PLUGIN_ID = savedId;
     });
 
     const plugin = createPlugin({});
     await expect(plugin.serve({})).rejects.toThrow(/missing/);
   });
 
-  test("onShortcut: registers the shortcut ids declared in clover-plugin.json (plugin cwd)", async () => {
-    // The manifest is read from the plugin's cwd only when CLOVER_PLUGIN_DIR is unset.
-    const savedDir = process.env.CLOVER_PLUGIN_DIR;
-    delete process.env.CLOVER_PLUGIN_DIR;
-    cleanups.push(() => { if (savedDir !== undefined) process.env.CLOVER_PLUGIN_DIR = savedDir; });
-    writeFileSync(join(tmpDir, "clover-plugin.json"), JSON.stringify({
+  test("onShortcut: registers the shortcut ids declared in moss-plugin.json (plugin cwd)", async () => {
+    // The manifest is read from the plugin's cwd only when MOSS_PLUGIN_DIR is unset.
+    const savedDir = process.env.MOSS_PLUGIN_DIR;
+    delete process.env.MOSS_PLUGIN_DIR;
+    cleanups.push(() => { if (savedDir !== undefined) process.env.MOSS_PLUGIN_DIR = savedDir; });
+    writeFileSync(join(tmpDir, "moss-plugin.json"), JSON.stringify({
       id: "sample", tier: "platform",
       contributes: { shortcuts: [{ id: "toggle", description: "Toggle the thing" }] },
     }));
@@ -434,7 +434,7 @@ describe("createPlugin().serve()", () => {
 
   test("onShortcut with no manifest present never calls shortcut.register", async () => {
     const originalCwd = process.cwd();
-    process.chdir(tmpDir); // empty tmp dir — no clover-plugin.json
+    process.chdir(tmpDir); // empty tmp dir — no moss-plugin.json
     cleanups.push(() => process.chdir(originalCwd));
 
     const server = startFakeServer(sockPath);
@@ -449,13 +449,13 @@ describe("createPlugin().serve()", () => {
     expect(server.shortcuts()).toBeNull();
   });
 
-  test("CLOVER_PLUGIN_DIR env var: manifest read from env var, not cwd, when set", async () => {
+  test("MOSS_PLUGIN_DIR env var: manifest read from env var, not cwd, when set", async () => {
     // Create manifest in a separate directory
-    const pluginDir = mkdtempSync(join(tmpdir(), "clover-plugin-env-"));
+    const pluginDir = mkdtempSync(join(tmpdir(), "moss-plugin-env-"));
     cleanups.push(() => {
-      try { unlinkSync(join(pluginDir, "clover-plugin.json")); } catch {}
+      try { unlinkSync(join(pluginDir, "moss-plugin.json")); } catch {}
     });
-    writeFileSync(join(pluginDir, "clover-plugin.json"), JSON.stringify({
+    writeFileSync(join(pluginDir, "moss-plugin.json"), JSON.stringify({
       id: "sample", tier: "platform",
       contributes: { shortcuts: [{ id: "cmd-a", description: "Command A" }, { id: "cmd-b" }] },
     }));
@@ -466,12 +466,12 @@ describe("createPlugin().serve()", () => {
     const plugin = createPlugin({ onShortcut: () => {} });
     cleanups.push(() => plugin.close());
 
-    // Serve with CLOVER_PLUGIN_DIR pointing to the manifest, while cwd is tmpDir (which is empty)
-    const savedEnv = process.env.CLOVER_PLUGIN_DIR;
-    process.env.CLOVER_PLUGIN_DIR = pluginDir;
+    // Serve with MOSS_PLUGIN_DIR pointing to the manifest, while cwd is tmpDir (which is empty)
+    const savedEnv = process.env.MOSS_PLUGIN_DIR;
+    process.env.MOSS_PLUGIN_DIR = pluginDir;
     cleanups.push(() => {
-      if (savedEnv !== undefined) process.env.CLOVER_PLUGIN_DIR = savedEnv;
-      else delete process.env.CLOVER_PLUGIN_DIR;
+      if (savedEnv !== undefined) process.env.MOSS_PLUGIN_DIR = savedEnv;
+      else delete process.env.MOSS_PLUGIN_DIR;
     });
 
     await plugin.serve({ socketPath: sockPath, token: "tok", pluginId: "sample" });
@@ -517,7 +517,7 @@ describe("ctx.hardware (Phase 4c Task 5, spec §5)", () => {
 
   beforeEach(() => {
     cleanups = [];
-    tmpDir = mkdtempSync(join(tmpdir(), "clover-plugin-sdk-hw-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "moss-plugin-sdk-hw-"));
     sockPath = join(tmpDir, "plugin.sock");
   });
   afterEach(() => {
@@ -602,11 +602,11 @@ describe("ctx.hardware (Phase 4c Task 5, spec §5)", () => {
   });
 
   test("typed failure: no_provider -> throws, tool result carries the code and message", async () => {
-    const { invoke } = await bootCallTool(() => ({ code: "no_provider", message: "hardware features require Clover.app" }));
+    const { invoke } = await bootCallTool(() => ({ code: "no_provider", message: "hardware features require MOSS Code.app" }));
     const res = await invoke("getChargeLimit");
     expect(res.resultJson).toBeUndefined();
     expect(res.error).toContain("no_provider");
-    expect(res.error).toContain("hardware features require Clover.app");
+    expect(res.error).toContain("hardware features require MOSS Code.app");
   });
 
   test("typed failure: timeout (scripted RESULT, not the SDK's own transport timeout) -> throws, tool result carries the code", async () => {
@@ -640,7 +640,7 @@ describe("Phase 4d-i Task 3: ctx.updateTile + onShortcut/onTileAction dispatch",
 
   beforeEach(() => {
     cleanups = [];
-    tmpDir = mkdtempSync(join(tmpdir(), "clover-plugin-sdk-4d-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "moss-plugin-sdk-4d-"));
     sockPath = join(tmpDir, "plugin.sock");
   });
   afterEach(() => {

@@ -13,8 +13,8 @@
 //   its session and seq; nothing the offering plugin adds rides along, and no bytes do: the claiming part reads the
 //   file or the message through its own plugin API, where the daemon checks its own access.
 // Sealed card frames are outside both (E-M3).
-import type { OpenTarget } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { SessionId, TreePath } from "@waifucave/clover-protocol";
+import type { OpenTarget } from "@waifucave/moss-plugin-sdk/ui/bridge";
+import { SessionId, TreePath } from "@waifucave/moss-protocol";
 
 export interface MenuItem {
   id?: string;
@@ -102,8 +102,8 @@ export function menuPoint(point: { x: number; y: number }, chain: readonly Rect[
 export const DRAG_KINDS: Readonly<Record<string, string | null>> = {
   "text/plain": null,
   "text/uri-list": null,
-  "application/x-clover-file": "files",
-  "application/x-clover-message": "conversation.read",
+  "application/x-moss-file": "files",
+  "application/x-moss-message": "conversation.read",
 };
 
 export const DRAG_GRANT_TTL_MS = 60_000;
@@ -155,11 +155,11 @@ export function checkDragOffer(raw: unknown, capabilities: ReadonlySet<string>):
   if (needs !== null && needs !== undefined && !capabilities.has(needs)) return { error: `the offering plugin lacks ${needs}` };
   const size = JSON.stringify(data ?? null).length;
   if (size > DRAG_DATA_MAX) return { error: "the data is too large" };
-  if (type === "application/x-clover-file") {
+  if (type === "application/x-moss-file") {
     const grant = mintFileGrant(data);
     return "error" in grant ? grant : { type, data: grant };
   }
-  if (type === "application/x-clover-message") {
+  if (type === "application/x-moss-message") {
     const grant = mintMessageGrant(data);
     return "error" in grant ? grant : { type, data: grant };
   }
@@ -345,7 +345,7 @@ export class SendGate {
   // that press landed IN THE CALLER'S OWN FRAME: the innermost frame of the press's record (`press`: the focused frame at a key
   // down; `holdFrames`: the frame under the pointer at a mouse down). A press in another plugin's frame, on a sealed card's
   // button or on the window's own root is not the caller's, and is left unspent for the frame it came to. The bundled tree's
-  // parts share one document (the `clover` layer's): a press anywhere in that document is that document's, as before.
+  // parts share one document (the `moss` layer's): a press anywhere in that document is that document's, as before.
   private readonly lastPress = new Map<number, Hold>();
   private readonly waiting = new Map<Hold, (() => void)[]>();
 
@@ -415,7 +415,7 @@ export class SendGate {
     return h;
   }
 
-  /** A frame's report that its own document received a trusted pointerdown (the preload's `clover:press-seen`): `frames` is
+  /** A frame's report that its own document received a trusted pointerdown (the preload's `moss:press-seen`): `frames` is
    *  that frame and the frames it sits in. It names where the window's latest mouse press landed, only while that press has no
    *  frames yet (the first report wins) and is recent; anything else is dropped. A press nobody reports (a drag region, no
    *  document) keeps no frames, and no frame takes it. True when it was taken. */
@@ -569,7 +569,7 @@ export function openTarget(v: unknown): OpenTarget | undefined {
 
 
 /** Who may ask the app to open a place (Settings at a section, a bot's editor) in the main window: a part whose plugin
- *  holds `shell.control` (its OK card says it moves Clover's window's own parts), whichever plugin it is (F2: no door
+ *  holds `shell.control` (its OK card says it moves MOSS's window's own parts), whichever plugin it is (F2: no door
  *  checks an id), and only on the user's own press in that frame (electron.ts takes it). */
 export function mayOpen(capabilities: ReadonlySet<string>): boolean {
   return capabilities.has("shell.control");
@@ -578,12 +578,12 @@ export function mayOpen(capabilities: ReadonlySet<string>): boolean {
 /** Why a part's open of a place in the main window is refused, or undefined: the capability first, then one press of the
  *  user's in that frame (`pressed` spends it, only once the capability holds). */
 export function openRefusal(capabilities: ReadonlySet<string>, pressed: () => boolean): string | undefined {
-  if (!mayOpen(capabilities)) return "opening a place in Clover's window takes the shell.control capability";
-  if (!pressed()) return "opening a place in Clover's window goes only right after your own key press or click";
+  if (!mayOpen(capabilities)) return "opening a place in MOSS's window takes the shell.control capability";
+  if (!pressed()) return "opening a place in MOSS's window goes only right after your own key press or click";
   return undefined;
 }
 
-/** Where a surface asked to be, kept on its display: inside the display's bounds for the `clover` tree, inside the work
+/** Where a surface asked to be, kept on its display: inside the display's bounds for the `moss` tree, inside the work
  *  area and `THIRD_PARTY_SURFACE_MAX` for anyone else. */
 export function surfaceBounds(asked: unknown, display: { bounds: Rect; workArea: Rect }, trusted: boolean): Rect | undefined {
   if (asked === null || typeof asked !== "object") return undefined;
@@ -616,7 +616,7 @@ export function viewRect(rect: Rect, chain: readonly Rect[]): Rect | undefined {
   return { x: Math.round(x0 + dx), y: Math.round(y0 + dy), width: Math.round(x1 - x0), height: Math.round(y1 - y0) };
 }
 
-/** Who places the Clover Browser's live view: a part whose plugin has `browser`. */
+/** Who places the MOSS Browser's live view: a part whose plugin has `browser`. */
 export function mayPlaceView(capabilities: ReadonlySet<string>): boolean {
   return capabilities.has("browser");
 }

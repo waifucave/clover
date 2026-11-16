@@ -1,5 +1,5 @@
 // Login start on all three OSes (spec §3.1, plan §4 C M1). The core builds the mechanism; lane M's
-// installers call `clover-core autostart enable|disable` to drive it. The OS starts `clover-core
+// installers call `moss-core autostart enable|disable` to drive it. The OS starts `moss-core
 // supervise` at login, not the daemon directly: Task Scheduler never restarts a crashed daemon, so
 // `supervise` (same binary) is the restart loop, and the OS only (re)starts `supervise`. On a clean
 // Quit it exits 0 and is not restarted until the next login, per §3.1.
@@ -18,20 +18,20 @@
 // the app through Launch Services.
 import { posix } from "node:path";
 import { homedir as realHomedir } from "node:os";
-import type { CloverProfile } from "../../profile";
+import type { MossProfile } from "../../profile";
 import type { DaemonPlatform } from "../transport";
 
 // macOS and Linux paths are POSIX whatever OS renders them (a test on Windows, say).
 const join = posix.join;
 
 /** What a login unit needs: the binary to run, the home it serves, the profile (dev carries
- *  `CLOVER_PROFILE`), and where its stdout/stderr go. `homedir` is injectable for hermetic tests. */
+ *  `MOSS_PROFILE`), and where its stdout/stderr go. `homedir` is injectable for hermetic tests. */
 export interface LoginSpec {
   readonly os: DaemonPlatform;
   readonly bin: string;
   readonly home: string;
   readonly logsDir: string;
-  readonly profile: CloverProfile;
+  readonly profile: MossProfile;
   readonly homedir?: string;
   /** Windows: the account the logon trigger and the task belong to, as its SID (`windowsUserSid`).
    *  Without it the trigger would fire for any user's logon, which only an administrator may register. */
@@ -46,30 +46,30 @@ export interface LoginSpec {
 /** The daemon's restart-loop subcommand; the login unit runs `<bin> supervise`. */
 export const SUPERVISE_ARGS = ["supervise"] as const;
 
-/** The reverse-DNS label, matching the Keychain service and the app (`com.waifucave.clover.core`,
+/** The reverse-DNS label, matching the Keychain service and the app (`com.waifucave.moss.core`,
  *  dev `.core.dev`). */
-export function loginLabel(profile: CloverProfile): string {
-  return profile === "dev" ? "com.waifucave.clover.core.dev" : "com.waifucave.clover.core";
+export function loginLabel(profile: MossProfile): string {
+  return profile === "dev" ? "com.waifucave.moss.core.dev" : "com.waifucave.moss.core";
 }
 
 /** The systemd user unit's file name. */
-export function systemdUnitName(profile: CloverProfile): string {
-  return profile === "dev" ? "clover-core-dev.service" : "clover-core.service";
+export function systemdUnitName(profile: MossProfile): string {
+  return profile === "dev" ? "moss-core-dev.service" : "moss-core.service";
 }
 
-/** The Task Scheduler task path (under a `\Clover` folder, one per profile). */
-export function schtasksTaskName(profile: CloverProfile): string {
-  return profile === "dev" ? "\\Clover\\clover-core-dev" : "\\Clover\\clover-core";
+/** The Task Scheduler task path (under a `\MOSS` folder, one per profile). */
+export function schtasksTaskName(profile: MossProfile): string {
+  return profile === "dev" ? "\\MOSS\\moss-core-dev" : "\\MOSS\\moss-core";
 }
 
 /** The app's on-demand systemd user unit (Linux). */
-export function appUnitName(profile: CloverProfile): string {
-  return profile === "dev" ? "clover-app-dev.service" : "clover-app.service";
+export function appUnitName(profile: MossProfile): string {
+  return profile === "dev" ? "moss-app-dev.service" : "moss-app.service";
 }
 
 /** The app's on-demand task (Windows). */
-export function appTaskName(profile: CloverProfile): string {
-  return profile === "dev" ? "\\Clover\\clover-app-dev" : "\\Clover\\clover-app";
+export function appTaskName(profile: MossProfile): string {
+  return profile === "dev" ? "\\MOSS\\moss-app-dev" : "\\MOSS\\moss-app";
 }
 
 function userHome(spec: Pick<LoginSpec, "homedir">): string {
@@ -109,7 +109,7 @@ export function appUnitPath(spec: LoginSpec): string | null {
 /** Linux: the XDG autostart entry that starts the app with the desktop session (§3.1). */
 export function xdgAutostartPath(spec: LoginSpec): string | null {
   if (spec.os !== "linux") return null;
-  return join(xdgConfigHome(spec), "autostart", `${spec.profile === "dev" ? "com.waifucave.clover.dev" : "com.waifucave.clover"}.desktop`);
+  return join(xdgConfigHome(spec), "autostart", `${spec.profile === "dev" ? "com.waifucave.moss.code.dev" : "com.waifucave.moss.code"}.desktop`);
 }
 
 /** A path or value with a control character (a newline above all) would add lines to a unit or an entry
@@ -141,12 +141,12 @@ function systemdEnv(key: string, value: string): string {
 
 /** A macOS LaunchAgent. `KeepAlive` is crash-only (`SuccessfulExit: false`), so a clean Quit holds
  *  until the next login (§3.1). `ThrottleInterval` 1: without it launchd waits up to 10 s before
- *  restarting a crashed job (S7 §5 measured a restart in 0.26–1.2 s with it). `CLOVER_APP` names the
+ *  restarting a crashed job (S7 §5 measured a restart in 0.26–1.2 s with it). `MOSS_APP` names the
  *  app bundle the daemon starts through Launch Services, when the installer gave one. */
 export function renderLaunchdPlist(spec: LoginSpec): string {
-  const vars: Array<[string, string]> = [["CLOVER_HOME", spec.home]];
-  if (spec.profile === "dev") vars.push(["CLOVER_PROFILE", "dev"]);
-  if (spec.app) vars.push(["CLOVER_APP", spec.app.bin]);
+  const vars: Array<[string, string]> = [["MOSS_HOME", spec.home]];
+  if (spec.profile === "dev") vars.push(["MOSS_PROFILE", "dev"]);
+  if (spec.app) vars.push(["MOSS_APP", spec.app.bin]);
   const env = `<dict>${vars.map(([k, v]) => `<key>${k}</key><string>${xmlEscape(v)}</string>`).join("")}</dict>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -178,10 +178,10 @@ export function renderLaunchdPlist(spec: LoginSpec): string {
  *  started with `systemctl --user start`. `ConditionPathExists` makes it inert once the binary is
  *  gone: a deb or rpm removal runs as root and can't reach the user's units (lane M). */
 export function renderSystemdUnit(spec: LoginSpec): string {
-  const env = [systemdEnv("CLOVER_HOME", spec.home)];
-  if (spec.profile === "dev") env.push(systemdEnv("CLOVER_PROFILE", "dev"));
+  const env = [systemdEnv("MOSS_HOME", spec.home)];
+  if (spec.profile === "dev") env.push(systemdEnv("MOSS_PROFILE", "dev"));
   return `[Unit]
-Description=Clover daemon (clover-core)
+Description=MOSS daemon (moss-core)
 ConditionPathExists=${systemdPath(spec.bin)}
 
 [Service]
@@ -201,10 +201,10 @@ WantedBy=default.target
  *  down (S7 §5). The daemon restarts it, so systemd does not; it stops with the graphical session. */
 export function renderAppSystemdUnit(spec: LoginSpec): string {
   if (!spec.app) throw new Error("renderAppSystemdUnit needs spec.app");
-  const env = [systemdEnv("CLOVER_HOME", spec.home)];
-  if (spec.profile === "dev") env.push(systemdEnv("CLOVER_PROFILE", "dev"));
+  const env = [systemdEnv("MOSS_HOME", spec.home)];
+  if (spec.profile === "dev") env.push(systemdEnv("MOSS_PROFILE", "dev"));
   return `[Unit]
-Description=Clover app
+Description=MOSS app
 ConditionPathExists=${systemdPath(spec.app.bin)}
 After=graphical-session.target
 PartOf=graphical-session.target
@@ -226,8 +226,8 @@ export function renderXdgAutostart(spec: LoginSpec): string {
   const tryExec = spec.app ? `TryExec=${noControl(spec.app.bin).replace(/\\/g, "\\\\")}\n` : "";
   return `[Desktop Entry]
 Type=Application
-Name=${spec.profile === "dev" ? "Clover Dev" : "Clover"}
-Comment=Starts Clover with the desktop session
+Name=${spec.profile === "dev" ? "MOSS Code Dev" : "MOSS"}
+Comment=Starts MOSS with the desktop session
 ${tryExec}Exec=systemctl --user start ${appUnitName(spec.profile)}
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
@@ -307,7 +307,7 @@ ${triggers}
 export function renderSchtasksXml(spec: LoginSpec, loginOn = true): string {
   const fallback = spec.fallbackBin === undefined ? undefined : schtasksFallback(spec.bin, spec.fallbackBin, spec.homedir ?? realHomedir());
   return renderTask({
-    description: `${spec.profile === "dev" ? "Clover (dev)" : "Clover"} daemon (clover-core supervise)`,
+    description: `${spec.profile === "dev" ? "MOSS (dev)" : "MOSS"} daemon (moss-core supervise)`,
     uri: schtasksTaskName(spec.profile),
     user: spec.winUser,
     logon: loginOn ? "on" : "off",
@@ -359,7 +359,7 @@ export function schtasksFallbackProblem(bin: string, fallback: string, homedir: 
 export function renderAppSchtasksXml(spec: LoginSpec): string {
   if (!spec.app) throw new Error("renderAppSchtasksXml needs spec.app");
   return renderTask({
-    description: `${spec.profile === "dev" ? "Clover (dev)" : "Clover"} app`,
+    description: `${spec.profile === "dev" ? "MOSS (dev)" : "MOSS"} app`,
     uri: appTaskName(spec.profile),
     user: spec.winUser,
     logon: "none",

@@ -1,6 +1,6 @@
 // Alpha's system prompt, as the harness assembles it from her plugin's own files: what makes a new user see her
 // plugin's parts in the first few turns without asking for them by name. Her stage (a mood when she greets, the first
-// list pinned, stage_status before an expression), her study buddy (the Agent call she makes, by name, on Clover's own
+// list pinned, stage_status before an expression), her study buddy (the Agent call she makes, by name, on MOSS's own
 // sandboxed agent), reminders through a routine, and pinned notes as data. A scripted model can't judge the wording;
 // this holds the cues in place.
 import { expect, test } from "bun:test";
@@ -10,7 +10,7 @@ import { harnessPrompt } from "../../../src/runtime-sdk/turn-loop/prompt";
 
 const ALPHA = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins", "alpha");
 const read = (p: string) => readFileSync(join(ALPHA, p), "utf8");
-const manifest = JSON.parse(read("clover.json")) as { contributes: { agents: { id: string; backend?: string }[]; mcpServers: Record<string, { instructions: string }> } };
+const manifest = JSON.parse(read("moss.json")) as { contributes: { agents: { id: string; backend?: string }[]; mcpServers: Record<string, { instructions: string }> } };
 
 const prompt = harnessPrompt({
   bot: { id: "alpha", name: "Alpha", instructions: read("bot/instructions.md") },
@@ -26,10 +26,10 @@ test("her stage shows it's alive in the first turns: a mood as she greets, the f
   expect(bot).toContain("never on every turn");
 });
 
-test("she starts her study buddy herself, by the definition her plugin ships, on Clover's own coding agent", () => {
+test("she starts her study buddy herself, by the definition her plugin ships, on MOSS's own coding agent", () => {
   const def = manifest.contributes.agents.find((a) => a.id === "study-buddy");
   expect(def).toBeDefined();
-  expect(bot).toContain('`Agent` with `agent: "alpha:study-buddy"`, `backend: "clover-code"`');
+  expect(bot).toContain('`Agent` with `agent: "alpha:study-buddy"`, `backend: "moss-code"`');
   expect(bot).toContain("pin a note");
   // The harness says where its report goes, so she waits for it rather than polling.
   expect(prompt).toContain("its report arrives later as a task notification");
@@ -37,7 +37,7 @@ test("she starts her study buddy herself, by the definition her plugin ships, on
 
 test("a reminder is a routine (she holds no notify grant: it would cost her stage tools their no-card run)", () => {
   expect(bot).toContain("make a routine for it (the Routine tool)");
-  expect((JSON.parse(read("clover.json")) as { capabilities?: string[] }).capabilities ?? []).not.toContain("notify");
+  expect((JSON.parse(read("moss.json")) as { capabilities?: string[] }).capabilities ?? []).not.toContain("notify");
 });
 
 test("pinned notes reach her as data, and her bot instructions sit inside the harness's own block, after its safety rules", () => {

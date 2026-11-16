@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FolderWatches, type TreeWatchEvent } from "../../src/tree/watch";
 
-const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-watch-")));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-b-watch-")));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 /** Waits for a watch to report `name`, at most `ms`; true when it did. */

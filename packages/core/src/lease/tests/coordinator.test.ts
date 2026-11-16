@@ -45,7 +45,7 @@ async function computers(names: string[], wrap?: (name: string, scope: Scope) =>
     const scope = wrap ? wrap(name, service.scope(device.id)) : service.scope(device.id);
     const node: Node = { name, device, handBacks: 0, active: false, mc: undefined as unknown as MainComputerHandle };
     node.mc = startMainComputer({
-      home: mkdtempSync(join(tmpdir(), "clover-h-lease-")), self: device.id, registry: device.registry, transport: device.transport,
+      home: mkdtempSync(join(tmpdir(), "moss-h-lease-")), self: device.id, registry: device.registry, transport: device.transport,
       clock, scope: () => scope, monotonic: () => performance.now(), watchSleep: false, timings: TIMINGS, userActive: () => node.active,
       ...(process.env.LANE_H_DEBUG ? { log: (l: string) => console.log(`${Date.now() % 100000} ${name} ${l}`) } : {}),
     });

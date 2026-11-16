@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { catalogPointDecl, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { catalogPointDecl, PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import type { Manifest } from "../../contracts/sdk-types";
 import { classifyChange, updateAddsTrigger, workshopAdds } from "../changes";
 import { RegistryCore, type OkCardRaiser } from "../core";
@@ -17,7 +17,7 @@ afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true
 
 /** Mika: a bot, an island tab beside it, a tool server beside it and one inside it (`own-bot`), her tab's composer. */
 const MIKA = (over: Record<string, unknown> = {}): Manifest => ({
-  manifest: 1, id: "mika", name: "Mika", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  manifest: 1, id: "mika", name: "Mika", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
   host: { entry: "server/index.ts" }, client: { entry: "client/index.tsx" },
   contributes: {
     bot: { name: "Mika", instructions: "bot/instructions.md" },
@@ -84,9 +84,9 @@ describe("the switch for the parts beside a bot", () => {
 describe("a part that moves from inside the bot to beside it asks again", () => {
   const FILES: Record<string, string> = { "bot/instructions.md": "You are Mika.", "server/index.ts": "export {};\n", "client/index.tsx": "export const Day = () => null;\n", "tab/pane.json": "{\"theme\":1,\"name\":\"Pane\",\"tokens\":{}}\n", "skills/a/SKILL.md": "---\nname: a\ndescription: A\n---\nA.\n", "skills/b/SKILL.md": "---\nname: b\ndescription: B\n---\nB.\n" };
   async function snap(manifest: Manifest) {
-    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-b-parts-"))), "mika");
+    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "moss-b-parts-"))), "mika");
     temps.push(dirname(dir));
-    for (const [path, text] of Object.entries({ ...FILES, "clover.json": JSON.stringify(manifest) })) {
+    for (const [path, text] of Object.entries({ ...FILES, "moss.json": JSON.stringify(manifest) })) {
       mkdirSync(dirname(join(dir, path)), { recursive: true });
       writeFileSync(join(dir, path), text);
     }

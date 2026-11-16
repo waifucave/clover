@@ -3,17 +3,17 @@
 // words match the behaviour: an "always" pressed for one bot's call answers that bot's same call, never another bot's,
 // and not the same call on another computer.
 import { describe, expect, test } from "bun:test";
-import type { Card } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker, type CloverApprovalRequest } from "../../src/approvals/broker";
+import type { Card } from "@waifucave/moss-protocol";
+import { MossApprovalBroker, type MossApprovalRequest } from "../../src/approvals/broker";
 import { ruleShapeOf } from "../../src/approvals/bot-check";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 
-const req = (over: Partial<CloverApprovalRequest> = {}): CloverApprovalRequest => ({
+const req = (over: Partial<MossApprovalRequest> = {}): MossApprovalRequest => ({
   kind: "tool", session: "s1", bot: "alpha", origin: "user", computers: ["Studio"], effect: "execute",
   ruleKey: "builtin:Bash(ls build)", fields: { title: { type: "text", text: "Run a command" } }, ...over,
 });
-const broker = () => new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "ask-risky", localComputer: "Studio" });
-function answerNext(b: CloverApprovalBroker, optionId: string): Promise<Card> {
+const broker = () => new MossApprovalBroker({ clock: new FakeClock(), levels: () => "ask-risky", localComputer: "Studio" });
+function answerNext(b: MossApprovalBroker, optionId: string): Promise<Card> {
   return new Promise((resolve) => {
     const off = b.watch((e) => {
       if (e.type !== "requested") return;

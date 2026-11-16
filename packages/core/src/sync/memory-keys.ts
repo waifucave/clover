@@ -278,7 +278,7 @@ function infoOf(raw: unknown): ContentKeyInfo | undefined {
 
 /** What a key's creator signs: its kid, epoch, members (in its order), creation time and the commitment to its bytes. */
 export function keyStatement(k: Omit<ContentKeyInfo, "sig">): Bytes {
-  return utf8(["clover-memory-v1 key", k.kid, String(k.epoch), k.members.join(","), String(k.createdAt), k.commit].join("\n"));
+  return utf8(["moss-memory-v1 key", k.kid, String(k.epoch), k.members.join(","), String(k.createdAt), k.commit].join("\n"));
 }
 
 /** The commitment to a key's bytes a key record carries. */
@@ -287,10 +287,10 @@ export function keyCommit(bytes: Uint8Array): string {
 }
 
 function commitOf(bytes: Uint8Array): string {
-  return createHash("sha256").update("clover-memory-v1 key commit\n").update(bytes).digest("hex");
+  return createHash("sha256").update("moss-memory-v1 key commit\n").update(bytes).digest("hex");
 }
 
 /** The `aad` of a memory file's content box: it binds the box to its key, bot, file and content. */
 export function contentAad(c: { kid: string; bot: string; key: string; hash: string }): Bytes {
-  return utf8(["clover-memory-v1 content", c.kid, c.bot, c.key, c.hash].join("\n"));
+  return utf8(["moss-memory-v1 content", c.kid, c.bot, c.key, c.hash].join("\n"));
 }

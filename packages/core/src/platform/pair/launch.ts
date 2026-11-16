@@ -1,16 +1,16 @@
 // How the daemon starts the app through the OS (spec §3.1), never as its own child, so a daemon
 // restart never takes the app down (S7 §5):
-//   macOS:   open -n -g -a <Clover.app> (Launch Services; -g keeps it in the background, so the app
-//            comes up in the menu bar with no window). The bundle is `CLOVER_APP` (the installer
+//   macOS:   open -n -g -a <MOSS Code.app> (Launch Services; -g keeps it in the background, so the app
+//            comes up in the menu bar with no window). The bundle is `MOSS_APP` (the installer
 //            writes it into the login item) or the bundle the daemon's own binary sits in.
-//   Linux:   systemctl --user start clover-app.service, once the graphical session is up (the user
+//   Linux:   systemctl --user start moss-app.service, once the graphical session is up (the user
 //            manager has DISPLAY or WAYLAND_DISPLAY); before that, "not-ready", which is not a crash.
-//   Windows: schtasks /Run /TN \Clover\clover-app (the app's on-demand task).
+//   Windows: schtasks /Run /TN \MOSS\moss-app (the app's on-demand task).
 // `resolveAppLauncher` answers null where no app is installed (a server, a cloud computer, a dev
 // checkout): the daemon then runs alone.
 import { existsSync } from "node:fs";
 import { posix } from "node:path";
-import type { CloverProfile } from "../../profile";
+import type { MossProfile } from "../../profile";
 import type { Runner } from "../login/live";
 import { appTaskName, appUnitName, systemdUserDir } from "../login/render";
 import type { DaemonPlatform } from "../transport";
@@ -27,7 +27,7 @@ export interface AppLauncher {
 
 export interface AppLauncherInput {
   readonly os: DaemonPlatform;
-  readonly profile: CloverProfile;
+  readonly profile: MossProfile;
   /** The daemon's own executable (`process.execPath`). */
   readonly execPath: string;
   readonly env: Record<string, string | undefined>;
@@ -56,7 +56,7 @@ export function hasGraphicalSession(showEnvironment: string): boolean {
 export async function resolveAppLauncher(input: AppLauncherInput, run: Runner): Promise<AppLauncher | null> {
   const exists = input.exists ?? existsSync;
   if (input.os === "darwin") {
-    const fromEnv = input.env.CLOVER_APP ? appBundleOf(input.env.CLOVER_APP) : null;
+    const fromEnv = input.env.MOSS_APP ? appBundleOf(input.env.MOSS_APP) : null;
     const bundle = fromEnv !== null && exists(fromEnv) ? fromEnv : appBundleOf(input.execPath);
     if (bundle === null || !exists(bundle)) return null;
     return {

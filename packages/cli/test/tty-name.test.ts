@@ -1,4 +1,4 @@
-// The Clover island: the CLI's hello names its controlling terminal (`HelloParams.tty`), found by device number.
+// The MOSS island: the CLI's hello names its controlling terminal (`HelloParams.tty`), found by device number.
 import { describe, expect, test } from "bun:test";
 import { controllingTtyName, type TtyProbe } from "../src/tty-name";
 

@@ -9,18 +9,18 @@
 //   `grant:<uuid>/<relative path>` (a folder grant) as the path, and learns the real path with `files.path` (the host
 //   half only, never the page) to hand to a program (ffmpeg takes paths); the plugin's own processes (its stdio MCP
 //   servers, its hooks, a supervised host) get the same paths in their fence (`fencePaths`).
-// * What a grant can never be: `/`, the user's home folder as a whole or a folder holding it, the Clover home or
+// * What a grant can never be: `/`, the user's home folder as a whole or a folder holding it, the MOSS home or
 //   anything in it or holding it (its plugins folder included), one of the user's secret places (`SECRET_READ_PLACES`)
 //   or a folder holding one, or any fenced item (settings, the login-start places, the browser profiles, the coding
 //   agents' installs and configs, the development folders) or a folder holding one. Refused when it is added, with a
 //   sentence main can show; and checked again, on the real path, every time it is used, so a link swapped in later
 //   leads nowhere.
 // * How long: until the user removes it (the plugin's page in Settings lists them, `plugin.grant.list`) or the plugin
-//   is removed. Records live in `<clover home>/plugins-state/grants.json`, inside the Clover home's default-deny: no
+//   is removed. Records live in `<moss home>/plugins-state/grants.json`, inside the MOSS home's default-deny: no
 //   bot, plugin or session writes it; the core is its only writer.
 import { closeSync, constants as FS, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, writeSync, type Stats } from "node:fs";
 import { basename, dirname, isAbsolute, join, posix, win32 } from "node:path";
-import { isAnyPluginId, PLUGINS_METHODS, type FileStat, type Os } from "@waifucave/clover-protocol";
+import { isAnyPluginId, PLUGINS_METHODS, type FileStat, type Os } from "@waifucave/moss-protocol";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { ContractError } from "../contracts/common";
 import { secretReadPlaces, type FencedPath } from "../contracts/fence";
@@ -47,7 +47,7 @@ export interface PluginGrant {
 }
 
 export interface PluginGrantsOptions {
-  cloverHome: string;
+  mossHome: string;
   userHome: string;
   os?: Os;
   /** The fenced items now (the fence's `fencedSet`): a grant may neither be in one nor hold one. */
@@ -82,19 +82,19 @@ export function realGrantPath(path: string, kind: GrantKind): string {
 }
 
 /** Why `real` (a real, absolute path) can never be a plugin's grant, or undefined when it can be. */
-export function grantRefusal(real: string, o: { cloverHome: string; userHome: string; os?: Os; fenced?: () => readonly FencedPath[] }): string | undefined {
+export function grantRefusal(real: string, o: { mossHome: string; userHome: string; os?: Os; fenced?: () => readonly FencedPath[] }): string | undefined {
   const os = o.os ?? osOf();
   const p = os === "windows" ? win32 : posix;
   if (CONTROL.test(real)) return "a picked path has no control characters";
   if (p.dirname(real) === real) return "the whole disk can't be given to a plugin";
   const holdsOrIn = (place: string) => within(real, place, os) || within(place, real, os);
   if (within(o.userHome, real, os)) return "the whole home folder can't be given to a plugin: pick a folder or file in it";
-  if (holdsOrIn(o.cloverHome)) return "Clover's own folder can't be given to a plugin";
+  if (holdsOrIn(o.mossHome)) return "MOSS's own folder can't be given to a plugin";
   for (const s of secretReadPlaces(os, o.userHome)) {
     if (holdsOrIn(s.path)) return `that ${within(real, s.path, os) ? "is in" : "holds"} a place that holds ${s.cls}, which no plugin is given`;
   }
   for (const item of o.fenced?.() ?? []) {
-    if (holdsOrIn(item.path)) return `that ${within(real, item.path, os) ? "is in" : "holds"} a place Clover keeps from plugins (${item.kind})`;
+    if (holdsOrIn(item.path)) return `that ${within(real, item.path, os) ? "is in" : "holds"} a place MOSS keeps from plugins (${item.kind})`;
   }
   return undefined;
 }
@@ -112,7 +112,7 @@ export class PluginGrants {
   constructor(o: PluginGrantsOptions) {
     this.#o = o;
     this.#os = o.os ?? osOf();
-    this.#file = join(o.cloverHome, "plugins-state", "grants.json");
+    this.#file = join(o.mossHome, "plugins-state", "grants.json");
     let stored: GrantsFile | undefined;
     try { stored = readJsonFile<GrantsFile>(this.#file); } catch { stored = undefined; } // unreadable: none kept
     this.#grants = (stored?.grants ?? []).filter((g) => GRANT_TOKEN.test(g.token) && isAnyPluginId(g.pluginId) && typeof g.path === "string"
@@ -133,7 +133,7 @@ export class PluginGrants {
   }
 
   #refusal(real: string): string | undefined {
-    return grantRefusal(real, { cloverHome: this.#o.cloverHome, userHome: this.#o.userHome, os: this.#os, ...(this.#o.fenced ? { fenced: this.#o.fenced } : {}) });
+    return grantRefusal(real, { mossHome: this.#o.mossHome, userHome: this.#o.userHome, os: this.#os, ...(this.#o.fenced ? { fenced: this.#o.fenced } : {}) });
   }
 
   /** Main registers a pick (`plugin.grant.add`). Refused, with a sentence for the user, for what a grant can never be. */

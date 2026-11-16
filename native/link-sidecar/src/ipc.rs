@@ -1,4 +1,4 @@
-//! `ipc`: the sidecar's local hop to clover-core, over its stdin and stdout. Frames are a
+//! `ipc`: the sidecar's local hop to moss-core, over its stdin and stdout. Frames are a
 //! big-endian u32 length and that many bytes; the prototype echoes each frame, which is enough
 //! to measure what the hop costs (spec §8.3: "adds microseconds"). A real sidecar would carry
 //! link streams in these frames.

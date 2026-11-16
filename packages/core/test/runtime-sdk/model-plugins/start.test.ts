@@ -160,13 +160,13 @@ describe("startModelPlugins", () => {
     const serveApi = host.serveApi.bind(host);
     host.serveApi = (r) => { serveApiCalls += 1; serveApi(r); };
     // A home whose catalog folder can't be made: the first load fails.
-    const blocker = join(tempDir("clover-a2-start-bad-"), "a-file");
+    const blocker = join(tempDir("moss-a2-start-bad-"), "a-file");
     writeFileSync(blocker, "x");
     await expect(startModelPlugins({ registry, host, home: blocker, secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h) })).rejects.toThrow();
     expect(api.served()).toBe(0);
     expect(installedModelPlugins()).toBeUndefined();
     // A clean start and stop: the handlers come and go; the host's router is never replaced.
-    const ok = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-ok-"), secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h) });
+    const ok = await startModelPlugins({ registry, host, home: tempDir("moss-a2-start-ok-"), secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h) });
     expect(api.served()).toBe(1);
     ok.stop();
     ok.stop();
@@ -184,7 +184,7 @@ describe("startModelPlugins", () => {
     }
     const api = serveApiHandlers(host, registry);
     const lines: string[] = [];
-    started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-off-"), secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h), serveCodeAdapters: false, log: (l) => lines.push(l) });
+    started = await startModelPlugins({ registry, host, home: tempDir("moss-a2-start-off-"), secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h), serveCodeAdapters: false, log: (l) => lines.push(l) });
     expect(started.plugins.snapshot!.served.size).toBe(0);
     expect(lines.some((l) => l.includes("code providers stay on the compiled path"))).toBe(true);
     const option = started.plugins.sessionOption({ caller: { kind: "core" } });
@@ -217,7 +217,7 @@ describe("startModelPlugins", () => {
         return globalThis.fetch(`${fake.url}${u.pathname}${u.search}`, init);
       };
       const api = serveApiHandlers(host, registry);
-        started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-home-"), secrets: store, fetch, addApiHandlers: (h) => api.addApiHandlers(h), serveCodeAdapters: true });
+        started = await startModelPlugins({ registry, host, home: tempDir("moss-a2-start-home-"), secrets: store, fetch, addApiHandlers: (h) => api.addApiHandlers(h), serveCodeAdapters: true });
       expect(installedModelPlugins()).toBe(started.plugins);
       expect(activeCatalog()).not.toBe(loadCatalog());
       expect(activeCatalog().providers.length).toBe(loadCatalog().providers.length);
@@ -228,7 +228,7 @@ describe("startModelPlugins", () => {
       expect(fake.bearers).toEqual([codexFake.FAKE_ACCESS_TOKEN]);
       const turn = fake.requests.find((r) => r.path.endsWith("/responses"))!;
       expect(turn.headers["chatgpt-account-id"]).toBe(codexFake.FAKE_ACCOUNT_ID);
-      expect(turn.headers["originator"]).toBe("clover");
+      expect(turn.headers["originator"]).toBe("moss");
 
       started.stop();
       started = undefined;

@@ -42,7 +42,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 
 /** Exactly the fields `plugin.list`'s own `extras.entry` discloses (`ipc/server.ts#pluginExtrasFor`)
- *  -- `cwd`, though `clover-plugin.json` may declare it, is never part of that disclosure and so
+ *  -- `cwd`, though `moss-plugin.json` may declare it, is never part of that disclosure and so
  *  never part of the fingerprint either. */
 export interface PluginFingerprintEntry {
   command: string;
@@ -54,11 +54,11 @@ export interface PluginFingerprintEntry {
  *  which discloses nothing beyond its install path, still hashes to a stable value. */
 export interface PluginDisclosure {
   entry?: PluginFingerprintEntry;
-  /** `clover-plugin.json`'s `permissions.tcc` verbatim (e.g. `["accessibility"]`) -- the LIST
+  /** `moss-plugin.json`'s `permissions.tcc` verbatim (e.g. `["accessibility"]`) -- the LIST
    *  CONTENTS, not just whether the "tcc" class is required, so a permission added under an
    *  already-consented class still invalidates. */
   tcc?: string[];
-  /** `clover-plugin.json`'s `permissions.hardware` verbatim, same reasoning as `tcc`. */
+  /** `moss-plugin.json`'s `permissions.hardware` verbatim, same reasoning as `tcc`. */
   hardware?: string[];
   /** `requiredConsentClasses(manifest)`'s own result -- belt-and-suspenders coverage for
    *  `permissions.exec`/`entry`'s contribution and any future required-consent-class addition. */

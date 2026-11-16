@@ -17,7 +17,7 @@ afterAll(() => {
 });
 
 test.if(onWindows)("a bare command finds its .exe or its .cmd on PATH, never npm's sh script or .ps1, and a .cmd runs", () => {
-  const dir = mkdtempSync(join(tmpdir(), "clover-k-win-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-k-win-"));
   temps.push(dir);
   // A real program as `exeagent.exe`, and an npm-style bin: `cmdagent.cmd` with its sh script and .ps1 beside it.
   copyFileSync(process.execPath, join(dir, "exeagent.exe"));

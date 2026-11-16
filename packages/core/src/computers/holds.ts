@@ -5,7 +5,7 @@
 //
 // A dropped link lets go of every hold the other computer took here: its sessions can't act here any more.
 import { z } from "zod";
-import { FencingToken, HoldTarget, SessionId, type HoldView } from "@waifucave/clover-protocol";
+import { FencingToken, HoldTarget, SessionId, type HoldView } from "@waifucave/moss-protocol";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { HoldRequest } from "../contracts/computer-registry";
 import type { LinkTransport } from "../contracts/link-transport";

@@ -8,8 +8,8 @@ import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const ROOT = join(import.meta.dir, "..", "..", "..");
-const IDS = /clover\/(island|pill)\b/;
-/** Files allowed to name them: none today (the build's plugin list is `apps/desktop/src/layer/clover/index.ts`, outside the scan). */
+const IDS = /moss\/(island|pill)\b/;
+/** Files allowed to name them: none today (the build's plugin list is `apps/desktop/src/layer/moss/index.ts`, outside the scan). */
 const EXEMPT: readonly string[] = [];
 
 function sources(dir: string): string[] {

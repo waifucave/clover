@@ -3,7 +3,7 @@
 // below) are exempt from the `<plugin-id>.` prefix rule, and a plugin that declares one must use the catalog's
 // declaration, or it is refused (§5.4).
 import { z } from "zod";
-import { utf16 } from "@waifucave/clover-protocol";
+import { utf16 } from "@waifucave/moss-protocol";
 import { EntryId, HandlerName, Path, Text } from "../manifest/fields";
 import { AVATAR_CAPABILITIES, AVATAR_FILE_CAPS, AVATAR_FILE_TYPES, AVATAR_FINDERS, AVATAR_MODEL_MAX_FILES, avatarFileProblem } from "./avatars";
 import { SPOTS } from "./spots";
@@ -26,7 +26,7 @@ export interface CorePointInfo {
    *  by `title`. */
   readonly oneAtATime?: boolean;
   readonly title?: string;
-  /** The line its fillers' OK cards show (`fillsOkLines`), attributed to Clover. */
+  /** The line its fillers' OK cards show (`fillsOkLines`), attributed to MOSS. */
   readonly fills?: { readonly ok: string; readonly warns?: boolean };
 }
 
@@ -36,7 +36,7 @@ export const CORE_POINTS: readonly CorePointInfo[] = [
   { name: "models", side: "daemon", shape: "list", uniqueBy: "provider", kind: "either", runsOn: "every computer running a session; started when first needed",
     doc: "Calls the adapter, or the declared endpoint, for every turn; the welcome guide reads the sign-in methods (§3.3).", shipsWith: "every provider today's agent SDK has" },
   { name: "mcpServers", side: "daemon", shape: "keyed", kind: "either", runsOn: "local servers on each computer they are installed on; remote servers on the computer running the session (§9.1)",
-    doc: "Dispatches tool calls, builds the MCP block and shows MCP Apps pages.", shipsWith: "the web tools; `mcp__clover__Browser`" },
+    doc: "Dispatches tool calls, builds the MCP block and shows MCP Apps pages.", shipsWith: "the web tools; `mcp__moss__Browser`" },
   { name: "skills", side: "daemon", shape: "list", kind: "data", runsOn: "data, on every device", doc: "Indexes them in `Glossary` (§6.8).", shipsWith: "—" },
   { name: "agents", side: "daemon", shape: "list", kind: "data", runsOn: "data, on every device",
     doc: "Offers these presets to `Agent`: backend, model, effort, instructions, computer, root folder, plugins (§9.3).", shipsWith: "—" },
@@ -59,7 +59,7 @@ export const CORE_POINTS: readonly CorePointInfo[] = [
   { name: "notifiers", side: "daemon", shape: "list", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",
     doc: "Told when a bot needs the user or has answered (which bot and session, and whether a message, a card or a question waits; never the words), so it can notify the user or wake a companion (§10). The OK card says so.", shipsWith: "waifucave push; desktop notifications" },
   { name: "companions", side: "daemon", shape: "list", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",
-    doc: "Serves a remote client within the fixed list of remote calls (§10).", shipsWith: "the iOS app; clover.waifucave.com" },
+    doc: "Serves a remote client within the fixed list of remote calls (§10).", shipsWith: "the iOS app; moss.waifucave.com" },
   { name: "themes", side: "app", shape: "list", kind: "data", runsOn: "every app instance",
     doc: "Applies the base theme, the user's global theme and each bot's theme in its tab (§5.5).", shipsWith: "the base theme" },
   { name: "app.root", side: "app", shape: "single", kind: "code", runsOn: "every app instance",
@@ -123,10 +123,10 @@ export const AvatarFormatEntry = z.strictObject({
 export type AvatarFormatEntry = z.infer<typeof AvatarFormatEntry>;
 
 export const DATA_POINTS: readonly DataPointInfo[] = [
-  { name: "webhook.ingress", shape: "list", declaredBy: "clover/trigger-webhook", kind: "code",
+  { name: "webhook.ingress", shape: "list", declaredBy: "moss/trigger-webhook", kind: "code",
     entry: z.strictObject({ id: EntryId, name: Text.optional(), handler: HandlerName }),
     doc: "Ways for webhooks to reach a device: the waifucave forwarder, the user's cloud computer, a tunnel (§7)." },
-  { name: "usage.sources", shape: "list", declaredBy: "clover/usage", kind: "code",
+  { name: "usage.sources", shape: "list", declaredBy: "moss/usage", kind: "code",
     entry: z.strictObject({
       /** The source's id: what its records and its plan reading are filed under, and what an alarm names. */
       id: EntryId,
@@ -138,10 +138,10 @@ export const DATA_POINTS: readonly DataPointInfo[] = [
       /** The least time between two plan readings (default 5 minutes, at least 10 seconds): the core asks no oftener. */
       planEveryMs: z.number().int().min(10_000).max(86_400_000).optional(),
     }),
-    doc: "A tool of the user's installed on this computer whose usage Clover reads: its plan windows (`plan`) and the token counts its own session files hold (`ingest`), through its own program and its own folders (`host.outside`), never its sign-in. The core calls the handler on this computer only, asks no oftener than `planEveryMs`, prices the records and keeps the store; the source owns how its tool is read (§12)." },
+    doc: "A tool of the user's installed on this computer whose usage MOSS reads: its plan windows (`plan`) and the token counts its own session files hold (`ingest`), through its own program and its own folders (`host.outside`), never its sign-in. The core calls the handler on this computer only, asks no oftener than `planEveryMs`, prices the records and keeps the store; the source owns how its tool is read (§12)." },
   { name: "island.line", shape: "list", declaredBy: "island", kind: "code",
     entry: z.strictObject({ id: EntryId, handler: HandlerName }),
-    doc: "A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island calls `handler` (an `IslandLineHandler`) only when Clover isn't in front (the first line on its closed strip, the lines on its open Needs you tab) and draws what it returns; the island decides how many lines fit, in what order, and how long they last. Nothing is drawn when the handler returns nothing, and a plugin that is off or removed has no line." },
+    doc: "A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island calls `handler` (an `IslandLineHandler`) only when MOSS isn't in front (the first line on its closed strip, the lines on its open Needs you tab) and draws what it returns; the island decides how many lines fit, in what order, and how long they last. Nothing is drawn when the handler returns nothing, and a plugin that is off or removed has no line." },
   { name: "avatar.formats", shape: "list", declaredBy: "core", readBy: ["avatar.report", "bots.avatar"], kind: "data",
     entry: AvatarFormatEntry,
     doc: "A model format a renderer plugin draws: the files its models are made of (closed kinds, capped), how they are found from the entry file, what the picker may import, and what the renderer can do. Nothing in the app is hardcoded per format (§5.5)." },

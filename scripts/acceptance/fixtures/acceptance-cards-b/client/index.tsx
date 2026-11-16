@@ -2,7 +2,7 @@
 // part is there and that the core answered its card list (data-listed), and every card id it was told of (data-ids),
 // by the event and by the list.
 import { useEffect, useState } from "react";
-import { useApprovals, usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
+import { useApprovals, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 
 export function CardsBMain() {
   return <p data-cards-b="main">Acceptance cards B</p>;

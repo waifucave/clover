@@ -4,13 +4,13 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { API_CALLS, catalogPointDecl } from "@waifucave/clover-plugin-sdk";
-import { CLOVER_EVENTS, CLOVER_METHODS, type Card, type Caller, type CloverRole } from "@waifucave/clover-protocol";
+import { API_CALLS, catalogPointDecl } from "@waifucave/moss-plugin-sdk";
+import { MOSS_EVENTS, MOSS_METHODS, type Card, type Caller, type MossRole } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { grantsInForce } from "../../contracts/plugin-registry";
 import type { Manifest } from "../../contracts/sdk-types";
-import type { CloverConn } from "../../ipc/clover";
+import type { MossConn } from "../../ipc/moss";
 import { sendCoreEvent } from "../../ipc/core-events";
 import { RegistryCore } from "../../registry/core";
 import { brokerOkCards } from "../../registry/ok-cards";
@@ -115,8 +115,8 @@ describe("the registry's transitions as plugin events, one per transition, ids a
     w.reg.put({ id: "tarot", manifest: m("Tarot", { version: "1.0.0" } as never), treeHash: "sha256:t1", approved: true });
     w.events.length = 0;
     w.reg.put({ id: "tarot", manifest: m("Tarot", { version: "1.1.0" } as never), treeHash: "sha256:t2", approved: true, change: "applies" } as never);
-    const page = conn("layer", ["plugins"], { kind: "plugin", pluginId: "clover/plugin-index" });
-    const grants = (id: string) => (id === "clover/plugin-index" ? ["plugins.watch"] : []);
+    const page = conn("layer", ["plugins"], { kind: "plugin", pluginId: "moss/plugin-index" });
+    const grants = (id: string) => (id === "moss/plugin-index" ? ["plugins.watch"] : []);
     for (const e of w.events) sendCoreEvent({ connections: () => [page.c], pluginCapabilities: grants }, e as never);
     expect(page.got.map((e) => [e.type, e.id, e.state])).toEqual([["plugin_changed", "tarot", "running"]]);
   });
@@ -130,40 +130,40 @@ describe("the registry's transitions as plugin events, one per transition, ids a
 });
 
 let seq = 0;
-function conn(role: CloverRole, areas: string[], caller: Caller = { kind: "user", client: "app" }) {
+function conn(role: MossRole, areas: string[], caller: Caller = { kind: "user", client: "app" }) {
   const got: Record<string, unknown>[] = [];
   const c = {
     connId: ++seq, role, caller, features: [], clientName: role, areas: new Set(areas), follows: new Map(), send: () => "x",
     notify: (_method: string, params: unknown) => { got.push(params as Record<string, unknown>); },
-  } as unknown as CloverConn;
+  } as unknown as MossConn;
   return { c, got };
 }
 
 describe("who hears them, over the real routing", () => {
   // The grants the registry computes from the bundled parts' real manifests (a bundled tree is OK'd as it is).
-  const manifestOf = (part: string) => JSON.parse(readFileSync(join(import.meta.dir, "../../../../../plugins/clover/plugins", part, "clover.json"), "utf8")) as Manifest;
+  const manifestOf = (part: string) => JSON.parse(readFileSync(join(import.meta.dir, "../../../../../plugins/moss/plugins", part, "moss.json"), "utf8")) as Manifest;
   const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
   reg.putAll([
-    { id: "clover", manifest: m("Clover"), treeHash: "sha256:c", approved: true, source: "bundled" } as never,
-    { id: "clover/plugin-index", manifest: manifestOf("plugin-index"), treeHash: "sha256:c", approved: true, source: "bundled" } as never,
-    { id: "clover/composer", manifest: manifestOf("composer"), treeHash: "sha256:c", approved: true, source: "bundled" } as never,
+    { id: "moss", manifest: m("MOSS"), treeHash: "sha256:c", approved: true, source: "bundled" } as never,
+    { id: "moss/plugin-index", manifest: manifestOf("plugin-index"), treeHash: "sha256:c", approved: true, source: "bundled" } as never,
+    { id: "moss/composer", manifest: manifestOf("composer"), treeHash: "sha256:c", approved: true, source: "bundled" } as never,
     { id: "tarot", manifest: m("Tarot", { capabilities: ["approvals"] }), treeHash: "sha256:t", approved: true } as never,
     // A bot plugin with the avatar's read grant and no `plugins.watch` (the shape of Alpha's tab).
     { id: "puppet", manifest: m("Puppet", { capabilities: ["avatar.read"] }), treeHash: "sha256:p", approved: true } as never,
   ]);
-  const routing = (conns: CloverConn[]) => ({ connections: () => conns, pluginCapabilities: (id: string) => grantsInForce(reg.get(id)), pluginRunning: (id: string) => { const r = reg.get(id); return r !== undefined && r.enabled && (r.state === "running" || r.state === "waiting"); } });
+  const routing = (conns: MossConn[]) => ({ connections: () => conns, pluginCapabilities: (id: string) => grantsInForce(reg.get(id)), pluginRunning: (id: string) => { const r = reg.get(id); return r !== undefined && r.enabled && (r.state === "running" || r.state === "waiting"); } });
 
-  test("the Plugins page's layer (clover/plugin-index holds plugins.watch) hears ids and states only; another part and a third-party layer hear nothing; the app and the terminal hear all", () => {
+  test("the Plugins page's layer (moss/plugin-index holds plugins.watch) hears ids and states only; another part and a third-party layer hear nothing; the app and the terminal hear all", () => {
     // Its events are plugins.watch's; F2's door calls are plugins.manage's, logs.read's and computers.read's.
-    expect(grantsInForce(reg.get("clover/plugin-index"))).toEqual(["plugins.watch", "plugins.manage", "logs.read", "computers.read"]);
-    const page = conn("layer", ["plugins"], { kind: "plugin", pluginId: "clover/plugin-index" });
-    const composer = conn("layer", ["plugins"], { kind: "plugin", pluginId: "clover/composer" });
+    expect(grantsInForce(reg.get("moss/plugin-index"))).toEqual(["plugins.watch", "plugins.manage", "logs.read", "computers.read"]);
+    const page = conn("layer", ["plugins"], { kind: "plugin", pluginId: "moss/plugin-index" });
+    const composer = conn("layer", ["plugins"], { kind: "plugin", pluginId: "moss/composer" });
     const tarot = conn("layer", ["plugins"], { kind: "plugin", pluginId: "tarot" });
     const app = conn("app", ["plugins"]);
     const cli = conn("cli", ["plugins"], { kind: "user", client: "cli" });
     const all = routing([page.c, composer.c, tarot.c, app.c, cli.c]);
     const changed = { type: "plugin_changed", ts: 1, id: "luna", state: "running", enabled: true, reason: "a reason that never reaches a layer" };
-    const found = { type: "plugin_found", ts: 2, id: "luna", folder: "/Users/someone/.clover/plugins/luna", card: "card_0a1b2c3d" };
+    const found = { type: "plugin_found", ts: 2, id: "luna", folder: "/Users/someone/.moss/plugins/luna", card: "card_0a1b2c3d" };
     const removed = { type: "plugin_removed", ts: 3, id: "luna" };
     const note = { type: "plugin_card_note", ts: 4, card: "card_0a1b2c3d", change: "plugin-remove", note: "It was already removed." };
     for (const e of [changed, found, removed, note]) expect([e.type, sendCoreEvent(all, e)]).toEqual([e.type, 3]);
@@ -180,7 +180,7 @@ describe("who hears them, over the real routing", () => {
 
   test("a plugin's settings change reaches only its own layer, as the key alone", () => {
     const own = conn("layer", ["plugins"], { kind: "plugin", pluginId: "tarot" });
-    const page = conn("layer", ["plugins"], { kind: "plugin", pluginId: "clover/plugin-index" });
+    const page = conn("layer", ["plugins"], { kind: "plugin", pluginId: "moss/plugin-index" });
     const app = conn("app", ["plugins"]);
     const e = { type: "plugin_settings_changed", ts: 1, pluginId: "tarot", key: "TAROT_KEY", value: "never sent" };
     expect(sendCoreEvent(routing([own.c, page.c, app.c]), e)).toBe(1);
@@ -200,7 +200,7 @@ describe("who hears them, over the real routing", () => {
     expect(grantsInForce(reg.get("puppet"))).not.toContain("plugins.watch");
     const own = conn("layer", ["plugins"], { kind: "plugin", pluginId: "puppet" });
     const other = conn("layer", ["plugins"], { kind: "plugin", pluginId: "tarot" });
-    const changed = { type: "plugin_ui_message", ts: 1, pluginId: "puppet", event: "clover.avatar.changed", value: { kind: "catalogue", catalogue: { expressions: ["smile"] } } };
+    const changed = { type: "plugin_ui_message", ts: 1, pluginId: "puppet", event: "moss.avatar.changed", value: { kind: "catalogue", catalogue: { expressions: ["smile"] } } };
     expect(sendCoreEvent(routing([own.c, other.c]), changed)).toBe(1);
     expect(own.got).toEqual([changed]);
     expect(other.got).toEqual([]);
@@ -216,9 +216,9 @@ describe("who hears them, over the real routing", () => {
 
 describe("the gate: plugins.watch opens nothing callable", () => {
   test("no method, no plugin API call names it; exactly the four plugin events do", () => {
-    expect([...CLOVER_METHODS.values()].filter((s) => (s as { capability?: string }).capability === "plugins.watch").map((s) => s.name)).toEqual([]);
+    expect([...MOSS_METHODS.values()].filter((s) => (s as { capability?: string }).capability === "plugins.watch").map((s) => s.name)).toEqual([]);
     expect(Object.entries(API_CALLS).filter(([, c]) => (c as { capability?: string }).capability === "plugins.watch").map(([k]) => k)).toEqual([]);
-    expect([...CLOVER_EVENTS.values()].filter((s) => (s as { capability?: string }).capability === "plugins.watch").map((s) => s.type).sort()).toEqual(["plugin_card_note", "plugin_changed", "plugin_found", "plugin_removed"]);
+    expect([...MOSS_EVENTS.values()].filter((s) => (s as { capability?: string }).capability === "plugins.watch").map((s) => s.type).sort()).toEqual(["plugin_card_note", "plugin_changed", "plugin_found", "plugin_removed"]);
   });
 });
 

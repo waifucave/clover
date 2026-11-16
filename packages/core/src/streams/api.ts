@@ -1,7 +1,7 @@
 // The `streams` area of the plugin API (spec §5.4 "Streams"), served to both halves of a plugin: `open` and `accept` (the
 // two ends' watches) and `write`, `end`, `cancel` and `ack` over the daemon's one hub (`./hub.ts`). No capability: a
 // stream connects only one plugin's own two halves, so the caller's own plugin is all it names. The SDK makes the Web
-// streams a plugin sees from these (`@waifucave/clover-plugin-sdk/streams`).
+// streams a plugin sees from these (`@waifucave/moss-plugin-sdk/streams`).
 import { ContractError } from "../contracts/common";
 import { listenerArg, stringArg, type ApiCallContext, type ApiHandlers } from "../plugin-host/api/router";
 import type { StreamEvent, StreamHub } from "./hub";

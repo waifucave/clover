@@ -8,7 +8,7 @@ import type {
   ShellApi, TerminalApi, UiSendApi, UsageApi,
   TurnsApi, StreamsApi,
 } from "../api/plugin-api";
-import type { HostProcess } from "@waifucave/clover-protocol";
+import type { HostProcess } from "@waifucave/moss-protocol";
 import type { AvatarApi } from "./avatar-cues";
 
 type Fn = (...args: never[]) => unknown;
@@ -41,8 +41,8 @@ export interface ApiCallInfo {
   /** The capability it needs; `call:*` is `call:<the target's top-level id>`, `network:*` the URL's host. */
   readonly capability?: string;
   /** Host halves in any process; only a host half in a process of the plugin's own (`own`, never a worker of a shared
-   *  process); only the `clover` process (the owner's answer to S4); components (UI layers); or both. */
-  readonly where: "host" | "own" | "clover" | "ui" | "both";
+   *  process); only the `moss` process (the owner's answer to S4); components (UI layers); or both. */
+  readonly where: "host" | "own" | "moss" | "ui" | "both";
   /** Listed, but no side serves it yet: why. The core refuses it with this reason ("isn't available yet"), whatever the
    *  plugin's capabilities, and the SDK's `PluginApi` types it as absent, so calling it is a type error. */
   readonly notYet?: string;
@@ -52,7 +52,7 @@ export interface ApiCallInfo {
 export type ApiCaller = "ui" | HostProcess;
 
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
-/** The Clover Browser's calls: the bundled tree's Browser tool (its host half, for the session whose tool call it serves) and
+/** The MOSS Browser's calls: the bundled tree's Browser tool (its host half, for the session whose tool call it serves) and
  *  the bundled panel (its component, for the person). The core serves no other plugin's. */
 const BROWSER: ApiCallInfo = { capability: "browser", where: "both" };
 
@@ -78,8 +78,8 @@ export const API_CALLS = {
   "net.fetch": both("network:*"),
   /** Only a process of the plugin's own; never a worker of a shared process, never a layer (§5.2). */
   "secrets.get": { where: "own" },
-  /** Only the `clover` process (S4): a bundled plugin's own per-computer key pairs, whose private half stays in the core. */
-  "keys.publicKey": { where: "clover" }, "keys.open": { where: "clover" }, "keys.delete": { where: "clover" },
+  /** Only the `moss` process (S4): a bundled plugin's own per-computer key pairs, whose private half stays in the core. */
+  "keys.publicKey": { where: "moss" }, "keys.open": { where: "moss" }, "keys.delete": { where: "moss" },
   "settings.get": both(), "settings.watch": both(), "settings.set": both(),
   "conversation.list": both("conversation.read"), "conversation.get": both("conversation.read"),
   "conversation.history": both("conversation.read"), "conversation.watch": both("conversation.read"), "conversation.follow": both("conversation.read"),
@@ -98,9 +98,9 @@ export const API_CALLS = {
   "computers.list": both("computers.read"), "computers.get": both("computers.read"), "computers.watch": both("computers.read"),
   "computers.holds": both("computers.control"), "computers.takeHold": { capability: "computers.control", where: "host" },
   "computers.releaseHold": { capability: "computers.control", where: "host" }, "computers.setUserWorking": { capability: "computers.control", where: "host" },
-  "computers.setActionRunning": { capability: "computers.control", where: "host" }, "computers.cloverWindows": { capability: "computers.control", where: "host" },
+  "computers.setActionRunning": { capability: "computers.control", where: "host" }, "computers.mossWindows": { capability: "computers.control", where: "host" },
   "devices.list": both("devices.read"), "devices.watch": both("devices.read"),
-  /** Components only, with `approvals`: which cards wait for this plugin's own bot (the bundled `clover` tree: all), ids and
+  /** Components only, with `approvals`: which cards wait for this plugin's own bot (the bundled `moss` tree: all), ids and
    *  places, never a card's text. A host half has no cards: they are the user's, and a sealed frame is a component's. */
   "approvals.pending": { capability: "approvals", where: "ui" }, "approvals.watch": { capability: "approvals", where: "ui" },
   "files.stat": both("files"), "files.readText": both("files"), "files.readBytes": both("files"), "files.write": both("files"),
@@ -111,8 +111,8 @@ export const API_CALLS = {
    *  half's `files.path` (a grant's real path, never a page's) beside them. */
   "files.pickOpen": { capability: "files", where: "ui" }, "files.pickFolder": { capability: "files", where: "ui" }, "files.pickSave": { capability: "files", where: "ui" },
   "files.url": { capability: "files", where: "ui" }, "files.onDrop": { capability: "files", where: "ui" },
-  /** The bundled `clover` tree's host halves only, for a tool call they serve (the Browser tool): the session that call
-   *  is for drives the Clover Browser, under its own rules; the bundled panel's component acts for the person and alone
+  /** The bundled `moss` tree's host halves only, for a tool call they serve (the Browser tool): the session that call
+   *  is for drives the MOSS Browser, under its own rules; the bundled panel's component acts for the person and alone
    *  places a tab in a view and hears the tabs change. A third-party plugin's `browser` isn't served: raw DevTools on the
    *  person's signed-in pages is more than an OK card's one line can carry. */
   "browser.toolCaller": { capability: "browser", where: "host" }, "browser.tabs": BROWSER, "browser.open": BROWSER,
@@ -121,7 +121,7 @@ export const API_CALLS = {
   /** Components only: a listener can't cross a call, so the panel hears the tabs change as the core's `tab_changed` and
    *  `tab_closed` events; a page's DevTools events (`onCdpEvent`) are a component's watch, the panel's alone, of the `Page.*` events. */
   "browser.watch": { capability: "browser", where: "ui" }, "browser.onCdpEvent": { capability: "browser", where: "ui" },
-  /** Components only, of the bundled `clover` tree: what reaches a terminal the runtime derives from trusted events. */
+  /** Components only, of the bundled `moss` tree: what reaches a terminal the runtime derives from trusted events. */
   "terminal.open": { capability: "terminal", where: "ui" }, "terminal.input": { capability: "terminal", where: "ui" },
   "terminal.onData": { capability: "terminal", where: "ui" }, "terminal.resize": { capability: "terminal", where: "ui" },
   "terminal.close": { capability: "terminal", where: "ui" },
@@ -132,21 +132,21 @@ export const API_CALLS = {
   "shell.closePanel": { capability: "shell.control", where: "ui" }, "shell.togglePanel": { capability: "shell.control", where: "ui" },
   "shell.setSidebar": { capability: "shell.control", where: "ui" }, "shell.toggleSidebar": { capability: "shell.control", where: "ui" },
   "shell.go": { capability: "shell.control", where: "ui" }, "shell.openSettings": { capability: "shell.control", where: "ui" }, "shell.dragWindow": { capability: "shell.control", where: "ui" }, "shell.provide": { capability: "shell.control", where: "ui" },
-  /** Components only, of the bundled `clover` tree (the plugin index browser). */
+  /** Components only, of the bundled `moss` tree (the plugin index browser). */
   "plugins.install": { capability: "plugins.install", where: "ui" },
   /** Lane D's usage rows and this computer's plan readings, read-only. */
   "usage.rows": both("usage.read"), "usage.plans": both("usage.read"),
   "usage.summary": both("usage.read"), "usage.watch": both("usage.read"),
-  /** A plugin's own tree's logs need no capability; Clover's own (`"core"`) and any other plugin's need `logs.read`,
+  /** A plugin's own tree's logs need no capability; MOSS's own (`"core"`) and any other plugin's need `logs.read`,
    *  which the core checks per source (the coordinator's ruling: what the OK card says decides). */
   "logs.read": both(), "logs.follow": both(),
   "notify.send": both("notify"),
-  /** This computer's own notifications (the local app's `app.notify`): only the bundled `clover` tree's process, for its
+  /** This computer's own notifications (the local app's `app.notify`): only the bundled `moss` tree's process, for its
    *  desktop notifier (§10). Any other plugin reaches the user through `notify.send`, under the core's rules (its name
    *  shown, its rate, the user's mute, never while a card waits). */
-  "desktop.show": { where: "clover" }, "desktop.close": { where: "clover" },
+  "desktop.show": { where: "moss" }, "desktop.close": { where: "moss" },
   /** A bot plugin's figure: its own bot only (the bot whose id is the plugin's top-level id), from its components and its
-   *  host half alike. The renderer's side is the stage's: only the bundled `clover` tree reports what it drew. */
+   *  host half alike. The renderer's side is the stage's: only the bundled `moss` tree reports what it drew. */
   "avatar.cue": both("avatar.control"), "avatar.catalogue": both("avatar.read"), "avatar.box": both("avatar.read"), "avatar.watch": both("avatar.read"),
   "avatar.report": { capability: "avatar.report", where: "ui" },
   /** One-at-a-time queues (§5.4 "Turns"), in both halves, with no capability of their own: the name decides. A plugin's

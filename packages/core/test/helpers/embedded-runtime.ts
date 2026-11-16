@@ -4,10 +4,10 @@ import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDG
 
 /**
  * A-M1 review S7: THE GATE FOR SESSION TESTS IS THE EMBEDDED RUNTIME, NOT THE CODING-AGENT BINARY. Every session
- * (code, dispatch, chat) runs the SDK embedded in clover-core, one Worker per session, so a test that boots a
+ * (code, dispatch, chat) runs the SDK embedded in moss-core, one Worker per session, so a test that boots a
  * daemon and drives a session needs exactly what the daemon needs: the linked SDK runtime at the version core
  * pins. That is part of core's own install, on every OS, so a missing or mismatched one FAILS here (it would
- * break every session) instead of skipping, and nothing reads `CLOVER_RUNTIME_EXECUTABLE`.
+ * break every session) instead of skipping, and nothing reads `MOSS_RUNTIME_EXECUTABLE`.
  *
  * `fn` receives a spawn hook for a test that drives `query()` directly rather than through a daemon: each call
  * runs one session in a new Worker of one embedded host, which is shut down after the block.

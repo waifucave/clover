@@ -1,5 +1,5 @@
 // Lane K's agents in the real daemon (the daemon integration lane): `createAgents` starts with the bot side over its
-// host, and `clover-core code-agent`'s relay (K's #291) opens a coding session against the daemon's own endpoint, as
+// host, and `moss-core code-agent`'s relay (K's #291) opens a coding session against the daemon's own endpoint, as
 // the user's terminal. Before the agents are up, and after they stop, the doors refuse. Fakes only where their lanes use
 // them: H's in-memory network, D's plugin registry and drivers; the coding agent runs on the real embedded runtime.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { catalogPointDecl } from "../../plugin-sdk/src/catalogs/index";
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import { AcpAgentSession } from "../src/agents/acp/session";
 import { runCodeAgentRelay } from "../src/agents/code-agent/relay";
 import { writeOpenAiApiKey } from "../src/auth/credential-material";
@@ -63,8 +63,8 @@ test("the doors refuse until the agents are up: a code-agent client is told to t
 
 /** A real daemon in a temp home, on H's in-memory network, with D's fake bots and K's agents on `model`. */
 async function bootDaemon(o: { model: string; prepare?(home: string, secrets: FileSecretStore): Promise<void> }) {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-int-agents-")));
-  const home = join(root, "clover-home");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-int-agents-")));
+  const home = join(root, "moss-home");
   const userHome = join(root, "home");
   const project = join(userHome, "project1");
   mkdirSync(project, { recursive: true });
@@ -84,11 +84,11 @@ async function bootDaemon(o: { model: string; prepare?(home: string, secrets: Fi
       agents: { defaultModel: () => o.model },
     },
   });
-  await daemon.cloverParts.ready;
+  await daemon.mossParts.ready;
   return { home, project };
 }
 
-/** `clover-core code-agent`'s relay against the daemon's endpoint, as the user's terminal, and its answers by id. */
+/** `moss-core code-agent`'s relay against the daemon's endpoint, as the user's terminal, and its answers by id. */
 function relay(project: string) {
   const input = new Lines();
   const out: Record<string, unknown>[] = [];
@@ -108,21 +108,21 @@ function relay(project: string) {
   return { input, reply, exit };
 }
 
-// clover-code runs in the embedded runtime's sandbox, macOS-only for now (it refuses to start elsewhere, with a reason):
+// moss-code runs in the embedded runtime's sandbox, macOS-only for now (it refuses to start elsewhere, with a reason):
 // its tests are macOS's.
-describeWithEmbeddedRuntime("clover-core code-agent against the real daemon", () => {
+describeWithEmbeddedRuntime("moss-core code-agent against the real daemon", () => {
   darwinTest("the agents start with the bot side; the relay opens a coding session through the daemon's endpoint and a turn runs; a level drop reaches it; the stop ends it", async () => {
     const { project } = await bootDaemon({ model: MODEL });
-    const agents = daemon!.cloverParts.agents();
+    const agents = daemon!.mossParts.agents();
     expect(agents).toBeDefined();
-    expect(agents!.backends().map((b) => b.id)).toEqual(expect.arrayContaining(["clover-code"]));
-    const side = daemon!.cloverParts.bots()!;
+    expect(agents!.backends().map((b) => b.id)).toEqual(expect.arrayContaining(["moss-code"]));
+    const side = daemon!.mossParts.bots()!;
     // The bot side asks through lane C's broker: its one SessionGrants is there for the browser.
     expect(side.grants).toBeDefined();
 
     const { input, reply, exit } = relay(project);
     input.push({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } });
-    expect((await reply(1))["result"]).toMatchObject({ agentInfo: { name: "clover-code" } });
+    expect((await reply(1))["result"]).toMatchObject({ agentInfo: { name: "moss-code" } });
     input.push({ jsonrpc: "2.0", id: 2, method: "session/new", params: { cwd: project, mcpServers: [] } });
     const sessionId = ((await reply(2))["result"] as { sessionId: string }).sessionId;
     expect(typeof sessionId).toBe("string");
@@ -141,12 +141,12 @@ describeWithEmbeddedRuntime("clover-core code-agent against the real daemon", ()
       return setLevel.call(this, level);
     };
     try {
-      const started = await agents!.manager.start({ caller: { kind: "user", device: "dev_test", clientMessageId: "m_1" }, backend: "clover-code", prompt: "hello", root: "home/Studio/project1" });
+      const started = await agents!.manager.start({ caller: { kind: "user", device: "dev_test", clientMessageId: "m_1" }, backend: "moss-code", prompt: "hello", root: "home/Studio/project1" });
       expect(side.host.list({ kind: "coding" }).map((v) => v.id)).toContain(started.sessionId);
       // The agent starts with its first turn, held to the level then.
       for (let i = 0; i < 1000 && levels.length === 0; i++) await Bun.sleep(10);
       expect(levels).toEqual(["ask-risky"]);
-      await daemon!.cloverParts.node()!.registry.setLevel("Studio", "read-only");
+      await daemon!.mossParts.node()!.registry.setLevel("Studio", "read-only");
       for (let i = 0; i < 100 && levels.length === 1; i++) await Bun.sleep(10);
       expect(levels).toEqual(["ask-risky", "read-only"]);
     } finally {

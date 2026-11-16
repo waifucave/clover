@@ -1,4 +1,4 @@
-// The fold's own subpath (`@waifucave/clover-plugin-sdk/fold`): foldTitle and lookalikeOf with no dependencies, so a
+// The fold's own subpath (`@waifucave/moss-plugin-sdk/fold`): foldTitle and lookalikeOf with no dependencies, so a
 // client part that compares names never bundles zod or the catalogs.
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";

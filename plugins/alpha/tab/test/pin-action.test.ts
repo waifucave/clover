@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ALPHA = join(import.meta.dir, "..", "..");
-const manifest = JSON.parse(readFileSync(join(ALPHA, "clover.json"), "utf8"));
+const manifest = JSON.parse(readFileSync(join(ALPHA, "moss.json"), "utf8"));
 
 test("her pin is a message action of her own: data, her host's ui.pinReply, her bot only, finished replies", () => {
   const ui = manifest.contributes.ui as Record<string, unknown>[];

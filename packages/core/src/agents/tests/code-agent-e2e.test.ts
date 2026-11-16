@@ -1,6 +1,6 @@
-// `clover-core code-agent` end to end (K-M3b): an outside ACP client (a stand-in for Zed) talks to the relay
-// (relay.ts) over its stdio, the relay to the daemon's real endpoint as the user's `cli`, and the daemon runs Clover's
-// coding agent on the embedded runtime for it (service.ts, `CloverCodeBackend.serve`). The test model writes a file;
+// `moss-core code-agent` end to end (K-M3b): an outside ACP client (a stand-in for Zed) talks to the relay
+// (relay.ts) over its stdio, the relay to the daemon's real endpoint as the user's `cli`, and the daemon runs MOSS's
+// coding agent on the embedded runtime for it (service.ts, `MossCodeBackend.serve`). The test model writes a file;
 // the write asks the client, which allows it once.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
@@ -8,16 +8,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query as sdkQuery, type Options, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { BOT_SANDBOX } from "../../runtime-sdk/turn-loop/driver";
-import type { Level } from "@waifucave/clover-protocol";
-import { CloverTokens } from "../../auth/clover-tokens";
-import { SessionProcesses } from "../../auth/clover-caller";
+import type { Level } from "@waifucave/moss-protocol";
+import { MossTokens } from "../../auth/moss-tokens";
+import { SessionProcesses } from "../../auth/moss-caller";
 import { FileSecretStore } from "../../auth/secret-store";
 import { TokenAuthority } from "../../auth/tokens";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { FakeFence } from "../../contracts/fakes/fence";
 import { FakeSessionHost } from "../../contracts/fakes/session-host";
 import { FakeTree } from "../../contracts/fakes/tree";
-import { createCloverServer } from "../../ipc/clover";
+import { createMossServer } from "../../ipc/moss";
 import { startIpcServer } from "../../ipc/server";
 import type { PeerFacts } from "../../platform/caller-probe";
 import { resolveEndpoint } from "../../platform/transport";
@@ -25,7 +25,7 @@ import { buildCoreBrand } from "../../runtime-sdk/brand";
 import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
 import { SessionStore } from "../../sessions/store";
 import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
-import { CloverCodeBackend } from "../clover-code/backend";
+import { MossCodeBackend } from "../moss-code/backend";
 import { runCodeAgentRelay } from "../code-agent/relay";
 import { codeAgentDoor, CodeAgentService } from "../code-agent/service";
 
@@ -40,7 +40,7 @@ afterAll(() => {
 
 function baseOptionsFor(home: string, spawn: SpawnClaudeCodeProcess) {
   return (o: { model: string; effort?: string; cwd: string }): Options => {
-    const env: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", CLOVER_HOME: home };
+    const env: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", MOSS_HOME: home };
     const provider = testProviderNameFor(o.model);
     if (provider !== undefined) env["WINTER_TEST_PROVIDER"] = provider;
     return { brand: buildCoreBrand(undefined, home), model: o.model, cwd: o.cwd, env, spawnClaudeCodeProcess: spawn, settingSources: [] };
@@ -71,21 +71,21 @@ class Lines implements AsyncIterable<Uint8Array> {
 }
 
 async function boot(spawn: SpawnClaudeCodeProcess, level: Level) {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-cae2e-")));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-k-cae2e-")));
   temps.push(root);
   const userHome = join(root, "home");
-  const cloverHome = join(userHome, ".clover");
+  const mossHome = join(userHome, ".moss");
   const project = join(userHome, "project1");
-  for (const d of [project, cloverHome, join(root, "run")]) mkdirSync(d, { recursive: true });
+  for (const d of [project, mossHome, join(root, "run")]) mkdirSync(d, { recursive: true });
   const clock = new FakeClock();
   const host = new FakeSessionHost({ clock });
   const sandboxes: unknown[] = [];
   const query: typeof sdkQuery = (args) => { sandboxes.push(args.options?.sandbox); return sdkQuery(args); };
-  const backend = new CloverCodeBackend({ clock: { now: () => Date.now() } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(cloverHome, spawn), sandboxReady: () => true, query });
+  const backend = new MossCodeBackend({ clock: { now: () => Date.now() } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(mossHome, spawn), sandboxReady: () => true, query });
   const service = new CodeAgentService({
-    home: cloverHome, computer: "Studio", userHome, host, clock,
+    home: mossHome, computer: "Studio", userHome, host, clock,
     tree: new FakeTree({ clock, computers: { Studio: { home: userHome } }, botComputer: () => "Studio" }),
-    fence: new FakeFence({ home: userHome, cloverHome }),
+    fence: new FakeFence({ home: userHome, mossHome }),
     backend: () => backend, levelOf: () => level,
   });
   const store = new SessionStore(root);
@@ -93,16 +93,16 @@ async function boot(spawn: SpawnClaudeCodeProcess, level: Level) {
   const authority = new TokenAuthority(new FileSecretStore(join(root, "secrets.json")));
   const legacy = await authority.ensureTokens();
   const logs: string[] = [];
-  const clover = createCloverServer({
-    tokens: new CloverTokens({ verifyCli: (t) => authority.verify("harness", t) }), processes: new SessionProcesses(), serverVersion: "test",
+  const moss = createMossServer({
+    tokens: new MossTokens({ verifyCli: (t) => authority.verify("harness", t) }), processes: new SessionProcesses(), serverVersion: "test",
     deviceId: "d".repeat(32), probe: () => outside, codeAgent: codeAgentDoor(service), log: (l) => void logs.push(l),
   });
-  const server = startIpcServer({ socketPath: endpoint, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
-  const stop = () => { clover.dispose(); server.stop(); store.close(); };
-  return { root, userHome, cloverHome, project, host, endpoint, token: legacy.harness, logs, sandboxes, stop };
+  const server = startIpcServer({ socketPath: endpoint, serverVersion: "test", tokens: authority, store, mossConnections: moss });
+  const stop = () => { moss.dispose(); server.stop(); store.close(); };
+  return { root, userHome, mossHome, project, host, endpoint, token: legacy.harness, logs, sandboxes, stop };
 }
 
-describeWithEmbeddedRuntime("clover-core code-agent end to end", (spawn) => {
+describeWithEmbeddedRuntime("moss-core code-agent end to end", (spawn) => {
   test("an outside client opens a session through the relay; a write asks it, and its answer allows it once", async () => {
     const b = await boot(spawn, "ask");
     const input = new Lines();
@@ -122,11 +122,11 @@ describeWithEmbeddedRuntime("clover-core code-agent end to end", (spawn) => {
     };
     try {
       input.push({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } });
-      expect((await reply(1))["result"]).toMatchObject({ agentInfo: { name: "clover-code" } });
+      expect((await reply(1))["result"]).toMatchObject({ agentInfo: { name: "moss-code" } });
       input.push({ jsonrpc: "2.0", id: 2, method: "session/new", params: { cwd: b.project, mcpServers: [] } });
       const sessionId = ((await reply(2))["result"] as { sessionId: string }).sessionId;
       // Listed as the user's coding session, from this client.
-      expect(b.host.list({ kind: "coding" })).toEqual([expect.objectContaining({ kind: "coding", root: "home/Studio/project1", title: "From clover-code-agent" })]);
+      expect(b.host.list({ kind: "coding" })).toEqual([expect.objectContaining({ kind: "coding", root: "home/Studio/project1", title: "From moss-code-agent" })]);
       const file = join(b.project, "hello.txt");
       input.push({ jsonrpc: "2.0", id: 3, method: "session/prompt", params: { sessionId, prompt: [{ type: "text", text: `CALL Write {"file_path":${JSON.stringify(file)},"content":"hi"}` }] } });
       // The level asks about a write: the client is asked, with no "always".
@@ -156,7 +156,7 @@ describeWithEmbeddedRuntime("clover-core code-agent end to end", (spawn) => {
     }
   });
 
-  test("a folder Clover can't place, or a token it won't take, gets no session and says why", async () => {
+  test("a folder MOSS can't place, or a token it won't take, gets no session and says why", async () => {
     const b = await boot(spawn, "ask");
     try {
       const said: string[] = [];

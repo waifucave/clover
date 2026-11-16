@@ -5,12 +5,12 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hookOkLines, PLUGIN_API_VERSION, validateManifest } from "@waifucave/clover-plugin-sdk";
+import { hookOkLines, PLUGIN_API_VERSION, validateManifest } from "@waifucave/moss-plugin-sdk";
 import { FakeApprovalBroker } from "../../../src/contracts/fakes/approval-broker";
 import { FakeClock } from "../../../src/contracts/fakes/clock";
 import { MemorySecretStore } from "../../../src/contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../../src/registry/open";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import type { InvokeRequest } from "../../../src/contracts/plugin-host";
 import type { Contribution } from "../../../src/contracts/plugin-registry";
 import { pluginHooks, servesSession, type HookSession } from "../../../src/runtime-sdk/turn-loop/hooks";
@@ -37,7 +37,7 @@ test("own-bot: the plugin's own bots' sessions and their delegations only", () =
 });
 
 const manifest = (scope: string) => ({
-  manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
   host: { entry: "host/index.js" },
   contributes: { hooks: [{ id: "watch", on: ["tool.after", "turn.end"], handler: "watch", scope }] },
 });
@@ -51,18 +51,18 @@ test("the OK card names the narrower scope", () => {
 });
 
 test("widening a hook from own-bot to bots asks for the OK again (its scope is in what it runs, and its card line changes)", async () => {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-ownbot-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-ownbot-")));
   temps.push(home);
   const dir = join(home, "plugins", "luna");
   mkdirSync(join(dir, "host"), { recursive: true });
   writeFileSync(join(dir, "host", "index.js"), "export const watch = async () => undefined;\n");
-  writeFileSync(join(dir, "clover.json"), JSON.stringify(manifest("own-bot")));
-  const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50, sandboxed: true });
+  writeFileSync(join(dir, "moss.json"), JSON.stringify(manifest("own-bot")));
+  const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50, sandboxed: true });
   try {
     const reg = opened.registry;
     await reg.approve("luna", reg.get("luna")!.treeHash!);
     expect(reg.get("luna")!.state).toBe("running");
-    writeFileSync(join(dir, "clover.json"), JSON.stringify(manifest("bots")));
+    writeFileSync(join(dir, "moss.json"), JSON.stringify(manifest("bots")));
     await opened.folders.refresh(dir);
     expect(reg.get("luna")!.state).toBe("found");
     expect(opened.folders.okText("luna", "macos", false, true).lines).toContain("Its hooks see your conversations: what each tool returns; they can change what a tool returns.");

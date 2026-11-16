@@ -3,12 +3,12 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, sep } from "node:path";
-import { OTHER_INSTALL_HOMES, realPathOf } from "@waifucave/clover-core";
+import { OTHER_INSTALL_HOMES, realPathOf } from "@waifucave/moss-core";
 
-/** Folders under the user's home a test must never use, read or write: Clover's homes (the dist one and the dev
+/** Folders under the user's home a test must never use, read or write: MOSS's homes (the dist one and the dev
  *  profile's), the other installs' (core's `other-installs.ts`) and the agents' own (plan §9). Matched on the first path
  *  segment under the home, by prefix. */
-export const PROTECTED_HOME_PREFIXES: readonly string[] = [".clover", ...OTHER_INSTALL_HOMES.map((o) => o.dir), ".claude"];
+export const PROTECTED_HOME_PREFIXES: readonly string[] = [".moss", ...OTHER_INSTALL_HOMES.map((o) => o.dir), ".claude"];
 
 export class UnsafeHomeError extends Error {
   constructor(public readonly path: string, reason: string) {
@@ -17,7 +17,7 @@ export class UnsafeHomeError extends Error {
   }
 }
 
-/** Throws unless `path` is a safe place for a test home: not a live install's folder (`~/.clover*`, the
+/** Throws unless `path` is a safe place for a test home: not a live install's folder (`~/.moss*`, the
  *  previous products' folders, the agents'), and not the user's home itself. Links are resolved first. */
 export function assertSafeTestHome(path: string, userHome: string = homedir()): void {
   const real = realPathOf(path);
@@ -31,9 +31,9 @@ export function assertSafeTestHome(path: string, userHome: string = homedir()): 
 }
 
 export interface TempHome {
-  /** The home folder: pass it as `CLOVER_HOME`, or to `startDaemon({ home })`. */
+  /** The home folder: pass it as `MOSS_HOME`, or to `startDaemon({ home })`. */
   home: string;
-  /** What a child process needs to use this home: `CLOVER_HOME`, and the dist profile. */
+  /** What a child process needs to use this home: `MOSS_HOME`, and the dist profile. */
   env: Record<string, string>;
   /** Removes the home. Safe to call twice. */
   cleanup(): void;
@@ -45,11 +45,11 @@ export function makeTempHome(opts: { name?: string; parent?: string } = {}): Tem
   assertSafeTestHome(parent);
   mkdirSync(parent, { recursive: true });
   const label = (opts.name ?? "home").replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 40);
-  const home = mkdtempSync(join(parent, `clover-home-${label}-`));
+  const home = mkdtempSync(join(parent, `moss-home-${label}-`));
   assertSafeTestHome(home);
   return {
     home,
-    env: { CLOVER_HOME: home, CLOVER_PROFILE: "dist" },
+    env: { MOSS_HOME: home, MOSS_PROFILE: "dist" },
     cleanup: () => rmSync(home, { recursive: true, force: true }),
   };
 }

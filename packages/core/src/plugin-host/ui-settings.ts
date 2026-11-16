@@ -2,15 +2,15 @@
 // orders, themes, overrides, language, appearance, text size. Kept in `<home>/settings/ui.json` (a fenced folder),
 // written whole through a temp file; each change is `ui_settings_changed` to the app.
 //
-// * From the app (the user) or the bundled `clover` tree's layer it applies; from any other layer it would be a card
+// * From the app (the user) or the bundled `moss` tree's layer it applies; from any other layer it would be a card
 //   (§5.5), which waits for the approval broker (C-M3): refused with why.
 // * Token overrides pass the same check as any theme's (`isValueForToken`). CSS overrides need the theme cleaner,
 //   which isn't on main: refused with why, so nothing uncleaned reaches the user's layer.
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { isValueForToken } from "@waifucave/clover-plugin-sdk";
-import { APP_EVENTS, APP_METHODS, UiSettings } from "@waifucave/clover-protocol";
+import { isValueForToken } from "@waifucave/moss-plugin-sdk";
+import { APP_EVENTS, APP_METHODS, UiSettings } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { handler, type MethodHandler } from "../rpc/handler";
 
@@ -35,8 +35,8 @@ export function uiSettingsMethods(o: { home: string; emit?: (event: { type: stri
     [M.uiSettings.name]: handler(M.uiSettings, () => readUiSettings(o.home)),
     [M.uiSet.name]: handler(M.uiSet, ({ patch }, ctx) => {
       const c = ctx.caller;
-      const fromClover = c.kind === "plugin" && (c.pluginId === "clover" || c.pluginId.startsWith("clover/"));
-      if (c.kind !== "user" && !fromClover) throw new ContractError("refused", "a layer's UI change is a card, which waits for the approval broker (C-M3)");
+      const fromMoss = c.kind === "plugin" && (c.pluginId === "moss" || c.pluginId.startsWith("moss/"));
+      if (c.kind !== "user" && !fromMoss) throw new ContractError("refused", "a layer's UI change is a card, which waits for the approval broker (C-M3)");
       const tokens = patch.overrides?.tokens;
       if (tokens !== undefined) {
         const bad = Object.entries(tokens).filter(([name, value]) => !isValueForToken(name, value)).map(([name]) => name);

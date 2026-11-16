@@ -30,19 +30,19 @@ export const CODING_AGENT_BINARY_VERSION = "0.0.55";
  *  Earlier: bumped to 0.0.75 (2026-11-09): a compiled fallback for the host-catalog adapters the host doesn't serve.
  *  Through 0.0.74: Bash, Monitor and background Bash sandboxed on Linux with bubblewrap, one auto-allow check for the
  *  engine and the host-code broker (`HostCodePermissionSnapshot.writableRoots`, which `host-code-authority.ts` fills
- *  from the run's own list), and a settings file's sandbox block that can only tighten (Clover's own sandbox comes
+ *  from the run's own list), and a settings file's sandbox block that can only tighten (MOSS's own sandbox comes
  *  through `Options.sandbox`, the flag tier, which it doesn't touch).
  *  Earlier: bumped to 0.0.72 (2026-11-07, #281's follow-up): the runtime's notification escaping reads a tag's letters through
- *  Clover's look-alike map (the plugin SDK's `lookalikeOf`, vendored and exported as `./lookalike`, held equal to it by
+ *  MOSS's look-alike map (the plugin SDK's `lookalikeOf`, vendored and exported as `./lookalike`, held equal to it by
  *  a test here), as `turn-loop/defuse.ts` does.
  *  Earlier: bumped to 0.0.71 (2026-11-07, F8's review): `Options.notificationPreamble`, the host's line on every task notification
- *  the runtime delivers (folded into a running turn too), and look-alike tags defused in their values; Clover passes
+ *  the runtime delivers (folded into a running turn too), and look-alike tags defused in their values; MOSS passes
  *  its "data, not instructions" frame.
  *  Earlier: bumped to 0.0.70 (2026-11-07, A's F8): what a command leaves running is adopted as a background task
- *  (`RunCommandResult.leftBehind`, the macOS process holder named in `CLOVER_PROCESS_HOLDER`), and
+ *  (`RunCommandResult.leftBehind`, the macOS process holder named in `MOSS_PROCESS_HOLDER`), and
  *  `sandbox.denyLaunchServices`, which every bot and agent session turns on.
  *  Earlier: bumped to 0.0.69 (2026-11-06, K-M3 and A-M3's follow-up): `Query.stopTask` (0.0.69) and the ACP package (`@waifucave/clover-agent-sdk/acp`), whose `serveAcpAgent`
- *  runs the coding agent as an ACP agent over `query()` (clover-code, 0.0.68).
+ *  runs the coding agent as an ACP agent over `query()` (moss-code, 0.0.68).
  *  A-M3's follow-up uses `Query.stopTask(id, { by })` to stop a paused bot's background shells and monitors.
  *  Earlier: bumped to 0.0.67 (2026-11-06, A-M3): a host's plain-named tool may take an unoffered built-in's name
  *  (`shadowBuiltins`: the core's `SendMessage`, `ListAgents`, `TaskStop`, `Agent`), and `Options.hostToolSearch`
@@ -56,7 +56,7 @@ export const CODING_AGENT_BINARY_VERSION = "0.0.55";
  *  (`catalogFromModelPlugins`), the SDK's family adapters keyless on the keyed fetch, and `Options.modelProviders`:
  *  a session on the host's catalog file, the generic adapters and the adapters the host serves (`model_adapter_*`);
  *  the Codex adapter's explicit `originator`.
- *  Earlier: bumped to 0.0.63 (2026-11-05, A-M1): the SDK is `@waifucave/clover-*` (the repository moved to the
+ *  Earlier: bumped to 0.0.63 (2026-11-05, A-M1): the SDK is `@waifucave/moss-*` (the repository moved to the
  *  `waifucave` owner); the model adapter interface on the keyed fetch, the catalog row schema and the
  *  conformance kit on them; ToolSearch spells the standing twins from the session's brand (so the daemon's
  *  own twin workaround is gone); a brand's `productVersion` and `installBrandIdentity`.
@@ -97,11 +97,11 @@ export const CODING_AGENT_BINARY_VERSION = "0.0.55";
  *  Opus 4.7/4.8; a 400 refusing `reasoning.summary` (an unverified OpenAI org) is retried once without it (memoised
  *  1 h); no summary is requested at effort "none".
  *  Earlier: bumped to 0.0.47 (2026-10-05, the thinking pill): every provider family's reasoning streams live to the host as the
- *  Clover-only `system/reasoning_progress` frame (start → delta* → end per block, `kind` summary/update/exposed/hidden,
+ *  MOSS-only `system/reasoning_progress` frame (start → delta* → end per block, `kind` summary/update/exposed/hidden,
  *  the last kind wins), which the projector turns into `thinking_delta`/`thinking_block` (`projector/thinking.ts`);
  *  Claude 5.x rows request `display: "updates"`, whose progress-update blocks title the pill.
  *  Earlier: bumped to 0.0.46 (2026-10-05; 0.0.45 was tagged but never published): a spawned runtime stops when its host dies, even
- *  mid-turn -- it watches its parent (`CLOVER_HOST_PID`, passed by the wrapper's spawn) and, once the host is gone, kills
+ *  mid-turn -- it watches its parent (`MOSS_HOST_PID`, passed by the wrapper's spawn) and, once the host is gone, kills
  *  every process group it started and exits, so a crashed daemon no longer leaves a session running unsupervised.
  *  Earlier: bumped to 0.0.44 (2026-10-04, user ruling "lets fold the message into the running turn"): host input sent while a
  *  turn runs is FOLDED into that turn just before its next request (after the next tool round), with
@@ -124,7 +124,7 @@ export const CODING_AGENT_BINARY_VERSION = "0.0.55";
  *  Earlier: bumped to 0.0.39 (2026-10-02): `Options.hostMessaging` — a session's `SendMessage` hands the daemon whatever
  *  it cannot resolve in-process (`host_message_send`), and `ListAgents` lists the sessions the daemon names
  *  (`host_message_list`), in both topologies; before it, SendMessage from any session reached no other
- *  Clover session (`agent/session-messaging.ts` answers both).
+ *  MOSS session (`agent/session-messaging.ts` answers both).
  *  Earlier: bumped to 0.0.38 (2026-10-02; 0.0.37 was tagged but never published): the tool-surface rework — claude's `tools` option (chat's and dispatch's allowed
  *  lists), plain-named in-process tools (`toolNames`: `Browser`, `Computer`, `SpawnSession`, …), `deferTools` and the
  *  persisted deferred-tools announcement, `Search` (Exa answer mode) as a runtime built-in, `legacyToolNames`,
@@ -156,7 +156,7 @@ export const CODING_AGENT_BINARY_VERSION = "0.0.55";
  *  Earlier: bumped to 0.0.29 (2026-09-27, security): 0.0.28 plus the compiled `winter` runtime built with
  *  `--no-compile-autoload-bunfig --no-compile-autoload-dotenv`, so a code-session child started in a
  *  user's repository no longer reads that repository's `bunfig.toml` (a `preload` would have run as
- *  Clover) or `.env`. Clover's own `compile`/`compile:core` carry the same two flags.
+ *  MOSS) or `.env`. MOSS's own `compile`/`compile:core` carry the same two flags.
  *  Earlier: bumped to 0.0.28 (2026-09-27, WS-24 follow-ups): the published SDK the WS-24 daemon lanes already
  *  feature-detected against a dev build — a Worker that closes without running its own teardown has its
  *  orphaned process groups reaped (`processGroups()` on `EmbeddedWorkerProcess`); a subagent's forwarded
@@ -167,7 +167,7 @@ export const CODING_AGENT_BINARY_VERSION = "0.0.55";
  *  WS-24 list (async hooks, `mcp_server_name`/`mcp_tool_name` on hook inputs, per-provider feature-rejected
  *  persistence, a subagent's own inline MCP servers, …), most of which this daemon does not yet consume.
  *  Before that, bumped to 0.0.27 (2026-09-26, WS-23; 0.0.25 and 0.0.26 were tagged but their release CI stopped at the
- *  test step, so neither was published): every model on the Clover SDK (xAI Responses, MCP v2, hooks, the
+ *  test step, so neither was published): every model on the MOSS SDK (xAI Responses, MCP v2, hooks, the
  *  Anthropic hardening + caching, per-message effort, mid-conversation tool changes, the reasoning-state
  *  sidecar, and the embedded runtime `@waifucave/clover-agent-runtime`).
  *  Before that, bumped to 0.0.24 (2026-09-25; 0.0.23 was published the same day but never pinned here): 0.0.23's
@@ -175,11 +175,11 @@ export const CODING_AGENT_BINARY_VERSION = "0.0.55";
  *  models, 22 families (China-region and plan/dialect twins as separate providers, GPT-6 Sol/Luna,
  *  Opus 5.5, Xiaomi MiMo, Tencent TokenHub, the Meta Model API, …); the `gpt` family's sol/luna slots
  *  move to GPT-6 and the `claude` opus slot (+ `opus` alias) to Opus 5.5 — plus 0.0.24's audit fixes and
- *  the Clover-leg Anthropic adapter fix (effort via `output_config.effort` + adaptive thinking on Claude 4.5+,
+ *  the MOSS-leg Anthropic adapter fix (effort via `output_config.effort` + adaptive thinking on Claude 4.5+,
  *  per-row thinking/tool_choice rewrites, the block-binding opt-in on Opus 5.5 / Fable 5.1, and dotted
  *  Claude ids sent as their dashed wire id). */
-/** Bumped to 0.0.22 (R.4, WS-21 publish, 2026-09-24): the shared `~/.clover/sdk` default home and
- *  `$CLOVER_STORE_HOME`, plugins in claude's own format (`hooks.json`, directory marketplaces,
+/** Bumped to 0.0.22 (R.4, WS-21 publish, 2026-09-24): the shared `~/.moss/sdk` default home and
+ *  `$MOSS_STORE_HOME`, plugins in claude's own format (`hooks.json`, directory marketplaces,
  *  `resolvesWithinPluginRoot`), an MCP tool list rebuilt per request with claude's up-to-2s
  *  first-turn connect wait and an unoffered-tool refusal, recursive subagent scope, and (SDK round 24)
  *  `mapChatMessages` merging consecutive same-role assistant entries so chat-completions-shaped
@@ -197,7 +197,7 @@ export const CODING_AGENT_BINARY_VERSION = "0.0.55";
  *  null gitRoot continues above the trusted root, and a project output style never redefines a user's
  *  or a built-in style. No API change.
  *  Earlier: bumped to 0.0.15 (WS-24, 2026-09-27): run-home repository-tier hardening -- a repository-shipped
- *  (git-tracked, symlinked or submodule) `.clover/settings.local.json` is filtered as the project tier,
+ *  (git-tracked, symlinked or submodule) `.moss/settings.local.json` is filtered as the project tier,
  *  so it can't raise the permission mode; repository tiers can't set the effort/thinking keys or the
  *  output style, and a project output style never redefines a user or built-in one; repository files
  *  (settings, rules, instructions, output styles, agents) are read without following swapped links.
@@ -211,11 +211,11 @@ export const CODING_AGENT_BINARY_VERSION = "0.0.55";
  *  failed on a timing-dependent control (a test asserting claude's own scheduler behaviour, not a
  *  containment failure) and was never published; 0.0.13 loosens that control only and republishes
  *  the same behavioural content — this pin skips 0.0.12 straight to it.
- *  Bumped to 0.0.11 (lane B, 2026-09-23): the router no longer names `<cwd>/.clover` as a local plugin
+ *  Bumped to 0.0.11 (lane B, 2026-09-23): the router no longer names `<cwd>/.moss` as a local plugin
  *  on the official leg — measured by its own tests, a cloned repository's `hooks/hooks.json` ran on a
  *  Code session's first prompt through it, with no trust decision anywhere — and gained
  *  `OptionsTemplatePolicy.plugins`, through which the daemon hands the SAME skills-only plugin views the
- *  Clover leg gets. A router below this still names the project dir itself, so this pin is also the
+ *  MOSS leg gets. A router below this still names the project dir itself, so this pin is also the
  *  floor.
  *
  *  0.0.10 (the official leg's LIVE permission-mode change): the router's `OfficialQuery`
@@ -246,8 +246,8 @@ export function installedWinterRuntimeSdkVersion(): string | undefined {
 
 /** Host-declared peer versions (router 0.0.2 consults these FIRST — the only answer that works
  *  inside a compiled $bunfs binary, where createRequire cannot resolve a manifest). P8b-4. WS-23: the
- *  Clover peer is the only one. */
-export const CLOVER_PEER_VERSIONS: { winterAgentSdk: string } = {
+ *  MOSS peer is the only one. */
+export const MOSS_PEER_VERSIONS: { winterAgentSdk: string } = {
   winterAgentSdk: SDK_VERSION,
 };
 
@@ -257,7 +257,7 @@ export const CLOVER_PEER_VERSIONS: { winterAgentSdk: string } = {
  * SDK's `startAnthropicConsoleBrokerLogin`/`logoutAnthropicConsole` spawn `claude auth login
  * --console`/`claude auth logout` — which was measured NOT to write the profile file at all (it
  * mints a Console API key into `CLAUDE_CONFIG_DIR` instead) — rather than the single intended door,
- * `ant auth login --profile clover`. Compared against the COMPILE-TIME PIN
+ * `ant auth login --profile moss`. Compared against the COMPILE-TIME PIN
  * (`REQUIRED_WINTER_AGENT_SDK`, above), never a runtime probe of the installed package (F1: that
  * probe always answers `undefined` inside a compiled `$bunfs` binary), so the refusal flips off
  * automatically the moment a pin bump actually raises `REQUIRED_WINTER_AGENT_SDK` to this floor or

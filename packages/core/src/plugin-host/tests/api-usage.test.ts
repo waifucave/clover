@@ -6,8 +6,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller, PlanReading } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller, PlanReading } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -36,8 +36,8 @@ export const unwatch = async () => { off?.(); return true; };
 function plugin(home: string, id: string, o: { process?: "own"; capabilities: string[] }): void {
   const folder = join(home, "plugins", id);
   mkdirSync(join(folder, "host"), { recursive: true });
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({
-    manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({
+    manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
     host: { entry: "host/index.js", ...(o.process === undefined ? {} : { process: o.process }) }, capabilities: o.capabilities,
   }));
   writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
@@ -53,7 +53,7 @@ function approved(registry: { get(id: string): { state: string } | undefined; wa
 
 describe("usage.* in a real plugin host", () => {
   test("with usage.read a plugin reads rows, summary and plans and hears new rows, worker and own process alike; without it, nothing", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-usage-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-a-usage-")));
     temps.push(home);
     plugin(home, "meter", { capabilities: ["usage.read"] });
     plugin(home, "meterown", { process: "own", capabilities: ["usage.read"] });
@@ -61,13 +61,13 @@ describe("usage.* in a real plugin host", () => {
     const ledger = new UsageLedger({ path: join(home, "usage.db"), computer: "Studio", timeZone: "UTC" });
     const t0 = Date.UTC(2026, 10, 12, 10);
     ledger.add([
-      { dedupe: "s1:1", source: "clover", at: t0, provider: "anthropic", model: "m1", bot: "alpha", session: "s1", inputTokens: 100, outputTokens: 20, costUsd: 0.01 },
-      { dedupe: "s2:1", source: "clover", at: t0 + 1000, provider: "openai", model: "m2", bot: "luna", session: "s2", inputTokens: 50, outputTokens: 5 },
+      { dedupe: "s1:1", source: "moss", at: t0, provider: "anthropic", model: "m1", bot: "alpha", session: "s1", inputTokens: 100, outputTokens: 20, costUsd: 0.01 },
+      { dedupe: "s2:1", source: "moss", at: t0 + 1000, provider: "openai", model: "m2", bot: "luna", session: "s2", inputTokens: 50, outputTokens: 5 },
     ]);
     const plan: PlanReading = { source: "codex", computer: "Studio", plan: "plus", window: "5h", usedPercent: 42, readAt: t0 } as PlanReading;
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({
       home, computer: "Studio", registry: opened.registry, secrets, fence: false,
       areas: { bots: () => undefined, node: () => undefined, links: () => undefined, usage: () => ({ ledger, plans: async () => [plan] }) },
@@ -98,7 +98,7 @@ describe("usage.* in a real plugin host", () => {
         await call(id, "watch");
         // The watch is open once the core has it (a moment after the call answers in the host).
         await Bun.sleep(300);
-        ledger.add([{ dedupe: `${id}:new`, source: "clover", at: t0 + 5000, bot: "alpha", inputTokens: 1, outputTokens: 1 }]);
+        ledger.add([{ dedupe: `${id}:new`, source: "moss", at: t0 + 5000, bot: "alpha", inputTokens: 1, outputTokens: 1 }]);
         let heard: number[] = [];
         for (let i = 0; i < 150 && heard.length === 0; i++) { await Bun.sleep(20); heard = await call<number[]>(id, "heardSince"); }
         expect(heard).toEqual([t0 + 5000]);

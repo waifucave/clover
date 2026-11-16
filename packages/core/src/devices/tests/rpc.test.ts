@@ -7,8 +7,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  callBindingInput, cardAnswerSigningInput, cardHashInput, CLOVER_ERR, DEVICES_METHODS, type Card, type CardContent, type Caller,
-} from "@waifucave/clover-protocol";
+  callBindingInput, cardAnswerSigningInput, cardHashInput, MOSS_ERR, DEVICES_METHODS, type Card, type CardContent, type Caller,
+} from "@waifucave/moss-protocol";
 import { isContractError } from "../../contracts/common";
 import { FakeApprovalBroker, MemoryAnswerLedger } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -37,7 +37,7 @@ const bot: Caller = { kind: "session", sessionId: "ses_abcdef12", sessionKind: "
 async function computer(net: MemoryNetwork, name: string) {
   const store = new MemorySecretStore();
   const key = await DeviceKey.loadOrCreate(store);
-  const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-rpc-")), key, clock, self: { name } });
+  const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "moss-h-rpc-")), key, clock, self: { name } });
   const pairing = new PairingService({ self: key, registry, wire: net.endpoint(key.publicKey), clock, store, selfTarget: () => ({}), account: () => null });
   stops.push(() => pairing.close());
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
@@ -81,7 +81,7 @@ describe("devices methods", () => {
     const a = await computer(net, "Studio");
     for (const [m, p] of [["device.pair.begin", {}], ["device.rename", { id: a.key.id, name: "x" }], ["device.revoke", { id: a.key.id }]] as const) {
       const err = (await a.call(m, p, bot).catch((e: unknown) => e)) as MethodError;
-      expect(err.code).toBe(CLOVER_ERR.NOT_THE_USER);
+      expect(err.code).toBe(MOSS_ERR.NOT_THE_USER);
     }
   });
 });

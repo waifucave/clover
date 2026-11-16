@@ -51,7 +51,7 @@ function ticketKey(secret: string): Promise<CryptoKey> {
   if (macKey?.secret !== secret) {
     macKey = {
       secret,
-      key: crypto.subtle.importKey("raw", utf8(`clover-handshake-v1 ticket|${secret}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]),
+      key: crypto.subtle.importKey("raw", utf8(`moss-handshake-v1 ticket|${secret}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]),
     };
   }
   return macKey.key;

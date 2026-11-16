@@ -1,0 +1,39 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "moss.pill.name": "Dispatch pill",
+    "moss.pill.label": "Message {name}",
+    "moss.pill.placeholder": "Message {name}",
+    "moss.pill.working": "{name} is working",
+    "moss.pill.send": "Send",
+    "moss.pill.stop": "Stop",
+    "moss.pill.stopping": "Stopping…",
+    "moss.pill.voice": "Voice",
+    "moss.pill.more": "More",
+    "moss.pill.fullScreen": "Full screen",
+    "moss.pill.openInApp": "Open {name} in MOSS",
+    "moss.pill.clearDraft": "Clear draft",
+    "moss.pill.target": "Choose who to message",
+    "moss.pill.targets": "Message someone else",
+    "moss.pill.asks": "{name} asks",
+    "moss.pill.aQuestion": "A question for you",
+    "moss.pill.chooseAny": "Choose any",
+    "moss.pill.typeAnswer": "Type an answer",
+    "moss.pill.somethingElse": "Something else",
+    "moss.pill.next": "Next",
+    "moss.pill.back": "Back",
+    "moss.pill.sending": "Sending…",
+    "moss.pill.childStop": "Stop {name}",
+    "moss.pill.childOpen": "Open {name}",
+    "moss.pill.childMore": {
+      "one": "1 more agent",
+      "other": "{count} more agents"
+    },
+    "moss.pill.untitled": "Agent",
+    "moss.pill.leavePreview": "Back to the message box",
+    "moss.pill.turn": "Turn {position}",
+    "moss.pill.notSent": "That answer didn't go through. Try again.",
+    "moss.pill.update": "An update from your bot"
+  }
+}

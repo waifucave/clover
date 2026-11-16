@@ -1,5 +1,5 @@
 // In-process subagents (lane A for lane K), the pause's watch over background tasks with a runtime that has no
-// `stopTask` (#287's ruling, as lane K's clover-code does): it says so once a minute while it lasts and keeps watching,
+// `stopTask` (#287's ruling, as lane K's moss-code does): it says so once a minute while it lasts and keeps watching,
 // since the tasks may end on their own or the pause lift. A scripted runtime, so it runs on every OS.
 import { afterAll, afterEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -17,7 +17,7 @@ const temp = (p: string) => { const d = realpathSync(mkdtempSync(join(tmpdir(), 
 function spec(root: string): AgentStartSpec {
   return {
     sessionId: "s_agent", root, model: "winter-test/echo",
-    bridge: { name: "clover_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
+    bridge: { name: "moss_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
     fence: { allowWrite: [root], denyWrite: [], denyRead: [], closedDoors: [], blockedAddresses: ["169.254.169.254"], network: "none" },
   };
 }
@@ -57,9 +57,9 @@ test("paused with background tasks and no stopTask: said once a minute while it 
   const look = async () => { for (const fn of [...watchers]) fn(); await Bun.sleep(5); };
   const runtime = scriptedRuntime();
   const session = await inProcessAgentBackend({
-    home: temp("clover-a3-pause-home-"), spawn: () => { throw new Error("no process here"); }, defaultModel: () => "winter-test/echo",
+    home: temp("moss-a3-pause-home-"), spawn: () => { throw new Error("no process here"); }, defaultModel: () => "winter-test/echo",
     pauseGateFor: () => gate, query: runtime.query, log: (l) => lines.push(l),
-  }).start(spec(temp("clover-a3-pause-root-")));
+  }).start(spec(temp("moss-a3-pause-root-")));
   let t = Date.now();
   setSystemTime(new Date(t));
   try {

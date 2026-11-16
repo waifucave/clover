@@ -28,7 +28,7 @@ export type FakeAcpStep =
   | { mcp: { server: string; tool: string; input?: unknown; ask?: boolean } }
   /** Runs a real `sleep` as an `execute` call, for the stall watchdog and the stop sequence. */
   | { exec: { seconds: number; id?: string } }
-  /** A hostile agent (review 12): calls a client method Clover didn't offer (`fs/*`, `terminal/*`), and reports how
+  /** A hostile agent (review 12): calls a client method MOSS didn't offer (`fs/*`, `terminal/*`), and reports how
    *  it was answered. */
   | { clientCall: { method: string; params?: unknown } }
   /** Opens this many permission requests at once and reports each answer. */
@@ -58,7 +58,7 @@ export interface FakeAcpConfig {
   askDuringReplay?: boolean;
   /** Variables every MCP server it starts gets, whatever its quirks pass on. A run on a test-marked core gives the
    *  test's keychain file's variable here: that core refuses to start (as the bridge too) without it, and an agent's
-   *  own environment never carries a CLOVER_ variable (buildAgentEnv). */
+   *  own environment never carries a MOSS_ variable (buildAgentEnv). */
   mcpEnv?: Record<string, string>;
 }
 
@@ -142,7 +142,7 @@ function startMcpServers(servers: unknown): void {
     Object.assign(env, cfg.mcpEnv ?? {});
     for (const kv of e.env ?? []) env[kv.name] = kv.value;
     for (const kv of e.env ?? []) {
-      if (kv.name !== "CLOVER_BRIDGE_TOKEN") continue;
+      if (kv.name !== "MOSS_BRIDGE_TOKEN") continue;
       bridgeToken = kv.value;
       bridgeName = e.name;
     }

@@ -14,7 +14,7 @@ import type {
   SpawnClaudeCodeProcess,
   SpawnRuntimeOptions,
 } from "@waifucave/clover-agent-sdk";
-import type { NewSessionEvent } from "@waifucave/clover-protocol";
+import type { NewSessionEvent } from "@waifucave/moss-protocol";
 import { WINTER_BRAND } from "@waifucave/clover-agent-sdk";
 import { CanonicalHostCodeAuthority } from "../../src/runtime-sdk/host-code-authority";
 import {
@@ -40,7 +40,7 @@ let root: string,
   coordination: string,
   unregister: (() => void) | undefined;
 beforeEach(() => {
-  root = realpathSync(mkdtempSync(join(tmpdir(), "clover-core-broker-")));
+  root = realpathSync(mkdtempSync(join(tmpdir(), "moss-core-broker-")));
   home = join(root, "home");
   source = join(root, "source");
   temp = join(root, "temp");
@@ -146,13 +146,13 @@ function fixture({
     });
   const spawnGeneration = (g: ReturnType<typeof enroll>) =>
     g.options.spawnClaudeCodeProcess!({
-      command: "resolved-clover",
+      command: "resolved-moss",
       args: [],
       cwd: source,
       env: {
         HOME: home,
-        CLOVER_HOME: "private-run",
-        CLOVER_STORE_HOME: "private-store",
+        MOSS_HOME: "private-run",
+        MOSS_STORE_HOME: "private-store",
         SECRET_CONTEXT: "host-owned",
       },
       signal: abort.signal,
@@ -246,7 +246,7 @@ test("inactive unregistered Code preserves resolved spawn posture", () => {
     g = f.enroll();
   f.spawnGeneration(g);
   expect(f.applied).toHaveLength(0);
-  expect(f.spawned?.command).toBe("resolved-clover");
+  expect(f.spawned?.command).toBe("resolved-moss");
   g.dispose();
   f.exited.resolve(0);
 });
@@ -287,8 +287,8 @@ test("admission binds exact query/input/cwd/policy and host environment", async 
   const result = await f.resolve(g);
   expect(result.commandOptions.env).toEqual({
     HOME: home,
-    CLOVER_HOME: "private-run",
-    CLOVER_STORE_HOME: "private-store",
+    MOSS_HOME: "private-run",
+    MOSS_STORE_HOME: "private-store",
     SECRET_CONTEXT: "host-owned",
     TMPDIR: temp,
   });
@@ -1059,7 +1059,7 @@ test("projected host tool names preserve the raw SDK identity rather than guessi
 });
 
 // The agent runtime is loaded on the first adapter probe, not at module load (about 17 MB and 60 ms per daemon). These pin both halves:
-// it is not a static import, and the lazy `require` is a LITERAL string so a bundler/compiler resolves it into the built clover-core.
+// it is not a static import, and the lazy `require` is a LITERAL string so a bundler/compiler resolves it into the built moss-core.
 test("host-code-broker has no static import of the agent runtime, and its lazy require is a literal the bundler can resolve", () => {
   const source = readFileSync(join(import.meta.dir, "../../src/runtime-sdk/host-code-broker.ts"), "utf8");
   expect(source).not.toMatch(/^import[^;]*["']@yanlinglabs\/winter-agent-runtime["']/m);

@@ -1,5 +1,5 @@
 // The bundled plugins on a server install (#244, the controller's ruling (a) and the per-target tarball ruling): a
-// server's daemon lives at `<home>/bin/daemon/clover-core` and its bundled plugins at `<home>/bin/plugins`, the folder
+// server's daemon lives at `<home>/bin/daemon/moss-core` and its bundled plugins at `<home>/bin/plugins`, the folder
 // core's `bundledPluginsDir` finds beside it. Each core embeds the manifest of the plugins it was built with
 // (packages/core/src/bundled-plugins-dir.ts), and the registry trusts a bundled file only when its bytes are that
 // manifest's; this module only makes the folder hold that tree, so the plugins are there to be trusted.
@@ -7,7 +7,7 @@
 // The tree comes from the release whose tag is the core's version (`releases/tags/v<version>`, its channel checked),
 // as the daemon itself and plain Bun do, checked in the same order and stopping at the first thing that fails:
 //   1. the update file (`<channel>-plugins-<target>.yml`) and its signature, before a byte of it is read; it must name
-//      exactly `clover-plugins-<version>-<target>.tar.gz` for the core's own version
+//      exactly `moss-plugins-<version>-<target>.tar.gz` for the core's own version
 //   2. the tarball: its signature, then its SHA-512 and size against the update file (at most its signed size read)
 //   3. unpacked in memory (packages/update-feed's strict `unpackTarball`: regular files, plain portable paths),
 //      measured, and the measured manifest's text must hash to the one the core carries
@@ -28,10 +28,10 @@
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { formatBundledManifest, measureBundledTree, type BundledManifest } from "@waifucave/clover-core";
+import { formatBundledManifest, measureBundledTree, type BundledManifest } from "@waifucave/moss-core";
 import {
   parsePluginsFeed, pluginsFeedFile, pluginsTarballFile, SIGNATURE_SUFFIX, unpackTarball, verifyFeed, type CoreFeed, type CoreTarget, type FeedChannel,
-} from "@waifucave/clover-update-feed";
+} from "@waifucave/moss-update-feed";
 import { realOps, syncDir, syncFile, type DurableOps } from "./durable";
 import { httpFetch, MAX_FEED_BYTES, UPDATE_REPO, type Fetcher } from "./self-update";
 

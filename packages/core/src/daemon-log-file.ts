@@ -4,11 +4,11 @@ import { format as formatArg } from "node:util";
 import { assertNotOtherInstallHome } from "./other-installs";
 
 /**
- * 2026-09-17 (field report, 0.114.x): the release app launches `clover-core` with stdout and stderr
+ * 2026-09-17 (field report, 0.114.x): the release app launches `moss-core` with stdout and stderr
  * on `/dev/null`, so every daemon line — the resolved runtime, each spawn's options, every typed
  * refusal, the child's relayed stderr — was discarded, and three incidents in one night each needed
  * a reproduction instead of a grep. The daemon now TEES both streams into
- * `<CLOVER_HOME>/logs/daemon.log` itself (the directory already exists; `clover-dir.ts` creates it),
+ * `<MOSS_HOME>/logs/daemon.log` itself (the directory already exists; `moss-dir.ts` creates it),
  * whoever launched it and however its stdio is wired.
  *
  *  - APPEND-only; rotation by size: past `maxBytes` the file is renamed to `daemon.log.1` (one previous

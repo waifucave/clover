@@ -1,10 +1,10 @@
 // The Antigravity source (spec §12 "Usage sources"): agy's own `/usage` parsed against the live-seen shape, the guard
 // and its latch, the timeout back-off, not installed. A stub `outside` answers; no real `agy` ever runs.
 import { describe, expect, test } from "bun:test";
-import type { OutsideRun } from "@waifucave/clover-plugin-sdk";
+import type { OutsideRun } from "@waifucave/moss-plugin-sdk";
 import { AGY_USAGE_ARGS, agyGroupScope, judgeAgyUsage, windowsFromAgyUsage } from "../src/antigravity";
 import { plan } from "../src/source";
-import type { Outside } from "@waifucave/clover-plugin-sdk/usage-source";
+import type { Outside } from "@waifucave/moss-plugin-sdk/usage-source";
 import AGY_USAGE from "./shapes/agy-usage.json";
 
 const NOW = Date.parse("2026-10-18T19:15:04Z");

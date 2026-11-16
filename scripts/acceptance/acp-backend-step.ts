@@ -1,13 +1,13 @@
 // An agent backend from a plugin (checklist 1.51 and 4.25), with a fake in place of a vendor's CLI. The fixture
 // (scripts/acceptance/fixtures/acceptance-acp) is a plugin whose `agentBackends` entry is an ACP backend; its program is
 // the fake ACP agent the core's backend conformance suite runs (packages/core/src/agents/testing/fake-acp-agent.ts),
-// a real process speaking ACP over stdio, scripted to say one line and call the Clover server it is given.
+// a real process speaking ACP over stdio, scripted to say one line and call the MOSS server it is given.
 //
 // 1. Installed from its folder (the run writes the program's and the config's absolute paths in first, as the echo fixture
 //    gets its targets): its OK card pressed in the window, it runs, and `agent.backends` lists the backend: installed,
 //    named beside its plugin, marked as acting without asking (a third party's) and as not sandboxed.
 // 2. A coding session started on it the way the app starts one (`agent.start`, no bot): the fake agent's reply is in the
-//    session's conversation, and the agent's own report shows what crossed the wire: the prompt, and the Clover server
+//    session's conversation, and the agent's own report shows what crossed the wire: the prompt, and the MOSS server
 //    it was given at `session/new`, which it started and called (`Glossary`, the one tool a coding session the user
 //    drives is given); the call's answer is in the session too.
 // Removed afterwards, whatever happened.
@@ -15,7 +15,7 @@ import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fail, leave, until, type ExampleCtx } from "./example-steps";
 
-export const ACP_BACKEND_STEP = "an agent backend from a plugin (ACP, a fake agent in place of a vendor's CLI): the fixture plugin installs from its folder behind its OK card, pressed in the window, and agent.backends lists its backend; a coding session started on it from the app's own method gets the fake agent's reply, and the agent was given the Clover server, which it started and called";
+export const ACP_BACKEND_STEP = "an agent backend from a plugin (ACP, a fake agent in place of a vendor's CLI): the fixture plugin installs from its folder behind its OK card, pressed in the window, and agent.backends lists its backend; a coding session started on it from the app's own method gets the fake agent's reply, and the agent was given the MOSS server, which it started and called";
 
 export const ACP_ID = "acceptance-acp";
 export const ACP_NAME = "Acceptance ACP";
@@ -47,7 +47,7 @@ export function agentConfig(quirksFile: string, o: { report: string; selection: 
     report: o.report,
     selection: o.selection,
     ...(o.mcpEnv !== undefined ? { mcpEnv: o.mcpEnv } : {}),
-    // One turn: its reply, then the Clover server's Glossary (no permission asked of the client: the call is the
+    // One turn: its reply, then the MOSS server's Glossary (no permission asked of the client: the call is the
     // bridge's own, judged by the daemon), then its closing words.
     script: [[{ say: ACP_REPLY }, { mcp: { server: "$bridge", tool: "Glossary", input: { query: "tool" }, ask: false } }, { say: " Done." }]],
   });
@@ -80,11 +80,11 @@ async function run(ctx: ExampleCtx): Promise<string> {
   // The fixture with the run's paths in, and the fake agent's config beside it (outside the plugin's folder).
   mkdirSync(dirname(config), { recursive: true });
   cpSync(FIXTURE, folder, { recursive: true });
-  const written = fixtureWith({ "clover.json": readFileSync(join(folder, "clover.json"), "utf8"), "quirks.json": readFileSync(join(folder, "quirks.json"), "utf8") }, { bun: process.execPath, fake: FAKE_ACP_AGENT, config });
+  const written = fixtureWith({ "moss.json": readFileSync(join(folder, "moss.json"), "utf8"), "quirks.json": readFileSync(join(folder, "quirks.json"), "utf8") }, { bun: process.execPath, fake: FAKE_ACP_AGENT, config });
   for (const [name, body] of Object.entries(written)) writeFileSync(join(folder, name), body);
-  // The Clover server the agent starts is this core's own binary: a test-marked one (a packaged run's) refuses to start
+  // The MOSS server the agent starts is this core's own binary: a test-marked one (a packaged run's) refuses to start
   // without the run's keychain file's variable, which no agent's environment carries.
-  writeFileSync(config, agentConfig(written["quirks.json"]!, { report, selection: join(work, "agent", "selection.json"), mcpEnv: { CLOVER_TEST_KEYCHAIN: ctx.keychainFile } }));
+  writeFileSync(config, agentConfig(written["quirks.json"]!, { report, selection: join(work, "agent", "selection.json"), mcpEnv: { MOSS_TEST_KEYCHAIN: ctx.keychainFile } }));
 
   // 1. Installed; its OK card pressed in the window; its backend listed.
   const installed = await rpc.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
@@ -136,18 +136,18 @@ async function run(ctx: ExampleCtx): Promise<string> {
   if (prompt === undefined || !String(prompt.text).includes(ACP_PROMPT)) fail(`the agent never got the prompt (report: ${r.map((x) => x.type).join(", ")})`);
   const made = r.find((x) => x.type === "session");
   const servers = Array.isArray(made?.servers) ? (made!.servers as string[]) : [];
-  const clover = servers.find((s) => /clover/i.test(s));
-  if (clover === undefined) fail(`the agent was given no Clover server at session/new (servers: ${servers.join(", ") || "none"})`);
-  const spawned = r.find((x) => x.type === "mcp-started" && x.server === clover);
-  if (spawned === undefined) fail(`the agent never started the ${clover} server (report: ${r.map((x) => x.type).join(", ")})`);
-  const result = await until("the agent's call of the Clover server", 60_000, async () => reportOf(report).find((x) => x.type === "mcp-result"));
-  if (result.isError === true) fail(`the Clover server's Glossary answered an error: ${String(result.text).slice(0, 300)}`);
+  const moss = servers.find((s) => /moss/i.test(s));
+  if (moss === undefined) fail(`the agent was given no MOSS server at session/new (servers: ${servers.join(", ") || "none"})`);
+  const spawned = r.find((x) => x.type === "mcp-started" && x.server === moss);
+  if (spawned === undefined) fail(`the agent never started the ${moss} server (report: ${r.map((x) => x.type).join(", ")})`);
+  const result = await until("the agent's call of the MOSS server", 60_000, async () => reportOf(report).find((x) => x.type === "mcp-result"));
+  if (result.isError === true) fail(`the MOSS server's Glossary answered an error: ${String(result.text).slice(0, 300)}`);
   const text = String(result.text);
-  if (!text.includes('"kind": "tool"')) fail(`the Clover server's Glossary listed no tool: "${text.replace(/\s+/g, " ").slice(0, 300)}"`);
+  if (!text.includes('"kind": "tool"')) fail(`the MOSS server's Glossary listed no tool: "${text.replace(/\s+/g, " ").slice(0, 300)}"`);
   // The session's own conversation carries the call too (the agent's tool call, completed).
   const finished = await until("the turn to end", 60_000, async () => ((await history()).some((e) => e.type === "turn_completed") ? true : undefined),
     async () => `events: ${(await history()).slice(-6).map((e) => String(e.type)).join(", ")}`);
   void finished;
-  done.push(`2 agent.start on it (session ${session}): the fake agent's reply "${ACP_REPLY.slice(0, 40)}…" is in the conversation; its report shows the prompt, the server "${clover}" given at session/new, started, and its Glossary call answered ("${text.replace(/\s+/g, " ").slice(0, 120)}")`);
+  done.push(`2 agent.start on it (session ${session}): the fake agent's reply "${ACP_REPLY.slice(0, 40)}…" is in the conversation; its report shows the prompt, the server "${moss}" given at session/new, started, and its Glossary call answered ("${text.replace(/\s+/g, " ").slice(0, 120)}")`);
   return done.join("; ");
 }

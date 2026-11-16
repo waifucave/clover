@@ -1,0 +1,946 @@
+import { sealedTextOf, settle, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { ConversationView, workingText, type ConversationViewProps } from "../client/ConversationView";
+import { thinkingLabel } from "../client/messages/ThinkingRow";
+import { MAX_OUTPUT_LINES, outputPreview } from "../client/messages/ToolRun";
+import { buildTimeline } from "../client/timeline";
+import type { ConversationItem } from "../client/types";
+import {
+  APPROVAL_PENDING,
+  APPROVAL_PENDING_CARD,
+  APPROVAL_STATES,
+  ATTACHMENTS,
+  BOT,
+  CONFIRM_CARD,
+  DEVICE,
+  DEVICES,
+  ELICITATION_CARD,
+  EVENTS,
+  FORMAT,
+  INTERRUPT,
+  NOTES,
+  NOW,
+  OTHER_CARDS,
+  QUESTION_FREE,
+  QUESTION_MULTI,
+  QUESTION_SINGLE,
+  SEALED_CARDS,
+  TOOLS,
+  TOOLS_OPEN,
+  approval,
+  at,
+  bot,
+  note,
+  thinking,
+  tool,
+  user,
+} from "../gallery/fixtures";
+import { mockRuntime } from "../gallery/mock-runtime";
+
+afterEach(cleanup);
+
+function renderView(props: Partial<ConversationViewProps> & { items: readonly ConversationItem[] }, runtime = mockRuntime({ cards: SEALED_CARDS })) {
+  const view = (p: typeof props) => (
+    <TestLayer runtime={runtime}>
+      <ConversationView bot={BOT} now={NOW} device={DEVICE} format={FORMAT} {...p} />
+    </TestLayer>
+  );
+  const result = render(view(props));
+  return { ...result, rerenderWith: (p: typeof props) => result.rerender(view(p)) };
+}
+
+/** The view, once the layer answered (the pending cards, their sealed frames). */
+async function renderSettled(props: Partial<ConversationViewProps> & { items: readonly ConversationItem[] }, waiting?: readonly ConversationItem[]) {
+  // The core's pending cards: those the items show waiting (or `waiting`'s, for a view that will show them).
+  const pending = (waiting ?? props.items).flatMap((i) => (i.kind === "approval" && (i.state === undefined || i.state === "pending") ? [i.cardId] : []));
+  const r = renderView(props, mockRuntime({ cards: SEALED_CARDS, pending }));
+  await act(() => settle(6));
+  return { ...r, rerenderWith: async (p: typeof props) => { r.rerenderWith(p); await act(() => settle(6)); } };
+}
+
+/** A sealed card's frames as the app places them: its fields by name, its buttons by option, and the words each shows. */
+const sealedCardIn = (container: ParentNode, id: string) => container.querySelector(`[data-moss-card="${id}"]`) as HTMLElement | null;
+const framesOf = (el: ParentNode, kind: "field" | "button") => [...el.querySelectorAll(`iframe[data-moss-sealed^="${kind}:"]`)].map((f) => (f as HTMLElement).dataset.mossSealed!.slice(kind.length + 1));
+const sealedWords = (el: ParentNode) => [...el.querySelectorAll("iframe[data-moss-sealed]")].map((f) => sealedTextOf(f) ?? "").join(" | ");
+
+const units = (container: HTMLElement) => [...container.querySelectorAll(".cl-conv__unit")].map((u) => (u as HTMLElement).dataset.unit);
+
+describe("the view", () => {
+  test("an empty conversation says so", () => {
+    renderView({ items: [] });
+    expect(screen.getByText("This is the start of your conversation with Alpha.")).toBeTruthy();
+    expect(screen.getByRole("log", { name: "Conversation with Alpha" })).toBeTruthy();
+  });
+
+  test("a transcript not read yet draws no empty state: nothing until the host says it has read it", () => {
+    const { rerenderWith } = renderView({ items: [], loaded: false });
+    expect(screen.queryByText("This is the start of your conversation with Alpha.")).toBeNull();
+    expect(screen.getByRole("log", { name: "Conversation with Alpha" })).toBeTruthy();
+    rerenderWith({ items: [], loaded: true });
+    expect(screen.getByText("This is the start of your conversation with Alpha.")).toBeTruthy();
+  });
+
+  test("every message kind draws, in order, with day dividers", () => {
+    const items: ConversationItem[] = [
+      user(at(-1, 9, 0), "hi"),
+      bot(at(-1, 9, 0), "hello"),
+      ...EVENTS.slice(0, 1),
+      ...NOTES.slice(2, 3),
+      ...APPROVAL_STATES.slice(0, 1),
+      QUESTION_SINGLE,
+      tool(at(0, 17, 0), { name: "Bash" }),
+      thinking(at(0, 17, 1), { title: "Planning" }),
+      EVENTS.find((e) => e.kind === "agent-report")!,
+      EVENTS.find((e) => e.kind === "task-notification")!,
+    ];
+    const { container } = renderView({ items });
+    expect(units(container)).toEqual([
+      "user", "bot", "routine-result", "note", "approval", "question", "tools", "thinking", "agent-report", "task-notification",
+    ]);
+    expect([...container.querySelectorAll(".cl-conv-day")].map((d) => d.textContent)).toEqual(["Yesterday", "Today"]);
+  });
+
+  test("the turn's status line reads the phase, and steps aside for a live answer or thinking row", () => {
+    const idle = buildTimeline([user(at(0, 1, 0), "x")], NOW, FORMAT);
+    expect(workingText(undefined, "Alpha", idle.at(-1))).toBeUndefined();
+    expect(workingText({ running: true }, "Alpha", idle.at(-1))).toBe("Alpha is thinking");
+    expect(workingText({ running: true, phase: "working" }, "Alpha", idle.at(-1))).toBe("Alpha is working");
+    expect(workingText({ running: true, phase: "waiting" }, "Alpha", idle.at(-1))).toBe("Alpha is waiting for you");
+    expect(workingText({ running: true, phase: "compacting" }, "Alpha", idle.at(-1))).toBe("Compacting the conversation");
+    expect(workingText({ running: true, phase: "retrying", retry: { attempt: 3, maxRetries: 10 } }, "Alpha", idle.at(-1))).toBe(
+      "Provider busy, retrying (3 of 10)",
+    );
+    const streaming = buildTimeline([bot(at(0, 1, 0), "par", { streaming: true })], NOW, FORMAT);
+    expect(workingText({ running: true }, "Alpha", streaming.at(-1))).toBeUndefined();
+    const live = buildTimeline([thinking(at(0, 1, 0), { live: true })], NOW, FORMAT);
+    expect(workingText({ running: true }, "Alpha", live.at(-1))).toBeUndefined();
+    expect(workingText({ running: true, phase: "compacting" }, "Alpha", live.at(-1))).toBe("Compacting the conversation");
+
+    renderView({ items: [user(at(0, 1, 0), "x")], turn: { running: true, phase: "working" } });
+    expect(screen.getByRole("status").textContent).toContain("Alpha is working");
+  });
+
+  test("Show earlier calls the host", () => {
+    const onLoadEarlier = mock(() => undefined);
+    renderView({ items: [user(at(0, 1, 0), "x")], hasEarlier: true, onLoadEarlier });
+    fireEvent.click(screen.getByRole("button", { name: "Show earlier messages" }));
+    expect(onLoadEarlier).toHaveBeenCalledTimes(1);
+  });
+
+  test("a reader who scrolled up keeps their place and gets Jump to latest; a follower is kept at the bottom", () => {
+    const items = [user(at(0, 1, 0), "one")];
+    const { container, rerenderWith } = renderView({ items });
+    const viewport = container.querySelector(".cl-conv__viewport") as HTMLElement;
+    let scrollTop = 0;
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, get: () => 2000 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, get: () => 400 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, get: () => scrollTop, set: (v: number) => { scrollTop = Math.min(v, 1600); } });
+
+    // Following: new output scrolls to the bottom.
+    rerenderWith({ items: [...items, bot(at(0, 1, 1), "two")] });
+    expect(scrollTop).toBe(1600);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+
+    // The reader scrolls up: new output leaves them there and offers the pill.
+    scrollTop = 200;
+    fireEvent.scroll(viewport);
+    rerenderWith({ items: [...items, bot(at(0, 1, 1), "two"), bot(at(0, 1, 2), "three")] });
+    expect(scrollTop).toBe(200);
+    const jump = screen.getByRole("button", { name: "Jump to latest" });
+    // The pill sits below the scrolling area, never over the conversation.
+    expect(jump.closest(".cl-conv__footer")).toBeTruthy();
+    expect(jump.closest(".cl-conv__viewport")).toBeNull();
+
+    fireEvent.click(jump);
+    expect(scrollTop).toBe(1600);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+
+  test("starting at the top shows the pill when there is more below", () => {
+    const { container } = render(<div />);
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 3000 });
+    try {
+      renderView({ items: [user(at(0, 1, 0), "one")], initialFollow: false });
+      expect(screen.getByRole("button", { name: "Jump to latest" })).toBeTruthy();
+    } finally {
+      if (original) Object.defineProperty(HTMLElement.prototype, "scrollHeight", original);
+      else delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+    }
+    expect(container).toBeTruthy();
+  });
+});
+
+describe("user and bot messages", () => {
+  test("attachments draw as thumbnails and chips; the meta says another device or a late arrival", () => {
+    const { container } = renderView({ items: [...ATTACHMENTS, ...DEVICES] });
+    expect(container.querySelectorAll(".cl-conv-user__thumb").length).toBe(2);
+    const chips = [...container.querySelectorAll(".cl-conv-user__bubble .cl-conv-user__chip")].map((c) => c.textContent);
+    expect(chips).toEqual(["island-a.png", "island-b.png", "notes.md"]);
+    expect(screen.getByText("from iPhone")).toBeTruthy();
+    expect(screen.getByText("from moss.waifucave.com")).toBeTruthy();
+    expect(screen.getByText("arrived late")).toBeTruthy();
+    // A message from this device does not repeat where it came from.
+    expect(screen.queryByText(`from ${DEVICE.name}`)).toBeNull();
+  });
+
+  test("Markdown shows raw HTML as text, drops unsafe links and hands links to the host", () => {
+    const onOpenLink = mock((_url: string) => undefined);
+    const { container } = renderView({
+      items: [bot(at(0, 1, 0), "<img src=x onerror=alert(1)> **bold** [safe](https://example.com) [bad](javascript:alert(1)) ![pic](https://example.com/p.png)")],
+      onOpenLink,
+    });
+    const md = container.querySelector(".cl-conv-md") as HTMLElement;
+    expect(md.querySelector("img")).toBeNull();
+    expect(md.textContent).toContain("<img src=x onerror=alert(1)>");
+    expect(md.querySelector("strong")?.textContent).toBe("bold");
+    const bad = within(md).getByText("bad") as HTMLAnchorElement;
+    expect(bad.getAttribute("href") ?? "").not.toContain("javascript");
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    within(md).getByText("safe").dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(onOpenLink).toHaveBeenCalledWith("https://example.com/");
+    fireEvent.click(within(md).getByText("Image: pic"));
+    expect(onOpenLink).toHaveBeenLastCalledWith("https://example.com/p.png");
+  });
+
+  test("one link rule: only absolute http, https and mailto reach the host; footnotes stay inside", () => {
+    const onOpenLink = mock((_url: string) => undefined);
+    const { container } = renderView({
+      items: [
+        bot(
+          at(0, 1, 0),
+          "[rel](/settings) [proto](//evil.example/x) [file](file:///etc/passwd) [mail](mailto:hi@moss.dev) [web](https://moss.dev/a) Note[^1]\n\n[^1]: The footnote.",
+        ),
+      ],
+      onOpenLink,
+    });
+    const md = container.querySelector(".cl-conv-md") as HTMLElement;
+    for (const name of ["rel", "proto", "file"]) {
+      const el = within(md).getByText(name);
+      expect(el.tagName).toBe("SPAN");
+      fireEvent.click(el);
+    }
+    expect(onOpenLink).not.toHaveBeenCalled();
+    // A footnote link scrolls inside the view and never goes to the host.
+    const footnote = md.querySelector('a[href^="#"]') as HTMLAnchorElement;
+    expect(footnote).toBeTruthy();
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    footnote.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(onOpenLink).not.toHaveBeenCalled();
+    fireEvent.click(within(md).getByText("mail"));
+    expect(onOpenLink).toHaveBeenLastCalledWith("mailto:hi@moss.dev");
+    // A middle-click never navigates by itself; it goes to the host like a click.
+    const middle = new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 });
+    within(md).getByText("web").dispatchEvent(middle);
+    expect(middle.defaultPrevented).toBe(true);
+    expect(onOpenLink).toHaveBeenLastCalledWith("https://moss.dev/a");
+  });
+
+  test("an attachment opens like any file the conversation names", () => {
+    const onOpenFile = mock((_p: string) => undefined);
+    renderView({
+      items: [user(at(0, 1, 1), "This one", { attachments: [{ n: 1, kind: "image", name: "a.png", path: "home/Studio/a.png", previewUrl: "blob:moss/a" }] })],
+      onOpenFile,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open a.png" }));
+    expect(onOpenFile).toHaveBeenCalledWith("home/Studio/a.png");
+  });
+
+  test("nothing in the conversation loads an image from the web", () => {
+    const { container } = renderView({
+      items: [
+        tool(at(0, 1, 0), {
+          name: "mcp__moss__WebSearch",
+          detail: "moss",
+          sites: [
+            { url: "https://moss.dev/", icon: "https://moss.dev/favicon.ico" },
+            { url: "https://example.com/", icon: "data:image/png;base64,iVBORw0KGgo=" },
+            { url: "javascript:alert(1)" },
+          ],
+        }),
+        user(at(0, 1, 1), "See these", {
+          attachments: [
+            { n: 1, kind: "image", name: "a.png", path: "a.png", previewUrl: "https://tracker.example/a.png" },
+            { n: 2, kind: "image", name: "b.png", path: "b.png", previewUrl: "blob:moss/b" },
+          ],
+        }),
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Searched the web/ }));
+    const sources = [...container.querySelectorAll("img")].map((img) => img.getAttribute("src") ?? "");
+    expect(sources.filter((src) => /^(https?:)?\/\//i.test(src))).toEqual([]);
+    expect(sources).toContain("data:image/png;base64,iVBORw0KGgo=");
+    expect(sources).toContain("blob:moss/b");
+    // An unsafe site draws as text, never as a link.
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull();
+  });
+
+  test("a code block copies its text as written", () => {
+    const onCopy = mock((_text: string) => undefined);
+    renderView({ items: [bot(at(0, 1, 0), "```ts\nconst a = 1;\n```")], onCopy });
+    expect(screen.getByText("ts")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+    expect(onCopy).toHaveBeenCalledWith("const a = 1;");
+  });
+
+  test("only the final answer carries a copy button; a streaming one is busy and has none", () => {
+    const { container, rerenderWith } = renderView({
+      items: [user(at(0, 1, 0), "go"), bot(at(0, 1, 0), "a step"), tool(at(0, 1, 0), { name: "Bash" }), bot(at(0, 1, 1), "the answer")],
+    });
+    expect(screen.getAllByRole("button", { name: "Copy message" }).length).toBe(1);
+    rerenderWith({ items: [user(at(0, 1, 0), "go"), bot(at(0, 1, 1), "the ans", { streaming: true })], turn: { running: true } });
+    const article = container.querySelector(".cl-conv-bot") as HTMLElement;
+    expect(article.dataset.streaming).toBe("true");
+    expect(article.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByRole("button", { name: "Copy message" })).toBeNull();
+  });
+
+  test("plugins' message actions: drawn in the row, on the side they ask for, one press runs with the message's seq", async () => {
+    const pin = { ref: "alpha#pin", title: "Pin to her stage", icon: "/_t/alpha/assets/pin.png", on: "assistant" as const };
+    const quote = { ref: "notes#quote", title: "Quote in a note", on: "both" as const };
+    const ran: [string, number | undefined][] = [];
+    const onMessageAction = mock(async (a: { ref: string }, item: { seq?: number }) => {
+      ran.push([a.ref, item.seq]);
+      return a.ref === "alpha#pin" ? { note: "Her stage is full: unpin one first." } : { ok: true };
+    });
+    const reply = bot(at(0, 1, 1), "the answer", { seq: 12 });
+    const { container } = renderView({ items: [user(at(0, 1, 0), "go", { seq: 11 }), reply], messageActions: [pin, quote], onMessageAction });
+    const row = container.querySelector(".cl-conv-bot__actions")!;
+    expect([...row.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual(["Copy message", "Pin to her stage", "Quote in a note"]);
+    expect(row.querySelector("img")?.getAttribute("src")).toBe("/_t/alpha/assets/pin.png");
+    // The user's message carries only what is on its side.
+    const mine = container.querySelector(".cl-conv-user__actions")!;
+    expect([...mine.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual(["Quote in a note"]);
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Pin to her stage" })));
+    expect(ran).toEqual([["alpha#pin", 12]]);
+    expect(container.querySelector(".cl-conv-bot__note")?.textContent).toBe("Her stage is full: unpin one first.");
+    await act(async () => void fireEvent.click(within(mine as HTMLElement).getByRole("button", { name: "Quote in a note" })));
+    expect(ran.at(-1)).toEqual(["notes#quote", 11]);
+    expect(container.querySelector(".cl-conv-user__note")).toBeNull();
+  });
+
+  test("plugins' message actions: none on a reply still streaming, on one not in the log, or with no host to run them", () => {
+    const pin = { ref: "alpha#pin", title: "Pin", on: "assistant" as const };
+    const { rerenderWith } = renderView({ items: [bot(at(0, 1, 1), "the ans", { streaming: true, seq: 3 })], turn: { running: true }, messageActions: [pin], onMessageAction: async () => ({ ok: true }) });
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    rerenderWith({ items: [bot(at(0, 1, 1), "the answer")], messageActions: [pin], onMessageAction: async () => ({ ok: true }) });
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    rerenderWith({ items: [bot(at(0, 1, 1), "the answer", { seq: 3 })], messageActions: [pin] });
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    // A picture from anywhere but the app's own plugin images isn't drawn (the glyph stands in).
+    rerenderWith({ items: [bot(at(0, 1, 1), "the answer", { seq: 3 })], messageActions: [{ ...pin, icon: "https://example.com/x.png" }], onMessageAction: async () => ({ ok: true }) });
+    expect(screen.getByRole("button", { name: "Pin" }).querySelector("img")).toBeNull();
+  });
+
+  test("a reply's add-ons: under it by default; in its actions row, after copy, when the theme asks", () => {
+    const extra = () => <button type="button">Pin</button>;
+    const items = [user(at(0, 1, 0), "go"), bot(at(0, 1, 1), "the answer")];
+    const { container, rerenderWith } = renderView({ items, renderMessageExtra: extra });
+    const under = container.querySelectorAll(".cl-conv__unit > .cl-conv__extra");
+    expect(under.length).toBe(2);
+    expect(container.querySelector(".cl-conv-bot__actions .cl-conv__extra")).toBeNull();
+    rerenderWith({ items, renderMessageExtra: extra, extraInline: true });
+    const row = container.querySelector(".cl-conv-bot__actions")!;
+    expect([...row.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Copy", "Pin"]);
+    // The user's message keeps its add-ons under it; the reply's are only in its row.
+    expect(container.querySelectorAll(".cl-conv__unit > .cl-conv__extra").length).toBe(1);
+    // A reply still streaming has no row yet: its add-ons stay under it.
+    rerenderWith({ items: [bot(at(0, 1, 1), "the ans", { streaming: true })], turn: { running: true }, renderMessageExtra: extra, extraInline: true });
+    expect(container.querySelectorAll(".cl-conv__unit > .cl-conv__extra").length).toBe(1);
+  });
+
+  test("a run's card parts (hidden in the stock look): the kind's icon, one call's hint and its lines", () => {
+    const { container } = renderView({ items: [tool(at(0, 1, 0), { name: "Read", detail: "notes/kyoto.md", output: "a\nb\nc\n" })] });
+    const summary = container.querySelector(".cl-conv-tools__summary")!;
+    expect(summary.querySelector(".cl-conv-tools__icon")?.getAttribute("data-icon")).toBe("file");
+    expect(summary.querySelector(".cl-conv-tools__icon")?.getAttribute("aria-hidden")).toBe("true");
+    expect(summary.querySelector(".cl-conv-tools__detail")?.textContent).toBe("notes/kyoto.md");
+    expect(summary.querySelector(".cl-conv-tools__meta")?.textContent).toBe("3 lines");
+    cleanup();
+    // Several calls: the icon only (the sentence names them).
+    const many = renderView({ items: [tool(at(0, 1, 0), { name: "Bash", detail: "ls" }), tool(at(0, 1, 0), { name: "Bash", detail: "pwd" })] });
+    const s2 = many.container.querySelector(".cl-conv-tools__summary")!;
+    expect(s2.querySelector(".cl-conv-tools__icon")?.getAttribute("data-icon")).toBe("terminal");
+    expect(s2.querySelector(".cl-conv-tools__detail")).toBeNull();
+    expect(s2.querySelector(".cl-conv-tools__meta")).toBeNull();
+    cleanup();
+    // One that failed says so in the card, beside its mark.
+    const failed = renderView({ items: [tool(at(0, 1, 0), { name: "Read", detail: "x.md", status: "failed", output: "no such file" })] });
+    expect(failed.container.querySelector(".cl-conv-tools__meta")?.textContent).toBe("Failed");
+  });
+
+  test("an interrupted answer says so", () => {
+    renderView({ items: [bot(at(0, 1, 0), "half an ans", { interrupted: true })] });
+    expect(screen.getByText("Interrupted")).toBeTruthy();
+  });
+});
+
+describe("thinking", () => {
+  test("labels: the title, else Thinking while live, else Thought (for a while)", () => {
+    expect(thinkingLabel(thinking(0, { title: "Planning", live: true }), true)).toBe("Planning");
+    expect(thinkingLabel(thinking(0, { title: "Planning", durationMs: 12_000 }), false)).toBe("Planning · 12s");
+    expect(thinkingLabel(thinking(0, { live: true }), true)).toBe("Thinking");
+    // A live block whose turn ended reads as done, never as thinking forever.
+    expect(thinkingLabel(thinking(0, { live: true }), false)).toBe("Thought");
+    expect(thinkingLabel(thinking(0, { durationMs: 8_000 }), false)).toBe("Thought it through · 8s");
+  });
+
+  test("a done row opens to its text; a hidden block says the provider kept it; a live row does not open", () => {
+    renderView({
+      items: [
+        thinking(at(0, 1, 0), { title: "Mapping", text: "The old sync keeps a cursor." }),
+        thinking(at(0, 1, 1), { reasoning: "hidden", durationMs: 1000 }),
+        thinking(at(0, 1, 2), { title: "Live one", live: true }),
+      ],
+      turn: { running: true },
+    });
+    const mapping = screen.getByRole("button", { name: /Mapping/ });
+    expect(mapping.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(mapping);
+    expect(screen.getByText("The old sync keeps a cursor.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Thought it through · 1s/ }));
+    expect(screen.getByText("The provider kept this reasoning hidden.")).toBeTruthy();
+    const live = screen.getByRole("button", { name: /Live one/ }) as HTMLButtonElement;
+    expect(live.disabled).toBe(true);
+    expect(live.closest(".cl-conv-thinking")?.getAttribute("data-running")).toBe("true");
+  });
+});
+
+describe("tool runs", () => {
+  test("a run reads as one sentence with its computer, and opens to each call", () => {
+    renderView({ items: TOOLS.slice(0, 6) });
+    const summary = screen.getByRole("button", { name: /Ran 3 commands and read 2 files/ });
+    expect(summary.textContent).toContain("on Studio");
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(summary);
+    expect(summary.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("git status --short")).toBeTruthy();
+    expect(screen.getByText(/84 pass/)).toBeTruthy();
+    // 56 lines of build log draw as MAX_OUTPUT_LINES plus a count of the rest.
+    // A shell run keeps the tail: the earlier lines are counted.
+    expect(screen.getByText(/earlier lines/)).toBeTruthy();
+  });
+
+  test("output previews bound lines and characters", () => {
+    expect(outputPreview("a\nb").moreLines).toBe(0);
+    expect(outputPreview(Array(45).fill("x").join("\n"))).toEqual({
+      text: Array(MAX_OUTPUT_LINES).fill("x").join("\n"),
+      moreLines: 45 - MAX_OUTPUT_LINES,
+      cut: false,
+    });
+    expect(outputPreview("y".repeat(5000)).cut).toBe(true);
+  });
+
+  test("diff chips open the diff; file paths open the file; sites go to the host", () => {
+    const onOpenDiff = mock((_id: string) => undefined);
+    const onOpenFile = mock((_p: string) => undefined);
+    const onOpenLink = mock((_u: string) => undefined);
+    renderView({ items: TOOLS, initialExpanded: TOOLS_OPEN, onOpenDiff, onOpenFile, onOpenLink });
+    fireEvent.click(screen.getByRole("button", { name: "Open the diff for plugins/moss/shell/moss.json" }));
+    expect(onOpenDiff).toHaveBeenCalledWith("d1");
+    fireEvent.click(screen.getByRole("button", { name: "home/Studio/projects/moss/docs/moss-spec.md" }));
+    expect(onOpenFile).toHaveBeenCalledWith("home/Studio/projects/moss/docs/moss-spec.md");
+    fireEvent.click(screen.getByText("github.com"));
+    expect(onOpenLink).toHaveBeenCalledWith("https://github.com/electron/electron/issues/41300");
+  });
+
+  test("a failed run shows its first error line folded; running and reviewing calls say so", () => {
+    const { container } = renderView({ items: TOOLS, turn: { running: true, phase: "working" } });
+    expect(screen.getByText("client/Composer.tsx(41,7): error TS2322: Type 'string' is not assignable to type 'number'.")).toBeTruthy();
+    const statuses = [...container.querySelectorAll(".cl-conv-tools")].map((t) => (t as HTMLElement).dataset.status);
+    expect(statuses).toContain("failed");
+    expect(statuses).toContain("interrupted");
+    expect(statuses.at(-1)).toBe("running");
+    expect(screen.getByText("Safety check")).toBeTruthy();
+    expect(screen.getByText("Running a command")).toBeTruthy();
+  });
+
+  test("a plugin can draw a tool's result (an MCP Apps page draws nothing until the app serves them)", () => {
+    const appCall = TOOLS.find((i) => i.kind === "tool" && i.call.app)!;
+    const blender = TOOLS.find((i) => i.kind === "tool" && i.call.name === "mcp__blender__Render")!;
+    const { container } = renderView({
+      items: TOOLS,
+      initialExpanded: TOOLS_OPEN,
+      renderToolResult: (c) => (c.name === "mcp__blender__Render" ? <span>custom render view</span> : undefined),
+    });
+    expect(appCall).toBeTruthy();
+    expect(container).toBeTruthy();
+    expect(screen.getByText("custom render view")).toBeTruthy();
+    // The custom view replaces that call's default output.
+    expect(screen.queryByText("home/Laptop/renders/island-preview.png")).toBeNull();
+    expect(blender).toBeTruthy();
+  });
+});
+
+describe("approvals", () => {
+  test("a pending card places every sealed field it has and one sealed button per option: deny, always, once", async () => {
+    const { container } = await renderSettled({ items: APPROVAL_PENDING });
+    const card = sealedCardIn(container, APPROVAL_PENDING_CARD)!;
+    expect(card).toBeTruthy();
+    // A tool card reads as the island's: the app's composed line and preview and what "Always allow" stores, beside
+    // the card's own facts. Never the call's raw input (`detail`): no card shows raw JSON.
+    expect([...card.querySelectorAll("[data-slot]")].map((f) => (f as HTMLElement).dataset.slot).sort()).toEqual(
+      ["summary", "preview", "computer", "risk", "reason", "always", "expires"].sort(),
+    );
+    expect(card.querySelector('[data-slot="detail"]')).toBeNull();
+    expect(framesOf(card, "field")).toEqual(["title", "summary", "preview", "computer", "risk", "reason", "always", "expires"]);
+    expect(framesOf(card, "button")).toEqual(["deny", "allow_always", "allow_once"]);
+    // The view adds no deadline words of its own: the core's sealed field says when.
+    expect(screen.queryByText(/Denied in/)).toBeNull();
+    // The call it holds says it is waiting, not that it ran.
+    expect(screen.getByText("Waiting to run a command")).toBeTruthy();
+  });
+
+  test("with no options known, it places the card's first deny and first approve", async () => {
+    const { container } = await renderSettled({ items: [approval(at(0, 1, 0), { cardId: "card-routine" })] });
+    expect(framesOf(container, "button")).toEqual(["deny", "approve"]);
+  });
+
+  test("a card from a turn the user did not start places the core's own deadline", async () => {
+    const { container } = await renderSettled({ items: APPROVAL_STATES });
+    expect(sealedWords(sealedCardIn(container, "card-routine")!)).toContain("Denied at 4:32 PM unless you answer");
+  });
+
+  test("a plugin's confirm names the plugin through sealed fields; a sign-in link seals its host", async () => {
+    const { container } = await renderSettled({ items: OTHER_CARDS });
+    const confirm = sealedCardIn(container, CONFIRM_CARD)!;
+    const source = confirm.querySelector('[data-slot="source"]')!;
+    expect(sealedWords(source)).toContain("tarot-panel");
+    const link = sealedCardIn(container, ELICITATION_CARD)!;
+    expect(sealedWords(link.querySelector('[data-slot="host"]')!)).toContain("linear.app");
+    expect(framesOf(link, "button")).toEqual(["decline", "open_link"]);
+    // No kind of card places the call's raw input.
+    expect(container.querySelector('[data-slot="detail"]')).toBeNull();
+  });
+
+  test("resolved cards say how they ended and where, and why a card was withdrawn", async () => {
+    await renderSettled({ items: APPROVAL_STATES });
+    expect(screen.getByText("Approved on iPhone")).toBeTruthy();
+    expect(screen.getByText("Denied on Studio")).toBeTruthy();
+    expect(screen.getByText("Denied: no answer in time")).toBeTruthy();
+    expect(screen.getByText("Withdrawn when the turn ended")).toBeTruthy();
+    expect(screen.getByText("Cancelled: its session stopped")).toBeTruthy();
+    cleanup();
+    await renderSettled({ items: INTERRUPT });
+    expect(screen.getByText("Withdrawn when you interrupted")).toBeTruthy();
+  });
+});
+
+describe("questions", () => {
+  test("one choice: pick, send, and the answer is keyed by the question", () => {
+    const onAnswerQuestion = mock((_id: string, _a: unknown) => undefined);
+    renderView({ items: [QUESTION_SINGLE], onAnswerQuestion });
+    const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: /^SQLite/ }));
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    expect(onAnswerQuestion).toHaveBeenCalledWith(QUESTION_SINGLE.callId, { answers: { "Which database should the hub use?": "SQLite" } });
+    // Sent once: the card does not send twice.
+    expect(send.disabled).toBe(true);
+  });
+
+  test("an answer that didn't go through gives the card back, with a note", async () => {
+    let fail: (e: Error) => void = () => undefined;
+    const onAnswerQuestion = mock((_id: string, _a: unknown) => new Promise<void>((_, reject) => (fail = reject)));
+    renderView({ items: [QUESTION_SINGLE], onAnswerQuestion });
+    fireEvent.click(screen.getByRole("radio", { name: /^SQLite/ }));
+    const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
+    fireEvent.click(send);
+    expect(send.disabled).toBe(true);
+    await act(async () => {
+      fail(new Error("offline"));
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("alert").textContent).toBe("Your answer didn't go through. Try again.");
+    expect(send.disabled).toBe(false);
+  });
+
+  test("typed text wins over a single choice; several choices join with the typed text", () => {
+    const onAnswerQuestion = mock((_id: string, _a: unknown) => undefined);
+    renderView({ items: [QUESTION_MULTI], onAnswerQuestion });
+    expect(screen.getByText("Computers")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Studio"));
+    fireEvent.click(screen.getByLabelText(/Cloud computer/));
+    const [first, second] = screen.getAllByRole("textbox") as HTMLInputElement[];
+    fireEvent.change(first!, { target: { value: "the old NAS" } });
+    fireEvent.click(screen.getByLabelText("2:00"));
+    fireEvent.change(second!, { target: { value: "3:30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    expect(onAnswerQuestion).toHaveBeenCalledWith(QUESTION_MULTI.callId, {
+      answers: { "Which computers should run the nightly backup?": "Studio, Cloud computer, the old NAS", "When should it run?": "3:30" },
+    });
+  });
+
+  test("a free-text question sends on Enter, and says when the bot goes on without it", () => {
+    const onAnswerQuestion = mock((_id: string, _a: unknown) => undefined);
+    renderView({ items: [QUESTION_FREE], onAnswerQuestion });
+    expect(screen.getByText("Alpha goes on without an answer in 8 minutes")).toBeTruthy();
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "Juniper" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onAnswerQuestion).toHaveBeenCalledWith(QUESTION_FREE.callId, { answers: { "What should I call the new bot?": "Juniper" } });
+  });
+
+  test("answered and expired questions draw closed", () => {
+    renderView({
+      items: [
+        { ...QUESTION_SINGLE, id: "q-a", state: "answered", answers: { "Which database should the hub use?": "Postgres" }, answeredOn: "iPhone" },
+        { ...QUESTION_FREE, id: "q-e", state: "expired" },
+      ],
+    });
+    expect(screen.getByText("You answered on iPhone")).toBeTruthy();
+    expect(screen.getByText("Postgres")).toBeTruthy();
+    expect(screen.getByText("No answer in time; Alpha went on without it.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Send answer" })).toBeNull();
+  });
+});
+
+describe("events and notes", () => {
+  test("routine results open their side thread; agents open their tab and transcript", () => {
+    const onOpenThread = mock((_id: string) => undefined);
+    const onOpenAgent = mock((_id: string) => undefined);
+    const onOpenFile = mock((_p: string) => undefined);
+    renderView({ items: EVENTS, onOpenThread, onOpenAgent, onOpenFile });
+    expect(screen.getByText("Morning brief")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "From OpenCode" })).toBeTruthy();
+    expect(screen.getByText("Every weekday at 9:00")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Open run" })[0]!);
+    expect(onOpenThread).toHaveBeenCalledWith("side-1");
+    expect(screen.getByText("OpenCode finished")).toBeTruthy();
+    expect(screen.getByText("Codex stopped making progress")).toBeTruthy();
+    expect(screen.getByText("Background command finished")).toBeTruthy();
+    expect(screen.getByText("Background command failed")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Open tab" })[0]!);
+    expect(onOpenAgent).toHaveBeenCalledWith("agent-island");
+    fireEvent.click(screen.getAllByRole("button", { name: "Open transcript" })[0]!);
+    expect(onOpenFile).toHaveBeenCalledWith("bots/alpha/agents/agent-island.jsonl");
+  });
+
+  test("a long report starts folded", () => {
+    renderView({ items: EVENTS });
+    const more = screen.getByRole("button", { name: "Show more" });
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(more);
+    expect(screen.getByRole("button", { name: "Show less" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  test("messages from other sessions and plugins name their sender, never the user", () => {
+    const { container } = renderView({ items: EVENTS });
+    const titles = [...container.querySelectorAll(".cl-conv-event__title")].map((t) => t.textContent);
+    expect(titles).toEqual(expect.arrayContaining(["From OpenCode", "From Luna", "From Tarot panel"]));
+    expect(screen.getByText(/joined the turn/)).toBeTruthy();
+    // A plugin's message (conversation.post, an MCP Apps page's ui/message) says it is a plugin's and
+    // is never a user bubble.
+    const fromPlugin = container.querySelector('[data-kind="agent-report"][data-from="plugin"]') as HTMLElement;
+    expect(fromPlugin.textContent).toContain("plugin tarot-panel");
+    // lane B's plugin_message: plain text, as a plugin's note is, and it says when an app page sent it.
+    expect(fromPlugin.querySelector(".cl-conv-md")).toBeNull();
+    expect(fromPlugin.textContent).toContain("from its app page");
+    expect(fromPlugin.closest(".cl-conv-user")).toBeNull();
+    for (const bubble of container.querySelectorAll(".cl-conv-user")) expect(bubble.textContent).not.toContain("pinned");
+  });
+
+  test("Try again: a button on the latest failed turn's note, one click calls the host once, a refusal shows its reason, and none without the host's callback", async () => {
+    const failed = { kind: "note", id: "n-fail", at: at(0, 1, 0), text: "The turn ended with an error.", tone: "error", retry: true } as const;
+    const calls: number[] = [];
+    const { container } = renderView({ items: [failed], onTryAgain: () => { calls.push(1); return Promise.resolve({ sent: true }); } });
+    const button = screen.getByRole("button", { name: "Try again" });
+    expect(container.querySelector(".cl-conv-note")?.contains(button)).toBe(true);
+    await act(async () => { fireEvent.click(button); });
+    expect(calls).toEqual([1]);
+    cleanup();
+    renderView({ items: [failed], onTryAgain: () => Promise.reject(new Error("a turn is running")) });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
+    expect(screen.getByRole("alert").textContent).toBe("a turn is running");
+    cleanup();
+    renderView({ items: [failed] });
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    cleanup();
+    renderView({ items: [{ ...failed, retry: undefined } as never], onTryAgain: () => Promise.resolve() });
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  test("notes are plain text and name a plugin's or a hook's source", () => {
+    const { container } = renderView({ items: NOTES });
+    expect(screen.getByRole("separator", { name: "Alpha summarized the conversation up to here" })).toBeTruthy();
+    const sources = [...container.querySelectorAll(".cl-conv-note__source")].map((n) => n.textContent);
+    expect(sources).toEqual(["Tarot panel (plugin tarot-panel)", "Hook from lint-guard", "Story mode (plugin story-mode)"]);
+    // A plugin's divider can copy the core's words, but never its look: it names who drew it.
+    const plugin = container.querySelector('.cl-conv-divider[data-from="plugin"]') as HTMLElement;
+    expect(plugin.getAttribute("aria-label")).toBe("Story mode (plugin story-mode): Alpha summarized the conversation up to here");
+    // Names the plugin chose sit in <bdi>, so bidi controls in them can't reorder the label.
+    expect([...plugin.querySelectorAll("bdi")].map((b) => b.textContent)).toEqual(["Story mode", "story-mode"]);
+    expect(container.querySelector('.cl-conv-note[data-tone="error"]')).toBeTruthy();
+    cleanup();
+    const plain = renderView({ items: [{ kind: "note", id: "n-md", at: at(0, 1, 0), text: "**not bold**", from: { kind: "plugin", id: "p", name: "P" } }] });
+    const text = plain.container.querySelector(".cl-conv-note__text") as HTMLElement;
+    expect(text.textContent).toBe("P (plugin p): **not bold**");
+    expect(text.querySelector("strong")).toBeNull();
+  });
+});
+
+describe("spots", () => {
+  test("a renderer replaces one message kind, and extras draw under every message", () => {
+    function Speech({ item }: { item: { text: string } }): ReactNode {
+      return <div>speech: {item.text}</div>;
+    }
+    renderView({
+      items: [user(at(0, 1, 0), "hi"), bot(at(0, 1, 0), "hello")],
+      renderers: { bot: Speech },
+      renderMessageExtra: (item) => <span>extra for {item.kind}</span>,
+    });
+    expect(screen.getByText("speech: hello")).toBeTruthy();
+    expect(screen.getByText("extra for user")).toBeTruthy();
+    expect(screen.getByText("extra for bot")).toBeTruthy();
+  });
+
+  test("expanding a run survives new items arriving", () => {
+    const items = TOOLS.slice(0, 3);
+    const { rerenderWith } = renderView({ items });
+    fireEvent.click(screen.getByRole("button", { name: /Ran 2 commands/ }));
+    act(() => rerenderWith({ items: [...items, bot(at(0, 15, 0), "more")] }));
+    expect(screen.getByRole("button", { name: /Ran 2 commands/ }).getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
+describe("the conversation.message spot", () => {
+  test("each entry gets lane B's props: { bot, session, item, ctx }; under tool, item is the run", () => {
+    const seen: string[] = [];
+    renderView({
+      session: "s_alpha",
+      items: [note(at(0, 1, 0), "A note"), tool(at(0, 1, 1), { name: "Bash", detail: "ls" }), tool(at(0, 1, 1), { name: "Read", detail: "a.md" })],
+      renderers: {
+        note: ({ bot, session, item, ctx }) => {
+          seen.push(`note ${bot.id}/${bot.name} ${session} ${item.kind} ${typeof ctx.actions}`);
+          return null;
+        },
+        tool: ({ bot, session, item }) => {
+          seen.push(`tool ${bot.id} ${session} ${item.kind} ${item.calls.map((c) => c.name).join("+")}`);
+          return null;
+        },
+      },
+    });
+    expect(seen).toEqual(["note alpha/Alpha s_alpha note object", "tool alpha s_alpha tool Bash+Read"]);
+  });
+});
+
+
+describe("a long transcript's cost per streamed word", () => {
+  test("a streamed word draws the streaming row again, not the rows that didn't change", () => {
+    const drawn = new Map<string, number>();
+    const count = (id: string) => drawn.set(id, (drawn.get(id) ?? 0) + 1);
+    const User = ({ item }: { item: { id: string; text: string } }) => { count(item.id); return <p>{item.text}</p>; };
+    const Bot = ({ item }: { item: { id: string; text: string } }) => { count(item.id); return <p>{item.text}</p>; };
+    const history: ConversationItem[] = [];
+    for (let i = 0; i < 40; i++) {
+      history.push(user(at(0, 1, i * 2), `question ${i}`));
+      history.push(bot(at(0, 1, i * 2 + 1), `answer ${i}`));
+    }
+    const streaming = (text: string) => ({ ...bot(at(0, 2, 0), text), id: "streaming", streaming: true }) as ConversationItem;
+    // The host projects the transcript again for each word: every item a new object with the same data.
+    const fresh = (items: ConversationItem[]) => items.map((i) => structuredClone(i));
+    const renderers = { user: User as never, bot: Bot as never };
+    const { rerenderWith } = renderView({ items: [...history, streaming("Hel")], renderers, onCopy: () => undefined });
+    drawn.clear();
+    rerenderWith({ items: [...fresh(history), streaming("Hello")], renderers, onCopy: () => undefined });
+    rerenderWith({ items: [...fresh(history), streaming("Hello th")], renderers, onCopy: () => undefined });
+    expect(drawn.get("streaming")).toBe(2);
+    expect([...drawn.keys()].filter((k) => k !== "streaming")).toEqual([]);
+  });
+});
+
+describe("following the bottom around a waiting card", () => {
+  function scrolled(container: HTMLElement) {
+    const viewport = container.querySelector(".cl-conv__viewport") as HTMLElement;
+    const m = { top: 0 };
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, get: () => 2000 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, get: () => 400 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, get: () => m.top, set: (v: number) => { m.top = Math.min(v, 1600); } });
+    return { viewport, m };
+  }
+  const before = APPROVAL_PENDING.filter((i) => i.kind !== "approval");
+  const answered = APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i));
+  const original = HTMLElement.prototype.scrollIntoView;
+
+  test("a card taller than the view leaves the view above the bottom; answered, a reader who didn't move follows again", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      rerenderWith({ items: [...before] });
+      m.top = 1600;
+      fireEvent.scroll(viewport);
+      // The card shows its buttons: the view stops above the bottom (the browser's scroll, reported as one).
+      rerenderWith({ items: APPROVAL_PENDING });
+      m.top = 1300;
+      fireEvent.scroll(viewport);
+      // Answered (a press in its sealed frame, never in the view): the view goes back to the bottom and follows.
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(1600);
+      rerenderWith({ items: [...answered, bot(at(0, 16, 5), "And done.")] });
+      expect(m.top).toBe(1600);
+      expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("content growing under a view pinned to the bottom (a row drawn at its real size, the window narrowing) keeps it following; the reader scrolling up doesn't", () => {
+    const items = [user(at(0, 1, 0), "one"), bot(at(0, 1, 1), "two")];
+    const { container, rerenderWith } = renderView({ items });
+    const { viewport, m } = scrolled(container);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three")] });
+    expect(m.top).toBe(1600);
+    // The content grew below the view after it pinned itself (scrollHeight 2000 → 2600): the scroll the browser reports
+    // leaves it 600 px above the bottom, at the place it pinned, so it still follows the next output.
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, get: () => 2600 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, get: () => m.top, set: (v: number) => { m.top = Math.min(v, 2200); } });
+    fireEvent.scroll(viewport);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three"), bot(at(0, 1, 3), "four")] });
+    expect(m.top).toBe(2200);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    // The reader scrolls up from there: they keep their place.
+    m.top = 1500;
+    fireEvent.scroll(viewport);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three"), bot(at(0, 1, 3), "four"), bot(at(0, 1, 4), "five")] });
+    expect(m.top).toBe(1500);
+  });
+
+  test("a reader who scrolled while the card waited keeps their place after it is answered", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      m.top = 1600;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: APPROVAL_PENDING });
+      fireEvent.wheel(viewport);
+      m.top = 900;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(900);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("a reader who wasn't following when the card came isn't moved when it is answered", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      // Following at first: new output puts it at the bottom; then the reader scrolls up.
+      rerenderWith({ items: [...before, bot(at(0, 16, 1), "One more.")] });
+      expect(m.top).toBe(1600);
+      m.top = 300;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: APPROVAL_PENDING });
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(300);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+});
+
+describe("the window's title bar over the view (spec §5.5: a covered card counts as hidden)", () => {
+  test("a pending card is marked to pin below the bar; an answered one is not", () => {
+    const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });
+    const unit = container.querySelector<HTMLElement>('.cl-conv__unit[data-unit="approval"]')!;
+    expect(unit.hasAttribute("data-pending")).toBe(true);
+    const answered = APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i));
+    rerenderWith({ items: answered });
+    expect(container.querySelector('.cl-conv__unit[data-unit="approval"]')?.hasAttribute("data-pending")).toBe(false);
+  });
+
+  test("a card that starts waiting is brought into view, to the nearest edge below the bar", async () => {
+    const calls: { el: Element; arg: unknown }[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement, arg?: boolean | ScrollIntoViewOptions) {
+      calls.push({ el: this, arg });
+    };
+    try {
+      const before = APPROVAL_PENDING.filter((i) => i.kind !== "approval");
+      const { container, rerenderWith } = await renderSettled({ items: before }, APPROVAL_PENDING);
+      expect(calls).toHaveLength(0);
+      await rerenderWith({ items: APPROVAL_PENDING });
+      // The card at once (its buttons come with its sealed frames as they size themselves: the next test).
+      expect(calls[0]!.el).toBe(container.querySelector('.cl-conv__unit[data-pending]')!);
+      expect(calls[0]!.arg).toEqual({ block: "nearest" });
+      const after = calls.length;
+      // The same card again is no news: no second jump.
+      await rerenderWith({ items: [...APPROVAL_PENDING, bot(at(0, 16, 3), "Waiting for your OK.")] });
+      expect(calls).toHaveLength(after);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("a waiting card that grows (its sealed frames sizing themselves) is brought into view again, its buttons included, at most once a frame", async () => {
+    const calls: Element[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    const originalRO = globalThis.ResizeObserver;
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancel = globalThis.cancelAnimationFrame;
+    let frames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((fn: FrameRequestCallback) => frames.push(fn)) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => { frames = []; }) as typeof cancelAnimationFrame;
+    const nextFrame = () => { const due = frames; frames = []; for (const fn of due) fn(0); };
+    const observers: { cb: ResizeObserverCallback; targets: Element[] }[] = [];
+    class FakeRO {
+      targets: Element[] = [];
+      constructor(public cb: ResizeObserverCallback) { observers.push(this); }
+      observe(t: Element) { this.targets.push(t); }
+      unobserve() {}
+      disconnect() { this.targets = []; }
+    }
+    globalThis.ResizeObserver = FakeRO as unknown as typeof ResizeObserver;
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+      calls.push(this);
+    };
+    const grow = (unit: Element, height: number) => {
+      for (const o of observers) if (o.targets.includes(unit)) o.cb([{ target: unit, contentRect: { height } } as unknown as ResizeObserverEntry], o as unknown as ResizeObserver);
+    };
+    try {
+      const { container, rerenderWith } = await renderSettled({ items: APPROVAL_PENDING });
+      const unit = container.querySelector('.cl-conv__unit[data-pending]')!;
+      const first = calls.length;
+      const toUnit = () => calls.slice(first).filter((el) => el === unit).length;
+      const toButtons = () => calls.slice(first).filter((el) => el.classList.contains("cl-conv-approval__buttons")).length;
+      // Its frames sizing themselves one after another in one frame: brought into view once, at the frame (each time is a
+      // layout of the whole view), never once per growth.
+      grow(unit, 120);
+      grow(unit, 200);
+      grow(unit, 320);
+      expect(toUnit()).toBe(0);
+      nextFrame();
+      expect(toUnit()).toBe(1);
+      expect(toButtons()).toBe(1);
+      grow(unit, 400);
+      nextFrame();
+      expect(toUnit()).toBe(2);
+      expect(toButtons()).toBe(2);
+      // Shrinking or the same size is no reason to move the reader.
+      grow(unit, 400);
+      grow(unit, 300);
+      nextFrame();
+      expect(toUnit()).toBe(2);
+      // Answered, it is no longer watched, and a frame still due does nothing.
+      grow(unit, 500);
+      await rerenderWith({ items: APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i)) });
+      grow(unit, 600);
+      nextFrame();
+      expect(toUnit()).toBe(2);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+      globalThis.ResizeObserver = originalRO;
+      globalThis.requestAnimationFrame = originalRaf;
+      globalThis.cancelAnimationFrame = originalCancel;
+    }
+  });
+});

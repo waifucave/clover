@@ -2,7 +2,7 @@
 // hand. Pair the host with a FakeApprovalBroker (or anything with `withdrawSession` and `cancelSession`) to see cards
 // withdrawn on an interrupt and cancelled on a stop.
 import { randomBytes } from "node:crypto";
-import { clampSentAt, type SessionStatus, type SessionView, type TurnOrigin } from "@waifucave/clover-protocol";
+import { clampSentAt, type SessionStatus, type SessionView, type TurnOrigin } from "@waifucave/moss-protocol";
 import type { ApprovalBroker } from "../approval-broker";
 import { compareStamps, type Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";

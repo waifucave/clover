@@ -5,7 +5,7 @@
 // * Where: `<home>/run/plugin-secrets/<top>/<server>/<key>`, a folder the plugin's own fenced processes READ (its
 //   hooks' and MCP servers' fence lists it, `toolFence`) and no plugin process writes. Its own data folder is
 //   writable by the plugin, which could plant a link there and have the core write a secret wherever it pointed, so
-//   the file lives beside it, fenced to the same plugin, not in it. No other plugin's fence lists it, and the Clover
+//   the file lives beside it, fenced to the same plugin, not in it. No other plugin's fence lists it, and the MOSS
 //   home is closed to every fenced process.
 // * How: folders 0700, the file written to a fresh name in its folder with `wx` and mode 0600, then renamed over
 //   `<key>`, so a reader never sees half a key, and owner-only throughout. The path is
@@ -21,18 +21,18 @@
 import { chmodSync, lstatSync, mkdirSync, renameSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { KEY_RE } from "@waifucave/clover-plugin-sdk";
+import { KEY_RE } from "@waifucave/moss-plugin-sdk";
 import { ContractError } from "../contracts/common";
 import { pluginPath } from "../plugin-host/paths";
 
 /** `<home>/run/plugin-secrets`. */
-export function secretFilesRoot(cloverHome: string): string {
-  return join(cloverHome, "run", "plugin-secrets");
+export function secretFilesRoot(mossHome: string): string {
+  return join(mossHome, "run", "plugin-secrets");
 }
 
 /** The folder a top-level plugin's secret files are in, which its fenced processes read. */
-export function secretFilesFolder(cloverHome: string, pluginId: string): string {
-  return pluginPath(secretFilesRoot(cloverHome), pluginId.split("/")[0]!);
+export function secretFilesFolder(mossHome: string, pluginId: string): string {
+  return pluginPath(secretFilesRoot(mossHome), pluginId.split("/")[0]!);
 }
 
 const SERVER_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -48,7 +48,7 @@ function ownFolder(path: string): void {
     if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
   }
   const st = lstatSync(path);
-  if (!st.isDirectory() || st.isSymbolicLink()) throw new ContractError("refused", `${path} isn't a folder of Clover's (a link or a file is there)`);
+  if (!st.isDirectory() || st.isSymbolicLink()) throw new ContractError("refused", `${path} isn't a folder of MOSS's (a link or a file is there)`);
   if (typeof process.getuid === "function" && st.uid !== process.getuid()) throw new ContractError("refused", `${path} isn't owned by this user`);
   if ((st.mode & 0o777) !== 0o700) chmodSync(path, 0o700);
 }
@@ -56,7 +56,7 @@ function ownFolder(path: string): void {
 export class PluginSecretFiles {
   /** `beforeWrite`: a test seam, run between the folders being made and the file written (where another instance's
    *  `release` can remove the server folder). */
-  constructor(private readonly cloverHome: string, private readonly seams: { beforeWrite?: () => void } = {}) {}
+  constructor(private readonly mossHome: string, private readonly seams: { beforeWrite?: () => void } = {}) {}
 
   /** A new instance's id: each running instance of a server has its own folder. */
   static instance(): string {
@@ -68,15 +68,15 @@ export class PluginSecretFiles {
     if (!SERVER_RE.test(server) || server.includes("..")) throw new ContractError("invalid", `${JSON.stringify(server)} isn't a server name`);
     if (!KEY_RE.test(key)) throw new ContractError("invalid", `${JSON.stringify(key)} isn't a secret's name`);
     if (!INSTANCE_RE.test(instance)) throw new ContractError("invalid", `${JSON.stringify(instance)} isn't an instance id`);
-    mkdirSync(join(this.cloverHome, "run"), { recursive: true, mode: 0o700 });
-    const top = secretFilesFolder(this.cloverHome, pluginId);
+    mkdirSync(join(this.mossHome, "run"), { recursive: true, mode: 0o700 });
+    const top = secretFilesFolder(this.mossHome, pluginId);
     const folder = join(top, server, instance);
     const file = join(folder, key);
     // Once more on ENOENT: another instance's `release` can remove the shared server folder between this one's
     // folders being made and its file written (#405's review).
     for (let attempt = 0; ; attempt++) {
       try {
-        for (const d of [secretFilesRoot(this.cloverHome), top, join(top, server), folder]) ownFolder(d);
+        for (const d of [secretFilesRoot(this.mossHome), top, join(top, server), folder]) ownFolder(d);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === "ENOENT" && attempt === 0) continue;
         throw err;
@@ -98,7 +98,7 @@ export class PluginSecretFiles {
   /** Its instance stopped: that instance's files go, and no other's. */
   release(pluginId: string, server: string, instance: string): void {
     if (!SERVER_RE.test(server) || server.includes("..") || !INSTANCE_RE.test(instance)) return;
-    const serverFolder = join(secretFilesFolder(this.cloverHome, pluginId), server);
+    const serverFolder = join(secretFilesFolder(this.mossHome, pluginId), server);
     rmSync(join(serverFolder, instance), { recursive: true, force: true });
     // The server's folder too, once no instance of it is left (another's keeps it).
     try {
@@ -110,11 +110,11 @@ export class PluginSecretFiles {
 
   /** Its plugin was removed: every file of its tree goes. */
   releasePlugin(pluginId: string): void {
-    rmSync(secretFilesFolder(this.cloverHome, pluginId), { recursive: true, force: true });
+    rmSync(secretFilesFolder(this.mossHome, pluginId), { recursive: true, force: true });
   }
 
   /** The daemon starts: none is left from a run before (no server of it runs now). */
   sweep(): void {
-    rmSync(secretFilesRoot(this.cloverHome), { recursive: true, force: true });
+    rmSync(secretFilesRoot(this.mossHome), { recursive: true, force: true });
   }
 }

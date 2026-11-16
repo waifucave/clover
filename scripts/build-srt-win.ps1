@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Build Clover's pinned srt-win launcher with a static CRT, Clover's
+  Build MOSS's pinned srt-win launcher with a static CRT, MOSS's
   per-principal patch set applied, and check its Authenticode digest.
 
 .DESCRIPTION
@@ -47,7 +47,7 @@ $crateDir = Join-Path $srcDir "vendor/srt-win-src"
 $outDir = Join-Path $root "vendor/srt-win"
 $outExe = Join-Path $outDir "srt-win.exe"
 
-# Pinned Clover patches (file name -> SHA-256). `Apply-Patches` refuses
+# Pinned MOSS patches (file name -> SHA-256). `Apply-Patches` refuses
 # unknown or extra `*.patch` files and any hash mismatch before building.
 $PinnedPatches = @{
   "0001-per-principal-setup-records.patch" = "6321a2922db67b4d19cb40728071af88f6635de761bba3aee2784431fd0e6341"
@@ -98,7 +98,7 @@ function Sync-Source {
 }
 
 function Apply-Patches {
-  # Clover's per-principal patch set (vendor/srt-win/patches/*.patch).
+  # MOSS's per-principal patch set (vendor/srt-win/patches/*.patch).
   # Applied after the checkout, before the build, in sorted order.
   # Only pinned files may be present (unknown or extra files fail the
   # build), each must match its pinned hash, and afterwards the tree

@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { SessionEvent } from "../src/events";
 import { buildCleanerVectorsFixture, buildDangerousDomainsFixture } from "./parity-fixtures";
-import { buildCloverArtifacts } from "./clover-artifacts";
+import { buildMossArtifacts } from "./moss-artifacts";
 
 const outDir = join(import.meta.dir, "..", "generated");
 const fixDir = join(outDir, "fixtures");
@@ -300,18 +300,18 @@ writeFileSync(join(fixDir, "dangerous-domains.json"), JSON.stringify(buildDanger
 const cleanerVectors = buildCleanerVectorsFixture();
 writeFileSync(join(fixDir, "cleaner-vectors.json"), JSON.stringify(cleanerVectors, null, 2));
 
-// 4. Clover's protocol (spec revision 17): an area file each, a fixture per Clover event and every role's allow list,
-// under generated/clover/ (scripts/clover-artifacts.ts). Delete-then-write, so a renamed event leaves no orphan.
-const cloverDir = join(outDir, "clover");
-rmSync(cloverDir, { recursive: true, force: true });
-const cloverFiles = buildCloverArtifacts();
-for (const [rel, content] of cloverFiles) {
-  mkdirSync(dirname(join(cloverDir, rel)), { recursive: true });
-  writeFileSync(join(cloverDir, rel), content);
+// 4. MOSS's protocol (spec revision 17): an area file each, a fixture per MOSS event and every role's allow list,
+// under generated/moss/ (scripts/moss-artifacts.ts). Delete-then-write, so a renamed event leaves no orphan.
+const mossDir = join(outDir, "moss");
+rmSync(mossDir, { recursive: true, force: true });
+const mossFiles = buildMossArtifacts();
+for (const [rel, content] of mossFiles) {
+  mkdirSync(dirname(join(mossDir, rel)), { recursive: true });
+  writeFileSync(join(mossDir, rel), content);
 }
 
 console.log(
   `generated: schema + ${Object.keys(fixtures).length} fixtures + ` +
     `dangerous-domains (${buildDangerousDomainsFixture().length} entries) + cleaner-vectors (${cleanerVectors.length} vectors) + ` +
-    `clover (${cloverFiles.size} files)`,
+    `moss (${mossFiles.size} files)`,
 );

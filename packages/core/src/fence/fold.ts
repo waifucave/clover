@@ -7,9 +7,9 @@
 //     same function; this one is swapped for it when it lands.)
 //   - On Windows, a name also drops its trailing dots and spaces, and an alternate data stream (`settings.json:x`,
 //     `settings.json::$DATA`) names its file: NTFS opens the same file for each.
-//   - Where Clover names things itself (the Clover home's top level, and any folder holding a fenced item), a name
+//   - Where MOSS names things itself (the MOSS home's top level, and any folder holding a fenced item), a name
 //     that isn't ASCII is refused outright (`nonAsciiAlias`), so no folding rule has to be right about it.
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 
 /** One name, as the fence compares it. */
 export function foldName(name: string): string {
@@ -38,13 +38,13 @@ export function foldPath(path: string, os: Os): string {
 }
 
 /** The second wall, as B's contract builds it (`nonAsciiAlias`, B-M1 #179; the controller's ruling): a name that
- *  isn't ASCII where Clover names things itself is refused, whatever a disk might fold it to. That is the Clover home's
+ *  isn't ASCII where MOSS names things itself is refused, whatever a disk might fold it to. That is the MOSS home's
  *  own top level and any folder under it that holds a fenced item (`plugins-state/` for `plugins-state/oks`). A bot's
  *  memory note or a plugin's asset may have any name: those folders hold no fenced item. The non-ASCII name found, or
  *  null. (Swapped for B's once #179 is on main.) */
-export function nonAsciiAlias(path: string, fenced: readonly string[], cloverHome: string, os: Os): string | null {
+export function nonAsciiAlias(path: string, fenced: readonly string[], mossHome: string, os: Os): string | null {
   const names = components(path, os).filter((c) => c !== "");
-  const home = components(cloverHome, os).filter((c) => c !== "");
+  const home = components(mossHome, os).filter((c) => c !== "");
   const same = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((n, i) => foldName(diskName(n, os)) === foldName(diskName(b[i]!, os)));
   if (names.length <= home.length || !same(names.slice(0, home.length), home)) return null;
   const holders = fenced.map((p) => components(p, os).filter((c) => c !== ""));

@@ -1,8 +1,8 @@
 // Pair-scope boxes (PROTOCOL.md, "Boxes"): what one member seals for the other. The service never opens one.
 //
-//   K   = HKDF-SHA256(ikm = the pair secret, salt = the pair id's 16 bytes, info = "clover handshake v1 box"), 32 bytes
+//   K   = HKDF-SHA256(ikm = the pair secret, salt = the pair id's 16 bytes, info = "moss handshake v1 box"), 32 bytes
 //   box = base64url( nonce (12 random bytes) || AES-256-GCM(K, nonce, plaintext, aad) )
-//   aad = "clover-handshake-v1 box" \n <pair> \n <from key> \n <to key> \n <kind> [\n <gen>]
+//   aad = "moss-handshake-v1 box" \n <pair> \n <from key> \n <to key> \n <kind> [\n <gen>]
 
 import { b64u, concatBytes, fromB64u, utf8 } from "../../shared/encoding";
 import { BOX_INFO, boxAad, type Kind } from "./wire";

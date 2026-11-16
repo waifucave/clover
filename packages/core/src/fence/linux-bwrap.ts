@@ -1,14 +1,14 @@
 // Linux: the fence as a bubblewrap sandbox, for a command run under it (spec §9.1). Built from the fence's
 // `SandboxPolicy` at each run. A mount can't deny a path that isn't there yet, so the shape differs from macOS's:
 //   * the whole tree read-only, then the writable roots (the home, temp) writable;
-//   * the Clover home itself is a tmpfs view holding only the runner's own folders (`outputs/<session>`,
+//   * the MOSS home itself is a tmpfs view holding only the runner's own folders (`outputs/<session>`,
 //     `scratch/<bot>`, `routines/<bot>`, its bot's folder read-only with its `memory` read-write, and a plugin's own
 //     `plugin-data/<id>`), each bound over it with its access: Landlock can't nest an allow inside a deny, and neither
 //     can a mount, so the home deny is the absence of everything else (B's contract, `policyAllows`'s order);
-//   * every fenced item outside the Clover home (the login-start places, development folders, OK'd agent installs, the
+//   * every fenced item outside the MOSS home (the login-start places, development folders, OK'd agent installs, the
 //     browser's partitions), and every folder that holds one inside a writable root, bound read-only again, and only
 //     their children that are neither fenced nor such a folder bound back writable: a fenced file that doesn't exist
-//     yet can't be made, and nothing new appears where Clover names things;
+//     yet can't be made, and nothing new appears where MOSS names things;
 //   * every folder between a writable root and an outside fenced item is bound onto itself, so it's a mount point:
 //     renaming or removing it fails (EBUSY), and the item can't be moved out;
 //   * a hard link across mounts fails (EXDEV), so none can be made from a fenced file;
@@ -20,7 +20,7 @@
 // Notes for the runner (a bot's Bash under here): a denied part of the home looks absent, not "permission denied"
 // (the tmpfs view holds nothing there: no listing, no stat), a write into the view fails as a read-only file
 // system (the view is remounted read-only around the bound-back own folders), `pip install --user` is refused (the
-// user site folders are fenced: bots use virtual environments), and `git init` and `git clone` use Clover's empty
+// user site folders are fenced: bots use virtual environments), and `git init` and `git clone` use MOSS's empty
 // template (`GIT_TEMPLATE_DIR`): no hooks are installed, plant none anyway, and the fence judges every tool call
 // that reaches another repo's).
 import { lstatSync, readdirSync } from "node:fs";
@@ -31,7 +31,7 @@ import type { CallerPlaces } from "./per-caller";
 
 export interface BwrapInput {
   readonly policy: SandboxPolicy;
-  readonly cloverHome: string;
+  readonly mossHome: string;
   readonly cwd: string;
   /** The user's id, for `/run/user/<uid>`. */
   readonly uid: number;
@@ -39,7 +39,7 @@ export interface BwrapInput {
   readonly fs?: { kind(path: string): "dir" | "file" | "other" | null; list(dir: string): string[] };
   /** The fd (in the child) bwrap reads the seccomp filter from. */
   readonly seccompFd?: number;
-  /** The runner's caller: its own folders are the only ways back into the Clover home's view. */
+  /** The runner's caller: its own folders are the only ways back into the MOSS home's view. */
   readonly caller?: CallerPlaces;
   /** The session's own repo's `.git/hooks`, when it is there: bound read-only. Other repos under the home are a
    *  known limit on Linux (bwrap can't match patterns): the fence still judges every tool call that reaches them. */
@@ -74,16 +74,16 @@ export interface HeldFolder { readonly folder: string; readonly because: string 
 export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder[] } {
   const held: HeldFolder[] = [];
   const fs = input.fs ?? realFs;
-  const { policy, cloverHome } = input;
+  const { policy, mossHome } = input;
   const writable = policy.allowWrite.filter((w) => fs.kind(w) === "dir");
-  // Only the fenced items outside the Clover home take the read-only shape: everything under the home is hidden by
+  // Only the fenced items outside the MOSS home take the read-only shape: everything under the home is hidden by
   // its tmpfs view below. The home itself is in the deny lists (the default-deny); it is the view, not an item.
-  const fenced = new Set([...policy.denyWrite].filter((d) => !inside(d, cloverHome)));
+  const fenced = new Set([...policy.denyWrite].filter((d) => !inside(d, mossHome)));
   const a: string[] = ["--die-with-parent", "--new-session", "--unshare-net", "--unshare-pid", "--unshare-ipc", "--unshare-uts",
     "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"];
   for (const w of writable) a.push("--bind", w, w);
 
-  // Where Clover names things outside its home: the nearest folder that is there takes the naming folders' shape
+  // Where MOSS names things outside its home: the nearest folder that is there takes the naming folders' shape
   // when a fenced item isn't there yet (a `.zshrc` a bash user never made, the login unit on a fresh home):
   // read-only, its present children writable, nothing new in it (fails closed: no new top-level names there for the
   // command). `held` names each such folder for the refusal's explanation. Supervised files never hold: the
@@ -91,7 +91,7 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   const naming = new Set<string>();
   const supervised = new Set(input.supervised ?? []);
   for (const d of fenced) {
-    if (inside(d, cloverHome) || fs.kind(d) !== null || supervised.has(d)) continue;
+    if (inside(d, mossHome) || fs.kind(d) !== null || supervised.has(d)) continue;
     let p = dirname(d);
     while (fs.kind(p) === null && p !== dirname(p)) p = dirname(p);
     if (writable.some((w) => inside(p, w))) {
@@ -104,7 +104,7 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   // and the link can't be removed, replaced or made there.
   for (const l of policy.holdLinks ?? []) {
     const p = dirname(l);
-    if (inside(p, cloverHome) || fs.kind(p) !== "dir" || !writable.some((w) => inside(p, w))) continue;
+    if (inside(p, mossHome) || fs.kind(p) !== "dir" || !writable.some((w) => inside(p, w))) continue;
     if (!naming.has(p)) held.push({ folder: p, because: l });
     naming.add(p);
   }
@@ -114,7 +114,7 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   // up to the writable root a mount point, so none is renamed away and replaced.
   for (const d of [...fenced, ...(policy.holdLinks ?? [])]) {
     for (let p = dirname(d); p !== dirname(p); p = dirname(p)) {
-      if (naming.has(p) || inside(p, cloverHome)) continue;
+      if (naming.has(p) || inside(p, mossHome)) continue;
       if (!writable.some((w) => inside(p, w))) break;
       holders.add(p);
     }
@@ -143,7 +143,7 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   for (const d of [...fenced].sort()) if (fs.kind(d) !== null) a.push("--ro-bind", d, d);
   // Read-denied items outside the home, hidden (an empty tmpfs, or /dev/null for a file).
   for (const r of [...policy.denyRead].sort()) {
-    if (inside(r, cloverHome)) continue;
+    if (inside(r, mossHome)) continue;
     const k = fs.kind(r);
     if (k === "dir") a.push("--tmpfs", r, "--remount-ro", r);
     else if (k !== null) a.push("--ro-bind", "/dev/null", r);
@@ -154,18 +154,18 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   if (input.repoHooks !== null && input.repoHooks !== undefined && fs.kind(input.repoHooks) === "dir") {
     a.push("--ro-bind", input.repoHooks, input.repoHooks);
   }
-  // The Clover home as a tmpfs view holding only the caller's own folders (the home default-deny, for runners).
+  // The MOSS home as a tmpfs view holding only the caller's own folders (the home default-deny, for runners).
   // Without a caller every own folder is absent: the view holds nothing.
-  if (fs.kind(cloverHome) === "dir") {
+  if (fs.kind(mossHome) === "dir") {
     const c = input.caller;
     // A bot's open access (the owner's ruling of November 9): the view holds the home's entries read-only, but every
     // one the policy read-denies by name, which never appears in it, there or not when the run starts (a secrets file
     // made mid-run stays out: #355's review); its own folders and every bot's scratch and memory bound read-write over
     // it, and what a glob denies masked below.
     const open = c?.botAccess ?? null;
-    a.push("--tmpfs", cloverHome);
+    a.push("--tmpfs", mossHome);
     const listed = (dir: string) => (fs.kind(dir) === "dir" ? fs.list(dir).sort() : []);
-    const named = open === null ? [] : policy.denyRead.filter((d) => d !== cloverHome && inside(d, cloverHome) && !d.includes("*"));
+    const named = open === null ? [] : policy.denyRead.filter((d) => d !== mossHome && inside(d, mossHome) && !d.includes("*"));
     const view = (dir: string): void => {
       for (const name of listed(dir)) {
         const e = `${dir}/${name}`;
@@ -175,7 +175,7 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
         if (k === "dir" || k === "file") a.push("--ro-bind", e, e);
       }
     };
-    if (open !== null) view(cloverHome);
+    if (open !== null) view(mossHome);
     // Shallow first: the top folders exist so a runner can list its own view, and each folder on the way to a
     // bind is made, so no bind needs its destination to exist.
     const ro: [string | null | undefined] = [c?.ownBot];
@@ -184,9 +184,9 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     const scratchAll = open !== null ? listed(open.scratch).map((x) => `${open.scratch}/${x}`) : [];
     const memoryAll = open !== null ? listed(open.bots).map((x) => `${open.bots}/${x}/memory`) : [];
     const rw = [...new Set([c?.ownOutputs, c?.ownScratch, c?.ownRoutines, c?.ownPluginData, c?.ownMemory, ...(c?.ownPlugins ?? []), ...scratchAll, ...memoryAll])];
-    const dirs = new Set(["bots", "outputs", "scratch", "routines", "plugin-data"].map((t) => `${cloverHome}/${t}`));
+    const dirs = new Set(["bots", "outputs", "scratch", "routines", "plugin-data"].map((t) => `${mossHome}/${t}`));
     for (const p of [...ro, ...rw].filter((p): p is string => typeof p === "string")) {
-      for (let d = dirname(p); d !== cloverHome && inside(d, cloverHome); d = dirname(d)) dirs.add(d);
+      for (let d = dirname(p); d !== mossHome && inside(d, mossHome); d = dirname(d)) dirs.add(d);
     }
     if (open === null) for (const d of [...dirs].sort((x, y) => x.length - y.length)) a.push("--dir", d);
     if (c?.ownBot !== null && c?.ownBot !== undefined && fs.kind(c.ownBot) === "dir") a.push("--ro-bind", c.ownBot, c.ownBot);
@@ -216,9 +216,9 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     // own check still covers.
     if (open !== null) {
       const matches: { path: string; kind: "dir" | "file" | "other" }[] = [];
-      for (const g of policy.denyRead.filter((d) => d.includes("*") && inside(d, cloverHome))) {
-        let at = [cloverHome];
-        for (const seg of g.slice(cloverHome.length + 1).split("/")) {
+      for (const g of policy.denyRead.filter((d) => d.includes("*") && inside(d, mossHome))) {
+        let at = [mossHome];
+        for (const seg of g.slice(mossHome.length + 1).split("/")) {
           const next: string[] = [];
           for (const dir of at) {
             if (!seg.includes("*")) { next.push(`${dir}/${seg}`); continue; }
@@ -240,11 +240,11 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
         }
       }
     }
-    // Clover's empty git template, read-only: `git init` and `git clone` install no hooks from it. Bound after
+    // MOSS's empty git template, read-only: `git init` and `git clone` install no hooks from it. Bound after
     // the tmpfs, which would otherwise hide it.
-    const template = gitTemplateDir(cloverHome);
+    const template = gitTemplateDir(mossHome);
     if (fs.kind(template) === "dir") a.push("--ro-bind", template, template);
-    a.push("--remount-ro", cloverHome);
+    a.push("--remount-ro", mossHome);
   }
   // The closed doors: the user's session bus and systemd (systemd-run --user), and the system bus.
   if (policy.closedDoors.length > 0) {
@@ -261,6 +261,6 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
  *  file holds the folder, and offer a subfolder or asking the user). Null when nothing in `stderr` looks like it. */
 export function heldFolderNote(stderr: string, held: readonly HeldFolder[]): string | null {
   if (held.length === 0 || !/Read-only file system|EROFS/.test(stderr)) return null;
-  const lines = held.map((h) => `clover: ${h.folder} takes no new names under the fence, because ${h.because} is fenced and isn't there yet; write in a subfolder of it, or ask the user`);
+  const lines = held.map((h) => `moss: ${h.folder} takes no new names under the fence, because ${h.because} is fenced and isn't there yet; write in a subfolder of it, or ask the user`);
   return `${lines.join("\n")}\n`;
 }

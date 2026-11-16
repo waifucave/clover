@@ -10,11 +10,11 @@ function plugin(id: string, ui: Record<string, unknown>[], opts: Partial<Pick<Ui
   return {
     id,
     topId: top,
-    layer: top === "clover" ? "clover" : id.replace(/\//g, "--"),
+    layer: top === "moss" ? "moss" : id.replace(/\//g, "--"),
     treeHash: "0".repeat(64),
     assetBase: `/plugins/${id}`,
     css: [],
-    source: opts.source ?? (top === "clover" || top === "alpha" ? "bundled" : "installed"),
+    source: opts.source ?? (top === "moss" || top === "alpha" ? "bundled" : "installed"),
     enabledAt: opts.enabledAt ?? ++enabled,
     // The `composer` spot needs conversation.post (the OK says it may send the bot a message): a composer entry here holds it.
     capabilities: new Set([...(opts.caps ?? []), ...(ui.some((e) => e.spot === "composer" && (e.component !== undefined || e.hide === true)) ? ["conversation.post"] : [])]),
@@ -32,35 +32,35 @@ const inTab = (bot: string, extra: Partial<CellContext> = {}): CellContext => ({
 const shownRefs = (r: { shown: { entry: { pluginId: string; id: string } }[] }) => r.shown.map((c) => entryRef(c.entry));
 
 // The default shell, as F's manifests have it, plus what the default bot tab would add.
-const shell = plugin("clover/shell", [{ spot: "app.root", component: "Window", declares: { sidebar: { shape: "single", props: {} }, main: { shape: "keyed", props: {} }, panel: { shape: "keyed", props: {} } } }]);
-const sidebar = plugin("clover/sidebar", [{ spot: "sidebar", component: "Sidebar" }]);
-const composer = plugin("clover/composer", [{ spot: "composer", component: "Composer", declares: { "composer.action": { shape: "keyed", props: {} } } }]);
-const conversation = plugin("clover/conversation", [{ spot: "conversation", component: "ConversationView" }, { spot: "conversation.message", component: "Message" }], { caps: ["conversation.read", "approvals"] });
-const panelDiff = plugin("clover/panel-diff", [{ spot: "panel", key: "diff", component: "DiffPanel", when: { session: "coding" } }]);
-const panelSession = plugin("clover/panel", [{ spot: "panel", key: "session", component: "SessionView" }]);
+const shell = plugin("moss/shell", [{ spot: "app.root", component: "Window", declares: { sidebar: { shape: "single", props: {} }, main: { shape: "keyed", props: {} }, panel: { shape: "keyed", props: {} } } }]);
+const sidebar = plugin("moss/sidebar", [{ spot: "sidebar", component: "Sidebar" }]);
+const composer = plugin("moss/composer", [{ spot: "composer", component: "Composer", declares: { "composer.action": { shape: "keyed", props: {} } } }]);
+const conversation = plugin("moss/conversation", [{ spot: "conversation", component: "ConversationView" }, { spot: "conversation.message", component: "Message" }], { caps: ["conversation.read", "approvals"] });
+const panelDiff = plugin("moss/panel-diff", [{ spot: "panel", key: "diff", component: "DiffPanel", when: { session: "coding" } }]);
+const panelSession = plugin("moss/panel", [{ spot: "panel", key: "session", component: "SessionView" }]);
 const DEFAULT = [shell, sidebar, composer, conversation, panelDiff, panelSession];
 
 describe("a cell's runner-up", () => {
   test("a bot's own entry on a right panel takes the cell on its tab; the stock entry is its runner-up, and only there", () => {
-    const browser = plugin("clover/browser-view", [{ spot: "panel", key: "browser", component: "BrowserPanel" }]);
+    const browser = plugin("moss/browser-view", [{ spot: "panel", key: "browser", component: "BrowserPanel" }]);
     const mine = plugin("juniper", [{ spot: "panel", key: "browser", component: "MyBrowser" }], { isBot: true });
     const all = [shell, browser, mine];
     const on = resolveCell({ plugins: all, ctx: inTab("juniper") }, "panel", "browser");
     expect(shownRefs(on)).toEqual(["juniper#panel"]);
-    expect(on.runnersUp.map((c) => entryRef(c.entry))).toEqual(["clover/browser-view#panel"]);
+    expect(on.runnersUp.map((c) => entryRef(c.entry))).toEqual(["moss/browser-view#panel"]);
     const elsewhere = resolveCell({ plugins: all, ctx: inTab("alpha") }, "panel", "browser");
-    expect(shownRefs(elsewhere)).toEqual(["clover/browser-view#panel"]);
+    expect(shownRefs(elsewhere)).toEqual(["moss/browser-view#panel"]);
     expect(elsewhere.runnersUp).toEqual([]);
   });
 });
 
 describe("single spots and keyed defaults", () => {
   test("the shell fills app.root", () => {
-    expect(shownRefs(resolveCell({ plugins: DEFAULT, ctx }, "app.root"))).toEqual(["clover/shell#app.root"]);
+    expect(shownRefs(resolveCell({ plugins: DEFAULT, ctx }, "app.root"))).toEqual(["moss/shell#app.root"]);
   });
 
   test("an exact key fills its cell; a key nothing fills shows nothing", () => {
-    expect(shownRefs(resolveCell({ plugins: DEFAULT, ctx }, "panel", "session"))).toEqual(["clover/panel#panel"]);
+    expect(shownRefs(resolveCell({ plugins: DEFAULT, ctx }, "panel", "session"))).toEqual(["moss/panel#panel"]);
     expect(resolveCell({ plugins: DEFAULT, ctx }, "panel", "browser").shown).toEqual([]);
   });
 
@@ -100,10 +100,10 @@ describe("single spots and keyed defaults", () => {
   });
 
   test("`when.session`: a code-only panel shows only in a code session", () => {
-    expect(shownRefs(resolveCell({ plugins: DEFAULT, ctx: { os: "macos", session: "coding" } }, "panel", "diff"))).toEqual(["clover/panel-diff#panel"]);
+    expect(shownRefs(resolveCell({ plugins: DEFAULT, ctx: { os: "macos", session: "coding" } }, "panel", "diff"))).toEqual(["moss/panel-diff#panel"]);
     const bot = resolveCell({ plugins: DEFAULT, ctx: inTab("alpha", { session: "bot" }) }, "panel", "diff");
     expect(bot.shown).toEqual([]);
-    expect(bot.skipped).toEqual([{ ref: "clover/panel-diff#panel", reason: "when" }]);
+    expect(bot.skipped).toEqual([{ ref: "moss/panel-diff#panel", reason: "when" }]);
   });
 
   test("`when.os` and `when.surface`", () => {
@@ -127,8 +127,8 @@ describe("which entry shows: the seven rules", () => {
   });
 
   test("1: the user's pick, for this bot first, then globally", () => {
-    const choices: UiChoices = { picks: [{ spot: "composer", entry: "clover/composer" }, { spot: "composer", bot: "luna", entry: "vn-composer#composer" }], lists: [] };
-    expect(shownRefs(resolveCell({ plugins: [...DEFAULT, vn], choices, ctx: inTab("alpha") }, "composer"))).toEqual(["clover/composer#composer"]);
+    const choices: UiChoices = { picks: [{ spot: "composer", entry: "moss/composer" }, { spot: "composer", bot: "luna", entry: "vn-composer#composer" }], lists: [] };
+    expect(shownRefs(resolveCell({ plugins: [...DEFAULT, vn], choices, ctx: inTab("alpha") }, "composer"))).toEqual(["moss/composer#composer"]);
     const luna = resolveCell({ plugins: [...DEFAULT, vn], choices, ctx: inTab("luna") }, "composer");
     expect(shownRefs(luna)).toEqual(["vn-composer#composer"]);
     expect(luna.decidedBy).toBe(1);
@@ -140,7 +140,7 @@ describe("which entry shows: the seven rules", () => {
     expect(r.hidden).toBe(true);
     expect(r.shown).toEqual([]);
     const stale: UiChoices = { picks: [{ spot: "composer", entry: "gone-plugin" }], lists: [] };
-    expect(shownRefs(resolveCell({ plugins: DEFAULT, choices: stale, ctx: inTab("alpha") }, "composer"))).toEqual(["clover/composer#composer"]);
+    expect(shownRefs(resolveCell({ plugins: DEFAULT, choices: stale, ctx: inTab("alpha") }, "composer"))).toEqual(["moss/composer#composer"]);
   });
 
   test("2: more scoped wins — a plugin for all bots' composers doesn't take the composer from a bot's own tab look", () => {
@@ -189,7 +189,7 @@ describe("which entry shows: the seven rules", () => {
     // With the bundled composer in the running too, the composer plugin still wins (it is limited to the bot).
     expect(shownRefs(resolveCell({ plugins: [...DEFAULT, luna, quiet], ctx: inTab("luna") }, "composer"))).toEqual(["quiet-composer#composer"]);
     // In another bot's tab, neither the bot's composer nor the ticked plugin applies.
-    expect(shownRefs(resolveCell({ plugins: [...DEFAULT, luna, quiet], ctx: inTab("alpha") }, "composer"))).toEqual(["clover/composer#composer"]);
+    expect(shownRefs(resolveCell({ plugins: [...DEFAULT, luna, quiet], ctx: inTab("alpha") }, "composer"))).toEqual(["moss/composer#composer"]);
   });
 
   test("3: a send-button plugin takes that button from a plugin that dresses every button", () => {
@@ -263,8 +263,8 @@ describe("entries: style and hide, `needs` and `keep`", () => {
     const r = resolveCell({ plugins: [...DEFAULT, noStatus], ctx: inTab("alpha") }, "composer");
     expect(r.hidden).toBe(true);
     expect(r.shown).toEqual([]);
-    const back: UiChoices = { picks: [{ spot: "composer", entry: "clover/composer" }], lists: [] };
-    expect(shownRefs(resolveCell({ plugins: [...DEFAULT, noStatus], choices: back, ctx: inTab("alpha") }, "composer"))).toEqual(["clover/composer#composer"]);
+    const back: UiChoices = { picks: [{ spot: "composer", entry: "moss/composer" }], lists: [] };
+    expect(shownRefs(resolveCell({ plugins: [...DEFAULT, noStatus], choices: back, ctx: inTab("alpha") }, "composer"))).toEqual(["moss/composer#composer"]);
   });
 
   test("in a list spot, a hide takes out the one entry it names (`target`), as its `when` and its bot allow; the user's own list wins both ways", () => {
@@ -304,14 +304,14 @@ describe("entries: style and hide, `needs` and `keep`", () => {
     expect(at([]).hidden).toBe(true);
     const back = at([{ spot: "conversation.message", bot: "alpha", order: [], hidden: [], shown: ["hide-notes#conversation.message"] }]);
     expect(back.hidden).toBe(false);
-    expect(shownRefs(back)).toEqual(["clover/conversation#conversation.message"]);
+    expect(shownRefs(back)).toEqual(["moss/conversation#conversation.message"]);
   });
 
   test("a kept key can't be hidden, by an entry or by a pick", () => {
     const hideCards = plugin("hide-cards", [{ spot: "conversation.message", key: "approval", hide: true }], { caps: ["conversation.read"] });
     const r = resolveCell({ plugins: [...DEFAULT, hideCards], ctx: inTab("alpha") }, "conversation.message", "approval");
     expect(r.hidden).toBe(false);
-    expect(shownRefs(r)).toEqual(["clover/conversation#conversation.message"]);
+    expect(shownRefs(r)).toEqual(["moss/conversation#conversation.message"]);
     const pickNothing: UiChoices = { picks: [{ spot: "conversation.message", key: "approval", entry: null }], lists: [] };
     expect(resolveCell({ plugins: DEFAULT, choices: pickNothing, ctx: inTab("alpha") }, "conversation.message", "approval").hidden).toBe(false);
     // Another key of the same spot can be hidden.
@@ -320,19 +320,19 @@ describe("entries: style and hide, `needs` and `keep`", () => {
   });
 
   test("style-only entries don't compete, and apply in reverse rank so the would-be winner applies last", () => {
-    const bundledStyle = plugin("clover/look", [{ spot: "composer", style: "a.json" }]);
+    const bundledStyle = plugin("moss/look", [{ spot: "composer", style: "a.json" }]);
     const userStyle = plugin("rounder", [{ spot: "composer", style: "b.json" }]);
     const lunaStyle = plugin("luna-look", [{ spot: "composer", style: "c.json", when: { bot: "luna" } }]);
     const r = resolveCell({ plugins: [...DEFAULT, bundledStyle, userStyle, lunaStyle], ctx: inTab("luna") }, "composer");
-    expect(shownRefs(r)).toEqual(["clover/composer#composer"]);
-    expect(r.styles.map((c) => c.plugin.id)).toEqual(["clover/look", "rounder", "luna-look"]);
-    expect(resolveCell({ plugins: [...DEFAULT, bundledStyle, userStyle, lunaStyle], ctx: inTab("alpha") }, "composer").styles.map((c) => c.plugin.id)).toEqual(["clover/look", "rounder"]);
+    expect(shownRefs(r)).toEqual(["moss/composer#composer"]);
+    expect(r.styles.map((c) => c.plugin.id)).toEqual(["moss/look", "rounder", "luna-look"]);
+    expect(resolveCell({ plugins: [...DEFAULT, bundledStyle, userStyle, lunaStyle], ctx: inTab("alpha") }, "composer").styles.map((c) => c.plugin.id)).toEqual(["moss/look", "rounder"]);
   });
 
   test("`needs`: an entry whose plugin lacks a capability the spot's props carry data for isn't mounted", () => {
     const blind = plugin("blind-bubbles", [{ spot: "conversation.message", key: "bot", component: "Bubble" }]);
     const r = resolveCell({ plugins: [...DEFAULT, blind], ctx: inTab("alpha") }, "conversation.message", "bot");
-    expect(shownRefs(r)).toEqual(["clover/conversation#conversation.message"]);
+    expect(shownRefs(r)).toEqual(["moss/conversation#conversation.message"]);
     expect(r.skipped).toEqual([{ ref: "blind-bubbles#conversation.message", reason: "needs", detail: "conversation.read" }]);
   });
 
@@ -367,7 +367,7 @@ describe("safe mode", () => {
     const vn = plugin("vn-composer", [{ spot: "composer", component: "VnComposer" }]);
     const alphaTab = plugin("alpha", [{ spot: "bot.tab", component: "AlphaTab" }], { isBot: true });
     const r = resolveCell({ plugins: [...DEFAULT, vn, alphaTab], ctx: inTab("alpha", { safeMode: true }) }, "composer");
-    expect(shownRefs(r)).toEqual(["clover/composer#composer"]);
+    expect(shownRefs(r)).toEqual(["moss/composer#composer"]);
     expect(r.skipped).toEqual([{ ref: "vn-composer#composer", reason: "safe-mode" }]);
     expect(shownRefs(resolveCell({ plugins: [...DEFAULT, alphaTab], ctx: { os: "macos", safeMode: true } }, "bot.tab", "alpha"))).toEqual(["alpha#bot.tab"]);
   });

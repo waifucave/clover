@@ -25,7 +25,7 @@ function load(html: string, answers: string[]) {
     unobserve() {}
   };
   for (const b of document.querySelectorAll(".seal-button")) (b as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect = () => ({ width: 80, height: 32 });
-  g.cloverSealed = { visible: () => {}, size: () => {}, answer: async (o: string) => { answers.push(o); return { accepted: true }; } };
+  g.mossSealed = { visible: () => {}, size: () => {}, answer: async (o: string) => { answers.push(o); return { accepted: true }; } };
   new Function(script)();
   window.dispatchEvent(new Event("DOMContentLoaded"));
   return { win: window, doc: document };

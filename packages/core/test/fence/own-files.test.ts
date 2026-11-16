@@ -3,8 +3,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
-import { CloverFence } from "../../src/fence/fence";
+import type { Caller } from "@waifucave/moss-protocol";
+import { MossFence } from "../../src/fence/fence";
 import { readOwnFile, refuseLinksIn, sweepOwnTempFiles, writeOwnFile } from "../../src/fence/own-files";
 import { FenceRefused } from "../../src/fence/open-checked";
 
@@ -14,10 +14,10 @@ const bot = (b: string | undefined, sessionId: string, sessionKind: "bot" | "sid
 // The core's own file access in a bot's folders: no link on the way in, and never outside its own folders, so a
 // symlink a runner leaves behind can't lead the core to another bot's data.
 describe("the core's own files in a caller's own folders", () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-own-")));
-  const home = join(root, "home"), clover = join(home, ".clover");
-  const fence = new CloverFence({ home, cloverHome: clover, temp: join(root, "tmp") });
-  const b = (...parts: string[]) => join(clover, "bots", ...parts);
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-own-")));
+  const home = join(root, "home"), moss = join(home, ".moss");
+  const fence = new MossFence({ home, mossHome: moss, temp: join(root, "tmp") });
+  const b = (...parts: string[]) => join(moss, "bots", ...parts);
   for (const d of [b("luna", "memory"), b("luna", "agents"), b("sol", "memory")]) mkdirSync(d, { recursive: true });
   writeFileSync(b("luna", "memory", "MEMORY.md"), "luna's");
   writeFileSync(b("luna", "agents", "t.json"), "{}");
@@ -35,7 +35,7 @@ describe("the core's own files in a caller's own folders", () => {
     expect(() => writeOwnFile(luna, b("sol", "agents.json"), "x")).toThrow(FenceRefused);
     expect(readOwnFile(luna, b("luna", "agents", "t.json")).toString()).toBe("{}"); // its own folder reads
     expect(() => writeOwnFile(luna, b("luna", "agents", "x.json"), "x")).toThrow(FenceRefused); // but never writes
-    const outs = join(clover, "outputs", "c1");
+    const outs = join(moss, "outputs", "c1");
     mkdirSync(outs, { recursive: true });
     writeOwnFile(coding, join(outs, "r.md"), "r");
     expect(readOwnFile(coding, join(outs, "r.md")).toString()).toBe("r");
@@ -87,23 +87,23 @@ describe("the core's own files in a caller's own folders", () => {
   test("a home under a symlinked folder works when callers pass the real path", () => {
     // /var and /tmp themselves are links on macOS: the fence canonicalizes to the real path, and the link
     // walk above a real path meets only real folders. A caller passing the unresolved path fails closed.
-    const realRoot = realpathSync(mkdtempSync(join(tmpdir(), "clover-real-")));
-    const link = join(tmpdir(), `clover-link-${process.pid}`);
+    const realRoot = realpathSync(mkdtempSync(join(tmpdir(), "moss-real-")));
+    const link = join(tmpdir(), `moss-link-${process.pid}`);
     symlinkSync(realRoot, link);
     try {
-      const home = join(link, "home"), clover = join(home, ".clover");
-      mkdirSync(join(clover, "bots", "luna", "memory"), { recursive: true });
-      writeFileSync(join(clover, "bots", "luna", "memory", "MEMORY.md"), "luna's");
-      const fence = new CloverFence({ home, cloverHome: clover, temp: join(link, "tmp") });
+      const home = join(link, "home"), moss = join(home, ".moss");
+      mkdirSync(join(moss, "bots", "luna", "memory"), { recursive: true });
+      writeFileSync(join(moss, "bots", "luna", "memory", "MEMORY.md"), "luna's");
+      const fence = new MossFence({ home, mossHome: moss, temp: join(link, "tmp") });
       expect(fence.home).toBe(join(realRoot, "home")); // canonicalized past the link
       const l = fence.forCaller(bot("luna", "s1"));
-      const mem = join(realRoot, "home", ".clover", "bots", "luna", "memory");
+      const mem = join(realRoot, "home", ".moss", "bots", "luna", "memory");
       expect(readOwnFile(l, join(mem, "MEMORY.md")).toString()).toBe("luna's");
       writeOwnFile(l, join(mem, "n.md"), "n");
       expect(readOwnFile(l, join(mem, "n.md")).toString()).toBe("n");
       expect(refuseLinksIn(mem)).toBeUndefined();
       // The unresolved spelling fails closed (a prefix is a link), never misread.
-      expect(() => readOwnFile(l, join(link, "home", ".clover", "bots", "luna", "memory", "MEMORY.md"))).toThrow(FenceRefused);
+      expect(() => readOwnFile(l, join(link, "home", ".moss", "bots", "luna", "memory", "MEMORY.md"))).toThrow(FenceRefused);
     } finally {
       rmSync(link, { force: true });
       rmSync(realRoot, { recursive: true, force: true });

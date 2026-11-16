@@ -7,8 +7,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { RoutineRunView } from "@waifucave/clover-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { RoutineRunView } from "@waifucave/moss-protocol";
 import { triggerOwnersFrom } from "../../bots/wiring";
 import type { SideThreadRun } from "../../bots/service";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
@@ -31,12 +31,12 @@ async function until(f: () => boolean, ms = 15_000): Promise<void> {
 
 describe("a plugin's routine trigger", () => {
   test("arms a routine through the plugin, which fires it; armed again after a restart; disarmed when the routine goes", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-b-triggers-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-b-triggers-"));
     temps.push(home);
     const folder = join(home, "plugins", "pinger");
     mkdirSync(join(folder, "host"), { recursive: true });
-    writeFileSync(join(folder, "clover.json"), JSON.stringify({
-      manifest: 1, id: "pinger", name: "Pinger", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    writeFileSync(join(folder, "moss.json"), JSON.stringify({
+      manifest: 1, id: "pinger", name: "Pinger", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
       host: { entry: "host/index.js" },
       contributes: { triggers: [{ type: "ping", title: "Ping", handler: "ping" }] },
     }));
@@ -62,7 +62,7 @@ describe("a plugin's routine trigger", () => {
 
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker, secrets, settleMs: 50 });
     const runs: SideThreadRun[] = [];
     let engine: RoutineEngine | undefined;
     const lines: string[] = [];

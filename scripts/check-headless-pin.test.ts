@@ -51,7 +51,7 @@ describe("the headless shell's pin", () => {
   });
 
   test("warns while the headless browser isn't there, requires the pin once it is, and fails on a mismatch", async () => {
-    const root = mkdtempSync(join(tmpdir(), "clover-headless-pin-"));
+    const root = mkdtempSync(join(tmpdir(), "moss-headless-pin-"));
     mkdirSync(join(root, "apps", "desktop"), { recursive: true });
     writeFileSync(join(root, "apps", "desktop", "package.json"), JSON.stringify({ devDependencies: { electron: "45.2.3" } }));
     expect(await main([], root)).toBe(0);

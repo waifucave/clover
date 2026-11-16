@@ -5,8 +5,8 @@
 // as functions. `forgeApiCall` is what a compromised process could send on its connection. A handler's `ctx.api` acts as
 // the call's caller (R7); the `api` a module's `start` and its MCP servers get acts as the plugin. The fake's gap: it
 // doesn't bind an MCP server's API calls to the `tools/call` it is serving (the real host does, B-M2); it only takes
-// the core's `_meta["clover/invocation"]` off before the server sees a request.
-import type { Caller, HostProcess, PluginSource } from "@waifucave/clover-protocol";
+// the core's `_meta["moss/invocation"]` off before the server sees a request.
+import type { Caller, HostProcess, PluginSource } from "@waifucave/moss-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {

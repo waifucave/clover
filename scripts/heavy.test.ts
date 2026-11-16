@@ -15,7 +15,7 @@ const STAND_IN = `#!/bin/sh\necho ${PINNED_BUN}\n`;
 
 /** A pinned-Bun cache that already holds this checkout's pinned version (a stand-in), so no test fetches one. */
 function bunCache(): string {
-  const cache = mkdtempSync(join(tmpdir(), "clover-heavy-test-bun-"));
+  const cache = mkdtempSync(join(tmpdir(), "moss-heavy-test-bun-"));
   mkdirSync(join(cache, PINNED_BUN));
   writeFileSync(join(cache, PINNED_BUN, "bun"), STAND_IN, { mode: 0o755 });
   return cache;
@@ -25,7 +25,7 @@ const CACHE = posix ? bunCache() : "";
 /** A throwaway checkout pinning this Bun version, its `.bun-sha256` pinning the stand-in (pinned-bun checks the cached
  *  binary against it on every run), with this repo's scripts/pinned-bun: heavy run there takes the stand-in. */
 function pinningCheckout(): string {
-  const dir = mkdtempSync(join(tmpdir(), "clover-heavy-test-checkout-"));
+  const dir = mkdtempSync(join(tmpdir(), "moss-heavy-test-checkout-"));
   spawnSync("git", ["init", "-q"], { cwd: dir });
   writeFileSync(join(dir, ".bun-version"), `${PINNED_BUN}\n`);
   const sha = createHash("sha256").update(STAND_IN).digest("hex");
@@ -39,11 +39,11 @@ function pinningCheckout(): string {
 
 /** The slot tests run with PATH as it is; the pinned-Bun test turns it on, in a checkout that pins the stand-in. */
 function env(dir: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  return { ...process.env, HEAVY_DIR: dir, HEAVY_POLL_SECONDS: "1", CLOVER_BUN_CACHE: CACHE, CLOVER_PINNED_BUN: "0", ...extra };
+  return { ...process.env, HEAVY_DIR: dir, HEAVY_POLL_SECONDS: "1", MOSS_BUN_CACHE: CACHE, MOSS_PINNED_BUN: "0", ...extra };
 }
 
 function slotDir(): string {
-  return mkdtempSync(join(tmpdir(), "clover-heavy-test-"));
+  return mkdtempSync(join(tmpdir(), "moss-heavy-test-"));
 }
 
 describe.if(posix)("scripts/heavy", () => {
@@ -101,17 +101,17 @@ describe.if(posix)("scripts/heavy", () => {
     expect(run.stderr).not.toContain("busy");
   });
 
-  test("the job runs with the checkout's pinned Bun first on PATH, and CLOVER_PINNED_BUN=0 leaves PATH alone", () => {
+  test("the job runs with the checkout's pinned Bun first on PATH, and MOSS_PINNED_BUN=0 leaves PATH alone", () => {
     const dir = slotDir();
     const which = ["sh", "-c", "command -v bun; bun --version"];
     const checkout = pinningCheckout();
-    const pinned = spawnSync(HEAVY, which, { cwd: checkout, env: env(dir, { CLOVER_PINNED_BUN: "1" }), encoding: "utf8" });
+    const pinned = spawnSync(HEAVY, which, { cwd: checkout, env: env(dir, { MOSS_PINNED_BUN: "1" }), encoding: "utf8" });
     expect(pinned.status).toBe(0);
     expect(pinned.stdout).toBe(`${join(CACHE, PINNED_BUN, "bun")}\n${PINNED_BUN}\n`);
-    const off = spawnSync(HEAVY, which, { cwd: checkout, env: env(dir, { CLOVER_PINNED_BUN: "0" }), encoding: "utf8" });
+    const off = spawnSync(HEAVY, which, { cwd: checkout, env: env(dir, { MOSS_PINNED_BUN: "0" }), encoding: "utf8" });
     expect(off.stdout).not.toContain(CACHE);
     // Outside a checkout that pins a Bun, PATH is left as it is.
-    const elsewhere = spawnSync(HEAVY, which, { cwd: dir, env: env(dir, { CLOVER_PINNED_BUN: "1" }), encoding: "utf8" });
+    const elsewhere = spawnSync(HEAVY, which, { cwd: dir, env: env(dir, { MOSS_PINNED_BUN: "1" }), encoding: "utf8" });
     expect(elsewhere.stdout).not.toContain(CACHE);
   });
 
@@ -130,13 +130,13 @@ describe.if(posix)("scripts/heavy", () => {
     await until(() => readFileSync(log, "utf8").includes("first-start"), "the first holder starting");
     const status = spawnSync(HEAVY, ["--status"], { env: env(dir, { HEAVY_SLOTS: "1" }), encoding: "utf8" });
     expect(status.stdout).toContain(`exclusive: pid ${first.pid} run: sh -c echo first-start`);
-    const second = spawnSync(HEAVY, ["--exclusive", "--packaged", "sh", "-c", `echo "second $CLOVER_HEAVY_EXCLUSIVE" >> '${log}'`], { env: env(dir), encoding: "utf8" });
+    const second = spawnSync(HEAVY, ["--exclusive", "--packaged", "sh", "-c", `echo "second $MOSS_HEAVY_EXCLUSIVE" >> '${log}'`], { env: env(dir), encoding: "utf8" });
     await exited(first);
     expect(second.status).toBe(0);
     expect(second.stderr).toContain(`heavy: waiting for the exclusive lock, held by pid ${first.pid} run: sh -c`);
     const lines = readFileSync(log, "utf8").split("\n");
     expect(lines.slice(0, 2)).toEqual(["first-start", "first-end"]);
-    // The command ran with the holder's pid in CLOVER_HEAVY_EXCLUSIVE (its own heavy's, not the first one's).
+    // The command ran with the holder's pid in MOSS_HEAVY_EXCLUSIVE (its own heavy's, not the first one's).
     expect(lines[2]).toMatch(/^second \d+$/);
     expect(lines[2]).not.toBe(`second ${first.pid}`);
     expect(existsSync(join(dir, "exclusive"))).toBe(false);

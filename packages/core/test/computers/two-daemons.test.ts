@@ -28,17 +28,17 @@ afterEach(async () => {
 async function daemon(net: MemoryNetwork, name: string, bots: string[] = []) {
   const root = mkdtempSync(join(tmpdir(), "lane-j-daemon-"));
   const home = join(root, "home");
-  const cloverHome = join(home, ".clover");
-  mkdirSync(cloverHome, { recursive: true });
-  const links = await startDeviceLinks({ home: cloverHome, store: new MemorySecretStore(), clock, self: { name, os: hostOs() }, wire: (key) => net.endpoint(key.publicKey) });
+  const mossHome = join(home, ".moss");
+  mkdirSync(mossHome, { recursive: true });
+  const links = await startDeviceLinks({ home: mossHome, store: new MemorySecretStore(), clock, self: { name, os: hostOs() }, wire: (key) => net.endpoint(key.publicKey) });
   stops.push(() => links.close());
-  return { name, home, cloverHome, links, bots };
+  return { name, home, mossHome, links, bots };
 }
 
 function node(d: Awaited<ReturnType<typeof daemon>>): ComputerNode {
   const handoff = computerNodeLinks(d.links);
   const n = startComputerNode({
-    clock, ...handoff, home: d.home, cloverHome: d.cloverHome, executor: shellExecutor, bots: () => d.bots, lease: null,
+    clock, ...handoff, home: d.home, mossHome: d.mossHome, executor: shellExecutor, bots: () => d.bots, lease: null,
   });
   stops.push(() => n.close());
   return n;

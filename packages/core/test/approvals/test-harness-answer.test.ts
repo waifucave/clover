@@ -2,13 +2,13 @@
 // the harness's own `cli` connection may list, frame and answer cards, and the broker takes its sealed-frame answer as
 // the app's origin. A real build has none of it: the role gate refuses card.* to `cli`, and the broker refuses a
 // sealed-frame proof from anything but the app. The test-build half runs in a child under the same define a test build
-// is compiled with (`bun --define __CLOVER_TEST_BUILD__=…`), since a test process from source is a real build.
+// is compiled with (`bun --define __MOSS_TEST_BUILD__=…`), since a test process from source is a real build.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import type { Card } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker } from "../../src/approvals/broker";
-import { gateCloverRequest } from "../../src/auth/clover-caller";
+import type { Card } from "@waifucave/moss-protocol";
+import { MossApprovalBroker } from "../../src/approvals/broker";
+import { gateMossRequest } from "../../src/auth/moss-caller";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import type { ApprovalRequest } from "../../src/contracts/approval-broker";
 
@@ -21,7 +21,7 @@ const req: ApprovalRequest = {
 
 /** A card on a broker of its own, and its answer from `from` on the card's minted channel (or `frame`). */
 async function answerFrom(from: { role: "app" | "cli"; testHarness?: true }, frame?: string): Promise<string> {
-  const b = new CloverApprovalBroker({ clock: new FakeClock() });
+  const b = new MossApprovalBroker({ clock: new FakeClock() });
   let card: Card | undefined;
   const off = b.watch((e) => { if (e.type === "requested") card = e.card; });
   const pending = b.request(req);
@@ -36,8 +36,8 @@ async function answerFrom(from: { role: "app" | "cli"; testHarness?: true }, fra
 
 describe("a real build (this process: no test-build define)", () => {
   test("the role gate refuses card.list, card.get, card.frame and card.answer to the cli role", () => {
-    for (const m of ["card.list", "card.get", "card.frame", "card.answer", "layer.token"]) expect(gateCloverRequest("cli", USER_CLI, m)?.message).toContain(`the cli role may not call ${m}`);
-    expect(gateCloverRequest("app", { kind: "user", client: "app" }, "card.answer")).toBeNull();
+    for (const m of ["card.list", "card.get", "card.frame", "card.answer", "layer.token"]) expect(gateMossRequest("cli", USER_CLI, m)?.message).toContain(`the cli role may not call ${m}`);
+    expect(gateMossRequest("app", { kind: "user", client: "app" }, "card.answer")).toBeNull();
   });
 
   test("the broker refuses a sealed-frame proof from anything but the app, a would-be harness included", async () => {
@@ -49,13 +49,13 @@ describe("a real build (this process: no test-build define)", () => {
 
 // The same checks in a child under the test build's define.
 const CHILD = `
-  const { gateCloverRequest } = await import(${JSON.stringify(join(import.meta.dir, "../../src/auth/clover-caller.ts"))});
-  const { CloverApprovalBroker } = await import(${JSON.stringify(join(import.meta.dir, "../../src/approvals/broker.ts"))});
+  const { gateMossRequest } = await import(${JSON.stringify(join(import.meta.dir, "../../src/auth/moss-caller.ts"))});
+  const { MossApprovalBroker } = await import(${JSON.stringify(join(import.meta.dir, "../../src/approvals/broker.ts"))});
   const { FakeClock } = await import(${JSON.stringify(join(import.meta.dir, "../../src/contracts/fakes/clock.ts"))});
   const req = ${JSON.stringify(req)};
   const answerFrom = async (from, wrongFrame) => {
     const logs = [];
-    const b = new CloverApprovalBroker({ clock: new FakeClock(), log: (l) => logs.push(l) });
+    const b = new MossApprovalBroker({ clock: new FakeClock(), log: (l) => logs.push(l) });
     let card;
     const off = b.watch((e) => { if (e.type === "requested") card = e.card; });
     const pending = b.request(req);
@@ -68,7 +68,7 @@ const CHILD = `
     await pending.catch(() => undefined);
     return { result, stale, logs };
   };
-  const gate = (role, caller, m) => gateCloverRequest(role, caller, m)?.message ?? null;
+  const gate = (role, caller, m) => gateMossRequest(role, caller, m)?.message ?? null;
   const out = {
     userCli: ["card.list", "card.get", "card.frame", "card.answer", "layer.token"].map((m) => gate("cli", ${JSON.stringify(USER_CLI)}, m)),
     sessionCli: gate("cli", ${JSON.stringify(SESSION)}, "card.answer"),
@@ -85,7 +85,7 @@ const CHILD = `
 
 describe("a test-marked build (a child under the test build's define)", () => {
   test("the harness's own cli connection may frame and answer; nothing else is relaxed, and every other check holds", () => {
-    const r = spawnSync(process.execPath, ["--define", `__CLOVER_TEST_BUILD__="CLOVER-TEST-BUILD"`, "-e", CHILD], { encoding: "utf8", timeout: 60_000 });
+    const r = spawnSync(process.execPath, ["--define", `__MOSS_TEST_BUILD__="MOSS-TEST-BUILD"`, "-e", CHILD], { encoding: "utf8", timeout: 60_000 });
     expect(r.status).toBe(0);
     const out = JSON.parse(r.stdout) as { userCli: (string | null)[]; sessionCli: string | null; sessionCliGet: string | null; sessionLayerToken: string | null; otherMethod: string | null; harness: { result: string; stale: string; logs: string[] }; plainCli: string; harnessWrongFrame: string; remoteMarked: string };
     // The gate: the user's cli (the harness token, outside any session) may call the four (card.get only reads); a

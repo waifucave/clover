@@ -1,4 +1,4 @@
-// The registry's own records (spec §5.1, §8.5; review S8), in the fenced `plugins-state/` folder of the Clover home:
+// The registry's own records (spec §5.1, §8.5; review S8), in the fenced `plugins-state/` folder of the MOSS home:
 // * `installed.json`: the synced list, in its order (which plugin keeps a clashing entry id or a namespace), with
 //   each plugin's switch, source and who installed it, the tree hash last OK'd or refused, and development folders;
 // * `oks/<id>.json`: what each OK'd tree held (`OkSnapshot`), so a later change can be told apart (§5.6);
@@ -23,7 +23,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { z } from "zod";
-import { PluginProvenance as PluginProvenanceSchema, PluginSource as PluginSourceSchema, type PluginProvenance, type PluginSource } from "@waifucave/clover-protocol";
+import { PluginProvenance as PluginProvenanceSchema, PluginSource as PluginSourceSchema, type PluginProvenance, type PluginSource } from "@waifucave/moss-protocol";
 import type { OkSnapshot } from "./changes";
 
 export interface PluginState {
@@ -182,7 +182,7 @@ interface Envelope {
   mac?: string;
 }
 
-/** The records on disk, under `<cloverHome>/plugins-state/`. With `macKey` (32 bytes from the secret store) every file
+/** The records on disk, under `<mossHome>/plugins-state/`. With `macKey` (32 bytes from the secret store) every file
  *  is signed, and one whose MAC doesn't verify, or that fails its schema, reads as absent (`onTampered` says which). */
 export interface RegistryStoreOptions {
   /** 32 bytes from the secret store; required where the daemon opens the registry (`openPluginRegistry`). */
@@ -202,7 +202,7 @@ export function fileRegistryStore(stateDir: string, opts: RegistryStoreOptions =
   const counters: Record<string, number> = { ...(opts.counters ?? {}) };
   const nameOf = (file: string) => relative(stateDir, file).split(sep).join("/");
   const mac = (name: string, gen: number, body: string) =>
-    createHmac("sha256", opts.macKey!).update(`clover/plugin-registry/1\0${name}\0${gen}\0${body}`).digest("hex");
+    createHmac("sha256", opts.macKey!).update(`moss/plugin-registry/1\0${name}\0${gen}\0${body}`).digest("hex");
   const write = (file: string, value: unknown) => {
     const body = JSON.stringify(value);
     let env: Envelope = { body };
@@ -223,8 +223,8 @@ export function fileRegistryStore(stateDir: string, opts: RegistryStoreOptions =
     if (opts.macKey) {
       const name = nameOf(file);
       // The counter the secret store kept for this name: an older copy put back has an older one, and is refused. A
-      // newer one is Clover's own last write whose counter didn't reach the secret store before the core stopped (the
-      // counter is kept after the file, `onCounters`): its MAC (below) says Clover wrote it, so it is taken and its
+      // newer one is MOSS's own last write whose counter didn't reach the secret store before the core stopped (the
+      // counter is kept after the file, `onCounters`): its MAC (below) says MOSS wrote it, so it is taken and its
       // counter adopted. No one without the key can write one ahead.
       const held = counters[name] ?? 0;
       if (typeof env.gen !== "number" || !Number.isSafeInteger(env.gen) || env.gen < 1 || env.gen < held) return bad();

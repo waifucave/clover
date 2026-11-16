@@ -1,4 +1,4 @@
-// The daemon binary, `clover-core`, for each of the four targets CI builds (plan §3): one `bun build --compile` per
+// The daemon binary, `moss-core`, for each of the four targets CI builds (plan §3): one `bun build --compile` per
 // target, from `packages/cli`'s own `compile:core` script with only the target and the output changed, so it is the
 // same five-step, five-entrypoint build (`cli/test/compile-core.test.ts` pins its shape) and cannot drift from it.
 //
@@ -15,18 +15,18 @@
 //   bun run build:daemon --test-build                     a test-marked core (scripts/test-build.ts; macOS only):
 //                                                         scripts/release/build.ts --test-build's
 //
-// Every `bun build` step gets `--define __CLOVER_DIST__=true` (packages/core/src/build-kind.ts: a dist build ignores
-// the environment's choice of programs to run) and the test-build define (`__CLOVER_TEST_BUILD__=false`, or the label
+// Every `bun build` step gets `--define __MOSS_DIST__=true` (packages/core/src/build-kind.ts: a dist build ignores
+// the environment's choice of programs to run) and the test-build define (`__MOSS_TEST_BUILD__=false`, or the label
 // with --test-build: scripts/test-build.ts); the built core passes the marker gate (a real one carries neither the label
 // nor the test-only code, a test one both), and the compiled binary is sealed (scripts/seal-bun-doors.ts: Bun's
 // BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT*, BUN_CONFIG_VERBOSE_FETCH and NODE_PATH made unsettable on macOS and Linux,
 // then the byte check; a Windows binary is left unsealed) before anything signs it.
 //
-// Beside it go the binaries that run code not the core's own (scripts/bundled-binaries.ts): `clover-plugin-bun`, the
-// pinned Bun's release build for the target (checked against its pinned SHA-256), and on macOS `clover-process-holder`,
+// Beside it go the binaries that run code not the core's own (scripts/bundled-binaries.ts): `moss-plugin-bun`, the
+// pinned Bun's release build for the target (checked against its pinned SHA-256), and on macOS `moss-process-holder`,
 // built from the installed agent runtime's source. Each is signed ad hoc under its own identifier here.
 //
-// Output: dist/daemon/<target>/clover-core (clover-core.exe on Windows), with its size and SHA-256 printed. The
+// Output: dist/daemon/<target>/moss-core (moss-core.exe on Windows), with its size and SHA-256 printed. The
 // binary is unsigned on every OS: the dev daemon signs its own copy on macOS (scripts/dev-daemon.ts), and release
 // signing is M2's. `--smoke` never starts a daemon: `--version` prints and exits before anything else runs.
 import { spawnSync } from "node:child_process";
@@ -62,7 +62,7 @@ export function hostTarget(platform: NodeJS.Platform = process.platform, arch: s
 
 /** The binary's file name on the target: Windows needs the `.exe`. */
 export function daemonFileName(target: DaemonTarget): string {
-  return target.startsWith("windows-") ? "clover-core.exe" : "clover-core";
+  return target.startsWith("windows-") ? "moss-core.exe" : "moss-core";
 }
 
 /** Where the target's binary lands, relative to the repo root, with `/`. */
@@ -75,7 +75,7 @@ const COMPILE = "bun build --compile";
  *  IT installs there), never a CA from the environment (`build-kind.ts`'s refusal). Adding to the OS store takes the
  *  user's authentication on macOS and root on Linux. Baked into the binary's execArgv, so nothing at run time sets it. */
 export const DIST_EXEC_ARGV = "--compile-exec-argv=--use-system-ca";
-const COMPILE_CORE_OUTFILE = "--outfile ../../dist/clover-core";
+const COMPILE_CORE_OUTFILE = "--outfile ../../dist/moss-core";
 /** Where `--plugins-manifest`'s file is copied for the compile (relative to packages/cli, beside the worker bundles):
  *  the compile step embeds it as a file (Bun.embeddedFiles), which the core reads as its bundled-plugins manifest. */
 export const MANIFEST_EMBED = `.build/${BUNDLED_MANIFEST_FILE}`;
@@ -156,13 +156,13 @@ function sha256(path: string): string {
 }
 
 /**
- * `clover-core bridge` (K-M1) answers an MCP `initialize` on stdio. Started with no session, as here, it reaches no
+ * `moss-core bridge` (K-M1) answers an MCP `initialize` on stdio. Started with no session, as here, it reaches no
  * daemon (it says so on stderr) but still serves the handshake, which shows the dispatch reaches the bridge. Returns
  * the server's name and protocol version.
  */
 async function smokeBridge(binary: string, env: NodeJS.ProcessEnv): Promise<string> {
   const bridgeEnv = { ...env };
-  for (const k of ["CLOVER_BRIDGE_TOKEN", "CLOVER_BRIDGE_SESSION", "CLOVER_BRIDGE_SOCKET"]) delete bridgeEnv[k];
+  for (const k of ["MOSS_BRIDGE_TOKEN", "MOSS_BRIDGE_SESSION", "MOSS_BRIDGE_SOCKET"]) delete bridgeEnv[k];
   const proc = Bun.spawn([binary, "bridge"], { env: bridgeEnv, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => proc.kill(), 60_000);
   try {
@@ -181,7 +181,7 @@ async function smokeBridge(binary: string, env: NodeJS.ProcessEnv): Promise<stri
     const stderr = await new Response(proc.stderr).text();
     let answer: { id?: number; result?: { protocolVersion?: string; serverInfo?: { name?: string } } } = {};
     try { answer = JSON.parse(out.split("\n")[0] ?? ""); } catch { /* below */ }
-    if (answer.id !== 1 || answer.result?.serverInfo?.name !== "clover" || code !== 0) {
+    if (answer.id !== 1 || answer.result?.serverInfo?.name !== "moss" || code !== 0) {
       throw new Error(`${binary} bridge: exit ${code}, answered ${JSON.stringify(out.slice(0, 300))}${stderr ? `\n${stderr.slice(0, 2000)}` : ""}`);
     }
     return `bridge: ok (serverInfo ${answer.result.serverInfo.name}, MCP ${answer.result.protocolVersion})`;
@@ -192,23 +192,23 @@ async function smokeBridge(binary: string, env: NodeJS.ProcessEnv): Promise<stri
 
 /** The environment a built binary's probes run with: a temp home, and none of a test's keychain variables (a release
  *  refuses them at startup, startup-guard.ts). A test-marked core refuses to start WITHOUT them, so its probes get
- *  HOME and CLOVER_HOME in the temp folder and a keychain file named there (never made: no probe opens a keychain). */
+ *  HOME and MOSS_HOME in the temp folder and a keychain file named there (never made: no probe opens a keychain). */
 function probeEnv(home: string, testBuild = false): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, CLOVER_HOME: home };
-  for (const k of ["CLOVER_PROFILE", "CLOVER_KEYCHAIN_SERVICE", "CLOVER_TEST_KEYCHAIN", "WINTER_TEST_KEYCHAIN"]) delete env[k];
-  if (testBuild) Object.assign(env, { HOME: home, CLOVER_TEST_KEYCHAIN: join(home, "probe.keychain-db") });
+  const env: NodeJS.ProcessEnv = { ...process.env, MOSS_HOME: home };
+  for (const k of ["MOSS_PROFILE", "MOSS_KEYCHAIN_SERVICE", "MOSS_TEST_KEYCHAIN", "WINTER_TEST_KEYCHAIN"]) delete env[k];
+  if (testBuild) Object.assign(env, { HOME: home, MOSS_TEST_KEYCHAIN: join(home, "probe.keychain-db") });
   return env;
 }
 
-/** What `--version` prints: `clover <version>`, with the label on a test-marked core. */
+/** What `--version` prints: `moss <version>`, with the label on a test-marked core. */
 export function versionLine(version: string, testBuild = false): string {
-  return testBuild ? `clover ${version} test build (${TEST_BUILD_LABEL}: a test-marked build, never for release)` : `clover ${version}`;
+  return testBuild ? `moss ${version} test build (${TEST_BUILD_LABEL}: a test-marked build, never for release)` : `moss ${version}`;
 }
 
 /** `--version`, `__ffi-probe`, `bridge` and `__verify-feed` from the host binary, on a temp home. None reads a Keychain
  *  item, and a release refuses a test's keychain variables at startup (startup-guard.ts), so none is set. */
 async function smoke(binary: string, version: string, testBuild = false): Promise<void> {
-  const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-smoke-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-build-daemon-smoke-"));
   try {
     const env = probeEnv(home, testBuild);
     const r = spawnSync(binary, ["--version"], { env, encoding: "utf8", timeout: 60_000 });
@@ -284,7 +284,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
 
 /** The bundled-plugins manifest a built core carries, as its `__bundled-manifest` prints it ("<n> files, sha256 <hex>"). */
 export function embeddedManifestLine(binary: string, testBuild = false): string {
-  const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-manifest-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-build-daemon-manifest-"));
   try {
     const r = spawnSync(binary, ["__bundled-manifest"], { env: probeEnv(home, testBuild), encoding: "utf8", timeout: 60_000 });
     const out = (r.stdout ?? "").trim();
@@ -313,7 +313,7 @@ export function hostBundlesBuilt(cliDir: string): { bytes: { host: Uint8Array; w
 
 /** The plugin host's bundles a built core carries, as its `__host-bundles` prints them. */
 export function embeddedHostBundlesLine(binary: string, testBuild = false): string {
-  const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-host-bundles-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-build-daemon-host-bundles-"));
   try {
     const r = spawnSync(binary, ["__host-bundles"], { env: probeEnv(home, testBuild), encoding: "utf8", timeout: 60_000 });
     const out = (r.stdout ?? "").trim();
@@ -328,7 +328,7 @@ export function embeddedHostBundlesLine(binary: string, testBuild = false): stri
 /** `__worker-entry-probe` (no home, Keychain or daemon) on a built core: a compiled Worker entry
  *  (`./fd-receiver-worker.ts`, named as `./embedded-worker.ts` is) loads inside the binary, on every OS. Throws when not. */
 export function workerEntryLine(binary: string, testBuild = false): string {
-  const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-worker-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-build-daemon-worker-"));
   try {
     const r = spawnSync(binary, ["__worker-entry-probe"], { env: probeEnv(home, testBuild), encoding: "utf8", timeout: 60_000 });
     const out = (r.stdout ?? "").trim().split("\n").at(-1) ?? "";

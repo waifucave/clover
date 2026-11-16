@@ -1,4 +1,4 @@
-// The two avatar formats Clover ships (`vrm`, `live2d`), as they behave before the character part reads its formats from
+// The two avatar formats MOSS ships (`vrm`, `live2d`), as they behave before the character part reads its formats from
 // installed renderers (the character-plugin design's lane 2): one matrix, row by row, so the move to declared formats is
 // held to "exactly as today" for both. A row that is meant to change says so where it is.
 //
@@ -9,7 +9,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AvatarFormatEntry, avatarFileProblem, BUNDLED_AVATAR_FORMATS, clampAvatarCap, DATA_POINTS, validateTree, type AvatarFormatDecl, type PluginFolderReader } from "@waifucave/clover-plugin-sdk";
+import { AvatarFormatEntry, avatarFileProblem, BUNDLED_AVATAR_FORMATS, clampAvatarCap, DATA_POINTS, validateTree, type AvatarFormatDecl, type PluginFolderReader } from "@waifucave/moss-plugin-sdk";
 import { AVATAR_IMPORT_CAPS, importAvatar } from "../avatar-import";
 import { userAvatarsDir } from "../paths";
 
@@ -76,7 +76,7 @@ function folder(files: Record<string, string | object>): PluginFolderReader {
 }
 
 const botWith = (avatar: object, files: Record<string, unknown> = {}) => folder({
-  "clover.json": { manifest: 1, id: "luna", name: "Luna", version: "1.0.0", contributes: { bot: { name: "Luna", instructions: "bot/instructions.md", avatar } } },
+  "moss.json": { manifest: 1, id: "luna", name: "Luna", version: "1.0.0", contributes: { bot: { name: "Luna", instructions: "bot/instructions.md", avatar } } },
   "bot/instructions.md": "Be kind.",
   ...(files as Record<string, string | object>),
 });
@@ -195,13 +195,13 @@ describe("import (`bot.importAvatar`): what each source becomes", () => {
 // ── Declared formats (lane 2): what changes on purpose, and what a third format gets ─────────────────────────────
 
 const declOf = (folder: string) => {
-  const m = JSON.parse(readFileSync(join(REPO, "plugins", "clover", "plugins", folder, "clover.json"), "utf8")) as { contributes: Record<string, unknown[]> };
+  const m = JSON.parse(readFileSync(join(REPO, "plugins", "moss", "plugins", folder, "moss.json"), "utf8")) as { contributes: Record<string, unknown[]> };
   return AvatarFormatEntry.parse(m.contributes["avatar.formats"]![0]);
 };
 const REPO = join(import.meta.dir, "..", "..", "..", "..", "..");
 
-describe("the formats Clover ships are their renderers' declarations", () => {
-  test("the SDK's fallback (an offline check's) is clover/vrm's and clover/live2d's avatar.formats entries", () => {
+describe("the formats MOSS ships are their renderers' declarations", () => {
+  test("the SDK's fallback (an offline check's) is moss/vrm's and moss/live2d's avatar.formats entries", () => {
     const pick = (d: AvatarFormatDecl) => ({ format: d.format, name: d.name, entry: d.entry, files: d.files, import: d.import });
     expect(BUNDLED_AVATAR_FORMATS.map(pick)).toEqual([pick(declOf("vrm")), pick(declOf("live2d"))]);
   });
@@ -268,7 +268,7 @@ describe("a third format, declared by its renderer, imports with no change to th
 
   test("a bot's avatar of a format its own tree declares is checked by that declaration at install", async () => {
     const tree = (file: string) => folder({
-      "clover.json": { manifest: 1, id: "hero", name: "Hero", version: "1.0.0", contributes: { bot: { name: "Hero", instructions: "bot/instructions.md", avatar: { file, format: "sprite" } }, "avatar.formats": [sprite] } },
+      "moss.json": { manifest: 1, id: "hero", name: "Hero", version: "1.0.0", contributes: { bot: { name: "Hero", instructions: "bot/instructions.md", avatar: { file, format: "sprite" } }, "avatar.formats": [sprite] } },
       "bot/instructions.md": "Be brave.", [file]: "{}",
     });
     const errors = async (file: string) => (await validateTree(tree(file), { folderName: "hero" })).issues.filter((i) => i.severity === "error").map((i) => i.code);

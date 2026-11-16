@@ -17,7 +17,7 @@
 //   5. the plugins that dress the part, the smallest part first, then each part around it (tokens flow down);
 //   4. the bot's theme, in its tab;
 //   3. the user's global theme (until the user picks one, the base theme);
-//   2. in bot tabs, the base theme for all bot tabs (`clover`'s);
+//   2. in bot tabs, the base theme for all bot tabs (`moss`'s);
 //   1. the catalog's default for that appearance (`dark` where it has one, else `default`).
 // A plugin's own tokens (`plugin.<id>.…`) have no catalog default: unset, its CSS's `var()` fallback applies.
 // `resolveTokens` computes one part's values from its layers.
@@ -26,7 +26,7 @@
 // them waits for its own OK while the rest of the change applies at once. Until the user OKs it, the core passes the
 // layer's last OK'd values as `heldCard`, and `resolveTokens` takes that layer's `card.*` values from there.
 import { z } from "zod";
-import { utf16 } from "@waifucave/clover-protocol";
+import { utf16 } from "@waifucave/moss-protocol";
 import {
   AUTO_INK, AUTO_INKS, CARD_TOKENS, LABEL_INK, SYSTEM_ACCENT, SYSTEM_LABEL_FILLS, TOKENS, fillForWhiteLabel, isTokenValue, isValueForToken,
   resolveAutoInk, type TokenValue,

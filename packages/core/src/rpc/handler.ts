@@ -3,7 +3,7 @@
 // code a client branches on. The server (lane C's endpoint, the link's peer side) applies the allow lists, the
 // capabilities and `userOnly` before a handler runs; handlers check the caller again where they change something.
 // Owner: lane B, for every lane that serves methods.
-import { CLOVER_ERR, ERR, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
+import { MOSS_ERR, ERR, type Caller, type MethodSpec } from "@waifucave/moss-protocol";
 import type { z } from "zod";
 import { ContractError, isContractError, RPC_ERROR_OF, type Unsubscribe } from "../contracts/common";
 
@@ -71,6 +71,6 @@ export function handler<S extends MethodSpec>(
 
 /** Refuses anyone but the user (`NOT_THE_USER`). */
 export function requireUser(ctx: MethodContext, what: string): Extract<Caller, { kind: "user" }> {
-  if (ctx.caller.kind !== "user") throw new MethodError(CLOVER_ERR.NOT_THE_USER, `only the user can ${what}`);
+  if (ctx.caller.kind !== "user") throw new MethodError(MOSS_ERR.NOT_THE_USER, `only the user can ${what}`);
   return ctx.caller;
 }

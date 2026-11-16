@@ -8,13 +8,13 @@
 // a routine's raised level. The root is resolved and checked again (`checkAgentRoot`) as if the agent were new.
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { LEVELS, type Level } from "@waifucave/clover-protocol";
+import { LEVELS, type Level } from "@waifucave/moss-protocol";
 
 export interface DaemonAgentRecord {
   v: 1;
   sessionId: string;
   backend: string;
-  /** The plugin whose entry the backend was (`clover/agent-cursor`, or `clover` for the core's own): a reattach goes on
+  /** The plugin whose entry the backend was (`moss/agent-cursor`, or `moss` for the core's own): a reattach goes on
    *  only with the same plugin's backend, never another plugin's that took the id since (#233's review). */
   pluginId?: string;
   bot?: string;

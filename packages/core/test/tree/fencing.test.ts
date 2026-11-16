@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { LeaseView } from "@waifucave/clover-protocol";
+import type { LeaseView } from "@waifucave/moss-protocol";
 import { fencingTokenOf, type Lease } from "../../src/contracts/lease";
 import { startComputerNode } from "../../src/computers/node";
 import { LocalHolder } from "../../src/tree/holder";
@@ -83,8 +83,8 @@ describe("the fencing token", () => {
     await t.write("home/Laptop1/a.txt", utf8("a"), { as: BOT });
     writeFileSync(join(studio.home, "b.txt"), "b");
     await t.copy("home/Studio/b.txt", "home/Laptop1/b.txt", { as: BOT });
-    const hold = await studio.node.holds.takeHold({ computer: "Laptop1", target: { kind: "app", app: "com.example.app" }, pluginId: "clover/shell", session: "s_alpha" });
-    await studio.node.holds.releaseHold(hold.id, { pluginId: "clover/shell", session: "s_alpha" });
+    const hold = await studio.node.holds.takeHold({ computer: "Laptop1", target: { kind: "app", app: "com.example.app" }, pluginId: "moss/shell", session: "s_alpha" });
+    await studio.node.holds.releaseHold(hold.id, { pluginId: "moss/shell", session: "s_alpha" });
     // Laptop1 took over (epoch 4) while Studio slept: Studio still carries epoch 3.
     leases.get("Laptop1")!.set("d_Laptop1", 4);
     const stale = await rejection(t.write("home/Laptop1/c.txt", utf8("c"), { as: BOT }));
@@ -113,7 +113,7 @@ describe("the fencing token", () => {
       expect([method, await code(link.request(method, { ...params, fence }))]).toEqual([method, "not_main"]);
     }
     // A hold, and a Mirror install.
-    expect(await code(studio.node.holds.takeHold({ computer: "Laptop1", target: { kind: "app", app: "com.example.app" }, pluginId: "clover/shell" }))).toBe("not_main");
+    expect(await code(studio.node.holds.takeHold({ computer: "Laptop1", target: { kind: "app", app: "com.example.app" }, pluginId: "moss/shell" }))).toBe("not_main");
     const mirrored = await studio.node.mirror("blender", { command: "blender-mcp" }, ["Laptop1"]);
     expect(mirrored.failed).toMatchObject([{ computer: "Laptop1", code: "not_main" }]);
     expect(installed).toEqual([]);
@@ -130,7 +130,7 @@ describe("the fencing token", () => {
     expect(bare).toMatchObject({ code: "not_main", detail: { fence: "missing" } });
     expect(await code(link.request("tree.judge", { from: "home/Studio/x", to: "home/Laptop1/x", move: false, role: "destination", level: "automatic" }))).toBe("not_main");
     expect(await code(link.request("terminal.open", { cwd: "home/Laptop1", cols: 80, rows: 24, level: "automatic" }))).toBe("not_main");
-    expect(await code(link.request("computer.takeHold", { target: { kind: "app", app: "com.example.app" }, pluginId: "clover/shell" }))).toBe("not_main");
+    expect(await code(link.request("computer.takeHold", { target: { kind: "app", app: "com.example.app" }, pluginId: "moss/shell" }))).toBe("not_main");
     expect(await code(link.request("mcp.mirror", { server: "blender", config: null, level: "automatic" }))).toBe("not_main");
   });
 });
@@ -165,7 +165,7 @@ describe("lease: null", () => {
     const lines: string[] = [];
     const node = startComputerNode({
       clock: { now: () => Date.now() }, transport: cluster.net.endpoint("d_lonely"), self: { name: "Lonely", device: "d_lonely" },
-      home: studio.home, cloverHome: studio.cloverHome, devices: { list: () => [], get: () => undefined, watch: () => () => {} } as never,
+      home: studio.home, mossHome: studio.mossHome, devices: { list: () => [], get: () => undefined, watch: () => () => {} } as never,
       lease: null, log: (l) => lines.push(l),
     });
     node.close();
@@ -177,7 +177,7 @@ describe("Windows' aliases (lane B's rule)", () => {
   test("a short 8.3 name is refused wherever it is, for every caller", async () => {
     const h = new LocalHolder({ clock: { now: () => Date.now() }, name: () => "Studio", home: "/nonexistent-home", os: "windows" });
     for (const as of [BOT, { kind: "user", client: "app" } as const]) {
-      expect(await code(h.stat("home/Studio/CLOVER~1/settings.json", { as }))).toBe("refused");
+      expect(await code(h.stat("home/Studio/MOSS~1/settings.json", { as }))).toBe("refused");
       expect(await code(h.write("home/Studio/PROGRA~1/x.txt", utf8("x"), { as }))).toBe("refused");
     }
   });

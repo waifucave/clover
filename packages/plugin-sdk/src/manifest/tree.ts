@@ -1,8 +1,8 @@
-// Validating a whole plugin folder through a reader (spec §5.1, §5.6 `clover plugin validate`): the top-level manifest,
+// Validating a whole plugin folder through a reader (spec §5.1, §5.6 `moss plugin validate`): the top-level manifest,
 // its child plugins one level deep, the files the manifests name, and the theme, layout and locale files they point
 // to. Nothing runs. The reader is how the folder is reached: the real file system for the CLI and the registry, or an
 // in-memory folder in tests.
-import { MAX_CHILD_PLUGINS, type ValidationIssue } from "@waifucave/clover-protocol";
+import { MAX_CHILD_PLUGINS, type ValidationIssue } from "@waifucave/moss-protocol";
 import { avatarFileProblem, BUNDLED_AVATAR_FORMATS, extensionOf, live2dReferences, type AvatarFormatDecl } from "../catalogs/avatars";
 import { AvatarFormatEntry } from "../catalogs/points";
 import { BOT_TAB_INSIDE, spotInfo } from "../catalogs/spots";
@@ -34,7 +34,7 @@ export interface TreeReport {
   top: ManifestReport;
   /** Each child, and whether it loads once the tree-wide findings are counted. */
   children: { folder: string; ok: boolean; report: ManifestReport }[];
-  /** What a bare folder holds when it has no `clover.json`, so the core wraps it (§5.1). */
+  /** What a bare folder holds when it has no `moss.json`, so the core wraps it (§5.1). */
   bareItem?: BareItemKind;
   /** Card styling (§5.5, review S7): a manifest in the tree has `approvals`, or a theme or `style` file sets `card.*`
    *  tokens. The OK says "restyles approval cards" (`describeOk`), and a later change to that styling waits for its own
@@ -66,7 +66,7 @@ function stable(v: unknown): string {
 
 export type BareItemKind = "claude-plugin" | "skill-folder" | "mcp-config";
 
-/** What a folder with no `clover.json` is (§5.1): a Claude Code plugin if it has `.claude-plugin/plugin.json`, or
+/** What a folder with no `moss.json` is (§5.1): a Claude Code plugin if it has `.claude-plugin/plugin.json`, or
  *  `skills/`, `commands/`, `agents/` or `hooks/hooks.json` where Claude Code looks for them; a skill folder if it has
  *  a `SKILL.md`; an MCP config if it has only `.mcp.json`. */
 export async function detectBareItem(reader: PluginFolderReader): Promise<BareItemKind | undefined> {
@@ -94,7 +94,7 @@ class TreeFindings {
 export async function validateTree(reader: PluginFolderReader, opts: {
   folderName: string; bundled?: boolean; apiVersion?: string;
   /** The installed renderers' `avatar.formats` declarations, which a bot's avatar is checked by (its file, how its
-   *  model's files are found); the ones Clover ships when left out. The tree's own declarations count too. */
+   *  model's files are found); the ones MOSS ships when left out. The tree's own declarations count too. */
   avatarFormats?: readonly AvatarFormatDecl[];
 }): Promise<TreeReport> {
   const findings = new TreeFindings();
@@ -103,7 +103,7 @@ export async function validateTree(reader: PluginFolderReader, opts: {
     const bare = await detectBareItem(reader);
     const top = refusedReport([{
       severity: "error", refuses: "plugin", code: "manifest_missing", file: MANIFEST_FILE, path: "",
-      message: bare ? `no ${MANIFEST_FILE}; this is a ${bare.replace("-", " ")}, which Clover wraps into a plugin` : `no ${MANIFEST_FILE}`,
+      message: bare ? `no ${MANIFEST_FILE}; this is a ${bare.replace("-", " ")}, which MOSS wraps into a plugin` : `no ${MANIFEST_FILE}`,
     }]);
     return { ok: false, top, children: [], ...(bare ? { bareItem: bare } : {}), restylesCards: false, restylesWindow: false, windowSkin: "", issues: findings.list };
   }
@@ -140,7 +140,7 @@ export async function validateTree(reader: PluginFolderReader, opts: {
     children.push({ folder, ok: report.ok, report });
   }
 
-  // Each bot's avatar, by its format's declaration: the installed ones (or Clover's own) and the tree's.
+  // Each bot's avatar, by its format's declaration: the installed ones (or MOSS's own) and the tree's.
   const formats = [...cards.formats, ...(opts.avatarFormats ?? BUNDLED_AVATAR_FORMATS)];
   for (const a of cards.avatars) await checkAvatar(reader, a.base, a.file, a.avatar, formats, findings);
 
@@ -272,7 +272,7 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
     cards.window = true;
     cards.skins.push(`${full}=${stable(t.shell)}`);
     // The app's own check (apps/desktop's `shellSkin`): each group kept only whole and legible over the theme's own
-    // surface, Clover's marks included. A group it would drop is said here, before the user sees a window half skinned.
+    // surface, MOSS's marks included. A group it would drop is said here, before the user sees a window half skinned.
     for (const appearance of ["light", "dark"] as const) {
       const tokens = appearance === "dark" && (t.appearance ?? "both") === "both" ? { ...t.tokens, ...(t.dark?.tokens ?? {}) } : t.tokens;
       const surface = (tokens as Record<string, unknown>)["color.surface"];
@@ -288,7 +288,7 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
   return setsCardTokens(t);
 }
 
-/** A bot's avatar by its format's declaration: its file (the bot schema already holds Clover's own formats to theirs),
+/** A bot's avatar by its format's declaration: its file (the bot schema already holds MOSS's own formats to theirs),
  *  and, for a format whose files are found by a check the core implements (`files.find`), that check. A format no
  *  declaration names isn't checked: its renderer, once installed, knows its files. */
 async function checkAvatar(reader: PluginFolderReader, base: string, file: string, avatar: { file: string; format: string }, formats: readonly AvatarFormatDecl[], f: TreeFindings): Promise<void> {

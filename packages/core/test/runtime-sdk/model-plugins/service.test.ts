@@ -52,7 +52,7 @@ async function world(opts: { fetch?: (url: string, init: RequestInit) => Promise
   }
   const secrets = new MemorySecretStore();
   serveApiHandlers(host, registry).addApiHandlers(modelPluginApiHandlers({ registry, ...secretStoreCredentials(secrets), ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}) }));
-  const home = tempDir("clover-a2-models-");
+  const home = tempDir("moss-a2-models-");
   const plugins = new ModelPlugins({ registry, host, home });
   return { registry, host, secrets, plugins, home };
 }
@@ -155,7 +155,7 @@ describe("a code plugin's adapter, served to a session through the plugin host",
     }
   }, 30_000);
 
-  test("Codex: Bearer from the core's sign-in, the account id from the connection, and originator clover", async () => {
+  test("Codex: Bearer from the core's sign-in, the account id from the connection, and originator moss", async () => {
     const fake = await codexFake.startCodexFake({ scenarios: { "gpt-5.6-luna": [openaiResponsesFake.responsesStream({ text: ["hello from ", "codex"] })] } });
     try {
       const { secrets, plugins } = await world({ fetch: routedFetch({ "chatgpt.com": fake }) });
@@ -165,7 +165,7 @@ describe("a code plugin's adapter, served to a session through the plugin host",
       expect(await text(stub.streamTurn({ model: "gpt-5.6-luna", messages: [{ role: "user", content: "hi" }] }, sessionContext({ providerId: "codex-oauth", account: codexFake.FAKE_ACCOUNT_ID })))).toBe("hello from codex");
       expect(fake.bearers).toEqual([codexFake.FAKE_ACCESS_TOKEN]);
       const turn = fake.requests.find((r) => r.path.endsWith("/responses"))!;
-      expect(turn.headers["originator"]).toBe("clover");
+      expect(turn.headers["originator"]).toBe("moss");
       expect(turn.headers["chatgpt-account-id"]).toBe(codexFake.FAKE_ACCOUNT_ID);
     } finally {
       await fake.close();
@@ -197,7 +197,7 @@ describe("a code plugin's adapter, served to a session through the plugin host",
   test("a worker in the shared host can't read a secret, and a plugin can't read another's", async () => {
     const { host, secrets } = await world();
     await secrets.set({ owner: { kind: "plugin", pluginId: modelPluginId("bedrock") }, name: "aws" }, "x");
-    await expect(host.forgeApiCall("clover", modelPluginId("google"), "secrets.get", ["api-key"])).rejects.toMatchObject({ code: "refused" });
+    await expect(host.forgeApiCall("moss", modelPluginId("google"), "secrets.get", ["api-key"])).rejects.toMatchObject({ code: "refused" });
     await expect(host.forgeApiCall("own", modelPluginId("bedrock"), "secrets.get", ["api-key"])).rejects.toMatchObject({ code: "refused" });
     expect(await host.forgeApiCall("own", modelPluginId("bedrock"), "secrets.get", ["aws"])).toBe("x");
     expect(existsSync(BUNDLED_CHILDREN_DIR)).toBe(true);
@@ -206,8 +206,8 @@ describe("a code plugin's adapter, served to a session through the plugin host",
 
 describe("live: the model plugins follow the registry, with no restart", () => {
   test("no model plugin in the registry: nothing is overridden, the SDK's own catalog answers", async () => {
-    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: bundled.filter((i) => i.id === "clover") });
-    const plugins = new ModelPlugins({ registry, host: new FakePluginHost({ clock: new FakeClock() }), home: tempDir("clover-a2-none-") });
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: bundled.filter((i) => i.id === "moss") });
+    const plugins = new ModelPlugins({ registry, host: new FakePluginHost({ clock: new FakeClock() }), home: tempDir("moss-a2-none-") });
     await plugins.start();
     try {
       expect(plugins.active).toBe(false);
@@ -222,9 +222,9 @@ describe("live: the model plugins follow the registry, with no restart", () => {
     const { installModelPlugins } = await import("../../../src/runtime-sdk/model-plugins/index");
     const { listModels } = await import("../../../src/runtime-sdk/models-list");
     const groq = modelPluginId("groq");
-    const inputs = bundled.filter((i) => i.id === "clover" || i.id === groq).map((i) => (i.id === groq ? { ...i, enabled: false } : i));
+    const inputs = bundled.filter((i) => i.id === "moss" || i.id === groq).map((i) => (i.id === groq ? { ...i, enabled: false } : i));
     const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: inputs });
-    const plugins = new ModelPlugins({ registry, host: new FakePluginHost({ clock: new FakeClock() }), home: tempDir("clover-a2-live-") });
+    const plugins = new ModelPlugins({ registry, host: new FakePluginHost({ clock: new FakeClock() }), home: tempDir("moss-a2-live-") });
     installModelPlugins(plugins);
     const providers = async () => new Set((await listModels({ signedIn: () => new Set() }, {})).models.map((m) => m.provider));
     try {
@@ -250,7 +250,7 @@ describe("live: the model plugins follow the registry, with no restart", () => {
   test("merge, never replace: a code plugin whose adapter isn't served (Bedrock and Vertex on Node) keeps the compiled rows; a third party's unserved code provider has no rows", async () => {
     const { mergeWithCompiled } = await import("../../../src/runtime-sdk/model-plugins/service");
     const { buildModelPluginSet, readModelPlugins } = await import("../../../src/runtime-sdk/model-plugins/load");
-    const keep = new Set(["clover", modelPluginId("bedrock"), modelPluginId("vertex"), modelPluginId("groq")]);
+    const keep = new Set(["moss", modelPluginId("bedrock"), modelPluginId("vertex"), modelPluginId("groq")]);
     const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: bundled.filter((i) => keep.has(i.id)) });
     const set = buildModelPluginSet(readModelPlugins(registry));
     // Nothing served: their host can't start here.
@@ -320,7 +320,7 @@ describe("a third party's row never names a built-in adapter (SDK 0.0.75's compi
       manifest: { manifest: 1, id: "rogue-data", name: "Rogue data", contributes: { models: [{ provider: "rogue-data", name: "Rogue data", catalog: as("rogue-data"), auth: [], endpoint: { protocol: "openai-chat", baseUrl: "https://evil.example/v1" } }] } } as never,
       source: "local",
     };
-    const keep = new Set(["clover", modelPluginId("groq")]);
+    const keep = new Set(["moss", modelPluginId("groq")]);
     const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [...bundled.filter((i) => keep.has(i.id)), code, declarative] });
     const set = buildModelPluginSet(readModelPlugins(registry));
     const builtIn = new Set(sdk.providers.map((p) => p.adapterId));
@@ -342,7 +342,7 @@ describe("a third party's row never names a built-in adapter (SDK 0.0.75's compi
       manifest: { manifest: 1, id: "rogue-code", name: "Rogue", contributes: { models: [{ provider: "rogue-code", name: "Rogue", catalog: { ...bedrockFile, rows }, auth: [], adapter: "adapter" }] } } as never,
       source: "local",
     };
-    const keep = new Set(["clover", modelPluginId("groq")]);
+    const keep = new Set(["moss", modelPluginId("groq")]);
     const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [...bundled.filter((i) => keep.has(i.id)), code] });
     const host = new FakePluginHost({ clock: new FakeClock() });
     const invoked: string[] = [];
@@ -351,7 +351,7 @@ describe("a third party's row never names a built-in adapter (SDK 0.0.75's compi
       invoked.push(req.pluginId);
       return invoke(req as never);
     }) as typeof host.invoke;
-    const plugins = new ModelPlugins({ registry, host, home: tempDir("clover-a2-rogue-") });
+    const plugins = new ModelPlugins({ registry, host, home: tempDir("moss-a2-rogue-") });
     const snap = await plugins.start();
     try {
       // Asked who it is (nothing is defined for it on this host, so it can't answer).
@@ -369,9 +369,9 @@ describe("a third party's row never names a built-in adapter (SDK 0.0.75's compi
 describe("merge, never replace: a provider whose adapter can't be served stays on the compiled path (#302's review B3)", () => {
   test("Bedrock and Vertex (Node hosts) and a code plugin whose host fails to start keep the compiled rows, never a row without an adapter", async () => {
     // Nothing defined on the host: Google's host fails to start, as Bedrock's and Vertex's do (Node).
-    const keep = new Set(["clover", modelPluginId("bedrock"), modelPluginId("vertex"), modelPluginId("google"), modelPluginId("groq")]);
+    const keep = new Set(["moss", modelPluginId("bedrock"), modelPluginId("vertex"), modelPluginId("google"), modelPluginId("groq")]);
     const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: bundled.filter((i) => keep.has(i.id)) });
-    const plugins = new ModelPlugins({ registry, host: new FakePluginHost({ clock: new FakeClock() }), home: tempDir("clover-a2-merge-") });
+    const plugins = new ModelPlugins({ registry, host: new FakePluginHost({ clock: new FakeClock() }), home: tempDir("moss-a2-merge-") });
     const snap = await plugins.start();
     try {
       for (const p of ["bedrock", "vertex", "google"]) {

@@ -5,18 +5,18 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/moss-protocol";
 import { SystemClock } from "../../src/clock/system-clock";
 import { FakePluginRegistry } from "../../src/contracts/fakes/plugin-registry";
 import { BASH_DEFAULT_TIMEOUT_MS, BASH_MAX_TIMEOUT_MS, fencedExecutor, fencedPath } from "../../src/computers/fenced-executor";
 import { nodeParts } from "../../src/computers/node-parts";
 import { startDaemonParts } from "../../src/daemon-parts";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { fencedSpawner } from "../../src/fence/fenced-process";
 import type { FencedRun, FencedRunResult, FencedSpawner } from "../../src/fence/spawn";
 import { startDaemonLinks } from "../../src/ipc/device-links";
 import { MemoryNetwork } from "../../src/links/memory-wire";
-import { CloverSecretStore, KeychainValues, memoryVault } from "../../src/secrets/clover-secret-store";
+import { MossSecretStore, KeychainValues, memoryVault } from "../../src/secrets/moss-secret-store";
 import { hostOs } from "../../src/tree/names";
 import type { ToolRunContext } from "../../src/tree/service";
 import { darwinDescribe } from "../helpers/darwin-only";
@@ -63,26 +63,26 @@ describe("fencedExecutor over a spawner", () => {
   });
 
   test("a bot's own run gets its own scratch folder as TMPDIR (made when missing); a link there, or another caller, gets the fence's", async () => {
-    const clover = join(temp("lane-j-exec-scratch-"), ".clover");
+    const moss = join(temp("lane-j-exec-scratch-"), ".moss");
     const s = fake(() => ({ kind: "exited", code: 0, stdout: "", stderr: "", shell: "sh" }));
-    const exec = fencedExecutor({ spawner: s, home: "/Users/me", temp: "/private/tmp", cloverHome: clover, os: "macos" });
+    const exec = fencedExecutor({ spawner: s, home: "/Users/me", temp: "/private/tmp", mossHome: moss, os: "macos" });
     await exec.run("Bash", { command: "true" }, ctx());
-    expect(s.runs[0]!.env.TMPDIR).toBe(`${clover}/scratch/luna`);
-    expect(lstatSync(join(clover, "scratch", "luna")).isDirectory()).toBe(true);
+    expect(s.runs[0]!.env.TMPDIR).toBe(`${moss}/scratch/luna`);
+    expect(lstatSync(join(moss, "scratch", "luna")).isDirectory()).toBe(true);
     await exec.run("Bash", { command: "true" }, ctx({ as: { kind: "session", sessionId: "s_code", sessionKind: "coding" } }));
     expect(s.runs[1]!.env.TMPDIR).toBe("/private/tmp");
     await exec.run("Bash", { command: "true" }, ctx({ as: PEER }));
     expect(s.runs[2]!.env.TMPDIR).toBe("/private/tmp");
     // A link where a bot's scratch folder should be: never followed, the fence's temp folder instead.
-    symlinkSync(temp("lane-j-exec-elsewhere-"), join(clover, "scratch", "alpha"));
+    symlinkSync(temp("lane-j-exec-elsewhere-"), join(moss, "scratch", "alpha"));
     await exec.run("Bash", { command: "true" }, ctx({ as: { kind: "session", sessionId: "s_a", sessionKind: "bot", bot: "alpha" } }));
     expect(s.runs[3]!.env.TMPDIR).toBe("/private/tmp");
     // A link in a parent (`scratch/` itself) is refused too: nothing is made through it.
-    const other = join(temp("lane-j-exec-parent-"), ".clover");
+    const other = join(temp("lane-j-exec-parent-"), ".moss");
     mkdirSync(other, { recursive: true });
     const elsewhere = temp("lane-j-exec-target-");
     symlinkSync(elsewhere, join(other, "scratch"));
-    const viaLink = fencedExecutor({ spawner: s, home: "/Users/me", temp: "/private/tmp", cloverHome: other, os: "macos" });
+    const viaLink = fencedExecutor({ spawner: s, home: "/Users/me", temp: "/private/tmp", mossHome: other, os: "macos" });
     await viaLink.run("Bash", { command: "true" }, ctx());
     expect(s.runs[4]!.env.TMPDIR).toBe("/private/tmp");
     expect(existsSync(join(elsewhere, "luna"))).toBe(false);
@@ -114,20 +114,20 @@ describe("fencedExecutor over a spawner", () => {
   test("Windows: lane C's door is closed, so every call is refused with its reason", async () => {
     const root = temp("lane-j-exec-win-");
     const home = join(root, "home");
-    mkdirSync(join(home, ".clover"), { recursive: true });
-    const spawner = fencedSpawner({ fence: new CloverFence({ os: hostOs(), home, cloverHome: join(home, ".clover"), temp: join(root, "tmp") }), os: "windows" });
+    mkdirSync(join(home, ".moss"), { recursive: true });
+    const spawner = fencedSpawner({ fence: new MossFence({ os: hostOs(), home, mossHome: join(home, ".moss"), temp: join(root, "tmp") }), os: "windows" });
     expect(spawner.available).toBe(false);
     const r = await fencedExecutor({ spawner, home, os: "windows" }).run("Bash", { command: "echo hi" }, ctx({ cwd: home }));
     expect(r.isError).toBe(true);
     expect(JSON.stringify(r.output)).toContain("refused");
   });
 
-  test("the fence's temp folder (CloverFence.temp, lane J's cross-lane getter) is the canonical one it lets every runner write", () => {
+  test("the fence's temp folder (MossFence.temp, lane J's cross-lane getter) is the canonical one it lets every runner write", () => {
     const root = temp("lane-j-exec-temp-");
     const home = join(root, "home");
-    mkdirSync(join(home, ".clover"), { recursive: true });
+    mkdirSync(join(home, ".moss"), { recursive: true });
     mkdirSync(join(root, "tmp"), { recursive: true });
-    const fence = new CloverFence({ os: hostOs(), home, cloverHome: join(home, ".clover"), temp: join(root, "tmp") });
+    const fence = new MossFence({ os: hostOs(), home, mossHome: join(home, ".moss"), temp: join(root, "tmp") });
     expect(fence.temp).toBe(realpathSync.native(join(root, "tmp")));
     expect(fence.policy().allowWrite).toContain(fence.temp);
   });
@@ -143,12 +143,12 @@ darwinDescribe("on this Mac's real fenced process (Seatbelt)", () => {
   test("Bash runs; a write to a fenced file is refused by the sandbox; the daemon's environment doesn't reach it", async () => {
     const root = temp("lane-j-exec-");
     const home = join(root, "home");
-    const clover = join(home, ".clover");
+    const moss = join(home, ".moss");
     const project = join(home, "project");
-    for (const d of [join(clover, "settings"), project, join(root, "tmp")]) mkdirSync(d, { recursive: true });
-    writeFileSync(join(clover, "settings.json"), "orig");
-    const spawner = fencedSpawner({ fence: new CloverFence({ os: hostOs(), home, cloverHome: clover, temp: join(root, "tmp") }) });
-    const exec = fencedExecutor({ spawner, home, temp: join(root, "tmp"), cloverHome: clover, os: hostOs() });
+    for (const d of [join(moss, "settings"), project, join(root, "tmp")]) mkdirSync(d, { recursive: true });
+    writeFileSync(join(moss, "settings.json"), "orig");
+    const spawner = fencedSpawner({ fence: new MossFence({ os: hostOs(), home, mossHome: moss, temp: join(root, "tmp") }) });
+    const exec = fencedExecutor({ spawner, home, temp: join(root, "tmp"), mossHome: moss, os: hostOs() });
     const coding: Caller = { kind: "session", sessionId: "s_code", sessionKind: "coding" };
     process.env.LANE_J_DAEMON_ONLY = "never-in-a-child";
     try {
@@ -166,10 +166,10 @@ darwinDescribe("on this Mac's real fenced process (Seatbelt)", () => {
     // A bot's own run makes its temp files in its own scratch folder, which the sandbox lets it write.
     const botTmp = await exec.run("Bash", { command: 'f=$(mktemp "$TMPDIR/lane-j.XXXXXX") && echo "$f"' }, ctx({ as: LUNA, cwd: project }));
     expect(botTmp.isError).toBe(false);
-    expect((botTmp.output as { stdout: string }).stdout.startsWith(join(clover, "scratch", "luna"))).toBe(true);
-    const fenced = await exec.run("Bash", { command: `echo planted > ${JSON.stringify(join(clover, "settings.json"))}` }, ctx({ as: coding, cwd: project }));
+    expect((botTmp.output as { stdout: string }).stdout.startsWith(join(moss, "scratch", "luna"))).toBe(true);
+    const fenced = await exec.run("Bash", { command: `echo planted > ${JSON.stringify(join(moss, "settings.json"))}` }, ctx({ as: coding, cwd: project }));
     expect(fenced.isError).toBe(true);
-    expect(readFileSync(join(clover, "settings.json"), "utf8")).toBe("orig");
+    expect(readFileSync(join(moss, "settings.json"), "utf8")).toBe("orig");
   }, 30_000);
 });
 
@@ -185,7 +185,7 @@ describe("through the daemon's parts (startDaemonParts), as the daemon wires it"
     const home = temp("lane-j-exec-home-");
     const userHome = temp("lane-j-exec-user-");
     const net = new MemoryNetwork();
-    const store = new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
+    const store = new MossSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
     const d = await startDaemonLinks({
       home, store, clock, self: { name: "Studio", os: hostOs() }, handlers: {}, binary: null, wire: (k) => net.endpoint(k.publicKey),
       handshake: null, publicTime: null, mainComputer: { watchSleep: false, monotonic: () => performance.now() }, watch: () => () => {},
@@ -194,8 +194,8 @@ describe("through the daemon's parts (startDaemonParts), as the daemon wires it"
     stops.push(() => d.close());
     const fakes = new Drivers();
     const parts = await startDaemonParts({
-      cloverHome: home, userHome, clock, links: d.links, handlers: {},
-      bots: { registry: new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [] }), drivers: () => fakes.factory, defaultModel: () => ({ model: "clover-test/calls" }) },
+      mossHome: home, userHome, clock, links: d.links, handlers: {},
+      bots: { registry: new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [] }), drivers: () => fakes.factory, defaultModel: () => ({ model: "moss-test/calls" }) },
       ...(spawner ? { spawner } : {}),
     });
     stops.push(() => parts.close());
@@ -214,7 +214,7 @@ describe("through the daemon's parts (startDaemonParts), as the daemon wires it"
     // In production too: a coding session's TMPDIR is the fence's temp folder; the bot's is its own scratch folder.
     expect(s.runs[0]!.env.TMPDIR).toEndWith("/scratch/luna");
     await node.tools.run("Bash", { command: "echo ok" }, { session: "s_code", sessionKind: "coding", callId: "c2", cwd: `home/${name}` });
-    expect(s.runs[1]!.env.TMPDIR).toBe(new CloverFence({ home: userHome, cloverHome: join(userHome, ".x") }).temp);
+    expect(s.runs[1]!.env.TMPDIR).toBe(new MossFence({ home: userHome, mossHome: join(userHome, ".x") }).temp);
   }, 30_000);
 
   test("without a spawner the node has no executor: Bash on its tree is refused, never run unsandboxed", async () => {

@@ -1,10 +1,10 @@
 // Agent SDK 0.0.77 on the bot side: the runtime's file tools write the file they checked, and a bot's are held to its
-// write roots (`botSandbox`'s `filesystem.enforceWriteRootsInFileTools`). What Clover adds: every bot-side session kind
+// write roots (`botSandbox`'s `filesystem.enforceWriteRootsInFileTools`). What MOSS adds: every bot-side session kind
 // turns it on, and an allowed Write, Edit or NotebookEdit runs with the REAL path its check judged and its card showed
 // (`withRealPaths`), so the runtime's waiver for a `canUseTool` allow of a link-free path can apply.
 //
-// The SDK's own swap seam is internal to its bundle, so the races here are driven from Clover's side: a link put in
-// place inside the `canUseTool` answer, after Clover's check judged the path and before the runtime writes.
+// The SDK's own swap seam is internal to its bundle, so the races here are driven from MOSS's side: a link put in
+// place inside the `canUseTool` answer, after MOSS's check judged the path and before the runtime writes.
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +14,7 @@ import type { TurnControl, TurnInput } from "../../../src/contracts/session-host
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
 import { BOT_SANDBOX, BotSessionDriver, botFileFence, botSandbox, withBotKeyReads, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
-import { CloverFence } from "../../../src/fence/fence";
+import { MossFence } from "../../../src/fence/fence";
 import { botSandboxSettings } from "../../../src/fence/sandbox-settings";
 import { botApprovalCheck, withRealPaths } from "../../../src/approvals/bot-check";
 import { BOT_KEY_PATHS } from "../../../src/runtime-sdk/turn-loop/file-fence";
@@ -74,9 +74,9 @@ describe("withRealPaths: an allowed file write runs with the path the check judg
   }
 
   darwinTest("macOS: a file under /tmp runs as /private/tmp/…, and one in a bot's scratch under /var/folders as /private/var/folders/…", async () => {
-    const underTmp = mkdtempSync("/tmp/clover-real-");
+    const underTmp = mkdtempSync("/tmp/moss-real-");
     temps.push(underTmp);
-    const scratch = temp("clover-scratch-"); // os.tmpdir() on macOS: /var/folders/…
+    const scratch = temp("moss-scratch-"); // os.tmpdir() on macOS: /var/folders/…
     expect(scratch.startsWith("/var/folders/")).toBe(true);
     const call = check(scratch);
     const a = await call("Write", { file_path: join(underTmp, "a.txt"), content: "x" });
@@ -90,8 +90,8 @@ describe("withRealPaths: an allowed file write runs with the path the check judg
   });
 
   test("a link at the path: the allowed call runs with the link's real target (what the card showed)", async () => {
-    const scratch = realpathSync(temp("clover-scratch-"));
-    const other = realpathSync(temp("clover-other-"));
+    const scratch = realpathSync(temp("moss-scratch-"));
+    const other = realpathSync(temp("moss-other-"));
     writeFileSync(join(other, "t.txt"), "t");
     symlinkSync(join(other, "t.txt"), join(scratch, "l.txt"));
     const r = await check(scratch)("Write", { file_path: join(scratch, "l.txt"), content: "x" });
@@ -109,10 +109,10 @@ describe("withRealPaths: an allowed file write runs with the path the check judg
 // commands run sandboxed and the runtime's sandbox is Seatbelt.
 describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (spawn) => {
   function setup(canUseTool: BotDriverDeps["canUseTool"]) {
-    const home = temp("clover-roots-");
+    const home = temp("moss-roots-");
     const ctx = context(home, "winter-test/calls");
     mkdirSync(ctx.paths.scratch, { recursive: true });
-    const outside = realpathSync(temp("clover-outside-"));
+    const outside = realpathSync(temp("moss-outside-"));
     const secret = join(outside, "secret.txt");
     writeFileSync(secret, "SECRET");
     const driver = new BotSessionDriver(ctx, { home, spawn, canUseTool, sandbox: () => ({}), stopGraceMs: 5_000, log: () => {} });
@@ -121,7 +121,7 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
   const allow: BotDriverDeps["canUseTool"] = () => async (_n, input) => ({ behavior: "allow", updatedInput: input as Record<string, unknown> });
 
   darwinTest("the checkpoint store and a classifier cache: neither Read nor the shell reads them", async () => {
-    const home = temp("clover-store-");
+    const home = temp("moss-store-");
     const ctx = context(home, "winter-test/calls");
     mkdirSync(ctx.paths.scratch, { recursive: true });
     const blob = join(home, "sdk", "file-history", "s1", "abc@v1");
@@ -130,7 +130,7 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
     const cache = join(home, "sdk", "projects", "k", "s1.auto-state.json");
     mkdirSync(join(home, "sdk", "projects", "k"), { recursive: true });
     writeFileSync(cache, "CACHED-DECISIONS");
-    const fence = new CloverFence({ home: dirname(home), cloverHome: home, temp: join(dirname(home), "fence-temp") });
+    const fence = new MossFence({ home: dirname(home), mossHome: home, temp: join(dirname(home), "fence-temp") });
     const driver = new BotSessionDriver(ctx, { home, spawn, canUseTool: allow, sandbox: () => ({}), stopGraceMs: 5_000, log: () => {}, fileFence: botFileFence(fence, home) });
     try {
       const calls = [
@@ -164,14 +164,14 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
     }
   }, 60_000);
 
-  darwinTest("a link swapped in after Clover's check (inside the allow) leaves the outside file unchanged", async () => {
+  darwinTest("a link swapped in after MOSS's check (inside the allow) leaves the outside file unchanged", async () => {
     let swapped = false;
     let target = "";
     let secretPath = "";
     const swapThenAllow: BotDriverDeps["canUseTool"] = (ctx, origin) => {
       const real = botApprovalCheck({
         request: async () => {
-          // Clover's check has judged the path (a plain file in the bot's scratch); now a command's link takes its place.
+          // MOSS's check has judged the path (a plain file in the bot's scratch); now a command's link takes its place.
           rmSync(target);
           symlinkSync(secretPath, target);
           swapped = true;
@@ -194,10 +194,10 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
     }
   }, 60_000);
 
-  darwinTest("an auto-allowed write outside the roots (no card, allowed by the level): a link swapped in between Clover's resolution and the runtime's plan is refused, the outside file unchanged", async () => {
-    // The ordinary file the bot asks to write, outside its roots, link-free: Clover resolves it (no link: the real path
+  darwinTest("an auto-allowed write outside the roots (no card, allowed by the level): a link swapped in between MOSS's resolution and the runtime's plan is refused, the outside file unchanged", async () => {
+    // The ordinary file the bot asks to write, outside its roots, link-free: MOSS resolves it (no link: the real path
     // is the path), the level allows it with no card, and the runtime is handed that real path.
-    const elsewhere = realpathSync(temp("clover-elsewhere-"));
+    const elsewhere = realpathSync(temp("moss-elsewhere-"));
     const target = join(elsewhere, "notes.txt");
     writeFileSync(target, "ordinary");
     let secretPath = "";
@@ -205,7 +205,7 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
     const levelAllows: BotDriverDeps["canUseTool"] = (ctx, origin) => botApprovalCheck({
       request: async (req: { paths?: string[] }) => {
         resolved = req.paths?.[0];
-        // After Clover's resolution, before the runtime plans its write: a command's link takes the file's place.
+        // After MOSS's resolution, before the runtime plans its write: a command's link takes the file's place.
         rmSync(target);
         symlinkSync(secretPath, target);
         return { allowed: true, by: "level" };
@@ -225,7 +225,7 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
   }, 60_000);
 
   darwinTest("a card's yes to a file outside the roots, under /tmp: written, through the real path the check judged", async () => {
-    const underTmp = mkdtempSync("/tmp/clover-real-");
+    const underTmp = mkdtempSync("/tmp/moss-real-");
     temps.push(underTmp);
     const cardYes: BotDriverDeps["canUseTool"] = (ctx, origin) => botApprovalCheck({ request: async () => ({ allowed: true, by: "card" }) } as never, { localComputer: "Studio" })(ctx, origin);
     const { driver } = setup(cardYes);
@@ -250,15 +250,15 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
 
   // The owner's try 14: "Error: protected host path access refused" for a Write on his Desktop. The user's secret places
   // are in every bot's deny lists, and the runtime's file-tool check refused every path when one of them couldn't be
-  // resolved (`~/Library/Mail` on a Mac that hasn't given Clover Full Disk Access; a folder at mode 000 here). A Read
+  // resolved (`~/Library/Mail` on a Mac that hasn't given MOSS Full Disk Access; a folder at mode 000 here). A Read
   // inside Mail is denied as that one call (agent SDK 0.0.79; 0.0.78's permission check ended the whole turn on it,
-  // "EACCES … lstat"), and the calls after it still run. `~/.ssh` stands for a secret place Clover can
+  // "EACCES … lstat"), and the calls after it still run. `~/.ssh` stands for a secret place MOSS can
   // open (Full Disk Access given): the file tools and the shell's Seatbelt profile, which now meets it as a glob, keep
   // it unread.
-  darwinTest("a user's home with ~/Library/Mail closed to Clover: a Write on the Desktop is written; a Read in Mail is denied as that one call; Mail and ~/.ssh stay unread, by the file tools and the shell", async () => {
-    const userHome = realpathSync(temp("clover-user-"));
-    const cloverHome = join(userHome, ".clover");
-    const ctx = context(cloverHome, "winter-test/calls");
+  darwinTest("a user's home with ~/Library/Mail closed to MOSS: a Write on the Desktop is written; a Read in Mail is denied as that one call; Mail and ~/.ssh stay unread, by the file tools and the shell", async () => {
+    const userHome = realpathSync(temp("moss-user-"));
+    const mossHome = join(userHome, ".moss");
+    const ctx = context(mossHome, "winter-test/calls");
     mkdirSync(ctx.paths.scratch, { recursive: true });
     for (const d of ["Desktop", "Library/Mail/V10", ".ssh"]) mkdirSync(join(userHome, d), { recursive: true });
     const mail = join(userHome, "Library/Mail/V10/inbox.mbox");
@@ -266,11 +266,11 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
     expect(existsSync(mail)).toBe(true);
     writeFileSync(join(userHome, ".ssh/id_ed25519"), "KEY-SECRET");
     const desk = join(userHome, "Desktop", "hello_world.md");
-    const fence = new CloverFence({ home: userHome, cloverHome, temp: join(userHome, "fence-temp") });
+    const fence = new MossFence({ home: userHome, mossHome, temp: join(userHome, "fence-temp") });
     const sandbox = (c: BotSessionContext) => botSandboxSettings(fence.forCaller(c.caller).policy(), {
-      cloverHome, userHome, level: undefined, ownFolders: [c.paths.scratch, c.paths.root], pathFolders: [],
+      mossHome, userHome, level: undefined, ownFolders: [c.paths.scratch, c.paths.root], pathFolders: [],
     });
-    const driver = new BotSessionDriver(ctx, { home: cloverHome, spawn, canUseTool: allow, sandbox, stopGraceMs: 5_000, log: () => {}, fileFence: botFileFence(fence, cloverHome, "macos", userHome) });
+    const driver = new BotSessionDriver(ctx, { home: mossHome, spawn, canUseTool: allow, sandbox, stopGraceMs: 5_000, log: () => {}, fileFence: botFileFence(fence, mossHome, "macos", userHome) });
     chmodSync(join(userHome, "Library/Mail"), 0o000);
     try {
       const calls = [
@@ -285,7 +285,7 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
       expect(existsSync(desk) && readFileSync(desk, "utf8")).toBe("hello");
       expect(r.find((x) => x.name === "Write")?.isError).toBe(false);
       const reads = r.filter((x) => x.name === "Read");
-      // The Read in the closed Mail folder: denied, that call alone (Clover's fence answers it; a denial's isError is
+      // The Read in the closed Mail folder: denied, that call alone (MOSS's fence answers it; a denial's isError is
       // false today, a known item); the turn went on to the calls after it.
       expect(reads[0]?.content).toContain("Read was not run");
       expect(reads[0]?.content).toContain("bots never read or change");
@@ -308,7 +308,7 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
   }, 60_000);
 
   darwinTest("an auto-allowed Write outside the roots spelled through /tmp, as given (no real path), is refused by the runtime", async () => {
-    const underTmp = mkdtempSync("/tmp/clover-real-");
+    const underTmp = mkdtempSync("/tmp/moss-real-");
     temps.push(underTmp);
     const { driver } = setup(allow);
     const file = join(underTmp, "spelled.txt");

@@ -1,4 +1,4 @@
-// Clover protocol area: approvals (spec §5.5 "Approvals are core data that plugins show but cannot read", §9.1,
+// MOSS protocol area: approvals (spec §5.5 "Approvals are core data that plugins show but cannot read", §9.1,
 // §9.3). Owner: lane C (sealed-card data, ids, hashes and signed answers, C-M3); lane E renders sealed frames
 // (E-M3). Pinned by lane B at M0.
 //
@@ -18,7 +18,7 @@
 //
 // The card's hash is SHA-256 over its canonical JSON (RFC 8785, JCS: keys sorted by UTF-16 code units, numbers and
 // strings as ECMAScript serializes them), never over another language's default encoder. The phone recomputes the hash
-// from the card it shows and signs that, never the hash it was sent. `generated/clover/fixtures/card-hash-vectors.json`
+// from the card it shows and signs that, never the hash it was sent. `generated/moss/fixtures/card-hash-vectors.json`
 // pins the encoding (nulls, `/`, non-ASCII, U+2028, emoji, large integers).
 import { z } from "zod";
 import { utf16 } from "./strings";
@@ -35,7 +35,7 @@ export const CARD_KINDS = [
   "agent-permission",
   /** A plugin's OK: found on disk, or an update or edit that adds a trigger, or new card styling (§5.1, §5.5, §5.6). */
   "plugin-ok",
-  /** A sensitive change, or a change to the core's settings from a layer other than `clover`'s (§5.5). */
+  /** A sensitive change, or a change to the core's settings from a layer other than `moss`'s (§5.5). */
   "change",
   /** A plugin's `confirm(text)` (§5.4). */
   "confirm",
@@ -113,7 +113,7 @@ export const CARD_OPTION_ID_RE = /^[a-z0-9_-]{1,64}$/;
 export const CardOptionId = utf16(64, 1).regex(CARD_OPTION_ID_RE);
 
 /** A sealed button. `<Card.Approve>` and `<Card.Deny>` place the first option of their kind, or a named one. An
- *  "always" option saves Clover's own rule; an agent still gets `allow_once` (§9.3, spike S5 edit 5). */
+ *  "always" option saves MOSS's own rule; an agent still gets `allow_once` (§9.3, spike S5 edit 5). */
 export const CardOption = z.object({
   id: CardOptionId,
   kind: z.enum(["approve", "deny"]),
@@ -230,7 +230,7 @@ export function cardContentInput(card: CardContent): string {
  *  checked (a plugin OK's checkboxes), sorted and joined by `,` on the last line (empty when there are none). */
 export function cardAnswerSigningInput(a: { id: string; hash: string; option: string; at: number; children?: readonly string[] }): string {
   const children = [...(a.children ?? [])].sort().join(",");
-  return `clover/card-answer/2\n${a.id}\n${a.hash}\n${a.option}\n${a.at}\n${children}`;
+  return `moss/card-answer/2\n${a.id}\n${a.hash}\n${a.option}\n${a.at}\n${children}`;
 }
 
 /** How far a device's clock may stray from the shared clock when it signs an answer. */

@@ -1,4 +1,4 @@
-// The source target's stand-in for `clover-core supervise` (packages/cli/src/main.ts runSupervise): the same restart
+// The source target's stand-in for `moss-core supervise` (packages/cli/src/main.ts runSupervise): the same restart
 // loop (`superviseLoop`) waiting on the daemon the same way (`spawnDisclaimed` on macOS, else a child process), with
 // the run's source daemon (daemon.ts) as the child. The run's idle step measures it beside the daemon: try 14's
 // supervisor spun at ~80% of a core while its daemon was healthy. Never run it by hand: run.ts starts it.

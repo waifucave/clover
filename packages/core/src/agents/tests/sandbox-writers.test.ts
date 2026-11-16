@@ -18,7 +18,7 @@ import { World, waitFor, type WorldOptions } from "./world";
 
 setDefaultTimeout(60_000);
 
-const H = "/u/me", C = "/u/me/.clover";
+const H = "/u/me", C = "/u/me/.moss";
 const policy = (over: Partial<SandboxPolicy> = {}): SandboxPolicy => ({
   allowWrite: [H, "/tmp"],
   denyWrite: [`${C}/settings.json`, `${C}/credentials`, `${C}/run`, `${C}/bots/*/memory`, `${C}/bots`, `${H}/dev`, C],
@@ -55,8 +55,8 @@ describe("the writers' input", () => {
     });
     expect(literalDenials(policy({ denyRead: [`${C}/bots/*/memory`], denyWrite: [`${C}/bots/*/memory`] }))).toEqual({ denyRead: [`${C}/bots`], denyWrite: [] });
     expect(literalDenials(policy({ denyRead: [], denyWrite: [`${C}/bots/*/memory`] }))).toEqual({ denyRead: [], denyWrite: [`${C}/bots`] });
-    // Held exactly: `/u/me/.Clover` doesn't hold `/u/me/.clover/…`, so the pattern widens instead of dropping.
-    expect(literalDenials(policy({ denyRead: ["/u/me/.Clover", `${C}/bots/*/memory`], denyWrite: [] })).denyRead).toEqual(["/u/me/.Clover", `${C}/bots`]);
+    // Held exactly: `/u/me/.MOSS` doesn't hold `/u/me/.moss/…`, so the pattern widens instead of dropping.
+    expect(literalDenials(policy({ denyRead: ["/u/me/.MOSS", `${C}/bots/*/memory`], denyWrite: [] })).denyRead).toEqual(["/u/me/.MOSS", `${C}/bots`]);
     expect(message(() => codexWriter(policy({ denyRead: ["*/secrets"] }), ctx))).toContain("has no folder to deny");
   });
 
@@ -79,7 +79,7 @@ describe("the writers' input", () => {
 });
 
 describe("Codex's profile", () => {
-  test("CODEX_CONFIG names the clover profile as the default: the root readable, writes where allowed, denials closed, the vendors' config read-only, no network", () => {
+  test("CODEX_CONFIG names the moss profile as the default: the root readable, writes where allowed, denials closed, the vendors' config read-only, no network", () => {
     const setup = codexWriter(policy(), ctx);
     expect(Object.keys(setup)).toEqual(["env", "modeFloor"]);
     // An allow-list, empty until the gates run: no Codex mode is counted on unchecked.
@@ -99,16 +99,16 @@ describe("Codex's profile", () => {
     expect(fs).toEqual({ ":root": "read", [H]: "write", [`${H}/dev`]: "read", [C]: "deny", [`${H}/dev/keys`]: "deny", ...Object.fromEntries(VENDOR.map((v) => [v, "read"])), ...secretDeny(H) });
     // The same path in two lists keeps its strictest access.
     expect(codexProfile(policy({ allowWrite: [H], denyWrite: [`${H}/x`], denyRead: [`${H}/x`] }), ctx).filesystem[`${H}/x`]).toBe("deny");
-    // No write folders: the session's root, as clover-code does.
+    // No write folders: the session's root, as moss-code does.
     expect(codexProfile(policy({ allowWrite: [] }), ctx).filesystem[ctx.root]).toBe("write");
   });
 
   test("compared case-folded: a looser entry under a denial by another case is left out (the review's probe)", () => {
-    const fs = codexProfile(policy({ allowWrite: ["/Users/k", "/Users/K/.clover/scratch"], denyRead: ["/Users/k/.clover"], denyWrite: ["/Users/K/.clover/bots"] }), { ...ctx, home: "/Users/k", root: "/Users/k/w" }).filesystem;
-    expect(fs["/Users/k/.clover"]).toBe("deny");
-    expect(fs["/Users/K/.clover/bots"]).toBeUndefined();
-    expect(fs["/Users/K/.clover/scratch"]).toBeUndefined();
-    for (const [path, a] of Object.entries(fs)) if (path.toLowerCase().startsWith("/users/k/.clover/")) expect(a).toBe("deny");
+    const fs = codexProfile(policy({ allowWrite: ["/Users/k", "/Users/K/.moss/scratch"], denyRead: ["/Users/k/.moss"], denyWrite: ["/Users/K/.moss/bots"] }), { ...ctx, home: "/Users/k", root: "/Users/k/w" }).filesystem;
+    expect(fs["/Users/k/.moss"]).toBe("deny");
+    expect(fs["/Users/K/.moss/bots"]).toBeUndefined();
+    expect(fs["/Users/K/.moss/scratch"]).toBeUndefined();
+    for (const [path, a] of Object.entries(fs)) if (path.toLowerCase().startsWith("/users/k/.moss/")) expect(a).toBe("deny");
   });
 });
 
@@ -120,25 +120,25 @@ describe.skipIf(process.platform === "win32")("a home reached through a link", (
   });
 
   test("each denial is written by the path it was given and by its real path, in both writers; nothing under it reopens", () => {
-    root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-wr-")));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "moss-k-wr-")));
     const real = join(root, "real-home"), link = join(root, "home");
-    mkdirSync(join(real, ".clover", "credentials"), { recursive: true });
+    mkdirSync(join(real, ".moss", "credentials"), { recursive: true });
     symlinkSync(real, link);
-    const p = policy({ allowWrite: [link], denyWrite: [join(link, ".clover", "credentials"), join(link, ".clover")], denyRead: [join(link, ".clover")] });
+    const p = policy({ allowWrite: [link], denyWrite: [join(link, ".moss", "credentials"), join(link, ".moss")], denyRead: [join(link, ".moss")] });
     const c = { ...ctx, home: link, root: join(link, "work") };
     const fs = codexProfile(p, c).filesystem;
-    expect(fs[join(link, ".clover")]).toBe("deny");
-    expect(fs[join(real, ".clover")]).toBe("deny");
+    expect(fs[join(link, ".moss")]).toBe("deny");
+    expect(fs[join(real, ".moss")]).toBe("deny");
     // `credentials` by either form is inside the denied home by its real path: never written as "read".
-    expect(fs[join(link, ".clover", "credentials")]).toBeUndefined();
-    expect(fs[join(real, ".clover", "credentials")]).toBeUndefined();
+    expect(fs[join(link, ".moss", "credentials")]).toBeUndefined();
+    expect(fs[join(real, ".moss", "credentials")]).toBeUndefined();
     expect(fs[join(real, ".codex")]).toBe("read");
     const o = claudeOptions(p, c);
-    expect(withoutSecrets(o["sandbox"].filesystem.denyRead, [link, real])).toEqual([join(link, ".clover"), join(real, ".clover")]);
+    expect(withoutSecrets(o["sandbox"].filesystem.denyRead, [link, real])).toEqual([join(link, ".moss"), join(real, ".moss")]);
     // A secret place by the path through the link and by its real path.
     expect(o["sandbox"].filesystem.denyRead).toEqual(expect.arrayContaining([join(link, ".aws"), join(real, ".aws")]));
-    expect(o["sandbox"].filesystem.denyWrite).toEqual(expect.arrayContaining([join(real, ".clover"), join(real, ".clover", "credentials"), join(real, ".claude")]));
-    expect(o["settings"].permissions.deny).toEqual(expect.arrayContaining([`Read(/${join(real, ".clover")}/**)`, `Edit(/${join(real, ".claude")}/**)`]));
+    expect(o["sandbox"].filesystem.denyWrite).toEqual(expect.arrayContaining([join(real, ".moss"), join(real, ".moss", "credentials"), join(real, ".claude")]));
+    expect(o["settings"].permissions.deny).toEqual(expect.arrayContaining([`Read(/${join(real, ".moss")}/**)`, `Edit(/${join(real, ".claude")}/**)`]));
   });
 });
 
@@ -289,13 +289,13 @@ describe("the session holds the mode floor", () => {
     const w = new World({ level: "ask", modes: ["agent", "read-only"], modeFloor: codexFloor, script: [[{ say: "never" }]] });
     world = w;
     await w.delegate();
-    expect((await waitFor(() => notification(w), "the notification")).text).toContain("agent mode and Clover has no mode to switch it to");
+    expect((await waitFor(() => notification(w), "the notification")).text).toContain("agent mode and MOSS has no mode to switch it to");
     expect(w.report("prompt")).toEqual([]);
     await w.close();
     const w2 = new World({ level: "ask", modeFloor: codexFloor, script: [[{ say: "never" }]] });
     world = w2;
     await w2.delegate();
-    expect((await waitFor(() => notification(w2), "the notification")).text).toContain("reports no mode Clover has checked");
+    expect((await waitFor(() => notification(w2), "the notification")).text).toContain("reports no mode MOSS has checked");
     await w2.close();
     // A mode the gates checked runs; its read-only switch to one they didn't is never made.
     const quirks = { ...WELL_BEHAVED_QUIRKS, marks: ["unasked-actions"] } as AgentQuirks;
@@ -334,11 +334,11 @@ describe("the writers' admission", () => {
 describe.skipIf(process.platform === "win32")("the live gates' fixture and probes", () => {
   const env = (f: ReturnType<typeof gateFixture>) => ({ HOME: f.home, PATH: process.env["PATH"] ?? "/usr/bin:/bin", TMPDIR: f.temp });
 
-  test("the real fence's policy for the fixture denies the Clover home; Codex's -c overrides parse back to the writer's profile", () => {
+  test("the real fence's policy for the fixture denies the MOSS home; Codex's -c overrides parse back to the writer's profile", () => {
     const f = gateFixture();
     try {
-      expect(f.policy.denyRead).toContain(f.cloverHome);
-      expect(f.policy.denyWrite).toContain(f.cloverHome);
+      expect(f.policy.denyRead).toContain(f.mossHome);
+      expect(f.policy.denyWrite).toContain(f.mossHome);
       const argv = codexSandboxArgv(f);
       expect(argv.slice(0, 6)).toEqual(["codex", "sandbox", "-C", f.work, "-P", CODEX_PROFILE]);
       expect(argv.at(-1)).toBe("--");

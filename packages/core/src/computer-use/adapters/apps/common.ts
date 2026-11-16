@@ -14,40 +14,40 @@ const bad = (message: string): TypeError => Object.assign(new TypeError(message)
 /** The handlers a script may call with `my …` (defined outside the `tell`, so their words are AppleScript's own). */
 const HANDLERS = {
   text: [
-    "on cloverText(v)",
+    "on mossText(v)",
     "  if v is missing value then return \"\"",
     "  return v as text",
-    "end cloverText",
+    "end mossText",
   ],
   iso: [
-    "on cloverPad(n)",
+    "on mossPad(n)",
     "  return text -2 thru -1 of (\"0\" & (n as text))",
-    "end cloverPad",
-    "on cloverISO(d)",
+    "end mossPad",
+    "on mossISO(d)",
     "  if d is missing value then return \"\"",
     "  set s to time of d",
-    "  return ((year of d) as text) & \"-\" & my cloverPad((month of d) as integer) & \"-\" & my cloverPad(day of d) & \"T\" & my cloverPad(s div 3600) & \":\" & my cloverPad((s mod 3600) div 60) & \":\" & my cloverPad(s mod 60)",
-    "end cloverISO",
+    "  return ((year of d) as text) & \"-\" & my mossPad((month of d) as integer) & \"-\" & my mossPad(day of d) & \"T\" & my mossPad(s div 3600) & \":\" & my mossPad((s mod 3600) div 60) & \":\" & my mossPad(s mod 60)",
+    "end mossISO",
   ],
   min: [
-    "on cloverMin(a, b)",
+    "on mossMin(a, b)",
     "  if a < b then return a",
     "  return b",
-    "end cloverMin",
+    "end mossMin",
   ],
 } as const;
 
 /**
- * One adapter script: `body` runs inside `tell application id "<bundleId>"`. Rows are joined with `cloverTAB` /
- * `cloverLF` (set before the tell); `handlers` adds `cloverText(v)` (missing value → "") and `cloverISO(date)`.
+ * One adapter script: `body` runs inside `tell application id "<bundleId>"`. Rows are joined with `mossTAB` /
+ * `mossLF` (set before the tell); `handlers` adds `mossText(v)` (missing value → "") and `mossISO(date)`.
  */
 export function appScript(bundleId: string, body: string[], opts: { handlers?: Array<keyof typeof HANDLERS> } = {}): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(bundleId)) throw bad("the bound app has no usable bundle id");
   const handlers = (opts.handlers ?? []).flatMap((h) => [...HANDLERS[h]]);
   return [
-    "set cloverTAB to tab",
-    "set cloverLF to linefeed",
-    "set cloverCR to return",
+    "set mossTAB to tab",
+    "set mossLF to linefeed",
+    "set mossCR to return",
     ...handlers,
     `tell application id "${bundleId}"`,
     ...body.map((l) => `  ${l}`),

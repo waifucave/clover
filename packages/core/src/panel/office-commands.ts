@@ -1,4 +1,4 @@
-import { OFFICE_COMMAND_ACTIONS, PANEL_COMMAND_ARGS_MAX_JSON_BYTES } from "@waifucave/clover-protocol";
+import { OFFICE_COMMAND_ACTIONS, PANEL_COMMAND_ARGS_MAX_JSON_BYTES } from "@waifucave/moss-protocol";
 
 // ================================================================================================
 // office-agent-tools T1 (task-1-brief.md; design

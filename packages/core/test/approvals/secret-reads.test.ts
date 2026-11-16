@@ -6,12 +6,12 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Level, Os } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker } from "../../src/approvals/broker";
+import type { Level, Os } from "@waifucave/moss-protocol";
+import { MossApprovalBroker } from "../../src/approvals/broker";
 import { botApprovalCheck } from "../../src/approvals/bot-check";
 import { CREDENTIAL_FILES, SECRET_READ_PLACES, secretReadPlaces } from "../../src/contracts/fence";
 import { FakeClock } from "../../src/contracts/fakes/clock";
-import { CloverFence } from "../../src/fence/fence";
+import { MossFence } from "../../src/fence/fence";
 import { forgetPlaces, secretPlaceOf, secretPlacesUnder, SKIPPED_NOTE } from "../../src/fence/secret-reads";
 import { claudeCodeOptions, codexProfile, writerDenials } from "../../src/agents/sandbox/writers";
 import { withSecretsDenied } from "../../src/agents/memory";
@@ -55,8 +55,8 @@ const CONTENT = "TOPSECRET-VALUE";
 function world() {
   const user = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-secrets-")));
   temps.push(user);
-  const clover = join(user, ".clover");
-  const scratch = join(clover, "scratch", "luna");
+  const moss = join(user, ".moss");
+  const scratch = join(moss, "scratch", "luna");
   mkdirSync(scratch, { recursive: true });
   for (const s of samples) {
     mkdirSync(dirname(join(user, s.file)), { recursive: true });
@@ -71,10 +71,10 @@ function world() {
     botId: "luna", sessionId: "s1", computer: "Studio", paths: { scratch, root: dirname(scratch) },
     caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
   } as unknown as BotSessionContext;
-  const fence = new CloverFence({ home: user, cloverHome: clover });
-  const fileFence = botFileFence(fence, clover, os, user)(ctx);
+  const fence = new MossFence({ home: user, mossHome: moss });
+  const fileFence = botFileFence(fence, moss, os, user)(ctx);
   const refused = (name: string, input: Record<string, unknown>) => fileToolFenceRefusal(name, input, fileFence, scratch);
-  return { user, clover, scratch, ctx, fence, fileFence, refused };
+  return { user, moss, scratch, ctx, fence, fileFence, refused };
 }
 
 describe("the one list", () => {
@@ -213,8 +213,8 @@ describe("the approvals (bot-check): refused with no card, at every level, for a
   for (const level of ["ask-risky", "accept-edits", "automatic"] as Level[]) {
     test(`at ${level}`, async () => {
       const w = world();
-      const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio", fence: () => w.fence });
-      const check = botApprovalCheck(broker, { home: w.user, localComputer: "Studio", fence: w.fence, cloverHome: w.clover, levelOf: () => level, commandsAlwaysCard: true })(w.ctx, () => "user");
+      const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio", fence: () => w.fence });
+      const check = botApprovalCheck(broker, { home: w.user, localComputer: "Studio", fence: w.fence, mossHome: w.moss, levelOf: () => level, commandsAlwaysCard: true })(w.ctx, () => "user");
       const call = (tool: string, input: Record<string, unknown>) => check(tool, input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" });
       for (const s of samples) {
         const d = await call("Read", { file_path: join(w.user, s.file) });
@@ -254,7 +254,7 @@ describe("the sandboxes: the bot's (the driver's) and every agent's hold the pla
 
   test("an agent's policy (the manager's) and each writer's rendering deny every place for reads and writes", () => {
     const w = world();
-    const policy = { denyRead: [w.clover], denyWrite: [w.clover], allowWrite: [join(w.user, "Projects")], network: "none", closedDoors: [] } as never;
+    const policy = { denyRead: [w.moss], denyWrite: [w.moss], allowWrite: [join(w.user, "Projects")], network: "none", closedDoors: [] } as never;
     const withSecrets = withSecretsDenied(policy, w.user, os);
     expect(withSecrets.denyRead).toContain(join(w.user, ".aws"));
     expect(withSecrets.denyWrite).toContain(join(w.user, ".ssh"));

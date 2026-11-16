@@ -55,7 +55,7 @@ async function daemon(net: MemoryNetwork, hs: FakeHandshake, name: string, o: { 
   });
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const links = await startDeviceLinks({
-    home: mkdtempSync(join(tmpdir(), "clover-h-group-")), store, clock, self: { name }, wire: (k) => net.endpoint(k.publicKey),
+    home: mkdtempSync(join(tmpdir(), "moss-h-group-")), store, clock, self: { name }, wire: (k) => net.endpoint(k.publicKey),
     handshake: client, openCard: brokerCardOpener(broker), mainComputer: false, driver: false,
     ...(process.env.LANE_H_DEBUG ? { log: (l: string) => console.error(`${name} ${l}`) } : {}),
   });
@@ -303,7 +303,7 @@ describe("voters and the quorum (lane I's proposal)", () => {
     const { generateEd25519 } = await import("../../identity/keys");
     const { GroupKeeper } = await import("../group");
     const key = await DeviceKey.loadOrCreate(store);
-    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-group-v1-")), key, clock, self: { name: "Studio" } });
+    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "moss-h-group-v1-")), key, clock, self: { name: "Studio" } });
     const own = generateEd25519();
     registry.setGroup({ id: "g1", joinedAt: Date.now(), ownKey: toBase64Url(own.publicKey), members: {} });
     await store.set(groupKeyRef("g1"), own.seed(), { synced: false });

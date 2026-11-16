@@ -41,7 +41,7 @@ async function opened(browser: "winter" | "chrome", page: FakePage = PAGE, o: Pa
   const r = h.run();
   const tab = await h.engine.global(r.scope, "browsers.open", { url: page.url, ...(browser === "chrome" ? { browser: "chrome" } : {}) }) as TabHandle;
   const p = (primitive: string, args: Record<string, unknown> = {}) => h.engine.primitive(r.scope, tab.targetId, primitive, args);
-  const tmpRoot = join(realpathSync(h.tmp), "clover-session-s1");
+  const tmpRoot = join(realpathSync(h.tmp), "moss-session-s1");
   return { h, r, tab, p, fake, tmpRoot };
 }
 
@@ -71,9 +71,9 @@ describe("the built-in browser (its own download handler)", () => {
     r.end();
   });
 
-  test("a Clover.app without link protocol 2 says to update Clover", async () => {
+  test("a MOSS Code.app without link protocol 2 says to update MOSS", async () => {
     const { r, p } = await opened("winter");
-    await expect(p("download", { target: 3 })).rejects.toThrow(/Clover's built-in browser can't save downloads until Clover is updated/);
+    await expect(p("download", { target: 3 })).rejects.toThrow(/MOSS's built-in browser can't save downloads until MOSS is updated/);
     r.end();
   });
 });
@@ -148,7 +148,7 @@ describe("a user's browser (Fetch interception)", () => {
     const got = await on.p("download", { target: 5 }) as { path: string; name: string; bytes: number };
     expect(got).toMatchObject({ name: "made.txt", bytes: 5 });
     expect(readFileSync(got.path, "utf8")).toBe("hello");
-    // Moved: nothing is left in the browser's folder (the Clover/<random> subfolder and Clover/ removed too).
+    // Moved: nothing is left in the browser's folder (the MOSS/<random> subfolder and MOSS/ removed too).
     expect(readdirSync(folder)).toEqual([]);
     expect(on.fake.released).toEqual(["dl1"]);
     on.r.end();
@@ -165,7 +165,7 @@ describe("a user's browser (Fetch interception)", () => {
 });
 
 describe("data: links, destinations, limits, policy", () => {
-  darwinTest("a data: link is decoded by Clover (no browser), named by its download attribute", async () => {
+  darwinTest("a data: link is decoded by MOSS (no browser), named by its download attribute", async () => {
     const { r, p, h } = await opened("chrome");
     const got = await p("download", { target: 4 }) as { path: string; name: string; mime: string };
     expect(got).toMatchObject({ name: "inline.csv", mime: "text/csv" });
@@ -245,7 +245,7 @@ describe("what a Fetch capture takes, and the floor on every address (review LOW
     const { h, r, p } = await opened("chrome", PAGE, { policy: "ask", dangerousAdded: ["evil.example"], answer: (s) => (s.includes("evil.example") ? "once" : "session") });
     h.chrome.files[CSV] = { ...FILES[CSV]!, redirectTo: "https://evil.example/prices.csv" };
     expect(await p("download", { target: 3 })).toMatchObject({ name: "prices.csv", bytes: 17 });
-    expect(h.cards.map((c) => c.summary)).toContain("Allow Clover to use evil.example in Google Chrome? It is on the dangerous-domains list.");
+    expect(h.cards.map((c) => c.summary)).toContain("Allow MOSS to use evil.example in Google Chrome? It is on the dangerous-domains list.");
     expect([...r.sites]).toContain("evil.example");
     r.end();
   });

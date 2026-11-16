@@ -17,7 +17,7 @@ import { ipAddressClass } from "../../agent/tools/web";
 import { originOf } from "./user-endpoint";
 import { maskError, maskResponse, noteKeys } from "./key-redaction";
 import { publicFetch } from "./public-fetch";
-import { reachesPublicNetwork } from "@waifucave/clover-plugin-sdk";
+import { reachesPublicNetwork } from "@waifucave/moss-plugin-sdk";
 import { hostAllowed, hostRules } from "../../plugin-host/net-proxy";
 
 /** Whether a URL's host is on the plugin's declared `network:` list (the keyed fetch's hosts), read as B's gate and the
@@ -227,7 +227,7 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
       }
       try {
         // A host on the plugin's declared network: list goes through its keyed fetch; any other only with
-        // `network:public` granted (B's gate checked it too), keyless, through Clover's web safeguards.
+        // `network:public` granted (B's gate checked it too), keyless, through MOSS's web safeguards.
         if (!declaredHost(ctx.record, url) && reachesPublicNetwork(ctx.record.granted)) {
           return maskResponse(await publicOf(ctx.record.id, url, init ?? {}, fetchOpts as Record<string, unknown> | undefined), keys);
         }

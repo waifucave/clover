@@ -19,13 +19,13 @@ describe("the install marker", () => {
   });
 
   test("written and read back from the home; a package's marker beside the binary wins", () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-marker-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-marker-"));
     expect(readInstallMarker(home)).toBeUndefined();
     writeInstallMarker(home, { kind: "server", channel: "beta" });
     expect(readInstallMarker(home)).toEqual({ kind: "server", channel: "beta" });
     const daemonDir = join(home, "opt", "resources", "daemon");
     mkdirSync(daemonDir, { recursive: true });
-    const bin = join(daemonDir, "clover-core");
+    const bin = join(daemonDir, "moss-core");
     expect(readInstallMarker(home, bin)).toEqual({ kind: "server", channel: "beta" });
     writeFileSync(join(daemonDir, "install.json"), '{"kind":"package"}\n');
     expect(readInstallMarker(home, bin)).toEqual({ kind: "package" });

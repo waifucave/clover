@@ -7,8 +7,8 @@
 //   * an act counts only inside the user's own key press or click in the calling frame, one call per gesture (the Plugins page's rule); `dragWindow`
 //     is the user's press on a region the main process itself saw, so it takes no gesture here (the drag's own rules in window-drag.ts apply);
 //   * an act is data the shell applies to its own state: a place to show, a panel view, the sidebar's fold; never a conversation, a card or a file.
-import { apiCallAllowed, STOCK_PANEL_KEYS, type ShellAccount, type ShellApp, type ShellState } from "@waifucave/clover-plugin-sdk";
-import { SHELL_ACTS, SHELL_READS, type ShellAct, type ShellMethod } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { apiCallAllowed, STOCK_PANEL_KEYS, type ShellAccount, type ShellApp, type ShellState } from "@waifucave/moss-plugin-sdk";
+import { SHELL_ACTS, SHELL_READS, type ShellAct, type ShellMethod } from "@waifucave/moss-plugin-sdk/ui/bridge";
 
 export type ShellCall =
   | { kind: "answer"; value: unknown }

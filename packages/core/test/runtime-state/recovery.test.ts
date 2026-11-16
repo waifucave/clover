@@ -5,7 +5,7 @@ import type { RuntimeSelection } from "../../src/runtime-sdk/host";
 import { openRuntimeStateDb, type RuntimeStateDb } from "../../src/runtime-state/db";
 import { RuntimeSessionRecords, type NewRuntimeSessionRecord } from "../../src/runtime-state/records";
 import { RuntimeLeases, processStartedAt, type ProcessIdentity } from "../../src/runtime-state/leases";
-import { RuntimeChildren, type PersistedCloverChild } from "../../src/runtime-state/children";
+import { RuntimeChildren, type PersistedMossChild } from "../../src/runtime-state/children";
 import { recoverRuntimeState, restampStep, type RecoveryDeps, type RecoveryReport } from "../../src/runtime-state/recovery";
 import { SessionStore } from "../../src/sessions/store";
 import { ISO, withTempHome } from "./support";
@@ -51,7 +51,7 @@ const newRecord = (home: string, id: string, over: Partial<NewRuntimeSessionReco
   ...over,
 });
 
-const newChild = (parent: string, childId: string, over: Partial<PersistedCloverChild> = {}): PersistedCloverChild => ({
+const newChild = (parent: string, childId: string, over: Partial<PersistedMossChild> = {}): PersistedMossChild => ({
   parentWinterSessionId: parent,
   childId,
   agentType: "general-purpose",
@@ -82,7 +82,7 @@ interface Harness {
   leases: RuntimeLeases;
   children: RuntimeChildren;
   /** EVERY run goes through here, so no test can forget `tempScanRoot` and send step 8's scan at
-   *  the real `/private/tmp/clover-<uid>` on the developer's machine. */
+   *  the real `/private/tmp/moss-<uid>` on the developer's machine. */
   run(over?: Partial<RecoveryDeps>): Promise<RecoveryReport>;
   attempts(): AttemptRow[];
 }

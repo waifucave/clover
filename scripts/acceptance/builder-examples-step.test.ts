@@ -5,7 +5,7 @@ import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readExamples } from "../../plugins/clover/plugins/plugin-builder/test/examples";
+import { readExamples } from "../../plugins/moss/plugins/plugin-builder/test/examples";
 import { FULL_STEPS } from "./steps";
 import { BUILDER_EXAMPLES_STEP, INSTALL_ORDER, writeExample } from "./builder-examples-step";
 
@@ -26,7 +26,7 @@ test("an example's files are written as a plugin folder, ex-buddy's child plugin
   for (const ex of readExamples()) {
     const folder = writeExample(dir, ex);
     for (const [path, body] of Object.entries(ex.files)) expect(readFileSync(join(folder, path), "utf8")).toBe(body);
-    expect((JSON.parse(readFileSync(join(folder, "clover.json"), "utf8")) as { id: string }).id).toBe(ex.folder);
+    expect((JSON.parse(readFileSync(join(folder, "moss.json"), "utf8")) as { id: string }).id).toBe(ex.folder);
   }
-  expect(existsSync(join(dir, "ex-buddy", "plugins", "status", "clover.json"))).toBe(true);
+  expect(existsSync(join(dir, "ex-buddy", "plugins", "status", "moss.json"))).toBe(true);
 });

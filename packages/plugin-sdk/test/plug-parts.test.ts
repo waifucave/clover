@@ -6,8 +6,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { botPartLines, describeOk, partScopeOf, pluginParts, skillItem, validateManifest } from "../src/index";
 
-const ALPHA = JSON.parse(readFileSync(join(import.meta.dir, "../../../plugins/alpha/clover.json"), "utf8")) as Record<string, unknown>;
-const engines = { clover: "^1.0.0" };
+const ALPHA = JSON.parse(readFileSync(join(import.meta.dir, "../../../plugins/alpha/moss.json"), "utf8")) as Record<string, unknown>;
+const engines = { moss: "^1.0.0" };
 
 describe("a plugin in today's shape keeps its meaning and its OK lines", () => {
   test("Alpha: her UI, her stage server (scope `own-bot`), skills, agent, hooks and commands are inside her; her island line is beside; her OK lines are as they were", () => {
@@ -20,10 +20,10 @@ describe("a plugin in today's shape keeps its meaning and its OK lines", () => {
     expect(describeOk(r)).toEqual([
       "alpha runs code on your computers.",
       "It adds: bot, themes, mcpServers, hooks, island.line, skills, agents, commands, locales, ui.",
-      "It puts a line of text on the island, with its name beside it, in the island's own style, when Clover isn't in front.",
+      "It puts a line of text on the island, with its name beside it, in the island's own style, when MOSS isn't in front.",
       "It sees all your bots and their settings.",
       "It reads your conversations with all your bots.",
-      "It lets its own buttons move around Clover's window.",
+      "It lets its own buttons move around MOSS's window.",
       "It sees which tab and panels are showing.",
       "It sees your bot's figure.",
       "It moves your bot's figure.",

@@ -13,8 +13,8 @@
 //   cancels. A stream connects one plugin's own two halves (a host half and a component), or a points stream's caller
 //   to the handler's host half (`openPoint`).
 // * One log line per stream opened and per stream ended (its bytes and why); never one per piece.
-import type { HostProcess } from "@waifucave/clover-protocol";
-import { STREAM_ACCEPTORS_PER_PLUGIN, STREAM_BUFFER_MAX, STREAM_CHUNK_MAX, STREAM_META_MAX_BYTES, STREAM_NAME, STREAMS_OPEN_PER_PLUGIN, STREAM_WINDOW_MAX, type StreamMeta } from "@waifucave/clover-plugin-sdk";
+import type { HostProcess } from "@waifucave/moss-protocol";
+import { STREAM_ACCEPTORS_PER_PLUGIN, STREAM_BUFFER_MAX, STREAM_CHUNK_MAX, STREAM_META_MAX_BYTES, STREAM_NAME, STREAMS_OPEN_PER_PLUGIN, STREAM_WINDOW_MAX, type StreamMeta } from "@waifucave/moss-plugin-sdk";
 import { randomUUID } from "node:crypto";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 
@@ -221,7 +221,7 @@ export class StreamHub {
 
   /** The daemon closes: every stream ends. */
   close(): void {
-    for (const s of [...this.#streams.values()]) this.#abort(s, "Clover's plugins closed");
+    for (const s of [...this.#streams.values()]) this.#abort(s, "MOSS's plugins closed");
     this.#acceptors.clear();
   }
 

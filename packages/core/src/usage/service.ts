@@ -6,7 +6,7 @@ import {
   INGEST_CALL_TIMEOUT_MS, PLAN_CALL_TIMEOUT_MS, SOURCE_ID, cleanIngestReply, cleanPlanReply, cleanReading, priceRecord, type UsageSourceEntry, type UsageSourcePort,
 } from "./sources";
 
-// The usage service (spec §12 "Usage sources"): records Clover's own turns as they end, ingests the user's other apps'
+// The usage service (spec §12 "Usage sources"): records MOSS's own turns as they end, ingests the user's other apps'
 // usage ON DEMAND (when a Usage surface asks — no watcher, no timer: an idle daemon does nothing), reads their plans, keeps
 // the user's one-shot plan alarms (every plan read judges them; a background beat reads the plans — `startBackground`), and
 // answers the `usage.*` RPCs. It reads NO app itself: every Codex, Claude Code, OpenCode or Antigravity number comes from a
@@ -15,7 +15,7 @@ import {
 export type UsageRange = "1h" | "24h" | "7d" | "30d" | "all";
 export const USAGE_RANGES: readonly UsageRange[] = ["1h", "24h", "7d", "30d", "all"];
 
-/** Which sources the user lets Clover read (`settings.usage`): by the source's name in camel case (`claudeCode`); a source
+/** Which sources the user lets MOSS read (`settings.usage`): by the source's name in camel case (`claudeCode`); a source
  *  with no switch is on. */
 export type UsageTracking = Record<string, boolean>;
 
@@ -29,11 +29,11 @@ export const trackingKey = (id: string): string => id.replace(/-([a-z0-9])/g, (_
 export interface UsageServiceDeps {
   db: UsageDb;
   pricer: UsagePricer;
-  /** LIVE: which external sources the user lets Clover read (`settings.usage`). */
+  /** LIVE: which external sources the user lets MOSS read (`settings.usage`). */
   tracking: () => UsageTracking;
   /** The `usage.sources` entries and how to call them. Absent: no source (nothing external is read). */
   sources?: UsageSourcePort;
-  /** What Clover's own sessions reported about limits, by name (`"codex-oauth"`): handed to every source as data. */
+  /** What MOSS's own sessions reported about limits, by name (`"codex-oauth"`): handed to every source as data. */
   reports?: () => Readonly<Record<string, readonly PlanStatusWindow[]>>;
   /** A fired alarm's notice goes out through the general notify door. */
   notify?: (notice: { title: string; body: string }) => void;
@@ -108,7 +108,7 @@ async function within(p: Promise<unknown>, ms: number): Promise<void> {
   if (timer !== undefined) clearTimeout(timer);
 }
 
-export interface CloverTurnRow {
+export interface MossTurnRow {
   model: string;
   canonicalModel?: string;
   provider?: string;
@@ -142,7 +142,7 @@ export interface UsageModelRow extends UsageTotals {
   source: UsageSource;
   provider: string;
   model: string;
-  /** `list` (the runtime's own price), `estimate` (Clover's list-price estimate), `reported` (the other app's own
+  /** `list` (the runtime's own price), `estimate` (MOSS's list-price estimate), `reported` (the other app's own
    *  figure — OpenCode), `mixed`, or `unknown`. */
   costBasis: "list" | "estimate" | "reported" | "mixed" | "unknown";
 }
@@ -314,11 +314,11 @@ export class UsageService {
     return this.deps.tracking()[trackingKey(id)] ?? true;
   }
 
-  // ── Clover's own turns ─────────────────────────────────────────────────────────────────────────
+  // ── MOSS's own turns ─────────────────────────────────────────────────────────────────────────
 
   /** A projected turn's per-model rows (`onTurnUsage`). A runtime-priced row keeps its price (`list`); an unpriced
-   *  one (a subscription row) gets Clover's list-price estimate at its API twin, or none. */
-  recordCloverTurn(sessionId: string, mode: string | undefined, sourceId: string, rows: readonly CloverTurnRow[]): void {
+   *  one (a subscription row) gets MOSS's list-price estimate at its API twin, or none. */
+  recordMossTurn(sessionId: string, mode: string | undefined, sourceId: string, rows: readonly MossTurnRow[]): void {
     const at = this.now();
     const records: UsageRecordInput[] = rows.map((r) => {
       const slash = r.model.indexOf("/");

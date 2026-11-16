@@ -8,7 +8,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { Listeners } from "../../contracts/common";
 import type { McpChannel } from "../../contracts/plugin-host";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
@@ -21,10 +21,10 @@ import { openPluginRegistry } from "../open";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
-const ENGINES = { clover: `^${PLUGIN_API_VERSION}` };
+const ENGINES = { moss: `^${PLUGIN_API_VERSION}` };
 
 async function world(files: Record<string, unknown>) {
-  const home = mkdtempSync(join(tmpdir(), "clover-b-fields-"));
+  const home = mkdtempSync(join(tmpdir(), "moss-b-fields-"));
   temps.push(home);
   for (const [path, value] of Object.entries(files)) {
     const at = join(home, "plugins", path);
@@ -32,7 +32,7 @@ async function world(files: Record<string, unknown>) {
     writeFileSync(at, typeof value === "string" ? value : JSON.stringify(value));
   }
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-  const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+  const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker, secrets: new MemorySecretStore(), settleMs: 50 });
   const approve = async (id: string) => {
     const { card } = await opened.registry.installed(id, "app");
     const shown = broker.cards().find((c) => c.id === card)!;
@@ -63,9 +63,9 @@ const host = {
 describe("manifest fields over the real registry", () => {
   test("enabledByDefault: a child that says false is off after its tree's OK; one that says nothing is on", async () => {
     const w = await world({
-      "kit/clover.json": { manifest: 1, id: "kit", name: "Kit", version: "1.0.0", engines: ENGINES, capabilities: ["notify"] },
-      "kit/plugins/core/clover.json": { manifest: 1, name: "Kit core", engines: ENGINES, capabilities: ["notify"] },
-      "kit/plugins/extra/clover.json": { manifest: 1, name: "Kit extra", engines: ENGINES, enabledByDefault: false, capabilities: ["notify"] },
+      "kit/moss.json": { manifest: 1, id: "kit", name: "Kit", version: "1.0.0", engines: ENGINES, capabilities: ["notify"] },
+      "kit/plugins/core/moss.json": { manifest: 1, name: "Kit core", engines: ENGINES, capabilities: ["notify"] },
+      "kit/plugins/extra/moss.json": { manifest: 1, name: "Kit extra", engines: ENGINES, enabledByDefault: false, capabilities: ["notify"] },
     });
     try {
       await w.approve("kit");
@@ -82,9 +82,9 @@ describe("manifest fields over the real registry", () => {
       contributes: { mcpServers: { srv: { type: "host" } } },
     });
     const w = await world({
-      "for-bots/clover.json": plugin("for-bots", "bots"), "for-bots/host/index.js": "export {};\n",
-      "for-agents/clover.json": plugin("for-agents", "agents"), "for-agents/host/index.js": "export {};\n",
-      "for-all/clover.json": plugin("for-all"), "for-all/host/index.js": "export {};\n",
+      "for-bots/moss.json": plugin("for-bots", "bots"), "for-bots/host/index.js": "export {};\n",
+      "for-agents/moss.json": plugin("for-agents", "agents"), "for-agents/host/index.js": "export {};\n",
+      "for-all/moss.json": plugin("for-all"), "for-all/host/index.js": "export {};\n",
     });
     const mcp = new PluginMcp({ registry: w.opened.registry, host: host as never, self: () => "Studio", computers: () => ["Studio"] });
     try {
@@ -108,23 +108,23 @@ describe("manifest fields over the real registry", () => {
       contributes: { mcpServers: { srv: { type: "host" } } },
     });
     const w = await world({
-      "cc-only/clover.json": plugin("cc-only", ["claude-code"]), "cc-only/host/index.js": "export {};\n",
-      "cc-and-clover/clover.json": plugin("cc-and-clover", ["claude-code", "clover"]), "cc-and-clover/host/index.js": "export {};\n",
-      "any/clover.json": plugin("any"), "any/host/index.js": "export {};\n",
+      "cc-only/moss.json": plugin("cc-only", ["claude-code"]), "cc-only/host/index.js": "export {};\n",
+      "cc-and-moss/moss.json": plugin("cc-and-moss", ["claude-code", "moss"]), "cc-and-moss/host/index.js": "export {};\n",
+      "any/moss.json": plugin("any"), "any/host/index.js": "export {};\n",
     });
     const mcp = new PluginMcp({ registry: w.opened.registry, host: host as never, self: () => "Studio", computers: () => ["Studio"] });
     try {
-      for (const id of ["cc-only", "cc-and-clover", "any"]) await w.approve(id);
+      for (const id of ["cc-only", "cc-and-moss", "any"]) await w.approve(id);
       await mcp.refresh();
       const plugins = (kind: "bot" | "agent" | "coding", backend?: string) => mcp.servers(kind, backend).map((s) => s.plugin).sort();
-      // Clover's own backend (a bot's delegation, the user's coding session): not the Claude-Code-only plugin.
-      expect(plugins("agent")).toEqual(["any", "cc-and-clover"]);
-      expect(plugins("coding")).toEqual(["any", "cc-and-clover"]);
+      // MOSS's own backend (a bot's delegation, the user's coding session): not the Claude-Code-only plugin.
+      expect(plugins("agent")).toEqual(["any", "cc-and-moss"]);
+      expect(plugins("coding")).toEqual(["any", "cc-and-moss"]);
       // Claude Code: all three; Codex: only the one with no list.
-      expect(plugins("agent", "claude-code")).toEqual(["any", "cc-and-clover", "cc-only"]);
+      expect(plugins("agent", "claude-code")).toEqual(["any", "cc-and-moss", "cc-only"]);
       expect(plugins("agent", "codex")).toEqual(["any"]);
       // A bot isn't an agent backend: it gets all three.
-      expect(plugins("bot")).toEqual(["any", "cc-and-clover", "cc-only"]);
+      expect(plugins("bot")).toEqual(["any", "cc-and-moss", "cc-only"]);
       // The one rule the hooks and the glossary read too.
       expect([servesBackend(w.opened.registry, "cc-only", "agent", "codex"), servesBackend(w.opened.registry, "cc-only", "agent", "claude-code"), servesBackend(w.opened.registry, "cc-only", "side-thread")]).toEqual([false, true, true]);
     } finally {
@@ -135,7 +135,7 @@ describe("manifest fields over the real registry", () => {
 
   test("locales: a plugin's language files reach the app's view of it", async () => {
     const w = await world({
-      "words/clover.json": { manifest: 1, id: "words", name: "Words", version: "1.0.0", engines: ENGINES, contributes: { locales: [{ lang: "fr", file: "locales/fr.json" }, { lang: "de", file: "locales/de.json" }] } },
+      "words/moss.json": { manifest: 1, id: "words", name: "Words", version: "1.0.0", engines: ENGINES, contributes: { locales: [{ lang: "fr", file: "locales/fr.json" }, { lang: "de", file: "locales/de.json" }] } },
       "words/locales/fr.json": { locale: 1, lang: "fr", strings: { "words.hello": "Bonjour" } },
       "words/locales/de.json": { locale: 1, lang: "de", strings: { "words.hello": "Hallo" } },
     });

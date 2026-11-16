@@ -1,0 +1,489 @@
+// The bot's avatar on its stage (the stage's `avatar` spot, keyed `vrm`, spec §5.5): the VRM drawn in the
+// theme's light, breathing and blinking at rest, its mouth moving with the speech the app plays — told to it as a
+// feed of loudness-and-brightness frames on the audio clock (`SpeechFeed`), so it hears nothing itself and asks
+// for no `audio` capability. It animates only while it can be seen (on screen, the window not hidden, not
+// paused), spec open question 33's budget, and draws at most 30 frames a second at rest, 60 while speech plays;
+// with reduced motion the body holds still and only the eyes and mouth move. The model's licence fields are
+// honoured: a model that asks for credit, or that its maker marked a placeholder, carries a credit line, on a
+// plate in a band of its own below the avatar, never over it. A model's outfit parts are the nodes its author marks in
+// the glTF node's `extras` as `"moss": { "outfit": "<name>" }` (`"on": false` for one that starts hidden, an
+// alternative outfit; several nodes may share a name): the catalogue lists them, and an outfit cue shows or hides them.
+//
+// The file is read with a running cap: a Content-Length over it is refused before the body is read, and the
+// body streams in until it passes the cap, then stops.
+
+import { useEffect, useRef, useState, type ReactElement } from "react";
+import { LipSync, SpeechRing, frameSource, type SpeechFeed } from "../lipsync/sources";
+import { SHUT, type VisemeWeights } from "../lipsync/visemes";
+import { Blinker } from "../motion/blink";
+import { idlePose } from "../motion/idle";
+import { t } from "../strings";
+import { AvatarError, AvatarScene, DEFAULT_LIGHTS, MOOD_EXPRESSIONS, type FaceState, type Crop, type Framing, type RendererFactory, type StageLights } from "../vrm/scene";
+import { MAX_VRM_BYTES, type VrmMeta } from "../vrm/validate";
+import { useAvatarStyles } from "./styles";
+import { boxFromRect, type FigureControl, type FigureCue } from "../control";
+
+export interface AvatarFrames {
+  now(): number;
+  requestFrame(callback: (time: number) => void): number;
+  cancelFrame(id: number): void;
+}
+
+export const BROWSER_FRAMES: AvatarFrames = {
+  now: () => performance.now(),
+  requestFrame: (callback) => requestAnimationFrame(callback),
+  cancelFrame: (id) => cancelAnimationFrame(id),
+};
+
+/** A fixed frame instead of a living avatar: the gallery's. */
+export interface AvatarStill {
+  /** Seconds into the idle motion. */
+  at: number;
+  visemes?: Partial<VisemeWeights>;
+  blink?: number;
+  happy?: number;
+  surprised?: number;
+}
+
+export interface VrmAvatarProps {
+  /** The avatar file: a URL inside the bot's plugin, or its bytes. */
+  src: string | ArrayBuffer;
+  /** Who it is, for its label and its loading line. */
+  name: string;
+  /** Shown while the model loads, and in its place if it can't be drawn. */
+  portrait?: string;
+  /** The speech the app plays, as frames on the audio clock; null when the bot is quiet. */
+  speech?: SpeechFeed | null;
+  happy?: number;
+  surprised?: number;
+  framing?: Framing;
+  /** The host's own reason to stop (the tab behind another). */
+  paused?: boolean;
+  reducedMotion?: boolean;
+  still?: AvatarStill;
+  /** The stage's light; read from the theme's `avatar.*` tokens when omitted. */
+  lights?: StageLights;
+  credit?: "auto" | "always" | "never";
+  createRenderer?: RendererFactory;
+  fetchBytes?: (url: string) => Promise<ArrayBuffer>;
+  frames?: AvatarFrames;
+  onReady?: (meta: VrmMeta) => void;
+  /** What the screen says went wrong, and the check's detail for the log. */
+  onError?: (message: string, detail?: string) => void;
+  /** The app's avatar control (`useAvatarControl()`): the bot plugin's cues in (a mood expression, a look-at point, a
+   *  pace), the model's names and the figure's box out. Without it the avatar only lives. */
+  control?: FigureControl;
+  /** Draws at most this many frames a second while quiet and while speech plays (the idle budget, OQ 33). */
+  maxFps?: { quiet: number; speaking: number; calm?: number; typing?: number };
+}
+
+type Status = { state: "loading" } | { state: "ready"; meta: VrmMeta } | { state: "error"; message: string };
+
+/** Frames a second: while the user is about (`quiet`), while they type (`typing`), with no one about for a while (`calm`), while speech plays.
+ *  None is under 30: below that the figure's breathing and sway read as a stutter (the owner's try 14g). Calm halves the cost, it doesn't freeze her. */
+export const AVATAR_FPS = { quiet: 60, typing: 30, calm: 30, speaking: 60 } as const;
+/** Seconds with no pointer input before the avatar goes calm, and how long a keystroke holds the typing rate. */
+export const CALM_AFTER_MS = 8000;
+export const TYPING_MS = 2500;
+
+/**
+ * The avatar file's bytes, never more than `limit`: a Content-Length over it is refused before the body is read,
+ * and the body is read as a stream and dropped the moment it passes the limit (a server may send more than it says,
+ * and a compressed body more than its Content-Length).
+ */
+export async function fetchCapped(url: string, limit = MAX_VRM_BYTES, fetcher: (url: string) => Promise<Response> = (u) => fetch(u)): Promise<ArrayBuffer> {
+  const response = await fetcher(url);
+  if (response.status === 413) throw new AvatarError("too-large", `The server says it is over its limit.`);
+  if (!response.ok) throw new AvatarError("unreadable", `The server answered ${response.status}.`);
+  const tooLarge = () => new AvatarError("too-large", `Over ${limit} bytes.`);
+  const declared = Number(response.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > limit) {
+    await response.body?.cancel().catch(() => {});
+    throw tooLarge();
+  }
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const whole = await response.arrayBuffer();
+    if (whole.byteLength > limit) throw tooLarge();
+    return whole;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => {});
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return out.buffer;
+}
+
+/** What the screen says about an error, and its detail for the log. */
+function describeError(error: unknown): { message: string; detail: string } {
+  if (error instanceof AvatarError) return { message: t(`moss.vrm.refused.${error.reason}`), detail: error.detail };
+  return { message: t("moss.vrm.refused.unreadable"), detail: error instanceof Error ? error.message : String(error) };
+}
+
+/** The light the theme gives the stage, from its custom properties. */
+export function themeLights(el: Element | null): StageLights {
+  if (!el || typeof getComputedStyle !== "function") return DEFAULT_LIGHTS;
+  const style = getComputedStyle(el);
+  const read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
+  const exposure = Number.parseFloat(read("--moss-avatar-exposure", "1"));
+  return {
+    key: read("--moss-avatar-light-key", DEFAULT_LIGHTS.key),
+    fill: read("--moss-avatar-light-fill", DEFAULT_LIGHTS.fill),
+    rim: read("--moss-avatar-light-rim", DEFAULT_LIGHTS.rim),
+    exposure: Number.isFinite(exposure) ? exposure : 1,
+  };
+}
+
+/** The credit line a model's licence asks for, or its maker's placeholder mark; null when none is due. */
+export function creditLine(meta: VrmMeta, credit: "auto" | "always" | "never" = "auto"): string | null {
+  if (credit === "never") return null;
+  if (credit === "auto" && !meta.creditRequired && !meta.placeholder) return null;
+  const licence = meta.otherLicenceUrl ? licenceName(meta.otherLicenceUrl) : meta.licenceName;
+  return [meta.title, meta.author ? t("moss.vrm.by", { author: meta.author }) : null, licence].filter(Boolean).join(" · ");
+}
+
+function licenceName(url: string): string {
+  if (/^https:\/\/vrm\.dev\/licenses\/1\.0\/?$/i.test(url)) return "VRM Public License 1.0";
+  if (/apache\.org\/licenses\/LICENSE-2\.0/i.test(url)) return "Apache-2.0";
+  if (/creativecommons\.org\/publicdomain\/zero/i.test(url)) return "CC0";
+  return url.replace(/^https?:\/\//, "");
+}
+
+const ratio = () => (typeof window === "undefined" ? 1 : Math.min(2, window.devicePixelRatio || 1));
+
+export function VrmAvatar(props: VrmAvatarProps): ReactElement {
+  useAvatarStyles();
+  const { src, name, portrait, paused = false, still, credit = "auto", frames = BROWSER_FRAMES } = props;
+  // The framing is the caller's, else the theme's (`--moss-avatar-framing: waist`, set by a layout or theme on the stage), else a bust.
+  const [themed, setThemed] = useState<Framing | undefined>(undefined);
+  const [crop, setCrop] = useState<Crop | undefined>(undefined);
+  const framing: Framing = props.framing ?? themed ?? "bust";
+  const figure = useRef<HTMLElement | null>(null);
+  /** What the canvas fills: the figure less the credit's band. */
+  const view = useRef<HTMLDivElement | null>(null);
+  const canvas = useRef<HTMLCanvasElement | null>(null);
+  const scene = useRef<AvatarScene | null>(null);
+  const [status, setStatus] = useState<Status>({ state: "loading" });
+  /** The outfit parts showing, by name (space-separated), for the figure's `data-outfit`. */
+  const [worn, setWorn] = useState("");
+  /** The last outfit cues it heard, for a test to read (`data-cues`). */
+  const heard = useRef<string[]>([]);
+  const [visible, setVisible] = useState(true);
+  const latest = useRef(props);
+  latest.current = props;
+  const lipsync = useRef(new LipSync(null));
+  /** The last pointer input and keystroke in this document: the avatar draws slowly with no one about. */
+  const lastPointer = useRef(performance.now());
+  const lastKey = useRef(Number.NEGATIVE_INFINITY);
+  useEffect(() => {
+    const doc = figure.current?.ownerDocument;
+    if (!doc) return;
+    const point = () => { lastPointer.current = performance.now(); };
+    const key = () => { lastKey.current = performance.now(); };
+    for (const ev of ["pointermove", "pointerdown", "wheel"]) doc.addEventListener(ev, point, { capture: true, passive: true });
+    for (const ev of ["keydown", "input"]) doc.addEventListener(ev, key, { capture: true, passive: true });
+    return () => {
+      for (const ev of ["pointermove", "pointerdown", "wheel"]) doc.removeEventListener(ev, point, true);
+      for (const ev of ["keydown", "input"]) doc.removeEventListener(ev, key, true);
+    };
+  }, []);
+  const blinker = useRef(new Blinker());
+  /** What the bot asked: a mood expression (held, then back to the face's own), a look-at point and a pace. */
+  const cued = useRef<{ expression: { name: string; level: number; to: number; holdLeft: number } | null; pace: boolean | undefined; look: { x: number; y: number } | null }>({ expression: null, pace: undefined, look: null });
+  /** Whether speech sounds now: a pushed frame covers the audio clock's now. */
+  const speaking = useRef<() => boolean>(() => false);
+
+  // The speech feed: its frames into a ring, read at the audio clock's now.
+  const feed = props.speech ?? null;
+  useEffect(() => {
+    speaking.current = () => false;
+    if (!feed) {
+      lipsync.current.use(null);
+      return;
+    }
+    const ring = new SpeechRing(48000, 0);
+    const now = () => feed.now();
+    lipsync.current.use(frameSource(ring, now));
+    speaking.current = () => ring.frameAt(now()) !== null;
+    const stop = feed.subscribe((frames) => ring.push(frames));
+    return () => {
+      stop();
+      lipsync.current.use(null);
+      speaking.current = () => false;
+    };
+  }, [feed]);
+
+  /** The face and pose for this moment: a still's, or the living avatar's. */
+  const moment = (dt: number, timeMs: number): { pose: ReturnType<typeof idlePose>; face: FaceState } => {
+    const p = latest.current;
+    if (p.still) {
+      return {
+        pose: idlePose(p.still.at, p.reducedMotion),
+        face: { visemes: { ...SHUT, ...p.still.visemes }, blink: p.still.blink ?? 0, happy: p.still.happy ?? p.happy, surprised: p.still.surprised ?? p.surprised },
+      };
+    }
+    const seconds = timeMs / 1000;
+    const e = cued.current.expression;
+    let expressions: Record<string, number> | undefined;
+    if (e) {
+      // A look held for a while, then back to the face's own, so one reaction never sticks.
+      if (e.to === 1) { e.holdLeft -= dt; if (e.holdLeft <= 0) e.to = 0; }
+      e.level = e.to > e.level ? Math.min(1, e.level + dt / 0.3) : Math.max(0, e.level - dt / 0.3);
+      expressions = { [e.name]: e.level };
+      if (e.to === 0 && e.level === 0) cued.current.expression = null;
+    }
+    return { pose: idlePose(seconds, p.reducedMotion), face: { visemes: lipsync.current.sample(dt), blink: blinker.current.value(seconds), happy: p.happy, surprised: p.surprised, ...(expressions ? { expressions } : {}) } };
+  };
+
+  const drawNow = (dt: number) => {
+    const s = scene.current;
+    if (!s?.loaded) return;
+    const { pose, face } = moment(dt, frames.now());
+    s.draw(pose, face, dt);
+  };
+
+  // The scene lives as long as the component; the model loads again when the file changes.
+  useEffect(() => {
+    if (!canvas.current) return;
+    let alive = true;
+    let made: AvatarScene;
+    try {
+      made = new AvatarScene(canvas.current, { createRenderer: latest.current.createRenderer, framing, lights: latest.current.lights ?? themeLights(figure.current) });
+    } catch (error) {
+      const message = t("moss.vrm.noWebgl");
+      setStatus({ state: "error", message });
+      latest.current.onError?.(message, error instanceof Error ? error.message : String(error));
+      return;
+    }
+    scene.current = made;
+    setStatus({ state: "loading" });
+    (async () => {
+      try {
+        const bytes = typeof src === "string" ? await (latest.current.fetchBytes ?? ((url: string) => fetchCapped(url)))(src) : src;
+        const loaded = await made.load(bytes);
+        if (!alive) return;
+        const rect = view.current?.getBoundingClientRect();
+        made.setSize(rect?.width || 300, rect?.height || 400, ratio());
+        setStatus({ state: "ready", meta: loaded.meta });
+        latest.current.onReady?.(loaded.meta);
+      } catch (error) {
+        if (!alive) return;
+        const { message, detail } = describeError(error);
+        setStatus({ state: "error", message });
+        latest.current.onError?.(message, detail);
+      }
+    })();
+    return () => {
+      alive = false;
+      made.dispose();
+      scene.current = null;
+    };
+    // The file decides the model; everything else is read live.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src]);
+
+  useEffect(() => {
+    scene.current?.frame(framing, crop ?? null);
+  }, [framing, crop]);
+
+  // Read the theme's framing once the figure is on screen, and again when its size changes (a layout may switch it with the window's shape).
+  useEffect(() => {
+    const el = figure.current;
+    if (!el || typeof getComputedStyle !== "function") return;
+    const read = () => {
+      const v = getComputedStyle(el).getPropertyValue("--moss-avatar-framing").trim();
+      setThemed(v === "full" || v === "bust" || v === "waist" ? v : undefined);
+      const num = (n: string): number => Number.parseFloat(getComputedStyle(el).getPropertyValue(n));
+      const show = num("--moss-avatar-crop"), headroom = num("--moss-avatar-headroom");
+      setCrop(Number.isFinite(show) && show >= 0.2 && show <= 1 ? { show, headroom: Number.isFinite(headroom) && headroom >= 0 && headroom <= 0.6 ? headroom : 0.03 } : undefined);
+    };
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (props.lights) scene.current?.setLights(props.lights);
+  }, [props.lights]);
+
+  // Seen or not: on screen, and the window not hidden.
+  useEffect(() => {
+    const el = figure.current;
+    const doc = el?.ownerDocument;
+    let onScreen = true;
+    const update = () => setVisible(onScreen && doc?.visibilityState !== "hidden");
+    let observer: IntersectionObserver | undefined;
+    if (el && typeof IntersectionObserver !== "undefined") {
+      observer = new IntersectionObserver((entries) => {
+        onScreen = entries.some((e) => e.isIntersecting);
+        update();
+      });
+      observer.observe(el);
+    }
+    doc?.addEventListener("visibilitychange", update);
+    return () => {
+      observer?.disconnect();
+      doc?.removeEventListener("visibilitychange", update);
+    };
+  }, []);
+
+  const running = status.state === "ready" && visible && !paused && !still;
+
+  // The canvas follows its view's size; a still (or a paused avatar) draws again at the new size.
+  useEffect(() => {
+    const el = view.current;
+    if (!el || status.state !== "ready" || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const rect = el.getBoundingClientRect();
+      scene.current?.setSize(rect.width, rect.height, ratio());
+      if (!running) drawNow(0);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.state, running]);
+
+  // The app's control: the mood expressions this model has go out, the bot's cues come in, and the figure's box is said
+  // (throttled there; nothing while hidden) when the model shows, when the canvas resizes, and about once a second while it draws.
+  const boxAt = useRef(0);
+  const reportBox = (force = false) => {
+    const control = latest.current.control;
+    const fig = figure.current, v = view.current, sc = scene.current;
+    if (!control || !fig || !v || !sc?.loaded) return;
+    const now = performance.now();
+    if (!force && now - boxAt.current < 1000) return;
+    boxAt.current = now;
+    const f = fig.getBoundingClientRect(), r = v.getBoundingClientRect();
+    const ox = r.left - f.left, oy = r.top - f.top;
+    const canvasBox = { width: f.width, height: f.height };
+    const lay = sc.layout();
+    if (!lay) return control.setBox({ canvas: { width: Math.round(f.width), height: Math.round(f.height) } });
+    const shifted = boxFromRect(canvasBox, { x: lay.figure.x + ox, y: lay.figure.y + oy, width: lay.figure.width, height: lay.figure.height });
+    const move = (p?: { x: number; y: number }) => (p ? { x: Math.round(p.x + ox), y: Math.round(p.y + oy) } : undefined);
+    const anchors = { headTop: move(lay.headTop), face: move(lay.face), mouth: move(lay.mouth), chest: move(lay.chest) };
+    control.setBox({ canvas: shifted.canvas, ...(shifted.figure ? { figure: shifted.figure } : {}), anchors: Object.fromEntries(Object.entries(anchors).filter(([, p]) => p !== undefined)) as never });
+  };
+  useEffect(() => {
+    const control = props.control;
+    const sc = scene.current;
+    if (!control || status.state !== "ready" || !sc) return;
+    const have = sc.expressionNames();
+    // The model's outfit parts (its author's marks), each with whether it shows: said again whenever one switches.
+    const tell = () => {
+      const outfits = sc.outfitNames();
+      control.setCatalogue({ expressions: have, motions: [], outfits });
+      setWorn(outfits.filter((o) => o.on).map((o) => o.name).join(" "));
+    };
+    tell();
+    const play = (c: FigureCue) => {
+      if (c.type === "outfit") {
+        heard.current = [...heard.current.slice(-7), `${c.part}:${c.on ? 1 : 0}`];
+        if (sc.setOutfit(c.part, c.on)) tell();
+        return;
+      }
+      if (c.type === "expression" && (have as readonly string[]).includes(c.name) && (MOOD_EXPRESSIONS as readonly string[]).includes(c.name)) {
+        const old = cued.current.expression;
+        cued.current.expression = { name: c.name, level: old?.name === c.name ? old.level : 0, to: 1, holdLeft: 12 };
+        if (old && old.name !== c.name) old.to = 0;
+      } else if (c.type === "lookAt") { cued.current.look = c.point; scene.current?.lookAt(c.point); }
+      else if (c.type === "pace") cued.current.pace = c.calm;
+    };
+    const off = control.onCue(play);
+    if (cued.current.look) sc.lookAt(cued.current.look);
+    reportBox(true);
+    return () => { off(); control.setCatalogue(undefined); control.setBox(undefined); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.state, props.control]);
+  useEffect(() => {
+    const el = view.current;
+    if (!el || status.state !== "ready" || !props.control || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => reportBox(true));
+    observer.observe(el);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.state, props.control]);
+
+  // A still: its spring bones settle for a second, then it draws once (again whenever it changes).
+  const stillKey = still ? JSON.stringify(still) : null;
+  useEffect(() => {
+    const s = scene.current;
+    if (status.state !== "ready" || !still || !s) return;
+    const { pose, face } = moment(1 / 60, 0);
+    s.settle(pose, face, 1.5);
+    s.draw(pose, face, 1 / 60);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.state, stillKey, props.reducedMotion]);
+
+  // The living avatar: a frame loop only while it is ready, seen and not paused, drawing at most `maxFps` (a display
+  // at 120 Hz draws half its frames; the frames it skips cost a callback, not a picture).
+  useEffect(() => {
+    if (!running) return;
+    let last = frames.now();
+    let due = last;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let id = frames.requestFrame(function tick() {
+      const now = frames.now();
+      const fps = latest.current.maxFps ?? AVATAR_FPS;
+      const asked = cued.current.pace;
+      const calm = !speaking.current() && (asked !== undefined ? asked : now - lastPointer.current > CALM_AFTER_MS && cued.current.look === null);
+      const typing = calm && now - lastKey.current < TYPING_MS;
+      const gap = 1000 / (speaking.current() ? fps.speaking : typing ? (fps.typing ?? AVATAR_FPS.typing) : calm ? (fps.calm ?? AVATAR_FPS.calm) : fps.quiet);
+      // Draws fall due on a steady schedule, with a few milliseconds' grace for a display's frames landing early.
+      if (now >= due - 4) {
+        drawNow((now - last) / 1000);
+        reportBox();
+        last = now;
+        due += gap;
+        if (due <= now) due = now + gap;
+      }
+      // Calm: sleep on a timer between frames, not a wake at every display refresh.
+      if (calm && !typing) timer = setTimeout(() => { id = frames.requestFrame(tick); }, Math.max(0, due - frames.now() - 16));
+      else id = frames.requestFrame(tick);
+    });
+    return () => { frames.cancelFrame(id); if (timer) clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, frames]);
+
+  const line = status.state === "ready" ? creditLine(status.meta, credit) : null;
+  return (
+    <figure ref={figure} className="clvr-avatar" data-state={status.state} data-running={running || undefined} data-outfit={worn !== "" ? worn : undefined} data-cues={heard.current.join(" ") || undefined} aria-label={name}>
+      <div ref={view} className="clvr-view">
+        <canvas ref={canvas} className="clvr-canvas" aria-hidden="true" />
+        {status.state === "loading" ? (
+          <div className="clvr-wait" role="status">
+            {portrait ? <img className="clvr-portrait" src={portrait} alt="" draggable={false} /> : <span className="clvr-silhouette" aria-hidden="true" />}
+            <span className="clvr-wait-line">{t("moss.vrm.gettingReady", { name })}</span>
+          </div>
+        ) : null}
+        {status.state === "error" ? (
+          <div className="clvr-error" role="alert">
+            {portrait ? <img className="clvr-portrait" src={portrait} alt="" draggable={false} /> : null}
+            <span className="clvr-error-title">{t("moss.vrm.cantShow", { name })}</span>
+            <span className="clvr-error-line">{status.message}</span>
+          </div>
+        ) : null}
+      </div>
+      {line ? (
+        <figcaption className="clvr-credit">
+          <span className="clvr-credit-plate">{line}</span>
+        </figcaption>
+      ) : null}
+    </figure>
+  );
+}

@@ -54,29 +54,29 @@ describe("Winter's routines and memories, carried over", () => {
     const winter = winterHome();
     const before = snapshot(winter);
     expect(before.some((f) => /-(shm|wal) /.test(f))).toBe(false);
-    const clover = tempDir();
-    const result = migrateWinter({ winterHome: winter, cloverHome: clover });
+    const moss = tempDir();
+    const result = migrateWinter({ winterHome: winter, mossHome: moss });
     expect(result.routines.map((r) => r.winterId)).toEqual(["rt_1", "rt_2"]);
     expect(result.skipped).toMatchObject([{ winterId: "rt_3" }]);
     expect(result.memories).toBe(2);
-    const files = readdirSync(join(clover, "routines", "alpha")).sort();
+    const files = readdirSync(join(moss, "routines", "alpha")).sort();
     expect(files).toEqual(["winter-check-my-email.md", "winter-watch-the-build.md"]);
-    const first = readFileSync(join(clover, "routines", "alpha", "winter-check-my-email.md"), "utf8");
+    const first = readFileSync(join(moss, "routines", "alpha", "winter-check-my-email.md"), "utf8");
     expect(first).toContain("paused: true");
     expect(first).toContain("schedule: \"0 9 * * 1-5\"");
     expect(first).toContain("level: ask");
     expect(first).toContain("Carried over from Winter (its routine rt_1). It ran in `/Users/someone/work`.");
-    expect(readFileSync(join(clover, "routines", "alpha", "winter-watch-the-build.md"), "utf8")).toContain("which was switched off there");
-    expect(readFileSync(join(botPaths(clover, "alpha").memory, "likes-tea.md"), "utf8")).toBe("The user likes green tea.\n");
+    expect(readFileSync(join(moss, "routines", "alpha", "winter-watch-the-build.md"), "utf8")).toContain("which was switched off there");
+    expect(readFileSync(join(botPaths(moss, "alpha").memory, "likes-tea.md"), "utf8")).toBe("The user likes green tea.\n");
     // Not one byte, time or name in Winter's home changed, and SQLite left no -shm or -wal there.
     expect(snapshot(winter)).toEqual(before);
     // Again: nothing new, nothing written twice, no memory overwritten.
-    writeFileSync(join(botPaths(clover, "alpha").memory, "likes-tea.md"), "Edited by Alpha.\n");
-    const again = migrateWinter({ winterHome: winter, cloverHome: clover });
+    writeFileSync(join(botPaths(moss, "alpha").memory, "likes-tea.md"), "Edited by Alpha.\n");
+    const again = migrateWinter({ winterHome: winter, mossHome: moss });
     expect(again.routines).toEqual([]);
-    expect(readFileSync(join(botPaths(clover, "alpha").memory, "likes-tea.md"), "utf8")).toBe("Edited by Alpha.\n");
+    expect(readFileSync(join(botPaths(moss, "alpha").memory, "likes-tea.md"), "utf8")).toBe("Edited by Alpha.\n");
     // The engine loads them paused.
-    const b = await boot({ home: clover, plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, routines: { watchFiles: false } });
+    const b = await boot({ home: moss, plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, routines: { watchFiles: false } });
     expect(b.side.routines!.list().map((v) => v.state)).toEqual(["paused", "paused"]);
     await b.shutdown();
   });
@@ -90,7 +90,7 @@ describe("Winter's routines and memories, carried over", () => {
     try {
       const before = snapshot(winter);
       expect(before.some((f) => f.startsWith("routines.db-wal "))).toBe(true);
-      const result = migrateWinter({ winterHome: winter, cloverHome: tempDir(), memories: false });
+      const result = migrateWinter({ winterHome: winter, mossHome: tempDir(), memories: false });
       expect(result.routines.map((r) => r.winterId)).toContain("rt_9");
       expect(snapshot(winter)).toEqual(before);
     } finally {
@@ -99,7 +99,7 @@ describe("Winter's routines and memories, carried over", () => {
   });
 
   test("a Winter home with neither routines nor memories carries nothing", () => {
-    const result = migrateWinter({ winterHome: tempDir(), cloverHome: tempDir() });
+    const result = migrateWinter({ winterHome: tempDir(), mossHome: tempDir() });
     expect(result).toEqual({ routines: [], skipped: [], memories: 0 });
     expect(existsSync(join(tempDir(), "routines"))).toBe(false);
   });

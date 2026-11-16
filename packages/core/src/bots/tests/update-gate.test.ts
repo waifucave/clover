@@ -2,7 +2,7 @@
 // waiting; while the gate is closed no turn starts, the user's message is refused typed, and what was held (a bot's
 // message, a routine's run) starts once it reopens.
 import { afterEach, describe, expect, test } from "bun:test";
-import { ERR, SESSIONS_METHODS as M, type Caller } from "@waifucave/clover-protocol";
+import { ERR, SESSIONS_METHODS as M, type Caller } from "@waifucave/moss-protocol";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { MethodError } from "../rpc";
 import type { UpdateGateLike } from "../update-gate";
@@ -16,7 +16,7 @@ class UpdateRestartingRefusal extends Error {
   readonly reason = "update-restarting" as const;
   readonly retry = true as const;
   constructor() {
-    super("Clover is restarting for an update; send it again in a moment");
+    super("MOSS is restarting for an update; send it again in a moment");
   }
 }
 

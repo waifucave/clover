@@ -1,5 +1,5 @@
 // The machine-wide exclusive lock (scripts/heavy --exclusive, the coordinator's rule: one acceptance or try run at a
-// time). An acceptance run that isn't already under it (CLOVER_HEAVY_EXCLUSIVE, which heavy sets for what runs under
+// time). An acceptance run that isn't already under it (MOSS_HEAVY_EXCLUSIVE, which heavy sets for what runs under
 // its hold: a try's watch.sh starting run.ts) runs itself again under it, queueing behind any other holder; a packaged
 // run (`--app`) takes it as packaged, so ordinary heavy jobs wait while it runs. Signals reach the run under the lock
 // (its own process group), so stopping this process by pid stops it too.
@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 /** heavy's arguments for this run, or undefined when it already runs under the hold (or there is no heavy). */
 export function exclusiveArgs(repo: string, argv: readonly string[], env: NodeJS.ProcessEnv = process.env): string[] | undefined {
-  if ((env.CLOVER_HEAVY_EXCLUSIVE ?? "") !== "") return undefined;
+  if ((env.MOSS_HEAVY_EXCLUSIVE ?? "") !== "") return undefined;
   const heavy = join(repo, "scripts", "heavy");
   if (!existsSync(heavy) || process.platform === "win32") return undefined;
   return [heavy, "--exclusive", ...(argv.includes("--app") ? ["--packaged"] : []), process.execPath, ...argv];

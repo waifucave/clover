@@ -12,13 +12,13 @@
 //   the credential store (`SecretStore`, owner the plugin, named by the key), so `plugin.settings.get` says only
 //   whether one is stored.
 // * The values sit in the fenced settings folder (`<home>/settings/plugins/<id>.json`), which no bot writes (§9.1).
-import { BotId, PLUGINS_METHODS, type ChangeResult, type PluginSettingView } from "@waifucave/clover-protocol";
+import { BotId, PLUGINS_METHODS, type ChangeResult, type PluginSettingView } from "@waifucave/moss-protocol";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
 import type { PluginRegistry } from "../../contracts/plugin-registry";
 import type { SecretStore } from "../../contracts/secret-store";
-import { settingHost, settingHostTemplates, settingTemplated, type Setting } from "@waifucave/clover-plugin-sdk";
+import { settingHost, settingHostTemplates, settingTemplated, type Setting } from "@waifucave/moss-plugin-sdk";
 import type { CardOpener } from "../../devices/rpc";
 import { handler, requireUser, type MethodHandler } from "../../rpc/handler";
 import { pluginPath } from "./storage";
@@ -47,8 +47,8 @@ const empty = (): PluginSettingValues => ({ account: {}, device: {}, bot: {} });
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-export function filePluginSettings(cloverHome: string): PluginSettingsBackend {
-  const file = (id: string) => `${pluginPath(join(cloverHome, "settings", "plugins"), id)}.json`;
+export function filePluginSettings(mossHome: string): PluginSettingsBackend {
+  const file = (id: string) => `${pluginPath(join(mossHome, "settings", "plugins"), id)}.json`;
   return {
     read(id) {
       const f = file(id);
@@ -97,7 +97,7 @@ export function checkSettingValue(key: string, field: Setting, value: unknown): 
     case "secret":
       throw new ContractError("refused", `${key} is a secret: the user sets it, and the plugin gets it only through the keyed fetch or secrets.get`);
     default:
-      throw bad(`a setting of a type this Clover doesn't know (${String((field as { type?: unknown }).type)})`);
+      throw bad(`a setting of a type this MOSS doesn't know (${String((field as { type?: unknown }).type)})`);
   }
 }
 
@@ -198,7 +198,7 @@ export class PluginSettings {
     const field = this.field(pluginId, key);
     // From the Plugins page (main sets `noSecret`): a secret is never set, replaced or cleared by a page call; the
     // app's own key dialog does it (the controller's ruling, 2026-11-11). The kind is the manifest's, never the page's.
-    if (o.noSecret === true && field.type === "secret") throw new ContractError("refused", `${key} is a key: it is entered, replaced or removed only in Clover's own key dialog`);
+    if (o.noSecret === true && field.type === "secret") throw new ContractError("refused", `${key} is a key: it is entered, replaced or removed only in MOSS's own key dialog`);
     if (field.type !== "secret") {
       const moves = this.#hostsMoved(pluginId, key, value, bot);
       if (moves.length === 0) {
@@ -351,7 +351,7 @@ export class PluginSettings {
    *  kind; `null` goes back to the default. Its change is the plugin's own `plugin_settings_changed`. */
   layerSet(pluginId: string, key: string, value: unknown, bot?: string): void {
     const field = this.field(pluginId, key);
-    if (field.type === "secret") throw new ContractError("refused", `${key} is a key: it is entered only in Clover's own key dialog`);
+    if (field.type === "secret") throw new ContractError("refused", `${key} is a key: it is entered only in MOSS's own key dialog`);
     let size = Infinity;
     try { size = JSON.stringify(value ?? null).length; } catch { /* not JSON */ }
     if (size > LAYER_SETTING_MAX) throw new ContractError("invalid", `${key}: the value is too large`);

@@ -8,7 +8,7 @@
 //     coreTools: botCoreTools({ side, agents: { manager } }),
 //     mcp: { servers, runner: node.mcp }, holds: node.holds, terminals: node.terminals,
 //     computers, epoch: () => main.epoch(), provider })
-import type { Level } from "@waifucave/clover-protocol";
+import type { Level } from "@waifucave/moss-protocol";
 import { agentToolDefs, type AgentToolOptions } from "../../agents/tools";
 import type { AgentManager } from "../../agents/manager";
 import type { BotSessionContext } from "../../bots/service";

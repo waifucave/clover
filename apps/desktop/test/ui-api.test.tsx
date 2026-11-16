@@ -4,14 +4,14 @@
 // part, and a reload button when a frame's layer stops.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import type { LayerBridge, LayerMessage, MountInfo, SpotView } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { LayerBridge, LayerMessage, MountInfo, SpotView } from "@waifucave/moss-plugin-sdk/ui/bridge";
 
 // Frames never load here: their documents are the main process's (the Electron UI test loads them).
 GlobalRegistrator.register({ settings: { navigation: { disableChildFrameNavigation: true } } });
 // The tests share one rendered layer, so the library must not unmount it after each.
 process.env.RTL_SKIP_AUTO_CLEANUP = "true";
 const { act, cleanup, render } = await import("@testing-library/react");
-const ui = await import("@waifucave/clover-plugin-sdk/ui");
+const ui = await import("@waifucave/moss-plugin-sdk/ui");
 const { createElement: h, useState } = await import("react");
 // The SDK's example renderer, as a third-party `avatar` entry (its own frame in the app).
 const pngtuber = await import("../../../packages/plugin-sdk/examples/example-pngtuber/client/index");
@@ -47,12 +47,12 @@ function fakeBridge(views: Record<string, SpotView>) {
     release: (mounts) => calls.push({ op: "release", args: [mounts] }),
     reload: async (child) => {
       calls.push({ op: "reload", args: [child] });
-      return "clover-plugin://other/?mount=fresh";
+      return "moss-plugin://other/?mount=fresh";
     },
     sleep: (child) => calls.push({ op: "sleep", args: [child] }),
     wake: async (child) => {
       calls.push({ op: "wake", args: [child] });
-      return "clover-plugin://vn/?mount=woken";
+      return "moss-plugin://vn/?mount=woken";
     },
     rectReply: (id, rect) => calls.push({ op: "rectReply", args: [id, rect] }),
     menu: async (mount, items, x, y) => {
@@ -71,7 +71,7 @@ function fakeBridge(views: Record<string, SpotView>) {
     composer: async (mount, op, args) => { calls.push({ op: "composer", args: [mount, op, args] }); return undefined; },
     entries: async (mount, spot, key) => {
       calls.push({ op: "entries", args: [mount, spot, key] });
-      return [{ ref: "clover/island#usage", id: "usage", pluginId: "clover/island", pluginName: "Island", bundled: true, fields: { title: "Usage" } }, { ref: "vn#tab", id: "tab", pluginId: "vn", pluginName: "VN", bundled: false, fields: { title: "VN" } }];
+      return [{ ref: "moss/island#usage", id: "usage", pluginId: "moss/island", pluginName: "Island", bundled: true, fields: { title: "Usage" } }, { ref: "vn#tab", id: "tab", pluginId: "vn", pluginName: "VN", bundled: false, fields: { title: "VN" } }];
     },
     api: async (mount, method, params) => {
       calls.push({ op: "api", args: [mount, method, params] });
@@ -95,7 +95,7 @@ function fakeBridge(views: Record<string, SpotView>) {
     },
     sealedFrame: async (mount: string, cardId: string, element: string) => {
       calls.push({ op: "sealedFrame", args: [mount, cardId, element] });
-      return `clover-sealed://card/${cardId}/${element}?token=x`;
+      return `moss-sealed://card/${cardId}/${element}?token=x`;
     },
     onMessage: (l) => {
       listeners.add(l);
@@ -174,8 +174,8 @@ describe("the UI API in a layer", () => {
 
   beforeAll(() => {
     fake = fakeBridge(Object.assign(views, {
-      "m1:sidebar": { spot: "sidebar", shape: "single", hidden: false, conflict: false, items: [{ kind: "inline", mount: "m2", ref: "clover/sidebar#sidebar", pluginId: "clover/sidebar", entryId: "sidebar", component: "Sidebar", context: CTX, tokens: { "color.accent": "#123456" } }] },
-      "m1:composer": { spot: "composer", shape: "single", hidden: false, conflict: false, items: [{ kind: "frame", mount: "m3", ref: "vn#composer", pluginId: "vn", entryId: "composer", layer: "vn", url: "clover-plugin://vn/?mount=abc" }] },
+      "m1:sidebar": { spot: "sidebar", shape: "single", hidden: false, conflict: false, items: [{ kind: "inline", mount: "m2", ref: "moss/sidebar#sidebar", pluginId: "moss/sidebar", entryId: "sidebar", component: "Sidebar", context: CTX, tokens: { "color.accent": "#123456" } }] },
+      "m1:composer": { spot: "composer", shape: "single", hidden: false, conflict: false, items: [{ kind: "frame", mount: "m3", ref: "vn#composer", pluginId: "vn", entryId: "composer", layer: "vn", url: "moss-plugin://vn/?mount=abc" }] },
       "m1:status": { spot: "status", shape: "list", hidden: true, conflict: false, items: [] },
     }));
     const Shell = ({ props, tokens }: { props: { title: string }; tokens: Record<string, unknown> }) =>
@@ -207,40 +207,40 @@ describe("the UI API in a layer", () => {
       hooks.claim = () => drag.claim("g1");
       return h("nav", { "data-route": props.route, "data-plugin": entry.pluginId, "data-accent": String(tokens["color.accent"]) }, h("div", { ref: viewRef, "data-live-view": "" }));
     };
-    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar }, vn: { VnPage }, "clover/character": { Stage }, "example-pngtuber": { PngtuberAvatar: pngtuber.PngtuberAvatar }, "test/fill": { Columns, NarrowProbe } }, sleepAfterMs: 30 });
+    ui.configureLayer({ bridge: fake.bridge, modules: { "moss/shell": { Window: Shell }, "moss/sidebar": { Sidebar }, vn: { VnPage }, "moss/character": { Stage }, "example-pngtuber": { PngtuberAvatar: pngtuber.PngtuberAvatar }, "test/fill": { Columns, NarrowProbe } }, sleepAfterMs: 30 });
   });
 
   test("the document's entry renders with its props and tokens; an inline part from the same layer with its own", async () => {
-    const info: MountInfo = { mount: "m1", pluginId: "clover/shell", entryId: "app.root", component: "Window", spot: "app.root", props: { title: "Clover" }, tokens: { "color.accent": "#2F6FDF" }, context: CTX, css: [] };
+    const info: MountInfo = { mount: "m1", pluginId: "moss/shell", entryId: "app.root", component: "Window", spot: "app.root", props: { title: "MOSS" }, tokens: { "color.accent": "#2F6FDF" }, context: CTX, css: [] };
     const { container } = render(h(ui.LayerRoot, { info }));
     await tick();
-    expect(container.querySelector("main")?.getAttribute("data-title")).toBe("Clover");
+    expect(container.querySelector("main")?.getAttribute("data-title")).toBe("MOSS");
     expect(container.querySelector("main")?.getAttribute("data-accent")).toBe("#2F6FDF");
     const nav = container.querySelector("nav")!;
     expect(nav.getAttribute("data-route")).toBe("alpha");
-    expect(nav.getAttribute("data-plugin")).toBe("clover/sidebar");
+    expect(nav.getAttribute("data-plugin")).toBe("moss/sidebar");
     // Another tab's (or a dressed part's) tokens: on the part, as custom properties and through the hook.
     expect(nav.getAttribute("data-accent")).toBe("#123456");
-    expect((nav.parentElement as HTMLElement).style.getPropertyValue("--clover-color-accent")).toBe("#123456");
+    expect((nav.parentElement as HTMLElement).style.getPropertyValue("--moss-color-accent")).toBe("#123456");
     // Tokens reach the document as custom properties.
-    expect(document.documentElement.style.getPropertyValue("--clover-color-accent")).toBe("#2F6FDF");
+    expect(document.documentElement.style.getPropertyValue("--moss-color-accent")).toBe("#2F6FDF");
     // Light to dark: one message updates the document's and the part's; the part keeps its new ones (the parent's
     // change never puts back the tokens it was resolved with).
     await act(async () => fake.emit({ type: "tokens", tokens: { m1: { "color.accent": "#0A0A0A" }, m2: { "color.accent": "#FEDCBA" } } }));
     await tick();
     expect(container.querySelector("nav")!.getAttribute("data-accent")).toBe("#FEDCBA");
-    expect((container.querySelector("nav")!.parentElement as HTMLElement).style.getPropertyValue("--clover-color-accent")).toBe("#FEDCBA");
+    expect((container.querySelector("nav")!.parentElement as HTMLElement).style.getPropertyValue("--moss-color-accent")).toBe("#FEDCBA");
     await act(async () => fake.emit({ type: "tokens", tokens: { m1: { "color.accent": "#2F6FDF" }, m2: { "color.accent": "#123456" } } }));
     await tick();
     expect(container.querySelector("nav")!.getAttribute("data-accent")).toBe("#123456");
   });
 
   test("a part from another layer is a frame; its props cross with callbacks as markers the core routes back", async () => {
-    const frame = document.querySelector('iframe[data-clover-entry="vn#composer"]') as HTMLIFrameElement;
-    expect(frame.getAttribute("src")).toBe("clover-plugin://vn/?mount=abc");
+    const frame = document.querySelector('iframe[data-moss-entry="vn#composer"]') as HTMLIFrameElement;
+    expect(frame.getAttribute("src")).toBe("moss-plugin://vn/?mount=abc");
     expect(frame.getAttribute("allow")).toBe("");
     const set = fake.calls.find((c) => c.op === "setProps" && c.args[0] === "m3")!;
-    expect(set.args[1]).toEqual({ bot: "alpha", onSend: { "$clover.callback": "1" } });
+    expect(set.args[1]).toEqual({ bot: "alpha", onSend: { "$moss.callback": "1" } });
     await act(async () => fake.emit({ type: "callback", child: "m3", id: "1", args: ["hello"] }));
     expect(seen).toEqual(["hello"]);
     await act(async () => fake.emit({ type: "child-size", child: "m3", height: 64 }));
@@ -259,18 +259,18 @@ describe("the UI API in a layer", () => {
   });
 
   test("a hidden part and an undeclared spot show nothing", () => {
-    expect(document.querySelector('[data-clover-spot="status"]')?.getAttribute("data-clover-empty")).toBe("hidden");
-    expect(document.querySelector('[data-clover-spot="never-declared"]')?.getAttribute("data-clover-empty")).toBe("waiting");
+    expect(document.querySelector('[data-moss-spot="status"]')?.getAttribute("data-moss-empty")).toBe("hidden");
+    expect(document.querySelector('[data-moss-spot="never-declared"]')?.getAttribute("data-moss-empty")).toBe("waiting");
   });
 
   test("a frame whose layer stopped shows a reload, which loads a fresh single-use URL", async () => {
     await act(async () => fake.emit({ type: "child-gone", child: "m3", reason: "its layer stopped" }));
-    const button = document.querySelector('[data-clover-gone] button') as HTMLButtonElement;
+    const button = document.querySelector('[data-moss-gone] button') as HTMLButtonElement;
     expect(button.textContent).toBe("Reload");
     await act(async () => button.click());
     await tick();
     expect(fake.calls.some((c) => c.op === "reload" && c.args[0] === "m3")).toBe(true);
-    expect(document.querySelector('iframe[data-clover-entry="vn#composer"]')?.getAttribute("src")).toBe("clover-plugin://other/?mount=fresh");
+    expect(document.querySelector('iframe[data-moss-entry="vn#composer"]')?.getAttribute("src")).toBe("moss-plugin://other/?mount=fresh");
   });
 
   test("the core asks where a child frame is (the menu broker); a part's menu and drags go through the core", async () => {
@@ -320,13 +320,13 @@ describe("the UI API in a layer", () => {
       await new Promise((r) => setTimeout(r, 60));
     });
     expect(fake.calls.some((c) => c.op === "sleep" && c.args[0] === "m3")).toBe(true);
-    const placeholder = document.querySelector('[data-clover-entry="vn#composer"][data-clover-asleep]') as HTMLElement;
+    const placeholder = document.querySelector('[data-moss-entry="vn#composer"][data-moss-asleep]') as HTMLElement;
     expect(placeholder).not.toBeNull();
-    expect(document.querySelector('iframe[data-clover-entry="vn#composer"]')).toBeNull();
+    expect(document.querySelector('iframe[data-moss-entry="vn#composer"]')).toBeNull();
     await act(async () => setNear(true));
     await tick();
     expect(fake.calls.some((c) => c.op === "wake" && c.args[0] === "m3")).toBe(true);
-    expect(document.querySelector('iframe[data-clover-entry="vn#composer"]')?.getAttribute("src")).toBe("clover-plugin://vn/?mount=woken");
+    expect(document.querySelector('iframe[data-moss-entry="vn#composer"]')?.getAttribute("src")).toBe("moss-plugin://vn/?mount=woken");
   });
 
   test("a registry change resolves every spot again", async () => {
@@ -338,11 +338,11 @@ describe("the UI API in a layer", () => {
 
   test("the themes' sheets go in the head in the core's order and follow its changes; each part carries its mark", async () => {
     // The marks a sheet's `@scope` finds: the document's part on its root, an inline part on its wrapper.
-    expect(document.documentElement.getAttribute("data-clover-part")).toBe("m1");
-    expect(document.querySelector('[data-clover-entry="clover/sidebar#sidebar"]')?.getAttribute("data-clover-part")).toBe("m2");
-    const ids = () => Array.from(document.head.querySelectorAll("style[data-clover-sheet]")).map((e) => `${e.getAttribute("data-clover-sheet")}=${e.textContent}`);
-    await act(async () => fake.emit({ type: "sheets", sheets: [{ id: "base:clover/base-theme", css: "a{}" }, { id: "bot:luna:m2", css: "b{}" }] }));
-    expect(ids()).toEqual(["base:clover/base-theme=a{}", "bot:luna:m2=b{}"]);
+    expect(document.documentElement.getAttribute("data-moss-part")).toBe("m1");
+    expect(document.querySelector('[data-moss-entry="moss/sidebar#sidebar"]')?.getAttribute("data-moss-part")).toBe("m2");
+    const ids = () => Array.from(document.head.querySelectorAll("style[data-moss-sheet]")).map((e) => `${e.getAttribute("data-moss-sheet")}=${e.textContent}`);
+    await act(async () => fake.emit({ type: "sheets", sheets: [{ id: "base:moss/base-theme", css: "a{}" }, { id: "bot:luna:m2", css: "b{}" }] }));
+    expect(ids()).toEqual(["base:moss/base-theme=a{}", "bot:luna:m2=b{}"]);
     // They come after the part's own stylesheets.
     const link = document.createElement("link");
     document.head.insertBefore(link, document.head.firstChild);
@@ -353,10 +353,10 @@ describe("the UI API in a layer", () => {
   });
 
   test("strings: the core's table, in its language, kept current; a key with no string reads as itself", async () => {
-    expect(hooks.t!("clover.sidebar.files", { count: 2 })).toBe("clover.sidebar.files");
-    await act(async () => fake.emit({ type: "strings", strings: { lang: "fr", strings: { "clover.sidebar.files": { one: "{count} fichier", other: "{count} fichiers" } } } }));
-    expect(hooks.t!("clover.sidebar.files", { count: 1 })).toBe("1 fichier");
-    expect(hooks.t!("clover.sidebar.files", { count: 1200 })).toBe("1\u202f200 fichiers");
+    expect(hooks.t!("moss.sidebar.files", { count: 2 })).toBe("moss.sidebar.files");
+    await act(async () => fake.emit({ type: "strings", strings: { lang: "fr", strings: { "moss.sidebar.files": { one: "{count} fichier", other: "{count} fichiers" } } } }));
+    expect(hooks.t!("moss.sidebar.files", { count: 1 })).toBe("1 fichier");
+    expect(hooks.t!("moss.sidebar.files", { count: 1200 })).toBe("1\u202f200 fichiers");
     expect(document.documentElement.lang).toBe("fr");
   });
 
@@ -372,12 +372,12 @@ describe("the UI API in a layer", () => {
         { kind: "column", grow: 1, children: [{ kind: "spot", spot: "conversation" }, { kind: "spacer" }] },
       ] },
     }] };
-    views["m20:conversation"] = { spot: "conversation", shape: "single", hidden: false, conflict: false, items: [{ kind: "inline", mount: "m21", ref: "clover/sidebar#sidebar", pluginId: "clover/sidebar", entryId: "sidebar", component: "Sidebar", context: CTX }] };
+    views["m20:conversation"] = { spot: "conversation", shape: "single", hidden: false, conflict: false, items: [{ kind: "inline", mount: "m21", ref: "moss/sidebar#sidebar", pluginId: "moss/sidebar", entryId: "sidebar", component: "Sidebar", context: CTX }] };
     await act(async () => fake.emit({ type: "respot" }));
     await tick();
-    const part = document.querySelector('[data-clover-part="m20"]')!;
-    expect(part.getAttribute("data-clover-tab")).toBe("luna");
-    expect(part.querySelector('[data-clover-layout="row"] > [data-clover-layout="column"].clv-luna__side')).not.toBeNull();
+    const part = document.querySelector('[data-moss-part="m20"]')!;
+    expect(part.getAttribute("data-moss-tab")).toBe("luna");
+    expect(part.querySelector('[data-moss-layout="row"] > [data-moss-layout="column"].clv-luna__side')).not.toBeNull();
     expect(part.querySelector("img")?.getAttribute("src")).toBe("/_t/luna/a.png");
     expect(part.querySelector("h1")?.textContent).toBe("Luna");
     expect(part.querySelector("em")?.textContent).toBe("stars");
@@ -388,12 +388,12 @@ describe("the UI API in a layer", () => {
     expect(part.textContent).not.toContain("only when wide");
     // Its spot resolves as the layout part's.
     expect(fake.calls).toContainEqual({ op: "resolve", args: ["m20", "conversation", undefined] });
-    expect(part.querySelector('[data-clover-part="m21"] nav')).not.toBeNull();
+    expect(part.querySelector('[data-moss-part="m21"] nav')).not.toBeNull();
   });
 
-  test("a spot's entries for its declaring part, and one entry shown by its ref; questions; the clover tree's parts have useUserSend", async () => {
+  test("a spot's entries for its declaring part, and one entry shown by its ref; questions; the moss tree's parts have useUserSend", async () => {
     await tick();
-    expect(hooks.entries!().map((e) => e.ref)).toEqual(["clover/island#usage", "vn#tab"]);
+    expect(hooks.entries!().map((e) => e.ref)).toEqual(["moss/island#usage", "vn#tab"]);
     // Answered: a list that is empty before the first answer says so (`loaded` false), so a host does not read it as the spot being unfilled.
     expect(hooks.loaded!()).toBe(true);
     expect(fake.calls).toContainEqual({ op: "entries", args: ["m2", "island.tab", undefined] });
@@ -402,7 +402,7 @@ describe("the UI API in a layer", () => {
     const q = { session: "s_alpha", callId: "c1", at: 1, questions: [{ question: "Which one?", options: [{ label: "A" }, { label: "B" }] }] };
     await act(async () => fake.emit({ type: "questions", questions: [q] }));
     expect(hooks.questions!()).toEqual([q]);
-    // A part of the bundled clover tree has the hook (the main process decides again, and gates the key press or
+    // A part of the bundled moss tree has the hook (the main process decides again, and gates the key press or
     // click); the runtime test covers a part of any other layer being refused there.
     expect(hooks.userSend).toBeDefined();
   });
@@ -423,8 +423,8 @@ describe("the UI API in a layer", () => {
     const got: string[] = [];
     const off = term.onData("term_1", (d) => got.push(d));
     await act(async () => {
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "terminal_output", terminalId: "term_1", data: "$ " } });
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "terminal_output", terminalId: "term_2", data: "other" } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "terminal_output", terminalId: "term_1", data: "$ " } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "terminal_output", terminalId: "term_2", data: "other" } });
       fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "terminal_output", terminalId: "term_1", data: "not mine" } });
     });
     off();
@@ -438,8 +438,8 @@ describe("the UI API in a layer", () => {
     const removed: string[] = [];
     const off = hooks.api!.bots!.watch((b) => changed.push(b.id), (id) => removed.push(id));
     await act(async () => {
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "bot_changed", bot: { id: "luna" } } });
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "bot_removed", id: "luna" } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "bot_changed", bot: { id: "luna" } } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "bot_removed", id: "luna" } });
       fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "bot_removed", id: "not-mine" } });
     });
     off();
@@ -447,7 +447,7 @@ describe("the UI API in a layer", () => {
     // With no `onRemoved`, nothing more is subscribed and a removal is not heard.
     const only: string[] = [];
     const offOnly = hooks.api!.bots!.watch((b) => only.push(b.id));
-    await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "bot_removed", id: "luna" } }));
+    await act(async () => fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "bot_removed", id: "luna" } }));
     offOnly();
     expect(only).toEqual([]);
   });
@@ -475,11 +475,11 @@ describe("the UI API in a layer", () => {
     const off = api.host.on("stage", (v) => heard.push(v));
     const offKeys = api.storage.synced.watch((k) => keys.push(k));
     await act(async () => {
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_ui_message", pluginId: "clover/sidebar", event: "stage", value: { v: 1, scene: "beach" } } });
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_ui_message", pluginId: "clover/sidebar", event: "other", value: 2 } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "plugin_ui_message", pluginId: "moss/sidebar", event: "stage", value: { v: 1, scene: "beach" } } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "plugin_ui_message", pluginId: "moss/sidebar", event: "other", value: 2 } });
       fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "plugin_ui_message", pluginId: "someone-else", event: "stage", value: "not mine" } });
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_ui_message", pluginId: "someone-else", event: "stage", value: "not mine either" } });
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_store_changed", pluginId: "clover/sidebar", key: "stage" } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "plugin_ui_message", pluginId: "someone-else", event: "stage", value: "not mine either" } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "plugin_store_changed", pluginId: "moss/sidebar", key: "stage" } });
       fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "plugin_store_changed", pluginId: "someone-else", key: "x" } });
     });
     off();
@@ -522,11 +522,11 @@ describe("the UI API in a layer", () => {
     const offAll = api.settings.watch(null, (k) => all.push(k));
     const offDeck = api.settings.watch("deck", (k) => deck.push(k));
     await act(async () => {
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "clover/sidebar", key: "deck" } });
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "clover/sidebar", key: "TAROT_KEY" } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "moss/sidebar", key: "deck" } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "moss/sidebar", key: "TAROT_KEY" } });
       fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "someone-else", key: "deck" } });
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "someone-else", key: "deck" } });
-      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_changed", id: "clover/sidebar", state: "running", enabled: true } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "someone-else", key: "deck" } });
+      fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "plugin_changed", id: "moss/sidebar", state: "running", enabled: true } });
     });
     offAll();
     offDeck();
@@ -538,9 +538,9 @@ describe("the UI API in a layer", () => {
     await tick();
     expect(hooks.cards!().map((c) => c.id)).toContain("card_before");
     // The same card heard again (its event, after the read) is still one card: shown once, never twice.
-    await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "card_pending", card: { id: "card_before", computers: ["Studio"] } } }));
+    await act(async () => fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "card_pending", card: { id: "card_before", computers: ["Studio"] } } }));
     expect(hooks.cards!().filter((c) => c.id === "card_before").length).toBe(1);
-    await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "card_resolved", id: "card_before", outcome: "approved" } }));
+    await act(async () => fake.emit({ type: "api-event", pluginId: "moss/sidebar", method: "core.event", params: { type: "card_resolved", id: "card_before", outcome: "approved" } }));
     expect(hooks.cards!().map((c) => c.id)).not.toContain("card_before");
   });
 
@@ -550,7 +550,7 @@ describe("the UI API in a layer", () => {
       fns.push(fn);
       return String(fns.length);
     });
-    expect(encoded).toEqual({ a: 1, nested: { f: { "$clover.callback": "1" } }, list: [{ "$clover.callback": "2" }, "x"] });
+    expect(encoded).toEqual({ a: 1, nested: { f: { "$moss.callback": "1" } }, list: [{ "$moss.callback": "2" }, "x"] });
     const called: unknown[] = [];
     const decoded = ui.decodeProps(encoded, (id, args) => called.push([id, args])) as { nested: { f: (x: unknown) => void } };
     decoded.nested.f(() => "a function never crosses");
@@ -558,12 +558,12 @@ describe("the UI API in a layer", () => {
   });
 
   test("an avatar renderer in its own frame gets the stage's speech as batches of numbers, ~every 40 ms while it speaks, nothing while quiet, hidden or gone", async () => {
-    views["s1:avatar[pngtuber]"] = { spot: "avatar", key: "pngtuber", shape: "keyed", hidden: false, conflict: false, items: [{ kind: "frame", mount: "s2", ref: "example-pngtuber#avatar", pluginId: "example-pngtuber", entryId: "avatar", layer: "example-pngtuber", url: "clover-plugin://example-pngtuber/?mount=a1" }] };
-    const info: MountInfo = { mount: "s1", pluginId: "clover/character", entryId: "bot-stage", component: "Stage", spot: "bot.stage", props: {}, tokens: {}, context: CTX, css: [] };
+    views["s1:avatar[pngtuber]"] = { spot: "avatar", key: "pngtuber", shape: "keyed", hidden: false, conflict: false, items: [{ kind: "frame", mount: "s2", ref: "example-pngtuber#avatar", pluginId: "example-pngtuber", entryId: "avatar", layer: "example-pngtuber", url: "moss-plugin://example-pngtuber/?mount=a1" }] };
+    const info: MountInfo = { mount: "s1", pluginId: "moss/character", entryId: "bot-stage", component: "Stage", spot: "bot.stage", props: {}, tokens: {}, context: CTX, css: [] };
     const stage = render(h(ui.LayerRoot, { info }));
     await tick();
     const speech = () => fake.calls.filter((c) => c.op === "speech");
-    expect(stage.container.querySelector('iframe[data-clover-mount="s2"]')).toBeTruthy();
+    expect(stage.container.querySelector('iframe[data-moss-mount="s2"]')).toBeTruthy();
     // The frame's props carry no feed (functions never cross as data): the speech goes its own way.
     const props = fake.calls.filter((c) => c.op === "setProps" && c.args[0] === "s2").at(-1)?.args[1] as Record<string, unknown>;
     expect(Object.keys(props).sort()).toEqual(["bot", "file", "format"]);
@@ -619,8 +619,8 @@ describe("the UI API in a layer", () => {
   });
 
   test("an avatar renderer in its own frame: the stage's cues go to it while it can be seen, and what it says about its model and figure reaches the stage's hub", async () => {
-    views["s1:avatar[pngtuber]"] = { spot: "avatar", key: "pngtuber", shape: "keyed", hidden: false, conflict: false, items: [{ kind: "frame", mount: "s2", ref: "example-pngtuber#avatar", pluginId: "example-pngtuber", entryId: "avatar", url: "clover-plugin://example-pngtuber/?mount=s2" }] } as never;
-    const info: MountInfo = { mount: "s1", pluginId: "clover/character", entryId: "bot-stage", component: "Stage", spot: "bot.stage", props: {}, tokens: {}, context: CTX, css: [] };
+    views["s1:avatar[pngtuber]"] = { spot: "avatar", key: "pngtuber", shape: "keyed", hidden: false, conflict: false, items: [{ kind: "frame", mount: "s2", ref: "example-pngtuber#avatar", pluginId: "example-pngtuber", entryId: "avatar", url: "moss-plugin://example-pngtuber/?mount=s2" }] } as never;
+    const info: MountInfo = { mount: "s1", pluginId: "moss/character", entryId: "bot-stage", component: "Stage", spot: "bot.stage", props: {}, tokens: {}, context: CTX, css: [] };
     const stage = render(h(ui.LayerRoot, { info }));
     await tick();
     const sentCues = () => fake.calls.filter((c) => c.op === "avatar");
@@ -684,22 +684,22 @@ describe("the UI API in a layer", () => {
   });
 
   test("a frame in the main or panel spot fills the room it is given and ignores the height its page reports; in another spot it takes the page's height", async () => {
-    const frameItem = (mount: string, spot: string) => ({ kind: "frame" as const, mount, ref: `vn#${spot}`, pluginId: "vn", entryId: spot, layer: "vn", url: `clover-plugin://vn/?mount=${mount}` });
+    const frameItem = (mount: string, spot: string) => ({ kind: "frame" as const, mount, ref: `vn#${spot}`, pluginId: "vn", entryId: spot, layer: "vn", url: `moss-plugin://vn/?mount=${mount}` });
     views["w1:main[editor]"] = { spot: "main", key: "editor", shape: "keyed", hidden: false, conflict: false, items: [frameItem("w2", "main")] };
     views["w1:panel[side]"] = { spot: "panel", key: "side", shape: "keyed", hidden: false, conflict: false, items: [frameItem("w3", "panel")] };
     views["w1:bar"] = { spot: "bar", shape: "single", hidden: false, conflict: false, items: [frameItem("w4", "bar")] };
     const info: MountInfo = { mount: "w1", pluginId: "test/fill", entryId: "columns", component: "Columns", spot: "app.root", props: {}, tokens: {}, context: CTX, css: [] };
     const win = render(h(ui.LayerRoot, { info }));
     await tick();
-    const frame = (mount: string) => win.container.querySelector(`iframe[data-clover-mount="${mount}"]`) as HTMLIFrameElement;
+    const frame = (mount: string) => win.container.querySelector(`iframe[data-moss-mount="${mount}"]`) as HTMLIFrameElement;
     await act(async () => { for (const m of ["w2", "w3", "w4"]) fake.emit({ type: "child-size", child: m, height: 64 }); });
     for (const m of ["w2", "w3"]) {
-      expect(frame(m).getAttribute("data-clover-fill")).toBe("");
+      expect(frame(m).getAttribute("data-moss-fill")).toBe("");
       expect(frame(m).style.height).toBe("100%");
       expect(frame(m).style.flex).toBe("1 1 0px");
       expect(["0", "0px"]).toContain(frame(m).style.minHeight);
     }
-    expect(frame("w4").getAttribute("data-clover-fill")).toBeNull();
+    expect(frame("w4").getAttribute("data-moss-fill")).toBeNull();
     expect(frame("w4").style.height).toBe("64px");
     win.unmount();
   });
@@ -708,7 +708,7 @@ describe("the UI API in a layer", () => {
     const info: MountInfo = { mount: "w9", pluginId: "vn", entryId: "main", component: "VnPage", spot: "main", props: {}, tokens: {}, context: CTX, css: [] };
     const page = render(h(ui.LayerRoot, { info }));
     await tick();
-    expect(document.documentElement.getAttribute("data-clover-spot")).toBe("main");
+    expect(document.documentElement.getAttribute("data-moss-spot")).toBe("main");
     page.unmount();
   });
 
@@ -761,18 +761,18 @@ describe("a document loaded again keeps the user's place", () => {
     expect(seen[0]).toBe("home");
     await act(async () => set!("plugins/installed"));
     // The document goes with no unmount (a reload runs no cleanup): the storage as it was, under a fresh tree.
-    const atReload = sessionStorage.getItem("clover.kept:clover:route");
+    const atReload = sessionStorage.getItem("moss.kept:moss:route");
     first.unmount();
-    expect(sessionStorage.getItem("clover.kept:clover:route")).toBeNull();
-    sessionStorage.setItem("clover.kept:clover:route", atReload!);
+    expect(sessionStorage.getItem("moss.kept:moss:route")).toBeNull();
+    sessionStorage.setItem("moss.kept:moss:route", atReload!);
     seen.length = 0;
     const second = render(h(Keeper));
     // The very first render already shows the kept place: no flash of the start page.
     expect(seen[0]).toBe("plugins/installed");
     expect(second.container.querySelector("p")?.getAttribute("data-kept")).toBe("plugins/installed");
-    // Outside a part it is the clover tree's; another key, or another plugin's, is its own.
-    expect(sessionStorage.getItem("clover.kept:clover:route")).toBe(JSON.stringify("plugins/installed"));
-    expect(sessionStorage.getItem("clover.kept:clover:other")).toBeNull();
+    // Outside a part it is the moss tree's; another key, or another plugin's, is its own.
+    expect(sessionStorage.getItem("moss.kept:moss:route")).toBe(JSON.stringify("plugins/installed"));
+    expect(sessionStorage.getItem("moss.kept:moss:other")).toBeNull();
     second.unmount();
     // Left (an unmount, the user going elsewhere): the next mount starts from its initial value.
     seen.length = 0;

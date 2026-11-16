@@ -14,7 +14,7 @@ describe("the web part, drag and review rows", () => {
   });
 
   test("the fixture declares a ui entry of kind web with a folder page, and no code", () => {
-    const m = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "acceptance-webpart", "clover.json"), "utf8"));
+    const m = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "acceptance-webpart", "moss.json"), "utf8"));
     expect(m.contributes.ui).toHaveLength(1);
     expect(m.contributes.ui[0].web).toEqual({ entry: "page.html", partition: "main" });
     expect(m.contributes.ui[0].component).toBeUndefined();

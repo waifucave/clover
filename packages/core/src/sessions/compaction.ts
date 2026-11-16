@@ -16,7 +16,7 @@
 // * **A cold cache:** when the cache has already expired, the next turn rebuilds the system prompt's harness blocks
 //   without compacting, since there is no cache left to save (`cacheCold`, which the driver reads as a turn starts).
 // * Only bots' own conversations compact on the clock. Side threads are short; agents compact themselves.
-import type { SessionView } from "@waifucave/clover-protocol";
+import type { SessionView } from "@waifucave/moss-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import type { Unsubscribe } from "../contracts/common";
 import type { SessionRecord } from "../contracts/session-host";

@@ -1,0 +1,29 @@
+{
+  "manifest": 1,
+  "name": "Plugin index",
+  "description": "Find plugins in the indexes you added, and install one with its OK.",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "plugins.watch",
+    "plugins.manage",
+    "logs.read",
+    "computers.read"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "main",
+        "key": "plugins",
+        "component": "PluginIndexEntry"
+      }
+    ]
+  }
+}

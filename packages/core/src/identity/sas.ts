@@ -1,5 +1,5 @@
 // The pairing ceremony's crypto (spec §8.1: "a code or QR, plus the inherited 4-word check"). The inherited phone
-// pairing did the same under its own domains; Clover's domains are its own, so no value from one can
+// pairing did the same under its own domains; MOSS's domains are its own, so no value from one can
 // stand for the other.
 //
 // * The transcript binds everything the two devices agree on: the pairing, both link keys, both device records, both
@@ -22,11 +22,11 @@ import { type Bytes, concat, constantTimeEqual, own, utf8 } from "./bytes";
 import { encode } from "../links/codec";
 import { EFF_SHORT_WORDLIST } from "./wordlist";
 
-export const PAIR_PROOF_JOINER = "clover/pair-proof/joiner/1";
-export const PAIR_PROOF_HOST = "clover/pair-proof/host/1";
-export const PAIR_SAS = "clover/pair-sas/1";
-const PAIR_SECRET_INFO = "clover/pair-secret/1";
-const PAIR_ID_INFO = "clover/pair-id/1";
+export const PAIR_PROOF_JOINER = "moss/pair-proof/joiner/1";
+export const PAIR_PROOF_HOST = "moss/pair-proof/host/1";
+export const PAIR_SAS = "moss/pair-sas/1";
+const PAIR_SECRET_INFO = "moss/pair-secret/1";
+const PAIR_ID_INFO = "moss/pair-id/1";
 
 /** One side's part of the transcript, as it sent it. */
 export interface PairSide {
@@ -46,22 +46,22 @@ export const PAIR_NONCE_BYTES = 32;
 
 /** The joiner's commitment to its nonce. */
 export function nonceCommitment(nonce: Uint8Array): Bytes {
-  return own(new Uint8Array(createHash("sha256").update(concat(utf8("clover/pair-commit/1"), nonce)).digest()));
+  return own(new Uint8Array(createHash("sha256").update(concat(utf8("moss/pair-commit/1"), nonce)).digest()));
 }
 
 /** What the joiner's proof covers: what the joiner knows before the host answers, its nonce's commitment included. */
 export function joinerTranscript(pairingId: string, hostKey: Uint8Array, joiner: PairSide, commit: Uint8Array): Bytes {
-  return own(encode(["clover/pair-transcript/joiner/3", pairingId, own(hostKey), sideArray(joiner), own(commit)]));
+  return own(encode(["moss/pair-transcript/joiner/3", pairingId, own(hostKey), sideArray(joiner), own(commit)]));
 }
 
 /** What the host's proof covers: the exchange up to the welcome, the host's nonce included. */
 export function fullTranscript(joinerPart: Uint8Array, host: PairSide, extra: { t: number; group: string; nonce: Uint8Array }): Bytes {
-  return own(encode(["clover/pair-transcript/3", own(joinerPart), sideArray(host), extra.t, extra.group, own(extra.nonce)]));
+  return own(encode(["moss/pair-transcript/3", own(joinerPart), sideArray(host), extra.t, extra.group, own(extra.nonce)]));
 }
 
 /** What the words and the pair secret cover: the whole exchange, with the joiner's revealed nonce. */
 export function finalTranscript(full: Uint8Array, joinerNonce: Uint8Array): Bytes {
-  return own(encode(["clover/pair-transcript/final/1", own(full), own(joinerNonce)]));
+  return own(encode(["moss/pair-transcript/final/1", own(full), own(joinerNonce)]));
 }
 
 function sideArray(s: PairSide): unknown[] {

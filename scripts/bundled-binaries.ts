@@ -1,10 +1,10 @@
-// The binaries that ship beside `clover-core` in resources/daemon/ and run code that is not the core's own, each
-// signed under its OWN identifier and named in no Keychain ACL (the core's items trust `clover-core` alone, so
+// The binaries that ship beside `moss-core` in resources/daemon/ and run code that is not the core's own, each
+// signed under its OWN identifier and named in no Keychain ACL (the core's items trust `moss-core` alone, so
 // nothing that runs bot or plugin code may share its identity):
 //
-//   clover-plugin-bun       plain Bun at the core's exact Bun version (`.bun-version`), for plugin code. Lane B's
+//   moss-plugin-bun       plain Bun at the core's exact Bun version (`.bun-version`), for plugin code. Lane B's
 //                           `pluginBun()` resolves it beside the compiled core and fails closed without it. Every OS.
-//   clover-process-holder   lane A's F8 holder (macOS only): a small C `posix_spawn` with the disclaim attribute and
+//   moss-process-holder   lane A's F8 holder (macOS only): a small C `posix_spawn` with the disclaim attribute and
 //                           POSIX_SPAWN_SETEXEC, the responsible process of everything a bot's command starts, so the
 //                           pause can find what the command left running. Built from the installed agent runtime's
 //                           `native/process-holder.c`, so it always matches the runtime that drives it.
@@ -22,7 +22,7 @@ import { inflateRawSync } from "node:zlib";
 import { PLUGIN_BUN_FILE as CORE_PLUGIN_BUN_FILE, PLUGIN_BUN_IDENTIFIER, PROCESS_HOLDER_FILE, PROCESS_HOLDER_IDENTIFIER } from "../packages/core/src/bundled-identities";
 import type { DaemonTarget } from "./build-daemon";
 
-/** The Bun that `clover-plugin-bun` is: the release asset per target and its SHA-256, pinned here (not trusted from
+/** The Bun that `moss-plugin-bun` is: the release asset per target and its SHA-256, pinned here (not trusted from
  *  the release's own SHASUMS256.txt). `bundled-binaries.test.ts` holds `version` to `.bun-version`, so a Bun bump
  *  must re-pin these. The assets are the same builds the core compiles from (`bun-<os>-<arch>`, not `-baseline`). */
 export const PLUGIN_BUN = {
@@ -48,10 +48,10 @@ export const BUNDLED_IDENTIFIERS = {
 } as const;
 
 /** The core's own identifiers, which none of these may carry. */
-export const CORE_IDENTIFIERS = ["com.waifucave.clover.core", "com.waifucave.clover.core.dev"] as const;
+export const CORE_IDENTIFIERS = ["com.waifucave.moss.core", "com.waifucave.moss.core.dev"] as const;
 
 /** Plain Bun runs plugin code: JIT, bun:ffi and native addons (another team's code). Nothing else. */
-export const PLUGIN_BUN_ENTITLEMENTS = "scripts/clover-plugin-bun.entitlements";
+export const PLUGIN_BUN_ENTITLEMENTS = "scripts/moss-plugin-bun.entitlements";
 /** codesign's `--options` for the core and the plugin Bun wherever they're signed (a release, the dev daemon, an
  *  unsigned build's ad-hoc copy): the hardened runtime plus `restrict`, which hides their environment from other
  *  processes of the user (release/lib.ts's RESOURCE_BINARIES says why). */
@@ -93,10 +93,10 @@ export function buildHolder(root: string, out: string): void {
 }
 
 function bunCache(): string {
-  if (process.env.CLOVER_BUN_CACHE) return process.env.CLOVER_BUN_CACHE;
-  if (process.platform === "darwin") return join(homedir(), "Library", "Caches", "clover-bun");
-  if (process.platform === "win32") return join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "clover-bun");
-  return join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "clover-bun");
+  if (process.env.MOSS_BUN_CACHE) return process.env.MOSS_BUN_CACHE;
+  if (process.platform === "darwin") return join(homedir(), "Library", "Caches", "moss-bun");
+  if (process.platform === "win32") return join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "moss-bun");
+  return join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "moss-bun");
 }
 
 export type Fetcher = (url: string) => Promise<Uint8Array>;
@@ -118,7 +118,7 @@ export async function pluginBunZip(target: DaemonTarget, fetcher: Fetcher = http
     const cached = new Uint8Array(readFileSync(zip));
     if (digest(cached) === sha256) return cached;
   }
-  const base = process.env.CLOVER_BUN_RELEASES ?? "https://github.com/oven-sh/bun/releases/download";
+  const base = process.env.MOSS_BUN_RELEASES ?? "https://github.com/oven-sh/bun/releases/download";
   const bytes = await fetcher(`${base}/bun-v${PLUGIN_BUN.version}/${asset}.zip`);
   const got = digest(bytes);
   if (got !== sha256) throw new Error(`${asset}.zip has SHA-256 ${got}, but scripts/bundled-binaries.ts pins ${sha256}: nothing staged`);
@@ -192,10 +192,10 @@ export function unpackPluginBun(zip: Uint8Array, target: DaemonTarget, out: stri
   chmodSync(out, 0o755);
 }
 
-/** Stages plain Bun for `target` at `out` (`clover-plugin-bun`, `.exe` on Windows). */
+/** Stages plain Bun for `target` at `out` (`moss-plugin-bun`, `.exe` on Windows). */
 export async function stagePluginBun(target: DaemonTarget, out: string, fetcher?: Fetcher): Promise<void> {
   unpackPluginBun(await pluginBunZip(target, fetcher), target, out);
-  // Oven's signature names Bun; ours names clover-plugin-bun (ad hoc here; a release or the dev daemon signs it for real).
+  // Oven's signature names Bun; ours names moss-plugin-bun (ad hoc here; a release or the dev daemon signs it for real).
   if (target === "darwin-arm64" && process.platform === "darwin") {
     const entitlements = join(dirname(import.meta.dir), PLUGIN_BUN_ENTITLEMENTS);
     const sign = spawnSync("codesign", ["--force", "--sign", "-", "--identifier", BUNDLED_IDENTIFIERS[PLUGIN_BUN_FILE].dist, "--options", RESTRICTED_SIGN_OPTIONS, "--entitlements", entitlements, out], { encoding: "utf8" });

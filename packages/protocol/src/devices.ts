@@ -1,4 +1,4 @@
-// Clover protocol area: devices and links (spec §6.4, §8). Owner: lane H (identity, devices, links, sync, the
+// MOSS protocol area: devices and links (spec §6.4, §8). Owner: lane H (identity, devices, links, sync, the
 // lease and the shared clock). Pinned by lane B at M0; spike S1 chose iroh (lane H's report of November 5).
 //
 // Every paired device has its own Ed25519 key, and each pair keeps one persistent encrypted link (§8.2). The main
@@ -90,9 +90,9 @@ export const DeviceView = z.object({
   name: utf16(63, 1),
   kind: DeviceKind,
   os: DeviceOs.optional(),
-  /** Runs clover-core, so it is a computer in the tree (§9.1) and can take over (§6.4). */
+  /** Runs moss-core, so it is a computer in the tree (§9.1) and can take over (§6.4). */
   runsCore: z.boolean(),
-  /** Its folder-tree name, for a device that runs clover-core. */
+  /** Its folder-tree name, for a device that runs moss-core. */
   computer: ComputerName.optional(),
   hasDisplay: z.boolean().optional(),
   online: z.boolean(),
@@ -272,14 +272,14 @@ export const DEVICES_METHODS = {
   deviceAnswerKeySet: defineMethod({
     /** The app's main process hands the core the key it answers cards with (H-M1's ask; item 91): held apart from the
      *  core's link key, so plugin code can't sign with it where the OS allows. The core takes it only with the app's
-     *  signature over `clover/answer-key/1\n<device>\n<publicKey>\n<held>` (`setOwnAnswerKey`), for a desktop. */
+     *  signature over `moss/answer-key/1\n<device>\n<publicKey>\n<held>` (`setOwnAnswerKey`), for a desktop. */
     /** The first key applies at once. Replacing one is a sensitive change (#179's review, check 2): other computers
      *  trust that key with their cards, so it ends in a sealed card (`{ applied: false, card }`). */
     name: "device.answerKey.set", owner: "H", roles: ["app"], userOnly: true,
     params: z.object({
       publicKey: Base64Key, held: AnswerKeyHolder, alg: AnswerKeyAlg.optional(), signature: Base64Key,
       /** Replacing a key this desktop already holds: the current key's hand-over, its signature over
-       *  `clover/answer-key-rotate/1\n<device>\n<from>\n<to>\n<at>` (`answerKeyRotateStatement`). The user's yes on a
+       *  `moss/answer-key-rotate/1\n<device>\n<from>\n<to>\n<at>` (`answerKeyRotateStatement`). The user's yes on a
        *  sealed change card bound to exactly this hand-over then applies it (`{ applied: false, card }` until then). */
       rotation: z.object({ from: Base64Key, at: Timestamp, signature: Base64Key }).optional(),
     }),
@@ -321,7 +321,7 @@ export const DEVICES_METHODS = {
   linkSessionDeliver: defineMethod({
     /** Lane H's bot relay, as a protocol method (H-M2's ask, D's review S2): another session's message, never the
      *  user's (a user's message comes only through `peer.session.send`, with its device's signature). The receiver
-     *  takes it only from a paired computer running clover-core, and only as what it says it is; `computer` names the
+     *  takes it only from a paired computer running moss-core, and only as what it says it is; `computer` names the
      *  sending computer, which must be the link's own peer. */
     name: "link.session.deliver", owner: "H", roles: ["peer"],
     params: z.object({
@@ -411,7 +411,7 @@ export const DEVICES_EVENTS = {
   }),
   linkChanged: defineEvent({
     type: "link_changed", owner: "H", roles: ["app", "cli"], schema: LinkChangedEvent,
-    fixture: { type: "link_changed", ts: 1781270000000, link: { peer: "k3x9a7mq2c4d8e1f5g6h0j2k4m6n8p0r", up: true, path: "relay", relay: "clover/relay-n0", rttMs: 48 } },
+    fixture: { type: "link_changed", ts: 1781270000000, link: { peer: "k3x9a7mq2c4d8e1f5g6h0j2k4m6n8p0r", up: true, path: "relay", relay: "moss/relay-n0", rttMs: 48 } },
     doc: "A link came up, went down or changed path.",
   }),
   pairingChanged: defineEvent({

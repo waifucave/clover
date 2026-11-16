@@ -10,8 +10,8 @@ import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } fr
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { AgentJob } from "../platform/win-job";
-import { noteSpawned } from "../auth/clover-caller";
-import type { Caller, Os } from "@waifucave/clover-protocol";
+import { noteSpawned } from "../auth/moss-caller";
+import type { Caller, Os } from "@waifucave/moss-protocol";
 
 export interface FencedRun {
   /** A shell command line, run by the platform's shell: `/bin/sh -c` on macOS and Linux; on Windows Git Bash
@@ -190,7 +190,7 @@ export async function runCommand(r: FencedRun, how: { shell: RunShell; argv: rea
   // only this run uses, the child's next fd.
   let status: { dir: string; file: string; fd: number } | undefined;
   if (how.descendants?.kind === "holder") {
-    const dir = mkdtempSync(join(tmpdir(), "clover-holder-"));
+    const dir = mkdtempSync(join(tmpdir(), "moss-holder-"));
     const file = join(dir, "status");
     const fd = openSync(file, "w", 0o600);
     status = { dir, file, fd };

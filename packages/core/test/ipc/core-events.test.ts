@@ -1,22 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import type { Caller, CloverRole } from "@waifucave/clover-protocol";
+import type { Caller, MossRole } from "@waifucave/moss-protocol";
 import { OWNER_SCOPED_EVENTS, sendCoreEvent } from "../../src/ipc/core-events";
-import type { CloverConn } from "../../src/ipc/clover";
+import type { MossConn } from "../../src/ipc/moss";
 import { approvalCoreEvents } from "../../src/approvals/core-events";
-import { CloverApprovalBroker } from "../../src/approvals/broker";
+import { MossApprovalBroker } from "../../src/approvals/broker";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 
 // C-M3 item 2: the `core.event` sender's routing, and the broker's cards as core events.
 
 let seq = 0;
-function conn(role: CloverRole, areas: string[], extra: { caller?: Caller; hostProcess?: CloverConn["hostProcess"]; throws?: boolean } = {}) {
+function conn(role: MossRole, areas: string[], extra: { caller?: Caller; hostProcess?: MossConn["hostProcess"]; throws?: boolean } = {}) {
   const got: unknown[] = [];
   const c = {
     connId: ++seq, role, caller: extra.caller ?? { kind: "user", client: "app" }, features: [], clientName: role,
     ...(extra.hostProcess ? { hostProcess: extra.hostProcess } : {}),
     areas: new Set(areas), follows: new Map(), send: () => "x",
     notify: (method: string, params: unknown) => { if (extra.throws) throw new Error("closed"); got.push([method, params]); },
-  } as unknown as CloverConn;
+  } as unknown as MossConn;
   return { c, got };
 }
 
@@ -97,7 +97,7 @@ describe("the core.event sender", () => {
 describe("the broker's cards as core events", () => {
   test("requested: the sealed card to the app, its meta to plugins with approvals; resolved to every one", async () => {
     const clock = new FakeClock();
-    const broker = new CloverApprovalBroker({ clock, levels: () => "ask" });
+    const broker = new MossApprovalBroker({ clock, levels: () => "ask" });
     const app = conn("app", ["approvals"]), layer = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "luna" } });
     const r = { connections: () => [app.c, layer.c], pluginCapabilities: () => ["approvals"] };
     const off = approvalCoreEvents(broker, (e, o) => sendCoreEvent(r, e, o), () => clock.now());
@@ -127,17 +127,17 @@ describe("a card is heard by its own bot's plugin and any plugin with approvals.
   });
   function setup() {
     const clock = new FakeClock();
-    const broker = new CloverApprovalBroker({ clock, levels: () => "ask" });
+    const broker = new MossApprovalBroker({ clock, levels: () => "ask" });
     const luna = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "luna" } });
     const lunaPart = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "luna/extra" } });
     const sol = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "sol" } });
     // Any plugin with `approvals.all` hears every card, the bundled island or a copy of it under another id; the tree's name alone is no key.
-    const tree = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "clover/island" } });
+    const tree = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "moss/island" } });
     const copy = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "mirror-island" } });
-    const treeWithout = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "clover/other" } });
+    const treeWithout = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "moss/other" } });
     const allAlone = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "all-alone" } });
     const app = conn("app", ["approvals"]);
-    const holds: Record<string, string[]> = { "all-alone": ["approvals.all"], "clover/island": ["approvals", "approvals.all"], "mirror-island": ["approvals", "approvals.all"] };
+    const holds: Record<string, string[]> = { "all-alone": ["approvals.all"], "moss/island": ["approvals", "approvals.all"], "mirror-island": ["approvals", "approvals.all"] };
     const r = { connections: () => [luna.c, lunaPart.c, sol.c, tree.c, copy.c, treeWithout.c, allAlone.c, app.c], pluginCapabilities: (id: string) => holds[id] ?? ["approvals"] };
     const off = approvalCoreEvents(broker, (e, o) => sendCoreEvent(r, e, o), () => clock.now());
     return { broker, luna, lunaPart, sol, tree, copy, treeWithout, allAlone, app, off };

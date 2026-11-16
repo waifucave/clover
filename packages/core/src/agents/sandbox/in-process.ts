@@ -1,4 +1,4 @@
-// The in-process agents' sandbox (Clover's coding agent and lane A's `clover` subagents). They run on the embedded
+// The in-process agents' sandbox (MOSS's coding agent and lane A's `moss` subagents). They run on the embedded
 // runtime with its sandbox required, and that sandbox is Seatbelt's, so only macOS has it for now. Elsewhere the
 // runtime refuses every sandboxed tool call ("refusing to silently run unsandboxed"); the backends say so at detection
 // instead, so a delegation there, on this computer or for another one, is refused up front with the reason, not left

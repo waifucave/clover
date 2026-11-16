@@ -1,4 +1,4 @@
-// `app.window.capture` (the daemon asks for the user's `clover-core app screenshot`): a picture of what one of the
+// `app.window.capture` (the daemon asks for the user's `moss-core app screenshot`): a picture of what one of the
 // app's windows draws, by Electron's own capture of its page (`webContents.capturePage`). Never the screen: no
 // `desktopCapturer`, no `screencapture`, nothing that needs Screen Recording or raises a privacy prompt. A window is
 // never shown, focused, raised or resized for it: a hidden or minimised window is reported "not drawn", with no
@@ -10,7 +10,7 @@
 //
 // The frame list (`frames`) names each document by its origin, its part's mount id, its size and its visibility: ids and
 // sizes only, never a page's text. A frame is asked with no user gesture, so the question can't count as the user's.
-import type { AppCaptureParams, AppCaptureResult, CapturedWindow } from "@waifucave/clover-protocol";
+import type { AppCaptureParams, AppCaptureResult, CapturedWindow } from "@waifucave/moss-protocol";
 
 type Rect = { x: number; y: number; width: number; height: number };
 type Size = { width: number; height: number };
@@ -85,7 +85,7 @@ async function framesOf(contents: ContentsLike, ms: number): Promise<NonNullable
       mount = u.searchParams.get("mount") ?? undefined;
       surface = u.searchParams.get("surface") ?? undefined;
       // A card's frame says which kind it is (its origin is opaque, its address holds its token): never more.
-      if (u.protocol === "clover-sealed:") sealed = u.host === "placeholder" ? "placeholder" : "card";
+      if (u.protocol === "moss-sealed:") sealed = u.host === "placeholder" ? "placeholder" : "card";
     } catch {
       // A frame with no URL yet.
     }

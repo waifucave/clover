@@ -12,9 +12,9 @@
 // A turn the user started is not announced (they are waiting for it, and the app shows it), nor are the turns a routine's
 // result or an agent's report start (their own kinds said it). No text of any message, card or question is read.
 import type { Unsubscribe } from "../contracts/common";
-import type { SessionView } from "@waifucave/clover-protocol";
+import type { SessionView } from "@waifucave/moss-protocol";
 import type { SessionHost, SessionRecord } from "../contracts/session-host";
-import type { NotifierUpdate } from "@waifucave/clover-plugin-sdk";
+import type { NotifierUpdate } from "@waifucave/moss-plugin-sdk";
 
 export interface CoreNoticeSink {
   core(update: { kind: Exclude<NotifierUpdate["kind"], "notification">; bot?: string; session?: string; failed?: boolean }): void;

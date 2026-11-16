@@ -16,7 +16,7 @@ interface Ipc {
   on(channel: string, listener: (event: unknown, ...args: any[]) => void): void;
 }
 const ipc = (require("electron") as { ipcRenderer: Ipc }).ipcRenderer;
-const CH = "clover-browser-stream";
+const CH = "moss-browser-stream";
 
 type Codec = "h264" | "vp8" | "jpeg";
 interface FrameMeta { source: string; seq: number; at: number; fullW: number; fullH: number; x: number; y: number; w: number; h: number }

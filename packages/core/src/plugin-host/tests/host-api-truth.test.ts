@@ -9,8 +9,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { API_CALLS, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { API_CALLS, PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -69,8 +69,8 @@ const HOST_JS = [
 function plugin(home: string, id: string, process?: "own"): string {
   const folder = join(home, "plugins", id);
   mkdirSync(join(folder, "host"), { recursive: true });
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({
-    manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({
+    manifest: 1, id, name: id, version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
     host: { entry: "host/index.js", ...(process === undefined ? {} : { process }) }, capabilities: ["files"],
   }));
   writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
@@ -80,13 +80,13 @@ function plugin(home: string, id: string, process?: "own"): string {
 
 describe("a host half's api in a real plugin host", () => {
   test("api.storage.dataFolder is its own folder, written from start, in a shared worker and in a process of its own; every host call the catalog lists is there", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-api-truth-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-b-api-truth-")));
     temps.push(home);
     plugin(home, "shared-one");
     plugin(home, "own-one", "own");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const opened = await openPluginRegistry({ mossHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const lines: string[] = [];
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome: join(home, "user"), log: (l) => lines.push(l) });
     try {

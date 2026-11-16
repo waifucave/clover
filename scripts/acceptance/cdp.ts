@@ -1,7 +1,7 @@
 // A small Chrome DevTools protocol client for the UI steps of the acceptance run: it attaches to every page and every
 // frame of the headless, offscreen desktop app (out-of-process frames included), records each frame's console messages
 // and uncaught errors, and lets a step evaluate, type and click inside any of them. The dev app takes the debugging
-// port only behind CLOVER_DEV_DEBUG=1 (apps/desktop/src/main/debug-guard.ts); a packaged app never does.
+// port only behind MOSS_DEV_DEBUG=1 (apps/desktop/src/main/debug-guard.ts); a packaged app never does.
 
 export interface ConsoleEntry { session: string; url: string; level: string; text: string }
 export interface FrameInfo { session: string; url: string; type: string; targetId?: string }
@@ -160,7 +160,7 @@ export class Cdp {
 
   /** The main window's pixels (a top-level target only: a frame's session can't capture). */
   async screenshot(): Promise<Buffer> {
-    const main = [...this.frames.values()].find((f) => f.type === "page" && f.url === "clover-core://app/");
+    const main = [...this.frames.values()].find((f) => f.type === "page" && f.url === "moss-core://app/");
     if (main === undefined) throw new Error("no main window target");
     const r = await this.send<{ data: string }>("Page.captureScreenshot", { format: "png" }, main.session);
     return Buffer.from(r.data, "base64");

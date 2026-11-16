@@ -1,5 +1,5 @@
 // Tests never reach the user's own secret store (the hard rule; #243 check 4, and lane K's find on the C-M3 round:
-// `openCloverSecretStore`'s default vault went to `Bun.secrets` directly, so a daemon booted in a test without
+// `openMossSecretStore`'s default vault went to `Bun.secrets` directly, so a daemon booted in a test without
 // `secrets` wrote its items into the account's LOGIN keychain under the test service). A process is under a test
 // when the preload set it up (`UNDER_TEST_ENV`), or, outside a release, when `NODE_ENV` is `test`; a test daemon a
 // test spawns inherits those variables, so the same rules hold there.
@@ -8,20 +8,20 @@
 //   macOS    the throwaway keychain FILE the preload made (`login-keychain.ts`'s pinned backend); `Bun.secrets`
 //            (which searches the user's keychain list and creates in the login keychain) is never isolated
 //   Linux    the Secret Service only on the private session bus `scripts/with-private-secret-service.sh` gives
-//            the test command (`CLOVER_PRIVATE_SECRET_SERVICE` is that bus's address, and the session bus is it)
+//            the test command (`MOSS_PRIVATE_SECRET_SERVICE` is that bus's address, and the session bus is it)
 //   Windows  Credential Manager only under a throwaway test service (`THROWAWAY_SERVICE_PREFIX…`, the harness's)
 // and anything else goes to a store in this process's memory (`isolatedTestBackend`). `Bun.secrets` itself is
 // fenced the same way (`guardBunSecrets`): an un-isolated call throws, rather than reach the user's store.
 import { DIST_BUILD } from "../build-kind";
 
 /** Names a throwaway test keychain file for a test daemon (non-release builds only). */
-export const TEST_KEYCHAIN_ENV = "CLOVER_TEST_KEYCHAIN";
+export const TEST_KEYCHAIN_ENV = "MOSS_TEST_KEYCHAIN";
 /** Any of these in the environment means a test preload set this process up. */
-export const UNDER_TEST_ENV = ["CLOVER_KEYCHAIN_SERVICE", "WINTER_TEST_KEYCHAIN", TEST_KEYCHAIN_ENV] as const;
+export const UNDER_TEST_ENV = ["MOSS_KEYCHAIN_SERVICE", "WINTER_TEST_KEYCHAIN", TEST_KEYCHAIN_ENV] as const;
 /** Set by scripts/with-private-secret-service.sh, inside its private bus, to that bus's address. */
-export const PRIVATE_SECRET_SERVICE_ENV = "CLOVER_PRIVATE_SECRET_SERVICE";
+export const PRIVATE_SECRET_SERVICE_ENV = "MOSS_PRIVATE_SECRET_SERVICE";
 /** Every throwaway test service starts with this (packages/test-harness's `TEST_SERVICE_PREFIX`). */
-export const THROWAWAY_SERVICE_PREFIX = "com.waifucave.clover.core.test.";
+export const THROWAWAY_SERVICE_PREFIX = "com.waifucave.moss.core.test.";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -34,7 +34,7 @@ export function underTest(env: Env = process.env, distBuild: boolean = DIST_BUIL
   return UNDER_TEST_ENV.some((k) => env[k] !== undefined) || (!distBuild && env.NODE_ENV === "test");
 }
 
-/** Linux: the session bus is the wrapper's private one: `CLOVER_PRIVATE_SECRET_SERVICE` names a bus address and it is
+/** Linux: the session bus is the wrapper's private one: `MOSS_PRIVATE_SECRET_SERVICE` names a bus address and it is
  *  the one `DBUS_SESSION_BUS_ADDRESS` names (a bare flag, or a bus the developer's own session gives, never counts). */
 export function privateBus(env: Env = process.env): boolean {
   const named = env[PRIVATE_SECRET_SERVICE_ENV];

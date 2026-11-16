@@ -6,8 +6,8 @@ import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_PROTOCOL_VERSION, PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/clover-protocol";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { MOSS_PROTOCOL_VERSION, PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/moss-protocol";
+import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
 import { catalogPointDecl } from "../../../plugin-sdk/src/catalogs/index";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { Drivers } from "../../src/bots/tests/fixtures";
@@ -54,8 +54,8 @@ async function rpc(path: string) {
 }
 
 test("a sixth usage source installed from a folder shows its plan windows and its tokens on the Usage page's doors", async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-f3-sixth-")));
-  const home = join(root, "clover-home");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "moss-f3-sixth-")));
+  const home = join(root, "moss-home");
   const userHome = join(root, "home");
   mkdirSync(userHome, { recursive: true });
   // The fake program, on the PATH the daemon's `api.outside` looks in: `acme plan` and `acme tokens`.
@@ -69,8 +69,8 @@ else log({ day: new Date().toISOString().slice(0, 10), input: 1200, output: 300 
   // The whole third-party plugin: a manifest and a handler. Nothing else in the repo knows it.
   const folder = join(home, "plugins", "acme-usage");
   mkdirSync(join(folder, "host"), { recursive: true });
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({
-    manifest: 1, id: "acme-usage", name: "Acme usage", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({
+    manifest: 1, id: "acme-usage", name: "Acme usage", version: "1.0.0", engines: { moss: `^${PLUGIN_API_VERSION}` },
     host: { entry: "host/index.js", process: "own", outside: { programs: ["acme"] } },
     contributes: { "usage.sources": [{ id: "acme", name: "Acme", handler: "source", provides: ["plan", "usage"], planEveryMs: 60000 }] },
   }));
@@ -91,7 +91,7 @@ export const source = {
 };
 `);
   // The Usage plugin (the owner of `usage.sources`) is the repository's, built and staged the way a source daemon does.
-  await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["clover"], cloverHome: home });
+  await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["moss"], mossHome: home });
   const net = new MemoryNetwork();
   daemon = await startDaemon({
     home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, appPeer: "none",
@@ -107,9 +107,9 @@ export const source = {
       agents: false,
     },
   });
-  await daemon.cloverParts.ready;
+  await daemon.mossParts.ready;
   const app = await rpc(daemon.socketPath);
-  expect((await app.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] }))["error"]).toBeUndefined();
+  expect((await app.request(METHODS.hello, { protocolVersion: MOSS_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] }))["error"]).toBeUndefined();
   const harness = await rpc(daemon.socketPath);
   expect((await harness.request(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: daemon.tokens.harness, clientName: "orb" }))["error"]).toBeUndefined();
 
@@ -120,7 +120,7 @@ export const source = {
   expect(before).toBeUndefined();
 
   const switched = (await app.request("plugin.setEnabled", { id: "acme-usage", enabled: true }))["result"] as { card: string };
-  const broker = daemon.cloverParts.broker()!;
+  const broker = daemon.mossParts.broker()!;
   for (let i = 0; i < 300 && broker.cards().find((c) => c.id === switched.card) === undefined; i++) await Bun.sleep(10);
   const card = broker.cards().find((c) => c.id === switched.card)!;
   // The card says what it runs outside the sandbox, named.

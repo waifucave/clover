@@ -1,4 +1,4 @@
-// A small Clover protocol client for the acceptance run: JSON-RPC 2.0 over NDJSON on the daemon's socket, a hello in
+// A small MOSS protocol client for the acceptance run: JSON-RPC 2.0 over NDJSON on the daemon's socket, a hello in
 // a role, and answers to the daemon's own requests (`app.ping`, which the pair's heartbeat sends every 5 s).
 import { createConnection, type Socket } from "node:net";
 
@@ -10,7 +10,7 @@ export class RpcError extends Error {
 
 type Pending = { method: string; resolve(v: unknown): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> };
 
-export class CloverClient {
+export class MossClient {
   private seq = 0;
   private buf = "";
   private readonly pending = new Map<string, Pending>();
@@ -24,11 +24,11 @@ export class CloverClient {
     socket.on("error", () => this.onClose());
   }
 
-  static connect(path: string, timeoutMs = 5_000): Promise<CloverClient> {
+  static connect(path: string, timeoutMs = 5_000): Promise<MossClient> {
     return new Promise((resolve, reject) => {
       const s = createConnection({ path });
       const t = setTimeout(() => { s.destroy(); reject(new Error(`no answer on the socket within ${timeoutMs} ms`)); }, timeoutMs);
-      s.once("connect", () => { clearTimeout(t); resolve(new CloverClient(s)); });
+      s.once("connect", () => { clearTimeout(t); resolve(new MossClient(s)); });
       s.once("error", (e) => { clearTimeout(t); reject(e); });
     });
   }
@@ -86,8 +86,8 @@ export class CloverClient {
 }
 
 /** Connects and says hello in `role`; the client is closed again when the hello is refused. */
-export async function hello(path: string, role: "app" | "cli" | "layer", token: string, clientName: string, protocolVersion: number, extra: Record<string, unknown> = {}): Promise<{ client: CloverClient; result: Record<string, unknown> }> {
-  const client = await CloverClient.connect(path);
+export async function hello(path: string, role: "app" | "cli" | "layer", token: string, clientName: string, protocolVersion: number, extra: Record<string, unknown> = {}): Promise<{ client: MossClient; result: Record<string, unknown> }> {
+  const client = await MossClient.connect(path);
   try {
     const result = await client.request("protocol.hello", { protocolVersion, role, token, clientName, features: ["app.quit"], ...extra }, 10_000);
     return { client, result };

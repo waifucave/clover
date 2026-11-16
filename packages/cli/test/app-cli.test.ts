@@ -1,4 +1,4 @@
-// `clover-core app screenshot` / `app frames` (app-cli.ts): its words, one request per window (`all` lists first), one
+// `moss-core app screenshot` / `app frames` (app-cli.ts): its words, one request per window (`all` lists first), one
 // PNG per window drawn, and the JSON it prints (a window that wasn't drawn has no file and says "not drawn").
 import { describe, expect, test } from "bun:test";
 import { parseAppArgs, runApp } from "../src/app-cli";
@@ -19,7 +19,7 @@ function harness() {
       if (p.window === "all") return { windows: [{ ...main, png: undefined }, island] };
       if (p.window === "nope") throw new Error("no window named nope (there are: main, island)");
       const w = p.window === "main" ? main : island;
-      return { windows: [{ ...w, ...(p.image === false ? { png: undefined } : {}), ...(p.frames ? { frames: [{ origin: "clover-core://app", width: 1280, height: 820, visibility: "visible" }] } : {}) }] };
+      return { windows: [{ ...w, ...(p.image === false ? { png: undefined } : {}), ...(p.frames ? { frames: [{ origin: "moss-core://app", width: 1280, height: 820, visibility: "visible" }] } : {}) }] };
     },
     writeFile: (path: string, bytes: Uint8Array) => { written[path] = Buffer.from(bytes); },
     mkdir: (path: string) => { made.push(path); },
@@ -29,7 +29,7 @@ function harness() {
   return { deps, asked, written, made, out, err };
 }
 
-describe("clover-core app", () => {
+describe("moss-core app", () => {
   test("its words: screenshot needs --out, frames takes none, a bad window name or a stray word is refused", () => {
     expect(parseAppArgs(["screenshot", "--out", "/tmp/shots"])).toEqual({ sub: "screenshot", window: "main", out: "/tmp/shots", frames: false });
     expect(parseAppArgs(["screenshot", "--window", "all", "--out", "d", "--frames"])).toEqual({ sub: "screenshot", window: "all", out: "d", frames: true });
@@ -57,7 +57,7 @@ describe("clover-core app", () => {
     expect(await runApp(["frames"], h.deps)).toBe(0);
     expect(h.asked).toEqual([{ window: "main", image: false, frames: true }]);
     expect(h.written).toEqual({});
-    expect(JSON.parse(h.out.join("\n")).windows[0].frames).toEqual([{ origin: "clover-core://app", width: 1280, height: 820, visibility: "visible" }]);
+    expect(JSON.parse(h.out.join("\n")).windows[0].frames).toEqual([{ origin: "moss-core://app", width: 1280, height: 820, visibility: "visible" }]);
   });
 
   test("the app's refusal is said, with exit 1; bad words, exit 2", async () => {
@@ -68,8 +68,8 @@ describe("clover-core app", () => {
   });
 });
 
-describe("clover-core app open / where", () => {
-  const answer = (target?: string, shown = true) => ({ ...(target ? { target } : {}), shown, ...(shown ? {} : { reason: "nope isn't a place in the app (targets: …)" }), drawn: true, where: { tab: { kind: "settings" }, side: "bots" }, frames: [{ origin: "clover-core://app", width: 1280, height: 820, visibility: "visible" }] });
+describe("moss-core app open / where", () => {
+  const answer = (target?: string, shown = true) => ({ ...(target ? { target } : {}), shown, ...(shown ? {} : { reason: "nope isn't a place in the app (targets: …)" }), drawn: true, where: { tab: { kind: "settings" }, side: "bots" }, frames: [{ origin: "moss-core://app", width: 1280, height: 820, visibility: "visible" }] });
   function nav() {
     const asked: unknown[] = [];
     const out: string[] = [];

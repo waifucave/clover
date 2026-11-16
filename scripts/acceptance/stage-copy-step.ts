@@ -20,11 +20,11 @@ import { EXAMPLES, SIDEBAR_ITEMS, clickTree, fail, layerDocs, sleep, toAlphasTab
 
 export const STAGE_COPY_STEP = "a folder-installed copy of the stage, under another id and behind its OK card (reports figures, sets avatars), takes the bundled one's place: it draws a bot's figure with the installed renderer and its report answers the bot's cue; its own Avatar section is on the Edit page; the bundled stage comes back when switched on again; the app logs no refusal by id";
 
-const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins", "clover", "plugins");
+const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins", "moss", "plugins");
 export const COPY_ID = "mirror-stage";
 const COPY_NAME = "Mirror stage";
 /** The bundled plugin the copy stands in for (switched off while the copy runs, on again after). */
-const BUNDLED = "clover/character";
+const BUNDLED = "moss/character";
 
 /** The OK card's plain lines for what the copy holds: the catalog's own `ok` words for `avatar.report` and `bots.avatar`. */
 export const COPY_OK_LINES: readonly string[] = ["avatar.report", "bots.avatar"].map((c) => capabilityOkText(c) ?? c);
@@ -32,7 +32,7 @@ export const COPY_OK_LINES: readonly string[] = ["avatar.report", "bots.avatar"]
 /** The copy's manifest: the bundled stage's, with an id and a name of its own and its client built to one module. Its
  *  capabilities and what it declares are the bundled stage's own, so what it may do is what its OK card says. */
 export function copyManifest(): Record<string, unknown> {
-  const src = JSON.parse(readFileSync(join(PLUGINS, "character", "clover.json"), "utf8")) as Record<string, unknown> & { contributes: Record<string, unknown>; client: Record<string, unknown> };
+  const src = JSON.parse(readFileSync(join(PLUGINS, "character", "moss.json"), "utf8")) as Record<string, unknown> & { contributes: Record<string, unknown>; client: Record<string, unknown> };
   const { locales: _locales, ...contributes } = src.contributes;
   return { ...src, id: COPY_ID, name: COPY_NAME, client: { ...src.client, entry: "client/index.js" }, contributes };
 }
@@ -44,7 +44,7 @@ export async function buildCopy(root: string): Promise<string> {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(join(dir, "client"), { recursive: true });
   const manifest = copyManifest() as { client: { css?: string[] } };
-  writeFileSync(join(dir, "clover.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  writeFileSync(join(dir, "moss.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const css of manifest.client.css ?? []) copyFileSync(join(PLUGINS, "character", css), join(dir, css));
   const result = await Bun.build({
     entrypoints: [join(PLUGINS, "character", "client", "index.tsx")], outdir: join(dir, "client"), target: "browser", format: "esm", splitting: false, minify: false,
@@ -75,8 +75,8 @@ function pictureBot(parent: string, botId: string, name: string): string {
     "}",
     "",
   ].join("\n"));
-  writeFileSync(join(folder, "clover.json"), JSON.stringify({
-    manifest: 1, id: botId, name, description: "The stage clause's bot with a community-format avatar.", version: "0.0.1", engines: { clover: "^1.0.0" },
+  writeFileSync(join(folder, "moss.json"), JSON.stringify({
+    manifest: 1, id: botId, name, description: "The stage clause's bot with a community-format avatar.", version: "0.0.1", engines: { moss: "^1.0.0" },
     capabilities: ["avatar.control"], host: { entry: "host/index.ts", runtime: "bun" },
     contributes: { commands: [{ name: "cue", description: "Cues the figure's happy expression", handler: "cue" }], bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
   }));
@@ -88,7 +88,7 @@ export async function stageCopyStep(ctx: ExampleCtx, _session: string): Promise<
   const said: string[] = [];
   const botId = "mirror-stage-bot";
   const botName = "Mirror Stage Bot";
-  const parent = mkdtempSync(join(tmpdir(), "clover-stage-copy-"));
+  const parent = mkdtempSync(join(tmpdir(), "moss-stage-copy-"));
   const installed: string[] = [];
   let switchedOff = false;
   const refusals = () => ctx.appLog().split("\n").filter((l) => l.includes(`tree: ${COPY_ID}:`) && l.includes("refused"));
@@ -113,7 +113,7 @@ export async function stageCopyStep(ctx: ExampleCtx, _session: string): Promise<
   }, async () => `the cue answered ${await cue()}`);
   const PROBE = "(() => { const e = document.querySelector('[data-pngtuber]'); const img = e && e.querySelector('img'); return e ? { state: e.getAttribute('data-pngtuber'), loaded: !!img && img.complete && img.naturalWidth > 0 } : null; })()";
   const rendererDrawn = async (): Promise<string> => until("the renderer drawing the bot's picture", 60_000, async () => {
-    for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("clover-plugin://example-pngtuber/"))) {
+    for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("moss-plugin://example-pngtuber/"))) {
       const r = await cdp.evaluate(d.session, PROBE).catch(() => undefined) as { state: string; loaded: boolean } | null | undefined;
       if (r?.loaded) return d.session;
     }

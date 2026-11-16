@@ -21,7 +21,7 @@ const declarative = sdk.providers.filter((p) => GENERIC_ADAPTER_IDS.has(p.adapte
 
 async function readPlugin(id: string): Promise<{ entry: ModelEntry; file: unknown }> {
   const dir = join(BUNDLED_CHILDREN_DIR, modelPluginFolder(id));
-  const manifest = (await Bun.file(join(dir, "clover.json")).json()) as { contributes: { models: ModelEntry[] } };
+  const manifest = (await Bun.file(join(dir, "moss.json")).json()) as { contributes: { models: ModelEntry[] } };
   return { entry: manifest.contributes.models[0]!, file: await Bun.file(join(dir, "catalog.json")).json() };
 }
 
@@ -191,7 +191,7 @@ async function kit(subject: string, adapter: ModelAdapter, context: () => Adapte
 
 /** A plugin's `network:` hosts, as its committed manifest declares them. */
 async function declaredHosts(id: string): Promise<string[]> {
-  const manifest = (await Bun.file(join(BUNDLED_CHILDREN_DIR, modelPluginFolder(id), "clover.json")).json()) as { capabilities: string[] };
+  const manifest = (await Bun.file(join(BUNDLED_CHILDREN_DIR, modelPluginFolder(id), "moss.json")).json()) as { capabilities: string[] };
   return manifest.capabilities.filter((c) => c.startsWith("network:")).map((c) => c.slice("network:".length));
 }
 
@@ -218,54 +218,54 @@ describe("conformance: every code model plugin, on the model adapter interface",
     expect(Object.keys(CODE_PLUGINS).sort()).toEqual(["azure-openai", "bedrock", "codex-oauth", "google", "vertex", "xai-oauth"]);
   });
 
-  test("clover/model-google, keyless on the keyed fetch (x-goog-api-key)", async () => {
+  test("moss/model-google, keyless on the keyed fetch (x-goog-api-key)", async () => {
     const fake = await startFake({ routes: geminiFake.geminiFakeRoutes({ stream: { "gemini-2.5-flash": (rec) => holding(rec, () => geminiFake.geminiStreamResponse([{ parts: [{ text: "ok" }], finishReason: "STOP" }])) } }) });
     try {
-      await kit("clover/model-google", await codeAdapter("google"), () => ({ connection: { providerId: "google", baseUrl: fake.url, local: true }, fetch: keyedOver(fake, { "api-key": { value: KEY, placement: { header: "x-goog-api-key" } } }), stallTimeoutMs: 5000, log: () => {} }), "gemini-2.5-flash");
+      await kit("moss/model-google", await codeAdapter("google"), () => ({ connection: { providerId: "google", baseUrl: fake.url, local: true }, fetch: keyedOver(fake, { "api-key": { value: KEY, placement: { header: "x-goog-api-key" } } }), stallTimeoutMs: 5000, log: () => {} }), "gemini-2.5-flash");
     } finally {
       await fake.close();
     }
   }, 30_000);
 
-  test("clover/model-azure-openai, keyless on the keyed fetch (api-key)", async () => {
+  test("moss/model-azure-openai, keyless on the keyed fetch (api-key)", async () => {
     const fake = await azureFake.startAzureFake({ chatScenarios: { "gpt-4o": (rec) => holding(rec, () => openaiChatFake.chatStream({ text: ["ok"], finishReason: "stop" })) } });
     try {
       const adapter = await codeAdapter("azure-openai");
       const row = sdk.models.find((m) => m.providerId === "azure-openai" && m.upstreamId === "gpt-4o") ?? sdk.models.find((m) => m.providerId === "azure-openai")!;
-      await kit("clover/model-azure-openai", adapter, () => ({ connection: { providerId: "azure-openai", baseUrl: fake.url, local: true, deployment: row.upstreamId, apiVersion: "2024-10-21" }, fetch: keyedOver(fake, { "api-key": { value: KEY, placement: { header: "api-key" } } }), stallTimeoutMs: 5000, log: () => {} }), row.upstreamId);
+      await kit("moss/model-azure-openai", adapter, () => ({ connection: { providerId: "azure-openai", baseUrl: fake.url, local: true, deployment: row.upstreamId, apiVersion: "2024-10-21" }, fetch: keyedOver(fake, { "api-key": { value: KEY, placement: { header: "api-key" } } }), stallTimeoutMs: 5000, log: () => {} }), row.upstreamId);
     } finally {
       await fake.close();
     }
   }, 30_000);
 
-  test("clover/model-codex-oauth, keyless on the keyed fetch (the core's ChatGPT sign-in as Bearer)", async () => {
+  test("moss/model-codex-oauth, keyless on the keyed fetch (the core's ChatGPT sign-in as Bearer)", async () => {
     const fake = await codexFake.startCodexFake({ scenarios: { "gpt-5.6-luna": (rec) => holding(rec, () => openaiResponsesFake.responsesStream({ text: ["ok"] })) } });
     try {
-      await kit("clover/model-codex-oauth", await codeAdapter("codex-oauth"), () => ({ connection: { providerId: "codex-oauth", baseUrl: fake.url, local: true, account: codexFake.FAKE_ACCOUNT_ID }, fetch: keyedOver(fake, { chatgpt: { value: codexFake.FAKE_ACCESS_TOKEN } }), stallTimeoutMs: 5000, log: () => {} }), "gpt-5.6-luna");
-      // Its privileged headers (originator `clover`, the account id) go only to the reviewed endpoint: service.test.ts.
+      await kit("moss/model-codex-oauth", await codeAdapter("codex-oauth"), () => ({ connection: { providerId: "codex-oauth", baseUrl: fake.url, local: true, account: codexFake.FAKE_ACCOUNT_ID }, fetch: keyedOver(fake, { chatgpt: { value: codexFake.FAKE_ACCESS_TOKEN } }), stallTimeoutMs: 5000, log: () => {} }), "gpt-5.6-luna");
+      // Its privileged headers (originator `moss`, the account id) go only to the reviewed endpoint: service.test.ts.
       expect(fake.bearers.every((b) => b === codexFake.FAKE_ACCESS_TOKEN)).toBe(true);
     } finally {
       await fake.close();
     }
   }, 30_000);
 
-  test("clover/model-xai-oauth, keyless on the keyed fetch (the core's xAI sign-in as Bearer)", async () => {
+  test("moss/model-xai-oauth, keyless on the keyed fetch (the core's xAI sign-in as Bearer)", async () => {
     const fake = await openaiChatFake.startOpenAiChatFake({ scenarios: {}, unknownModel: (rec) => holding(rec, () => openaiChatFake.chatStream({ text: ["ok"], finishReason: "stop" })) });
     try {
       const row = sdk.models.find((m) => m.providerId === "xai-oauth")!;
-      await kit("clover/model-xai-oauth", await codeAdapter("xai-oauth"), () => ({ connection: { providerId: "xai-oauth", baseUrl: `${fake.url}/v1`, local: true }, fetch: keyedOver(fake, { signIn: { value: "test-token-xai-0001" } }), stallTimeoutMs: 5000, log: () => {} }), row.upstreamId);
+      await kit("moss/model-xai-oauth", await codeAdapter("xai-oauth"), () => ({ connection: { providerId: "xai-oauth", baseUrl: `${fake.url}/v1`, local: true }, fetch: keyedOver(fake, { signIn: { value: "test-token-xai-0001" } }), stallTimeoutMs: 5000, log: () => {} }), row.upstreamId);
     } finally {
       await fake.close();
     }
   }, 30_000);
 
-  test("clover/model-bedrock, signing in a process of its own (secrets.get there, SigV4 verified by the fake)", async () => {
+  test("moss/model-bedrock, signing in a process of its own (secrets.get there, SigV4 verified by the fake)", async () => {
     const fake = await bedrockFake.startBedrockFake({ scenarios: { "amazon.nova-lite-v1:0": (rec) => holding(rec, () => bedrockFake.eventStreamResponse(bedrockFake.textTurnFrames("ok"))) } });
     try {
       const secrets = { get: async (name: string): Promise<CredentialMaterial | null> => (name === "aws" ? { kind: "aws", accessKeyId: bedrockFake.FAKE_ACCESS_KEY_ID, secretAccessKey: bedrockFake.FAKE_SECRET_ACCESS_KEY } : null) };
       const proc = await ownProcessAdapter("bedrock", secrets, [new URL(fake.url).host]);
       try {
-        await kit("clover/model-bedrock", proc, () => ({ connection: { providerId: "bedrock", region: bedrockFake.FAKE_REGION, baseUrl: fake.url, local: true }, fetch: createKeyedFetch({ hosts: [new URL(fake.url).host] }), stallTimeoutMs: 5000, log: () => {} }), "amazon.nova-lite-v1:0", { ownProcess: true, fakeRequests: () => fake.requests.length });
+        await kit("moss/model-bedrock", proc, () => ({ connection: { providerId: "bedrock", region: bedrockFake.FAKE_REGION, baseUrl: fake.url, local: true }, fetch: createKeyedFetch({ hosts: [new URL(fake.url).host] }), stallTimeoutMs: 5000, log: () => {} }), "amazon.nova-lite-v1:0", { ownProcess: true, fakeRequests: () => fake.requests.length });
       } finally {
         await proc.close();
       }
@@ -276,18 +276,18 @@ describe("conformance: every code model plugin, on the model adapter interface",
     }
   }, 30_000);
 
-  test("clover/model-vertex, signing in a process of its own (a service account's JWT, verified by the fake)", async () => {
+  test("moss/model-vertex, signing in a process of its own (a service account's JWT, verified by the fake)", async () => {
     const { privateKeyPem, publicKey } = await vertexFake.generateTestKeyPair();
     const row = sdk.models.find((m) => m.providerId === "vertex" && m.upstreamId.startsWith("gemini")) ?? sdk.models.find((m) => m.providerId === "vertex")!;
-    const opts = { publicKey, project: "clover-test-project", location: "us-central1", tokenUri: "", verified: [] as { header: Record<string, unknown>; claims: Record<string, unknown> }[], stream: { [row.upstreamId]: (rec: RecordedRequest) => holding(rec, () => geminiFake.geminiStreamResponse([{ parts: [{ text: "ok" }], finishReason: "STOP" }])) } };
+    const opts = { publicKey, project: "moss-test-project", location: "us-central1", tokenUri: "", verified: [] as { header: Record<string, unknown>; claims: Record<string, unknown> }[], stream: { [row.upstreamId]: (rec: RecordedRequest) => holding(rec, () => geminiFake.geminiStreamResponse([{ parts: [{ text: "ok" }], finishReason: "STOP" }])) } };
     const fake = await startFake({ routes: vertexFake.vertexFakeRoutes(opts) });
     opts.tokenUri = vertexFake.vertexTokenUrl(fake.url);
     try {
-      const material: CredentialMaterial = { kind: "gcp-service-account", clientEmail: "clover-test@clover-test-project.iam.gserviceaccount.com", privateKeyPem, tokenUri: opts.tokenUri };
+      const material: CredentialMaterial = { kind: "gcp-service-account", clientEmail: "moss-test@moss-test-project.iam.gserviceaccount.com", privateKeyPem, tokenUri: opts.tokenUri };
       const secrets = { get: async (name: string): Promise<CredentialMaterial | null> => (name === "gcp-service-account" ? material : null) };
       const proc = await ownProcessAdapter("vertex", secrets, [new URL(fake.url).host]);
       try {
-        await kit("clover/model-vertex", proc, () => ({ connection: { providerId: "vertex", baseUrl: fake.url, local: true, project: opts.project, location: opts.location }, fetch: createKeyedFetch({ hosts: [new URL(fake.url).host] }), stallTimeoutMs: 5000, log: () => {} }), row.upstreamId, { ownProcess: true, fakeRequests: () => fake.requests.length });
+        await kit("moss/model-vertex", proc, () => ({ connection: { providerId: "vertex", baseUrl: fake.url, local: true, project: opts.project, location: opts.location }, fetch: createKeyedFetch({ hosts: [new URL(fake.url).host] }), stallTimeoutMs: 5000, log: () => {} }), row.upstreamId, { ownProcess: true, fakeRequests: () => fake.requests.length });
       } finally {
         await proc.close();
       }
@@ -300,7 +300,7 @@ describe("conformance: every code model plugin, on the model adapter interface",
   // The production path (agent SDK 0.0.65): the plugin's own adapter as its own process runs it in the plugin host,
   // every request out through the keyed fetch on the plugin's DECLARED hosts at the provider's real endpoint, never a
   // loopback base URL. It signs, so the kit's own-process cases apply (it sets its own credential header).
-  test("clover/model-bedrock on its declared hosts: the real regional endpoint answers, and a region it didn't declare is refused with nothing sent", async () => {
+  test("moss/model-bedrock on its declared hosts: the real regional endpoint answers, and a region it didn't declare is refused with nothing sent", async () => {
     const fake = await bedrockFake.startBedrockFake({ scenarios: { "amazon.nova-lite-v1:0": (rec) => holding(rec, () => bedrockFake.eventStreamResponse(bedrockFake.textTurnFrames("ok"))) } });
     try {
       const secrets = { get: async (name: string): Promise<CredentialMaterial | null> => (name === "aws" ? { kind: "aws", accessKeyId: bedrockFake.FAKE_ACCESS_KEY_ID, secretAccessKey: bedrockFake.FAKE_SECRET_ACCESS_KEY } : null) };
@@ -309,7 +309,7 @@ describe("conformance: every code model plugin, on the model adapter interface",
       expect(hosts.some((h) => h.includes("*"))).toBe(false);
       const routes = { [`bedrock-runtime.${bedrockFake.FAKE_REGION}.amazonaws.com`]: fake, [`bedrock.${bedrockFake.FAKE_REGION}.amazonaws.com`]: fake };
       const adapter = await codeAdapter("bedrock");
-      await kit("clover/model-bedrock (declared hosts)", adapter, () => ({ connection: { providerId: "bedrock", region: bedrockFake.FAKE_REGION }, fetch: declaredFetch(hosts, routes), secrets, stallTimeoutMs: 5000, log: () => {} }), "amazon.nova-lite-v1:0", { signs: true });
+      await kit("moss/model-bedrock (declared hosts)", adapter, () => ({ connection: { providerId: "bedrock", region: bedrockFake.FAKE_REGION }, fetch: declaredFetch(hosts, routes), secrets, stallTimeoutMs: 5000, log: () => {} }), "amazon.nova-lite-v1:0", { signs: true });
       expect(fake.signatures.length).toBeGreaterThan(0);
       expect(fake.signatures.every((s) => s.verified)).toBe(true);
       const before = fake.requests.length;
@@ -321,20 +321,20 @@ describe("conformance: every code model plugin, on the model adapter interface",
     }
   }, 30_000);
 
-  test("clover/model-vertex on its declared hosts: the location endpoint and Google's token endpoint, nothing else", async () => {
+  test("moss/model-vertex on its declared hosts: the location endpoint and Google's token endpoint, nothing else", async () => {
     const { privateKeyPem, publicKey } = await vertexFake.generateTestKeyPair();
     const row = sdk.models.find((m) => m.providerId === "vertex" && m.upstreamId.startsWith("gemini")) ?? sdk.models.find((m) => m.providerId === "vertex")!;
-    const opts = { publicKey, project: "clover-test-project", location: "us-central1", tokenUri: "", verified: [] as { header: Record<string, unknown>; claims: Record<string, unknown> }[], stream: { [row.upstreamId]: (rec: RecordedRequest) => holding(rec, () => geminiFake.geminiStreamResponse([{ parts: [{ text: "ok" }], finishReason: "STOP" }])) } };
+    const opts = { publicKey, project: "moss-test-project", location: "us-central1", tokenUri: "", verified: [] as { header: Record<string, unknown>; claims: Record<string, unknown> }[], stream: { [row.upstreamId]: (rec: RecordedRequest) => holding(rec, () => geminiFake.geminiStreamResponse([{ parts: [{ text: "ok" }], finishReason: "STOP" }])) } };
     const fake = await startFake({ routes: vertexFake.vertexFakeRoutes(opts) });
     opts.tokenUri = `https://oauth2.googleapis.com${new URL(vertexFake.vertexTokenUrl(fake.url)).pathname}`;
     try {
-      const material: CredentialMaterial = { kind: "gcp-service-account", clientEmail: "clover-test@clover-test-project.iam.gserviceaccount.com", privateKeyPem, tokenUri: opts.tokenUri };
+      const material: CredentialMaterial = { kind: "gcp-service-account", clientEmail: "moss-test@moss-test-project.iam.gserviceaccount.com", privateKeyPem, tokenUri: opts.tokenUri };
       const secrets = { get: async (name: string): Promise<CredentialMaterial | null> => (name === "gcp-service-account" ? material : null) };
       const hosts = await declaredHosts("vertex");
       expect(hosts).toEqual(expect.arrayContaining(["us-central1-aiplatform.googleapis.com", "oauth2.googleapis.com"]));
       expect(hosts.some((h) => h.includes("*"))).toBe(false);
       const routes = { "us-central1-aiplatform.googleapis.com": fake, "oauth2.googleapis.com": fake };
-      await kit("clover/model-vertex (declared hosts)", await codeAdapter("vertex"), () => ({ connection: { providerId: "vertex", project: opts.project, location: opts.location }, fetch: declaredFetch(hosts, routes), secrets, stallTimeoutMs: 5000, log: () => {} }), row.upstreamId, { signs: true });
+      await kit("moss/model-vertex (declared hosts)", await codeAdapter("vertex"), () => ({ connection: { providerId: "vertex", project: opts.project, location: opts.location }, fetch: declaredFetch(hosts, routes), secrets, stallTimeoutMs: 5000, log: () => {} }), row.upstreamId, { signs: true });
       expect(opts.verified.length).toBeGreaterThan(0);
     } finally {
       await fake.close();

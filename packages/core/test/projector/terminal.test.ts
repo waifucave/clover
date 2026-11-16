@@ -6,7 +6,7 @@ import {
 
 type TC = { type: string; stopReason?: string; inputTokens?: number; outputTokens?: number; contextTokens?: number; message?: string; code?: string };
 
-describe("projector: the terminal rule (Clover 8b Task 10)", () => {
+describe("projector: the terminal rule (MOSS 8b Task 10)", () => {
   test("a clean result is ONE turn_completed(end_turn) on the main thread", () => {
     const { projector } = makeProjector();
     accept(projector, init());
@@ -109,7 +109,7 @@ describe("projector: the terminal rule (Clover 8b Task 10)", () => {
   });
 
   test("beginTurn returns the turn_started the host appends — and never a user_message", () => {
-    // `turn_started` has a producer on the Clover leg now; `user_message` stays the host's (P8b-5),
+    // `turn_started` has a producer on the MOSS leg now; `user_message` stays the host's (P8b-5),
     // and a projector that produced one too would double-append the user's turn.
     const { projector } = makeProjector();
     const out = beginTurn(projector, "say hello");
@@ -190,7 +190,7 @@ describe("projector: turn_completed usage (the contextTokens contract)", () => {
   });
 
   test("an UNPRICED row (P8b-30): required fields report 0, OPTIONAL contextTokens is OMITTED, logged ONCE", () => {
-    // The measured case for every clover-test double, and real for any row Clover cannot price.
+    // The measured case for every moss-test double, and real for any row MOSS cannot price.
     // `turn_completed`'s schema makes inputTokens/outputTokens required and contextTokens optional,
     // so the required pair reports 0 and the optional field is absent — "not known" rather than
     // "measured, and it was nothing". Nothing is fabricated either way.
@@ -219,7 +219,7 @@ describe("projector: turn_completed usage (the contextTokens contract)", () => {
 
   test("contextTokens is keyed to the SESSION'S model row — an auxiliary model cannot inflate it (m6)", () => {
     // `contextTokens` answers "how full is this conversation's context", which is a fact about the
-    // main loop's model. Clover's ledger is keyed by model and §4.2 says nothing about whether the
+    // main loop's model. MOSS's ledger is keyed by model and §4.2 says nothing about whether the
     // compaction summariser / classifier / advisor accrue into it — so summing every row would let
     // an auxiliary call inflate a figure labelled EXACT. Keying to the init model closes that
     // without needing to prove what the ledger does.
@@ -258,7 +258,7 @@ describe("projector: turn_completed usage (the contextTokens contract)", () => {
 
   // ── 2026-09-22 (C1): a turn's usage WITHOUT a priced ledger ────────────────────────────────────
   //
-  // The Clover runtime puts usage on the wire ONLY through `modelUsage`, and ONLY for a PRICED
+  // The MOSS runtime puts usage on the wire ONLY through `modelUsage`, and ONLY for a PRICED
   // generation (agent SDK 0.0.17 `engine.ts:2547-2562` + `session-provider.ts:829`): a subscription
   // row (`codex-oauth/*`, `pricingBasis: "subscription"`) and every row with no pricing evidence
   // (`deepseek*/*`, `zai*/*`) therefore report NOTHING, and every `turn_completed` since the
@@ -330,10 +330,10 @@ describe("projector: turn_completed usage (the contextTokens contract)", () => {
 // Two changes arrive together — the main row is keyed by the QUALIFIED `provider/model` catalog key
 // (while the daemon passes the BARE id at the spawn boundary, so `init.model` is bare), and subagent
 // spend plus the web tools' inner passes are priced into the same ledger. The old reading
-// (`model === init.model`, else SUM every row) therefore missed on every Clover-leg session and
+// (`model === init.model`, else SUM every row) therefore missed on every MOSS-leg session and
 // inflated `contextTokens` by a child's whole run — which drives premature, repeated auto-compaction.
 describe("projector: contextTokens under a QUALIFIED ledger (SDK 0.0.17, P-B1)", () => {
-  /** The real Clover-leg 0.0.17 init: `model` is the bare id, `winter_provider.modelKey` is the row key. */
+  /** The real MOSS-leg 0.0.17 init: `model` is the bare id, `winter_provider.modelKey` is the row key. */
   const qualifiedInit = (modelId: string, providerId: string) =>
     init({ model: modelId, winter_provider: { providerId, modelKey: `${providerId}/${modelId}` } });
 
@@ -470,7 +470,7 @@ describe("projector: contextTokens and the tools that SHARE the main row (0.0.17
   test("a WebSearch call omits contextTokens: its inner pass runs on the SESSION'S OWN model", () => {
     const { projector } = makeProjector();
     accept(projector, qualifiedInit());
-    accept(projector, assistantToolUse("t1", "WebSearch", { query: "clover" }));
+    accept(projector, assistantToolUse("t1", "WebSearch", { query: "moss" }));
     const out = accept(projector, result({ modelUsage: usage(4000, 60) })) as TC[];
     expect(out[0]).toMatchObject({ inputTokens: 4000 });
     expect(out[0]!.contextTokens).toBeUndefined();

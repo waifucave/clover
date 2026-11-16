@@ -2,7 +2,7 @@
 // the refusal the bot reads, the new-tool rule, the card rules taken back, and that only the user sets any of it.
 import { describe, expect, test } from "bun:test";
 import type { HookCallback, HookCallbackMatcher } from "@waifucave/clover-agent-sdk";
-import { CloverApprovalBroker, type StoredRule } from "../../src/approvals/broker";
+import { MossApprovalBroker, type StoredRule } from "../../src/approvals/broker";
 import { ruleKeyHash } from "../../src/approvals/strings";
 import { pluginToolName, toolPermissionMethods } from "../../src/approvals/tool-permissions";
 import { connectorPermissionTable, type Settings } from "../../src/settings";
@@ -10,7 +10,7 @@ import { sessionHooksFor } from "../../src/runtime-sdk/hooks";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import type { ConnectorPermissionSource } from "../../src/agent/mcp/connector-permissions";
 import type { MethodContext } from "../../src/rpc/handler";
-import { gateCloverRequest } from "../../src/auth/clover-caller";
+import { gateMossRequest } from "../../src/auth/moss-caller";
 
 const USER: MethodContext = { caller: { kind: "user", client: "app" } };
 const SERVER = "reel-reel";
@@ -19,7 +19,7 @@ function setup(tools: string[] = ["Export", "Trim"], rules: StoredRule[] = []) {
   let settings = {} as Settings;
   let listed = tools;
   const saves: Settings[] = [];
-  const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "ask-for-risky-actions", fence: () => undefined, rules: { load: () => rules, save: (r: StoredRule[]) => { rules.length = 0; rules.push(...r); } }, localComputer: "Delta" } as never);
+  const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "ask-for-risky-actions", fence: () => undefined, rules: { load: () => rules, save: (r: StoredRule[]) => { rules.length = 0; rules.push(...r); } }, localComputer: "Delta" } as never);
   const methods = toolPermissionMethods({
     listing: () => [{ server: SERVER, plugin: "reel", name: "reel", tools: listed.map((name) => ({ name })) }],
     pluginName: () => "Reel",
@@ -38,7 +38,7 @@ const set = (s: ReturnType<typeof setup>, p: Record<string, unknown>, ctx = USER
 function floor(table: ConnectorPermissionSource["table"]): (tool: string) => Promise<{ decision: string; reason?: string }> {
   const source: ConnectorPermissionSource = { table, readOnly: () => undefined };
   const built = sessionHooksFor({ sessionId: "s_1", roots: ["/tmp"], mode: "chat", cwd: "/tmp", policy: () => "ask", connectors: source });
-  const hook: HookCallback = (built.clover?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === undefined)[1]!.hooks[0]!;
+  const hook: HookCallback = (built.moss?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === undefined)[1]!.hooks[0]!;
   return async (tool) => {
     const r = await hook({ hook_event_name: "PreToolUse", tool_name: tool, tool_input: { anything: "at all" }, session_id: "b", transcript_path: "", cwd: "/tmp" } as never, "tu1", { signal: new AbortController().signal }) as { hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } };
     return { decision: r.hookSpecificOutput?.permissionDecision ?? "none", ...(r.hookSpecificOutput?.permissionDecisionReason !== undefined ? { reason: r.hookSpecificOutput.permissionDecisionReason } : {}) };
@@ -148,17 +148,17 @@ describe("only the user changes or reads these", () => {
 
   test("the door refuses a plugin's own layer connection or a session before any handler runs", () => {
     for (const m of ["tool.permissions", "tool.setPermission", "tool.takeBackRule"]) {
-      expect(gateCloverRequest("layer", { kind: "plugin", pluginId: "reel" }, m)).not.toBeNull(); // not a layer's method at all
-      expect(gateCloverRequest("app", { kind: "plugin", pluginId: "reel" }, m)).not.toBeNull();
-      expect(gateCloverRequest("app", { kind: "session", sessionId: "s_1", sessionKind: "bot" } as never, m)).not.toBeNull();
-      expect(gateCloverRequest("app", { kind: "user", client: "app" }, m)).toBeNull();
+      expect(gateMossRequest("layer", { kind: "plugin", pluginId: "reel" }, m)).not.toBeNull(); // not a layer's method at all
+      expect(gateMossRequest("app", { kind: "plugin", pluginId: "reel" }, m)).not.toBeNull();
+      expect(gateMossRequest("app", { kind: "session", sessionId: "s_1", sessionKind: "bot" } as never, m)).not.toBeNull();
+      expect(gateMossRequest("app", { kind: "user", client: "app" }, m)).toBeNull();
     }
   });
 
   test("the protocol marks all three methods userOnly, and none is open to a plugin's own connection beyond the gate", async () => {
-    const { CLOVER_METHODS } = await import("@waifucave/clover-protocol");
+    const { MOSS_METHODS } = await import("@waifucave/moss-protocol");
     for (const m of ["tool.permissions", "tool.setPermission", "tool.takeBackRule"]) {
-      const spec = CLOVER_METHODS.get(m)!;
+      const spec = MOSS_METHODS.get(m)!;
       expect([m, spec.userOnly]).toEqual([m, true]);
       expect(spec.roles).not.toContain("plugin-host");
     }
@@ -173,7 +173,7 @@ describe("a bot's approval check reads the setting at each call", () => {
     const { botApprovalCheck } = await import("../../src/approvals/bot-check");
     let setting: "allow" | "deny" | undefined;
     for (const level of ["read-only", "ask", "ask-risky", "automatic"] as const) {
-      const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio" });
+      const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio" });
       const check = botApprovalCheck(broker, { toolSetting: () => (setting === "deny" ? { setting: "deny", message: "the user blocked this tool in Settings (Tools)" } : setting === "allow" ? { setting: "allow" } : undefined) });
       setting = "allow";
       expect([level, (await check(ctx, () => "user")(tool, { any: "thing" }, run))?.behavior]).toEqual([level, "allow"]);
@@ -184,7 +184,7 @@ describe("a bot's approval check reads the setting at each call", () => {
       expect(broker.cards()).toHaveLength(0);
     }
     // Ask: nothing stored, the call goes to the broker (a card at "ask").
-    const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "ask", localComputer: "Studio" });
+    const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "ask", localComputer: "Studio" });
     setting = undefined;
     const check = botApprovalCheck(broker, { toolSetting: () => undefined });
     void check(ctx, () => "user")(tool, {}, run);
@@ -193,7 +193,7 @@ describe("a bot's approval check reads the setting at each call", () => {
   });
   test("the core's own tools never read the setting", async () => {
     const { botApprovalCheck } = await import("../../src/approvals/bot-check");
-    const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "read-only", localComputer: "Studio" });
+    const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "read-only", localComputer: "Studio" });
     let asked = 0;
     const check = botApprovalCheck(broker, { hostTools: () => ["SendMessage"], toolSetting: () => (asked++, { setting: "allow" }) });
     await check(ctx, () => "user")("Bash", { command: "ls" }, run);

@@ -1,29 +1,29 @@
-// `clover-core server install [--channel latest|beta]` and `clover-core server uninstall` (plan §4 M-M2): the daemon
+// `moss-core server install [--channel latest|beta]` and `moss-core server uninstall` (plan §4 M-M2): the daemon
 // alone on a computer with no app (a server, a cloud computer), started by the OS and updating itself.
 //
-// `install` copies this binary to `<home>/bin/daemon/clover-core` (the one place a server's binary lives, which its own
-// update replaces), puts plain Bun for plugins beside it (`<home>/bin/daemon/clover-plugin-bun`, plugin-bun-install.ts)
+// `install` copies this binary to `<home>/bin/daemon/moss-core` (the one place a server's binary lives, which its own
+// update replaces), puts plain Bun for plugins beside it (`<home>/bin/daemon/moss-plugin-bun`, plugin-bun-install.ts)
 // and the bundled plugins this core's manifest names in `<home>/bin/plugins` (plugins-install.ts: the release's
 // tarball, checked), the layout core's `bundledPluginsDir` reads as the app's `resources/daemon` and
 // `resources/plugins`; registers lane C's login start for it (`loginEnable`: the same LaunchAgent on macOS, systemd user unit on
-// Linux and per-user Task Scheduler task at logon on Windows that `clover-core autostart` writes, each running
-// `clover-core supervise`), on Linux turns lingering on (`loginctl enable-linger`) so the unit runs with no one logged
+// Linux and per-user Task Scheduler task at logon on Windows that `moss-core autostart` writes, each running
+// `moss-core supervise`), on Linux turns lingering on (`loginctl enable-linger`) so the unit runs with no one logged
 // in, and writes `<home>/install.json` `{ kind: "server" }`, the marker that lets the daemon update itself. A binary
 // inside an app (`…/resources/daemon/`) is refused: the app updates that one.
 //
 // `uninstall` stops the daemon cleanly, removes the login start, turns lingering off again if install turned it on,
-// and removes the marker, the binaries and the bundled plugins. A home with the earlier layout (`<home>/bin/clover-core`
+// and removes the marker, the binaries and the bundled plugins. A home with the earlier layout (`<home>/bin/moss-core`
 // and plugin Bun beside it) has those removed at install and uninstall. On Windows the binary running the uninstall can't delete itself, and says so.
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { schtasksFallbackProblem, type InstallChannel, type InstallMarker, type LoginOsDeps, type LoginSpec, type Runner } from "@waifucave/clover-core";
+import { schtasksFallbackProblem, type InstallChannel, type InstallMarker, type LoginOsDeps, type LoginSpec, type Runner } from "@waifucave/moss-core";
 import { homedir } from "node:os";
 import { syncDir, syncFile } from "./durable";
 import { serverPluginBun, type PluginBunResult } from "./plugin-bun-install";
 import { badBinary, oldBinary } from "./self-update";
 import { serverPluginsDir, type PluginsResult } from "./plugins-install";
 
-export const SERVER_USAGE = "usage: clover-core server install [--channel latest|beta] | server uninstall";
+export const SERVER_USAGE = "usage: moss-core server install [--channel latest|beta] | server uninstall";
 
 /**
  * What server install says when the account logs on (Windows) with a profile other than this process's home: a
@@ -36,17 +36,17 @@ export function profileNote(profile: string, home: string = homedir()): string |
 /** Where a server install keeps its binary: `<home>/bin/daemon/`, with plain Bun for plugins beside it and the bundled
  *  plugins in `<home>/bin/plugins`. */
 export function serverBinary(home: string, os: LoginSpec["os"]): string {
-  return join(home, "bin", "daemon", os === "win32" ? "clover-core.exe" : "clover-core");
+  return join(home, "bin", "daemon", os === "win32" ? "moss-core.exe" : "moss-core");
 }
 
-/** The earlier layout's files (`<home>/bin/clover-core`, plugin Bun beside it, and what their updates left). */
+/** The earlier layout's files (`<home>/bin/moss-core`, plugin Bun beside it, and what their updates left). */
 export function earlierLayoutFiles(home: string, os: LoginSpec["os"]): string[] {
   const exe = os === "win32" ? ".exe" : "";
-  const core = join(home, "bin", `clover-core${exe}`), bun = join(home, "bin", `clover-plugin-bun${exe}`);
+  const core = join(home, "bin", `moss-core${exe}`), bun = join(home, "bin", `moss-plugin-bun${exe}`);
   return [core, `${core}.new`, `${core}.old`, `${core}.bad`, bun, `${bun}.new`, `${bun}.old`, `${bun}.swap`];
 }
 
-/** Whether `bin` is the daemon inside an app (`Clover.app/Contents/Resources/daemon/`, `resources/daemon/`). */
+/** Whether `bin` is the daemon inside an app (`MOSS Code.app/Contents/Resources/daemon/`, `resources/daemon/`). */
 export function insideApp(bin: string): boolean {
   return basename(dirname(bin)) === "daemon" && basename(dirname(dirname(bin))).toLowerCase() === "resources";
 }
@@ -95,7 +95,7 @@ const same = (a: string, b: string): boolean => {
 export async function serverInstall(d: ServerDeps, channel: InstallChannel): Promise<number> {
   const { spec } = d;
   if (insideApp(spec.bin)) {
-    d.log("server install: this clover-core is the app's, which updates it; a server install takes the clover-core-<version>-<target> release file");
+    d.log("server install: this moss-core is the app's, which updates it; a server install takes the moss-core-<version>-<target> release file");
     return 1;
   }
   const marker = d.readMarker(spec.home);
@@ -157,7 +157,7 @@ export async function serverInstall(d: ServerDeps, channel: InstallChannel): Pro
     d.log(`server install: the login start was written but the OS did not register it (${st.label})`);
     return 1;
   }
-  d.log(`server install: clover-core at ${bin} with plain Bun for plugins beside it and the bundled plugins in ${serverPluginsDir(spec.home)}, started by the OS (${st.label}), updating itself on ${channel}`);
+  d.log(`server install: moss-core at ${bin} with plain Bun for plugins beside it and the bundled plugins in ${serverPluginsDir(spec.home)}, started by the OS (${st.label}), updating itself on ${channel}`);
   return 0;
 }
 
@@ -201,11 +201,11 @@ export async function serverUninstall(d: ServerDeps): Promise<number> {
 export type MigrationResult = { kind: "not needed" } | { kind: "restart" } | { kind: "next logon" } | { kind: "failed"; why: string };
 
 /**
- * One step from the earlier layout (`<home>/bin/clover-core`, which no release shipped, but dev and test servers run):
- * when a server's daemon starts from that path, it copies itself to `<home>/bin/daemon/clover-core` (written, flushed,
+ * One step from the earlier layout (`<home>/bin/moss-core`, which no release shipped, but dev and test servers run):
+ * when a server's daemon starts from that path, it copies itself to `<home>/bin/daemon/moss-core` (written, flushed,
  * renamed in place), moves plain Bun beside it, and points the old path at the new one:
- *   - macOS and Linux: the old path becomes a symlink to `daemon/clover-core` (one atomic rename), so the login unit,
- *     which runs `<home>/bin/clover-core supervise`, starts the new layout; the caller then exits with the restart
+ *   - macOS and Linux: the old path becomes a symlink to `daemon/moss-core` (one atomic rename), so the login unit,
+ *     which runs `<home>/bin/moss-core supervise`, starts the new layout; the caller then exits with the restart
  *     code, and `supervise` starts it at once;
  *   - Windows (a running binary can't be replaced, and a symlink needs a privilege): the logon task is registered
  *     again for the new path (with its `.old` fallback); this daemon keeps running, and the next logon starts the new

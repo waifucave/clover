@@ -6,7 +6,7 @@
 //
 //   const handlers = browserMethodHandlers({ service: browser.service });
 //   for (const [name, fn] of Object.entries(handlers)) server.serve(name, fn);   // lane INT
-import { BROWSER_METHODS, CLOVER_ERR, ERR, type Caller } from "@waifucave/clover-protocol";
+import { BROWSER_METHODS, MOSS_ERR, ERR, type Caller } from "@waifucave/moss-protocol";
 import { handler, MethodError, type MethodContext, type MethodHandler } from "../rpc/handler";
 import type { AppTabEvent } from "./contract";
 import { BrowserError, type BrowserErrorCode } from "./policy";
@@ -27,7 +27,7 @@ const NOT_FOUND: ReadonlySet<BrowserErrorCode> = new Set(["no_tab", "tab_closed"
 /** A browser refusal as the JSON-RPC error a client branches on, its own code kept in `data.code`. */
 function failure(e: unknown): never {
   if (e instanceof BrowserError) {
-    throw new MethodError(NOT_FOUND.has(e.code) ? ERR.NOT_FOUND : e.code === "needs_ok" ? CLOVER_ERR.CAPABILITY_REFUSED : ERR.INVALID_REQUEST, e.message, { code: e.code });
+    throw new MethodError(NOT_FOUND.has(e.code) ? ERR.NOT_FOUND : e.code === "needs_ok" ? MOSS_ERR.CAPABILITY_REFUSED : ERR.INVALID_REQUEST, e.message, { code: e.code });
   }
   throw e;
 }
@@ -61,7 +61,7 @@ export function browserMethodHandlers(o: BrowserMethodOptions): Record<string, M
   add(M.browserHide.name, handler(M.browserHide, async (p, ctx) => ({ tab: await run(() => service.hide(caller(ctx), p.id)) })));
   add(M.browserHold.name, handler(M.browserHold, async (p, ctx) => {
     // The person's gesture in the view, seen by the app's own connection (§5.5's rule for sends).
-    if ((ctx.caller as Caller).kind !== "user") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user can take or give back a tab");
+    if ((ctx.caller as Caller).kind !== "user") throw new MethodError(MOSS_ERR.NOT_THE_USER, "only the user can take or give back a tab");
     await run(() => service.hold(p.id, p.held));
     return { ok: true as const };
   }));
@@ -70,13 +70,13 @@ export function browserMethodHandlers(o: BrowserMethodOptions): Record<string, M
   add(M.browserStream.name, handler(M.browserStream, async (p, ctx) => {
     const c = ctx.caller as Caller;
     const device = o.deviceOf?.(ctx) ?? (c.kind === "peer" ? c.device : c.kind === "user" ? c.device : undefined);
-    if (device === undefined) throw new MethodError(CLOVER_ERR.ROLE_REFUSED, "a stream goes to a device: this call didn't come on a device's link");
+    if (device === undefined) throw new MethodError(MOSS_ERR.ROLE_REFUSED, "a stream goes to a device: this call didn't come on a device's link");
     return run(() => service.stream(caller(ctx), p.id, { on: p.on, ...(p.maxKbps !== undefined ? { maxKbps: p.maxKbps } : {}), ...(p.codecs !== undefined ? { codecs: p.codecs } : {}) }, device));
   }));
   add(M.browserReport.name, handler(M.browserReport, async (p, ctx) => {
     // Only the app's own connection tells the core what happened to its tabs.
     const c = ctx.caller as Caller;
-    if (c.kind !== "user" || c.client !== "app") throw new MethodError(CLOVER_ERR.ROLE_REFUSED, "only the app reports on its tabs");
+    if (c.kind !== "user" || c.client !== "app") throw new MethodError(MOSS_ERR.ROLE_REFUSED, "only the app reports on its tabs");
     service.report(p.events as AppTabEvent[]);
     return { ok: true as const };
   }));

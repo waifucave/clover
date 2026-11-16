@@ -1,8 +1,8 @@
-// Semver versions and ranges, for `version` and `engines.clover` (spec §5.1 "Formats", §5.9). Self-contained, so the
+// Semver versions and ranges, for `version` and `engines.moss` (spec §5.1 "Formats", §5.9). Self-contained, so the
 // SDK runs the same in the daemon, the CLI and the app. Ranges take npm's grammar: `1.2.3`, `=`, `<`, `<=`, `>`, `>=`,
 // `^`, `~`, x-ranges (`1.x`, `1.2.*`, `*`), hyphen ranges (`1.2.3 - 2.0.0`), spaces for "and" and `||` for "or". A
 // prerelease satisfies a range only if a comparator of the same major.minor.patch names a prerelease too.
-import { SEMVER_RE } from "@waifucave/clover-protocol";
+import { SEMVER_RE } from "@waifucave/moss-protocol";
 
 export interface Version {
   major: number;

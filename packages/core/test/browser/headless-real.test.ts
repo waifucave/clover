@@ -1,7 +1,7 @@
 // The headless shell for real (spec §12.1, "Where no app runs"): the pinned build installed into a temp folder (or
-// `CLOVER_HEADLESS_DIR`, a CI cache), a bot's tab on a local fixture server, its pictures, the URL rule, the refused
+// `MOSS_HEADLESS_DIR`, a CI cache), a bot's tab on a local fixture server, its pictures, the URL rule, the refused
 // DevTools domains, the address policy through the real network filter (R13), a stream, a page's window, dialogs and
-// permissions. Skipped unless CLOVER_HEADLESS_TESTS=1. The headless shell opens no window, so it may run on a
+// permissions. Skipped unless MOSS_HEADLESS_TESTS=1. The headless shell opens no window, so it may run on a
 // developer's machine; in CI it runs on all four OSes (on Linux with unprivileged user namespaces allowed for
 // Chromium's sandbox, as the app's tests).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -16,11 +16,11 @@ import { HeadlessBrowser, imageSize } from "../../src/browser/headless";
 import { startBrowser } from "../../src/browser/daemon";
 import type { BrowserEvent } from "../../src/browser/service";
 
-const RUN = process.env.CLOVER_HEADLESS_TESTS === "1";
+const RUN = process.env.MOSS_HEADLESS_TESTS === "1";
 /** One install folder for the whole file (CI's cache when it gives one): the second describe reuses the first's
  *  install instead of downloading the shell again. */
 let sharedDir: string | undefined;
-const SHARED_DIR = (): string => (sharedDir ??= process.env.CLOVER_HEADLESS_DIR ?? mkdtempSync(join(tmpdir(), "clover-headless-")));
+const SHARED_DIR = (): string => (sharedDir ??= process.env.MOSS_HEADLESS_DIR ?? mkdtempSync(join(tmpdir(), "moss-headless-")));
 const T = 120_000;
 
 /** A bot allowed loopback, so its tab can load the local fixture server: only the R13 checks use the real policies. */
@@ -35,7 +35,7 @@ describe.skipIf(!RUN)("the headless shell, for real", () => {
   const chunks: { stream: string; chunk: StreamChunk }[] = [];
   const names: string[] = [];
   const logs: string[] = [];
-  const secret = join(mkdtempSync(join(tmpdir(), "clover-headless-file-")), "secret.txt");
+  const secret = join(mkdtempSync(join(tmpdir(), "moss-headless-file-")), "secret.txt");
   writeFileSync(secret, "FILE-MARKER-7f3a");
   let server: ReturnType<typeof Bun.serve>;
   let base = "";
@@ -227,7 +227,7 @@ describe.skipIf(!RUN)("the headless shell, for real", () => {
 describe.skipIf(!RUN)("the daemon's browser where no app runs, for real", () => {
   test("startBrowser: the headless shell drives tabs through the service, and its filter takes only the shell's own connections", async () => {
     const dir = SHARED_DIR();
-    const home = mkdtempSync(join(tmpdir(), "clover-daemon-browser-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-daemon-browser-"));
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => html(`<title>Daemon</title><p>DAEMON-MARKER</p>`) });
     const logs: string[] = [];
     const events: BrowserEvent[] = [];

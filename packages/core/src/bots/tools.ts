@@ -13,7 +13,7 @@
 //   reaches another bot only through that bot's own conversation, and otherwise only sessions of its own bot (its
 //   bot's conversation, side threads and background agents), never itself. Another bot's agents and side threads, and
 //   the user's own coding sessions, are refused (`sendMessageRefusal`).
-import { type SessionView } from "@waifucave/clover-protocol";
+import { type SessionView } from "@waifucave/moss-protocol";
 import { isContractError } from "../contracts/common";
 import type { DeliveredInput, Disposition } from "../contracts/session-host";
 import type { DurableSessionHost } from "../sessions/durable-host";

@@ -1,0 +1,12 @@
+{
+  "manifest": 1,
+  "id": "fixture-background",
+  "name": "Fixture background",
+  "description": "A third-party background part for the app's tests: a component with no place in any window, which the app keeps running in a hidden window of its own; it holds audio, so its frame may play sound with no press.",
+  "capabilities": ["audio"],
+  "engines": { "moss": "^1.0.0" },
+  "client": { "entry": "client/index.js" },
+  "contributes": {
+    "ui": [{ "spot": "app.background", "id": "ticker", "component": "FixtureBackground" }]
+  }
+}

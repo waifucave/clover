@@ -2,7 +2,7 @@
 
 A bot's tab owns its page: the top bar and the right-hand panels are part of it. The left sidebar is not: it is the app's own and looks exactly the
 same on every tab, so a bot gets nothing of it (spec §5.5, "Bots is part of the app with a plug"). A plugin with a bot reshapes what Bots gives it the way every plugin
-does everything else in Clover: **it draws its own parts, in its own frames, and calls the plugin API to make the app do things.** The app never draws a
+does everything else in MOSS: **it draws its own parts, in its own frames, and calls the plugin API to make the app do things.** The app never draws a
 plugin's styles for it, and no plugin script ever runs in the shell's document. All of this applies only while your bot's tab shows, switches
 cleanly when the user leaves (other tabs are stock), respects reduced motion, and costs nothing while idle.
 

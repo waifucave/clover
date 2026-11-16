@@ -5,10 +5,10 @@
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
 //   ACCEPTANCE-STDIO  → a `tool_use` of the tool whose name ends in `StdioProbe` (the fixture's stdio server's tool)
 //   ACCEPTANCE-STAGE <mood> → a `tool_use` of the tool whose name ends in `__set_mood` (Alpha's stage) with that mood
-//   ACCEPTANCE-AGENT <root> → a `tool_use` of `Agent`: Alpha's study-buddy definition on clover-code in <root>, with
+//   ACCEPTANCE-AGENT <root> → a `tool_use` of `Agent`: Alpha's study-buddy definition on moss-code in <root>, with
 //                       the brief `ACCEPTANCE-CHILD …`
 //   ACCEPTANCE-CHILD  → the child agent's own turn: text, `CHILD_REPORT`
-//   ACCEPTANCE-AGENT-ECHO <root> → an `Agent`: Alpha's study-buddy on clover-code in <root>, with the brief
+//   ACCEPTANCE-AGENT-ECHO <root> → an `Agent`: Alpha's study-buddy on moss-code in <root>, with the brief
 //                       `ACCEPTANCE-CHILD-ECHO …`
 //   ACCEPTANCE-CHILD-ECHO → an agent's turn (a bot's or the user's coding session): a `tool_use` of the echo plugin's
 //                       tool on its bridge (`BRIDGE_ECHO`: never a bot's own Echo) with `acceptance-child-ping`; its
@@ -32,7 +32,7 @@
 //   ACCEPTANCE-NETCMD-OUTSIDE <url> → the same `Bash` with `dangerouslyDisableSandbox: true` (it asks to leave the sandbox)
 //   ACCEPTANCE-ROUTINE-NETCMD <url> → a `Routine` (name `Outside probe`, a once-a-year schedule) whose instructions are
 //                       `ACCEPTANCE-NETCMD-OUTSIDE <url>`: its side thread makes the flagged call (`routine.runNow`)
-//   ACCEPTANCE-AGENT-NETCMD <root> <url> → an `Agent`: Alpha's study-buddy on clover-code in <root>, with the brief
+//   ACCEPTANCE-AGENT-NETCMD <root> <url> → an `Agent`: Alpha's study-buddy on moss-code in <root>, with the brief
 //                       `ACCEPTANCE-NETCMD-OUTSIDE <url>`: the child agent makes the flagged call
 //                       (each of these four is called once in its turn, a deferred tool loaded through Glossary first)
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
@@ -194,8 +194,8 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
 const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|NETCMD|ROUTINE|SLOW|STREAM|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL|FAIL)\b/;
 
-/** The echo plugin's tool on an agent's bridge: `mcp__<the session's bridge, clover_ and 16 hex>__<its server's key>__Echo`. */
-export const BRIDGE_ECHO = /^mcp__clover_[0-9a-f]{16}__acceptance-echo-echo__Echo$/;
+/** The echo plugin's tool on an agent's bridge: `mcp__<the session's bridge, moss_ and 16 hex>__<its server's key>__Echo`. */
+export const BRIDGE_ECHO = /^mcp__moss_[0-9a-f]{16}__acceptance-echo-echo__Echo$/;
 
 /** The command that needs the network (the outside-the-sandbox step's): one request to <url>, its body printed. The
  *  run's own loopback server is the target, never the real network. */
@@ -209,7 +209,7 @@ export function netCommandCall(said: string): { tool: string; input: Record<stri
   const routine = /ACCEPTANCE-ROUTINE-NETCMD (\S+)/.exec(said);
   if (routine !== null) return { tool: "Routine", input: { name: "Outside probe", instructions: `ACCEPTANCE-NETCMD-OUTSIDE ${routine[1]}`, schedule: "0 3 1 1 *" } };
   const agent = /ACCEPTANCE-AGENT-NETCMD (\S+) (\S+)/.exec(said);
-  if (agent !== null) return { tool: "Agent", input: { agent: "alpha:study-buddy", backend: "clover-code", root: agent[1], description: "Outside probe", prompt: `ACCEPTANCE-NETCMD-OUTSIDE ${agent[2]}` } };
+  if (agent !== null) return { tool: "Agent", input: { agent: "alpha:study-buddy", backend: "moss-code", root: agent[1], description: "Outside probe", prompt: `ACCEPTANCE-NETCMD-OUTSIDE ${agent[2]}` } };
   const outside = /ACCEPTANCE-NETCMD-OUTSIDE (\S+)/.exec(said);
   if (outside !== null) return { tool: "Bash", input: { command: netCommand(outside[1]!), description: "Fetch the probe page", dangerouslyDisableSandbox: true } };
   const inside = /ACCEPTANCE-NETCMD (\S+)/.exec(said);
@@ -326,10 +326,10 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       let content: Record<string, unknown>[];
       let stop: string;
-      // A shell directive's turn, also when Clover's note after a grant came as a user message of its own: the
+      // A shell directive's turn, also when MOSS's note after a grant came as a user message of its own: the
       // directive is then the user message before it.
       const shellFrom = said.includes("ACCEPTANCE-SHELL-") ? lastUser
-        : record.lastUserText.includes("Clover granted your shell commands")
+        : record.lastUserText.includes("MOSS granted your shell commands")
           ? [...messages].reverse().find((m) => m.role === "user" && textOf(m.content).includes("ACCEPTANCE-SHELL-") && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")))
           : undefined;
       const shell = shellFrom === undefined ? undefined : shellStep(newestDirective(textOf(shellFrom.content)), messages, shellFrom, record);
@@ -357,7 +357,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const callLoaded = callTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === callTool));
       // A plugin's Review (the internal `reviewer.model` job, registry/plugin-review.ts): its report, naming the plugin
       // it was given, so the run sees the job got that plugin's tree.
-      const reviewing = JSON.stringify((body as { system?: unknown }).system ?? "").includes("You review a plugin for Clover");
+      const reviewing = JSON.stringify((body as { system?: unknown }).system ?? "").includes("You review a plugin for MOSS");
       if (reviewing) {
         const reviewed = /PLUGIN: (\S+)/.exec(record.lastUserText)?.[1] ?? /PLUGIN: (\S+)/.exec(textOf(messages[0]?.content))?.[1] ?? "unknown";
         content = [{ type: "text", text: `${REVIEW_MARK} ${reviewed}: it echoes text back. Nothing odd found.` }];
@@ -423,7 +423,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           content = [{ type: "text", text: "ACCEPTANCE-NO-AGENT-TOOL" }];
           stop = "end_turn";
         } else {
-          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { agent: "alpha:study-buddy", backend: "clover-code", root, description: "Echo probe", prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." } }];
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { agent: "alpha:study-buddy", backend: "moss-code", root, description: "Echo probe", prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
@@ -437,7 +437,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           content = [{ type: "text", text: "ACCEPTANCE-NO-AGENT-TOOL" }];
           stop = "end_turn";
         } else {
-          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { agent: "alpha:study-buddy", backend: "clover-code", root, description: "Study notes", prompt: "ACCEPTANCE-CHILD: read the folder and say you're done." } }];
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { agent: "alpha:study-buddy", backend: "moss-code", root, description: "Study notes", prompt: "ACCEPTANCE-CHILD: read the folder and say you're done." } }];
           stop = "tool_use";
           record.toolUse = tool;
         }

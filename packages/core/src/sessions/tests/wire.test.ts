@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CloverSessionEvent, SessionEvent, UserMessageEvent, UserMessageStamp } from "@waifucave/clover-protocol";
+import { MossSessionEvent, SessionEvent, UserMessageEvent, UserMessageStamp } from "@waifucave/moss-protocol";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { FakeSessionDriver } from "../../contracts/fakes/session-host";
 import type { SessionRecord } from "../../contracts/session-host";
@@ -16,7 +16,7 @@ afterEach(() => {
   for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true });
 });
 
-/** The inherited user message, with the stamp Clover adds (§6.4). */
+/** The inherited user message, with the stamp MOSS adds (§6.4). */
 const StampedUserMessage = UserMessageEvent.extend(UserMessageStamp.shape);
 
 function parseWire(event: Record<string, unknown>): void {
@@ -24,14 +24,14 @@ function parseWire(event: Record<string, unknown>): void {
     StampedUserMessage.parse(event);
     return;
   }
-  const clover = CloverSessionEvent.safeParse(event);
-  if (clover.success) return;
+  const moss = MossSessionEvent.safeParse(event);
+  if (moss.success) return;
   SessionEvent.parse(event);
 }
 
 describe("projecting a session's log", () => {
   test("a conversation with every kind of input projects onto events the protocol accepts, records without one left out", async () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-d-wire-"));
+    const home = mkdtempSync(join(tmpdir(), "moss-d-wire-"));
     homes.push(home);
     const clock = new FakeClock();
     const host = new DurableSessionHost({ home, clock, epoch: () => 7 });

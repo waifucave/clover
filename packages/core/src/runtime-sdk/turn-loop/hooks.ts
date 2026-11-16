@@ -20,7 +20,7 @@
 // * **Who it runs as:** the session that made the call (R7), so the API calls the hook makes act for that session.
 // * A `command` hook (Claude Code's hook protocol) needs a process in lane C's sandbox; until that lands it is skipped,
 //   reported once per entry.
-import { topPluginIdOf, type Caller } from "@waifucave/clover-protocol";
+import { topPluginIdOf, type Caller } from "@waifucave/moss-protocol";
 import { claudeEventNameOf, hookMatchesTool, hookOrder, HOOK_DEFAULT_TIMEOUT_MS, HOOK_RETURNS, type HookEvent, type HookInput, type TurnOutcome } from "../../../../plugin-sdk/src/catalogs/hooks";
 import type { TurnEnd } from "../../contracts/session-host";
 import type { PluginHost } from "../../contracts/plugin-host";
@@ -55,7 +55,7 @@ export interface HookSession {
    *  carries the bot that started the first one). */
   bot?: string;
   computer: string;
-  /** An agent's backend (`claude-code`, …), for plugins' `onlyBackends`; absent, Clover's own (`clover`). */
+  /** An agent's backend (`claude-code`, …), for plugins' `onlyBackends`; absent, MOSS's own (`moss`). */
   backend?: string;
 }
 
@@ -220,7 +220,7 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
           if (failClosed("couldn't run (the plugin has no folder on this computer)")) break;
           continue;
         }
-        // Clover's input with Claude Code's names beside it, so a wrapped Claude Code hook reads what it expects.
+        // MOSS's input with Claude Code's names beside it, so a wrapped Claude Code hook reads what it expects.
         const stdin = JSON.stringify({ ...args, ...claudeHookInput(event, s, folder, args) });
         if (Buffer.byteLength(stdin, "utf8") > COMMAND_HOOK_STDIN_MAX) {
           o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "its input is too large to hand to a command hook" });
@@ -386,7 +386,7 @@ function claudeHookInput(event: HookEvent, s: HookSession, cwd: string, args: Ho
   return out;
 }
 
-/** A command hook's output in Clover's shape: Clover's own fields as they are, and Claude Code's mapped onto them
+/** A command hook's output in MOSS's shape: MOSS's own fields as they are, and Claude Code's mapped onto them
  *  (its hooks reference). On `tool.before`: `decision: "block"` and `continue: false` deny (with `reason` /
  *  `stopReason`); `hookSpecificOutput.permissionDecision` `deny` denies and `ask` asks, with its
  *  `permissionDecisionReason`, while `allow` is ignored (a hook never allows, §5.3); `hookSpecificOutput.updatedInput`
@@ -409,12 +409,12 @@ export function fromClaudeHookOutput(event: HookEvent, out: Record<string, unkno
 }
 
 /** A command hook's whole environment: nothing of the core's is inherited (no key, no token), only what a hook
- *  written for Claude Code expects to find, under Clover's names and Claude Code's. */
+ *  written for Claude Code expects to find, under MOSS's names and Claude Code's. */
 export function commandHookEnv(pluginId: string, folder: string, s: Pick<HookSession, "id">, platform: NodeJS.Platform = process.platform, from: Readonly<Record<string, string | undefined>> = process.env): Record<string, string> {
   const env: Record<string, string> = {
-    CLOVER_PLUGIN_ID: pluginId,
-    CLOVER_SESSION_ID: s.id,
-    CLOVER_PLUGIN_ROOT: folder,
+    MOSS_PLUGIN_ID: pluginId,
+    MOSS_SESSION_ID: s.id,
+    MOSS_PLUGIN_ROOT: folder,
     CLAUDE_PLUGIN_ROOT: folder,
   };
   if (platform === "win32") {

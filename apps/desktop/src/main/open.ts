@@ -1,11 +1,11 @@
-// `app.window.open` (the daemon asks for the user's `clover-core app open <target>` and `app where`): the main window
+// `app.window.open` (the daemon asks for the user's `moss-core app open <target>` and `app where`): the main window
 // moved to a place by the route its own sidebar and commands use (the shell's `shell-act`, the same acts a bot's own
 // controls send through `shell.*`), then the window's place as its shell reports it, and its frames. Navigation only:
 // no click or key press goes into a page, and the window is never shown, raised, focused, moved or resized. A hidden or
 // minimised main window is "not drawn": nothing is sent to it.
-import type { AppOpenResult, CapturedWindow } from "@waifucave/clover-protocol";
-import type { ShellState } from "@waifucave/clover-plugin-sdk";
-import type { ShellAct } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { AppOpenResult, CapturedWindow } from "@waifucave/moss-protocol";
+import type { ShellState } from "@waifucave/moss-plugin-sdk";
+import type { ShellAct } from "@waifucave/moss-plugin-sdk/ui/bridge";
 
 /** A target as the shell's act and the place that shows it once it is there. Settings is a dialog over the tab (the
  *  shell's `dialog`); every other place shows only with no dialog over it. */

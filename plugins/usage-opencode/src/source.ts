@@ -1,5 +1,5 @@
-import type { HandlerContext } from "@waifucave/clover-plugin-sdk";
-import type { UsageIngestArgs, UsageIngestReply, UsageRecord } from "@waifucave/clover-plugin-sdk/usage-source";
+import type { HandlerContext } from "@waifucave/moss-plugin-sdk";
+import type { UsageIngestArgs, UsageIngestReply, UsageRecord } from "@waifucave/moss-plugin-sdk/usage-source";
 import {
   OPENCODE_ALL_ARGS, OPENCODE_SETTLE_AFTER_DAY_MS, currentTimeZone, dayMinus, daysBefore, localDay, localDayEnd, localDayStart, localNoon, opencodeDayRecords,
   opencodeDaysArgs, opencodeDifference, opencodeFingerprint, runOpencodeStats, sameOpencodeStats, type OpencodeStats,

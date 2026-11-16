@@ -5,7 +5,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { HostProcess } from "@waifucave/clover-protocol";
+import type { HostProcess } from "@waifucave/moss-protocol";
 import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
 import { SystemClock } from "../../clock/system-clock";
 import { FakePluginRegistry } from "../../contracts/fakes/plugin-registry";
@@ -23,13 +23,13 @@ const processes: { kill(): void }[] = [];
 afterAll(() => { for (const p of processes) p.kill(); });
 
 test("WebSearch and WebFetch over a real plugin-host link reach the fake search backend and answer; nothing else is reached", async () => {
-  const folder = join(import.meta.dir, "../../../../../plugins/clover/plugins/web");
-  const manifest = JSON.parse(readFileSync(join(folder, "clover.json"), "utf8"));
+  const folder = join(import.meta.dir, "../../../../../plugins/moss/plugins/web");
+  const manifest = JSON.parse(readFileSync(join(folder, "moss.json"), "utf8"));
   const registry = new FakePluginRegistry({
     catalog: catalogPointDecl,
     plugins: [
-      { id: "clover", manifest: { manifest: 1, id: "clover", name: "Clover" } as never, source: "bundled" },
-      { id: "clover/web", manifest, source: "bundled" },
+      { id: "moss", manifest: { manifest: 1, id: "moss", name: "MOSS" } as never, source: "bundled" },
+      { id: "moss/web", manifest, source: "bundled" },
     ],
   });
   const exa = fakeExa();
@@ -44,7 +44,7 @@ test("WebSearch and WebFetch over a real plugin-host link reach the fake search 
     const r = registry.get(id);
     return r === undefined ? undefined : { id: r.id, source: r.source };
   });
-  const records = new Map<string, HostedRecord>([["clover/web", { id: "clover/web", source: "bundled", folder, entry: "host/index.ts", runtime: "bun", dataFolder: join(folder, ".test-data") } as HostedRecord]]);
+  const records = new Map<string, HostedRecord>([["moss/web", { id: "moss/web", source: "bundled", folder, entry: "host/index.ts", runtime: "bun", dataFolder: join(folder, ".test-data") } as HostedRecord]]);
   const links = new Map<string, RpcPeer>();
   const logs: string[] = [];
   const host = new CorePluginHost({
@@ -52,7 +52,7 @@ test("WebSearch and WebFetch over a real plugin-host link reach the fake search 
     connect: (p: HostProcess) => {
       let peer = links.get(p);
       if (peer === undefined || peer.closed) {
-        const sp = spawnHostProcess({ cmd: [globalThis.process.execPath, HOST_PROCESS_ENTRY], env: { ...(globalThis.process.env as Record<string, string>), CLOVER_COMPUTER: "Studio" } });
+        const sp = spawnHostProcess({ cmd: [globalThis.process.execPath, HOST_PROCESS_ENTRY], env: { ...(globalThis.process.env as Record<string, string>), MOSS_COMPUTER: "Studio" } });
         processes.push(sp);
         links.set(p, (peer = sp.peer));
       }
@@ -62,7 +62,7 @@ test("WebSearch and WebFetch over a real plugin-host link reach the fake search 
   });
   host.serveApi(router);
 
-  const ch = await host.openMcp("clover/web", "web");
+  const ch = await host.openMcp("moss/web", "web");
   const answers = new Map<unknown, Record<string, unknown>>();
   const waiters = new Map<unknown, (m: Record<string, unknown>) => void>();
   ch.onMessage((m) => {

@@ -29,11 +29,11 @@ const CORE: readonly Pattern[] = ["packages/core/", "packages/protocol/", "packa
 export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // every workspace package's own tests, on all four machines
   workspaces: ["packages/", "apps/", "plugins/", "services/", "native/", "examples/", "spikes/", "scripts/workspaces.ts", "scripts/with-private-secret-service.sh"],
-  daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", "scripts/verify-sealed-core.ts", "scripts/clover-core.entitlements"],
-  // the app, and what it loads: Clover's own plugins and the plugin SDK's UI API (E-M1)
-  app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
+  daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", "scripts/verify-sealed-core.ts", "scripts/moss-core.entitlements"],
+  // the app, and what it loads: MOSS's own plugins and the plugin SDK's UI API (E-M1)
+  app: ["apps/", "plugins/moss/", "packages/plugin-sdk/"],
   // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon and the
-  // link sidecar they carry (the job installs the deb and runs its `clover`)
+  // link sidecar they carry (the job installs the deb and runs its `moss`)
   packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", "scripts/release/", ...CORE, "packages/cli/", "native/link/"],
   // the macOS and Windows installers (the unsigned release build: dmg, zip, NSIS), on macOS and Windows machines: only
   // what makes them, so a code change alone doesn't spend a macOS job on them (the app and daemon jobs build those)
@@ -45,7 +45,7 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   extension: ["extensions/"],
   // lane A's model plugins: the core's catalog and generator check reads them; the core's account tests import the
   // services' shared account-token check and the harness's sign-in stub
-  core: [...CORE, "plugins/clover/plugins/model-*/**/*", "services/shared/", "packages/test-harness/src/signin-stub.ts"],
+  core: [...CORE, "plugins/moss/plugins/model-*/**/*", "services/shared/", "packages/test-harness/src/signin-stub.ts"],
   cli: [...CORE, "packages/cli/"],
   // the repo scripts' tests read the core, the CLI, the app, the release inputs and the workflows; its job also runs the
   // repo-wide source scans (the native channel's anti-wiring test reads every package's src/ and scripts/), so any
@@ -66,8 +66,8 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
     // an agent backend's bare command on PATH (its .exe or .cmd on Windows)
     "packages/core/src/agents/backend.ts", "packages/core/src/agents/process/launch.ts", "packages/core/src/agents/tests/windows-path.test.ts",
     // the bundled agent plugins' manifests, whose bare commands that check is about
-    "plugins/clover/plugins/agent-*/clover.json"],
-  // the link sidecar (clover-link) built on every OS, and the core's link tests over it: the sidecar, the links, and
+    "plugins/moss/plugins/agent-*/moss.json"],
+  // the link sidecar (moss-link) built on every OS, and the core's link tests over it: the sidecar, the links, and
   // what they import (the devices and identity the handshake and pairing use, the contracts, the clock, the protocol)
   link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/",
     "packages/core/src/contracts/", "packages/core/src/clock/", "packages/protocol/"],

@@ -1,10 +1,10 @@
-// The Clover home for a bot's own file tools (lane C's fence). Owner: lane A. A bot's Read, Glob, Grep and writes are
+// The MOSS home for a bot's own file tools (lane C's fence). Owner: lane A. A bot's Read, Glob, Grep and writes are
 // judged here by the same fence the other runners' real-path checks use (`Fence.forCaller(…).check`), and a read of a
 // file that carries keys is refused on top (`botReadDenied`). Every path is judged as it really is: a link from a bot's
 // folder is judged where it points, and a pattern's `..` like a path's. The bot's Bash meets the same fence through its
 // sandbox (lane C's `sandboxSettingsOf`).
 import { isAbsolute, join, resolve } from "node:path";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Os } from "@waifucave/moss-protocol";
 import { BOT_READ_DENIED, type FenceOp, type FenceVerdict } from "../../contracts/fence";
 import { homeReach, realPathOf } from "../../agents/memory";
 import { CONFIG_COPY_FILES } from "./home-deny";
@@ -34,7 +34,7 @@ function globRoot(pattern: string, base: string): string {
   return isAbsolute(pattern) ? at || "/" : resolve(base, at);
 }
 
-/** What a bot never reads in the Clover home, relative to it: lane C's `BOT_READ_DENIED` (#355), the one list (its
+/** What a bot never reads in the MOSS home, relative to it: lane C's `BOT_READ_DENIED` (#355), the one list (its
  *  `*` patterns match no literal path here; the provider-state files are judged below). */
 export const BOT_KEY_PATHS: readonly (readonly string[])[] = BOT_READ_DENIED;
 
@@ -52,7 +52,7 @@ export const RUNTIME_STATE_SUFFIXES: readonly string[] = [PROVIDER_STATE_SUFFIX,
 export const RUNTIME_STATE_STORES = PROVIDER_STATE_STORES;
 
 /** Whether a path, as written or as it really is, carries keys: in `BOT_KEY_PATHS` or the read-denied kinds, a
- *  provider state file in a runtime store, or a config copy (a `.clover.json`, `.claude.json` or `.credentials.json`
+ *  provider state file in a runtime store, or a config copy (a `.moss.json`, `.claude.json` or `.credentials.json`
  *  in the home or a staging root, or a staging root's `backups/`). */
 export function botReadDenied(home: string, path: string, cwd: string): boolean {
   for (const p of new Set([isAbsolute(path) ? resolve(path) : resolve(cwd, path), realPathOf(path, cwd)])) {
@@ -68,7 +68,7 @@ export function botReadDenied(home: string, path: string, cwd: string): boolean 
 export interface FileFence {
   /** The fence as the session meets it (`Fence.forCaller(ctx.caller).check`). */
   check(op: FenceOp): FenceVerdict;
-  /** The Clover home. */
+  /** The MOSS home. */
   home: string;
   os?: Os;
   /** The user's home: its secret places (`SECRET_READ_PLACES`) are never read, and a search from above skips them. */
@@ -114,7 +114,7 @@ export function fileToolFenceRefusal(name: string, input: unknown, fence: FileFe
     if (verdict.allowed && tool.op === "read" && botReadDenied(fence.home, path, cwd)) return `${name} was not run: ${raw} holds secrets or keys, which bots never read.`;
     const cls = secrets === undefined ? undefined : secretPlaceOf(raw, secrets, places);
     if (cls !== undefined) return secretReadRefusal(name, raw, cls);
-    if (!verdict.allowed) return `${name} was not run: ${raw} is in Clover's folder, outside what this session may ${tool.op === "read" ? "read" : "write"}.`;
+    if (!verdict.allowed) return `${name} was not run: ${raw} is in MOSS's folder, outside what this session may ${tool.op === "read" ? "read" : "write"}.`;
   }
   return undefined;
 }
@@ -138,7 +138,7 @@ function hitShown(hit: string, fence: FileFence, root: string, cwd: string, plac
 }
 
 /** What a search's result is replaced with when it isn't in the runtime's own form, so it can't be checked. */
-export const UNCHECKED_SEARCH = "The search's result wasn't in the form Clover checks, so it isn't shown. Search again with a narrower path.";
+export const UNCHECKED_SEARCH = "The search's result wasn't in the form MOSS checks, so it isn't shown. Search again with a narrower path.";
 
 /** The runtime's one-line error for a search (`Error: path not found: …`, `Error: invalid pattern: …`): its own text,
  *  which names only what the call asked. */

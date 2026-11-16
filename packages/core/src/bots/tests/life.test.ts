@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CLOVER_ERR, SESSIONS_METHODS as M, userMessageHashInput, userMessageSigningInput, type Caller } from "@waifucave/clover-protocol";
+import { MOSS_ERR, SESSIONS_METHODS as M, userMessageHashInput, userMessageSigningInput, type Caller } from "@waifucave/moss-protocol";
 import { isContractError } from "../../contracts/common";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64 } from "../../contracts/fakes/device-registry";
@@ -32,7 +32,7 @@ async function alpha() {
 async function withLuna() {
   const root = tempDir();
   const luna = writePlugin(root, "luna", {
-    "clover.json": botManifest("luna", "Luna"),
+    "moss.json": botManifest("luna", "Luna"),
     "bot/instructions.md": "You are Luna.",
   });
   return [...(await alpha()), ...(await pluginFromFolder(luna)).inputs];
@@ -154,19 +154,19 @@ describe("the main computer (§6.4, the lease faked until H-M2)", () => {
 
   test("lane J's hooks: where each bot runs, and a session's scratch folder as a tree path", async () => {
     const user = tempDir();
-    const home = join(user, ".clover");
+    const home = join(user, ".moss");
     mkdirSync(home);
     const b = await boot({ home, plugins: await alpha(), computer: "Studio", userHome: user });
     expect(b.bots.computerFor("alpha")).toBe("Studio");
     expect(b.bots.computerFor("nobody")).toBeUndefined();
     b.host.open({ id: "s_side", kind: "side-thread", bot: "alpha", parent: "b_alpha", computer: "Studio" }, new FakeSessionDriver());
     b.host.open({ id: "s_code", kind: "coding", computer: "Studio", backend: "codex" }, new FakeSessionDriver({ canFold: false }));
-    expect(b.bots.scratchFor("b_alpha")).toBe("home/Studio/.clover/scratch/alpha");
-    expect(b.bots.scratchFor("s_side")).toBe("home/Studio/.clover/scratch/alpha");
-    expect(b.bots.scratchFor("s_code")).toBe("home/Studio/.clover/scratch/_/s_code");
+    expect(b.bots.scratchFor("b_alpha")).toBe("home/Studio/.moss/scratch/alpha");
+    expect(b.bots.scratchFor("s_side")).toBe("home/Studio/.moss/scratch/alpha");
+    expect(b.bots.scratchFor("s_code")).toBe("home/Studio/.moss/scratch/_/s_code");
     expect(existsSync(join(home, "scratch", "_", "s_code"))).toBe(true);
     await b.shutdown();
-    // A Clover home outside the user's home has no tree path.
+    // A MOSS home outside the user's home has no tree path.
     const lone = await boot({ home: tempDir(), plugins: await alpha(), userHome: user });
     expect(isContractError(await thrown(Promise.resolve().then(() => lone.bots.scratchFor("b_alpha"))))).toBe(true);
     await lone.shutdown();
@@ -319,9 +319,9 @@ describe("the pause switch (§9.2)", () => {
   test("bots.pause is the user's", async () => {
     const b = await boot({ home: tempDir(), plugins: await alpha() });
     const methods = sessionsMethods({ home: b.home, computer: "Studio", bots: b.bots, host: b.host, clock: b.clock, localDevice: "studio" });
-    const plugin: MethodContext = { caller: { kind: "plugin", pluginId: "clover/sidebar" } };
+    const plugin: MethodContext = { caller: { kind: "plugin", pluginId: "moss/sidebar" } };
     const err = await thrown(methods[M.botsPause.name]!({ paused: true }, plugin));
-    expect(err instanceof MethodError && err.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect(err instanceof MethodError && err.code).toBe(MOSS_ERR.NOT_THE_USER);
     expect(await methods[M.botsPause.name]!({ paused: true }, { caller: thePhone })).toEqual({ ok: true });
     expect(b.bots.paused).toBe(true);
     await b.shutdown();
@@ -570,7 +570,7 @@ describe("the new sessions methods", () => {
     const bot = await thrown(methods[M.sessionSetModel.name]!({ id: "b_alpha", model: "x/y" }, { caller: theUser }));
     expect(bot instanceof MethodError && bot.message).toContain("user layer");
     const notUser = await thrown(methods[M.sessionSetModel.name]!({ id: "s_agent", model: "x/y" }, { caller: { kind: "session", sessionId: "b_alpha", sessionKind: "bot", bot: "alpha" } }));
-    expect(notUser instanceof MethodError && notUser.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect(notUser instanceof MethodError && notUser.code).toBe(MOSS_ERR.NOT_THE_USER);
     await b.shutdown();
   });
 
@@ -594,7 +594,7 @@ describe("the new sessions methods", () => {
     const signature = toBase64(await phone.sign(new TextEncoder().encode(userMessageSigningInput({ session: "b_alpha", clientMessageId: m.clientMessageId, hash: sha256(userMessageHashInput(m)), sentAt: m.sentAt }))));
     const fromLaptop: MethodContext = { caller: { kind: "peer", device: "devlaptop000000000" } };
     const notPeer = await thrown(peer({ id: "b_alpha", message: m, device: phone.id, sentAt: clock.now() }, { caller: theUser }));
-    expect(notPeer instanceof MethodError && notPeer.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    expect(notPeer instanceof MethodError && notPeer.code).toBe(MOSS_ERR.ROLE_REFUSED);
     await peer({ id: "b_alpha", message: { ...m, signature }, device: phone.id, sentAt: clock.now() }, fromLaptop);
     await flush();
     const d = b.drivers.for("b_alpha");
@@ -644,14 +644,14 @@ describe("the new sessions methods", () => {
     const toAgent = await thrown(deliver({ id: "s_agent", computer: "Laptop", input: fromBot }, fromLaptop));
     expect(toAgent instanceof MethodError && toAgent.message).toContain("reaches only a bot's main conversation");
     const notPeerDeliver = await thrown(deliver({ id: "b_alpha", computer: "Laptop", input: fromBot }, { caller: theUser }));
-    expect(notPeerDeliver instanceof MethodError && notPeerDeliver.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    expect(notPeerDeliver instanceof MethodError && notPeerDeliver.code).toBe(MOSS_ERR.ROLE_REFUSED);
     await b.shutdown();
     // A computer that doesn't run the bot refuses it.
     const elsewhere: MainComputer = { self: "Studio", runner: () => "Laptop", main: () => "Laptop", runsHere: () => false, epoch: () => 3, release: async () => {}, watch: () => () => {} };
     const other = await boot({ home: tempDir(), plugins: await alpha(), clock, main: elsewhere });
     const otherPeer = peerSessionMethods({ bots: other.bots, host: other.host, clock, devices: registry })["peer.session.send"]!;
     const notMain = await thrown(otherPeer({ id: "b_alpha", message: { ...m, clientMessageId: "m-3" }, device: phone.id, sentAt: clock.now() }, fromLaptop));
-    expect(notMain instanceof MethodError && notMain.code).toBe(CLOVER_ERR.NOT_MAIN);
+    expect(notMain instanceof MethodError && notMain.code).toBe(MOSS_ERR.NOT_MAIN);
     await other.shutdown();
   });
 });

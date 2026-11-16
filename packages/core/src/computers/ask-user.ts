@@ -7,12 +7,12 @@
 //   the refusal names, on the computer it names (and, for a transfer, its source).
 // * It is the asking call's card: its session (withdrawn on the user's interrupt, cancelled when it stops), its bot,
 //   and its turn's origin (`askOrigin`: a call that didn't say is unattended, so its card is denied after 10 minutes).
-// * Its first line is Clover's (`callCardTitle`), naming the computer that holds the call; a card that doesn't open
+// * Its first line is MOSS's (`callCardTitle`), naming the computer that holds the call; a card that doesn't open
 //   with exactly that line isn't shown (the holder words the rest of its card, never the line that says whose it is).
 // * Only a device's signature travels: the broker hands back the proof that approved the card
 //   (`ApprovalDecision.signed`). An answer in a sealed frame (the app without an answer key), a deny, an expired or
 //   withdrawn card, a refusal or a broker that fails all give null, and the call stays refused.
-import { CallBinding, Card, type SignedCardAnswer } from "@waifucave/clover-protocol";
+import { CallBinding, Card, type SignedCardAnswer } from "@waifucave/moss-protocol";
 import type { ActionEffect, ApprovalBroker } from "../contracts/approval-broker";
 import { askOrigin, type AnswerAsker } from "../tree/judge";
 import { callCardTitle } from "./call-cards";
@@ -46,11 +46,11 @@ export function brokerAsker(o: { broker: Pick<ApprovalBroker, "request" | "get">
       log(`askUser: ${need.computer}'s card for ${need.method} binds another call`);
       return null;
     }
-    // Its first line is Clover's, naming the computer that holds the call (the stage 1 review): a paired computer words
+    // Its first line is MOSS's, naming the computer that holds the call (the stage 1 review): a paired computer words
     // the rest of its card, never that line. A card without it isn't shown.
     const title = card.fields.title;
     if (title?.type !== "text" || title.text !== callCardTitle(need.computer)) {
-      log(`askUser: ${need.computer}'s card for ${need.method} doesn't open with Clover's line naming it`);
+      log(`askUser: ${need.computer}'s card for ${need.method} doesn't open with MOSS's line naming it`);
       return null;
     }
     const as = ctx.as;

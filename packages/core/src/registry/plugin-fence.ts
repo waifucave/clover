@@ -4,7 +4,7 @@
 // a plugin starts can read, write and ask the system for.
 //
 // What a fenced process can't reach:
-// * the Clover home (`<home>/**`): the run folder (the app's token, the socket, every run file but its own), the other
+// * the MOSS home (`<home>/**`): the run folder (the app's token, the socket, every run file but its own), the other
 //   plugins' folders and data, the bots, the session transcripts, the settings, the secrets file, the logs;
 // * the user's home, but the folders its kind of process is given (`tools` below);
 // * the Keychain: its files (`~/Library/Keychains`) and the security daemon's services, so no item is read through
@@ -24,11 +24,11 @@
 // * the clipboard and the window server (their services), and any signal but to itself and its children;
 // * the network and every Unix socket but its own proxy's loopback port and the sockets it's named (a supervised
 //   host's daemon socket): no ssh-agent, no other program's socket, and no DNS of its own (S1; 2g);
-// * in the `clover` process, which holds many plugins, any native code but Bun's and the system's (B3; since #345's
+// * in the `moss` process, which holds many plugins, any native code but Bun's and the system's (B3; since #345's
 //   review, `file-map-executable` is denied everywhere else, not only in what it reads and writes).
 //
-// What it can: read its plugin's tree (and, for the `clover` process, the verified copy of the bundled plugins), read
-// Clover's run files and shared packages that the guard loads, read and write its own data and temp folders, reach
+// What it can: read its plugin's tree (and, for the `moss` process, the verified copy of the bundled plugins), read
+// MOSS's run files and shared packages that the guard loads, read and write its own data and temp folders, reach
 // the hosts it's granted through its proxy, and read everything else outside the homes and those folders that the system leaves readable.
 //
 // Hooks and MCP servers (`tools: true`): a server started with `npx`, `uvx` or `bunx` needs its package manager's
@@ -46,7 +46,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { PluginRunFiles } from "./plugin-run";
 import { agentConfigPaths, autoRunPaths, CREDENTIAL_FILES, SECRET_READ_PLACES, SHELL_FILES } from "../contracts/fence";
-import { CloverFence } from "../fence/fence";
+import { MossFence } from "../fence/fence";
 import { runLaterExtras } from "../fence/run-later";
 import { secretFilesFolder } from "./secret-files";
 
@@ -88,10 +88,10 @@ export const PLUGIN_FENCE_SECRET_PLACES: readonly string[] = SECRET_READ_PLACES.
 
 /** A project folder's entries denied WHOLE to a fenced process's writes, and the folder itself (so it can't be renamed
  *  away and back, #352's review): Git's folder (its hooks, config, attributes and every submodule's under `modules`),
- *  the editors' (VS Code's tasks run on folder open; JetBrains' `.idea` the same), and Clover's and Claude Code's own
+ *  the editors' (VS Code's tasks run on folder open; JetBrains' `.idea` the same), and MOSS's and Claude Code's own
  *  settings, MCP servers and hooks; and Husky's `.husky` and a `.githooks` folder, where a repository's `core.hooksPath`
  *  most often points. */
-export const PROJECT_WHOLE_DENIES: readonly string[] = [".git", ".vscode", ".idea", ".claude", ".clover", ".husky", ".githooks"];
+export const PROJECT_WHOLE_DENIES: readonly string[] = [".git", ".vscode", ".idea", ".claude", ".moss", ".husky", ".githooks"];
 
 /** Inside a project folder, never written by a fenced process, besides `PROJECT_WHOLE_DENIES`: anything else that
  *  runs on its own without the user running their project (the controller's rulings on #352). A project's MCP servers
@@ -109,10 +109,10 @@ export const NEVER_IN_A_PROJECT: readonly string[] = [
 ];
 
 /** Where a write runs later outside any sandbox, under the user's home (#308's `autoRunPaths` and `agentConfigPaths`),
- *  and every place the fence keeps from bots outside the Clover home (`CloverFence.fencedSet`): denied to every fenced
+ *  and every place the fence keeps from bots outside the MOSS home (`MossFence.fencedSet`): denied to every fenced
  *  process's writes, last in its profile, in their plain and real spellings (a dotfiles project holds the real file of
- *  `~/.zshrc`). The Clover home itself is denied whole already, but for the process's own data and temp folders. */
-export function persistencePlaces(userHome: string, cloverHome: string, o: { fenced?: boolean } = {}): string[] {
+ *  `~/.zshrc`). The MOSS home itself is denied whole already, but for the process's own data and temp folders. */
+export function persistencePlaces(userHome: string, mossHome: string, o: { fenced?: boolean } = {}): string[] {
   const out = new Set<string>();
   if (process.platform === "darwin" || process.platform === "linux") {
     const os = process.platform === "darwin" ? "macos" : "linux";
@@ -120,14 +120,14 @@ export function persistencePlaces(userHome: string, cloverHome: string, o: { fen
     if (o.fenced === false) return [...out];
     let fenced: readonly { path: string }[] = [];
     try {
-      fenced = new CloverFence({ home: userHome, cloverHome, os }).fencedSet();
+      fenced = new MossFence({ home: userHome, mossHome, os }).fencedSet();
     } catch {
       fenced = [];
     }
-    const clover = realOrResolved(cloverHome);
+    const moss = realOrResolved(mossHome);
     for (const f of fenced) {
       const p = f.path;
-      if (p === cloverHome || p.startsWith(cloverHome + sep) || p === clover || p.startsWith(clover + sep)) continue;
+      if (p === mossHome || p.startsWith(mossHome + sep) || p === moss || p.startsWith(moss + sep)) continue;
       out.add(p);
     }
   }
@@ -226,23 +226,23 @@ export function gitHooksPaths(project: string, userHome: string): string[] {
 }
 
 /** The session's working directories a hook or MCP server is given: absolute folders that are none of the homes, never
- *  a folder above one (`/`, `/Users`), never inside the Clover home. Real paths. */
-export function projectFolders(dirs: readonly string[], o: { userHome: string; cloverHome: string }): string[] {
-  const homes = [o.userHome, o.cloverHome].map(realOrResolved);
+ *  a folder above one (`/`, `/Users`), never inside the MOSS home. Real paths. */
+export function projectFolders(dirs: readonly string[], o: { userHome: string; mossHome: string }): string[] {
+  const homes = [o.userHome, o.mossHome].map(realOrResolved);
   const inside = (p: string, root: string) => p === root || p.startsWith(root.endsWith(sep) ? root : root + sep);
   // The places a project may never hold (#352's review): a working folder of ~/Library or ~/.config would put the
   // LaunchAgents or a tool's settings in reach. By where they are, never by where a link points: a dotfiles project
   // holding the real file of ~/.zshrc stays a project, and its profile write-denies that file (`persistencePlaces`).
   const never = [
     ...paths([...NEVER_IN_A_PROJECT.map((d) => join(o.userHome, d)), ...CREDENTIAL_FILES.map((f) => join(o.userHome, f))]),
-    ...persistencePlaces(o.userHome, o.cloverHome, { fenced: false }).map((p) => resolve(p)),
+    ...persistencePlaces(o.userHome, o.mossHome, { fenced: false }).map((p) => resolve(p)),
   ];
   const out: string[] = [];
   for (const d of dirs) {
     if (typeof d !== "string" || !d.startsWith("/")) continue;
     const p = realOrResolved(d);
     if (homes.some((h) => inside(h, p))) continue; // a home, or a folder above one
-    if (inside(p, homes[1]!)) continue; // inside the Clover home
+    if (inside(p, homes[1]!)) continue; // inside the MOSS home
     if (never.some((n) => inside(n, p))) continue; // holds a place where a write runs later, or a tool's settings
     if (!out.includes(p)) out.push(p);
   }
@@ -304,8 +304,8 @@ export const PRIVACY_DENIES = {
 } as const;
 
 export interface PluginFenceInput {
-  /** The Clover home: denied whole, but what `read` and `write` name. */
-  cloverHome: string;
+  /** The MOSS home: denied whole, but what `read` and `write` name. */
+  mossHome: string;
   /** The user's home: denied whole, but what `read`, `write` and `tools` give. */
   userHome: string;
   /** Folders and files it reads (its plugin's tree, the run files, the shared packages, its Bun). */
@@ -323,7 +323,7 @@ export interface PluginFenceInput {
    *  so nothing it starts can leave its process group (`setsid`), which Seatbelt has no rule for (#322's review, B1). */
   fork?: boolean;
   /** No native code but its Bun's (`execs`) and the system's (`file-map-executable` denied everywhere else): the
-   *  clover process (B3, and #345's review). */
+   *  moss process (B3, and #345's review). */
   noNativeCode?: boolean;
   /** The session's project folders (its working directories), for a hook or MCP server of that session: readable,
    *  and writable when `projectWrite` (its plugin holds `project.write`). `.git/hooks`, `.git/config` and the credential
@@ -390,7 +390,7 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
   const projects = i.projects ?? [];
   const read = [...i.read, ...(i.execs ?? []), ...(i.tools ? TOOL_READ_DIRS.map((d) => join(user, d)) : []), ...projects, ...(i.picked ?? [])];
   const write = [...i.write, ...(i.projectWrite ? projects : [])];
-  const closed = [user, i.cloverHome, ...darwinUserFolders()];
+  const closed = [user, i.mossHome, ...darwinUserFolders()];
   const lines = [
     "(version 1)",
     "(allow default)",
@@ -440,7 +440,7 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
   ];
   // Last, for every fenced process: no write where a write runs later, nor anywhere the fence keeps from bots, in both
   // spellings, and in a project folder not the folders that hold one either (#352's review).
-  const places = persistencePlaces(user, i.cloverHome);
+  const places = persistencePlaces(user, i.mossHome);
   if (places.length > 0) {
     lines.push(`(deny file-write* ${subpaths(places)})`);
     const held = holdersWithin(places, projects);
@@ -525,12 +525,12 @@ export function fencedCommand(cmd: readonly string[], fence: PluginFenceInput | 
 
 /** Where a plugin's data folder and a fenced process's temp folder are (`<home>/plugin-data/<top>`, made on first
  *  use; `<home>/run/plugin-tmp/<name>`). A plugin id that isn't one gets none. */
-export function fenceFolders(cloverHome: string, pluginId: string | undefined, name: string): { data?: string; tmp: string } {
-  const tmp = join(cloverHome, "run", "plugin-tmp", name.replace(/[^a-z0-9-]/gi, "_").slice(0, 120));
+export function fenceFolders(mossHome: string, pluginId: string | undefined, name: string): { data?: string; tmp: string } {
+  const tmp = join(mossHome, "run", "plugin-tmp", name.replace(/[^a-z0-9-]/gi, "_").slice(0, 120));
   mkdirSync(tmp, { recursive: true, mode: 0o700 });
   const top = pluginId?.split("/")[0];
   if (top === undefined || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(top)) return { tmp };
-  const data = join(cloverHome, "plugin-data", top);
+  const data = join(mossHome, "plugin-data", top);
   mkdirSync(data, { recursive: true, mode: 0o700 });
   return { data, tmp };
 }
@@ -558,21 +558,21 @@ export function toolCacheEnv(tmp: string): Record<string, string> {
   };
 }
 
-/** The fence for a plugin's hook command or stdio MCP server: its plugin's tree, Clover's run files and shared
+/** The fence for a plugin's hook command or stdio MCP server: its plugin's tree, MOSS's run files and shared
  *  packages and its Bun to read; its data and temp folders to write; the package managers' installs to read (`tools`);
  *  any program, fenced the same; its proxy's port (2g). Returns its temp folder and the env it runs with (`toolCacheEnv`). */
-export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess; proxyPort?: number; openNetwork?: boolean; reads?: readonly string[]; picked?: { read: readonly string[]; write: readonly string[] } }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
-  const { data, tmp } = fenceFolders(o.files.cloverHome, o.pluginId, o.name);
+export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "mossHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess; proxyPort?: number; openNetwork?: boolean; reads?: readonly string[]; picked?: { read: readonly string[]; write: readonly string[] } }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
+  const { data, tmp } = fenceFolders(o.files.mossHome, o.pluginId, o.name);
   const userHome = o.userHome ?? homedir();
-  const projects = o.project !== undefined ? projectFolders(o.project.dirs, { userHome, cloverHome: o.files.cloverHome }) : [];
+  const projects = o.project !== undefined ? projectFolders(o.project.dirs, { userHome, mossHome: o.files.mossHome }) : [];
   return {
     tmp,
     env: toolCacheEnv(tmp),
     fence: {
-      cloverHome: o.files.cloverHome, userHome,
+      mossHome: o.files.mossHome, userHome,
       ...(projects.length > 0 ? { projects, projectWrite: o.project?.write === true } : {}),
       // Its own plugin's secret files (`${secretFile:…}`, `secret-files.ts`): read, never written, and no other plugin's.
-      read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun")), ...(data !== undefined && o.pluginId !== undefined ? [secretFilesFolder(o.files.cloverHome, o.pluginId)] : []), ...(o.reads ?? [])],
+      read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun")), ...(data !== undefined && o.pluginId !== undefined ? [secretFilesFolder(o.files.mossHome, o.pluginId)] : []), ...(o.reads ?? [])],
       ...((o.reads ?? []).length > 0 ? { readDenies: o.reads } : {}),
       // The files and folders the user picked for this plugin (`fence/plugin-grants.ts`): an open pick read, a save pick
       // or an export folder read and written. Every deny that comes last (the persistence places, the Keychain, the
@@ -587,21 +587,21 @@ export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cl
 /** The spawn trampoline's file in the run folder (`ensurePluginRunFiles` writes it). */
 export const SPAWN_TRAMPOLINE_FILE = "spawn.mjs";
 
-/** Clover's spawn trampoline (the controller's TCC ruling after #345). The daemon starts it on the plugin Bun with a
+/** MOSS's spawn trampoline (the controller's TCC ruling after #345). The daemon starts it on the plugin Bun with a
  *  clean environment; it becomes the fenced command in place (`posix_spawn` with `POSIX_SPAWN_SETEXEC`) with its
  *  responsibility disclaimed, so the plugin process is its own TCC-responsible process: it never inherits a privacy
  *  permission (Screen Recording, Accessibility, the microphone…) the daemon or the app holds. Same pid, same process
- *  group, the descriptors it's told to keep (`CLOVER_SPAWN_FDS`, every other one closed), the environment and working
- *  folder it's handed (`CLOVER_SPAWN_ENV`, `CLOVER_SPAWN_CWD`). It loads nothing but `bun:ffi`. */
-export const SPAWN_TRAMPOLINE_SOURCE = String.raw`// Clover's spawn trampoline (registry/plugin-fence.ts). Generated; do not edit.
+ *  group, the descriptors it's told to keep (`MOSS_SPAWN_FDS`, every other one closed), the environment and working
+ *  folder it's handed (`MOSS_SPAWN_ENV`, `MOSS_SPAWN_CWD`). It loads nothing but `bun:ffi`. */
+export const SPAWN_TRAMPOLINE_SOURCE = String.raw`// MOSS's spawn trampoline (registry/plugin-fence.ts). Generated; do not edit.
 import { dlopen, ptr } from "bun:ffi";
-const fail = (what, code) => { process.stderr.write("clover spawn: " + what + "\n"); process.exit(code); };
+const fail = (what, code) => { process.stderr.write("moss spawn: " + what + "\n"); process.exit(code); };
 const argv = process.argv.slice(2);
 if (argv.length === 0) fail("nothing to start", 126);
 let env;
-try { env = JSON.parse(process.env.CLOVER_SPAWN_ENV ?? "{}"); } catch { fail("its environment doesn't parse", 126); }
-const fds = (process.env.CLOVER_SPAWN_FDS ?? "0,1,2").split(",").map(Number).filter((n) => Number.isInteger(n) && n >= 0);
-const cwd = process.env.CLOVER_SPAWN_CWD;
+try { env = JSON.parse(process.env.MOSS_SPAWN_ENV ?? "{}"); } catch { fail("its environment doesn't parse", 126); }
+const fds = (process.env.MOSS_SPAWN_FDS ?? "0,1,2").split(",").map(Number).filter((n) => Number.isInteger(n) && n >= 0);
+const cwd = process.env.MOSS_SPAWN_CWD;
 const { symbols: c } = dlopen("/usr/lib/libSystem.B.dylib", {
   posix_spawnattr_init: { args: ["ptr"], returns: "i32" },
   posix_spawnattr_setflags: { args: ["ptr", "i16"], returns: "i32" },
@@ -645,20 +645,20 @@ export function fencedSpawn(o: {
   if (o.fence === undefined || !pluginFenceAvailable(platform)) return { cmd, env, ...(o.cwd !== undefined ? { cwd: o.cwd } : {}) };
   const runFolder = dirname(o.files.guard);
   return {
-    // Clover's own config and no .env, whatever folder it starts in: nothing of the plugin's or the project's loads here.
+    // MOSS's own config and no .env, whatever folder it starts in: nothing of the plugin's or the project's loads here.
     cmd: [realOrResolved(join(o.files.bin, "bun")), `--config=${o.files.bunfig}`, "--no-env-file", "--no-macros", join(runFolder, SPAWN_TRAMPOLINE_FILE), ...cmd],
     env: {
-      CLOVER_SPAWN_ENV: JSON.stringify(env), CLOVER_SPAWN_FDS: (o.fds ?? [0, 1, 2]).join(","), ...(o.cwd !== undefined ? { CLOVER_SPAWN_CWD: o.cwd } : {}),
+      MOSS_SPAWN_ENV: JSON.stringify(env), MOSS_SPAWN_FDS: (o.fds ?? [0, 1, 2]).join(","), ...(o.cwd !== undefined ? { MOSS_SPAWN_CWD: o.cwd } : {}),
       PATH: "/usr/bin:/bin", ...(env.TMPDIR !== undefined ? { TMPDIR: env.TMPDIR } : {}),
     },
     cwd: runFolder,
   };
 }
 
-/** The environment a spawn hands its command: through the spawn trampoline, the one it carries (`CLOVER_SPAWN_ENV`);
+/** The environment a spawn hands its command: through the spawn trampoline, the one it carries (`MOSS_SPAWN_ENV`);
  *  otherwise `env` itself. */
 export function commandEnvOf(env: Readonly<Record<string, string | undefined>> | undefined): Record<string, string> {
-  const carried = env?.CLOVER_SPAWN_ENV;
+  const carried = env?.MOSS_SPAWN_ENV;
   if (carried !== undefined) return JSON.parse(carried) as Record<string, string>;
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env ?? {})) if (v !== undefined) out[k] = v;

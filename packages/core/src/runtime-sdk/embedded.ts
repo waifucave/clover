@@ -1,14 +1,14 @@
 import { embeddedHostPathProtection, withWorkshopOpen, embeddedFileProtectionSupported, embeddedContextProtectionSupported, type EmbeddedHostPathProtection, type EmbeddedProtectionCapability } from "./embedded-path-protection";
 import * as embeddedHostApi from "@waifucave/clover-agent-runtime/embedded-host";
 import { hostStorageFloorDescriptor, registerHostStoragePolicyConsumer } from "./host-storage-fence";
-// WS-23 (ruling R1): CHAT AND DISPATCH RUN THE CLOVER RUNTIME EMBEDDED — one Bun Worker per session,
-// inside `clover-core`. A-M1 (spec §3.3): CODE SESSIONS DO TOO. No session spawns the `winter` binary
+// WS-23 (ruling R1): CHAT AND DISPATCH RUN THE MOSS RUNTIME EMBEDDED — one Bun Worker per session,
+// inside `moss-core`. A-M1 (spec §3.3): CODE SESSIONS DO TOO. No session spawns the `winter` binary
 // any more; it stays buildable as Winter's coding agent, which becomes an ACP agent (§9.3, lane K).
 //
 // WHY A WORKER AND NOT THE DAEMON'S MAIN THREAD. The runtime keeps its tool registry, MCP executors,
 // advisor, child-engine factory and background-task table as module-level singletons — one per JS
 // realm — and its Bash/Monitor tools spawn with `{...process.env}`. Two sessions in one realm would
-// route each other's tool calls (session A's `mcp__clover__browser__browser` would travel B's wire).
+// route each other's tool calls (session A's `mcp__moss__browser__browser` would travel B's wire).
 // A Worker is still this process and this pid, but it is its own realm with its own `process.env`
 // (the Worker's `env` option), and an uncaught throw in it reaches the daemon as an `error` event
 // instead of killing it. What a Worker does NOT contain: an out-of-memory error or a native crash
@@ -19,7 +19,7 @@ import { hostStorageFloorDescriptor, registerHostStoragePolicyConsumer } from ".
 // `Options.spawnClaudeCodeProcess` — the seam `create.ts`'s `spawnHookFor` was built around (P8b-1:
 // "path (b) is a change to this one function's return value"). The projector, the approval bridge,
 // `sdk_mcp_call` into the daemon's capability servers, hooks and messaging cannot tell the topologies
-// apart. Every embedded session is still a `CloverSession` incarnation, so credential eviction,
+// apart. Every embedded session is still a `MossSession` incarnation, so credential eviction,
 // idle reaping and resume work unchanged.
 //
 // CREDENTIALS. An embedded session still asks the daemon for every credential, exactly as a spawned
@@ -28,11 +28,11 @@ import { hostStorageFloorDescriptor, registerHostStoragePolicyConsumer } from ".
 // the main thread against that session's allowlist. The Worker never reads the Keychain itself.
 //
 // PIDS. `pid` is `null` for an embedded session (WS-04 §1.1: hosts must not require one). Nothing on
-// the daemon's Clover-leg path reads a child pid (audited for WS-23: the router's pid reads are all on
+// the daemon's MOSS-leg path reads a child pid (audited for WS-23: the router's pid reads are all on
 // the official leg's supervisor; the daemon's own are its plugin supervisor and its own workflow
 // runtime). The transcript lease is stamped with the pid, and every Worker shares the daemon's — which
 // is why `exited` settles only once a Worker has CLOSED (after its engine returned), never earlier:
-// `CloverSession.open()` resumes only after the previous incarnation's iteration ends, and that
+// `MossSession.open()` resumes only after the previous incarnation's iteration ends, and that
 // ordering is the only thing keeping two engines off one transcript.
 import { fileURLToPath } from "node:url";
 import { createProcessGroupLedger, sweepProcessGroupLedger } from "./process-group-ledger";
@@ -61,12 +61,12 @@ export function runsEmbedded(mode: RunnableSessionMode): boolean {
 export const COMPILED_EMBEDDED_WORKER_ENTRY = "./embedded-worker.ts";
 
 /**
- * The argv token that selects the RUNTIME's workflow worker (`workflowWorkerMain`) in `clover-core`.
+ * The argv token that selects the RUNTIME's workflow worker (`workflowWorkerMain`) in `moss-core`.
  *
  * Distinct from `__workflow-worker` on purpose: `cli/src/main.ts` routes ANY argv containing that
  * token to the daemon's OWN workflow worker (a different program with a different bridge), so the
  * runtime's default command — `process.execPath __workflow-worker --bridge`, correct for a `winter`
- * binary — would launch the wrong worker from inside `clover-core`. The embedded session is told to
+ * binary — would launch the wrong worker from inside `moss-core`. The embedded session is told to
  * use this token instead (`runtimeWorkflowWorkerCommand`), and `main.ts` routes it positionally.
  */
 export const RUNTIME_WORKFLOW_WORKER_ARG = "__runtime-workflow-worker";
@@ -97,7 +97,7 @@ export function runtimeWorkflowWorkerCommand(compiled: boolean = isCompiledDaemo
 /**
  * The typed refusal for an embedded session. Carries its own `code` so `session-driver.ts` forwards it
  * as the JSON-RPC error's `data.code` rather than re-describing it as a missing binary — an embedded
- * session needs no binary, and "set CLOVER_RUNTIME_EXECUTABLE" would be the wrong advice.
+ * session needs no binary, and "set MOSS_RUNTIME_EXECUTABLE" would be the wrong advice.
  */
 export class EmbeddedRuntimeUnavailable extends Error {
   readonly code = "embedded_runtime_unavailable" as const;
@@ -128,7 +128,7 @@ export const LINKED_EMBEDDED_VERSIONS: EmbeddedVersions = { runtime: RUNTIME_VER
 export function embeddedVersionCheck(versions: EmbeddedVersions = LINKED_EMBEDDED_VERSIONS): EmbeddedRuntimeUnavailable | undefined {
   if (versions.runtime === versions.sdk && versions.sdk === versions.required) return undefined;
   return new EmbeddedRuntimeUnavailable(
-    `the embedded Clover runtime is ${versions.runtime}, the agent SDK wrapper is ${versions.sdk} and this build is pinned to ${versions.required} — ` +
+    `the embedded MOSS runtime is ${versions.runtime}, the agent SDK wrapper is ${versions.sdk} and this build is pinned to ${versions.required} — ` +
       "every session runs the runtime in-process and refuses a mixed set; reinstall so all three agree",
   );
 }
@@ -360,7 +360,7 @@ export function createEmbeddedSessionHost(deps: EmbeddedSessionHostDeps = {}): E
   // so the transcript lease (pid-stamped, same-pid re-entrant) cannot keep two incarnations of one
   // session apart; this map is what does. The wrapper can end an iteration WITHOUT the Worker having
   // ended (a `ProtocolDecodeError` on an oversized frame throws out of `query()` while the engine is
-  // still finishing its turn), after which `CloverSession.open()` resumes at once.
+  // still finishing its turn), after which `MossSession.open()` resumes at once.
   const newest = new Map<string, EmbeddedWorkerProcess>();
   let spawned = 0;
   let shuttingDown: Promise<void> | undefined;

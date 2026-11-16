@@ -26,7 +26,7 @@
 //   undelivered goes again when the sync starts and whenever a link comes up (the writer adds nothing twice). A log
 //   is never mixed: no computer ends up with the old main's records under the new main's.
 // * **Late, per record:** in a batch, only the records from an earlier lease are marked late.
-import type { SessionView } from "@waifucave/clover-protocol";
+import type { SessionView } from "@waifucave/moss-protocol";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { SessionRecord } from "../contracts/session-host";

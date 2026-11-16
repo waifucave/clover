@@ -2,8 +2,8 @@
 // the daemon closing) and the log line for each; a waiting take that dies leaves the queue; who may use which name;
 // and a host half's `take` through the real host runtime and the router (the `Turn` it gets, `lost`, a refusal).
 import { describe, expect, test } from "bun:test";
-import type { TurnEvent, TurnState } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import type { TurnEvent, TurnState } from "@waifucave/moss-plugin-sdk";
+import type { Caller } from "@waifucave/moss-protocol";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { isContractError } from "../../contracts/common";
 import type { PluginRecord } from "../../contracts/plugin-registry";
@@ -196,13 +196,13 @@ describe("turns: who may use a name", () => {
     ["cards", rec("cards")],
     ["voice", rec("voice", ["audio"])],
     ["talk", rec("talk", ["microphone"])],
-    ["clover/voice", rec("clover/voice")],
+    ["moss/voice", rec("moss/voice")],
   ]);
   const check = (caller: string, name: string) => capture(() => checkTurnName(name, { pluginId: caller, record: records.get(caller)! }, (id) => records.get(id)));
 
   test("its own needs no declaration; another plugin's only if that plugin lists it; a device turn needs its capability", () => {
     expect(check("cards", "cards/anything")).toBeUndefined();
-    expect(check("clover/voice", "clover/voice/queue")).toBeUndefined();
+    expect(check("moss/voice", "moss/voice/queue")).toBeUndefined();
     expect(check("cards", "tarot/deck")).toBeUndefined();
     const undeclared = check("cards", "tarot/spread");
     expect(isContractError(undeclared, "refused")).toBe(true);

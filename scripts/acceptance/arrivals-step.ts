@@ -2,7 +2,7 @@
 // 1. A plugin folder the user copies into the plugins folder by hand (as the Finder copies it) is found: it waits for
 //    its OK card, runs nothing before it, and once the card is pressed in the window its skill is in Alpha's Glossary.
 // 2. A bare skill folder (a SKILL.md and its files), wrapped by `plugin.install { from: "wrap", kind: "skill-folder" }`:
-//    its OK card says Clover made the plugin around it; pressed, Alpha's Glossary loads the skill's instructions.
+//    its OK card says MOSS made the plugin around it; pressed, Alpha's Glossary loads the skill's instructions.
 // 3. A bare agent file (a Markdown file with front matter), wrapped the same way (`agent-file`): pressed, Alpha's
 //    Glossary lists its agent definition.
 // Each is removed after the row, whatever happened.
@@ -10,7 +10,7 @@ import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { callTurn, fail, leave, until, type ExampleCtx } from "./example-steps";
 
-export const ARRIVALS_STEP = "a plugin arrives other ways: a folder copied into the plugins folder by hand is found, waits for its OK card and runs nothing before it, pressed it runs and its skill is in Alpha's Glossary; a bare skill folder and a bare agent file are wrapped, each OK card says Clover made the plugin around it, pressed Glossary loads the skill and lists the agent";
+export const ARRIVALS_STEP = "a plugin arrives other ways: a folder copied into the plugins folder by hand is found, waits for its OK card and runs nothing before it, pressed it runs and its skill is in Alpha's Glossary; a bare skill folder and a bare agent file are wrapped, each OK card says MOSS made the plugin around it, pressed Glossary loads the skill and lists the agent";
 
 const FIXTURES = resolve(import.meta.dir, "fixtures");
 export const HAND = "acceptance-handcopy";
@@ -75,12 +75,12 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   if (skill.id !== SKILL_ID) fail(`the skill folder was wrapped as ${skill.id}, not ${SKILL_ID}`);
   const skillCard = skill.card !== undefined ? { id: skill.card } : await okCardOf(ctx, SKILL_ID);
   const skillText = await cardText(ctx, skillCard.id);
-  if (!skillText.includes("Clover made this plugin around a skill folder (SKILL.md)")) fail(`${SKILL_ID}'s OK card doesn't say Clover made it around a skill folder: ${skillText.slice(0, 400)}`);
+  if (!skillText.includes("MOSS made this plugin around a skill folder (SKILL.md)")) fail(`${SKILL_ID}'s OK card doesn't say MOSS made it around a skill folder: ${skillText.slice(0, 400)}`);
   if ((await stateOf(ctx, SKILL_ID)) !== "found") fail(`${SKILL_ID} is ${await stateOf(ctx, SKILL_ID)} before its OK, not found`);
   await pressOk(ctx, SKILL_ID, skillCard.id);
   const loaded = await glossary(ctx, session, { load: `${SKILL_ID}:Arrival notes` });
   if (!loaded.includes(SKILL_MARK)) fail(`Alpha's Glossary load of ${SKILL_ID}:Arrival notes answered "${loaded.slice(0, 300)}"`);
-  done.push(`2 skill folder wrapped as ${SKILL_ID}: its OK card says Clover made it around a SKILL.md, pressed; Glossary loads its instructions`);
+  done.push(`2 skill folder wrapped as ${SKILL_ID}: its OK card says MOSS made it around a SKILL.md, pressed; Glossary loads its instructions`);
 
   // 3. A bare agent file, wrapped.
   const agentFile = join(ctx.userHome, "Downloads", "arrival-reviewer.md");
@@ -89,11 +89,11 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   if (agent.id !== AGENT_ID) fail(`the agent file was wrapped as ${agent.id}, not ${AGENT_ID}`);
   const agentCard = agent.card !== undefined ? { id: agent.card } : await okCardOf(ctx, AGENT_ID);
   const agentText = await cardText(ctx, agentCard.id);
-  if (!/Clover made this plugin around an? agent/i.test(agentText)) fail(`${AGENT_ID}'s OK card doesn't say Clover made it around an agent file: ${agentText.slice(0, 400)}`);
+  if (!/MOSS made this plugin around an? agent/i.test(agentText)) fail(`${AGENT_ID}'s OK card doesn't say MOSS made it around an agent file: ${agentText.slice(0, 400)}`);
   await pressOk(ctx, AGENT_ID, agentCard.id);
   const listed = await glossary(ctx, session, { query: "arrival-reviewer" });
   if (!listed.includes(`${AGENT_ID}:arrival-reviewer`)) fail(`Alpha's Glossary search for the agent answered "${listed.slice(0, 300)}"`);
-  done.push(`3 agent file wrapped as ${AGENT_ID}: its OK card says Clover made it around the agent file, pressed; Glossary lists ${AGENT_ID}:arrival-reviewer`);
+  done.push(`3 agent file wrapped as ${AGENT_ID}: its OK card says MOSS made it around the agent file, pressed; Glossary lists ${AGENT_ID}:arrival-reviewer`);
 
   return done.join("; ");
 }

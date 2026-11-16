@@ -1,4 +1,4 @@
-// clover.waifucave.com: serves the web companion's page with the headers that keep it closed: a strict content
+// moss.waifucave.com: serves the web companion's page with the headers that keep it closed: a strict content
 // security policy (its own scripts only, connections only to the handshake and WebRTC), no referrer, no framing.
 // /config.json tells the page which handshake it uses.
 

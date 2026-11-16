@@ -12,7 +12,7 @@
 // nobody acts; and a computer out of its group (no scope) keeps no view of the old lease (the controller's rulings on
 // #237). Lane H's lease feeds it; a node made with
 // `lease: null` (no group yet) carries and judges nothing, and says so once in its log.
-import { type FenceVerdict, type FencingToken } from "@waifucave/clover-protocol";
+import { type FenceVerdict, type FencingToken } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { FenceGuard, fencingTokenOf, type Lease } from "../contracts/lease";
 
