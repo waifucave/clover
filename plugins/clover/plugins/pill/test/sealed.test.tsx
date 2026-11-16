@@ -2,15 +2,15 @@
 // transform other than a move or an enlargement, on itself or anything around it; and as covered when anything
 // is painted over it, even a transparent box that ignores the pointer. A button must show whole at 24 × 24 or
 // more. These hold wherever the pill puts sealed parts, at rest, checked on the real pill against its own
-// stylesheet (`sealedProblems`, from the base theme's checks).
+// stylesheet (`sealedProblems`, the SDK's theme lint).
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, fireEvent, render } from "@testing-library/react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { CSSProperties, ReactElement } from "react";
-import { BASE_THEME, resolveTokens, tokensFor } from "../../base-theme/src/index";
-import { sealedProblems } from "../../base-theme/src/sealed-check";
+import { resolveTokens } from "@waifucave/clover-plugin-sdk";
+import { sealedProblems } from "@waifucave/clover-plugin-sdk/ui/testing";
 import * as client from "../client/index";
 import { CardBody } from "../src/ui/Card";
 import { DispatchPill, type DispatchPillProps } from "../src/ui/DispatchPill";
@@ -195,7 +195,7 @@ describe("the frames take the pill's own tokens", () => {
   });
 
   test("every card value comes from a pill token, the base theme's value when nothing sets it", () => {
-    const base = resolveTokens("light", [tokensFor(BASE_THEME, "light")]);
+    const base = resolveTokens("light", []);
     for (const [name, source] of Object.entries(PILL_CARD_SOURCES)) {
       expect(name.startsWith("card.")).toBe(true);
       if ("token" in source) expect(source.fallback, name).toBe(String(base[source.token]));

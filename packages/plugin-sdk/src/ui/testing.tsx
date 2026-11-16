@@ -589,3 +589,6 @@ const rootChildren = new Map<string, ReactNode>();
 function RootChildren({ props }: { props?: { testRoot?: string } }): ReactNode {
   return rootChildren.get(props?.testRoot ?? "") ?? null;
 }
+
+// ---- Theme lint ----------------------------------------------------------------------------------------------------
+export * from "./theme-lint/index";

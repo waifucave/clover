@@ -1,11 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   BASE_THEME,
   TOKENS,
   checkTheme,
-  checkThemeCss,
   contrast,
   cssProperty,
   cssRule,
@@ -22,7 +21,8 @@ import {
   labelFill,
   resolveAutoInk,
 } from "../src/index";
-import { checkManifest } from "../src/manifest-check";
+import { validateManifest } from "@waifucave/clover-plugin-sdk";
+import { checkThemeCss } from "@waifucave/clover-plugin-sdk/ui/testing";
 
 const root = join(import.meta.dir, "..");
 // As the core resolves them with no OS accent to read (Linux): "system" keeps the theme's accent, "auto" inks resolve.
@@ -247,9 +247,10 @@ describe("the base theme's CSS", () => {
 
 describe("the manifest", () => {
   test("is a child plugin contributing the theme, as data", () => {
-    const check = checkManifest(root, { child: true });
-    expect(check.problems).toEqual([]);
-    expect(check.kind).toBe("data");
+    const report = validateManifest(readFileSync(join(root, "clover.json"), "utf8"), { folderName: basename(root), parent: { id: "clover", namespace: "clover" }, bundled: true, file: "clover.json" });
+    expect(report.issues.map((i) => `${i.severity} ${i.code} ${i.path}: ${i.message}`)).toEqual([]);
+    const manifest = JSON.parse(readFileSync(join(root, "clover.json"), "utf8")) as Record<string, unknown>;
+    expect([manifest.client, manifest.host]).toEqual([undefined, undefined]);
   });
 });
 

@@ -1,30 +1,34 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
-import { BASE_THEME, TOKENS, contrast, cssProperty, resolveTokens, tokensFor } from "../../base-theme/src/index";
-import { checkThemeCss } from "../../base-theme/src/css-check";
-import { checkManifest } from "../../base-theme/src/manifest-check";
+import { basename, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { contrastRatio, flattenColor, validateManifest } from "@waifucave/clover-plugin-sdk";
+import { checkThemeCss, tokenFallbackProblems, tokenUses, catalogValues } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { ISLAND_CSS } from "../src/ui/styles";
 
-const byProperty = new Map(TOKENS.map((spec) => [cssProperty(spec.name), spec.name]));
+/** The findings the SDK's validator reports for this part's manifest, as a child of the bundled `clover` plugin. */
+function manifestFindings(root: string): string[] {
+  const report = validateManifest(readFileSync(join(root, "clover.json"), "utf8"), { folderName: basename(root), parent: { id: "clover", namespace: "clover" }, bundled: true, file: "clover.json" });
+  return report.issues.map((i) => `${i.severity} ${i.code} ${i.path}: ${i.message}`);
+}
+
+/** The contrast of `fg` on `bg` (hex), a translucent `bg` first laid on `under`: the SDK's catalog helpers. */
+const contrast = (fg: string, bg: string, under = "#FFFFFF"): number => {
+  const ground = flattenColor(bg, under)!;
+  return contrastRatio(flattenColor(fg, ground)!, ground)!;
+};
+
+
 /** The base theme as the core resolves it with no OS reading: an accent that follows the OS is the catalog's, an ink
  *  on it worked out against it (the CSS fallbacks are those values). */
-const light = resolveTokens("light", [tokensFor(BASE_THEME, "light")]);
+const light = catalogValues("light");
 /** Custom properties the island's own CSS sets for itself, not tokens. */
 const LOCAL = new Set(["--glyph-cut"]);
 
-const normalise = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
 
 describe("the island's stylesheet", () => {
-  test("reads only catalog tokens, each with the base theme's value as its fallback", () => {
-    const uses = [...ISLAND_CSS.matchAll(/var\((--[a-z0-9-]+)\s*(?:,\s*((?:[^()]|\([^()]*\))*?))?\)/g)];
-    expect(uses.length).toBeGreaterThan(20);
-    for (const [, property, fallback] of uses) {
-      if (LOCAL.has(property!)) continue;
-      const token = byProperty.get(property!);
-      expect(token, `${property} is not a catalog token`).toBeDefined();
-      expect(fallback, `${property} has no fallback`).toBeDefined();
-      expect(normalise(fallback!), property).toBe(normalise(String(light[token!])));
-    }
+  test("reads only catalog tokens, each with the catalog's value as its fallback", () => {
+    expect(tokenUses(ISLAND_CSS).length).toBeGreaterThan(20);
+    expect(tokenFallbackProblems(ISLAND_CSS, { local: LOCAL })).toEqual([]);
   });
 
   test("the answer field's placeholder reads at 4.5:1 or more, on the island's black and on an inner card", () => {
@@ -53,8 +57,9 @@ describe("the island's stylesheet", () => {
 
 describe("the manifest", () => {
   test("is a child plugin with one app surface, the Island component, as code", () => {
-    const check = checkManifest(join(import.meta.dir, ".."), { child: true });
-    expect(check.problems).toEqual([]);
-    expect(check.kind).toBe("code");
+    const root = join(import.meta.dir, "..");
+    expect(manifestFindings(root)).toEqual([]);
+    const manifest = JSON.parse(readFileSync(join(root, "clover.json"), "utf8"));
+    expect(manifest.client?.entry).toBeDefined();
   });
 });

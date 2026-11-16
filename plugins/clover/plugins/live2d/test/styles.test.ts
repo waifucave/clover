@@ -1,27 +1,23 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
-import { BASE_THEME, CATALOG_ACCENTS, SYSTEM_ACCENT, TOKENS, cssProperty, tokensFor } from "../../base-theme/src/index";
-import { checkThemeCss } from "../../base-theme/src/css-check";
-import { checkManifest } from "../../base-theme/src/manifest-check";
+import { basename, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { validateManifest } from "@waifucave/clover-plugin-sdk";
+import { checkThemeCss, tokenFallbackProblems, tokenUses, catalogValues } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { LIVE2D_CSS } from "../src/ui/styles";
 
-const byProperty = new Map(TOKENS.map((spec) => [cssProperty(spec.name), spec.name]));
-const light = tokensFor(BASE_THEME, "light");
-const normalise = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
+/** The findings the SDK's validator reports for this part's manifest, as a child of the bundled `clover` plugin. */
+function manifestFindings(root: string): string[] {
+  const report = validateManifest(readFileSync(join(root, "clover.json"), "utf8"), { folderName: basename(root), parent: { id: "clover", namespace: "clover" }, bundled: true, file: "clover.json" });
+  return report.issues.map((i) => `${i.severity} ${i.code} ${i.path}: ${i.message}`);
+}
+
+
+const light = catalogValues("light");
 
 describe("the Live2D renderer's stylesheet", () => {
-  test("reads only catalog tokens, each with the base theme's value as its fallback", () => {
-    const wrong: string[] = [];
-    for (const [, property, fallback] of LIVE2D_CSS.matchAll(/var\((--[a-z0-9-]+)\s*(?:,\s*((?:[^()]|\([^()]*\))*?))?\)/g)) {
-      const token = byProperty.get(property!);
-      if (!token) wrong.push(`${property} is not a catalog token`);
-      else if (fallback === undefined) wrong.push(`${property} has no fallback`);
-      else {
-        const want = light[token] === SYSTEM_ACCENT ? CATALOG_ACCENTS[token]!.light : String(light[token]);
-        if (normalise(fallback) !== normalise(want)) wrong.push(`${property}: ${fallback}, the base theme's is ${want}`);
-      }
-    }
-    expect(wrong).toEqual([]);
+  test("reads only catalog tokens, each with the catalog's value as its fallback", () => {
+    expect(tokenUses(LIVE2D_CSS).length).toBeGreaterThan(5);
+    expect(tokenFallbackProblems(LIVE2D_CSS)).toEqual([]);
   });
 
   test("draws inside its own box: nothing of the avatar can lie over a sealed frame", () => {
@@ -30,9 +26,10 @@ describe("the Live2D renderer's stylesheet", () => {
   });
 
   test("the manifest passes the plugin checks: a child of clover, UI code", () => {
-    const check = checkManifest(join(import.meta.dir, ".."), { child: true });
-    expect(check.problems).toEqual([]);
-    expect(check.kind).toBe("code");
+    const root = join(import.meta.dir, "..");
+    expect(manifestFindings(root)).toEqual([]);
+    const manifest = JSON.parse(readFileSync(join(root, "clover.json"), "utf8"));
+    expect(manifest.client?.entry).toBeDefined();
   });
 });
 

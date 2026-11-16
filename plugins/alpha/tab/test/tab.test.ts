@@ -5,7 +5,8 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
-import { BASE_THEME, TOKENS, checkTheme, checkThemeCss, contrast, readTheme, resolveTokens, tokensFor } from "../../../clover/plugins/base-theme/src/index";
+import { BASE_THEME, TOKENS, checkTheme, contrast, readTheme, resolveTokens, tokensFor } from "../../../clover/plugins/base-theme/src/index";
+import { checkThemeCss } from "../../../../packages/plugin-sdk/src/ui/theme-lint/css";
 import { resolveShell, SHELL_GROUPS, SHELL_SHAPE_NAMES } from "../../../../packages/plugin-sdk/src/formats/shell";
 import { SHELL_GROUPS as LINT_GROUPS } from "../../../clover/plugins/base-theme/src/theme";
 import { BOT_TAB_SPOTS, checkLayout } from "../../../clover/plugins/base-theme/src/layout-check";

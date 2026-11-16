@@ -1,25 +1,26 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
-import { BASE_THEME, TOKENS, cssProperty, resolveTokens, tokensFor } from "../../base-theme/src/index";
-import { checkThemeCss } from "../../base-theme/src/css-check";
-import { checkManifest } from "../../base-theme/src/manifest-check";
+import { basename, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { TOKENS, cssProperty, validateManifest } from "@waifucave/clover-plugin-sdk";
+import { checkThemeCss, tokenFallbackProblems, tokenUses, catalogValues } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { AVATAR_CSS } from "../src/ui/styles";
+
+/** The findings the SDK's validator reports for this part's manifest, as a child of the bundled `clover` plugin. */
+function manifestFindings(root: string): string[] {
+  const report = validateManifest(readFileSync(join(root, "clover.json"), "utf8"), { folderName: basename(root), parent: { id: "clover", namespace: "clover" }, bundled: true, file: "clover.json" });
+  return report.issues.map((i) => `${i.severity} ${i.code} ${i.path}: ${i.message}`);
+}
+
 
 const byProperty = new Map(TOKENS.map((spec) => [cssProperty(spec.name), spec.name]));
 /** The base theme as the core resolves it with no OS reading: an accent that follows the OS is the catalog's, an ink
  *  on it worked out against it (the CSS fallbacks are those values). */
-const light = resolveTokens("light", [tokensFor(BASE_THEME, "light")]);
-const normalise = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
+const light = catalogValues("light");
 
 describe("the avatar's stylesheet", () => {
-  test("reads only catalog tokens, each with the base theme's value as its fallback", () => {
-    const uses = [...AVATAR_CSS.matchAll(/var\((--[a-z0-9-]+)\s*(?:,\s*((?:[^()]|\([^()]*\))*?))?\)/g)];
-    expect(uses.length).toBeGreaterThan(5);
-    for (const [, property, fallback] of uses) {
-      const token = byProperty.get(property!);
-      expect(token, `${property} is not a catalog token`).toBeDefined();
-      expect(normalise(fallback!), property).toBe(normalise(String(light[token!])));
-    }
+  test("reads only catalog tokens, each with the catalog's value as its fallback", () => {
+    expect(tokenUses(AVATAR_CSS).length).toBeGreaterThan(5);
+    expect(tokenFallbackProblems(AVATAR_CSS)).toEqual([]);
   });
 
   test("keeps to the theme CSS rules", () => {
@@ -33,9 +34,10 @@ describe("the avatar's stylesheet", () => {
 
 describe("the manifest", () => {
   test("fills the stage's avatar spot for the vrm format, as code", () => {
-    const check = checkManifest(join(import.meta.dir, ".."), { child: true });
-    expect(check.problems).toEqual([]);
-    expect(check.kind).toBe("code");
+    const root = join(import.meta.dir, "..");
+    expect(manifestFindings(root)).toEqual([]);
+    const manifest = JSON.parse(readFileSync(join(root, "clover.json"), "utf8"));
+    expect(manifest.client?.entry).toBeDefined();
   });
 
   test("asks for no capability: the avatar hears nothing, it is told what plays", async () => {

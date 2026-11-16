@@ -18,7 +18,7 @@
 // unless a negative z-index puts it beneath (in the part's own layer). Hover, focus and active states count as if they were on: a glow
 // under the pointer shows exactly when the user is about to click.
 
-import { animatesAny, drawsOver, hidesFrames, hidingKeyframes, lifts, pullsOver, styleRules, type Declaration } from "./css-check";
+import { animatesAny, drawsOver, hidesFrames, hidingKeyframes, lifts, pullsOver, styleRules, type Declaration } from "./css";
 
 type Pseudo = "before" | "after";
 

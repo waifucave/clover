@@ -95,19 +95,15 @@ export function cloverDependencies(pluginDir: string): string[] {
   return out;
 }
 
-/** Imports across plugins found by this test that wait for the controller's ruling (F2b report), by plugin: each a
- *  pattern of `<file>: <specifier>` lines. The test fails on any other, and on a pattern that no longer matches (the
- *  list only shrinks). */
+/** The named exceptions, by plugin: each a pattern of `<file>: <specifier>` lines. Only the two whole-app galleries are
+ *  left: dev-only pages that draw many parts together (never shipped, never loaded by the app), which move out of
+ *  `plugins/` to one `apps/gallery` workspace after try 15 (backlog). The test fails on any other import, and on a
+ *  pattern that no longer matches (the list only shrinks). */
 const PENDING_RULING: Record<string, readonly RegExp[]> = {
-  pill: [/^pill\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
-  usage: [/^usage\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
-  live2d: [/^live2d\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
-  // The base theme's token tables and CSS checks, in other parts' style tests.
-  island: [/^island\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
-  vrm: [/^vrm\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
-  // The whole-window gallery, which draws every bundled part together.
+  // A whole-app gallery, dev-only: the whole window, every bundled part together (moves to apps/gallery after try 15).
   shell: [/^shell\/(gallery\/[^:]+|test\/gallery\.test\.ts):/],
-  // The look gallery (lane G's), which draws the island, the pill, the avatars, usage and notifications together.
+  // A whole-app gallery, dev-only: the look, the island with other plugins' tabs, the pill, the avatars, usage and
+  // notifications together (lane G's package; moves to apps/gallery after try 15).
   "base-theme": [/^base-theme\/gallery\/src\/(main|alpha|island-tabs)\.tsx: \.\.\/\.\.\/\.\.\//],
 };
 

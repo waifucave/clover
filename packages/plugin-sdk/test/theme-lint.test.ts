@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { checkThemeCss, hidesFrames } from "../src/css-check";
+import { checkThemeCss, hidesFrames } from "../src/ui/theme-lint/css";
 
 describe("checkThemeCss: the cleaner's limits", () => {
   test("refuses @import and @property, and at-rules the cleaner drops", () => {

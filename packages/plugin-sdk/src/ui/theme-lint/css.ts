@@ -1,5 +1,5 @@
-// A lint for the theme CSS we ship (the base theme, Alpha's tab), holding it to spec §5.5's rules before
-// the app's cleaner (lane E) ever sees it:
+// A lint for a plugin's theme or part CSS (any theme, any part's stylesheet; `@waifucave/clover-plugin-sdk/ui/testing`),
+// holding it to spec §5.5's rules before the app's cleaner ever sees it:
 //
 //   1. The cleaner's limits: no `@import`, and only the at-rules it keeps — @media, @supports, @container,
 //      @scope, @starting-style, and the named ones (@keyframes, @font-face, @layer, @counter-style,
@@ -19,7 +19,7 @@
 //      transparent box that ignores the pointer. So a theme keeps pseudo-elements in flow or beneath the
 //      content (a negative z-index), takes no element out of flow, shifts or moves none, pulls none over
 //      its neighbours with a negative margin, and lifts nothing with a positive z-index. A part's own stylesheet positions its layout, so it is checked
-//      on the rendered part instead (`sealed-check.ts`), with `{ component: true }` here.
+//      on the rendered part instead (`./sealed.ts`, `sealedProblems`), with `{ component: true }` here.
 //
 // Not a general CSS parser: comments, strings, parentheses, nesting and the at-rules above, which is all
 // a theme of ours may use.
@@ -398,7 +398,7 @@ function moves(declarations: readonly Declaration[]): boolean {
 
 export interface CssCheckOptions {
   /** A part's own stylesheet (the island's, the pill's, the avatar's): its layout positions elements, so the
-   *  overlap rule (3) is checked on the rendered part instead (`sealed-check.ts`). */
+   *  overlap rule (3) is checked on the rendered part instead (`./sealed.ts`, `sealedProblems`). */
   component?: boolean;
   /** Where the file sits in its plugin (`theme.css`, `styles/tab.css`), for resolving its url()s. */
   path?: string;
