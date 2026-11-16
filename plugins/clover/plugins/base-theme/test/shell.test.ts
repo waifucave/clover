@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SHELL_GROUPS as SDK_GROUPS, SHELL_NOT_OFFERED as SDK_NOT_OFFERED, SHELL_SHAPE as SDK_SHAPE } from "../../../../../packages/plugin-sdk/src/formats/shell";
+import { SHELL_GROUPS as SDK_GROUPS, SHELL_NOT_OFFERED as SDK_NOT_OFFERED, SHELL_SHAPE as SDK_SHAPE } from "@waifucave/clover-plugin-sdk";
 import { checkTheme } from "../src/index";
 import { SHELL_GROUPS, SHELL_NOT_OFFERED, SHELL_SHAPE } from "../src/theme";
 
