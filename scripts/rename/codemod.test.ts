@@ -1,8 +1,9 @@
 // Winter Phase 9b — the codemod's rule corpus (P9b-1/P9b-8). Pure functions only; no git.
 import { describe, expect, test } from "bun:test";
-import { CLOVER_RULES, entryAppliesTo, globToRegex, isExemptPath, pathStays, planMoves, renamePath, rewriteText, scaffoldPresent } from "./codemod";
+import { CLOVER_RULES, MOSS_RULES, entryAppliesTo, globToRegex, isExemptPath, pathStays, planMoves, renamePath, rewriteText, scaffoldPresent } from "./codemod";
 import { EXPLICIT_TOKEN_MAP, RENAME_ALLOWLIST } from "./allowlist";
 import { CLOVER_ALLOWLIST } from "./clover";
+import { MOSS_ALLOWLIST } from "./moss";
 
 const rw = (s: string, path = "packages/core/src/x.ts") => rewriteText(s, path);
 
@@ -249,6 +250,87 @@ describe("clover rules — what renames and what the allowlist keeps", () => {
     const ids = CLOVER_ALLOWLIST.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const e of CLOVER_ALLOWLIST) {
+      expect(e.why.length).toBeGreaterThan(20);
+      expect(e.regex.flags).toContain("g");
+    }
+  });
+});
+
+
+// ── Clover→MOSS (`--rules moss`, the default) ───────────────────────────────────────────────────
+describe("moss rules — what renames, what the app takes its own name for, and what the allowlist keeps", () => {
+  const mw = (s: string, path = "packages/core/src/x.ts") => rewriteText(s, path, MOSS_RULES);
+
+  test("the shape rule: the brand in prose is MOSS, an identifier part is Moss, a lower or upper token follows its case", () => {
+    expect(mw("Clover is great. Clover's mark; quit Clover.").out).toBe("MOSS is great. MOSS's mark; quit MOSS.");
+    expect(mw("CloverHome cloverHome CLOVER_HOME clover-core isCloversOwn").out).toBe("MossHome mossHome MOSS_HOME moss-core isMossOwn");
+    expect(mw("`~/.clover` and CLOVER_PROFILE=dev").out).toBe("`~/.moss` and MOSS_PROFILE=dev");
+    // A word after an escape is still a word.
+    expect(mw("\\nClover said").out).toBe("\\nMOSS said");
+  });
+
+  test("the app takes the name MOSS Code only for its own identity: bundle, dev build, executable, installer and archive names", () => {
+    expect(mw("/Applications/Clover.app Clover Dev.app Clover.exe Clover-Setup-1.exe Clover-1.2.3.dmg waifucave.Clover").out)
+      .toBe("/Applications/MOSS Code.app MOSS Code Dev.app MOSS Code.exe MOSS-Code-Setup-1.exe MOSS-Code-1.2.3.dmg waifucave.MOSSCode");
+    expect(mw("/opt/Clover/clover").out).toBe("/opt/moss-code/moss-code"); // never a space on Linux
+    expect(mw("Application Support/Clover  %APPDATA%\\Clover  Program Files\\Clover").out)
+      .toBe("Application Support/MOSS Code  %APPDATA%\\MOSS Code  Program Files\\MOSS Code");
+  });
+
+  test("identities: the app is com.waifucave.moss.code, the engine com.waifucave.moss.core, the bare moss id is never produced", () => {
+    expect(mw("com.waifucave.clover com.waifucave.clover.dev com.waifucave.clover.dev.desktop com.waifucave.clover.ShipIt").out)
+      .toBe("com.waifucave.moss.code com.waifucave.moss.code.dev com.waifucave.moss.code.dev.desktop com.waifucave.moss.code.ShipIt");
+    expect(mw("com.waifucave.clover.core com.waifucave.clover.core.dev com.waifucave.clover.core.test-isolated com.waifucave.clover.core.scratch com.waifucave.clover.plugin-bun").out)
+      .toBe("com.waifucave.moss.core com.waifucave.moss.core.dev com.waifucave.moss.core.test-isolated com.waifucave.moss.core.scratch com.waifucave.moss.core.plugin-bun");
+    expect(mw("com.waifucave.clover.ios com.waifucave.clover.ios.test").out).toBe("com.waifucave.clover.ios com.waifucave.clover.ios.test"); // the iOS app's own, kept
+    for (const id of ["com.waifucave.clover", "com.waifucave.clover.dev", "com.waifucave.clover.core", "com.waifucave.clover.helper"]) {
+      expect(mw(id).out).not.toMatch(/com\.waifucave\.moss(?![.\w])/);
+    }
+  });
+
+  test("packages, slugs and the SDK's names", () => {
+    expect(mw('"@waifucave/clover-core" "@waifucave/clover-protocol" waifucave/clover').out).toBe('"@waifucave/moss-core" "@waifucave/moss-protocol" waifucave/moss');
+    // The agent SDK's packages are installed from the registry under its own names, and its repo and result key are its own.
+    const sdk = 'import { a } from "@waifucave/clover-agent-sdk"; "@waifucave/clover-agent-runtime/mcp-auth" waifucave/clover-sdk waifucave/clover-ios';
+    expect(mw(sdk).out).toBe(sdk);
+    expect(mw('_meta["clover/load"]', "packages/core/src/runtime-sdk/turn-loop/glossary.ts").out).toBe('_meta["clover/load"]');
+    expect(mw('x["clover/load"]').out).toBe('x["moss/load"]'); // only where the SDK reads it
+  });
+
+  test("the old names a user wrote are kept where the one helper reads them, and renamed anywhere else", () => {
+    const s = 'export const OLD_PROJECT_DIR = ".clover"; export const OLD_INSTRUCTIONS_FILE = "CLOVER.md"; export const OLD_PLUGIN_MANIFEST = "clover.json";';
+    expect(mw(s, "packages/core/src/old-names.ts").out).toBe(s);
+    expect(mw(s).out).toBe('export const OLD_PROJECT_DIR = ".moss"; export const OLD_INSTRUCTIONS_FILE = "MOSS.md"; export const OLD_PLUGIN_MANIFEST = "moss.json";');
+  });
+
+  test("the plant is Alpha's, in its own files", () => {
+    expect(mw("const clover = leaf(); // a clover meadow", "plugins/alpha/client/meadow-art.ts").out).toBe("const clover = leaf(); // a clover meadow");
+    expect(mw("const clover = leaf();", "plugins/sidebar/client/x.ts").out).toBe("const moss = leaf();");
+  });
+
+  test("paths: the plugin tree, the brand folder, the cask and the winget ids take the new names", () => {
+    expect([
+      renamePath("plugins/clover/plugins/x/clover.json", MOSS_RULES),
+      renamePath("assets/brand/clover/a.svg", MOSS_RULES),
+      renamePath("packaging/clover.rb.tmpl", MOSS_RULES),
+      renamePath("packaging/winget/waifucave.Clover.yaml.tmpl", MOSS_RULES),
+      renamePath("CLOVER.md", MOSS_RULES),
+    ]).toEqual(["plugins/moss/plugins/x/moss.json", "assets/brand/moss-code/a.svg", "packaging/moss-code.rb.tmpl", "packaging/winget/waifucave.MOSSCode.yaml.tmpl", "MOSS.md"]);
+  });
+
+  test("exempt paths are left byte for byte; a doubled name is reported; a second pass changes nothing", () => {
+    const s = "Clover clover CLOVER ~/.clover";
+    expect(mw(s, "spikes/s1/README.md").out).toBe(s);
+    expect(mw(s, "docs/research/x.md").out).toBe(s);
+    expect(mw("moss-clover").doubleWinter.length).toBeGreaterThan(0);
+    const once = mw("CLOVER_HOME cloverHome com.waifucave.clover /Applications/Clover.app @waifucave/clover-core").out;
+    expect(mw(once).out).toBe(once);
+  });
+
+  test("allowlist hygiene: ids unique, every entry has a reason, file globs are well formed", () => {
+    const ids = MOSS_ALLOWLIST.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const e of MOSS_ALLOWLIST) {
       expect(e.why.length).toBeGreaterThan(20);
       expect(e.regex.flags).toContain("g");
     }
