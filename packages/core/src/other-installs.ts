@@ -17,6 +17,15 @@ export const CLOVER_DEV_HOME_DIR = ".clover-dev";
 export const CLOVER_KEYCHAIN_SERVICE = "com.waifucave.clover.core";
 export const CLOVER_DEV_KEYCHAIN_SERVICE = "com.waifucave.clover.core.dev";
 
+/** The same names under neutral identifiers, for the one-time copy (`migration/old-home/`), which reads the old home
+ *  and its login item, never writes them: the old home's and its dev profile's folder names, the old engine's login
+ *  item label (its Keychain service's name, which the copy never opens as a service), and the app's name as a person
+ *  says it. */
+export const OLD_INSTALL_HOME_DIR = CLOVER_HOME_DIR;
+export const OLD_INSTALL_DEV_HOME_DIR = CLOVER_DEV_HOME_DIR;
+export const OLD_INSTALL_LOGIN_LABEL = CLOVER_KEYCHAIN_SERVICE;
+export const OLD_APP_NAME = "Clover";
+
 /** The live Winter install's home folder, under the user's home. */
 export const WINTER_HOME_DIR = ".winter";
 /** Winter Dev's home folder. */

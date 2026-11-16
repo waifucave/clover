@@ -180,6 +180,13 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
     files: ["docs/moss-spec.md"],
     why: "the old install's names where the spec names them as the OLD ones: the home that is copied once to `~/.moss` and then left untouched, the project folder the build still reads second, and the owner's checkout folder",
   },
+  // ── The old home's own names, which the one-time copy maps (stage 2) ─────────────────────────────
+  {
+    id: "old-home-map",
+    regex: /[A-Za-z0-9_./@-]*(?:clover|Clover|CLOVER)[A-Za-z0-9_./:-]*/g,
+    files: ["packages/core/src/migration/old-home/names.ts", "packages/core/test/migration/old-home/**"],
+    why: "the one table of what the old install's home calls things that the renamed code calls something else (the old root plugin's id, its standing server's tool names, its turn ledger, the runtime home's config file, the manifest file name, the plugin SDK's import specifier, the plugin API's variables, CSS tokens and URL schemes): the one-time copy of an old home (spec §12, item 125) maps each through this file, and its tests build old homes from the same names",
+  },
   // ── The installed Clover app, which MOSS never touches ───────────────────────────────────────────
   {
     id: "old-install",
