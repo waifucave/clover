@@ -81,7 +81,7 @@ export function live2dReferences(model3: unknown): string[] | null {
 }
 
 // -------------------------------------------------------------------------------------------------
-// What a renderer declares about its format (`avatar.formats`, a data point the character plugin declares)
+// What a renderer declares about its format (`avatar.formats`, a data point the platform declares)
 // -------------------------------------------------------------------------------------------------
 
 /** The kinds of file a model is made of. A closed set: each is served as one fixed, inert media type (nosniff, never a

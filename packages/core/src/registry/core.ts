@@ -60,7 +60,7 @@ export function idleOkCards(): OkCardRaiser {
 }
 
 export interface RegistryCoreOptions {
-  catalog: (name: string) => PointDecl | undefined;
+  catalog: (name: string) => (PointDecl & { platform?: boolean }) | undefined;
   store: RegistryStore;
   cards?: OkCardRaiser;
   now?: () => number;

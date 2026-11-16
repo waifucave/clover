@@ -33,15 +33,10 @@ describe("clover.json (spec §5.9, format 1)", () => {
     for (const ui of manifest.contributes.ui) expect(typeof entry[ui.component]).toBe("function");
   });
 
-  test("it fills `bot.stage` and declares the `avatar` spot (keyed) and the data points `avatar.formats` and `avatar.packs` (lists)", () => {
+  test("it fills `bot.stage` and declares the `avatar` spot (keyed); `avatar.formats` and `avatar.packs` are the platform's, which it declares nothing for", () => {
     expect(stage.spot).toBe("bot.stage");
     expect(stage.declares.avatar.shape).toBe("keyed");
-    for (const point of ["avatar.formats", "avatar.packs"]) {
-      expect(stage.declares[point].shape).toBe("list");
-      expect(stage.declares[point].props).toBeUndefined();
-    }
-    expect(Object.keys(stage.declares["avatar.packs"].fields.properties).sort()).toEqual(["file", "format", "id", "license", "name", "portrait"]);
-    expect(stage.declares["avatar.packs"].fields.required).toEqual(["id", "file", "format"]);
+    expect(Object.keys(stage.declares).sort()).toEqual(["avatar", "bot.stage.action"]);
   });
 
   test("it fills the bot editor's `bot.editor.section` with the Avatar section", () => {

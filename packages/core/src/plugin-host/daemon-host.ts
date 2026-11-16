@@ -525,6 +525,21 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   const offStreamsHost = host.watch((s) => {
     if (s.state === "stopped" || s.state === "restarting" || s.state === "idle") streams.endPlugin(s.pluginId, `its host half is ${s.state}`, (side) => side !== "ui");
   });
+  // The figures the stages report (`avatar.report`): a stage that stops, goes off or is removed loses its reports, so what
+  // the core answers for a bot is always from the stage drawing it now.
+  const avatars = new AvatarService((event) => o.emit?.(event), Date.now, {
+    fills: (id) => o.registry.entries("ui").some((c) => c.pluginId === id && c.state === "active" && (c.value as { spot?: string } | undefined)?.spot === "bot.stage") && grantsInForce(o.registry.get(id)).includes("avatar.report"),
+    botExists: (bot) => o.registry.get(bot)?.manifest?.contributes?.bot !== undefined,
+  });
+  const offAvatarsRegistry = o.registry.watch((c) => {
+    if (c.type === "removed") return avatars.endStage(c.id);
+    if (c.type !== "plugin") return;
+    const r = o.registry.get(c.id);
+    if (r === undefined || !r.enabled || !RUNNING_STATES.has(r.state)) avatars.endStage(c.id);
+  });
+  const offAvatarsHost = host.watch((s) => {
+    if (s.state === "stopped") avatars.endStage(s.pluginId);
+  });
   const handlers: ApiHandlers[] = [
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl, streams }),
     storageApi(new SyncedStores(fileSyncedStores(o.home), { changed: storeChanged })),
@@ -535,7 +550,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     // P5: the programs a plugin's manifest names, run by the daemon outside its sandbox with the user's own access.
     outsideApi({ userHome: o.userHome ?? noUserHome(), cloverHome: o.home, log, writable: (id) => o.picked?.(id)?.write ?? [] }),
     ...(areas !== undefined ? [areas.handlers] : []),
-    new AvatarService((event) => o.emit?.(event)).handlers(),
+    avatars.handlers(),
     turnsApi({ queues: turns, record: (id) => o.registry.get(id) }),
     streamsApi({ hub: streams }),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
@@ -834,6 +849,8 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       offTurnsHost();
       turns.close();
       offStreamsRegistry();
+      offAvatarsRegistry();
+      offAvatarsHost();
       offStreamsHost();
       streams.close();
       const running = o.registry.list().map((p) => p.id);

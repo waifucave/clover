@@ -10,6 +10,9 @@
 //   only (what the contributor declared for that point, nothing else of its manifest). A value's `path` fields (by the
 //   point's declaration, `format: "path"`) become asset URLs.
 // * The reader must be on and running too: a turned-off plugin's connection still open reads nothing.
+// * A platform point (`avatar.formats`, `avatar.packs`: the core and the app read it, no plugin declares it) is read by any
+//   plugin that holds one of the capabilities its catalog entry names (`readBy`); there is no declarer's right to read
+//   it, and no plugin's id decides. Its entries are in force as soon as their plugins run.
 // * A component reads them the same way (`plugin.layer.call`'s `points.entries`, its own plugin as the caller), and
 //   hears a change as `plugin_point_changed`, the point's name only, on its own plugin's connection (`pointChanges`).
 // * `points.call` runs the handler an entry names in `field`, a field whose format is `handler` in the point's
@@ -21,7 +24,7 @@
 // * `points.active` and `points.onActive` (§5.4 "One at a time"): which entry of a one-at-a-time point is active, as
 //   its plugin and entry id (never its value), for the declarer's tree and for a plugin of a tree with an entry in it
 //   (`registry/active-one.ts`). Only the user's own door changes it (`point.active.set`); no plugin call does.
-import { STREAM_POINT_TIMEOUT_MAX_MS, type ActiveFiller, type PointEntry } from "@waifucave/clover-plugin-sdk";
+import { STREAM_POINT_TIMEOUT_MAX_MS, DATA_POINTS, catalogPointDecl, dataPointInfo, type ActiveFiller, type PointEntry } from "@waifucave/clover-plugin-sdk";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { PluginHost } from "../../contracts/plugin-host";
@@ -54,6 +57,19 @@ export function declaredPointFor(registry: Pick<PluginRegistry, "points">, point
   }
   return p;
 }
+
+/** The platform point `point` names, when `granted` lets its holder read it: the point as the catalog declares it, or
+ *  `undefined` when `point` is not a platform point; refused when it is and none of the capabilities that read it is held. */
+export function platformPointFor(point: string, granted: readonly string[]): RegisteredPoint | undefined {
+  const info = dataPointInfo(point);
+  if (info === undefined || info.declaredBy !== "core") return undefined;
+  const readers = info.readBy ?? [];
+  if (!readers.some((c) => granted.includes(c))) throw new ContractError("refused", `${point} is the platform's; reading it takes ${readers.map((c) => `\`${c}\``).join(" or ")}`);
+  return { name: point, shape: info.shape, declaredBy: "core", spot: false, active: true, decl: catalogPointDecl(point) as RegisteredPoint["decl"] };
+}
+
+/** The platform's own data points by name (the catalog's, whose `declaredBy` is `"core"`), for the change notices. */
+const PLATFORM_POINTS: ReadonlyMap<string, (typeof DATA_POINTS)[number]> = new Map(DATA_POINTS.filter((p) => p.declaredBy === "core").map((p) => [p.name, p]));
 
 /** A contribution as a declarer sees it, its `path` fields as asset URLs. */
 export function pointEntryOf(c: Contribution, decl: RegisteredPoint["decl"], assetUrl: (pluginId: string, path: string) => string): PointEntry {
@@ -96,10 +112,15 @@ export function pointChanges(o: Pick<PointsApiOptions, "registry" | "assetUrl"> 
   const last = new Map<string, string>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   // What each declared point shows, with its declaring tree: a new declarer taking a point over is a change too.
+  const platform = PLATFORM_POINTS;
   const snapshot = () => {
     const now = new Map<string, { text: string; tree: string }>();
+    for (const [name, info] of platform) {
+      const p: RegisteredPoint = { name, shape: info.shape, declaredBy: "core", spot: false, active: true, decl: catalogPointDecl(name) as RegisteredPoint["decl"] };
+      now.set(name, { text: `core\u0000${JSON.stringify(visibleEntries(o, p))}`, tree: "" });
+    }
     for (const p of o.registry.points()) {
-      if (!p.active || p.declaredBy === "core") continue;
+      if (!p.active || p.declaredBy === "core" || platform.has(p.name)) continue;
       const tree = topPluginIdOf(p.declaredBy.pluginId);
       now.set(p.name, { text: `${tree}\u0000${JSON.stringify(visibleEntries(o, p))}`, tree });
     }
@@ -116,8 +137,11 @@ export function pointChanges(o: Pick<PointsApiOptions, "registry" | "assetUrl"> 
         // The tree that declares the point when the notice goes, not when the first change came.
         const tree = snapshot().get(name)?.tree;
         if (tree === undefined) return;
+        const readers = platform.get(name)?.readBy;
         for (const r of o.registry.list()) {
-          if (topPluginIdOf(r.id) === tree && r.enabled && RUNNING_STATES.has(r.state)) changed(r.id, name);
+          if (!r.enabled || !RUNNING_STATES.has(r.state)) continue;
+          // A platform point goes to the running plugins that may read it (their grants); any other to the declaring tree.
+          if (readers !== undefined ? readers.some((c) => r.granted.includes(c)) : topPluginIdOf(r.id) === tree) changed(r.id, name);
         }
       }, ms));
     }
@@ -159,7 +183,7 @@ export function pointsApi(o: PointsApiOptions): ApiHandlers {
   };
   const entriesFor = (ctx: ApiCallContext, point: string): PointEntry[] => {
     readerRuns(ctx);
-    return visibleEntries(o, declaredPointFor(o.registry, point, ctx.pluginId));
+    return visibleEntries(o, platformPointFor(point, ctx.record.granted) ?? declaredPointFor(o.registry, point, ctx.pluginId));
   };
   /** `points.call`'s and `points.stream`'s checks: the point, its entry and the handler field's export. */
   const resolveCall = (ctx: ApiCallContext, args: readonly unknown[]) => {

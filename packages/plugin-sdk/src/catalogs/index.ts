@@ -29,7 +29,7 @@ const schema = (s: z.ZodType) => z.toJSONSchema(s, { target: "draft-2020-12", io
  *  for that point whoever declares it, so its `keep` and `needs` hold whatever the declarer wrote (review S2). A plugin
  *  that declares a well-known name declares only its shape and whether it is a spot (`{ shape, props: {} }` is
  *  enough); the rest is the catalog's. Undefined for any other name, the core's own points included. */
-export function catalogPointDecl(name: string): PointDecl | undefined {
+export function catalogPointDecl(name: string): (PointDecl & { platform?: true }) | undefined {
   if (!WELL_KNOWN_POINT_NAMES.has(name)) return undefined;
   const s = spotInfo(name);
   if (s) {
@@ -40,7 +40,7 @@ export function catalogPointDecl(name: string): PointDecl | undefined {
     };
   }
   const p = dataPointInfo(name)!;
-  return { shape: p.shape, fields: schema(p.entry), doc: p.doc, ...(p.oneAtATime === true ? { oneAtATime: true, ...(p.title !== undefined ? { title: p.title } : {}) } : {}) };
+  return { shape: p.shape, fields: schema(p.entry), doc: p.doc, ...(p.declaredBy === "core" ? { platform: true as const } : {}), ...(p.oneAtATime === true ? { oneAtATime: true, ...(p.title !== undefined ? { title: p.title } : {}) } : {}) };
 }
 
 export function catalogJson() {

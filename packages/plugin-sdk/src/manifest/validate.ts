@@ -14,7 +14,7 @@ import {
 import { capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { hookReadsStdinAsScript } from "./hook-command";
-import { CORE_POINTS, CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
+import { CORE_POINTS, CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo, isPlatformDataPoint } from "../catalogs/points";
 import { OWN_PANEL_KEY_RE, SAME_ON_EVERY_TAB, SPOT_NAMES, botsOffer, foldTitle, isOwnPanelKey, isReservedPluginName, spotInfo } from "../catalogs/spots";
 import { holdsBot, marksAppParts, pluginParts, skillItem } from "./parts";
 import { treePathProblem } from "../formats/tree-hash";
@@ -286,6 +286,10 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
     }
     if (CORE_POINT_NAMES.has(name)) {
       f.error(refuses, "point_declares_core", at, `"${name}" is one of the core's points; no plugin declares it`);
+      continue;
+    }
+    if (isPlatformDataPoint(name)) {
+      f.error(refuses, "point_declares_core", at, `"${name}" is the platform's point (the core reads it); no plugin declares it, a plugin fills it`);
       continue;
     }
     const wellKnown = WELL_KNOWN_POINT_NAMES.has(name);
