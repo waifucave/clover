@@ -41,7 +41,7 @@ export interface RegistryPlugin {
 
 export interface RegistryRuleOptions {
   /** The catalog's declaration of a well-known name (the plugin SDK's `catalogPointDecl`). */
-  catalog: (name: string) => PointDecl | undefined;
+  catalog: (name: string) => (PointDecl & { platform?: boolean }) | undefined;
   /** The user confirmed they are 18 or older (§5.7). */
   adultConfirmed: boolean;
   /** This computer's platform (`darwin-arm64`, …): a plugin whose `platforms` leaves it out is off here, with why.
@@ -195,6 +195,8 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       const spot = (c.value as { spot?: string }).spot ?? "";
       return CORE_SPOTS.includes(spot) ? undefined : spot;
     }
+    // A point the platform itself reads (`avatar.formats`) has no declarer to wait for.
+    if (opts.catalog(c.point)?.platform === true) return undefined;
     return c.point.includes(".") ? c.point : undefined;
   };
   const treeOf = (id: string) => parentOf(id) ?? id;

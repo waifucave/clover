@@ -86,6 +86,8 @@ export const CORE_POINT_NAMES: ReadonlySet<string> = new Set(CORE_POINTS.map((p)
 export interface DataPointInfo {
   readonly name: string;
   readonly shape: "single" | "list" | "keyed";
+  /** A plugin's id, or `"core"`: a point the core and the app read themselves (avatar import, model serving) is the
+   *  platform's. No plugin declares it; its entries are in force as soon as their plugin runs. */
   readonly declaredBy: string;
   readonly entry: z.ZodType;
   readonly kind: "data" | "code";
@@ -143,10 +145,10 @@ export const DATA_POINTS: readonly DataPointInfo[] = [
   { name: "island.line", shape: "list", declaredBy: "island", kind: "code",
     entry: z.strictObject({ id: EntryId, handler: HandlerName }),
     doc: "A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island calls `handler` (an `IslandLineHandler`) only when Clover isn't in front (the first line on its closed strip, the lines on its open Needs you tab) and draws what it returns; the island decides how many lines fit, in what order, and how long they last. Nothing is drawn when the handler returns nothing, and a plugin that is off or removed has no line." },
-  { name: "avatar.formats", shape: "list", declaredBy: "clover/character", kind: "data",
+  { name: "avatar.formats", shape: "list", declaredBy: "core", kind: "data",
     entry: AvatarFormatEntry,
     doc: "A model format a renderer plugin draws: the files its models are made of (closed kinds, capped), how they are found from the entry file, what the picker may import, and what the renderer can do. Nothing in the app is hardcoded per format (§5.5)." },
-  { name: "avatar.packs", shape: "list", declaredBy: "clover/character", kind: "data",
+  { name: "avatar.packs", shape: "list", declaredBy: "core", kind: "data",
     entry: z.strictObject({ id: EntryId, name: Text.optional(), file: Path, format: utf16(32, 1).regex(/^[a-z0-9-]+$/), portrait: Path.optional(), license: utf16(200).optional() })
       .superRefine((a, ctx) => {
         const problem = avatarFileProblem(a.format, a.file);
@@ -175,4 +177,9 @@ export function oneAtATimeOf(name: string, decl: { oneAtATime?: boolean; title?:
   if (typeof t === "string" && t !== "") return { title: t };
   if (typeof t === "object" && t !== null && typeof (t as { en?: unknown }).en === "string") return { title: t as { en: string; [lang: string]: string } };
   return { title: name };
+}
+
+/** Whether a data point is the platform's own (no plugin declares it; fillers need no declarer to run). */
+export function isPlatformDataPoint(name: string): boolean {
+  return dataPointInfo(name)?.declaredBy === "core";
 }

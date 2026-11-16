@@ -39,7 +39,7 @@ export interface FakePluginInput {
 
 export interface FakePluginRegistryOptions {
   /** The catalog's declaration of a well-known name, or undefined for any other: the plugin SDK's `catalogPointDecl`. */
-  catalog: (name: string) => PointDecl | undefined;
+  catalog: (name: string) => (PointDecl & { platform?: boolean }) | undefined;
   plugins?: FakePluginInput[];
   adultConfirmed?: boolean;
 }
@@ -63,7 +63,7 @@ export class FakePluginRegistry implements PluginRegistry {
   readonly #plugins = new Map<string, Held>();
   readonly #listeners = new Listeners<RegistryChange>();
   readonly #treeListeners = new Listeners<{ id: string }>();
-  readonly #catalog: (name: string) => PointDecl | undefined;
+  readonly #catalog: (name: string) => (PointDecl & { platform?: boolean }) | undefined;
   /** The OK cards raised, by top-level plugin: the card and the tree it shows. */
   readonly #okCards = new Map<string, { card: string; treeHash: string }>();
   /** The user's one-at-a-time choices, by point. */

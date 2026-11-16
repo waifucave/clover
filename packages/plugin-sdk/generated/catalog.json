@@ -683,7 +683,7 @@
     {
       "name": "avatar.formats",
       "shape": "list",
-      "declaredBy": "clover/character",
+      "declaredBy": "core",
       "kind": "data",
       "doc": "A model format a renderer plugin draws: the files its models are made of (closed kinds, capped), how they are found from the entry file, what the picker may import, and what the renderer can do. Nothing in the app is hardcoded per format (§5.5).",
       "fields": {
@@ -864,7 +864,7 @@
     {
       "name": "avatar.packs",
       "shape": "list",
-      "declaredBy": "clover/character",
+      "declaredBy": "core",
       "kind": "data",
       "doc": "Avatar files with their format and portrait, so an avatar pack is a data plugin (§5.5).",
       "fields": {
