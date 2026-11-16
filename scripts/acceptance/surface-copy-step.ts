@@ -37,7 +37,7 @@ const BUNDLED: Readonly<Record<Mirror, string>> = { island: "clover/island", pil
 /** The OK card's plain lines for what the copies hold (the catalog's `ok` words). */
 export const MIRROR_OK_LINES: Readonly<Record<Mirror, readonly string[]>> = {
   island: ["shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them", "shows windows on top of everything else on your screen"],
-  pill: ["shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them", "shows windows on top of everything else on your screen", "sends messages to your bots and sessions as you, with text it chooses, when you click or press a key in its window, or up to 30 seconds after you let go", "adds items to Clover's menu in your menu bar"],
+  pill: ["shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them", "shows windows on top of everything else on your screen", "sends messages to your bots and sessions as you, with text it chooses, when you click or press a key in its window, or press its own key anywhere in Clover's window, or up to 30 seconds after you let go", "adds items to Clover's menu in your menu bar"],
 };
 
 /** A copy's manifest: the bundled one's, with an id and a name of its own and its client built to one module. Its capabilities, its

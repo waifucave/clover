@@ -122,7 +122,12 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
   answer is ignored and it holds nothing up (a `message.out` observer hears each stored reply; replies keep streaming).
 - **`commands`** (list): `{ name, description, args (JSON Schema), handler, runsOn, scope }`: the user runs them from
   the composer. `scope: "own-bot"` keeps a command inside the plugin's bot: the user may always run it, and of the bots
-  only that one. `key` is a default shortcut (building-plugins, "Limits today").
+  only that one. `key` is a default shortcut (building-plugins, "Limits today"). `hold: true` (with `key`, no
+  `args`, and not an arrow, Home, End, Backspace, Delete, Enter or Tab) asks for the key's release too: the handler runs
+  with `{ key: "down" }` when the chord goes down (its repeats are no new press), once with `{ key: "up" }` when its key or
+  one of its modifiers comes up, and with `{ key: "cancel" }` when the hold ended with no release (drop what it started);
+  pass them on to your parts with `ui.send`. It runs only from its key (the palette and the CLI are refused). With
+  `user.send`, that release lets your parts in the window send once, as after a held click.
 - **`triggers`** (list): `{ type, title, fields (JSON Schema), handler }`: a new kind of routine trigger.
 - **Voices are Clover Voice's own points, not core ones.** A voice provider fills `"clover.voice.providers": [{ id,
   name, speak, listen?, ready? }]`: its `speak` handler answers `{ text, voice, model?, format }` with the audio as bytes

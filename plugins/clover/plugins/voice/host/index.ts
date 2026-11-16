@@ -22,7 +22,8 @@
 //   holds; `stops`: each bot's stop count), so the newest message of each is all a part needs.
 // * Push-to-talk: this plugin's own talk button (`composer.action`) records and streams the audio here (`talk`); the
 //   active voice writes it down (another plugin's `hear`, else the bot's provider's `listen`), the player held meanwhile,
-//   and the button sends the words as the user's message.
+//   and the button sends the words as the user's message. Its held key binding (`push-to-talk`, Ctrl+Shift+Space) holds
+//   the button from the keyboard: its down and up are passed on to the button.
 import type { HostPluginApi, HookInput, PointEntry } from "@waifucave/clover-plugin-sdk";
 
 export const PROVIDERS = "clover.voice.providers";
@@ -362,6 +363,21 @@ function stopBot(bot: string): void {
   } catch {
     /* no part to tell */
   }
+}
+
+/** Its command `push-to-talk`, Ctrl+Shift+Space held anywhere in the window (a held key binding, run only from its key:
+ *  `{ key: "down" }` on the press, `{ key: "up" }` on the user's release, `{ key: "cancel" }` for a hold that ended with
+ *  none): passed on to its talk buttons (`talk-down`, `talk-up`, `talk-cancel`), which hold to talk exactly as when the
+ *  button is held, and drop the recording on a cancel as on a lost pointer. */
+export function pushToTalk(args: unknown): { ok: boolean } {
+  const key = (args as { key?: unknown } | null)?.key;
+  if (key !== "down" && key !== "up" && key !== "cancel") return { ok: false };
+  try {
+    api?.ui.send(`talk-${key}`, {});
+  } catch {
+    /* no part to tell */
+  }
+  return { ok: true };
 }
 
 /** The plugin's ui table (`host.call`): the speak button's `speak`, the chip's `stop`, and a bot's voice for its

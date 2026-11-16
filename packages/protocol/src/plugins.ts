@@ -161,6 +161,8 @@ export const CommandView = z.object({
     z.object({ state: z.literal("bare") }),
     z.object({ state: z.literal("clash"), with: z.array(utf16(128)).max(64) }),
   ]).optional(),
+  /** Its key binding asks for the key's release too (§5.4 `hold`): run only from its key, with `{ key: "down" | "up" | "cancel" }`. */
+  hold: z.literal(true).optional(),
   runsOn: z.enum(["each", "main", "chosen"]).optional(),
 });
 export type CommandView = z.infer<typeof CommandView>;
@@ -768,7 +770,8 @@ export const PLUGINS_METHODS = {
     name: "command.run", owner: "B", roles: ["app", "cli", "remote", "layer"],
     /** A plugin caller needs `call:<the target's top-level id>`, which its OK lists (§5.4). */
     capability: "call:*",
-    params: z.object({ name: utf16(128, 3), args: z.unknown().optional() }),
+    /** `held`: a held key binding's down, release or cancel (§5.4 `hold`), the app's own alone (main sends it from the key). */
+    params: z.object({ name: utf16(128, 3), args: z.unknown().optional(), held: z.enum(["down", "up", "cancel"]).optional() }),
     result: z.object({ result: z.unknown() }),
     doc: "Runs `<namespace>.<name>` at once, with no model turn; the handler is told who called (§5.4).",
   }),

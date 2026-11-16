@@ -13,6 +13,15 @@
 
 export type KeyPlatform = "darwin" | "win32" | "linux" | NodeJS.Platform;
 
+/** A held key binding's calls (`commands[].hold`), its handler's `{ key }`: the chord going down; its release (the user's);
+ *  and `cancel`, a hold that ended with no release of the user's (the window lost the focus or closed, or the chord's key
+ *  went down again without its modifiers after an up that never came). */
+export type HoldPhase = "down" | "up" | "cancel";
+
+/** A key that edits text where it is typed: a held binding may not take it (`hold` on such a chord would turn editing in
+ *  the message box into the binding's presses). */
+export const TEXT_EDITING_KEYS: ReadonlySet<string> = new Set(["up", "down", "left", "right", "home", "end", "backspace", "delete", "enter", "tab"]);
+
 /** The chords the app answers before any page, as written in a manifest (`mod` = ⌘ on macOS, Ctrl elsewhere). */
 export const APP_CHORDS: readonly { chord: string; what: string; mac?: true }[] = [
   { chord: "mod+q", what: "Quit" },

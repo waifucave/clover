@@ -130,7 +130,8 @@ the user.
   yet; a bot's settings show on the Plugins page until its Edit page has their section; and the switch for a plugin's
   parts beside its bot is the OK card's checkbox, with no toggle on the Plugins page yet.
 - A command's `key` (`mod+shift+k`) is a default shortcut while the Clover window has the focus; one that clashes with
-  the app's own or another plugin's stays unbound.
+  the app's own or another plugin's stays unbound. With `hold: true` the command hears the key's release too
+  (plugin-manifest, `commands`); there is no narrower scope (a focused field, say) for a key.
 - There is no point for an app page's own menu or context menu.
 - `helper` and `host.runtime: "node"` are refused by the check (run a program from the host half, and use
   `process: "own"` for a process of its own).

@@ -258,6 +258,11 @@ export const CommandSchema = z.strictObject({
   args: JsonSchema.optional(),
   handler: HandlerName,
   key: utf16(64).regex(KEY_CHORD_RE).optional(),
+  /** With `key`: the key binding asks for the key's release as well as its press (§5.4). The handler runs with
+   *  `{ key: "down" }` when the chord goes down (a held key's repeats are no new press), once with `{ key: "up" }` when its
+   *  key or one of its modifiers comes up, and with `{ key: "cancel" }` for a hold that ended with no release (`HoldPhase`).
+   *  It runs only from its key, so it declares no `args`; its key is never a text-editing one (`TEXT_EDITING_KEYS`). */
+  hold: z.boolean().optional(),
   runsOn: RunsOn.optional(),
   /** `own-bot`: a command inside the bot: the user runs it, and of the bots only the one its plugin holds. */
   scope: PartScope.optional(),

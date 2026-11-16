@@ -25,7 +25,7 @@ export interface SlashCommand {
 export const BUILT_IN_NAMES: ReadonlySet<string> = new Set([
   "help", "compact", "model", "output-style", "status", "quota", "sessions", "add-dir", "cd", "dirs", "skills", "mcp", "bg",
   "routines", "memory", "workflows", "background", "archive", "clear", "new", "stop", "settings", "plugins", "bots",
-  "agents", "level", "effort", "voice", "attach", "send", "quit", "exit", "resume", "login", "logout", "doctor", "run",
+  "agents", "level", "effort", "attach", "send", "quit", "exit", "resume", "login", "logout", "doctor", "run",
 ]);
 
 /** A line typed as a command: the name so far, and what follows it. */

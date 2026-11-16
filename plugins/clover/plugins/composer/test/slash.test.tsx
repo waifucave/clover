@@ -33,6 +33,11 @@ describe("the slash rules", () => {
     expect(names.get("evil.Model")).toBe("evil.Model");
   });
 
+  test("/voice is no built-in any more (no built-in serves it): a plugin's voice command shows as /voice", () => {
+    expect(BUILT_IN_NAMES.has("voice")).toBe(false);
+    expect(displayNames([cmd("talker.voice")]).get("talker.voice")).toBe("voice");
+  });
+
   test("matching: an exact name first, then prefixes, then the rest that hold it; all for a bare /", () => {
     const list = [cmd("a.redraw"), cmd("b.draw"), cmd("c.drawing"), cmd("d.other")];
     expect(matchCommands(list, "").map((i) => i.command.name)).toEqual(["a.redraw", "b.draw", "c.drawing", "d.other"]);

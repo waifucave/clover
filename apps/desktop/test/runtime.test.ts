@@ -839,6 +839,35 @@ describe("lane B's #179 hooks in the runtime", () => {
   });
 });
 
+describe("a held key binding's documents (§5.4 `hold`)", () => {
+  test("the owner's own documents in that window get its release's allowance, only while the owner holds user.send", () => {
+    const id = (f: FrameRef) => `${f.processId}:${f.routingId}`;
+    const open = (granted: string[]) => {
+      const s = setup(composerFixture());
+      s.rt.setRegistry(s.rt.registry.map((p) => (!granted.includes(p.id) ? p : { ...p, capabilities: new Set([...p.capabilities, "user.send"]) })));
+      const shell = mountShell(s);
+      const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+      const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
+      const token = new URL(composer.url).searchParams.get("mount")!;
+      s.rt.serveDocument("fixture-composer", token);
+      const child = frame(composer.url, shell.shellFrame);
+      s.rt.describe(child, WIN, token);
+      return { s, shell: shell.shellFrame, child };
+    };
+    // A plugin without user.send gets none, whatever it holds in the window.
+    const none = open([]);
+    expect(none.s.rt.heldKeyFrames(WIN, "fixture-composer")).toEqual([]);
+    expect(none.s.rt.heldKeyFrames(WIN, "clover/shell")).toEqual([]);
+    // With it: its own document, never another plugin's, and nothing in another window.
+    const one = open(["fixture-composer"]);
+    expect(one.s.rt.heldKeyFrames(WIN, "fixture-composer")).toEqual([id(one.child)]);
+    expect(one.s.rt.heldKeyFrames(WIN + 1, "fixture-composer")).toEqual([]);
+    expect(one.s.rt.heldKeyFrames(WIN, "clover/shell")).toEqual([]);
+    const both = open(["fixture-composer", "clover/shell"]);
+    expect(both.s.rt.heldKeyFrames(WIN, "clover/shell")).toEqual([id(both.shell)]);
+  });
+});
+
 describe("the composer spot's mount record", () => {
   test("composerOf knows only an entry the core mounted in the composer spot, for the session the declaring document gave", () => {
     const s = setup(composerFixture());

@@ -3309,7 +3309,9 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     // Whether Clover's window is in front, for the rows that place a card (CLOVER_TEST_MAIN_FRONT_FILE, test-marked and acceptance builds only): a headless run's windows are never the focused one.
     const frontFile = join(root, "main-front");
     const unitAppearance = join(root, "unit-appearance");
-    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_APPEARANCE_FILE: unitAppearance, CLOVER_TEST_PICK: pickFile, CLOVER_TEST_MAIN_FRONT_FILE: frontFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+    // A key held in the window (the listen row's Ctrl+Shift+Space): main's own sendInputEvent from this file, as the full run's.
+    const unitKeys = join(root, "unit-press-key");
+    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_APPEARANCE_FILE: unitAppearance, CLOVER_TEST_PICK: pickFile, CLOVER_TEST_MAIN_FRONT_FILE: frontFile, CLOVER_TEST_KEY_FILE: unitKeys, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
     proc = startChild("unit-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
@@ -3319,7 +3321,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     rpc = (await appDriver()).client;
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
-    const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, unitAppearance, frontFile);
+    const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, unitAppearance, frontFile, keyPresser(unitKeys));
     for (const [name, run] of uiRowRunners(ctx, session, launch)) {
       if (!names.includes(name)) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
@@ -3338,8 +3340,15 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
   }
 }
 
+/** Main's key presses in one app's window, through the file it watches (CLOVER_TEST_KEY_FILE): each new `n` is one press, or
+ *  one event of a held key (`type`). One counter per file, shared by every row that presses there. */
+function keyPresser(file: string): (key: string, modifiers: string[], type?: "down" | "repeat" | "up") => void {
+  let n = 0;
+  return (key, modifiers, type) => writeFileSync(file, JSON.stringify({ n: ++n, key, modifiers, ...(type !== undefined ? { type } : {}) }));
+}
+
 /** The examples' context over one app: its cards pressed in its window, main's picker, the fake's requests. */
-function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string, appearanceFile?: string, frontFile?: string): ExampleCtx {
+function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string, appearanceFile?: string, frontFile?: string, pressKey?: ExampleCtx["pressKey"]): ExampleCtx {
   return {
     cdp, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
     // This app's own output and the home's app log, whichever it wrote to.
@@ -3367,6 +3376,7 @@ function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: strin
     appCli: (words) => appCli(words),
     ...(appearanceFile !== undefined ? { setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme) } : {}),
     ...(frontFile !== undefined ? { setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back") } : {}),
+    ...(pressKey !== undefined ? { pressKey } : {}),
     healFake: (id) => fake?.heal(id),
   };
 }
@@ -5087,7 +5097,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const appearanceFile = join(root, "appearance");
   // A command's default key pressed in the window (CLOVER_TEST_KEY_FILE, test-marked and acceptance builds only): CDP key events never reach the window's before-input-event, so main presses it with sendInputEvent from this file.
   const keyFile = join(root, "press-key");
-  let keyPresses = 0;
+  const pressKey = keyPresser(keyFile);
   let windowSeam = 0;
   // The Browser row's fixture site by name too: on a run that isn't sharded (a packaged one) that row runs in this app.
   const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_TEST_MAIN_FRONT_FILE: join(root, "main-front"), CLOVER_TEST_WINDOW_FILE: join(root, "main-window"), CLOVER_TEST_KEY_FILE: keyFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
@@ -5113,7 +5123,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       appCli: (words) => appCli(words),
       uiSettings: () => { try { return JSON.parse(readFileSync(join(home, "settings", "ui.json"), "utf8")) as { appearance?: string }; } catch { return {}; } },
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
-      pressKey: (key: string, modifiers: string[]) => writeFileSync(keyFile, JSON.stringify({ n: ++keyPresses, key, modifiers })),
+      pressKey,
       mainWindow: (what: "close" | "open") => writeFileSync(join(root, "main-window"), `${what} ${++windowSeam}`),
       daemonLog: () => readLog(join(logs, `daemon-${daemonRun}.log`)),
       ...(pressable ? {
@@ -5142,7 +5152,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     }
     // The SDK's two full examples, third-party plugins installed from their folders on the Plugins page (example-steps.ts),
     // and the rows after them (a shard's units leave out the ones another shard runs).
-    const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, appearanceFile, join(root, "main-front"));
+    const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, appearanceFile, join(root, "main-front"), pressKey);
     for (const [name, run] of uiRowRunners(exampleCtx, session!)) {
       if (!runs(unitOf(name))) continue;
       const n = FULL_STEPS.indexOf(name) + 1;

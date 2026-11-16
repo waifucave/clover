@@ -12,6 +12,13 @@
 // What is sent is the voice's words made one plain line (`spokenText`: control characters collapsed as the SDK's
 // `plainLine` does) and cut to TALK_TEXT_MAX characters, never refused for its length (a hold is at most a minute).
 //
+// From the keyboard: Ctrl+Shift+Space anywhere in the window (this plugin's held key binding, `push-to-talk`, which its
+// host half passes on as `talk-down`, `talk-up` and `talk-cancel`) holds it the same way: the key's down starts (a repeat
+// does nothing), its release ends it and the words go once, and a cancel (the window let go of the hold, never the user)
+// drops it as a lost pointer does; the chord never types. The release main saw counts as the user's for this
+// plugin's documents, as the button's own press and release do. Of several talk buttons it is the one nearest the focus
+// (in the composer being typed in), else the first.
+//
 // It never sticks on: a hold that ends without the user's release (the window losing the focus or going hidden, the button
 // losing the focus, the pointer cancelled, the button going away, the stream refusing a piece, or the host half's minute
 // passing) is dropped: the microphone closes (every track ends), the stream is aborted, the turn is let go, and nothing is sent.
@@ -61,6 +68,32 @@ export function setTalkLimit(ms: number | undefined): void {
 
 let count = 0;
 
+/** The talk buttons shown in this document, for the key binding to pick one. */
+const shown = new Set<HTMLElement>();
+
+/** How deep the nearest element holding both `el` and the focus is (the focus's own composer is the deepest). */
+function nearFocus(el: HTMLElement): number {
+  const focus = typeof document !== "undefined" ? document.activeElement : null;
+  if (focus === null) return 0;
+  let at: Node | null = el;
+  while (at !== null && !at.contains(focus)) at = at.parentNode;
+  let depth = 0;
+  for (let n: Node | null = at; n !== null; n = n.parentNode) depth++;
+  return depth;
+}
+
+/** The talk button the key binding holds: the one nearest the focus, else the first in the document. */
+function keyButton(): HTMLElement | undefined {
+  let best: HTMLElement | undefined;
+  let bestDepth = -1;
+  const inOrder = [...shown].sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  for (const el of inOrder) {
+    const d = nearFocus(el);
+    if (d > bestDepth) [best, bestDepth] = [el, d];
+  }
+  return best;
+}
+
 /** Whether a hold was dropped (read after each wait: another handler may have dropped it meanwhile). */
 const gone = (r: Rec): boolean => r.dropped === true;
 
@@ -90,6 +123,10 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
   const current = useRef<Rec | undefined>(undefined);
   /** Mounted: a dropped hold's state is set only then. */
   const live = useRef(true);
+  /** This button's element, while it shows. */
+  const self = useRef<HTMLSpanElement | null>(null);
+  /** The hold now is the key binding's (only its release ends it). */
+  const byKey = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -231,9 +268,41 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
     };
   }, [cancel, drop]);
 
+  // The key binding's down and release (its host half passes them on): the button nearest the focus holds.
+  useEffect(() => {
+    const offDown = api.host.on("talk-down", () => {
+      const el = self.current;
+      if (el === null || keyButton() !== el || current.current !== undefined) return;
+      byKey.current = true;
+      void start();
+    });
+    const offUp = api.host.on("talk-up", () => {
+      if (!byKey.current) return;
+      byKey.current = false;
+      end();
+    });
+    // No release of the user's: the hold is dropped (nothing heard, nothing sent).
+    const offCancel = api.host.on("talk-cancel", () => {
+      if (!byKey.current) return;
+      byKey.current = false;
+      cancel();
+    });
+    return () => {
+      offDown();
+      offUp();
+      offCancel();
+    };
+  }, [api, start, end, cancel]);
+
+  const place = useCallback((el: HTMLSpanElement | null) => {
+    if (self.current !== null) shown.delete(self.current);
+    self.current = el;
+    if (el !== null) shown.add(el);
+  }, []);
+
   if (!listens) return null;
   return (
-    <span className="cl-voice-talk" data-voice-talk={phase}>
+    <span className="cl-voice-talk" data-voice-talk={phase} ref={place}>
       <button
         type="button"
         className="cl-voice-talk__button"

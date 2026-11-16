@@ -450,6 +450,22 @@ export class SendGate {
     if (h.frames !== undefined) this.credit(windowId, h);
   }
 
+  /** The window's newest press: a held key binding's down takes it (main's `press` ran for that same key down first). */
+  newest(windowId: number): Hold | undefined {
+    return this.lastPress.get(windowId);
+  }
+
+  /** A held key binding's release that the main process saw (§5.4 `hold`: the up of its key or of one of its modifiers),
+   *  `frames` being the binding owner's documents in this window (none for a plugin without `user.send`). They get the
+   *  allowance a press and release in them gives: one send within SEND_RELEASE_WINDOW_MS, shared with the press's own frames
+   *  (one press, one send), ended by any new press in the window (`hold` is then no longer the newest), lost when a frame
+   *  navigates, and nothing once the press was spent or is older than SEND_HOLD_MAX_MS. */
+  creditHeld(windowId: number, hold: Hold, frames: readonly string[]): void {
+    if (this.lastPress.get(windowId) !== hold || hold.spent || this.now() - hold.at > SEND_HOLD_MAX_MS) return;
+    hold.releasedAt ??= this.now();
+    for (const f of frames) this.releases.set(f, { windowId, at: hold.releasedAt, hold });
+  }
+
   private credit(windowId: number, h: Hold): void {
     this.holds.delete(windowId);
     for (const f of h.frames ?? []) this.releases.set(f, { windowId, at: h.releasedAt ?? this.now(), hold: h });
@@ -466,7 +482,11 @@ export class SendGate {
     if (r === undefined || r.windowId !== windowId) return false; // another window's call spends nothing
     const fresh = this.now() - r.at <= SEND_RELEASE_WINDOW_MS;
     for (const [f, x] of this.releases) if (x.hold === r.hold) this.releases.delete(f);
-    if (fresh) this.lastInput.delete(windowId);
+    if (fresh) {
+      this.lastInput.delete(windowId);
+      // Spent: a release of that press still to come (a held key binding's key let go after its modifier) gives nothing more.
+      r.hold.spent = true;
+    }
     return fresh;
   }
 

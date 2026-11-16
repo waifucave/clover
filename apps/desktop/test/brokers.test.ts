@@ -472,6 +472,95 @@ describe("a send after a hold (hold-to-talk): the release the main process saw g
   });
 });
 
+describe("a held key binding's release (§5.4 `hold`): its owner's documents get the press's one send within 30 s", () => {
+  const FOCUSED = "10:1"; // the frame the key went down in (another plugin's, say)
+  const OWNER = "20:1"; // the binding's owner's document in the window
+  const OTHER = "30:1"; // a third document, not the owner's
+  /** The binding's key down as main sees it (`press` first, then the binding takes the window's newest press). */
+  const down = (g: SendGate) => {
+    g.press(1, { kind: "key", key: " ", frames: [FOCUSED] });
+    return g.newest(1)!;
+  };
+
+  test("the release gives the owner's documents the allowance, spent once, within 30 s; another document gets none", () => {
+    for (const [after, ok] of [[5, true], [30, true], [31, false]] as const) {
+      const now = { t: 0 };
+      const g = new SendGate(() => now.t);
+      const h = down(g);
+      now.t += 4_000;
+      g.creditHeld(1, h, [OWNER]);
+      now.t += after * 1000;
+      expect(g.takeRelease(1, OTHER)).toBe(false);
+      expect(g.takeRelease(1, OWNER)).toBe(ok);
+      expect(g.takeRelease(1, OWNER)).toBe(false);
+    }
+  });
+
+  test("none for a plugin without user.send (main gives no documents), and none in another window", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    const h = down(g);
+    g.creditHeld(1, h, []);
+    expect(g.takeRelease(1, OWNER)).toBe(false);
+    const h2 = down(g);
+    g.creditHeld(1, h2, [OWNER]);
+    expect(g.takeRelease(2, OWNER)).toBe(false);
+  });
+
+  test("ended by a new press: one before the release leaves it nothing, one after takes it away", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    const h = down(g);
+    g.press(1, { kind: "mouse", key: "left" }); // a click while the key is held
+    g.creditHeld(1, h, [OWNER]);
+    expect(g.takeRelease(1, OWNER)).toBe(false);
+    const h2 = down(g);
+    g.creditHeld(1, h2, [OWNER]);
+    g.press(1, { kind: "key", key: "a", frames: [FOCUSED] });
+    expect(g.takeRelease(1, OWNER)).toBe(false);
+  });
+
+  test("one press, one send: the key's own release in its frame and the owner's share it, and a send on the key down spends both", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    const h = down(g);
+    g.release(1, { kind: "key", key: " ", frame: FOCUSED });
+    g.creditHeld(1, h, [OWNER]);
+    expect(g.takeRelease(1, OWNER)).toBe(true);
+    expect(g.takeRelease(1, FOCUSED)).toBe(false);
+    const h2 = down(g);
+    expect(g.take(1)).toBe(true);
+    g.creditHeld(1, h2, [OWNER]);
+    expect(g.takeRelease(1, OWNER)).toBe(false);
+  });
+
+  test("a modifier let go first: the owner's documents send once; the key's own up after that send gives no second one", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    const h = down(g);
+    g.release(1, { kind: "key", key: "Control", frame: FOCUSED }); // another key's up: not the press's
+    g.creditHeld(1, h, [OWNER]);
+    expect(g.takeRelease(1, OWNER)).toBe(true);
+    now.t += 700;
+    g.release(1, { kind: "key", key: " ", frame: FOCUSED }); // the space let go after the send
+    expect(g.takeRelease(1, FOCUSED)).toBe(false);
+    expect(g.takeRelease(1, OWNER)).toBe(false);
+  });
+
+  test("lost when the owner's document navigates, and nothing for a press held past two minutes", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    const h = down(g);
+    g.creditHeld(1, h, [OWNER]);
+    g.forgetFrame(OWNER);
+    expect(g.takeRelease(1, OWNER)).toBe(false);
+    const h2 = down(g);
+    now.t += SEND_HOLD_MAX_MS + 1;
+    g.creditHeld(1, h2, [OWNER]);
+    expect(g.takeRelease(1, OWNER)).toBe(false);
+  });
+});
+
 describe("a gesture counts only for the frame it happened in", () => {
   test("a press in frame A never unlocks a call from frame B; a refused call spends nobody's gesture", () => {
     const gate = new SendGate(() => 0);

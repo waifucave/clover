@@ -1627,6 +1627,9 @@
           "maxLength": 64,
           "pattern": "^((mod|ctrl|alt|shift|meta)\\+)*([a-z0-9]|f([1-9]|1[0-2])|enter|escape|space|tab|backspace|delete|up|down|left|right|home|end|pageup|pagedown|[`=[\\];',./-])$"
         },
+        "hold": {
+          "type": "boolean"
+        },
         "runsOn": {
           "$ref": "#/$defs/__schema8"
         },

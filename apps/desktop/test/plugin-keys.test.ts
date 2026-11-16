@@ -43,6 +43,88 @@ describe("a plugin command's key in main", () => {
   });
 });
 
+describe("a held key binding (`commands[].hold`): its down and its release", () => {
+  const heldRows = [
+    { name: "v.talk", pluginId: "v", key: "ctrl+shift+space", hold: true, keyState: { state: "bound", chord: "ctrl+shift+space" } },
+    { name: "a.go", pluginId: "a", key: "mod+shift+k", keyState: { state: "bound", chord: "shift+meta+k" } },
+  ];
+  const chord = { key: " ", code: "Space", control: true, shift: true };
+  const make = () => {
+    const k = new PluginKeys("darwin");
+    k.set(heldRows);
+    return k;
+  };
+
+  test("the down is delivered once; repeats are no new press; neither is handled in main (Chromium would drop the release), the preload keeps both from the page; the key's up delivers the up once and is consumed", () => {
+    const k = make();
+    expect(k.hold(1, press(chord), true)).toMatchObject({ binding: { name: "v.talk", pluginId: "v", hold: true }, phase: "down", consume: false });
+    expect(k.swallows(1, chord)).toBe(true);
+    expect(k.swallows(2, chord)).toBe(false);
+    expect(k.swallows(1, { key: "a", code: "KeyA" })).toBe(false);
+    for (let i = 0; i < 3; i++) expect(k.hold(1, press({ ...chord, isAutoRepeat: true }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: false });
+    expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toMatchObject({ phase: "up", consume: true });
+    expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toBeUndefined();
+    expect(k.swallows(1, chord)).toBe(false);
+  });
+
+  test("another key's up is not its up; another key's down passes by and the hold goes on", () => {
+    const k = make();
+    k.hold(1, press(chord), true);
+    expect(k.hold(1, press({ key: "a", code: "KeyA", type: "keyUp", control: true, shift: true }), true)).toBeUndefined();
+    expect(k.hold(1, press({ key: "a", code: "KeyA", control: true, shift: true }), true)).toBeUndefined();
+    expect(k.hold(1, press({ key: "Alt", type: "keyUp", control: true, shift: true }), true)).toBeUndefined(); // not one of its modifiers
+    expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toMatchObject({ phase: "up" });
+  });
+
+  test("a modifier let go first ends it once (not consumed: the page sees the modifier go); its key's repeats are still kept from the page (the preload) and its up consumed", () => {
+    const k = make();
+    k.hold(1, press(chord), true);
+    expect(k.hold(1, press({ key: "Shift", code: "ShiftLeft", type: "keyUp", control: true }), true)).toMatchObject({ phase: "up", consume: false });
+    expect(k.hold(1, press({ key: "Control", code: "ControlLeft", type: "keyUp" }), true)).toBeUndefined();
+    expect(k.hold(1, press({ key: " ", code: "Space", control: true, isAutoRepeat: true }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: false });
+    expect(k.swallows(1, { key: " ", code: "Space" })).toBe(true);
+    expect(k.hold(1, press({ key: " ", code: "Space", type: "keyUp" }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: true });
+    // Pressed again, it is a new hold.
+    expect(k.hold(1, press(chord), true)).toMatchObject({ phase: "down" });
+    // An up whose state lost a modifier ends it too, whatever key it names (a synthesized modifier's up).
+    expect(k.hold(1, press({ key: "Unidentified", type: "keyUp", control: true }), true)).toMatchObject({ phase: "up", consume: false });
+  });
+
+  test("per window; a hold starts only where a command's key may run; a press binding is no hold, and match never runs a held one as a press", () => {
+    const k = make();
+    expect(k.hold(1, press(chord), false)).toBeUndefined();
+    expect(k.hold(1, press({ key: "K", code: "KeyK", meta: true, shift: true }), true)).toBeUndefined();
+    expect(k.binding(press(chord))).toMatchObject({ name: "v.talk", hold: true });
+    k.hold(1, press(chord), true);
+    expect(k.hold(2, press({ ...chord, type: "keyUp" }), true)).toBeUndefined();
+    expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toMatchObject({ phase: "up" });
+  });
+
+  test("a stale hold (its up never came): the chord's key down afresh without its modifiers ends it as a cancel, goes on to the page, and its up is nobody's", () => {
+    const k = make();
+    k.hold(1, press(chord), true);
+    // The chord pressed again with all its modifiers while still held: no new press.
+    expect(k.hold(1, press(chord), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: false });
+    // A plain space later (the up was lost while the Mac slept): the hold ends with no release, and the space is the page's.
+    expect(k.hold(1, press({ key: " ", code: "Space" }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), phase: "cancel", consume: false, passOn: true });
+    expect(k.swallows(1, { key: " ", code: "Space" })).toBe(false);
+    expect(k.holding(1)).toBeUndefined();
+    expect(k.hold(1, press({ key: " ", code: "Space", type: "keyUp" }), true)).toBeUndefined();
+    // With only some of its modifiers it is stale too.
+    k.hold(1, press(chord), true);
+    expect(k.hold(1, press({ key: " ", code: "Space", control: true }), true)).toMatchObject({ phase: "cancel", passOn: true });
+  });
+
+  test("the window losing the focus ends a hold with no release of the user's (a cancel); nothing when none is held", () => {
+    const k = make();
+    expect(k.cancel(1)).toBeUndefined();
+    k.hold(1, press(chord), true);
+    expect(k.cancel(1)).toMatchObject({ binding: { name: "v.talk" }, phase: "cancel" });
+    expect(k.cancel(1)).toBeUndefined();
+    expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toBeUndefined();
+  });
+});
+
 describe("the app's own chords", () => {
   test("every chord the resolver reserves for the three shortcuts is one appShortcut answers", () => {
     for (const [chord, expected] of [["mod+q", "quit"], ["mod+w", "close-window"], ["mod+,", "settings"]] as const) {

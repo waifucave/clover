@@ -102,7 +102,7 @@ interface Ctx {
   /** Sets the window's dark or light (the renders; the app follows a file the run writes). */
   setAppearance?(scheme: "dark" | "light" | "system"): void;
   /** Main presses a key chord in the window (`webContents.sendInputEvent`), from a file the build watches. */
-  pressKey?(key: string, modifiers: string[]): void;
+  pressKey?(key: string, modifiers: string[], type?: "down" | "repeat" | "up"): void;
   /** Closes the main window, or opens it again, as the user would (a file the test build watches: CLOVER_TEST_WINDOW_FILE). */
   mainWindow?(what: "close" | "open"): void;
   /** The daemon's own log, as text (what the core says it told the user). */
@@ -1474,7 +1474,33 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         return undefined;
       }, async () => `its page counts ${JSON.stringify(pinged)} after ${presses} press(es); the app's log: ${ctx.appLog().split("\n").filter((l) => l.includes("keys:")).slice(-3).join(" | ") || "no keys: line"}`);
       if (!ctx.appLog().includes(`keys: ${id}.ping ran from its key`)) fail(`its page counted a ping, but the app's log has no "keys: ${id}.ping ran from its key"`);
-      const keyed = `its command ${id}.ping, bound to mod+shift+y, ran from a real key press in the window (${presses} press(es) until main had the key; its page counted ${pinged}); ${translated}`;
+      // A held key binding (§5.4 `hold`): the fixture's `held` names mod+shift+u with `hold: true`. Main sends its down, two
+      // auto-repeats, another key's up, the shift's up (a modifier let go first ends the hold), then its key's up, each one
+      // event; the page counts what its handler was told: one down and one up, no more.
+      const mod = process.platform === "darwin" ? "meta" : "control";
+      const heldRead = async () => (await pageRead("(() => { const m = document.querySelector('[data-acceptance-ui=\"main\"]'); return m ? `${m.getAttribute('data-held-down')}/${m.getAttribute('data-held-up')}` : ''; })()")) as string;
+      const send = async (key: string, modifiers: string[], type: "down" | "repeat" | "up") => {
+        ctx.pressKey!(key, modifiers, type);
+        await sleep(700); // main polls the key file every 250 ms: one event per write
+      };
+      await send("U", [mod, "shift"], "down");
+      await until("its held command's down on its page", 15_000, async () => ((await heldRead()) === "1/0" ? true : undefined), async () => `its page reads ${await heldRead()}; the app's log: ${ctx.appLog().split("\n").filter((l) => l.includes("keys:")).slice(-4).join(" | ")}`);
+      await send("U", [mod, "shift"], "repeat");
+      await send("U", [mod, "shift"], "repeat");
+      await send("A", [mod, "shift"], "up");
+      await sleep(800);
+      if ((await heldRead()) !== "1/0") fail(`after its key's repeats and another key's up, its page reads ${await heldRead()} (down/up), not 1/0`);
+      await send("Shift", [mod], "up");
+      await until("its held command's up on its page", 15_000, async () => ((await heldRead()) === "1/1" ? true : undefined), async () => `its page reads ${await heldRead()}`);
+      await send("U", [mod], "up");
+      await sleep(800);
+      if ((await heldRead()) !== "1/1") fail(`after its key's own up (the hold already ended), its page reads ${await heldRead()}, not 1/1`);
+      const heldLines = ctx.appLog().split("\n").filter((l) => l.includes(`keys: ${id}.held `));
+      // A log made of two sources (the app's own output and the home's app log) may hold a line twice: each source counts alone.
+      const once = (what: string) => Math.max(...[true, false].map((own) => heldLines.filter((l) => l.startsWith("[clover-app]") === own && l.includes(what)).length));
+      if (once(`${id}.held down from its key`) !== 1 || once(`${id}.held up from its key`) !== 1) fail(`the app's log has these held-key lines: ${heldLines.join(" | ")}`);
+      const repeats = ctx.appLog().split("\n").filter((l) => /keys: repeated .*\+U in the window/.test(l)).length;
+      const keyed = `its command ${id}.ping, bound to mod+shift+y, ran from a real key press in the window (${presses} press(es) until main had the key; its page counted ${pinged}); its held command ${id}.held (mod+shift+u, hold) got one down and one up from real key events (a down, ${repeats} repeat(s), another key's up and the shift let go first, then its key's up): its page counted 1 down and 1 up; ${translated}`;
       // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, its row's Open, Turn off.
       const shell = keyShell;
       for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
