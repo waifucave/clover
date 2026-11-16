@@ -36,7 +36,7 @@ describe("staging: only committed files", () => {
   test("writes HEAD's blobs under plugins/, less what a release leaves out", () => {
     const dir = repo(committed);
     const dest = join(dir, "out", "plugins");
-    expect(stageBundledPlugins(dir, dest).sort()).toEqual(["alpha/moss.json", "moss/moss.json", "moss/host.js"]);
+    expect(stageBundledPlugins(dir, dest).sort()).toEqual(["alpha/moss.json", "moss/host.js", "moss/moss.json"]);
     expect(readFileSync(join(dest, "moss", "moss.json"), "utf8")).toBe(`{"id":"moss"}`);
     expect(existsSync(join(dest, "alpha", "tab", "tsconfig.json"))).toBe(false);
   });
@@ -253,7 +253,7 @@ describe("the bundled plugins, built for shipping (lane B's buildPluginForShippi
     expect(calls.map((c) => [c.folder.split("/").slice(-2).join("/"), c.target, c.out === join(dest, c.folder.split("/").at(-1)!)])).toEqual([["plugins/alpha", "linux-x64", true], ["plugins/moss", "linux-x64", true]]);
     // The staging filter applies to the source: the committed tsconfig is never handed to the build.
     expect(calls[0]!.seen).toEqual(["moss.json"]);
-    expect(built.files).toEqual(["alpha/moss.json", "moss/moss.json", "moss/host.js", "moss/node_modules/node-datachannel/package.json"]);
+    expect(built.files).toEqual(["alpha/moss.json", "moss/host.js", "moss/moss.json", "moss/node_modules/node-datachannel/package.json"]);
     expect(built.modules.map((m) => m.file)).toEqual(["moss/host.js"]);
     expect(built.natives).toEqual([{ file: "moss/node_modules/node-datachannel/package.json", package: "node-datachannel", target: "linux-x64" }]);
   });
@@ -336,7 +336,7 @@ describe("what the bundler read: every input tracked at HEAD or in a package bun
     const built = await buildPluginModule({ entry: join(dir, "plugins", "moss", "host.ts"), outFile: join(out, "host.js"), side: "bun" });
     // Inlined: the copy filter never saw it.
     expect(built.source).toContain("generated, never committed");
-    expect(built.inputs.map((p) => p.split("/").slice(-2).join("/")).sort()).toEqual(["moss/host.ts", "ignored/gen.ts"]);
+    expect(built.inputs.map((p) => p.split("/").slice(-2).join("/")).sort()).toEqual(["ignored/gen.ts", "moss/host.ts"]);
     expect(await repoInputVetter(dir)(built.inputs)).toEqual(["ignored/gen.ts: the build read a file that isn't tracked at HEAD"]);
     // Through the release's build: the build fails, naming it, and the stage is removed.
     const dest = join(dir, "out", "plugins");
