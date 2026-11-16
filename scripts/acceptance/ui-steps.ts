@@ -1330,9 +1330,12 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await waitText("the adult plugin's For adults section", "I am 18 or older");
       // The adult confirm.
       await clickScrolled("I am 18 or older", "button", "I am 18 or older");
+      // From a part it asks on a sealed card (F2's fix round: one press in a plugin's frame never declares the user's age);
+      // nothing is confirmed before the press on the card.
+      const ageCard = await ctx.pressCard!("the age card", (c) => c.kind === "change" && c.change === "plugin-confirm-adult");
       await until("plugin.list adultConfirmed true", 20_000, async () => ((await adultOf()) ? true : undefined));
       await until("the adult section gone", 15_000, async () => ((await treeText(cdp)).includes("I am 18 or older") ? undefined : true), () => dumpFrames(cdp));
-      said.push(`adult: ${adultId} (adult:true, OK card ${adultCard}) showed the confirm until "I am 18 or older" was pressed (plugin.list adultConfirmed true)`);
+      said.push(`adult: ${adultId} (adult:true, OK card ${adultCard}) showed the confirm until "I am 18 or older" was pressed and its sealed card ${ageCard} answered (plugin.list adultConfirmed true)`);
       await clickScrolled("Remove…", "button", "Remove");
       await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove" && (c.pluginId === undefined || c.pluginId === adultId));
       await until(`${adultId} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: adultId }).then(() => false, () => true)) ? true : undefined));

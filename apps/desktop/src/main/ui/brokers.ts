@@ -354,6 +354,12 @@ export class SendGate {
     return this.take(windowId);
   }
 
+  /** The frames the window's latest press landed in (outermost first), for the log line a refused call writes. */
+  pressFrames(windowId: number): readonly string[] | undefined {
+    const f = this.lastPress.get(windowId)?.frames;
+    return f === undefined ? undefined : [...f];
+  }
+
   /** Waits (at most `ms`) until the window's latest press knows its frames (a mouse press asks the frames under the pointer a
    *  moment after it): resolves at once when there is none or it is known. */
   settle(windowId: number, ms = 2_000): Promise<void> {

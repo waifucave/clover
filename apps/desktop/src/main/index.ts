@@ -395,7 +395,11 @@ async function ready(): Promise<void> {
       throw err;
     }),
     // A part's gestured call spends only a press that landed in its own frame (F2, read 52).
-    takeGesture: (windowId, frameId) => sends.takeIn(windowId, frameId),
+    takeGesture: (windowId, frameId) => {
+      const ok = sends.takeIn(windowId, frameId);
+      if (!ok) log(`press: a call from frame ${frameId} found no press of its own (the latest press: ${JSON.stringify(sends.pressFrames(windowId) ?? null)})`);
+      return ok;
+    },
     settleGesture: (windowId) => sends.settle(windowId),
     treeRequest: async (method, params) => {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
