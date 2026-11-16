@@ -95,6 +95,9 @@ if (isRoot || isLayer) {
   contextBridge.exposeInMainWorld("cloverSealed", {
     answer: (option: string, children?: readonly string[]) => ipcRenderer.invoke("clover:sealed-answer", { token, option, children }),
     visible: (visible: boolean) => void ipcRenderer.send("clover:sealed-visible", { token, visible }),
+    // The report a press asked for (a new observer made at the press): whether the button showed whole and uncovered right then, and how
+    // long the report took. The answer that follows is taken only on this.
+    fresh: (seen: boolean, ms: number) => void ipcRenderer.send("clover:sealed-fresh", { token, seen, ms }),
     // A press the page saw, in one word of a fixed set (what it did with it); the app logs it with the card's id.
     pressed: (what: string) => void ipcRenderer.send("clover:sealed-press", { token, what }),
     size: (height: number) => void ipcRenderer.send("clover:sealed-size", { token, height }),

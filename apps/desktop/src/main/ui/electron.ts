@@ -423,6 +423,8 @@ export interface IpcHooks {
    *  a card's buttons show (§5.5's fallback rule). Checked like the answer: the sender must be the sealed frame its
    *  token was served to. */
   sealedVisible(token: string, visible: boolean): void;
+  /** The report a press asked for: the button showed whole and uncovered at the press (`seen`), after `ms`. */
+  sealedFresh(token: string, seen: boolean, ms: number): void;
   /** A press the sealed page saw and what it did with it (one of `SEALED_PRESS_WORDS`). */
   sealedPress(token: string, what: string): void;
   /** The app's own card page says how tall it is, so its window fits it (a number, nothing else). */
@@ -914,6 +916,25 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (bound === undefined || bound !== key) throw new LayerError("bad sealed visibility");
     return hooks.sealedVisible(token, visible);
   });
+  // The report a press asked for: a new observer the page made at the press says whether the button shows whole and uncovered right
+  // now. Checked like the visibility report: the sender is the sealed frame its token was served to, on the channel the mint bound.
+  on("clover:sealed-fresh", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+    if (inRender(event)) return;
+    const token = str(a.token, 128);
+    const seen = typeof a.seen === "boolean" ? a.seen : undefined;
+    const ms = typeof a.ms === "number" && Number.isFinite(a.ms) ? Math.max(0, Math.min(60_000, Math.round(a.ms))) : undefined;
+    if (token === undefined || seen === undefined || ms === undefined) throw new LayerError("bad sealed report");
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (urlToken === null || urlToken !== token) throw new LayerError("bad sealed report");
+    const key = f.parent !== null && !f.parent.detached
+      ? `p:${f.parent.processId}:${f.parent.routingId}`
+      : `m:${f.processId}:${f.routingId}`;
+    const bound = runtime.boundOf(token);
+    if (bound === undefined || bound !== key) throw new LayerError("bad sealed report");
+    return hooks.sealedFresh(token, seen, ms);
+  });
   // A press the sealed page saw, in one word of a fixed set: logged with the card's id, so a press that did nothing says why.
   // Checked like the visibility report: the sender is the sealed frame its token was served to, on the channel the mint bound.
   on("clover:sealed-press", (event, a) => {
@@ -975,7 +996,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:shell", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:shell", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible", "clover:sealed-fresh"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag", "clover:shell-report", "clover:sealed-size", "clover:sealed-press"]) ipcMain.removeAllListeners(c);
   };
 }

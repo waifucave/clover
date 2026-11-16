@@ -121,8 +121,10 @@ function cardRegistry(path: string, withFixture = true, alpha = false): string {
 
 /** Start the app against the fake daemon, click via the smoke run, and return the run's output. */
 async function runApp(opts: {
-  click?: { cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean };
+  click?: { cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number };
   acting?: boolean;
+  dropFresh?: boolean;
+  pinVisible?: boolean;
   fallback?: boolean;
   card?: Record<string, unknown>;
   withFixture?: boolean;
@@ -142,6 +144,8 @@ async function runApp(opts: {
       CLOVER_TEST_MAIN_FRONT_FILE: frontFile,
       ...(opts.click !== undefined ? { CLOVER_SMOKE_SEALED_CLICK: JSON.stringify(opts.click) } : {}),
       ...(opts.fallback === true ? { CLOVER_SMOKE_SEALED_FALLBACK: "1" } : {}),
+      ...(opts.pinVisible === true ? { CLOVER_SMOKE_PIN_VISIBLE: "1" } : {}),
+      ...(opts.dropFresh === true ? { CLOVER_SMOKE_DROP_FRESH: "1" } : {}),
       CLOVER_SMOKE_SETTLE_MS: "3000",
     }),
     stdio: ["ignore", "pipe", "pipe"],
@@ -218,6 +222,61 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     expect(r.output).toContain("presses=[[");
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);
   }, 120_000);
+
+  // The press counts only if the visibility report that FOLLOWS it still says visible: a click-through cover drawn N ms before a press on a
+  // button the page had long reported ready is in that report, whatever the page's last timer-driven verdict said.
+  for (const lead of [10, 50, 150, 190]) {
+    onCi(`a cover drawn ${lead} ms before the press does not land (fresh report)`, async () => {
+      const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", coverLead: lead } });
+      expect(r.output).toContain(`press ${lead} ms after the cover`);
+      expect(r.output).toContain("presses=[[");
+      // Refused either by the page's own gate (it had already seen the cover) or by the fresh report: never an answer.
+      expect(r.output).toMatch(/not-visible|covered|none in time/);
+      expect(answerCallsOf(r.home), r.output).toHaveLength(0);
+    }, 120_000);
+  }
+
+  onCi("an uncovered press lands after the fresh report, and the added delay is logged", async () => {
+    const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once" } });
+    const m = r.output.match(/fresh report uncovered after (\d+) ms/);
+    expect(m, r.output).not.toBeNull();
+    expect(Number(m![1])).toBeLessThan(400);
+    console.log(`fresh report delay (uncovered press): ${m![1]} ms`);
+    expect(answerCallsOf(r.home), r.output).toHaveLength(1);
+  }, 120_000);
+
+  onCi("a press with no fresh report is refused (test build drops the report)", async () => {
+    const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once" }, dropFresh: true });
+    expect(r.output).toContain("sealed: answer refused (no visibility report came with the press)");
+    expect(answerCallsOf(r.home), r.output).toHaveLength(0);
+  }, 120_000);
+
+  // The cover an attacker would draw: by the EMBEDDING document over the sealed iframe, click-through and see-through, a few ms before
+  // the press. The page's own document holds nothing of it; the fresh report (a new observer made at the press) is what must say so.
+  for (const lead of [0, 2, 5, 10, 50, 150, 190]) {
+    onCi(`a cover drawn by the embedder ${lead} ms before the press, the page's own verdict pinned visible: the fresh report refuses it`, async () => {
+      const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", parentCoverLead: lead }, pinVisible: true });
+      expect(r.output).toContain(`press ${lead} ms after the parent cover`);
+      expect(r.output).toContain("presses=[[");
+      const line = /sealed: press on [^\n]*(fresh report [^\n]*)/.exec(r.output)?.[1] ?? "(no fresh line)";
+      console.log(`parent cover ${lead} ms (verdict pinned): ${line}`);
+      const landed = answerCallsOf(r.home).length;
+      console.log(`parent cover ${lead} ms (verdict pinned): ${landed} answer(s) taken`);
+      // At lead 0 the cover and the press are sent together: which one the compositor sees first is not decided here (the measured
+      // window is reported, not asserted). From 2 ms on the fresh report must see the cover and nothing is taken.
+      if (lead >= 2) {
+        expect(r.output).toMatch(/fresh report (covered|none in time) after \d+ ms/);
+        expect(landed, r.output).toBe(0);
+      }
+    }, 120_000);
+    onCi(`the same cover ${lead} ms before the press, nothing pinned: no answer (which gate refused is printed)`, async () => {
+      const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", parentCoverLead: lead } });
+      expect(r.output).toContain("presses=[[");
+      const line = /sealed: press on [^\n]*: (not-visible|fresh report [^\n]*)/.exec(r.output)?.[1] ?? "(none)";
+      console.log(`parent cover ${lead} ms (unpinned): ${line}, ${answerCallsOf(r.home).length} answer(s) taken`);
+      if (lead >= 2) expect(answerCallsOf(r.home), r.output).toHaveLength(0); // at 0 the cover and the press are sent together: reported, not asserted
+    }, 120_000);
+  }
 
   onCi("a semi-transparent (opacity) cover does not land", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", opacity: 0 } });
