@@ -246,10 +246,11 @@ export interface CompanionHandler {
   pairing?(args: { code: string; expiresAt: number }, ctx: HandlerContext): Promise<{ url?: string; qr?: string }>;
 }
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 /** What `register` takes in place of a routine's key: base64url (no padding) of SHA-256 over
- *  `moss hook key v1|<key>`, as the waifucave forwarder's service stores it. */
+ *  `clover hook key v1|<key>`, as the waifucave forwarder's service stores it. */
 export async function webhookKeyHash(key: string): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`moss hook key v1|${key}`)));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`clover hook key v1|${key}`)));
   let bin = "";
   for (const b of digest) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");

@@ -147,17 +147,19 @@ const MAX_ROTATIONS = 256;
 const NAME_RE = /^[^\u0000-\u001f\u007f]{1,63}$/u;
 const KINDS: readonly DeviceKind[] = ["desktop", "server", "cloud", "phone", "browser"];
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /** What a device's app signs to show it holds an answer key. The statement covers the key's algorithm (B's #187): a
- *  P-256 key's is `moss/answer-key/2` with `alg` last; an Ed25519 key's stays `moss/answer-key/1`. */
+ *  P-256 key's is `clover/answer-key/2` with `alg` last; an Ed25519 key's stays `clover/answer-key/1`. */
 export function answerKeyStatement(deviceId: string, publicKey: string, held: string, alg: AnswerKeyAlg = "ed25519"): Uint8Array {
   return alg === "ed25519"
-    ? utf8(`moss/answer-key/1\n${deviceId}\n${publicKey}\n${held}`)
-    : utf8(`moss/answer-key/2\n${deviceId}\n${publicKey}\n${held}\n${alg}`);
+    ? utf8(`clover/answer-key/1\n${deviceId}\n${publicKey}\n${held}`)
+    : utf8(`clover/answer-key/2\n${deviceId}\n${publicKey}\n${held}\n${alg}`);
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /** What the current answer key signs to hand over to the next one. */
 export function answerKeyRotateStatement(deviceId: string, from: string, to: string, at: number): Uint8Array {
-  return utf8(`moss/answer-key-rotate/1\n${deviceId}\n${from}\n${to}\n${at}`);
+  return utf8(`clover/answer-key-rotate/1\n${deviceId}\n${from}\n${to}\n${at}`);
 }
 
 /** Whether `proof` carries a device's answer key from `from` (undefined: the device had none) to `to`. */
@@ -622,12 +624,13 @@ export interface PeerUpdate {
   at: number;
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /** The update as signed: canonical CBOR, so no field's value can read as another's or as "no change". */
 export function peerUpdateStatement(id: string, update: { name?: string; computer?: string; answerKey?: { publicKey: string; held: string; alg?: AnswerKeyAlg } | null; at: number }): Uint8Array {
   // A P-256 key's algorithm is signed too (B's #187); an Ed25519 key's update reads as before.
   const ak = update.answerKey === undefined ? ["keep"] : update.answerKey === null ? ["none"]
     : algOf(update.answerKey) === "ed25519" ? ["key", update.answerKey.publicKey, update.answerKey.held] : ["key", update.answerKey.publicKey, update.answerKey.held, algOf(update.answerKey)];
-  return encode(["moss/device-update/3", id, update.at, update.name === undefined ? ["keep"] : ["set", update.name], update.computer === undefined ? ["keep"] : ["set", update.computer], ak]);
+  return encode(["clover/device-update/3", id, update.at, update.name === undefined ? ["keep"] : ["set", update.name], update.computer === undefined ? ["keep"] : ["set", update.computer], ak]);
 }
 
 /** Names Windows keeps for devices, which lane J's tree refuses as a computer's name. */

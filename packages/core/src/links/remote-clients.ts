@@ -3,7 +3,7 @@
 // speaks the same MOSS protocol it would on the daemon's socket, over a stream on its persistent link: requests
 // and their answers, the daemon's own requests, and the events its role may see.
 //
-// * **The door:** a stream labelled `moss/rpc/1` from a paired, unrevoked phone (role `remote`) or browser (role
+// * **The door:** a stream labelled `clover/rpc/1` from a paired, unrevoked phone (role `remote`) or browser (role
 //   `web`). A computer is refused: computers speak `peer.*` and `sync.*`, never a client role.
 // * **The hello:** the client's first message is `protocol.hello`. The link already proved the device, so the core mints
 //   the role's token for that device itself (lane C's `MossTokens`, `{role, device}`) and passes the hello to lane C's
@@ -19,7 +19,8 @@ import type { Unsubscribe } from "../contracts/common";
 import type { LinkStream, LinkTransport } from "../contracts/link-transport";
 import type { FileDeviceRegistry } from "../devices/registry";
 
-export const REMOTE_RPC_LABEL = "moss/rpc/1";
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
+export const REMOTE_RPC_LABEL = "clover/rpc/1";
 
 /** The connection lane C's server keeps (`MossConn`), as far as the door needs it. */
 export interface RemoteConn {

@@ -172,15 +172,15 @@ describe("notify", () => {
       topic: env.APNS_TOPIC,
       pushType: "alert",
       priority: "10",
-      collapseId: "moss-updates",
+      collapseId: "clover-updates",
     });
     expect(apns.payload).toEqual({
-      aps: { alert: { "loc-key": "MOSS_UPDATES", "loc-args": ["3"] }, badge: 3, sound: "default", "mutable-content": 1, "thread-id": "moss" },
+      aps: { alert: { "loc-key": "CLOVER_UPDATES", "loc-args": ["3"] }, badge: 3, sound: "default", "mutable-content": 1, "thread-id": "clover" },
     });
     const web = entries.filter((e) => e.service === "webpush");
     expect(web.map((e) => e.subscription).sort()).toEqual(["apple", "fcm"]);
     for (const entry of web) {
-      expect(entry).toMatchObject({ status: 201, decrypted: { n: 3 }, ttl: "86400", urgency: "normal", topicHeader: "moss-updates" });
+      expect(entry).toMatchObject({ status: 201, decrypted: { n: 3 }, ttl: "86400", urgency: "normal", topicHeader: "clover-updates" });
       expect(entry.vapidAud).toBe(new URL(entry.url).origin);
       expect(entry.vapidSub).toBe(env.VAPID_SUBJECT);
     }

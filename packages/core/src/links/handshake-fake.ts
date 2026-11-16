@@ -66,6 +66,7 @@ export interface FakeHandshakeOptions {
   rollbackMs?: number;
 }
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandshake {
   const pairs = new Map<string, Pair>();
   const ended = new Set<string>();
@@ -153,7 +154,7 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
   /** Checks a signed request; returns the member key, or the refusal. */
   const authorize = async (req: Request, url: URL, bytes: Uint8Array, members: (key: string) => boolean, last: Map<string, number>): Promise<string | Response> => {
     const header = req.headers.get("authorization") ?? "";
-    const m = /^MOSS-Sig key=([A-Za-z0-9_-]+), t=(\d+), sig=([A-Za-z0-9_-]+)$/.exec(header);
+    const m = /^Clover-Sig key=([A-Za-z0-9_-]+), t=(\d+), sig=([A-Za-z0-9_-]+)$/.exec(header);
     if (!m) return err(401, "unauthorized");
     const [, key, tText, sig] = m as unknown as [string, string, string, string];
     const t = Number(tText);

@@ -390,6 +390,69 @@ describe("Clover→MOSS rename residue", () => {
     expect(analyzeNever("infra/sandbox/profile.sb", `(deny file-write* (subpath "/Applications/Clover.app"))`).never.map((n) => n.id)).toEqual(["clover-app"]);
   });
 
+  // A crypto or wire tag is a value already on the wire and on disk: the deployed services verify it, clients that keep
+  // the old name speak it, and the state stage 2 carries over was signed or derived under it. The identifier around it
+  // is renamed, the string is not, so this table fails the moment one of them is changed to the new name.
+  // The three groups are the allowlist's: `wire-deployed-services`, `wire-clients-keep-name`, `disk-signed-or-derived-state`.
+  describe("the crypto and wire tags keep their old values", () => {
+    const KEPT_TAGS: readonly { name: string; file: string; value: string; group: string }[] = [
+      { name: "account register statement", file: "packages/core/src/identity/account.ts", value: "clover-account-v2 register", group: "wire-deployed-services" },
+      { name: "account mint statement", file: "services/accounts/src/wire.ts", value: "clover-account-v1 mint", group: "wire-deployed-services" },
+      { name: "handshake wire prefix", file: "packages/core/src/links/handshake.ts", value: 'HANDSHAKE_PREFIX = "clover-handshake-v1"', group: "wire-deployed-services" },
+      { name: "handshake client prefix", file: "services/handshake/client/wire.ts", value: 'PREFIX = "clover-handshake-v1"', group: "wire-deployed-services" },
+      { name: "handshake box info", file: "packages/core/src/identity/box-key.ts", value: 'HANDSHAKE_BOX_INFO = "clover handshake v1 box"', group: "wire-deployed-services" },
+      { name: "handshake recovery info", file: "services/handshake/client/recovery.ts", value: 'INFO = "clover handshake v1 recovery"', group: "wire-deployed-services" },
+      { name: "handshake Authorization scheme", file: "services/handshake/client/wire.ts", value: "Clover-Sig key=${key}", group: "wire-deployed-services" },
+      { name: "handshake ticket HMAC key", file: "services/handshake/src/auth.ts", value: "clover-handshake-v1 ticket|", group: "wire-deployed-services" },
+      { name: "relay ticket HMAC key", file: "services/relay/src/auth.ts", value: "clover-relay-v1 ticket|", group: "wire-deployed-services" },
+      { name: "forwarder envelope info", file: "plugins/moss/plugins/forwarder/src/wire/envelope.ts", value: 'utf8("clover forwarder v1")', group: "wire-deployed-services" },
+      { name: "forwarder hook key digest", file: "plugins/moss/plugins/forwarder/src/wire/protocol.ts", value: "clover hook key v1|${key}", group: "wire-deployed-services" },
+      { name: "web pairing transcript", file: "services/web/protocol/pairing.ts", value: '"clover web pairing v1"', group: "wire-deployed-services" },
+      { name: "web pairing words MAC", file: "services/web/protocol/pairing.ts", value: 'utf8("clover web words v1")', group: "wire-deployed-services" },
+      { name: "link ALPN", file: "packages/core/src/links/wire.ts", value: 'ALPN_LINK = "clover/link/1"', group: "wire-clients-keep-name" },
+      { name: "pair ALPN", file: "packages/core/src/links/wire.ts", value: 'ALPN_PAIR = "clover/pair/1"', group: "wire-clients-keep-name" },
+      { name: "link sidecar ALPN", file: "native/link/src/main.rs", value: 'LINK_ALPN: &str = "clover/link/1"', group: "wire-clients-keep-name" },
+      { name: "remote RPC stream label", file: "packages/core/src/links/remote-clients.ts", value: 'REMOTE_RPC_LABEL = "clover/rpc/1"', group: "wire-clients-keep-name" },
+      { name: "pairing QR prefix", file: "packages/core/src/links/pairing.ts", value: 'QR_PREFIX = "clover-pair:1:"', group: "wire-clients-keep-name" },
+      { name: "iOS companion QR prefix", file: "plugins/moss/plugins/companion-ios/host/index.ts", value: 'QR_PREFIX = "clover-pair:1:"', group: "wire-clients-keep-name" },
+      { name: "pair SAS context", file: "packages/core/src/identity/sas.ts", value: 'PAIR_SAS = "clover/pair-sas/1"', group: "wire-clients-keep-name" },
+      { name: "pair proof (host)", file: "packages/core/src/identity/sas.ts", value: 'PAIR_PROOF_HOST = "clover/pair-proof/host/1"', group: "wire-clients-keep-name" },
+      { name: "pair transcript", file: "packages/core/src/identity/sas.ts", value: '"clover/pair-transcript/3"', group: "wire-clients-keep-name" },
+      { name: "group key statement", file: "packages/core/src/links/group.ts", value: "clover/group-key/1", group: "wire-clients-keep-name" },
+      { name: "answer-key statement", file: "packages/core/src/identity/answer-key.ts", value: "clover/answer-key/1", group: "wire-clients-keep-name" },
+      { name: "answer-key rotation statement", file: "packages/core/src/devices/registry.ts", value: "clover/answer-key-rotate/1", group: "wire-clients-keep-name" },
+      { name: "device-update record", file: "packages/core/src/devices/registry.ts", value: '"clover/device-update/3"', group: "wire-clients-keep-name" },
+      { name: "card-answer statement", file: "packages/protocol/src/approvals.ts", value: "clover/card-answer/2", group: "wire-clients-keep-name" },
+      { name: "user-message statement", file: "packages/protocol/src/sessions.ts", value: "clover/user-message/1", group: "wire-clients-keep-name" },
+      { name: "memory mail info", file: "packages/core/src/sync/memory.ts", value: 'MAIL_INFO = "clover memory v1 mail"', group: "wire-clients-keep-name" },
+      { name: "memory key statement", file: "packages/core/src/sync/memory-keys.ts", value: "clover-memory-v1 key commit", group: "wire-clients-keep-name" },
+      { name: "update feed signed statement", file: "packages/update-feed/src/index.ts", value: "clover-update-feed-v1", group: "wire-clients-keep-name" },
+      { name: "push alert key", file: "services/push/src/apns.ts", value: '"loc-key": "CLOVER_UPDATES"', group: "wire-clients-keep-name" },
+      { name: "plugin registry MAC context", file: "packages/core/src/registry/state.ts", value: "clover/plugin-registry/1", group: "disk-signed-or-derived-state" },
+      { name: "saved allow rule hash", file: "packages/core/src/approvals/strings.ts", value: "clover-saved-rule-v1", group: "disk-signed-or-derived-state" },
+      { name: "cowork peer-send digest", file: "packages/core/src/cowork/peer-inbox.ts", value: 'DIGEST_VERSION = "clover.cowork.peer-send.v1"', group: "disk-signed-or-derived-state" },
+      { name: "web companion key store", file: "services/web/src/store.ts", value: 'DB = "clover-companion"', group: "disk-signed-or-derived-state" },
+    ];
+
+    test.each(KEPT_TAGS.map((t) => [t.name, t] as const))("%s", (_name, tag) => {
+      const text = readFileSync(join(repoRoot(), tag.file), "utf8");
+      expect(text.includes(tag.value), `${tag.file} no longer spells ${tag.value}`).toBe(true);
+      // The new spelling of the same value is the mistake this table exists to catch.
+      expect(text.includes(tag.value.replace(/clover/g, "moss").replace(/Clover/g, "MOSS").replace(/CLOVER/g, "MOSS")), `${tag.file} spells the renamed ${tag.value}`).toBe(false);
+      expect(MOSS_ALLOWLIST.some((e) => e.id === tag.group)).toBe(true);
+    });
+
+    test("each tag is permitted by the allowlist group it names", () => {
+      for (const tag of KEPT_TAGS) {
+        const entry = MOSS_ALLOWLIST.find((e) => e.id === tag.group);
+        const clover = /clover|Clover|CLOVER/.exec(tag.value);
+        expect(clover, tag.name).not.toBeNull();
+        const probe = new RegExp(entry!.regex.source, "g");
+        expect(probe.test(tag.value) || /thread-id|loc-key/.test(tag.value), `${tag.name}: ${tag.value} is not matched by ${tag.group}`).toBe(true);
+      }
+    });
+  });
+
   test("the old names live in one helper: nothing else in live code spells them", () => {
     const { hits } = scan();
     const spelled = hits.filter((h) => /(?<![A-Za-z0-9_])\.clover(?![A-Za-z0-9_-])|CLOVER\.md|\bclover\.json\b/.test(h.context)).map((h) => h.file);

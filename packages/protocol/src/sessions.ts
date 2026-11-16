@@ -176,10 +176,11 @@ export function userMessageHashInput(m: Pick<UserMessageInput, "text" | "images"
   return canonicalJson({ text: m.text, images: m.images ?? [], files: m.files ?? [] });
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /** What the sending device signs for a message another computer may relay (review N3): the session, the client's
  *  message id, the message's hash and its send time, one per line. */
 export function userMessageSigningInput(a: { session: string; clientMessageId: string; hash: string; sentAt: number }): string {
-  return `moss/user-message/1\n${a.session}\n${a.clientMessageId}\n${a.hash}\n${a.sentAt}`;
+  return `clover/user-message/1\n${a.session}\n${a.clientMessageId}\n${a.hash}\n${a.sentAt}`;
 }
 
 /** A routine, as the synced list keeps it (§8.5): any device can show it, even while its computer is off. */

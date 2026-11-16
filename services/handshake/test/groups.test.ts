@@ -42,8 +42,8 @@ describe("membership", () => {
     const { group, founder, c } = await createdGroup();
     const joiner = await signer();
     const t = Date.now();
-    const sig = await signText(joiner, `moss-handshake-v1 join\n${group}\n${joiner.key}\n${t}`);
-    const wrongAdmit = await signText(founder, `moss-handshake-v1 admit\n${group}\n${joiner.key}\n${t + 1}`);
+    const sig = await signText(joiner, `clover-handshake-v1 join\n${group}\n${joiner.key}\n${t}`);
+    const wrongAdmit = await signText(founder, `clover-handshake-v1 admit\n${group}\n${joiner.key}\n${t + 1}`);
     const err = await refusal(c.joinGroup(group, { key: joiner.key, t, sig, by: founder.key, bysig: wrongAdmit }));
     expect(err.status).toBe(401);
   });

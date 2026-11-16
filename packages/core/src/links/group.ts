@@ -679,9 +679,10 @@ function parseInfo(raw: unknown): GroupInfo | undefined {
   };
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /** What a member signs with its group key to show it holds the key it names for its device. */
 export function groupKeyStatement(group: string, device: string): Uint8Array {
-  return utf8(`moss/group-key/1\n${group}\n${device}`);
+  return utf8(`clover/group-key/1\n${group}\n${device}`);
 }
 
 /** The first `n` defined results of `ps`, as soon as they're in (or all there are, once every one has settled). */

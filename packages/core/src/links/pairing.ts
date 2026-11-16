@@ -1,5 +1,5 @@
 // Pairing without an account (spec §8.1): a code or QR, the 4-word check on both devices, then the user's sealed card
-// (or their own terminal). It runs over its own ALPN (`moss/pair/1`), the one door that takes a key the registry
+// (or their own terminal). It runs over its own ALPN (`clover/pair/1`), the one door that takes a key the registry
 // doesn't know; the link's ALPN refuses unpaired keys.
 //
 // The QR carries the pairing's id and 32-byte secret, the host's link key and where to reach it. The short code a
@@ -16,7 +16,7 @@
 // Each device adds the other once both confirms have crossed. The words and the pair secret cover both nonces
 // (identity/sas.ts).
 //
-// The pair door (`moss/pair/1`) is the one that takes an unknown key, so it is kept narrow: a connection is turned
+// The pair door (`clover/pair/1`) is the one that takes an unknown key, so it is kept narrow: a connection is turned
 // away unless this device shows a pairing, its first frame must come within `FIRST_FRAME_MS`, and at most
 // `MAX_DOOR_ATTEMPTS` run at once.
 //
@@ -51,7 +51,8 @@ import { ALPN_PAIR, CLOSE_NORMAL, CLOSE_PROTOCOL, type DialTarget, type WireConn
 type PairingView = z.infer<typeof PairingViewSchema>;
 
 export const PAIRING_TTL_MS = 10 * 60_000;
-const QR_PREFIX = "moss-pair:1:";
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
+const QR_PREFIX = "clover-pair:1:";
 const STEP_TIMEOUT_MS = 30_000;
 /** How long an incoming pairing connection has to send its hello. */
 const FIRST_FRAME_MS = 10_000;
@@ -892,12 +893,14 @@ export function parseCode(code: string): Bytes | undefined {
   return out.length === 15 ? own(new Uint8Array(out)) : undefined;
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 function codeSecret(part: Uint8Array): Bytes {
-  return own(new Uint8Array(hkdfSync("sha256", part, new Uint8Array(0), utf8("moss/pair-code-secret/1"), 32)));
+  return own(new Uint8Array(hkdfSync("sha256", part, new Uint8Array(0), utf8("clover/pair-code-secret/1"), 32)));
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 function rendezvousKey(part: Uint8Array): Bytes {
-  return own(new Uint8Array(hkdfSync("sha256", part, new Uint8Array(0), utf8("moss/pair-rendezvous/1"), 32)));
+  return own(new Uint8Array(hkdfSync("sha256", part, new Uint8Array(0), utf8("clover/pair-rendezvous/1"), 32)));
 }
 
 function rendezvousContext(slot: string) {

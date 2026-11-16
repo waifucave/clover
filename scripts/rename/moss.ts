@@ -139,6 +139,27 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
     files: ["services/*/wrangler.jsonc"],
     why: "live infrastructure: the deployed Cloudflare Worker names and the service bindings that name them, which move with a deliberate deploy, so a deploy from this tree updates the live Workers and never creates new ones",
   },
+  // ── Crypto and wire tags: the value is already on the wire or on disk, so it keeps its old spelling ─
+  // Identifier names may be renamed; the string a signature, a MAC, a key derivation or a protocol check covers may not.
+  // Each tag table is a plain alternation, so a tag added to one of these entries is a deliberate act.
+  {
+    id: "wire-deployed-services",
+    regex:
+      /(?<![A-Za-z0-9_-])(?:clover-account-v[12]|clover-handshake-v1|clover handshake v1|clover-relay-v1|clover forwarder (?:v1|kid)|clover hook key v1|clover web (?:invite key|invite secret|pair secret|pairing v1|words v1)|Clover-Sig)(?![A-Za-z0-9_-])/g,
+    why: "on the wire: verified by deployed services (accounts, handshake, relay, forwarder and the web companion's pairing): their verifiers still check these signature, MAC and key-derivation contexts, and they move with a deliberate deploy",
+  },
+  {
+    id: "wire-clients-keep-name",
+    regex:
+      /(?<![A-Za-z0-9_-])(?:clover\/(?:link|pair|rpc|pair-code-secret|pair-rendezvous|pair-secret|pair-id|pair-sas|pair-commit|group-key|user-message)\/1|clover\/pair-proof\/(?:host|joiner)\/1|clover\/pair-transcript\/(?:joiner\/3|3|final\/1)|clover\/answer-key(?:-rotate)?\/[12]|clover\/card-answer\/[12]|clover\/device-update\/3|clover-memory-v1|clover memory v1|clover-update-feed-v1|CLOVER_UPDATES|clover-updates)(?![A-Za-z0-9_])|(?<![A-Za-z0-9_-])clover-pair:1:|(?<="thread-id": ")clover(?=")/g,
+    why: "on the wire: spoken by clients that keep their name (the iOS companion, the installed Clover until stage 2, other computers on the old build): the link and pair ALPNs, the pairing QR prefix and key-derivation contexts, the answer-key and card-answer statements, the device-update record, the memory-sync contexts, the update feed's signed statement and the push alert key",
+  },
+  {
+    id: "disk-signed-or-derived-state",
+    regex:
+      /(?<![A-Za-z0-9_-])(?:clover\/plugin-registry\/1|clover-saved-rule-v1|clover\.cowork\.peer-send\.v1|clover-companion)(?![A-Za-z0-9_-])/g,
+    why: "on disk: signed or derived state carried over: the plugin registry's MAC context, the saved allow rule's hash, the cowork peer-send digest version and the web companion's browser-side key store, all of which were written under these names",
+  },
   // ── Old names a user wrote on disk outside the home, read by the one helper ───────────────────
   {
     id: "old-names",

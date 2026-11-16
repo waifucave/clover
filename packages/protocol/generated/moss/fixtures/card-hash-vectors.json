@@ -152,6 +152,6 @@
         "luna/deck"
       ]
     },
-    "input": "moss/card-answer/2\ncard_0a1b2c3d4e5f60718293a4b5\n372f3fc73fbbf32ea4aa14bd4d27b90b5cef2f780ba9f51ae38822bcc608f5c9\napprove\n1781270001000\nluna/deck,luna/tarot-panel"
+    "input": "clover/card-answer/2\ncard_0a1b2c3d4e5f60718293a4b5\n372f3fc73fbbf32ea4aa14bd4d27b90b5cef2f780ba9f51ae38822bcc608f5c9\napprove\n1781270001000\nluna/deck,luna/tarot-panel"
   }
 }

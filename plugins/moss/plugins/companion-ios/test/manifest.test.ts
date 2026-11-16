@@ -29,7 +29,7 @@ describe("moss.json", () => {
 });
 
 describe("the pairing link", () => {
-  const qr = "moss-pair:1:gmRhYmNk";
+  const qr = "clover-pair:1:gmRhYmNk";
 
   test("carries a QR pairing in the fragment, and the QR is the pairing itself", async () => {
     expect(await host.companion.pairing({ code: qr, expiresAt: Date.now() + 600_000 })).toEqual({ url: `moss://pair#${qr}`, qr });

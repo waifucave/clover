@@ -182,7 +182,7 @@ describe("the declarations", () => {
   });
 
   test("a routine's key reaches an ingress only as its hash; the long poll fits the 10-minute cap", async () => {
-    const want = createHash("sha256").update("moss hook key v1|k3y").digest("base64url");
+    const want = createHash("sha256").update("clover hook key v1|k3y").digest("base64url");
     expect(await webhookKeyHash("k3y")).toBe(want);
     expect(WEBHOOK_NEXT_WAIT_MAX_MS + WEBHOOK_NEXT_GRACE_MS).toBeLessThanOrEqual(API_CALL_MAX_TIMEOUT_MS);
     expect(WEBHOOK_NEXT_MAX_BYTES).toBe(WEBHOOK_NEXT_MAX * WEBHOOK_BODY_MAX_BYTES);

@@ -74,7 +74,7 @@ describe.skipIf(process.platform === "win32")("the app against a real daemon (la
       const k = generateKeyPairSync("ed25519");
       const der = k.publicKey.export({ format: "der", type: "spki" });
       const publicKey = Buffer.from(der.subarray(der.length - 32)).toString("base64");
-      const statement = Buffer.from(`moss/answer-key/1\n${self.id}\n${publicKey}\nnone`);
+      const statement = Buffer.from(`clover/answer-key/1\n${self.id}\n${publicKey}\nnone`);
       const unsigned = await c.request("device.answerKey.set", { publicKey, held: "none", signature: sign(null, Buffer.from("something else"), k.privateKey).toString("base64") });
       expect(unsigned.error?.code).toBeDefined();
       expect(unsigned.error?.code).not.toBe(-32601);

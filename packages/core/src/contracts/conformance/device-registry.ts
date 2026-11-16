@@ -22,7 +22,7 @@ export type DeviceRegistryPendingCase = "answer-alg";
 
 export function runDeviceRegistryConformance(make: DeviceRegistryFactory, opts: { pending?: readonly DeviceRegistryPendingCase[] } = {}): void {
   const pendingOr = (key: DeviceRegistryPendingCase) => (opts.pending?.includes(key) ? test.todo : test);
-  const data = new TextEncoder().encode("moss/card-answer/1\ncard_abcdef\n00\napprove\n5");
+  const data = new TextEncoder().encode("clover/card-answer/1\ncard_abcdef\n00\napprove\n5");
 
   describe("DeviceRegistry", () => {
     test("this device has its own key, and its id is derived from it", async () => {

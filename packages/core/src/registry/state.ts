@@ -194,6 +194,7 @@ export interface RegistryStoreOptions {
   onTampered?: (file: string) => void;
 }
 
+// Keeps its old spelling on purpose: signed or derived state on disk carries this value over from the old install.
 export function fileRegistryStore(stateDir: string, opts: RegistryStoreOptions = {}): RegistryStore {
   const installed = join(stateDir, "installed.json");
   const ok = (id: string) => join(stateDir, "oks", `${fileId(id)}.json`);
@@ -202,7 +203,7 @@ export function fileRegistryStore(stateDir: string, opts: RegistryStoreOptions =
   const counters: Record<string, number> = { ...(opts.counters ?? {}) };
   const nameOf = (file: string) => relative(stateDir, file).split(sep).join("/");
   const mac = (name: string, gen: number, body: string) =>
-    createHmac("sha256", opts.macKey!).update(`moss/plugin-registry/1\0${name}\0${gen}\0${body}`).digest("hex");
+    createHmac("sha256", opts.macKey!).update(`clover/plugin-registry/1\0${name}\0${gen}\0${body}`).digest("hex");
   const write = (file: string, value: unknown) => {
     const body = JSON.stringify(value);
     let env: Envelope = { body };

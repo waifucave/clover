@@ -226,11 +226,12 @@ export function cardContentInput(card: CardContent): string {
   return canonicalJson({ kind: card.kind, change: card.change, binds: card.binds, fields: card.fields, options: card.options, children: card.children?.map(({ id, label }) => ({ id, label })) });
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /** What a paired device signs to answer a card: the card's id and hash, the option, the time, and the children it
  *  checked (a plugin OK's checkboxes), sorted and joined by `,` on the last line (empty when there are none). */
 export function cardAnswerSigningInput(a: { id: string; hash: string; option: string; at: number; children?: readonly string[] }): string {
   const children = [...(a.children ?? [])].sort().join(",");
-  return `moss/card-answer/2\n${a.id}\n${a.hash}\n${a.option}\n${a.at}\n${children}`;
+  return `clover/card-answer/2\n${a.id}\n${a.hash}\n${a.option}\n${a.at}\n${children}`;
 }
 
 /** How far a device's clock may stray from the shared clock when it signs an answer. */

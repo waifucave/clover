@@ -13,16 +13,18 @@ export interface RegisterFields {
   os?: string;
 }
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 /**
- * A registration's statement: lane H's `moss-account-v2 register`, the deterministic CBOR array (the core's
+ * A registration's statement: lane H's `clover-account-v2 register`, the deterministic CBOR array (the core's
  * links/codec) of the account, every field of the device as sent (`os` null when absent) and `t`. Binding the
  * box key and the record means a session holder can't re-send a device's signature with another box key.
  */
 export const registerStatement = (account: string, d: RegisterFields, t: number): Uint8Array =>
-  cborArray(["moss-account-v2 register", account, d.id, d.publicKey, d.boxKey, d.name, d.kind, d.os ?? null, t]);
+  cborArray(["clover-account-v2 register", account, d.id, d.publicKey, d.boxKey, d.name, d.kind, d.os ?? null, t]);
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 export const mintStatement = (account: string, audience: string, device: string, t: number): Uint8Array =>
-  utf8(["moss-account-v1 mint", account, audience, device, String(t)].join("\n"));
+  utf8(["clover-account-v1 mint", account, audience, device, String(t)].join("\n"));
 
 /**
  * The deterministic CBOR (RFC 8949, shortest heads) of an array of text strings, nulls and non-negative safe

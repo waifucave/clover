@@ -272,14 +272,14 @@ export const DEVICES_METHODS = {
   deviceAnswerKeySet: defineMethod({
     /** The app's main process hands the core the key it answers cards with (H-M1's ask; item 91): held apart from the
      *  core's link key, so plugin code can't sign with it where the OS allows. The core takes it only with the app's
-     *  signature over `moss/answer-key/1\n<device>\n<publicKey>\n<held>` (`setOwnAnswerKey`), for a desktop. */
+     *  signature over `clover/answer-key/1\n<device>\n<publicKey>\n<held>` (`setOwnAnswerKey`), for a desktop. */
     /** The first key applies at once. Replacing one is a sensitive change (#179's review, check 2): other computers
      *  trust that key with their cards, so it ends in a sealed card (`{ applied: false, card }`). */
     name: "device.answerKey.set", owner: "H", roles: ["app"], userOnly: true,
     params: z.object({
       publicKey: Base64Key, held: AnswerKeyHolder, alg: AnswerKeyAlg.optional(), signature: Base64Key,
       /** Replacing a key this desktop already holds: the current key's hand-over, its signature over
-       *  `moss/answer-key-rotate/1\n<device>\n<from>\n<to>\n<at>` (`answerKeyRotateStatement`). The user's yes on a
+       *  `clover/answer-key-rotate/1\n<device>\n<from>\n<to>\n<at>` (`answerKeyRotateStatement`). The user's yes on a
        *  sealed change card bound to exactly this hand-over then applies it (`{ applied: false, card }` until then). */
       rotation: z.object({ from: Base64Key, at: Timestamp, signature: Base64Key }).optional(),
     }),

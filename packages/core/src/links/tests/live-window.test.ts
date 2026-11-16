@@ -63,7 +63,7 @@ describe.skipIf(!built)("a live stream's window (L-M3)", () => {
     const started = new Promise<void>((r) => (go = r));
     let got = 0;
     const finished = new Promise<void>((resolve) => {
-      b.wire.onIncoming("moss/link/1", (conn) => conn.onStream((ws) => {
+      b.wire.onIncoming("clover/link/1", (conn) => conn.onStream((ws) => {
         // As the receiving transport does once it read a live stream's header.
         ws.setWindow?.(W);
         ws.onData(async (c) => {
@@ -74,7 +74,7 @@ describe.skipIf(!built)("a live stream's window (L-M3)", () => {
         ws.onFin(() => resolve());
       }));
     });
-    const conn = await a.wire.dial({ key: b.key.publicKey, direct: b.direct }, { alpn: "moss/link/1", timeoutMs: 5000 });
+    const conn = await a.wire.dial({ key: b.key.publicKey, direct: b.direct }, { alpn: "clover/link/1", timeoutMs: 5000 });
     const s = conn.openStream(1, { window: W });
     expect(a.ops.find((m) => m.op === "open")).toMatchObject({ window: W });
     let written = 0;

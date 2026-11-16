@@ -84,14 +84,16 @@ async function hkdf(ikm: Uint8Array, salt: Uint8Array, info: string, length = 32
   return new Uint8Array(await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt: salt as Uint8Array<ArrayBuffer>, info: utf8(info) }, key, length * 8));
 }
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 /** The invite key B0, which both ends can sign with (the computer when it registers P1, the page on P1). */
 export async function inviteSigner(invite: Pick<Invite, "pair" | "secret">): Promise<Signer> {
-  return signerFromSeed(await hkdf(invite.secret, fromB64u(invite.pair), "moss web invite key"));
+  return signerFromSeed(await hkdf(invite.secret, fromB64u(invite.pair), "clover web invite key"));
 }
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 /** P1's pair secret, for its boxes. */
 export function invitePairSecret(invite: Pick<Invite, "pair" | "secret">): Promise<Uint8Array> {
-  return hkdf(invite.secret, fromB64u(invite.pair), "moss web invite secret");
+  return hkdf(invite.secret, fromB64u(invite.pair), "clover web invite secret");
 }
 
 // ---- the exchange ----
@@ -155,8 +157,9 @@ export interface Transcript {
   code: string;
 }
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 function transcriptBytes(t: Transcript): Uint8Array {
-  return utf8(["moss web pairing v1", t.invitePair, t.pair, t.computerKey, t.browserKey, t.computerX25519, t.browserX25519, t.code].join("\n"));
+  return utf8(["clover web pairing v1", t.invitePair, t.pair, t.computerKey, t.browserKey, t.computerX25519, t.browserX25519, t.code].join("\n"));
 }
 
 export async function generateX25519(): Promise<{ publicKey: string; privateKey: CryptoKey }> {
@@ -164,6 +167,7 @@ export async function generateX25519(): Promise<{ publicKey: string; privateKey:
   return { publicKey: b64u(new Uint8Array((await crypto.subtle.exportKey("raw", pair.publicKey)) as ArrayBuffer)), privateKey: pair.privateKey };
 }
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 /**
  * The lasting pair's secret and the four words, from this end's X25519 private key and the other end's public key.
  * Both ends get the same values from the same transcript.
@@ -178,10 +182,10 @@ export async function pairingResult(
   const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: "X25519", public: peer } as unknown as AlgorithmIdentifier, own, 256));
   const bytes = transcriptBytes(transcript);
   const digest = await sha256(bytes);
-  const secret = await hkdf(concatBytes(shared, inviteSecret), digest, "moss web pair secret");
+  const secret = await hkdf(concatBytes(shared, inviteSecret), digest, "clover web pair secret");
   shared.fill(0);
   const macKey = await crypto.subtle.importKey("raw", secret as Uint8Array<ArrayBuffer>, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", macKey, concatBytes(utf8("moss web words v1"), bytes)));
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", macKey, concatBytes(utf8("clover web words v1"), bytes)));
   return { secret, words: wordsFrom(mac) };
 }
 

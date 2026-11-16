@@ -110,6 +110,7 @@ export function allowedEndpoint(endpoint: string, hosts: string): boolean {
     .some((allowed) => (allowed.startsWith("*.") ? host.endsWith(allowed.slice(1)) && host.length > allowed.length - 1 : host === allowed));
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 export async function sendWebPush(
   config: VapidConfig,
   subscription: WebPushSubscription,
@@ -126,7 +127,7 @@ export async function sendWebPush(
       "content-type": "application/octet-stream",
       ttl: String(options.ttlSeconds),
       urgency: options.urgent ? "high" : "normal",
-      topic: "moss-updates",
+      topic: "clover-updates",
     },
     body,
     signal: AbortSignal.timeout(options.timeoutMs ?? PUSH_TIMEOUT_MS),

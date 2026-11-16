@@ -14,7 +14,8 @@ import type { SecretRef } from "../contracts/secret-store";
 import { type Bytes, concat, fromBase64Url, fromUtf8, own, randomBytes, toBase64Url, utf8 } from "../identity/bytes";
 import type { Ed25519Key } from "../identity/keys";
 
-export const HANDSHAKE_PREFIX = "moss-handshake-v1";
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
+export const HANDSHAKE_PREFIX = "clover-handshake-v1";
 export const HANDSHAKE_AUDIENCE = "handshake.waifucave.com";
 
 export type HandshakeKind = "addr" | "dial" | "signal";
@@ -83,9 +84,10 @@ export function requestStatement(method: string, pathAndQuery: string, t: number
   return utf8([`${HANDSHAKE_PREFIX} request`, method.toUpperCase(), pathAndQuery, String(t), digest].join("\n"));
 }
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 export function authorizationHeader(key: Ed25519Key, method: string, pathAndQuery: string, t: number, body: Uint8Array): string {
   const sig = key.sign(requestStatement(method, pathAndQuery, t, body));
-  return `MOSS-Sig key=${toBase64Url(key.publicKey)}, t=${t}, sig=${toBase64Url(sig)}`;
+  return `Clover-Sig key=${toBase64Url(key.publicKey)}, t=${t}, sig=${toBase64Url(sig)}`;
 }
 
 // ---- boxes (PROTOCOL.md "Boxes", pair scope) ----
@@ -106,11 +108,12 @@ function boxAad(c: BoxContext): Bytes {
   return utf8(lines.join("\n"));
 }
 
-/** K = HKDF-SHA256(ikm = S, salt = the pair id's 16 bytes, info = `moss handshake v1 box`). */
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
+/** K = HKDF-SHA256(ikm = S, salt = the pair id's 16 bytes, info = `clover handshake v1 box`). */
 export function pairBoxKey(pairSecret: Uint8Array, pairId: string): Bytes {
   const salt = fromBase64Url(pairId);
   if (!salt || salt.length !== 16) throw new ContractError("invalid", "a pair id is 16 bytes");
-  return own(new Uint8Array(hkdfSync("sha256", pairSecret, salt, utf8("moss handshake v1 box"), 32)));
+  return own(new Uint8Array(hkdfSync("sha256", pairSecret, salt, utf8("clover handshake v1 box"), 32)));
 }
 
 export function sealPairBox(key: Uint8Array, c: BoxContext, plaintext: unknown): string {

@@ -39,10 +39,10 @@ A device's record:
 
 A registration and a mint are signed by the device's link key, Ed25519. `sig` is base64url, and `t` is the device's clock in milliseconds.
 
-A registration signs lane H's `moss-account-v2 register` statement: the deterministic CBOR (the core's `links/codec`: shortest heads, definite lengths) of the array
+A registration signs lane H's `clover-account-v2 register` statement: the deterministic CBOR (the core's `links/codec`: shortest heads, definite lengths) of the array
 
 ```
-["moss-account-v2 register", <account: the Supabase user id>, id, publicKey, boxKey, name, kind, os or null, t]
+["clover-account-v2 register", <account: the Supabase user id>, id, publicKey, boxKey, name, kind, os or null, t]
 ```
 
 with each device field exactly as the request carries it (`publicKey` in whichever base64 it was sent) and `t` a CBOR unsigned integer. It covers the whole record, so a session holder can't re-send a device's signature with another box key, name or kind.
@@ -50,7 +50,7 @@ with each device field exactly as the request carries it (`publicKey` in whichev
 A mint signs UTF-8 lines joined by `\n`:
 
 ```
-moss-account-v1 mint
+clover-account-v1 mint
 <account: the Supabase user id>
 <aud>
 <device id>

@@ -53,12 +53,13 @@ export const HOOK_KEY_RE = /^[A-Za-z0-9._~-]{16,512}$/;
 /** The shortest key the plugin registers: 43 characters, the base64url of MOSS's 32 random bytes. */
 export const MIN_ROUTINE_KEY_LENGTH = 43;
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 /**
- * What the service keeps of a routine's key: SHA-256 of "moss hook key v1|" + key. The computer registers
+ * What the service keeps of a routine's key: SHA-256 of "clover hook key v1|" + key. The computer registers
  * this hash and the edge hashes the key a sender presents, so the key itself is never stored by waifucave.
  */
 export async function hookKeyHash(key: string): Promise<Bytes> {
-  return sha256(utf8(`moss hook key v1|${key}`));
+  return sha256(utf8(`clover hook key v1|${key}`));
 }
 
 export function encodeWebhookFrame(seq: number, envelope: Uint8Array): Bytes {

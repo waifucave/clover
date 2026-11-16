@@ -30,14 +30,16 @@ export const ACCOUNT_SESSION_REF: SecretRef = { owner: { kind: "device" }, name:
 
 export type AccountProvider = "email" | "discord" | "google";
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 /** What a device signs to register with the account: the whole record it lists, box key included, so the service (or
  *  anyone between) can't list the device with another key or name than it gave. Canonical CBOR, so no field can read
  *  as another. */
 export const registerStatement = (account: string, d: { id: string; publicKey: string; boxKey: string; name: string; kind: string; os?: string }, t: number): Uint8Array =>
-  encode(["moss-account-v2 register", account, d.id, d.publicKey, d.boxKey, d.name, d.kind, d.os ?? null, t]);
+  encode(["clover-account-v2 register", account, d.id, d.publicKey, d.boxKey, d.name, d.kind, d.os ?? null, t]);
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 /** What a device signs to have a token minted: the account it's on too, as the register statement names it (lane I). */
 export const mintStatement = (account: string, audience: string, device: string, t: number): Uint8Array =>
-  utf8(["moss-account-v1 mint", account, audience, device, String(t)].join("\n"));
+  utf8(["clover-account-v1 mint", account, audience, device, String(t)].join("\n"));
 
 export interface AccountConfig {
   /** The Supabase project URL. */
@@ -79,6 +81,7 @@ export interface AccountClientOptions {
   fetch?: (req: Request) => Promise<Response>;
 }
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 export class AccountClient {
   readonly #o: AccountClientOptions;
   readonly #fetch: (req: Request) => Promise<Response>;
@@ -112,7 +115,7 @@ export class AccountClient {
   /** What two devices compare at pairing to tell whether they share an account, without telling which. */
   async accountHash(): Promise<string | null> {
     const id = await this.accountId();
-    return id === null ? null : createHash("sha256").update(`moss-account-v1 hash\n${id}`).digest("base64url").slice(0, 22);
+    return id === null ? null : createHash("sha256").update(`clover-account-v1 hash\n${id}`).digest("base64url").slice(0, 22);
   }
 
   /** Starts a PKCE sign-in: returns the URL the client opens, and resolves `done` once the browser came back and the

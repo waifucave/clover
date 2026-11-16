@@ -134,7 +134,7 @@ describe("pairing", () => {
     const net = new MemoryNetwork();
     const [host, joiner] = [await device(net, "Studio"), await device(net, "Phone")];
     const view = await host.pairing.begin();
-    const prefix = "moss-pair:1:";
+    const prefix = "clover-pair:1:";
     const fields = decode(fromBase64Url(view.qr!.slice(prefix.length))!) as unknown[];
     const p = (1n << 255n) - 19n;
     const nonCanonical = Uint8Array.from({ length: 32 }, (_, i) => Number(((p + 1n) >> BigInt(8 * i)) & 0xffn));
@@ -156,7 +156,7 @@ describe("pairing", () => {
     const view = await host.pairing.begin();
     const raw = parseCode(view.code!)!;
     const slot = toBase64Url(raw.subarray(0, 5));
-    const key = new Uint8Array(hkdfSync("sha256", raw.subarray(5), new Uint8Array(0), new TextEncoder().encode("moss/pair-rendezvous/1"), 32));
+    const key = new Uint8Array(hkdfSync("sha256", raw.subarray(5), new Uint8Array(0), new TextEncoder().encode("clover/pair-rendezvous/1"), 32));
     const context = { scope: slot, from: "host", to: "joiner", kind: "signal" as const };
     const offer = openPairBox(key, context, rendezvous.slots.get(slot)!) as Record<string, unknown>;
     rendezvous.slots.set(slot, sealPairBox(key, context, { ...offer, key: toBase64Url(new Uint8Array(32)) }));
@@ -290,7 +290,7 @@ describe("the pair door and the words' commitment (S2, S6.3 of H-M1's review)", 
     const net = new MemoryNetwork();
     const a = await device(net, "Studio");
     const stranger = net.endpoint(generateEd25519().publicKey);
-    const conn = await stranger.dial({ key: a.key.publicKey }, { alpn: "moss/pair/1" });
+    const conn = await stranger.dial({ key: a.key.publicKey }, { alpn: "clover/pair/1" });
     expect((await conn.closed).reason).toBe("no pairing is open");
   });
 
@@ -305,7 +305,7 @@ describe("the pair door and the words' commitment (S2, S6.3 of H-M1's review)", 
     cleanup.push(() => pairing.close());
     await pairing.begin();
     const stranger = net.endpoint(generateEd25519().publicKey);
-    const conn = await stranger.dial({ key: key.publicKey }, { alpn: "moss/pair/1" });
+    const conn = await stranger.dial({ key: key.publicKey }, { alpn: "clover/pair/1" });
     conn.openStream(3);
     expect((await conn.closed).reason).toBe("no hello in time");
   });
@@ -334,7 +334,7 @@ describe("the pair door and the words' commitment (S2, S6.3 of H-M1's review)", 
 async function forgeQrSecret(qr: string): Promise<string> {
   const { decode, encode } = await import("../codec");
   const { fromBase64Url } = await import("../../identity/bytes");
-  const prefix = "moss-pair:1:";
+  const prefix = "clover-pair:1:";
   const v = decode(fromBase64Url(qr.slice(prefix.length))!) as unknown[];
   const secret = new Uint8Array(v[1] as Uint8Array);
   secret[0]! ^= 1;

@@ -1,12 +1,13 @@
 // The iPhone companion's host half (moss/companion-ios). It fills its `companions` entry (lane B's
 // CompanionHandler) with what the pairing screen shows for a phone. Everything else is the core's: the phone pairs
 // as a device of its own (lane H's pairing, with the four words checked on both), dials this computer over its own
-// link, and speaks the remote role's call list on a `moss/rpc/1` stream (lane H's remote-client door). Cards never
+// link, and speaks the remote role's call list on a `clover/rpc/1` stream (lane H's remote-client door). Cards never
 // pass through this plugin: the phone answers them with its own answer key, on the core's link (spec §10).
 
 /** The app's URL scheme: the iPhone app opens `moss://pair` links and reads the pairing from them. */
 export const APP_SCHEME = "moss";
-const QR_PREFIX = "moss-pair:1:";
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
+const QR_PREFIX = "clover-pair:1:";
 
 /** The link the phone opens for the core's pairing code, and what its QR carries. */
 export function pairingLink(code: string): { url: string; qr: string } {

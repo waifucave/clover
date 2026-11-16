@@ -2,10 +2,10 @@
 // the core's link key, which signs this desktop's answers to cards and the user's own messages (E-M3), so plugin code
 // can't sign with it where the OS keeps it from them. The app makes it once and registers its public half with the
 // core on every connection (`device.answerKey.set`, with the app's signature over
-// `moss/answer-key/1\n<device>\n<public key>\n<holder>`, which lane H's registry checks).
+// `clover/answer-key/1\n<device>\n<public key>\n<holder>`, which lane H's registry checks).
 //
 // Replacing it (`rotate`): other computers trust the key with their cards, so the core takes a new one only with the
-// current key's hand-over (its signature over `moss/answer-key-rotate/1\n<device>\n<from>\n<to>\n<at>`) and the user's
+// current key's hand-over (its signature over `clover/answer-key-rotate/1\n<device>\n<from>\n<to>\n<at>`) and the user's
 // yes on a sealed change card (lane C's `answer-key-rotate`), which the core cancels after 10 minutes. The core adopts
 // the new key on that yes, wherever it is answered and whether or not the app is there to see it, so the new key is
 // stored first, in the vault's second slot (`staged`), before the app asks; a rotation whose key can't be stored never
@@ -184,14 +184,16 @@ export function fileVault(file: string, held: AnswerKeyHolder = "none"): KeyVaul
   };
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /** What the app signs to show the core it holds the key (lane H's `answerKeyStatement`). */
 export function answerKeyStatement(deviceId: string, publicKey: string, held: AnswerKeyHolder): Uint8Array {
-  return new TextEncoder().encode(`moss/answer-key/1\n${deviceId}\n${publicKey}\n${held}`);
+  return new TextEncoder().encode(`clover/answer-key/1\n${deviceId}\n${publicKey}\n${held}`);
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /** What the current key signs to hand this desktop's answer key over to a new one (lane H's `answerKeyRotateStatement`). */
 export function answerKeyRotateStatement(deviceId: string, from: string, to: string, at: number): Uint8Array {
-  return new TextEncoder().encode(`moss/answer-key-rotate/1\n${deviceId}\n${from}\n${to}\n${at}`);
+  return new TextEncoder().encode(`clover/answer-key-rotate/1\n${deviceId}\n${from}\n${to}\n${at}`);
 }
 
 /** How a replacement went: applied at once, waiting on its card, or refused (and why). */

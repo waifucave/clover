@@ -56,7 +56,8 @@ import { ContentKeyRing, contentAad, type SharedContentKey } from "./memory-keys
 import { mountSyncStreams } from "./streams";
 
 const PREFIX = "memory:";
-export const MAIL_INFO = "moss memory v1 mail";
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
+export const MAIL_INFO = "clover memory v1 mail";
 const DEVICE_RE = /^[a-z0-9]{16,64}$/;
 const HASH_RE = /^[0-9a-f]{64}$/;
 /** What one push or one pull page carries at most in content (the link's own frames are smaller; it splits them). */
@@ -969,17 +970,20 @@ export class MemorySync {
 /** The link's own request two computers trade their box keys with as their link comes up. */
 export const MEMORY_HELLO = "link.memory.hello";
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /** What a version's writer signs: the bot, the path, the vector, the time, the content's hash and size. */
 export function versionStatement(bot: string, v: MemoryVersion): Bytes {
-  return utf8(["moss-memory-v1 version", bot, v.rel, vvText(v.vv), String(v.ts), v.hash ?? "-", String(v.size)].join("\n"));
+  return utf8(["clover-memory-v1 version", bot, v.rel, vvText(v.vv), String(v.ts), v.hash ?? "-", String(v.size)].join("\n"));
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 function mailAad(from: string, to: string, id: string): Bytes {
-  return utf8(["moss-memory-v1 mail", from, to, id].join("\n"));
+  return utf8(["clover-memory-v1 mail", from, to, id].join("\n"));
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 function mailStatement(from: string, to: string, id: string, box: string): Bytes {
-  return utf8(["moss-memory-v1 mail", from, to, id, sha256Hex(utf8(box))].join("\n"));
+  return utf8(["clover-memory-v1 mail", from, to, id, sha256Hex(utf8(box))].join("\n"));
 }
 
 function botOf(stream: unknown): string | undefined {

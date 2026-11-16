@@ -77,9 +77,10 @@ export function looksCredentialBearing(s: string): boolean {
   return false;
 }
 
+// Keeps its old spelling on purpose: signed or derived state on disk carries this value over from the old install.
 /** The hash a saved rule matches on: a rule's key never sits on disk. */
 export function ruleKeyHash(ruleKey: string): string {
-  return createHash("sha256").update(`moss-saved-rule-v1\u0000${ruleKey}`).digest("hex");
+  return createHash("sha256").update(`clover-saved-rule-v1\u0000${ruleKey}`).digest("hex");
 }
 
 /** The longest display string a saved rule keeps. */

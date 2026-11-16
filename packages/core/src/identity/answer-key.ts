@@ -40,6 +40,7 @@ export interface AnswerKeyStorage {
   save(seed: Secret): Promise<void>;
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 export class AnswerKey {
   readonly held: AnswerKeyHolder;
   readonly #key: Ed25519Key;
@@ -67,14 +68,14 @@ export class AnswerKey {
 
   /** What the app hands the core so it takes the key: the public half, how it is held, and the proof. */
   registration(deviceId: string): { publicKey: string; held: AnswerKeyHolder; signature: string } {
-    const statement = utf8(`moss/answer-key/1\n${deviceId}\n${this.publicKey}\n${this.held}`);
+    const statement = utf8(`clover/answer-key/1\n${deviceId}\n${this.publicKey}\n${this.held}`);
     return { publicKey: this.publicKey, held: this.held, signature: toBase64(this.#key.sign(statement)) };
   }
 
   /** Hands this device's answering over to `next` (a new key, a new holder): this key signs the hand-over, which the
    *  core and every peer need before they take `next` (`answerKeyRotateStatement`). */
   handOverTo(next: AnswerKey, deviceId: string, at: number): { from: string; at: number; signature: string } {
-    const statement = utf8(`moss/answer-key-rotate/1\n${deviceId}\n${this.publicKey}\n${next.publicKey}\n${at}`);
+    const statement = utf8(`clover/answer-key-rotate/1\n${deviceId}\n${this.publicKey}\n${next.publicKey}\n${at}`);
     return { from: this.publicKey, at, signature: toBase64(this.#key.sign(statement)) };
   }
 

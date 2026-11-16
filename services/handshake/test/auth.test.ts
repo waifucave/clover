@@ -16,7 +16,7 @@ async function realKey() {
 
 describe("verifySignature", () => {
   test("the all-zero key with the all-zero signature is refused, for any statement", async () => {
-    for (const text of ["moss-pair-v1 register\nx", "moss/answer-key/1\ndev\nkey\nnone", "anything"]) {
+    for (const text of ["moss-pair-v1 register\nx", "clover/answer-key/1\ndev\nkey\nnone", "anything"]) {
       expect(await verifySignature(b64u(new Uint8Array(32)), b64u(new Uint8Array(64)), text)).toBe(false);
     }
   });

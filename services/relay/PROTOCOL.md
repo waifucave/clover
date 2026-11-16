@@ -23,7 +23,7 @@ Errors are `{"error": "<code>"}`: 400 `bad_request`, 401 `unauthorized`, 404 `no
    - A refused upgrade (401) means the ticket expired or the key was rotated: ask the plugin for its endpoints again.
 2. The link layer opens a WebSocket to that URL with `&room=<room>&peer=<peer>` added.
    - `room`: 16–64 characters of `[A-Za-z0-9_-]`. Both devices of a pair must name the same room.
-     - Lane H derives it from the pair, for example base64url of the first 16 bytes of SHA-256 over `moss-relay-v1 room\n<lower device id>\n<higher device id>`.
+     - Lane H derives it from the pair, for example base64url of the first 16 bytes of SHA-256 over `clover-relay-v1 room\n<lower device id>\n<higher device id>`.
    - `peer`: 1–64 characters of `[A-Za-z0-9_-]`, this device's name for itself in the room (its device id).
 
 A room holds two peers.

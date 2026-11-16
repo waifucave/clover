@@ -23,7 +23,7 @@ function keyFor(device: string): { publicKey: string; signature: string; private
   const k = generateKeyPairSync("ed25519");
   const der = k.publicKey.export({ format: "der", type: "spki" });
   const publicKey = Buffer.from(der.subarray(der.length - 32)).toString("base64");
-  return { publicKey, privateKey: k.privateKey, signature: sign(null, Buffer.from(`moss/answer-key/1\n${device}\n${publicKey}\nnone`), k.privateKey).toString("base64") };
+  return { publicKey, privateKey: k.privateKey, signature: sign(null, Buffer.from(`clover/answer-key/1\n${device}\n${publicKey}\nnone`), k.privateKey).toString("base64") };
 }
 
 describe("answerKeyMethods before the registry opens", () => {
@@ -133,7 +133,7 @@ describe.skipIf(process.platform === "win32")("a real daemon whose links are sti
       let rotated: Awaited<ReturnType<typeof c.request>> | undefined;
       for (let i = 0; i < 200; i++) {
         const at = Date.now();
-        const handOver = sign(null, Buffer.from(`moss/answer-key-rotate/1\n${device}\n${k.publicKey}\n${other.publicKey}\n${at}`), k.privateKey).toString("base64");
+        const handOver = sign(null, Buffer.from(`clover/answer-key-rotate/1\n${device}\n${k.publicKey}\n${other.publicKey}\n${at}`), k.privateKey).toString("base64");
         rotated = await c.request("device.answerKey.set", { publicKey: other.publicKey, signature: other.signature, held: "none", rotation: { from: k.publicKey, at, signature: handOver } });
         if (rotated.error?.code !== ERR.RETRY) break;
         await Bun.sleep(50);

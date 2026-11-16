@@ -363,9 +363,9 @@ describe("cards", () => {
     const card = { id: "card_0a1b2c3d", hash: "f".repeat(64), kind: "tool" } as never;
     expect(cardHashInput(card)).toBe('{"id":"card_0a1b2c3d","kind":"tool"}');
     expect(cardAnswerSigningInput({ id: "card_0a1b2c3d", hash: "a".repeat(64), option: "deny", at: 5 }))
-      .toBe(`moss/card-answer/2\ncard_0a1b2c3d\n${"a".repeat(64)}\ndeny\n5\n`);
+      .toBe(`clover/card-answer/2\ncard_0a1b2c3d\n${"a".repeat(64)}\ndeny\n5\n`);
     expect(cardAnswerSigningInput({ id: "c", hash: "h", option: "approve", at: 7, children: ["luna/z", "luna/a"] }))
-      .toBe("moss/card-answer/2\nc\nh\napprove\n7\nluna/a,luna/z");
+      .toBe("clover/card-answer/2\nc\nh\napprove\n7\nluna/a,luna/z");
   });
 
   test("an answer's time falls between the card's issue and the earlier of now and its expiry, give or take the skew", () => {
@@ -432,7 +432,7 @@ describe("relayed messages and peer file calls (review N2, N3, N5)", () => {
   });
 
   test("the user-message signing input is pinned, and the hash covers the words and attachments only", () => {
-    expect(userMessageSigningInput({ session: "s_alpha", clientMessageId: "m-1", hash: "ab", sentAt: 5 })).toBe("moss/user-message/1\ns_alpha\nm-1\nab\n5");
+    expect(userMessageSigningInput({ session: "s_alpha", clientMessageId: "m-1", hash: "ab", sentAt: 5 })).toBe("clover/user-message/1\ns_alpha\nm-1\nab\n5");
     expect(userMessageHashInput({ text: "hi" })).toBe('{"files":[],"images":[],"text":"hi"}');
   });
 

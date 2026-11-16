@@ -10,7 +10,8 @@ import type { SecretRef, SecretStore } from "../contracts/secret-store";
 import { type Bytes, concat, fromBase64, fromBase64Url, own, toBase64, toBase64Url, utf8 } from "./bytes";
 
 export const BOX_KEY_REF: SecretRef = { owner: { kind: "device" }, name: "device:box-key" };
-export const HANDSHAKE_BOX_INFO = "moss handshake v1 box";
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
+export const HANDSHAKE_BOX_INFO = "clover handshake v1 box";
 
 const PKCS8_PREFIX = Buffer.from("302e020100300506032b656e04220420", "hex");
 const SPKI_PREFIX = Buffer.from("302a300506032b656e032100", "hex");

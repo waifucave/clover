@@ -41,7 +41,7 @@ describe("the answer key", () => {
     expect(Buffer.from(p.publicKey, "base64")).toHaveLength(32);
     expect(verify(null, Buffer.from(answerKeyStatement("dev_laptop", p.publicKey, "app-keychain")), verifier(p.publicKey), Buffer.from(p.signature, "base64"))).toBe(true);
     // The statement is lane H's, byte for byte.
-    expect(new TextDecoder().decode(answerKeyStatement("dev_laptop", "AAAA", "none"))).toBe("moss/answer-key/1\ndev_laptop\nAAAA\nnone");
+    expect(new TextDecoder().decode(answerKeyStatement("dev_laptop", "AAAA", "none"))).toBe("clover/answer-key/1\ndev_laptop\nAAAA\nnone");
   });
 
   test("made once and kept: the same key across starts; the file holds only what the OS's key encrypted", () => {

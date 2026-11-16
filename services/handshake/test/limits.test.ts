@@ -78,7 +78,7 @@ describe("sizes", () => {
   test("a body over 16 KiB is refused before it is read", async () => {
     const { pair, a } = await registeredPair();
     const big = new Uint8Array(16 * 1024 + 1);
-    const response = await worker(new Request(`${ORIGIN}/v1/pairs/${pair}/messages`, { method: "POST", body: big, headers: { authorization: `MOSS-Sig key=${a.key}, t=${Date.now()}, sig=${"A".repeat(86)}` } }));
+    const response = await worker(new Request(`${ORIGIN}/v1/pairs/${pair}/messages`, { method: "POST", body: big, headers: { authorization: `Clover-Sig key=${a.key}, t=${Date.now()}, sig=${"A".repeat(86)}` } }));
     expect(response.status).toBe(413);
   });
 });

@@ -12,9 +12,11 @@
 import type { Unsubscribe } from "../contracts/common";
 import type { Bytes } from "../identity/bytes";
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /** The link's own protocol; a different one carries pairing, which accepts devices that aren't paired yet. */
-export const ALPN_LINK = "moss/link/1";
-export const ALPN_PAIR = "moss/pair/1";
+export const ALPN_LINK = "clover/link/1";
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
+export const ALPN_PAIR = "clover/pair/1";
 
 /** The wire priority of each LinkTransport class, highest first (§8.2). */
 export const WIRE_PRIORITY = { control: 3, tokens: 2, screenshots: 1, files: 0 } as const;

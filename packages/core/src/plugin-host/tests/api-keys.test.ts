@@ -82,7 +82,7 @@ describe("keys.* in a real plugin host", () => {
       expect(pub.length).toBe(32);
       expect(await call<Uint8Array>("moss", "pub", { name: "fwd" })).toEqual(pub);
       // A webhook sealed to it opens; one sealed to another key, or tampered with, doesn't.
-      const msg = seal(pub, "a webhook body", "route-1", "moss forwarder v1");
+      const msg = seal(pub, "a webhook body", "route-1", "clover forwarder v1");
       expect(await call("moss", "open", { name: "fwd", sealed: msg })).toBe("a webhook body");
       const other = await call<Uint8Array>("moss", "pub", { name: "other" });
       expect(await call("moss", "open", { name: "fwd", sealed: seal(other, "x", "a", "i") })).toEqual({ error: "invalid: the message doesn't open with that key" });

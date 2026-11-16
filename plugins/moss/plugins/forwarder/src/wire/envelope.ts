@@ -19,7 +19,7 @@
 //   nonce         12 bytes  content nonce
 //   ciphertext    the rest  AES-256-GCM of the request record, aad = every byte before it
 //
-// Each recipient's HPKE info is "moss forwarder v1" || 0x00 || the bytes from version through pid, which
+// Each recipient's HPKE info is "clover forwarder v1" || 0x00 || the bytes from version through pid, which
 // binds the wrapped key to this routine, this arrival time and this payload.
 
 import { concat, fromUtf8, own, randomBytes, readU64, sha256, u64, utf8, type Bytes } from "./bytes";
@@ -36,7 +36,8 @@ const WRAPPED_BYTES = 32 + 16;
 const RECIPIENT_BYTES = KID_BYTES + ENC_BYTES + WRAPPED_BYTES;
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
-const INFO_LABEL = concat(utf8("moss forwarder v1"), Uint8Array.of(0));
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
+const INFO_LABEL = concat(utf8("clover forwarder v1"), Uint8Array.of(0));
 
 export interface EnvelopeRecipient {
   kid: Uint8Array;
@@ -77,9 +78,10 @@ export interface EnvelopeHeader {
   kids: Bytes[];
 }
 
+// Keeps its old spelling on purpose: the owner's deployed services verify against this value, so it stays until they move.
 /** The 8-byte key id of a forwarder public key. */
 export async function keyId(publicKey: Uint8Array): Promise<Bytes> {
-  return (await sha256(concat(utf8("moss forwarder kid"), publicKey))).slice(0, KID_BYTES);
+  return (await sha256(concat(utf8("clover forwarder kid"), publicKey))).slice(0, KID_BYTES);
 }
 
 function prefixBytes(routineId: string, receivedAt: number, pid: Uint8Array): Bytes {

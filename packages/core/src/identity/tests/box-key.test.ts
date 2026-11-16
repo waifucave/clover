@@ -18,7 +18,7 @@ describe("box key", () => {
 
   test("opens what the forwarder's HPKE sealed, and the other way", async () => {
     const mine = BoxKey.generate();
-    const aad = utf8("moss-handshake-v1 box\nsub\ndevA\ndevB\naddr\n7");
+    const aad = utf8("clover-handshake-v1 box\nsub\ndevA\ndevB\naddr\n7");
     const theirs = await sealBase(AEAD_AES_256_GCM, mine.publicKey, utf8(HANDSHAKE_BOX_INFO), aad, utf8("from webcrypto"));
     expect(new TextDecoder().decode(mine.open(toBase64Url(concat(theirs.enc, theirs.ciphertext)), aad)!)).toBe("from webcrypto");
 

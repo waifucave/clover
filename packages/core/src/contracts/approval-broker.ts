@@ -33,7 +33,7 @@
 //    (role `app`), naming the channel minted for this card (`frameChannel`). A device's signature counts relayed by
 //    any computer (review N4), from a device that may answer cards (a phone, or a desktop with its app's answer key:
 //    `mayAnswerCards`, the owner's decision on N1), with its time inside `answerTimeOk`'s bounds, over the option and
-//    the children checked (`moss/card-answer/2`).
+//    the children checked (`clover/card-answer/2`).
 //    The owner's decision, recorded here: any desktop may answer; a compromised plugin on a Windows or Linux computer
 //    could approve actions on other computers.
 // 8. An agent never gets an "always": `acpOutcomeFor` picks `allow_once` or `reject_once`, and a card's "always" is

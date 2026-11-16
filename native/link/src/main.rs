@@ -65,7 +65,8 @@ const T_JSON: u8 = 0;
 const T_DATA: u8 = 1;
 const T_CREDIT: u8 = 2;
 const MAX_FRAME: usize = 16 * 1024 * 1024 + 16;
-const LINK_ALPN: &str = "moss/link/1";
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
+const LINK_ALPN: &str = "clover/link/1";
 const CLOSE_UNPAIRED: u32 = 2;
 const CLOSE_REVOKED: u32 = 3;
 const RESET_ABORTED: u32 = 1;

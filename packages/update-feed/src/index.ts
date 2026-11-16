@@ -125,14 +125,15 @@ function parseBinaryFeed(text: string, prefix: string, what: string): CoreFeed {
   return { version, file, sha512, size };
 }
 
+// Keeps its old spelling on purpose: clients that keep the old name speak this value on the wire.
 /**
  * What is signed for an update file: a fixed label, its file name and the SHA-512 of its bytes, each ended by a
- * zero byte (`moss-update-feed-v1\0latest-mac.yml\0<hex>\0`), so the signature holds only for that file under
+ * zero byte (`clover-update-feed-v1\0latest-mac.yml\0<hex>\0`), so the signature holds only for that file under
  * that name.
  */
 export function signedMessage(name: string, bytes: Uint8Array): Buffer {
   if (!FEED_NAME.test(name)) throw new Error(`${name} is not an update file's name`);
-  return Buffer.from(`moss-update-feed-v1\0${name}\0${createHash("sha512").update(bytes).digest("hex")}\0`, "utf8");
+  return Buffer.from(`clover-update-feed-v1\0${name}\0${createHash("sha512").update(bytes).digest("hex")}\0`, "utf8");
 }
 
 /** The signature for the update file `name` with these bytes, as its `.sig` file holds it. */

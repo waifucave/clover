@@ -16,7 +16,7 @@ describe("the update feed's signature", () => {
     const sig = signFeed("latest-mac.yml", feed, key.privateKey);
     expect(verifyFeed("latest-mac.yml", feed, sig, key.publicKey)).toEqual({ ok: true });
     expect(verifyFeed("latest-mac.yml", feed, `${sig}\n`, key.publicKey)).toEqual({ ok: true });
-    expect(signedMessage("beta.yml", feed).toString("utf8")).toMatch(/^moss-update-feed-v1\0beta\.yml\0[0-9a-f]{128}\0$/);
+    expect(signedMessage("beta.yml", feed).toString("utf8")).toMatch(/^clover-update-feed-v1\0beta\.yml\0[0-9a-f]{128}\0$/);
   });
 
   test("a file signed under one name is refused under another: a beta file as latest, one OS's as another's", () => {

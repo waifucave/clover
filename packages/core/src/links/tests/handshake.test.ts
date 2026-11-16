@@ -210,8 +210,8 @@ describe("a join that moves a key (lane I's #195)", () => {
   test("the statement names the group it moves from as a fifth line, byte for byte with the service's; a move signed without it is refused", async () => {
     const { joinStatement, admitStatement } = await import("../handshake");
     const text = (b: Uint8Array) => new TextDecoder().decode(b);
-    expect(text(joinStatement("g", "k", 1793000000123, "old"))).toBe("moss-handshake-v1 join\ng\nk\n1793000000123\nold");
-    expect(text(joinStatement("g", "k", 1793000000123))).toBe("moss-handshake-v1 join\ng\nk\n1793000000123");
+    expect(text(joinStatement("g", "k", 1793000000123, "old"))).toBe("clover-handshake-v1 join\ng\nk\n1793000000123\nold");
+    expect(text(joinStatement("g", "k", 1793000000123))).toBe("clover-handshake-v1 join\ng\nk\n1793000000123");
     const hs = service();
     const client = new HandshakeClient({ baseUrl: hs.url, clock });
     const host = generateEd25519();
