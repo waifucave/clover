@@ -449,6 +449,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
    *  that very frame. Waits for a click's frame to be known first, only when the frame reports activation (nothing else can
    *  spend a press). */
   const fid = (f: { processId: number; routingId: number }) => `${f.processId}:${f.routingId}`;
+  /** The shell API's calls that spend no press (`routeShell` answers them before its gesture). */
+  const SHELL_NO_PRESS: ReadonlySet<string> = new Set(["state", "apps", "account", "dragWindow", "provide"]);
   const pressIn = async (s: { windowId: number; frame: { processId: number; routingId: number } }, active: unknown): Promise<(windowId: number) => boolean> => {
     if (active === true) await hooks.settleGesture?.(s.windowId);
     return (w) => frameGesture(active, () => hooks.takeGesture(w, fid(s.frame)));
@@ -750,7 +752,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const plugin = { id: runtime.partOf(s.frame, mount), capabilities: runtime.capabilitiesOf(s.frame, mount) };
     let r;
     try {
-      const press = await pressIn(s, a.active);
+      // Only the shell's acts take a press: a read, the drag (main follows the pointer itself, at once) and `provide` never wait for one.
+      const press = SHELL_NO_PRESS.has(String(a.method)) ? () => false : await pressIn(s, a.active);
       r = routeShell({ method: a.method, args: a.args, plugin, window: shellWindows.get(s.windowId), appButtons: () => runtime.appButtons(), takeGesture: () => press(s.windowId) });
     } catch (err) {
       throw new LayerError(err instanceof Error ? err.message : "refused");
