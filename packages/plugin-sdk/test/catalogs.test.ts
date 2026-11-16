@@ -120,12 +120,18 @@ describe("the plugin API's gating", () => {
     for (const [call, info] of Object.entries(API_CALLS)) {
       const cap = (info as { capability?: string }).capability;
       if (cap === undefined) continue;
-      expect([call, cap === "call:*" || cap === "network:*" || names.has(cap)]).toEqual([call, true]);
+      // A family by kind (spec revision 19, §3.6) names one capability per kind of data.
+      const family = cap.endsWith(".*") && cap !== "call:*" && cap !== "network:*" ? ["sessions", "bots"].every((k) => names.has(`${cap.slice(0, -1)}${k}`)) : false;
+      expect([call, cap === "call:*" || cap === "network:*" || family || names.has(cap)]).toEqual([call, true]);
     }
   });
 
   test("every capability but call: and network: gates at least one call", () => {
-    const used = new Set(Object.values(API_CALLS).map((i) => (i as { capability?: string }).capability));
+    const used = new Set(Object.values(API_CALLS).flatMap((i) => {
+      const cap = (i as { capability?: string }).capability;
+      // A family by kind gates each kind's capability.
+      return cap !== undefined && cap.endsWith(".*") && cap !== "call:*" && cap !== "network:*" ? [`${cap.slice(0, -1)}sessions`, `${cap.slice(0, -1)}bots`] : [cap];
+    }));
     // network:public gates the core's fetch, as network:<host> does, not an API call; project.write gates the
     // plugin-process fence (its hooks' and MCP servers' writes to project folders); plugins.watch gates events only
     // (the controller's ruling: nothing callable).

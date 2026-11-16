@@ -234,7 +234,6 @@
     "calls": [
       "activity.list",
       "bot.conversation",
-      "bot.edit",
       "bot.get",
       "bot.list",
       "bot.records",

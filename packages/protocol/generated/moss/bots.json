@@ -563,13 +563,12 @@
       }
     },
     "bot.edit": {
-      "doc": "Changes a bot's record or instructions for the user; the next turn uses it. From a plugin's layer it is a sealed card.",
+      "doc": "Changes a bot's record or instructions for the user; the next turn uses it.",
       "owner": "BT",
       "direction": "to-daemon",
       "roles": [
         "app",
-        "cli",
-        "layer"
+        "cli"
       ],
       "userOnly": true,
       "change": "core",

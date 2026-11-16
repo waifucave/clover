@@ -16,7 +16,7 @@ import {
   type BotView, type Caller, type CardMeta, type CommandView, type ComputerView, type MossWindow, type DeviceView, type FileStat, type HostProcess,
   type HoldTarget, type HoldView, type InstallSource, type MemoryEntry, type PlanReading, type PluginState, type RoutineRunView, type RoutineView,
   type Screenshot, type SessionView, type TabOwner, type TabView, type UsageRow, type Viewport, BUNDLED_ROOT_PLUGIN,
-  topPluginIdOf,
+  topPluginIdOf, type ActivityView, type DataKind, type PictureView, type PicturePublishMeta,
 } from "@waifucave/moss-protocol";
 
 import type { AvatarApi, AvatarReport } from "../catalogs/avatar-cues";
@@ -540,6 +540,34 @@ export interface ConversationApi {
   answer(session: string, callId: string, answers: Record<string, string>): Promise<void>;
 }
 
+/** `sessions.read` (spec revision 19, §3.6, G6): the user's code sessions, and nothing of bots' conversations, which
+ *  are `conversation.read`'s. Sealed card fields never reach a plugin. Not served yet (lane AF). */
+export interface SessionsApi {
+  list(): Promise<SessionView[]>;
+  get(session: string): Promise<SessionView>;
+  watch(listener: (session: SessionView) => void): Unsubscribe;
+  history(session: string, page: { before?: number; limit: number }): Promise<{ events: Record<string, unknown>[]; hasMore: boolean }>;
+  follow(session: string, listener: (event: Record<string, unknown>) => void, opts?: { since?: number }): Unsubscribe;
+}
+
+/** The activity feed (spec revision 19, §3.6, G4), by kind: `activity.read.sessions` for code sessions,
+ *  `activity.read.bots` for bots. States and names only, never words. Not served yet (lane AF). */
+export interface ActivityApi {
+  list(kind: DataKind): Promise<ActivityView[]>;
+  watch(kind: DataKind, listener: (activity: ActivityView) => void): Unsubscribe;
+}
+
+/** A tool's live picture (spec revision 19, §3.6, G5). Reading is by kind (`picture.read.sessions`,
+ *  `picture.read.bots`); `open` gives the picture's frames as a byte stream (each frame a 4-byte big-endian length and one
+ *  image). `publish` is a tool's host half's, while it serves a tool call, when its server declares `picture: true`: the
+ *  engine keys the picture to that call's session, never to anything the plugin names. Not served yet (lane AF). */
+export interface PicturesApi {
+  list(kind: DataKind, of?: { session?: string; bot?: string }): Promise<PictureView[]>;
+  watch(kind: DataKind, listener: (event: { picture: PictureView } | { ended: string }) => void): Unsubscribe;
+  open(picture: string, options?: { maxFps?: number; signal?: AbortSignal }): Promise<ReadableStream<Uint8Array>>;
+  publish(meta: PicturePublishMeta, options?: { signal?: AbortSignal }): Promise<WritableStream<Uint8Array>>;
+}
+
 export interface MemoryApi {
   list(bot: string): Promise<MemoryEntry[]>;
   read(bot: string, path: string): Promise<string>;
@@ -1025,4 +1053,9 @@ export interface PluginApi {
   readonly turns: TurnsApi;
   /** Byte streams between its own two halves (§5.4 "Streams"). */
   readonly streams: StreamsApi;
+  /** Spec revision 19 (§3.6), not served yet: code sessions (`sessions.read`), the activity feed and live pictures by
+   *  kind. */
+  readonly sessions?: NotYet<SessionsApi>;
+  readonly activity?: NotYet<ActivityApi>;
+  readonly pictures?: NotYet<PicturesApi>;
 }

@@ -147,10 +147,12 @@ export const BOTS_METHODS = {
     doc: "Makes a bot: a folder under the home's bots/ with its record and instructions file; its id comes from its name.",
   }),
   botEdit: defineMethod({
-    name: "bot.edit", owner: "BT", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
+    /** The app's and the user's terminal; a plugin's door to it (`bots.edit`, through the app's door for parts) is lane
+     *  BT's to add, as a sealed card from any other layer. */
+    name: "bot.edit", owner: "BT", roles: ["app", "cli"], userOnly: true, change: "core",
     params: z.object({ id: BotId, patch: BotPatch }),
     result: ChangeResult,
-    doc: "Changes a bot's record or instructions for the user; the next turn uses it. From a plugin's layer it is a sealed card.",
+    doc: "Changes a bot's record or instructions for the user; the next turn uses it.",
   }),
   botRemove: defineMethod({
     name: "bot.remove", owner: "BT", roles: ["app", "cli"], userOnly: true,

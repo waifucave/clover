@@ -76,6 +76,10 @@ const LAYER_TARGETS: Record<string, string> = {
   "routine.list": "routines.read",
   "usage.rows": "usage.read",
   "usage.summary": "usage.read",
+  // Spec revision 19 (not served yet): one bot's conversation behind the read of every bot's, and a session's or a bot's
+  // live pictures behind the family by kind.
+  "bot.conversation": "conversation.read",
+  "picture.list": "picture.read.*",
   // The hello names the plugin the layer token was minted for; another id is refused (moss-connections.test.ts).
   "protocol.hello": "token",
 };

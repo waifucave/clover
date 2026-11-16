@@ -58,6 +58,9 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "plugins.watch", lets: "Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing", ok: "sees every plugin you have, whether it's on, and when you add or remove one", warns: true },
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
   { name: "logs.read", lets: "Read MOSS's logs and every plugin's", ok: "reads MOSS's logs and every plugin's logs", warns: false },
+  /** Retired by spec revision 19 (§5.4 "There is no avatar in the platform", G7): `avatar.read`, `avatar.control`,
+   *  `avatar.control.all`, `avatar.report` and `bots.avatar` move into the bundled avatar plugin as its own points and
+   *  rules (lane MC). Kept until that lane replaces them. */
   { name: "avatar.read", lets: "Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change", ok: "sees your bot's figure", warns: false },
   { name: "avatar.control", lets: "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, look at a point, or move its mouth with speech levels; the renderer says plainly what it doesn't do", ok: "moves your bot's figure", warns: false },
   /** Any bot's figure, not only the plugin's own: a voice that speaks for every bot sends each its mouth. It holds
@@ -86,6 +89,15 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "account.read", lets: "Read whether MOSS is signed in to an account, with which provider, and the account's id, name and email", ok: "sees the name and email of your MOSS account", warns: true },
   /** A composer's door to every plugin's commands: the command runs with the commanded plugin's own powers, never the caller's. */
   { name: "commands.run", lets: "From the composer it fills: list every running plugin's commands and, on the user's own press, run one as the user, with that plugin's own powers (a carded action still raises its card)", ok: "runs your plugins' commands as you when you press a key in it", warns: true },
+  /** Reads by kind of data (spec revision 19, §3.6, G6; item 115's working names fixed by lane SP). `sessions.read` is the
+   *  user's code sessions and nothing of bots'; `conversation.read` (above) is bots' conversations and nothing of code
+   *  sessions from revision 19 on, and a grant OK'd before it reads no bot's conversation until the plugin asks again
+   *  (the protocol's `grantReadsBots`). The feed and live pictures have one capability per kind. Not served yet (lane AF). */
+  { name: "sessions.read", lets: "Read the user's code sessions and follow them live, and nothing of bots' conversations; sealed card fields never reach it", ok: "reads your code sessions", warns: false },
+  { name: "activity.read.sessions", lets: "Read the activity feed of the user's code sessions: each one's state (idle, listening, thinking, working, asking, stuck, done, asleep), its name and the tool it works with; never what was said, a tool's arguments or a card's text", ok: "follows what your code sessions are doing: their names and states, never their words", warns: false },
+  { name: "activity.read.bots", lets: "Read the activity feed of every bot: each one's state (idle, listening, thinking, working, asking, stuck, done, asleep), its name and the tool it works with; never what was said, a tool's arguments or a card's text", ok: "follows what all your bots are doing: their names and states, never their words", warns: false },
+  { name: "picture.read.sessions", lets: "Show the live pictures tools publish of their work in the user's code sessions (inert pixels, with the publisher's id): a computer-use tool's can show the user's own screen, a browser tool's a page the user is signed in to", ok: "shows live pictures of what tools are doing in your code sessions, which can include your own screen and pages you are signed in to", warns: true },
+  { name: "picture.read.bots", lets: "Show the live pictures tools publish of every bot's work (inert pixels, with the publisher's id): a computer-use tool's can show the user's own screen, a browser tool's a page the user is signed in to", ok: "shows live pictures of what all your bots' tools are doing, which can include your own screen and pages you are signed in to", warns: true },
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
   /** Lane A's web plugin (WebFetch): any public host, through the core's fetch with the web floors (public addresses
    *  only, the dangerous-domain list, a private address refused with no card, the audit log). Its components get no host from
