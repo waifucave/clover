@@ -22,9 +22,9 @@ function answerNext(b: CloverApprovalBroker, optionId: string): Promise<Card> {
   });
 }
 
-function setup(level: () => Level, site: () => string | undefined = () => "example.com") {
+function setup(level: () => Level, site: () => string | undefined = () => "example.com", plugin: () => string | undefined = () => "clover/browser") {
   const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: level, localComputer: "Studio" });
-  const check = botApprovalCheck(broker, { bundledTool: (_c, tool) => (tool === TOOL ? "browser" : undefined), browserHost: async () => site(), levelOf: () => level() });
+  const check = botApprovalCheck(broker, { bundledTool: (_c, tool) => (tool === TOOL ? "browser" : undefined), toolPlugin: () => plugin(), browserHost: async () => site(), levelOf: () => level() });
   return { broker, check };
 }
 
@@ -140,7 +140,7 @@ test("a bot's delegated agent has no Always of its own: it falls under its bot's
 test("the card's act is words from the session's last read, never a bare ref; a secure field's text is not shown", async () => {
   const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "ask", localComputer: "Studio" });
   const elements = new Map([["e12", { role: "button", name: "Say hello", secure: false }], ["e3", { role: "textbox", name: "Password", secure: true }], ["e4", { role: "textbox", name: "Email", secure: false }]]);
-  const check = botApprovalCheck(broker, { bundledTool: (_c, tool) => (tool === TOOL ? "browser" : undefined), browserHost: async () => "example.com", browserElement: (_c, ref) => elements.get(ref), levelOf: () => "ask" });
+  const check = botApprovalCheck(broker, { bundledTool: (_c, tool) => (tool === TOOL ? "browser" : undefined), toolPlugin: () => "clover/browser", browserHost: async () => "example.com", browserElement: (_c, ref) => elements.get(ref), levelOf: () => "ask" });
   const commandOf = async (input: Record<string, unknown>): Promise<string> => {
     const asked = answerNext(broker, "deny");
     await check(ctxOf("alpha"), () => "user")(TOOL, input, run);
@@ -153,4 +153,31 @@ test("the card's act is words from the session's last read, never a bare ref; a 
   expect(await commandOf({ verb: "type", ref: "e3", text: "hunter2" })).toBe('Type into the field "Password"');
   expect(await commandOf({ verb: "type", ref: "e99", text: "hunter2" })).toBe("Type into an element the page showed");
   expect(await commandOf({ verb: "key", key: "Enter" })).toBe("Press Enter");
+});
+
+test("browser-press 4: the kept yes is keyed with the serving plugin: a third party's server and tool of the same names asks again", async () => {
+  let plugin = "clover/browser";
+  const { broker, check } = setup(() => "ask-risky", () => "example.com", () => plugin);
+  const always = answerNext(broker, "always");
+  expect((await check(ctxOf("alpha"), () => "user")(TOOL, { verb: "click", ref: "e1" }, run))?.behavior).toBe("allow");
+  await always;
+  expect(broker.rules().map((r) => r.ruleKey)).toContain("tool:mcp__browser__Browser@clover/browser(example.com)");
+  // The bundled tool's next click runs; the same names served by another plugin raise a card again.
+  const before = broker.cards().length;
+  expect((await check(ctxOf("alpha"), () => "user")(TOOL, { verb: "click", ref: "e1" }, run))?.behavior).toBe("allow");
+  expect(broker.cards().length).toBe(before);
+  plugin = "acme/browser";
+  const asked = answerNext(broker, "deny");
+  expect((await check(ctxOf("alpha"), () => "user")(TOOL, { verb: "click", ref: "e1" }, run))?.behavior).toBe("deny");
+  expect((await asked).id).toBeDefined();
+});
+
+test("browser-press 4: with no plugin to name, an acting call cards every time (no kept answer to inherit or leave)", async () => {
+  const { broker, check } = setup(() => "ask-risky", () => "example.com", () => undefined);
+  const asked = new Promise<Card>((resolve) => { const off = broker.watch((e) => { if (e.type === "requested") { off(); resolve(e.card); } }); });
+  const run2 = check(ctxOf("alpha"), () => "user")(TOOL, { verb: "click", ref: "e1" }, run);
+  const card = await asked;
+  expect(card.options.map((o) => o.id)).not.toContain("always");
+  await broker.answer(card.id, { optionId: "deny", hash: card.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card.id)!, input: "click", at: 1 } }, { role: "app" });
+  expect((await run2)?.behavior).toBe("deny");
 });

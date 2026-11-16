@@ -2,14 +2,17 @@
 // `browser.*` and the terminal are served by capability. Three folder plugins, none of Clover's own:
 // * `acc-surf`, holding `browser`, with a host MCP server whose `Surf` tool its manifest lists in `browserTools`: Alpha's
 //   call drives her own tab (open, read with no card; a click asks for the site, as the Browser tool's does).
-// * `acc-view`, holding `browser`, a live view: its layer lists Alpha's tab, shows it, hears the change and hides it.
+// * `acc-view`, holding `browser` (and `overlay`), a live view in a window of its own (`app.surface`): from its own frame, with no press,
+//   it lists Alpha's tab, shows and hides it, and its navigate is refused; its button, pressed for real, navigates.
+// * `acc-bg`, holding `browser`, a part kept in the background (`app.background`): its `browser.tabs` is refused.
+//   (browser-press, the coordinator's narrowing of F5: the app main process's gesture rule, browser-calls.ts.)
 // * `acc-term`, holding `terminal`: its layer opens a terminal and hears its shell's output; its own call writing to the
 //   terminal (`plugin.layer.call`'s `terminal.input`) is refused.
 // Kept apart from browser-step.ts so the fixtures and the verdict are unit-tested.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const F5_IDS = { surf: "acc-surf", view: "acc-view", term: "acc-term" } as const;
+export const F5_IDS = { surf: "acc-surf", view: "acc-view", term: "acc-term", bg: "acc-bg" } as const;
 export const SURF_TOOL = "Surf";
 
 /** The Surf tool's host half: an MCP server over `api.browser`, for the session whose tool call it serves. */
@@ -46,8 +49,58 @@ const SURF_HOST = [
   "",
 ].join("\n");
 
-/** A component that does nothing on its own (the run drives its plugin's layer): a live view or a terminal needs one. */
+/** A component that does nothing on its own (the run drives its plugin's layer): the terminal needs one. */
 const CLIENT = "export function Part() { return null; }\n";
+
+const REFUSED = "(e) => \"refused \" + (e && e.message ? e.message : String(e))";
+/** The live view's part: `window.__accView` makes its calls from its own frame (the run evaluates them: no press), and its
+ *  button, pressed, navigates `__accView.target`, saying what came of it in `data-said`. */
+const VIEW_CLIENT = [
+  "import { jsx } from \"react/jsx-runtime\";",
+  "import { useEffect, useState } from \"react\";",
+  "import { usePluginApi } from \"@waifucave/clover-plugin-sdk/ui\";",
+  "export function Go() {",
+  "  const api = usePluginApi();",
+  "  const [said, setSaid] = useState(\"\");",
+  "  useEffect(() => {",
+  "    if (!api || !api.browser) return;",
+  "    const b = api.browser;",
+  `    const no = ${REFUSED};`,
+  "    window.__accView = {",
+  "      target: null,",
+  "      list: () => b.tabs({ owner: { kind: \"bot\", bot: \"alpha\" } }).then((t) => \"ok \" + JSON.stringify(t.map((x) => ({ id: x.id, place: x.place, url: x.url }))), no),",
+  "      show: (id) => b.show(id, \"browser\", { width: 800, height: 600 }).then((t) => \"ok \" + t.place, no),",
+  "      hide: (id) => b.hide(id).then((t) => \"ok \" + t.place, no),",
+  "      navigate: (id, url) => b.navigate(id, url).then((t) => \"ok \" + t.url, no),",
+  "    };",
+  "  }, [api]);",
+  "  const onClick = () => {",
+  "    const t = window.__accView && window.__accView.target;",
+  "    if (!api || !t) { setSaid(\"no target\"); return; }",
+  `    api.browser.navigate(t.id, t.url).then((x) => setSaid("ok " + x.url), (e) => setSaid((${REFUSED})(e)));`,
+  "  };",
+  "  return jsx(\"button\", { type: \"button\", \"data-acc-view\": \"go\", \"data-said\": said, onClick, style: { display: \"block\", width: \"100%\", height: 120, fontSize: 20 }, children: \"Acceptance view go\" });",
+  "}",
+  "",
+].join("\n");
+
+/** The background part: on mount it asks for the tab list and writes what came of it in `data-acc-bg`. */
+const BG_CLIENT = [
+  "import { jsx } from \"react/jsx-runtime\";",
+  "import { useEffect, useState } from \"react\";",
+  "import { usePluginApi } from \"@waifucave/clover-plugin-sdk/ui\";",
+  "export function Bg() {",
+  "  const api = usePluginApi();",
+  "  const [said, setSaid] = useState(\"waiting\");",
+  "  useEffect(() => {",
+  "    if (!api) return;",
+  "    if (!api.browser) { setSaid(\"refused no browser in the api\"); return; }",
+  `    api.browser.tabs({}).then((t) => setSaid("ok " + t.length), (e) => setSaid((${REFUSED})(e)));`,
+  "  }, [api]);",
+  "  return jsx(\"div\", { \"data-acc-bg\": said, children: \"background\" });",
+  "}",
+  "",
+].join("\n");
 
 function write(dir: string, manifest: Record<string, unknown>, files: Record<string, string>): string {
   mkdirSync(dir, { recursive: true });
@@ -60,7 +113,7 @@ function write(dir: string, manifest: Record<string, unknown>, files: Record<str
 }
 
 /** The three plugins' folders under `root`. */
-export function writeF5(root: string): { surf: string; view: string; term: string } {
+export function writeF5(root: string): { surf: string; view: string; term: string; bg: string } {
   const engines = { clover: "^1.0.0" };
   const surf = write(join(root, F5_IDS.surf), {
     manifest: 1, id: F5_IDS.surf, name: "Acceptance surf", version: "1.0.0", engines, capabilities: ["browser"],
@@ -72,7 +125,19 @@ export function writeF5(root: string): { surf: string; view: string; term: strin
     client: { entry: "client/index.tsx" },
     contributes: { ui: [{ spot: "panel", key: id, title: name, component: "Part" }] },
   }, { "client/index.tsx": CLIENT });
-  return { surf, view: part(F5_IDS.view, "Acceptance view", "browser"), term: part(F5_IDS.term, "Acceptance terminal", "terminal") };
+  const view = write(join(root, F5_IDS.view), {
+    manifest: 1, id: F5_IDS.view, name: "Acceptance view", version: "1.0.0", engines, capabilities: ["browser", "overlay"],
+    client: { entry: "client/index.js" },
+    // A visible part of its own window (an overlay surface, as lane G's hold fixture): its frame fills the window, so a
+    // click the run sends into it reaches the main process's pointer walk at the window's own point.
+    contributes: { ui: [{ spot: "app.surface", id: "go", component: "Go", title: "Acceptance view", window: { type: "overlay", alwaysOnTop: true, placement: { macos: "bottom-center", windows: "bottom-center", linux: "bottom-center" } } }] },
+  }, { "client/index.js": VIEW_CLIENT });
+  const bg = write(join(root, F5_IDS.bg), {
+    manifest: 1, id: F5_IDS.bg, name: "Acceptance background browser", version: "1.0.0", engines, capabilities: ["browser"],
+    client: { entry: "client/index.js" },
+    contributes: { ui: [{ spot: "app.background", id: "bg", component: "Bg" }] },
+  }, { "client/index.js": BG_CLIENT });
+  return { surf, view, term: part(F5_IDS.term, "Acceptance terminal", "terminal"), bg };
 }
 
 /** What the clause saw. */
@@ -81,13 +146,16 @@ export interface F5Seen {
   open: { text: string; cards: string[] };
   read: { text: string; cards: string[] };
   click: { text: string; cards: string[] };
-  view: { listed: number; shown: string; heard: boolean; hidden: string };
+  /** What the live view's own frame got: each with no press, and the navigate its button made when pressed. */
+  view: { list: string; show: string; hide: string; navNoPress: string; navPressed: string; otherUrl: string };
+  /** What the background part's `browser.tabs` got. */
+  bg: string;
   term: { output: boolean; inputRefused: string };
 }
 
 /** What is wrong; empty when the folder tool drove Alpha's tab (open and read with no card, a click with one), the
- *  folder live view listed, showed (hearing it) and hid her tab, and the folder terminal opened and spoke, with its own
- *  write refused. */
+ *  folder live view listed, showed and hid her tab with no press, was refused a navigate with no press and navigated on a
+ *  real one, the background part was refused, and the folder terminal opened and spoke, with its own write refused. */
 export function f5Wrong(s: F5Seen): string[] {
   const wrong: string[] = [];
   if (!s.surfCard.includes(`says ${SURF_TOOL} drives the calling bot's own tab of the Clover Browser`)) wrong.push("acc-surf's OK card doesn't name its Browser tool with the warning");
@@ -96,7 +164,12 @@ export function f5Wrong(s: F5Seen): string[] {
   if (!/Browser fixture home/.test(s.read.text)) wrong.push(`Surf didn't read the page (${s.read.text.slice(0, 160)})`);
   if (!s.click.cards.some((c) => c.startsWith("a tool card"))) wrong.push(`Surf's click raised no tool card (${s.click.cards.join("; ") || "none"})`);
   if (!/hello was clicked/.test(s.click.text)) wrong.push(`Surf's click, approved, didn't act (${s.click.text.slice(0, 160)})`);
-  if (s.view.listed < 1 || s.view.shown !== "shown" || !s.view.heard || s.view.hidden !== "headless") wrong.push(`acc-view's live view: ${JSON.stringify(s.view)}`);
+  if (!/^ok \[\{"id":"tab_/.test(s.view.list)) wrong.push(`acc-view's list with no press: ${s.view.list.slice(0, 200)}`);
+  if (s.view.show !== "ok shown" || s.view.hide !== "ok headless") wrong.push(`acc-view's show and hide with no press: ${s.view.show}, ${s.view.hide}`);
+  if (!/^refused .*right after your own key press or click/.test(s.view.navNoPress)) wrong.push(`acc-view's navigate with no press wasn't refused for want of a press (${s.view.navNoPress.slice(0, 200)})`);
+  // The tab it answers with may still show the old address while the new page loads: a navigate that went is "ok".
+  if (!s.view.navPressed.startsWith("ok ")) wrong.push(`acc-view's navigate on a real press didn't go (${s.view.navPressed.slice(0, 200)})`);
+  if (!/^refused .*background/.test(s.bg)) wrong.push(`acc-bg's background part wasn't refused the browser (${s.bg.slice(0, 200)})`);
   if (!s.term.output) wrong.push("acc-term's terminal never spoke");
   if (!/only the user's own key presses and pastes/.test(s.term.inputRefused)) wrong.push(`acc-term's own write wasn't refused (${s.term.inputRefused.slice(0, 160)})`);
   return wrong;

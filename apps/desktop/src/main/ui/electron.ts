@@ -1,6 +1,7 @@
 // The Electron half of the plugin runtime: the app's schemes, the UI session's hardening, the protocol handlers that
 // serve the core root and the layers, the IPC the preload's bridge speaks, and the crash census. Spike S9's measured
 // design, with decision 94 (stock Electron) and the E-M0 review: the WebRTC UDP policy on every window, no PAC.
+import { browserReach, browserRefusal } from "./browser-calls";
 import { readFileSync } from "node:fs";
 import type { FrameWatches } from "./frame-watches";
 import { join, normalize } from "node:path";
@@ -391,6 +392,14 @@ export interface IpcHooks {
   /** Waits (briefly) until the window's latest press knows which frame it landed in (a click asks the frames under the
    *  pointer a moment after it), so `takeGesture` can tell. */
   settleGesture?(windowId: number): Promise<void>;
+  /** A visible part subscribed to the `browser` area (on) or unsubscribed (off): the app unsubscribes its plugin's
+   *  connection when the last such part goes (browser-calls.ts `BrowserAreaFrames`). */
+  browserArea?(pluginId: string, mount: string, on: boolean): void;
+  /** A watch opened on a `browser.*` call: its values go only to the plugin's visible documents. */
+  noteBrowserWatch?(watch: string): void;
+  /** Whether part `mount` in window `windowId` is showing tab `tab` in its own browser view now (its frame holds the view
+   *  and that tab is the one shown there). */
+  showsTab?(windowId: number, mount: string, tab: string): boolean;
   /** The windows' push-to-talk holds (listen.ts): the composer's start and stop, and the shell's pieces. */
   listens?: import("./listen").ListenHolds;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
@@ -680,6 +689,15 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (mount === undefined || method === undefined) throw new LayerError("bad request");
     const pluginId = runtime.partOf(s.frame, mount);
     const press = await pressIn(s, a.active);
+    // The Clover Browser from a component (browser-calls.ts): none from a part in the background, and an acting call only with
+    // the user's own press in this part's frame (`press`: the SendGate's `takeIn`, one press, one call; a refused call spends
+    // nobody's gesture).
+    const reach = browserReach(method, a.params, { showing: (tab) => hooks.showsTab?.(s.windowId, mount, tab) === true });
+    const browserWhy = browserRefusal(reach, { background: runtime.inBackground(s.frame, mount), takePress: () => press(s.windowId) });
+    if (browserWhy !== undefined) {
+      log(`layers: ${pluginId}: ${reach.kind === "none" ? method : reach.call} refused (${browserWhy}); frame ${s.frame.processId}:${s.frame.routingId}, active ${a.active === true}`);
+      throw new LayerError(browserWhy);
+    }
     // The pickers are main's own: a plugin that holds `files`, the user's own click, main's dialog; the page gets tokens.
     if (PICK_METHODS.has(method)) {
       if (pluginId === "core" || hooks.pickFiles === undefined || hooks.registerGrant === undefined || hooks.grants === undefined) throw new LayerError("this part can't ask for a file");
@@ -711,6 +729,15 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       entries: (spot) => runtime.entries(s.frame, mount, spot),
       layer: () => {
         const got = hooks.api(pluginId, method, a.params);
+        // The `browser` area, by the visible part that asked for it (a background part's ask was refused above).
+        const areas = (a.params as { areas?: unknown } | undefined)?.areas;
+        if ((method === "events.subscribe" || method === "events.unsubscribe") && Array.isArray(areas) && areas.includes("browser")) {
+          void got.then(() => hooks.browserArea?.(pluginId, mount, method === "events.subscribe"), () => undefined);
+        }
+        const watched = (a.params as { call?: unknown } | undefined)?.call;
+        if (method === "plugin.layer.watch" && typeof watched === "string" && watched.startsWith("browser.")) {
+          void got.then((r) => { const w = (r as { watch?: unknown } | undefined)?.watch; if (typeof w === "string") hooks.noteBrowserWatch?.(w); }, () => undefined);
+        }
         // A frame's watch is the frame's: noted, so the frame's going ends it (frame-watches.ts).
         const fw = hooks.frameWatches;
         if (fw === undefined) return got;

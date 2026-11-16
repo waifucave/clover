@@ -591,3 +591,27 @@ describe("a part's gestured call spends only a press in its own frame (F2, read 
     expect(g.takeIn(1, "doc:A")).toBe(true);
   });
 });
+
+describe("SendGate.takeIn is timed by the press itself (browser-press, read 53 item 6)", () => {
+  test("an old press's frames plus fresh window input of another kind unlocks nothing; a press spent by take is not spent again", () => {
+    let now = 1_000;
+    const g = new SendGate(() => now);
+    g.press(1, { kind: "mouse", key: "left" });
+    expect(g.seen(1, ["tree:1", "panel:A"])).toBe(true);
+    now += 600;
+    g.input(1); // input the main process saw that is no new press (a release, a background window's key)
+    now += 600; // the press is 1.2 s old, the input 0.6 s
+    expect(g.takeIn(1, "panel:A")).toBe(false);
+    // A fresh press, spent by the window rule (`take`): its frame can't spend it again.
+    now += 5_000;
+    g.press(1, { kind: "key", key: "Enter", frames: ["tree:1", "panel:A"] });
+    expect(g.take(1)).toBe(true);
+    expect(g.takeIn(1, "panel:A")).toBe(false);
+    // And the other way round: spent by its frame, the window rule finds nothing.
+    now += 5_000;
+    g.press(1, { kind: "key", key: "Enter", frames: ["tree:1", "panel:A"] });
+    expect(g.takeIn(1, "panel:A")).toBe(true);
+    expect(g.take(1)).toBe(false);
+    expect(g.takeIn(1, "panel:A")).toBe(false);
+  });
+});

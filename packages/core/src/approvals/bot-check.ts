@@ -403,6 +403,9 @@ export function botApprovalCheck(
      *  `webFetch`) on the tree the user OK'd or the build's copy, or the bundled Browser tool (its staged,
      *  digest-checked manifest). Anything else a plugin serves is judged as a tool, whatever it says of itself. */
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined;
+    /** The plugin whose server serves `tool` (the router's binding): a Browser tool's kept "Always allow" is keyed with it,
+     *  so another plugin's server and tool of the same names never inherit it. */
+    toolPlugin?: (ctx: BotSessionContext, tool: string) => string | undefined;
     /** The site the bot's own browser tab is on (the host of its address), or undefined: it has no tab. */
     browserHost?: (ctx: BotSessionContext) => Promise<string | undefined>;
     /** What the session's last Browser `read` said a ref was (its role and name), for the card's words. */
@@ -718,6 +721,7 @@ function knownEffect(
   ctx: BotSessionContext, tool: string, input: Record<string, unknown>, hostTools: ReadonlySet<string>,
   opts: {
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined; seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
+    toolPlugin?: (ctx: BotSessionContext, tool: string) => string | undefined;
     containedTool?: (ctx: BotSessionContext, tool: string) => boolean;
     readOnlyTool?: (ctx: BotSessionContext, tool: string) => boolean;
     fetchBudget?: (ctx: BotSessionContext, url: string) => FetchBudget | undefined;
@@ -741,10 +745,13 @@ function knownEffect(
     const site = url === undefined ? undefined : normalUrl(url);
     const budget = url === undefined ? undefined : opts.fetchBudget?.(ctx, url);
     const seen = url !== undefined && opts.seenUrl?.(ctx, url) === true;
+    // Its kept "Always allow" is keyed with the serving plugin's id as well as the site, as a Browser tool's: another
+    // plugin's server and tool of the same names never inherit it. With no plugin to name, no "always".
+    const plugin = opts.toolPlugin?.(ctx, tool);
     return {
       effect: "fetch",
       ...(seen && budget?.within === true ? { contained: true } : {}),
-      ...(site === null || site === undefined ? {} : { ruleKey: `${OTHER_TOOL_KEY}${tool}(${new URL(site.full).origin})` }),
+      ...(site === null || site === undefined ? {} : plugin === undefined ? { cardAlways: true } : { ruleKey: `${OTHER_TOOL_KEY}${tool}@${plugin}(${new URL(site.full).origin})` }),
       ...(budget === undefined ? {} : {
         budget,
         host: `${budget.domain}: fetch ${budget.toDomain} to this domain this turn (${budget.inAll} in all; without a card, at most ${FETCHES_PER_DOMAIN} to a domain and ${FETCHES_PER_TURN} in all)`,
@@ -765,7 +772,7 @@ function knownEffect(
  *  other kept answers); at "ask" every acting call is a card. With no tab to name the site, a card every time. */
 async function browserKnown(
   ctx: BotSessionContext, tool: string, input: Record<string, unknown>,
-  opts: { levelOf?: (computer: string) => Level | undefined; browserHost?: (ctx: BotSessionContext) => Promise<string | undefined>; browserElement?: (ctx: BotSessionContext, ref: string) => ReadElement | undefined },
+  opts: { levelOf?: (computer: string) => Level | undefined; browserHost?: (ctx: BotSessionContext) => Promise<string | undefined>; browserElement?: (ctx: BotSessionContext, ref: string) => ReadElement | undefined; toolPlugin?: (ctx: BotSessionContext, tool: string) => string | undefined },
 ): Promise<Known> {
   const verb = typeof input.verb === "string" ? input.verb : "";
   if (!BROWSER_ACTING_VERBS.has(verb)) return { effect: "read" }; // looking, or a verb the tool refuses itself
@@ -780,7 +787,16 @@ async function browserKnown(
   const element = ref === undefined || ref === "" ? undefined : opts.browserElement?.(ctx, ref);
   const command = browserActionWords(input, element);
   if (host === undefined || level === "ask") return { effect: "screen", what, cardAlways: true, command };
-  return { effect: "screen", what, command, ruleKey: `${OTHER_TOOL_KEY}${tool}(${host})` };
+  // Keyed with the serving plugin's id: a third party's server and tool named like the bundled ones (or another plugin's)
+  // never inherit this yes. With no plugin to name, a card every time.
+  const plugin = opts.toolPlugin?.(ctx, tool);
+  if (plugin === undefined) return { effect: "screen", what, cardAlways: true, command };
+  return { effect: "screen", what, command, ruleKey: browserRuleKey(tool, plugin, host) };
+}
+
+/** A Browser tool's kept "Always allow": the tool as the session sees it, the plugin serving it, and the site. */
+export function browserRuleKey(tool: string, plugin: string, host: string): string {
+  return `${OTHER_TOOL_KEY}${tool}@${plugin}(${host})`;
 }
 
 /** A `SendMessage`: contained to the bot's own sessions and to a session at a level no wider than the bot's; to any

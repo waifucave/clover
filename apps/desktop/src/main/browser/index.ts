@@ -243,6 +243,14 @@ export class BrowserHost {
     this.show(tab, view, tab.viewport);
   }
 
+  /** The tab shown in a view now, while that view has a frame to show it in; undefined: none. */
+  tabInView(view: string): string | undefined {
+    const slot = this.views.get(view);
+    if (slot?.target === undefined || slot.tab === undefined) return undefined;
+    const tab = this.tabs.get(slot.tab);
+    return tab === undefined || tab.closed ? undefined : slot.tab;
+  }
+
   /** The streams running now: codec, encoder, bitrate and what was sent (diagnostics). */
   streams(): StreamStats[] {
     return this.streamer?.stats() ?? [];

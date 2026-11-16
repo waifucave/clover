@@ -323,9 +323,11 @@ export class SendGate {
     const ok = at !== undefined && arrived - at <= SEND_INPUT_WINDOW_MS;
     if (ok) {
       // One press, one send, whichever rule spends it: this press's hold is spent (a key's send comes on its key down, a click's on
-      // its release), and an allowance its release already gave is gone.
+      // its release), and an allowance its release already gave is gone; `takeIn` can't spend the same press again.
       const h = this.holds.get(windowId);
       if (h !== undefined) h.spent = true;
+      const p = this.lastPress.get(windowId);
+      if (p !== undefined) p.spent = true;
       this.dropAllowances(windowId);
     }
     return ok;
@@ -351,11 +353,17 @@ export class SendGate {
    *  frame (its innermost frame); false (and nothing spent) otherwise. `arrived` is when the call came (before any wait for
    *  the walk, `settle`): the window is measured to it, so a slow walk never makes a timely call late. */
   takeIn(windowId: number, frameId: string, arrived: number = this.now()): boolean {
+    // Timed by the press itself (browser-press, read 53's item 6): never one press's frames with another input's time.
     const p = this.lastPress.get(windowId);
-    const at = this.lastInput.get(windowId);
-    if (p === undefined || at === undefined || arrived - at > SEND_INPUT_WINDOW_MS || arrived < at) return false;
+    if (p === undefined || p.spent || arrived - p.at > SEND_INPUT_WINDOW_MS || arrived < p.at) return false;
     if (p.frames === undefined || [...p.frames].at(-1) !== frameId) return false;
-    return this.take(windowId, arrived);
+    // Spent as `take` spends it: this press, its hold and allowances, and the window's one-second record.
+    p.spent = true;
+    this.lastInput.delete(windowId);
+    const h = this.holds.get(windowId);
+    if (h !== undefined) h.spent = true;
+    this.dropAllowances(windowId);
+    return true;
   }
 
   /** The frames the window's latest press landed in (outermost first), for the log line a refused call writes. */
@@ -628,6 +636,15 @@ export class ViewFrames {
       for (const [m, f] of byMount) if (f.windowId === windowId) any = byMount.delete(m) || any;
       if (any) this.update(name);
     }
+  }
+
+  /** The part whose frame holds the view now (the one it is drawn in), with its window; undefined: none. */
+  holder(name: string): { mount: string; windowId: number } | undefined {
+    const byMount = this.frames.get(name);
+    if (byMount === undefined) return undefined;
+    let best: { mount: string; f: { windowId: number; bounds?: Rect; usedAt: number } } | undefined;
+    for (const [mount, f] of byMount) if (best === undefined || f.usedAt > best.f.usedAt) best = { mount, f };
+    return best?.f.bounds === undefined ? undefined : { mount: best.mount, windowId: best.f.windowId };
   }
 
   /** The view's target now. */

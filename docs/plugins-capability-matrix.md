@@ -166,12 +166,20 @@ yet". A class test (`plugin-host/tests/host-calls-served.test.ts`) fails when a 
 Approval cards: `approvals.pending` and `approvals.watch` are served to components only, with `approvals`: the cards that wait for the plugin's own bot (the bundled `clover` tree: all), ids and places, never their text. A host half has none.
 
 `browser` is any plugin's to ask for (the owner, 2026-11-15), with a warning line on its card: "drives the Clover Browser:
-a bot's own tab as its tool, and in its own page every tab of the Clover Browser on this computer, which it can open,
-read and act on, signed in wherever you signed in there". F5 serves `browser.*` by the capability: a host half acts only
-for the session whose tool call it serves, on that session's own tab (`browser.toolCaller` says which); a component is
-a live view for the person (every owner's tab here, `show`, `hide`, `onCdpEvent`'s `Page.*` events). A server's
-`browserTools` are judged as the Browser tool. `terminal` opens terminals from a component; only the user's own key
-presses and pastes reach one (the app hands them over), never a plugin's call.
+a bot's own tab as its tool; its page sees every Clover Browser tab on this computer, its address, title and picture,
+ones you opened yourself included, with no asking, and opens, closes and acts in tabs when you press its controls,
+signed in wherever you signed in there". F5 serves `browser.*` by the
+capability: a host half acts only for the session whose tool call it serves, while that call is open, on that session's
+own tab (`browser.toolCaller` says which; a call on a later tick is refused). A component the user can see is a live
+view for the person: it lists every owner's tab here, shows, hides, hears `onCdpEvent`'s `Page.*` events and the tab
+changes, reads `Page.getNavigationHistory` and pictures the tab it is showing in its own view, with no press; every
+other `browser.cdp` method, `navigate`, `open` (for any owner), `close`, a picture of another tab and any `browser.*`
+call the app doesn't know go only right after the user's own press in that part's frame (the app main process's
+gesture rule: one press, one acting call). A part in `app.background` gets no `browser.*` at all and hears no tab
+event; the `browser` area is unsubscribed when a plugin's last visible part that asked for it goes. A server's
+`browserTools` are judged as the Browser tool, its looking/acting split by the plugin's own word; their "Always allow"
+is kept with the plugin's id. `terminal` opens terminals from a component; only the user's own key presses and pastes
+reach one (the app hands them over), never a plugin's call.
 
 A host half that reads a member the API doesn't have (`api.env`, `api.log`) gets a TypeError naming it, where it reads
 it. Feature-test with `in`, which never throws: `"files" in api`, `"get" in api.settings` (false for a call not served
