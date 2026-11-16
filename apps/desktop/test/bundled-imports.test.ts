@@ -71,8 +71,7 @@ const PENDING_RULING: Record<string, readonly RegExp[]> = {
   devices: [/^devices\/client\/entries\.tsx: @waifucave\/clover-plugin-island$/],
   pill: [/^pill\/(src|test)\/.*: @waifucave\/clover-plugin-island(\/names)?$/, /^pill\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
   usage: [/^usage\/src\/.*: @waifucave\/clover-plugin-island(\/fixtures|\/gallery)?$/, /^usage\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
-  // The VRM plugin's lip sync and figure control, which the Live2D plugin reuses.
-  live2d: [/^live2d\/(src|test)\/.*: @waifucave\/clover-plugin-vrm\/(control|lipsync|gallery)$/, /^live2d\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
+  live2d: [/^live2d\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
   // The base theme's token tables and CSS checks, in other parts' style tests.
   island: [/^island\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
   vrm: [/^vrm\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],

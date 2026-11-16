@@ -3,8 +3,8 @@
 // phrase as the speech feed reads it, then loading and refused. Every frame is a still, the same on every run.
 
 import type { ReactElement, ReactNode } from "react";
-import { ALPHA_PORTRAIT, Stage, phraseFrames } from "@waifucave/clover-plugin-vrm/gallery";
-import type { VisemeWeights } from "@waifucave/clover-plugin-vrm/lipsync";
+import { ALPHA_PORTRAIT, Stage, phraseFrames } from "./stage";
+import type { VisemeWeights } from "@waifucave/clover-plugin-sdk/ui/mouth";
 import { Live2dAvatar, type AvatarStill } from "./ui/Live2dAvatar";
 import { archiveBombCheck, bombCheckProblems } from "./bomb";
 

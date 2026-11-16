@@ -10,7 +10,7 @@
 //   and `ParamMouthForm` widens for the bright vowels and rounds for the dark ones, where the model has it.
 
 import type { MotionSyncSetting } from "@waifucave/mochi2d/headless";
-import type { VisemeWeights } from "@waifucave/clover-plugin-vrm/lipsync";
+import type { VisemeWeights } from "@waifucave/clover-plugin-sdk/ui/mouth";
 
 export const MOUTH_FORM = "ParamMouthForm";
 export const MOUTH_OPEN = "ParamMouthOpenY";
