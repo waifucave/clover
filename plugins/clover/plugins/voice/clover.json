@@ -173,6 +173,15 @@
         "name": "Clover Voice"
       }
     ],
+    "commands": [
+      {
+        "name": "push-to-talk",
+        "description": "Hold Ctrl+Shift+Space to talk to the bot, as when you hold the talk button; let go to send.",
+        "handler": "pushToTalk",
+        "key": "ctrl+shift+space",
+        "hold": true
+      }
+    ],
     "hooks": [
       {
         "id": "replies",

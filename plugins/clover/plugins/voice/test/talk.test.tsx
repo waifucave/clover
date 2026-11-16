@@ -20,13 +20,15 @@ afterEach(() => {
 
 const alpha = { props: { bot: { id: "alpha", name: "Alpha" }, session: "b_alpha" } } as unknown as EntryProps<{ bot: BotRef; session: string }>;
 
-function world(o: { listens?: boolean; heard?: { text?: string; note?: string }; writeFails?: boolean } = {}) {
+function world(o: { listens?: boolean; heard?: { text?: string; note?: string }; writeFails?: boolean; buttons?: number } = {}) {
   const calls: { name: string; args: unknown }[] = [];
   const turns: string[] = [];
   const done: string[] = [];
   const written: number[] = [];
   const streams: { name: string; meta: Record<string, unknown>; closed: boolean }[] = [];
   const sent: { to: unknown; message: unknown }[] = [];
+  /** What its host half sends its parts (`host.on`): every listener of each event. */
+  const heard = new Map<string, Set<(data: unknown) => void>>();
   const a = fakeApi({ pluginId: "clover/voice", settings: {} });
   const api = Object.assign(a, {
     settings: { ...a.settings, watch: () => () => undefined },
@@ -46,15 +48,27 @@ function world(o: { listens?: boolean; heard?: { text?: string; note?: string };
         if (name === "heard") return o.heard ?? { text: "hello from the clip" };
         return { ok: true };
       },
-      on: () => () => undefined,
+      on: (event: string, fn: (data: unknown) => void) => {
+        const set = heard.get(event) ?? new Set();
+        heard.set(event, set.add(fn));
+        return () => set.delete(fn);
+      },
     },
   }) as unknown as PluginApi;
+  // Several composers each with its own button and text box (the key binding picks the one nearest the focus).
   render(
     <UiRuntimeProvider runtime={runtimeWith({ api: () => api, userSend: () => async (to, message) => { sent.push({ to, message }); } })}>
-      <TalkButton {...alpha} />
+      {Array.from({ length: o.buttons ?? 1 }, (_, i) => (
+        <div key={i} data-composer={i}>
+          <textarea aria-label={`box ${i}`} />
+          <TalkButton {...alpha} />
+        </div>
+      ))}
     </UiRuntimeProvider>,
   );
-  return { calls, turns, done, written, streams, sent };
+  /** Its host half passing on the held key binding's down or up. */
+  const key = (phase: "down" | "up") => { for (const fn of heard.get(`talk-${phase}`) ?? []) fn({}); };
+  return { calls, turns, done, written, streams, sent, key };
 }
 
 /** A test source: two chunks at once, then nothing until stopped. */
@@ -103,6 +117,54 @@ describe("Clover Voice's hold-to-talk button", () => {
     expect(w.streams).toHaveLength(1);
     await act(async () => { fireEvent.keyUp(button, { key: " " }); await settle(10); });
     expect(w.sent).toHaveLength(1);
+  });
+
+  test("by its held key binding (Ctrl+Shift+Space, passed on by its host half): the down starts, a second down does nothing, the up sends once", async () => {
+    twoChunks();
+    const w = world();
+    await act(() => settle(6));
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    await act(async () => { w.key("down"); await settle(6); });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => { w.key("down"); await settle(4); });
+    expect(w.turns).toEqual(["device/microphone"]);
+    expect(w.streams).toHaveLength(1);
+    await act(async () => { w.key("up"); await settle(10); });
+    expect(w.sent).toEqual([{ to: { session: "b_alpha" }, message: { text: "hello from the clip" } }]);
+    await act(async () => { w.key("up"); await settle(4); });
+    expect(w.sent).toHaveLength(1);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("the key's up doesn't end a hold the mouse started; its down doesn't start a second one", async () => {
+    twoChunks();
+    const w = world();
+    await act(() => settle(6));
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    await act(async () => { fireEvent.pointerDown(button, { pointerId: 1, button: 0 }); await settle(6); });
+    await act(async () => { w.key("down"); w.key("up"); await settle(6); });
+    expect(w.streams).toHaveLength(1);
+    expect(w.sent).toEqual([]);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => { fireEvent.pointerUp(button, { pointerId: 1, button: 0 }); await settle(10); });
+    expect(w.sent).toHaveLength(1);
+  });
+
+  test("of several talk buttons, the key holds the one in the composer that has the focus, else the first", async () => {
+    twoChunks();
+    const w = world({ buttons: 2 });
+    await act(() => settle(6));
+    const [first, second] = screen.getAllByRole("button", { name: "Hold to talk" });
+    screen.getByLabelText("box 1").focus();
+    await act(async () => { w.key("down"); await settle(6); });
+    expect([first!.getAttribute("aria-pressed"), second!.getAttribute("aria-pressed")]).toEqual(["false", "true"]);
+    await act(async () => { w.key("up"); await settle(10); });
+    expect(w.sent).toHaveLength(1);
+    (document.activeElement as HTMLElement | null)?.blur();
+    await act(async () => { w.key("down"); await settle(6); });
+    expect([first!.getAttribute("aria-pressed"), second!.getAttribute("aria-pressed")]).toEqual(["true", "false"]);
+    await act(async () => { w.key("up"); await settle(10); });
+    expect(w.sent).toHaveLength(2);
   });
 
   test("nothing heard: no send, and a note says why by the button", async () => {

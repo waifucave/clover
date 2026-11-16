@@ -4,6 +4,8 @@
 // instead; the default voice a plugin gives the bot it brings (the user's choice wins; it speaks only with a provider set up);
 // the speak button reads the reply from the log; the player's stops and holds go as whole-state `ui.send` messages.
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import * as host from "../host/index";
 import type { HookInput } from "@waifucave/clover-plugin-sdk";
 
@@ -243,6 +245,20 @@ describe("Clover Voice's host half", () => {
     expect(f.asked.map((a) => [a.point, (a.args as { bot?: string }).bot])).toEqual([[`${host.MODES}#hear`, "alpha"]]);
     fake({ active: { pluginId: "acme-voice", entryId: "acme" }, modes: [{ pluginId: "acme-voice", entryId: "acme", value: { name: "Acme" } }] });
     expect(await host.ui.listens({ bot: "alpha" })).toBe(false);
+  });
+
+  test("its held key binding (push-to-talk, Ctrl+Shift+Space): the key's down and up go on to its talk buttons; run with no key it does nothing", async () => {
+    const f = fake();
+    expect(host.pushToTalk({ key: "down" })).toEqual({ ok: true });
+    expect(host.pushToTalk({ key: "up" })).toEqual({ ok: true });
+    expect(host.pushToTalk({})).toEqual({ ok: false });
+    expect(host.pushToTalk(null)).toEqual({ ok: false });
+    expect(f.sent).toEqual([["talk-down", {}], ["talk-up", {}]]);
+  });
+
+  test("its manifest binds Ctrl+Shift+Space as a held key to that handler", () => {
+    const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "clover.json"), "utf8")) as { contributes: { commands?: Record<string, unknown>[] } };
+    expect(manifest.contributes.commands).toEqual([expect.objectContaining({ name: "push-to-talk", handler: "pushToTalk", key: "ctrl+shift+space", hold: true })]);
   });
 
   test("push-to-talk's holds go to the player as the whole set; the player's ready answers the state so far", async () => {
