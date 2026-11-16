@@ -4,7 +4,7 @@
 // port only behind CLOVER_DEV_DEBUG=1 (apps/desktop/src/main/debug-guard.ts); a packaged app never does.
 
 export interface ConsoleEntry { session: string; url: string; level: string; text: string }
-export interface FrameInfo { session: string; url: string; type: string; targetId?: string; /** The session it was attached under (its parent document's), none for a window's page. */ parent?: string }
+export interface FrameInfo { session: string; url: string; type: string; targetId?: string }
 
 type Pending = { method: string; resolve(v: any): void; reject(e: Error): void };
 
@@ -55,7 +55,7 @@ export class Cdp {
     if (m.method === "Target.attachedToTarget") {
       const sid: string = m.params.sessionId;
       const info = m.params.targetInfo as { url: string; type: string; targetId?: string };
-      this.frames.set(sid, { session: sid, url: info.url, type: info.type, ...(info.targetId !== undefined ? { targetId: info.targetId } : {}), ...(s !== "browser" ? { parent: s } : {}) });
+      this.frames.set(sid, { session: sid, url: info.url, type: info.type, ...(info.targetId !== undefined ? { targetId: info.targetId } : {}) });
       void this.arm(sid);
     } else if (m.method === "Target.targetInfoChanged") {
       // A target attached before its page loaded (a surface window: the island, the pill) was named by its first
@@ -122,40 +122,14 @@ export class Cdp {
     }
   }
 
-  /** Where a point of a frame's own viewport is in its window's page: the window's page session and the point there, adding each
-   *  enclosing frame's content offset (its owner iframe's box in the parent document). Undefined when a hop can't be read. */
-  async windowPoint(session: string, x: number, y: number): Promise<{ session: string; x: number; y: number } | undefined> {
-    let s = session;
-    let px = x;
-    let py = y;
-    for (let depth = 0; depth < 8; depth++) {
-      const f = this.frames.get(s);
-      if (f === undefined || f.parent === undefined || f.type === "page") return { session: s, x: px, y: py };
-      const tree = await this.send<{ frameTree: { frame: { id: string } } }>("Page.getFrameTree", {}, s).catch(() => undefined);
-      if (tree === undefined) return undefined;
-      await this.send("DOM.enable", {}, f.parent).catch(() => undefined);
-      const owner = await this.send<{ backendNodeId: number }>("DOM.getFrameOwner", { frameId: tree.frameTree.frame.id }, f.parent).catch(() => undefined);
-      if (owner === undefined) return undefined;
-      const box = await this.send<{ model: { content: number[] } }>("DOM.getBoxModel", { backendNodeId: owner.backendNodeId }, f.parent).catch(() => undefined);
-      if (box === undefined) return undefined;
-      px += box.model.content[0]!;
-      py += box.model.content[1]!;
-      s = f.parent;
-    }
-    return undefined;
-  }
-
-  /** A trusted click at a point of a session's viewport (CSS pixels), as a person makes one: sent to the window's page at the
-   *  window's coordinates (the app reads which frame it landed in from the window, as it does for real input), or to the
-   *  frame's own session when its place in the window can't be read. */
+  /** A trusted click at a point of a session's viewport (CSS pixels). */
   async click(session: string, x: number, y: number): Promise<void> {
-    const at = (await this.windowPoint(session, x, y)) ?? { session, x, y };
     // A window under load (a shard at a high load average) can leave one of the three events unanswered for 20 s: the press is
     // made again, twice at most, only for that answer's absence.
     for (let attempt = 0; ; attempt++) {
       try {
         for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
-          await this.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1, buttons: type === "mousePressed" ? 1 : 0 }, at.session);
+          await this.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, buttons: type === "mousePressed" ? 1 : 0 }, session);
         }
         return;
       } catch (err) {
