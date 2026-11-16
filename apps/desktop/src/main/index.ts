@@ -2786,7 +2786,7 @@ async function smoke(): Promise<void> {
               await new Promise((r) => setTimeout(r, 120));
               if (typeof pulse === "number") {
                 // The "press again" pulse of an earlier refused press is running (its animation started `pulse` ms ago): the press must still land.
-                await frame.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (b) b.dataset.again = 'yes'; return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true)))); })()`, true).catch(() => undefined);
+                await frame.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (b) b.dataset.again = 'yes'; return new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r(true))); setTimeout(() => r(false), 1500); }); })()`, true).catch(() => undefined);
                 await new Promise((r) => setTimeout(r, Math.max(0, Math.min(1500, pulse))));
                 log(`sealed-click: press ${Math.round(pulse)} ms into the pulse`);
               }
