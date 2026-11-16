@@ -63,7 +63,7 @@ case "$cmd" in
     gh run view "$run" --json jobs --jq '.jobs[] | select(.conclusion == "failure" and .name != "gate" and .name != "lane gate") | "\(.databaseId)\t\(.name)\t\([.steps[] | select(.conclusion == "failure") | .name] | join("; "))"' |
     while IFS=$'\t' read -r id name steps; do
       echo "== $name  (failed: $steps)"
-      gh run view "$run" --job "$id" --log-failed 2>/dev/null | grep -aE "error:|\(fail\)|##\[error\]|FAIL|✗| fail$|acceptance: step [0-9]+: (FAIL|BLOCKED)" | sed -E 's/^[^	]*\t[^	]*\t[0-9TZ:.-]+ //' | cut -c1-300 | head -25
+      gh run view "$run" --job "$id" --log-failed 2>/dev/null | grep -aE "error:|\(fail\)|##\[error\][^-]|FAIL|✗| [1-9][0-9]* fail$|acceptance: step [0-9]+: (FAIL|BLOCKED)" | sed -E 's/^[^	]*\t[^	]*\t[0-9TZ:.-]+ //' | perl -pe 's/\e\[[0-9;]*m//g' | cut -c1-300 | awk '!seen[$0]++' | head -25
     done ;;
   *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
