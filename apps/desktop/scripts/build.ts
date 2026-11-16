@@ -88,7 +88,7 @@ await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: jo
 }
 
 // ---- The app's own icons: the tray's (macOS's template, the Windows and Linux themes') and MOSS Code Dev's ----
-// Drawn from assets/brand/moss/ by scripts/brand-icons.ts and committed; copied as they are.
+// Drawn from assets/brand/moss-code/ by scripts/brand-icons.ts and committed; copied as they are.
 cpSync(join(root, "resources", "icons"), join(out, "main", "icons"), { recursive: true });
 
 // ---- The core root ----
