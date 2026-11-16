@@ -3,9 +3,12 @@
 // the `conversation` spot, read only: the conversation part reads it from `archive.history` when its props say
 // `archived`. An old session's approvals have no sealed card, so they read as notes there.
 import { useEffect, useState } from "react";
-import type { ArchivedSessionView } from "../../shell/runtime/types";
+import type { ArchivedSessionView } from "@waifucave/clover-plugin-sdk";
 import { Archive } from "./Archive";
-import { Spot, useCore } from "./sdk";
+import { Spot, useCore } from "@waifucave/clover-plugin-sdk/ui";
+
+/** `archive.list`'s answer (the core's): a page of old sessions, newest first. */
+type ArchivePage = { sessions: ArchivedSessionView[]; more: boolean; cursor?: string };
 
 export interface ArchiveEntryProps {
   route?: string;
@@ -35,7 +38,7 @@ export function ArchiveEntry({ props }: { props: ArchiveEntryProps }) {
     if (!core) return;
     let live = true;
     setLoading(true);
-    core.call("archive.list", { ...(asked ? { query: asked } : {}), limit: PAGE }).then(
+    (core.call("archive.list", { ...(asked ? { query: asked } : {}), limit: PAGE }) as Promise<ArchivePage>).then(
       (page) => {
         if (!live) return;
         setSessions(page.sessions);
@@ -52,7 +55,7 @@ export function ArchiveEntry({ props }: { props: ArchiveEntryProps }) {
 
   const older = () => {
     if (!core || cursor === undefined) return;
-    void core.call("archive.list", { ...(asked ? { query: asked } : {}), cursor, limit: PAGE }).then((page) => {
+    void (core.call("archive.list", { ...(asked ? { query: asked } : {}), cursor, limit: PAGE }) as Promise<ArchivePage>).then((page) => {
       setSessions((s) => [...s, ...page.sessions.filter((x) => !s.some((y) => y.id === x.id))]);
       setMore(page.more);
       setCursor(page.cursor);

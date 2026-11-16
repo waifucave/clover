@@ -1,5 +1,5 @@
 // Mocked old sessions (lane B's `ArchivedSessionView`) and one's events, for the gallery and the tests.
-import type { ArchivedSessionView } from "../../shell/runtime/types";
+import type { ArchivedSessionView } from "@waifucave/clover-plugin-sdk";
 
 /** Thursday, November 5, 2026, 16:30 UTC (the gallery's clock). */
 export const NOW = Date.UTC(2026, 10, 5, 16, 30);
