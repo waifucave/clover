@@ -30,6 +30,7 @@ import { installFromNpm } from "../registry/indexes/npm";
 import type { PluginUpdater } from "../registry/indexes/update";
 import { readReviewTree, REVIEW_CHANGED, type PluginReviews, type ReviewTree } from "../registry/plugin-review";
 import { folderTreeHash } from "../registry/tree";
+import { manifestPathIn } from "../old-names";
 import { homedir } from "node:os";
 import { installWrapped } from "../registry/wrap";
 import { forgetRemovedPlugin } from "../registry/leftovers";
@@ -95,7 +96,7 @@ function devFolderCheck(path: string): string {
   } catch {
     throw new ContractError("invalid", `${path} doesn't exist`);
   }
-  if (!statSync(real).isDirectory() || !existsSync(join(real, "moss.json"))) throw new ContractError("invalid", `${real} has no moss.json`);
+  if (!statSync(real).isDirectory() || !existsSync(manifestPathIn(real))) throw new ContractError("invalid", `${real} has no moss.json`);
   return real;
 }
 

@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { TrustStore } from "./trust";
 import { storeHomeFor } from "./paths";
+import { projectDirOf } from "../old-names";
 import { neutralizeReminderTags } from "./context";
 import { LEGACY_PROJECT_DIR, resolveLegacyProjectDir, resolveLegacyProjectPath } from "./legacy-project-files";
 import { trustedProjectWalk } from "./project-scope-dirs";
@@ -149,7 +150,7 @@ export class OutputStyleStore {
   /** MOSS-named project style path, or its legacy counterpart when the flag is on and the MOSS
    *  one is absent. `legacySettings` absent (see the constructor dep's own doc) never falls back. */
   private resolveStylePath(cwd: string, name: string): { path: string; usedLegacy: boolean } {
-    const winterPath = join(cwd, ".moss", "output-styles", `${name}.md`);
+    const winterPath = join(projectDirOf(cwd), "output-styles", `${name}.md`);
     if (!this.deps.legacySettings) return { path: winterPath, usedLegacy: false };
     return resolveLegacyProjectPath(winterPath, join(cwd, LEGACY_PROJECT_DIR, "output-styles", `${name}.md`), this.deps.legacySettings());
   }
@@ -175,7 +176,7 @@ export class OutputStyleStore {
     // Project overrides user; along the walk, nearest first and each later (more root-ward) dir overriding
     // — the run home's `lastWins` (see the class doc).
     for (const projectDir of trustedProjectWalk(cwd, this.deps.trust)) {
-      const mossDir = join(projectDir, ".moss", "output-styles");
+      const mossDir = join(projectDirOf(projectDir), "output-styles");
       const legacyDir = join(projectDir, LEGACY_PROJECT_DIR, "output-styles");
       const dir = this.deps.legacySettings ? resolveLegacyProjectDir(mossDir, legacyDir, this.deps.legacySettings()).dir : mossDir;
       scan(dir);

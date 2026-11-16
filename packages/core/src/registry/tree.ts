@@ -8,10 +8,11 @@
 // Hard links (#197's review): a regular file with more than one name could be written through a name outside the
 // folder, which the watcher doesn't see and the OK never covered, so one makes an installed plugin invalid. A
 // development folder may hold them (a package manager's links), since it reloads on every change anyway.
-import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { isTreeHashExcluded, treeHash, treePathProblem, type PluginFolderReader, type TreeEntry } from "@waifucave/moss-plugin-sdk";
 import { createHash } from "node:crypto";
+import { newManifestFor, oldManifestFor } from "../old-names";
 
 /** Why a folder's files can't be hashed: a symlink out of it, a bad path. */
 export class TreeProblem extends Error {
@@ -59,7 +60,9 @@ export function treeEntries(folder: string, opts: { allowHardLinks?: boolean; ma
       else if (st.isFile()) {
         if (st.nlink > 1 && !opts.allowHardLinks) throw new TreeProblem(rel, `${rel} is a hard link, with another name outside the plugin's control`);
         count(rel, st.size);
-        out.push(entry(rel, abs, st.mode));
+        // An old-named manifest is listed under the new name when the new-named file is absent: one tree, one hash.
+        const asNew = newManifestFor(rel);
+        out.push(entry(asNew !== undefined && !existsSync(join(root, asNew)) ? asNew : rel, abs, st.mode));
       }
     }
   };
@@ -85,7 +88,13 @@ export function folderReader(folder: string): PluginFolderReader {
       return folder;
     }
   })();
-  const at = (path: string) => join(root, ...path.split("/").filter((p) => p !== "" && p !== "."));
+  const at = (path: string) => {
+    const segments = path.split("/").filter((p) => p !== "" && p !== ".");
+    const file = join(root, ...segments);
+    // An old-named manifest (`old-names.ts`) stands in for a new-named one that isn't there.
+    const old = existsSync(file) ? undefined : oldManifestFor(segments.join("/"));
+    return old !== undefined && existsSync(join(root, ...old.split("/"))) ? join(root, ...old.split("/")) : file;
+  };
   return {
     readText(path) {
       try {

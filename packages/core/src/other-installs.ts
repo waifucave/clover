@@ -1,12 +1,21 @@
 // The other installs that share this machine with MOSS, named in ONE place so every guard refuses them by the same
-// names: the live Winter install (spec §2: it keeps running beside MOSS until the hand-over), its dev profile, and
-// the legacy install kept as the rollback source (`legacy-names.ts`). A MOSS daemon, the dev scripts and the tests
+// names: the live Winter install (spec §2: it keeps running beside MOSS until the hand-over), its dev profile, the
+// legacy install kept as the rollback source (`legacy-names.ts`), and the installed Clover app (this product's previous
+// name: its app bundle, its home folder, its launch agent and Keychain service, which stay in use until the owner
+// hands over). A MOSS daemon, the dev scripts and the tests
 // never run on, read or write any of these homes or Keychain services. MOSS's own names are in `profile.ts` and
 // `moss-dir.ts`.
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { LEGACY_DEV_HOME_DIR, LEGACY_HOME_DIR, LEGACY_KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE_DEV } from "./legacy-names";
+
+/** The installed Clover app's home folder, and its dev profile's: the app this one replaces, kept running beside it. */
+export const CLOVER_HOME_DIR = ".clover";
+export const CLOVER_DEV_HOME_DIR = ".clover-dev";
+/** The installed Clover app's Keychain service (also its launch agent's label), and its dev profile's. */
+export const CLOVER_KEYCHAIN_SERVICE = "com.waifucave.clover.core";
+export const CLOVER_DEV_KEYCHAIN_SERVICE = "com.waifucave.clover.core.dev";
 
 /** The live Winter install's home folder, under the user's home. */
 export const WINTER_HOME_DIR = ".winter";
@@ -22,6 +31,8 @@ export const OTHER_INSTALL_HOMES: readonly { dir: string; what: string }[] = [
   { dir: WINTER_DEV_HOME_DIR, what: "Winter Dev's home" },
   { dir: LEGACY_HOME_DIR, what: "the legacy install's home (the rollback source)" },
   { dir: LEGACY_DEV_HOME_DIR, what: "the legacy dev home (the rollback source)" },
+  { dir: CLOVER_HOME_DIR, what: "the installed Clover app's home" },
+  { dir: CLOVER_DEV_HOME_DIR, what: "Clover Dev's home" },
 ];
 
 /** Their Keychain services, and what each is: a MOSS daemon, script or test never reads or writes one. */
@@ -30,6 +41,8 @@ export const OTHER_INSTALL_KEYCHAIN_SERVICES: readonly { service: string; what: 
   { service: WINTER_DEV_KEYCHAIN_SERVICE, what: "Winter Dev's Keychain service" },
   { service: LEGACY_KEYCHAIN_SERVICE, what: "the legacy install's Keychain service (the rollback source)" },
   { service: LEGACY_KEYCHAIN_SERVICE_DEV, what: "the legacy dev Keychain service (the rollback source)" },
+  { service: CLOVER_KEYCHAIN_SERVICE, what: "the installed Clover app's Keychain service" },
+  { service: CLOVER_DEV_KEYCHAIN_SERVICE, what: "Clover Dev's Keychain service" },
 ];
 
 export class OtherInstallHomeRefused extends Error {

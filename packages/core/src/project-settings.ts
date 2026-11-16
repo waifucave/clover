@@ -2,6 +2,7 @@ import { lstatSync, type Stats } from "node:fs";
 import { join } from "node:path";
 import { readRawSettings, Settings, legacyProjectFilesReadEnabled } from "./settings";
 import { LEGACY_PROJECT_DIR } from "./legacy-names";
+import { projectDirOf } from "./old-names";
 
 /** Keys never taken from a project/local overlay (top level only): `provider` is an exfil/MITM
  *  line and a provider-type change requires a daemon restart; `plugins` consent is its own
@@ -152,7 +153,7 @@ export class ProjectSettingsResolver {
     if (!cwd || !base) return base;
 
     const trusted = this.deps.trust.isTrusted(cwd);
-    const dotMoss = join(cwd, ".moss");
+    const dotMoss = projectDirOf(cwd);
     const projectPath = join(dotMoss, "settings.json");
     const localPath = join(dotMoss, "settings.local.json");
 

@@ -71,6 +71,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync, chmodSync, statSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
+import { OLD_PROJECT_DIR, newThenOld } from "../../old-names";
 import { z } from "zod";
 import { validateMcpOAuthConfig } from "@waifucave/clover-agent-runtime/mcp-auth";
 
@@ -310,7 +311,8 @@ export function extractRawMcpServers(parsedJson: unknown): { raw: Record<string,
  *    of some OTHER name.
  */
 export function readRawProjectMcpConfig(dir: string): { kind: "absent" } | { kind: "malformed" } | { kind: "ok"; raw: Record<string, unknown>; servers: Record<string, unknown> } {
-  const path = projectMcpConfigPath(dir);
+  // The new-named file first, the old-named one second (`old-names.ts`); a write always goes to the new name.
+  const path = newThenOld(projectMcpConfigPath(dir), join(dir, OLD_PROJECT_DIR, PROJECT_MCP_FILENAME));
   if (!existsSync(path)) return { kind: "absent" };
   let parsed: unknown;
   try {

@@ -1,0 +1,53 @@
+// The OLD product's names that a user wrote on disk outside the home, in exactly ONE place. The new build reads
+// the new name first and one of these second: it never writes them, and nothing else in live code spells them.
+// Each helper answers "which path do I read": the new one when it exists, the old one when only that exists, the
+// new one when neither does (so a caller's own "nothing there" handling is unchanged).
+import { existsSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+
+/** A project's settings folder before the rename. */
+export const OLD_PROJECT_DIR = ".clover";
+/** A project's (or the home's) instructions file before the rename. */
+export const OLD_INSTRUCTIONS_FILE = "CLOVER.md";
+/** A folder plugin's manifest before the rename. */
+export const OLD_PLUGIN_MANIFEST = "clover.json";
+
+/** Every name above, for the one test that holds this file to them. */
+export const OLD_NAMES = [OLD_PROJECT_DIR, OLD_INSTRUCTIONS_FILE, OLD_PLUGIN_MANIFEST] as const;
+
+/** `newPath` when it exists, else `oldPath` when it exists, else `newPath`. */
+export function newThenOld(newPath: string, oldPath: string): string {
+  if (existsSync(newPath)) return newPath;
+  return existsSync(oldPath) ? oldPath : newPath;
+}
+
+/** A project's `.moss` folder, or its old-named one when only that is there. */
+export function projectDirOf(cwd: string, newName = ".moss"): string {
+  return newThenOld(join(cwd, newName), join(cwd, OLD_PROJECT_DIR));
+}
+
+/** The instructions file in `dir`: `newName` (`MOSS.md`), else the old-named one. */
+export function instructionsFileIn(dir: string, newName = "MOSS.md"): string {
+  return newThenOld(join(dir, newName), join(dir, OLD_INSTRUCTIONS_FILE));
+}
+
+/** The manifest of the plugin folder `dir`: its `moss.json`, else the old-named file when only that is there. */
+export function manifestPathIn(dir: string, newName = "moss.json"): string {
+  return newThenOld(join(dir, newName), join(dir, OLD_PLUGIN_MANIFEST));
+}
+
+/** The old-named manifest that stands in for the new-named path `rel` (a plugin folder's `moss.json` or a child's), or
+ *  `undefined` when `rel` is not a manifest path. The caller uses it only when the new-named file is absent. */
+export function oldManifestFor(rel: string, newName = "moss.json"): string | undefined {
+  if (basename(rel) !== newName) return undefined;
+  const dir = dirname(rel);
+  return dir === "." || dir === "" ? OLD_PLUGIN_MANIFEST : join(dir, OLD_PLUGIN_MANIFEST);
+}
+
+/** The inverse, for a tree listing: the new-named path a plugin folder's (or child's) old-named manifest `rel` is listed
+ *  as, or `undefined` when `rel` is not one. The caller uses it only when the new-named file is absent. */
+export function newManifestFor(rel: string, newName = "moss.json"): string | undefined {
+  if (rel === OLD_PLUGIN_MANIFEST) return newName;
+  const parts = rel.split("/");
+  return parts.length === 3 && parts[0] === "plugins" && parts[2] === OLD_PLUGIN_MANIFEST ? `${dirname(rel)}/${newName}` : undefined;
+}

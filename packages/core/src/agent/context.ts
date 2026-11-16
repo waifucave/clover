@@ -4,6 +4,7 @@ import type { TrustStore } from "./trust";
 import type { SkillStore } from "./skills";
 import type { ResolvedStyle } from "./output-styles";
 import { LEGACY_INSTRUCTIONS_FILE, LEGACY_PROJECT_DIR, resolveLegacyProjectDir, resolveLegacyProjectPath } from "./legacy-project-files";
+import { instructionsFileIn, projectDirOf } from "../old-names";
 import type { Settings } from "../settings";
 
 export const BASE_PROMPT = [
@@ -460,14 +461,14 @@ export class ContextAssembler {
 
     // WS-21: the run folder's generated `MOSS.md` carries both tiers (spec §3.4.3) — not composed here.
     if (!runHome) {
-      const userInstrResolved = resolveInstr(join(this.mossHome, "MOSS.md"), join(this.mossHome, LEGACY_INSTRUCTIONS_FILE));
+      const userInstrResolved = resolveInstr(instructionsFileIn(this.mossHome), join(this.mossHome, LEGACY_INSTRUCTIONS_FILE));
       if (userInstrResolved.usedLegacy) legacyNoticePaths.push(userInstrResolved.path);
       const userInstr = readCapped(userInstrResolved.path, this.caps.instructionsBytes);
       if (userInstr) sections.push(`## User instructions (~/.moss/MOSS.md)\n${userInstr}`);
     }
 
     if (!runHome && cwd && trusted) {
-      const projInstrResolved = resolveInstr(join(cwd, "MOSS.md"), join(cwd, LEGACY_INSTRUCTIONS_FILE));
+      const projInstrResolved = resolveInstr(instructionsFileIn(cwd), join(cwd, LEGACY_INSTRUCTIONS_FILE));
       if (projInstrResolved.usedLegacy) legacyNoticePaths.push(projInstrResolved.path);
       const projInstr = readCapped(projInstrResolved.path, this.caps.instructionsBytes);
       if (projInstr) sections.push(`## Project instructions (MOSS.md)\n${projInstr}`);
@@ -480,7 +481,7 @@ export class ContextAssembler {
     // unbounded prompt; `readCapped` truncates each file to whatever of that budget remains, and
     // files are read in sorted filename order for determinism.
     if (!runHome && cwd && trusted) {
-      const rulesResolved = resolveRulesDir(join(cwd, ".moss", "rules"), join(cwd, LEGACY_PROJECT_DIR, "rules"));
+      const rulesResolved = resolveRulesDir(join(projectDirOf(cwd), "rules"), join(cwd, LEGACY_PROJECT_DIR, "rules"));
       if (rulesResolved.usedLegacy) legacyNoticePaths.push(rulesResolved.dir);
       const rulesDir = rulesResolved.dir;
       let files: string[] = [];
@@ -573,7 +574,7 @@ export class ContextAssembler {
       const userMem = readMemory(join(this.mossHome, "memory", "MEMORY.md"), this.caps.memoryLines, this.caps.memoryBytes);
       if (userMem) mem.push(`### User memory\n${userMem}`);
       if (cwd && trusted) {
-        const projMem = readMemory(join(cwd, ".moss", "memory", "MEMORY.md"), this.caps.memoryLines, this.caps.memoryBytes);
+        const projMem = readMemory(join(projectDirOf(cwd), "memory", "MEMORY.md"), this.caps.memoryLines, this.caps.memoryBytes);
         if (projMem) mem.push(`### Project memory\n${projMem}`);
       }
       if (mem.length) sections.push(`## Memory\n${mem.join("\n\n")}`);

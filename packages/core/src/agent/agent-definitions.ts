@@ -32,6 +32,7 @@ import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentDefinition } from "@waifucave/clover-agent-sdk";
 import { storeHomeFor } from "./paths";
+import { projectDirOf } from "../old-names";
 
 /** One rejected `<home>/agents/*.md` file — never silently skipped (measured against the SDK's own
  *  posture: a missing `name`/`description` is a rejection with a reason, not a silent drop). */
@@ -269,7 +270,7 @@ export function loadUserAgentDefinitions(home: string): LoadedAgentDefinitions {
  * `permissionMode: bypassPermissions` under a trusted project's name.
  */
 export function loadProjectAgentDefinitions(cwd: string): LoadedAgentDefinitions {
-  const dotMoss = join(cwd, ".moss");
+  const dotMoss = projectDirOf(cwd);
   if (!isRealDir(dotMoss)) return { definitions: {}, sources: [], rejected: [] };
   const agentsDir = join(dotMoss, "agents");
   if (!isRealDir(agentsDir)) return { definitions: {}, sources: [], rejected: [] };

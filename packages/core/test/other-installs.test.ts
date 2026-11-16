@@ -20,8 +20,8 @@ function fakeUserHome(): string {
 describe("other installs' homes", () => {
   test("each one, and anything inside it, is refused; MOSS's own homes and others are not", () => {
     const user = fakeUserHome();
-    expect(OTHER_INSTALL_HOMES.map((o) => o.dir)).toEqual([".winter", ".winter-dev", LEGACY_HOME_DIR, LEGACY_DEV_HOME_DIR]);
-    expect(OTHER_INSTALL_KEYCHAIN_SERVICES.map((o) => o.service)).toEqual(["com.winter.core", "com.winter.core.dev", LEGACY_KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE_DEV]);
+    expect(OTHER_INSTALL_HOMES.map((o) => o.dir)).toEqual([".winter", ".winter-dev", LEGACY_HOME_DIR, LEGACY_DEV_HOME_DIR, ".clover", ".clover-dev"]);
+    expect(OTHER_INSTALL_KEYCHAIN_SERVICES.map((o) => o.service)).toEqual(["com.winter.core", "com.winter.core.dev", LEGACY_KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE_DEV, "com.waifucave.clover.core", "com.waifucave.clover.core.dev"]);
     for (const o of OTHER_INSTALL_HOMES) {
       expect(otherInstallHome(join(user, o.dir), user)?.what).toBe(o.what);
       expect(otherInstallHome(join(user, o.dir, "nested", "home"), user)?.what).toBe(o.what);

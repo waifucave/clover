@@ -19,6 +19,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { MANIFEST_FILE } from "@waifucave/moss-plugin-sdk";
+import { manifestPathIn } from "../old-names";
 import type { Os, PluginProvenance, PluginState, ValidationIssue } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import type { CoreToolDef, CoreToolResult } from "../runtime-sdk/turn-loop/servers";
@@ -136,7 +137,7 @@ export class PluginWorkshop {
     const roots = this.roots(caller).filter((r) => existsSync(r)).map((r) => realpathSync(r));
     if (!roots.some((r) => isInside(r, real))) throw new ContractError("refused", `a bot installs a plugin from its own scratch folder (${scratch}) or this conversation's outputs, not ${folder}`);
     if (roots.includes(real)) throw new ContractError("invalid", "name the plugin's own folder inside your scratch, not the scratch folder itself");
-    if (!existsSync(join(real, MANIFEST_FILE))) throw new ContractError("invalid", `${folder} has no ${MANIFEST_FILE}`);
+    if (!existsSync(manifestPathIn(real, MANIFEST_FILE))) throw new ContractError("invalid", `${folder} has no ${MANIFEST_FILE}`);
     return real;
   }
 

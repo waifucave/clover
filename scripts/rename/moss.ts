@@ -29,6 +29,7 @@
 // Adding an entry is a reviewed edit: the residue test fails on any `clover` no entry permits AND on any entry — or any
 // top-level alternative of an entry's regex — that no longer matches anything.
 import type { AllowlistEntry } from "./allowlist";
+import type { NeverPermitted } from "./clover";
 
 /** One regex rename, applied after the explicit map and before the generic pass (in list order). `files` scopes it. */
 export interface RegexRule {
@@ -90,7 +91,7 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
   // ── Names another repo or the registry defines ────────────────────────────────────────────────
   {
     id: "sdk-packages",
-    regex: new RegExp(`@waifucave\\\\?[/+]clover-${SDK_PACKAGES}(?![A-Za-z0-9-])(?:\\\\?/[A-Za-z0-9./_-]*)?|(?<![A-Za-z0-9@/_-])clover-${SDK_PACKAGES}(?=/\\d)`, "g"),
+    regex: new RegExp(`@waifucave\\\\?[/+]clover-${SDK_PACKAGES}(?![A-Za-z0-9-])(?:\\\\?/[A-Za-z0-9./_-]*)?`, "g"),
     why: "the agent SDK's npm packages (`@waifucave/clover-agent-sdk`, `-agent-runtime`, `-provider-runtime`, `-provider-catalog`, `-provider-conformance`, `-web`, the darwin binary package) and their subpaths: published from the `clover-sdk` repo and installed from GitHub Packages, so they keep their names until that repo renames them",
   },
   {
@@ -133,6 +134,13 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
     files: ["packages/core/src/old-names.ts", "packages/core/test/old-names.test.ts"],
     why: "the names a user wrote outside the home — a project's `.clover/` folder, a `CLOVER.md`, a folder plugin's `clover.json` — which the new build still reads second, through `old-names.ts`, the one place that lists them",
   },
+  // ── The installed Clover app, which MOSS never touches ───────────────────────────────────────────
+  {
+    id: "old-install",
+    regex: /\bcom\.waifucave\.clover\.core(?:\.dev)?(?![\w-]|\.\w)|\bCLOVER_(?:DEV_)?(?:HOME_DIR|KEYCHAIN_SERVICE)\b|\.clover(?:-dev)?(?![A-Za-z0-9_])|\bClover\b/g,
+    files: ["packages/core/src/other-installs.ts", "packages/core/test/other-installs.test.ts"],
+    why: "the installed Clover app's home, Keychain service and name, listed in the one file every guard reads so a MOSS daemon, script or test refuses them (the owner's install keeps running until the hand-over)",
+  },
 ];
 
 /** Whole-token renames applied BEFORE the regex map and the generic pass (boundaries as in `explicitTokenRegex`). */
@@ -173,4 +181,33 @@ export const MOSS_REGEX_MAP: readonly RegexRule[] = [
   { id: "linux-app-exe", regex: /\/opt\/Clover\/clover(?![A-Za-z0-9_-])/g, to: "/opt/moss-code/moss-code" },
   { id: "linux-app-dir", regex: /\/opt\/Clover\//g, to: "/opt/moss-code/" },
   { id: "plurals-test", regex: /\bclovers\b/g, to: "moss", files: ["packages/core/test/runtime-sdk/protected-paths.test.ts"] },
+];
+
+/**
+ * The installed Clover app's names (`/Applications/Clover.app`, `~/.clover`, launch agent `com.waifucave.clover.core`),
+ * which the residue test refuses FIRST, in every scanned file, outside the files an entry names (and whatever the
+ * allowlist permits there): the owner's install keeps running beside MOSS until the hand-over, and nothing MOSS builds,
+ * tests or documents in code may reach it. The one place that names them is `other-installs.ts`, so every guard refuses
+ * them by the same names. `CLAUDE.md` and the docs say them in prose and are not scanned.
+ */
+export const MOSS_NEVER_PERMITTED: readonly NeverPermitted[] = [
+  {
+    id: "clover-keychain",
+    // The launch agent's label is the same string as the Keychain service. Exactly `.core` or `.core.dev`, not a longer id.
+    regex: /\bcom\.waifucave\.clover\.core(?:\.dev)?(?![\w-]|\.\w)|\bcom\\\.waifucave\\\.clover\\\.core(?:\\\.dev)?(?![\w-]|\\\.\w)/g,
+    files: ["packages/core/src/other-installs.ts", "packages/core/test/other-installs.test.ts"],
+    why: "the installed Clover app's Keychain service and launch agent label, and Clover Dev's",
+  },
+  {
+    id: "clover-home",
+    regex: /(?:~|\$HOME|\$\{HOME\})\/\.clover|homedir\(\)\s*,\s*["'`]\.clover/g,
+    files: [],
+    why: "the installed Clover app's home and Clover Dev's (`~/.clover`, `~/.clover-dev`)",
+  },
+  {
+    id: "clover-app",
+    regex: /\/Applications\/Clover\.app|["'`]\/Applications["'`]\s*,\s*["'`]Clover\.app/g,
+    files: [],
+    why: "the installed Clover app (`/Applications/Clover.app`), which MOSS never opens, signs or replaces",
+  },
 ];

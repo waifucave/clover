@@ -109,6 +109,7 @@ export function askedByPluginText(asker: string, name: string): string {
   return `${asker} wants to add ${name}.`;
 }
 import { TreeProblem, folderReader, treeEntries } from "./tree";
+import { manifestPathIn } from "../old-names";
 import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
 import { homesOf, outsideHomeIssues } from "./outside-homes";
 
@@ -164,9 +165,9 @@ export async function readPluginFolder(
   const placeholder = (): Manifest => ({ manifest: 1, name } as Manifest);
   // A manifest that doesn't parse yet is a write in progress: the folder is left as it was until it does (§5.1).
   let parses = true;
-  if (existsSync(join(folder, MANIFEST_FILE))) {
+  if (existsSync(manifestPathIn(folder, MANIFEST_FILE))) {
     try {
-      parses = parseJsonc(readFileSync(join(folder, MANIFEST_FILE), "utf8")).ok;
+      parses = parseJsonc(readFileSync(manifestPathIn(folder, MANIFEST_FILE), "utf8")).ok;
     } catch {
       parses = false;
     }
@@ -715,7 +716,7 @@ export class PluginFolders {
   async addDevFolder(path: string, by: "cli" | "app"): Promise<DevFolderState> {
     // The real path, symlinks resolved, is what reloads and what the fence keeps bots out of (#197's review).
     const abs = realPath(path);
-    if (!existsSync(join(abs, MANIFEST_FILE)) || !statSync(abs).isDirectory()) throw new ContractError("invalid", `${abs} has no ${MANIFEST_FILE}`);
+    if (!existsSync(manifestPathIn(abs, MANIFEST_FILE)) || !statSync(abs).isDirectory()) throw new ContractError("invalid", `${abs} has no ${MANIFEST_FILE}`);
     const plugins = realPath(this.#o.pluginsDir);
     if (abs === plugins || abs.startsWith(plugins + sep) || plugins.startsWith(abs + sep)) {
       throw new ContractError("invalid", "a development folder is kept outside the plugins folder");
@@ -773,7 +774,7 @@ export class PluginFolders {
    *  on this computer; then the bundled plugins and the plugins folder. */
   #sources(): Source[] {
     const out: Source[] = [];
-    for (const d of this.devFolders()) if (existsSync(join(d.path, MANIFEST_FILE))) out.push({ folder: d.path, source: "local", dev: d });
+    for (const d of this.devFolders()) if (existsSync(manifestPathIn(d.path, MANIFEST_FILE))) out.push({ folder: d.path, source: "local", dev: d });
     const bundled = this.#bundledNames();
     for (const dir of this.#o.bundledDirs ?? []) for (const name of listDirs(dir)) out.push({ folder: join(dir, name), source: "bundled", bundled: true });
     for (const name of listDirs(this.#o.pluginsDir)) {

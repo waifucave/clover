@@ -22,6 +22,7 @@ import { join } from "node:path";
 
 import type { RunHomeBuildContext } from "./build";
 import { isHomeOrAbove } from "./walk";
+import { OLD_PROJECT_DIR, newThenOld } from "../../../old-names";
 
 const PRIVATE_FILE = 0o600;
 
@@ -68,7 +69,7 @@ export async function buildMcpConfig(context: RunHomeBuildContext): Promise<void
   let project: Record<string, unknown> = {};
   // FIX ROUND 1, M2: never `$HOME/<project dir>/mcp.json` — that is the daemon's home, not a project.
   if (input.trustedProjectRoot !== null && !isHomeOrAbove(input.trustedProjectRoot, context.userHome)) {
-    const file = await readObject(join(input.trustedProjectRoot, brand.projectDirName, "mcp.json"));
+    const file = await readObject(newThenOld(join(input.trustedProjectRoot, brand.projectDirName, "mcp.json"), join(input.trustedProjectRoot, OLD_PROJECT_DIR, "mcp.json")));
     if (file !== undefined && isPlainObject(file["mcpServers"])) project = file["mcpServers"];
   }
   const projects = isPlainObject(shared["projects"]) ? shared["projects"] : {};

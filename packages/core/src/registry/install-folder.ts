@@ -16,6 +16,7 @@ import { chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, mkdirSy
 import { basename, dirname, join, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { MANIFEST_FILE, parseJsonc } from "@waifucave/moss-plugin-sdk";
+import { manifestPathIn } from "../old-names";
 import { TopPluginId, type PluginProvenance } from "@waifucave/moss-protocol";
 import { ContractError } from "../contracts/common";
 import { treeEntries, TreeProblem } from "./tree";
@@ -223,7 +224,7 @@ export async function replaceStaged(staged: string, o: Pick<InstallTarget, "plug
  *  `ContractError` (`invalid`, `conflict`) with the reason. */
 export async function installFromFolder(o: InstallTarget & { source: string }): Promise<{ id: string; folder: string; treeHash: string }> {
   const root = sourceFolder(o.source, o.pluginsDir);
-  if (!existsSync(join(root, MANIFEST_FILE))) throw new ContractError("invalid", `${root} has no ${MANIFEST_FILE}`);
+  if (!existsSync(manifestPathIn(root, MANIFEST_FILE))) throw new ContractError("invalid", `${root} has no ${MANIFEST_FILE}`);
   const stage = newStage(o.stagingDir);
   const staged = join(stage.dir, basename(root));
   mkdirSync(staged, { recursive: true, mode: 0o700 });
@@ -237,7 +238,7 @@ export async function installFromFolder(o: InstallTarget & { source: string }): 
 
 /** A validated folder's manifest version (validation read the same file). */
 export function manifestVersion(folder: string): string | undefined {
-  const r = parseJsonc(readFileSync(join(folder, MANIFEST_FILE), "utf8"));
+  const r = parseJsonc(readFileSync(manifestPathIn(folder, MANIFEST_FILE), "utf8"));
   const v = r.ok ? (r.value as { version?: unknown } | null)?.version : undefined;
   return typeof v === "string" ? v : undefined;
 }
