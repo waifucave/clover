@@ -52,11 +52,22 @@ case "$cmd" in
       [ "$st" = completed ] && break
       sleep 20
     done
-    gh run view "$run" --json createdAt,updatedAt,url,jobs --jq '
+    conclusion="$(gh run view "$run" --json conclusion --jq '.conclusion' 2>/dev/null || true)"
+    # An unfinished job has no end time (0001-01-01): its time reads "-".
+    gh run view "$run" --json url,jobs --jq '
       "url: \(.url)",
-      (.jobs | sort_by(.name)[] | select(.conclusion != "skipped") | "\(.conclusion)\t\(((.completedAt|fromdateiso8601) - (.startedAt|fromdateiso8601)) / 60 | floor)m\t\(.name)")'
+      (.jobs | sort_by(.name)[] | select(.conclusion != "skipped") |
+        "\(.conclusion)\t\(if .completedAt < "2000" or .startedAt < "2000" then "-" else "\(((.completedAt|fromdateiso8601) - (.startedAt|fromdateiso8601)) / 60 | floor)m" end)\t\(.name)")'
+    if [ "$conclusion" = cancelled ]; then
+      echo "lane gate: cancelled (a newer run on this branch superseded it, or it was cancelled by hand): wait for the newer run: scripts/ci/lane wait"
+      exit 1
+    fi
     gate="$(gh run view "$run" --json jobs --jq '[.jobs[] | select(.name == "lane gate")][0].conclusion // "none"')"
+    ran_suites="$(gh run view "$run" --json jobs --jq '[.jobs[] | select(.name == "typecheck")][0].conclusion // "none"')"
     echo "lane gate: $gate"
+    if [ "$gate" = success ] && [ "$ran_suites" = skipped ]; then
+      echo "lane: the suites did not run (an --only acceptance run): this is not a full green; run scripts/ci/lane start for that"
+    fi
     [ "$gate" = success ] ;;
   failures)
     run="${1:-$(find_run)}"; [ -n "$run" ] || die "no run of $sha: scripts/ci/lane start first"

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { units } from "../acceptance/shards";
 import { judge, parseRows } from "./acceptance-unit";
 
 const TABLE = `
@@ -44,10 +45,23 @@ describe("the acceptance unit's verdict", () => {
     expect(v.problems.some((p) => p.startsWith("sealed presses were refused as covered or unchecked: 3 of the run's own presses"))).toBe(true);
   });
 
+  test("a row the unit owns that the table lacks fails it", () => {
+    const v = judge({ exit: 0, table: TABLE, progress: OK_PROGRESS, logs: [], expected: ["first start", "a model key", "a row that was dropped"] });
+    expect(v.problems).toEqual(['the unit\'s row "a row that was dropped" is not in the table']);
+    expect(judge({ exit: 0, table: TABLE, progress: OK_PROGRESS, logs: [], expected: ["first start", "a model key"] }).ok).toBe(true);
+  });
+
   test('a "shown while headless" line in the progress or in any kept log fails it', () => {
     const line = "2026-11-16T10:00:00.000Z [moss-app] window: shown while headless (main)";
     expect(judge({ exit: 0, table: TABLE, progress: `${OK_PROGRESS}${line}\n`, logs: [] }).ok).toBe(false);
     const v = judge({ exit: 0, table: TABLE, progress: OK_PROGRESS, logs: [{ file: "app.log", text: `a\n${line}\nb` }, { file: "daemon-1.log", text: "fine" }] });
     expect(v.problems).toEqual([`a window was shown while headless (app.log): ${line}`]);
+  });
+
+  test("the four units a lane's check runs own their rows between them, once each, 65 of them", () => {
+    const four = units().filter((u) => ["main", "workshop", "plugin-app", "browser"].includes(u.id));
+    const names = four.flatMap((u) => u.rows);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names.length).toBe(65);
   });
 });

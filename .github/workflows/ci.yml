@@ -47,8 +47,8 @@ jobs:
   # workspace packages' tests (the plugins' and services' among them), builds the daemon binary and builds the
   # unsigned app, whose window the UI test then opens (CI only: no app window on a developer's screen, plan §8): one
   # job per machine. The typecheck, the lockfile check, the galleries, the protocol codegen and the extension run
-  # once, on Linux. Only what needs macOS runs there, in as few jobs as it can (the org's plan runs five macOS jobs at
-  # once): one job for core, cli, the scripts and the compiled-binary gates (which need the agent runtime's
+  # once, on Linux. Only what needs macOS runs there, in as few jobs as it can (macOS minutes are the dear ones; the
+  # org's plan ran ten macOS jobs at once on 2026-11-16): one job for core, cli, the scripts and the compiled-binary gates (which need the agent runtime's
   # darwin-arm64 binary), and the browser host's Swift tests, only when apple/ changes.
   #
   # A pull request runs only the jobs whose inputs it changes (`changes`, scripts/ci-changes.ts); the names-and-layout
@@ -159,7 +159,7 @@ jobs:
   #    the UI test opens it twice, under Electron and as the packaged app, and reads back its one sandboxed window.
   #    Linux runs it, and the browser tests, under xvfb, with unprivileged user namespaces allowed again for Chromium's
   #    sandbox (Ubuntu 24.04's AppArmor turns them off by default).
-  # One job, not three, so a macOS runner (five at once on the org's plan) is taken once per change, not three times.
+  # One job, not three, so a macOS runner is taken once per change, not three times.
   # A later part still runs after an earlier one fails, so one run reports all three.
   #
   # Windows is its own job, `machine-windows` (the same steps, by YAML anchor): the lane gate (`lane-gate`) leaves the
@@ -815,7 +815,7 @@ jobs:
   #  - the compiled-binary proofs (Winter Phase 8d, P8d-5): verify:workflow, verify:automation-worker,
   #    verify:runtime-state, verify:fd-receiver and verify:runtimes, which resolves the `winter` binary through its
   #    own ladder (the installed platform package first).
-  # One job, not four, so a macOS runner (five at once on the org's plan) is taken once per change.
+  # One job, not four, so the macOS runners are taken once per change.
   #
   # In three legs, so the core's macOS tests (11 minutes on one runner) take about four each: every leg runs a third of
   # them (scripts/platform-tests.ts --shard), leg 1 adds the CLI's tests, the scripts' macOS tests and the compiled-binary
@@ -1102,8 +1102,10 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      # The Electron binary the app runs on (electron's install.js downloads it, which bun's install does not run).
-      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      # The Electron binary the app runs on (electron's install.js downloads it, which bun's install does not run): restored
+      # here, and saved after the run even when a row failed (the cache action's own post step saves only a passing job).
+      - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        id: electron
         with:
           path: ~/Library/Caches/electron
           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
@@ -1116,6 +1118,12 @@ jobs:
 
       - name: Acceptance · ${{ matrix.unit }}
         run: bun scripts/ci/acceptance-unit.ts ${{ matrix.unit }} "$RUNNER_TEMP/acceptance-${{ matrix.unit }}"
+
+      - uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        if: ${{ !cancelled() && steps.electron.outputs.cache-hit != 'true' }}
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}

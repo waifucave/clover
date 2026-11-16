@@ -11,6 +11,7 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { units } from "../acceptance/shards";
 
 export interface Verdict {
   ok: boolean;
@@ -30,9 +31,11 @@ export function parseRows(table: string): { n: number; name: string; status: str
 }
 
 /** The verdict over a finished run: its exit code, its table (stdout), its progress (stderr) and the kept logs' text. */
-export function judge(input: { exit: number; table: string; progress: string; logs: readonly { file: string; text: string }[] }): Verdict {
+export function judge(input: { exit: number; table: string; progress: string; logs: readonly { file: string; text: string }[]; expected?: readonly string[] }): Verdict {
   const problems: string[] = [];
   const rows = parseRows(input.table);
+  // A row the unit owns (shards.ts) and the table lacks was dropped, not passed.
+  for (const name of input.expected ?? []) if (!rows.some((r) => r.name === name)) problems.push(`the unit's row "${name.slice(0, 120)}" is not in the table`);
   if (input.exit !== 0) problems.push(`run.ts exited ${input.exit}`);
   if (rows.length === 0) problems.push("the run printed no table rows");
   for (const r of rows) if (r.status !== "PASS") problems.push(`row ${r.n} "${r.name}" is ${r.status}: ${r.detail.slice(0, 300)}`);
@@ -75,10 +78,10 @@ function report(unit: string, v: Verdict, table: string): string {
   ].join("\n");
 }
 
-function finish(unit: string, out: string, exit: number): never {
+function finish(unit: string, out: string, exit: number, expected?: readonly string[]): never {
   const table = existsSync(join(out, "table.txt")) ? readFileSync(join(out, "table.txt"), "utf8") : "";
   const progress = existsSync(join(out, "progress.txt")) ? readFileSync(join(out, "progress.txt"), "utf8") : "";
-  const v = judge({ exit, table, progress, logs: keptLogs(join(out, "logs")) });
+  const v = judge({ exit, table, progress, logs: keptLogs(join(out, "logs")), ...(expected !== undefined ? { expected } : {}) });
   const text = report(unit, v, table);
   console.log(`\n${text}`);
   writeFileSync(join(out, "verdict.md"), text);
@@ -94,6 +97,8 @@ if (import.meta.main) {
   }
   const [unit, outArg] = args;
   if (unit === undefined || outArg === undefined) { console.error("usage: acceptance-unit.ts <unit> <out dir>"); process.exit(2); }
+  const owned = units().find((u) => u.id === unit);
+  if (owned === undefined) { console.error(`acceptance-unit: no unit "${unit}" in scripts/acceptance/shards.ts (${units().map((u) => u.id).join(", ")})`); process.exit(2); }
   const out = resolve(outArg);
   mkdirSync(join(out, "logs"), { recursive: true });
   mkdirSync(join(out, "renders"), { recursive: true });
@@ -112,5 +117,5 @@ if (import.meta.main) {
   const exit = await new Promise<number>((done) => child.on("exit", (c, s) => done(c ?? (s === null ? 1 : 128))));
   await Promise.all([new Promise((r) => table.end(r)), new Promise((r) => progress.end(r))]);
   writeFileSync(join(out, "exit.txt"), `${exit}\n`);
-  finish(unit, out, exit);
+  finish(unit, out, exit, owned.rows);
 }

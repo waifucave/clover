@@ -54,7 +54,7 @@ describe("ci-changes", () => {
     expect(on(["services/forwarder/src/index.ts"])).toEqual(["workspaces", "typecheck"]);
   });
 
-  test("macOS: a merge-queue run takes at most two macOS jobs (its machine's and the one for core, cli, scripts and verify); a pull request takes none (the local gate); Swift runs on demand only", () => {
+  test("macOS: a merge-queue run takes two macOS jobs (its machine's and the one for core, cli, scripts and verify, which runs in legs); a pull request takes none (the local gate); Swift runs on demand only", () => {
     type Job = { if?: string; "runs-on"?: string; strategy?: { matrix?: { include?: string | Array<{ runner: string }> } } };
     const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, Job> }).jobs;
     type Event = "pull_request" | "merge_group" | "workflow_dispatch";
