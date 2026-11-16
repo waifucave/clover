@@ -146,6 +146,19 @@ describe("code, engines and platforms", () => {
     }
   });
 
+  test("a held key's command (`hold`) needs its `key` and declares no args (its args are the core's: HOLD_ARGS)", () => {
+    const held = (cmd: Record<string, unknown>) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" },
+      contributes: { commands: [{ name: "talk", description: "Talk", handler: "talk", ...cmd }] } });
+    expect(held({ key: "ctrl+shift+space", hold: true }).manifest?.contributes?.commands).toEqual([{ name: "talk", description: "Talk", handler: "talk", key: "ctrl+shift+space", hold: true }]);
+    const noKey = held({ hold: true });
+    expect(noKey.manifest?.contributes?.commands).toEqual([]);
+    expect(codes(noKey)).toContain("error:entry:hold_without_key:/contributes/commands/0/hold");
+    const withArgs = held({ key: "ctrl+shift+space", hold: true, args: { type: "object" } });
+    expect(withArgs.manifest?.contributes?.commands).toEqual([]);
+    expect(codes(withArgs)).toContain("error:entry:hold_args:/contributes/commands/0/args");
+    expect(codes(held({ key: "ctrl+shift+space", hold: "yes" }))).toContain("error:entry:schema:/contributes/commands/0/hold");
+  });
+
   test("`availability: not-yet` is Clover's own mark: its parked plugins carry it; any other plugin is refused for it", () => {
     const parked = { status: "not-yet", reason: "webhook-keys" };
     // Clover's parked plugins, as they are in the tree, validate as its children.

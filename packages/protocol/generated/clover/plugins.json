@@ -4318,6 +4318,10 @@
                     }
                   ]
                 },
+                "hold": {
+                  "type": "boolean",
+                  "const": true
+                },
                 "runsOn": {
                   "type": "string",
                   "enum": [

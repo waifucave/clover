@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { catalogPointDecl } from "@waifucave/clover-plugin-sdk";
 import { commandViews } from "../../commands/views";
+import { registryCommand, runCommand } from "../commands";
 import type { Manifest } from "../../contracts/sdk-types";
 import { currentPlatform, hostedRecordOf } from "../../plugin-host/daemon-host";
 import { filePluginSettings, PluginSettings } from "../../plugin-host/api/settings";
@@ -52,6 +53,26 @@ describe("commands[].key", () => {
       { id: "b", manifest: m({ id: "b", contributes: { commands: [{ name: "x", description: "x", handler: "x", key: "mod+j" }] } }), treeHash: "sha256:b", approved: true, enabled: false },
     ]);
     expect(commandViews(reg, "linux").map((c) => [c.name, c.keyState])).toEqual([["a.x", { state: "bound", chord: "ctrl+j" }]]);
+  });
+});
+
+describe("commands[].hold", () => {
+  test("a held key's command says so in its view, and command.run takes { key: down | up } (the core's own args) and nothing else", async () => {
+    const reg = registryOf([
+      { id: "a", manifest: m({ id: "a", contributes: { commands: [{ name: "talk", description: "talk", handler: "talk", key: "ctrl+shift+space", hold: true }, { name: "go", description: "go", handler: "go", key: "mod+shift+k" }] } }), treeHash: "sha256:a", approved: true },
+    ]);
+    const views = commandViews(reg, "darwin");
+    expect(views.find((c) => c.name === "a.talk")).toMatchObject({ key: "ctrl+shift+space", hold: true, keyState: { state: "bound", chord: "ctrl+shift+space" } });
+    expect(views.find((c) => c.name === "a.go")!.hold).toBeUndefined();
+    const calls: unknown[] = [];
+    const o = { find: (name: string) => registryCommand(reg, name), host: { invoke: async <R>(req: { args: unknown }) => { calls.push(req.args); return null as R; } } };
+    const user = { kind: "user", client: "app" } as const;
+    for (const key of ["down", "up"]) await runCommand(o, { name: "a.talk", args: { key } }, user);
+    await runCommand(o, { name: "a.talk" }, user);
+    expect(calls).toEqual([{ key: "down" }, { key: "up" }, {}]);
+    for (const args of [{ key: "sideways" }, { key: "down", extra: 1 }]) await expect(runCommand(o, { name: "a.talk", args }, user)).rejects.toMatchObject({ code: "invalid_args" });
+    // A press binding still takes no args it didn't declare.
+    await expect(runCommand(o, { name: "a.go", args: { key: "down" } }, user)).rejects.toMatchObject({ code: "invalid_args" });
   });
 });
 

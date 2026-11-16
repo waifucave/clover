@@ -43,6 +43,66 @@ describe("a plugin command's key in main", () => {
   });
 });
 
+describe("a held key binding (`commands[].hold`): its down and its release", () => {
+  const heldRows = [
+    { name: "v.talk", pluginId: "v", key: "ctrl+shift+space", hold: true, keyState: { state: "bound", chord: "ctrl+shift+space" } },
+    { name: "a.go", pluginId: "a", key: "mod+shift+k", keyState: { state: "bound", chord: "shift+meta+k" } },
+  ];
+  const chord = { key: " ", code: "Space", control: true, shift: true };
+  const make = () => {
+    const k = new PluginKeys("darwin");
+    k.set(heldRows);
+    return k;
+  };
+
+  test("the down is delivered once and consumed; repeats are no new press and are consumed too; the key's up delivers the up once", () => {
+    const k = make();
+    expect(k.hold(1, press(chord), true)).toMatchObject({ binding: { name: "v.talk", pluginId: "v", hold: true }, phase: "down", consume: true });
+    for (let i = 0; i < 3; i++) expect(k.hold(1, press({ ...chord, isAutoRepeat: true }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: true });
+    expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toMatchObject({ phase: "up", released: true, consume: true });
+    expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toBeUndefined();
+  });
+
+  test("another key's up is not its up; another key's down passes by and the hold goes on", () => {
+    const k = make();
+    k.hold(1, press(chord), true);
+    expect(k.hold(1, press({ key: "a", code: "KeyA", type: "keyUp" }), true)).toBeUndefined();
+    expect(k.hold(1, press({ key: "a", code: "KeyA", control: true, shift: true }), true)).toBeUndefined();
+    expect(k.hold(1, press({ key: "Alt", type: "keyUp" }), true)).toBeUndefined(); // not one of its modifiers
+    expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toMatchObject({ phase: "up", released: true });
+  });
+
+  test("a modifier let go first ends it once (not consumed: the page sees the modifier go); its key's repeats and up are still kept from the page", () => {
+    const k = make();
+    k.hold(1, press(chord), true);
+    expect(k.hold(1, press({ key: "Shift", code: "ShiftLeft", type: "keyUp", control: true }), true)).toMatchObject({ phase: "up", released: true, consume: false });
+    expect(k.hold(1, press({ key: "Control", code: "ControlLeft", type: "keyUp" }), true)).toBeUndefined();
+    expect(k.hold(1, press({ key: " ", code: "Space", control: true, isAutoRepeat: true }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: true });
+    expect(k.hold(1, press({ key: " ", code: "Space", type: "keyUp" }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: true });
+    // Pressed again, it is a new hold.
+    expect(k.hold(1, press(chord), true)).toMatchObject({ phase: "down" });
+  });
+
+  test("per window; a hold starts only where a command's key may run; a press binding is no hold, and match never runs a held one as a press", () => {
+    const k = make();
+    expect(k.hold(1, press(chord), false)).toBeUndefined();
+    expect(k.hold(1, press({ key: "K", code: "KeyK", meta: true, shift: true }), true)).toBeUndefined();
+    expect(k.binding(press(chord))).toMatchObject({ name: "v.talk", hold: true });
+    k.hold(1, press(chord), true);
+    expect(k.hold(2, press({ ...chord, type: "keyUp" }), true)).toBeUndefined();
+    expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toMatchObject({ phase: "up" });
+  });
+
+  test("the window losing the focus ends a hold with no release of the user's; nothing when none is held", () => {
+    const k = make();
+    expect(k.cancel(1)).toBeUndefined();
+    k.hold(1, press(chord), true);
+    expect(k.cancel(1)).toMatchObject({ binding: { name: "v.talk" }, phase: "up", released: false });
+    expect(k.cancel(1)).toBeUndefined();
+    expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toBeUndefined();
+  });
+});
+
 describe("the app's own chords", () => {
   test("every chord the resolver reserves for the three shortcuts is one appShortcut answers", () => {
     for (const [chord, expected] of [["mod+q", "quit"], ["mod+w", "close-window"], ["mod+,", "settings"]] as const) {

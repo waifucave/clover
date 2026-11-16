@@ -1603,6 +1603,20 @@ export class UiRuntime {
     for (const id of docs) this.post(id, message);
   }
 
+  /** The documents of one window that hold a part of this plugin (the ones its host half's messages reach there, by
+   *  `pluginMessage`'s rule), as frame ids, when the plugin holds `user.send`; none otherwise. A held key binding's release
+   *  gives them its send allowance (§5.4 `hold`). Decided from what the main process holds, never from what a page says. */
+  heldKeyFrames(windowId: number, pluginId: string): string[] {
+    const out = new Set<string>();
+    for (const m of this.mounts.values()) {
+      if (m.windowId !== windowId || m.plugin?.id !== pluginId || !m.plugin.capabilities.has("user.send")) continue;
+      if (m.kind === "inline" && m.plugin.layer !== this.docOf(m)?.layer) continue;
+      const doc = this.docOf(m);
+      if (doc?.frame !== undefined && doc.kind === "frame") out.add(`${doc.frame.processId}:${doc.frame.routingId}`);
+    }
+    return [...out];
+  }
+
   /** The `clover` shell document of one window (not a surface's, never a plugin's): the only frame main gives a user
    *  activation to, so its player's AudioContext may start without a click (a plugin's page keeps the gesture rule). */
   shellFrames(windowId: number): { mount: string; frame: { processId: number; routingId: number } }[] {

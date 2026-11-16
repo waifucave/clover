@@ -13,6 +13,17 @@
 
 export type KeyPlatform = "darwin" | "win32" | "linux" | NodeJS.Platform;
 
+/** A held key binding's two calls (`commands[].hold`): the chord going down, and its release. */
+export type HoldPhase = "down" | "up";
+
+/** The args a held command takes, the core's own (it declares none): `{ key: "down" }` on the press, `{ key: "up" }` on the
+ *  release; run another way (the palette, the CLI) it may get `{}`. */
+export const HOLD_ARGS: Record<string, unknown> = {
+  type: "object",
+  properties: { key: { enum: ["down", "up"] } },
+  additionalProperties: false,
+};
+
 /** The chords the app answers before any page, as written in a manifest (`mod` = ⌘ on macOS, Ctrl elsewhere). */
 export const APP_CHORDS: readonly { chord: string; what: string; mac?: true }[] = [
   { chord: "mod+q", what: "Quit" },

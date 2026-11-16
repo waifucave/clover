@@ -57,7 +57,7 @@ import { DEFAULT_PREFS, readPrefs, withLegacyHidden, writePrefs, type AppPrefs }
 import { FourFingerTap, loadTouches, type TouchAddon } from "./touch-tap";
 import type { TrayState } from "./tray-menu";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
-import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, surfaceBounds, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
+import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, surfaceBounds, surfacePlacement, surfaceSize, type Hold, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
@@ -65,7 +65,7 @@ import { FrameWatches } from "./ui/frame-watches";
 import { LAYER_SCHEME } from "./ui/documents";
 import { micHandlers } from "./ui/microphone";
 import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
-import { PluginKeys, keysMayRun } from "./plugin-keys";
+import { PluginKeys, keysMayRun, type HoldStep } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { cloverFront, FrontWatcher, islandMayDraw, placeCard, pressMayBeTaken, placeLine, type CardPlace } from "./card-place";
@@ -668,22 +668,25 @@ async function ready(): Promise<void> {
     watchFile(file, { interval: 250 }, follow);
   }
   // The acceptance run's key press (a headless test-marked or acceptance build only, compiled out of a release; the marker
-  // gate's TEST_ONLY_APP_STRINGS checks it): a key chord from a file the harness writes, `{ n, key, modifiers }`, pressed
+  // gate's TEST_ONLY_APP_STRINGS checks it): a key chord from a file the harness writes, `{ n, key, modifiers, type? }`, pressed
   // in the main window with `sendInputEvent`, the one way a synthesized press reaches the window's before-input-event
-  // (CDP key events don't). Each new `n` is one press.
+  // (CDP key events don't). Each new `n` is one press: down and up, or with `type` only its `down`, a `repeat` (a held key's
+  // auto-repeat) or its `up` (a held key binding's hold, its repeats and its release, one event each).
   if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_KEY_FILE) {
     const file = process.env.CLOVER_TEST_KEY_FILE;
     let last = 0;
     watchFile(file, { interval: 250 }, () => {
       try {
-        const v = JSON.parse(readFileSync(file, "utf8")) as { n?: unknown; key?: unknown; modifiers?: unknown };
+        const v = JSON.parse(readFileSync(file, "utf8")) as { n?: unknown; key?: unknown; modifiers?: unknown; type?: unknown };
         if (typeof v.n !== "number" || v.n <= last || typeof v.key !== "string" || !Array.isArray(v.modifiers)) return;
         last = v.n;
         const modifiers = v.modifiers.filter((m): m is "shift" | "control" | "alt" | "meta" => m === "shift" || m === "control" || m === "alt" || m === "meta");
         const w = mainWindow;
         if (w === undefined || w.isDestroyed()) return;
-        for (const type of ["keyDown", "keyUp"] as const) w.webContents.sendInputEvent({ type, keyCode: v.key, modifiers });
-        log(`keys: pressed ${modifiers.join("+")}+${v.key} in the window`);
+        const one = v.type === "down" || v.type === "repeat" || v.type === "up" ? v.type : undefined;
+        if (one === undefined) for (const type of ["keyDown", "keyUp"] as const) w.webContents.sendInputEvent({ type, keyCode: v.key, modifiers });
+        else w.webContents.sendInputEvent({ type: one === "up" ? "keyUp" : "keyDown", keyCode: v.key, modifiers: one === "repeat" ? [...modifiers, "isautorepeat" as const] : modifiers });
+        log(`keys: ${one === undefined ? "pressed" : one === "down" ? "put down" : one === "repeat" ? "repeated" : "let go of"} ${[...modifiers, v.key].join("+")} in the window`);
       } catch {
         // Not written yet.
       }
@@ -2367,9 +2370,13 @@ function watchWindow(win: BrowserWindow): void {
   });
   win.webContents.on("unresponsive", () => void diagnoseHang(win));
   win.webContents.on("responsive", () => hangs.responsive(id));
-  // A drag ends when the window loses focus too, not only on the release (which may go to another window).
-  win.on("blur", () => dragEnd(id));
+  // A drag ends when the window loses focus too, not only on the release (which may go to another window). So does a held key binding.
+  win.on("blur", () => {
+    dragEnd(id);
+    heldKeyLost(id, false);
+  });
   win.on("closed", () => {
+    heldKeyLost(id, true);
     menus.forget(id);
     sends.forget(id);
     windowDrags.forget(id);
@@ -2421,6 +2428,44 @@ function nativeMenu(win: BrowserWindow, items: MenuItem[], point: { x: number; y
   });
 }
 
+/** Each window's press that its held key binding went down with (the send gate's record of that key down). */
+const heldPresses = new Map<number, Hold>();
+/** Each window's held-binding calls, in order: a binding's up goes only once its down's call has settled. */
+const heldCalls = new Map<number, Promise<unknown>>();
+
+/** A held key binding's down or up (`commands[].hold`, §5.4) goes to its command, as a press runs it: `command.run` with
+ *  `{ key: "down" }` or `{ key: "up" }`, as the user. A release the user made gives the binding's owner its documents in this
+ *  window the send allowance of the press (`creditHeld`: one `user.send`, 30 s); one the window made (it lost the focus or
+ *  closed) gives nothing. */
+function heldKey(windowId: number, step: HoldStep): void {
+  const { binding: b, phase } = step;
+  if (phase === undefined) return;
+  if (phase === "down") {
+    const press = sends.newest(windowId);
+    if (press !== undefined) heldPresses.set(windowId, press);
+    else heldPresses.delete(windowId);
+  } else {
+    const press = heldPresses.get(windowId);
+    heldPresses.delete(windowId);
+    if (step.released === true && press !== undefined) sends.creditHeld(windowId, press, runtime.heldKeyFrames(windowId, b.pluginId));
+  }
+  log(`keys: ${b.name} ${phase} from its key${phase === "up" && step.released !== true ? " (the window let go of it)" : ""}`);
+  const next = (heldCalls.get(windowId) ?? Promise.resolve())
+    .then(() => pair.client?.request("command.run", { name: b.name, args: { key: phase } }, 30_000))
+    .catch((err: unknown) => log(`keys: ${b.name} ${phase} failed: ${why(err)}`));
+  heldCalls.set(windowId, next);
+}
+
+/** A window that lost the focus or closed ends its held binding with no release of the user's. */
+function heldKeyLost(windowId: number, closed: boolean): void {
+  const step = pluginKeys.cancel(windowId);
+  if (step !== undefined) heldKey(windowId, step);
+  if (closed) {
+    heldPresses.delete(windowId);
+    heldCalls.delete(windowId);
+  }
+}
+
 /** The app's shortcuts, ahead of every layer (`shortcuts.ts`). */
 function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void {
   const which = appShortcut(input, process.platform);
@@ -2428,7 +2473,18 @@ function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void
     // The app's own keys won above; a plugin command's default key runs that command as the user (the press is theirs).
     // Not while a sealed card or the key dialog's secret field has the focus: the key goes where the focus is.
     const frame = win.webContents.focusedFrame;
-    const command = !keysMayRun({ frameUrl: frame === null || frame.detached ? undefined : frame.url, secureOpen: keyTarget !== undefined }) ? undefined : pluginKeys.match({ type: input.type, key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift, isAutoRepeat: input.isAutoRepeat });
+    const mayRun = keysMayRun({ frameUrl: frame === null || frame.detached ? undefined : frame.url, secureOpen: keyTarget !== undefined });
+    const press = { type: input.type, key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift, isAutoRepeat: input.isAutoRepeat };
+    // A held binding (`commands[].hold`) hears its key's down and its release; its repeats and its key's up are kept from the page.
+    const held = pluginKeys.hold(win.id, press, mayRun);
+    if (held !== undefined) {
+      if (held.consume) event.preventDefault();
+      heldKey(win.id, held);
+      return;
+    }
+    const bound = mayRun ? pluginKeys.binding(press) : undefined;
+    // A held binding's chord pressed while another is held is not a press of it.
+    const command = bound?.hold === true ? undefined : bound?.name;
     // A test-marked or acceptance build says which chord an unbound press made (the harness reads it); a release never does.
     if (command === undefined && (input.type === "keyDown" || input.type === "rawKeyDown") && (input.meta || input.control) && (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")) {
       log(`keys: an unbound ${input.type} made ${pluginKeys.chordOf({ key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift }) ?? "no chord"}`);

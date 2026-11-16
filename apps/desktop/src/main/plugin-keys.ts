@@ -2,7 +2,10 @@
 // `command.list` (the core's `keyState` says which chords are bound: the app's own and clashing ones are not), read
 // synchronously on each press because `before-input-event` must be answered in the same turn. Pure but for the one
 // request that fills it, so the matching is unit-tested.
-import { canonicalChord, chordOfPress, type KeyPress, type KeyPlatform } from "@waifucave/clover-plugin-sdk";
+//
+// A held binding (`commands[].hold`) asks for the key's release too (`hold`, below): per window, the chord's down (never a
+// repeat) starts it, and the first up of its key or of one of its modifiers ends it, once; another key's up is not it.
+import { canonicalChord, chordOfPress, type HoldPhase, type KeyPress, type KeyPlatform } from "@waifucave/clover-plugin-sdk";
 import { liveCommands } from "./ui/composer-calls";
 
 /** Whether a press may run a plugin's command at all: not while a sealed frame (an approval or OK card, whose buttons and
@@ -13,18 +16,52 @@ export function keysMayRun(focus: { frameUrl: string | null | undefined; secureO
   return !(typeof focus.frameUrl === "string" && focus.frameUrl.startsWith("clover-sealed://"));
 }
 
+/** A bound key: its command, the command's plugin, and whether it asks for the release too. */
+export interface BoundKey {
+  name: string;
+  pluginId: string;
+  hold: boolean;
+  /** Canonical (`ctrl+shift+space`). */
+  chord: string;
+}
+
+/** What a held binding's key event comes to: deliver `phase` to its command (none: only consumed), and whether the event
+ *  is consumed (kept from the page). `released`: an up the user made (the window losing the focus ends a hold with none). */
+export interface HoldStep {
+  binding: BoundKey;
+  phase?: HoldPhase;
+  released?: boolean;
+  consume: boolean;
+}
+
+/** The modifier keys a key event names (`input.key`), as a chord writes them. */
+const MODIFIER_KEYS: Record<string, string> = { Control: "ctrl", Shift: "shift", Alt: "alt", Meta: "meta" };
+
+/** The key of a press without its modifiers (`space`, `k`), or undefined for a lone modifier. */
+const keyPart = (p: KeyPress): string | undefined => chordOfPress({ key: p.key, ...(p.code !== undefined ? { code: p.code } : {}), control: false, meta: false, alt: false, shift: false });
+
+/** One window's held binding: its key and modifiers; `ended` once a modifier's up ended it while its key is still down
+ *  (that key's repeats and up are still the binding's, so the chord never types). */
+interface Held {
+  binding: BoundKey;
+  key: string;
+  mods: Set<string>;
+  ended: boolean;
+}
+
 export class PluginKeys {
-  #table = new Map<string, string>();
+  #table = new Map<string, BoundKey>();
+  #held = new Map<number, Held>();
   constructor(private readonly platform: KeyPlatform) {}
 
   /** Replaces the table from `command.list` rows already narrowed to running plugins' commands. */
-  set(rows: readonly { name: string; key?: unknown; keyState?: unknown }[]): void {
-    const next = new Map<string, string>();
+  set(rows: readonly { name: string; pluginId?: unknown; key?: unknown; keyState?: unknown; hold?: unknown }[]): void {
+    const next = new Map<string, BoundKey>();
     for (const r of rows) {
       const st = r.keyState as { state?: unknown; chord?: unknown } | undefined;
       if (st?.state !== "bound" || typeof r.key !== "string") continue;
       const canon = canonicalChord(r.key, this.platform);
-      if (canon !== undefined) next.set(canon, r.name);
+      if (canon !== undefined) next.set(canon, { name: r.name, pluginId: typeof r.pluginId === "string" ? r.pluginId : "", hold: r.hold === true, chord: canon });
     }
     this.#table = next;
     this.onSet?.(next.size);
@@ -44,13 +81,60 @@ export class PluginKeys {
   }
 
   match(press: KeyPress & { type: string; isAutoRepeat?: boolean }): string | undefined {
+    return this.binding(press)?.name;
+  }
+
+  /** The binding a fresh key-down (not a repeat) makes, or undefined. */
+  binding(press: KeyPress & { type: string; isAutoRepeat?: boolean }): BoundKey | undefined {
     if ((press.type !== "keyDown" && press.type !== "rawKeyDown") || press.isAutoRepeat === true || this.#table.size === 0) return undefined;
     const chord = chordOfPress(press);
     return chord === undefined ? undefined : this.#table.get(chord);
   }
 
+  /** A key event in window `windowId`, for the held bindings, before anything else reads it: undefined when it is none of
+   *  theirs (the press goes on as any other). `mayRun` is `keysMayRun` for the focus now: a hold starts only where a
+   *  command's key may run, and once started its release is always heard.
+   *  * The chord's down (not a repeat) starts the hold: `down`, consumed.
+   *  * While held, the chord's key going down again (a repeat) is nothing new: consumed, nothing delivered.
+   *  * The up of its key ends it (`up`, consumed); so does the up of one of its modifiers (`up`, not consumed, so the page
+   *    sees the modifier let go); its key's later repeats and up are still consumed. Another key's up is not it. */
+  hold(windowId: number, input: KeyPress & { type: string; isAutoRepeat?: boolean }, mayRun: boolean): HoldStep | undefined {
+    const h = this.#held.get(windowId);
+    const down = input.type === "keyDown" || input.type === "rawKeyDown";
+    if (down) {
+      if (h !== undefined && keyPart(input) === h.key && (input.isAutoRepeat === true || !h.ended)) return { binding: h.binding, consume: true };
+      // Any other press: what was left of an ended hold goes (the press goes on as any other).
+      if (h?.ended === true) this.#held.delete(windowId);
+      if (h !== undefined && !h.ended) return undefined;
+      const b = mayRun ? this.binding(input) : undefined;
+      if (b === undefined || !b.hold) return undefined;
+      const parts = b.chord.split("+");
+      this.#held.set(windowId, { binding: b, key: parts.pop()!, mods: new Set(parts), ended: false });
+      return { binding: b, phase: "down", consume: true };
+    }
+    if (input.type !== "keyUp" || h === undefined) return undefined;
+    if (keyPart(input) === h.key) {
+      this.#held.delete(windowId);
+      return h.ended ? { binding: h.binding, consume: true } : { binding: h.binding, phase: "up", released: true, consume: true };
+    }
+    const mod = MODIFIER_KEYS[input.key];
+    if (!h.ended && mod !== undefined && h.mods.has(mod)) {
+      h.ended = true;
+      return { binding: h.binding, phase: "up", released: true, consume: false };
+    }
+    return undefined;
+  }
+
+  /** The window lost the focus or closed: a hold still on ends with no release of the user's (its `up` is delivered, and
+   *  counts for nothing). */
+  cancel(windowId: number): HoldStep | undefined {
+    const h = this.#held.get(windowId);
+    this.#held.delete(windowId);
+    return h === undefined || h.ended ? undefined : { binding: h.binding, phase: "up", released: false, consume: false };
+  }
+
   /** Fills the table from the daemon: only commands of plugins that are on, OK'd and running count. */
   async refresh(asApp: (method: string, params: unknown) => Promise<unknown>): Promise<void> {
-    this.set((await liveCommands(asApp)).map((l) => l.cmd as { name: string; key?: unknown; keyState?: unknown }));
+    this.set((await liveCommands(asApp)).map((l) => l.cmd as { name: string; pluginId?: unknown; key?: unknown; keyState?: unknown; hold?: unknown }));
   }
 }

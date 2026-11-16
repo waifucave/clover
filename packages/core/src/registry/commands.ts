@@ -10,7 +10,7 @@
 // scope or its plugin's, §5.5) runs for the user and for that bot's own sessions (its conversation, side threads and
 // the agents it starts), never another bot's or a coding session's. The checks are before the args check, so a refused
 // caller learns nothing of the command's schema.
-import { validateArgs } from "@waifucave/clover-plugin-sdk";
+import { HOLD_ARGS, validateArgs } from "@waifucave/clover-plugin-sdk";
 import { PLUGINS_METHODS, type Caller } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
@@ -73,10 +73,12 @@ export async function runCommand(o: CommandRunnerOptions, params: { name: string
 export function registryCommand(registry: Pick<PluginRegistry, "entries"> & Partial<Pick<PluginRegistry, "get">>, name: string): RunnableCommand | undefined {
   const c = registry.entries("commands").find((e) => e.state === "active" && e.entryId === name);
   if (c === undefined) return undefined;
-  const v = c.value as { handler: string; args?: Record<string, unknown>; scope?: unknown };
+  const v = c.value as { handler: string; args?: Record<string, unknown>; scope?: unknown; hold?: unknown };
   // Its scope as the registry reads it (its own, else its plugin's or tree's); without the records, only its own.
   const scope = registry.get !== undefined ? scopeOf(registry as Pick<PluginRegistry, "get">, c.pluginId, v.scope) : v.scope === "own-bot" ? "own-bot" : undefined;
-  return { name, pluginId: c.pluginId, handler: v.handler, ...(v.args === undefined ? {} : { args: v.args }), ...(scope === undefined ? {} : { scope }) };
+  // A held key's command (`hold`) takes the core's own args: `{ key: "down" | "up" }` (it declares none).
+  const args = v.hold === true ? HOLD_ARGS : v.args;
+  return { name, pluginId: c.pluginId, handler: v.handler, ...(args === undefined ? {} : { args }), ...(scope === undefined ? {} : { scope }) };
 }
 
 /** `command.run` on Clover's connections: every caller's call goes through `runCommand`, the args check first. */

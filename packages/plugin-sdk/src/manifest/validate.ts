@@ -995,6 +995,15 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
       return ok;
     }
     case "commands": {
+      // A held key binding (`hold`) is a key's: it needs `key`, and its args are the core's own (`HOLD_ARGS`).
+      if (e.hold === true && e.key === undefined) {
+        f.error("entry", "hold_without_key", [...at, "hold"], "`hold` asks for a key's release as well as its press: give the command a `key`");
+        return false;
+      }
+      if (e.hold === true && e.args !== undefined) {
+        f.error("entry", "hold_args", [...at, "args"], "a held key's command declares no `args`: its handler gets `{ key: \"down\" }` on the press and `{ key: \"up\" }` on the release");
+        return false;
+      }
       // A command's args schema in the subset `command.run` enforces (F-M3's review N4), or it takes no call.
       if (e.args !== undefined) {
         const schema = checkArgsSchema(e.args);

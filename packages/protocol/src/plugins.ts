@@ -161,6 +161,8 @@ export const CommandView = z.object({
     z.object({ state: z.literal("bare") }),
     z.object({ state: z.literal("clash"), with: z.array(utf16(128)).max(64) }),
   ]).optional(),
+  /** Its key binding asks for the key's release too (§5.4 `hold`): run with `{ key: "down" }` and `{ key: "up" }`. */
+  hold: z.literal(true).optional(),
   runsOn: z.enum(["each", "main", "chosen"]).optional(),
 });
 export type CommandView = z.infer<typeof CommandView>;

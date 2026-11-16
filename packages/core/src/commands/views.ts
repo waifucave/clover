@@ -32,6 +32,7 @@ export function commandViews(registry: Pick<PluginRegistry, "entries">, platform
       description: v.description as CommandView["description"],
       ...(isObject(v.args) ? { args: v.args } : {}),
       ...(typeof v.key === "string" ? { key: v.key } : {}),
+      ...(v.hold === true && typeof v.key === "string" ? { hold: true as const } : {}),
       ...(v.runsOn === "each" || v.runsOn === "main" || v.runsOn === "chosen" ? { runsOn: v.runsOn } : {}),
     });
   }
