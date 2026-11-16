@@ -4,7 +4,6 @@ import type { EntryComponent } from "../client/local";
 import type { CardMeta } from "@waifucave/clover-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { mockSealed } from "../gallery/mock-runtime";
 import { ConversationEntry } from "../client/entry";
 import { project, toolHint, type CoreEvent } from "../client/project";
 import type { ApprovalItem, BotItem, ToolItem } from "../client/types";
@@ -150,7 +149,6 @@ describe("the conversation entry", () => {
       ...(extra.cards
         ? {
             approvals: { cards: () => extra.cards!.list, subscribe: (l: () => void) => { extra.cards!.listeners.add(l); return () => void extra.cards!.listeners.delete(l); } },
-            sealed: mockSealed({}),
           }
         : {}),
     });
@@ -200,15 +198,17 @@ describe("the conversation entry", () => {
       card("card_ok", { kind: "plugin-ok" }),
     ];
     tell();
-    const placed = [...document.querySelectorAll("[data-sealed-card]")].map((e) => (e as HTMLElement).dataset.sealedCard);
+    await act(() => settle());
+    const placed = [...document.querySelectorAll("[data-clover-card]")].map((e) => (e as HTMLElement).dataset.cloverCard);
     expect(placed).toEqual(["card_here"]);
     const unit = document.querySelector<HTMLElement>('.cl-conv__unit[data-unit="approval"]')!;
     expect(unit.hasAttribute("data-pending")).toBe(true);
-    expect(unit.querySelector(".cl-conv-approval [data-sealed-button='approve']")).toBeTruthy();
-    expect(unit.querySelector(".cl-conv-approval [data-sealed-button='deny']")).toBeTruthy();
+    expect(unit.querySelector(".cl-conv-approval [data-clover-sealed='button:approve']")).toBeTruthy();
+    expect(unit.querySelector(".cl-conv-approval [data-clover-sealed='button:deny']")).toBeTruthy();
     // Answered (anywhere): it leaves the list, and its cell goes.
     cards.list = [];
     tell();
+    await act(() => settle());
     expect(document.querySelector(".cl-conv-approval")).toBeNull();
   });
 

@@ -1,14 +1,12 @@
-// A pretend UI runtime for the gallery and the tests: it draws what the core's sealed frames and
-// MCP Apps views would, so the conversation's layout around them can be seen. The text in a sealed
-// field and an option's label here are the MOCK CORE's, handed to the frame, never to the
-// conversation plugin — exactly the split the real runtime keeps (spec §5.5).
-import { runtimeWith } from "@waifucave/clover-plugin-sdk/ui/testing";
-// F2b TODO @@UNKNOWN:ui: type CardButtonProps, type SealedField, type SealedRenderers, type UiRuntime
-import { createContext, useContext, type ReactNode } from "react";
+// A pretend core for the gallery and the tests: the SDK's own test layer (`ui/testing`), with the cards the conversation
+// places pending and each sealed frame showing what the core's sealed page would (a field's words, a button's label).
+// The words are the MOCK CORE's, in the sealed frames' pages, never the conversation plugin's: the split the app keeps
+// (spec §5.5).
+import { card as cardMeta, fakeApprovals, runtimeWith, type TestRuntime } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { CardFieldProps, CardMeta } from "@waifucave/clover-plugin-sdk";
 
+type SealedField = CardFieldProps["name"];
 export type SealedCardData = Partial<Record<SealedField, string>>;
-
-const CardContext = createContext<{ id: string; data: SealedCardData } | undefined>(undefined);
 
 /** The mock core's option labels, by option id. */
 const LABELS: Record<string, string> = {
@@ -20,92 +18,32 @@ const LABELS: Record<string, string> = {
   decline: "Decline",
 };
 
+/** An option's kind, by its id (the mock core's options). */
+const KIND: Record<string, "approve" | "deny"> = { allow_once: "approve", allow_always: "approve", approve: "approve", open_link: "approve", deny: "deny", decline: "deny" };
+
 export interface MockRuntimeOptions {
-  /** What each card's sealed fields say, by card id. */
+  /** What each card's sealed fields say, by card id: each is pending. */
   cards?: Record<string, SealedCardData>;
-  /** What each MCP Apps page draws, by tool call id. */
-  apps?: Record<string, { resourceUri: string; body: ReactNode }>;
-  onApprove?: (cardId: string, option?: string) => void;
-  onDeny?: (cardId: string, option?: string) => void;
+  /** A card's options, by card id (else deny and approve). */
+  options?: Record<string, readonly string[]>;
+  /** The cards still waiting (else every card in `cards`): an answered one is no longer pending in the core. */
+  pending?: readonly string[];
 }
 
-/** A runtime with only the sealed frames and MCP Apps views: what the conversation's own stories and tests need. */
-export function mockRuntime(options: MockRuntimeOptions = {}): UiRuntime {
-  return runtimeWith({ sealed: mockSealed(options) });
+/** A pending card as the core would list it, with its options. */
+export function mockCard(id: string, options: readonly string[] = ["deny", "approve"]): CardMeta {
+  return cardMeta(id, { options: options.map((o) => ({ id: o, kind: KIND[o] ?? "approve" })) as CardMeta["options"] });
 }
 
-/** The mock core's sealed frames and MCP Apps views. */
-export function mockSealed(options: MockRuntimeOptions = {}): SealedRenderers {
+/** A test layer with the cards pending and their sealed frames' words. */
+export function mockRuntime(options: MockRuntimeOptions = {}, extra: Partial<TestRuntime> = {}): TestRuntime {
   const cards = options.cards ?? {};
-  const apps = options.apps ?? {};
-  return {
-    Card: ({ id, children }) => (
-      <CardContext.Provider value={{ id, data: { ...cards[id] } }}>
-        <div className="mock-card" data-sealed-card={id}>
-          {children}
-        </div>
-      </CardContext.Provider>
-    ),
-    CardField: ({ name, lines }) => <MockField name={name} lines={lines} />,
-    CardApprove: (props) => <MockButton kind="approve" {...props} onPress={options.onApprove} />,
-    CardDeny: (props) => <MockButton kind="deny" {...props} onPress={options.onDeny} />,
-    AppView: ({ call }) => {
-      const app = apps[call.callId];
-      return (
-        <div className="mock-app" data-app-view={call.callId}>
-          <div className="mock-app__bar">{app?.resourceUri ?? "ui://"}</div>
-          <div className="mock-app__body">{app?.body ?? null}</div>
-        </div>
-      );
+  return runtimeWith({
+    approvals: fakeApprovals((options.pending ?? Object.keys(cards)).map((id) => mockCard(id, options.options?.[id]))),
+    sealedText: (cardId, element) => {
+      const [kind, name] = element.split(":") as ["field" | "button", string];
+      return kind === "field" ? cards[cardId]?.[name as SealedField] : LABELS[name] ?? name;
     },
-  };
-}
-
-function MockField({ name, lines }: { name: SealedField; lines?: number }) {
-  const card = useContext(CardContext);
-  const text = card?.data[name];
-  if (text === undefined) return null;
-  return (
-    <span className="mock-sealed" data-sealed-field={name} data-field={name} data-lines={lines}>
-      {text}
-    </span>
-  );
-}
-
-function MockButton({
-  kind,
-  option,
-  onPress,
-}: CardButtonProps & { kind: "approve" | "deny"; onPress?: (cardId: string, option?: string) => void }) {
-  const card = useContext(CardContext);
-  const label = (option && LABELS[option]) ?? (kind === "approve" ? LABELS.approve : LABELS.deny);
-  return (
-    <span
-      className="mock-sealed-button"
-      data-sealed-button={kind}
-      data-option={option}
-      data-kind={kind}
-      data-always={option === "allow_always" || undefined}
-      role="button"
-      tabIndex={0}
-      onClick={() => card && onPress?.(card.id, option)}
-    >
-      {label}
-    </span>
-  );
-}
-
-/** A tiny bar chart, standing in for an MCP Apps page's content. */
-export function MockChart({ bars }: { bars: { label: string; value: number }[] }): ReactNode {
-  const max = Math.max(1, ...bars.map((b) => b.value));
-  return (
-    <div className="mock-chart">
-      {bars.map((b) => (
-        <div key={b.label} className="mock-chart__col">
-          <div className="mock-chart__bar" style={{ height: `${Math.round((b.value / max) * 100)}%` }} />
-          <div className="mock-chart__label">{b.label}</div>
-        </div>
-      ))}
-    </div>
-  );
+    ...extra,
+  });
 }

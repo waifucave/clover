@@ -86,6 +86,12 @@ function emit(s: Schema, indent: string, defs: Record<string, Schema>, seen: Set
 
 const wrap = (t: string) => (/[|&]/.test(t) && !t.startsWith("{") ? `(${t})` : t);
 
+/** One schema as a plain TypeScript type (its text). */
+export function typeOf(schema: z.ZodType): string {
+  const json = z.toJSONSchema(schema, { io: "output", unrepresentable: "any" }) as Schema;
+  return emit(json, "", json.$defs ?? {}, new Set());
+}
+
 /** The file's text. */
 export function viewsSource(): string {
   const out = [

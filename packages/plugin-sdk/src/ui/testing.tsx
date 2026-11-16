@@ -80,6 +80,9 @@ export interface TestRuntime {
   t?(pluginId: string, key: string, params?: Record<string, string | number>): string;
   /** The pending cards (`useApprovals`): read now, and told when they change. */
   approvals?: { cards(): readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe };
+  /** What a card's sealed element says (a field's words, a button's label), as the app's sealed page would: each sealed
+   *  frame then shows a page with that text (a `data:` URL; `sealedTextOf` reads it back). Undefined: an empty page. */
+  sealedText?(cardId: string, element: string): string | undefined;
   /** The host's OS, for `when.os` and the mount context. */
   os?: string;
   /** The rest of the mount context a part reads (`useMountContext`): the bot, the surface… */
@@ -216,6 +219,16 @@ export const card = (id: string, extra: Partial<CardMeta> = {}): CardMeta => ({
   id, kind: "change", computer: "Studio", origin: "user", issuedAt: 0, expiresAt: null,
   options: [{ id: "approve", kind: "approve" }, { id: "deny", kind: "deny" }], ...extra,
 } as CardMeta);
+
+/** The text a test layer's sealed frame shows (its `sealedText`), read back from the frame's address; undefined for a
+ *  frame with none. */
+export function sealedTextOf(frame: Element): string | undefined {
+  const src = frame.getAttribute("src") ?? "";
+  if (!src.startsWith("data:text/html")) return undefined;
+  const html = decodeURIComponent(src.slice(src.indexOf(",") + 1));
+  const body = /<body[^>]*>([\s\S]*)<\/body>/.exec(html)?.[1] ?? "";
+  return body.replace(/&#(\d+);/g, (_m, n: string) => String.fromCharCode(Number(n)));
+}
 
 /** Lets the promises a render started settle (a few rounds of the microtask queue). */
 export async function settle(rounds = 4): Promise<void> {
@@ -431,7 +444,8 @@ export function setUpTestLayer(runtime: TestRuntime, root: { pluginId: string; e
       note("api", mount, [method, params]);
       const pluginId = pluginOf(mount);
       if (method === "events.subscribe") return {};
-      if (method === "card.pending" && runtime.approvals !== undefined) return { cards: runtime.approvals.cards() };
+      // The pending cards are the layer's (the test's `approvals`, none when it gives none), never a core call of the part's.
+      if (method === "card.pending") return { cards: runtime.approvals?.cards() ?? [] };
       if (method === "plugin.layer.call") {
         const p = params as { call: string; args?: unknown[] };
         return { result: await callPath(runtime.api?.(pluginId), p.call, p.args ?? []) };
@@ -452,7 +466,8 @@ export function setUpTestLayer(runtime: TestRuntime, root: { pluginId: string; e
     dragClaim: async () => ({ error: "no drags in a test layer" }),
     sealedFrame: async (mount, cardId, element, look) => {
       note("sealedFrame", mount, [cardId, element, look]);
-      return `about:blank#sealed:${encodeURIComponent(cardId)}:${encodeURIComponent(element)}`;
+      const text = runtime.sealedText?.(cardId, element);
+      return text === undefined ? "about:blank" : `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><body style="margin:0;font:14px system-ui">${text.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}</body>`)}`;
     },
     onMessage(listener) { listeners.add(listener); return () => void listeners.delete(listener); },
   };

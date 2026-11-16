@@ -1813,9 +1813,10 @@ export function useApprovals(): { readonly cards: readonly CardMeta[]; subscribe
       if (!live || !Array.isArray(now)) return;
       const known = new Set(rt().cards.map((c) => c.id));
       const added = (now as CardMeta[]).filter((c) => typeof c?.id === "string" && !known.has(c.id) && !resolvedCards.has(c.id));
-      if (added.length === 0) return;
-      rt().cards = [...rt().cards, ...added];
-      setCards([...rt().cards]);
+      if (added.length > 0) rt().cards = [...rt().cards, ...added];
+      // Every part's list is the layer's now: one that mounted beside another (whose read added the cards first) heard
+      // nothing of them otherwise, and drew a pending card as answered.
+      setCards((old) => (old.length === rt().cards.length && old.every((c, i) => c === rt().cards[i]) ? old : [...rt().cards]));
     }, () => undefined);
     return () => { live = false; };
   }, [mount]);

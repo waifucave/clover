@@ -33,40 +33,20 @@ import {
   STATUS_RETRYING,
   STREAMING,
   THINKING,
-  TOOL_APPS,
   TOOLS,
   TOOLS_OPEN,
   at,
   longConversation,
   thinking,
 } from "./fixtures";
-import { MockChart, mockRuntime } from "./mock-runtime";
+import { mockRuntime } from "./mock-runtime";
 import type { Story } from "./story";
 
 const noop = () => undefined;
 
-const runtime = mockRuntime({
-  cards: SEALED_CARDS,
-  apps: Object.fromEntries(
-    Object.entries(TOOL_APPS).map(([callId, app]) => [
-      callId,
-      {
-        resourceUri: app.resourceUri,
-        body: (
-          <MockChart
-            bars={[
-              { label: "Mon", value: 412 },
-              { label: "Tue", value: 388 },
-              { label: "Wed", value: 506 },
-              { label: "Thu", value: 297 },
-              { label: "Fri", value: 301 },
-            ]}
-          />
-        ),
-      },
-    ]),
-  ),
-});
+// The cards pending and their sealed frames' words (an MCP Apps view draws nothing until the app serves them: the
+// SDK's AppView is empty, so the tool's text result shows).
+const runtime = mockRuntime({ cards: SEALED_CARDS });
 
 const COMMON: Omit<ConversationViewProps, "items"> = {
   bot: BOT,
