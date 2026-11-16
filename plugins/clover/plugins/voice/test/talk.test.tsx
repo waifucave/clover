@@ -115,3 +115,64 @@ describe("Clover Voice's hold-to-talk button", () => {
     expect(screen.getByRole("note").textContent).toBe("Nothing was heard.");
   });
 });
+
+describe("it never sticks on (review item 7): a hold that ends without the user's release is dropped, nothing sent", () => {
+  /** A test source that says when it is stopped. */
+  function stoppable(): { stopped: () => boolean } {
+    let stopped = false;
+    setTalkSource(async (sink) => {
+      sink.chunk(new Uint8Array(3200));
+      return { stop: () => { stopped = true; } };
+    });
+    return { stopped: () => stopped };
+  }
+  const held = async () => {
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    await act(async () => { fireEvent.pointerDown(button, { pointerId: 1, button: 0 }); await settle(6); });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    return button;
+  };
+
+  for (const [what, end] of [
+    ["the window losing the focus", () => window.dispatchEvent(new Event("blur"))],
+    ["the window going hidden", () => { Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true }); document.dispatchEvent(new Event("visibilitychange")); }],
+    ["the button losing the focus", () => fireEvent.blur(screen.getByRole("button", { name: "Hold to talk" }))],
+    ["the pointer cancelled", () => fireEvent.pointerCancel(screen.getByRole("button", { name: "Hold to talk" }), { pointerId: 1 })],
+  ] as const) {
+    test(what, async () => {
+      const src = stoppable();
+      const w = world();
+      await act(() => settle(6));
+      const button = await held();
+      await act(async () => { end(); await settle(10); });
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      expect(src.stopped()).toBe(true);
+      expect(w.done).toEqual(["device/microphone"]);
+      expect(w.calls.some((c) => c.name === "heard")).toBe(false);
+      expect(w.sent).toEqual([]);
+      expect(button.getAttribute("aria-pressed")).toBe("false");
+      expect(screen.getByRole("note").textContent).toBe("Stopped: you let go elsewhere. Hold to talk again.");
+    });
+  }
+
+  test("the button going away (another bot's tab)", async () => {
+    const src = stoppable();
+    const w = world();
+    await act(() => settle(6));
+    await held();
+    await act(async () => { cleanup(); await settle(10); });
+    expect(src.stopped()).toBe(true);
+    expect(w.done).toEqual(["device/microphone"]);
+    expect(w.sent).toEqual([]);
+  });
+
+  test("a release after the hold was dropped sends nothing either", async () => {
+    stoppable();
+    const w = world();
+    await act(() => settle(6));
+    const button = await held();
+    await act(async () => { window.dispatchEvent(new Event("blur")); await settle(6); });
+    await act(async () => { fireEvent.pointerUp(button, { pointerId: 1, button: 0 }); await settle(10); });
+    expect(w.sent).toEqual([]);
+  });
+});

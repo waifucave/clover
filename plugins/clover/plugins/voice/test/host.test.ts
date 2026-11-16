@@ -1,6 +1,6 @@
 // Clover Voice's host half against a fake plugin API: a bot's main-conversation reply (the message.out observer, then the
 // turn's end) streams its provider's audio to the player part; nothing for a side thread, a failed turn, a bot with no
-// voice or "Speak replies" off; the voice the user picked (the platform's active `voiceModes` filler) is handed the reply
+// voice or "Speak replies" off; the voice the user picked (the active filler of its own `clover.voice.modes`) is handed the reply
 // instead; the default voice a plugin gives the bot it brings (the user's choice wins; it speaks only with a provider set up);
 // the speak button reads the reply from the log; the player's stops and holds go as whole-state `ui.send` messages.
 import { describe, expect, test } from "bun:test";
@@ -101,7 +101,7 @@ describe("Clover Voice's host half", () => {
     expect(f.opened).toEqual([]);
   });
 
-  test("the voice the user picked (another plugin's active voiceModes entry) is handed the reply; Clover Voice's player gets nothing", async () => {
+  test("the voice the user picked (another plugin's active clover.voice.modes entry) is handed the reply; Clover Voice's player gets nothing", async () => {
     const f = fake({ settings: VOICED, active: { pluginId: "acme-voice", entryId: "acme" }, modes: [{ pluginId: "acme-voice", entryId: "acme", value: { name: "Acme", reply: "reply" } }] });
     await host.replies(at("message.out", { text: "Hi." }));
     await host.replies(at("turn.end", { outcome: "completed" }));

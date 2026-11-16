@@ -124,9 +124,10 @@ export function clipSource(o: { seconds?: number; chunkMs?: number; everyMs?: nu
   };
 }
 
-/** Whether this is a test or acceptance build (compile-time marks, folded away in a release build). */
+/** Whether this is a test or acceptance build: the app's own convention (a mark defined as a string, its label; `false`
+ *  in a real build), the same test main makes, so the two never disagree. The clover tree's bundle gets both defines. */
 export function testBuild(): boolean {
-  return (typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" && __CLOVER_ACCEPTANCE_BUILD__ !== "") || (typeof __CLOVER_TEST_BUILD__ === "string" && __CLOVER_TEST_BUILD__ !== "");
+  return typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" || typeof __CLOVER_TEST_BUILD__ === "string";
 }
 
 /** The source a recording uses: the generated clip in a test or acceptance build, else the real microphone. */

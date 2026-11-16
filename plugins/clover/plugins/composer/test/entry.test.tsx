@@ -14,7 +14,7 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; plugin?: string; signedIn?: boolean; efforts?: string[]; defaultEffort?: string }[]; listen?: { listens: boolean; start?: () => { note?: string } | Promise<{ note?: string }>; stop?: () => { text?: string; note?: string } | Promise<{ text?: string; note?: string }> }; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; plugin?: string; signedIn?: boolean; efforts?: string[]; defaultEffort?: string }[]; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
@@ -24,14 +24,6 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     setModel: async (model: string, effort?: string) => { host.push(["setModel", model, effort ?? ""]); held = { ...held, model, ...(effort !== undefined ? { effort } : {}) }; },
     interrupt: async () => { host.push(["interrupt"]); },
     stop: async () => { host.push(["stop"]); },
-    ...(opts.listen
-      ? {
-          listenStatus: async () => ({ listens: opts.listen!.listens }),
-          // Recorded at once, as the host takes it: inside the press, or not at all.
-          listenStart: () => { host.push(["listenStart"]); return Promise.resolve(opts.listen!.start?.() ?? {}); },
-          listenStop: () => { host.push(["listenStop"]); return Promise.resolve(opts.listen!.stop?.() ?? {}); },
-        }
-      : {}),
     ...(opts.commands
       ? {
           commands: async () => ({ commands: opts.commands! }),

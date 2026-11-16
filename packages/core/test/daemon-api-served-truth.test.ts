@@ -113,7 +113,6 @@ const ARGS: Record<string, unknown[]> = {
   "logs.read": ["core", { lines: 1 }], "logs.follow": [{ plugin: PLUGIN }, FN],
   "notify.send": [{ title: "truth" }], "desktop.show": [{ title: "truth" }], "desktop.close": ["n_none"],
   "avatar.cue": [{ kind: "expression", name: "none" }], "avatar.watch": [FN], "avatar.report": ["truth", undefined],
-  "audio.onRecording": [FN],
 };
 
 /** The host half: `ui.api` calls `ctx.api.<path>` with the arguments (`$fn` a listener), and says what came back. */

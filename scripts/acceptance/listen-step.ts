@@ -88,14 +88,14 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
     await until("the talk button", 30_000, button, async () => "no talk button in the composer");
     done.push("with a listening voice set, the talk button shows, with no window focus given");
 
-    // A counter on the real constructor's door: the generated clip must never reach it.
+    // A counter on the real device's door that only counts: it never reaches the real getUserMedia, so even a wrong source
+    // opens no device. The generated clip must never come here.
     for (const d of await treeDocs(cdp)) {
       await cdp.evaluate(d.session, `(() => {
         const m = navigator.mediaDevices;
         if (!m || m.__listenProbe) return;
         m.__listenProbe = 0;
-        const real = m.getUserMedia ? m.getUserMedia.bind(m) : undefined;
-        m.getUserMedia = (...a) => { m.__listenProbe++; return real ? real(...a) : Promise.reject(new Error('none')); };
+        m.getUserMedia = () => { m.__listenProbe++; return Promise.reject(new Error('the acceptance run never opens a microphone')); };
       })()`).catch(() => undefined);
     }
 
