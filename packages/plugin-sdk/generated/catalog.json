@@ -220,8 +220,8 @@
     },
     {
       "name": "tools.permissions",
-      "lets": "Read and, on the user's own press in its frame, change what each plugin tool may do (always allow, ask, always block) and take back the card rules saved for a bot",
-      "ok": "changes which tools may act without asking you",
+      "lets": "Read and, on the user's own press in its frame, change what each plugin tool may do (always allow, ask, always block): every installed plugin's tools, Clover's own bundled plugins' included, so a tool set to always allow then acts with no card; not Clover's built-in shell and file tools. It can also take back the card rules saved for a bot",
+      "ok": "sets any plugin's tools, Clover's own plugins' included, to act without asking you, with no card (not Clover's built-in shell and file tools)",
       "warns": true
     },
     {
