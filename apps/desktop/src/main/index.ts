@@ -395,8 +395,8 @@ async function ready(): Promise<void> {
       throw err;
     }),
     // A part's gestured call spends only a press that landed in its own frame (F2, read 52).
-    takeGesture: (windowId, frameId) => {
-      const ok = sends.takeIn(windowId, frameId);
+    takeGesture: (windowId, frameId, arrived) => {
+      const ok = sends.takeIn(windowId, frameId, arrived);
       if (!ok) log(`press: a call from frame ${frameId} found no press of its own (the latest press: ${JSON.stringify(sends.pressFrames(windowId) ?? null)})`);
       return ok;
     },
@@ -615,8 +615,9 @@ async function ready(): Promise<void> {
       if (!sends.takeRelease(windowId, frameId)) {
         if (!active) return refuse("the frame reported no user activation", "the user's words go only right after their own key press or click");
         // The press must have landed in THIS frame (F2, read 52): a press in another frame of the window is not this sender's.
+        const arrived = Date.now();
         await sends.settle(windowId);
-        if (!sends.takeIn(windowId, frameId)) return refuse("the main process saw no key press or click land in this frame just before", "the user's words go only right after their own key press or click");
+        if (!sends.takeIn(windowId, frameId, arrived)) return refuse("the main process saw no key press or click land in this frame just before", "the user's words go only right after their own key press or click");
       }
       try {
         return await client.request<{ seq?: number }>("user.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
@@ -1899,7 +1900,8 @@ function hitRoot(f: Electron.WebFrameMain): HitFrame {
     get children() { return f.frames.map(hitRoot); },
     ask: (x, y) => Promise.race([
       f.executeJavaScript(hitScript(x, y)) as Promise<{ src: string; x: number; y: number } | null>,
-      new Promise<null>((r) => setTimeout(() => r(null), 400)),
+      // A frame that doesn't answer in time is no answer (the walk marks where it couldn't see, F2), not "no iframe here".
+      new Promise<null>((_r, no) => setTimeout(() => no(new Error("no answer")), 400)),
     ]),
   };
 }
@@ -2348,7 +2350,7 @@ function watchWindow(win: BrowserWindow): void {
     else {
       // The frame under the pointer is found a moment later (it asks the frames); the release waits for it if it comes first.
       const hold = sends.press(id, { kind: "mouse", key: mouse.button ?? "left" });
-      void frameChainAt(hitRoot(win.webContents.mainFrame), mouse.x, mouse.y).then((frames) => sends.holdFrames(id, hold, frames), () => undefined);
+      void frameChainAt(hitRoot(win.webContents.mainFrame), mouse.x, mouse.y, { markUnresolved: true }).then((frames) => sends.holdFrames(id, hold, frames), () => undefined);
     }
     pointers.down(id, mouse.x, mouse.y);
   });

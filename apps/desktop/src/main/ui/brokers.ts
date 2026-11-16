@@ -300,6 +300,9 @@ export class MenuGate {
 /** How soon after the user's key press or click a send it started must reach the main process. */
 export const SEND_INPUT_WINDOW_MS = 1_000;
 
+/** frame-hit.ts's `UNRESOLVED_FRAME`: a walk that couldn't see where a press landed ends in this, no frame's id. */
+const UNRESOLVED = "?";
+
 /** How long after a press's release the frame may send once (hold-to-talk: the release, then the transcription). */
 export const SEND_RELEASE_WINDOW_MS = 30_000;
 
@@ -314,10 +317,10 @@ export class SendGate {
     this.lastInput.set(windowId, this.now());
   }
 
-  take(windowId: number): boolean {
+  take(windowId: number, arrived: number = this.now()): boolean {
     const at = this.lastInput.get(windowId);
     this.lastInput.delete(windowId);
-    const ok = at !== undefined && this.now() - at <= SEND_INPUT_WINDOW_MS;
+    const ok = at !== undefined && arrived - at <= SEND_INPUT_WINDOW_MS;
     if (ok) {
       // One press, one send, whichever rule spends it: this press's hold is spent (a key's send comes on its key down, a click's on
       // its release), and an allowance its release already gave is gone.
@@ -345,13 +348,14 @@ export class SendGate {
   private readonly waiting = new Map<Hold, (() => void)[]>();
 
   /** Spends the window's press for a call from `frameId`: true once, within SEND_INPUT_WINDOW_MS, when the press landed in that
-   *  frame (its innermost frame); false (and nothing spent) otherwise. */
-  takeIn(windowId: number, frameId: string): boolean {
+   *  frame (its innermost frame); false (and nothing spent) otherwise. `arrived` is when the call came (before any wait for
+   *  the walk, `settle`): the window is measured to it, so a slow walk never makes a timely call late. */
+  takeIn(windowId: number, frameId: string, arrived: number = this.now()): boolean {
     const p = this.lastPress.get(windowId);
     const at = this.lastInput.get(windowId);
-    if (p === undefined || at === undefined || this.now() - at > SEND_INPUT_WINDOW_MS) return false;
-    if (p.frames === undefined || [...p.frames].at(-1) !== frameId) return false;
-    return this.take(windowId);
+    if (p === undefined || at === undefined || arrived - at > SEND_INPUT_WINDOW_MS || arrived < at) return false;
+    if (p.frames === undefined || frameId === UNRESOLVED || [...p.frames].at(-1) !== frameId) return false;
+    return this.take(windowId, arrived);
   }
 
   /** The frames the window's latest press landed in (outermost first), for the log line a refused call writes. */
@@ -362,7 +366,7 @@ export class SendGate {
 
   /** Waits (at most `ms`) until the window's latest press knows its frames (a mouse press asks the frames under the pointer a
    *  moment after it): resolves at once when there is none or it is known. */
-  settle(windowId: number, ms = 2_000): Promise<void> {
+  settle(windowId: number, ms = 2_500): Promise<void> {
     const p = this.lastPress.get(windowId);
     if (p === undefined || p.frames !== undefined) return Promise.resolve();
     return new Promise<void>((resolve) => {

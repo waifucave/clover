@@ -539,6 +539,26 @@ describe("a part's gestured call spends only a press in its own frame (F2, read 
     expect(g.takeIn(W, "doc:A")).toBe(false);
   });
 
+  test("a call that came in time is still in time when the walk is slow: the window is measured to its arrival", () => {
+    let t = 1_000;
+    const g = new SendGate(() => t);
+    const h = g.press(W, { kind: "mouse", key: "left" });
+    const arrived = t + 200;
+    t += 2_400; // the walk took 2.4 s to name the frame
+    g.holdFrames(W, h, ["part"]);
+    expect(g.takeIn(W, "part", t)).toBe(false); // measured now: late
+    expect(g.takeIn(W, "part", arrived)).toBe(true);
+    expect(g.takeIn(W, "part", arrived)).toBe(false); // once
+  });
+
+  test("a press whose walk couldn't see where it landed (an unresolved last hop) is no frame's, not the outer document's", () => {
+    const g = new SendGate(() => 7);
+    const h = g.press(W, { kind: "mouse", key: "left" });
+    g.holdFrames(W, h, ["clover-doc", "?"]);
+    expect(g.takeIn(W, "clover-doc")).toBe(false);
+    expect(g.takeIn(W, "?")).toBe(false);
+  });
+
   test("another window's press is never this window's", () => {
     const g = new SendGate(() => 1);
     g.press(1, { kind: "key", key: "Enter", frames: ["doc:A"] });

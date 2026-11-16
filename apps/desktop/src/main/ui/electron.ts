@@ -387,7 +387,7 @@ export interface IpcHooks {
   frameWatches?: FrameWatches;
   /** One key press or click of the user's the main process saw land IN THE CALLER'S OWN FRAME (`frameId`), spent (the
    *  SendGate's `takeIn`, F2): a press in another frame of the window is not the caller's, and is left unspent. */
-  takeGesture(windowId: number, frameId: string): boolean;
+  takeGesture(windowId: number, frameId: string, arrived?: number): boolean;
   /** Waits (briefly) until the window's latest press knows which frame it landed in (a click asks the frames under the
    *  pointer a moment after it), so `takeGesture` can tell. */
   settleGesture?(windowId: number): Promise<void>;
@@ -452,8 +452,9 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   /** The shell API's calls that spend no press (`routeShell` answers them before its gesture). */
   const SHELL_NO_PRESS: ReadonlySet<string> = new Set(["state", "apps", "account", "dragWindow", "provide"]);
   const pressIn = async (s: { windowId: number; frame: { processId: number; routingId: number } }, active: unknown): Promise<(windowId: number) => boolean> => {
+    const arrived = Date.now();
     if (active === true) await hooks.settleGesture?.(s.windowId);
-    return (w) => frameGesture(active, () => hooks.takeGesture(w, fid(s.frame)));
+    return (w) => frameGesture(active, () => hooks.takeGesture(w, fid(s.frame), arrived));
   };
   /** What the shell last said of each window's place, for the plugin frames that read it (`shell.state`). */
   const shellWindows = new Map<number, { state: ShellState; apps: ShellApp[] }>();

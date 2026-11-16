@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { frameChainAt, hitScript, type HitFrame } from "../src/main/frame-hit";
+import { frameChainAt, hitScript, UNRESOLVED_FRAME, type HitFrame } from "../src/main/frame-hit";
 
 // A window as the walk sees it: each frame answers for the iframe at a point, in its own coordinates.
 const frame = (id: string, url: string, over: { at: { x: number; y: number; w: number; h: number }; child: HitFrame } | undefined, extra: HitFrame[] = []): HitFrame => ({
@@ -29,6 +29,15 @@ describe("the frames a press landed in", () => {
     expect(await frameChainAt(frame("1:1", "x", { at: { x: 0, y: 0, w: 500, h: 500 }, child: silent }), 5, 5)).toEqual(["2:2"]);
     const lost: HitFrame = { id: "1:1", url: "x", children: [], ask: async () => ({ src: "clover-plugin://nowhere", x: 0, y: 0 }) };
     expect(await frameChainAt(lost, 5, 5)).toEqual([]);
+  });
+
+  test("marked (F2): a walk that can't see where the point is ends in no frame's id, so no outer frame takes the press", async () => {
+    const silent: HitFrame = { ...layer, ask: () => Promise.reject(new Error("hung")) };
+    expect(await frameChainAt(frame("1:1", "x", { at: { x: 0, y: 0, w: 500, h: 500 }, child: silent }), 5, 5, { markUnresolved: true })).toEqual(["2:2", UNRESOLVED_FRAME]);
+    const lost: HitFrame = { id: "1:1", url: "x", children: [], ask: async () => ({ src: "clover-plugin://nowhere", x: 0, y: 0 }) };
+    expect(await frameChainAt(lost, 5, 5, { markUnresolved: true })).toEqual([UNRESOLVED_FRAME]);
+    // Over a frame's own content (an answer of no iframe) is that frame's, as before.
+    expect(await frameChainAt(root, 105, 105, { markUnresolved: true })).toEqual(["2:2"]);
   });
 
   test("the hop's script asks for an iframe at rounded numbers only", () => {

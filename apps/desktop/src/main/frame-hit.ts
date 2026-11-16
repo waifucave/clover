@@ -16,18 +16,29 @@ export interface HitFrame {
 
 export const FRAME_HIT_DEPTH = 5;
 
+/** The last entry of a chain whose walk could not say where the point is (F2, read 52): a hop that did not answer, or answered
+ *  an iframe none of its frames is. No frame's id, so no frame takes the press as its own (`SendGate.takeIn`). */
+export const UNRESOLVED_FRAME = "?";
+
 /** The ids of the frames the point (window coordinates) is in, outermost first, the window's main frame left out: empty if the
  *  point is over the root document's own content. */
-export async function frameChainAt(main: HitFrame, x: number, y: number): Promise<string[]> {
+export async function frameChainAt(main: HitFrame, x: number, y: number, opts: { markUnresolved?: boolean } = {}): Promise<string[]> {
   const chain: string[] = [];
   let frame = main;
   let ox = 0;
   let oy = 0;
   for (let i = 0; i < FRAME_HIT_DEPTH; i++) {
-    const hit = await frame.ask(x - ox, y - oy).catch(() => null);
-    if (hit === null) break;
+    let answered = true;
+    const hit = await frame.ask(x - ox, y - oy).catch(() => ((answered = false), null));
+    if (hit === null) {
+      if (!answered && opts.markUnresolved === true) chain.push(UNRESOLVED_FRAME);
+      break;
+    }
     const child = frame.children.find((c) => c.url === hit.src);
-    if (child === undefined) break;
+    if (child === undefined) {
+      if (opts.markUnresolved === true) chain.push(UNRESOLVED_FRAME);
+      break;
+    }
     chain.push(child.id);
     ox += hit.x;
     oy += hit.y;
