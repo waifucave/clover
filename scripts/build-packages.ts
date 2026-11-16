@@ -87,9 +87,12 @@ export function packageArchNames(arch: LinuxArch): { deb: string; rpm: string; a
 }
 
 /** The electron-builder command for one architecture, run in apps/desktop: never publishing, with the update files
- *  written for `channel` (scripts/release/lib.ts). */
+ *  written for `channel` (scripts/release/lib.ts). The product name is "MOSS Code" everywhere but on Linux, where
+ *  electron-builder installs under /opt/<product name> and names the executable's folder after it: a name with a space
+ *  would make /opt/MOSS Code, so Linux builds take `moss-code` (the launcher entry's own Name stays "MOSS Code",
+ *  electron-builder.yml's `desktop.entry`). */
 export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxFormat[], channel: Channel = "latest"): string[] {
-  return ["electron-builder", "--linux", ...formats, `--${arch}`, "--publish", "never", ...channelArgs(channel)];
+  return ["electron-builder", "--linux", ...formats, `--${arch}`, "--publish", "never", "-c.productName=moss-code", ...channelArgs(channel)];
 }
 
 /** The link sidecar's build (native/link), relative to the repo root: one for this machine. */

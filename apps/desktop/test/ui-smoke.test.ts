@@ -403,10 +403,10 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   test.if(ci)("the unsigned packaged app draws the same shell", () => {
     const dist = join(root, "out", "dist");
     const candidates = process.platform === "darwin"
-      ? [join(dist, `mac-${process.arch}`, "MOSS Code.app", "Contents", "MacOS", "MOSS"), join(dist, "mac", "MOSS Code.app", "Contents", "MacOS", "MOSS")]
+      ? [join(dist, `mac-${process.arch}`, "MOSS Code.app", "Contents", "MacOS", "MOSS Code"), join(dist, "mac", "MOSS Code.app", "Contents", "MacOS", "MOSS Code")]
       : process.platform === "win32"
         ? [join(dist, "win-unpacked", "MOSS Code.exe")]
-        : [join(dist, process.arch === "x64" ? "linux-unpacked" : `linux-${process.arch}-unpacked`, "moss")];
+        : [join(dist, process.arch === "x64" ? "linux-unpacked" : `linux-${process.arch}-unpacked`, "moss-code")];
     const executable = candidates.find((c) => existsSync(c));
     expect(executable, "run `bun run dist` first (the app job does)").toBeDefined();
     // A packaged dist app ignores MOSS_DAEMON_BIN: it finds its daemon in its own resources, where lane M packages

@@ -24,7 +24,7 @@ function codeLines(text: string, comment: string): string[] {
 }
 
 /** electron-builder's Linux script macros, as FpmTarget fills them. */
-const MACROS: Record<string, string> = { executable: "moss", sanitizedProductName: "MOSS", productFilename: "MOSS" };
+const MACROS: Record<string, string> = { executable: "moss-code", sanitizedProductName: "moss-code", productFilename: "moss-code" };
 function renderLinux(rel: string): string {
   return read(rel).replace(/\$\{([a-zA-Z]+)\}/g, (_, name: string) => {
     if (!(name in MACROS)) throw new Error(`${rel}: electron-builder knows no macro ${name}`);
@@ -107,11 +107,11 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
     expect(builder.linux.maintainer).toBe("MOSS <w@waifucave.com>");
   });
 
-  test("the deb and the rpm are named moss, file and package, with no folder in the name", () => {
-    expect(builder.deb.packageName).toBe("moss");
-    expect(builder.rpm.packageName).toBe("moss");
-    expect(builder.deb.artifactName).toBe("moss_${version}_${arch}.${ext}");
-    expect(builder.rpm.artifactName).toBe("moss-${version}.${arch}.${ext}");
+  test("the deb and the rpm are named moss-code, file and package, with no folder in the name", () => {
+    expect(builder.deb.packageName).toBe("moss-code");
+    expect(builder.rpm.packageName).toBe("moss-code");
+    expect(builder.deb.artifactName).toBe("moss-code_${version}_${arch}.${ext}");
+    expect(builder.rpm.artifactName).toBe("moss-code-${version}.${arch}.${ext}");
     for (const name of [builder.deb.artifactName, builder.rpm.artifactName, builder.appImage.artifactName] as string[]) expect(name).not.toMatch(/[/@]|\$\{name\}/);
   });
 
@@ -133,7 +133,7 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
     const install = renderLinux("packaging/linux/after-install.sh");
     expect(install).toContain(`CLI='${AFTER_INSTALL_MARK}'`);
     expect(install).toContain("update-alternatives --install '/usr/bin/moss' 'moss' \"$CLI\" 100");
-    expect(install).toContain("APPARMOR_PROFILE_TARGET='/etc/apparmor.d/moss'");
+    expect(install).toContain("APPARMOR_PROFILE_TARGET='/etc/apparmor.d/moss-code'");
     expect(install).toContain("apparmor_parser --replace");
     // The install marker beside the daemon: a package's daemon never updates itself.
     expect(install).toContain(`printf '{"kind":"package"}\\n' > "$(dirname "$CLI")/install.json"`);
@@ -158,7 +158,7 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
   test("the AppArmor profile grants user namespaces to the app's executable alone", () => {
     const profile = renderLinux("packaging/linux/apparmor-profile");
     expect(builder.linux.executableName).toBe(MACROS.executable);
-    expect(profile).toContain("profile moss /opt/moss-code/moss-code flags=(unconfined) {");
+    expect(profile).toContain("profile moss-code /opt/moss-code/moss-code flags=(unconfined) {");
     expect(profile).toContain("  userns,");
   });
 
@@ -173,7 +173,7 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
   test("the deb's and the rpm's launcher entry carries Quit, which runs the app with --quit (no tray on stock GNOME)", () => {
     for (const format of ["deb", "rpm"]) {
       expect(builder[format].desktop.entry.Actions, format).toBe("Quit;");
-      expect(builder[format].desktop.desktopActions.Quit, format).toEqual({ Name: "Quit MOSS", Exec: `/opt/moss-code/${builder.linux.executableName} --quit` });
+      expect(builder[format].desktop.desktopActions.Quit, format).toEqual({ Name: "Quit MOSS Code", Exec: `/opt/moss-code/${builder.linux.executableName} --quit` });
     }
   });
 
@@ -241,8 +241,8 @@ describe("build-packages.ts", () => {
   });
 
   test("electron-builder packages one architecture at a time and never publishes", () => {
-    expect(electronBuilderArgs("arm64", ["deb", "rpm"])).toEqual(["electron-builder", "--linux", "deb", "rpm", "--arm64", "--publish", "never", "-c.publish.channel=latest"]);
-    expect(electronBuilderArgs("x64", ["AppImage"], "beta")).toEqual(["electron-builder", "--linux", "AppImage", "--x64", "--publish", "never", "-c.publish.channel=beta"]);
+    expect(electronBuilderArgs("arm64", ["deb", "rpm"])).toEqual(["electron-builder", "--linux", "deb", "rpm", "--arm64", "--publish", "never", "-c.productName=moss-code", "-c.publish.channel=latest"]);
+    expect(electronBuilderArgs("x64", ["AppImage"], "beta")).toEqual(["electron-builder", "--linux", "AppImage", "--x64", "--publish", "never", "-c.productName=moss-code", "-c.publish.channel=beta"]);
     expect(packageArchNames("x64")).toEqual({ deb: "amd64", rpm: "x86_64", appImage: "x86_64" });
     expect(packageArchNames("arm64")).toEqual({ deb: "arm64", rpm: "aarch64", appImage: "arm64" });
   });

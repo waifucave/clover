@@ -142,6 +142,7 @@ deb:
   # own executable with --quit (E-M1's app quits the pair). `moss` on the PATH is the daemon's command line.
   desktop:
     entry:
+      Name: MOSS Code
       Actions: Quit;
     desktopActions:
       Quit:
@@ -170,6 +171,7 @@ rpm:
   # The same Quit action as the deb's.
   desktop:
     entry:
+      Name: MOSS Code
       Actions: Quit;
     desktopActions:
       Quit:

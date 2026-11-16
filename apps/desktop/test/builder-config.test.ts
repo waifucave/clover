@@ -22,7 +22,7 @@ describe("electron-builder.yml", () => {
 
   test("is the dist identity", () => {
     expect(config.appId).toBe("com.waifucave.moss.code");
-    expect(config.productName).toBe("MOSS");
+    expect(config.productName).toBe("MOSS Code");
   });
 
   test("`dist` builds the unpacked app on every OS, and never signs or publishes", () => {
