@@ -220,7 +220,7 @@ describe("ci-changes", () => {
     const gated = Object.values(jobs).flatMap((j) => [...(j.if ?? "").matchAll(/needs\.changes\.outputs\.(\w+) == 'true'/g)].map((m) => m[1]!));
     expect([...new Set(gated)].sort()).toEqual([...CI_AREA_NAMES].sort());
     const gateNeeds = jobs.gate?.needs;
-    const all = Object.keys(jobs).filter((id) => !["gate", "acceptance", "lane-gate"].includes(id) && jobs[id]!.if !== "github.event_name == 'workflow_dispatch'");
+    const all = Object.keys(jobs).filter((id) => !["gate", "acceptance", "lane-gate", "swift-cowork-launcher", "libkrun-queue"].includes(id));
     expect([...(Array.isArray(gateNeeds) ? gateNeeds : [])].sort()).toEqual(all.sort());
   });
 });
