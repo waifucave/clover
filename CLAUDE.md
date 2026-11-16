@@ -4,16 +4,16 @@ Guidance for Claude Code (claude.ai/code) when working in this repository. This 
 
 ## What this is
 
-Clover is Winter's successor: one assistant across macOS, Windows and Linux, built from bots and plugins. Where it is going is in two documents, and they are the source of truth whenever anything else disagrees with them:
+MOSS is Winter's successor: one assistant across macOS, Windows and Linux, built from bots and plugins. It was called Clover until 2026-11-16 (see the note at the top of the spec); the app in this repo is **MOSS Code**, and a second app, MOSS (the bots), is specified later and takes none of MOSS Code's identity. Where it is going is in two documents, and they are the source of truth whenever anything else disagrees with them:
 
-- [docs/clover-spec.md](docs/clover-spec.md) — the direction spec (names and homes in §2, what happens to each of Winter's parts in §12)
-- [docs/clover-plan.md](docs/clover-plan.md) — the build plan: phases C0–C7, the lanes, the repos and how merging works
+- [docs/moss-spec.md](docs/moss-spec.md) — the direction spec (names and homes in §2, what happens to each of Winter's parts in §12)
+- [docs/moss-plan.md](docs/moss-plan.md) — the build plan: phases C0–C7, the lanes, the repos and how merging works
 
-The code in this repo today is Winter's, renamed (C0). It is a TypeScript/Bun daemon (`clover-core`, package `@waifucave/clover-core`) with the `clover` CLI. They speak JSON-RPC 2.0 over NDJSON on a Unix socket (`<CLOVER_HOME>/run/core.sock`; default home `~/.clover`). The daemon is the single source of truth; every client is a view over its event stream.
+The code in this repo today is Winter's, renamed twice (to Clover in C0, to MOSS on 2026-11-16). It is a TypeScript/Bun daemon (`moss-core`, package `@waifucave/moss-core`) with the `moss` CLI and the MOSS Code desktop app (`apps/desktop`). They speak JSON-RPC 2.0 over NDJSON on a Unix socket (`<MOSS_HOME>/run/core.sock`; default home `~/.moss`). The daemon is the single source of truth; every client is a view over its event stream.
 
-**The daemon runs no agent loop of its own.** Every session is a runtime child driven through the router (`@yanlinglabs/winter-runtime-sdk`, now archived) on the agent SDK's runtime, which Clover's daemon names with its own brand (`packages/core/src/runtime-sdk/brand.ts`: `~/.clover`, `CLOVER_*`, `mcp__clover__*`). Code sessions spawn the `winter` binary (Winter's coding agent, from the SDK); chat and dispatch run the SDK embedded in `clover-core`, one Bun Worker per session. Session modes are `code`, `dispatch`, `chat`. **Cowork is paused** and not an implemented session mode — see [docs/cowork-status.md](docs/cowork-status.md).
+**The daemon runs no agent loop of its own.** Every session is a runtime child driven through the router (`@yanlinglabs/winter-runtime-sdk`, now archived) on the agent SDK's runtime, which MOSS's daemon names with its own brand (`packages/core/src/runtime-sdk/brand.ts`: `~/.moss`, `MOSS_*`, `mcp__moss__*`). Code sessions spawn the `winter` binary (Winter's coding agent, from the SDK); chat and dispatch run the SDK embedded in `moss-core`, one Bun Worker per session. Session modes are `code`, `dispatch`, `chat`. **Cowork is paused** and not an implemented session mode — see [docs/cowork-status.md](docs/cowork-status.md).
 
-Names that still say Winter on purpose: the SDK's npm packages (`@yanlinglabs/winter-*`, renamed when lane A republishes the SDK) and its API; Winter's coding agent and its build (`build:winter`, `dist/winter`); the Swift packages in `apple/` (`apple/Winter` is retired and not built; WinterKit and WinterProtocol serve the iOS app); computer use (Winter Computer Use, Winter for Chrome), which waits for opensky; values already on the wire or on disk; history. Each is listed with its reason in `scripts/rename/clover.ts`, and `packages/core/test/rename/clover-residue.test.ts` fails on any other.
+Names that still say Winter on purpose: the SDK's npm packages (`@yanlinglabs/winter-*`, renamed when lane A republishes the SDK) and its API; Winter's coding agent and its build (`build:winter`, `dist/winter`); the Swift packages in `apple/` (`apple/Winter` is retired and not built; WinterKit and WinterProtocol serve the iOS app); computer use (Winter Computer Use, Winter for Chrome), which waits for opensky; values already on the wire or on disk; history. Each is listed with its reason in `scripts/rename/moss.ts`, and `packages/core/test/rename/moss-residue.test.ts` fails on any other. The agent SDK's npm packages are installed from the registry under their published names (`@waifucave/clover-*`), which also stay until the SDK repo renames them. A project's `.clover/` folder, a `CLOVER.md` and a folder plugin's `clover.json` are read second, after the MOSS names, through `packages/core/src/old-names.ts`, the one place that lists them.
 
 ## Commands
 
@@ -24,7 +24,7 @@ scripts/pinned-bun <args>            # the Bun .bun-version pins (CI's), beside 
 pnpm test                            # every workspace, serially (`bun scripts/workspaces.ts run test` is CI's per-OS run)
 cd packages/core && bun test         # one package
 bun test path/to/file.test.ts        # one file (substring match); `bun test -t "name"` for one test
-bun test scripts                     # the repo scripts' tests, the layout's conventions among them (docs/clover-layout.md)
+bun test scripts                     # the repo scripts' tests, the layout's conventions among them (docs/moss-layout.md)
 bun run typecheck                    # every package's own `typecheck`, the page runtime and scripts/ (typecheck:core / … for one)
 pnpm protocol:generate               # REQUIRED after changing packages/protocol/src/events.ts
 
@@ -34,34 +34,34 @@ bun run verify:workflow              # also verify:automation-worker, verify:run
 # Swift — the computer-use helper's packages and the paused Cowork's; the old Mac app's kits are gone (below)
 cd apple/ComputerUse/WinterBrowserHost && swift test   # also the other packages under apple/ComputerUse and apple/Cowork
 
-# CLI / daemon in dev — never a plain `clover` or `winter`: those are dist CLIs
+# CLI / daemon in dev — never a plain `moss` or `winter`: those are dist CLIs
 cd packages/cli && bun src/main.ts daemon run   # headless daemon; `-p "hello"` one-shot; no args = TUI (a throwaway home only, below)
 bun run build:winter                 # dist/winter from ../clover-sdk, for the built-binary e2e
 
 # Build and dev, on macOS, Linux and Windows (heavy: through scripts/heavy here, which runs the pinned Bun)
-bun run build:daemon                 # dist/daemon/<target>/clover-core; --target linux-x64,… or --all cross-compiles; --dry-run
+bun run build:daemon                 # dist/daemon/<target>/moss-core; --target linux-x64,… or --all cross-compiles; --dry-run
 bun run build:app                    # apps/desktop, unsigned and unpacked (apps/desktop/out/dist); opens no window
 bun scripts/build-packages.ts --check  # Linux only: deb, rpm and AppImage with the daemon inside (packaging/); --dry-run elsewhere
 bun run dev:daemon --dry-run         # the dev daemon's plan; without --dry-run it builds and STARTS it (see Profiles)
 bun run dev:app --dry-run            # the dev app's plan; without --dry-run it OPENS A WINDOW: never from an agent here
 
-# Live suites: WINTER_CU_LIVE_TESTS=1 bun run e2e:cu-live (NEVER from an agent); CLOVER_BROWSER_E2E=1 bun run e2e:browser (likewise)
+# Live suites: WINTER_CU_LIVE_TESTS=1 bun run e2e:cu-live (NEVER from an agent); MOSS_BROWSER_E2E=1 bun run e2e:browser (likewise)
 ```
 
-Run a daemon from the checkout under plain `bun` only on a throwaway home with a throwaway Keychain: `H="$(mktemp -d)"; security create-keychain -p clover-throwaway-test-keychain "$H/test.keychain-db" && security set-keychain-settings "$H/test.keychain-db"`, then `CLOVER_HOME="$H" CLOVER_PROFILE=dev CLOVER_KEYCHAIN_SERVICE=com.waifucave.clover.core.scratch CLOVER_TEST_KEYCHAIN="$H/test.keychain-db"`. Without `CLOVER_TEST_KEYCHAIN` it refuses at boot (any test signal keeps it off the login keychain). The throwaway keychain is never added to the search list. The dev home `~/.clover-dev` only through `bun run dev:daemon` (see Profiles). Every daemon tees its stdout/stderr into `<CLOVER_HOME>/logs/daemon.log` (`clover doctor` prints the path). Tests get a per-process temp root and a throwaway Keychain service from the preloads.
+Run a daemon from the checkout under plain `bun` only on a throwaway home with a throwaway Keychain: `H="$(mktemp -d)"; security create-keychain -p moss-throwaway-test-keychain "$H/test.keychain-db" && security set-keychain-settings "$H/test.keychain-db"`, then `MOSS_HOME="$H" MOSS_PROFILE=dev MOSS_KEYCHAIN_SERVICE=com.waifucave.moss.core.scratch MOSS_TEST_KEYCHAIN="$H/test.keychain-db"`. Without `MOSS_TEST_KEYCHAIN` it refuses at boot (any test signal keeps it off the login keychain). The throwaway keychain is never added to the search list. The dev home `~/.moss-dev` only through `bun run dev:daemon` (see Profiles). Every daemon tees its stdout/stderr into `<MOSS_HOME>/logs/daemon.log` (`moss doctor` prints the path). Tests get a per-process temp root and a throwaway Keychain service from the preloads.
 
 ## Profiles — which daemon you are talking to
 
-- The home and the profile are set INDEPENDENTLY: `CLOVER_HOME` picks the home (default `~/.clover`, treat it as a live install); `CLOVER_PROFILE=dev` changes only the Keychain service and the app identity, never the home. Always set BOTH — dev is `CLOVER_HOME=~/.clover-dev CLOVER_PROFILE=dev`.
-- Identities: dist `com.waifucave.clover` with Keychain `com.waifucave.clover.core`; dev `com.waifucave.clover.dev` with `com.waifucave.clover.core.dev`.
-- A plain `clover` is the dist CLI and, on a dead socket, tries to launch the dist app. A plain `winter` is **Winter's** dist CLI and launches the live Winter app. Never run either for dev or test work.
-- `bun run dev:daemon` builds and runs the dev daemon (`dist/dev/clover-core`, `.exe` on Windows) on `~/.clover-dev`, signing it on macOS only; `bun run dev:app` runs apps/desktop as "Clover Dev" on the same home. Both refuse `~/.clover` and, by real path, every other install's home (`packages/core/src/other-installs.ts`); `clover daemon run` and `startDaemon` refuse those homes too. A boot never imports anything from another install: Migration B (`packages/core/src/migration/`) runs only for an explicit `clover migrate --from <legacy home>`, and Clover's carry-over from Winter is a later lane's.
-- macOS: after the dev daemon's one-time `bun run dev:daemon --transition`, the dev Keychain items trust only the signed dev binary: never run a dev daemon or the dev CLI on `~/.clover-dev` under plain `bun`, which is prompted for every Keychain item. Use `bun run dev:daemon` (`--no-build` reuses the binary; `bun scripts/dev-daemon.ts --no-build --cli <args>` runs the dev CLI through it).
+- The home and the profile are set INDEPENDENTLY: `MOSS_HOME` picks the home (default `~/.moss`, treat it as a live install); `MOSS_PROFILE=dev` changes only the Keychain service and the app identity, never the home. Always set BOTH — dev is `MOSS_HOME=~/.moss-dev MOSS_PROFILE=dev`.
+- Identities: dist app `com.waifucave.moss.code` ("MOSS Code.app") with the engine's Keychain service and launch agent label `com.waifucave.moss.core`; dev `com.waifucave.moss.code.dev` ("MOSS Code Dev") with `com.waifucave.moss.core.dev`. The bare `com.waifucave.moss` is not used: the second app takes it later.
+- A plain `moss` is the dist CLI and, on a dead socket, tries to launch the dist app. A plain `winter` is **Winter's** dist CLI and launches the live Winter app. Never run either for dev or test work.
+- `bun run dev:daemon` builds and runs the dev daemon (`dist/dev/moss-core`, `.exe` on Windows) on `~/.moss-dev`, signing it on macOS only; `bun run dev:app` runs apps/desktop as "MOSS Code Dev" on the same home. Both refuse `~/.moss` and, by real path, every other install's home (`packages/core/src/other-installs.ts`, which lists the installed Clover app's `~/.clover` and Keychain service beside Winter's); `moss daemon run` and `startDaemon` refuse those homes too. A boot never imports anything from another install: Migration B (`packages/core/src/migration/`) runs only for an explicit `moss migrate --from <legacy home>`, and MOSS's carry-over from Winter is a later lane's.
+- macOS: after the dev daemon's one-time `bun run dev:daemon --transition`, the dev Keychain items trust only the signed dev binary: never run a dev daemon or the dev CLI on `~/.moss-dev` under plain `bun`, which is prompted for every Keychain item. Use `bun run dev:daemon` (`--no-build` reuses the binary; `bun scripts/dev-daemon.ts --no-build --cli <args>` runs the dev CLI through it).
 - `dev:helper` and `dev:headless` refuse to run in this repo until opensky: they would build and register Winter's Computer Use and Headless helpers under Winter's identities, replacing Winter Dev's own registrations and its native-messaging manifests.
 
 ## Where to read more
 
-The topic files under `docs/claude/` describe **Winter's** code as it stood at the `winter-before-clover` tag. Most of it still holds for the renamed code (read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*`, `~/.winter` as `~/.clover`), but they are reference, not rules: where one disagrees with the spec, the spec wins. Plain links, not `@` imports — read the file whose area you are about to touch.
+The topic files under `docs/claude/` describe **Winter's** code as it stood at the `winter-before-clover` tag. Most of it still holds for the renamed code (read `winter-core` as `moss-core`, `WINTER_*` as `MOSS_*`, `~/.winter` as `~/.moss`), but they are reference, not rules: where one disagrees with the spec, the spec wins. Plain links, not `@` imports — read the file whose area you are about to touch.
 
 | Read | When |
 |---|---|
@@ -74,34 +74,43 @@ The topic files under `docs/claude/` describe **Winter's** code as it stood at t
 | [runtime-home.md](docs/claude/runtime-home.md) | Before touching `<home>/sdk`, run folders, MCP/settings scopes and trust, Migration C, saved answers or the plugin format. |
 | [tool-surface.md](docs/claude/tool-surface.md) | Before changing what a model can call: capability servers and plain names, deferral, chat/dispatch allowed lists, web tools, hooks, read/write fences, sandbox escapes, saved allow rules, skills. |
 | [dispatch-and-messaging.md](docs/claude/dispatch-and-messaging.md) | Before touching mid-turn pushes (the fold), turn pairing, `SpawnSession`/children, `SendMessage`/`ListAgents`/`TaskStop`, `ListSessions`, or the Dispatch pill's command mode and terminal. |
-| [mcp.md](docs/claude/mcp.md) | Before touching connector permissions, MCP OAuth sign-ins, URL-mode elicitation, an `mcp.*` RPC or `clover mcp`. |
+| [mcp.md](docs/claude/mcp.md) | Before touching connector permissions, MCP OAuth sign-ins, URL-mode elicitation, an `mcp.*` RPC or `moss mcp`. |
 | [images.md](docs/claude/images.md) | Before touching image attachments, `session.stageImage` or `images` on `session.send`/`steer`. |
 | [computer-use.md](docs/claude/computer-use.md) | Before touching `packages/core/src/computer-use/**` (not `browser/`), `apple/ComputerUse/**`, the `computer_v2` tool, its policy/cards, the helper client, app adapters, the focus guardian. |
 | [computer-use-browsers.md](docs/claude/computer-use-browsers.md) | Before touching `computer-use/browser/**`, `extensions/winter-for-chrome/**`, `apple/ComputerUse/WinterBrowserHost/**` or the browser link — tabs, readers, downloads, the sign-in hand-off, WebMCP. |
 | [headless.md](docs/claude/headless.md) | Before touching the `headless` backend, the Winter Headless helper, its local-network rules or the Chromium embed layout. |
 | [usage.md](docs/claude/usage.md) | Before touching usage and cost tracking: `packages/core/src/usage/`, the projector's `onTurnUsage`, `usage.*`, `settings.usage`, reading the user's Codex/Claude Code/Antigravity/OpenCode usage or plans. |
 | [testing.md](docs/claude/testing.md) | Before running or writing tests, a verify gate, the live computer-use suite, or anything reading daemon logs/temp dirs. |
-| [release.md](docs/claude/release.md) | Winter's release pipeline, for reference: Clover's is built in C7 (spec §12). |
+| [release.md](docs/claude/release.md) | Winter's release pipeline, for reference: MOSS's is built in C7 (spec §12). |
 | [cowork.md](docs/claude/cowork.md) | Before touching `packages/core/src/cowork/**`, `packages/protocol/src/cowork.ts`, `apple/Cowork/**`, `scripts/cowork-guest-artifact/**`, host-storage-fence or home-fence cowork roots, `refreshForStorage`, or the `workspace.*` / `project.*` methods and events. Cowork is paused. |
 
-Other references: `clover-vs-cc-tools.md` (repo root, the tool comparison with Claude Code), `apple/ComputerUse/PROTOCOL.md` (the helper's wire contract), `apple/ComputerUse/WinterBrowserHost/PROTOCOL.md` (Winter for Chrome's).
+Other references: `moss-vs-cc-tools.md` (repo root, the tool comparison with Claude Code), `apple/ComputerUse/PROTOCOL.md` (the helper's wire contract), `apple/ComputerUse/WinterBrowserHost/PROTOCOL.md` (Winter for Chrome's).
 
 ## Hard rules
+
+### The installed Clover app and MOSS Code
+
+Two installs protect each other's data on the owner's machine. Until the owner hands over, the daily driver is the installed **Clover** app; MOSS Code is the build in this repo.
+
+- **Never kill, restart, launch or write to the owner's installed Clover app or its daemon.** It is `/Applications/Clover.app` (`com.waifucave.clover`) on `~/.clover`, with the launch agent and Keychain service `com.waifucave.clover.core` (dev: `Clover Dev`, `~/.clover-dev`, `com.waifucave.clover.core.dev`). Its userData folders are its own. Nothing built from this repo opens, signs, replaces, reads or writes any of them: `packages/core/src/other-installs.ts` names them so every guard refuses them, and `moss-residue.test.ts` fails on a name of theirs anywhere else in code.
+- **Never kill, restart, launch, install over or write to the owner's `/Applications/MOSS Code.app` or its daemon, once they install it** (`com.waifucave.moss.code`, home `~/.moss`, launch agent and Keychain service `com.waifucave.moss.core`), and never from an agent before they do. A local Release build of the app carries the same bundle id, and Launch Services can resolve it to that build at relaunch: build Release copies, never launch one, and never delete an `out/release/<version>` tree while a MOSS Code process runs from it. Dev work happens only in "MOSS Code Dev" (`com.waifucave.moss.code.dev`, `~/.moss-dev`).
+- **The migration from Clover to MOSS Code is its own lane (stage 2).** A boot never imports from `~/.clover`; until that lane ships, MOSS Code starts empty on `~/.moss`. The old names a user wrote outside the home are read second through `packages/core/src/old-names.ts`; nothing writes them.
+- The bare `com.waifucave.moss` and the name "MOSS" for an app are the second app's (the bots); this repo's app is "MOSS Code" in every window title, menu, dock, About, installer and package name.
 
 ### Winter's live install
 
 - **Never kill, restart, launch or write to a running Winter.app or the user's live Winter daemon.** The daily driver is `Winter.app` (`com.winter.app`) in `/Applications` on `~/.winter` with Keychain `com.winter.core`. A local Release build of the Mac app (`out/release/<version>/…/Winter.app`) carries the same bundle id and Launch Services can resolve `com.winter.app` to it at relaunch: never launch one, and never delete an `out/release/<version>` tree while a Winter process runs from it. The legacy `Norma.app` / `~/.norma` / `com.norma.core` items stay untouched as the rollback source.
 - **Never launch a dist Winter instance** — `Winter.app`, a Release build, or the dist `winter` CLI, which launches the app on a dead socket. A Claude-launched dist instance is indistinguishable from the user's own in the menu bar and defeats the entire dev/dist split. Winter's dev work happens only in "Winter Dev" (`com.winter.app.dev`, `~/.winter-dev`), from the Winter checkout, never from this one.
-- **Winter fixes go on `winter/maintenance`**, from Winter's own checkout. The `winter-before-clover` tag marks Winter's last commit before Clover: never move it.
-- **Before C7, never run `scripts/release*.ts` or `bun run tap:publish`.** They publish against Winter's live update feed and tap; `release.ts` and `tap:publish` refuse until Clover's own release pipeline lands in C7.
+- **Winter fixes go on `winter/maintenance`**, from Winter's own checkout. The `winter-before-clover` tag marks Winter's last commit before MOSS: never move it.
+- **Before C7, never run `scripts/release*.ts` or `bun run tap:publish`.** They publish against Winter's live update feed and tap; `release.ts` and `tap:publish` refuse until MOSS's own release pipeline lands in C7.
 - **The old Winter Mac app's Swift sources are not in this repo** (the owner's ruling, 2026-11-15): `apple/WinterKit`, `apple/WinterChatKit`, `apple/WinterProtocol`, the root `Package.swift` and the app, tests and resources of `apple/Winter` live on `winter/maintenance` and the `winter-before-clover` tag. `apple/Winter` stays only as the Xcode project of the helpers (Winter Computer Use, the browser-host tool, Winter Headless and its Chromium; see `apple/Winter/project.yml`). Never build the old app from that branch into a live install, and never run WinterKit's `winter-probe` (its defaults are the live Winter daemon's socket and Keychain).
-- **Never run the live suites from an agent.** `e2e:cu-live` takes over the screen (gated only by `WINTER_CU_LIVE_TESTS=1`); `e2e:browser` drives real browsers on the desktop (`CLOVER_BROWSER_E2E=1`).
+- **Never run the live suites from an agent.** `e2e:cu-live` takes over the screen (gated only by `WINTER_CU_LIVE_TESTS=1`); `e2e:browser` drives real browsers on the desktop (`MOSS_BROWSER_E2E=1`).
 - The Sparkle public key in the old app's `project.yml` (`SUPublicEDKey`, on `winter/maintenance`) is Winter's production key, and Winter's live update feed depends on it; the private half exists only in the login Keychain — never committed anywhere.
 
 ### Tests, secrets and identities
 
-- **Tests never touch `~/.winter*`, `~/.clover*` (apart from temp homes), `~/.claude*`, or the real Keychain.** Always point at a temp `CLOVER_HOME`; every test daemon resolves credentials against a throwaway Keychain service (`packages/core/test/preload.ts` sets `CLOVER_KEYCHAIN_SERVICE`), never `com.winter.core*` or `com.waifucave.clover.core*`, which hold (or will hold) the user's real items.
-- Secrets live in the OS secret store (on macOS the Keychain: `Bun.secrets`, service `com.waifucave.clover.core`) — never on disk, never in fixtures, never in a log line or an error message.
-- Codex's `originator` is `"clover"` (spec §3.3) — a deliberate ToS decision; do not revert it to a first-party value. The value actually sent is `codexOriginator` in `packages/core/src/runtime-sdk/brand.ts`: it rides every session's brand, and `runtime-sdk/process-identity.ts` installs it process-wide when core loads, for the daemon's and the CLI's own provider calls (`providers/codex-config.ts` repeats it in its header table, pinned to it by a test).
+- **Tests never touch `~/.winter*`, `~/.clover*`, `~/.moss*` (apart from temp homes), `~/.claude*`, or the real Keychain.** Always point at a temp `MOSS_HOME`; every test daemon resolves credentials against a throwaway Keychain service (`packages/core/test/preload.ts` sets `MOSS_KEYCHAIN_SERVICE`), never `com.winter.core*`, `com.waifucave.clover.core*` or `com.waifucave.moss.core*`, which hold (or will hold) the user's real items.
+- Secrets live in the OS secret store (on macOS the Keychain: `Bun.secrets`, service `com.waifucave.moss.core`) — never on disk, never in fixtures, never in a log line or an error message.
+- Codex's `originator` is `"moss"` (spec §3.3) — a deliberate ToS decision; do not revert it to a first-party value. The value actually sent is `codexOriginator` in `packages/core/src/runtime-sdk/brand.ts`: it rides every session's brand, and `runtime-sdk/process-identity.ts` installs it process-wide when core loads, for the daemon's and the CLI's own provider calls (`providers/codex-config.ts` repeats it in its header table, pinned to it by a test).
 - Version strings are generated; edit only `VERSION`, through the bump/sync scripts.
 - Ordinary Code, plugin hooks, LSP and third-party MCP tools get no outer Cowork Seatbelt; each tool's own sandbox is unchanged, and Cowork fences only through the existing `sandboxConfigFor` deny arrays ([cowork.md](docs/claude/cowork.md)).

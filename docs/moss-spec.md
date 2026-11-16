@@ -1,5 +1,9 @@
 # MOSS — direction spec
 
+> Renamed from Clover to MOSS on 2026-11-16: every name below that says MOSS said Clover when this spec was written.
+> The app in this repo is MOSS Code (the engine is `moss-core`, home `~/.moss`).
+> The split into MOSS (the bots) and MOSS Code (the coding app) is specified later; this spec does not yet describe it.
+
 Date: November 5, 2026 (revision 18: the owner's decisions 76–94, the spikes' results and the controller's rulings)
 Status: **draft for the owner's review**, and the contract the lanes build to ([the plan](moss-plan.md)). It records the direction and the decisions made so far. **[D]** The plugin section (§5) is frozen as of revision 16, by the owner's stopping rule; later changes to it come from building C1 and C2 (§14.2 item 73). Revision 17 renames the product MOSS and moves computer use after 1.111.1 (items 74 and 75), by the owner's decision; neither changes how plugins work. Revision 18 changes §5 where the owner decided it (items 77, 83, 84, 86, 87, 90, 91 and 94: shared parts, the default shell, the two plugin hosts, avatars, card answers and WebRTC), and adds **[P]** details from building C1 and C2: S9's mounts, input and state, and the controller's rulings on the keyed fetch, theme tokens and per-computer keys.
 Source repo at writing: `yanlingLabs/winter` @ `eccdda6c2` (Winter 0.124.0); revision 18 against `waifucave/moss` @ `7b1c56911`
