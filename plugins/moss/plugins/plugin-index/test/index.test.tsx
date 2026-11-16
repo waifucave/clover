@@ -167,7 +167,7 @@ describe("the Plugins page: what is installed", () => {
     expect(core.calls.map((c) => c.method)).toEqual(["plugin.list", "plugin.ui"]);
     expect(groupNames()).toEqual(["Needs you", "On", "Off"]);
     expect(names("Needs you")).toEqual(["My panelIn development", "Story mode", "Weather routine"]);
-    expect(names("On")).toEqual(["MOSS", "linear", "Tarot panel"]);
+    expect(names("On")).toEqual(["linear", "MOSS", "Tarot panel"]);
     expect(names("Off")).toEqual(["Terminal plus"]);
     const moss = screen.getByRole("button", { name: "Open MOSS" }).closest("li")!;
     expect(moss.textContent).toContain("2 parts");

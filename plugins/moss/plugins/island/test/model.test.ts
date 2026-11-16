@@ -547,7 +547,7 @@ describe("guest tabs (the review's spoofing fix)", () => {
   test("a plugin named as Needs you or as MOSS gets no tab, and a shown name loses its bidi controls", () => {
     const tabs = guestTabs([
       { id: "servers", title: "Servers", pluginId: "spoof-a", pluginName: "Needs\u200B you" },
-      { id: "servers", title: "Servers", pluginId: "spoof-b", pluginName: "Cl\u043Ever" },
+      { id: "servers", title: "Servers", pluginId: "spoof-b", pluginName: "M\u043ESS" },
       { id: "servers", title: "Servers", pluginId: "spoof-c", pluginName: "MOSS" },
       { id: "servers", title: "Serv\u202Eers", pluginId: "homelab", pluginName: "Home\u2066lab\u2069" },
       { id: "own", title: "Own", pluginId: "moss", pluginName: "MOSS" },

@@ -31,7 +31,7 @@ const NAMES = [
 
 /** The review's rows (#264): lookalikes B's first fold let through. */
 const REVIEW_TITLES = ["Needs y\u0585u", "Needs y\u03C3u", "N\u0451eds you", "NEEDS Y\u13EBU", "NEEDS Y\u0555U", "NEEDS YO\u054D", "NEED\u054F YOU"];
-const REVIEW_NAMES = ["CL\u13EBVER", "CL\u0555VER", "C\u0407over", "\u03C2lover", "C\u13A5over"];
+const REVIEW_NAMES = ["M\u041ESS", "M\u039FSS", "\u041COSS", "M\u0555SS", "MO\u0405S"];
 
 describe("the island's names agree with the manifest check's", () => {
   test("the island's skeleton is foldTitle", () => {
