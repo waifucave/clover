@@ -3,7 +3,7 @@
 // this device and comes back to it; a target that went away falls back to the first bot. Pure, except the memory's
 // default store, which reads and writes the layer's own storage and never fails the pill.
 
-import { readsAs, shownName } from "@waifucave/clover-plugin-island/names";
+import { readsAs, shownName } from "./names";
 
 /** A bot, as `bots.read` lists it (lane B's `BotView`, the fields the pill reads). */
 export interface PillBot {

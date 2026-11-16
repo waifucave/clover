@@ -29,7 +29,7 @@ import { AvatarControlHub, cleanAvatarDown, cleanAvatarUp, type AvatarState } fr
 import type { AvatarBox, AvatarCatalogueNames, AvatarCue } from "../catalogs/avatar-cues";
 
 export * from "./bridge";
-export { AvatarControlHub, cleanAvatarCue, type AvatarState } from "./avatar-control";
+export { AvatarControlHub, avatarBoxFromRect, cleanAvatarCue, type AvatarState } from "./avatar-control";
 // What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
 // React of its own (`clover plugin new`'s UI and point templates do).
 export { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";

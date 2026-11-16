@@ -2,7 +2,7 @@
 // the pill's canvas that takes clicks only on the pill, and a normal window on Wayland.
 import { describe, expect, test } from "bun:test";
 import { act, fireEvent, render } from "@testing-library/react";
-import type { Rect, SurfaceEnvironment, SurfaceHostApi, SurfaceWindowSpec } from "@waifucave/clover-plugin-island";
+import type { Rect, SurfaceEnvironment, SurfaceHostApi, SurfaceWindowSpec } from "../src/surface/window";
 import { PILL } from "../src/model/metrics";
 import { RESTING_CANVAS, pieceRects, pillMode, pillRegions, pillWindow } from "../src/model/placement";
 import { estimatedMenuHeight } from "../src/model/metrics";

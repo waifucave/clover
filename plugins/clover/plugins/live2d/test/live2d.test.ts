@@ -10,7 +10,7 @@ import { memorySource, readCapped, urlSource, zipDeclared, zipSource } from "../
 import { inflateCapped, openZip, settingsIn } from "../src/zip";
 import { archiveBombCheck, bombCheckProblems } from "../src/bomb";
 import { motionSyncValues, mouthPlan, openAndForm } from "../src/mouth";
-import { SHUT } from "@waifucave/clover-plugin-vrm/lipsync";
+import { SHUT } from "@waifucave/clover-plugin-sdk/ui/mouth";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const FILES = placeholderFiles();

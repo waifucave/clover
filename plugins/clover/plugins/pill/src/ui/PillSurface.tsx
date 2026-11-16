@@ -4,7 +4,7 @@
 // Until E's runtime hands it over, the gallery and the tests give a stand-in (`SurfaceHostApi`).
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import type { SurfaceEnvironment, SurfaceHostApi } from "@waifucave/clover-plugin-island";
+import type { SurfaceEnvironment, SurfaceHostApi } from "../surface/window";
 import { RESTING_CANVAS, pillInset, pillMode, pillRegions, pillWindow, type PillPieces } from "../model/placement";
 import type { Size } from "../model/metrics";
 import { DispatchPill, type DispatchPillProps } from "./DispatchPill";
