@@ -1496,7 +1496,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await sleep(800);
       if ((await heldRead()) !== "1/1") fail(`after its key's own up (the hold already ended), its page reads ${await heldRead()}, not 1/1`);
       const heldLines = ctx.appLog().split("\n").filter((l) => l.includes(`keys: ${id}.held `));
-      if (heldLines.filter((l) => l.includes(`${id}.held down from its key`)).length !== 1 || heldLines.filter((l) => l.includes(`${id}.held up from its key`)).length !== 1) fail(`the app's log has these held-key lines: ${heldLines.join(" | ")}`);
+      // A log made of two sources (the app's own output and the home's app log) may hold a line twice: each source counts alone.
+      const once = (what: string) => Math.max(...[true, false].map((own) => heldLines.filter((l) => l.startsWith("[clover-app]") === own && l.includes(what)).length));
+      if (once(`${id}.held down from its key`) !== 1 || once(`${id}.held up from its key`) !== 1) fail(`the app's log has these held-key lines: ${heldLines.join(" | ")}`);
       const repeats = ctx.appLog().split("\n").filter((l) => /keys: repeated .*\+U in the window/.test(l)).length;
       const keyed = `its command ${id}.ping, bound to mod+shift+y, ran from a real key press in the window (${presses} press(es) until main had the key; its page counted ${pinged}); its held command ${id}.held (mod+shift+u, hold) got one down and one up from real key events (a down, ${repeats} repeat(s), another key's up and the shift let go first, then its key's up): its page counted 1 down and 1 up; ${translated}`;
       // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, its row's Open, Turn off.

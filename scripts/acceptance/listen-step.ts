@@ -190,8 +190,10 @@ async function keyHoldClause(ctx: ExampleCtx, sentWith: (words: string) => Promi
   const started = (await starts()) - startsBefore;
   if (started !== 1) fail(`the held key started ${started} recording(s), not one (its repeats are no new press)`);
   const lines = keyLines().slice(linesBefore);
-  const downs = lines.filter((l) => l.includes("clover.push-to-talk down from its key")).length;
-  const ups = lines.filter((l) => l.includes("clover.push-to-talk up from its key")).length;
+  // The context's log is the app's own output and the home's app log together, so a line may be there twice: each source counts alone.
+  const once = (what: string) => Math.max(...[true, false].map((own) => lines.filter((l) => l.startsWith("[clover-app]") === own && l.includes(what)).length));
+  const downs = once("clover.push-to-talk down from its key");
+  const ups = once("clover.push-to-talk up from its key");
   if (downs !== 1 || ups !== 1) fail(`main delivered ${downs} down(s) and ${ups} up(s) of the held key, not one each: ${lines.join(" | ")}`);
   const boxAfter = String(await cdp.evaluate(doc, `document.querySelector('${BOX}') ? document.querySelector('${BOX}').value : null`).catch(() => null));
   if (boxAfter !== boxBefore) fail(`the composer's box changed while the chord was held: ${JSON.stringify(boxBefore)} became ${JSON.stringify(boxAfter)}`);
