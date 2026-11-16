@@ -15,7 +15,7 @@ const EXEMPT: readonly string[] = [];
 function sources(dir: string): string[] {
   const out: string[] = [];
   for (const f of new Bun.Glob("**/*.{ts,tsx}").scanSync({ cwd: dir })) {
-    if (/(^|\/)(tests?|__tests__|node_modules|fixtures)\//.test(f) || /\.test\.tsx?$/.test(f)) continue;
+    if (/(^|\/)(tests?|__tests__|node_modules|fixtures)\//.test(f.replaceAll("\\", "/")) || /\.test\.tsx?$/.test(f)) continue;
     out.push(join(dir, f));
   }
   return out;

@@ -1222,10 +1222,15 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
       const docs = await cdp.documents();
       const own = docs.find((d) => d.url.startsWith(`${cardUrl}own`));
       if (own !== undefined) return own;
+      // A card can stand in two places at once (a hidden window's page that was drawn first, and the island's): the page that
+      // says it is ready to answer is the one to press; a card whose pages all say no is pressed on the first, as before.
+      let first: (typeof docs)[number] | undefined;
       for (const d of docs.filter((x) => decodeURIComponent(x.url).startsWith(`${cardUrl}button:`))) {
-        if ((await cdp.evaluate(d.session, "!!document.querySelector('.seal-button[data-kind=approve]:not(.quiet):not([data-remember])')").catch(() => false)) === true) return d;
+        if ((await cdp.evaluate(d.session, "!!document.querySelector('.seal-button[data-kind=approve]:not(.quiet):not([data-remember])')").catch(() => false)) !== true) continue;
+        if ((await cdp.evaluate(d.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes") return d;
+        first ??= d;
       }
-      return undefined;
+      return first;
     }, 300).catch((err: unknown) => fail(`${why(err)}: ${firstLine(appLog, new RegExp(`fallback card for ${card.id}`)) ?? "the app logged nothing about its fallback"}${tried.length ? `; pressed before: ${tried.join(" | ")}` : ""} [apps/desktop/src/main/index.ts showFallbackCard]`));
     const isOwn = found.url.startsWith(`${cardUrl}own`);
     if (isOwn && !fallbackChecked) { await fallbackLooksRight(cdp, found.session, card); fallbackChecked = true; }

@@ -1095,6 +1095,9 @@ jobs:
         unit: [main, workshop, plugin-app, browser]
     env:
       MOSS_PINNED_BUN: "0"
+      # Row 37 counts a hidden page's 100 ms ticks over 3 s (30 on a free machine, about 3 when throttled; the bar is 20): a shared runner
+      # can starve the page, so the bar here is 10, still well above a throttled page.
+      MOSS_ACCEPT_TICK_MIN: "10"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

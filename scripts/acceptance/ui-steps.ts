@@ -3275,7 +3275,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await sleep(3_000);
       const t1 = await waitPart(BACKGROUND_IDS.sound, "read again");
       const ticked = n(t1, "ticks") - n(t0, "ticks");
-      if (ticked < 20) fail(`the hidden part counted ${ticked} ticks in 3 s of a 100 ms timer (a slowed timer counts about 3)`);
+      // A shared CI runner can starve the page: MOSS_ACCEPT_TICK_MIN lowers the bar there (ci.yml sets it to 10; a throttled page counts about 3).
+      const tickMin = /^\d+$/.test(process.env.MOSS_ACCEPT_TICK_MIN ?? "") ? Number(process.env.MOSS_ACCEPT_TICK_MIN) : 20;
+      if (ticked < tickMin) fail(`the hidden part counted ${ticked} ticks in 3 s of a 100 ms timer (a slowed timer counts about 3; the bar is ${tickMin})`);
       said.push(`its 100 ms timer counted ${ticked} ticks in 3 s while hidden`);
       // 3. Sound: the holder's tone runs with no press, and is muted at the output; the other plugin's context never runs.
       const tone = await waitPart(BACKGROUND_IDS.sound, "making its tone", (a) => a["data-ctx"] === "running" && n(a, "rms") > 0.01 && n(a, "time") > 0.5, 30_000);
