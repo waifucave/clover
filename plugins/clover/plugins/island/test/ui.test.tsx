@@ -71,14 +71,16 @@ describe("LiquidCard", () => {
     expect(content.style.filter).toContain("blur(");
   });
 
-  test("hovered: grows from its top edge by the compact pill's points", () => {
+  test("hovered: marked for its rim cue, and never moved, scaled or transitioned (it holds sealed buttons)", () => {
     const { container } = render(
       <LiquidCard geometry={g} hovered>
         x
       </LiquidCard>,
     );
     const shell = container.querySelector(".clv-card-shell") as HTMLElement;
-    expect(shell.style.transform).toBe(`scale(${1 + 9.48 / 400})`);
+    expect(shell.style.transform).toBe("");
+    expect(shell.style.transition).toBe("");
+    expect(shell.getAttribute("data-hovered")).toBe("true");
   });
 
   test("reduce motion: no birth — it appears where it rests", () => {

@@ -38,8 +38,6 @@
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  transform-origin: 50% 100%;
-  transition: transform 300ms linear(0, 0.2 6%, 0.62 15%, 0.92 25%, 1.06 34%, 1.09 41%, 1.07 50%, 1.01 64%, 0.99 78%, 1);
 }
 
 /* The main pill: the black shape, its plume underneath, its content on top. */
@@ -53,6 +51,16 @@
     inset 0 0 0 1px var(--clover-pill-rim, #FFFFFF17),
     var(--clover-pill-shadow, 0 0 0 0 #00000000);
   flex: none;
+  transition: box-shadow 150ms ease-out;
+}
+
+/* The hover cue: a brighter rim, painted under the content. The stack holds sealed buttons and is never moved, scaled, faded or filtered on
+   hover, focus or press, nor given a transition of those: a reading taken while it moves says "not visible" and the press is refused. */
+.clp-stage[data-hovered] .clp-shell,
+.clp-stack[data-hovered] .clp-shell {
+  box-shadow:
+    inset 0 0 0 2px var(--clover-pill-rim, #FFFFFF17),
+    var(--clover-pill-shadow, 0 0 0 0 #00000000);
 }
 
 .clp-underlay {
