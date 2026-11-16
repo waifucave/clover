@@ -167,12 +167,18 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
     files: ["packages/core/src/old-names.ts", "packages/core/test/old-names.test.ts"],
     why: "the names a user wrote outside the home — a project's `.clover/` folder, a `CLOVER.md`, a folder plugin's `clover.json` — which the new build still reads second, through `old-names.ts`, the one place that lists them",
   },
-  // ── The rename's own note ────────────────────────────────────────────────────────────────────────
+  // ── The spec's own record of the rename, and of the names before it (docs/moss-spec.md only) ──────
   {
-    id: "rename-note",
-    regex: /Renamed from Clover to MOSS on 2026-11-16|said Clover when this spec was written/g,
+    id: "spec-rename-history",
+    regex: /Revision 17 renames the product Clover|`waifucave\/clover` @ `7b1c56911`|the product is renamed Clover, from Wyrmhole:.*?`mcp__clover__…`/g,
     files: ["docs/moss-spec.md"],
-    why: "the dated note at the top of the spec that says what it was called before: a record of the rename, not a name in use",
+    why: "sentences that state an earlier rename or name the repo as it was: revision 17's rename to Clover, revision 18's source repo, and item 74 (Wyrmhole to Clover, whose paths and tool names were those of its day); item 125 records the rename to MOSS",
+  },
+  {
+    id: "spec-old-home",
+    regex: /`~\/\.clover(?:-dev)?`|Existing Clover homes|the old `\.clover`|`Xcode progects\/WaifuCave\/clover`/g,
+    files: ["docs/moss-spec.md"],
+    why: "the old install's names where the spec names them as the OLD ones: the home that is copied once to `~/.moss` and then left untouched, the project folder the build still reads second, and the owner's checkout folder",
   },
   // ── The installed Clover app, which MOSS never touches ───────────────────────────────────────────
   {
@@ -241,8 +247,8 @@ export const MOSS_NEVER_PERMITTED: readonly NeverPermitted[] = [
   {
     id: "clover-home",
     regex: /(?:~|\$HOME|\$\{HOME\})\/\.clover|homedir\(\)\s*,\s*["'`]\.clover/g,
-    files: [],
-    why: "the installed Clover app's home and Clover Dev's (`~/.clover`, `~/.clover-dev`)",
+    files: ["docs/moss-spec.md"],
+    why: "the installed Clover app's home and Clover Dev's (`~/.clover`, `~/.clover-dev`): only the spec names them, as the old home that is copied once to `~/.moss` and then left untouched (item 125, §12); no code spells them",
   },
   {
     id: "clover-app",

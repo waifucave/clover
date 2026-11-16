@@ -456,7 +456,8 @@ describe("Clover→MOSS rename residue", () => {
   test("the old names live in one helper: nothing else in live code spells them", () => {
     const { hits } = scan();
     const spelled = hits.filter((h) => /(?<![A-Za-z0-9_])\.clover(?![A-Za-z0-9_-])|CLOVER\.md|\bclover\.json\b/.test(h.context)).map((h) => h.file);
-    const allowed = new Set(["packages/core/src/old-names.ts", "packages/core/test/old-names.test.ts", "packages/core/src/other-installs.ts", "packages/core/test/other-installs.test.ts"]);
+    // The spec (docs/moss-spec.md) is prose, not live code: it names `.clover` as the old project folder the build still reads second.
+    const allowed = new Set(["docs/moss-spec.md", "packages/core/src/old-names.ts", "packages/core/test/old-names.test.ts", "packages/core/src/other-installs.ts", "packages/core/test/other-installs.test.ts"]);
     const stray = [...new Set(spelled)].filter((f) => !allowed.has(f));
     expect(stray, `files other than the old-name helper that spell an old name:\n${stray.join("\n")}`).toHaveLength(0);
   }, 120_000);
