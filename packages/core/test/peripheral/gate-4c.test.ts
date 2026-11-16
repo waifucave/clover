@@ -286,7 +286,7 @@ describe("4c gate: hardware broker paths (spec §5, plan Task 6)", () => {
       plugin.close();
     });
 
-    test("PATH 3: NO-PROVIDER (no provider connection registered) -> typed no_provider whose message conveys \"requires MOSS Code.app\"", async () => {
+    test("PATH 3: NO-PROVIDER (no provider connection registered) -> typed no_provider whose message conveys \"require the app\"", async () => {
       const pluginName = "battery-limiter";
       const pluginId = pluginSpecFor(pluginName); // WS-24: live plugins are keyed by their spec
       const { inst, home, socketPath } = await bootScripted(pluginName, { hardwareConsent: true });
@@ -294,7 +294,7 @@ describe("4c gate: hardware broker paths (spec §5, plan Task 6)", () => {
 
       const res = await plugin.request(METHODS.hardwareRequest, { verb: "getChargeLimit" });
       expect(res.result).toEqual({ code: "no_provider", message: NO_PROVIDER_MESSAGE });
-      expect((res.result as { message: string }).message).toContain("MOSS Code.app");
+      expect((res.result as { message: string }).message).toContain("require the app");
 
       const hwLine = readAuditLines(home).find((l) => l.kind === "hardware" && l.verb === "getChargeLimit");
       expect(hwLine).toMatchObject({
