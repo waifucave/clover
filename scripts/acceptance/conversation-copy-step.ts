@@ -63,6 +63,7 @@ export async function buildCopy(root: string): Promise<string> {
     entrypoints: [join(from, "index.tsx")], outdir: join(dir, "client"), target: "browser", format: "esm", splitting: false, minify: false,
     naming: { entry: "index.[ext]" }, external: [...CLIENT_BARE_IMPORTS], define: { "process.env.NODE_ENV": JSON.stringify("production") }, throw: false,
     plugins: [{ name: "copy-sdk", setup(b) { b.onResolve({ filter: /^\.\.?\/sdk(\.tsx?)?$/ }, (args) => (args.importer.startsWith(from) ? { path: shim } : undefined)); } }],
+    ...{ macros: false },
   });
   rmSync(shim, { force: true });
   if (!result.success || !existsSync(join(dir, "client", "index.js"))) throw new Error(`the conversation copy's client wasn't built: ${result.logs.map((l) => String(l)).join("; ").slice(0, 400)}`);

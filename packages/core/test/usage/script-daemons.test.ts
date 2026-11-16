@@ -48,6 +48,7 @@ const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/acceptance/cdp.test.ts": "tests the DevTools client against a stand-in socket; names `clover-core://app/` page URLs, starts no daemon",
   "scripts/acceptance/web-step.ts": "the web page part's step over DevTools; names the `clover-core://` scheme (a page that must not be the app's), starts no daemon",
   "scripts/acceptance/example-steps.ts":"the SDK examples' window steps over DevTools; names the app's `clover-core://app/` page (the key dialog), starts no daemon",
+  "scripts/acceptance/conversation-copy-step.ts": "the conversation copy's step over DevTools; names the app's `clover-core://app/` page (the root document its negative clause clicks), starts no daemon",
   "scripts/dev-daemon-lib.ts": "the dev daemon's helpers (paths, signing, the transition)",
   "scripts/dev-daemon.test.ts": "tests the dev daemon's helpers; boots none",
   "scripts/cu-live/build.ts": "compiles and signs clover-core-live; runs it never",
