@@ -16,6 +16,12 @@
 // | Tree              | J          | tree.ts               |
 // | AgentBackend      | K          | agent-backend.ts      |
 // | BrowserApi        | L          | browser-api.ts        |
+// | SurfaceDoor       | RT         | surface-door.ts       |
+// | CardRouter        | RT         | card-router.ts        |
+// | ProgramAnswerKeys | RT (over H's registry) | program-keys.ts |
+// | ReleaseHome       | RL         | release-home.ts       |
+//
+// The split's contracts (spec revision 19, §13 Split 1) were pinned by lane SP; their owners are the split's lanes.
 //
 // The UI API (lane E) is in the plugin SDK (`packages/plugin-sdk/src/api/ui-api.ts`). The fakes are in `./fakes`.
 export * from "./common";
@@ -34,3 +40,7 @@ export * from "./computer-registry";
 export * from "./tree";
 export * from "./agent-backend";
 export * from "./browser-api";
+export * from "./surface-door";
+export * from "./card-router";
+export * from "./program-keys";
+export * from "./release-home";

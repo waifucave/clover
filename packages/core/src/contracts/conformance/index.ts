@@ -13,3 +13,7 @@ export * from "./plugin-registry";
 export * from "./secret-store";
 export * from "./session-host";
 export * from "./tree";
+export * from "./surface-door";
+export * from "./card-router";
+export * from "./program-keys";
+export * from "./release-home";

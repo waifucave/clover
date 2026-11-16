@@ -14,3 +14,7 @@ export * from "./computer-registry";
 export * from "./tree";
 export * from "./agent-backend";
 export * from "./browser-api";
+export * from "./surface-door";
+export * from "./card-router";
+export * from "./program-keys";
+export * from "./release-home";

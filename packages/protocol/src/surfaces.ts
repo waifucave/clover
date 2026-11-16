@@ -93,8 +93,10 @@ export const LEGACY_CODE_MOUNTS: MountList = {
 };
 
 /** Why a hello's `surface` was refused (`MOSS_ERR.SURFACE_REFUSED`'s data). `second-host`: a host is live on this home
- *  already (one per home, §3.1); `not-app`: `surface` belongs to the `app` role only. */
-export const SurfaceRefusal = z.object({ reason: z.enum(["second-host", "not-app"]), surface: Surface.optional() });
+ *  already (one per home, §3.1); `not-app`: `surface` belongs to the `app` role only; `program-mismatch`: the connection's
+ *  signed program is another surface's (macOS); `older-copy`: a newer copy of the same program is live, so this older one
+ *  stops (§3.1: the engine tells an older second client of a surface to stop). */
+export const SurfaceRefusal = z.object({ reason: z.enum(["second-host", "not-app", "program-mismatch", "older-copy"]), surface: Surface.optional() });
 export type SurfaceRefusal = z.infer<typeof SurfaceRefusal>;
 
 // -------------------------------------------------------------------------------------------------
