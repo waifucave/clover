@@ -136,8 +136,7 @@ export type SpotItem =
     isolated?: true;
     /** The part is a background part (`app.background`) of a plugin holding `audio`: its frame may play sound with no press (`allow="autoplay"`). */
     autoplay?: true;
-    /** The frame's document policy for the microphone is open (`allow="microphone"`): its own layer holds `microphone`, or it
-     *  hands the microphone on to a layer that does. Only a frame of a holding layer opens it. */
+    /** A plugin of the frame's own layer holds `microphone`: the frame may open the microphone (`allow="microphone"`). */
     microphone?: true;
   }
   /** A web page entry (§5.5 "Web pages"): an isolated view with its own session, which the core draws over the

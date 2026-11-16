@@ -70,8 +70,8 @@ function frameFor(item: { mount: string; url: string; ref: string; layer: string
   // Only a plugin whose manifest asks (`client.isolated`) gets a cross-origin isolated frame. A plugin's page is placed inside
   // the `clover` layer's frames (the shell, the main spot), and a frame is isolated only when every frame above it passes the
   // permission down: so the `clover` layer's frames carry it too (the delegation only; they isolate no plugin).
-  // `allow="microphone"` when the frame's document policy is open (the runtime's `microphone` flag, `layerMicrophone`); only a
-  // frame whose own layer holds `microphone` opens it (its own policy, and main's permission handler by the same layer).
+  // A frame may open the microphone when a plugin of its own layer holds `microphone` (the runtime's `microphone` flag; main's
+  // permission handler answers by the same layer).
   const allow = [
     item.isolated === true || item.layer === "clover" ? "cross-origin-isolated" : "",
     item.microphone === true ? "microphone" : "",

@@ -38,7 +38,6 @@ describe("the documents' microphone policy", () => {
     expect(policy(layerHeaders("text/javascript"))).toContain("microphone=()");
     expect(policy(layerHeaders("text/html; charset=utf-8", [], [], false, true))).toContain("microphone=(self)");
     expect(policy(layerHeaders("text/html; charset=utf-8", [], [], false, "*"))).toContain("microphone=*");
-    expect(policy(layerHeaders("text/html; charset=utf-8", [], [], false, '("clover-plugin://acc-mic")'))).toContain('microphone=("clover-plugin://acc-mic")');
     for (const p of [policy(layerHeaders("text/html", [], [], false, true)), policy(withMicrophone(commonHeaders(), "(self)"))]) {
       for (const closed of ["camera=()", "display-capture=()", "geolocation=()"]) expect(p).toContain(closed);
     }
@@ -111,20 +110,14 @@ describe("the session's two handlers (request and check), driven with fake detai
 describe("one rule for every layer's document (layerMicrophone): no layer is named", () => {
   const holds = (layers: string[]) => (l: string) => layers.includes(l);
   const all = ["acc-mic", "acc-other", "alpha", "clover"];
-  test("its own layer holds it: open to itself and handed on (the bundled tree's layer and a third party's shared one alike)", () => {
-    expect(layerMicrophone("clover", all, holds(["clover"]))).toBe("*");
+  test("its own layer holds it: open (the bundled tree's layer and a third party's shared one alike); else closed", () => {
+    expect(layerMicrophone("clover", holds(["clover"]))).toBe("*");
     // A third party's tree: the plugin and its children share the layer `acc-tree`; a child holding it opens it for the layer.
-    expect(layerMicrophone("acc-tree", [...all, "acc-tree"], holds(["acc-tree"]))).toBe("*");
-  });
-  test("another layer holds it: handed on to those origins only, never to itself", () => {
-    expect(layerMicrophone("clover", all, holds(["acc-mic"]))).toBe('("clover-plugin://acc-mic")');
-    expect(layerMicrophone("alpha", all, holds(["acc-mic", "clover"]))).toBe('("clover-plugin://acc-mic" "clover-plugin://clover")');
-    // A layer the document may not frame is not named.
-    expect(layerMicrophone("alpha", ["alpha", "clover"], holds(["acc-mic"]))).toBe(false);
-  });
-  test("none holds it: closed", () => {
-    expect(layerMicrophone("clover", all, holds([]))).toBe(false);
-    expect(policy(layerHeaders("text/html; charset=utf-8", [], all, false, layerMicrophone("alpha", all, holds([]))))).toContain("microphone=()");
+    expect(layerMicrophone("acc-tree", holds(["acc-tree"]))).toBe("*");
+    // Another layer holding it opens nothing here.
+    expect(layerMicrophone("alpha", holds(["acc-mic", "clover"]))).toBe(false);
+    expect(layerMicrophone("clover", holds([]))).toBe(false);
+    expect(policy(layerHeaders("text/html; charset=utf-8", [], all, false, layerMicrophone("alpha", holds([]))))).toContain("microphone=()");
   });
   const policy = (h: Record<string, string>) => h["Permissions-Policy"]!;
   test("the app's main process names no layer for the microphone", () => {

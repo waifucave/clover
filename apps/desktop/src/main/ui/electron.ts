@@ -143,9 +143,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const mount = runtime.serveDocument(layer, url.searchParams.get("mount"));
       if (mount === undefined) return forbidden();
       const doc = runtime.mountForDocument(mount);
-      // The microphone policy by one rule for every layer (`layerMicrophone`): open to itself while its own layer holds
-      // `microphone`, handed on while a layer it may frame does. The permission itself is main's (microphone.ts), by the frame's own layer.
-      const microphone = layerMicrophone(doc.layer, doc.layers, (l) => runtime.layerHolds(l, "microphone"));
+      // The microphone policy by one rule for every layer (`layerMicrophone`): open while its own layer holds `microphone`. The
+      // permission itself is main's (microphone.ts), by the requesting frame's own layer.
+      const microphone = layerMicrophone(doc.layer, (l) => runtime.layerHolds(l, "microphone"));
       const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", microphone);
       // The DNS probe's positive control (the UI test, unpackaged runs only): the same document without its allowlist.
       if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];

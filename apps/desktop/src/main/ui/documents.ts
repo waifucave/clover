@@ -118,19 +118,15 @@ export const CORE_CSP = [
 ].join("; ");
 
 /** A layer document's microphone policy, ONE rule for every layer (the bundled tree's and a third party's alike; a plugin and
- *  its children share a layer, which holds `microphone` when any of them does):
- *  - its own layer holds it: `"*"`, open to itself and handed on to the frames it holds;
- *  - another layer it may frame holds it: those layers' origins only (`("<scheme>://<layer>" …)`, never `self`), so it can
- *    hand the microphone on to their frames and never opens it itself;
- *  - none does: `false`, closed.
- *  Its frame carries `allow="microphone"` exactly when this is open (the runtime's `microphone` flag), and main's permission
- *  handler still answers by the requesting frame's own layer (microphone.ts), so only a frame of a holding layer opens it. */
-export function layerMicrophone(layer: string, layers: readonly string[], holds: (layer: string) => boolean): MicrophonePolicy | false {
-  if (holds(layer)) return "*";
-  const others = [...new Set(layers)].filter((l) => l !== layer && holds(l));
-  return others.length === 0 ? false : `(${others.map((l) => `"${LAYER_SCHEME}://${l}"`).join(" ")})`;
+ *  its children share a layer, which holds `microphone` when any of them does): `"*"` while its own layer holds it (open to
+ *  itself, and to the frames it holds that may open it too), else `false` (closed). A frame carries `allow="microphone"`
+ *  only when its own layer holds it (the runtime's `microphone` flag), and main's permission handler answers by the
+ *  requesting frame's own layer (microphone.ts). Permissions Policy passes a feature to a child frame only when every
+ *  document above it has it, so a holder's frame inside a document of a layer that doesn't hold it gets no microphone. */
+export function layerMicrophone(layer: string, holds: (layer: string) => boolean): MicrophonePolicy | false {
+  return holds(layer) ? "*" : false;
 }
-export type MicrophonePolicy = "(self)" | "*" | `(${string})`;
+export type MicrophonePolicy = "(self)" | "*";
 
 /** `headers` with the microphone policy opened to `allow` (`(self)` for the clover layer's own document, the layer's origin for
  *  the core root that frames it); the iframe still needs `allow="microphone"` (root.ts), and main's permission handler

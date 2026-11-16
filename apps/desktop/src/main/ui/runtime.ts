@@ -27,7 +27,7 @@ import { isSealedLookAllowed } from "@waifucave/clover-plugin-sdk";
 import { fieldPage, buttonPage, ownCardPage, placeholderPage, summaryFieldPage, labelOf } from "../sealed-pages";
 import { alwaysSentence, summarize as summarizeCard } from "../card-summary";
 import { homedir } from "node:os";
-import { layerMicrophone, sealHeaders } from "./documents";
+import { sealHeaders } from "./documents";
 import type { SealedCard, SealedFrames, SealedValue } from "../sealed";
 
 /** A frame as Electron describes it. */
@@ -890,9 +890,9 @@ export class UiRuntime {
         ...(m.plugin!.isolated === true ? { isolated: true as const } : {}),
         // A background part's frame may play sound with no press from the user when its plugin holds `audio`.
         ...(m.spot === "app.background" && m.plugin!.capabilities.has("audio") ? { autoplay: true as const } : {}),
-        // `allow="microphone"` exactly when the frame's document policy is open (`layerMicrophone`: its own layer holds it, or it
-        // hands it on to a layer that does); main's permission handlers say yes for a holding layer's origin only.
-        ...(layerMicrophone(m.layer, this.layerLabels(), (l) => this.layerHolds(l, "microphone")) !== false ? { microphone: true as const } : {}),
+        // A frame whose own layer holds `microphone` (any plugin of it: a plugin and its children share one) may open it; main's
+        // permission handlers say yes for that layer's origin only.
+        ...(this.layerHolds(m.layer, "microphone") ? { microphone: true as const } : {}),
       };
       if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true, ...isolated };
       return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m), ...isolated };
