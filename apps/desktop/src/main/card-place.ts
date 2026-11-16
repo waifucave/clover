@@ -1,3 +1,5 @@
+// To be replaced by spec revision 19 (§3.5, ruling A, R1): the engine's router places each card from every program's
+// presence (`card.placement`, `card_placed`, `pressMatchesPlacement`); this window-local rule retires with lane RT's work.
 // Where a pending permission card is drawn, one place at a time (the owner's ruling, 2026-11-13: "island should only show when
 // the app window is not foreground"). While MOSS's main window is in front the island shows none, and the window draws the
 // card: in the conversation on screen when that conversation draws it, else in the app's own card. While it is not in front the

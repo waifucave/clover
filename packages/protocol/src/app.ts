@@ -192,6 +192,9 @@ export const APP_METHODS = {
     params: AppCaptureParams, result: AppCaptureResult,
     doc: "The daemon asks the app's main process for `app.capture`'s answer, one window's picture at a time.",
   }),
+  // `pair.*` is the always-on pair of app and daemon (C2), retired by spec revision 19 (§3.1, items 98 and 112: the engine
+  // and the background host are the always-on part, quitting an app stops nothing, "Hand over and quit" goes): lane HS
+  // replaces it with `host.*` (host.ts).
   pairStatus: defineMethod({
     name: "pair.status", owner: "C", roles: ["app", "cli"],
     params: Empty, result: PairStatus,

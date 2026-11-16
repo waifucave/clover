@@ -23,6 +23,8 @@ import { coreEvent, defineEvent, defineMethod } from "./rpc";
 /** A bot's state as clients show it. `asleep`: no computer that can run it is connected (§6.4, §14.2 item 18). */
 export const BotState = z.enum(["idle", "thinking", "asleep", "paused"]);
 
+/** To be retired in part by spec revision 19 (§6.1, G7, G8): a bot becomes engine data (`BotRecordView`, bots.ts) and its
+ *  `avatar`, `theme`, `layout` and the user layer go with the plugin bot; lane BT moves the bots over (`bot.move.status`). */
 export const BotView = z.object({
   /** The bot's id is its plugin's id (§6.1). */
   id: BotId,
@@ -289,6 +291,8 @@ export const SESSIONS_METHODS = {
     params: z.object({ id: BotId, patch: UserLayerPatch }), result: ChangeResult,
     doc: "Sets or clears fields of a bot's user layer; a change to its instructions applies at its next turn.",
   }),
+  // `bot.importAvatar` and `bot.avatarFormats` are retired by spec revision 19 (§5.4 "There is no avatar in the platform",
+  // G7): the bundled avatar plugin takes them as its own points (lane MC).
   botImportAvatar: defineMethod({
     name: "bot.importAvatar", owner: "D", roles: ["app", "cli"], userOnly: true,
     params: z.object({ id: BotId, path: utf16(4096) }),

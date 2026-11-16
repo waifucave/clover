@@ -1,3 +1,5 @@
+// To be replaced by spec revision 19 (§3.5, ruling A): stepping aside follows the presence the windows report to the engine,
+// and the surfaces move to the background host (lanes RT and HS; `presence.report`, `card_placed`).
 // Which surfaces stand aside while MOSS's own window is the one in front, by what each surface's manifest says (`window.front`).
 // The Dispatch pill is a second place to type to a bot; with the window's composer in front it only covers the window's own
 // composer and picker, so it says `steps-aside` and comes back when the window is closed, hidden, minimised, or another app is in
