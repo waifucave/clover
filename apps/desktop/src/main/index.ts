@@ -394,7 +394,9 @@ async function ready(): Promise<void> {
       if (err instanceof Error && /^a layer doesn't call /.test(err.message)) log(`layer: ${pluginId}: ${err.message.replace(/[^\w. -]/g, "").slice(0, 80)}`);
       throw err;
     }),
-    takeGesture: (windowId) => sends.take(windowId),
+    // A part's gestured call spends only a press that landed in its own frame (F2, read 52).
+    takeGesture: (windowId, frameId) => sends.takeIn(windowId, frameId),
+    settleGesture: (windowId) => sends.settle(windowId),
     treeRequest: async (method, params) => {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
       const client = pair.client;
@@ -608,7 +610,9 @@ async function ready(): Promise<void> {
       // send is the one second after a press, in the frame's own activation. A refused call spends nobody's allowance or gesture.
       if (!sends.takeRelease(windowId, frameId)) {
         if (!active) return refuse("the frame reported no user activation", "the user's words go only right after their own key press or click");
-        if (!sends.take(windowId)) return refuse("the main process saw no key press or click come to the window just before", "the user's words go only right after their own key press or click");
+        // The press must have landed in THIS frame (F2, read 52): a press in another frame of the window is not this sender's.
+        await sends.settle(windowId);
+        if (!sends.takeIn(windowId, frameId)) return refuse("the main process saw no key press or click land in this frame just before", "the user's words go only right after their own key press or click");
       }
       try {
         return await client.request<{ seq?: number }>("user.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);

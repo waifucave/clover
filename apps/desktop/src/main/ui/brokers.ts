@@ -331,7 +331,46 @@ export class SendGate {
   forget(windowId: number): void {
     this.lastInput.delete(windowId);
     this.holds.delete(windowId);
+    this.lastPress.delete(windowId);
     this.dropAllowances(windowId);
+  }
+
+  // F2 (read 52): the press is the caller's frame's, not the window's. A gestured call from a part (the door for parts, the
+  // composer spot, the pickers, the shell API, an open) spends only the window's latest press, within the second, and only when
+  // that press landed IN THE CALLER'S OWN FRAME: the innermost frame of the press's record (`press`: the focused frame at a key
+  // down; `holdFrames`: the frame under the pointer at a mouse down). A press in another plugin's frame, on a sealed card's
+  // button or on the window's own root is not the caller's, and is left unspent for the frame it came to. The bundled tree's
+  // parts share one document (the `clover` layer's): a press anywhere in that document is that document's, as before.
+  private readonly lastPress = new Map<number, Hold>();
+  private readonly waiting = new Map<Hold, (() => void)[]>();
+
+  /** Spends the window's press for a call from `frameId`: true once, within SEND_INPUT_WINDOW_MS, when the press landed in that
+   *  frame (its innermost frame); false (and nothing spent) otherwise. */
+  takeIn(windowId: number, frameId: string): boolean {
+    const p = this.lastPress.get(windowId);
+    const at = this.lastInput.get(windowId);
+    if (p === undefined || at === undefined || this.now() - at > SEND_INPUT_WINDOW_MS) return false;
+    if (p.frames === undefined || [...p.frames].at(-1) !== frameId) return false;
+    return this.take(windowId);
+  }
+
+  /** Waits (at most `ms`) until the window's latest press knows its frames (a mouse press asks the frames under the pointer a
+   *  moment after it): resolves at once when there is none or it is known. */
+  settle(windowId: number, ms = 2_000): Promise<void> {
+    const p = this.lastPress.get(windowId);
+    if (p === undefined || p.frames !== undefined) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      const list = this.waiting.get(p) ?? [];
+      list.push(() => { clearTimeout(timer); resolve(); });
+      this.waiting.set(p, list);
+    });
+  }
+
+  private framesKnown(hold: Hold): void {
+    const list = this.waiting.get(hold);
+    this.waiting.delete(hold);
+    for (const done of list ?? []) done();
   }
 
   // After a hold (hold-to-talk): the words come only after the release and the transcription, past the second and past the
@@ -352,11 +391,19 @@ export class SendGate {
     this.dropAllowances(windowId);
     const h: Hold = { kind: press.kind, key: press.key, at: this.now(), spent: false, ...(press.frames !== undefined ? { frames: new Set(press.frames) } : {}) };
     this.holds.set(windowId, h);
+    const was = this.lastPress.get(windowId);
+    if (was !== undefined) this.framesKnown(was);
+    this.lastPress.set(windowId, h);
     return h;
   }
 
   /** The frames a mouse press happened in, once found (the release may already have come: it is credited now). */
   holdFrames(windowId: number, hold: Hold, frames: readonly string[]): void {
+    // The press's own record knows where it landed (a gestured call reads it, `takeIn`), whether or not its hold is still open.
+    if (this.lastPress.get(windowId) === hold) {
+      if (hold.frames === undefined) hold.frames = new Set(frames);
+      this.framesKnown(hold);
+    }
     if (this.holds.get(windowId) !== hold) return;
     hold.frames = new Set(frames);
     if (hold.releasedAt !== undefined) this.credit(windowId, hold);

@@ -385,8 +385,12 @@ export interface IpcHooks {
   api(pluginId: string, method: string, params: unknown): Promise<unknown>;
   /** The watches each frame opened, so its going ends them (frame-watches.ts). */
   frameWatches?: FrameWatches;
-  /** One key press or click of the user's the main process saw come to the window, spent (the SendGate). */
-  takeGesture(windowId: number): boolean;
+  /** One key press or click of the user's the main process saw land IN THE CALLER'S OWN FRAME (`frameId`), spent (the
+   *  SendGate's `takeIn`, F2): a press in another frame of the window is not the caller's, and is left unspent. */
+  takeGesture(windowId: number, frameId: string): boolean;
+  /** Waits (briefly) until the window's latest press knows which frame it landed in (a click asks the frames under the
+   *  pointer a moment after it), so `takeGesture` can tell. */
+  settleGesture?(windowId: number): Promise<void>;
   /** The windows' push-to-talk holds (listen.ts): the composer's start and stop, and the shell's pieces. */
   listens?: import("./listen").ListenHolds;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
@@ -441,6 +445,14 @@ function rect(v: unknown): Rect | undefined {
 
 /** The IPC the preload's bridge speaks. Every call is bound to its sender's frame. */
 export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: string) => void, stats?: IpcStats): () => void {
+  /** A gestured call's press, for the frame that sent it (F2): the frame's own activation, and a press the main process saw land in
+   *  that very frame. Waits for a click's frame to be known first, only when the frame reports activation (nothing else can
+   *  spend a press). */
+  const fid = (f: { processId: number; routingId: number }) => `${f.processId}:${f.routingId}`;
+  const pressIn = async (s: { windowId: number; frame: { processId: number; routingId: number } }, active: unknown): Promise<(windowId: number) => boolean> => {
+    if (active === true) await hooks.settleGesture?.(s.windowId);
+    return (w) => frameGesture(active, () => hooks.takeGesture(w, fid(s.frame)));
+  };
   /** What the shell last said of each window's place, for the plugin frames that read it (`shell.state`). */
   const shellWindows = new Map<number, { state: ShellState; apps: ShellApp[] }>();
   /** Which essential handles a shown bot's own frames offer (`shell.provide`), by window and frame; only while a bot of the plugin shows its tab. */
@@ -555,14 +567,15 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const id = runtime.surfaceOf(sender(event).frame);
     return id === undefined ? undefined : hooks.surfaceEnvironment(id);
   });
-  handle("clover:open", (event, a) => {
+  handle("clover:open", async (event, a) => {
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
     const pluginId = runtime.partOf(sender(event).frame, mount);
     const target = openTarget(a.target);
     if (target === undefined) throw new LayerError("not a place the app opens");
     // It brings the main window up: `shell.control`, and the user's own press in that frame, one open per press.
-    const refused = openRefusal(runtime.capabilitiesOf(sender(event).frame, mount), () => frameGesture(a.active, () => hooks.takeGesture(sender(event).windowId)));
+    const press = await pressIn(sender(event), a.active);
+    const refused = openRefusal(runtime.capabilitiesOf(sender(event).frame, mount), () => press(sender(event).windowId));
     if (refused !== undefined) {
       log(`open: ${pluginId}: refused (${refused})`);
       throw new LayerError(refused);
@@ -657,12 +670,13 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
   // The Plugins page's picked folders, as one-use tokens (tree-calls.ts): their paths stay in main.
   const pickTokens = new PickTokens();
-  handle("clover:api", (event, a) => {
+  handle("clover:api", async (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
     const method = str(a.method, 128);
     if (mount === undefined || method === undefined) throw new LayerError("bad request");
     const pluginId = runtime.partOf(s.frame, mount);
+    const press = await pressIn(s, a.active);
     // The pickers are main's own: a plugin that holds `files`, the user's own click, main's dialog; the page gets tokens.
     if (PICK_METHODS.has(method)) {
       if (pluginId === "core" || hooks.pickFiles === undefined || hooks.registerGrant === undefined || hooks.grants === undefined) throw new LayerError("this part can't ask for a file");
@@ -671,7 +685,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
         params: a.params,
         plugin: { id: pluginId, capabilities: runtime.capabilitiesOf(s.frame, mount) },
         windowId: s.windowId,
-        takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
+        takeGesture: press,
         dialog: hooks.pickFiles,
         grants: hooks.grants,
         register: hooks.registerGrant,
@@ -687,9 +701,9 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       ...(hooks.listens ? { listens: hooks.listens } : {}),
       ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse) => hooks.pick!(w, kind, filters, use) } : {}),
       ...(hooks.openKey ? { openKey: (target: KeyTarget) => hooks.openKey!(target) } : {}),
-      // The key press or click must have come to THIS frame (its own transient activation, read in the preload) and be
-      // one the main process saw come to the window; a refused call spends nobody's gesture.
-      takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
+      // The key press or click must have come to THIS frame: its own transient activation (read in the preload) AND a press the
+      // main process saw land in this frame (F2); a refused call spends nobody's gesture.
+      takeGesture: press,
       request: hooks.treeRequest,
       entries: (spot) => runtime.entries(s.frame, mount, spot),
       layer: () => {
@@ -729,14 +743,15 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     }, () => undefined);
   });
   // `PluginApi.shell` (spec §5.4: `shell.read`, `shell.control`): every rule is in shell-calls.ts.
-  handle("clover:shell", (event, a) => {
+  handle("clover:shell", async (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
     const plugin = { id: runtime.partOf(s.frame, mount), capabilities: runtime.capabilitiesOf(s.frame, mount) };
     let r;
     try {
-      r = routeShell({ method: a.method, args: a.args, plugin, window: shellWindows.get(s.windowId), appButtons: () => runtime.appButtons(), takeGesture: () => frameGesture(a.active, () => hooks.takeGesture(s.windowId)) });
+      const press = await pressIn(s, a.active);
+      r = routeShell({ method: a.method, args: a.args, plugin, window: shellWindows.get(s.windowId), appButtons: () => runtime.appButtons(), takeGesture: () => press(s.windowId) });
     } catch (err) {
       throw new LayerError(err instanceof Error ? err.message : "refused");
     }
@@ -780,17 +795,18 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (checked === undefined) throw new LayerError("not a key press or a paste");
     return hooks.terminalInput(s.windowId, `${s.frame.processId}:${s.frame.routingId}`, runtime.partOf(s.frame, mount), terminalId, checked);
   });
-  handle("clover:composer", (event, a) => {
+  handle("clover:composer", async (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
     const pluginId = runtime.partOf(s.frame, mount);
+    const press = await pressIn(s, a.active);
     return routeComposer({
       composer: runtime.composerOf(s.frame, mount),
       ...(hooks.listens ? { listens: hooks.listens } : {}),
       op: a.op,
       args: a.args,
-      takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
+      takeGesture: press,
       asApp: hooks.treeRequest,
       asLayer: (id, method, params) => hooks.api(id || pluginId, method, params),
       log,

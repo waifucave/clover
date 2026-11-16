@@ -485,3 +485,64 @@ describe("a gesture counts only for the frame it happened in", () => {
     expect(frameGesture(true, () => gate.take(1))).toBe(false);
   });
 });
+
+describe("a part's gestured call spends only a press in its own frame (F2, read 52)", () => {
+  const W = 3;
+  test("a press in frame A, then a gestured call from frame B, is refused and leaves the press for A", () => {
+    let t = 1_000;
+    const g = new SendGate(() => t);
+    g.press(W, { kind: "key", key: "Enter", frames: ["doc:A"] });
+    expect(g.takeIn(W, "doc:B")).toBe(false);
+    expect(g.takeIn(W, "doc:A")).toBe(true);
+    // One press, one call.
+    expect(g.takeIn(W, "doc:A")).toBe(false);
+    // A new press, past the second: nothing.
+    g.press(W, { kind: "key", key: "a", frames: ["doc:A"] });
+    t += SEND_INPUT_WINDOW_MS + 1;
+    expect(g.takeIn(W, "doc:A")).toBe(false);
+  });
+
+  test("a press on a sealed card's button unlocks no part's write: its innermost frame is the sealed frame, not the document that placed it", () => {
+    const g = new SendGate(() => 5_000);
+    const hold = g.press(W, { kind: "mouse", key: "left" });
+    g.holdFrames(W, hold, ["clover-doc", "plugin:acme", "sealed:card-1"]);
+    expect(g.takeIn(W, "plugin:acme")).toBe(false);
+    expect(g.takeIn(W, "clover-doc")).toBe(false);
+  });
+
+  test("the bundled tree's parts share one document: a press anywhere in it is that document's; a press in a plugin's frame nested in it is the plugin's alone", () => {
+    const g = new SendGate(() => 9_000);
+    const h1 = g.press(W, { kind: "mouse", key: "left" });
+    g.holdFrames(W, h1, ["clover-doc"]);
+    expect(g.takeIn(W, "clover-doc")).toBe(true);
+    const h2 = g.press(W, { kind: "mouse", key: "left" });
+    g.holdFrames(W, h2, ["clover-doc", "plugin:acme"]);
+    expect(g.takeIn(W, "clover-doc")).toBe(false);
+    expect(g.takeIn(W, "plugin:acme")).toBe(true);
+    // A press on the window's own root (no frame) is no part's.
+    const h3 = g.press(W, { kind: "mouse", key: "left" });
+    g.holdFrames(W, h3, []);
+    expect(g.takeIn(W, "clover-doc")).toBe(false);
+  });
+
+  test("a click's frame is found a moment after the press: a call waits for it (settle), then is judged; with no press it doesn't wait", async () => {
+    const g = new SendGate();
+    await g.settle(W, 50);
+    const hold = g.press(W, { kind: "mouse", key: "left" });
+    expect(g.takeIn(W, "doc:A")).toBe(false); // not known yet: nothing spent
+    setTimeout(() => g.holdFrames(W, hold, ["doc:A"]), 10);
+    await g.settle(W, 1_000);
+    expect(g.takeIn(W, "doc:A")).toBe(true);
+    // A press whose frames never come: settle gives up, and the call is refused.
+    g.press(W, { kind: "mouse", key: "left" });
+    await g.settle(W, 20);
+    expect(g.takeIn(W, "doc:A")).toBe(false);
+  });
+
+  test("another window's press is never this window's", () => {
+    const g = new SendGate(() => 1);
+    g.press(1, { kind: "key", key: "Enter", frames: ["doc:A"] });
+    expect(g.takeIn(2, "doc:A")).toBe(false);
+    expect(g.takeIn(1, "doc:A")).toBe(true);
+  });
+});
