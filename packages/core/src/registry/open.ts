@@ -18,6 +18,7 @@ import { IndexClient, type IndexFetch } from "./indexes/client";
 import { PluginUpdater } from "./indexes/update";
 import { Leftovers } from "./leftovers";
 import { installStagingDir } from "./install-folder";
+import { applyCarry } from "../migration/old-home/carry";
 
 export interface OpenRegistryOptions {
   mossHome: string;
@@ -116,6 +117,13 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
         : `plugins: ${file} was changed outside MOSS, so it isn't trusted; plugins ask for their OK again`);
     },
   });
+  // An old install's home copied in (`migration/old-home/`): its plugins' switches and picks, carried, are written now
+  // through this store, signed with this engine's key, before the registry reads them; once.
+  try {
+    applyCarry(o.mossHome, store, o.log);
+  } catch (err) {
+    o.log?.(`plugins: the old home's carried switches weren't written (${(err as Error)?.message ?? String(err)}); plugins keep this home's`);
+  }
   const hostNetworkHeld = o.hostNetworkHeld ?? (o.os === "macos" && pluginFenceAvailable());
   const sandboxed = o.sandboxed ?? pluginFenceAvailable();
   let folders: PluginFolders | undefined;

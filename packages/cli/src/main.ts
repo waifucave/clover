@@ -2541,7 +2541,14 @@ if (import.meta.main) {
     console.error(`daemon log: ${daemonLog.path}`);
     let daemon: Awaited<ReturnType<typeof startDaemon>>;
     try {
-      daemon = await startDaemon();
+      // The one-time copy of an old install's home is staged: stop, and start again at once (the supervisor and the app
+      // start a daemon that exits with UPDATE_RESTART_EXIT_CODE again), so the next start swaps it in.
+      daemon = await startDaemon({
+        requestRestart: () => {
+          console.error("old home: restarting to swap the copy in");
+          void (async () => { try { await stopWithin(daemon); } finally { process.exit(UPDATE_RESTART_EXIT_CODE); } })();
+        },
+      });
     } catch (err) {
       // Migration B's `MigrationRefused` and (WS-21) Migration C's `MigrationCRefused`: a message and exit 1.
       const { bootRefusalExitCode, migrationRefusalMessage } = await import("./daemon-boot-refusal");

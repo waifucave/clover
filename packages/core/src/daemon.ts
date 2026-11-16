@@ -26,6 +26,11 @@ import { acquireLock, type Lock } from "./lock";
 import { keychainService, resolveMossProfile } from "./profile";
 import { describeHomePristineness, planMigrationB, runMigrationB, MigrationRefused } from "./migration/migrate-b";
 import { inspectCoworkSource } from "./migration/cowork-exclusion";
+import { markFresh } from "./migration/old-home/choice";
+import { oldEngineAlive } from "./migration/old-home/alive";
+import { oldHomeFor } from "./migration/old-home/locate";
+import { runOldHomeOffer, type OfferDeps } from "./migration/old-home/offer";
+import { applyStagedCopy } from "./migration/old-home/swap";
 import { manifestFileState, manifestPath } from "./migration/manifest";
 import { TOKEN_NAMES, TokenAuthority } from "./auth/tokens";
 import { appTokenAclBootTrust, migrateAppTokenAcl, prepareAppTokenAccess, recoverAppTokenShadows, type AppTokenAccess, type AppTokenKeychain, type AppTokenTrust } from "./auth/app-token-acl";
@@ -689,6 +694,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** TEST ONLY: the user's home the other-install guard below measures against (default `homedir()`), so a test
    *  proves the refusal on a stand-in home and never names the real one. */
   userHomeForTests?: string;
+  /** The one-time copy of an old install's home (`migration/old-home/`): asked when the copy is staged, so the caller
+   *  stops this daemon and starts it again (the CLI's `daemon run` exits with `UPDATE_RESTART_EXIT_CODE`), and the
+   *  next start swaps the copy in. Absent: the copy waits for the next start. */
+  requestRestart?: (why: "old-home-copy") => void;
+  /** TEST SEAM for the offer (`migration/old-home/offer.ts`): the old engine's liveness, its login item and its
+   *  `autostart disable`. Absent: the real checks (read-only; the old home's location is `oldHomeFor`'s alone). */
+  oldHome?: Partial<Pick<OfferDeps, "alive" | "loginItem" | "disableLoginItem">>;
 } = {}): Promise<RunningDaemon> {
   const startedAt = Date.now();
   // C0 (review S1): the daemon's own provider calls (titles, the reviewer, the dreamer, the cleaner) present as
@@ -842,8 +854,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
   }
 
-  const dirs = bootstrapMossDir(home);
+  // Whether this home is new under this build (no settings yet): the only home the old install's copy is offered on.
+  const homeWasNew = !existsSync(join(home, "settings.json"));
+  let dirs = bootstrapMossDir(home);
   const lock: Lock = await acquireLock(dirs.lockPath, dirs.socketPath);
+  // The one-time copy of an old install's home (spec §12, item 125), under the lock and before any store opens: a
+  // whole staged copy is swapped in (a swap a start cut short is finished), one cut short is removed (the offer comes
+  // again). The offer itself is raised once the broker is up (below, after the parts).
+  if (homeWasNew) markFresh(home, Date.now());
+  try {
+    if (applyStagedCopy(home, { log: (line) => console.error(line) }).kind === "swapped") dirs = bootstrapMossDir(home);
+  } catch (err) {
+    lock.release();
+    throw err;
+  }
 
   // A3: legacy top-level files an earlier Migration B copied but nothing reads (`mcp.json`,
   // `tools.json`, …). One line when any exist — never touched, only named (`moss doctor` repeats it).
@@ -4749,6 +4773,27 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
   })().catch((err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); })
     .finally(() => { partsBrokerSettled(daemonParts?.broker); partsDoorsIn(); });
+  // The old install's home, offered once on a fresh home (or the notice after its copy), on the parts' broker: the core's
+  // own card, no plugin's. Only where `oldHomeFor` names one: the real profile, or a test's or the acceptance run's override.
+  {
+    const old = oldHomeFor({ home, profile, log: (line) => console.error(line) });
+    if (old.path !== undefined) {
+      const oldPath = old.path;
+      void partsReady.then(async () => {
+        const broker = daemonParts?.broker;
+        if (broker === undefined || partsStopping) return;
+        const outcome = await runOldHomeOffer({
+          home, oldHome: oldPath, broker,
+          alive: opts.oldHome?.alive ?? (() => oldEngineAlive(oldPath)),
+          ...(opts.oldHome?.loginItem ? { loginItem: opts.oldHome.loginItem } : {}),
+          ...(opts.oldHome?.disableLoginItem ? { disableLoginItem: opts.oldHome.disableLoginItem } : {}),
+          ...(opts.requestRestart ? { requestRestart: () => opts.requestRestart!("old-home-copy") } : {}),
+          log: (line) => console.error(line),
+        });
+        if (outcome !== "not-fresh" && outcome !== "already-chosen") console.error(`old home: ${outcome}`);
+      }).catch((err: unknown) => console.error(`old home: the offer failed: ${(err as Error)?.message ?? String(err)}`));
+    }
+  }
   // What the stop's asynchronous tail still waits on, by name (`stopPending`, which `stopWithin` names when its bound
   // cuts the stop off): each drain is added as it starts and goes as it settles.
   const stopTail = new Set<string>();
