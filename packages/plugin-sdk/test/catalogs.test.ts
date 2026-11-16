@@ -305,7 +305,7 @@ describe("points and spots", () => {
     expect(named("Needs\u200B y\u043Eu")).toEqual(["name_reserved:/name"]);
     expect(named("Needs you", true)).toEqual([]);
     expect(named("Lights")).toEqual([]);
-    for (const name of ["MOSS", "CL\u041EVER", "moss!"]) expect([name, named(name)]).toEqual([name, ["name_reserved:/name"]]);
+    for (const name of ["MOSS", "M\u041ESS", "moss!"]) expect([name, named(name)]).toEqual([name, ["name_reserved:/name"]]);
     expect(named("MOSS", true)).toEqual([]);
     // Always-on-top surfaces are for a plugin with the `overlay` capability, whoever it is (F4), and cards and the tray likewise.
     const float = { spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } };
@@ -332,7 +332,7 @@ describe("points and spots", () => {
     // As lane G's island compares: small capitals, Cherokee letters, I/1/l as one, "rn" as "m", and missing or
     // invisible spaces fold too, so the manifest check and the island agree.
     for (const t of ["Needsyou", "Needs\u200Byou", "\u0274\u1D07\u1D07\u1D05\uA731 \u028F\u1D0F\u1D1C"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
-    for (const t of ["CIover", "C1over", "Cl0ver", "\u13DFlover", "Clov\u0435\u0433"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("MOSS")]);
+    for (const t of ["M0SS", "M\u041ESS", "\u041C\u041E\u0405\u0405", "\u039COSS", "M\u03BFSS"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("MOSS")]);
     expect(foldTitle("Rnoon")).toBe(foldTitle("moon"));
     // Lane G's cases: I and i are one letter, with 1, l, | and the Greek and Cyrillic lookalikes, so a bot named
     // "Iris" refuses a pill target "iris"; "vv" reads as "w" and "cl" as "d", as the island folds them.
@@ -344,13 +344,13 @@ describe("points and spots", () => {
     expect(foldTitle("Iris")).toBe("lrls");
     // #187's review: stroke letters, Lisu, the lunate sigma, and marks NFKC would spell out.
     for (const t of ["Neeđs you", "Neeɗs you", "Needs yøu", "Ꮑeeds you", "ꓠeeds you", "Needs ყou"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
-    for (const t of ["Cłover", "Cƚover", "ꓚlover", "Ϲlover", "ϲlover", "MOSS™", "MOSS®", "Cloveɍ", "Clovɘr", "Clѻver", "Cl○ver"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("MOSS")]);
+    for (const t of ["MØSS", "M\u0585SS", "M\u0555SS", "\uA4DFOSS", "Ꮇ0SS", "MOSS™", "MOSS®", "M○SS", "M\u00F2SS", "MO\u0405S", "MOS\u0405"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("MOSS")]);
     expect(foldTitle("ħŧđ")).toBe("htd");
     expect(foldTitle("Iris")).not.toBe(foldTitle("Irma"));
     // #264's review: lookalikes the island's own fold refused, which needed the order (NFKD and marks first, the map
     // before and after case) and the island's tables: Cherokee, Armenian capitals, Greek sigmas, Cyrillic yi.
     for (const t of ["Needs y\u0585u", "Needs y\u03C3u", "N\u0451eds you", "NEEDS Y\u13EBU", "NEEDS Y\u0555U", "NEEDS YO\u054D", "NEED\u054F YOU"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
-    for (const t of ["CL\u13EBVER", "CL\u0555VER", "C\u0407over", "\u03C2lover", "C\u13A5over"]) expect([t, isReservedPluginName(t)]).toEqual([t, true]);
+    for (const t of ["M\u13EBSS", "M\u0555SS", "MO\u054FS", "MO\u0405S", "\u13B7OSS"]) expect([t, isReservedPluginName(t)]).toEqual([t, true]);
     // Too loose to keep: Greek eta reads as "n" only in some faces.
     expect(foldTitle("\u03B7eeds you")).not.toBe(foldTitle("Needs you"));
     // The panel says whose tabs a bot's panel shows; the client entry's bare imports are React 19's and the UI API's.

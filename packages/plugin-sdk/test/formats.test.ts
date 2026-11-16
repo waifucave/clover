@@ -401,7 +401,7 @@ describe("the tree hash", () => {
 
   test("is SHA-256 over sorted lines of path, executable bit and the file's SHA-256 (§5.1)", async () => {
     const input = treeHashInput(entries);
-    expect(input).toBe(`bin/run\tx\t${H("2")}\nmoss.json\t-\t${H("3")}\nhost/index.ts\t-\t${H("1")}\n`);
+    expect(input).toBe(`bin/run\tx\t${H("2")}\nhost/index.ts\t-\t${H("1")}\nmoss.json\t-\t${H("3")}\n`);
     const want = createHash("sha256").update(input).digest("hex");
     expect(await treeHash(entries)).toBe(`sha256:${want}`);
     expect(await sha256Hex("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
