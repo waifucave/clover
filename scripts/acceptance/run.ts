@@ -2910,7 +2910,7 @@ async function main(): Promise<void> {
       if (result === undefined) fail(`${called} gave no answer of its own (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
       const said = apiProbePairs(result!.text);
       const wrong = apiProbeWrong(said);
-      if (!cardText.includes("hears what you say to your bots with push-to-talk")) wrong.push("its OK card doesn't say what audio gives");
+      if (!cardText.includes("can play sound at any time, even while no window of it shows")) wrong.push("its OK card doesn't say what audio gives");
       if (!cardText.includes("controls the screen and input of your computers")) wrong.push("its OK card doesn't say what computers.control gives");
       if (wrong.length > 0) fail(`${wrong.join("; ")} (${result!.text.slice(0, 600)})`);
       // `secrets.get` in a process of the plugin's own: the vault reads the key the run stored for its `auth` entry.
