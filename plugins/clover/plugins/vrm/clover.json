@@ -20,7 +20,7 @@
         "spot": "avatar",
         "id": "vrm",
         "key": "vrm",
-        "component": "VrmAvatar"
+        "component": "VrmAvatarEntry"
       }
     ],
     "avatar.formats": [

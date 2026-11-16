@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "clover/voice: Clover Voice (spec §6.6), on general capabilities: its player is its own background part, its providers its own point, its settings its own.",
+  "description": "clover/voice: Clover Voice (spec \u00a76.6), on general capabilities: its player is its own background part, its providers its own point, its settings its own.",
   "type": "module",
   "exports": {
     ".": "./host/index.ts",

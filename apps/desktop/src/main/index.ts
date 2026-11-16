@@ -1159,7 +1159,7 @@ function makePair(): Pair {
       known: () => ({ bots: [...botNames.keys()].sort(), pages: [...new Set([...runtime.mainKeys(), ...runtime.appButtons().map((b) => b.id)])].sort() }),
       look: async (frames) => (await captureWindows(captureDeps, { window: "main", image: false, frames }).catch(() => ({ windows: [] }))).windows[0],
       state: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? shellStates.get(mainWindow.id) : undefined),
-      act: (act) => { if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.shellMessage(mainWindow.id, { type: "shell-act", act }); },
+      act: (act) => { if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootPartMessage(mainWindow.id, { type: "shell-act", act }); },
     }, parsed.data);
   });
   // A bot's look at a place in the app (`AppScreenshot`, render.ts): drawn in a render window the user never sees, one

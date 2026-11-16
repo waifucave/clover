@@ -19,7 +19,6 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
-import type { BunPlugin } from "bun";
 import { CLIENT_BARE_IMPORTS } from "../../../packages/plugin-sdk/src/manifest/schema";
 import { acceptanceBuildDefine, RELEASE_BUILD_BANNER, releaseBuildDefine, testBuildDefine } from "../../../scripts/test-build";
 
@@ -157,30 +156,8 @@ function findChildren(dir: string, depth = 0): Child[] {
 }
 const children = findChildren(join(repo, "plugins", "clover"));
 const byName = new Map(children.map((c) => [c.name, c]));
-const childAlias: BunPlugin = {
-  name: "clover-child",
-  setup(b) {
-    b.onResolve({ filter: /^@clover-child\// }, (args) => {
-      // `@clover-child/<name>` is the child's client entry; `@clover-child/<name>/<path>` a file in its folder.
-      const [name, ...rest] = args.path.slice("@clover-child/".length).split("/");
-      const child = byName.get(name ?? "");
-      if (child === undefined) throw new Error(`no child plugin named ${args.path} under plugins/clover`);
-      if (rest.length === 0) return { path: child.entry };
-      const base = join(child.dir, ...rest);
-      const file = [base, `${base}.ts`, `${base}.tsx`].find((f) => existsSync(f) && statSync(f).isFile());
-      if (file === undefined) throw new Error(`no file ${args.path}`);
-      return { path: file };
-    });
-    // Each part's own UI API stand-in (lane F's \`client/sdk.ts\`) is the app's runtime in the \`clover\` layer.
-    b.onResolve({ filter: /^\.\.?\/sdk(\.tsx?)?$/ }, (args) => {
-      const dir = dirname(args.importer);
-      if (!children.some((c) => dir.startsWith(join(c.dir, "client")))) return undefined;
-      return { path: join(root, "src", "layer", "clover", "sdk.ts") };
-    });
-  },
-};
 // The tree carries the build marks too (compile-time only, `false` in a real build): Clover Voice's player shows its counters in a test or acceptance build.
-await build({ ...browser, define: { ...browser.define, ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild) }, entrypoints: [join(root, "src", "layer", "clover", "index.ts")], outdir: layerOut, naming: "clover.[ext]", external: LAYER_EXTERNALS, plugins: [childAlias] }, "the clover tree");
+await build({ ...browser, define: { ...browser.define, ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild) }, entrypoints: [join(root, "src", "layer", "clover", "index.ts")], outdir: layerOut, naming: "clover.[ext]", external: LAYER_EXTERNALS }, "the clover tree");
 // Its styles: each child's `client.css`, in the bindings' order (lane E-M2's cleaner wraps them in @scope).
 const { modules } = (await import(join(root, "src", "layer", "clover", "ids.ts"))) as { modules: readonly string[] };
 const css: string[] = [];

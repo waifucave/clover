@@ -1589,6 +1589,15 @@ export class UiRuntime {
   }
 
   /** A message to the `clover` shell document of one window (not a surface's), such as a piece of speech for its player. */
+  /** A message to the part that fills a window's `app.root` (the window's own shell, whichever plugin's it is: F2b, no
+   *  layer or plugin id decides it): the window's acts a bot's plugin asked for (`shell-act`) and what it provides. */
+  rootPartMessage(windowId: number, message: LayerMessage): void {
+    for (const m of this.mounts.values()) {
+      const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);
+      if (m.windowId === windowId && m.kind === "frame" && m.frame !== undefined && m.spot === "app.root" && parent?.kind === "root" && parent.surfaceRef === undefined) this.post(m.id, message);
+    }
+  }
+
   shellMessage(windowId: number, message: LayerMessage): void {
     for (const m of this.mounts.values()) {
       const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);

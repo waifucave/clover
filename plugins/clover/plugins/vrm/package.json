@@ -8,7 +8,8 @@
     ".": "./client/index.tsx",
     "./gallery": "./src/gallery.tsx",
     "./lipsync": "./src/lipsync/index.ts",
-    "./control": "./src/control.ts"
+    "./control": "./src/control.ts",
+    "./client": "./client/index.tsx"
   },
   "scripts": {
     "test": "bun test",

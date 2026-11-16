@@ -4,7 +4,7 @@ import type { EntryComponent } from "../client/local";
 import type { PluginDetail, PluginSummary } from "@waifucave/clover-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { NOT_AVAILABLE_YET as PROTOCOL_REASON } from "../../../../../packages/protocol/src/plugins";
+import { NOT_AVAILABLE_YET as PROTOCOL_REASON } from "@waifucave/clover-plugin-sdk";
 import { NOT_AVAILABLE_YET, okWords, SettingsEntry } from "../client/entry";
 
 /** A running plugin's UI as `plugin.ui` lists it: its themes and string tables, the rest left plain. */

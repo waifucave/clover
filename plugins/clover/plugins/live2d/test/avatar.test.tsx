@@ -263,8 +263,8 @@ describe("no microphone, no sound of its own", () => {
 
 describe("the entry the manifest names", () => {
   test("is an export of the client entry, keyed live2d in the avatar spot", async () => {
-    expect(manifest.contributes.ui).toEqual([{ spot: "avatar", id: "live2d", key: "live2d", component: "Live2dAvatarEntry" }]);
-    expect(typeof (client as Record<string, unknown>).Live2dAvatarEntry).toBe("function");
+    expect(manifest.contributes.ui).toEqual([{ spot: "avatar", id: "live2d", key: "live2d", component: "Live2dAvatarSpot" }]);
+    expect(typeof (client as Record<string, unknown>).Live2dAvatarSpot).toBe("function");
   });
 
   test("takes the spot's props: the bot's name and its file", () => {

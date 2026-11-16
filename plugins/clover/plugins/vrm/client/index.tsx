@@ -13,3 +13,5 @@ export { idlePose, IDLE, type Pose, type BoneName } from "../src/motion/idle";
 
 // The words: the app installs its translator (lane E's `useT()`) for parts with no host context, such as an avatar.
 export { setTranslator, t, type Translator } from "../src/strings";
+// The `avatar` spot's entry: the avatar with the app's language, speech and cues, through the public UI SDK.
+export { VrmAvatarEntry } from "./entry";

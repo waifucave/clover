@@ -617,7 +617,7 @@ describe("the Plugins page: updates and indexes", () => {
 
 describe("the words for the parts beside a bot", () => {
   test("every word is one the row's chips use (contributionLabels)", async () => {
-    const { CONTRIBUTION_LABEL_ORDER } = await import("../../../../../packages/plugin-sdk/src/manifest/labels");
+    const { CONTRIBUTION_LABEL_ORDER } = await import("@waifucave/clover-plugin-sdk");
     const { PART_WORDS } = await import("../client/Installed");
     for (const w of Object.values(PART_WORDS)) expect(CONTRIBUTION_LABEL_ORDER as readonly string[]).toContain(w);
   });
