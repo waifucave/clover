@@ -91,7 +91,7 @@ const rendered = new Map<string, () => void>();
  *  sends after its first render), so the window never shows an empty stage or a first page that isn't the user's (the
  *  parts keep their place with `useKept`). The old one is inert meanwhile: main let it go already. After 5 s the new
  *  one takes the place anyway, but never before it has loaded (a document that hasn't is the blank one). */
-function reloadIn(item: { mount: string; url: string; ref: string; layer: string }): void {
+function reloadIn(item: { mount: string; url: string; ref: string; layer: string; isolated?: true; autoplay?: true; microphone?: true }): void {
   const frames = Array.from(stage.querySelectorAll("iframe")).filter((f) => f.dataset.cloverMount === item.mount);
   // A load still pending from an earlier reload is for a token main has spent: it goes, and the frame showing stays.
   for (const f of frames) if (f.dataset.cloverPending !== undefined) f.remove();
@@ -127,7 +127,7 @@ function reloadIn(item: { mount: string; url: string; ref: string; layer: string
   shown = { mount: item.mount, url: item.url };
 }
 
-function mount(item: { mount: string; url: string; ref: string; layer: string }): void {
+function mount(item: { mount: string; url: string; ref: string; layer: string; isolated?: true; autoplay?: true; microphone?: true }): void {
   if (shown?.mount === item.mount && shown.url === item.url && stage.querySelector("iframe") !== null) return;
   stage.replaceChildren(frameFor(item));
   shown = { mount: item.mount, url: item.url };
@@ -195,7 +195,8 @@ function onMessage(m: LayerMessage): void {
   if (m.type === "child-size") rendered.get(m.child)?.();
   if (m.type === "child-reload" && m.child === shown?.mount) {
     const frame = stage.querySelector("iframe");
-    reloadIn({ mount: m.child, url: m.url, ref: frame?.dataset.cloverEntry ?? "", layer: frame?.dataset.cloverLayer ?? "" });
+    // The new frame gets the flags main sends with the reload: its `allow` as main has it now, as a first load's item gives it.
+    reloadIn({ mount: m.child, url: m.url, ref: frame?.dataset.cloverEntry ?? "", layer: frame?.dataset.cloverLayer ?? "", ...(m.isolated === true ? { isolated: true as const } : {}), ...(m.autoplay === true ? { autoplay: true as const } : {}), ...(m.microphone === true ? { microphone: true as const } : {}) });
   }
   if (m.type === "child-gone" && m.child === shown?.mount) {
     const child = m.child;

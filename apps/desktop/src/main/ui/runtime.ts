@@ -613,7 +613,8 @@ export class UiRuntime {
     if (parentDoc === undefined) return;
     const url = this.reissue(doc);
     this.log(`layers: ${doc.id} loads again ${why === "to frame a layer installed after it was served" ? why : `(${why})`}`);
-    this.post(parentDoc.id, { type: "child-reload", child: doc.id, url });
+    // The frame's flags go with it: a parent that builds the frame again (the core root) gives the new one the same `allow`.
+    this.post(parentDoc.id, { type: "child-reload", child: doc.id, url, ...this.frameFlags(doc) });
   }
 
   /** A document asks what it is: the root of its window, or the frame its token was issued for. */
@@ -881,19 +882,24 @@ export class UiRuntime {
     return m;
   }
 
+  /** What a frame's `allow` carries, from main's own record of it: the same for its first load and every load again. */
+  private frameFlags(m: Mount): { isolated?: true; autoplay?: true; microphone?: true } {
+    return {
+      ...(m.plugin?.isolated === true ? { isolated: true as const } : {}),
+      // A background part's frame may play sound with no press from the user when its plugin holds `audio`.
+      ...(m.spot === "app.background" && m.plugin?.capabilities.has("audio") === true ? { autoplay: true as const } : {}),
+      // A frame whose own layer holds `microphone` (any plugin of it: a plugin and its children share one) may open it; main's
+      // permission handlers say yes for that layer's origin only.
+      ...(this.layerHolds(m.layer, "microphone") ? { microphone: true as const } : {}),
+    };
+  }
+
   private item(m: Mount, parent: Mount): SpotItem {
     const ref = `${m.plugin!.id}#${m.entryId}`;
     const layout = this.entryOf(m)?.layout;
     if (m.kind === "web") return { kind: "web", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId };
     if (m.kind === "frame") {
-      const isolated = {
-        ...(m.plugin!.isolated === true ? { isolated: true as const } : {}),
-        // A background part's frame may play sound with no press from the user when its plugin holds `audio`.
-        ...(m.spot === "app.background" && m.plugin!.capabilities.has("audio") ? { autoplay: true as const } : {}),
-        // A frame whose own layer holds `microphone` (any plugin of it: a plugin and its children share one) may open it; main's
-        // permission handlers say yes for that layer's origin only.
-        ...(this.layerHolds(m.layer, "microphone") ? { microphone: true as const } : {}),
-      };
+      const isolated = this.frameFlags(m);
       if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true, ...isolated };
       return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m), ...isolated };
     }

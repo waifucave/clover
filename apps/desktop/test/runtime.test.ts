@@ -953,7 +953,8 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(s.rt.layerHolds("fixture-composer", "microphone")).toBe(true);
     const gain = s.sent.filter((x) => x.m.type === "child-reload");
     expect(gain.length).toBe(1);
-    expect(gain[0]!.m).toMatchObject({ child: item.mount });
+    // The reload carries the frame's flags (a parent that builds the frame again, the core root, gives it the same `allow`).
+    expect(gain[0]!.m).toMatchObject({ child: item.mount, microphone: true });
     const token = new URL((gain[0]!.m as { url: string }).url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-composer", token);
     s.rt.describe(frame((gain[0]!.m as { url: string }).url, shell.shellFrame), WIN, token);
@@ -965,6 +966,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     s.rt.setRegistry([...base, ...withMic(false)]);
     const lose = s.sent.filter((x) => x.m.type === "child-reload");
     expect(lose.length).toBe(1);
+    expect((lose[0]!.m as { microphone?: true }).microphone).toBeUndefined();
     expect(s.rt.layerHolds("fixture-composer", "microphone")).toBe(false);
   });
 

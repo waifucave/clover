@@ -208,7 +208,7 @@ export type LayerMessage =
   | { type: "child-gone"; child: string; reason: string }
   /** A child frame's document loads again, from this fresh single-use URL (it must frame a layer installed after it
    *  was served). */
-  | { type: "child-reload"; child: string; url: string }
+  | { type: "child-reload"; child: string; url: string; /** The frame's `allow` flags as main has them now (its item's). */ isolated?: true; autoplay?: true; microphone?: true }
   /** The window's width class changed (`MountContext.window`), to every frame of the window. */
   | { type: "window"; narrow: boolean }
   /** A child frame's content height, for the parent to size it (§5.5: the core sizes the frame). */
