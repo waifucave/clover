@@ -49,7 +49,13 @@ interface Runtime {
   /** Loads a plugin's module on demand (a third-party layer's own). */
   load?: (pluginId: string) => Promise<ClientModule | undefined>;
   /** A test layer's plugin API (`ui/testing`): `usePluginApi` hands a part this object as it is. Never set in the app. */
-  testApi?: (pluginId: string) => PluginApi | undefined;
+  testApi?: (pluginId: string, mount?: string) => PluginApi | undefined;
+  /** A test layer's own room in the window's session storage (`useKept`), so several layers in one document (a gallery)
+   *  keep apart. Never set in the app. */
+  testKeptScope?: (mount: string) => string;
+  /** Whether a pending card is a test layer's own, for a part of it (several layers in one document hold their own
+   *  cards). Never set in the app. */
+  testOwnsCard?: (mount: string, cardId: string) => boolean;
   listeners: Set<(m: LayerMessage) => void>;
   /** The callbacks each child frame was handed, by child mount. */
   callbacks: Map<string, Map<string, (...args: unknown[]) => unknown>>;
@@ -73,12 +79,15 @@ function rt(): Runtime {
 }
 
 /** Sets the layer up (the app's layer boot calls it once, before rendering). Not for plugins. */
-export function configureLayer(input: { bridge: LayerBridge; modules?: Record<string, ClientModule>; load?: Runtime["load"]; sleepAfterMs?: number; testApi?: Runtime["testApi"] }): void {
+export function configureLayer(input: { bridge: LayerBridge; modules?: Record<string, ClientModule> | Map<string, ClientModule>; load?: Runtime["load"]; sleepAfterMs?: number; testApi?: Runtime["testApi"]; testKeptScope?: Runtime["testKeptScope"]; testOwnsCard?: Runtime["testOwnsCard"] }): void {
   const r: Runtime = {
     bridge: input.bridge,
-    modules: new Map(Object.entries(input.modules ?? {})),
+    // A map is kept as given (a test layer adds the modules of the layers it sets up later).
+    modules: input.modules instanceof Map ? input.modules : new Map(Object.entries(input.modules ?? {})),
     ...(input.load ? { load: input.load } : {}),
     ...(input.testApi ? { testApi: input.testApi } : {}),
+    ...(input.testKeptScope ? { testKeptScope: input.testKeptScope } : {}),
+    ...(input.testOwnsCard ? { testOwnsCard: input.testOwnsCard } : {}),
     listeners: new Set(),
     callbacks: new Map(),
     tokens: new Map(),
@@ -1172,7 +1181,7 @@ function layerStreams(mount: string, pluginId: string): StreamsTransport {
 export function usePluginApi(): PluginApi {
   const part = usePart();
   const t = useT();
-  const fake = rt().testApi?.(part.entry.pluginId);
+  const fake = rt().testApi?.(part.entry.pluginId, part.mount);
   return useMemo(() => {
     if (fake !== undefined) return fake;
     const call = <T,>(method: string, params: unknown) => rt().bridge.api(part.mount, method, params) as Promise<T>;
@@ -1721,8 +1730,10 @@ export function useCore(): CoreClient | undefined {
  *  A draft there (the composer's, keyed by its conversation's id only) may hold something pasted, a secret even: it is
  *  no more exposed than the text field it is typed in, which the same document already holds. */
 export function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
-  const pluginId = useContext(PartContext)?.entry.pluginId ?? "clover";
-  const storeKey = `clover.kept:${pluginId}:${key}`;
+  const part = useContext(PartContext);
+  const pluginId = part?.entry.pluginId ?? "clover";
+  const scope = part !== null && runtime !== undefined ? runtime.testKeptScope?.(part.mount) ?? "" : "";
+  const storeKey = `clover.kept:${scope}${pluginId}:${key}`;
   const read = (k: string): T => {
     try {
       const raw = globalThis.sessionStorage?.getItem(k);
@@ -1827,7 +1838,9 @@ export function useApprovals(): { readonly cards: readonly CardMeta[]; subscribe
   const listeners = useRef(new Set<() => void>());
   useEffect(() => onLayerMessage(() => setCards([...rt().cards])), []);
   useEffect(() => { for (const l of listeners.current) l(); }, [cards]);
-  return useMemo(() => ({ cards, subscribe: (listener: () => void) => { listeners.current.add(listener); return () => listeners.current.delete(listener); } }), [cards]);
+  const owns = rt().testOwnsCard;
+  const own = useMemo(() => (owns === undefined ? cards : cards.filter((c) => owns(mount, c.id))), [cards, owns, mount]);
+  return useMemo(() => ({ cards: own, subscribe: (listener: () => void) => { listeners.current.add(listener); return () => listeners.current.delete(listener); } }), [own]);
 }
 
 // Sealed cards (E-M3, §5.5): a part with the `approvals` capability places each card's sealed frames — its fields'

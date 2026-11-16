@@ -4,7 +4,7 @@
 // inline, `useCore`, `usePluginApi`, `useUserSend`, `useComposerHost`, `useApprovals`, `useT` and `useTokens` are the
 // SDK's, and what reaches the bridge is what would reach the app. Any plugin's tests and galleries may use it; it names
 // no plugin. Rendering is the test's own (`@testing-library/react` or a gallery's root).
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import type { BotView, CardMeta, ComputerView, DeviceView, PluginDetail, PluginSummary, SessionView } from "../views";
 import type { TokenValue } from "../catalogs/tokens";
 import { spotInfo, STOCK_PANEL_KEYS } from "../catalogs/spots";
@@ -334,25 +334,101 @@ function emitCoreEvent(e: Record<string, unknown>): void {
   for (const pluginId of current.pluginIds()) current.emit({ type: "api-event", pluginId, method: "core.event", params: e });
 }
 
+/** One test layer's own answers, routed by the mounts it made (a gallery shows several in one document). */
+interface Layer {
+  owns(mount: string): boolean;
+  /** Its room in the session storage (`useKept`). */
+  scope: string;
+  /** Whether a pending card is one of its own (its test's `approvals`). */
+  ownsCard(cardId: string): boolean;
+  bridge: LayerBridge;
+  componentOf(pluginId: string, name: string): unknown;
+  pluginIds(): readonly string[];
+  api(pluginId: string): PluginApi | undefined;
+  listeners: Set<(m: LayerMessage) => void>;
+  log: TestLayerLog;
+  emit(m: LayerMessage): void;
+}
+
+let layerSeq = 0;
+/** The document's runtime listens here: what any of its layers says reaches it. */
+const docListeners = new Set<(m: LayerMessage) => void>();
+/** The layers in this document, the latest last. */
+const layers: Layer[] = [];
+/** The document's client modules, shared by its layers: a plugin's component is the latest layer's that names it. */
+const modules = new Map<string, ClientModule>();
+const moduleOf = (pluginId: string): ClientModule =>
+  new Proxy({}, { get: (_t, name) => {
+    if (typeof name !== "string") return undefined;
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const c = layers[i]!.componentOf(pluginId, name);
+      if (c !== undefined) return c;
+    }
+    return undefined;
+  } }) as ClientModule;
+
+const ownerOf = (mount: string): Layer | undefined => layers.find((l) => l.owns(mount)) ?? layers.at(-1);
+/** Routes each bridge call to the layer whose mount it names (one with no mount, to the latest). */
+const router: LayerBridge = new Proxy({} as LayerBridge, {
+  get: (_t, key) => {
+    if (key === "token") return undefined;
+    if (key === "onMessage") return (listener: (m: LayerMessage) => void) => {
+      docListeners.add(listener);
+      return () => void docListeners.delete(listener);
+    };
+    return (...args: unknown[]) => {
+      const first = args[0];
+      const layer = typeof first === "string" ? ownerOf(first) : key === "release" && Array.isArray(first) ? ownerOf(String(first[0])) : layers.at(-1);
+      const fn = (layer?.bridge as unknown as Record<string, unknown> | undefined)?.[key as string];
+      if (typeof fn === "function") return (fn as (...a: unknown[]) => unknown).apply(layer!.bridge, args);
+      // No layer left (a part's call after its test unmounted it): an asking call fails as a gone layer's does.
+      return ASKS.has(key as string) ? Promise.reject(new Error("the test layer is gone")) : undefined;
+    };
+  },
+});
+
+/** The bridge's calls that answer (a promise). */
+const ASKS = new Set(["describe", "resolve", "entries", "reload", "wake", "menu", "surfaceEnvironment", "open", "composer", "shell", "api", "terminalInput", "userSend", "dragOffer", "dragClaim", "sealedFrame", "cardPage"]);
+
+function attach(layer: Layer): void {
+  if (layers.length === 0) {
+    // The first layer of a document: the SDK's runtime starts afresh (no cards, no listeners from a test before).
+    modules.clear();
+    docListeners.clear();
+    configureLayer({
+      bridge: router, modules,
+      testApi: (pluginId: string, mount?: string) => (mount !== undefined ? ownerOf(mount) : layers.at(-1))?.api(pluginId),
+      // Each layer its own room in the session storage, but the first (a test's one layer keeps the app's keys).
+      testKeptScope: (mount: string) => { const l = ownerOf(mount); return l === undefined || l === layers[0] ? "" : `${l.scope}:`; },
+      testOwnsCard: (mount: string, cardId: string) => ownerOf(mount)?.ownsCard(cardId) ?? true,
+    });
+  }
+  layers.push(layer);
+  for (const id of layer.pluginIds()) if (!modules.has(id)) modules.set(id, moduleOf(id));
+}
+
+function detach(layer: Layer): void {
+  const i = layers.indexOf(layer);
+  if (i >= 0) layers.splice(i, 1);
+}
+
 const OS = (os: string | undefined): MountContext["os"] => (os === "windows" || os === "linux" ? os : "macos");
 
 /** Sets up the SDK's runtime on a fake bridge answering from `runtime`. `TestLayer` does this for its children; a gallery
  *  that renders several roots calls it once. */
-export function setUpTestLayer(runtime: TestRuntime, root: { pluginId: string; entryId: string; spot: string; key?: string }): { info: MountInfo; log: TestLayerLog } {
+export function setUpTestLayer(runtime: TestRuntime, root: { pluginId: string; entryId: string; spot: string; key?: string }): { info: MountInfo; log: TestLayerLog; detach(): void } {
   const mounts = new Map<string, { pluginId: string; context: MountContext }>();
   const listeners = new Set<(m: LayerMessage) => void>();
   const log: TestLayerLog = { calls: [] };
   let n = 0;
+  const seq = ++layerSeq;
   const baseContext: MountContext = { os: OS(runtime.os), material: "none", safeMode: false, window: { narrow: false }, ...runtime.context };
-  const rootMount = "test-root";
+  const rootMount = `test-root-${seq}`;
   mounts.set(rootMount, { pluginId: root.pluginId, context: baseContext });
   const pluginOf = (mount: string) => mounts.get(mount)?.pluginId ?? root.pluginId;
   const note = (kind: string, mount: string, args: unknown[]) => log.calls.push({ kind, mount, pluginId: pluginOf(mount), args });
   const pluginIds = () => [...new Set([root.pluginId, ...runtime.entries.map((e) => e.pluginId)])];
-  const modules: Record<string, ClientModule> = {};
-  for (const id of pluginIds()) {
-    modules[id] = new Proxy({}, { get: (_t, name) => (name === TEST_ROOT && id === root.pluginId ? RootChildren : typeof name === "string" ? runtime.component(id, name) : undefined) }) as ClientModule;
-  }
+  const componentOf = (id: string, name: string): unknown => (name === TEST_ROOT && id === root.pluginId ? RootChildren : runtime.component(id, name));
   const strings = (pluginId: string): StringTable => ({
     lang: "en",
     strings: new Proxy({} as Record<string, string>, { get: (_t, key) => (typeof key === "string" && runtime.t !== undefined ? runtime.t(pluginId, key) : undefined) }),
@@ -364,7 +440,7 @@ export function setUpTestLayer(runtime: TestRuntime, root: { pluginId: string; e
     return { bot: hints?.bot ?? c.bot, sessionKind: kind, os: runtime.os ?? c.os, surface: c.surface };
   };
   let cardsSeen = new Map<string, CardMeta>();
-  const emit = (m: LayerMessage) => { for (const l of [...listeners]) l(m); };
+  const emit = (m: LayerMessage) => { for (const l of [...docListeners]) l(m); };
   runtime.approvals?.subscribe(() => {
     const now = new Map(runtime.approvals!.cards().map((c) => [c.id, c] as const));
     for (const id of pluginIds()) {
@@ -393,7 +469,7 @@ export function setUpTestLayer(runtime: TestRuntime, root: { pluginId: string; e
       if (hints?.entry !== undefined) entries = entries.filter((e) => entryRef(e) === hints.entry);
       const parent = mounts.get(mount)?.context ?? baseContext;
       const items: SpotItem[] = entries.filter((e) => e.component !== undefined && runtime.component(e.pluginId, e.component) !== undefined).map((e) => {
-        const child = `test-m${++n}`;
+        const child = `test-${seq}-m${++n}`;
         const context: MountContext = { ...parent, ...(ctx.bot !== undefined ? { bot: ctx.bot } : {}), ...(hints?.session !== undefined ? { session: hints.session } : {}) };
         mounts.set(child, { pluginId: e.pluginId, context });
         return { kind: "inline", mount: child, ref: entryRef(e), pluginId: e.pluginId, entryId: e.id, component: e.component!, context, ...(runtime.tokens !== undefined ? { tokens: runtime.tokens() } : {}) };
@@ -480,31 +556,34 @@ export function setUpTestLayer(runtime: TestRuntime, root: { pluginId: string; e
     component: TEST_ROOT,
     spot: root.spot,
     ...(root.key !== undefined ? { key: root.key } : {}),
-    props: {},
+    // The root's own props say which layer's children it draws (a document may hold several).
+    props: { testRoot: rootMount },
     tokens: runtime.tokens?.() ?? {},
     context: baseContext,
     css: [],
     strings: strings(root.pluginId),
   };
-  configureLayer({ bridge, modules, ...(runtime.api !== undefined ? { testApi: (pluginId: string) => runtime.api!(pluginId) as PluginApi | undefined } : {}) });
   if (runtime.approvals !== undefined) cardsSeen = new Map(runtime.approvals.cards().map((c) => [c.id, c] as const));
-  current = { emit, pluginIds, log };
-  return { info, log };
+  const layer: Layer = { owns: (m) => mounts.has(m), scope: `layer-${seq}`, ownsCard: (id) => runtime.approvals === undefined || runtime.approvals.cards().some((c) => c.id === id), bridge, componentOf, pluginIds, api: (pluginId) => runtime.api?.(pluginId) as PluginApi | undefined, listeners, log, emit };
+  attach(layer);
+  current = { emit: (m) => { for (const l of layers) l.emit(m); }, pluginIds: () => [...new Set(layers.flatMap((l) => l.pluginIds()))], log };
+  return { info, log, detach: () => detach(layer) };
 }
 
 const TEST_ROOT = "__testRoot";
-let rootChildren: ReactNode = null;
 
 /** Renders `children` as a part of `pluginId` (the entry `entry`, in the spot `spot`) on a test layer set up from
  *  `runtime`: every SDK hook in them is the real one, answered by the fake bridge. */
 export function TestLayer({ runtime, pluginId = "test.plugin", entry, spot = "main", spotKey, children }: { runtime: TestRuntime; pluginId?: string; entry?: string; spot?: string; spotKey?: string; children?: ReactNode }) {
-  const info = useMemo(() => {
-    return setUpTestLayer(runtime, { pluginId, entryId: entry ?? spot, spot, ...(spotKey !== undefined ? { key: spotKey } : {}) }).info;
-  }, [runtime, pluginId, entry, spot, spotKey]);
-  rootChildren = children;
-  return <LayerRoot info={info} />;
+  const set = useMemo(() => setUpTestLayer(runtime, { pluginId, entryId: entry ?? spot, spot, ...(spotKey !== undefined ? { key: spotKey } : {}) }), [runtime, pluginId, entry, spot, spotKey]);
+  useEffect(() => () => set.detach(), [set]);
+  rootChildren.set(set.info.mount, children);
+  return <LayerRoot info={set.info} />;
 }
 
-function RootChildren(): ReactNode {
-  return rootChildren;
+/** Each layer's children, by its root mount. */
+const rootChildren = new Map<string, ReactNode>();
+
+function RootChildren({ props }: { props?: { testRoot?: string } }): ReactNode {
+  return rootChildren.get(props?.testRoot ?? "") ?? null;
 }

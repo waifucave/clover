@@ -932,7 +932,7 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
       expect(toUnit()).toBe(2);
       // Answered, it is no longer watched, and a frame still due does nothing.
       grow(unit, 500);
-      rerenderWith({ items: APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i)) });
+      await rerenderWith({ items: APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i)) });
       grow(unit, 600);
       nextFrame();
       expect(toUnit()).toBe(2);
