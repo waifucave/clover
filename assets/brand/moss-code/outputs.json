@@ -1,127 +1,144 @@
 {
   "renderer": "@resvg/resvg-js 2.6.2",
   "sources": {
-    "assets/brand/moss/moss-white-on-green.svg": "9d7feb10c5c4384e08a378e22c520e5b2477a6236a814901e07e358c35632250",
-    "assets/brand/moss/moss-green-on-white.svg": "1f95cb9f0f00c123cd9e1916357a647de8b312a3f841b74b0ed170264f21108a",
-    "assets/brand/moss/moss-green-on-transparent.svg": "46ca778b5107a3302ef1da097538491e217d79466d10027b1b646f0a7e35f9dc",
-    "assets/brand/moss/moss-green-on-dark.svg": "052aaa9dadb9c68539b167209a27bbb958769eebca42388da5506fb017cb3ad6",
-    "assets/brand/moss/moss-white-on-transparent.svg": "12938f4028b65f6aa11ae91697255b978d0176586d686877935883e6f48fe6a3",
-    "assets/brand/moss/moss-white-on-dark.svg": "ec822f00ce67d6eb6b3e35baba14f578454827c4cc8b4427b0d8e62d9a3edae3",
-    "assets/brand/moss/moss-dark-on-white.svg": "b5c25ef9227b6590c23af0a8a083aef78d604d19be7e3d28f85d7e7c06ef1b3e",
-    "assets/brand/moss/moss-dark-on-transparent.svg": "0bd73dff54ef9c6582df4c08344b6278e816e27e63c316e4b4ff2b6763bb9fa4"
+    "assets/brand/moss-code/mark/shards-mark-on-dark.svg": "b9d17ba2fac4672ba9af1d7c0b75d8e054a324cc118491d075f9f3958c40132b",
+    "assets/brand/moss-code/mark/shards-mark-on-light.svg": "56c0d19542ecb0c0f300ec276ae1845b7e3173bd07d748e342a20cb61ad4e7fc",
+    "assets/brand/moss-code/mark/shards-mark-black.svg": "13c5282b97ed0eaa0375f46f03c510daf75fa96b3a161956d4fab687f732e7b6",
+    "assets/brand/moss-code/mark/shards-mark-white.svg": "3225d48832268d3bb537833e000ffb36b096b17cbe00fdfe7d9d27ac21550220",
+    "assets/brand/moss-code/mark/small/shards-mark-16-on-dark.svg": "c64bfe02256e1ecba399d5cfeddcfa6a90c686c5a07179568a7ccad5e16d43ed",
+    "assets/brand/moss-code/mark/small/shards-mark-16-on-light.svg": "fe0e310473b5e661ea860d64e72dc74a6ae76158217d0bbf008c922b5c52560f",
+    "assets/brand/moss-code/mark/small/shards-mark-16-black.svg": "b1691400320193e0f7399031d196c463ab1196ccaeaf9837596c4c7b347f69e1",
+    "assets/brand/moss-code/mark/small/shards-mark-16-white.svg": "d6853600379c220aaed682ff5ef0bfeef2b9c0e4cb36c8e1c9d4b54b1c0da6cd",
+    "assets/brand/moss-code/mark/small/shards-mark-24-on-dark.svg": "8ea264e95f69e7381a514dee9370db23cc4abc0f81f3d631e0105bab939832c9",
+    "assets/brand/moss-code/mark/small/shards-mark-24-on-light.svg": "29c0528783510f4df2b83bf348ff50f38d907b0263d8c3e643b2d4bb2f2dd043",
+    "assets/brand/moss-code/mark/small/shards-mark-24-black.svg": "59968d3ab4fd621eb17650d4cacb9f4b54a96786f8377dcd21016700453d9327",
+    "assets/brand/moss-code/mark/small/shards-mark-24-white.svg": "adf9ff0dd35954ce513b5c8db150162f55005561b5441d35a871a7cde9b71ba5",
+    "assets/brand/moss-code/mark/small/shards-mark-40-on-dark.svg": "97e95bf177adb9c6e9324ed164bf719f369eefa2762ceddfd8d315e8e938976a",
+    "assets/brand/moss-code/mark/small/shards-mark-40-on-light.svg": "5628a860ec58a919f9b2294b1c7ee2102e8fb942214a941b0f8d0bb6f985f928",
+    "assets/brand/moss-code/mark/small/shards-mark-40-black.svg": "987dbe87e8ae018cf1823adb25cc86d4a6e8e380c4c262c0b05fa50639783942",
+    "assets/brand/moss-code/mark/small/shards-mark-40-white.svg": "46f88642d7f1b4da2028cdafdc783fc9b335be3a0f60b63c06bbdfafc61619cf",
+    "assets/brand/moss-code/mark/small/shards-mark-64-on-dark.svg": "bf77edb9957f34155bf7c99f5efeaf33cb0442e29880e1e1bddad6a158eb1abe",
+    "assets/brand/moss-code/mark/small/shards-mark-64-on-light.svg": "91d4304ceb8eb05c84773deca12335601baf706b1a379691ea108e5bb0e107d9",
+    "assets/brand/moss-code/mark/small/shards-mark-64-black.svg": "62d2cb291ae9dfb1ba9be521500b610d0adeffed1fa4e034b54ba8725ac770d4",
+    "assets/brand/moss-code/mark/small/shards-mark-64-white.svg": "ac193739bf6f75dbd2af19fbcb63dd934a745ff9139c601905ef3b00a847d7fb",
+    "assets/brand/moss-code/app-icon/app-icon.svg": "d3742b96ddcd1ead9485ef5c9275ccda763fb12da234bdb266615dd4642a0e6d",
+    "assets/brand/moss-code/app-icon/app-icon-rounded.svg": "37075fea3d3531cd18bba5a23a7f1bf3d83971e3c4227bb7b280a42ea1be1e91",
+    "assets/brand/moss-code/app-icon/app-icon-paper.svg": "5736625df698e284f023d77e183a4b7d37a6daa36a85996c880fc82b9a33368f"
   },
   "outputs": {
-    "apps/desktop/build/icon.icns": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "e0aa5def71c1f3b2856e66a721245b2f1bdd1fb90e75d100da1d47fd962b8a83"
-    },
-    "apps/desktop/build/icon.ico": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "c20bda83fe59a0737a0f2e139cec5678ecfa1a9b8ce44e168d2e378a7abf74b5"
-    },
-    "apps/desktop/build/icons/16x16.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "7e2fe5bae6343f9d3234c63a79c355345ba121b58b6a046b015448e61557208a"
-    },
-    "apps/desktop/build/icons/24x24.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "a0f239b6e6148530c27ef8591d66066f8f1d552d6b89c9b852c27dd4c99e9a81"
-    },
-    "apps/desktop/build/icons/32x32.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "555de98e1cdb5f2b46a981af42671c490e0de385aeaeab40caf1e2da9d31c9a4"
-    },
-    "apps/desktop/build/icons/48x48.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "ffa184af2a809c782823d16d3bbaf61abb655be440ba6fe52ea8b2b235988fd6"
-    },
-    "apps/desktop/build/icons/64x64.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "bbb9d08a262d0f3faa14d1eb27fa5a6a8cf423c2a19bd6cc6ddbbc063cfedb15"
-    },
-    "apps/desktop/build/icons/128x128.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "6bbf36b553bd4b78b2996480b7dfb8b1c481e28b047ec664916f05ea98101f85"
-    },
-    "apps/desktop/build/icons/256x256.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "c093edf4812b3e58031791c1f435c80dc05e7d41a0fc5e96b987a4775de07d5a"
-    },
-    "apps/desktop/build/icons/512x512.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "cdf34f2f0304e7d8efcfd23749adc540c3ffdaa614889d54cae52968187ef09a"
-    },
     "apps/desktop/resources/icons/dev-dock.png": {
-      "from": "assets/brand/moss/moss-green-on-dark.svg",
-      "sha256": "bc83b370300aa56fff09537b3030cea69fe084a05a95a918cb5a44865087c0eb"
+      "from": "assets/brand/moss-code/app-icon/app-icon-paper.svg",
+      "sha256": "594a2e8de358444ca86104fc5b4f4b6a81f9d55ada6809d73872634a91600d93"
     },
     "apps/desktop/resources/icons/dev-window.png": {
-      "from": "assets/brand/moss/moss-green-on-dark.svg",
-      "sha256": "4f4f246066872cd7ce7233d56cb2bafa0e824a86fcb2c68f0192af5c1f0e749a"
+      "from": "assets/brand/moss-code/app-icon/app-icon-paper.svg",
+      "sha256": "f38ee751bc6a554eabdabc11ee934e1e9ff8d4042bcf0eb6fa098db87626aa27"
     },
     "apps/desktop/resources/icons/trayTemplate.png": {
-      "from": "assets/brand/moss/moss-dark-on-transparent.svg",
-      "sha256": "10cf6995c0816b73ed971f0893e4ae97f31b5c84166b356bf57a9961e5210b85"
+      "from": "assets/brand/moss-code/mark/small/shards-mark-16-black.svg",
+      "sha256": "b4e7f51811460319958fbad0e67be475abab80e8f5cda655a2c1acaabf78117b"
     },
     "apps/desktop/resources/icons/trayTemplate@2x.png": {
-      "from": "assets/brand/moss/moss-dark-on-transparent.svg",
-      "sha256": "049698cbb2f542ad392934bcac47cf1346c28ecead3ae57d4daa7e9e5d4ff2b9"
+      "from": "assets/brand/moss-code/mark/small/shards-mark-40-black.svg",
+      "sha256": "b6f62d0c6c63d20711a0fc5c20467dd64ff14e18c7fc1762cdb016827ddb5639"
     },
     "apps/desktop/resources/icons/tray16Template.png": {
-      "from": "assets/brand/moss/moss-dark-on-transparent.svg",
-      "sha256": "165d83f4981d38381bd327ff113359a15922f2ce447160923f7f4a48fefd15fc"
+      "from": "assets/brand/moss-code/mark/small/shards-mark-16-black.svg",
+      "sha256": "abcc39a7d107daa7c345c990be41b2b9af25ae7db182e694d738b1ec1cee08f6"
     },
     "apps/desktop/resources/icons/tray16Template@2x.png": {
-      "from": "assets/brand/moss/moss-dark-on-transparent.svg",
-      "sha256": "afe5c3f93ac606e41c6a219af35293e96fe56520a9bba51f9c493dd131ab64b5"
+      "from": "assets/brand/moss-code/mark/small/shards-mark-40-black.svg",
+      "sha256": "2c0d632fe947e8fe020598e475206be6b163412d0c462c5d9537c1c56df7b0b9"
     },
     "apps/desktop/resources/icons/tray-on-dark.png": {
-      "from": "assets/brand/moss/moss-white-on-transparent.svg",
-      "sha256": "69aaba2b72cd86d1efd811a839189891b711ec5d9c02a391532ea7de238aa7c5"
+      "from": "assets/brand/moss-code/mark/small/shards-mark-16-white.svg",
+      "sha256": "46fb3d5c48e359180d2f1bf69b6049694a3d8b9ccd7ab67cc2271ba8da7f9dec"
     },
     "apps/desktop/resources/icons/tray-on-dark@2x.png": {
-      "from": "assets/brand/moss/moss-white-on-transparent.svg",
-      "sha256": "37c9ac8d7ea9112fd5d25a95059319546409eb700ea4d70e39bd31870580d9eb"
+      "from": "assets/brand/moss-code/mark/small/shards-mark-40-white.svg",
+      "sha256": "4f6c670865bf62dac1fc205192872b1baf7ff341cc89078f5e8c42099154feef"
     },
     "apps/desktop/resources/icons/tray-on-light.png": {
-      "from": "assets/brand/moss/moss-dark-on-transparent.svg",
-      "sha256": "bbe0a2a9d53e997b6b20c4e343221af537d26d02bcf6a6821e51113ed7bab689"
+      "from": "assets/brand/moss-code/mark/small/shards-mark-16-black.svg",
+      "sha256": "9bee9337b2a951bfaf18f55bc854809da02d650c2f243f78e981d83d2c950ce0"
     },
     "apps/desktop/resources/icons/tray-on-light@2x.png": {
-      "from": "assets/brand/moss/moss-dark-on-transparent.svg",
-      "sha256": "c01461521e1beb79f286e9ba55bad25dfd686a06e61b136274c5fd045fa9e561"
-    },
-    "services/web/src/icons/favicon.svg": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "9d7feb10c5c4384e08a378e22c520e5b2477a6236a814901e07e358c35632250"
+      "from": "assets/brand/moss-code/mark/small/shards-mark-40-black.svg",
+      "sha256": "1e24766e1e7e8004210ca55b91aa92beae8000994fced53284afa0ac017215a6"
     },
     "services/web/src/icons/favicon-32.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "555de98e1cdb5f2b46a981af42671c490e0de385aeaeab40caf1e2da9d31c9a4"
+      "from": "assets/brand/moss-code/app-icon/app-icon-rounded.svg",
+      "sha256": "919bd72b7622609ea0b7c8ebb126dcdb94a63e54ebd0617fc5fa5319c5580934"
+    },
+    "services/web/src/icons/mark-light.svg": {
+      "from": "assets/brand/moss-code/mark/shards-mark-on-light.svg",
+      "sha256": "56c0d19542ecb0c0f300ec276ae1845b7e3173bd07d748e342a20cb61ad4e7fc"
+    },
+    "services/web/src/icons/mark-dark.svg": {
+      "from": "assets/brand/moss-code/mark/shards-mark-on-dark.svg",
+      "sha256": "b9d17ba2fac4672ba9af1d7c0b75d8e054a324cc118491d075f9f3958c40132b"
+    }
+  },
+  "supplied": {
+    "apps/desktop/build/icon.icns": {
+      "from": "app-icon/macos/app.icns",
+      "sha256": "d24630f33d88808d5b5647bb8e8a4d0c525eb4f981d50bd558245136ac8de693"
+    },
+    "apps/desktop/build/icon.ico": {
+      "from": "app-icon/windows/app.ico",
+      "sha256": "96c6aeb6fe718b97e9bca70a43c252ce497e26ede3056d0fecfbca189be33584"
+    },
+    "apps/desktop/build/icons/16x16.png": {
+      "from": "app-icon/rounded/app-icon-16.png",
+      "sha256": "15a8b5374d0f32a909b049b1049facac627c8c30167fe1df16310ba69864313a"
+    },
+    "apps/desktop/build/icons/24x24.png": {
+      "from": "app-icon/rounded/app-icon-24.png",
+      "sha256": "dd1f35794e8b731cf5e445a11676b0a9cce373000b58b9e768612d0c5afd2405"
+    },
+    "apps/desktop/build/icons/32x32.png": {
+      "from": "app-icon/rounded/app-icon-32.png",
+      "sha256": "90ebcc084594a806d519558226783d090e517da6a309897b6c5709629444e3e7"
+    },
+    "apps/desktop/build/icons/48x48.png": {
+      "from": "app-icon/rounded/app-icon-48.png",
+      "sha256": "0a7fbb2c792110ed423766d14f6726221cc965ac76535b37be6d602a7fd35747"
+    },
+    "apps/desktop/build/icons/64x64.png": {
+      "from": "app-icon/rounded/app-icon-64.png",
+      "sha256": "09a0d28c77c66d5a4b48d0b9685a8f129e03d517c74439ce9d2445b629ba664f"
+    },
+    "apps/desktop/build/icons/128x128.png": {
+      "from": "app-icon/rounded/app-icon-128.png",
+      "sha256": "05bc7a7d14c67c1f31287e86693b99d99cf0d865f5fd356ad2623156d17fa195"
+    },
+    "apps/desktop/build/icons/256x256.png": {
+      "from": "app-icon/rounded/app-icon-256.png",
+      "sha256": "dd58608c1eaf0a20b31fb7e4692b226e6b3ce140d96c334256cec7d1f243fe28"
+    },
+    "apps/desktop/build/icons/512x512.png": {
+      "from": "app-icon/rounded/app-icon-512.png",
+      "sha256": "382e909ace3af90a9711b7dcfbb664df22352e96605a3d4fa64e85b7c095ed8f"
+    },
+    "services/web/src/icons/favicon.svg": {
+      "from": "web/favicon.svg",
+      "sha256": "af34563a9a295ba6a56d36b5fb736b3a237cb9da15da35bcf0889ba4958b3de8"
     },
     "services/web/src/icons/icon-192.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "f1fd234de20220b505856aa621a7fbc985ab9e1db704c94be965958fbcdc94f0"
+      "from": "web/icon-192.png",
+      "sha256": "cac3c59aff07687684463a38863639377f93645933993e7667d7473364869e0b"
     },
     "services/web/src/icons/icon-512.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "cdf34f2f0304e7d8efcfd23749adc540c3ffdaa614889d54cae52968187ef09a"
+      "from": "web/icon-512.png",
+      "sha256": "382e909ace3af90a9711b7dcfbb664df22352e96605a3d4fa64e85b7c095ed8f"
     },
     "services/web/src/icons/icon-maskable-512.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "b3ca63ed7f265ebf83f863dcd3ce05b34c280d0063f39c4add881c3acfc77026"
+      "from": "web/maskable-512.png",
+      "sha256": "b69fca9b19cd995a25502f11093d7ad00b4ae8ec3e78f3e016f45e3f42cb500f"
     },
     "services/web/src/icons/apple-touch-icon.png": {
-      "from": "assets/brand/moss/moss-white-on-green.svg",
-      "sha256": "4308377618e80800abf194026ac0687d9566f6a43719bdf853226f247de2c49c"
-    },
-    "services/web/src/icons/mark-green.svg": {
-      "from": "assets/brand/moss/moss-green-on-transparent.svg",
-      "sha256": "46ca778b5107a3302ef1da097538491e217d79466d10027b1b646f0a7e35f9dc"
-    },
-    "services/web/src/icons/mark-white.svg": {
-      "from": "assets/brand/moss/moss-white-on-transparent.svg",
-      "sha256": "12938f4028b65f6aa11ae91697255b978d0176586d686877935883e6f48fe6a3"
+      "from": "web/apple-touch-icon.png",
+      "sha256": "e20c30a2cbb35aea5016a32fa092f046b242b309c625fcc73a9feb339fefbe74"
     }
   }
 }

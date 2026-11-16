@@ -165,7 +165,7 @@
     "plugin.moss.diff.removed.soft": "#C2364F17",
     "plugin.moss.branch": "#6F52C4",
     "plugin.moss.unread": "#8A8A8A",
-    "plugin.moss.mark": "#3D7655"
+    "plugin.moss.mark": "#161A33"
   },
   "dark": {
     "tokens": {
@@ -230,7 +230,7 @@
       "plugin.moss.diff.removed.soft": "#DA6F8024",
       "plugin.moss.branch": "#B19EDE",
       "plugin.moss.unread": "#848484",
-      "plugin.moss.mark": "#FFFFFF"
+      "plugin.moss.mark": "#F6F4EE"
     }
   },
   "css": "theme.css"

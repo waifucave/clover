@@ -153,7 +153,7 @@
   --moss-plugin-moss-diff-removed-soft: #C2364F17; /* A removed line's tint (request: color.diff.removed.soft). */
   --moss-plugin-moss-branch: #6F52C4; /* A session's branch badge. */
   --moss-plugin-moss-unread: #8A8A8A; /* The unread dot: a neutral grey, apart from running's accent. */
-  --moss-plugin-moss-mark: #3D7655; /* MOSS's mark: green on light (docs/moss-brand.md), white on dark. */
+  --moss-plugin-moss-mark: #161A33; /* MOSS's mark: Night on light (docs/moss-brand.md), Paper on dark. */
 
   /* The gallery page itself, and the desktop behind the window. */
   --gallery-page: #ececee;
@@ -225,7 +225,7 @@
   --moss-plugin-moss-diff-removed-soft: #DA6F8024;
   --moss-plugin-moss-branch: #B19EDE;
   --moss-plugin-moss-unread: #848484;
-  --moss-plugin-moss-mark: #FFFFFF;
+  --moss-plugin-moss-mark: #F6F4EE;
 
   --gallery-page: #0f0f10;
   --gallery-ink: #f1f1f2;

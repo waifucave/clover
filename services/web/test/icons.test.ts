@@ -1,5 +1,5 @@
-// The page's icons (docs/moss-brand.md): the favicon, the touch icon and the manifest's icons, white on green, and
-// the header's mark by the page's scheme. Every file they name is one scripts/brand-icons.ts draws into src/icons.
+// The page's icons (docs/moss-brand.md): the favicon, the touch icon and the manifest's icons, the Shards tile, and
+// the header's mark by the page's scheme. Every file they name is one scripts/brand-icons.ts draws or records in src/icons.
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -32,13 +32,13 @@ describe("the page's icons", () => {
     for (const [, href] of linked) expect(existsSync(at(href!))).toBe(true);
     expect(pngSize(at("/icons/favicon-32.png"))).toEqual([32, 32]);
     expect(pngSize(at("/icons/apple-touch-icon.png"))).toEqual([180, 180]);
-    // The favicon is the app logo itself: white on green.
-    expect(readFileSync(at("/icons/favicon.svg"), "utf8")).toContain('<rect width="200" height="200" rx="40" fill="#3D7655" />');
+    // The favicon is the kit's tile: the mark on Night.
+    expect(readFileSync(at("/icons/favicon.svg"), "utf8")).toContain('rx="230.4" fill="#161A33"');
   });
 
-  test("the manifest: MOSS's name, its green, and icons at 192 and 512 (one maskable), each the size it says", () => {
+  test("the manifest: MOSS's name, its Night, and icons at 192 and 512 (one maskable), each the size it says", () => {
     expect(manifest.name).toBe("MOSS");
-    expect(manifest.theme_color).toBe("#3D7655");
+    expect(manifest.theme_color).toBe("#161A33");
     expect(manifest.icons.filter((i) => i.purpose === "maskable").map((i) => i.src)).toEqual(["/icons/icon-maskable-512.png"]);
     for (const icon of manifest.icons) {
       expect(existsSync(at(icon.src))).toBe(true);
@@ -49,11 +49,11 @@ describe("the page's icons", () => {
     }
   });
 
-  test("the header's mark: green on a light page, white on a dark one", () => {
-    expect(html).toContain('<img class="mark mark--light" src="/icons/mark-green.svg" alt="" />');
-    expect(html).toContain('<img class="mark mark--dark" src="/icons/mark-white.svg" alt="" />');
-    expect(readFileSync(at("/icons/mark-green.svg"), "utf8")).toContain('fill="#3D7655"');
-    expect(readFileSync(at("/icons/mark-white.svg"), "utf8")).toContain('fill="#FFFFFF"');
+  test("the header's mark: the on-light cut on a light page, the on-dark cut on a dark one", () => {
+    expect(html).toContain('<img class="mark mark--light" src="/icons/mark-light.svg" alt="" />');
+    expect(html).toContain('<img class="mark mark--dark" src="/icons/mark-dark.svg" alt="" />');
+    expect(readFileSync(at("/icons/mark-light.svg"), "utf8")).toContain('fill="#1B1D2B"');
+    expect(readFileSync(at("/icons/mark-dark.svg"), "utf8")).toContain('fill="#F6F4EE"');
     const css = readFileSync(join(src, "style.css"), "utf8");
     expect(css).toMatch(/@media \(prefers-color-scheme: dark\) \{\s*\.mark--light \{ display: none; \}\s*\.mark--dark \{ display: inline; \}/);
   });

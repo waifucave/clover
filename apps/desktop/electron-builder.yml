@@ -90,7 +90,7 @@ mac:
       arch: arm64
   category: public.app-category.productivity
   artifactName: MOSS-Code-${version}-mac.${ext}
-  # The app icon, white on green on Apple's icon grid (lane G; drawn by scripts/brand-icons.ts, docs/moss-brand.md).
+  # The app icon (the Shards kit's), supplied by the kit (lane G; drawn by scripts/brand-icons.ts, docs/moss-brand.md).
   icon: build/icon.icns
   # Unsigned unless the release signs it: `scripts/release/build.ts --sign` names the Developer ID identity and turns
   # notarization on (with notarytool's stored profile, APPLE_KEYCHAIN_PROFILE). The hardened runtime is on for both.

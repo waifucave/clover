@@ -90,7 +90,7 @@ export const stories: Story[] = [
   {
     id: "sidebar/brand-mark",
     title: "MOSS's mark",
-    notes: "The brand mark (docs/moss-brand.md) at the sidebar's 16 px and larger, on the sidebar's ground and on the card's: green on the light theme, white on the dark one.",
+    notes: "The brand mark (docs/moss-brand.md) at the sidebar's 16 px and larger, on the sidebar's ground and on the card's: Night on the light theme, Paper on the dark one.",
     width: 520,
     height: 220,
     render: () => (

@@ -1,4 +1,4 @@
-// Which of the app's own icons (out/main/icons/, drawn by scripts/brand-icons.ts from assets/brand/moss/; see
+// Which of the app's own icons (out/main/icons/, drawn by scripts/brand-icons.ts from assets/brand/moss-code/; see
 // docs/moss-brand.md) the tray and MOSS Code Dev wear. Pure, so the choice is tested without Electron.
 import type { AppProfile } from "./identity";
 
@@ -9,7 +9,7 @@ export function trayIconFile(platform: NodeJS.Platform, darkTaskbar: boolean): s
   return darkTaskbar ? "tray-on-dark.png" : "tray-on-light.png";
 }
 
-/** MOSS Code Dev's own icon, green on dark, so it never looks like the release app: unpackaged it would otherwise wear
+/** MOSS Code Dev's own icon, the kit's paper tile, so it never looks like the release app: unpackaged it would otherwise wear
  *  Electron's. The release app's comes from its package (electron-builder's `icon` keys). */
 export function devAppIcon(input: { profile: AppProfile; packaged: boolean; platform: NodeJS.Platform }): { dock?: string; window?: string } {
   if (input.profile !== "dev" || input.packaged) return {};

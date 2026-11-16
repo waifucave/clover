@@ -1,47 +1,47 @@
-# MOSS's logo
+# MOSS Code's logo
 
-The logo is one moss path, in eight colour variants. The sources live in `assets/brand/moss/`, as 512 px SVGs on a 200 viewBox. The plated variants put the moss on a rounded square (`rx` 40). Each source holds one plain path and nothing else: no scripts, styles, images or links.
+The logo is the Shards mark: a disc cut into four pieces and joined again, the gaps showing one colour, the seam. It comes from the owner's Shards icon kit. The mark and app-icon SVGs live in `assets/brand/moss-code/` (`mark/`, `mark/small/`, `app-icon/`); the kit's own icon files are committed where the build takes them.
 
 | Colour | Hex |
 | --- | --- |
-| Green | `#3D7655` |
-| Dark | `#191919` |
-| White | `#FFFFFF` |
+| Accent, the seam | `#E5A72E` |
+| Night | `#161A33` |
+| Paper | `#F6F4EE` |
+| Ink | `#1B1D2B` |
 
-**White on green is the app logo.**
+**The mark on Night is the app logo.**
 
-## Where each variant goes
+The mark is recut for small sizes (the gaps widen, and below 32 px it drops to three pieces). `mark/small/shards-mark-<16|24|40|64>-*.svg` are those cuts; `scripts/brand-icons.ts` picks the cut by the pixel width it draws.
 
-| Use | Variant | Output |
+## Where each file goes
+
+| Use | Source | Output |
 | --- | --- | --- |
-| App icon, macOS | white on green | `apps/desktop/build/icon.icns`: on Apple's icon grid (a 1024 canvas, an 824 px body centred), 16 to 1024 px at @1x and @2x |
-| App icon, Windows | white on green | `apps/desktop/build/icon.ico`: as drawn, 16 to 256 px |
-| App icon, Linux (deb, rpm, AppImage) | white on green | `apps/desktop/build/icons/<n>x<n>.png`: as drawn, 16 to 512 px |
-| MOSS Code Dev (`bun run dev:app`) | green on dark | `apps/desktop/resources/icons/dev-dock.png` (macOS Dock, on the grid) and `dev-window.png` (Windows and Linux windows) |
-| Menu bar, macOS | dark on transparent, in black | `trayTemplate.png` (18 pt) and `tray16Template.png` (16 pt), each with its `@2x`: template images, which macOS tints for the bar |
-| Tray, Windows and Linux | white on transparent on a dark taskbar; dark on transparent on a light one | `tray-on-dark.png`, `tray-on-light.png`, each with its `@2x`; swapped when the theme changes |
-| In-app brand mark (sidebar, conversation; later the About page and onboarding) | green on transparent on light themes; white on transparent on dark ones | the `MossMark` and `IconMoss` components draw the source path in `currentColor`. They wear `plugin.moss.mark`, which the base theme sets to `#3D7655` (light) and `#FFFFFF` (dark) |
-| Web companion: favicon, touch icon, PWA icons | white on green | `services/web/src/icons/`: `favicon.svg`, `favicon-32.png`, `apple-touch-icon.png` (180 px), and `icon-192.png`, `icon-512.png` and `icon-maskable-512.png` for `manifest.webmanifest` |
-| Web companion header | green on transparent on a light page; white on transparent on a dark one | `mark-green.svg`, `mark-white.svg` |
-
-The other variants (green on white, white on dark, dark on white) are kept for whatever needs them next: a store listing, a social card, a print.
-
-**Maskable icons.** The maskable PWA icon and the touch icon put the plate full bleed, without rounded corners, and keep the moss inside the 80 % safe circle. The platform cuts its own shape.
+| App icon, macOS | kit `app-icon/macos/app.icns` | `apps/desktop/build/icon.icns`, supplied as the kit made it |
+| App icon, Windows | kit `app-icon/windows/app.ico` | `apps/desktop/build/icon.ico`, supplied |
+| App icon, Linux (deb, rpm, AppImage) | kit `app-icon/rounded/app-icon-<n>.png` | `apps/desktop/build/icons/<n>x<n>.png`, 16 to 512 px, supplied |
+| MOSS Code Dev (`bun run dev:app`) | `app-icon/app-icon-paper.svg` | `apps/desktop/resources/icons/dev-dock.png` (macOS Dock, on the grid) and `dev-window.png`, drawn: the paper tile, so it is not mistaken for the release app |
+| Menu bar, macOS | `mark/small/*-black.svg` | `trayTemplate.png` (18 pt) and `tray16Template.png` (16 pt), each with its `@2x`: template images, which macOS tints for the bar |
+| Tray, Windows and Linux | `mark/small/*-white.svg` on a dark taskbar, `*-black.svg` on a light one | `tray-on-dark.png`, `tray-on-light.png`, each with its `@2x`; swapped when the theme changes |
+| In-app brand mark (sidebar, conversation, plugin index) | `mark/shards-mark-white.svg` (the single-colour cut) | the `MossMark` components draw its path in `currentColor`. They wear `plugin.moss.mark`: Night on light themes, Paper on dark ones |
+| Web companion: favicon, touch icon, PWA icons | kit `web/` | `services/web/src/icons/`: `favicon.svg`, `apple-touch-icon.png` (180 px), `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` (supplied) and `favicon-32.png` (drawn) |
+| Web companion header | `mark/shards-mark-on-light.svg`, `shards-mark-on-dark.svg` | `mark-light.svg` on a light page, `mark-dark.svg` on a dark one |
 
 ## Rebuilding
 
-Every raster comes from the sources, drawn by `scripts/brand-icons.ts`. Never edit an output by hand. To change the logo:
+The drawn rasters come from the SVG sources, by `scripts/brand-icons.ts`. Never edit an output by hand. To change the logo:
 
-1. Edit the SVGs.
+1. Replace the SVGs (and, for the supplied files, the kit's icon files they stand beside).
 2. Run `bun scripts/brand-icons.ts`.
-3. Commit the sources, the outputs and `assets/brand/moss/outputs.json` together.
+3. Commit the sources, the outputs and `assets/brand/moss-code/outputs.json` together.
 
 The script does the following:
 
-- It draws with `@resvg/resvg-js` at exactly the locked version, and writes the `.icns` and `.ico` containers itself, so nothing depends on the machine it runs on.
-- `--check` writes nothing. It fails if any output differs from what the script would write.
-- `--preview <png>` also draws a contact sheet of the whole set.
+- It draws with `@resvg/resvg-js` at exactly the locked version, so nothing depends on the machine it runs on.
+- It records the SHA-256 of every source, every drawn output and every supplied file in `outputs.json`.
+- `--check` writes nothing. It fails if any drawn output differs from what the script would write.
+- `--preview <png>` also draws a contact sheet of the set.
 
-`scripts/brand-icons.test.ts` checks the committed files against `outputs.json`, on every OS. It fails when an output was edited by hand, or when a source changed and the script wasn't rerun.
+`scripts/brand-icons.test.ts` checks the committed files against `outputs.json`, on every OS. It fails when a file was edited by hand, or when a source changed and the script wasn't rerun.
 
 The older `docs/brand.md` and the other files directly in `assets/brand/` belong to the predecessor app. They are not MOSS's.

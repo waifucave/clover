@@ -1,14 +1,15 @@
-// MOSS's icons (scripts/brand-icons.ts, docs/moss-brand.md): the eight sources are the moss's one plain path,
-// every committed output is the one the script drew from them (outputs.json's hashes, so an output edited by hand or
-// a source changed without a run fails here), each container holds the sizes its platform wants, and every place
-// that wears the mark names a file that is there.
+// MOSS Code's icons (scripts/brand-icons.ts, docs/moss-brand.md): the sources are the owner's Shards kit SVGs, every
+// drawn output is the one the script drew from them and every supplied file is the kit's own (outputs.json's hashes,
+// so a file edited by hand or a source changed without a run fails here), each container holds the sizes its
+// platform wants, and every place that wears the mark names a file that is there.
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { BRAND, ICNS_TYPES, ICO_SIZES, JOBS, LINUX_SIZES, RECORD, REPO, VARIANTS, mossPath, drawnSvg, rel, sha256, sourcePath, type OutputsRecord, type PngJob } from "./brand-icons";
+import { APP_ICONS, BRAND, CUT_WIDTHS, ICO_SIZES, JOBS, LINUX_SIZES, MARKS, RECORD, REPO, SOURCES, SUPPLIED, cutFor, drawnSvg, markShape, rel, sha256, sourcePath, type OutputsRecord, type PngJob } from "./brand-icons";
 
 const record = JSON.parse(readFileSync(RECORD, "utf8")) as OutputsRecord;
 const job = (end: string) => JOBS.find((j) => rel(j.out).endsWith(end))!;
+const supplied = (end: string) => SUPPLIED.find((j) => rel(j.out).endsWith(end))!;
 
 function pngSize(b: Buffer): [number, number] {
   expect(b.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
@@ -16,81 +17,94 @@ function pngSize(b: Buffer): [number, number] {
 }
 
 describe("the sources", () => {
-  test("eight SVGs, each the same moss path on a 200 viewBox, in MOSS's three colours, and nothing else in them", () => {
-    expect(readdirSync(BRAND).filter((f) => f.endsWith(".svg")).sort()).toEqual(VARIANTS.map((v) => `moss-${v}.svg`).sort());
-    const paths = new Set<string>();
-    for (const v of VARIANTS) {
-      const svg = readFileSync(sourcePath(v), "utf8");
-      expect(svg).toContain('viewBox="0 0 200 200"');
-      // Plain shapes only: no script, style, link, image or foreign content.
-      expect(svg).not.toMatch(/<script|<style|<image|<foreignObject|href=|url\(|on[a-z]+=/i);
-      expect(svg.match(/<(?!\/)([a-z]+)/g)!.map((t) => t.slice(1)).filter((t) => !["svg", "title", "rect", "path"].includes(t))).toEqual([]);
-      for (const colour of svg.match(/#[0-9A-Fa-f]{6}/g)!) expect(["#3D7655", "#191919", "#FFFFFF"]).toContain(colour);
-      const p = mossPath(svg);
-      paths.add(`${p.transform}|${p.d}`);
-      const [fg, , bg] = v.split("-");
-      expect(p.fill).toBe({ white: "#FFFFFF", green: "#3D7655", dark: "#191919" }[fg!]!);
-      if (bg === "transparent") expect(svg).not.toContain("<rect");
-      else expect(svg).toContain(`<rect width="200" height="200" rx="40" fill="${{ white: "#FFFFFF", green: "#3D7655", dark: "#191919" }[bg!]}" />`);
+  test("the kit's SVGs, and nothing else, in the brand folder", () => {
+    const found = [
+      ...readdirSync(join(BRAND, "mark")).filter((f) => f.endsWith(".svg")).map((f) => `mark/${f}`),
+      ...readdirSync(join(BRAND, "mark", "small")).map((f) => `mark/small/${f}`),
+      ...readdirSync(join(BRAND, "app-icon")).map((f) => `app-icon/${f}`),
+    ];
+    expect(found.sort()).toEqual([...SOURCES].sort());
+    expect(readdirSync(BRAND).sort()).toEqual(["app-icon", "mark", "outputs.json"]);
+  });
+
+  test("plain shapes only, in the kit's colours: no script, style, link, image or foreign content", () => {
+    const colours = ["#E5A72E", "#F6F4EE", "#1B1D2B", "#111111", "#FFFFFF", "#161A33"];
+    for (const s of SOURCES) {
+      const svg = readFileSync(sourcePath(s), "utf8");
+      expect([s, /<script|<style|<image|<foreignObject|href=|url\(|\son[a-z]+=/i.test(svg)]).toEqual([s, false]);
+      expect(svg.match(/<(?!\/)([a-z]+)/g)!.map((t) => t.slice(1)).filter((t) => !["svg", "title", "rect", "path", "g"].includes(t))).toEqual([]);
+      for (const colour of svg.match(/#[0-9A-Fa-f]{6}/g)!) expect([s, colours.includes(colour.toUpperCase())]).toEqual([s, true]);
     }
-    expect(paths.size).toBe(1);
+  });
+
+  test("every mark has one cut at full size and one at each small width, for each ground", () => {
+    expect(MARKS).toEqual(["on-dark", "on-light", "black", "white"]);
+    for (const m of MARKS) {
+      expect(existsSync(sourcePath(`mark/shards-mark-${m}.svg`))).toBe(true);
+      for (const w of CUT_WIDTHS) expect(existsSync(sourcePath(`mark/small/shards-mark-${w}-${m}.svg`))).toBe(true);
+      expect(markShape(readFileSync(sourcePath(`mark/shards-mark-${m}.svg`), "utf8")).viewBox).toBe("86 86 828 828");
+    }
+    for (const a of APP_ICONS) expect(markShape(readFileSync(sourcePath(`app-icon/${a}.svg`), "utf8")).viewBox).toBe("0 0 1024 1024");
+  });
+
+  test("the small cut is chosen by the pixels the disc is drawn at (the kit's table)", () => {
+    expect([cutFor(256, "black"), cutFor(128, "black"), cutFor(64, "black"), cutFor(40, "black"), cutFor(24, "black"), cutFor(16, "black")]).toEqual([
+      "mark/shards-mark-black.svg",
+      "mark/shards-mark-black.svg",
+      "mark/small/shards-mark-64-black.svg",
+      "mark/small/shards-mark-40-black.svg",
+      "mark/small/shards-mark-24-black.svg",
+      "mark/small/shards-mark-16-black.svg",
+    ]);
   });
 });
 
 describe("the outputs", () => {
-  test("outputs.json names every source and every output, with today's hashes: nothing edited by hand, nothing stale", () => {
+  test("outputs.json names every source, every drawn output and every supplied file, with today's hashes", () => {
     expect(record.renderer).toBe("@resvg/resvg-js 2.6.2");
-    expect(record.sources).toEqual(Object.fromEntries(VARIANTS.map((v) => [rel(sourcePath(v)), sha256(readFileSync(sourcePath(v)))])));
+    expect(record.sources).toEqual(Object.fromEntries(SOURCES.map((s) => [rel(sourcePath(s)), sha256(readFileSync(sourcePath(s)))])));
     expect(Object.keys(record.outputs).sort()).toEqual(JOBS.map((j) => rel(j.out)).sort());
+    expect(Object.keys(record.supplied).sort()).toEqual(SUPPLIED.map((j) => rel(j.out)).sort());
     for (const j of JOBS) {
       expect([rel(j.out), existsSync(j.out)]).toEqual([rel(j.out), true]);
       expect([rel(j.out), sha256(readFileSync(j.out))]).toEqual([rel(j.out), record.outputs[rel(j.out)]!.sha256]);
       expect(record.outputs[rel(j.out)]!.from).toBe(rel(sourcePath(j.from)));
     }
+    for (const f of SUPPLIED) {
+      expect([rel(f.out), existsSync(f.out)]).toEqual([rel(f.out), true]);
+      expect([rel(f.out), sha256(readFileSync(f.out))]).toEqual([rel(f.out), record.supplied[rel(f.out)]!.sha256]);
+      expect(record.supplied[rel(f.out)]!.from).toBe(f.from);
+    }
   });
 
-  test("every PNG is the size its job says", () => {
+  test("every drawn PNG is the size its job says", () => {
     for (const j of JOBS.filter((x): x is PngJob => x.kind === "png")) expect([rel(j.out), pngSize(readFileSync(j.out))]).toEqual([rel(j.out), [j.size, j.size]]);
   });
 
-  test("the .icns: Apple's ten PNG entries, 16 to 1024 at @1x and @2x, white on green on the macOS grid", () => {
-    const b = readFileSync(job("build/icon.icns").out);
+  test("the supplied .icns holds PNG entries from 32 to 1024 px, and the supplied .ico the sizes Windows wants", () => {
+    const b = readFileSync(supplied("build/icon.icns").out);
     expect(b.subarray(0, 4).toString("latin1")).toBe("icns");
     expect(b.readUInt32BE(4)).toBe(b.length);
-    const found: { type: string; px: number }[] = [];
+    const sizes = new Set<number>();
     for (let at = 8; at < b.length; ) {
+      const type = b.subarray(at, at + 4).toString("latin1");
       const len = b.readUInt32BE(at + 4);
-      found.push({ type: b.subarray(at, at + 4).toString("latin1"), px: pngSize(b.subarray(at + 8, at + len))[0] });
+      if (type !== "TOC ") {
+        const data = b.subarray(at + 8, at + len);
+        if (data.subarray(0, 4).toString("hex") === "89504e47") sizes.add(pngSize(data)[0]);
+      }
       at += len;
     }
-    expect(found).toEqual([...ICNS_TYPES]);
-    expect(job("build/icon.icns").from).toBe("white-on-green");
+    expect([...sizes].sort((x, y) => x - y)).toEqual([32, 64, 128, 256, 512, 1024]);
+
+    const ico = readFileSync(supplied("build/icon.ico").out);
+    expect([ico.readUInt16LE(0), ico.readUInt16LE(2), ico.readUInt16LE(4)]).toEqual([0, 1, ICO_SIZES.length]);
+    expect(ICO_SIZES.map((_, i) => ico.readUInt8(6 + 16 * i) || 256)).toEqual(ICO_SIZES);
   });
 
-  test("the .ico: 16 to 256, BMP entries with straight alpha below 256 and PNG at 256", () => {
-    const b = readFileSync(job("build/icon.ico").out);
-    expect([b.readUInt16LE(0), b.readUInt16LE(2), b.readUInt16LE(4)]).toEqual([0, 1, ICO_SIZES.length]);
-    ICO_SIZES.forEach((n, i) => {
-      const e = 6 + 16 * i;
-      expect(b.readUInt8(e) || 256).toBe(n);
-      const data = b.subarray(b.readUInt32LE(e + 12), b.readUInt32LE(e + 12) + b.readUInt32LE(e + 8));
-      if (n === 256) {
-        expect(pngSize(data)).toEqual([256, 256]);
-        return;
-      }
-      expect([data.readUInt32LE(0), data.readInt32LE(4), data.readInt32LE(8), data.readUInt16LE(14)]).toEqual([40, n, n * 2, 32]);
-      // The corners are the plate's transparent outside. From 48 px, where a pixel is clear of the edges' blending,
-      // the centre is the moss's white and the plate's green is there unpremultiplied (B, G, R order).
-      const px = (x: number, y: number) => [...data.subarray(40 + ((n - 1 - y) * n + x) * 4, 40 + ((n - 1 - y) * n + x) * 4 + 4)];
-      expect(px(0, 0)[3]).toBe(0);
-      if (n < 48) return;
-      expect(px(n / 2, n / 2)).toEqual([255, 255, 255, 255]);
-      expect(px(Math.round(n * 0.1), Math.round(n / 2))).toEqual([0x55, 0x76, 0x3d, 255]);
-    });
-  });
-
-  test("Linux's set is <n>x<n>.png from 16 to 512", () => {
+  test("Linux's set is <n>x<n>.png from 16 to 512, each the size it says", () => {
     expect(readdirSync(join(REPO, "apps/desktop/build/icons")).sort()).toEqual(LINUX_SIZES.map((n) => `${n}x${n}.png`).sort());
+    for (const n of LINUX_SIZES) expect(pngSize(readFileSync(join(REPO, `apps/desktop/build/icons/${n}x${n}.png`)))).toEqual([n, n]);
   });
 
   test("the menu-bar templates are the shape alone, in black: macOS reads only their alpha", () => {
@@ -109,16 +123,15 @@ describe("where the mark is worn", () => {
     for (const p of [config.mac!.icon!, config.win!.icon!, config.linux!.icon!]) expect(existsSync(join(REPO, "apps/desktop", p))).toBe(true);
   });
 
-  test("the in-app mark is the sources' path, and wears green on light themes and white on dark ones", () => {
-    const { d, transform } = mossPath(readFileSync(sourcePath("green-on-transparent"), "utf8"));
-    for (const file of ["plugins/moss/plugins/sidebar/client/icons.tsx", "plugins/moss/plugins/conversation/client/icons.tsx"]) {
+  test("the in-app mark is the kit's single-colour path, and wears Night on light themes and Paper on dark ones", () => {
+    const { paths } = markShape(readFileSync(sourcePath("mark/shards-mark-white.svg"), "utf8"));
+    expect(paths.length).toBe(1);
+    for (const file of ["plugins/moss/plugins/sidebar/client/icons.tsx", "plugins/moss/plugins/conversation/client/icons.tsx", "plugins/moss/plugins/plugin-index/client/icons.tsx"]) {
       const source = readFileSync(join(REPO, file), "utf8");
-      expect([file, source.match(/MOSS_MARK_PATH =\s*"([^"]+)"/)?.[1]]).toEqual([file, d]);
-      expect(source).toContain(`transform="${transform}"`);
-      expect(source).toContain('viewBox="0 0 200 200"');
+      expect([file, source.match(/MOSS_MARK_PATH =\s*"([^"]+)"/)?.[1]]).toEqual([file, paths[0]!.d]);
+      expect(source).toContain('viewBox="86 86 828 828"');
     }
-    const theme = JSON.parse(readFileSync(join(REPO, "plugins/moss/plugins/base-theme/theme.json"), "utf8")) as { tokens: Record<string, string>; dark?: { tokens?: Record<string, string> } } & Record<string, unknown>;
-    const text = JSON.stringify(theme);
-    expect(text.match(/"plugin\.moss\.mark":"(#[0-9A-F]{6})"/g)).toEqual(['"plugin.moss.mark":"#3D7655"', '"plugin.moss.mark":"#FFFFFF"']);
+    const text = JSON.stringify(JSON.parse(readFileSync(join(REPO, "plugins/moss/plugins/base-theme/theme.json"), "utf8")));
+    expect(text.match(/"plugin\.moss\.mark":"(#[0-9A-F]{6})"/g)).toEqual(['"plugin.moss.mark":"#161A33"', '"plugin.moss.mark":"#F6F4EE"']);
   });
 });
