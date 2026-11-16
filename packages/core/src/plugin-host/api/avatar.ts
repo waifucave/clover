@@ -31,8 +31,11 @@ const WATCHES_MAX = 8;
 const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 export class AvatarService {
-  /** What the stage last said about each bot's figure, and which plugin said it (the cue goes back to that one). */
-  readonly #reports = new Map<string, { report: AvatarReport; stage: string }>();
+  /** What each stage last said about each bot's figure: per bot, a map by stage plugin, kept in the order the stages last
+   *  spoke. The live one is the stage that spoke last and still holds its report: it is what the core answers for the
+   *  bot and where its cues go. A stage that says nothing, stops, goes off or is removed loses its report (`endStage`),
+   *  so no stale word from a stage that left is ever the answer, and two stages never overwrite each other. */
+  readonly #reports = new Map<string, Map<string, AvatarReport>>();
   readonly #changes = new Listeners<{ bot: string; change: AvatarChange }>();
   readonly #windows = new Map<string, { start: number; n: number }>();
   /** The speech cues' own window per plugin: cues and the mouth levels in them, in the second that began at `start`. */
@@ -41,25 +44,57 @@ export class AvatarService {
 
   constructor(private readonly emit: (event: { type: string; [key: string]: unknown }) => void, private readonly now: () => number = Date.now) {}
 
+  /** The stage that is drawing `bot` now, and what it said. */
+  #live(bot: string): { report: AvatarReport; stage: string } | undefined {
+    const held = this.#reports.get(bot);
+    if (held === undefined) return undefined;
+    let live: { report: AvatarReport; stage: string } | undefined;
+    for (const [stage, report] of held) live = { report, stage };
+    return live;
+  }
+
   /** The figure of `bot` as its plugin reads it. */
   catalogue(bot: string): AvatarCatalogue | undefined {
-    const r = this.#reports.get(bot)?.report;
+    const r = this.#live(bot)?.report;
     if (r === undefined) return undefined;
     return { format: r.format, renderer: r.renderer, capabilities: r.capabilities, expressions: r.names?.expressions ?? [], motions: r.names?.motions ?? [], outfits: r.names?.outfits ?? [] };
   }
 
   box(bot: string) {
-    return boxOrDefault(this.#reports.get(bot)?.report.box);
+    return boxOrDefault(this.#live(bot)?.report.box);
   }
 
-  /** The stage's word about a bot's figure (`undefined`: nothing drawn now). */
+  /** The stage's word about a bot's figure (`undefined`: this stage draws nothing for it now). */
   report(stage: string, bot: string, raw: unknown): void {
     const report = raw === undefined || raw === null ? undefined : cleanAvatarReport(raw);
     if (raw !== undefined && raw !== null && report === undefined) throw new ContractError("invalid", "avatar.report takes a renderer's report or nothing");
+    this.#change(bot, () => {
+      const held = this.#reports.get(bot) ?? new Map<string, AvatarReport>();
+      held.delete(stage);
+      if (report !== undefined) held.set(stage, report);
+      if (held.size === 0) this.#reports.delete(bot);
+      else this.#reports.set(bot, held);
+    });
+  }
+
+  /** A stage's plugin stopped, went off, or was removed (or its document went): every report it held is dropped, and
+   *  each bot it was drawing goes to the stage that still draws it, or to nothing. */
+  endStage(stage: string): void {
+    for (const bot of [...this.#reports.keys()]) {
+      if (this.#reports.get(bot)?.has(stage) !== true) continue;
+      this.#change(bot, () => {
+        const held = this.#reports.get(bot)!;
+        held.delete(stage);
+        if (held.size === 0) this.#reports.delete(bot);
+      });
+    }
+  }
+
+  /** Runs `edit` and tells the bot's plugin what changed in the figure it now reads. */
+  #change(bot: string, edit: () => void): void {
     const oldCatalogue = this.catalogue(bot);
     const oldBox = this.box(bot);
-    if (report === undefined) this.#reports.delete(bot);
-    else this.#reports.set(bot, { report, stage });
+    edit();
     const catalogue = this.catalogue(bot);
     const box = this.box(bot);
     if (!sameJson(oldCatalogue, catalogue)) this.#tell(bot, { kind: "catalogue", catalogue });
@@ -84,7 +119,7 @@ export class AvatarService {
     const w = this.#windows.get(pluginId);
     if (w === undefined || t - w.start >= 1000) this.#windows.set(pluginId, { start: t, n: 1 });
     else if (++w.n > AVATAR_CUES_PER_SECOND) throw new ContractError("refused", `${pluginId} sent more than ${AVATAR_CUES_PER_SECOND} cues this second`);
-    const held = this.#reports.get(bot);
+    const held = this.#live(bot);
     const no = judgeCue(held?.report, cue);
     if (no !== undefined || held === undefined) return no ?? { ok: false, reason: "no-renderer", message: "nothing is drawing this bot's figure right now" };
     this.emit({ type: "plugin_ui_message", pluginId: held.stage, event: AVATAR_CUE_EVENT, value: { bot, cue } });
@@ -104,7 +139,7 @@ export class AvatarService {
       w.frames += cue.frames.length;
       if (w.cues > SPEECH_CUES_PER_SECOND || w.frames > SPEECH_FRAMES_PER_SECOND) throw new ContractError("refused", `${pluginId} sent more than ${SPEECH_CUES_PER_SECOND} speech cues or ${SPEECH_FRAMES_PER_SECOND} mouth levels this second`);
     }
-    const held = this.#reports.get(bot);
+    const held = this.#live(bot);
     const no = judgeSpeech(held?.report);
     if (no !== undefined || held === undefined) return no ?? { ok: false, reason: "no-renderer", message: "nothing is drawing this bot's figure right now" };
     // `from`: the sending plugin, so the stage's `cut` drops only that sender's own levels.

@@ -171,3 +171,48 @@ describe("speech: the mouth's levels", () => {
     expect(h["avatar.cue"]!(ctx("alpha/tab"), [{ type: "speech", frames: levels(3) }])).toEqual({ ok: true });
   });
 });
+
+describe("more than one stage (the stage is a plugin like any other)", () => {
+  const ours = "clover/character";
+  const theirs = "mystage";
+
+  test("any plugin id may report: the door asks the grant, never the id", () => {
+    const { h, events } = make();
+    expect(h["avatar.report"]!(ctx(theirs, ["avatar.report"]), ["alpha", report()])).toBeUndefined();
+    expect(h["avatar.catalogue"]!(ctx("alpha"), [])).toMatchObject({ format: "live2d" });
+    expect(h["avatar.cue"]!(ctx("alpha"), [{ type: "expression", name: "happy" }])).toEqual({ ok: true });
+    expect(events.at(-1)).toMatchObject({ pluginId: theirs, event: AVATAR_CUE_EVENT });
+  });
+
+  test("two stages do not overwrite each other: cues follow the stage that spoke last, and fall back when it leaves", () => {
+    const { svc, h, events } = make();
+    h["avatar.report"]!(ctx(ours), ["alpha", report()]);
+    h["avatar.report"]!(ctx(theirs), ["alpha", report({ format: "vrm", renderer: "x/vrm", capabilities: ["expressions"] })]);
+    expect(h["avatar.catalogue"]!(ctx("alpha"), [])).toMatchObject({ format: "vrm" });
+    h["avatar.cue"]!(ctx("alpha"), [{ type: "expression", name: "happy" }]);
+    expect(events.at(-1)).toMatchObject({ pluginId: theirs });
+    // The stage that drew it stops: the other's report is what is left to answer.
+    svc.endStage(theirs);
+    expect(h["avatar.catalogue"]!(ctx("alpha"), [])).toMatchObject({ format: "live2d" });
+    h["avatar.cue"]!(ctx("alpha"), [{ type: "expression", name: "happy" }]);
+    expect(events.at(-1)).toMatchObject({ pluginId: ours });
+  });
+
+  test("a stopped stage's report is gone: nothing answers for the bot, the plugin's watch hears it, and its return reports again", () => {
+    const { svc, h } = make();
+    const seen: string[] = [];
+    h["avatar.watch"]!(ctx("alpha"), [(c: { kind: string }) => seen.push(c.kind)]);
+    h["avatar.report"]!(ctx(theirs), ["alpha", report()]);
+    seen.length = 0;
+    svc.endStage(theirs);
+    expect(h["avatar.catalogue"]!(ctx("alpha"), [])).toBeUndefined();
+    expect(h["avatar.cue"]!(ctx("alpha"), [{ type: "expression", name: "happy" }])).toMatchObject({ ok: false, reason: "no-renderer" });
+    expect(seen).toEqual(["catalogue", "box"]);
+    h["avatar.report"]!(ctx(ours), ["alpha", report()]);
+    expect(h["avatar.catalogue"]!(ctx("alpha"), [])).toBeDefined();
+    // Ending a stage that holds nothing changes nothing.
+    seen.length = 0;
+    svc.endStage("nobody");
+    expect(seen).toEqual([]);
+  });
+});
