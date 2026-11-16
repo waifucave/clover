@@ -14,6 +14,7 @@
     "placeholder": "bun scripts/make-placeholder.ts"
   },
   "dependencies": {
+    "@waifucave/clover-plugin-sdk": "workspace:*",
     "@waifucave/clover-plugin-vrm": "workspace:*",
     "@waifucave/mochi2d": "0.13.0",
     "fflate": "0.8.3"

@@ -46,3 +46,6 @@ export type * from "./api/ui-api";
 export { isSealedLookAllowed } from "./api/ui-api";
 
 export * from "./legacy-tier2";
+
+// The core's views a plugin's parts read (generated from the core's schemas: scripts/views.ts).
+export type * from "./views";

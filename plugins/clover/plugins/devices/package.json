@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@waifucave/clover-plugin-island": "workspace:*"
+    "@waifucave/clover-plugin-island": "workspace:*",
+    "@waifucave/clover-plugin-sdk": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.3.0",
