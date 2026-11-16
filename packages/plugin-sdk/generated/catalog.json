@@ -161,7 +161,7 @@
     {
       "name": "avatar.report",
       "lets": "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)",
-      "ok": "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see",
+      "ok": "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see, and receives your bots' expression, motion and speech cues to draw",
       "warns": true
     },
     {
@@ -197,7 +197,7 @@
     {
       "name": "bots.avatar",
       "lets": "On the user's own press in its frame: set a bot's avatar from a model file the user picks in Clover's own file dialog (the path never reaches the plugin), and its avatar and credit fields",
-      "ok": "changes your bots' avatars to files you pick",
+      "ok": "changes your bots' avatars to files you pick, and lists the avatar packs installed",
       "warns": false
     },
     {

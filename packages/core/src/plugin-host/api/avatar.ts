@@ -42,14 +42,21 @@ export class AvatarService {
   readonly #speechWindows = new Map<string, { start: number; cues: number; frames: number }>();
   readonly #watching = new Map<string, number>();
 
-  constructor(private readonly emit: (event: { type: string; [key: string]: unknown }) => void, private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly emit: (event: { type: string; [key: string]: unknown }) => void,
+    private readonly now: () => number = Date.now,
+    /** Who may draw: `fills(plugin)` says whether the plugin has an active entry filling `bot.stage` now, `botExists(bot)`
+     *  whether the bot is installed. Without it every reporter may (a test's). */
+    private readonly gate?: { fills(pluginId: string): boolean; botExists(bot: string): boolean },
+  ) {}
 
   /** The stage that is drawing `bot` now, and what it said. */
   #live(bot: string): { report: AvatarReport; stage: string } | undefined {
     const held = this.#reports.get(bot);
     if (held === undefined) return undefined;
     let live: { report: AvatarReport; stage: string } | undefined;
-    for (const [stage, report] of held) live = { report, stage };
+    // Only a plugin that fills `bot.stage` now can be the one drawing; others' reports are kept, not live.
+    for (const [stage, report] of held) if (this.gate === undefined || this.gate.fills(stage)) live = { report, stage };
     return live;
   }
 
@@ -179,6 +186,10 @@ export class AvatarService {
       "avatar.report": (ctx, args) => {
         const bot = args[0];
         if (typeof bot !== "string" || bot === "" || bot.length > 128) throw new ContractError("invalid", "avatar.report takes the bot's id first");
+        if (this.gate !== undefined && args[1] !== undefined && args[1] !== null) {
+          if (!this.gate.fills(ctx.pluginId)) throw new ContractError("refused", `${ctx.pluginId} has no active entry filling bot.stage, so it is not drawing any bot's figure`);
+          if (!this.gate.botExists(bot)) throw new ContractError("refused", `there is no bot ${bot}`);
+        }
         this.report(ctx.pluginId, bot, args[1]);
       },
     };

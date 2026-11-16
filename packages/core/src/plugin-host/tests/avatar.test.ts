@@ -216,3 +216,46 @@ describe("more than one stage (the stage is a plugin like any other)", () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe("the stage drawing a bot is the one filling bot.stage", () => {
+  const gated = (fillers: Set<string>, bots = new Set(["alpha"])) => {
+    const events: { type: string; [k: string]: unknown }[] = [];
+    const svc = new AvatarService((e) => events.push(e), Date.now, { fills: (id) => fillers.has(id), botExists: (b) => bots.has(b) });
+    return { svc, events, h: svc.handlers() };
+  };
+
+  test("a plugin with no bot.stage entry, or a report for a bot that does not exist, is refused with a reason", () => {
+    const { h } = gated(new Set(["stageA"]));
+    expect(() => h["avatar.report"]!(ctx("hidden"), ["alpha", report()])).toThrow("bot.stage");
+    expect(() => h["avatar.report"]!(ctx("stageA"), ["ghost", report()])).toThrow("no bot ghost");
+    expect(h["avatar.report"]!(ctx("stageA"), ["alpha", report()])).toBeUndefined();
+  });
+
+  test("a second holder re-reporting never becomes live: cues, catalogue and box stay the filler's", () => {
+    const fillers = new Set(["stageA", "stageB"]);
+    const { svc, h, events } = gated(fillers);
+    h["avatar.report"]!(ctx("stageA"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("stageB"), ["alpha", report({ format: "vrm", renderer: "x/vrm" })]);
+    // stageB fills bot.stage no more (the user picked A, or its entry went): its report is kept but is not live.
+    fillers.delete("stageB");
+    h["avatar.report"]!(ctx("stageA"), ["alpha", report()]);
+    expect(() => h["avatar.report"]!(ctx("stageB"), ["alpha", report({ format: "vrm", renderer: "x/vrm" })])).toThrow("bot.stage");
+    expect(h["avatar.catalogue"]!(ctx("alpha"), [])).toMatchObject({ format: "live2d" });
+    events.length = 0;
+    expect(h["avatar.cue"]!(ctx("alpha"), [{ type: "expression", name: "happy" }])).toEqual({ ok: true });
+    expect(events.map((e) => e.pluginId)).toEqual(["stageA"]);
+    void svc;
+  });
+
+  test("the switch-over: when the filler changes, the live one follows at once", () => {
+    const fillers = new Set(["stageA", "stageB"]);
+    const { h, events } = gated(fillers);
+    h["avatar.report"]!(ctx("stageA"), ["alpha", report()]);
+    h["avatar.report"]!(ctx("stageB"), ["alpha", report({ format: "vrm", renderer: "x/vrm", capabilities: ["expressions"] })]);
+    expect(h["avatar.catalogue"]!(ctx("alpha"), [])).toMatchObject({ format: "vrm" });
+    fillers.delete("stageB");
+    expect(h["avatar.catalogue"]!(ctx("alpha"), [])).toMatchObject({ format: "live2d" });
+    h["avatar.cue"]!(ctx("alpha"), [{ type: "expression", name: "happy" }]);
+    expect(events.at(-1)).toMatchObject({ pluginId: "stageA" });
+  });
+});

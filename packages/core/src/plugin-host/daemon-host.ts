@@ -527,7 +527,10 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   });
   // The figures the stages report (`avatar.report`): a stage that stops, goes off or is removed loses its reports, so what
   // the core answers for a bot is always from the stage drawing it now.
-  const avatars = new AvatarService((event) => o.emit?.(event));
+  const avatars = new AvatarService((event) => o.emit?.(event), Date.now, {
+    fills: (id) => o.registry.entries("ui").some((c) => c.pluginId === id && c.state === "active" && (c.value as { spot?: string } | undefined)?.spot === "bot.stage") && grantsInForce(o.registry.get(id)).includes("avatar.report"),
+    botExists: (bot) => o.registry.get(bot)?.manifest?.contributes?.bot !== undefined,
+  });
   const offAvatarsRegistry = o.registry.watch((c) => {
     if (c.type === "removed") return avatars.endStage(c.id);
     if (c.type !== "plugin") return;
