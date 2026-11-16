@@ -28,6 +28,9 @@ function files(dir: string): string[] {
   return out;
 }
 
+/** A relative path with `/` between its parts, whatever the OS: the pending rulings below name files that way. */
+const slashed = (p: string): string => p.split(sep).join("/");
+
 /** What one bundled plugin's files import from outside it: `<file>: <specifier>` lines. */
 export function outsideImports(pluginDir: string): string[] {
   // What a file may import: what the package.json files between it and the plugin's folder name (its own, a gallery's).
@@ -48,7 +51,7 @@ export function outsideImports(pluginDir: string): string[] {
     for (const m of text.matchAll(SPEC)) {
       const spec = m[1] ?? m[2] ?? m[3];
       if (spec === undefined) continue;
-      const at = `${relative(BUNDLED, file)}: ${spec}`;
+      const at = `${slashed(relative(BUNDLED, file))}: ${spec}`;
       if (spec.startsWith(".")) {
         const target = resolve(dirname(file), spec);
         if (target !== pluginDir && !target.startsWith(pluginDir + sep)) bad.push(at);
@@ -86,7 +89,7 @@ export function mossDependencies(pluginDir: string): string[] {
       else if (name === "package.json") {
         const pkg = JSON.parse(readFileSync(p, "utf8")) as Record<string, Record<string, string> | undefined>;
         for (const dep of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies, ...pkg.optionalDependencies })) {
-          if ((dep.startsWith("@waifucave/moss-") && dep !== "@waifucave/moss-plugin-sdk") || dep.startsWith("@moss-child")) out.push(`${relative(BUNDLED, p)}: ${dep}`);
+          if ((dep.startsWith("@waifucave/moss-") && dep !== "@waifucave/moss-plugin-sdk") || dep.startsWith("@moss-child")) out.push(`${slashed(relative(BUNDLED, p))}: ${dep}`);
         }
       }
     }

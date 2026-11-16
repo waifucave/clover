@@ -5,13 +5,16 @@
 // named and why.
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { MOSS_METHODS } from "@waifucave/moss-protocol";
 import { API_CALLS, CAPABILITIES, CORE_CONTRIBUTION_KEYS, CORE_POINTS, DEVICE_TURNS, LISTENER_ARGS } from "@waifucave/moss-plugin-sdk";
 
 const ROOT = join(import.meta.dir, "..", "..", "..");
 const DIRS = ["packages/core/src", "apps/desktop/src", "packages/plugin-sdk/src", "packages/protocol/src"] as const;
 const VOICE = /voice/i;
+
+/** A relative path with `/` between its parts, whatever the OS: the exemptions below name files that way. */
+const slashed = (p: string): string => p.split(sep).join("/");
 
 /** Files that may name it, and why. */
 const EXEMPT: Readonly<Record<string, string>> = {
@@ -63,7 +66,7 @@ function split(src: string): { code: string; strings: string[] } {
 
 describe("nothing of the platform names voice", () => {
   test("no file is named for it", () => {
-    const named = DIRS.flatMap((d) => sources(join(ROOT, d))).map((f) => relative(ROOT, f)).filter((f) => VOICE.test(f));
+    const named = DIRS.flatMap((d) => sources(join(ROOT, d))).map((f) => slashed(relative(ROOT, f))).filter((f) => VOICE.test(f));
     expect(named).toEqual([]);
   });
 
@@ -87,7 +90,7 @@ describe("nothing of the platform names voice", () => {
       expect(files.length).toBeGreaterThan(10);
       const hits: string[] = [];
       for (const f of files) {
-        const at = relative(ROOT, f);
+        const at = slashed(relative(ROOT, f));
         if (EXEMPT[at] !== undefined) continue;
         const { code, strings } = split(readFileSync(f, "utf8"));
         for (const id of code.match(/[A-Za-z_$][\w$]*/g) ?? []) if (VOICE.test(id)) hits.push(`${at}: identifier ${id}`);
