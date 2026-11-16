@@ -265,7 +265,8 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
       // At lead 0 the cover and the press are sent together: which one the compositor sees first is not decided here (the measured
       // window is reported, not asserted). From 2 ms on the fresh report must see the cover and nothing is taken.
       if (lead >= 2) {
-        expect(r.output).toMatch(/fresh report (covered|none in time) after \d+ ms/);
+        // The fresh path's own refusal: the reading taken after the press said covered (not a timeout, and not the page's older gate: the periodic verdict is pinned).
+        expect(r.output).toMatch(/fresh report covered after \d+ ms/);
         expect(landed, r.output).toBe(0);
       }
     }, 120_000);

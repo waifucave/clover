@@ -44,6 +44,7 @@ const FRESH_SCRIPT = `
     if (typeof freshWaiter !== "undefined") {
       // The page's own observer reads the button again (observed afresh: its first report is a new reading), so no second observer
       // watches the same button: the report that follows is this page's next one.
+      freshFrom = performance.now();
       freshWaiter = finish;
       io.unobserve(btn);
       io.observe(btn);
@@ -253,19 +254,30 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   // The whole button, uncovered (IOv2), since enough time to have been seen (S4).
   let visible = false;
   let visibleAt = 0;
+  // The press's own reading: the waiter takes the first entry computed AFTER the press (on the entry's own clock, performance.now() at the
+  // press is freshFrom); an entry queued before it is never the press's reading.
   let freshWaiter = null;
+  let freshFrom = 0;
+  const readOf = (e) => {
+    const whole = e.intersectionRatio >= 1;
+    const enough = e.target instanceof HTMLElement && e.target.getBoundingClientRect().width >= 24 && e.target.getBoundingClientRect().height >= 24;
+    return whole === true && e.isVisible === true && enough === true;
+  };
   const io = new IntersectionObserver((entries) => {
     const e = entries[entries.length - 1];
     if (e === undefined) return;
-    const whole = e.intersectionRatio >= 1;
-    const enough = e.target instanceof HTMLElement && e.target.getBoundingClientRect().width >= 24 && e.target.getBoundingClientRect().height >= 24;
-    const seen = whole === true && e.isVisible === true && enough === true;
-    if (${pinVisible.on} && visible) return; // a test build's pin (never set in a real one): the periodic verdict stays "visible"
-    if (seen && !visible) visibleAt = Date.now();
-    visible = seen;
-    // Report visibility to the main process so it can disarm the fallback once all of a card's buttons show (S1).
-    if (b !== undefined) b.visible?.(seen);
-    if (freshWaiter !== null) { const w = freshWaiter; freshWaiter = null; w(seen); }
+    const seen = readOf(e);
+    // A test build's pin (never set in a real one) holds the PERIODIC verdict at "visible"; the press's own reading below is never pinned.
+    if (!(${pinVisible.on} && visible)) {
+      if (seen && !visible) visibleAt = Date.now();
+      visible = seen;
+      // Report visibility to the main process so it can disarm the fallback once all of a card's buttons show (S1).
+      if (b !== undefined) b.visible?.(seen);
+    }
+    if (freshWaiter !== null) {
+      const after = entries.filter((x) => typeof x.time === "number" && x.time >= freshFrom);
+      if (after.length > 0) { const w = freshWaiter; freshWaiter = null; w(readOf(after[after.length - 1])); }
+    }
   }, { threshold: [0, 0.25, 0.5, 0.75, 1], trackVisibility: true, delay: 200 });
   // A part that takes its card's frames away (the island folding a card back into its strip) leaves nothing showing: the
   // page says so as it goes, so the fallback's timer runs again.
