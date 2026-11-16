@@ -134,6 +134,13 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
     files: ["packages/core/src/old-names.ts", "packages/core/test/old-names.test.ts"],
     why: "the names a user wrote outside the home — a project's `.clover/` folder, a `CLOVER.md`, a folder plugin's `clover.json` — which the new build still reads second, through `old-names.ts`, the one place that lists them",
   },
+  // ── The rename's own note ────────────────────────────────────────────────────────────────────────
+  {
+    id: "rename-note",
+    regex: /Renamed from Clover to MOSS on 2026-11-16|said Clover when this spec was written/g,
+    files: ["docs/moss-spec.md"],
+    why: "the dated note at the top of the spec that says what it was called before: a record of the rename, not a name in use",
+  },
   // ── The installed Clover app, which MOSS never touches ───────────────────────────────────────────
   {
     id: "old-install",
