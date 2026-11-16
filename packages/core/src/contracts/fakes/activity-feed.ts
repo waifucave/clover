@@ -24,7 +24,7 @@ export class FakeActivityFeed implements ActivityFeed {
   }
 
   #check(kind: DataKind, reader: FeedReader): void {
-    if (!readerMay(reader, "activity.read", kind)) throw new ContractError("refused", `reading the ${kind} feed needs activity.read.${kind}`);
+    if (!readerMay(reader, "activity.read.*", kind)) throw new ContractError("refused", `reading the ${kind} feed needs activity.read.${kind}`);
   }
 
   list(kind: DataKind, reader: FeedReader): ActivityView[] {

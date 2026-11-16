@@ -3,7 +3,7 @@
 // area file. The allow lists are derived, never hand-kept: a method names its roles, and `allowedMethods(role)` is
 // exactly the methods that name it (spec §3.1, §10: a companion plugin can't widen the remote lists).
 import { z } from "zod";
-import { ACTIVITY_EVENTS, ACTIVITY_METHODS } from "./activity";
+import { ACTIVITY_EVENTS, ACTIVITY_METHODS, isKindFamily, kindCapability } from "./activity";
 import { AGENTS_EVENTS, AGENTS_METHODS } from "./agents";
 import { APP_EVENTS, APP_METHODS } from "./app";
 import { APPROVALS_EVENTS, APPROVALS_METHODS } from "./approvals";
@@ -181,9 +181,9 @@ export function pluginMayCall(method: MethodSpec, capabilities: readonly string[
     if (target === undefined) return false;
     return capabilities.includes(`call:${target.split("/")[0]}`);
   }
-  if (method.capability.endsWith(".*")) {
+  if (isKindFamily(method.capability)) {
     if (target !== "sessions" && target !== "bots") return false;
-    return capabilities.includes(`${method.capability.slice(0, -1)}${target}`);
+    return capabilities.includes(kindCapability(method.capability, target));
   }
   return capabilities.includes(method.capability);
 }

@@ -9,7 +9,7 @@
 // * Readers are scoped by kind: a plugin without the kind's capability is refused (`refused`), and a watch of one kind
 //   never hears the other's.
 // * `set` with the same state and name as before changes nothing and is heard by no one.
-import type { ActivitySubject, ActivityView, DataKind } from "@waifucave/moss-protocol";
+import { kindCapability, type ActivitySubject, type ActivityView, type DataKind } from "@waifucave/moss-protocol";
 import type { Unsubscribe } from "./common";
 
 /** Who reads: the user's own client, or a plugin with its granted capabilities. */
@@ -26,6 +26,6 @@ export interface ActivityFeed {
 
 /** Whether `reader` may read `kind` from a family (`activity.read.*`, `picture.read.*`): the user always, a plugin with
  *  that kind's capability. */
-export function readerMay(reader: FeedReader, family: "activity.read" | "picture.read", kind: DataKind): boolean {
-  return reader.kind === "user" || reader.capabilities.includes(`${family}.${kind}`);
+export function readerMay(reader: FeedReader, family: "activity.read.*" | "picture.read.*" | "conversation.*", kind: DataKind): boolean {
+  return reader.kind === "user" || reader.capabilities.includes(kindCapability(family, kind));
 }

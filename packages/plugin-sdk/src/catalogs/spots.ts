@@ -79,6 +79,9 @@ export const SPOTS: readonly SpotInfo[] = [
   { name: "app.tray", shape: "list", declaredBy: "app", botsOffer: false, needs: ["tray"], fields: titled,
     props: none,
     doc: "A line in the menu-bar (tray) menu, with the `tray` capability: `toggles` names one of the plugin's own `app.surface` entries (the line hides and shows it, and the choice is kept), or `command` names a command of the plugin's own that the line runs." },
+  // Retired by spec revision 19 (§5.5, items 99 and 100, G8): `bot.tab`, `bot.header`, `bot.side`, `bot.stage` with its
+  // `avatar` spot and `bot.stage.action`, and `BOTS_OFFER` below. A bot has no tab in a plugin window; lane MC removes
+  // them with bots out of MOSS Code's window.
   { name: "bot.tab", shape: "keyed", declaredBy: "app", botsOffer: true, context: ["bot"], fields: none,
     props: z.object({ bot: BotRef }),
     doc: "Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key." },

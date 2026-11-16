@@ -56,7 +56,7 @@ export class FakeLivePictures implements LivePictures {
   }
 
   #check(kind: DataKind, reader: FeedReader): void {
-    if (!readerMay(reader, "picture.read", kind)) throw new ContractError("refused", `showing ${kind}' live pictures needs picture.read.${kind}`);
+    if (!readerMay(reader, "picture.read.*", kind)) throw new ContractError("refused", `showing ${kind}' live pictures needs picture.read.${kind}`);
   }
 
   list(kind: DataKind, reader: FeedReader, of: { session?: string; bot?: string } = {}): PictureView[] {

@@ -5,8 +5,10 @@
 // * A bot is a folder under the home: `bots/<seg>/` (`<seg>` the id with `/` written `--`, §5.1), holding its record
 //   (`BOT_RECORD_FILE`: name, model, effort, voice, greeting, face pins, who made it), its instructions file
 //   (`BOT_INSTRUCTIONS_FILE`, the `<bot-instructions>` block, read at each turn), its memory and its agents' transcripts.
-//   The record is the user's: the core writes it, and no bot does (§9.1). The instructions file is written with the
-//   ordinary Write and Edit, under `instructionsEditRule`.
+//   The record is the user's: the core writes it, and no bot does (§9.1). Today's fence already keeps every bot out of
+//   `bots/<seg>/` but its `memory/` (`fence/fence.ts`, `per-caller.ts`), so the record sits at the folder's root; the
+//   instructions file has a folder of its own (`instructions/`), which lane BT, with lane C's fence, opens to the bot
+//   itself and to the bot that made it, under `instructionsEditRule`, and to no one else.
 // * Bots are listed, made, changed and removed through `bot.records`, `bot.create`, `bot.edit` and `bot.remove`; one bot's
 //   single conversation is `bot.conversation`, and its routines are `routine.list { bot }` (sessions.ts). MOSS's list
 //   reads each bot's last line and unread state (`bot.summaries`), which is conversation text, so it needs
@@ -23,9 +25,10 @@ import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 /** The record's file and the instructions file, inside `bots/<seg>/`. */
 export const BOT_RECORD_FILE = "bot.json";
-export const BOT_INSTRUCTIONS_FILE = "instructions.md";
-/** The move's journal, under the home: written once, when every plugin bot has been moved or left. */
-export const BOT_MOVE_JOURNAL = "bots/.moved.json";
+export const BOT_INSTRUCTIONS_FILE = "instructions/instructions.md";
+/** The move's journal, under the home: written once, when every plugin bot has been moved or left. In the fenced
+ *  `user-layers/` folder (a subfolder, so the user layers' loader, which reads the folder's own `.json` files, skips it). */
+export const BOT_MOVE_JOURNAL = "user-layers/moved/bots.json";
 
 /** The living-bots kit's traits (§6.9): a name makes them all, and the user may pin the shape and the colour. The kit's
  *  own names for shapes and its ten colours are the kit's (held outside the repo, item 110), so they are plain strings

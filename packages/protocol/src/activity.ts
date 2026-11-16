@@ -28,10 +28,17 @@ export const DataKind = z.enum(DATA_KINDS);
 export type DataKind = z.infer<typeof DataKind>;
 
 /** The capability that reads `kind` from a family written `<family>.*` (`activity.read.*` → `activity.read.bots`). What was
- *  said is the odd pair: `sessions.read` for code sessions, `conversation.read` for bots' conversations. */
-export function kindCapability(family: "activity.read.*" | "picture.read.*" | "conversation.*", kind: DataKind): string {
+ *  said is the odd pair: `conversation.*` is `sessions.read` for code sessions and `conversation.read` for bots'
+ *  conversations. The one mapping every gate uses (`pluginMayCall`, the SDK's `apiCallAllowed`, the contracts'
+ *  `readerMay`), so a family a lane adds is read the same everywhere. */
+export function kindCapability(family: string, kind: DataKind): string {
   if (family === "conversation.*") return kind === "sessions" ? "sessions.read" : "conversation.read";
   return `${family.slice(0, -1)}${kind}`;
+}
+
+/** Whether a capability names a family by kind (`<family>.*`), not `call:*` or `network:*`. */
+export function isKindFamily(capability: string): boolean {
+  return capability.endsWith(".*") && capability !== "call:*" && capability !== "network:*";
 }
 
 /** The spec revision from which `conversation.read` means bots' conversations only (§5.4): a grant OK'd before it gives

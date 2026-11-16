@@ -8,7 +8,7 @@ import type {
   ShellApi, TerminalApi, UiSendApi, UsageApi,
   TurnsApi, StreamsApi, SessionsApi, ActivityApi, PicturesApi,
 } from "../api/plugin-api";
-import type { HostProcess } from "@waifucave/moss-protocol";
+import { isKindFamily, kindCapability, type HostProcess } from "@waifucave/moss-protocol";
 import type { AvatarApi } from "./avatar-cues";
 
 type Fn = (...args: never[]) => unknown;
@@ -187,6 +187,6 @@ export function apiCallAllowed(call: string, where: ApiCaller, capabilities: rea
   if (info.capability === undefined) return true;
   if (info.capability === "call:*") return target?.plugin !== undefined && capabilities.includes(`call:${target.plugin.split("/")[0]}`);
   if (info.capability === "network:*") return target?.host !== undefined && allowNetwork !== undefined && allowNetwork(capabilities, target.host, target.port);
-  if (info.capability.endsWith(".*")) return target?.kind !== undefined && capabilities.includes(`${info.capability.slice(0, -1)}${target.kind}`);
+  if (isKindFamily(info.capability)) return target?.kind !== undefined && capabilities.includes(kindCapability(info.capability, target.kind));
   return capabilities.includes(info.capability);
 }
