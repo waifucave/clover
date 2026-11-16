@@ -42,7 +42,7 @@
         "doc": "A voice provider: `speak` answers `{ text, voice, model?, format }` with the audio as it is made (pcm16-24k bytes, through points.stream); the optional `listen` answers `{ audio, format, model? }` (pcm16-16k bytes) with `{ text }`; the optional `ready` answers `{ ready, why? }`, whether the user set it up (its key or sign-in). A bot's voice names the entry's id.",
         "title": "Voice providers",
         "fills": {
-          "ok": "is sent what your bots say, to speak it, and what you say with push-to-talk, to write it down, when you or a bot's default picks one of its voices"
+          "ok": "when you or a bot's default picks one of its voices, it is sent what your bots say, to speak it, and what you say with push-to-talk; what it writes down is sent to your bot as your message, with nothing shown to you first"
         }
       },
       "clover.voice.modes": {
@@ -73,7 +73,7 @@
         "doc": "The voice your bots speak and listen with, one at a time: the user's pick in Settings (the platform's picker, titled Voice), else Clover Voice, which fills it itself. Another plugin's entry, while it is the one: `reply` is handed `{ bot, session, text, asked }` and speaks it its own way (its own background part, taking device/speech); `hear` is handed `{ bot, audio, format }` (what the user said with push-to-talk, pcm16-16k bytes) and answers `{ text }`.",
         "title": "Voice",
         "fills": {
-          "ok": "when you choose it, it is given what your bots say, to speak, and what you say with push-to-talk, to write down"
+          "ok": "when you choose it, it is given what your bots say, to speak, and what you say with push-to-talk; what it writes down is sent to your bot as your message, with nothing shown to you first"
         },
         "oneAtATime": true
       },
@@ -103,7 +103,7 @@
         "doc": "The default voice a plugin gives the bot it brings (the bot of its own tree; any other bot's is ignored): `provider` (an entry of clover.voice.providers) and `plugin` (the plugin that fills it, when another plugin's entry has the same id), `voice`, `model?`. The user's own choice in the bot's Voice section always wins, and a default speaks only when its provider says it is set up (its `ready`).",
         "title": "Default voices",
         "fills": {
-          "ok": "sets the voice its bot speaks with; if you have set up that voice's provider, its bot's replies are sent to that provider on your account",
+          "ok": "sets the voice its bot speaks with; if you have set up that voice's provider, its bot's replies are sent to that provider on your account, and what it writes down from your push-to-talk is sent to your bot as your message, with nothing shown to you first",
           "warns": true
         }
       }

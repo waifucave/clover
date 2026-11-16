@@ -21,6 +21,8 @@ export const S = {
   talkRefused: "That didn't go. Hold to talk to try again.",
   talkNoSend: "This window can't send your words.",
   talkStopped: "Stopped: you let go elsewhere. Hold to talk again.",
+  talkTooLong: "That was longer than a minute; hold to talk for less.",
+  talkCut: "The recording stopped. Hold to talk again.",
   mute: "Mute spoken replies",
   unmute: "Unmute spoken replies",
 } as const;

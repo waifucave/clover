@@ -9,9 +9,12 @@
 // words go to the bot as the user's message (`useUserSend`): the app counts it as the user's because main saw this
 // frame's press and release, for one send within 30 s of the release.
 //
+// What is sent is the voice's words made one plain line (`spokenText`: control characters collapsed as the SDK's
+// `plainLine` does) and cut to TALK_TEXT_MAX characters, never refused for its length (a hold is at most a minute).
+//
 // It never sticks on: a hold that ends without the user's release (the window losing the focus or going hidden, the button
-// losing the focus, the pointer cancelled, the button going away) is dropped: the microphone closes, the stream is aborted,
-// the turn is let go, and nothing is sent.
+// losing the focus, the pointer cancelled, the button going away, the stream refusing a piece, or the host half's minute
+// passing) is dropped: the microphone closes (every track ends), the stream is aborted, the turn is let go, and nothing is sent.
 //
 // A test or acceptance build marks its counters on the document's root (`data-voice-talk-*`).
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,11 +27,36 @@ import { defaultSource, testBuild, type PcmHandle, type PcmSource } from "../src
 export const DEVICE_MICROPHONE = "device/microphone";
 const PROVIDERS = "clover.voice.providers";
 const MODES = "clover.voice.modes";
+/** The host half's TALK_MAX_BYTES (60 s of 16 kHz 16-bit mono). */
+const TALK_LIMIT_BYTES = 60 * 16_000 * 2;
+
+/** The most a transcription sends as the user's message; longer is cut. */
+export const TALK_TEXT_MAX = 2_000;
+/** The host half's limit on a recording (TALK_MAX_BYTES: 60 s of 16 kHz PCM), and the little past it the button waits
+ *  before it closes the microphone itself, should the stream not have refused a piece by then. */
+export const TALK_LIMIT_MS = 60_000;
+export const TALK_GRACE_MS = 2_000;
+
+/** A transcription as the message it sends: control, line-break, zero-width and direction characters to one space (the
+ *  SDK's `plainLine`), runs of space to one, trimmed, and cut to `max` (never half a surrogate pair). */
+export function spokenText(raw: string, max: number = TALK_TEXT_MAX): string {
+  const line = raw.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").replace(/\s+/g, " ").trim();
+  if (line.length <= max) return line;
+  let cut = line.slice(0, max);
+  if (/[\ud800-\udbff]$/.test(cut)) cut = cut.slice(0, -1);
+  return cut.trimEnd();
+}
 
 let made: PcmSource | undefined;
 /** Test seam: the next recordings' source (undefined: the build's own). */
 export function setTalkSource(source: PcmSource | undefined): void {
   made = source;
+}
+
+let limitAfter: number | undefined;
+/** Test seam: when the backstop closes a hold that is still held (undefined: TALK_LIMIT_MS + TALK_GRACE_MS). */
+export function setTalkLimit(ms: number | undefined): void {
+  limitAfter = ms;
 }
 
 let count = 0;
@@ -47,6 +75,8 @@ interface Rec {
   writer?: WritableStreamDefaultWriter<Uint8Array>;
   handle?: PcmHandle;
   turn?: { done(): Promise<void> | void };
+  /** The backstop at the host half's limit. */
+  limit?: ReturnType<typeof setTimeout>;
 }
 
 export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string }>) {
@@ -83,6 +113,7 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
 
   /** The user let go: the recording ends, its words are heard, and they go to the bot as the user's message. */
   const finish = useCallback(async (rec: Rec) => {
+    if (rec.limit !== undefined) clearTimeout(rec.limit);
     rec.handle?.stop();
     try {
       await rec.writer?.close();
@@ -99,10 +130,11 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
     const r: { text?: string; note?: string } = await Promise.resolve(api.host.call<{ text?: string; note?: string }>("heard", { utterance: rec.id })).catch((err: unknown) => ({ note: err instanceof Error ? err.message : String(err) }));
     if (current.current === rec) current.current = undefined;
     setPhase("idle");
-    if (typeof r?.text === "string" && r.text.trim() !== "") {
+    const text = typeof r?.text === "string" ? spokenText(r.text) : "";
+    if (text !== "") {
       if (send === undefined) return setNote(S.talkNoSend);
       // One send after this frame's press and release (the app's 30 s allowance).
-      await send({ session: props.session }, { text: r.text }).catch(() => setNote(S.talkRefused));
+      await send({ session: props.session }, { text }).catch(() => setNote(S.talkRefused));
     } else setNote(r?.note ?? S.talkNothing);
   }, [api, send, props.session]);
 
@@ -111,6 +143,7 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
     if (rec.dropped === true) return;
     rec.dropped = true;
     rec.released = true;
+    if (rec.limit !== undefined) clearTimeout(rec.limit);
     rec.handle?.stop();
     void rec.writer?.abort("the hold ended without a release").catch(() => undefined);
     void Promise.resolve(rec.turn?.done()).catch(() => undefined);
@@ -137,6 +170,8 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
       if (gone(rec)) return void rec.writer.abort("the hold ended without a release").catch(() => undefined);
       if (rec.released) return void finish(rec);
       const source = made ?? defaultSource();
+      // The host half takes at most a minute: past it (and a little), the microphone closes even if the user still holds.
+      rec.limit = setTimeout(() => drop(rec, S.talkTooLong), limitAfter ?? TALK_LIMIT_MS + TALK_GRACE_MS);
       let bytes = 0;
       const starts = Number((typeof document !== "undefined" ? document.documentElement.dataset.voiceTalkStarts : undefined) ?? 0) + 1;
       mark({ voiceTalkStarts: starts, voiceTalkSource: made !== undefined ? "test" : testBuild() ? "clip" : "mic", voiceTalkBytes: 0 });
@@ -144,7 +179,9 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
         chunk: (pcm) => {
           bytes += pcm.length;
           mark({ voiceTalkBytes: bytes });
-          void rec.writer?.write(pcm).catch(() => undefined);
+          // A piece the stream refuses (the host half cut it at its minute, or it ended) ends the recording: the
+          // microphone closes at once, not when the user lets go.
+          void rec.writer?.write(pcm).catch(() => { if (!rec.released) drop(rec, bytes > TALK_LIMIT_BYTES ? S.talkTooLong : S.talkCut); });
         },
         end: () => {
           rec.released = true;
@@ -153,6 +190,7 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
       });
       if (gone(rec) || rec.released) rec.handle.stop();
     } catch (err) {
+      if (rec.limit !== undefined) clearTimeout(rec.limit);
       rec.handle?.stop();
       void rec.writer?.abort(err instanceof Error ? err.message : "the recording didn't start").catch(() => undefined);
       await Promise.resolve(rec.turn?.done()).catch(() => undefined);
@@ -160,7 +198,7 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
       setPhase("idle");
       setNote(S.talkRefused);
     }
-  }, [api, bot, finish, mark]);
+  }, [api, bot, finish, drop, mark]);
 
   const end = useCallback(() => {
     const rec = current.current;

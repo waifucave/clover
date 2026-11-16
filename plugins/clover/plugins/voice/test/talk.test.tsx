@@ -8,18 +8,19 @@ import { fakeApi, settle } from "../../shell/runtime/testkit";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { UiRuntimeProvider } from "../../shell/client/sdk";
 import { TalkButton } from "../client";
-import { setTalkSource } from "../client/talk";
+import { TALK_TEXT_MAX, setTalkLimit, setTalkSource, spokenText } from "../client/talk";
 import type { PluginApi } from "@waifucave/clover-plugin-sdk";
 import type { BotRef, EntryProps } from "../../shell/runtime/types";
 
 afterEach(() => {
   cleanup();
   setTalkSource(undefined);
+  setTalkLimit(undefined);
 });
 
 const alpha = { props: { bot: { id: "alpha", name: "Alpha" }, session: "b_alpha" } } as unknown as EntryProps<{ bot: BotRef; session: string }>;
 
-function world(o: { listens?: boolean; heard?: { text?: string; note?: string } } = {}) {
+function world(o: { listens?: boolean; heard?: { text?: string; note?: string }; writeFails?: boolean } = {}) {
   const calls: { name: string; args: unknown }[] = [];
   const turns: string[] = [];
   const done: string[] = [];
@@ -35,7 +36,7 @@ function world(o: { listens?: boolean; heard?: { text?: string; note?: string } 
       open: async (name: string, opts: { meta: Record<string, unknown> }) => {
         const rec = { name, meta: opts.meta, closed: false };
         streams.push(rec);
-        return { getWriter: () => ({ write: async (c: Uint8Array) => { written.push(c.length); }, close: async () => { rec.closed = true; }, abort: async () => undefined }) };
+        return { getWriter: () => ({ write: async (c: Uint8Array) => { if (o.writeFails === true) throw new Error("too long"); written.push(c.length); }, close: async () => { rec.closed = true; }, abort: async () => undefined }) };
       },
     },
     host: {
@@ -174,5 +175,86 @@ describe("it never sticks on (review item 7): a hold that ends without the user'
     await act(async () => { window.dispatchEvent(new Event("blur")); await settle(6); });
     await act(async () => { fireEvent.pointerUp(button, { pointerId: 1, button: 0 }); await settle(10); });
     expect(w.sent).toEqual([]);
+  });
+});
+
+describe("what a transcription sends: one plain line, cut at TALK_TEXT_MAX, never refused for its length", () => {
+  test("control, line-break, zero-width and direction characters collapse to one space, as the SDK's plainLine does", () => {
+    expect(spokenText("  hi\nthere\u0007\u200b you\u202e\tok  ")).toBe("hi there you ok");
+    expect(spokenText("x".repeat(5000))).toHaveLength(TALK_TEXT_MAX);
+    // Never half a surrogate pair at the cut.
+    expect(spokenText("a".repeat(TALK_TEXT_MAX - 1) + "\u{1F600}")).toBe("a".repeat(TALK_TEXT_MAX - 1));
+  });
+
+  test("a long, unclean transcription is sent cut and plain", async () => {
+    twoChunks();
+    const w = world({ heard: { text: "one\ntwo\u0000 " + "z".repeat(4000) } });
+    await act(() => settle(6));
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    await act(async () => { fireEvent.pointerDown(button, { pointerId: 1, button: 0 }); await settle(6); });
+    await act(async () => { fireEvent.pointerUp(button, { pointerId: 1, button: 0 }); await settle(10); });
+    expect(w.sent).toHaveLength(1);
+    const text = (w.sent[0]!.message as { text: string }).text;
+    expect(text).toHaveLength(TALK_TEXT_MAX);
+    expect(text.startsWith("one two " + "z")).toBe(true);
+  });
+});
+
+describe("the microphone never outlives the recording", () => {
+  function stoppable(): { stopped: () => boolean } {
+    let stopped = false;
+    setTalkSource(async (sink) => {
+      // A piece once the source is open, as a microphone gives them.
+      setTimeout(() => sink.chunk(new Uint8Array(3200)), 1);
+      return { stop: () => { stopped = true; } };
+    });
+    return { stopped: () => stopped };
+  }
+
+  test("a piece the stream refuses (the host half cut it) closes the source at once, while the user still holds", async () => {
+    const src = stoppable();
+    const w = world({ writeFails: true });
+    await act(() => settle(6));
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    await act(async () => { fireEvent.pointerDown(button, { pointerId: 1, button: 0 }); await settle(6); await new Promise((r) => setTimeout(r, 10)); await settle(6); });
+    expect(src.stopped()).toBe(true);
+    expect(w.done).toEqual(["device/microphone"]);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("note").textContent).toBe("The recording stopped. Hold to talk again.");
+    // The release that follows sends nothing.
+    await act(async () => { fireEvent.pointerUp(button, { pointerId: 1, button: 0 }); await settle(10); });
+    expect(w.calls.some((c) => c.name === "heard")).toBe(false);
+    expect(w.sent).toEqual([]);
+  });
+
+  test("at the host half's limit (and a little past it) the source closes even with no refused piece", async () => {
+    setTalkLimit(15);
+    const src = stoppable();
+    const w = world();
+    await act(() => settle(6));
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    await act(async () => { fireEvent.pointerDown(button, { pointerId: 1, button: 0 }); await settle(6); });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => { await new Promise((r) => setTimeout(r, 40)); await settle(6); });
+    expect(src.stopped()).toBe(true);
+    expect(w.done).toEqual(["device/microphone"]);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("note").textContent).toBe("That was longer than a minute; hold to talk for less.");
+    await act(async () => { fireEvent.pointerUp(button, { pointerId: 1, button: 0 }); await settle(10); });
+    expect(w.sent).toEqual([]);
+  });
+
+  test("a release before the limit clears it: nothing is dropped afterwards", async () => {
+    setTalkLimit(30);
+    twoChunks();
+    const w = world();
+    await act(() => settle(6));
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    await act(async () => { fireEvent.pointerDown(button, { pointerId: 1, button: 0 }); await settle(6); });
+    await act(async () => { fireEvent.pointerUp(button, { pointerId: 1, button: 0 }); await settle(10); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); await settle(4); });
+    expect(w.sent).toHaveLength(1);
+    expect(screen.queryByRole("note")).toBeNull();
   });
 });
