@@ -397,9 +397,10 @@ export interface IpcHooks {
   browserArea?(pluginId: string, mount: string, on: boolean): void;
   /** A watch opened on a `browser.*` call: its values go only to the plugin's visible documents. */
   noteBrowserWatch?(watch: string): void;
-  /** Whether part `mount` in window `windowId` is showing tab `tab` in its own browser view now (its frame holds the view
-   *  and that tab is the one shown there). */
+  /** Whether part `mount`'s own browser view is bound to tab `tab` (live or paused: browser-calls.ts `ViewBindings`). */
   showsTab?(windowId: number, mount: string, tab: string): boolean;
+  /** A part's Browser call answered (its view's binding follows its show, open-and-show, hide and close). */
+  noteBrowserResult?(mount: string, method: string, params: unknown, result: unknown): void;
   /** The windows' push-to-talk holds (listen.ts): the composer's start and stop, and the shell's pieces. */
   listens?: import("./listen").ListenHolds;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
@@ -734,6 +735,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
         if ((method === "events.subscribe" || method === "events.unsubscribe") && Array.isArray(areas) && areas.includes("browser")) {
           void got.then(() => hooks.browserArea?.(pluginId, mount, method === "events.subscribe"), () => undefined);
         }
+        if (reach.kind !== "none") void got.then((r) => hooks.noteBrowserResult?.(mount, method, a.params, r), () => undefined);
         const watched = (a.params as { call?: unknown } | undefined)?.call;
         if (method === "plugin.layer.watch" && typeof watched === "string" && watched.startsWith("browser.")) {
           void got.then((r) => { const w = (r as { watch?: unknown } | undefined)?.watch; if (typeof w === "string") hooks.noteBrowserWatch?.(w); }, () => undefined);

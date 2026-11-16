@@ -66,8 +66,8 @@ plugin: a child plugin's lists don't count):
   (the plugin needs `browser`; `api.browser.toolCaller()` says whose tool call it serves). Looking runs without a card;
   clicking, typing, a key or a select asks for the site, "Always allow" kept per bot, site and plugin. The split is by
   the plugin's own word for its verbs, and the card says so; what the tab shows goes through the plugin. A component
-  holding `browser` (never one in `app.background`) lists, shows and hides tabs freely, and pictures the one it shows in
-  its own view, but `browser.cdp` (bar `Page.getNavigationHistory`), `navigate`, `open`, `close` and a picture of any
+  holding `browser` (never one in `app.background`) lists, shows and hides tabs freely, and pictures the one its own view holds
+  (live or paused), but `browser.cdp` (bar `Page.getNavigationHistory`), `navigate`, `open`, `close` and a picture of any
   other tab go only from the user's own press in it: call them straight from the click or key handler, one call per
   press.
 

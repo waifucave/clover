@@ -638,15 +638,6 @@ export class ViewFrames {
     }
   }
 
-  /** The part whose frame holds the view now (the one it is drawn in), with its window; undefined: none. */
-  holder(name: string): { mount: string; windowId: number } | undefined {
-    const byMount = this.frames.get(name);
-    if (byMount === undefined) return undefined;
-    let best: { mount: string; f: { windowId: number; bounds?: Rect; usedAt: number } } | undefined;
-    for (const [mount, f] of byMount) if (best === undefined || f.usedAt > best.f.usedAt) best = { mount, f };
-    return best?.f.bounds === undefined ? undefined : { mount: best.mount, windowId: best.f.windowId };
-  }
-
   /** The view's target now. */
   target(name: string): ViewTargetRef | undefined {
     const byMount = this.frames.get(name);

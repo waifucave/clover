@@ -1,6 +1,6 @@
 // browser-press: the main process's reading of a part's Clover Browser call (browser-calls.ts).
 import { expect, test } from "bun:test";
-import { BrowserAreaFrames, browserReach, browserRefusal, isBrowserEvent } from "../src/main/ui/browser-calls";
+import { BrowserAreaFrames, browserReach, browserRefusal, isBrowserEvent, ViewBindings } from "../src/main/ui/browser-calls";
 
 const both = (call: string, params: Record<string, unknown>, args: unknown[], o: { showing?: (tab: string) => boolean } = {}) =>
   [browserReach(call, params, o), browserReach("plugin.layer.call", { call, args }, o)];
@@ -71,4 +71,30 @@ test("the browser area is a plugin's while a visible part of it subscribed; the 
   expect(f.gone("m2")).toBe("acme");
   expect(f.gone("m2")).toBeUndefined();
   expect(f.gone("m3")).toBe("other");
+});
+
+test("item 4 (the read's ruling): a part's view is bound to the tab it showed, live or paused; a picture of that tab is free, of any other it acts", () => {
+  const b = new ViewBindings();
+  const reach = (mount: string, tab: string) => browserReach("browser.screenshot", { id: tab }, { showing: (t) => b.bound(mount) === t }).kind;
+  // Panel A shows t1 through the core's method; panel B shows t2 through the layer door (another panel taking the live view).
+  b.note("A", "browser.show", { id: "t1", view: "browser" }, { tab: { id: "t1", place: "shown" } });
+  b.note("B", "plugin.layer.call", { call: "browser.show", args: ["t2", "browser", {}] }, { result: { id: "t2", place: "shown" } });
+  // A's tab is paused now (t2 holds the live view); A's still picture of t1 needs no press; of t2, A needs one.
+  expect([reach("A", "t1"), reach("A", "t2"), reach("B", "t2"), reach("B", "t1")]).toEqual(["look", "act", "look", "act"]);
+  // A refused show binds nothing; an open that shows at once binds the new tab.
+  b.note("C", "browser.show", { id: "t9", view: "browser" }, undefined);
+  expect(b.bound("C")).toBeUndefined();
+  b.note("C", "browser.open", { owner: { kind: "user" }, show: { view: "browser", viewport: {} } }, { tab: { id: "t3" } });
+  expect(b.bound("C")).toBe("t3");
+  b.note("D", "browser.open", { owner: { kind: "user" } }, { tab: { id: "t4" } });
+  expect(b.bound("D")).toBeUndefined();
+  // Hiding or closing its own bound tab unbinds; another tab's hide doesn't; the part going does.
+  b.note("A", "browser.hide", { id: "t2" }, { tab: { id: "t2" } });
+  expect(b.bound("A")).toBe("t1");
+  b.note("A", "browser.hide", { id: "t1" }, { tab: { id: "t1" } });
+  expect(reach("A", "t1")).toBe("act");
+  b.note("B", "plugin.layer.call", { call: "browser.close", args: ["t2"] }, { result: null });
+  expect(b.bound("B")).toBeUndefined();
+  b.gone("C");
+  expect(b.bound("C")).toBeUndefined();
 });

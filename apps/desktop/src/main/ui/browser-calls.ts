@@ -4,7 +4,8 @@
 // * LOOKING needs no press: the tab list (every owner's tabs, their addresses and titles), show and hide, the tab events
 //   (`events.subscribe` of the `browser` area, `browser.onCdpEvent`), `browser.cdp`'s `Page.getNavigationHistory` (it
 //   reads the history list and runs no page script; the bundled panel asks it to turn its Back and Forward on), and a
-//   picture of the tab the calling part is showing in its own view at that moment (the user sees what is pictured).
+//   picture of the tab the calling part's own view is bound to, live or paused (the tab the user put in that panel;
+//   another panel taking the live view doesn't unbind it: `ViewBindings`).
 // * ACTING needs the user's own press in that part's frame: every other `browser.cdp` method (`Runtime.evaluate` and
 //   `Input.*` among them), `browser.navigate`, `browser.open` for any owner (it takes an address: a signed-in navigation
 //   as the person), `browser.close` (it destroys the person's page state), a picture of any other tab, and any
@@ -102,5 +103,53 @@ export class BrowserAreaFrames {
       return pluginId;
     }
     return undefined;
+  }
+}
+
+/** Which tab each part's own browser view is bound to: the tab the user put in that panel (its last `show`, or an `open`
+ *  that showed it at once), live or paused (another panel taking the live view doesn't unbind it); its `hide` or `close` of
+ *  that tab, or the part going, unbinds it. A picture of the bound tab needs no press (the read's ruling on item 4). */
+export class ViewBindings {
+  readonly #byMount = new Map<string, string>();
+
+  /** A part's Browser call answered: `method` and `params` as the part sent them, `result` the core's answer. */
+  note(mount: string, method: string, params: unknown, result: unknown): void {
+    const p = obj(params);
+    let call = method;
+    let args: unknown[] = [];
+    if (method === "plugin.layer.call") {
+      if (typeof p.call !== "string") return;
+      call = p.call;
+      args = Array.isArray(p.args) ? p.args : [];
+    }
+    const layer = method === "plugin.layer.call";
+    const r = obj(result);
+    const tabOf = (v: unknown): string | undefined => { const t = obj(v); return typeof t.id === "string" ? t.id : undefined; };
+    // The core's method answers `{ tab }`; the layer door's call answers `{ result: tab }`.
+    const answered = layer ? tabOf(r.result) : tabOf(r.tab);
+    if (call === "browser.show") {
+      const id = layer ? args[0] : p.id;
+      if (typeof id === "string" && answered === id) this.#byMount.set(mount, id);
+      return;
+    }
+    if (call === "browser.open") {
+      const show = obj(layer ? args[0] : p).show;
+      if (show !== undefined && answered !== undefined) this.#byMount.set(mount, answered);
+      return;
+    }
+    if (call === "browser.hide" || call === "browser.close") {
+      const id = layer ? args[0] : p.id;
+      if (typeof id === "string" && this.#byMount.get(mount) === id) this.#byMount.delete(mount);
+    }
+  }
+
+  /** The tab a part's view is bound to, or undefined. */
+  bound(mount: string): string | undefined {
+    return this.#byMount.get(mount);
+  }
+
+  /** The part went. */
+  gone(mount: string): void {
+    this.#byMount.delete(mount);
   }
 }

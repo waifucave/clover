@@ -44,7 +44,7 @@ import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
-import { BrowserAreaFrames, isBrowserEvent } from "./ui/browser-calls";
+import { BrowserAreaFrames, isBrowserEvent, ViewBindings } from "./ui/browser-calls";
 import { FRESH_LIMIT_MS, ownCardPage, pinVisible } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
@@ -328,6 +328,7 @@ async function ready(): Promise<void> {
         void layerLinks.call(w.pluginId, "plugin.layer.unwatch", { watch: w.watch }).catch(() => undefined);
       }
       // The last visible part of a plugin that subscribed to the `browser` area went: its connection stops hearing tabs.
+      viewBindings.gone(mount);
       const lastBrowser = browserAreaFrames.gone(mount);
       if (lastBrowser !== undefined) void layerLinks.call(lastBrowser, "events.unsubscribe", { areas: ["browser"] }).catch(() => undefined);
     },
@@ -412,10 +413,8 @@ async function ready(): Promise<void> {
       else browserAreaFrames.gone(mount);
     },
     noteBrowserWatch: (watch) => { browserWatches.add(watch); },
-    showsTab: (windowId, mount, tab) => {
-      const h = views.holder("browser");
-      return h !== undefined && h.windowId === windowId && h.mount === mount && browser?.tabInView("browser") === tab;
-    },
+    showsTab: (_windowId, mount, tab) => viewBindings.bound(mount) === tab,
+    noteBrowserResult: (mount, method, params, result) => viewBindings.note(mount, method, params, result),
     treeRequest: async (method, params) => {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
       const client = pair.client;
@@ -2091,6 +2090,8 @@ const frameWatches = new FrameWatches();
  *  subscribed to the `browser` area (browser-calls.ts). */
 const browserWatches = new Set<string>();
 const browserAreaFrames = new BrowserAreaFrames();
+/** The tab each part's own browser view is bound to (browser-calls.ts `ViewBindings`). */
+const viewBindings = new ViewBindings();
 const layerLinks = new LayerLinks({
   appClient: () => pair?.client,
   dial: () => dialDaemon(daemonEndpoint(home)),

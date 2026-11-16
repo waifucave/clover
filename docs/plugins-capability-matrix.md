@@ -172,7 +172,7 @@ signed in wherever you signed in there". F5 serves `browser.*` by the
 capability: a host half acts only for the session whose tool call it serves, while that call is open, on that session's
 own tab (`browser.toolCaller` says which; a call on a later tick is refused). A component the user can see is a live
 view for the person: it lists every owner's tab here, shows, hides, hears `onCdpEvent`'s `Page.*` events and the tab
-changes, reads `Page.getNavigationHistory` and pictures the tab it is showing in its own view, with no press; every
+changes, reads `Page.getNavigationHistory` and pictures the tab its own view holds (live or paused), with no press; every
 other `browser.cdp` method, `navigate`, `open` (for any owner), `close`, a picture of another tab and any `browser.*`
 call the app doesn't know go only right after the user's own press in that part's frame (the app main process's
 gesture rule: one press, one acting call). A part in `app.background` gets no `browser.*` at all and hears no tab
