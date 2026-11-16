@@ -17,7 +17,7 @@ afterEach(() => {
   devFolders = [];
 });
 
-async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found", kept?: Map<string, string>) {
+async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found") {
   const core = fakeCore({
     "plugin.list": () => ({ plugins: INSTALLED, adultConfirmed: false }),
     "plugin.ui": () => ({ plugins: Object.entries(INSTALLED_ICONS).map(([pluginId, icon]) => ({ pluginId, icon })) as never }),
@@ -60,7 +60,7 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
   });
   const routes: unknown[] = [];
   render(
-    <TestLayer runtime={runtimeWith({ core: () => core, ...(kept ? { kept } : {}) })}>
+    <TestLayer runtime={runtimeWith({ core: () => core })}>
       <PluginIndexEntry props={{ route: "plugins", params, navigate: (r) => routes.push(r), now: NOW }} />
     </TestLayer>,
   );
@@ -523,23 +523,24 @@ describe("the Plugins page: updates and indexes", () => {
   });
 
   test("the tab the user is on outlives a reload of the window's document (installing a plugin with its own layer), per route", async () => {
-    const kept = new Map<string, string>();
-    await mount({}, "found", kept);
+    sessionStorage.clear();
+    await mount({}, "found");
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Installed");
     fireEvent.click(screen.getByRole("tab", { name: /Updates/ }));
     await act(() => settle());
-    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
-    const atReload = new Map(kept);
+    // The document goes with no unmount (a reload runs no cleanup): the window's session storage as it was.
+    const atReload = Object.fromEntries(Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i)!).map((k) => [k, sessionStorage.getItem(k)!]));
     cleanup();
-    await mount({}, "found", atReload);
+    for (const [k, v] of Object.entries(atReload)) sessionStorage.setItem(k, v);
+    await mount({}, "found");
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Updates");
     // Left and opened again (an unmount): the first tab, as before.
     cleanup();
-    await mount({}, "found", atReload);
+    await mount({}, "found");
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Installed");
     // A link that names its own tab starts there.
     cleanup();
-    await mount({ tab: "find" }, "found", atReload);
+    await mount({ tab: "find" }, "found");
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Find");
   });
 

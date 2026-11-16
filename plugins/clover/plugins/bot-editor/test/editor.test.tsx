@@ -197,7 +197,7 @@ describe("the sections other plugins add (`bot.editor.section`)", () => {
     await mount(ALPHA_VIEW, undefined, {}, [section("clover/character")], Section);
     const drawn = screen.getByRole("region", { name: "a plugin's section" });
     expect(JSON.parse(drawn.textContent!)).toMatchObject({ bot: { id: "alpha", name: "Alpha" } });
-    const rows = [...document.querySelectorAll(".cl-bot-editor__rows > section")].map((e) => e.getAttribute("aria-label") ?? e.querySelector(".cl-bot-editor__label")?.textContent);
+    const rows = [...document.querySelectorAll(".cl-bot-editor__rows > section, .cl-bot-editor__rows > [data-clover-spot] > [data-clover-entry] > section")].map((e) => e.getAttribute("aria-label") ?? e.querySelector(".cl-bot-editor__label")?.textContent);
     expect(rows.indexOf("a plugin's section")).toBe(rows.indexOf("Model") + 1);
     expect(rows[rows.indexOf("a plugin's section") + 1]).toBe("Theme");
   });

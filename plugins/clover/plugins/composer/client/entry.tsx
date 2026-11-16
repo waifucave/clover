@@ -105,15 +105,21 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const [commands, setCommands] = useState<SlashCommand[] | undefined>(undefined);
   const [slashResult, setSlashResult] = useState<ComposerSlash["result"]>(undefined);
 
+  // A composer whose command list the app refuses (its plugin holds no `commands.run`) has no slash menu: a `/` line is
+  // plain text it sends like any other.
+  const [noCommands, setNoCommands] = useState(false);
   const slash: ComposerSlash | undefined =
-    host?.commands && host.runCommand
+    host?.commands && host.runCommand && !noCommands
       ? {
           commands,
           onOpen: () => {
             setCommands(undefined);
             host.commands!().then(
               (r) => setCommands((Array.isArray(r?.commands) ? r.commands : []).filter((c) => inScope(c, kind))),
-              () => setCommands([]),
+              () => {
+                setCommands([]);
+                setNoCommands(true);
+              },
             );
           },
           onRun: (command, rest, display) => {

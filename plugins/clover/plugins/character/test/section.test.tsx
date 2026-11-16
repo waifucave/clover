@@ -8,7 +8,7 @@ import type { EntryComponent } from "../client/local";
 import * as React from "react";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { BotEditorEntry } from "../../bot-editor/client/entry";
+import { Spot } from "@waifucave/clover-plugin-sdk/ui";
 import { AvatarSection } from "../client";
 
 afterEach(cleanup);
@@ -23,7 +23,13 @@ const PACKS = [
 ];
 const sectionEntry = { pluginId: "clover/character", id: "avatar", spot: "bot.editor.section", component: "AvatarSection", fields: { title: "Avatar" }, source: "bundled", enabledAt: 0 } as unknown as UiEntry;
 
-/** The bot editor with whatever entries fill `bot.editor.section` (the character plugin's, or none), on the runtime. */
+/** A host that declares `bot.editor.section` for a bot, as a bot editor does (the bundled one is another plugin's: its
+ *  own tests place the spot among its rows). */
+function EditorHost({ bot }: { bot: BotView }) {
+  return <div className="cl-bot-editor__rows"><Spot name="bot.editor.section" props={{ bot: { id: bot.id, name: bot.name } }} /></div>;
+}
+
+/** A bot editor's section spot with whatever entries fill it (the character plugin's, or none), on the runtime. */
 async function editor(view: BotView, o: { entries?: UiEntry[]; formats?: unknown[]; packs?: unknown[]; core?: Parameters<typeof fakeCore>[0] } = {}) {
   const core = fakeCore({
     "bot.setUserLayer": () => ({ applied: true }),
@@ -43,7 +49,7 @@ async function editor(view: BotView, o: { entries?: UiEntry[]; formats?: unknown
   });
   render(
     <TestLayer runtime={runtime}>
-      <BotEditorEntry props={{ route: "bot-editor", params: { bot: view.id }, navigate: noop }} />
+      <EditorHost bot={view} />
     </TestLayer>,
   );
   await act(() => settle(6));
@@ -60,16 +66,9 @@ describe("the bot editor and this plugin's section", () => {
     expect(screen.queryByText("Avatar")).toBeNull();
     expect(screen.queryByRole("radiogroup")).toBeNull();
     expect(screen.queryByRole("button", { name: "Choose avatar…" })).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy();
   });
 
   // The voice is Clover Voice's own section now (a later order in the same spot), not one of the editor's rows.
-  test("the section sits right after the model", async () => {
-    await editor(ALPHA);
-    const rows = [...document.querySelectorAll(".cl-bot-editor__rows > section")].map((e) => e.querySelector(".cl-bot-editor__label, .cl-avatar-section__label")?.textContent);
-    expect(rows.indexOf("Avatar")).toBe(rows.indexOf("Model") + 1);
-    expect(rows).not.toContain("Voice");
-  });
 });
 
 describe("the avatar section", () => {

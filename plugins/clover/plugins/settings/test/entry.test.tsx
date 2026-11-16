@@ -207,6 +207,7 @@ describe("settings on the runtime", () => {
     const Section: EntryComponent = () => <p>Tarot settings</p>;
     await mount({}, { component: Section });
     fireEvent.click(screen.getByRole("button", { name: "Tarot" }));
+    await act(() => settle()); // the section's spot resolves through the layer, as in the app
     expect(screen.getByText("Tarot settings")).toBeTruthy();
   });
 

@@ -13,7 +13,7 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; plugin?: string; signedIn?: boolean; efforts?: string[]; defaultEffort?: string }[]; listen?: { listens: boolean; start?: () => { note?: string } | Promise<{ note?: string }>; stop?: () => { text?: string; note?: string } | Promise<{ text?: string; note?: string }> }; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; models?: { id: string; name: string; providerName: string; plugin?: string; signedIn?: boolean; efforts?: string[]; defaultEffort?: string }[]; listen?: { listens: boolean; start?: () => { note?: string } | Promise<{ note?: string }>; stop?: () => { text?: string; note?: string } | Promise<{ text?: string; note?: string }> }; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
@@ -58,14 +58,13 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
       sends.push({ to, message });
     },
     approvals,
-    ...(opts.kept ? { kept: opts.kept } : {}),
     spot: (name) => (name === "composer.action" ? { shape: "keyed" } : undefined),
     entries: opts.entries ?? [],
     component: () => opts.component,
     ...(opts.tokens ? { tokens: () => opts.tokens! } : {}),
   });
   render(
-    <TestLayer runtime={runtime}>
+    <TestLayer runtime={runtime} spot="composer">
       <ComposerEntry props={{ bot: { id: s.kind === "bot" ? "alpha" : "codex", name: s.kind === "bot" ? "Alpha" : "Codex" }, session: s.id }} />
     </TestLayer>,
   );
@@ -276,11 +275,11 @@ describe("the composer entry", () => {
       expect(shown).toEqual(["/say", "/lint"]);
     });
 
-    test("a host with no commands (another plugin's composer) leaves / as plain text", async () => {
+    test("a composer whose command list the app refuses (its plugin holds no commands.run) offers none, and / is plain text", async () => {
       const { sends } = await mount();
       fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "/say hi" } });
       await act(() => settle());
-      expect(screen.queryByRole("listbox")).toBeNull();
+      expect(screen.queryAllByRole("option")).toEqual([]);
       fireEvent.keyDown(screen.getByRole("textbox", { name: "Message to Alpha" }), { key: "Enter" });
       await act(() => settle());
       expect(sends).toEqual([{ to: { session: "s_alpha" }, message: { text: "/say hi" } }]);
@@ -288,18 +287,21 @@ describe("the composer entry", () => {
   });
 
   test("the draft outlives a reload of the window's document (a plugin with its own layer installed), per conversation", async () => {
-    const kept = new Map<string, string>();
-    await mount(session({}), { kept });
+    sessionStorage.clear();
+    await mount(session({}));
     fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "half a thought" } });
     await act(() => settle());
-    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
-    const atReload = new Map(kept);
+    // The document goes with no unmount (a reload runs no cleanup): the window's session storage as it was.
+    const atReload = Object.fromEntries(Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i)!).map((k) => [k, sessionStorage.getItem(k)!]));
+    const restore = () => { sessionStorage.clear(); for (const [k, v] of Object.entries(atReload)) sessionStorage.setItem(k, v); };
     cleanup();
-    await mount(session({}), { kept: atReload });
+    restore();
+    await mount(session({}));
     expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("half a thought");
     // Another conversation's composer starts empty.
     cleanup();
-    await mount(session({ id: "s_other" }), { kept: new Map(atReload) });
+    restore();
+    await mount(session({ id: "s_other" }));
     expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("");
   });
 
