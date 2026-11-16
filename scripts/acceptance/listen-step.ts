@@ -115,6 +115,8 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
     if (c.starts !== 1 || c.bytes !== 38_400) fail(`the recorder's counters read ${JSON.stringify(c)}; wanted 1 start, 38400 bytes`);
     if (c.probe !== 0) fail(`getUserMedia was called ${c.probe} time(s): the real microphone was asked for`);
     done.push(`the recorder ran the generated clip once (${c.starts} start, ${c.bytes} bytes), and getUserMedia was never called`);
+    // The same button held from the keyboard: Clover Voice's held key binding.
+    done.push(...(await keyHoldClause(ctx, sentWith, inTree, counters!.session)));
     // The document that recorded (the one with the counters) is the clover layer's own (Clover Voice's button is drawn there), and the
     // browser's Permissions-Policy for its frame allows the microphone; a document of a layer that doesn't hold `microphone` (Alpha's,
     // the fixture voice's) does not (the real device is never asked).
@@ -140,7 +142,6 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
       others.push(v.href.slice(0, 30));
     }
     done.push(`the recording document's Permissions-Policy allows the microphone for it (browser state ${String(mine.browser)}, page ${mine.page})${others.length > 0 ? `, and blocks it in ${others.length} other layer document(s)` : ""} (no prompt was raised)`);
-    done.push(...(await keyHoldClause(ctx, sentWith, inTree, counters!.session)));
     // The second voice's clause, with Alpha's voice still the run's tone voice; it holds the button again while that voice is picked.
     done.push(...(await voiceModeClause(ctx, talk)));
     return done.join("; ");
