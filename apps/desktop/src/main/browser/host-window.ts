@@ -37,7 +37,7 @@ export class HostWindow {
       skipTaskbar: true,
       hasShadow: false,
       transparent: process.platform !== "linux",
-      title: "MOSS",
+      title: "MOSS Code",
       ...(windows ? { type: "toolbar" } : {}),
     });
     window.setIgnoreMouseEvents(true);

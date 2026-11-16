@@ -27,7 +27,7 @@ export class AppTray {
       if (this.tray === undefined) {
         this.tray = new Tray(this.image());
         if (process.platform !== "darwin") nativeTheme.on("updated", this.retint);
-        this.tray.setToolTip("MOSS");
+        this.tray.setToolTip("MOSS Code");
         if (process.platform !== "darwin") this.tray.on("click", () => this.actions.open());
       }
       this.tray.setContextMenu(Menu.buildFromTemplate(trayMenu(state, this.actions)));

@@ -48,7 +48,7 @@ export interface InstallerHook {
 }
 
 export const INSTALLER_HOOKS: Readonly<Record<Installer, InstallerHook>> = {
-  homebrew: { onInstall: null, onUninstall: "remove", file: "packaging/moss.rb.tmpl", why: "the cask's uninstall runs as the user, before the app's files are removed, and goes on when the app is already gone" },
+  homebrew: { onInstall: null, onUninstall: "remove", file: "packaging/moss-code.rb.tmpl", why: "the cask's uninstall runs as the user, before the app's files are removed, and goes on when the app is already gone" },
   dmg: { onInstall: null, onUninstall: null, file: null, why: "a dmg has no scripts: the app turns login start on at first launch, and Homebrew's uninstall (or the app's own) turns it off" },
   nsis: { onInstall: null, onUninstall: "remove", file: "packaging/windows/installer.nsh", why: "a per-user installer runs as the user; an upgrade runs the old uninstaller with --updated, which keeps login start (stopping the old daemon there is still open: installer.nsh)" },
   winget: { onInstall: null, onUninstall: null, file: null, why: "winget runs the NSIS installer and its uninstaller, which carry the hooks" },

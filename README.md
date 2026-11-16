@@ -60,7 +60,7 @@ and put a job on a schedule.
 
 ```sh
 brew tap waifucave/moss
-brew install --cask moss
+brew install --cask moss-code
 moss login          # sign in with your ChatGPT account
 ```
 

@@ -74,9 +74,9 @@ const osOf = (): Os => (process.platform === "win32" ? "windows" : process.platf
 /** The app's userData folder on each OS, under the user's home. */
 function defaultUserData(os: Os, home: string): string {
   const p = os === "windows" && !home.startsWith("/") ? win32 : posix;
-  if (os === "macos") return p.join(home, "Library", "Application Support", "MOSS");
-  if (os === "windows") return p.join(home, "AppData", "Roaming", "MOSS");
-  return p.join(home, ".config", "MOSS");
+  if (os === "macos") return p.join(home, "Library", "Application Support", "MOSS Code");
+  if (os === "windows") return p.join(home, "AppData", "Roaming", "MOSS Code");
+  return p.join(home, ".config", "MOSS Code");
 }
 
 export class MossFence implements Fence {

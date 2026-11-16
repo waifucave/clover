@@ -88,7 +88,7 @@ export function appHello(token: string, version: string, protocolVersion: number
     protocolVersion,
     role: "app",
     token,
-    clientName: `MOSS ${version}`.slice(0, 128),
+    clientName: `MOSS Code ${version}`.slice(0, 128),
     features: ["app.show", "app.quit", "layers", "app.capture", "app.open", "app.render", "browser"],
   };
 }

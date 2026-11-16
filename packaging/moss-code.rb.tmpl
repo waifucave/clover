@@ -1,5 +1,5 @@
 # Homebrew cask template for MOSS. Rendered per release by scripts/release.ts
-# (caskFrom in scripts/release-lib.ts) into out/release/<version>/moss.rb — this .tmpl is
+# (caskFrom in scripts/release-lib.ts) into out/release/<version>/moss-code.rb — this .tmpl is
 # the only copy committed to the repo; the rendered file is per-release build output.
 #
 # Interpolated at release time: the release version and the sha256 checksum of the release DMG.
@@ -7,11 +7,11 @@
 # interpolation (idiomatic cask style — keeps a real per-version sha256, passes brew audit).
 # (Slot names written in prose, not the literal syntax, so caskFrom's replaceAll can't mangle
 # this comment itself.)
-cask "moss" do
+cask "moss-code" do
   version "{{version}}"
   sha256 "{{sha256}}"
 
-  url "https://github.com/waifucave/moss/releases/download/v#{version}/MOSS-#{version}.dmg"
+  url "https://github.com/waifucave/moss/releases/download/v#{version}/MOSS-Code-#{version}.dmg"
   name "MOSS"
   desc "Bot-first, endlessly moddable desktop agent platform"
   homepage "https://github.com/waifucave/moss"

@@ -154,8 +154,8 @@ describe("releaseNotesHtml (2026-09-17 settings-surface plan, item 9)", () => {
   });
 
   test("a fence renders verbatim (escaped, never inline-converted) and drops the language hint", () => {
-    expect(render("```sh\nbrew install --cask moss && echo a<b **not bold**\n```")).toBe(
-      "<pre><code>brew install --cask moss &amp;&amp; echo a&lt;b **not bold**</code></pre>",
+    expect(render("```sh\nbrew install --cask moss-code && echo a<b **not bold**\n```")).toBe(
+      "<pre><code>brew install --cask moss-code &amp;&amp; echo a&lt;b **not bold**</code></pre>",
     );
   });
 
@@ -338,7 +338,7 @@ describe("verifyAntEmbed (Winter Phase 10a, Task L3's ant CONTENT-IDENTITY gate,
 });
 
 describe("caskFrom", () => {
-  const tmpl = `cask "moss" do
+  const tmpl = `cask "moss-code" do
   version "{{version}}"
   sha256 "{{sha256}}"
   url "{{url}}"

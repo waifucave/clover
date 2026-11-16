@@ -7,7 +7,7 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   // The core root
   "moss.core.root.empty": "Nothing fills this window. A shell plugin may have been turned off or removed.",
   "moss.core.root.starting": "Starting MOSS…",
-  "moss.core.root.down": "MOSS's background service hasn't started. MOSS keeps trying; if this stays, quit MOSS and open it again, or restart the computer.",
+  "moss.core.root.down": "MOSS's background service hasn't started. MOSS Code keeps trying; if this stays, quit MOSS Code and open it again, or restart the computer.",
   "moss.core.root.empty-safe": "Nothing fills this window, even in safe mode.",
   "moss.core.root.failed": "The window could not be drawn: {error}",
   "moss.core.root.stopped": "MOSS's window stopped drawing. Its layer will start again when you reload.",
@@ -82,19 +82,19 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "moss.core.terminal.cancel": "Cancel",
 
   // The main process
-  "moss.core.tray.open": "Open MOSS",
+  "moss.core.tray.open": "Open MOSS Code",
   "moss.core.tray.hide-item": "Hide {title}",
   "moss.core.tray.show-item": "Show {title}",
   "moss.core.tray.four-finger-tap": "Four-Finger Tap Hides and Shows {titles}",
   "moss.core.tray.mute-sound": "Mute Sound from Plugins",
-  "moss.core.tray.quit": "Quit MOSS",
+  "moss.core.tray.quit": "Quit MOSS Code",
   "moss.core.tray.safe-mode": "Restart in Safe Mode",
   "moss.core.tray.restart-normally": "Restart Normally",
   "moss.core.tray.manage-plugins": "Manage Plugins…",
 
   // The app's own update (updater.ts), once downloaded
-  "moss.core.update.ready.title": "MOSS {version} is ready",
-  "moss.core.update.ready.body": "It installs when you quit MOSS.",
+  "moss.core.update.ready.title": "MOSS Code {version} is ready",
+  "moss.core.update.ready.body": "It installs when you quit MOSS Code.",
 };
 
 /** The core's built-in tables, by language. */

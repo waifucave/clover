@@ -135,16 +135,16 @@ describe("the windows (decision 86)", () => {
   });
 
   test("macOS: an inset title bar over the sidebar material", () => {
-    const p = mainWindowPlan({ platform: "darwin", acrylic: false, title: "MOSS", dark: false, solid: "#F5F5F5", symbol: "#1F1F1F", webPreferences: prefs });
+    const p = mainWindowPlan({ platform: "darwin", acrylic: false, title: "MOSS Code", dark: false, solid: "#F5F5F5", symbol: "#1F1F1F", webPreferences: prefs });
     expect(p.material).toBe("vibrancy");
     expect(p.options).toMatchObject({ titleBarStyle: "hiddenInset", vibrancy: "sidebar", backgroundColor: "#00000000", show: false });
   });
 
   test("Windows 11: acrylic under a hidden title bar with the system's controls; older Windows: solid", () => {
-    const p = mainWindowPlan({ platform: "win32", acrylic: true, title: "MOSS", dark: true, solid: "#202020", symbol: "#F2F2F2", webPreferences: prefs });
+    const p = mainWindowPlan({ platform: "win32", acrylic: true, title: "MOSS Code", dark: true, solid: "#202020", symbol: "#F2F2F2", webPreferences: prefs });
     expect(p.material).toBe("acrylic");
     expect(p.options).toMatchObject({ titleBarStyle: "hidden", backgroundMaterial: "acrylic", titleBarOverlay: { height: 45, symbolColor: "#F2F2F2" } });
-    const old = mainWindowPlan({ platform: "win32", acrylic: false, title: "MOSS", dark: true, solid: "#202020", symbol: "#F2F2F2", webPreferences: prefs });
+    const old = mainWindowPlan({ platform: "win32", acrylic: false, title: "MOSS Code", dark: true, solid: "#202020", symbol: "#F2F2F2", webPreferences: prefs });
     expect(old.material).toBe("none");
     expect(old.options.backgroundMaterial).toBeUndefined();
     expect(windowsHasAcrylic("10.0.22621")).toBe(true);
@@ -152,7 +152,7 @@ describe("the windows (decision 86)", () => {
   });
 
   test("Linux: a solid colour", () => {
-    const p = mainWindowPlan({ platform: "linux", acrylic: false, title: "MOSS", dark: false, solid: "#F5F5F5", symbol: "#1F1F1F", webPreferences: prefs });
+    const p = mainWindowPlan({ platform: "linux", acrylic: false, title: "MOSS Code", dark: false, solid: "#F5F5F5", symbol: "#1F1F1F", webPreferences: prefs });
     expect(p.material).toBe("none");
     expect(p.options).toMatchObject({ backgroundColor: "#F5F5F5", titleBarStyle: "hidden" });
   });
@@ -284,7 +284,7 @@ describe("surface windows", () => {
     expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "linux" }).type).toBeUndefined();
     expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin", wayland: true }).type).toBeUndefined();
     expect(surfaceWindowPlan({ surface: { type: "window" }, title: "t", webPreferences: prefs, platform: "darwin" }).type).toBeUndefined();
-    const main = mainWindowPlan({ platform: "darwin", acrylic: false, title: "MOSS", dark: true, solid: "#202020", symbol: "#fff", webPreferences: prefs });
+    const main = mainWindowPlan({ platform: "darwin", acrylic: false, title: "MOSS Code", dark: true, solid: "#202020", symbol: "#fff", webPreferences: prefs });
     expect((main.options as Record<string, unknown>).type).toBeUndefined();
   });
 

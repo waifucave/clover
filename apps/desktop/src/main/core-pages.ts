@@ -150,7 +150,7 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
     return { ok: true };
   }
   const client = deps.client();
-  if (client === undefined) throw new Error("MOSS isn't running");
+  if (client === undefined) throw new Error("MOSS Code isn't running");
   const id = typeof p.id === "string" && ID_RE.test(p.id) ? p.id : undefined;
   switch (name as PageCall) {
     case "welcome.providers":

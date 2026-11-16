@@ -47,5 +47,5 @@ export function quitQuestion(raw: unknown): QuitQuestion {
   const buttons: { id: QuitChoice; label: string }[] = [];
   if (status.bots.length > 0 && status.canHandOver) buttons.push({ id: "handover", label: "Hand over and quit" });
   buttons.push({ id: "quit", label: "Quit" }, { id: "cancel", label: "Cancel" });
-  return { ask: true, message: "Quit MOSS?", detail: lines.join("\n\n"), buttons };
+  return { ask: true, message: "Quit MOSS Code?", detail: lines.join("\n\n"), buttons };
 }

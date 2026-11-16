@@ -21,7 +21,7 @@ export function resolveAppProfile(env: Record<string, string | undefined>): AppP
 export function appIdentity(profile: AppProfile): AppIdentity {
   return profile === "dev"
     ? { profile, appId: "com.waifucave.moss.code.dev", productName: "MOSS Code Dev" }
-    : { profile, appId: "com.waifucave.moss.code", productName: "MOSS" };
+    : { profile, appId: "com.waifucave.moss.code", productName: "MOSS Code" };
 }
 
 /** The daemon home this app's daemon uses: `MOSS_HOME`, else `~/.moss` — the daemon's own rule

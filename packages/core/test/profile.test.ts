@@ -22,7 +22,7 @@ describe("profile", () => {
 
   test("profileDisplayName", () => {
     expect(profileDisplayName("dist")).toBe("MOSS");
-    expect(profileDisplayName("dev")).toBe("MOSS Code Dev");
+    expect(profileDisplayName("dev")).toBe("MOSS Dev");
   });
 
   // Test-keychain-isolation fix (P9c-15 guard): MOSS_KEYCHAIN_SERVICE overrides the returned

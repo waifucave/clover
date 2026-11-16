@@ -187,7 +187,7 @@ export class OffscreenTab extends BrowserTab {
       width: AGENT_VIEWPORT.width,
       height: AGENT_VIEWPORT.height,
       useContentSize: true,
-      title: "MOSS",
+      title: "MOSS Code",
       skipTaskbar: true,
       webPreferences: tabWebPreferences(partitionFor(owner), true),
     });

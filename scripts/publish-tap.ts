@@ -1,6 +1,6 @@
 /**
  * Publishes both casks to the Homebrew tap `waifucave/homebrew-moss` (Winter Phase 9c, P9c-5):
- *   - Casks/moss.rb   <- out/release/<version>/moss.rb  (this repo's own release, already
+ *   - Casks/moss-code.rb   <- out/release/<version>/moss-code.rb  (this repo's own release, already
  *                          rendered by release.ts's `caskFrom` call — read verbatim, never
  *                          re-interpolated here)
  *   - Casks/norma.rb    <- packaging/norma-deprecated.rb    (the deprecated cask, filled in by
@@ -30,7 +30,7 @@ import { refuseHeldScript } from "./held-scripts";
 export const TAP_REPO = "waifucave/homebrew-moss";
 
 export interface TapFile {
-  /** Repo-relative path under the tap, e.g. "Casks/moss.rb". */
+  /** Repo-relative path under the tap, e.g. "Casks/moss-code.rb". */
   repoPath: string;
   /** Local path this file's content is read from (verbatim — never interpolated here). */
   localPath: string;
@@ -40,7 +40,7 @@ export interface TapFile {
  *  reads — so it's unit-testable without a real release build on disk. */
 export function tapPlan(version: string): TapFile[] {
   return [
-    { repoPath: "Casks/moss.rb", localPath: join(ROOT, "out", "release", version, "moss.rb") },
+    { repoPath: "Casks/moss-code.rb", localPath: join(ROOT, "out", "release", version, "moss-code.rb") },
     { repoPath: "Casks/norma.rb", localPath: join(ROOT, "packaging", "norma-deprecated.rb") },
   ];
 }
@@ -198,5 +198,5 @@ if (import.meta.main) {
     console.log(`Publishing ${f.repoPath}...`);
     publishFile(realGhRunner, f);
   }
-  console.log(`Published Casks/moss.rb + Casks/norma.rb to ${TAP_REPO}.`);
+  console.log(`Published Casks/moss-code.rb + Casks/norma.rb to ${TAP_REPO}.`);
 }

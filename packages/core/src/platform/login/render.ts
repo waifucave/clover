@@ -226,7 +226,7 @@ export function renderXdgAutostart(spec: LoginSpec): string {
   const tryExec = spec.app ? `TryExec=${noControl(spec.app.bin).replace(/\\/g, "\\\\")}\n` : "";
   return `[Desktop Entry]
 Type=Application
-Name=${spec.profile === "dev" ? "MOSS Code Dev" : "MOSS"}
+Name=${spec.profile === "dev" ? "MOSS Code Dev" : "MOSS Code"}
 Comment=Starts MOSS with the desktop session
 ${tryExec}Exec=systemctl --user start ${appUnitName(spec.profile)}
 NoDisplay=true
@@ -359,7 +359,7 @@ export function schtasksFallbackProblem(bin: string, fallback: string, homedir: 
 export function renderAppSchtasksXml(spec: LoginSpec): string {
   if (!spec.app) throw new Error("renderAppSchtasksXml needs spec.app");
   return renderTask({
-    description: `${spec.profile === "dev" ? "MOSS (dev)" : "MOSS"} app`,
+    description: `${spec.profile === "dev" ? "MOSS Code (dev)" : "MOSS Code"} app`,
     uri: appTaskName(spec.profile),
     user: spec.winUser,
     logon: "none",

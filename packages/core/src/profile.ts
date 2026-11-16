@@ -68,5 +68,5 @@ export function cliCommandName(profile: MossProfile = resolveMossProfile()): str
 }
 
 export function profileDisplayName(profile: MossProfile = resolveMossProfile()): string {
-  return profile === "dev" ? "MOSS Code Dev" : "MOSS";
+  return profile === "dev" ? "MOSS Dev" : "MOSS";
 }

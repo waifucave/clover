@@ -34,8 +34,8 @@ describe("tapPlan", () => {
   test("names both cask paths, keyed off the given version", () => {
     const plan = tapPlan("0.111.0");
     expect(plan).toHaveLength(2);
-    expect(plan[0]!.repoPath).toBe("Casks/moss.rb");
-    expect(plan[0]!.localPath).toContain("out/release/0.111.0/moss.rb");
+    expect(plan[0]!.repoPath).toBe("Casks/moss-code.rb");
+    expect(plan[0]!.localPath).toContain("out/release/0.111.0/moss-code.rb");
     expect(plan[1]!.repoPath).toBe("Casks/norma.rb");
     expect(plan[1]!.localPath).toContain("packaging/norma-deprecated.rb");
   });
@@ -47,7 +47,7 @@ describe("tapPlan", () => {
 
 describe("commitMessageFor", () => {
   test("ends with the Claude-Session trailer", () => {
-    expect(commitMessageFor("Casks/moss.rb")).toMatch(/Claude-Session: https:\/\/claude\.ai\/code\/session_/);
+    expect(commitMessageFor("Casks/moss-code.rb")).toMatch(/Claude-Session: https:\/\/claude\.ai\/code\/session_/);
   });
   test("names the exact file being published", () => {
     expect(commitMessageFor("Casks/norma.rb")).toContain("Casks/norma.rb");
@@ -56,16 +56,16 @@ describe("commitMessageFor", () => {
 
 describe("putArgsFor", () => {
   test("base64-encodes the content and targets the right repo/path", () => {
-    const args = putArgsFor("Casks/moss.rb", "cask \"moss\" do\nend\n", undefined);
+    const args = putArgsFor("Casks/moss-code.rb", "cask \"moss-code\" do\nend\n", undefined);
     expect(args).toEqual([
       "api",
       "-X",
       "PUT",
-      `repos/${TAP_REPO}/contents/Casks/moss.rb`,
+      `repos/${TAP_REPO}/contents/Casks/moss-code.rb`,
       "-f",
-      `message=${commitMessageFor("Casks/moss.rb")}`,
+      `message=${commitMessageFor("Casks/moss-code.rb")}`,
       "-f",
-      `content=${Buffer.from("cask \"moss\" do\nend\n", "utf8").toString("base64")}`,
+      `content=${Buffer.from("cask \"moss-code\" do\nend\n", "utf8").toString("base64")}`,
     ]);
   });
 
@@ -84,7 +84,7 @@ describe("putArgsFor", () => {
 describe("currentSha", () => {
   test("returns the sha when gh succeeds with a nonempty value", () => {
     const runner: GhRunner = () => "deadbeef\n";
-    expect(currentSha(runner, "Casks/moss.rb")).toBe("deadbeef");
+    expect(currentSha(runner, "Casks/moss-code.rb")).toBe("deadbeef");
   });
 
   test("returns undefined when gh throws (404 — the cask does not exist yet)", () => {
@@ -96,7 +96,7 @@ describe("currentSha", () => {
 
   test("treats an empty jq result the same as absent, rather than an empty-string sha", () => {
     const runner: GhRunner = () => "";
-    expect(currentSha(runner, "Casks/moss.rb")).toBeUndefined();
+    expect(currentSha(runner, "Casks/moss-code.rb")).toBeUndefined();
   });
 
   test("queries the exact repo/path this release publishes to", () => {
@@ -105,25 +105,25 @@ describe("currentSha", () => {
       calls.push(args);
       return "sha1\n";
     };
-    currentSha(runner, "Casks/moss.rb");
-    expect(calls).toEqual([["api", `repos/${TAP_REPO}/contents/Casks/moss.rb`, "--jq", ".sha"]]);
+    currentSha(runner, "Casks/moss-code.rb");
+    expect(calls).toEqual([["api", `repos/${TAP_REPO}/contents/Casks/moss-code.rb`, "--jq", ".sha"]]);
   });
 });
 
 describe("publishFile", () => {
   test("fetches the current sha, then PUTs with it included (updating an existing cask)", () => {
-    const localPath = tempFile("cask \"moss\" do\nend\n");
+    const localPath = tempFile("cask \"moss-code\" do\nend\n");
     const calls: string[][] = [];
     const runner: GhRunner = (args) => {
       calls.push(args);
       if (args[0] === "api" && args.length === 4) return "existing-sha\n"; // the sha lookup
       return ""; // the PUT itself
     };
-    publishFile(runner, { repoPath: "Casks/moss.rb", localPath });
+    publishFile(runner, { repoPath: "Casks/moss-code.rb", localPath });
 
     expect(calls).toHaveLength(2);
-    expect(calls[0]).toEqual(["api", `repos/${TAP_REPO}/contents/Casks/moss.rb`, "--jq", ".sha"]);
-    expect(calls[1]).toEqual(putArgsFor("Casks/moss.rb", "cask \"moss\" do\nend\n", "existing-sha"));
+    expect(calls[0]).toEqual(["api", `repos/${TAP_REPO}/contents/Casks/moss-code.rb`, "--jq", ".sha"]);
+    expect(calls[1]).toEqual(putArgsFor("Casks/moss-code.rb", "cask \"moss-code\" do\nend\n", "existing-sha"));
   });
 
   test("omits sha on a brand-new cask (the sha lookup 404s)", () => {
@@ -177,10 +177,10 @@ describe("findUnfilledTemplateSlot", () => {
 
 describe("renderDryRunEntry — fix wave M3 (whole-branch review, Major)", () => {
   test("prints the full content when there is no unfilled slot", () => {
-    const localPath = tempFile('cask "moss" do\nend\n');
-    const entry = renderDryRunEntry({ repoPath: "Casks/moss.rb", localPath });
-    expect(entry).toContain("Casks/moss.rb");
-    expect(entry).toContain('cask "moss" do');
+    const localPath = tempFile('cask "moss-code" do\nend\n');
+    const entry = renderDryRunEntry({ repoPath: "Casks/moss-code.rb", localPath });
+    expect(entry).toContain("Casks/moss-code.rb");
+    expect(entry).toContain('cask "moss-code" do');
     expect(entry).not.toContain("REFUSED");
   });
 
@@ -194,7 +194,7 @@ describe("renderDryRunEntry — fix wave M3 (whole-branch review, Major)", () =>
   });
 
   test("prints the 'missing on disk' note when the file does not exist yet — never a false refusal", () => {
-    const entry = renderDryRunEntry({ repoPath: "Casks/moss.rb", localPath: join(tmpdir(), "moss-publish-tap-test-does-not-exist", "moss.rb") });
+    const entry = renderDryRunEntry({ repoPath: "Casks/moss-code.rb", localPath: join(tmpdir(), "moss-publish-tap-test-does-not-exist", "moss-code.rb") });
     expect(entry).toContain("missing on disk");
     expect(entry).not.toContain("REFUSED");
   });

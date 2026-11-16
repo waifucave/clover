@@ -10,7 +10,7 @@ describe("the app's identity (spec §2)", () => {
   });
 
   test("dist and dev have their own app id and name (so their own user-data folder)", () => {
-    expect(appIdentity("dist")).toEqual({ profile: "dist", appId: "com.waifucave.moss.code", productName: "MOSS" });
+    expect(appIdentity("dist")).toEqual({ profile: "dist", appId: "com.waifucave.moss.code", productName: "MOSS Code" });
     expect(appIdentity("dev")).toEqual({ profile: "dev", appId: "com.waifucave.moss.code.dev", productName: "MOSS Code Dev" });
   });
 

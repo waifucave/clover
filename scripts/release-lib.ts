@@ -207,7 +207,7 @@ export function appcastDescription(i: { versionLine: string; version: string; no
   return `<p>${i.versionLine}</p>\n${notes}`;
 }
 
-/** Interpolates a brew cask template (T3's packaging/moss.rb.tmpl) — `{{version}}`/`{{sha256}}`/`{{url}}`. */
+/** Interpolates a brew cask template (T3's packaging/moss-code.rb.tmpl) — `{{version}}`/`{{sha256}}`/`{{url}}`. */
 export function caskFrom(tmpl: string, i: { version: string; sha256: string; url: string }): string {
   return tmpl
     .replaceAll("{{version}}", i.version)

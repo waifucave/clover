@@ -108,7 +108,7 @@ async function main(): Promise<void> {
     // macOS: the system's spellchecker.
   }
   const appWindow = new BrowserWindow({ width: 1100, height: 760, show: true, webPreferences: { sandbox: true, contextIsolation: true, spellcheck: false } });
-  await appWindow.loadURL("data:text/html,<title>MOSS</title><body style='margin:0;background:%23eee'></body>");
+  await appWindow.loadURL("data:text/html,<title>MOSS Code</title><body style='margin:0;background:%23eee'></body>");
   const viewTarget = { window: appWindow, bounds: { x: 20, y: 40, width: 900, height: 600 } };
   let n = 0;
   const hostOpts = {

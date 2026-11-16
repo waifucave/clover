@@ -48,7 +48,7 @@ describe("the installers' hooks", () => {
   });
 
   test("the Homebrew cask's uninstall removes it through the daemon, as the user, and goes on without the app", () => {
-    const code = codeLines(read("packaging/moss.rb.tmpl"), "#").join("\n");
+    const code = codeLines(read("packaging/moss-code.rb.tmpl"), "#").join("\n");
     // Through /bin/sh, so a binary already gone (the app in the Trash) exits 0: Homebrew refuses a missing executable.
     expect(code).toContain('executable:   "/bin/sh"');
     expect(code).toContain(`args:         ["-c", '[ -x "$1" ] || exit 0; exec "$1" ${autostartArgs("remove").join(" ")}', "sh", "#{appdir}/MOSS Code.app/Contents/Resources/daemon/moss-core"]`);
@@ -69,7 +69,7 @@ describe("the installers' hooks", () => {
   });
 
   test("the cask's zap takes exactly the caches, the preferences, the logs and the login item (the owner's rule)", () => {
-    const code = codeLines(read("packaging/moss.rb.tmpl"), "#").join("\n");
+    const code = codeLines(read("packaging/moss-code.rb.tmpl"), "#").join("\n");
     const zap = code.slice(code.indexOf("zap trash: ["), code.indexOf("]", code.indexOf("zap trash: [")));
     const paths = [...zap.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     expect(paths).toEqual(["~/Library/Caches/@waifucavemoss-desktop-updater", "~/Library/Caches/com.waifucave.moss.code", "~/Library/Caches/com.waifucave.moss.code.ShipIt",
@@ -85,7 +85,7 @@ describe("the installers' hooks", () => {
   });
 
   test("none reaches systemctl or Task Scheduler itself, launchctl only in the cask's fallback, and none turns it on", () => {
-    for (const [rel, comment] of [["packaging/moss.rb.tmpl", "#"], ["packaging/windows/installer.nsh", ";"], ["packaging/linux/after-install.sh", "#"], ["packaging/linux/after-remove.sh", "#"]] as const) {
+    for (const [rel, comment] of [["packaging/moss-code.rb.tmpl", "#"], ["packaging/windows/installer.nsh", ";"], ["packaging/linux/after-install.sh", "#"], ["packaging/linux/after-remove.sh", "#"]] as const) {
       const code = codeLines(read(rel), comment).filter((l) => !(rel.endsWith(".rb.tmpl") && l === `uninstall launchctl: "${LAUNCHD_LABEL}",`)).join("\n");
       expect(code, rel).not.toMatch(/\b(launchctl|systemctl|schtasks)\b/);
       expect(code, rel).not.toContain(`${AUTOSTART_SUBCOMMAND} enable`);
@@ -219,7 +219,7 @@ describe("winget", () => {
 
 describe("the Homebrew cask", () => {
   test("renders with every slot filled, and keeps the user's ~/.moss out of zap", () => {
-    const cask = caskFrom(read("packaging/moss.rb.tmpl"), { version: "1.111.1", sha256: "ab".repeat(32), url: "unused" });
+    const cask = caskFrom(read("packaging/moss-code.rb.tmpl"), { version: "1.111.1", sha256: "ab".repeat(32), url: "unused" });
     expect(cask).not.toMatch(/\{\{\w+\}\}/);
     expect(cask).toContain('version "1.111.1"');
     const zap = cask.slice(cask.indexOf("zap trash:"));

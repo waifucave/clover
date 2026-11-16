@@ -66,7 +66,7 @@ export const PAIR_TIMING: PairTiming = {
 };
 
 /** What the window says when the app has had no daemon for `stuckAfterMs` (it keeps trying meanwhile). */
-export const STUCK_REASON = "MOSS's background service hasn't started. MOSS keeps trying; if this stays, quit MOSS and open it again, or restart the computer.";
+export const STUCK_REASON = "MOSS's background service hasn't started. MOSS Code keeps trying; if this stays, quit MOSS Code and open it again, or restart the computer.";
 
 export interface PairOptions {
   endpoint: string;

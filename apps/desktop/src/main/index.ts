@@ -262,8 +262,8 @@ async function microphoneProblem(): Promise<string | undefined> {
   if (process.platform !== "darwin") return undefined;
   const status = systemPreferences.getMediaAccessStatus("microphone");
   if (status === "granted") return undefined;
-  if (status === "denied" || status === "restricted") return "Microphone access is off for MOSS. Turn it on in System Settings, under Privacy & Security, Microphone.";
-  return (await systemPreferences.askForMediaAccess("microphone")) ? undefined : "Microphone access wasn't allowed for MOSS.";
+  if (status === "denied" || status === "restricted") return "Microphone access is off for MOSS Code. Turn it on in System Settings, under Privacy & Security, Microphone.";
+  return (await systemPreferences.askForMediaAccess("microphone")) ? undefined : "Microphone access wasn't allowed for MOSS Code.";
 }
 
 async function ready(): Promise<void> {
@@ -351,7 +351,7 @@ async function ready(): Promise<void> {
     // A plugin's icon for the Plugins page's lists: where it is (`plugin.iconSource`, the app's alone), read here.
     pluginIcon: (id) => pluginIconFile(async (pid) => {
       const c = pair?.client;
-      if (c === undefined) throw new Error("MOSS isn't connected");
+      if (c === undefined) throw new Error("MOSS Code isn't connected");
       const raw = await c.request("plugin.iconSource", { id: pid });
       const r = PLUGINS_METHODS.pluginIconSource.result.safeParse(raw);
       if (!r.success) throw new Error("the core's answer isn't plugin.iconSource's");
@@ -401,7 +401,7 @@ async function ready(): Promise<void> {
     treeRequest: async (method, params) => {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
       const client = pair.client;
-      if (client === undefined) throw new LayerError("MOSS isn't running");
+      if (client === undefined) throw new LayerError("MOSS Code isn't running");
       // An install or an update downloads (up to 30 minutes for a large one); everything else answers within 30 s.
       return client.request(method, params ?? {}, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : method === "bot.importAvatar" ? 5 * 60_000 : 30_000);
     },
@@ -463,7 +463,7 @@ async function ready(): Promise<void> {
     // answers method-not-found and the pick still returns its token (the media URL needs only main's copy).
     registerGrant: async (grant) => {
       const client = pair.client;
-      if (client === undefined) throw new Error("MOSS isn't running");
+      if (client === undefined) throw new Error("MOSS Code isn't running");
       try {
         await client.request("plugin.grant.add", { pluginId: grant.pluginId, token: grant.token, path: grant.path, kind: grant.kind, access: grant.access }, 10_000);
         return "ok";
@@ -504,7 +504,7 @@ async function ready(): Promise<void> {
       const key = answerKeyValue;
       if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
       const client = pair.client;
-      if (client === undefined) { log(`sealed: answer refused (no client)`); return { accepted: false, reason: "MOSS isn't running" }; }
+      if (client === undefined) { log(`sealed: answer refused (no client)`); return { accepted: false, reason: "MOSS Code isn't running" }; }
       // The gate first, before anything else moves: any computer use driving this desktop's computer, no.
       const acting = await client.request<{ running?: boolean }>("computer.acting", {}, 3_000).catch(() => undefined);
       if (acting === undefined) { log(`sealed: answer refused (computer-use check failed)`); return { accepted: false, reason: "the computer-use check couldn't run" }; }
@@ -581,7 +581,7 @@ async function ready(): Promise<void> {
       const cardId = sealed.cardOf(token);
       if (cardId === undefined || sealed.elementOf(token) !== "own") return { state: "failed", why: "This card can't be reviewed here." };
       const client = pair.client;
-      if (client === undefined) return { state: "failed", why: "MOSS isn't running." };
+      if (client === undefined) return { state: "failed", why: "MOSS Code isn't running." };
       return client.request<{ state: string; report?: string; why?: string; model?: string }>("plugin.review", { card: cardId, ...(peek ? { peek: true } : {}) }, 15_000)
         .catch((err: unknown) => ({ state: "failed", why: err instanceof Error ? err.message.slice(0, 300) : "The review couldn't start." }));
     },
@@ -604,7 +604,7 @@ async function ready(): Promise<void> {
       const images = sendImages(message.images);
       if ("error" in images) return refuse(`images: ${images.error}`, images.error);
       const client = pair.client;
-      if (client === undefined) return refuse("MOSS isn't running");
+      if (client === undefined) return refuse("MOSS Code isn't running");
       // One key press or click that came to THIS frame (its own activation) and that the main process saw come to the
       // window covers one send (§5.5).
       // A hold that ended (hold-to-talk) lets this frame send once within 30 s of the release, its activation long gone; any other
@@ -1424,7 +1424,7 @@ function stateChanged(s: PairState): void {
   // The root draws "Starting MOSS…" until the shell comes; once the pair has gone a long time with no daemon (and
   // again when one comes), it is asked to draw again, so it says so instead.
   if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });
-  const status = s.kind === "reconnecting" ? "Reconnecting to MOSS…" : s.kind === "unavailable" ? "MOSS isn't running" : s.kind === "starting-daemon" ? "Starting MOSS…" : s.kind === "unverified" ? "Can't verify the MOSS daemon" : undefined;
+  const status = s.kind === "reconnecting" ? "Reconnecting to MOSS…" : s.kind === "unavailable" ? "MOSS Code isn't running" : s.kind === "starting-daemon" ? "Starting MOSS…" : s.kind === "unverified" ? "Can't verify the MOSS daemon" : undefined;
   tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(status !== undefined ? { status } : {}) });
 }
 

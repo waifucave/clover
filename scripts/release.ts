@@ -1482,19 +1482,19 @@ if (appcastPlan.target === "preview") {
 // write is deferred to the publish tail (section 12, inside `if (!DRY_RUN)`) — see F1 above.
 
 // ---------------------------------------------------------------------------
-// 11. Cask: render packaging/moss.rb.tmpl with this release's version/sha256(DMG)/url into
-//     out/release/<v>/moss.rb — per-release build output; only the .tmpl is committed.
+// 11. Cask: render packaging/moss-code.rb.tmpl with this release's version/sha256(DMG)/url into
+//     out/release/<v>/moss-code.rb — per-release build output; only the .tmpl is committed.
 // ---------------------------------------------------------------------------
 console.log("Rendering Homebrew cask...");
 const dmgSha256 = sh(`shasum -a 256 "${dmgPath}"`).trim().split(/\s+/)[0]!;
-const caskTmplPath = join(ROOT, "packaging", "moss.rb.tmpl");
+const caskTmplPath = join(ROOT, "packaging", "moss-code.rb.tmpl");
 const caskTmpl = readFileSync(caskTmplPath, "utf8");
 const caskRendered = caskFrom(caskTmpl, {
   version,
   sha256: dmgSha256,
   url: `https://github.com/${GH_REPO}/releases/download/v${version}/MOSS-Code-${version}.dmg`,
 });
-const caskOutPath = join(OUT, "moss.rb");
+const caskOutPath = join(OUT, "moss-code.rb");
 writeFileSync(caskOutPath, caskRendered);
 console.log(`Cask rendered: ${caskOutPath} (sha256 ${dmgSha256})`);
 

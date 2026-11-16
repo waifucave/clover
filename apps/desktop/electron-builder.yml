@@ -5,7 +5,7 @@
 # channel come from the release scripts' flags (scripts/release/lib.ts); nothing here holds a secret, and nothing is
 # ever published from a build (`--publish never`): publishing is the owner's step (scripts/release/publish.ts).
 appId: com.waifucave.moss.code
-productName: MOSS
+productName: MOSS Code
 copyright: Copyright © 2026 waifucave
 directories:
   output: out/dist
@@ -126,18 +126,18 @@ linux:
   icon: build/icons
   # The app's own executable, /opt/moss-code/moss-code; `moss` on the PATH is the daemon's command line
   # (packaging/linux/after-install.sh), as on macOS.
-  executableName: moss
+  executableName: moss-code
   synopsis: A bot-first, endlessly moddable desktop agent platform
   # The deb's Maintainer field and the rpm's Packager, the owner's contact: a name and an email, as Debian wants.
   maintainer: MOSS <w@waifucave.com>
 # The deb and the rpm are the main Linux packages: they install the AppArmor profile Electron's sandbox needs on
 # Ubuntu (spec §4). Their scripts and the profile live in packaging/linux/. Besides electron-builder's own
 # dependencies, the daemon's Bash tool needs bubblewrap (spec §4) and its secrets need libsecret.
-# Both are named `moss`: electron-builder would otherwise name the file after the package.json name, whose
+# Both are named `moss-code`: electron-builder would otherwise name the file after the package.json name, whose
 # `@waifucave/` scope puts a folder in the path (the first packages run failed on it).
 deb:
-  packageName: moss
-  artifactName: moss_${version}_${arch}.${ext}
+  packageName: moss-code
+  artifactName: moss-code_${version}_${arch}.${ext}
   # GNOME without the AppIndicator extension shows no tray, so the launcher entry carries Quit (spec §4): the app's
   # own executable with --quit (E-M1's app quits the pair). `moss` on the PATH is the daemon's command line.
   desktop:
@@ -145,7 +145,7 @@ deb:
       Actions: Quit;
     desktopActions:
       Quit:
-        Name: Quit MOSS
+        Name: Quit MOSS Code
         Exec: /opt/moss-code/moss-code --quit
   afterInstall: ../../packaging/linux/after-install.sh
   afterRemove: ../../packaging/linux/after-remove.sh
@@ -165,15 +165,15 @@ deb:
     - libappindicator3-1
     - gnome-keyring
 rpm:
-  packageName: moss
-  artifactName: moss-${version}.${arch}.${ext}
+  packageName: moss-code
+  artifactName: moss-code-${version}.${arch}.${ext}
   # The same Quit action as the deb's.
   desktop:
     entry:
       Actions: Quit;
     desktopActions:
       Quit:
-        Name: Quit MOSS
+        Name: Quit MOSS Code
         Exec: /opt/moss-code/moss-code --quit
   afterInstall: ../../packaging/linux/after-install.sh
   afterRemove: ../../packaging/linux/after-remove.sh
@@ -193,7 +193,7 @@ rpm:
 # (spec §3.1, §4).
 appImage:
   artifactName: MOSS-Code-${version}-${arch}.AppImage
-# The release's names, which the Homebrew cask and winget point at (packaging/moss.rb.tmpl, packaging/winget/).
+# The release's names, which the Homebrew cask and winget point at (packaging/moss-code.rb.tmpl, packaging/winget/).
 # (The zip takes the mac section's artifactName.)
 dmg:
   artifactName: MOSS-Code-${version}.${ext}

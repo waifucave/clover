@@ -54,7 +54,7 @@ describe("the feed and the channels", () => {
     expect(builder.dmg.artifactName).toBe("MOSS-Code-${version}.${ext}");
     expect(builder.mac.artifactName).toBe("MOSS-Code-${version}-mac.${ext}");
     expect(builder.nsis.artifactName).toBe("MOSS-Code-Setup-${version}.${ext}");
-    expect(read("packaging/moss.rb.tmpl")).toContain("/releases/download/v#{version}/MOSS-#{version}.dmg");
+    expect(read("packaging/moss-code.rb.tmpl")).toContain("/releases/download/v#{version}/MOSS-Code-#{version}.dmg");
     expect(installers("1.2.3", "mac")).toEqual(["MOSS-Code-1.2.3.dmg", "MOSS-Code-1.2.3-mac.zip"]);
     expect(installers("1.2.3", "linux-arm64")).toEqual(["moss_1.2.3_arm64.deb", "moss-1.2.3.arm64.rpm", "MOSS-Code-1.2.3-arm64.AppImage"]);
     expect(expectedArtifacts("1.2.3", "win", "latest")).toEqual(["MOSS-Code-Setup-1.2.3.exe", "latest.yml", "beta.yml", "moss-core-1.2.3-windows-x64.exe", "latest-core-windows-x64.yml", "beta-core-windows-x64.yml",

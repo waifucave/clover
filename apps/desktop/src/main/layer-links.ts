@@ -140,10 +140,10 @@ export class LayerLinks {
   private async open(pluginId: string): Promise<DaemonClient> {
     const app = this.deps.appClient();
     const appToken = this.deps.appToken();
-    if (app === undefined || appToken === undefined) throw new Error("MOSS isn't running");
+    if (app === undefined || appToken === undefined) throw new Error("MOSS Code isn't running");
     const { token } = await app.request<{ token: string }>("layer.token", { pluginId });
     const client = await this.deps.dial();
-    if (client === undefined) throw new Error("MOSS isn't running");
+    if (client === undefined) throw new Error("MOSS Code isn't running");
     const why = await proveServer(client, appToken, this.deps.pid, 5_000);
     if (why !== undefined) {
       client.close();
