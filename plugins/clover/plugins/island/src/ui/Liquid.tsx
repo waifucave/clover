@@ -10,7 +10,6 @@ import { useId, type CSSProperties, type ReactElement, type ReactNode } from "re
 import type { CardGeometry } from "../model/geometry";
 import { fluidFrame, FLUID, type Blob, type FluidFrame } from "../model/fluid";
 import { morphBlur, LIQUID } from "../model/geometry";
-import { hoverScale } from "../model/hover";
 import { springEasing, SURFACE_SPRING } from "../model/curves";
 import { useIslandStyles } from "./styles";
 
@@ -78,11 +77,11 @@ export function LiquidCard({ geometry, seconds, hovered = false, reducedMotion =
     width: Math.max(card.width, 0),
     height: Math.max(card.height, 0),
     borderRadius: radius,
-    transition: `transform ${HOVER_EASING.durationMs}ms ${HOVER_EASING.easing}`,
     pointerEvents: interactive ? "auto" : "none",
   };
   if (frame.crisp < 1) shell.opacity = frame.crisp;
-  if (grow) shell.transform = `scale(${hoverScale(geometry.card.width)})`;
+  // A hovered card is never moved, scaled, faded or filtered: it holds sealed buttons, and a reading taken while it moves says "not visible"
+  // (a click within a spring's time of the pointer arriving was refused). The hover cue is a brighter rim (island.css, `data-hovered`).
 
   const blur = morphBlur(card, geometry.card) + LIQUID.maxMorphBlur * (1 - frame.content);
   const content: CSSProperties = {
