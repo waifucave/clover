@@ -55,7 +55,10 @@ beforeAll(async () => {
   document.body.append(root);
   const original = console.error;
   console.error = (...args: unknown[]) => {
-    errors.push(args.map(String).join(" "));
+    const line = args.map(String).join(" ");
+    // happy-dom loads no frame's page: a sealed card's frames (the app's own pages) are placed and left empty here.
+    if (/Iframe page loading is disabled/.test(line)) return;
+    errors.push(line);
   };
   try {
     (0, eval)(readFileSync(join(outdir, "main.js"), "utf8"));

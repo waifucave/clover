@@ -2,10 +2,11 @@
 // and an agent's live tab (`main` keyed `agent`, and `panel` keyed `agent` for a bot's coding agent opened from its
 // slim column). Each lays out the spots it declares: the conversation over the composer, and the stage above them
 // when a plugin fills it. The column beside the conversation (`bot.side`, the session column) is the shell's frame's.
-import type { BotRef, BotView, EntryProps, SessionView } from "../runtime/types";
+import type { BotRef } from "./local";
+import type { BotView, EntryProps, SessionView } from "@waifucave/clover-plugin-sdk";
+import { Spot, useSpotEntries, usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useState } from "react";
 import { useLoad } from "./data";
-import { Spot, useSpotEntries, usePluginApi } from "./sdk";
 import { S } from "./strings";
 import { BotTab } from "./Window";
 

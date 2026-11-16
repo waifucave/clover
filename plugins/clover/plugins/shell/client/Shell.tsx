@@ -8,23 +8,25 @@
 // `bot-editor`. Panels by tab (the owner's item 90): a coding session has its column, the terminal, the changes, the
 // files and the browser; a bot's tab has its slim column (`bot.side`) and the browser, and one of its coding agents
 // opens in the panel as a live tab of its own.
+import { type BotRef, fieldText, plain } from "./local";
+import type { EntryProps, SessionKind, SessionView } from "@waifucave/clover-plugin-sdk";
+import { Spot, useApprovals, useCore, useKept, usePluginApi, useSpotEntries, useTokens } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import type { ShellAct } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import type { BotRef, EntryProps, SessionKind, SessionView } from "../runtime/types";
 import { useLiveList, useLoad } from "./data";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelViewId } from "./panel-types";
 import type { OwnPanel, PanelView } from "./panel-types";
-import { Spot, useApprovals, useCore, useKept, usePluginApi, useSpotEntries, useTokens } from "./sdk";
 import { S } from "./strings";
-import { fieldText, plain } from "../runtime/views";
 import { Window, shapeOf, skinOf } from "./Window";
 import { KeptTab } from "./KeptTab";
 import { ReplacedPanel } from "./ReplacedPanel";
-import { entryRef } from "../runtime/resolve";
 import type { ChromeApi } from "./chrome";
+
+/** An entry's ref (`<plugin id>#<entry id>`). */
+const entryRef = (e: { pluginId: string; id: string }) => `${e.pluginId}#${e.id}`;
 
 /** The panel keys besides the session column, each a `panel` entry's key. */
 const PANEL_KEYS = ["terminal", "diff", "browser", "files", "agent"] as const;

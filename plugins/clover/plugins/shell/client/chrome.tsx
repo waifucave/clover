@@ -8,13 +8,13 @@
 //
 // The parts reach the shell's state through one context, which only the shell's own `Window` and `Shell` provide; a tab drawn
 // outside the shell (a gallery) has none and these parts draw nothing.
+import type { BotRef } from "./local";
+import { Spot } from "@waifucave/clover-plugin-sdk/ui";
 import { createContext, useContext, useLayoutEffect, type ReactNode } from "react";
-import type { BotRef } from "../runtime/types";
 import { IconChevronDown, IconEdit, IconSidebar } from "./icons";
 import { PanelToggleButton } from "./PanelToggles";
 import { OwnPanelToggles } from "./OwnPanelToggles";
 import type { OwnPanel, SessionKind } from "./panel-types";
-import { Spot } from "./sdk";
 import { S } from "./strings";
 
 /** The names a layout's placement is tracked by. */

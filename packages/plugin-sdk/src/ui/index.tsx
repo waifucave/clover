@@ -1508,15 +1508,19 @@ export function useSpotEntries(name: string, spotKey?: string, forProps?: string
   const forBot = typeof b === "string" ? b : typeof (b as { id?: unknown } | undefined)?.id === "string" ? (b as { id: string }).id : undefined;
   const kind = typeof forProps === "object" && typeof forProps?.forSessionKind === "string" ? forProps.forSessionKind : undefined;
   const [entries, setEntries] = useState<readonly SpotEntryView[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  // Which question the last answer was to: an answer for other params (another bot, another session kind) is not this
+  // one's, so the list reads as not loaded in the very render the params change, until its own answer comes.
+  const asked = JSON.stringify([part.mount, name, spotKey ?? null, forBot ?? null, kind ?? null]);
+  const [answered, setAnswered] = useState<string | undefined>(undefined);
+  const loaded = answered === asked;
   const listeners = useRef(new Set<() => void>());
   useEffect(() => {
     let live = true;
     const load = () => void rt().bridge.entries(part.mount, name, spotKey, forBot, kind).then((e) => {
       if (!live) return;
       setEntries((old) => (JSON.stringify(old) === JSON.stringify(e) ? old : e));
-      setLoaded(true);
-    }, () => { if (live) setLoaded(true); });
+      setAnswered(asked);
+    }, () => { if (live) setAnswered(asked); });
     load();
     const off = onLayerMessage((m) => {
       if (m.type === "respot") load();
@@ -1525,7 +1529,7 @@ export function useSpotEntries(name: string, spotKey?: string, forProps?: string
       live = false;
       off();
     };
-  }, [part.mount, name, spotKey, forBot, kind]);
+  }, [part.mount, name, spotKey, forBot, kind, asked]);
   useEffect(() => {
     for (const l of listeners.current) l();
   }, [entries]);

@@ -5,6 +5,10 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { ChromeActions, ChromeDrag, ChromeEdit, ChromePanels, ChromeSession, ChromeSidebar, ChromeTitle } from "../client/chrome";
 import { BotTab, Window, shapeOf, type WindowProps } from "../client/Window";
 import type { ChromeApi } from "../client/chrome";
+import { runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+
+/** The layer the window draws in (its spots are empty here). */
+const LAYER = runtimeWith({});
 
 afterEach(cleanup);
 
@@ -24,9 +28,11 @@ const chromeApi = (over: Partial<Omit<ChromeApi, "place" | "panels">> = {}): Omi
 
 function frame(skin: Record<string, string> | undefined, children: React.ReactNode, props: Partial<WindowProps> = {}, chrome = chromeApi()) {
   return (
-    <Window sidebar={<div>sidebar</div>} title="Alpha" skin={skin} shape={shapeOf(skin)} chrome={chrome} panel={<div>the panel</div>} {...props}>
-      <BotTab conversation={<div>{children}</div>} composer={<div>composer</div>} />
-    </Window>
+    <TestLayer runtime={LAYER}>
+      <Window sidebar={<div>sidebar</div>} title="Alpha" skin={skin} shape={shapeOf(skin)} chrome={chrome} panel={<div>the panel</div>} {...props}>
+        <BotTab conversation={<div>{children}</div>} composer={<div>composer</div>} />
+      </Window>
+    </TestLayer>
   );
 }
 

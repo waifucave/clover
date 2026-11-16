@@ -7,12 +7,13 @@
 // A code session has every panel: its column, the terminal, the changes, the files (its folder) and the browser (lane
 // L's, so the host's placeholder for now). A bot's tab has its slim column and the browser; one of its coding agents
 // opens in the panel as a live tab of its own (the owner's item 90).
+import { Spot } from "@waifucave/clover-plugin-sdk/ui";
+import { TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { EntryComponent } from "../client/local";
 import { useState } from "react";
 import type { ConversationItem } from "../../conversation/client/types";
 import { APPROVAL_PENDING, APPROVAL_PENDING_CARD, at, BASIC, bot, GREETING, tool, user } from "../../conversation/gallery/fixtures";
-import { Spot, UiRuntimeProvider } from "../client/sdk";
 import type { ShellStart } from "../client/Shell";
-import type { EntryComponent } from "../runtime/types";
 import type { Story } from "./story";
 import { waitingCard, world, type WorldOptions } from "./world";
 
@@ -140,9 +141,9 @@ function Screen({ config }: { config: ScreenConfig }) {
   // One world per screen for its life: a new one each render would start every part's loads again.
   const [runtime] = useState(() => world(config.world));
   return (
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <Spot name="app.root" props={{ translucent: true, start: config.start }} />
-    </UiRuntimeProvider>
+    </TestLayer>
   );
 }
 

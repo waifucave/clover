@@ -242,7 +242,8 @@ interface Ctx { bot?: string; sessionKind?: string; os?: string; surface?: strin
 const asList = <T,>(v: T | readonly T[] | undefined): readonly T[] | undefined => (v === undefined ? undefined : Array.isArray(v) ? (v as readonly T[]) : [v as T]);
 export const entryRef = (e: Pick<TestEntry, "pluginId" | "id">) => `${e.pluginId}#${e.id}`;
 
-function applies(e: TestEntry, ctx: Ctx): boolean {
+/** Whether an entry's `when` holds in a context. A condition the context can't answer doesn't hold. */
+export function applies(e: TestEntry, ctx: Ctx): boolean {
   const bots = asList(e.when?.bot) ?? (e.botPlugin !== undefined ? [e.botPlugin] : undefined);
   if (bots && (ctx.bot === undefined || !bots.includes(ctx.bot))) return false;
   const sessions = asList(e.when?.session);
@@ -253,7 +254,8 @@ function applies(e: TestEntry, ctx: Ctx): boolean {
   return true;
 }
 
-function keyFit(entryKey: string | undefined, key: string): number {
+/** How well an entry's key covers a key: 3 exact, 2 a `*` pattern, 1 no key, 0 not at all. */
+export function keyFit(entryKey: string | undefined, key: string): number {
   if (entryKey === undefined) return 1;
   if (entryKey.endsWith("*")) return key.startsWith(entryKey.slice(0, -1)) ? 2 : 0;
   return entryKey === key ? 3 : 0;
@@ -467,7 +469,7 @@ export function setUpTestLayer(runtime: TestRuntime, root: { pluginId: string; e
     sealedFrame: async (mount, cardId, element, look) => {
       note("sealedFrame", mount, [cardId, element, look]);
       const text = runtime.sealedText?.(cardId, element);
-      return text === undefined ? "about:blank" : `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><body style="margin:0;font:14px system-ui">${text.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}</body>`)}`;
+      return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><body style="margin:0;font:14px system-ui">${(text ?? "").replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}</body>`)}`;
     },
     onMessage(listener) { listeners.add(listener); return () => void listeners.delete(listener); },
   };

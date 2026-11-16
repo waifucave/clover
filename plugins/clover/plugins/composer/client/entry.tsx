@@ -109,7 +109,7 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   // plain text it sends like any other.
   const [noCommands, setNoCommands] = useState(false);
   const slash: ComposerSlash | undefined =
-    host?.commands && host.runCommand && !noCommands
+    host !== undefined && !noCommands
       ? {
           commands,
           onOpen: () => {

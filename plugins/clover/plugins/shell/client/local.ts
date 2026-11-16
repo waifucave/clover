@@ -1,8 +1,31 @@
-// Small readers for B's views that every part needs.
-import type { DeviceView } from "./types";
+// Small shapes and readers this part keeps for itself (they were the shell's, F2b: no part imports another's folder).
+import type { DeviceView, EntryProps, PluginApi, UiComponent, Unsubscribe } from "@waifucave/clover-plugin-sdk";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 
-/** B's `Text`: a plain string, or one per language with `en` always there. */
+/** A bot as a reference: its id and name. */
+export interface BotRef {
+  id: string;
+  name: string;
+}
+
+/** An `avatar.packs` entry: an avatar file with its format and portrait. */
+export interface AvatarPackEntry {
+  id: string;
+  name?: string;
+  file: string;
+  format: string;
+  portrait?: string;
+  license?: string;
+}
+
+/** A component an entry names. */
+export type EntryComponent<P = any> = UiComponent<EntryProps<P>>;
+
+/** `files`, with its watch. */
+export type FilesWithWatch = NonNullable<PluginApi["files"]>;
+export type { Unsubscribe };
+
+/** A manifest's text: a plain string, or one per language with `en` always there. */
 export type Text = string | ({ en: string } & Record<string, string>);
 
 /** A `Text` in the user's language, else its base language, else English. */
@@ -12,13 +35,10 @@ export function plain(text: Text | undefined, lang = "en"): string {
   return text[lang] ?? text[lang.split("-")[0]!] ?? text.en;
 }
 
-/** The most of a spot entry's title the shell shows (a sidebar row, the title bar, a Settings section's heading). */
+/** The most of a spot entry's title shown in one line. */
 export const FIELD_TEXT_MAX = 80;
 
-/** A spot entry's text field (a `title`, as the manifest wrote it: a string, or words by language) in `lang`, through
- *  the SDK's one plain-text cleaner (`displayText`: one line, no control, bidi or zero-width characters, at most
- *  FIELD_TEXT_MAX), or undefined when it is neither or nothing is left. A plugin wrote it, and the places that show it
- *  are the shell's own. A language map is as good as a string: an entry is never dropped for one. */
+/** A spot entry's text field (a string, or words by language) in `lang`, one clean line, or undefined. */
 export function fieldText(v: unknown, lang = "en"): string | undefined {
   if (typeof v === "string") return displayText(v, FIELD_TEXT_MAX);
   if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
@@ -28,7 +48,7 @@ export function fieldText(v: unknown, lang = "en"): string | undefined {
   return displayText(pick, FIELD_TEXT_MAX);
 }
 
-/** What a device is, as Settings groups them: a computer (it runs the core, or is one), a phone, or a browser. */
+/** What a device is, as Settings groups them: a computer, a phone, or a browser. */
 export function deviceKind(d: Pick<DeviceView, "kind" | "runsCore">): "computer" | "phone" | "web" {
   if (d.kind === "phone") return "phone";
   if (d.kind === "browser") return "web";

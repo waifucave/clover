@@ -1,20 +1,21 @@
 // The default shell on the runtime: routes, the panels each tab offers (the owner's item 90), the dialog layer and its
 // card rule, and the tabs it ships. The other parts stand in as stubs that show the props their spots got.
+import { type TestEntry as UiEntry, card, fakeApi, fakeApprovals, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { BotView, SessionView } from "@waifucave/clover-plugin-sdk";
+import type { EntryComponent } from "../client/local";
+import { catalogSpot } from "@waifucave/clover-plugin-sdk/ui/testing";
+import { Spot } from "@waifucave/clover-plugin-sdk/ui";
 import * as React from "react";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import type { UiEntry } from "../runtime/resolve";
-import { card, fakeApi, fakeApprovals, fakeCore, settle } from "../runtime/testkit";
-import type { BotView, EntryComponent, SessionView } from "../runtime/types";
-import { runtimeWith } from "../runtime/ui";
-import { SPOT_DECLS } from "../runtime/catalog";
 import { DEFAULT_TAB_LAYOUT, layoutSpots } from "@waifucave/clover-plugin-sdk";
 import { AgentTab, BotHeader, DefaultBotTab } from "../client/Tabs";
 import { newestCoding, Shell, type ShellStart } from "../client/Shell";
 import { KeptTab, notDrawn } from "../client/KeptTab";
-import { Spot, UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
+// What a part keeps across a reload is the window's session storage: each test starts with none.
+afterEach(() => sessionStorage.clear());
 
 const bot = (id: string, name: string): BotView => ({ id, name, model: "m", userLayer: [], state: "idle", mainSession: `s_${id}` });
 const s = (id: string, extra: Partial<SessionView>): SessionView => ({ id, kind: "agent", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
@@ -92,7 +93,7 @@ const ENTRIES: UiEntry[] = [
   entry("clover/settings", "main", "Settings", { key: "settings" }),
 ];
 
-async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<string, string>, onWatch?: (listener: (v: SessionView) => void) => void, shellProps: Record<string, unknown> = {}, onBotWatch?: (listener: (b: BotView) => void, onRemoved?: (id: string) => void) => void) {
+async function mount(start?: ShellStart, extra: UiEntry[] = [], _kept?: undefined, onWatch?: (listener: (v: SessionView) => void) => void, shellProps: Record<string, unknown> = {}, onBotWatch?: (listener: (b: BotView) => void, onRemoved?: (id: string) => void) => void) {
   const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }) });
   const approvals = fakeApprovals();
   const api = fakeApi({
@@ -100,24 +101,23 @@ async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<strin
     conversation: { list: async () => SESSIONS, get: async (id) => SESSIONS.find((x) => x.id === id)!, watch: (l) => { onWatch?.(l); return () => undefined; } },
   });
   const runtime = runtimeWith({
-    spot: (name) => SPOT_DECLS[name],
+    spot: catalogSpot,
     entries: [...ENTRIES, ...extra],
     component: (_p, name) => COMPONENTS[name],
     api: () => api,
     core: () => core,
     approvals,
     sessionKind: (id) => SESSIONS.find((x) => x.id === id)?.kind,
-    ...(kept ? { kept } : {}),
   });
   const tree = (extraProps: Record<string, unknown>) => (
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <Spot name="app.root" props={start ? { start, ...extraProps } : extraProps} />
-    </UiRuntimeProvider>
+    </TestLayer>
   );
   const rendered = render(tree(shellProps));
-  await act(() => settle(6));
+  await act(() => settle(20));
   /** The window's `act` prop arriving after it has drawn (what a bot's own frame's `shell.openPanel` becomes). */
-  const send = async (extraProps: Record<string, unknown>) => { rendered.rerender(tree(extraProps)); await act(() => settle(4)); };
+  const send = async (extraProps: Record<string, unknown>) => { rendered.rerender(tree(extraProps)); await act(() => settle(20)); };
   return { core, approvals, send };
 }
 
@@ -130,7 +130,7 @@ describe("the shell's session list", () => {
     await mount({ route: { route: "agent", params: { session: "code-new" } } }, [], undefined, (l) => (emit = l));
     expect(toggles()).not.toContain("Terminal");
     await act(async () => emit!(s("code-new", { kind: "coding", root: "home/Studio/projects/cli", title: "From the CLI", startedAt: 5 })));
-    await act(() => settle(6));
+    await act(() => settle(20));
     expect(toggles()).toContain("Terminal");
   });
 
@@ -154,21 +154,21 @@ describe("a bot that is removed", () => {
     await mount({ route: { route: "bot", params: { bot: "luna" } } }, [], undefined, undefined, {}, (_l, r) => (removed = r));
     expect(route()).toContain('"bot":"luna"');
     await act(async () => removed!("luna"));
-    await act(() => settle(6));
+    await act(() => settle(20));
     expect(route()).toContain('"bot":"alpha"');
   });
   test("a bot that isn't showing is just gone from the list; the tab stays", async () => {
     let removed: ((id: string) => void) | undefined;
     await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [], undefined, undefined, {}, (_l, r) => (removed = r));
     await act(async () => removed!("luna"));
-    await act(() => settle(6));
+    await act(() => settle(20));
     expect(route()).toContain('"bot":"alpha"');
   });
   test("the last bot: the window shows its empty state", async () => {
     let removed: ((id: string) => void) | undefined;
     await mount({ route: { route: "bot", params: { bot: "luna" } } }, [], undefined, undefined, {}, (_l, r) => (removed = r));
     await act(async () => { removed!("alpha"); removed!("luna"); });
-    await act(() => settle(6));
+    await act(() => settle(20));
     expect(document.querySelector(".cl-shell-empty")).not.toBeNull();
   });
 });
@@ -196,13 +196,13 @@ describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock pa
     await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("sheets", "sheets", "Sheets")]);
     expect(views()).toEqual(["terminal"]);
     press("Sheets");
-    await act(() => settle(4));
+    await act(() => settle(20));
     expect(views()).toEqual(["terminal", "sheets#sheets"]);
     expect(stubText("panel:sheets")).toContain('"app":"sheets"');
     expect(screen.getByRole("button", { name: "Sheets" }).getAttribute("aria-pressed")).toBe("true");
     press("Session");
     press("Terminal");
-    await act(() => settle(4));
+    await act(() => settle(20));
     expect(views()).toEqual(["sheets#sheets"]);
   });
 
@@ -219,10 +219,10 @@ describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock pa
     await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("one", "notes", "One notes"), added("two", "notes", "Two notes")]);
     expect(toggles()).toEqual(["Session", "Terminal", "One notes", "Two notes"]);
     press("Two notes");
-    await act(() => settle(4));
+    await act(() => settle(20));
     expect(views()).toEqual(["terminal", "two#notes"]);
     press("One notes");
-    await act(() => settle(4));
+    await act(() => settle(20));
     expect(views()).toEqual(["two#notes", "one#notes"]);
   });
 
@@ -235,7 +235,7 @@ describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock pa
     const items = [...document.querySelectorAll('[role="menuitemcheckbox"]')].map((i) => i.textContent);
     expect(items).toEqual(["Panel D", "Panel E"]);
     fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Panel E" }));
-    await act(() => settle(4));
+    await act(() => settle(20));
     expect(views()).toEqual(["p-e#e"]);
     expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(screen.getByRole("button", { name: "Other panels" }).getAttribute("aria-pressed")).toBe("true");
@@ -244,7 +244,7 @@ describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock pa
   test("a panel whose part draws nothing shows the host's placeholder", async () => {
     await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("sheets", "sheets", "Sheets", { component: "Missing" })]);
     press("Sheets");
-    await act(() => settle(4));
+    await act(() => settle(20));
     expect(document.querySelector('[data-empty-view="sheets#sheets"]')).not.toBeNull();
   });
 
@@ -275,19 +275,19 @@ describe("the shell", () => {
   });
 
   test("where the user is outlives a reload of the window's document: the route, and Settings over the tab under it", async () => {
-    const kept = new Map<string, string>();
-    await mount(undefined, [], kept);
+    await mount(undefined, []);
     fireEvent.click(screen.getByRole("button", { name: "go code" }));
-    await act(() => settle(6));
+    await act(() => settle(20));
     fireEvent.click(screen.getByRole("button", { name: "go settings" }));
-    await act(() => settle(6));
+    await act(() => settle(20));
     expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
     expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-1"}}');
-    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
-    const atReload = new Map(kept);
+    // The document goes with no unmount (a reload runs no cleanup): the window's session storage as it was.
+    const atReload = new Map(Array.from({ length: sessionStorage.length }, (_, i) => [sessionStorage.key(i)!, sessionStorage.getItem(sessionStorage.key(i)!)!] as const));
     cleanup();
-    expect(kept.size).toBe(0);
-    await mount(undefined, [], atReload);
+    expect(sessionStorage.length).toBe(0);
+    for (const [k, v] of atReload) sessionStorage.setItem(k, v);
+    await mount(undefined, []);
     // The same place from the first render: Settings, with the agent's tab under it (not the first bot's tab).
     expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
     expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-1"}}');
@@ -298,8 +298,9 @@ describe("the shell", () => {
   test("a bot's slim column opens its coding agent in the panel, as a live tab of its own (item 90)", async () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    await act(() => settle(20));
     fireEvent.click(screen.getByRole("button", { name: "open agent" }));
-    await act(() => settle(6));
+    await act(() => settle(20));
     const panel = screen.getByRole("region", { name: "Panel" });
     const agent = panel.querySelector('.cl-agent-tab[data-place="panel"]')!;
     expect(agent).toBeTruthy();
@@ -424,12 +425,12 @@ describe("a bot's own layout's header", () => {
       api: () => api,
       core: () => fakeCore({}),
       approvals: fakeApprovals(),
-      spot: (name) => SPOT_DECLS[name],
+      spot: catalogSpot,
       entries: [{ pluginId: "clover/vrm", id: "vrm", spot: "avatar", key: "vrm", component: "VrmAvatar" } as UiEntry],
       component: (_p, name) => (name === "VrmAvatar" ? AvatarStub : undefined),
     });
-    render(<UiRuntimeProvider runtime={runtime}>{React.createElement(Part as never, { props: { bot: { id: b.id, name: b.name } } } as never)}</UiRuntimeProvider>);
-    await act(() => settle(6));
+    render(<TestLayer runtime={runtime}>{React.createElement(Part as never, { props: { bot: { id: b.id, name: b.name } } } as never)}</TestLayer>);
+    await act(() => settle(20));
   }
 
   test("the default tab draws the stock layout's parts in its order (`extends: \"default\"` means this tab)", async () => {
@@ -439,7 +440,7 @@ describe("a bot's own layout's header", () => {
       api: () => api,
       core: () => fakeCore({}),
       approvals: fakeApprovals(),
-      spot: (name) => SPOT_DECLS[name],
+      spot: catalogSpot,
       entries: [
         { pluginId: "clover/character", id: "stage", spot: "bot.stage", component: "Stage" } as UiEntry,
         { pluginId: "clover/conversation", id: "conversation", spot: "conversation", component: "Conversation" } as UiEntry,
@@ -447,8 +448,8 @@ describe("a bot's own layout's header", () => {
       ],
       component: (_p, name) => (name === "Stage" ? Stub("bot.stage") : name === "Conversation" ? Stub("conversation") : name === "Composer" ? Stub("composer") : undefined),
     });
-    render(<UiRuntimeProvider runtime={runtime}>{React.createElement(DefaultBotTab as never, { props: { bot: { id: "luna", name: "Luna" } } } as never)}</UiRuntimeProvider>);
-    await act(() => settle(6));
+    render(<TestLayer runtime={runtime}>{React.createElement(DefaultBotTab as never, { props: { bot: { id: "luna", name: "Luna" } } } as never)}</TestLayer>);
+    await act(() => settle(20));
     expect([...document.querySelectorAll("[data-part]")].map((e) => e.getAttribute("data-part"))).toEqual(layoutSpots(DEFAULT_TAB_LAYOUT.root));
   });
 
@@ -474,7 +475,7 @@ describe("the bot tab kept across pages", () => {
   const kept = () => [...document.querySelectorAll(".cl-shell-kept")] as HTMLElement[];
   const go = async (name: string) => {
     fireEvent.click(screen.getByRole("button", { name }));
-    await act(() => settle(6));
+    await act(() => settle(20));
   };
 
   test("leaving a bot's tab keeps it mounted, hidden and inert; coming back shows the same element, not a new one", async () => {

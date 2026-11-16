@@ -5,6 +5,14 @@
 //
 // The world counts the calls still in flight, so the gallery says it is ready only once every screen has drawn its
 // data (`whenIdle`).
+import { type TestEntry as UiEntry, type TestRuntime as UiRuntime, card, catalogSpot, computerView, deviceView, fakeApi, pluginDetail, pluginSummary, runtimeWith } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { BotView, CardMeta, ComputerView, DeviceView, PluginApi, PluginSummary, PointEntry, SessionView } from "@waifucave/clover-plugin-sdk";
+import type { CoreClient } from "@waifucave/clover-plugin-sdk/ui";
+import type { EntryComponent } from "../client/local";
+
+/** A running plugin's UI as `plugin.ui` lists it: its themes and string tables, the rest left plain. */
+const uiPluginView = (pluginId: string, themes: { id: string; file: string }[] = [], locales: { lang: string; file: string }[] = []) =>
+  ({ pluginId, name: pluginId, treeHash: "sha256-test", layer: pluginId.split("/")[0]!, assetBase: `clover-asset://${pluginId}/`, ui: [] as Record<string, unknown>[], themes, locales, bots: "all" as const });
 import archiveManifest from "../../archive/clover.json";
 import * as archiveClient from "../../archive/client/index";
 import { ARCHIVED, HISTORY as ARCHIVE_HISTORY } from "../../archive/gallery/fixtures";
@@ -21,7 +29,7 @@ import * as conversationClient from "../../conversation/client/index";
 import type { CoreEvent } from "../../conversation/client/project";
 import type { ConversationItem } from "../../conversation/client/types";
 import { SEALED_CARDS } from "../../conversation/gallery/fixtures";
-import { mockSealed } from "../../conversation/gallery/mock-runtime";
+import { mockRuntime } from "../../conversation/gallery/mock-runtime";
 import panelDiffManifest from "../../panel-diff/clover.json";
 import * as panelDiffClient from "../../panel-diff/client/index";
 import { FILES } from "../../panel-diff/gallery/fixtures";
@@ -45,13 +53,6 @@ import * as sidebarClient from "../../sidebar/client/index";
 import { portrait } from "../../sidebar/gallery/fixtures";
 import shellManifest from "../clover.json";
 import * as shellClient from "../client/index";
-import { SPOT_DECLS } from "../runtime/catalog";
-import type { UiEntry } from "../runtime/resolve";
-import type {
-  BotView, CardMeta, ComputerView, CoreClient, CoreMethods, DeviceView, EntryComponent, PluginApi, PluginSummary, PointEntry, SessionView,
-} from "../runtime/types";
-import { card, computerView, deviceView, fakeApi, pluginDetail, pluginSummary, uiPluginView } from "../runtime/testkit";
-import { runtimeWith, type UiRuntime } from "../runtime/ui";
 
 // -------------------------------------------------------------------------------------------------
 // The parts, as the runtime reads them
@@ -277,7 +278,7 @@ export interface WorldOptions {
   extra?: { pluginId: string; entries: Omit<UiEntry, "pluginId" | "source" | "enabledAt">[]; components: Record<string, EntryComponent>; capabilities?: string[] }[];
 }
 
-type Handlers = { [M in keyof CoreMethods]?: (params: CoreMethods[M]["params"]) => CoreMethods[M]["result"] };
+type Handlers = Record<string, (params: any) => unknown>;
 
 const coreHandlers: Handlers = {
   "account.status": () => ({ signedIn: true, provider: "email", user: { id: "u1", name: "Sam" } }),
@@ -457,7 +458,8 @@ export function world(options: WorldOptions = {}): UiRuntime {
     };
   };
 
-  const sealed = mockSealed({ cards: SEALED_CARDS });
+  // What the cards' sealed frames say (the mock core's words).
+  const sealedText = mockRuntime({ cards: SEALED_CARDS }).sealedText!;
   const approvals = {
     cards: () => cards,
     subscribe: (l: () => void) => {
@@ -467,7 +469,7 @@ export function world(options: WorldOptions = {}): UiRuntime {
   };
 
   return runtimeWith({
-    spot: (name) => SPOT_DECLS[name],
+    spot: catalogSpot,
     entries: plugins.flatMap((p) => p.entries),
     component: (pluginId, name) => plugins.find((p) => p.pluginId === pluginId)?.client[name] as EntryComponent | undefined,
     uiSettings: () => ({ picks: [], lists: [] }),
@@ -476,7 +478,7 @@ export function world(options: WorldOptions = {}): UiRuntime {
     core: () => core,
     tokens: () => TOKENS,
     approvals,
-    sealed,
+    sealedText,
     os: "macos",
   });
 }

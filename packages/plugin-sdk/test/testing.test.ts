@@ -1,13 +1,7 @@
-// The stand-in for lane E's runtime: which entries a spot shows (spec §5.5), and how <Spot> mounts them.
-import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
-import { applies, entryRef, keyFit, resolveSpot, type UiEntry } from "../runtime/resolve";
-import { fakeApi, fakeCore } from "../runtime/testkit";
-import type { EntryComponent } from "../runtime/types";
-import { runtimeWith, type UiRuntime } from "../runtime/ui";
-import { Spot, useCore, useEntry, usePluginApi, useSpotEntries, UiRuntimeProvider, Card } from "../client/sdk";
-
-afterEach(cleanup);
+// The test layer's resolver (ui/testing): which entries a spot shows, by the app's rules (spec §5.5). It was the shell's
+// stand-in runtime's, and moved with it into the SDK's testing kit (F2b).
+import { describe, expect, test } from "bun:test";
+import { applies, entryRef, keyFit, resolveSpot, type TestEntry as UiEntry } from "../src/ui/testing";
 
 const e = (pluginId: string, spot: string, extra: Partial<UiEntry> = {}): UiEntry => ({ pluginId, id: extra.id ?? spot, spot, source: "bundled", enabledAt: 0, component: "C", ...extra });
 
@@ -68,94 +62,3 @@ describe("resolveSpot", () => {
   });
 });
 
-describe("<Spot> and the hooks", () => {
-  const Who: EntryComponent = ({ props, entry }) => {
-    const api = usePluginApi();
-    const core = useCore();
-    const me = useEntry();
-    return <p data-testid={`${entry.pluginId}`}>{`${api.plugin.id} ${core ? "core" : "no-core"} ${me?.spot}:${me?.key ?? ""} ${JSON.stringify(props)}`}</p>;
-  };
-  const Nested: EntryComponent = () => <Spot name="panel" spotKey="terminal" props={{ app: "terminal" }} fallback={<p data-testid="fallback">placeholder</p>} />;
-
-  function runtime(entries: UiEntry[], extra: Partial<UiRuntime> = {}): UiRuntime {
-    const core = fakeCore();
-    return runtimeWith({
-      spot: (name) => ({ "main": { shape: "keyed" as const }, panel: { shape: "keyed" as const }, status: { shape: "list" as const } })[name],
-      entries,
-      component: (_, name) => ({ Who, Nested })[name],
-      api: (pluginId) => fakeApi({ pluginId }),
-      core: () => core,
-      sessionKind: (s) => (s === "s-code" ? "coding" : s === "s-bot" ? "bot" : undefined),
-      ...extra,
-    });
-  }
-
-  test("mounts each entry with its props and which entry it is; the API is the entry's own plugin's, the core only the clover tree's", () => {
-    render(
-      <UiRuntimeProvider runtime={runtime([e("clover/x", "status", { component: "Who" }), e("someone", "status", { component: "Who" })])}>
-        <Spot name="status" props={{ n: 1 }} />
-      </UiRuntimeProvider>,
-    );
-    expect(screen.getByTestId("clover/x").textContent).toBe('clover/x core status: {"n":1}');
-    expect(screen.getByTestId("someone").textContent).toBe('someone no-core status: {"n":1}');
-  });
-
-  test("a spot with nothing in it shows its fallback; `only` picks one list entry; an undeclared spot shows nothing", () => {
-    const rt = runtime([e("a", "status", { component: "Who" }), e("b", "status", { component: "Who" })]);
-    const { rerender } = render(
-      <UiRuntimeProvider runtime={rt}>
-        <Spot name="status" only="b#status" />
-        <Spot name="nowhere" fallback={<p>fallback</p>} />
-      </UiRuntimeProvider>,
-    );
-    expect(screen.queryByTestId("a")).toBeNull();
-    expect(screen.getByTestId("b")).toBeTruthy();
-    expect(screen.getByText("fallback")).toBeTruthy();
-    rerender(
-      <UiRuntimeProvider runtime={runtimeWith({})}>
-        <Spot name="status" fallback={<p>empty</p>} />
-      </UiRuntimeProvider>,
-    );
-    expect(screen.getByText("empty")).toBeTruthy();
-  });
-
-  test("the session's kind flows down to the spots inside an entry, for `when.session`", () => {
-    const entries = [
-      e("clover/shell", "main", { key: "agent", component: "Nested" }),
-      e("clover/panel-terminal", "panel", { key: "terminal", component: "Who", when: { session: "coding" } }),
-    ];
-    const { rerender } = render(
-      <UiRuntimeProvider runtime={runtime(entries)}>
-        <Spot name="main" spotKey="agent" props={{ session: "s-code" }} />
-      </UiRuntimeProvider>,
-    );
-    expect(screen.getByTestId("clover/panel-terminal").textContent).toBe('clover/panel-terminal core panel:terminal {"app":"terminal"}');
-    rerender(
-      <UiRuntimeProvider runtime={runtime(entries)}>
-        <Spot name="main" spotKey="agent" props={{ session: "s-bot" }} />
-      </UiRuntimeProvider>,
-    );
-    expect(screen.getByTestId("fallback")).toBeTruthy();
-  });
-
-  test("useSpotEntries says what a spot would show, for parts that lay entries out themselves", () => {
-    const Lister = () => <p>{useSpotEntries("status").entries.map(entryRef).join(",")}</p>;
-    render(
-      <UiRuntimeProvider runtime={runtime([e("b", "status"), e("a", "status")])}>
-        <Lister />
-      </UiRuntimeProvider>,
-    );
-    expect(screen.getByText("a#status,b#status")).toBeTruthy();
-  });
-
-  test("a card with no sealed renderer around it says where it can show", () => {
-    render(
-      <UiRuntimeProvider runtime={runtimeWith({})}>
-        <Card id="card-1">
-          <Card.Field name="title" />
-        </Card>
-      </UiRuntimeProvider>,
-    );
-    expect(screen.getByText("This approval card can only show in Clover's own window.")).toBeTruthy();
-  });
-});
