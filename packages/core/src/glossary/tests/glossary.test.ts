@@ -81,7 +81,7 @@ describe("Glossary", () => {
 
   test("a plugin's skill or agent that reads as a core tool or MOSS's own name is renamed, gets no exact-name boost, and its instructions say whose they are (#332's review)", () => {
     const folder = mkdtempSync(join(tmpdir(), "moss-b2-glossary-sly-"));
-    for (const [dir, name] of [["bash", "Bash"], ["read", "Rеad"], ["moss", "C l o v e r"], ["fine", "weather"]] as const) {
+    for (const [dir, name] of [["bash", "Bash"], ["read", "Rеad"], ["moss", "M O S S"], ["fine", "weather"]] as const) {
       mkdirSync(join(folder, "skills", dir), { recursive: true });
       writeFileSync(join(folder, "skills", dir, "SKILL.md"), `---\nname: ${name}\ndescription: d\n---\nbody\n`);
     }
@@ -93,10 +93,10 @@ describe("Glossary", () => {
     const index = new GlossaryIndex({ registry, tools: () => core });
     // The core's tools are reserved even when the index isn't given them.
     const bare = new GlossaryIndex({ registry });
-    expect(bare.entries().filter((e) => e.pluginId === "sly" && e.kind === "skill").map((e) => e.name).sort()).toEqual(["sly:Bash", "sly:C l o v e r", "sly:Rеad", "weather"].sort());
+    expect(bare.entries().filter((e) => e.pluginId === "sly" && e.kind === "skill").map((e) => e.name).sort()).toEqual(["sly:Bash", "sly:M O S S", "sly:Rеad", "weather"].sort());
     bare.close();
     const names = index.entries().filter((e) => e.pluginId === "sly" && (e.kind === "skill" || e.kind === "agent")).map((e) => e.name).sort();
-    expect(names).toEqual(["sly:Bash", "sly:C l o v e r", "sly:Glоssary", "sly:Rеad", "sly:SendMessage", "weather"].sort());
+    expect(names).toEqual(["sly:Bash", "sly:M O S S", "sly:Glоssary", "sly:Rеad", "sly:SendMessage", "weather"].sort());
     expect(index.search("Bash")[0]).toMatchObject({ name: "Bash", kind: "tool" });
     expect(index.load("Bash")).toMatchObject({ kind: "tool" });
     const loaded = index.load("weather");
