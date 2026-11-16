@@ -599,9 +599,9 @@ When step 4 decides, Settings shows a conflict badge on that spot with a picker.
 * **[P] When the app asks again:**
   * A code change waits for a new OK, whoever made it, since the core cannot always tell who wrote a file.
   * An update asks again if it turns data into code, or adds capabilities, network hosts, helper permissions, hook events, add-ons of its own (`addons`), a `stdio` command that fetches code at run time, code children, adult content, routine triggers, or host code that starts at once (`host.start`) or starts somewhere new. These are **the triggers**. **[P]** Every line the OK card shows from the tree counts: an update whose card would show a line the OK'd one didn't asks again.
-  * A local edit asks again on the same triggers, and any edit that changes what runs is a code change wherever it is written: a `stdio` server's `command`, `args` or `env`, a hook's or agent backend's `command` or `args`, the `host`, `client` or `helper` fields, or a field whose format is `program` or `code`; a changed setting `default` waits for the user's OK too, since bots can't change settings (§9.1). Other data edits (themes, layouts, CSS, Markdown) apply at once, except approval-card styling (§5.5). A change to a bot's instructions (its plugin's file, or the user layer's) applies at the bot's next turn, however short its conversation: the prompt is rebuilt and the transcript resumes under it, at the cost of one cache miss per edit; while the bot's background work runs, the change waits for it to end.
-  * **[P] The workshop rule** (the owner, November 12: a bot can build a plugin and the card decides). A bot builds a plugin in its scratch, checks it with `PluginValidate { folder }` (what `clover plugin validate` prints, and for its own installed plugin whether the folder would apply without a card) and installs it with `PluginInstall { folder }`, from its scratch or its conversation's outputs. It lands found like any install, and its OK card's source line says "Built by <bot>. <bot> can change its code later without asking, within what this card lists." The install record (`by: "bot"`, with the bot) makes it that bot's workshop plugin: that bot's own sessions (its conversation and side threads, never an agent's or another bot's) write its folder in the plugins folder (§9.1), and the registry judges each change against the user's last OK. Code included, it applies at once while it asks for nothing the last OK didn't list: every trigger and every OK-card line an index update is held to, and also a program it runs that it didn't (a `stdio` server's or hook's command, its helper, a point's code field, a hook's scope), a tool that runs without a card that didn't, a changed default of a setting it runs with, and its window skin. One that does stops the plugin and puts its sealed OK card before the user at once, as an install does (the controller's ruling): a yes runs it with the new grant and moves the snapshot; a no leaves it off, and a later change that takes the request back out applies and runs again with no card, since it is judged against the last OK; a further change while the card waits replaces that card, and one that takes the request out withdraws it. Card styling waits for its own OK as always; in a tree the user OK'd with `approvals`, which places its bot's sealed cards in its own components, every code change waits as card styling (§5.5). Each applied change becomes the OK snapshot, so the ceiling only goes down: a grant one edit drops, a later one asks for again. `PluginInstall` with the id of the bot's own workshop plugin replaces its folder from scratch as an update, judged the same way; any other installed id is refused. `PluginStatus { id }` shows one of its own workshop plugins: its state and why (a client build's failure included), what it waits for, its validation findings and its log's last lines. A workshop plugin may ask for whatever any third-party plugin may (what is bundled-only stays so), and the user decides on its card. Removing it stays the user's.
-  * **Development folders** are the exception. A folder the user adds in Settings, or with `clover plugin dev <folder>` from their own terminal, reloads on every change without asking. It never syncs, the fence keeps bots out of it (§9.1), and no agent's root may contain it. Adding one is a sealed card, unless the user adds it in their own terminal (§5.1). While one is on, the tray shows it and lists each reload (the tray, when built, gets its own event for the reloads; the protocol keeps no name for it until then), and it turns off after 24 hours unless renewed. **[P]** A development folder's contributions exist only on its own computer: a bot in one thinks and shows there, and its models, tools and UI serve only that computer. One with an installed plugin's id replaces that plugin there while it is on; if that plugin holds a bot, it takes effect only on the computer running that bot and waits elsewhere, so the bot keeps one writer (§6.5).
+  * A local edit asks again on the same triggers, and any edit that changes what runs is a code change wherever it is written: a `stdio` server's `command`, `args` or `env`, a hook's or agent backend's `command` or `args`, the `host`, `client` or `helper` fields, or a field whose format is `program` or `code`; a changed setting `default` waits for the user's OK too, since bots can't change settings (§9.1). Other data edits (themes, layouts, CSS, Markdown) apply at once, except approval-card styling (§5.5). A change to a bot's instructions applies at the bot's next turn, however short its conversation: the prompt is rebuilt and the transcript resumes under it, at the cost of one cache miss per edit; while the bot's background work runs, the change waits for it to end.
+  * **[P] The workshop rule** (the owner, November 12: a bot can build a plugin and the card decides). A bot builds a plugin in its scratch, checks it with `PluginValidate { folder }` (what `clover plugin validate` prints, and for its own installed plugin whether the folder would apply without a card) and installs it with `PluginInstall { folder }`, from its scratch or its conversation's outputs. It lands found like any install, and its OK card's source line says "Built by <bot>. <bot> can change its code later without asking, within what this card lists." The install record (`by: "bot"`, with the bot) makes it that bot's workshop plugin: that bot's own sessions (its conversation and side threads, never an agent's or another bot's) write its folder in the plugins folder (§9.1), and the registry judges each change against the user's last OK. Code included, it applies at once while it asks for nothing the last OK didn't list: every trigger and every OK-card line an index update is held to, and also a program it runs that it didn't (a `stdio` server's or hook's command, its helper, a point's code field, a hook's scope), a tool that runs without a card that didn't, a changed default of a setting it runs with, and its window skin. One that does stops the plugin and puts its sealed OK card before the user at once, as an install does (the controller's ruling): a yes runs it with the new grant and moves the snapshot; a no leaves it off, and a later change that takes the request back out applies and runs again with no card, since it is judged against the last OK; a further change while the card waits replaces that card, and one that takes the request out withdraws it. Card styling waits for its own OK as always; in a tree the user OK'd with `approvals`, which places sealed cards in its own components, every code change waits as card styling (§5.5). Each applied change becomes the OK snapshot, so the ceiling only goes down: a grant one edit drops, a later one asks for again. `PluginInstall` with the id of the bot's own workshop plugin replaces its folder from scratch as an update, judged the same way; any other installed id is refused. `PluginStatus { id }` shows one of its own workshop plugins: its state and why (a client build's failure included), what it waits for, its validation findings and its log's last lines. A workshop plugin may ask for whatever any third-party plugin may (what is bundled-only stays so), and the user decides on its card. Removing it stays the user's.
+  * **Development folders** are the exception. A folder the user adds in Settings, or with `clover plugin dev <folder>` from their own terminal, reloads on every change without asking. It never syncs, the fence keeps bots out of it (§9.1), and no agent's root may contain it. Adding one is a sealed card, unless the user adds it in their own terminal (§5.1). While one is on, the tray shows it and lists each reload (the tray, when built, gets its own event for the reloads; the protocol keeps no name for it until then), and it turns off after 24 hours unless renewed. **[P]** A development folder's contributions exist only on its own computer: its models, tools and UI serve only that computer. One with an installed plugin's id replaces that plugin there while it is on.
 * **[P] The guards:**
   * the OK when a plugin is found (§5.1)
   * the approval level for each computer (§9.1); bots are equal, so there is no per-bot policy
@@ -611,13 +611,13 @@ When step 4 decides, Settings shows a conflict badge on that spot with a picker.
   * the manifest's capability list, which gates the plugin API only. It is **not** a containment boundary: a host plugin can do anything the user can, except, on macOS, reach Clover's Keychain items and the daemon's socket.
   * **the load guard** (#234): a plugin process Clover starts (a host half, a hook, a stdio MCP server) runs Bun as `clover-plugin-bun`: a Bun binary of its own, the core's version, signed under its own identifier, so no Keychain item's access list (which names `clover-core` alone) admits it. Never the core's binary, never with `BUN_BE_BUN`, never one the plugin ships. It runs with Clover's own `bunfig.toml`, no `.env`, and a preloaded guard that refuses to load any file, native addon or worker code from outside the plugin's own folder and Clover's shared packages. Bun hands an ESM load of a file without an extension to no hook, so two more walls stand in for the guard there: no runner may write a `node_modules` in any folder above one plugin code loads from (`~/node_modules` among them), and the OK refuses a plugin that imports or declares a dependency it doesn't ship in its own `node_modules`, except that a file only its client entries reach may import what every layer's import map serves (React 19, its JSX runtimes, react-dom and the UI API: the SDK's `CLIENT_BARE_IMPORTS`, one list with the map and the client build's externals); the client always gets the layer's React, whatever react the plugin ships. That install scan is an early, friendly error, not the wall: the guard preloaded into every plugin process is. What the scan can't follow (a computed `import()`, `require` of a variable, a Worker's path, `eval`) is not followed; it is refused at run time if it leaves the folder. A host half therefore runs under Bun; only Clover's own plugins keep a Node host. **Known limit:** a program that isn't Bun (a `stdio` server's command, a helper, a `node` the plugin's code starts) resolves its own imports as it likes. It is code by declaration, the OK says "It runs its own programs, which Clover doesn't confine", and the static check in `clover plugin validate` is its only early warning. Neither does the guard judge what the approved code chooses itself: `eval`, or a child it starts with a clean environment.
 * **[P] `clover plugin validate`** prints a folder's class, contributions, declared points, network hosts, helper permissions, capabilities, tool names, settings and children without running anything, like `claude plugin validate`. It checks every schema and catalog name, prints the OK's text, takes `--json`, and exits non-zero on any error. Model plugins also get Winter's provider conformance suite (`@yanlinglabs/winter-provider-conformance`, renamed) as their test kit.
-* **[P] The plugin SDK** (`@waifucave/clover-plugin-sdk`) ships on day one, from one source: JSON Schemas and TypeScript types for the manifest, theme, layout, locale and index formats; the catalogs of spots, points, tokens, hooks and capabilities; the plugin API (§5.4); `clover plugin new <template>`, with templates for a bot, a theme, a tool, a UI part, a model, a trigger and a point; and a bundled skill that teaches bots the same. A template is only a starting point that writes an ordinary plugin folder. The docs are generated from the same catalogs.
+* **[P] The plugin SDK** (`@waifucave/clover-plugin-sdk`) ships on day one, from one source: JSON Schemas and TypeScript types for the manifest, theme, layout, locale and index formats; the catalogs of spots, points, tokens, hooks and capabilities; the plugin API (§5.4); `clover plugin new <template>`, with templates for a theme, a tool, a UI part, a model, a trigger and a point; and a bundled skill that teaches bots the same. A template is only a starting point that writes an ordinary plugin folder. The docs are generated from the same catalogs.
 * **[P]** A full OS sandbox for plugins can come later; until then only macOS keeps host halves from Clover's Keychain items and the daemon's socket.
 
 ### 5.7 Content and age
 
 * **[D] Clover is rated 13+.**
-* **[D] The default app ships with no adult content.** Alpha, the default theme and everything bundled are safe-for-work. Adult content can only come from plugins other users make (bots, mods…).
+* **[D] The default app ships with no adult content.** Alpha, the default theme and everything bundled are safe-for-work. Adult content can only come from plugins other users make (avatar packs, mods…).
   * **[P] Stated precisely:** it can also come from bots and avatars the user makes, and from what the model writes, which follows the user's own provider's rules.
   * **[P]** Provider terms differ by age: some providers require users to be 18 or older, others need a parent's permission under 18. The welcome guide shows each provider's terms before sign-in.
   * **[P]** The harness keeps a safety block in the system prompt that no bot or data plugin can remove. A model plugin sees the whole prompt, and its OK says so.
@@ -641,21 +641,22 @@ When step 4 decides, Settings shows a conflict badge on that spot with a picker.
 * the safety reviewer behind "ask for risky actions", with the rules that choose its model (§9.1)
 * the bridge MCP server that carries plugins to ACP agents (§9.3)
 * the list of calls a remote client may make (§10)
-* the Electron main process: windows, tray, updater, daemon installer and the Clover Browser's tabs (§3.1, §12.1)
-* **[P]** the app's plugin runtime: loading UI halves, the theme engine, the sealed frames, and the app core points (§5.3)
+* **[D]** bots, the router, the activity feed, a tool's live picture and the background host (§3.1, §3.5, §3.6, §6; revision 19)
+* the Electron main processes of the two apps and of the background host: windows, the menu-bar icon, the updaters, the engine's installer and the Clover Browser's tabs (§3.1, §12.1; which program owns which is open, items 111 and 112)
+* **[P]** the plugin runtime of MOSS Code's window and of the background host: loading UI halves, the theme engine, the sealed frames, and the window and screen core points (§3.4, §5.3)
 * the welcome setup guide (§3.3)
 * the core tools and the `Glossary` index (§6.7, §6.8)
 * **[P]** the index revocation check (§14.2 item 25), opt-in crash reporting (§14.2 item 27), and the usage counting of Clover's own turns (§12)
-* **[P] Safe mode:** if a replaced shell plugin breaks the app, safe mode starts only the app's own plugins (`clover` and `alpha`) and a core plugin manager, reachable from the tray or the CLI. No third-party UI, host half or hook runs in it.
+* **[P] Safe mode:** if a replaced shell plugin breaks the app, safe mode starts only the product's own plugins (`clover`) and a core plugin manager, reachable from the tray or the CLI. No third-party UI, host half or hook runs in it.
 
-**Clients, not plugins:** the CLI and TUI, which talk to the daemon like the app does; `clover doctor` carries over from `winter doctor`. Remote clients such as the iOS app and the web page are served by plugins contributing to `companions` (§10).
+**Clients, not plugins:** the CLI and TUI, which talk to the daemon like the apps do; `clover doctor` carries over from `winter doctor`. Remote clients such as the iOS app and the web page are served by plugins contributing to `companions` (§10).
 
 **[D] Plugins, decided November 3:**
 
 * **Tools:** core except the web, computer-use and browser tools, which are plugins (§6.7).
 * **Agent-loop hooks:** the `hooks` point (§5.3), shipping in C1.
 * **The shell and the panel:** plugins (§5.5), the browser view included.
-* **Bots:** plugins with a `bot` entry, which may carry code for their own tab (§5.3, §5.5). Themes and skills are data.
+* **Bots:** engine data, not plugins (revision 19, item 101; November 3 had them as plugins with a `bot` entry). Themes and skills are data.
 * **Cloud computers:** each one is a plugin folder (§9.2).
 
 **[P] The remaining items:**
@@ -665,7 +666,7 @@ When step 4 decides, Settings shows a conflict badge on that spot with a picker.
 * **Output styles:** for bots, `<bot-instructions>` covers them; for coding sessions they return later as a plugin (§12).
 * **LSP:** a plugin with an MCP server.
 * **Usage tracking:** the counting is core; each computer reads its own apps' usage (§12); the views are UI plugins.
-* **The settings screen, the bot editor, the plugin index browser and the archive of old Winter sessions:** bundled UI plugins. Sensitive changes made from them still end in a sealed card (§5.5).
+* **The settings screen, the plugin index browser and the archive of old Winter sessions:** bundled UI plugins in MOSS Code's window; MOSS's Plugins page is built in (§6.10). Sensitive changes made from them still end in a sealed card (§5.5).
 * **Desktop notifications:** a bundled plugin contributing to `notifiers`.
 * **A browser tool before opensky:** a bundled plugin over the Clover Browser's API (§12.1).
 
@@ -695,7 +696,7 @@ interface Manifest {
   platforms?: Platform[];           // code runs only on these; default all
   adult?: boolean;                  // whole tree; off until the user confirms they are 18+
   enabledByDefault?: boolean;       // children only; default true
-  scope?: Scope | "own-bot";        // default "both"; covers mcpServers, skills, agents, hooks; own-bot: a bot plugin's own (§5.1)
+  scope?: Scope;                    // default "both"; covers mcpServers, skills, agents, hooks (§5.1)
   onlyBackends?: string[];          // only these Agent backends receive it, e.g. ["claude-code"]
   host?: { entry: Path; runtime?: "bun" | "node";   // bun = a worker in the plugin host; node = its own process, Clover's own plugins only (§5.6, the load guard)
            start?: "each" | "main" | "chosen";     // starts at once there (§5.2); otherwise only when needed
@@ -704,7 +705,7 @@ interface Manifest {
   helper?: { bin: Partial<Record<Platform, Path>>;   // a signed .app on macOS, started through Launch Services
              permissions?: ("accessibility" | "screen-recording" | "input-monitoring" | "microphone" | "camera")[];
              ipc?: "socket" | "stdio" };
-  capabilities?: string[];          // conversation.read, conversation.post, memory.read, bots.read, routines.read,
+  capabilities?: string[];          // conversation.read, sessions.read, activity.read, picture.publish, picture.read, conversation.post, memory.read, bots.read, routines.read,
                                     // computers.read, computers.control, approvals, files, browser, usage.read,
                                     // logs.read, notify, audio, call:<plugin-id>, network:<host> (§5.4).
                                     // They gate the plugin API; they are not containment
@@ -725,7 +726,7 @@ interface Setting {
 }
 
 interface Contributions {
-  bot?: Bot;                                  models?: Model[];
+  models?: Model[];
   mcpServers?: Record<string, McpServer>;     skills?: Path[];            // folders holding SKILL.md; globs allowed
   agents?: (Path | AgentDef)[];               agentBackends?: AgentBackend[];
   hooks?: Hook[];                             commands?: Command[];
@@ -746,18 +747,9 @@ interface Command { name: string; description: Text; args?: JsonSchema; handler:
 interface PointDecl { shape: "single" | "list" | "keyed"; fields?: JsonSchema; props?: JsonSchema;   // props: a UI spot
                       needs?: string[];      // capabilities an entry's plugin must have for the data its props carry
                       keep?: string[];       // keys that can't be hidden
-                      context?: string[];    // the keys the spot offers to `when`, such as "bot"
+                      context?: string[];    // the keys the spot offers to `when`, such as "surface"
                       private?: boolean; deprecated?: Text; doc?: Text }
 
-interface Bot {                                // one per plugin; the bot's id is the plugin's id
-  name: Text; instructions: Path;              // Markdown that becomes <bot-instructions>
-  model?: { default: string; effort?: string }; // a qualified catalog id; with no key for it, the user's default model
-  avatar?: { file: Path; format: string; portrait?: Path };   // format: "vrm", "live2d" or a plugin's own
-                                               // (a bot's voice is Clover Voice's own setting, §6.6)
-  theme?: string; layout?: Path;               // a theme id from this plugin, and a layout file; both apply in its tab
-  greeting?: Path;
-  memory?: Path;                               // starter memories, copied once into the bot's memory folder
-}
 interface Model {
   provider: string; name: Text; terms?: string; catalog: Path | object[];   // rows follow the SDK catalog schema
   auth: Auth[];
@@ -795,9 +787,7 @@ interface McpServer {
 interface Hook { id: string; on: ("tool.before" | "tool.after" | "message.in" | "message.out" | "turn.start" | "turn.end"
                                   | "compact.before" | "compact.after")[];
                  tools?: string[]; handler?: string; command?: string; args?: string[]; timeoutMs?: number;
-                 scope?: Scope | "own-bot";   // [P] own-bot: only the sessions of the bots its tree contributes (their
-                                               // conversations, side threads, delegations), held by the host; the OK
-                                               // card says "only what its own bot does"; a change to it asks again
+                 scope?: Scope;
                  observe?: boolean }           // [P] only hears its events: its answer is ignored, it holds nothing
                                                // up and refuses nothing; a message.out observer hears each bot's
                                                // reply once stored (with the bot and the session), so replies keep
@@ -808,8 +798,8 @@ interface AgentDef { id: string; name: Text; backend: string; model?: string; ef
 interface Ui {
   spot: string; id?: string;                 // id defaults to the spot; required if the plugin fills one spot twice
   key?: string; order?: number;              // order: position in a list spot; default 500, then plugin id
-  when?: { bot?: string | string[]; surface?: string | string[]; os?: Os[];
-           setting?: Record<string, unknown>; [ctx: string]: unknown };   // in a bot's plugin, bot is implied
+  when?: { surface?: string | string[]; os?: Os[];
+           setting?: Record<string, unknown>; [ctx: string]: unknown };
   component?: string;                        // an export of client.entry. An entry has one of component, web, style or hide
   web?: { url?: string; entry?: Path; partition: string };   // the partition is prefixed with the plugin's id
   style?: Path;                              // a theme-format file; restyles what fills this spot or key (§5.5)
@@ -842,18 +832,15 @@ interface Ui {
 //                a secret's file only in a stdio server's env and args.
 ```
 
-**[P] Checked before anything runs:** the folder name equals the id; paths stay inside the folder; a bot's plugin fills only spots in its own tab, and its `locales` hold only its own keys; tool names are unique within a top-level plugin and contain no `__`; nothing is an expression. A contribution to a point that is missing at run time is allowed, and waits.
+**[P] Checked before anything runs:** the folder name equals the id; paths stay inside the folder; tool names are unique within a top-level plugin and contain no `__`; nothing is an expression. A contribution to a point that is missing at run time is allowed, and waits.
 
-**[P] Alpha's manifest,** as an example. More worked examples are in the [plugin model proposals](research/2026-11-03-wyrmhole-plugin-model-proposals.md) (its §3.9); they predate revision 11, so where they differ, this spec wins.
+**[P] A manifest,** as an example: a plugin that brings one skill and one theme. More worked examples are in the [plugin model proposals](research/2026-11-03-wyrmhole-plugin-model-proposals.md) (its §3.9); they predate revision 11, so where they differ, this spec wins.
 
 ```json
-{ "manifest": 1, "id": "alpha", "version": "1.111.1", "name": "Alpha", "icon": "assets/portrait.webp",
+{ "manifest": 1, "id": "tarot", "version": "1.0.0", "name": "Tarot",
   "contributes": {
-    "bot": { "name": "Alpha", "instructions": "bot/instructions.md", "greeting": "bot/greeting.md", "memory": "bot/memory",
-             "model": { "default": "<qualified catalog id>", "effort": "medium" },
-             "avatar": { "file": "assets/live2d/alpha.model3.json", "format": "live2d", "portrait": "assets/portrait.webp" },
-             "theme": "alpha", "layout": "tab/layout.json" },
-    "themes": [{ "id": "alpha", "file": "tab/theme.json" }] } }
+    "skills": ["skills/spread"],
+    "themes": [{ "id": "velvet", "file": "theme/theme.json" }] } }
 ```
 
 ---
