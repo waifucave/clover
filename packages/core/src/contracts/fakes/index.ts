@@ -18,3 +18,8 @@ export * from "./surface-door";
 export * from "./card-router";
 export * from "./program-keys";
 export * from "./release-home";
+export * from "./host-supervisor";
+export * from "./activity-feed";
+export * from "./live-pictures";
+export * from "./bot-records";
+export * from "./tool-settings";

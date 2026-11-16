@@ -20,6 +20,11 @@
 // | CardRouter        | RT         | card-router.ts        |
 // | ProgramAnswerKeys | RT (over H's registry) | program-keys.ts |
 // | ReleaseHome       | RL         | release-home.ts       |
+// | HostSupervisor    | HS         | host-supervisor.ts    |
+// | ActivityFeed      | AF         | activity-feed.ts      |
+// | LivePictures      | AF (HS for tabs, MA shows them) | live-pictures.ts |
+// | BotRecords        | BT         | bot-records.ts        |
+// | ToolSettings      | TS (beside A's permission) | tool-settings.ts |
 //
 // The split's contracts (spec revision 19, §13 Split 1) were pinned by lane SP; their owners are the split's lanes.
 //
@@ -44,3 +49,8 @@ export * from "./surface-door";
 export * from "./card-router";
 export * from "./program-keys";
 export * from "./release-home";
+export * from "./host-supervisor";
+export * from "./activity-feed";
+export * from "./live-pictures";
+export * from "./bot-records";
+export * from "./tool-settings";
