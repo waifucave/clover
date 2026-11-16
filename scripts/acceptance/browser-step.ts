@@ -8,11 +8,11 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { callTurn, sleep, until, type ExampleCtx } from "./example-steps";
+import { callTurn, SIDEBAR_ITEMS, sleep, until, type ExampleCtx } from "./example-steps";
 import { F5_IDS, f5Wrong, SURF_TOOL, writeF5, type F5Seen } from "./f5-step";
 import { islandCardHolds, islandDrawsOkCard, islandShooter, islandStripLine, islandStripLineShown, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 
-export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; the diff panel's layer reads a coding session's changed and new file and the column's layer its outputs, context and connectors; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw; F5: a folder plugin's own Browser tool drives the bot's tab, a folder live view lists, shows and hides it, and a folder terminal opens and speaks, its own write refused";
+export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; the diff panel's layer reads a coding session's changed and new file and the column's layer its outputs, context and connectors; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw; F5: a folder plugin's own Browser tool drives the bot's tab, a folder live view lists, shows and hides it with no press and navigates only on a real press, a folder background part is refused the browser, and a folder terminal opens and speaks, its own write refused";
 
 export const FIXTURE_NAME = "browser-fixture.test";
 /** A second name for the same server: another site, as the browser and the approval judge it. */
@@ -392,7 +392,6 @@ async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixtur
   };
   try {
     const surfCard = await install(F5_IDS.surf, folders.surf);
-    await install(F5_IDS.view, folders.view);
     await install(F5_IDS.term, folders.term);
     const surf = async (input: Record<string, unknown>) => {
       const r = await callTurn(ctx, session, SURF_TOOL, input);
@@ -401,20 +400,59 @@ async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixtur
     const open = await surf({ verb: "open", url: fixture.url });
     const read = await surf({ verb: "read" });
     const click = await surf({ verb: "click" });
-    // The live view: a third party's layer, holding `browser`, acting for the person.
-    const view = await openLayer(F5_IDS.view);
-    let seenView: F5Seen["view"];
-    try {
-      await view.request("events.subscribe", { areas: ["browser"] });
-      const listed = (await view.request("browser.tabs", { owner: { kind: "bot", bot: "alpha" } })) as { tabs: { id: string }[] };
-      const id = listed.tabs[0]?.id ?? fail(`F5: acc-view listed no tab of Alpha's (${JSON.stringify(listed).slice(0, 200)})`);
-      const shown = (await view.request("browser.show", { id, view: "browser", viewport: { width: 800, height: 600 } })) as { tab: { place: string } };
-      const heard = await until("acc-view hears its tab shown", 10_000, async () => (view.heard("tab_changed").some((e) => e.tab?.id === id && e.tab.place === "shown") ? true : undefined)).catch(() => false);
-      const hidden = (await view.request("browser.hide", { id })) as { tab: { place: string } };
-      seenView = { listed: listed.tabs.length, shown: shown.tab.place, heard, hidden: hidden.tab.place };
-    } finally {
-      view.close();
+    // The live view (browser-press): a third party's part in Alpha's composer, holding `browser`, acting for the person from
+    // its own frame through the app's door. Looking with no press; a navigate with no press refused; on a real press, it goes.
+    await install(F5_IDS.view, folders.view);
+    const viewDoc = async () => {
+      for (const d of (await ctx.cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${F5_IDS.view}/`))) {
+        const ready = await ctx.cdp.evaluate(d.session, "typeof window.__accView === 'object' && document.querySelector('[data-acc-view=\"go\"]') !== null").catch(() => false);
+        if (ready === true) return d.session;
+      }
+      return undefined;
+    };
+    // Alpha's conversation in front, so her composer (and the part in it) is drawn.
+    const treeDocs = async () => (await ctx.cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/"));
+    const composerShown = async () => {
+      for (const d of await treeDocs()) if ((await ctx.cdp.evaluate(d.session, "!!document.querySelector('.cl-composer textarea')").catch(() => false)) === true) return true;
+      return undefined;
+    };
+    if ((await composerShown()) === undefined) {
+      const alpha = await until("Alpha in the sidebar", 20_000, async () => {
+        for (const d of await treeDocs()) {
+          const c = await ctx.cdp.centerOf(d.session, SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      });
+      await ctx.cdp.click(alpha.session, alpha.c.x, alpha.c.y);
+      await until("Alpha's composer drawn", 20_000, composerShown);
     }
+    const viewSession = await until("acc-view's part drawn in Alpha's composer", 60_000, viewDoc, async () => `documents: ${(await ctx.cdp.documents()).map((d) => d.url.slice(0, 50)).join(" | ")}`);
+    const inView = async (expr: string) => String(await ctx.cdp.evaluate(viewSession, expr).catch((e: unknown) => `refused ${(e as Error).message}`));
+    const list = await inView("window.__accView.list()");
+    const tabId = /"id":"(tab_[^"]+)"/.exec(list)?.[1] ?? fail(`F5: acc-view listed no tab of Alpha's (${list.slice(0, 200)})`);
+    const show = await inView(`window.__accView.show(${JSON.stringify(tabId)})`);
+    const hide = await inView(`window.__accView.hide(${JSON.stringify(tabId)})`);
+    const navNoPress = await inView(`window.__accView.navigate(${JSON.stringify(tabId)}, ${JSON.stringify(fixture.otherUrl)})`);
+    await inView(`(window.__accView.target = { id: ${JSON.stringify(tabId)}, url: ${JSON.stringify(fixture.otherUrl)} }, "set")`);
+    // Pressed with a real click on the part's own frame (its document reports the trusted pointerdown; the main process credits
+    // the press to that frame).
+    const at = await until("acc-view's button on the screen", 20_000, async () => ctx.cdp.centerOf(viewSession, '[data-acc-view="go"]').catch(() => undefined));
+    await ctx.cdp.click(viewSession, at.x, at.y);
+    const navPressed = await until("acc-view's pressed navigate answered", 20_000, async () => {
+      const said = await inView("document.querySelector('[data-acc-view=\"go\"]').getAttribute('data-said') || ''");
+      return said === "" ? undefined : said;
+    });
+    const seenView: F5Seen["view"] = { list, show, hide, navNoPress, navPressed, otherUrl: fixture.otherUrl };
+    // A background part holding `browser`: refused.
+    await install(F5_IDS.bg, folders.bg);
+    const bg = await until("acc-bg's background part answered", 45_000, async () => {
+      for (const d of (await ctx.cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${F5_IDS.bg}/`))) {
+        const v = await ctx.cdp.evaluate(d.session, "(() => { const e = document.querySelector('[data-acc-bg]'); return e ? e.getAttribute('data-acc-bg') : ''; })()").catch(() => "");
+        if (typeof v === "string" && v !== "" && v !== "waiting") return v;
+      }
+      return undefined;
+    });
     // The terminal: a third party's layer, holding `terminal`, opens one and hears its shell; its own write is refused.
     const term = await openLayer(F5_IDS.term);
     let seenTerm: F5Seen["term"];
@@ -429,11 +467,12 @@ async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixtur
     } finally {
       term.close();
     }
-    const seen: F5Seen = { surfCard, open, read, click, view: seenView, term: seenTerm };
+    const seen: F5Seen = { surfCard, open, read, click, view: seenView, bg, term: seenTerm };
     const wrong = f5Wrong(seen);
     if (wrong.length > 0) fail(`F5: ${wrong.join("; ")}`);
-    return `acc-surf's card named Surf as a Browser tool; Alpha's Surf opened her tab and read it with no card (${read.text.slice(0, 60)}), its click raised ${click.cards.join(", ")} and acted; acc-view's layer listed her tab, showed it (heard), hid it; acc-term's layer opened a terminal that spoke, and its own write was refused`;
+    return `acc-surf's card named Surf as a Browser tool; Alpha's Surf opened her tab and read it with no card (${read.text.slice(0, 60)}), its click raised ${click.cards.join(", ")} and acted; acc-view's part listed, showed and hid her tab with no press, was refused a navigate with no press and navigated on a real press; acc-bg's background part was refused the browser; acc-term's layer opened a terminal that spoke, and its own write was refused`;
   } finally {
     for (const id of installed.reverse()) await ctx.rpc.request("plugin.remove", { id }).catch(() => undefined);
   }
 }
+

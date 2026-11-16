@@ -60,7 +60,6 @@ function Demo(props: Partial<ComposerProps> & { initial?: string }) {
       onStop={noop}
       model={MODELS}
       level={LEVEL}
-      voice={{ listening: false, onPressStart: noop, onPressEnd: noop }}
       {...props}
       attachments={attachments}
     />
@@ -163,30 +162,22 @@ export const stories: Story[] = [
     render: () => <Demo cardPending running initial="" />,
   },
   {
-    id: "composer/listening",
-    title: "Holding to talk",
-    render: () => <Demo voice={{ listening: true, onPressStart: noop, onPressEnd: noop }} />,
-  },
-  {
     id: "composer/minimal",
-    title: "With no attach, model, level or voice",
-    notes: "A bot with no voice plugin, in a host that offers nothing else.",
-    render: () => <Demo model={undefined} level={undefined} voice={undefined} onAttach={undefined} />,
+    title: "With no attach, model or level",
+    notes: "A bot in a host that offers nothing else, with no button of a plugin's own.",
+    render: () => <Demo model={undefined} level={undefined} onAttach={undefined} />,
   },
   {
     id: "composer/replaced-action",
     title: "A plugin dressing one button",
-    notes: "composer.action in use: the voice button replaced, attach hidden.",
+    notes: "composer.action in use: a plugin's own button added, attach hidden.",
     render: () => (
       <Demo
-        renderAction={(id, standard) =>
-          id === "voice" ? (
-            <button type="button" className="story-suggest">
-              ✦ Suggest
-            </button>
-          ) : id === "attach" ? null : (
-            standard
-          )
+        renderAction={(id, standard) => (id === "attach" ? null : standard)}
+        added={
+          <button type="button" className="story-suggest">
+            ✦ Suggest
+          </button>
         }
       />
     ),

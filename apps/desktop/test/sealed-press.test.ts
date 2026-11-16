@@ -21,7 +21,7 @@ function load(html: string, answers: string[]) {
   delete document.body.dataset.ready;
   g.IntersectionObserver = class {
     constructor(private cb: (e: unknown[]) => void) {}
-    observe(t: Element) { this.cb([{ target: t, intersectionRatio: 1, isVisible: true }]); }
+    observe(t: Element) { this.cb([{ target: t, intersectionRatio: 1, isVisible: true, time: performance.now() }]); }
     unobserve() {}
   };
   for (const b of document.querySelectorAll(".seal-button")) (b as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect = () => ({ width: 80, height: 32 });

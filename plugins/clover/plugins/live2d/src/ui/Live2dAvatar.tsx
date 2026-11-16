@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { MochiView, type ViewOptions } from "@waifucave/mochi2d";
 import { drawnBounds, frameFor, readCrop, type Box, type Crop, type DrawnRuntime } from "./framing";
 import { parseMotionSync, type MotionSyncSetting } from "@waifucave/mochi2d/headless";
-import { LipSync, SHUT, SpeechRing, frameSource, type SpeechFeed, type VisemeWeights } from "@waifucave/clover-plugin-sdk/ui/mouth";
+import { LipSync, SHUT, SpeechRing, frameSource, type SpeechFeed, type VisemeWeights } from "@waifucave/clover-plugin-sdk/ui";
 import { mouthPlan, type MouthPlan } from "../mouth";
 import { urlSource, zipSource, readCapped } from "../sources";
 import { t } from "../strings";

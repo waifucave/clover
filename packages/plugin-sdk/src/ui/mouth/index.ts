@@ -1,4 +1,4 @@
-// Mouth levels from speech (`@waifucave/clover-plugin-sdk/ui/mouth`): for any avatar renderer, the five vowel shapes'
+// Mouth levels from speech (exported from `@waifucave/clover-plugin-sdk/ui`, the one SDK module a layer serves): for any avatar renderer, the five vowel shapes'
 // weights (aa, ih, ou, ee, oh) from the speech the stage plays, read at the moment it sounds. The feed is the `avatar`
 // spot's `speech` (`useAvatarSpeech().feed`): two numbers a frame, loudness and brightness, never samples, so a
 // renderer needs no `audio` capability. A renderer maps the weights onto its own mouth (morphs, parameters, sprites).

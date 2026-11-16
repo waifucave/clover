@@ -1298,7 +1298,11 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
   const log = readLog(appLog).slice(from);
   if (verdict !== "accepted") fail(`the press on the island's ${card.kind} card: ${verdict?.trim() ?? "no answer within 8 s"} (the app logged: ${log.split("\n").filter((l) => /sealed: .*press|fallback/.test(l)).slice(-6).join(" | ") || "no press line"})`);
   if (new RegExp(`fallback card for ${card.id}`).test(log)) fail(`the app drew its fallback card for the ${card.kind} card though the island showed its buttons`);
-  return "pressed on the island (its own window's sealed Approve, the page ready, accepted by the app and the core, the fallback card never drawn)";
+  // The answer came from the island's own press (read fresh and uncovered there), not from a press on the main window's card.
+  const idRe = card.id.replace(/[^A-Za-z0-9_]/g, ".");
+  if (!new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in clover/island#island: fresh report uncovered after \\d+ ms`).test(log)) fail(`the ${card.kind} card was answered, but the app logged no island press read as uncovered for it (the answer did not come from the island's own press): ${log.split("\n").filter((l) => l.includes("sealed: press on")).slice(-4).join(" | ").slice(0, 400)}`);
+  if (new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in the main window`).test(log)) fail(`the ${card.kind} card was also pressed in the main window, so the island's press is not what answered it`);
+  return "pressed on the island (its own window's sealed Approve, the page ready, read uncovered fresh at the press, accepted by the app and the core, the fallback card never drawn, no press in the main window)";
 }
 
 /** Presses the card's Approve where the person would, in HER conversation: the sealed button drawn in the main window's own
@@ -2912,7 +2916,7 @@ async function main(): Promise<void> {
       if (result === undefined) fail(`${called} gave no answer of its own (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
       const said = apiProbePairs(result!.text);
       const wrong = apiProbeWrong(said);
-      if (!cardText.includes("hears what you say to your bots with push-to-talk")) wrong.push("its OK card doesn't say what audio gives");
+      if (!cardText.includes("can play sound at any time, even while no window of it shows")) wrong.push("its OK card doesn't say what audio gives");
       if (!cardText.includes("controls the screen and input of your computers")) wrong.push("its OK card doesn't say what computers.control gives");
       if (wrong.length > 0) fail(`${wrong.join("; ")} (${result!.text.slice(0, 600)})`);
       // `secrets.get` in a process of the plugin's own: the vault reads the key the run stored for its `auth` entry.
@@ -5208,6 +5212,13 @@ try {
   for (const f of ["app.log.1", "app.log"]) {
     const shown = readLog(join(home, "logs", f)).split("\n").find((l) => /window: shown while headless/.test(l) && !(/^\d{4}-\d\d-\d\dT/.test(l) && l.slice(0, 24) < runStartedAt));
     if (shown !== undefined) { console.error(`acceptance: FAIL: a window was shown during a headless run (${f}): ${shown.slice(0, 300)}`); code = code === 0 ? 1 : code; break; }
+  }
+  // The run's own presses on a sealed button are legitimate (the cover tests live in the desktop suite, never here): one the app refused as
+  // covered, or whose fresh visibility report never came, is a button the person could not have pressed either, and fails the run.
+  {
+    const refused = ["app.log.1", "app.log"].flatMap((f) => readLog(join(home, "logs", f)).split("\n")).filter((l) => !(/^\d{4}-\d\d-\d\dT/.test(l) && l.slice(0, 24) < runStartedAt)).filter((l) => /sealed: press on .*: fresh report (covered|none in time) after/.test(l) || /sealed: answer refused \((the button was covered|no visibility report)/.test(l));
+    if (refused.length > 0) { console.error(`acceptance: FAIL: ${refused.length} of the run's own presses on a sealed button were refused as covered or unchecked, e.g. ${refused[0]!.slice(0, 260)}`); code = code === 0 ? 1 : code; }
+    else console.error("acceptance: sealed presses refused as covered or unchecked: 0");
   }
   // Nor any sound: every app this run started began muted ("audio: muted"), and none played unmuted.
   {

@@ -88,7 +88,7 @@ function BarFrame({ presentation = "compact", draft = "", running = false, stopp
   const target = mainSize(presentation, lines * 20 + 6);
   const look = barLook(presentation === "expanded", running, draft, false, `Message ${ALPHA.name}`, verb ?? `${ALPHA.name} is working`);
   return (
-    <div className="clp-stack" style={hovered ? { transform: `scale(${1 + (PILL.compactWidth * (PILL.hoverScale - 1)) / target.width})` } : undefined}>
+    <div className="clp-stack" data-hovered={hovered ? "true" : undefined}>
       <BarMenus menu={menu} target={targets[0] ?? ALPHA} targets={targets} width={(size ?? target).width} />
       <Shell
         size={size ?? target}

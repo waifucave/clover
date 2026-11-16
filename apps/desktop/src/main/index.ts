@@ -44,6 +44,7 @@ import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
+import { BrowserAreaFrames, isBrowserEvent, ViewBindings } from "./ui/browser-calls";
 import { FRESH_LIMIT_MS, ownCardPage, pinVisible } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
@@ -62,7 +63,7 @@ import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { FrameWatches } from "./ui/frame-watches";
 import { LAYER_SCHEME } from "./ui/documents";
-import { LISTEN_REQUEST_MS, ListenHolds, micHandlers } from "./ui/listen";
+import { micHandlers } from "./ui/microphone";
 import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
@@ -173,8 +174,6 @@ const safeMode = start.safeMode || args.safeMode;
 
 let runtime: UiRuntime;
 let pair: Pair;
-/** The windows' push-to-talk holds (ui/listen.ts), made at ready. */
-let listens: ListenHolds | undefined;
 let browser: BrowserHost | undefined;
 let tray: AppTray | undefined;
 let mainWindow: BrowserWindow | undefined;
@@ -287,28 +286,14 @@ async function ready(): Promise<void> {
   await hardenSession(session.defaultSession, log);
   const ui = session.fromPartition(UI_PARTITION);
   await hardenSession(ui, log);
-  // Push-to-talk (listen.ts): the one place a microphone may open is the main window's `clover` shell, for audio, while the
-  // user's own press has a recording open in that window. `hardenSession` refused every permission to every frame; these two
-  // handlers (the request and the check, Chromium asks both) are the only exception, for this session alone.
-  const holds = listens = new ListenHolds({
-    shell: (windowId, message) => runtime.shellMessage(windowId, message),
-    request: (method, params) => {
-      const client = pair?.client;
-      if (client === undefined) return Promise.reject(new Error("Clover isn't running"));
-      return client.request(method, params, LISTEN_REQUEST_MS);
-    },
-    // The operating system's own question, on the first press of a real app; a test or acceptance build never asks (its shell
-    // records from a generated clip, never the microphone).
-    ...(typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? {} : { ensureMic: microphoneProblem }),
-    log,
-  });
-  // A plugin that holds `microphone` may open it from its own frames (their address names the layer; the runtime says what that plugin
-  // holds). On a real build the system's own question comes first (the first time, on a Mac); a test or acceptance build answers the
-  // permission check and request but never opens a real microphone or asks the system (nothing in a test calls getUserMedia).
-  const pluginMic = (layer: string): boolean => runtime?.layerHolds(layer, "microphone") === true;
+  // The microphone (ui/microphone.ts): a frame whose own layer holds `microphone` may open it, for audio alone, by one rule
+  // for every layer. `hardenSession` refused every permission to
+  // every frame; these two handlers (the request and the check, Chromium asks both) are the only exception, for this session
+  // alone. On a real build the system's own question comes first (the first time, on a Mac); a test or acceptance build
+  // answers the check and the request but never asks the system (nothing in a test calls getUserMedia).
   const testBuild = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string";
   const mic = micHandlers({
-    holds, layerScheme: LAYER_SCHEME, plugin: pluginMic, testBuild,
+    layerScheme: LAYER_SCHEME, holds: (layer) => runtime?.layerHolds(layer, "microphone") === true, testBuild,
     windowOf: (wc) => (wc === null ? undefined : BrowserWindow.fromWebContents(wc as Electron.WebContents)?.id),
     systemProblem: microphoneProblem,
   });
@@ -322,7 +307,14 @@ async function ready(): Promise<void> {
       views.drop(mount);
       webViews.drop(mount);
       // The watches the frame left open end with it (a turn it took included, §5.4 "Turns").
-      for (const w of frameWatches.gone(mount)) void layerLinks.call(w.pluginId, "plugin.layer.unwatch", { watch: w.watch }).catch(() => undefined);
+      for (const w of frameWatches.gone(mount)) {
+        browserWatches.delete(w.watch);
+        void layerLinks.call(w.pluginId, "plugin.layer.unwatch", { watch: w.watch }).catch(() => undefined);
+      }
+      // The last visible part of a plugin that subscribed to the `browser` area went: its connection stops hearing tabs.
+      viewBindings.gone(mount);
+      const lastBrowser = browserAreaFrames.gone(mount);
+      if (lastBrowser !== undefined) void layerLinks.call(lastBrowser, "events.unsubscribe", { areas: ["browser"] }).catch(() => undefined);
     },
     systemLanguage: app.getPreferredSystemLanguages()[0] ?? app.getLocale(),
     // The acceptance's tab-flash row (a headless test-marked or acceptance build only, compiled out of a release; the
@@ -373,7 +365,6 @@ async function ready(): Promise<void> {
   });
   const ipcStats = ipcStatsOn({ env: process.env, flagFile: existsSync(join(home, "ipc-stats")) }) ? new IpcStats() : undefined;
   installIpc(runtime, {
-    listens: holds,
     frameWatches,
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     shellState: (id, state) => shellStates.set(id, state),
@@ -400,6 +391,13 @@ async function ready(): Promise<void> {
       return ok;
     },
     settleGesture: (windowId) => sends.settle(windowId),
+    browserArea: (pluginId, mount, on) => {
+      if (on) browserAreaFrames.add(pluginId, mount);
+      else browserAreaFrames.gone(mount);
+    },
+    noteBrowserWatch: (watch) => { browserWatches.add(watch); },
+    showsTab: (_windowId, mount, tab) => viewBindings.bound(mount) === tab,
+    noteBrowserResult: (mount, method, params, result) => viewBindings.note(mount, method, params, result),
     treeRequest: async (method, params) => {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
       const client = pair.client;
@@ -2071,6 +2069,12 @@ const menus = new MenuGate();
 /** Each plugin layer's own connection to the core (its plugin API). */
 /** The watches each frame opened on its plugin's connection: a frame's going ends them (ui/frame-watches.ts). */
 const frameWatches = new FrameWatches();
+/** The watches open on a `browser.*` call (their values are the Clover Browser's events), and the visible parts that
+ *  subscribed to the `browser` area (browser-calls.ts). */
+const browserWatches = new Set<string>();
+const browserAreaFrames = new BrowserAreaFrames();
+/** The tab each part's own browser view is bound to (browser-calls.ts `ViewBindings`). */
+const viewBindings = new ViewBindings();
 const layerLinks = new LayerLinks({
   appClient: () => pair?.client,
   dial: () => dialDaemon(daemonEndpoint(home)),
@@ -2086,7 +2090,8 @@ const layerLinks = new LayerLinks({
       const id = (params as { card?: { id?: unknown } }).card?.id;
       if (typeof id === "string") noteTold(id, pluginId);
     }
-    runtime.pluginMessage(pluginId, { type: "api-event", pluginId, method, params });
+    // The Clover Browser's events go only to the plugin's documents the user can see (browser-calls.ts).
+    runtime.pluginMessage(pluginId, { type: "api-event", pluginId, method, params }, method === CORE_EVENT_NOTIFICATION && isBrowserEvent(params, browserWatches) ? { visibleOnly: true } : {});
   },
   log,
 });
@@ -2367,7 +2372,6 @@ function watchWindow(win: BrowserWindow): void {
   win.on("closed", () => {
     menus.forget(id);
     sends.forget(id);
-    listens?.closeWindow(id);
     windowDrags.forget(id);
     cursors.delete(id);
     pointers.forget(id);
@@ -2623,9 +2627,9 @@ async function smoke(): Promise<void> {
       if (spec !== undefined) {
         try {
           const {
-            cardId, element, cover, opacity, doubleClick, coverLead, parentCoverLead,
+            cardId, element, cover, opacity, doubleClick, coverLead, parentCoverLead, pulse,
           } = JSON.parse(spec) as {
-            cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number;
+            cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number; pulse?: number;
           };
           const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
             f.url.startsWith("clover-sealed://") &&
@@ -2784,20 +2788,26 @@ async function smoke(): Promise<void> {
               log(`sealed-click: input via ${!inputAllowed ? "refused" : cdp ? "cdp" : "sendInputEvent"}`);
               await dispatch("mouseMoved");
               await new Promise((r) => setTimeout(r, 120));
+              if (typeof pulse === "number") {
+                // The "press again" pulse of an earlier refused press is running (its animation started `pulse` ms ago): the press must still land.
+                await frame.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (b) b.dataset.again = 'yes'; return new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r(true))); setTimeout(() => r(false), 1500); }); })()`, true).catch(() => undefined);
+                await new Promise((r) => setTimeout(r, Math.max(0, Math.min(1500, pulse))));
+                log(`sealed-click: press ${Math.round(pulse)} ms into the pulse`);
+              }
               if (typeof parentCoverLead === "number") {
                 // The cover an embedder would draw: a click-through, see-through element in the window's own (root) document over the sealed
                 // iframe, `parentCoverLead` ms before the press. The page's own document holds nothing of it.
                 const left = Math.round(offsetX + buttonRect.x);
                 const top = Math.round(offsetY + buttonRect.y);
                 // Lead 0: the cover is sent and the press follows at once, without waiting for the cover's own call to come back.
-                const putCover = win.webContents.mainFrame.executeJavaScript(`(() => { const c = document.createElement('div'); c.id = '__parentCover'; c.style.cssText = 'position:fixed;left:${left}px;top:${top}px;width:${Math.round(buttonRect.width)}px;height:${Math.round(buttonRect.height)}px;z-index:2147483647;pointer-events:none;background:rgba(255,0,0,0.25)'; document.body.appendChild(c); })()`, true).catch(() => undefined);
+                const putCover = win.webContents.mainFrame.executeJavaScript(`(() => { const c = document.createElement('div'); c.id = '__parentCover'; c.style.cssText = 'position:fixed;left:${left}px;top:${top}px;width:${Math.round(buttonRect.width)}px;height:${Math.round(buttonRect.height)}px;z-index:2147483647;pointer-events:none;background:rgba(255,0,0,0.25)'; document.body.appendChild(c); return new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r(true))); setTimeout(() => r(false), 1500); }); })()`, true).catch(() => undefined);
                 if (parentCoverLead > 0) await putCover;
                 if (parentCoverLead > 0) await new Promise((r) => setTimeout(r, Math.min(2000, parentCoverLead)));
                 log(`sealed-click: press ${Math.round(parentCoverLead)} ms after the parent cover`);
               }
               if (typeof coverLead === "number") {
-                // A cover drawn `coverLead` ms before the press, on a button the page has long reported ready: the press must not land.
-                await frame.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (!b) return; const c = document.createElement('div'); c.style.position = 'absolute'; c.style.inset = '0'; c.style.zIndex = '9999'; c.style.pointerEvents = 'none'; b.parentElement?.insertBefore(c, b); })()`, true).catch(() => undefined);
+                // The lead counts from the frame that drew the cover (two animation frames after it went in), never from when the call returned, so a loaded machine does not shorten it. A cover drawn `coverLead` ms before the press, on a button the page has long reported ready: the press must not land.
+                await frame.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (!b) return; const c = document.createElement('div'); c.style.position = 'absolute'; c.style.inset = '0'; c.style.zIndex = '9999'; c.style.pointerEvents = 'none'; b.parentElement?.insertBefore(c, b); return new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r(true))); setTimeout(() => r(false), 1500); }); })()`, true).catch(() => undefined);
                 await new Promise((r) => setTimeout(r, Math.max(0, Math.min(2000, coverLead))));
                 log(`sealed-click: press ${Math.round(coverLead)} ms after the cover`);
               }

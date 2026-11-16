@@ -134,9 +134,7 @@
       "usage.plans",
       "usage.rows",
       "usage.summary",
-      "user.send",
-      "voice.listen",
-      "voice.status"
+      "user.send"
     ],
     "receives": [
       "account_changed",

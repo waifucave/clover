@@ -30,11 +30,20 @@ function files(dir: string): string[] {
 
 /** What one bundled plugin's files import from outside it: `<file>: <specifier>` lines. */
 export function outsideImports(pluginDir: string): string[] {
-  const pkgPath = join(pluginDir, "package.json");
-  const pkg = existsSync(pkgPath) ? (JSON.parse(readFileSync(pkgPath, "utf8")) as Record<string, Record<string, string> | undefined>) : {};
-  const own = new Set(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies }));
+  // What a file may import: what the package.json files between it and the plugin's folder name (its own, a gallery's).
+  const named = (dir: string): string[] => {
+    const pkgPath = join(dir, "package.json");
+    const pkg = existsSync(pkgPath) ? (JSON.parse(readFileSync(pkgPath, "utf8")) as Record<string, Record<string, string> | undefined>) : {};
+    return Object.keys({ ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies, ...pkg.optionalDependencies });
+  };
+  const ownFor = (file: string): Set<string> => {
+    const out = new Set<string>();
+    for (let dir = dirname(file); dir === pluginDir || dir.startsWith(pluginDir + sep); dir = dirname(dir)) for (const n of named(dir)) out.add(n);
+    return out;
+  };
   const bad: string[] = [];
   for (const file of files(pluginDir)) {
+    const own = ownFor(file);
     const text = readFileSync(file, "utf8");
     for (const m of text.matchAll(SPEC)) {
       const spec = m[1] ?? m[2] ?? m[3];
@@ -58,10 +67,33 @@ export function outsideImports(pluginDir: string): string[] {
 }
 
 /** The bundled plugins with parts (a client entry): the ones the app's `clover` layer bundles. */
-const plugins = readdirSync(BUNDLED).filter((n) => {
+const withParts = readdirSync(BUNDLED).filter((n) => {
   const m = join(BUNDLED, n, "clover.json");
   return existsSync(m) && (JSON.parse(readFileSync(m, "utf8")) as { client?: { entry?: string } }).client?.entry !== undefined;
 });
+/** Those, and the base theme (a look the parts are drawn in, with a gallery of its own): every file of each is scanned,
+ *  its tests and its galleries too. The host-only plugins (model providers, the browser's host half) are not UI parts. */
+const plugins = [...withParts, ...(withParts.includes("base-theme") ? [] : ["base-theme"])];
+
+/** Every package.json in a plugin's folder (its own, a gallery's): the Clover packages each depends on but the SDK. */
+export function cloverDependencies(pluginDir: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      if (name === "node_modules" || name === "dist" || name === "out" || name.startsWith(".")) continue;
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (name === "package.json") {
+        const pkg = JSON.parse(readFileSync(p, "utf8")) as Record<string, Record<string, string> | undefined>;
+        for (const dep of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies, ...pkg.optionalDependencies })) {
+          if ((dep.startsWith("@waifucave/clover-") && dep !== "@waifucave/clover-plugin-sdk") || dep.startsWith("@clover-child")) out.push(`${relative(BUNDLED, p)}: ${dep}`);
+        }
+      }
+    }
+  };
+  walk(pluginDir);
+  return out;
+}
 
 /** Imports across plugins found by this test that wait for the controller's ruling (F2b report), by plugin: each a
  *  pattern of `<file>: <specifier>` lines. The test fails on any other, and on a pattern that no longer matches (the
@@ -69,7 +101,7 @@ const plugins = readdirSync(BUNDLED).filter((n) => {
 const PENDING_RULING: Record<string, readonly RegExp[]> = {
   // Shared parts of the island's: the sealed card's content and buttons, its names, its gallery fixtures.
   devices: [/^devices\/client\/entries\.tsx: @waifucave\/clover-plugin-island$/],
-  pill: [/^pill\/(src|test)\/.*: @waifucave\/clover-plugin-island(\/names)?$/, /^pill\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
+  pill: [/^pill\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
   usage: [/^usage\/src\/.*: @waifucave\/clover-plugin-island(\/fixtures|\/gallery)?$/, /^usage\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
   live2d: [/^live2d\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
   // The base theme's token tables and CSS checks, in other parts' style tests.
@@ -77,6 +109,14 @@ const PENDING_RULING: Record<string, readonly RegExp[]> = {
   vrm: [/^vrm\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
   // The whole-window gallery, which draws every bundled part together.
   shell: [/^shell\/(gallery\/[^:]+|test\/gallery\.test\.ts):/],
+  // The look gallery (lane G's), which draws the island, the pill, the avatars, usage and notifications together.
+  "base-theme": [/^base-theme\/gallery\/src\/(main|alpha)\.tsx: \.\.\/\.\.\/\.\.\//],
+};
+
+/** The same, for package.json dependencies (pending the same rulings). */
+const PENDING_DEPENDENCY: Record<string, readonly RegExp[]> = {
+  usage: [/^usage\/package\.json: @waifucave\/clover-plugin-island$/],
+  devices: [/^devices\/package\.json: @waifucave\/clover-plugin-island$/],
 };
 
 describe("each bundled plugin is a folder of its own (F2b)", () => {
@@ -88,12 +128,19 @@ describe("each bundled plugin is a folder of its own (F2b)", () => {
       // Each pending pattern still matches something: once fixed, it leaves the list.
       for (const p of pending) expect([String(p), found.some((line) => p.test(line))]).toEqual([String(p), true]);
     });
+
+    test(`${name}'s package.json files depend on no other Clover package but the SDK`, () => {
+      const pending = PENDING_DEPENDENCY[name] ?? [];
+      const found = cloverDependencies(join(BUNDLED, name));
+      expect(found.filter((line) => !pending.some((p) => p.test(line)))).toEqual([]);
+      for (const p of pending) expect([String(p), found.some((line) => p.test(line))]).toEqual([String(p), true]);
+    });
   }
 
   test("the app's build substitutes nothing for a part: no build alias, no ./sdk swap", () => {
     const build = readFileSync(join(import.meta.dir, "..", "scripts", "build.ts"), "utf8");
     expect(build).not.toMatch(/@clover-child|onResolve|childAlias/);
     expect(existsSync(join(import.meta.dir, "..", "src", "layer", "clover", "sdk.ts"))).toBe(false);
-    for (const n of plugins) expect([n, existsSync(join(BUNDLED, n, "client", "sdk.ts")) || existsSync(join(BUNDLED, n, "client", "sdk.tsx"))]).toEqual([n, false]);
+    for (const n of withParts) expect([n, existsSync(join(BUNDLED, n, "client", "sdk.ts")) || existsSync(join(BUNDLED, n, "client", "sdk.tsx"))]).toEqual([n, false]);
   });
 });

@@ -1,6 +1,7 @@
 // The acceptance run's second speaking plugin (spec §6.6, F1's proof): everything it says, its own background part plays
 // (client/index.tsx), in the device's speech turn. Its host half only tells the part what to say: a reply handed to it
-// as a voice mode Clover Voice's user chose (`clover.voice.modes`' `reply`), or its own `chime`. The part reports each
+// as the voice Clover Voice's user chose (`clover.voice.modes`' `reply`), or its own `chime`; push-to-talk's recording
+// comes to its `hear`, which answers with words that say how many bytes reached it. The part reports each
 // span it held the turn (`record`), which `report` answers with, so the run can prove it never overlapped Clover Voice.
 // It tells its part through a stream with only its meta (`say`), once the part has said it accepts them (`ready`): a
 // background part's frame loads after its plugin starts, and a stream opened before that finds no one to accept it.
@@ -8,7 +9,7 @@
 type Api = { streams: { open(name: string, o: { meta: Record<string, unknown> }): Promise<{ close(): Promise<void> }> } };
 
 let api: Api | undefined;
-const said = { replies: [] as string[], spans: [] as { what: string; from: number; to: number }[] };
+const said = { replies: [] as string[], heard: [] as number[], spans: [] as { what: string; from: number; to: number }[] };
 
 export function start(a: Api): void {
   api = a;
@@ -45,17 +46,14 @@ export const chime = async () => {
   return { offered: true, at };
 };
 
-/** Its `voiceModes` handler: picked as the voice, it doesn't listen (push-to-talk shows no button for it). */
-export const listening = {
-  listens: async () => false,
-  listenStart: async () => {
-    throw new Error("the acceptance voice mode doesn't listen");
-  },
-  listenPiece: async () => ({}),
-  listenEnd: async () => undefined,
-};
+/** Its entry's `hear`: push-to-talk's recording, written down as what reached it. */
+export async function hear(args: { bot?: unknown; audio?: unknown; format?: unknown }): Promise<{ text: string }> {
+  if (!(args.audio instanceof Uint8Array)) throw new Error("the acceptance voice mode writes down a recording: its audio, as bytes");
+  said.heard.push(args.audio.length);
+  return { text: `heard by the voice mode: ${args.audio.length} bytes of ${String(args.format)}` };
+}
 
-export const report = async () => ({ ready, replies: [...said.replies], spans: [...said.spans] });
+export const report = async () => ({ ready, replies: [...said.replies], heard: [...said.heard], spans: [...said.spans] });
 
 /** Its part's own table: each span it held the device's speech turn. */
 export const ui = {

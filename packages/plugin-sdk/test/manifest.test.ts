@@ -223,9 +223,9 @@ describe("contributes", () => {
   });
 
   test("entry ids are unique within a plugin", () => {
-    const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "h.ts" }, contributes: { voices: [{ id: "v", name: "V", handler: "a" }, { id: "v", name: "W", handler: "b" }] } });
+    const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "h.ts" }, contributes: { computerProviders: [{ id: "v", name: "V", auth: [], handler: "a" }, { id: "v", name: "W", auth: [], handler: "b" }] } });
     expect(has(r, "entry_duplicate", "entry")).toBe(true);
-    expect(r.manifest?.contributes?.voices?.length).toBe(1);
+    expect(r.manifest?.contributes?.computerProviders?.length).toBe(1);
   });
 
   test("a ui entry has exactly one of component, web, style or hide; filling a spot twice needs ids", () => {

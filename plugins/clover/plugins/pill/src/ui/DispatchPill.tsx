@@ -11,7 +11,7 @@ import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, 
 import { assignPaletteSlots, type ChildItem } from "../model/children";
 import { questionAdvance, questionAnswers, chooseOption, emptyDraft, typeOther, type PillCard, type QuestionCard, type QuestionDraft } from "../model/cards";
 import type { PillPieces } from "../model/placement";
-import { PILL, barLook, canvasSize, cardSize, contentReveal, estimatedMenuHeight, hoverScale, mainSize, previewCeiling, previewHeight, type Presentation, type Size } from "../model/metrics";
+import { PILL, barLook, canvasSize, cardSize, contentReveal, estimatedMenuHeight, mainSize, previewCeiling, previewHeight, type Presentation, type Size } from "../model/metrics";
 import { CHILD_PALETTES, type PlumeThrow } from "../model/plume";
 import { turnPreview, type Exchange } from "../model/preview";
 import { restingSpring, retarget, settled, stepSpring, type SizeSpring } from "../model/spring";
@@ -390,8 +390,8 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
   const shownPreview = drawn.startsWith("preview:") ? turnPreview(exchanges, Number(drawn.slice(8))) : null;
 
   return (
-    <div className="clp-stage" data-presentation={presentation} data-running={running || undefined} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
-      <div className="clp-stack" style={hovered && !reducedMotion ? { transform: `scale(${hoverScale(s.size.width)})` } : undefined}>
+    <div className="clp-stage" data-hovered={hovered && !reducedMotion ? "true" : undefined} data-presentation={presentation} data-running={running || undefined} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+      <div className="clp-stack">
         <Children
           items={agents}
           width={s.size.width}

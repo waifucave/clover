@@ -30,9 +30,6 @@ import { RoutineEngine, type RoutineEngineOptions } from "../routines/engine";
 import { routineMethods } from "../routines/rpc";
 import { routineToolDef, type RoutineToolDeps } from "../routines/tool";
 import { WebhookIngress, type WebhookIngressOptions } from "../routines/webhooks";
-import { voicesMethods } from "../voices/rpc";
-import { VoiceService, type VoiceServiceOptions } from "../voices/service";
-import { VoiceSlot } from "../voices/slot";
 import { readUiSettings } from "../plugin-host/ui-settings";
 import { workshopToolDefs, type PluginWorkshop } from "../registry/workshop";
 import { appScreenshotToolDef, type AppScreenshotDeps } from "./app-screenshot";
@@ -89,9 +86,6 @@ export interface BotSideOptions {
   /** Lane M's update gate (`RunningDaemon.updateGate`, #198): its turns are a busy source, and none starts while an
    *  update closes it (update-gate.ts). */
   updateGate?: UpdateGateLike;
-  /** Push-to-talk on this device (§6.6, the listening half until it is re-founded): the `voices` entries and the plugin
-   *  host that streams them. The bots' voices are Clover Voice's own settings; it speaks on its own. */
-  voices?: Pick<VoiceServiceOptions, "registry" | "host" | "listenIdleMs">;
   userHome?: string;
   approvals?: DurableSessionHostOptions["approvals"] & Partial<Pick<ApprovalBroker, "request">>;
   /** The provider check for bots' plugin-chosen models (provider-consent.ts); by default one over this side's grants,
@@ -118,10 +112,6 @@ export interface BotSide {
   routines?: RoutineEngine;
   /** Its webhooks' way in, when an ingress was given. */
   ingress?: WebhookIngress;
-  /** Bots' voices here, when voices were given. */
-  voices?: VoiceService;
-  /** The voice slot (§6.6): the active voice mode, its sink and the providers' endpoints. */
-  voiceSlot?: VoiceSlot;
   /** The one `SessionGrants` of this computer (R10: what the user allowed one session, such as driving their own
    *  browser partition), over this side's host and the approval broker; present when `approvals` can `request`.
    *  The daemon hands this same instance to the browser (`personsBrowserGrants(side.grants)`), so a grant the user
@@ -220,17 +210,6 @@ export function createBotSide(o: BotSideOptions): BotSide {
     registry: o.routines.ingress.registry, host: o.routines.ingress.host, engine: routines, clock: o.clock, ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   const questions = botQuestions({ host, ...(o.warn === undefined ? {} : { warn: o.warn }) });
-  const voices = o.voices === undefined ? undefined : new VoiceService({
-    ...o.voices,
-    ...(o.warn === undefined ? {} : { warn: o.warn }),
-  });
-  // The voice slot (§6.6): the active voice mode (`voiceModes`' one at a time, the user's pick in Settings) hears
-  // push-to-talk; the service carries the providers' listening.
-  const voiceSlot = voices === undefined || o.voices?.host.invoke === undefined ? undefined : new VoiceSlot({
-    registry: o.registry, host: o.voices.host as Pick<PluginHost, "invoke">, service: voices,
-    ...(o.voices.listenIdleMs === undefined ? {} : { listenIdleMs: o.voices.listenIdleMs }),
-    ...(o.warn === undefined ? {} : { warn: o.warn, log: o.warn }),
-  });
   // Held by an update's restart: started again as the gate reopens.
   const offReopen = updates?.onReopen(() => host.resume());
   // The turns running here keep an update waiting (lane M's busy registry).
@@ -258,8 +237,6 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(agents === undefined ? {} : { agents }),
     ...(routines === undefined ? {} : { routines }),
     ...(ingress === undefined ? {} : { ingress }),
-    ...(voices === undefined ? {} : { voices }),
-    ...(voiceSlot === undefined ? {} : { voiceSlot }),
     ...(grants === undefined ? {} : { grants }),
     questions,
     tools: (sessionId) => {
@@ -285,7 +262,6 @@ export function createBotSide(o: BotSideOptions): BotSide {
       // `pill.target` entry's handler through the plugin host, when there is one.
       ...userSendMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
-      ...(voices === undefined ? {} : voicesMethods({ ...(voiceSlot === undefined ? {} : { slot: voiceSlot }) })),
       };
     },
     start: async () => {

@@ -26,5 +26,5 @@ test("the validator: browserTools needs browser; its card line says what the tab
   const codes = (caps: string[]) => validateManifest(m(caps), { folderName: "surfer" }).issues.filter((i) => i.severity === "error").map((i) => i.code);
   expect(codes([])).toContain("browser_tool_no_capability");
   expect(codes(["browser"])).toEqual([]);
-  expect(describeOk(validateManifest(m(["browser"]), { folderName: "surfer" }))).toContain("Its server web says Browse drives the calling bot's own tab of the Clover Browser: at the default approval level opening, reading and a picture of a page run without asking, clicking and typing ask for the site, and what the tab shows goes through this plugin.");
+  expect(describeOk(validateManifest(m(["browser"]), { folderName: "surfer" })).join("\n")).toContain("Its server web says Browse drives the calling bot's own tab of the Clover Browser. Looking and acting are told apart by the plugin's own word (its verbs)");
 });

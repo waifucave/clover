@@ -67,6 +67,41 @@ function mountPill(props: Partial<DispatchPillProps>) {
   return { ...view, clock };
 }
 
+
+/** What may not happen to a container of a sealed frame while the user can press: no transform, opacity below 1 or filter on it, whether inline or from a
+ *  hover / focus / press rule, and no transition of those. A sealed button read (IntersectionObserver v2) while its container moves, fades or filters
+ *  says "not visible", and the press is refused. Paint-only cues (a rim, a shadow, a background) are fine. */
+function motionProblems(container: HTMLElement, css: string): string[] {
+  const problems: string[] = [];
+  const ancestors = new Set<HTMLElement>();
+  for (const part of container.querySelectorAll("[data-sealed]")) {
+    for (let el = part.parentElement; el !== null && el !== container.parentElement; el = el.parentElement) ancestors.add(el);
+  }
+  const classes = new Set<string>();
+  for (const el of ancestors) {
+    for (const c of Array.from(el.classList)) classes.add(c);
+    const st = el.style;
+    if (st.transform !== "" && st.transform !== "none") problems.push(`an ancestor (${el.className}) has an inline transform ${st.transform}`);
+    if (st.filter !== "" && st.filter !== "none") problems.push(`an ancestor (${el.className}) has an inline filter ${st.filter}`);
+    if (st.opacity !== "" && Number(st.opacity) < 1) problems.push(`an ancestor (${el.className}) has an inline opacity ${st.opacity}`);
+    if (/transform|opacity|filter|all/.test(st.transition)) problems.push(`an ancestor (${el.className}) has an inline transition of ${st.transition}`);
+  }
+  const subjectOf = (selector: string): string[] => {
+    const last = selector.trim().split(/\s+|>|\+|~/).filter(Boolean).pop() ?? "";
+    return [...last.matchAll(/\.([A-Za-z0-9_-]+)/g)].map((m) => m[1]!);
+  };
+  for (const rule of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const [, selectors, body] = rule;
+    for (const selector of selectors!.split(",")) {
+      if (!subjectOf(selector).some((c) => classes.has(c))) continue;
+      const state = /:hover|:focus|:active|\[data-hovered|\[data-pressed/.test(selector);
+      if (state && /(^|[;\s])(transform|translate|scale|rotate|filter|opacity)\s*:/.test(body!)) problems.push(`${selector.trim()} sets a transform, filter or opacity on a state of a sealed frame's container`);
+      if (/(^|[;\s])transition(-property)?\s*:[^;]*(transform|opacity|filter|\ball\b)/.test(body!)) problems.push(`${selector.trim()} transitions a transform, filter or opacity on a sealed frame's container`);
+    }
+  }
+  return problems;
+}
+
 describe("sealed parts stay visible at rest, on the real pill", () => {
   test("an approval, one with an \"always\" answer, and a link request on top, once the shape rests", () => {
     for (const card of [APPROVAL, APPROVAL_ALWAYS, LINK]) {
@@ -84,6 +119,23 @@ describe("sealed parts stay visible at rest, on the real pill", () => {
     fireEvent.mouseEnter(pill.container.querySelector(".clp-stage")!);
     pill.clock.run(600);
     assertVisible(pill.container);
+  });
+
+  test("under the pointer, nothing around a sealed frame is moved, scaled, faded or filtered, nor transitioned (a reading taken while it moves says \"not visible\")", () => {
+    const pill = mountPill({ cards: [APPROVAL, LINK], agents: AGENTS, running: true });
+    pill.clock.run(2500);
+    fireEvent.mouseEnter(pill.container.querySelector(".clp-stage")!);
+    pill.clock.run(600);
+    expect(pill.container.querySelector(".clp-stage[data-hovered]")).not.toBeNull();
+    expect(motionProblems(pill.container, PILL_CSS)).toEqual([]);
+  });
+
+  test("the check itself catches a hover scale on the stack and a transition of a transform", () => {
+    const pill = mountPill({ cards: [APPROVAL] });
+    pill.clock.run(2500);
+    expect(motionProblems(pill.container, ".clp-stage[data-hovered] .clp-stack { transform: scale(1.03) }")).toHaveLength(1);
+    expect(motionProblems(pill.container, ".clp-stack { transition: transform 300ms linear(0, 1) }")).toHaveLength(1);
+    expect(motionProblems(pill.container, ".clp-shell { transition: box-shadow 150ms ease-out }")).toEqual([]);
   });
 
   test("but not while the shape still moves or the card fades (its clicks do not count yet)", () => {

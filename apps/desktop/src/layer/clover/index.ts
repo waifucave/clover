@@ -1,8 +1,7 @@
 // The `clover` layer's bundle (served as `/_clover/clover.js` in the `clover` layer only): one client module per child
 // plugin of `clover`, by plugin id, as each child's client entry exports it (lane F's, G's and L's parts are entries of
-// the UI API's shape). Everything we ship under `clover` shares this one layer (spec §5.5). The shell is wrapped for
-// the app's commands (bindings.tsx).
-import * as b from "./bindings";
+// the UI API's shape). Everything we ship under `clover` shares this one layer (spec §5.5). Each is bound as it is: the
+// shell's own `Shell` hears the app's commands itself.
 import * as archive from "@waifucave/clover-plugin-archive/client";
 import * as botEditor from "@waifucave/clover-plugin-bot-editor/client";
 import * as character from "@waifucave/clover-plugin-character/client";
@@ -27,7 +26,7 @@ import * as vrm from "@waifucave/clover-plugin-vrm/client";
 import type { CloverChildId } from "./ids";
 
 export const modules: Record<CloverChildId, Record<string, unknown>> = {
-  "clover/shell": { ...shell, Shell: b.Shell },
+  "clover/shell": shell,
   "clover/character": character,
   "clover/sidebar": sidebar,
   "clover/conversation": conversation,

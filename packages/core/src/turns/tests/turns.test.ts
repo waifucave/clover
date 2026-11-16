@@ -195,6 +195,7 @@ describe("turns: who may use a name", () => {
     ["tarot", rec("tarot", [], [{ name: "deck", doc: "the one deck" }])],
     ["cards", rec("cards")],
     ["voice", rec("voice", ["audio"])],
+    ["talk", rec("talk", ["microphone"])],
     ["clover/voice", rec("clover/voice")],
   ]);
   const check = (caller: string, name: string) => capture(() => checkTurnName(name, { pluginId: caller, record: records.get(caller)! }, (id) => records.get(id)));
@@ -209,6 +210,9 @@ describe("turns: who may use a name", () => {
     expect(isContractError(check("cards", "nobody/deck"), "refused")).toBe(true);
     expect(isContractError(check("cards", "device/speech"), "refused")).toBe(true);
     expect(check("voice", "device/speech")).toBeUndefined();
+    // The microphone's turn is behind `microphone`, as speech's is behind `audio`.
+    expect(check("talk", "device/microphone")).toBeUndefined();
+    expect(isContractError(check("voice", "device/microphone"), "refused")).toBe(true);
     expect(isContractError(check("voice", "device/elsewhere"), "invalid")).toBe(true);
     expect(isContractError(check("voice", "Deck"), "invalid")).toBe(true);
     expect(isContractError(check("voice", "tarot/Deck Two"), "invalid")).toBe(true);

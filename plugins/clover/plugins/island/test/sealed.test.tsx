@@ -76,6 +76,41 @@ function mountIsland(cards: IslandCard[], shape = NOTCH) {
   return { ...c, view, update: (list: IslandCard[]) => view.rerender(ui(list)) };
 }
 
+
+/** What may not happen to a container of a sealed frame while the user can press: no transform, opacity below 1 or filter on it, whether inline or from a
+ *  hover / focus / press rule, and no transition of those. A sealed button read (IntersectionObserver v2) while its container moves, fades or filters
+ *  says "not visible", and the press is refused. Paint-only cues (a rim, a shadow, a background) are fine. */
+function motionProblems(container: HTMLElement, css: string): string[] {
+  const problems: string[] = [];
+  const ancestors = new Set<HTMLElement>();
+  for (const part of container.querySelectorAll("[data-sealed]")) {
+    for (let el = part.parentElement; el !== null && el !== container.parentElement; el = el.parentElement) ancestors.add(el);
+  }
+  const classes = new Set<string>();
+  for (const el of ancestors) {
+    for (const c of Array.from(el.classList)) classes.add(c);
+    const st = el.style;
+    if (st.transform !== "" && st.transform !== "none") problems.push(`an ancestor (${el.className}) has an inline transform ${st.transform}`);
+    if (st.filter !== "" && st.filter !== "none") problems.push(`an ancestor (${el.className}) has an inline filter ${st.filter}`);
+    if (st.opacity !== "" && Number(st.opacity) < 1) problems.push(`an ancestor (${el.className}) has an inline opacity ${st.opacity}`);
+    if (/transform|opacity|filter|all/.test(st.transition)) problems.push(`an ancestor (${el.className}) has an inline transition of ${st.transition}`);
+  }
+  const subjectOf = (selector: string): string[] => {
+    const last = selector.trim().split(/\s+|>|\+|~/).filter(Boolean).pop() ?? "";
+    return [...last.matchAll(/\.([A-Za-z0-9_-]+)/g)].map((m) => m[1]!);
+  };
+  for (const rule of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const [, selectors, body] = rule;
+    for (const selector of selectors!.split(",")) {
+      if (!subjectOf(selector).some((c) => classes.has(c))) continue;
+      const state = /:hover|:focus|:active|\[data-hovered|\[data-pressed/.test(selector);
+      if (state && /(^|[;\s])(transform|translate|scale|rotate|filter|opacity)\s*:/.test(body!)) problems.push(`${selector.trim()} sets a transform, filter or opacity on a state of a sealed frame's container`);
+      if (/(^|[;\s])transition(-property)?\s*:[^;]*(transform|opacity|filter|\ball\b)/.test(body!)) problems.push(`${selector.trim()} transitions a transform, filter or opacity on a sealed frame's container`);
+    }
+  }
+  return problems;
+}
+
 describe("sealed parts stay visible at rest", () => {
   const g = cardGeometry(NOTCH, { width: 400, height: 120 }, { rounded: true });
 
@@ -145,6 +180,28 @@ describe("sealed parts stay visible at rest", () => {
     island.advance(400);
     expect(island.view.container.querySelector(".clv-waiting")).not.toBeNull();
     assertVisible(island.view.container);
+  });
+
+  test("a hovered card is not moved, scaled, faded or filtered (a reading taken while it moves says \"not visible\" and the press is refused)", () => {
+    for (const hovered of [false, true]) {
+      const { container, unmount } = render(withKit(<LiquidCard geometry={g} hovered={hovered}><SealedCardContent card={APPROVAL} hover={hovered ? "accept" : undefined} /></LiquidCard>));
+      expect(motionProblems(container, ISLAND_CSS)).toEqual([]);
+      unmount();
+    }
+    const island = mountIsland([APPROVAL]);
+    island.advance(2000);
+    fireEvent.mouseEnter(island.view.container.querySelector(".clv-card-shell")!.parentElement!.parentElement!);
+    island.advance(600);
+    expect(island.view.container.querySelector('.clv-card-shell[data-hovered]')).not.toBeNull();
+    expect(motionProblems(island.view.container, ISLAND_CSS)).toEqual([]);
+  });
+
+  test("the check itself catches a hover scale on the shell and a transition of a transform", () => {
+    const { container } = render(withKit(<LiquidCard geometry={g} hovered><SealedCardContent card={APPROVAL} /></LiquidCard>));
+    expect(motionProblems(container, ".clv-card-shell[data-hovered] { transform: scale(1.03) }")).toHaveLength(1);
+    expect(motionProblems(container, ".clv-card-shell { transition: transform 300ms ease }")).toHaveLength(1);
+    expect(motionProblems(container, ".clv-card-shell:hover { opacity: 0.9 }")).toHaveLength(1);
+    expect(motionProblems(container, ".clv-card-shell[data-hovered] { box-shadow: inset 0 0 0 1px #fff; } .clv-card-shell { transition: box-shadow 150ms }")).toEqual([]);
   });
 
   test("on the real island: opened on Needs you, once the morph rests", () => {

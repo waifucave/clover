@@ -41,6 +41,15 @@ const FRESH_SCRIPT = `
       resolve(seen);
     };
     timer = setTimeout(() => finish(false), ${FRESH_LIMIT_MS});
+    if (typeof freshWaiter !== "undefined") {
+      // The page's own observer reads the button again (observed afresh: its first report is a new reading), so no second observer
+      // watches the same button: the report that follows is this page's next one.
+      freshFrom = performance.now();
+      freshWaiter = finish;
+      io.unobserve(btn);
+      io.observe(btn);
+      return;
+    }
     o = new IntersectionObserver((entries) => {
       const e = entries[entries.length - 1];
       if (e === undefined) return;
@@ -245,17 +254,30 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   // The whole button, uncovered (IOv2), since enough time to have been seen (S4).
   let visible = false;
   let visibleAt = 0;
+  // The press's own reading: the waiter takes the first entry computed AFTER the press (on the entry's own clock, performance.now() at the
+  // press is freshFrom); an entry queued before it is never the press's reading.
+  let freshWaiter = null;
+  let freshFrom = 0;
+  const readOf = (e) => {
+    const whole = e.intersectionRatio >= 1;
+    const enough = e.target instanceof HTMLElement && e.target.getBoundingClientRect().width >= 24 && e.target.getBoundingClientRect().height >= 24;
+    return whole === true && e.isVisible === true && enough === true;
+  };
   const io = new IntersectionObserver((entries) => {
     const e = entries[entries.length - 1];
     if (e === undefined) return;
-    const whole = e.intersectionRatio >= 1;
-    const enough = e.target instanceof HTMLElement && e.target.getBoundingClientRect().width >= 24 && e.target.getBoundingClientRect().height >= 24;
-    const seen = whole === true && e.isVisible === true && enough === true;
-    if (${pinVisible.on} && visible) return; // a test build's pin (never set in a real one): the periodic verdict stays "visible"
-    if (seen && !visible) visibleAt = Date.now();
-    visible = seen;
-    // Report visibility to the main process so it can disarm the fallback once all of a card's buttons show (S1).
-    if (b !== undefined) b.visible?.(seen);
+    const seen = readOf(e);
+    // A test build's pin (never set in a real one) holds the PERIODIC verdict at "visible"; the press's own reading below is never pinned.
+    if (!(${pinVisible.on} && visible)) {
+      if (seen && !visible) visibleAt = Date.now();
+      visible = seen;
+      // Report visibility to the main process so it can disarm the fallback once all of a card's buttons show (S1).
+      if (b !== undefined) b.visible?.(seen);
+    }
+    if (freshWaiter !== null) {
+      const after = entries.filter((x) => typeof x.time === "number" && x.time >= freshFrom);
+      if (after.length > 0) { const w = freshWaiter; freshWaiter = null; w(readOf(after[after.length - 1])); }
+    }
   }, { threshold: [0, 0.25, 0.5, 0.75, 1], trackVisibility: true, delay: 200 });
   // A part that takes its card's frames away (the island folding a card back into its strip) leaves nothing showing: the
   // page says so as it goes, so the fallback's timer runs again.
@@ -318,21 +340,22 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     say("received");
     answering = true;
     const state = document.querySelector(".state");
-    if (state !== null) state.textContent = "…";
-    document.body.dataset.answering = "yes";
+    // Nothing on the page changes before the fresh reading (a status line growing could move the button, and a button that moved is not
+    // read as showing): the "…" and the answering mark come after it.
     // A refused answer says so on the card and the button answers again: never a "…" that stays.
     const refused = (r) => { answering = false; document.body.dataset.answered = "no"; delete document.body.dataset.answering; const said = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; if (state !== null) state.textContent = said; closest.title = said; };
     // The press counts only if the report that follows it says the button shows uncovered: asked for now, not read from the last one.
     askFresh(closest).then((ok) => {
       if (!ok) {
         say("covered");
-        answering = false; delete document.body.dataset.answering;
-        if (state !== null) state.textContent = "";
+        answering = false;
         closest.dataset.again = "yes"; closest.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
         if (state !== null) state.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
         setTimeout(() => { delete closest.dataset.again; closest.removeAttribute("title"); if (state !== null && state.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) state.textContent = ""; }, 1800);
         return null;
       }
+      if (state !== null) state.textContent = "…";
+      document.body.dataset.answering = "yes";
       return b.answer(option).then((r) => {
         if (r !== null && typeof r === "object" && r.accepted === true) { document.body.dataset.answered = "yes"; delete document.body.dataset.answering; answering = false; if (state !== null) state.textContent = ""; }
         else refused(r);

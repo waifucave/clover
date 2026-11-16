@@ -94,8 +94,8 @@
     },
     {
       "name": "browser",
-      "lets": "Drive the Clover Browser on this computer: a host half only for the session whose tool call it serves, on that session's own tab (out of sight, the Browser tool's nine DevTools methods); a component for the person, as a live view: every owner's tab here (the bots', the sessions' and the person's own in the Clover Browser, signed in wherever the person signed in there), which it can list, open, navigate, show in a view, picture and hear the page events of. Never the person's other browsers",
-      "ok": "drives the Clover Browser: a bot's own tab as its tool, and in its own page every tab of the Clover Browser on this computer, which it can open, read and act on, signed in wherever you signed in there",
+      "lets": "Drive the Clover Browser on this computer. A host half: only the session whose tool call it serves, while that call is open, on that session's own tab, out of sight. A component the user can see: a live view for the person over every owner's tab here, the person's own signed-in tabs included; it lists them (address and title), shows, hides and hears them, and pictures the one its own view holds (live or paused), freely; it runs DevTools, navigates, opens or closes a tab, or pictures another, only right after the user's own press in it. A background part: nothing, not even the tab events. Never the person's other browsers",
+      "ok": "drives the Clover Browser: a bot's own tab as its tool; its page sees every Clover Browser tab on this computer, its address, title and picture, ones you opened yourself included, with no asking, and opens, closes and acts in tabs when you press its controls, signed in wherever you signed in there",
       "warns": true
     },
     {
@@ -172,20 +172,14 @@
     },
     {
       "name": "audio",
-      "lets": "Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one mute covers it), including as the bots' voices",
-      "ok": "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
+      "lets": "Play sound with no press from the user, even from a part kept in the background, and take the device's speech turn (`device/speech`) so it never talks over another plugin",
+      "ok": "can play sound at any time, even while no window of it shows",
       "warns": true
     },
     {
       "name": "microphone",
       "lets": "Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission still applies, and no other plugin's frame gets it",
       "ok": "hears your microphone, also while no window of it shows",
-      "warns": true
-    },
-    {
-      "name": "voices.use",
-      "lets": "Ask the voice providers (`voices` entries) to transcribe audio, getting the text back",
-      "ok": "can ask your voice providers to transcribe, which may use your accounts with them",
       "warns": true
     },
     {
@@ -383,35 +377,6 @@
       "runsOn": "each computer, started at once",
       "doc": "Arms them for routine files (§7).",
       "shipsWith": "schedule, webhook"
-    },
-    {
-      "name": "voices",
-      "side": "daemon",
-      "shape": "list",
-      "uniqueBy": "id",
-      "kind": "code",
-      "runsOn": "the computer the user is talking on",
-      "doc": "Speech-to-text for push-to-talk (§6.6, the listening half until it is re-founded), which the active voice mode takes. Speaking is a provider's entry on Clover Voice's own point (`clover.voice.providers`).",
-      "shipsWith": "Fish Audio",
-      "title": "Voice listening",
-      "fills": {
-        "ok": "plugins you allow can ask it to transcribe, using your account with it"
-      }
-    },
-    {
-      "name": "voiceModes",
-      "side": "daemon",
-      "shape": "list",
-      "uniqueBy": "id",
-      "kind": "code",
-      "runsOn": "the computer the user is talking on",
-      "doc": "The voice your bots speak and listen with (§6.6): one at a time, the user's pick in Settings (else Clover Voice). The active one hears push-to-talk (the listening half until it is re-founded); a mode that speaks the replies also offers its `reply` on Clover Voice's own point (`clover.voice.modes`).",
-      "shipsWith": "Clover Voice",
-      "oneAtATime": true,
-      "title": "Voice",
-      "fills": {
-        "ok": "when you choose it in Settings, it hears what you say with push-to-talk"
-      }
     },
     {
       "name": "turns",
@@ -2402,7 +2367,7 @@
       "context": [
         "bot"
       ],
-      "doc": "The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; each acting one needs the user's own key press or click, and a model switch on a bot's main conversation is a sealed card unless it is the default composer's. The default composer also lists the running plugins' commands and runs one as the user (its slash menu); another plugin's entry doesn't get those. It alone also gets push-to-talk (`listenStatus`, `listenStart`, `listenStop`): while the user holds the button or key the app records (never the plugin), hands the audio to the bot's listening voice, and the words heard come back as text for the box.",
+      "doc": "The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; each acting one needs the user's own key press or click, and a model switch on a bot's main conversation is a sealed card unless it is the default composer's. The default composer also lists the running plugins' commands and runs one as the user (its slash menu); another plugin's entry doesn't get those.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2598,7 +2563,7 @@
       "context": [
         "bot"
       ],
-      "doc": "The composer's buttons, keyed by action id.",
+      "doc": "The composer's buttons, keyed by action id: an entry keyed `attach`, `model`, `level`, `send` or `stop` draws that button another way (or hides it); one with any other key adds a button of its own, drawn among the buttons plugins add, in the spot's order (`order`, then plugin and id).",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4651,22 +4616,6 @@
       "capability": "avatar.report",
       "where": "ui"
     },
-    "audio.onRecording": {
-      "capability": "audio",
-      "where": "both"
-    },
-    "voices.providers": {
-      "capability": "voices.use",
-      "where": "both"
-    },
-    "voices.listen": {
-      "capability": "voices.use",
-      "where": "host"
-    },
-    "voices.feed": {
-      "capability": "voices.use",
-      "where": "host"
-    },
     "turns.take": {
       "where": "both"
     },
@@ -4709,6 +4658,11 @@
       "name": "device/speech",
       "capability": "audio",
       "doc": "One voice at a time on this device: a plugin takes it before its sound starts and says done when the sound has ended."
+    },
+    {
+      "name": "device/microphone",
+      "capability": "microphone",
+      "doc": "One recording at a time on this device: a plugin takes it before it opens the microphone and says done when it has closed it."
     }
   ]
 }

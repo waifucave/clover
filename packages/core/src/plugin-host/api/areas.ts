@@ -200,17 +200,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     return t;
   };
 
-  // ---- the providers' listening, push-to-talk's (§6.6; `voices/slot.ts`) ----
-  let slotHandlers: { slot: unknown; handlers: ApiHandlers } | undefined;
-  const slotRoute = (path: keyof ApiHandlers) => (ctx: ApiCallContext, args: readonly unknown[]) => {
-    const slot = side().voiceSlot ?? notRunning("the voice slot");
-    if (slotHandlers?.slot !== slot) slotHandlers = { slot, handlers: slot.apiHandlers() };
-    const h = slotHandlers.handlers[path] ?? notRunning(`${path}`);
-    return h(ctx, args);
-  };
-
   const handlers: ApiHandlers = {
-    "voices.providers": slotRoute("voices.providers"), "voices.listen": slotRoute("voices.listen"), "voices.feed": slotRoute("voices.feed"),
     "conversation.list": (_ctx, args) => {
       const f = opt(args[0]);
       const kinds = Array.isArray(f.kinds) ? (f.kinds as string[]) : undefined;
@@ -429,19 +419,6 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
         offLinks();
       };
       });
-    },
-
-    // ---- audio: push-to-talk (`audio`) ----
-    // `audio.onRecording`: each piece of the user's push-to-talk audio, as it comes, whichever bot it is for. A plugin
-    // plays its own sound in a frame of its own (a background part, `app.background`), taking `device/speech`.
-    "audio.onRecording": (ctx, args) => {
-      const listener = listenerArg<{ utterance: string; format: string; data: Uint8Array; final: boolean }>(args, 0);
-      const voices = side().voices ?? notRunning("the bots' voices");
-      // An inactive voice mode hears nothing (§6.6: only the active voice hears the user), judged at each piece.
-      return watch(ctx, () => voices.onRecording((p) => {
-        if (s.bots()?.voiceSlot?.inactiveMode(ctx.pluginId) === true) return;
-        listener({ utterance: p.utterance, format: p.format, data: p.data, final: p.final });
-      }));
     },
 
     // ---- memory (lane D's memory folder, read-only) ----

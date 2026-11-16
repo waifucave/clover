@@ -4,7 +4,7 @@
 
 import type { ReactElement, ReactNode } from "react";
 import { ALPHA_PORTRAIT, Stage, phraseFrames } from "./stage";
-import type { VisemeWeights } from "@waifucave/clover-plugin-sdk/ui/mouth";
+import type { VisemeWeights } from "@waifucave/clover-plugin-sdk/ui";
 import { Live2dAvatar, type AvatarStill } from "./ui/Live2dAvatar";
 import { archiveBombCheck, bombCheckProblems } from "./bomb";
 
