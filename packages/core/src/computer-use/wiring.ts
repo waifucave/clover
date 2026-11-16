@@ -149,7 +149,7 @@ export interface ComputerUseRuntime {
   settings(): Settings | null | undefined;
   /** The hub observer: compaction (diff bases) and main-thread turn ends (the helper fades the mirrors). */
   observe(event: SessionEvent): void;
-  /** Phase 2: the browser engine, the backends it can use, and MOSS Code.app's browser link (`browserLink.*`). */
+  /** Phase 2: the browser engine, the backends it can use, and the app's browser link (`browserLink.*`). */
   browsers: BrowserEngine;
   backends: BrowserBackendRegistry;
   browserLink: BrowserLink;
@@ -298,7 +298,7 @@ export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): Computer
     log,
   });
 
-  // Phase 2: the browsers. The registry holds the backends (MOSS Code.app's link registers the built-in browser; MOSS
+  // Phase 2: the browsers. The registry holds the backends (the app's link registers the built-in browser; MOSS
   // for Chrome's host server registers the user's); the engine drives their tabs for the service.
   const backends = new BrowserBackendRegistry();
   const mossWebTabs = (sessionId: string): { tabs: Array<{ tabId: string; url?: string; title?: string }>; activeTabId?: string } => {
@@ -334,7 +334,7 @@ export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): Computer
     ...(deps.inject?.headless?.idleExitMs === undefined ? {} : { idleExitMs: deps.inject.headless.idleExitMs }),
     ...(deps.inject?.headless?.enabledPollMs === undefined ? {} : { enabledPollMs: deps.inject.headless.enabledPollMs }),
     ...(deps.inject?.headless?.timeouts === undefined ? {} : { timeouts: deps.inject.headless.timeouts }),
-    // Lane H3: MOSS Code.app's panel shows a headless tab (the browser link's feature `headless`); the helper accepts only
+    // Lane H3: the app's panel shows a headless tab (the browser link's feature `headless`); the helper accepts only
     // MOSS's own app as its viewer.
     viewer: () => browserLink.headlessViewer(),
     viewerMissing: () => browserLink.headlessViewerMissing(),

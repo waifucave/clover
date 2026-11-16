@@ -81,7 +81,7 @@ export type PrintModelCheck = { ok: true; model: PrintModel } | { ok: false; mes
 /**
  * Everything that needs no daemon: the tag's shape, the pinned provider, the catalog (or BYO-endpoint)
  * membership, and the facing-name / renamed-tag canonicalisation. Run BEFORE `connect()`, which
- * launches MOSS Code.app when the daemon is down -- a typo must never open a socket. `settings` (optional,
+ * launches the app when the daemon is down -- a typo must never open a socket. `settings` (optional,
  * best effort) carries the BYO-endpoint leniency `validateModelTag` and `canonicalizeModelTag` share.
  */
 export function checkPrintModelOffline(typed: string, settings?: Settings): PrintModelCheck {

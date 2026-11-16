@@ -602,11 +602,11 @@ describe("ctx.hardware (Phase 4c Task 5, spec §5)", () => {
   });
 
   test("typed failure: no_provider -> throws, tool result carries the code and message", async () => {
-    const { invoke } = await bootCallTool(() => ({ code: "no_provider", message: "hardware features require MOSS Code.app" }));
+    const { invoke } = await bootCallTool(() => ({ code: "no_provider", message: "hardware features require the app" }));
     const res = await invoke("getChargeLimit");
     expect(res.resultJson).toBeUndefined();
     expect(res.error).toContain("no_provider");
-    expect(res.error).toContain("hardware features require MOSS Code.app");
+    expect(res.error).toContain("hardware features require the app");
   });
 
   test("typed failure: timeout (scripted RESULT, not the SDK's own transport timeout) -> throws, tool result carries the code", async () => {

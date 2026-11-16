@@ -82,7 +82,7 @@ const BOOTSTRAP_TOP_LEVEL = new Set(["agents", "hooks", "logs", "memory", "outpu
 
 /** P9c-16 (whole-branch review, Critical C2): named app-owned top-level directories the pristine
  *  check tolerates WITHOUT recursing into them at all — unlike `BOOTSTRAP_TOP_LEVEL`, their content
- *  is never required to be empty. MOSS Code.app must never write into `MOSS_HOME` before the
+ *  is never required to be empty. The app must never write into `MOSS_HOME` before the
  *  daemon's first successful connect, but a UI marker file (today: `app-state/cli-install-offered`)
  *  is impractical to avoid — this is the ONE named exception, not a general escape hatch: any FUTURE
  *  app-side home write is a deliberate addition to this list, reviewed the same way. A legacy

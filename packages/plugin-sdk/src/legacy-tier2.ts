@@ -48,7 +48,7 @@ export interface PluginToolDef {
 /** Phase 4c Task 5 (design spec §5): the helper bag every tool `run` handler receives as its
  *  second argument. Today this is just `hardware` — a plugin's own escape hatch into core's
  *  `hardware.request` broker (Phase 4c Task 2) for verbs like `setChargeLimit`/`getChargeLimit`,
- *  routed through MOSS Code.app's privileged XPC helper. Kept as its own named interface (not inlined
+ *  routed through the app's privileged XPC helper. Kept as its own named interface (not inlined
  *  into `PluginToolDef.run`'s signature) because it's public surface a plugin author imports and
  *  destructures directly. */
 export interface PluginContext {

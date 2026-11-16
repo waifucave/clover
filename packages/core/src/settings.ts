@@ -511,7 +511,7 @@ export const Settings = z.object({
   /** Computer use (Phase 5 CU). `enabled` is the capability switch, default ON (user ruling
    *  2026-10-07): the `computer` tool is registered unless it is explicitly `false` — absent means
    *  on, `false` means CU does not exist for the session (`computerUseEnabledFrom`). `screenshotMaxDim` caps the longest
-   *  side of a captured screenshot (default 1280, MOSS Code.app-side) to bound the base64 payload well
+   *  side of a captured screenshot (default 1280, the app-side) to bound the base64 payload well
    *  under the NDJSON line limit and the model's image budget. The lease heartbeat/expiry reuse the
    *  `peripheral` block above. */
   computerUse: z.object({

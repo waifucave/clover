@@ -1486,7 +1486,7 @@ describe("daemon IPC", () => {
       const plugin = await connectPlugin(srv.store, srv.socketPath, "battery-limiter@test-mkt");
 
       const res = await plugin.request(METHODS.hardwareRequest, { verb: "getChargeLimit" });
-      expect(res.result).toEqual({ code: "no_provider", message: "hardware features require MOSS Code.app" });
+      expect(res.result).toEqual({ code: "no_provider", message: "hardware features require the app" });
 
       plugin.close(); srv.stop();
     });

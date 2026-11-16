@@ -1,5 +1,5 @@
 // ComputerV2 — the ONLY CDP the browser engine may send or subscribe to. Every transport refuses anything else before it
-// reaches a browser (`not_allowed`): MOSS Code.app's link (a Swift copy, kept equal by a repo test) and the MOSS for
+// reaches a browser (`not_allowed`): the app's link (a Swift copy, kept equal by a repo test) and the MOSS for
 // Chrome extension (which imports this file at build time). Nothing here reads cookies, storage, credentials, request
 // bodies or headers. A RESPONSE body crosses only when the model asks for one (`Network.getResponseBody`, cut at
 // CDP_RESPONSE_BODY_MAX_CHARS) or saves a download (`Fetch.takeResponseBodyAsStream` and `IO.read`). This file is DATA
@@ -112,7 +112,7 @@ export const CDP_IO_READ_MAX = 1_048_576;
  *    reads `blob:<uuid>` handles: the rule keeps it to caught downloads);
  *  - `Emulation.setDeviceMetricsOverride` with keys other than `width`, `height` (integers 0–4096), `deviceScaleFactor`
  *    (0–4) and `mobile` (a boolean).
- * A transport may refuse more: MOSS Code.app's link refuses `Fetch.*` and `IO.*` outright — the built-in browser saves
+ * A transport may refuse more: the app's link refuses `Fetch.*` and `IO.*` outright — the built-in browser saves
  * downloads itself (`CdpTransport.armDownloads`).
  * Not on the list, by design: `Fetch.fulfillRequest` / `continueWithAuth` / `getResponseBody` (they could write a page
  * or answer an auth challenge), `Network.getRequestPostData`, every `*ExtraInfo` event (headers and cookies),

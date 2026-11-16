@@ -217,13 +217,13 @@ describe("buildConsentBlock (exact strings — spec §1: full exec-payload discl
     ]);
   });
 
-  test("hardware only → header + one 'hardware access via MOSS Code.app helper: <perm>' line per entry", () => {
+  test("hardware only → header + one 'hardware access via the app's helper: <perm>' line per entry", () => {
     expect(buildConsentBlock(mkInfo({
       requiredConsents: ["hardware"],
       hardwarePermissions: ["battery"],
     }))).toEqual([
       "plugin demo requests:",
-      "hardware access via MOSS Code.app helper: battery",
+      "hardware access via the app's helper: battery",
     ]);
   });
 
@@ -238,7 +238,7 @@ describe("buildConsentBlock (exact strings — spec §1: full exec-payload discl
       "plugin kitchen-sink requests:",
       "mcp: node s.js",
       "will request macOS permission: input-monitoring",
-      "hardware access via MOSS Code.app helper: battery",
+      "hardware access via the app's helper: battery",
     ]);
   });
 

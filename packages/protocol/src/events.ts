@@ -653,7 +653,7 @@ export const PluginToolInvokeEvent = ThreadBase.extend({
 });
 
 /** TRANSIENT (broadcast-only, like `assistant_delta`/the lease events/`plugin_tool_invoke` above)
- *  — core pushes this to the active PROVIDER's connection (MOSS Code.app, spec §5) when a plugin (or
+ *  — core pushes this to the active PROVIDER's connection (the app, spec §5) when a plugin (or
  *  the harness, dev/testing) calls `hardware.request` (methods.ts): the app-side broker answers
  *  via `hardware.respond` {requestId, resultJson?, error?}, the same approval-broker
  *  request/response pattern as `peripheral_call_requested`/`plugin_tool_invoke`. A hardware verb

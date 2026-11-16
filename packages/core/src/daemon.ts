@@ -1672,7 +1672,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     expiryMs: settings?.peripheral?.expiryMs,
     policy: buildLeasePolicy({ store, approvals: approvalBroker, hub }),
     // lease_granted/lease_lost are emitted on the REQUESTER's session (broadcastTransient scopes
-    // fan-out to that session's attached harnesses), but the provider connection (MOSS Code.app) is
+    // fan-out to that session's attached harnesses), but the provider connection (the app) is
     // rarely attached to the requesting session — it needs its own copy of these two event types
     // to track its active-lease set regardless of what it's attached to. peripheral_call_requested
     // already reaches the provider via pushToProvider; lease_granted/lease_lost did not, which
@@ -2842,7 +2842,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // Computer use (Phase 5 CU): on unless settings.computerUse.enabled is explicitly false (default
     // ON since 2026-10-07, user ruling; it was opt-in before — absent now means on).
     // The service holds leases on the SAME `peripheral` broker (hoisted above this gate) that
-    // MOSS Code.app serves screenshot/ax-read/input-drive behind. reuses settings.peripheral.heartbeatMs.
+    // The app serves screenshot/ax-read/input-drive behind. reuses settings.peripheral.heartbeatMs.
     // P8b Task 6: the `let` itself is HOISTED above the MOSS runtime block (it is the holder the
     // `computer` capability server's getter reads — one service, one lease set, two doors); only
     // the construction stays here, unchanged.
@@ -3242,7 +3242,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // Hardware helper (Phase 4c Task 2, spec §5).  // Hardware helper (Phase 4c Task 2, spec §5). Built unconditionally, same precedent as
   // `peripheral` above — hardware access has nothing to do with whether an LLM provider is
-  // configured. Shares the SAME `providerLink`/`audit` instances as `peripheral`: MOSS Code.app's one
+  // configured. Shares the SAME `providerLink`/`audit` instances as `peripheral`: the app's one
   // provider connection doubles as the hardware provider, and `hardware.respond` (ipc/server.ts)
   // reuses `peripheral.isProvider()` to gate on that SAME connection identity rather than tracking
   // its own.

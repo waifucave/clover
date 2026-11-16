@@ -130,7 +130,7 @@ async function connectPlugin(inst: SupervisedInstance, socketPath: string, plugi
   return c;
 }
 
-const NO_PROVIDER_MESSAGE = "hardware features require MOSS Code.app"; // pinned to hardware.ts's literal (verified against source, not re-derived)
+const NO_PROVIDER_MESSAGE = "hardware features require the app"; // pinned to hardware.ts's literal (verified against source, not re-derived)
 
 describe("4c gate: hardware broker paths (spec §5, plan Task 6)", () => {
   // -----------------------------------------------------------------------------------------

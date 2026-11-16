@@ -13,9 +13,9 @@
 //    whose disarm could not reach the page goes at the next), holding the tab (`wake:<id>`) for the trigger's life.
 //    That hold is WATCH-ONLY (`TabDriver`): while only wake holders hold a tab, it changes nothing the user sees or does
 //    — no file-chooser interception, no focus emulation, no emulated screen size, no agent overlay, and on the built-in
-//    browser none of MOSS Code.app's native-UI holds (link feature `watchOnly`: the page's dialogs, permission prompts, file
+//    browser none of the app's native-UI holds (link feature `watchOnly`: the page's dialogs, permission prompts, file
 //    choosers, downloads, context menus, keys and focus are the user's). A primitive on the tab takes the full hold back;
-//    the tab drops back after. A MOSS Code.app without the feature never holds a built-in tab for a wake (refused, "update
+//    the tab drops back after. A the app without the feature never holds a built-in tab for a wake (refused, "update
 //    MOSS"). A page dialog is never answered or dismissed by the wake path, and the poller polls around one; a
 //    dialog the user raised while the arming run still held the tab fully (the built-in browser holds it unseen, and the
 //    page — the wait's own report with it — is paused on it) is kept held, and each wait on the tab ends `lost` saying
@@ -77,7 +77,7 @@ export const WAKE_CLOSED_GRACE_MS = 2_000;
 export const WAKE_HEADLESS = "nobody can see a headless tab — the user can't act in it; open the page with browsers.open(url) in MOSS's browser and wait there";
 export const WAKE_OLD_EXTENSION_NOTE = "this Winter for Chrome is older than 1.2.0, so MOSS keeps the browser's debugger on the tab while it waits (its debugging bar shows) — update Winter for Chrome to wait without the debugging bar";
 export const WAKE_IN_FRAME_NOTE = "the element is inside a frame of the page, so MOSS keeps the browser's debugger on the tab while it waits (its debugging bar shows)";
-/** A MOSS Code.app without the link feature `watchOnly` would hold the tab with every native-UI hold on for the whole wait
+/** A the app without the link feature `watchOnly` would hold the tab with every native-UI hold on for the whole wait
  *  (the user's dialogs unseen, their file chooser cancelled): never. */
 export const WAKE_UPDATE_MOSS = "this MOSS's app can't wait on a built-in tab without taking it from the user — update MOSS to wait on a built-in tab";
 
@@ -191,7 +191,7 @@ export class BrowserWakeBackend implements WakeBackend {
     const driver = t.driver;
     const transport = driver.transport;
     // MOSS's built-in browser can't be watched without a hold (its CDP needs one): only a watch-only hold, never one
-    // with MOSS Code.app's native-UI holds on for the whole wait.
+    // with the app's native-UI holds on for the whole wait.
     if (t.family === "winter" && transport.watchOnlyHolds !== true) throw new AutomationFailure("NotAllowed", WAKE_UPDATE_MOSS);
     const c = req.condition;
     const ref = "ref" in c && c.ref !== undefined ? parseRef(c.ref) : undefined;

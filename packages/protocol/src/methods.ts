@@ -587,7 +587,7 @@ export const ComputerUseStatusResult = z.object({
    *  browser that is connected (Winter for Chrome) or installed; `reason` says why one is not connected. */
   browsers: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean(), reason: z.string().optional() })).optional(),
 });
-/** ComputerV2 Phase 2 — MOSS Code.app's BROWSER LINK: the dedicated connection (clientName "browser-link") over which the
+/** ComputerV2 Phase 2 — the app's BROWSER LINK: the dedicated connection (clientName "browser-link") over which the
  *  daemon drives the built-in browser's tabs (CDP, the allowlisted subset) with no window open. HARNESS ROLE ONLY —
  *  never in `REMOTE_ALLOWED_METHODS` or the plugin list, and refused for any other role. The connection never attaches
  *  to a session and nothing on it is a `SessionEvent`. The protocol number is `BROWSER_LINK_PROTOCOL`
@@ -865,7 +865,7 @@ export const SessionInterruptResult = z.object({ ok: z.literal(true), wasRunning
 
 /** ComputerV2 Phase 1b (the phone mirror): the paired phone asks to watch, or stops watching, the live mirror of
  *  the session it is attached to. The daemon is only the GATE — the frames never pass through it, nor through the
- *  session log, history or the remote event stream: MOSS Code.app's Gateway relays MOSS Code.app's own mirror of the
+ *  session log, history or the remote event stream: the app's Gateway relays the app's own mirror of the
  *  session (its one helper view subscription, which the watch holds open with pictures while it lasts — a viewer in
  *  its own right, ref-counted beside the Mac's windows) straight to the phone over its own wire kind. A
  *  `watch: true` needs the caller attached to `sessionId` (the remote mode gate applies too); `mirror` reports
@@ -1953,9 +1953,9 @@ export const PluginRestartResult = z.object({ ok: z.literal(true) });
 
 // ---------------------------------------------------------------------------------------------
 // Hardware helper (Phase 4c Task 1, spec §5): plugin (or harness, dev/testing) → core →
-// MOSS Code.app's XPC helper. `hardware.request` is PLUGIN-CALLABLE (ipc/server.ts's
+// The app's XPC helper. `hardware.request` is PLUGIN-CALLABLE (ipc/server.ts's
 // PLUGIN_ALLOWED_METHODS gains it, growing the plugin-role allowlist to seven verbs);
-// `hardware.respond` is NOT — only the active provider connection (MOSS Code.app) may answer a
+// `hardware.respond` is NOT — only the active provider connection (the app) may answer a
 // `hardware_requested` push (events.ts), same precedent as `peripheral.respond` above. The
 // core-side broker (Task 2) owns unknown-verb/consent/no-provider/timeout error shaping; this
 // task only pins the wire shapes.
@@ -1970,8 +1970,8 @@ export const HardwareRequestParams = z.object({
  *  Success carries `resultJson`; failures are typed by `code`: `unknown_verb`
  *  (`verbClass(verb) === null`, core's peripheral/hardware.ts), `consent_denied` (a plugin-role
  *  caller's manifest permissions/consent record didn't cover the verb's class — `missing` names
- *  which permission/consent class was absent), `no_provider` (MOSS Code.app isn't connected —
- *  `message` is the user-facing "hardware features require MOSS Code.app" string), `timeout` (the
+ *  which permission/consent class was absent), `no_provider` (the app isn't connected —
+ *  `message` is the user-facing "hardware features require the app" string), `timeout` (the
  *  provider never answered within the broker's timeoutMs), and `provider_error` (the provider's
  *  own `hardware.respond` carried an `error` string, passed through verbatim as `message`). */
 export const HardwareRequestResult = z.union([
@@ -3431,7 +3431,7 @@ export const METHODS = {
   computerUseAppsSet: "computerUse.apps.set",
   computerUseSetSettings: "computerUse.setSettings",
   computerUseWakesCancel: "computerUse.wakes.cancel",
-  // ComputerV2 Phase 2: MOSS Code.app's browser link. HARNESS role only.
+  // ComputerV2 Phase 2: the app's browser link. HARNESS role only.
   browserLinkAttach: "browserLink.attach",
   browserLinkResult: "browserLink.result",
   browserLinkEvents: "browserLink.events",

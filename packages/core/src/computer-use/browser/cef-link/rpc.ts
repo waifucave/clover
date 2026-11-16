@@ -1,4 +1,4 @@
-// ComputerV2 Phase 2 — the daemon side of MOSS Code.app's BROWSER LINK (spine §5): the four `browserLink.*` requests the
+// ComputerV2 Phase 2 — the daemon side of the app's BROWSER LINK (spine §5): the four `browserLink.*` requests the
 // app makes, and the link's lifetime. The app opens a dedicated harness connection (clientName "browser-link") once
 // its main connection is up, attaches, and keeps it for its life; the daemon writes `browserLink.command`
 // notifications on it and the app answers each with `browserLink.result`, streams the subscribed events in batches
@@ -55,7 +55,7 @@ export class BrowserLink {
 
   constructor(private readonly deps: BrowserLinkDeps) {}
 
-  /** Is MOSS Code.app's link up now? */
+  /** Is the app's link up now? */
   get connected(): boolean { return this.current !== undefined && this.current.transport.connected; }
 
   /** Feature `headless`: the app's panel as a viewer, while the link is up and the app named the feature. */

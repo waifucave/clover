@@ -408,7 +408,7 @@ export interface IpcServerOptions {
    * LOCAL-ONLY `computerUse.*` RPCs. Absent (a bare test server): those methods answer INTERNAL.
    */
   computerUse?: ComputerUseControl;
-  /** ComputerV2 Phase 2: MOSS Code.app's browser link (`browserLink.*`, harness role only — `computer-use/browser/cef-link/`).
+  /** ComputerV2 Phase 2: the app's browser link (`browserLink.*`, harness role only — `computer-use/browser/cef-link/`).
    *  Absent (a bare test server): those methods answer INTERNAL. */
   browserLink?: BrowserLink;
   /** A session was archived (`session.setActivity`): the browser engine closes its remaining agent tabs. */
@@ -544,7 +544,7 @@ export interface IpcServerOptions {
   peripheral?: PeripheralBroker; // lease machinery; peripheral.* verbs (Phase 2f)
   providerLink?: ProviderLink;   // bridges PeripheralBroker.call()'s pushToProvider to the live
                                   // provider connection this server tracks (Phase 2f)
-  // Phase 4c Task 2 (spec §5): plugin (or harness, dev/testing) → MOSS Code.app's XPC helper.
+  // Phase 4c Task 2 (spec §5): plugin (or harness, dev/testing) → the app's XPC helper.
   // `hardware` is constructed with the SAME `providerLink` as `peripheral` above (daemon.ts) — the
   // app's one provider connection doubles as the hardware provider. `hardware.respond` reuses
   // `peripheral.isProvider()` to gate on that SAME connection identity (see the hardware.respond
@@ -764,8 +764,8 @@ function skillErrorCode(failure: { kind?: SkillErrorKind }): number {
 // below.
 //
 // Phase 4c Task 1 (spec §5) adds a seventh: `hardware.request` — a plugin's own tool may need to
-// ask MOSS Code.app's XPC helper to do something (e.g. set the battery charge limit). `hardware.respond`
-// is DELIBERATELY NOT here: only the active provider connection (MOSS Code.app) may answer a
+// ask the app's XPC helper to do something (e.g. set the battery charge limit). `hardware.respond`
+// is DELIBERATELY NOT here: only the active provider connection (the app) may answer a
 // `hardware_requested` push, same precedent as `peripheral.respond` staying off this list — a
 // plugin connection calling it is role-rejected before dispatch, never reaching the handler.
 // Task 2 wires `hardware.request`'s handler (consent gate + HardwareBroker) below.
@@ -851,7 +851,7 @@ export const REMOTE_ALLOWED_METHODS = new Set<string>([
   METHODS.credentialRemove,
   // ComputerV2 Phase 1b (the phone mirror): the phone asks to watch the live mirror of the session it is
   // attached to. The daemon only GATES it (assertRemoteMayUseSession + the attachment + the user's mirror
-  // setting); MOSS Code.app's Gateway special-cases it like `session.attach` and relays the frames it already
+  // setting); the app's Gateway special-cases it like `session.attach` and relays the frames it already
   // shows on its own wire kind — never through this socket, the session log, history or the event stream.
   METHODS.sessionMirror,
 ]);
@@ -2079,7 +2079,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         if (socket.data.helloTimer) clearTimeout(socket.data.helloTimer);
         if (socket.data.hubClient) hub.detach(socket.data.hubClient);
         harnessConns.delete(socket.data);
-        // ComputerV2 Phase 2: the connection that carried MOSS Code.app's browser link is gone — the built-in browser
+        // ComputerV2 Phase 2: the connection that carried the app's browser link is gone — the built-in browser
         // reads "MOSS isn't running" until the app attaches again (every command in flight fails `disconnected`).
         opts.browserLink?.connectionClosed(socket.data);
         // Chat Slice D task 2: an in-flight chunked sync.push dies with its connection — the
@@ -2694,7 +2694,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         return { ok: true, ...opts.engine.interrupt(p.sessionId) };
       }
       case METHODS.sessionMirror: {
-        // ComputerV2 Phase 1b: the GATE for the phone mirror. Frames never come here — the Gateway relays MOSS Code.app's
+        // ComputerV2 Phase 1b: the GATE for the phone mirror. Frames never come here — the Gateway relays the app's
         // own mirror of the session (its helper view subscription, which the watch holds open with pictures) — so
         // this answers only "may this caller watch this session's mirror, and is the mirror on at all". The phone
         // renews its watch through here every 10 s, so turning the setting off ends a running watch at the next
@@ -2708,7 +2708,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         if (!socket.data.hubClient || hub.attachedSession(socket.data.hubClient) !== p.sessionId) {
           throw new RpcFailure(ERR.NOT_FOUND, "attach to the session first");
         }
-        // Chat has no computer use: answered off at once, so a chat screen never makes MOSS Code.app open anything.
+        // Chat has no computer use: answered off at once, so a chat screen never makes the app open anything.
         if ((opts.store.meta(p.sessionId).mode ?? "code") === "chat") return { ok: true, mirror: false };
         // Fail CLOSED (review decision): settings that cannot be read are no consent to stream the screen.
         const settings = liveSettingsFor(opts);
@@ -3823,7 +3823,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         }
       }
       // -----------------------------------------------------------------------------------------
-      // ComputerV2 Phase 2: MOSS Code.app's BROWSER LINK. Harness role only — outside every allowlist, and the explicit
+      // ComputerV2 Phase 2: the app's BROWSER LINK. Harness role only — outside every allowlist, and the explicit
       // check keeps it so if one ever widens. The connection never attaches to a session; nothing here is an event.
       // -----------------------------------------------------------------------------------------
       case METHODS.browserLinkAttach:
@@ -4677,7 +4677,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
 
       // -----------------------------------------------------------------------------------------
       // Hardware helper (Phase 4c Task 2, spec §5): plugin (or harness, dev/testing) → core →
-      // MOSS Code.app's XPC helper. Consent gating lives HERE, not in HardwareBroker — the broker has
+      // The app's XPC helper. Consent gating lives HERE, not in HardwareBroker — the broker has
       // no PluginStore access, only `verbClass` (this file's `hardware.request` case is the one
       // place that has BOTH the requesting plugin's PluginInfo and the verb's class at once). A
       // plugin-role caller must have the verb's class in its manifest's `permissions.hardware`

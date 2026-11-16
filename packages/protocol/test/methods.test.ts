@@ -896,8 +896,8 @@ describe("hardware.request / hardware.respond (Phase 4c Task 1, spec §5)", () =
       code: "consent_denied", missing: "battery",
     });
 
-    expect(HardwareRequestResult.parse({ code: "no_provider", message: "hardware features require MOSS Code.app" })).toEqual({
-      code: "no_provider", message: "hardware features require MOSS Code.app",
+    expect(HardwareRequestResult.parse({ code: "no_provider", message: "hardware features require the app" })).toEqual({
+      code: "no_provider", message: "hardware features require the app",
     });
     expect(() => HardwareRequestResult.parse({ code: "no_provider" })).toThrow(); // message is required
 

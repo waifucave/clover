@@ -103,7 +103,7 @@ import { officeTimeoutMessage, officeResolvedPathWithinFence } from "./sheets";
  * here AND an independent ceiling app-side (`OfficeCommandConsumer.officeDocsMaxParagraphIndex`).
  * This is not belt-and-braces for its own sake: `z.number().int().positive()` is NOT a bound
  * (`Number.isInteger(1e30)` is `true`), the app's `Int(Double)` conversion TRAPS outside `Int`'s
- * range, and a trap aborts MOSS Code.app along with every open document's unsaved edits. That class shipped
+ * range, and a trap aborts the app along with every open document's unsaved edits. That class shipped
  * twice in this arc (`sheets insert_rows at:1e30`, `slides read slide:1e30`), both measured as
  * SIGTRAPs — and `docs.ts` did not exist during the sweep that closed them, so it is outside that
  * sweep by construction. The daemon's ceiling makes the refusal immediate and specific; the app's is

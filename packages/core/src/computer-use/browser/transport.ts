@@ -1,5 +1,5 @@
 // ComputerV2 Phase 2 — the ONE interface between the browser engine and a browser backend. The engine speaks
-// CDP through it and nothing else; the built-in browser (MOSS Code.app over the browser link), MOSS's headless browser
+// CDP through it and nothing else; the built-in browser (the app over the browser link), MOSS's headless browser
 // (private, windowless engines the daemon runs over pipes) and the user's browsers (the Winter for Chrome extension
 // over winter-browser-host) each implement it. Change it only through the controller.
 import type { WatchArmResult, WatchSpec } from "./page-runtime/watch";
@@ -33,7 +33,7 @@ export interface TransportTab {
 export interface TransportDownload {
   /** The backend's own id for this download. */
   id: string;
-  /** `refused`: a download the tab started while NOT armed (`winter`: MOSS Code.app refused it; the engine only says so). */
+  /** `refused`: a download the tab started while NOT armed (`winter`: the app refused it; the engine only says so). */
   state: "started" | "progress" | "done" | "failed" | "refused";
   /** The suggested file name. */
   name: string;
@@ -56,7 +56,7 @@ export interface CdpEvent {
 }
 
 export type TransportErrorCode =
-  | "disconnected"        // the backend went away (MOSS Code.app quit, the host or extension disconnected) — retryable
+  | "disconnected"        // the backend went away (the app quit, the host or extension disconnected) — retryable
   | "tab_gone"            // the tab was closed, crashed, or its browser was stopped
   | "attach_refused"      // the tab cannot be debugged (a browser-internal page, a store page, another debugger, the user cancelled)
   | "not_allowed"         // a method or event outside cdp-allowlist.ts, or a world rule broken — refused before sending
@@ -121,7 +121,7 @@ export interface CdpTransport {
   bookmarks?(q: { text?: string; maxResults: number }): Promise<Array<{ url: string; title: string; folder: string }>>;
   /**
    * Downloads the BROWSER itself saves for this tab until `until` (epoch ms), at most `maxBytes` each; `null` disarms.
-   * `winter`: MOSS Code.app's own handler writes into `dir` (MOSS's staging, inside its home); extension (its optional
+   * `winter`: the app's own handler writes into `dir` (MOSS's staging, inside its home); extension (its optional
    * `downloads` permission granted): the browser writes into `<its download folder>/<subdir>/` and may show its own
    * "save as" dialog if the user asked it to. Each is reported through `onDownload`. Absent, or refused `not_allowed`
    * (`data.permission`): the engine catches http(s) downloads over CDP Fetch instead.
@@ -143,7 +143,7 @@ export interface CdpTransport {
   /** Idempotent; the watcher (its ring and pill) leaves the page. */
   unwatch?(tabKey: string, watchId: string): Promise<void>;
   onWatchEvent?(listener: (tabKey: string, e: TransportWatchEvent) => void): () => void;
-  /** Wake triggers on MOSS's built-in browser (link feature `watchOnly`): its hold has native-UI effects (MOSS Code.app
+  /** Wake triggers on MOSS's built-in browser (link feature `watchOnly`): its hold has native-UI effects (the app
    *  holds the tab's dialogs, denies its prompts, cancels its file choosers and downloads, …), and it can hold a tab
    *  WATCH-ONLY, with none of them (`attach`'s `watchOnly`). Absent or false: holds have no such effects (a user's
    *  browser, a headless engine) — or, on the built-in browser, the app is older, and a built-in tab is never held for

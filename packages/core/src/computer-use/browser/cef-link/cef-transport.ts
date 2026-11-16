@@ -1,4 +1,4 @@
-// ComputerV2 Phase 2 — the built-in browser's `CdpTransport`: MOSS Code.app's CEF tabs, reached over the BROWSER LINK
+// ComputerV2 Phase 2 — the built-in browser's `CdpTransport`: the app's CEF tabs, reached over the BROWSER LINK
 // (`rpc.ts`). Every call is one `browserLink.command` notification the app answers with one `browserLink.result`; a
 // late result is dropped by its `cmdId`. The app enforces the CDP allowlist with its own Swift copy, and so does this
 // transport, before anything is written (both layers). One transport per link: a second attach (or a relaunched app)
@@ -235,7 +235,7 @@ export class CefTransport implements CdpTransport {
 
   // ── Phase 3 (link protocol 2) ──────────────────────────────────────────────────────────────────
 
-  /** The sign-in handoff: MOSS Code.app shows the session's window with this tab selected (after the user's OK). */
+  /** The sign-in handoff: the app shows the session's window with this tab selected (after the user's OK). */
   async present(tabKey: string, opts: { sessionId: string }): Promise<void> {
     await this.command("tab.present", { sessionId: opts.sessionId, tabId: tabKey }, this.timeouts.other);
   }

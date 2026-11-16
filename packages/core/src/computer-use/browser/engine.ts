@@ -1,6 +1,6 @@
 // ComputerV2 Phase 2 — the BROWSER ENGINE: browser tabs as ComputerV2 targets, and the `browsers` global. The service
 // (`service.ts`) routes every primitive on a tab target and every `browsers.*` call here, with a `TabRunScope`; the
-// engine speaks CDP to the tab through its backend's transport (`transport.ts` — MOSS Code.app's link for the built-in
+// engine speaks CDP to the tab through its backend's transport (`transport.ts` — the app's link for the built-in
 // browser, Winter for Chrome for the user's), via one `TabDriver` per tab.
 //
 // What the engine owns, per session: its BINDINGS (target ids `bt_<12 hex>`, stable per (session, backend, tab) while
@@ -405,7 +405,7 @@ export class BrowserEngine {
     }
   }
 
-  /** MOSS Code.app's ceiling on held built-in tabs, reached while wake triggers hold some of them: the sentence names
+  /** The app's ceiling on held built-in tabs, reached while wake triggers hold some of them: the sentence names
    *  `wakes.cancel` too (a waiting tab is held until its trigger ends). */
   private holdsNameWakes(err: unknown): unknown {
     if (!(err instanceof AutomationFailure) || err.kind !== "TargetBusy" || err.message !== HOLD_CEILING_SENTENCE) return err;
@@ -438,7 +438,7 @@ export class BrowserEngine {
       b.lost = "turn_end";
       void this.drivers.get(tabKeyOf(b.backend, b.tabKey))?.release(sessionId);
     }
-    // A built-in tab's hold keeps a browser alive in MOSS Code.app: it goes at the turn's end too (the binding stays; its
+    // A built-in tab's hold keeps a browser alive in the app: it goes at the turn's end too (the binding stays; its
     // next use takes the hold again — the page is re-read then, so earlier refs are stale).
     for (const b of s.bindings.values()) {
       if (b.lost !== undefined || this.familyOf(b.backend) !== "winter") continue;
@@ -759,7 +759,7 @@ export class BrowserEngine {
   private makeRoomForHold(scope: TabRunScope, driver: TabDriver): void {
     driver.lastUsed = this.now();
     if (driver.isAttached && driver.holders.has(scope.sessionId)) return;
-    // A headless tab's attachment costs nothing in MOSS Code.app: the pool's open-tab caps are its budget, and it neither
+    // A headless tab's attachment costs nothing in the app: the pool's open-tab caps are its budget, and it neither
     // counts toward these caps nor is let go for them.
     if (this.isHeadless(driver.backend)) return;
     const held = [...this.drivers.values()].filter((d) => d !== driver && d.isAttached && d.holders.size > 0 && !this.isHeadless(d.backend));
@@ -1976,7 +1976,7 @@ export class BrowserEngine {
     const headless = this.isHeadless(b.backend);
     const name = this.browserName(b.backend);
     const transport = driver.transport;
-    // A headless tab is shown in MOSS's panel (lane H3): MOSS Code.app must be there and able to.
+    // A headless tab is shown in MOSS's panel (lane H3): the app must be there and able to.
     const cannotShow = headless ? this.deps.headlessPresentMissing?.() ?? (this.deps.headlessHandBack === undefined ? "this MOSS can't show a headless tab" : undefined) : undefined;
     if (cannotShow !== undefined) throw new AutomationFailure("BrowserUnavailable", `waitForUser() shows a headless tab in MOSS's panel, and ${cannotShow}`);
     if (transport.present === undefined) {

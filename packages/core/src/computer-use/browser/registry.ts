@@ -1,4 +1,4 @@
-// ComputerV2 Phase 2 — the backends the browser engine can use (`transport.ts`'s `BackendRegistry`). MOSS Code.app's
+// ComputerV2 Phase 2 — the backends the browser engine can use (`transport.ts`'s `BackendRegistry`). The app's
 // browser link registers the built-in browser ("winter"); Winter for Chrome's host server registers one transport per
 // extension instance. The engine only reads.
 //

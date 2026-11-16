@@ -26,13 +26,13 @@
 // (`disposeSession`) or the helper exits.
 //
 // PRESENTATION (lane H3, the helper's feature `present` and the browser link's feature `headless`): a live headless
-// tab can be SHOWN in MOSS Code.app's panel — the same page, drawn from the helper's own GPU frames; nothing is reloaded or
+// tab can be SHOWN in the app's panel — the same page, drawn from the helper's own GPU frames; nothing is reloaded or
 // moved — for the `waitForUser` hand-off (`present`, the person in control) or for the person to watch (`watch`) and take
 // over (`takeOver`) from the panel. While the person holds CONTROL, every agent command on that tab (attach, send,
 // subscribe) is refused `capacity` ("the user has this tab", which the engine reads as `TargetBusy`); taking control
 // first stops new agent commands and lets the ones in flight finish (`HEADLESS_DRAIN_MS` at most). The CDP events keep
 // flowing, so the engine still follows the page. A presentation nobody connected to within `HEADLESS_PRESENT_START_MS`
-// (MOSS Code.app not there, its viewer refused) is ended here. A tab the turn's end closes while the person holds it is
+// (the app not there, its viewer refused) is ended here. A tab the turn's end closes while the person holds it is
 // closed when they let it go.
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -107,10 +107,10 @@ export interface HeadlessPoolDeps {
   memoryOf?(rootPid: number): number | undefined;
   /** How long the guard waits for closes in flight before it decides (`HEADLESS_CLOSE_SETTLE_MS`). */
   closeSettleMs?: number;
-  /** Presentation: MOSS Code.app's panel as a viewer (the browser link's feature `headless`), or why there is none. */
+  /** Presentation: the app's panel as a viewer (the browser link's feature `headless`), or why there is none. */
   viewer?(): HeadlessViewer | undefined;
   viewerMissing?(): string | undefined;
-  /** The code requirement the viewer (MOSS Code.app) must satisfy (`winterAppRequirementFor`). */
+  /** The code requirement the viewer (the app) must satisfy (`winterAppRequirementFor`). */
   viewerRequirement?(): string;
   presentStartMs?: number;
   drainMs?: number;
@@ -898,7 +898,7 @@ export class HeadlessPool implements CdpTransport {
   }
 
   /**
-   * Show `t` in the panel: the helper checks in a presentation service for it (accepting only MOSS Code.app, by code
+   * Show `t` in the panel: the helper checks in a presentation service for it (accepting only the app, by code
    * signature, naming a fresh nonce), the app is told to connect to it, and the viewer's acceptance is awaited. Nobody
    * accepted in time: the presentation is ended and the call fails, typed. `control`: the person holds the tab from the
    * start (the agent's commands in flight finish first).
@@ -1177,7 +1177,7 @@ export class HeadlessPool implements CdpTransport {
       for (const w of [...p.startWaiters]) w(true);
       return;
     }
-    // The viewer went away (the person closed it, MOSS Code.app quit): the presentation is over and control returns to the
+    // The viewer went away (the person closed it, the app quit): the presentation is over and control returns to the
     // agent. A hand-off it was answering reads as not done.
     t.presentation = undefined;
     if (p.control || p.yielded === true) this.deps.log?.(`computer-use: headless tab ${t.tabKey}: control back with the agent (the viewer ended it: ${e.reason})`);

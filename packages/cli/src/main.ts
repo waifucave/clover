@@ -288,7 +288,7 @@ export async function ensureDaemonReachable(deps: {
 /**
  * WS-19 (fix round 4): the daemon door the credential verbs use WHEN ONE IS ALREADY LISTENING.
  *
- * Deliberately NOT `connect()` above: that one STARTS the daemon (and with it MOSS Code.app) when the endpoint is missing,
+ * Deliberately NOT `connect()` above: that one STARTS the daemon (and with it the app) when the endpoint is missing,
  * which is exactly wrong here — `moss login` has always worked with no daemon, and launching the
  * user's menu-bar app because they typed a credential command would be a surprise, not a service.
  * So this probes the socket file first and answers `undefined` for every failure: no socket, no
@@ -311,7 +311,7 @@ async function openCredentialDaemonDoor(): Promise<CredentialRpcDoor | undefined
 /**
  * WS-21: the daemon door `moss plugin`'s write verbs use when one is already listening — same
  * no-auto-launch posture as `openCredentialDaemonDoor` just above (a plugin install/enable/etc.
- * must not launch MOSS Code.app as a side effect), but returns the FULL `MossClient` rather than
+ * must not launch the app as a side effect), but returns the FULL `MossClient` rather than
  * `CredentialRpcDoor`'s narrow `request`/`close` shape: `MossClient` already declares every
  * `PluginDoor` method (`client.ts`'s own `plugin*` methods), so it satisfies `plugin-cli.ts`'s
  * `PluginDoor` interface structurally, with no adapter shim.
@@ -2362,7 +2362,7 @@ if (import.meta.main) {
   const route = routeCliInvocation(argv, isTTY);
 
   if (argv[0] === "-p") {
-    // `--model <tag>` is parsed and checked BEFORE anything connects: `connect()` launches MOSS Code.app when the
+    // `--model <tag>` is parsed and checked BEFORE anything connects: `connect()` launches the app when the
     // daemon is down, and a bad flag must not do that. Without it the prompt is still `argv[3]`, exactly as before.
     const printArgs = parsePrintArgs(argv.slice(1));
     if (printArgs.kind === "usageError") { console.error(printArgs.message); process.exit(1); }
@@ -3089,7 +3089,7 @@ if (import.meta.main) {
     }
 
     // WS-25 (MCP OAuth): `login` / `logout [--forget-client]` / `set-secret` — through the daemon when it is
-    // live (never `connect()`'s auto-launch: a sign-in must not launch MOSS Code.app as a side effect), else
+    // live (never `connect()`'s auto-launch: a sign-in must not launch the app as a side effect), else
     // the same doors in-process (`mcp-cli.ts`'s WS-25 section says why both, and why a secret comes in
     // only at the masked prompt).
     if (sub === "login" || sub === "logout" || sub === "set-secret") {
@@ -3159,7 +3159,7 @@ if (import.meta.main) {
     // `moss plugin claude …` is WS-21's Claude-plugin manager (spec §5.2), which mirrors `claude plugin` —
     // install/uninstall/enable/disable/update/list/marketplace{add,remove,list,update}, over Contract B. It goes through
     // the daemon when it's live (a real socket + a harness token — `openPluginDaemonDoor`, never `connect()`'s
-    // auto-launch: a plugin write must not launch MOSS Code.app as a side effect, exactly the `openCredentialDaemonDoor`
+    // auto-launch: a plugin write must not launch the app as a side effect, exactly the `openCredentialDaemonDoor`
     // precedent), and the SDK adapter directly otherwise.
     const claude = process.argv[3] === "claude";
     const base = claude ? 4 : 3;
@@ -4092,7 +4092,7 @@ if (import.meta.main) {
 
       // Best-effort daemon augmentation, ONLY if a daemon is ALREADY up (a direct existsSync
       // check — never connect()'s own autolaunch: unlike `run`, a plain `list` must not have the
-      // side effect of spawning MOSS Code.app). workflow.list is session-scoped server-side
+      // side effect of spawning the app). workflow.list is session-scoped server-side
       // (WorkflowRegistry.list(sessionId) filters strictly to that session's own runs), so this
       // creates a session the same way `run` does below; wrapped in try/catch because the
       // file-direct saved list above already answered the primary ask — a down/flaked daemon must

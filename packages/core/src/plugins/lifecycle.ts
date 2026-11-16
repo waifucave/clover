@@ -107,7 +107,7 @@ export interface ConsentBlockPlugin {
  *   - exec: every `execPayload` line verbatim (already self-describing — "mcp: …", "hook(…): …",
  *     "entry: …" — no extra prefix).
  *   - tcc: one "will request macOS permission: <perm>" line per `tccPermissions` entry.
- *   - hardware: one "hardware access via MOSS Code.app helper: <perm>" line per `hardwarePermissions`
+ *   - hardware: one "hardware access via the app helper: <perm>" line per `hardwarePermissions`
  *     entry.
  * Does NOT include the trailing `type "yes" to consent:` prompt — that's printed by the caller's
  * own `readLine` call, since it's an input prompt, not a disclosure line.
@@ -121,7 +121,7 @@ export function buildConsentBlock(info: ConsentBlockPlugin): string[] {
     for (const perm of info.tccPermissions) lines.push(`will request macOS permission: ${perm}`);
   }
   if (info.requiredConsents.includes("hardware")) {
-    for (const perm of info.hardwarePermissions) lines.push(`hardware access via MOSS Code.app helper: ${perm}`);
+    for (const perm of info.hardwarePermissions) lines.push(`hardware access via the app's helper: ${perm}`);
   }
   return lines;
 }

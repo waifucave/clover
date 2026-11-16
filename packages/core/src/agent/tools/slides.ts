@@ -172,7 +172,7 @@ const SlidesArgs = z.object({
    *  **Bounded (T5 fix round, re-review's NEW Critical).** `z.number().int().positive()` is not a
    *  bound: `Number.isInteger(1e30)` is `true`, so `1e30` satisfied every clause and reached the
    *  app's own `OfficeCommandConsumer.oneBasedIndex`, whose `Int(Double)` TRAPS outside `Int`'s
-   *  range — aborting MOSS Code.app and every open document's unsaved edits, from `slides read
+   *  range — aborting the app and every open document's unsaved edits, from `slides read
    *  slide:1e30`. Identical class to `sheets`' own `at`/`count`, on five live handlers. The
    *  app-side ceiling is the load-bearing fix (`officeSlideMaxIndex`); this makes the refusal
    *  immediate and specific. 10,000 is far past any real deck and keeps every downstream

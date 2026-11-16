@@ -64,12 +64,12 @@ interface PendingHardwareRequest {
 
 export interface HardwareBrokerDeps {
   audit: AuditLog;
-  /** Push a `hardware_requested` event directly to the active provider connection (MOSS Code.app) —
+  /** Push a `hardware_requested` event directly to the active provider connection (the app) —
    *  bypasses session attachment entirely, mirrors `PeripheralBrokerDeps.pushToProvider` EXACTLY.
    *  daemon.ts wires BOTH brokers to the SAME `ProviderLink` instance
    *  (`pushToProvider: (event) => providerLink.push(event)`) — the app's one provider connection
    *  doubles as the hardware provider. Returns false when there is no provider connection to
-   *  deliver to (npm-only install, or MOSS Code.app not running/not yet advertised). */
+   *  deliver to (npm-only install, or the app not running/not yet advertised). */
   pushToProvider: (event: NewSessionEvent) => boolean;
   /** Per-call round-trip timeout to the provider (spec-fixed at 10000ms via
    *  MOSS_HARDWARE_TIMEOUT_MS; overridable here only so tests don't have to wait out a real 10s
@@ -129,7 +129,7 @@ export class HardwareBroker {
     if (!delivered) {
       const p = this.pending.get(requestId);
       if (p) { clearTimeout(p.timer); this.pending.delete(requestId); }
-      const outcome: HardwareRequestResult = { code: "no_provider", message: "hardware features require MOSS Code.app" };
+      const outcome: HardwareRequestResult = { code: "no_provider", message: "hardware features require the app" };
       this.auditHardware(req.verb, req.requester, outcome);
       return outcome;
     }

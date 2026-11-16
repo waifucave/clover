@@ -12,7 +12,7 @@
 // and how a daemon that dies takes it along.
 //
 // FEATURES (the protocol stays 1): what a helper can do beyond it, named in its hello. `present` — a live tab shown to
-// MOSS Code.app through the GPU (`apple/Winter/Sources/HeadlessPresent`): the ops `headless.present {tabId, nonce,
+// The app through the GPU (`apple/Winter/Sources/HeadlessPresent`): the ops `headless.present {tabId, nonce,
 // viewerRequirement, control, scale}` → `{service, cssWidth, cssHeight}`, `headless.unpresent {tabId}` → its stats,
 // `headless.control {tabId, control}`, and the helper's `headless.presentationStarted {tabId}` (its viewer was accepted),
 // `headless.presentationEnded {tabId, reason}` (the viewer ended it) and `headless.popupOpened {tabId, openerTabId, url}`

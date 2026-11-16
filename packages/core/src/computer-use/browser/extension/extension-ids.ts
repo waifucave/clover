@@ -1,6 +1,6 @@
 // ComputerV2 Phase 2 — who may talk to the daemon through `winter-browser-host`: the Winter for Chrome extension ids
 // per profile, the native-messaging host names, and the host's own code identities. Defined once per language and kept
-// equal by a repo test: here, the host's ExtensionIds.swift / HostIdentity.swift, MOSS Code.app's manifest writer, and the
+// equal by a repo test: here, the host's ExtensionIds.swift / HostIdentity.swift, the app's manifest writer, and the
 // id derived from the dev build's manifest `key` (extensions/winter-for-chrome/keys/dev.pub).
 import { createHash } from "node:crypto";
 import { MOSS_TEAM_ID } from "../../../auth/app-token-acl";

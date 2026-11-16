@@ -130,7 +130,7 @@ export function transportFailure(err: unknown, browserName: string): Error {
     // The backend's own tab or memory budget (headless): its sentence says what to close; not retryable at once.
     case "capacity": return new AutomationFailure("TargetBusy", err.message);
     case "not_allowed":
-      // MOSS Code.app's ceiling on held built-in tabs (`tab.ensure` refused: "… already holds 24 tabs for automation …").
+      // The app's ceiling on held built-in tabs (`tab.ensure` refused: "… already holds 24 tabs for automation …").
       if (err.data.holdCeiling === true || /already holds \d+ tabs/i.test(err.message)) return new AutomationFailure("TargetBusy", HOLD_CEILING_SENTENCE);
       return new Error(`the browser refused that request (${err.message})`);
     case "cdp_error": {
@@ -233,7 +233,7 @@ export class TabDriver {
   readonly wakeHolders = new Map<string, string>();
   /** WATCH-ONLY (wake triggers): while only `wake:` holders hold the tab, the attachment changes nothing the user sees
    *  or does — no file-chooser interception, no focus emulation, no emulated screen size, no agent overlay, and (the
-   *  built-in browser, link feature `watchOnly`) none of MOSS Code.app's native-UI holds. A primitive's hold turns them
+   *  built-in browser, link feature `watchOnly`) none of the app's native-UI holds. A primitive's hold turns them
    *  back on; the tab drops back to watch-only when only wake holders remain. */
   private watchMode = false;
   private modeChain: Promise<void> = Promise.resolve();
@@ -525,7 +525,7 @@ export class TabDriver {
     this.clearDeferred();
     this.overlay(false);
     const holder = [...this.holders][0]!;
-    // The built-in browser first: MOSS Code.app's native-UI holds come off (the page's dialogs, prompts, file choosers,
+    // The built-in browser first: the app's native-UI holds come off (the page's dialogs, prompts, file choosers,
     // downloads, context menus, keys and focus are the user's again).
     if (this.transport.watchOnlyHolds === true) {
       try { await this.transport.attach(this.tabKey, { sessionId: this.sessionOf(holder), watchOnly: true }); } catch { /* the tab or the link went */ }

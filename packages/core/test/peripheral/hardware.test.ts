@@ -62,7 +62,7 @@ describe("HardwareBroker", () => {
   test("no provider (pushToProvider returns false) → typed no_provider immediately", async () => {
     const { broker } = setup({ pushToProvider: () => false });
     const res = await broker.request({ requester: pluginRequester, verb: "getChargeLimit" });
-    expect(res).toEqual({ code: "no_provider", message: "hardware features require MOSS Code.app" });
+    expect(res).toEqual({ code: "no_provider", message: "hardware features require the app" });
   });
 
   test("a known verb pushes a hardware_requested event carrying requestId/verb/argsJson", async () => {
@@ -155,7 +155,7 @@ describe("HardwareBroker", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       kind: "hardware", verb: "getChargeLimit", requester: harnessRequester,
-      outcome: { code: "no_provider", message: "hardware features require MOSS Code.app" },
+      outcome: { code: "no_provider", message: "hardware features require the app" },
     });
   });
 

@@ -51,7 +51,7 @@
 //   - the public API cannot even build a tagged entry: `SecACLCreateWithSimpleContents` +
 //     `SecACLUpdateAuthorizations(partition-id)` makes an UNTAGGED entry that `dump-keychain -a` prints as
 //     `partition_id` but securityd never consults (`findPartitionSubject` looks up by tag) — a trap.
-// So the list is exactly `teamid:<creator's team>`. Dist: `moss-core` and MOSS Code.app share MOSS's team,
+// So the list is exactly `teamid:<creator's team>`. Dist: `moss-core` and the app share MOSS's team,
 // so the app is never prompted. Dev under Homebrew `bun` (another team): MOSS Code Dev is asked once per item
 // after every re-creation, and "Always Allow" appends its team — re-creating drops it again, so the
 // migration must never re-run merely because the list lacks a team. The cure is the creator: a dev daemon
