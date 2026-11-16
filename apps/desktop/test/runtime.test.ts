@@ -1265,7 +1265,7 @@ describe("the E-M1 review's fixes", () => {
     // Served again, it names the new layer.
     const token = new URL(url).searchParams.get("mount")!;
     const again = s.rt.serveDocument("moss", token);
-    expect(s.rt.mountForDocument(again!).layers).toEqual(["alpha", "moss", "fixture-composer"]);
+    expect(s.rt.mountForDocument(again!).layers).toEqual(["alpha", "fixture-composer", "moss"]);
   });
 });
 

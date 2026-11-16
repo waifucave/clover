@@ -86,7 +86,7 @@ function expectQuiet(r: ReturnType<typeof smoke>, allowed: Parameters<typeof off
 function expectShell(r: ReturnType<typeof smoke>, opts: { safeMode?: boolean } = {}): Frame {
   expect(r.facts, r.output).toBeDefined();
   const f = r.facts!;
-  expect(f, r.output).toMatchObject({ ok: true, profile: "dist", appId: "com.waifucave.moss.code", name: "MOSS", visibleWindows: 0, pair: "connected", safeMode: opts.safeMode ?? false });
+  expect(f, r.output).toMatchObject({ ok: true, profile: "dist", appId: "com.waifucave.moss.code", name: "MOSS Code", visibleWindows: 0, pair: "connected", safeMode: opts.safeMode ?? false });
   // The main window, one per surface (the island and the pill are moss's; they stay hidden), and one per background
   // part that runs (MOSS Voice's player; hidden too).
   expect(f.windows).toBe(1 + (f.surfaces as unknown[]).length + (f.backgrounds as unknown[]).length);

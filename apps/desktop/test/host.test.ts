@@ -163,7 +163,7 @@ describe("the tray", () => {
     const calls: string[] = [];
     const actions = { open: () => calls.push("open"), quit: () => calls.push("quit"), restart: (s: boolean) => calls.push(`restart ${s}`), managePlugins: () => calls.push("plugins") };
     const menu = trayMenu({ safeMode: false, status: "Reconnecting to MOSS…" }, actions);
-    expect(menu.map((m) => m.label ?? m.type)).toEqual(["Reconnecting to MOSS…", "separator", "Open MOSS", "Restart in Safe Mode", "separator", "Quit MOSS"]);
+    expect(menu.map((m) => m.label ?? m.type)).toEqual(["Reconnecting to MOSS…", "separator", "Open MOSS Code", "Restart in Safe Mode", "separator", "Quit MOSS Code"]);
     for (const m of menu) (m.click as (() => void) | undefined)?.();
     expect(calls).toEqual(["open", "restart true", "quit"]);
     // A plugin's toggle line (the pill's) flips between Hide and Show with its state, and only where the app offers it; a command line just runs.
@@ -171,7 +171,7 @@ describe("the tray", () => {
     const withLine = { ...actions, line: (ref: string) => lineCalls.push(ref) };
     const pill = { ref: "moss/pill#put-away", title: "Dispatch Pill", hidden: false };
     const shown = trayMenu({ safeMode: false, lines: [pill] }, withLine);
-    expect(shown.map((m) => m.label ?? m.type)).toEqual(["Open MOSS", "Hide Dispatch Pill", "Restart in Safe Mode", "separator", "Quit MOSS"]);
+    expect(shown.map((m) => m.label ?? m.type)).toEqual(["Open MOSS Code", "Hide Dispatch Pill", "Restart in Safe Mode", "separator", "Quit MOSS Code"]);
     (shown[1]!.click as () => void)();
     expect(lineCalls).toEqual(["moss/pill#put-away"]);
     expect(trayMenu({ safeMode: false, lines: [{ ...pill, hidden: true }] }, withLine).map((m) => m.label ?? m.type)[1]).toBe("Show Dispatch Pill");
@@ -199,7 +199,7 @@ describe("the tray", () => {
     expect(trayMenu({ safeMode: false, fourFingerTap: true }, withTap).some((m) => m.type === "checkbox")).toBe(false);
     // In safe mode the core's plugin manager is there too (§5.8).
     const safe = trayMenu({ safeMode: true }, actions);
-    expect(safe.map((m) => m.label ?? m.type)).toEqual(["Open MOSS", "Manage Plugins…", "Restart Normally", "separator", "Quit MOSS"]);
+    expect(safe.map((m) => m.label ?? m.type)).toEqual(["Open MOSS Code", "Manage Plugins…", "Restart Normally", "separator", "Quit MOSS Code"]);
     // In the app's language.
     expect(trayMenu({ safeMode: false }, actions, { lang: "fr", strings: { "moss.core.tray.quit": "Quitter MOSS" } }).at(-1)?.label).toBe("Quitter MOSS");
   });

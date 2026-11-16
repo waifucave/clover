@@ -499,7 +499,7 @@ describe("a daemon going away when the app opens (try 9's dead end)", () => {
     pair["timing"].stuckAfterMs = 200;
     await pair.start();
     await until(() => pair.stuck !== undefined);
-    expect(pair.state).toMatchObject({ kind: "unavailable", reason: expect.stringContaining("quit MOSS and open it again") });
+    expect(pair.state).toMatchObject({ kind: "unavailable", reason: expect.stringContaining("quit MOSS Code and open it again") });
     fakes.push(await startFakeDaemon({ home }));
     await until(() => pair.state.kind === "connected");
     expect(pair.stuck).toBeUndefined();
