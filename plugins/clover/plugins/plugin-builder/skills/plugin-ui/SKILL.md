@@ -318,6 +318,15 @@ folder, a worker, the media URL, approval cards and the app around it; WebCodecs
 only, so test them in yours. Without `isolated`, use a single-threaded build, or a program the host half runs
 (plugin-host, "Programs").
 
+## An avatar renderer
+
+A plugin that draws the `avatar` spot for a format of its own takes its cues and reports its model and figure through
+`useAvatarControl()`, and lip-syncs from the spot's `speech` feed (`useAvatarSpeech().feed`). The helpers Clover's own
+renderers use are in `@waifucave/clover-plugin-sdk/ui`, the one SDK module a page is served (import nothing from a
+subpath of it): `SpeechRing` and `frameSource` read the frame that sounds now, `LipSync` turns it into five eased vowel
+weights (`aa`, `ih`, `ou`, `ee`, `oh`, summing to at most 1; `SHUT` is a closed mouth), and `avatarBoxFromRect` makes the
+figure's box and anchors from its bounding rectangle for `setBox`. Map the weights onto your format's own mouth.
+
 ## Testing a part
 
 `@waifucave/clover-plugin-sdk/ui/testing` runs your part on the UI SDK's own runtime, over a fake layer that answers

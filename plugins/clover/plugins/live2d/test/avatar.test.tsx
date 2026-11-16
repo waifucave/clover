@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { act, render, screen } from "@testing-library/react";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { PushedSpeech } from "@waifucave/clover-plugin-sdk/ui/mouth";
+import { PushedSpeech } from "@waifucave/clover-plugin-sdk/ui";
 import type { AvatarBox as FigureBox, AvatarCatalogueNames as FigureNames, AvatarCue as FigureCue } from "@waifucave/clover-plugin-sdk";
 import { placeholderFiles } from "../src/placeholder/model";
 import { Live2dAvatar, VIEW_OPTIONS, type AvatarFrames, type Live2dView, type ViewFactory } from "../src/ui/Live2dAvatar";

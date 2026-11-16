@@ -10,7 +10,6 @@
     "./ui": "./src/ui/index.tsx",
     "./ui/bridge": "./src/ui/bridge.ts",
     "./ui/avatar-control": "./src/ui/avatar-control.ts",
-    "./ui/mouth": "./src/ui/mouth/index.ts",
     "./ui/testing": "./src/ui/testing.tsx",
     "./fold": "./src/catalogs/fold.ts",
     "./api-calls": "./src/catalogs/api-calls.ts",

@@ -1,7 +1,7 @@
 // The gallery's stage and its synthetic speech, this plugin's own (F2b: no plugin imports another's folder): a stage the
 // size of the frame with the theme's floor shadow, and what the SDK's mouth levels read at moments of a synthetic phrase.
 import type { CSSProperties, ReactElement, ReactNode } from "react";
-import { FFT_SIZE, LipSync, type VisemeWeights } from "@waifucave/clover-plugin-sdk/ui/mouth";
+import { FFT_SIZE, LipSync, type VisemeWeights } from "@waifucave/clover-plugin-sdk/ui";
 import { phrase } from "./synth";
 
 /** The placeholder bot's portrait, as the gallery serves it. */

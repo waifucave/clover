@@ -30,6 +30,8 @@ import type { AvatarBox, AvatarCatalogueNames, AvatarCue } from "../catalogs/ava
 
 export * from "./bridge";
 export { AvatarControlHub, avatarBoxFromRect, cleanAvatarCue, type AvatarState } from "./avatar-control";
+// Mouth levels from speech, for any avatar renderer (./mouth): the five vowel weights from the `avatar` spot's speech feed.
+export { LipSync, SpeechRing, frameSource, ringSource, analyserSource, bufferSource, speechFrames, PushedSpeech, MAX_FRAME_SECONDS, visemeWeights, MouthSmoother, VISEMES, SHUT, SILENCE_RMS, FULL_RMS, DARK_HZ, BRIGHT_HZ, clamp01, rmsOf, spectralCentroidOf, FFT_SIZE, type LipSyncSource, type SpeechFeatureSource, type SpeechFeatures, type AnalyserLike, type VisemeWeights } from "./mouth";
 // What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
 // React of its own (`clover plugin new`'s UI and point templates do).
 export { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";
