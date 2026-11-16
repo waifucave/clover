@@ -8,6 +8,22 @@
 
 Every daemon tees stdout/stderr into `<WINTER_HOME>/logs/daemon.log` (`packages/core/src/daemon-log-file.ts`: 8 MiB, one rotation to `daemon.log.1`); `winter doctor` prints the path. Grep it before reproducing anything.
 
+## CI for the lanes
+
+*A lane's whole check runs on GitHub, many lanes at once. Only scoped tests run on a Mac while coding.*
+
+1. Commit and push your branch, then `scripts/ci/lane start` (it pushes `HEAD` to `origin/<your branch>` and dispatches `ci.yml` on it, printing the run). A `lane-int/*` integration branch needs no start: every push to it runs CI, and a newer push cancels the run it supersedes.
+2. `scripts/ci/lane wait` is one blocking call: it returns when the run has ended, with each job's result and time, and exits 0 only when **`lane gate`** passed. A newer start on the same branch cancels the run before it.
+3. `scripts/ci/lane failures` names each failed job's failing steps and the error lines of their logs. For one job's whole log: `gh run view <run> --job <id> --log-failed`.
+4. `scripts/ci/lane start --only acceptance` runs just the acceptance units again (a few minutes) after a fix to one.
+
+What the run holds (`.github/workflows/ci.yml`; a pull request to main and the merge queue still run the unchanged `gate`):
+
+- **`lane gate`** is the one result a lane reads. It is `gate` without the four Windows jobs (`machine-windows`, `installers-windows`, `tree-windows`, `link-windows`, which are the Windows legs of the machine, installers, tree and link jobs, by YAML anchor) plus the acceptance run. A Windows job that is red for a known reason shows in the table and does not fail `lane gate`; `gate` still needs it.
+- **The acceptance run** is one macOS job per unit (`main`, `workshop`, `plugin-app`, `browser`; scripts/acceptance/shards.ts), each `scripts/ci/acceptance-unit.ts <unit> <dir>`: the unit headless over the fake provider, failed on any row that is not PASS, on any "shown while headless" line and on a nonzero "sealed presses refused as covered or unchecked". Its table, progress, kept logs and renders are the job's artifact (`acceptance-<unit>`; `gh run download <run> -n acceptance-main`), and the verdict is on the job's summary page. The local exclusive lock (`scripts/heavy --exclusive`) is free on a fresh runner and taken as on a Mac; Electron's download is cached under the lockfile, and Bun is the pinned one setup-bun gives (`MOSS_PINNED_BUN=0`).
+- The macOS job runs in three legs (the core's macOS tests dealt in thirds with `--shard K/3`; the CLI, scripts and compiled-binary proofs on leg 1, the link sidecar on leg 2).
+- A manual run of `only: acceptance` takes no other area.
+
 ## Running tests
 
 - `pnpm test` (every workspace, serially); `cd packages/core && bun test`; `bun test path/to/file.test.ts` (substring); `bun test -t "name"`.

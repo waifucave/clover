@@ -46,7 +46,14 @@ bun run dev:daemon --dry-run         # the dev daemon's plan; without --dry-run 
 bun run dev:app --dry-run            # the dev app's plan; without --dry-run it OPENS A WINDOW: never from an agent here
 
 # Live suites: WINTER_CU_LIVE_TESTS=1 bun run e2e:cu-live (NEVER from an agent); MOSS_BROWSER_E2E=1 bun run e2e:browser (likewise)
+
+# The whole check, on GitHub, for the branch you are on (docs/claude/testing.md, "CI for the lanes"): the suites on every OS and the acceptance run
+scripts/ci/lane start               # push the branch and start CI on it (a `lane-int/*` branch starts it by itself on push)
+scripts/ci/lane wait                # one blocking call: ends with the jobs' results; exit 0 when `lane gate` passed
+scripts/ci/lane failures            # the failing steps and their error lines
 ```
+
+While coding run only the scoped tests (one file, one package); the whole suite and the acceptance run are CI's, not this Mac's.
 
 Run a daemon from the checkout under plain `bun` only on a throwaway home with a throwaway Keychain: `H="$(mktemp -d)"; security create-keychain -p moss-throwaway-test-keychain "$H/test.keychain-db" && security set-keychain-settings "$H/test.keychain-db"`, then `MOSS_HOME="$H" MOSS_PROFILE=dev MOSS_KEYCHAIN_SERVICE=com.waifucave.moss.core.scratch MOSS_TEST_KEYCHAIN="$H/test.keychain-db"`. Without `MOSS_TEST_KEYCHAIN` it refuses at boot (any test signal keeps it off the login keychain). The throwaway keychain is never added to the search list. The dev home `~/.moss-dev` only through `bun run dev:daemon` (see Profiles). Every daemon tees its stdout/stderr into `<MOSS_HOME>/logs/daemon.log` (`moss doctor` prints the path). Tests get a per-process temp root and a throwaway Keychain service from the preloads.
 

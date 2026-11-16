@@ -1,0 +1,69 @@
+#!/bin/bash
+# lane: run CI on GitHub for the branch you are on, so many lanes can be checked at once without queuing on one Mac.
+#
+#   scripts/ci/lane start [--only acceptance]   push this branch, start CI on it, print the run's number and address
+#   scripts/ci/lane wait [run]                  block until the run ends, print each job's result and time; exits 0
+#                                               when the `lane gate` job passed (Windows aside), 1 when it did not
+#   scripts/ci/lane failures [run]              each failed job's failing steps and the error lines of their logs
+#
+# `run` defaults to the newest run of this branch's HEAD commit. `--only acceptance` runs just the acceptance units
+# (and the names and layout checks), to run them again after a fix. What a lane reads is `lane gate`: every job but the
+# Windows ones, plus the acceptance run (a red Windows job shows in the table and does not fail the lane gate).
+# It needs `gh`, signed in with access to this repository. It pushes only the branch you are on and starts only ci.yml.
+set -u
+say() { echo "lane: $*" >&2; }
+die() { say "$*"; exit 2; }
+command -v gh >/dev/null || die "the GitHub CLI (gh) is not installed"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+sha="$(git rev-parse HEAD)"
+[ "$branch" != HEAD ] || die "a detached HEAD: check out your lane's branch"
+case "$branch" in main) die "this is main: CI for main runs through the merge queue" ;; esac
+
+# The newest run of CI for this branch at this commit (any event: a push to lane-int/* or a manual run).
+find_run() {
+  gh run list --workflow ci.yml --branch "$branch" --limit 20 --json databaseId,headSha --jq "[.[] | select(.headSha == \"$sha\")][0].databaseId // empty" 2>/dev/null
+}
+
+cmd="${1:-}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  start)
+    only=all
+    if [ "${1:-}" = "--only" ]; then only="${2:-}"; [ "$only" = acceptance ] || die "--only takes acceptance"; shift 2; fi
+    [ -z "$(git status --porcelain --untracked-files=no)" ] || say "note: uncommitted changes are not in the run (it runs what is pushed)"
+    case "$branch" in
+      lane-int/*) say "pushing $branch: a push to an integration branch starts CI by itself"
+        git push origin "HEAD:refs/heads/$branch" >&2 || die "the push failed"
+        for i in $(seq 1 12); do run="$(find_run)"; [ -n "$run" ] && break; sleep 5; done ;;
+      *) git push origin "HEAD:refs/heads/$branch" >&2 || die "the push failed"
+        before="$(find_run)"
+        gh workflow run ci.yml --ref "$branch" -f "only=$only" >&2 || die "could not start ci.yml on $branch"
+        run=""
+        for i in $(seq 1 12); do sleep 5; run="$(find_run)"; [ -n "$run" ] && [ "$run" != "$before" ] && break; run=""; done ;;
+    esac
+    [ -n "${run:-}" ] || die "no run of $sha showed up yet: scripts/ci/lane wait finds it later"
+    echo "run $run  $(gh run view "$run" --json url --jq .url)"
+    ;;
+  wait)
+    run="${1:-$(find_run)}"; [ -n "$run" ] || die "no run of $sha: scripts/ci/lane start first"
+    say "waiting for run $run"
+    # A dropped network connection is not the run ending: look again.
+    while :; do
+      st="$(gh run view "$run" --json status --jq .status 2>/dev/null || true)"
+      [ "$st" = completed ] && break
+      sleep 20
+    done
+    gh run view "$run" --json createdAt,updatedAt,url,jobs --jq '
+      "url: \(.url)",
+      (.jobs | sort_by(.name)[] | select(.conclusion != "skipped") | "\(.conclusion)\t\(((.completedAt|fromdateiso8601) - (.startedAt|fromdateiso8601)) / 60 | floor)m\t\(.name)")'
+    gate="$(gh run view "$run" --json jobs --jq '[.jobs[] | select(.name == "lane gate")][0].conclusion // "none"')"
+    echo "lane gate: $gate"
+    [ "$gate" = success ] ;;
+  failures)
+    run="${1:-$(find_run)}"; [ -n "$run" ] || die "no run of $sha: scripts/ci/lane start first"
+    gh run view "$run" --json jobs --jq '.jobs[] | select(.conclusion == "failure" and .name != "gate" and .name != "lane gate") | "\(.databaseId)\t\(.name)\t\([.steps[] | select(.conclusion == "failure") | .name] | join("; "))"' |
+    while IFS=$'\t' read -r id name steps; do
+      echo "== $name  (failed: $steps)"
+      gh run view "$run" --job "$id" --log-failed 2>/dev/null | grep -aE "error:|\(fail\)|##\[error\]|FAIL|✗| fail$|acceptance: step [0-9]+: (FAIL|BLOCKED)" | sed -E 's/^[^	]*\t[^	]*\t[0-9TZ:.-]+ //' | cut -c1-300 | head -25
+    done ;;
+  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac
