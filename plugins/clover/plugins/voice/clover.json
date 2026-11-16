@@ -42,7 +42,8 @@
         "doc": "A voice provider: `speak` answers `{ text, voice, model?, format }` with the audio as it is made (pcm16-24k bytes, through points.stream); the optional `listen` answers `{ audio, format, model? }` (pcm16-16k bytes) with `{ text }`; the optional `ready` answers `{ ready, why? }`, whether the user set it up (its key or sign-in). A bot's voice names the entry's id.",
         "title": "Voice providers",
         "fills": {
-          "ok": "when you or a bot's default picks one of its voices, it is sent what your bots say, to speak it, and what you say with push-to-talk; what it writes down is sent to your bot as your message, with nothing shown to you first"
+          "ok": "when you or a bot's default picks one of its voices, it is sent what your bots say, to speak it, and what you say with push-to-talk; what it writes down is sent to your bot as your message, with nothing shown to you first",
+          "warns": true
         }
       },
       "clover.voice.modes": {
@@ -73,7 +74,8 @@
         "doc": "The voice your bots speak and listen with, one at a time: the user's pick in Settings (the platform's picker, titled Voice), else Clover Voice, which fills it itself. Another plugin's entry, while it is the one: `reply` is handed `{ bot, session, text, asked }` and speaks it its own way (its own background part, taking device/speech); `hear` is handed `{ bot, audio, format }` (what the user said with push-to-talk, pcm16-16k bytes) and answers `{ text }`.",
         "title": "Voice",
         "fills": {
-          "ok": "when you choose it, it is given what your bots say, to speak, and what you say with push-to-talk; what it writes down is sent to your bot as your message, with nothing shown to you first"
+          "ok": "when you choose it, it is given what your bots say, to speak, and what you say with push-to-talk; what it writes down is sent to your bot as your message, with nothing shown to you first",
+          "warns": true
         },
         "oneAtATime": true
       },

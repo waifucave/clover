@@ -256,6 +256,11 @@ describe("Clover Voice's host half", () => {
     expect(f.sent).toEqual([["talk-down", {}], ["talk-up", {}]]);
   });
 
+  test("each of its points' fills lines warns: a filler is sent what the user says, and what it writes down goes as the user's message unseen", () => {
+    const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "clover.json"), "utf8")) as { host: { declares: Record<string, { fills?: { ok: string; warns?: boolean } }> } };
+    for (const point of [host.PROVIDERS, host.MODES, host.DEFAULTS]) expect([point, manifest.host.declares[point]?.fills?.warns]).toEqual([point, true]);
+  });
+
   test("its manifest binds Ctrl+Shift+Space as a held key to that handler", () => {
     const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "clover.json"), "utf8")) as { contributes: { commands?: Record<string, unknown>[] } };
     expect(manifest.contributes.commands).toEqual([expect.objectContaining({ name: "push-to-talk", handler: "pushToTalk", key: "ctrl+shift+space", hold: true })]);
