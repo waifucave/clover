@@ -85,7 +85,11 @@ With the `microphone` capability, `navigator.mediaDevices.getUserMedia({ audio: 
 `composer.action` button, a panel, a `main` page, and a part kept in the background (a voice mode that listens for a wake word
 needs exactly that). No other plugin's frame gets it. The system's own permission still applies (a Mac asks the first time;
 without it the call is refused), and the OK card says "It hears your microphone, also while no window of it shows" with a warning. Open it when your part needs it and
-stop the track (`track.stop()`) when it doesn't. This is not push-to-talk: that is the user's press and the `audio` capability.
+stop the track (`track.stop()`) when it doesn't, and take the device's microphone turn (`device/microphone`) while you record, so
+two plugins never record at once (plugin-host, "Turns"). Clover Voice's hold-to-talk button is built this way: a `composer.action`
+entry under a key of its own (`voice`; any key that isn't one of the composer's buttons, `attach`, `model`, `level`, `send`
+or `stop`, adds a button, drawn among the others plugins add in the spot's order) that records while it is held, streams the audio to its host half (`streams.open`) and sends the words as the
+user's message (`useUserSend`, with `user.send`).
 
 ## A part that keeps running in the background
 

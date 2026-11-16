@@ -15,7 +15,6 @@
 //   read      a read.
 //   gesture   a call that counts only inside the user's own key press or click in that frame (the SendGate), for every
 //             holder, one call per press.
-//   held      a call that counts only while a hold the user's own press opened is live (push-to-talk's `voice.listen`).
 //   card      trust-changing (levels, devices, the main computer): never on this route, whoever asks.
 //   unserved  the daemon has no such method.
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path. A part's OWN plugin's
@@ -26,11 +25,10 @@ import { withImplied } from "@waifucave/clover-plugin-sdk";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { resend } from "./resend";
 import { messageAction } from "./message-action";
-import type { ListenHolds } from "./listen";
 /** The bundled tree whose notices are the app's own: never muted. */
 const CLOVER_TREE = "clover";
 
-export type Disposition = "read" | "gesture" | "held" | "card" | "unserved";
+export type Disposition = "read" | "gesture" | "card" | "unserved";
 
 /** The capabilities that gate this door (catalog: `packages/plugin-sdk/src/catalogs/capabilities.ts`). */
 export const APP_SETTINGS = "app.settings";
@@ -46,7 +44,7 @@ export interface TreeCall {
   disposition: Disposition;
   /** The capability the caller's plugin must hold: one name, or a function of the params that names the one the call's
    *  shape needs, or a list of which any one will do (the call itself then holds each to its own reach). Absent on a
-   *  `read`/`gesture`/`held` call: no capability (each such call says why). */
+   *  `read`/`gesture` call: no capability (each such call says why). */
   needs?: string | readonly string[] | ((params: unknown) => string | readonly string[]);
 }
 
@@ -104,10 +102,6 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "ui.set": press((p) => (uiSetShape(p) === "lists" ? BOTS_EDIT : APP_SETTINGS)),
   "point.active.list": read(APP_SETTINGS),
   "point.active.set": press(APP_SETTINGS),
-  // The pieces of a recording the user is holding (push-to-talk, `audio`: the OK says it hears push-to-talk): main names
-  // the bot and the utterance and refuses any with no hold open (`ListenHolds.piece`); the hold itself began on the user's
-  // press. Until the Voice plugin's listening half replaces it.
-  "voice.listen": { disposition: "held", needs: "audio" },
   // Another plugin's settings (Settings › Plugins: `plugins.read` reads, `plugins.manage` writes; a secret never through
   // a page), or the edited bot's own plugin's at bot scope (`bots.edit`: main checks the id is a bot's).
   "plugin.settings.get": read((p) => (namesBot(p) ? [BOTS_EDIT, PLUGINS_READ] : PLUGINS_READ)),
@@ -431,8 +425,6 @@ export interface TreeRoute {
   log(line: string): void;
   /** How a refusal is thrown. */
   refuse(why: string): Error;
-  /** The window's push-to-talk holds (listen.ts): `voice.listen` rides one; without it the call is refused. */
-  listens?: Pick<ListenHolds, "piece">;
   /** The picked folders' tokens (the Plugins page's); absent, `ui.pick` and a picked install are refused. */
   tokens?: PickTokens;
   /** Main's native folder or file dialog over the window: the path chosen, or undefined when the user cancels. */
@@ -534,10 +526,6 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
   if (verdict.call.disposition === "gesture" && !listing && !r.takeGesture(c.windowId)) {
     r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
-  }
-  if (r.method === "voice.listen") {
-    if (r.listens === undefined) throw r.refuse("this app can't record");
-    return r.listens.piece(c.windowId, r.params);
   }
   if (r.method === "ui.set") {
     const shape = uiSetShape(r.params);

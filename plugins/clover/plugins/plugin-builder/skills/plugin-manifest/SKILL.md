@@ -124,17 +124,16 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
   the composer. `scope: "own-bot"` keeps a command inside the plugin's bot: the user may always run it, and of the bots
   only that one. `key` is a default shortcut (building-plugins, "Limits today").
 - **`triggers`** (list): `{ type, title, fields (JSON Schema), handler }`: a new kind of routine trigger.
-- **`voices`** (list): `{ id, name, speak, listen, auth, handler }`: a provider's listening, for push-to-talk (its
-  `listen`). To speak for the bots, fill Clover Voice's own point instead: `"clover.voice.providers": [{ id, name,
-  speak, ready? }]`, whose `speak` handler answers `{ text, voice, model?, format }` with the audio as bytes
-  (`points.stream`) and whose optional `ready` answers `{ ready, why? }`: whether the user set it up (a key saved). A
-  plugin that brings a bot gives that bot a default voice with `"clover.voice.defaults": [{ provider, voice, model? }]`; the user's
-  choice in the bot's Voice section wins, and a default speaks only with a provider that is set up.
-- **`voiceModes`** (list, at most one): `{ id, name, handler }`: the voice the bots speak and listen with. One at a
-  time (`oneAtATime`, titled "Voice"): the user's pick in Settings › Plugins, else Clover Voice; the active one hears
-  push-to-talk (its handler's `listens`, `listenStart`, `listenPiece`, `listenEnd`). To speak the replies your own way
-  while it is the one, add `"clover.voice.modes": [{ id, name, reply }]` and play in a background part of your own,
-  taking `device/speech` (plugin-host, "Turns").
+- **Voices are Clover Voice's own points, not core ones.** A voice provider fills `"clover.voice.providers": [{ id,
+  name, speak, listen?, ready? }]`: its `speak` handler answers `{ text, voice, model?, format }` with the audio as bytes
+  (`points.stream`), its optional `listen` answers `{ audio, format }` (push-to-talk's recording, 16 kHz PCM) with
+  `{ text }`, and its optional `ready` answers `{ ready, why? }`: whether the user set it up (a key saved). A plugin that
+  brings a bot gives that bot a default voice with `"clover.voice.defaults": [{ provider, voice, model? }]`; the user's
+  choice in the bot's Voice section wins, and a default speaks only with a provider that is set up. To be the voice the
+  bots speak and listen with, fill `"clover.voice.modes": [{ id, name, reply?, hear? }]`: one at a time (`oneAtATime`,
+  titled "Voice"), the user's pick in Settings › Plugins, else Clover Voice. While yours is the one, `reply` is handed
+  each reply to speak your own way (play it in a background part of your own, taking `device/speech`; plugin-host,
+  "Turns"), and `hear` is handed push-to-talk's recording, `{ bot, audio, format }`, and answers `{ text }`.
 - **`turns`** (list): `{ name, doc }`: one of the plugin's own one-at-a-time turns (`<plugin id>/<name>`) that other
   plugins may take too (plugin-host, "Turns"). Its own turns need no entry; another plugin's take of one it doesn't list
   is refused.
@@ -175,7 +174,7 @@ Every entry above may also carry `declares` (below).
 - `layout` (on `bot.tab` only), `window` (for an `app.surface` entry: `{ type: "overlay" | "window", alwaysOnTop, transparent,
   placement, front, cards, summon }`). `alwaysOnTop` needs the `overlay` capability; `front: "steps-aside"` leaves the screen while
   Clover's window is in front; `cards: true` draws the pending cards while the window is not in front (needs `approvals` and
-  `approvals.all`); `summon: ["tap"]` is the four-finger tap. `toggles` (an own surface's id) or `command` (an own command) on an
+  `approvals.all`). A container that holds a sealed card (the surface's card shell, its stack, its panel) must not move, scale, fade or filter it, nor transition those, on hover, focus or press while the user can press: a sealed button is read afresh at the press, and one read while its container moves says "not visible", so the press is refused (give a hover cue that only paints, such as a rim or a shadow); `summon: ["tap"]` is the four-finger tap. `toggles` (an own surface's id) or `command` (an own command) on an
   `app.tray` entry add a line to the menu-bar menu, with the `tray` capability. The pill's send is `useUserSend` with `user.send`: text the part chooses goes to any bot, session or `pill.target` as the user on any real click or key press in its window, and the OK card says so. A send comes inside the press (within a second, in the frame's own activation) or, for hold-to-talk, once within 30 s after a press the app saw held and released in the frame it happened in (no activation needed then; one press covers one send; a new press anywhere in the window, a reload, focus a page moved, or a page's own events give none).
 - a part that does what Clover's own Settings, Plugins page, bot editor or avatar section does: `useCore().call(method, params)`
   reaches the app's door for parts, where each call needs a capability (no plugin's id passes it): `app.settings` (Clover's
@@ -201,8 +200,9 @@ point): `"declares": { "<your-id>.<name>": { "shape": "single" | "list" | "keyed
   Read it with `api.points.active(point)` and hear it change with `api.points.onActive(point, listener)` (your tree and
   the fillers may); no plugin call or setting changes it;
 - `fills: { ok, warns? }`: the line your fillers' OK cards show, in your words and named as yours (`Fills <your name>'s
-  "<title>": <ok>.`), plain text up to 300 characters: say what a filler is given or what it makes happen (`warns`:
-  shown as a caution). A filler whose card gains it asks the user again, and so do your fillers when you change it;
+  (<your id>) "<title>": <ok>.`), plain text up to 300 characters: say what a filler is given or what it makes happen
+  (`warns`: shown as a caution). A filler whose card gains it asks the user again, and so do your fillers when you
+  change it; changing it is also your own update's trigger, so your OK comes first;
 - rarely: `gates` (props that reach only a filler holding a capability, by dotted path) and `keep` (keys that can't be
   hidden).
 

@@ -14,19 +14,12 @@
 //   runCommand  `command.run` on the app's own connection: the user asking that plugin, so its handler is told the user
 //               called and acts with exactly the plugin's own powers (a carded action still raises its card). Only a
 //               command `commands` lists now, with the gesture; the args go to that command's plugin alone.
-//   listenStatus  a read: `voice.status` for the composer's bot, whether its voice listens now (the hold-to-talk control shows only then).
-//   listenStart   the user's press: the app's shell records (listen.ts). The bot is the one the core mounted the composer for, never
-//                 the page's word; one press covers one recording (the gesture), and the recording ends when the user lets go.
-//   listenStop    the release: the shell stops, and the answer is what was heard as text for the box, or a note saying why not.
 //   `commands` and `runCommand` need the `commands.run` capability (its OK card warns that it runs your plugins' commands as
-//   you when you press a key in it; the command runs with the commanded plugin's own powers, never the caller's); the
-//   three listen ops need `audio` (push-to-talk), until the Voice plugin's listening half replaces them. No entry gets them
-//   by its id (F2).
+//   you when you press a key in it; the command runs with the commanded plugin's own powers, never the caller's). No entry
+//   gets them by its id (F2).
 // Every acting call spends one key press or click the main process saw come to the window (the SendGate).
 
-import type { ListenHolds } from "./listen";
-
-export const COMPOSER_OPS = ["models", "setModel", "interrupt", "stop", "commands", "runCommand", "listenStatus", "listenStart", "listenStop"] as const;
+export const COMPOSER_OPS = ["models", "setModel", "interrupt", "stop", "commands", "runCommand"] as const;
 export type ComposerOp = (typeof COMPOSER_OPS)[number];
 
 /** The composer mount the core made: where it is, which session and bot it was handed, whose it is. */
@@ -42,8 +35,6 @@ export interface ComposerMount {
 
 export interface ComposerRoute {
   composer: ComposerMount | undefined;
-  /** The window's push-to-talk holds (listen.ts); without it the listen ops are refused. */
-  listens?: Pick<ListenHolds, "start" | "stop">;
   op: unknown;
   args: unknown;
   takeGesture(windowId: number): boolean;
@@ -124,7 +115,7 @@ async function isBotMain(r: ComposerRoute, session: string, bot: string | undefi
 export async function routeComposer(r: ComposerRoute): Promise<unknown> {
   const out = await routeComposerOp(r);
   // One line for each acting call that went through: the method and the outcome, never what it carried or returned.
-  if (r.composer !== undefined && r.op !== "models" && r.op !== "commands" && r.op !== "listenStatus") r.log(`composer: ${r.composer.pluginId}: ${String(r.op)} went through`);
+  if (r.composer !== undefined && r.op !== "models" && r.op !== "commands") r.log(`composer: ${r.composer.pluginId}: ${String(r.op)} went through`);
   return out;
 }
 
@@ -141,17 +132,6 @@ async function routeComposerOp(r: ComposerRoute): Promise<unknown> {
     throw r.refuse(why);
   };
   if (op === "models") return r.asApp("models.list", { session: c.session });
-  if (op === "listenStatus" || op === "listenStart" || op === "listenStop") {
-    // Push-to-talk is `audio`'s (the OK says it hears what you say to your bots with push-to-talk).
-    if (!c.capabilities.has("audio")) return refuse("recording for you takes the audio capability");
-    if (c.bot === undefined) return refuse("this conversation has no bot to talk to");
-    if (op === "listenStatus") return r.asApp("voice.status", { bot: c.bot });
-    if (r.listens === undefined) return refuse("this app can't record");
-    if (op === "listenStop") return r.listens.stop(c.windowId);
-    // Only a press of the user's own starts a recording, and one press covers one.
-    if (!r.takeGesture(c.windowId)) return refuse("recording starts only right after your own key press or click");
-    return r.listens.start(c.windowId, c.bot);
-  }
   if (op === "commands" || op === "runCommand") {
     if (!c.capabilities.has("commands.run")) return refuse("running plugins' commands as you takes the commands.run capability");
     if (op === "commands") return { commands: await commandsFor(r, c) };

@@ -676,7 +676,7 @@ describe("a message to the main window's shell", () => {
   test("a shell message goes to the window's clover shell document only (not the core root, not another window's)", () => {
     const s = setup([]);
     const shell = mountShell(s);
-    const m = { type: "listen" as const, op: "stop" as const, utterance: "u1" };
+    const m = { type: "shell-provides" as const, sidebar: true, drag: false };
     s.sent.length = 0;
     s.rt.shellMessage(WIN, m);
     expect(s.sent).toEqual([{ to: `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`, m }]);
@@ -972,7 +972,8 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(s.rt.layerHolds("fixture-composer", "microphone")).toBe(true);
     const gain = s.sent.filter((x) => x.m.type === "child-reload");
     expect(gain.length).toBe(1);
-    expect(gain[0]!.m).toMatchObject({ child: item.mount });
+    // The reload carries the frame's flags (a parent that builds the frame again, the core root, gives it the same `allow`).
+    expect(gain[0]!.m).toMatchObject({ child: item.mount, microphone: true });
     const token = new URL((gain[0]!.m as { url: string }).url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-composer", token);
     s.rt.describe(frame((gain[0]!.m as { url: string }).url, shell.shellFrame), WIN, token);
@@ -984,6 +985,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     s.rt.setRegistry([...base, ...withMic(false)]);
     const lose = s.sent.filter((x) => x.m.type === "child-reload");
     expect(lose.length).toBe(1);
+    expect((lose[0]!.m as { microphone?: true }).microphone).toBeUndefined();
     expect(s.rt.layerHolds("fixture-composer", "microphone")).toBe(false);
   });
 
@@ -1045,7 +1047,8 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const bg = readUiPlugins([folderView(join(FIXTURES, "fixture-background"))] as never);
     const s = setup(bg);
     // Clover Voice's player is the bundled tree's own background part.
-    const VOICE = { ref: "clover/voice#player", pluginId: "clover/voice", audio: true, microphone: false };
+    // Clover Voice holds `microphone` for its hold-to-talk button; a capability is the plugin's, so its player's window carries it too.
+    const VOICE = { ref: "clover/voice#player", pluginId: "clover/voice", audio: true, microphone: true };
     expect(s.rt.backgroundEntries()).toEqual([VOICE, { ref: "fixture-background#ticker", pluginId: "fixture-background", audio: true, microphone: false }]);
     // The surface list doesn't take it, and in safe mode only clover's would run.
     expect(s.rt.surfaceEntries().map((e) => e.id)).not.toContain("ticker");
@@ -1103,7 +1106,9 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const hold = setup(view(["microphone"]));
     expect(hold.rt.layerHolds("fixture-surface", "microphone")).toBe(true);
     expect(hold.rt.layerHolds("fixture-surface", "audio")).toBe(false);
-    expect(hold.rt.layerHolds("clover", "microphone")).toBe(false);
+    // The clover layer holds it through Clover Voice (its hold-to-talk button), one of its plugins.
+    expect(hold.rt.layerHolds("clover", "microphone")).toBe(true);
+    expect(hold.rt.layerHolds("fixture-other", "microphone")).toBe(false);
     expect(hold.rt.layerHolds("someone-else", "microphone")).toBe(false);
     const itemOf = (s: ReturnType<typeof setup>) => {
       s.rt.openWindow(7, { material: "none", surface: { id: "fixture", ref: "fixture-surface#fixture" } });
@@ -1137,9 +1142,24 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     s.sent.length = 0;
     s.rt.pluginMessage("clover/voice", { ...message, pluginId: "clover/voice" } as never);
     expect(s.sent.filter((x) => x.to === `${child.processId}:${child.routingId}`)).toEqual([]);
+    // browser-press: the Clover Browser's events (`visibleOnly`) never reach a background document, and the part is known
+    // as one in the background.
+    s.sent.length = 0;
+    s.rt.pluginMessage("fixture-background", { ...message, params: { type: "tab_changed", tab: { id: "t" } } } as never, { visibleOnly: true });
+    expect(s.sent).toEqual([]);
+    expect(s.rt.inBackground(child, item.mount)).toBe(true);
     // The other way: its part's calls (`host.call` to its host half among them) go as its own plugin, with its capabilities.
     expect(s.rt.partOf(child, item.mount)).toBe("fixture-background");
     expect([...s.rt.capabilitiesOf(child, item.mount)]).toContain("audio");
+  });
+
+  test("browser-press: the Clover Browser's events (visibleOnly) reach a visible part's document in the main window", () => {
+    const { s, child, item } = withFixtureFrame();
+    s.sent.length = 0;
+    const m = { type: "api-event", pluginId: "fixture-composer", method: "core.event", params: { type: "tab_changed", tab: { id: "t" } } };
+    s.rt.pluginMessage("fixture-composer", m as never, { visibleOnly: true });
+    expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: m as never }]);
+    expect(s.rt.inBackground(child, item.mount)).toBe(false);
   });
 
   test("the menu broker learns a frame's place from each document above it", () => {

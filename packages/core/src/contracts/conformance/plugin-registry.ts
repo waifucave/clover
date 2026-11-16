@@ -306,18 +306,18 @@ export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): vo
   describe("PluginRegistry: entry ids", () => {
     const fish = (id: string): FakePluginInput => ({
       id,
-      manifest: m({ host: { entry: "host/index.ts" }, contributes: { voices: [{ id: "fish", name: "Fish", handler: "speak" }] } }),
+      manifest: m({ host: { entry: "host/index.ts" }, contributes: { computerProviders: [{ id: "fish", name: "Fish", auth: [], handler: "provide" }] } }),
     });
 
     test("the plugin enabled first keeps an id; only the clashing entry is refused, and gets it once the first is off", async () => {
       const reg = make({ plugins: [fish("fish-audio"), fish("fish-copy")] });
-      expect(reg.entries("voices").map((c) => [c.pluginId, c.state, c.reason])).toEqual([
+      expect(reg.entries("computerProviders").map((c) => [c.pluginId, c.state, c.reason])).toEqual([
         ["fish-audio", "active", undefined],
         ["fish-copy", "refused", "`fish` is taken by `fish-audio`"],
       ]);
       expect(reg.get("fish-copy")?.state).toBe("running");
       await reg.setEnabled("fish-audio", false);
-      expect(reg.entries("voices").map((c) => [c.pluginId, c.state])).toEqual([["fish-copy", "active"]]);
+      expect(reg.entries("computerProviders").map((c) => [c.pluginId, c.state])).toEqual([["fish-copy", "active"]]);
     });
 
     test("commands are unique within a namespace, not across them", () => {

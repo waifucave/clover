@@ -728,7 +728,7 @@ export const PLUGINS_METHODS = {
     name: "plugin.layer.watch", owner: "A", roles: ["layer"],
     params: z.object({
       /** A member that takes a listener the catalog gives components (`files.watch`, `logs.follow`, `usage.watch`,
-       *  `conversation.follow`, `audio.onRecording` …): the core calls it as the plugin from the `ui` side, with its own
+       *  `conversation.follow` …): the core calls it as the plugin from the `ui` side, with its own
        *  listener in the listener's place, after the same capability and fence checks as a host half's. */
       call: utf16(128, 1),
       /** The member's parameters in order, the listener's place `null`. */

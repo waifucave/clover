@@ -136,7 +136,7 @@ try {
 
 - Names: `<your plugin id>/<name>` is yours (no declaration). Another plugin can take it only if your manifest lists
   `<name>` in `contributes.turns` (plugin-manifest). `device/speech` is one voice at a time on this device, behind the
-  `audio` capability.
+  `audio` capability; `device/microphone` is one recording at a time, behind `microphone`.
 - The turn ends when you call `done()`, when its limit passes (default 60 s, `turn.extend(ms)` up to 10 minutes from the
   grant), or when its holder goes (its host process exits, its plugin stops, a component's frame goes). `turn.lost`
   resolves `"limit"` or `"stopped"` when the platform ended it: stop the work then. Never hold a turn across a wait for

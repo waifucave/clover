@@ -553,7 +553,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   };
   const levels: Record<string, Level> = { Studio: "ask-risky", Laptop: "automatic" };
   const check = botApprovalCheck(recorder, {
-    hostTools: () => ["SendMessage", "ListAgents", "TaskStop", "Agent", "Glossary", "PluginValidate", "PluginStatus", "PluginInstall"], bundledTool: bundled, readOnlyTool: readOnly, seenUrl: (c, u) => seen.seen(c.sessionId, u),
+    hostTools: () => ["SendMessage", "ListAgents", "TaskStop", "Agent", "Glossary", "PluginValidate", "PluginStatus", "PluginInstall"], bundledTool: bundled, toolPlugin: (_c, tool) => (tool.startsWith("mcp__web__") ? "clover/web" : undefined), readOnlyTool: readOnly, seenUrl: (c, u) => seen.seen(c.sessionId, u),
     fetchBudget: (c, u) => seen.take(c.sessionId, u), messageTarget: (_c, to) => targets[to], levelOf: (c) => levels[c],
   });
   const call = async (tool: string, input: Record<string, unknown>) => {
@@ -605,8 +605,9 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
     expect(await call("mcp__web__WebSearch", { query: "q" })).toMatchObject({ effect: "search" });
     const given = await call("mcp__web__WebFetch", { url: "https://given.example/a" });
     expect(given).toMatchObject({ effect: "fetch", contained: true, fields: { title: { type: "text", text: "Fetch a web page" } } });
-    // Its "always" holds for that site only.
-    expect(given.ruleKey).toBe("tool:mcp__web__WebFetch(https://given.example)");
+    // Its "always" holds for that site only, and for the plugin serving it (browser-press: another plugin's server and tool
+    // of the same names never inherit it).
+    expect(given.ruleKey).toBe("tool:mcp__web__WebFetch@clover/web(https://given.example)");
     const composed = await call("mcp__web__WebFetch", { url: "https://given.example/a?leak=secret" });
     expect(composed).toMatchObject({ effect: "fetch" });
     expect(composed.contained).toBeUndefined();

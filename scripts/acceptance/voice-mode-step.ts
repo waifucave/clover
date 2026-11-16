@@ -3,43 +3,46 @@
 // (`acceptance-voice-mode`) is installed from its folder the user's way: it speaks through a background part of its own
 // (its OK card says it keeps one running), which takes the device's speech turn (`device/speech`) like Clover Voice's
 // player. Its `chime`, asked for while Alpha's reply sounds, waits for that turn: its span begins only once Clover Voice's
-// ended (the two plugins' turn spans never overlap). It fills the platform's `voiceModes` (one at a time, P4) and offers
-// its reply on Clover Voice's own modes point: picked in Settings › Plugins' "Voice" picker it says Alpha's next reply
-// its own way and Clover Voice's player says nothing; Clover Voice picked again takes it back. A plain plugin with `voices.use` (`acceptance-narrator`) gets a provider's transcription as its
-// own data; its child, with no `voices.use`, is refused. Assertions are on the turn spans and the players' counters,
-// never on sound (the test build is muted).
+// ended (the two plugins' turn spans never overlap). It fills Clover Voice's own modes point (`clover.voice.modes`, one
+// at a time, P4, titled "Voice"): picked in Settings › Plugins' "Voice" picker it says Alpha's next reply its own way and
+// Clover Voice's player says nothing, and Clover Voice's talk button, held, hands it the recording (its `hear`), whose
+// words are sent as the user's message; Clover Voice picked again takes it back. Assertions are on the turn spans, the
+// players' counters and the conversation, never on sound (the test build is muted).
 import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { BACKGROUND_OK_LINE, fillsLine } from "../../packages/plugin-sdk/src/manifest/validate";
 import { clickTree, fail, leave, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
 
-export const VOICE_MODE_CLAUSE = "a second speaking plugin from a folder speaks through its own background part in the device's speech turn: its OK says it keeps a part running in the background and, in Clover Voice's words, what it is given as a voice mode; a bot that brings a default voice says Clover Voice's caution for it on its OK card; its chime, asked for while Alpha's reply sounds, begins only after Clover Voice's turn ended (the spans never overlap); picked in Settings' Voice picker (the platform's one at a time) it says Alpha's reply its own way while Clover Voice's player stays quiet, and Clover Voice takes back over when chosen again; a plugin with voices.use gets a provider's transcription as its own data, one without is refused";
+export const VOICE_MODE_CLAUSE = "a second speaking plugin from a folder speaks through its own background part in the device's speech turn: its OK says it keeps a part running in the background and, in Clover Voice's words, what it is given as a voice; a bot that brings a default voice says Clover Voice's caution for it on its OK card; its chime, asked for while Alpha's reply sounds, begins only after Clover Voice's turn ended (the spans never overlap); picked in Settings' Voice picker (Clover Voice's own point, one at a time) it says Alpha's reply its own way while Clover Voice's player stays quiet, and hears the talk button's recording, whose words are sent as the user's message; Clover Voice takes back over when chosen again";
+
+/** Holds Clover Voice's talk button through a clip and waits for the user's message carrying `words`; answers the button's document (listen-step.ts). */
+export type Talk = (words: string) => Promise<string>;
 
 const MODE_DIR = resolve(import.meta.dir, "fixtures", "acceptance-voice-mode");
 const MODE_ID = "acceptance-voice-mode";
-const NARRATOR_DIR = resolve(import.meta.dir, "fixtures", "acceptance-narrator");
-const NARRATOR_ID = "acceptance-narrator";
 const VOICE_BOT_DIR = resolve(import.meta.dir, "fixtures", "acceptance-voice-bot");
 const VOICE_BOT_ID = "acceptance-voice-bot";
+/** Clover Voice's own one-at-a-time point of voices. */
+const MODES = "clover.voice.modes";
 
 /** The line Clover Voice's point puts on its fillers' OK cards (its declaration's `fills`), as the card says it. */
 function voiceFills(point: string): string {
   const voice = JSON.parse(readFileSync(resolve(import.meta.dir, "..", "..", "plugins", "clover", "plugins", "voice", "clover.json"), "utf8")) as { name: string; host: { declares: Record<string, { title: string; fills: { ok: string; warns?: boolean } }> } };
   const d = voice.host.declares[point]!;
-  return fillsLine({ by: voice.name, title: d.title, ok: d.fills.ok, ...(d.fills.warns === true ? { warns: true } : {}) });
+  return fillsLine({ by: voice.name, id: "clover/voice", title: d.title, ok: d.fills.ok, ...(d.fills.warns === true ? { warns: true } : {}) });
 }
 /** Whether a card's text (its JSON) shows `line`. */
 const shows = (cardJson: string, line: string): boolean => cardJson.includes(JSON.stringify(line).slice(1, -1));
-/** What the run's tone voice hears of the narrator's 3,200 bytes. */
-const NARRATED = "heard 1 pieces, 3200 bytes of pcm16-16k";
+/** What the second voice's `hear` answers for the talk button's 1.2 s clip. */
+const MODE_HEARD = "heard by the voice mode: 38400 bytes of pcm16-16k";
 
 type Span = { bot: string; id: string; from: number; to: number; cut: boolean };
 type Counters = { pieces: number; speaking: string[]; overlap: number; cut: number; spans: Span[] };
 type CardView = { id: string; kind: string; pluginId?: string };
-type Report = { replies: string[]; spans: { what: string; from: number; to: number }[] };
+type Report = { replies: string[]; heard: number[]; spans: { what: string; from: number; to: number }[] };
 
-export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
+export async function voiceModeClause(ctx: ExampleCtx, talk: Talk): Promise<string[]> {
   const { cdp, rpc } = ctx;
   const done: string[] = [];
   let chosen = false;
@@ -77,8 +80,8 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     await until(`${id} running`, 60_000, async () => ((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
     return text;
   };
-  /** Settings › Plugins, the user's way: the gear, the Plugins section, `name` in the platform's "Voice" picker (the
-   *  `voiceModes` point, one at a time); then closed. A layer installed a moment ago may load the window's document
+  /** Settings › Plugins, the user's way: the gear, the Plugins section, `name` in the "Voice" picker (Clover Voice's
+   *  `clover.voice.modes` point, one at a time); then closed. A layer installed a moment ago may load the window's document
    *  again, closing a dialog opened before it: opened again until the picker shows. */
   const PICKER = '.cl-settings__one [role=radiogroup][aria-label="Voice"]';
   const choose = async (name: string) => {
@@ -110,8 +113,8 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     const mode = await run<Report>(`${MODE_ID}.report`).catch(() => undefined);
     return `Clover Voice's player: ${JSON.stringify(await counters())}; ${MODE_ID}: ${JSON.stringify(mode)}; Clover Voice's log: ${logs.slice(-1200)}; app: ${ctx.appLog().split("\n").filter((l) => /voice|turns:/i.test(l)).slice(-8).join(" | ").slice(-1500)}`;
   };
-  /** The platform's active `voiceModes` filler (P4), by its plugin. */
-  const active = async () => (await rpc.request<{ points: { point: string; active?: { pluginId: string } }[] }>("point.active.list", {})).points.find((p) => p.point === "voiceModes")?.active?.pluginId;
+  /** The active filler of Clover Voice's modes point (P4), by its plugin. */
+  const active = async () => (await rpc.request<{ points: { point: string; active?: { pluginId: string } }[] }>("point.active.list", {})).points.find((p) => p.point === MODES)?.active?.pluginId;
   try {
     // The second speaking plugin, its OK card saying it keeps a part running in the background.
     const ok = await install(MODE_DIR, MODE_ID);
@@ -163,7 +166,7 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     // Picked in Settings' Voice picker: the second plugin says Alpha's next reply its own way; Clover Voice says nothing.
     const value = await choose("Acceptance voice mode");
     chosen = true;
-    await until(`the active voiceModes filler = ${MODE_ID}`, 10_000, async () => ((await active()) === MODE_ID ? true : undefined), async () => `it reads ${JSON.stringify(await active())} (the list chose ${value})`);
+    await until(`the active ${MODES} filler = ${MODE_ID}`, 10_000, async () => ((await active()) === MODE_ID ? true : undefined), async () => `it reads ${JSON.stringify(await active())} (the list chose ${value})`);
     const heard = (await run<Report>(`${MODE_ID}.report`)).replies.length;
     const p0 = (await counters())!;
     await say("Say it in the other voice.");
@@ -174,27 +177,25 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     await sleep(1_000);
     const p1 = (await counters())!;
     if (p1.pieces !== p0.pieces) fail(`with ${MODE_ID} chosen, Clover Voice's player still got ${p1.pieces - p0.pieces} piece(s) of Alpha's reply`);
-    done.push(`picked in Settings' Voice picker (the platform's voiceModes, one at a time), ${MODE_ID} said Alpha's reply in its own part (${r.spans.filter((s) => s.what === "reply:alpha").length} span(s) in the device's speech turn) and Clover Voice's player got nothing`);
+    done.push(`picked in Settings' Voice picker (Clover Voice's own point, one at a time), ${MODE_ID} said Alpha's reply in its own part (${r.spans.filter((s) => s.what === "reply:alpha").length} span(s) in the device's speech turn) and Clover Voice's player got nothing`);
+
+    // Still picked: Clover Voice's talk button hands it the recording (its `hear`), and its words go as the user's message.
+    const heardBefore = (await run<Report>(`${MODE_ID}.report`)).heard.length;
+    await talk(MODE_HEARD);
+    const hr = await run<Report>(`${MODE_ID}.report`);
+    if (hr.heard.length !== heardBefore + 1 || hr.heard.at(-1) !== 38_400) fail(`${MODE_ID}'s hear got ${JSON.stringify(hr.heard)}; wanted one more recording of 38400 bytes`);
+    done.push(`held, the talk button's recording went to ${MODE_ID}'s hear (38,400 bytes), and its words "${MODE_HEARD}" were sent as the user's message`);
 
     // Clover Voice again.
     await choose("Clover Voice");
-    await until("Clover Voice the active voiceModes filler again", 10_000, async () => ((await active()) === "clover/voice" ? true : undefined));
+    await until(`Clover Voice the active ${MODES} filler again`, 10_000, async () => ((await active()) === "clover/voice" ? true : undefined));
     chosen = false;
     done.push("Clover Voice picked again in Settings' Voice picker");
 
-    // A plain plugin with voices.use, and its child without.
-    const nok = await install(NARRATOR_DIR, NARRATOR_ID);
-    if (!nok.includes("can ask your voice providers to transcribe")) fail(`${NARRATOR_ID}'s OK card doesn't say it may use the voice providers: ${nok.slice(0, 400)}`);
-    const n = await run<{ providers?: string[]; text?: string; error?: string }>(`${NARRATOR_ID}.narrate`);
-    if (n.text !== NARRATED || !(n.providers ?? []).includes("acceptance-voice")) fail(`the narrator's ask came back ${JSON.stringify(n)}; wanted "${NARRATED}" from acceptance-voice`);
-    const nosy = await run<{ error?: string }>(`${NARRATOR_ID}.nosy`);
-    if (nosy.error === undefined || !nosy.error.includes("voices.use")) fail(`the child with no voices.use got ${JSON.stringify(nosy)}`);
-    done.push(`a plugin with voices.use (its OK says so) got a transcription back as its own data ("${n.text}"); its child without was refused ("${nosy.error}")`);
     return done;
   } finally {
-    if (chosen) await rpc.request("point.active.set", { point: "voiceModes", entry: { pluginId: "clover/voice", entryId: "clover-voice" } }).catch(() => undefined);
+    if (chosen) await rpc.request("point.active.set", { point: MODES, entry: { pluginId: "clover/voice", entryId: "clover-voice" } }).catch(() => undefined);
     if (long) await setVoice("tone").catch(() => undefined);
-    await leave(ctx, NARRATOR_ID);
     await leave(ctx, VOICE_BOT_ID);
     await leave(ctx, MODE_ID);
   }

@@ -16,14 +16,20 @@ import { removeFileDurably, writeJsonAtomic } from "../sessions/atomic-file";
 /** Where the core kept a setting: `ui.json`'s `[object, key]`, or `key` of a bot's user-layer field (an object). */
 export type MovedFrom = { ui: readonly [string, string] } | { botField: string; key: string };
 
-/** One setting that moved: from the core's place to a plugin's setting. A bot field moves to the `bot` scope (per bot). */
+/** One setting that moved: from the core's place to a plugin's setting. A bot field moves to the `bot` scope (per bot).
+ *  A row with `value` moves nothing: where the core's value equals `when`, it writes `value` to the plugin's key (a
+ *  setting the old value implied), and leaves the core's value to the row that moves it, which comes after it; `with`:
+ *  only while the plugin's setting it names isn't set (the value it implies belongs with that one). */
 export type SettingMove =
-  | { from: { ui: readonly [string, string] }; plugin: string; scope: "account" | "device"; key: string }
-  | { from: { botField: string; key: string }; plugin: string; scope: "bot"; key: string };
+  | { from: { ui: readonly [string, string] }; plugin: string; scope: "account" | "device"; key: string; when?: string; value?: string; with?: string }
+  | { from: { botField: string; key: string }; plugin: string; scope: "bot"; key: string; when?: string; value?: string; with?: string };
 
 export const SETTINGS_MOVED_TO_PLUGINS: readonly SettingMove[] = [
   // Speaking replies left the core for Clover Voice (F1): its switch, and each bot's voice.
   { from: { ui: ["voice", "speakReplies"] }, plugin: "clover/voice", scope: "account", key: "speakReplies" },
+  // A provider picked before providers were their plugins' own: Fish Audio's entry was the only one, and it is
+  // Fish Audio's plugin's.
+  { from: { botField: "voice", key: "provider" }, when: "fish-audio", value: "clover/fish-audio", with: "provider", plugin: "clover/voice", scope: "bot", key: "providerPlugin" },
   { from: { botField: "voice", key: "provider" }, plugin: "clover/voice", scope: "bot", key: "provider" },
   { from: { botField: "voice", key: "voice" }, plugin: "clover/voice", scope: "bot", key: "voice" },
   { from: { botField: "voice", key: "model" }, plugin: "clover/voice", scope: "bot", key: "model" },
@@ -80,13 +86,15 @@ export function moveSettingsToPlugins(home: string, o: { log?: (line: string) =>
         const [object, key] = m.from.ui;
         const holder = ui?.[object];
         if (!isObject(holder) || !(key in holder)) continue;
-        const value = holder[key];
+        const held = holder[key];
         const mine = settingsOf(m.plugin)[m.scope as "account" | "device"];
-        if (value !== undefined && !(m.key in mine)) {
+        const value = m.value === undefined ? held : m.when === undefined || held === m.when ? m.value : undefined;
+        if (value !== undefined && !(m.key in mine) && !(m.with !== undefined && m.with in mine)) {
           mine[m.key] = value;
           touched.add(m.plugin);
-          moved.push(`${object}.${key} → ${m.plugin}'s ${m.scope} setting ${m.key}`);
+          moved.push(`${object}.${key} → ${m.plugin}'s ${m.scope} setting ${m.key}${m.value === undefined ? "" : ` (${String(value)})`}`);
         }
+        if (m.value !== undefined) continue;
         delete holder[key];
         if (Object.keys(holder).length === 0) delete ui![object];
         uiChanged = true;
@@ -96,14 +104,16 @@ export function moveSettingsToPlugins(home: string, o: { log?: (line: string) =>
       for (const l of layers) {
         const field = l.stored.fields[botField];
         if (!isObject(field) || !(key in field)) continue;
-        const value = field[key];
+        const held = field[key];
         const bot = l.stored.bot;
         const mine = (settingsOf(m.plugin).bot[bot] ??= {});
-        if (typeof value === "string" && value !== "" && !(m.key in mine)) {
+        const value = m.value === undefined ? held : m.when === undefined || held === m.when ? m.value : undefined;
+        if (typeof value === "string" && value !== "" && !(m.key in mine) && !(m.with !== undefined && m.with in mine)) {
           mine[m.key] = value;
           touched.add(m.plugin);
-          moved.push(`${bot}'s ${botField}.${key} → ${m.plugin}'s bot setting ${m.key}`);
+          moved.push(`${bot}'s ${botField}.${key} → ${m.plugin}'s bot setting ${m.key}${m.value === undefined ? "" : ` (${value})`}`);
         }
+        if (m.value !== undefined) continue;
         delete field[key];
         if (Object.keys(field).length === 0) delete l.stored.fields[botField];
         l.changed = true;

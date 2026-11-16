@@ -829,50 +829,6 @@ export interface NotifyApi {
   send(notification: { title: string; body?: string; session?: string }): Promise<void>;
 }
 
-/** One provider on `voices` (§6.6), as a voice mode sees it. */
-export interface VoiceProviderView {
-  pluginId: string;
-  id: string;
-  name: string;
-  speak: boolean;
-  listen: boolean;
-}
-
-/** `voices`: the providers' listening (§6.6, push-to-talk until it is re-founded), for a plugin with `voices.use` and
- *  for any voice mode. A provider plugin's `voices` entry is its endpoint; the core carries the calls (as it carries
- *  `points.call`) and places no key: the provider's own keyed fetch does, and the caller sees only text, its own data.
- *  At most VOICES_CALLS_PER_PLUGIN open at once a plugin; each use is logged with the caller's id. Speaking is a
- *  provider's entry on Clover Voice's own point (`clover.voice.providers`). */
-export interface VoicesApi {
-  providers(): Promise<VoiceProviderView[]>;
-  /** Opens `provider`'s listening under the caller's own `id` (for the active voice mode, a push-to-talk utterance's,
-   *  from `VoiceModeHandler.listenStart`); the caller feeds it (`feed`), and what it heard comes to `listener`. */
-  listen(provider: string, req: { id: string; format: "pcm16-16k" | "opus" }, listener: (e: { text?: string; error?: string }) => void): Unsubscribe;
-  /** One piece of an open listening, the last `final`. */
-  feed(id: string, data: Uint8Array, final: boolean): Promise<void>;
-}
-
-/** What the core calls on the active voice mode's handler (its `voiceModes` entry's `handler`, an exported object), for
- *  push-to-talk (§6.6, the listening half until it is re-founded). The bot's voice is the mode's own to read. */
-export interface VoiceModeHandler {
-  /** Whether a push-to-talk for `bot` would be heard (the bot has a voice whose provider listens). */
-  listens(args: { bot: string }): Promise<boolean>;
-  /** The user holds push-to-talk on this device: whatever the mode sounds stops and nothing starts until the last
-   *  piece; the mode opens the bot's provider's listening for `utterance` (`voices.listen`). */
-  listenStart(args: { bot: string; utterance: string; format: "pcm16-16k" | "opus" }): Promise<void>;
-  /** One push-to-talk piece; the mode feeds it on. On the last (`final`) it answers what the provider heard. */
-  listenPiece(args: { bot: string; utterance: string; data: Uint8Array; final: boolean }): Promise<{ text?: string }>;
-  /** A push-to-talk utterance ended without its last piece (the app went away): resume. */
-  listenEnd(args: { bot: string; utterance: string }): Promise<void>;
-}
-
-/** `audio`: push-to-talk audio as it comes, for every bot (§6.6). A plugin's own sound plays in a part of its own (a
- *  background part, `app.background`), taking the device's speech turn (`device/speech`). The OK says it "hears what
- *  you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices". */
-export interface AudioApi {
-  onRecording(listener: (chunk: { utterance: string; format: "pcm16-16k" | "opus"; data: Uint8Array; final: boolean }) => void): Unsubscribe;
-}
-
 // -------------------------------------------------------------------------------------------------
 // Streams (§5.4 "Streams"): a byte stream between a plugin's two halves, and a handler's answer as a stream
 // -------------------------------------------------------------------------------------------------
@@ -1060,10 +1016,6 @@ export interface PluginApi {
   /** Its own tree's logs with no capability; Clover's and every other plugin's with `logs.read`. */
   readonly logs: LogsApi;
   readonly notify?: NotifyApi;
-  /** `audio`: it hears push-to-talk. */
-  readonly audio?: AudioApi;
-  /** The voice providers' listening, for push-to-talk's voice mode (§6.6). */
-  readonly voices?: VoicesApi;
   /** `avatar.read`, `avatar.control`: the plugin's own bot's figure, each call by its capability. */
   readonly avatar?: Partial<AvatarApi> & Partial<AvatarReportApi>;
   /** Only the bundled `clover` tree's process: this computer's desktop notifications, for its notifier. */

@@ -2,7 +2,7 @@
 // style and hide entries, `needs` and `keep`, list spots and safe mode.
 import { describe, expect, test } from "bun:test";
 import { readUiEntry, type UiPlugin } from "../src/main/ui/model";
-import { NO_CHOICES, SpotTree, entryRef, ownPanelCandidates, partOf, resolveCell, type CellContext, type UiChoices } from "../src/main/ui/spots";
+import { NO_CHOICES, SpotTree, addedCandidates, entryRef, ownPanelCandidates, partOf, resolveCell, type CellContext, type UiChoices } from "../src/main/ui/spots";
 
 let enabled = 0;
 function plugin(id: string, ui: Record<string, unknown>[], opts: Partial<Pick<UiPlugin, "source" | "isBot" | "bots" | "enabledAt">> & { caps?: string[] } = {}): UiPlugin {
@@ -414,6 +414,16 @@ describe("panels plugins add (§5.5)", () => {
     const own = plugin("juniper", [{ spot: "panel", key: "notes", title: "Notes", component: "N" }], { isBot: true });
     expect(ids(inTab("juniper"), [own])).toEqual(["juniper#notes"]);
     expect(ids(inTab("alpha"), [own])).toEqual([]);
+  });
+});
+
+describe("buttons plugins add to the composer (composer.action's `*`): the general placement, no key looked for", () => {
+  test("every entry under a key that isn't one of the composer's own, in order; a stock key's entry replaces that button instead", () => {
+    const talk = plugin("any-voice", [{ spot: "composer.action", key: "hold-to-talk", component: "Talk", order: 40 }, { spot: "composer.action", key: "send", component: "Send" }]);
+    const extra = plugin("tools", [{ spot: "composer.action", key: "suggest", component: "Suggest", order: 10 }]);
+    expect(addedCandidates({ plugins: [talk, extra], ctx: inTab("alpha") }, "composer.action").map((x) => `${x.plugin.id}#${x.entry.key}`)).toEqual(["tools#suggest", "any-voice#hold-to-talk"]);
+    // A spot with no stock keys lists nothing this way.
+    expect(addedCandidates({ plugins: [talk, extra], ctx: inTab("alpha") }, "conversation.message")).toEqual([]);
   });
 });
 

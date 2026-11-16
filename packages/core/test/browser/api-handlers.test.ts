@@ -187,3 +187,32 @@ describe("through the plugin API's router (the component's `plugin.layer.api` en
     await expect(ask("clover/browser-view", "browser.watch", [() => {}])).rejects.toThrow(/events|isn't available|not served/);
   });
 });
+
+describe("browser-press 3: a host half's call after its tool call has ended", () => {
+  test("a third party's host half reaches the session's tab inside the tool call; on a later tick, with the ended call's id or none, it is refused", async () => {
+    const { apiChannel } = await import("../../src/plugin-host/api-channel");
+    const { InvocationTable } = await import("../../src/plugin-host/invocations");
+    const records: Record<string, unknown> = { "acme/surf": { id: "acme/surf", enabled: true, state: "running", source: "user", granted: ["browser"] } };
+    const service = new BrowserService({ computer: "Studio", app: () => new FakeApp() });
+    const invocations = new InvocationTable();
+    const ch = apiChannel({ process: "shared", router: createApiRouter({ registry: { get: (id: string) => records[id] as never }, handlers: [browserApiHandlers(() => service)] }), invocations, deliver: () => {} });
+    const api = ch.methods["pluginHost.api"]!;
+    const ctx = { caller: { kind: "core" } as Caller };
+    const ask = (call: string, args: unknown[], invocation?: string) => api({ pluginId: "acme/surf", callId: `c_${Math.random()}`, call, args, ...(invocation !== undefined ? { invocation } : {}) }, ctx) as Promise<{ result: any }>;
+    const end = invocations.open("tool_1", { pluginId: "acme/surf", caller: alpha, session: "s-alpha" });
+    const opened = (await ask("browser.open", [{ owner: { kind: "bot", bot: "alpha" } }], "tool_1")).result;
+    expect(opened.owner).toEqual({ kind: "bot", bot: "alpha" });
+    end();
+    // A timer the plugin left behind: the ended call's id is refused, and with none it acts as itself (no tabs).
+    const later = await new Promise<string[]>((resolve) => setTimeout(() => void Promise.all([
+      ask("browser.tabs", [{}], "tool_1").then(() => "ran", (e: Error) => e.message),
+      ask("browser.navigate", [opened.id, "https://example.org/"], "tool_1").then(() => "ran", (e: Error) => e.message),
+      ask("browser.tabs", [{}]).then(() => "ran", (e: Error) => e.message),
+      ask("browser.toolCaller", []).then(() => "ran", (e: Error) => e.message),
+    ]).then(resolve), 5));
+    expect(later[0]).toContain("has ended");
+    expect(later[1]).toContain("has ended");
+    expect(later[2]).toContain("has no tabs here");
+    expect(later[3]).toMatch(/has no tabs here|the session whose tool call/);
+  });
+});

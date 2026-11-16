@@ -7,7 +7,7 @@
 import { useEffect, useMemo, type ReactNode } from "react";
 import type { BotView, CardMeta, ComputerView, DeviceView, PluginDetail, PluginSummary, SessionView } from "../views";
 import type { TokenValue } from "../catalogs/tokens";
-import { spotInfo, STOCK_PANEL_KEYS } from "../catalogs/spots";
+import { spotInfo, STOCK_KEYS } from "../catalogs/spots";
 import type { EntryProps, UiComponent } from "../api/ui-api";
 import type { PluginApi, PointEntry, Unsubscribe } from "../api/plugin-api";
 import { configureLayer, LayerRoot, type ClientModule } from "./index";
@@ -284,8 +284,10 @@ export function resolveSpot(spot: string, decl: TestSpot, all: readonly TestEntr
     });
     return { entries: shown, conflict: false };
   }
-  if (spot === "panel" && key === "*") {
-    return { entries: here.filter((e) => !e.hide && e.key !== undefined && !STOCK_PANEL_KEYS.includes(e.key) && !e.key.endsWith("*")).sort(order), conflict: false };
+  // What plugins add (the spot's `*`: the panels, the composer's buttons): every entry whose key isn't a stock one.
+  const stock = STOCK_KEYS[spot];
+  if (stock !== undefined && key === "*") {
+    return { entries: here.filter((e) => !e.hide && e.key !== undefined && !stock.includes(e.key) && !e.key.endsWith("*")).sort(order), conflict: false };
   }
   const kept = key !== undefined && (decl.keep ?? []).includes(key);
   let candidates = here.filter((e) => !(kept && e.hide));

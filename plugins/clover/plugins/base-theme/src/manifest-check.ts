@@ -13,7 +13,7 @@ const TOP_KEYS = new Set([
 ]);
 
 const CORE_POINTS = new Set([
-  "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices",
+  "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers",
   "computerProviders", "computer", "relays", "notifiers", "companions", "themes", "locales", "ui",
 ]);
 

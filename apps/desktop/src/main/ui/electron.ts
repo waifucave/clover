@@ -1,6 +1,7 @@
 // The Electron half of the plugin runtime: the app's schemes, the UI session's hardening, the protocol handlers that
 // serve the core root and the layers, the IPC the preload's bridge speaks, and the crash census. Spike S9's measured
 // design, with decision 94 (stock Electron) and the E-M0 review: the WebRTC UDP policy on every window, no PAC.
+import { browserReach, browserRefusal } from "./browser-calls";
 import { readFileSync } from "node:fs";
 import type { FrameWatches } from "./frame-watches";
 import { join, normalize } from "node:path";
@@ -8,7 +9,7 @@ import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, withMicrophone } from "./documents";
+import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, layerMicrophone, withMicrophone } from "./documents";
 import { checkMenu, frameGesture, openRefusal, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { SEALED_PRESS_WORDS } from "../sealed-pages";
@@ -143,8 +144,10 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const mount = runtime.serveDocument(layer, url.searchParams.get("mount"));
       if (mount === undefined) return forbidden();
       const doc = runtime.mountForDocument(mount);
-      // The clover layer's document alone may open the microphone (push-to-talk's shell, listen.ts); the policy still needs the frame's `allow`.
-      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", doc.layer === "clover" ? "*" : runtime.layerHolds(doc.layer, "microphone"));
+      // The microphone policy by one rule for every layer (`layerMicrophone`): open while its own layer holds `microphone`. The
+      // permission itself is main's (microphone.ts), by the requesting frame's own layer.
+      const microphone = layerMicrophone(doc.layer, (l) => runtime.layerHolds(l, "microphone"));
+      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", microphone);
       // The DNS probe's positive control (the UI test, unpackaged runs only): the same document without its allowlist.
       if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];
       return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });
@@ -391,8 +394,15 @@ export interface IpcHooks {
   /** Waits (briefly) until the window's latest press knows which frame it landed in (a click asks the frames under the
    *  pointer a moment after it), so `takeGesture` can tell. */
   settleGesture?(windowId: number): Promise<void>;
-  /** The windows' push-to-talk holds (listen.ts): the composer's start and stop, and the shell's pieces. */
-  listens?: import("./listen").ListenHolds;
+  /** A visible part subscribed to the `browser` area (on) or unsubscribed (off): the app unsubscribes its plugin's
+   *  connection when the last such part goes (browser-calls.ts `BrowserAreaFrames`). */
+  browserArea?(pluginId: string, mount: string, on: boolean): void;
+  /** A watch opened on a `browser.*` call: its values go only to the plugin's visible documents. */
+  noteBrowserWatch?(watch: string): void;
+  /** Whether part `mount`'s own browser view is bound to tab `tab` (live or paused: browser-calls.ts `ViewBindings`). */
+  showsTab?(windowId: number, mount: string, tab: string): boolean;
+  /** A part's Browser call answered (its view's binding follows its show, open-and-show, hide and close). */
+  noteBrowserResult?(mount: string, method: string, params: unknown, result: unknown): void;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
   treeRequest(method: string, params: unknown): Promise<unknown>;
   /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
@@ -680,6 +690,15 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (mount === undefined || method === undefined) throw new LayerError("bad request");
     const pluginId = runtime.partOf(s.frame, mount);
     const press = await pressIn(s, a.active);
+    // The Clover Browser from a component (browser-calls.ts): none from a part in the background, and an acting call only with
+    // the user's own press in this part's frame (`press`: the SendGate's `takeIn`, one press, one call; a refused call spends
+    // nobody's gesture).
+    const reach = browserReach(method, a.params, { showing: (tab) => hooks.showsTab?.(s.windowId, mount, tab) === true });
+    const browserWhy = browserRefusal(reach, { background: runtime.inBackground(s.frame, mount), takePress: () => press(s.windowId) });
+    if (browserWhy !== undefined) {
+      log(`layers: ${pluginId}: ${reach.kind === "none" ? method : reach.call} refused (${browserWhy}); frame ${s.frame.processId}:${s.frame.routingId}, active ${a.active === true}`);
+      throw new LayerError(browserWhy);
+    }
     // The pickers are main's own: a plugin that holds `files`, the user's own click, main's dialog; the page gets tokens.
     if (PICK_METHODS.has(method)) {
       if (pluginId === "core" || hooks.pickFiles === undefined || hooks.registerGrant === undefined || hooks.grants === undefined) throw new LayerError("this part can't ask for a file");
@@ -701,7 +720,6 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       method,
       params: a.params,
       tokens: pickTokens,
-      ...(hooks.listens ? { listens: hooks.listens } : {}),
       ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse) => hooks.pick!(w, kind, filters, use) } : {}),
       ...(hooks.openKey ? { openKey: (target: KeyTarget) => hooks.openKey!(target) } : {}),
       // The key press or click must have come to THIS frame: its own transient activation (read in the preload) AND a press the
@@ -711,6 +729,16 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       entries: (spot) => runtime.entries(s.frame, mount, spot),
       layer: () => {
         const got = hooks.api(pluginId, method, a.params);
+        // The `browser` area, by the visible part that asked for it (a background part's ask was refused above).
+        const areas = (a.params as { areas?: unknown } | undefined)?.areas;
+        if ((method === "events.subscribe" || method === "events.unsubscribe") && Array.isArray(areas) && areas.includes("browser")) {
+          void got.then(() => hooks.browserArea?.(pluginId, mount, method === "events.subscribe"), () => undefined);
+        }
+        if (reach.kind !== "none") void got.then((r) => hooks.noteBrowserResult?.(mount, method, a.params, r), () => undefined);
+        const watched = (a.params as { call?: unknown } | undefined)?.call;
+        if (method === "plugin.layer.watch" && typeof watched === "string" && watched.startsWith("browser.")) {
+          void got.then((r) => { const w = (r as { watch?: unknown } | undefined)?.watch; if (typeof w === "string") hooks.noteBrowserWatch?.(w); }, () => undefined);
+        }
         // A frame's watch is the frame's: noted, so the frame's going ends it (frame-watches.ts).
         const fw = hooks.frameWatches;
         if (fw === undefined) return got;
@@ -807,7 +835,6 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const press = await pressIn(s, a.active);
     return routeComposer({
       composer: runtime.composerOf(s.frame, mount),
-      ...(hooks.listens ? { listens: hooks.listens } : {}),
       op: a.op,
       args: a.args,
       takeGesture: press,

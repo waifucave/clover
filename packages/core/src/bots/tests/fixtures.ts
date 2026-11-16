@@ -120,7 +120,6 @@ export async function boot(opts: {
   routines?: BotSideOptions["routines"];
   onSessionEnded?: BotSideOptions["onSessionEnded"];
   updateGate?: BotSideOptions["updateGate"];
-  voices?: BotSideOptions["voices"];
   /** Ask for a provider the bot's plugin chose, as the daemon does (provider-consent.ts); by default the fixture's
    *  bots hold every provider already, so a test about something else never meets the card. */
   askProvider?: boolean;
@@ -149,7 +148,6 @@ export async function boot(opts: {
     ...(opts.routines === undefined ? {} : { routines: opts.routines }),
     ...(opts.onSessionEnded === undefined ? {} : { onSessionEnded: opts.onSessionEnded }),
     ...(opts.updateGate === undefined ? {} : { updateGate: opts.updateGate }),
-    ...(opts.voices === undefined ? {} : { voices: opts.voices }),
     assetUrl: (pluginId, path) => `clover-asset://${pluginId.replace("/", "--")}/${path}`,
     warn: (m) => warnings.push(m),
   });

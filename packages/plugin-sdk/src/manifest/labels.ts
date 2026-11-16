@@ -24,7 +24,7 @@ const STOCK_PANELS: readonly string[] = ["session", "terminal", "diff", "browser
 
 /** The order the labels appear in, so a row reads the same everywhere. */
 export const CONTRIBUTION_LABEL_ORDER = [
-  "Bot", "Tools", "Skills", "Agent", "Agent backend", "Model", "Voice", "Theme", "Panel", "Island tab", "App page", "Background", "Pill target", "Settings section",
+  "Bot", "Tools", "Skills", "Agent", "Agent backend", "Model", "Theme", "Panel", "Island tab", "App page", "Background", "Pill target", "Settings section",
   "Editor section", "Status line", "Avatar renderer", "File preview", "Message look", "Message action", "Tool result look", "Commands", "Hooks",
   "Trigger", "Notifier", "Relay", "Companion", "Computer", "Translation",
 ] as const;
@@ -44,7 +44,6 @@ export function contributionLabels(manifests: readonly unknown[]): string[] {
     if (nonEmpty(c.agents)) found.add("Agent");
     if (nonEmpty(c.agentBackends)) found.add("Agent backend");
     if (nonEmpty(c.models)) found.add("Model");
-    if (nonEmpty(c.voices) || nonEmpty(c.voiceModes)) found.add("Voice");
     if (nonEmpty(c.themes)) found.add("Theme");
     if (nonEmpty(c.commands)) found.add("Commands");
     if (nonEmpty(c.hooks)) found.add("Hooks");
