@@ -96,8 +96,9 @@ export class PluginKeys {
    *  command's key may run, and once started its release is always heard.
    *  * The chord's down (not a repeat) starts the hold: `down`, consumed.
    *  * While held, the chord's key going down again (a repeat) is nothing new: consumed, nothing delivered.
-   *  * The up of its key ends it (`up`, consumed); so does the up of one of its modifiers (`up`, not consumed, so the page
-   *    sees the modifier let go); its key's later repeats and up are still consumed. Another key's up is not it. */
+   *  * The up of its key ends it (`up`, consumed); so does the up of one of its modifiers, or any up whose modifier state has
+   *    lost one of them (`up`, not consumed, so the page sees the modifier let go); its key's later repeats and up are still
+   *    consumed. Another key's up, its modifiers still down, is not it. */
   hold(windowId: number, input: KeyPress & { type: string; isAutoRepeat?: boolean }, mayRun: boolean): HoldStep | undefined {
     const h = this.#held.get(windowId);
     const down = input.type === "keyDown" || input.type === "rawKeyDown";
@@ -117,12 +118,21 @@ export class PluginKeys {
       this.#held.delete(windowId);
       return h.ended ? { binding: h.binding, consume: true } : { binding: h.binding, phase: "up", released: true, consume: true };
     }
+    // One of its modifiers let go: that key's up, or an up whose modifier state no longer has one of them (a synthesized
+    // modifier's up may name no key Chromium knows, but its state says which modifiers are still down).
     const mod = MODIFIER_KEYS[input.key];
-    if (!h.ended && mod !== undefined && h.mods.has(mod)) {
+    const still: Record<string, boolean> = { ctrl: input.control, shift: input.shift, alt: input.alt, meta: input.meta };
+    if (!h.ended && ((mod !== undefined && h.mods.has(mod)) || [...h.mods].some((m) => still[m] !== true))) {
       h.ended = true;
       return { binding: h.binding, phase: "up", released: true, consume: false };
     }
     return undefined;
+  }
+
+  /** The held binding of a window, if one is held now. */
+  holding(windowId: number): string | undefined {
+    const h = this.#held.get(windowId);
+    return h === undefined || h.ended ? undefined : h.binding.name;
   }
 
   /** The window lost the focus or closed: a hold still on ends with no release of the user's (its `up` is delivered, and

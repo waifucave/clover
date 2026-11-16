@@ -2482,6 +2482,10 @@ function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void
       heldKey(win.id, held);
       return;
     }
+    // A test-marked or acceptance build says which up passed a held binding by (the harness reads it).
+    if (input.type === "keyUp" && pluginKeys.holding(win.id) !== undefined && (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")) {
+      log(`keys: an up of ${JSON.stringify(input.key)} (${input.code}; ${[input.control && "ctrl", input.shift && "shift", input.alt && "alt", input.meta && "meta"].filter(Boolean).join("+") || "no modifier"}) is not ${pluginKeys.holding(win.id)}'s`);
+    }
     const bound = mayRun ? pluginKeys.binding(press) : undefined;
     // A held binding's chord pressed while another is held is not a press of it.
     const command = bound?.hold === true ? undefined : bound?.name;

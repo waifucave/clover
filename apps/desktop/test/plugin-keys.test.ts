@@ -66,9 +66,9 @@ describe("a held key binding (`commands[].hold`): its down and its release", () 
   test("another key's up is not its up; another key's down passes by and the hold goes on", () => {
     const k = make();
     k.hold(1, press(chord), true);
-    expect(k.hold(1, press({ key: "a", code: "KeyA", type: "keyUp" }), true)).toBeUndefined();
+    expect(k.hold(1, press({ key: "a", code: "KeyA", type: "keyUp", control: true, shift: true }), true)).toBeUndefined();
     expect(k.hold(1, press({ key: "a", code: "KeyA", control: true, shift: true }), true)).toBeUndefined();
-    expect(k.hold(1, press({ key: "Alt", type: "keyUp" }), true)).toBeUndefined(); // not one of its modifiers
+    expect(k.hold(1, press({ key: "Alt", type: "keyUp", control: true, shift: true }), true)).toBeUndefined(); // not one of its modifiers
     expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toMatchObject({ phase: "up", released: true });
   });
 
@@ -81,6 +81,8 @@ describe("a held key binding (`commands[].hold`): its down and its release", () 
     expect(k.hold(1, press({ key: " ", code: "Space", type: "keyUp" }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: true });
     // Pressed again, it is a new hold.
     expect(k.hold(1, press(chord), true)).toMatchObject({ phase: "down" });
+    // An up whose state lost a modifier ends it too, whatever key it names (a synthesized modifier's up).
+    expect(k.hold(1, press({ key: "Unidentified", type: "keyUp", control: true }), true)).toMatchObject({ phase: "up", released: true, consume: false });
   });
 
   test("per window; a hold starts only where a command's key may run; a press binding is no hold, and match never runs a held one as a press", () => {
