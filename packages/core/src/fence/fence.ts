@@ -199,7 +199,7 @@ export class MossFence implements Fence {
         ? joinHome(this.#home, this.os, "AppData", "Roaming")
         : joinHome(this.#home, this.os, ".config");
     const browserProfiles = this.#layout["browser-profiles"] ?? [
-      joinHome(appData, this.os, "MOSS", "Partitions"),
+      joinHome(appData, this.os, "MOSS Code", "Partitions"),
       joinHome(appData, this.os, "MOSS Code Dev", "Partitions"),
       joinHome(this.#userData, this.os, "Partitions"),
       ...(this.#sessionData === undefined ? [] : [joinHome(this.#sessionData, this.os, "Partitions")]),

@@ -78,13 +78,13 @@ describe("the pinned launcher", () => {
 
   test("the sublayer GUID is a GUID, and the principal uses the Addendum 9 format", () => {
     expect(MOSS_WFP_SUBLAYER).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i);
-    // Full name with 8 hex chars = 18 chars (fits the 20-char account limit)
+    // Full name with 8 hex chars = 16 chars (fits the 20-char account limit)
     expect(SANDBOX_PRINCIPAL_PREFIX).toBe("moss-sb-");
-    expect(SANDBOX_PRINCIPAL_PREFIX.length).toBe(10);
-    // Test principalNameFromSid produces 18-char name
+    expect(SANDBOX_PRINCIPAL_PREFIX.length).toBe(8);
+    // Test principalNameFromSid produces 16-char name
     const name = principalNameFromSid("S-1-5-21-1234567890-1234567890-1234567890-1001");
     expect(name).toMatch(/^moss-sb-[0-9a-f]{8}$/);
-    expect(name.length).toBe(18);
+    expect(name.length).toBe(16);
     // Collision test: different SIDs produce different names
     const name2 = principalNameFromSid("S-1-5-21-1234567890-1234567890-1234567890-1002");
     expect(name2).not.toBe(name);
@@ -705,14 +705,14 @@ describe("the install marker (ruling 3)", () => {
 
 describe("the pool (ruling 2)", () => {
   const owner = "S-1-5-21-2049286435-129160171-2159440921-1000";
-  test("four exclusive 18-char names with distinct sublayers", () => {
+  test("four exclusive 16-char names with distinct sublayers", () => {
     const pool = sandboxPool(owner);
     expect(pool).toHaveLength(4);
     const names = pool.map((x) => x.principal);
     expect(new Set(names).size).toBe(4);
     for (const [i, p] of names.entries()) {
       expect(p).toMatch(/^moss-sb-[0-9a-f]{6}-[1-4]$/);
-      expect(p.length).toBe(18);
+      expect(p.length).toBe(16);
       expect(p.endsWith(`-${i + 1}`)).toBe(true);
     }
     const guids = pool.map((x) => x.sublayer);

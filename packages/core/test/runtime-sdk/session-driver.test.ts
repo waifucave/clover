@@ -487,7 +487,7 @@ describe("createMossSessionDrivers — the table", () => {
       const sid = t.store.createSession("t", { mode: "code", model: "winter-test/echo", cwd: repo });
       const session = await t.drivers.create(sid);
       const servers = t.q().options.mcpServers as Record<string, unknown>;
-      expect(Object.keys(servers).sort()).toEqual(["moss__browser", "fake"]);
+      expect(Object.keys(servers).sort()).toEqual(["fake", "moss__browser"]);
       expect(servers.fake).toEqual({ type: "stdio", command: "bun", args: ["run", "fake.ts", repo] });
       await session.end();
     } finally { t.close(); }

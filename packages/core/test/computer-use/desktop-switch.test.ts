@@ -568,7 +568,7 @@ describe("ComputerV2: the desktop switch end to end", () => {
     };
     const r = await w.run("const notes = await apps.open('Notes')\nawait notes.click(14)\nawait notes.click(15)");
     expect(r.isError).toBe(false);
-    expect(cardsOf(w.events).map((c) => c.onTimeout ?? c.summary.slice(0, 22))).toEqual(["Allow MOSS to use No", "allow", "MOSS needs to bring "]);
+    expect(cardsOf(w.events).map((c) => c.onTimeout ?? c.summary.slice(0, 22))).toEqual(["Allow MOSS to use Note", "allow", "MOSS needs to bring No"]);
     expect(w.fake.calls("target.act").map((a) => [a.desktopVisit, a.allowForeground])).toEqual([[undefined, false], [true, false], [true, false], [true, true]]);
     // Unattended: the rung-4 card is never raised, so that act fails NeedsForeground — the allowance did not widen it.
     const w2 = world({ policy: "ask", attended: false, answer: (c, b) => b.resolve(c.sessionId, c.callId, true, "orb", c.summary.startsWith("Allow") ? "session" : "switch") });

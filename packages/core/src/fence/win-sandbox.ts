@@ -4,7 +4,7 @@
 // hash-pinned srt-win launcher (Apache-2.0, `anthropics/sandbox-runtime` tag `v0.0.81`, commit
 // `c40cf14…`; source in `vendor/srt-win-src`, built with a static CRT by `scripts/build-srt-win.ps1`).
 // Never as the user, never AppContainer, and never a network-open or unsandboxed fallback.
-// Per Addendum 9: the principal name is `moss-sb-` + first 8 hex chars of SHA-256(user SID), 18 chars total.
+// Per Addendum 9: the principal name is `moss-sb-` + first 8 hex chars of SHA-256(user SID), 16 chars total.
 // The full SID is stored in the principal's description field and checked on status/remove to prevent collisions.
 //
 // This module is the pure half: constants, the launcher's argument shapes, its status parsing, the
@@ -47,7 +47,7 @@ export async function isProtectedCopy(execPath: string = process.execPath): Prom
 export { SRT_WIN_PINS, launcherPinned, authenticodeDigest, srtWinArch, srtWinPath, launcherProblem, launcherDigest, type SrtWinArch } from "./windows-launcher";
 
 /** The base prefix for the sandbox principal (Addendum 9). Windows account names are capped at 20
- *  characters, so we use `moss-sb-` (10 chars) + 8 hex chars = 18 chars total. */
+ *  characters, so we use `moss-sb-` (8 chars) + 8 hex chars = 16 chars total. */
 export const SANDBOX_PRINCIPAL_PREFIX = "moss-sb-";
 
 /** Compute the per-user principal name from a Windows SID (Addendum 9).
@@ -62,7 +62,7 @@ export function principalNameFromSid(sid: string): string {
 /** Pool size: concurrent sessions per user (controller ruling 2). */
 export const SANDBOX_POOL_SIZE = 4;
 
-/** Pool principal `n` (1-based) for an owner SID: `moss-sb-<6hex>-<n>`, 18 chars, leased
+/** Pool principal `n` (1-based) for an owner SID: `moss-sb-<6hex>-<n>`, 16 chars, leased
  *  exclusively — two bots never share a principal while they run. */
 export function poolPrincipalName(ownerSid: string, slot: number): string {
   const hash = createHash("sha256").update(ownerSid).digest("hex").slice(0, 6);

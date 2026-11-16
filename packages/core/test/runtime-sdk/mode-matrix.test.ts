@@ -349,7 +349,7 @@ test("the control-plane deny rules cover the four write tools × the control-pla
   // read-denies exactly three generated config files per run folder, and (round 6) its `backups/`.
   for (const tool of ["Read", "Glob", "Grep"]) {
     const underCache = deny.filter((r) => r.startsWith(`${tool}(`) && r.includes("/cache"));
-    expect(underCache.sort()).toEqual([".claude.json", ".moss.json", ".credentials.json", "backups/**"].map((f) => `${tool}(//h/cache/runs/*/${f})`));
+    expect(underCache.sort()).toEqual([".claude.json", ".credentials.json", ".moss.json", "backups/**"].map((f) => `${tool}(//h/cache/runs/*/${f})`));
     expect(deny).toContain(`${tool}(//h/sdk/.moss.json)`);
   }
   // Task 17: + the engine's read-tool denials, carried: Read/Glob/Grep × { run/**, runtimes/** }
