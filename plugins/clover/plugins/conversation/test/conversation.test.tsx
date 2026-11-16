@@ -1,10 +1,10 @@
+import { TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { ConversationView, workingText, type ConversationViewProps } from "../client/ConversationView";
 import { thinkingLabel } from "../client/messages/ThinkingRow";
 import { MAX_OUTPUT_LINES, outputPreview } from "../client/messages/ToolRun";
-import { UiRuntimeProvider } from "../client/sdk";
 import { buildTimeline } from "../client/timeline";
 import type { ConversationItem } from "../client/types";
 import {
@@ -43,9 +43,9 @@ afterEach(cleanup);
 
 function renderView(props: Partial<ConversationViewProps> & { items: readonly ConversationItem[] }, runtime = mockRuntime({ cards: SEALED_CARDS })) {
   const view = (p: typeof props) => (
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <ConversationView bot={BOT} now={NOW} device={DEVICE} format={FORMAT} {...p} />
-    </UiRuntimeProvider>
+    </TestLayer>
   );
   const result = render(view(props));
   return { ...result, rerenderWith: (p: typeof props) => result.rerender(view(p)) };

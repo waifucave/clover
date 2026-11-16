@@ -5,12 +5,11 @@
 //
 // The shell hands it where `main` is (`route`) and a way to go elsewhere (`navigate`): B's catalog gives `sidebar` no
 // props, so how the sidebar moves the shell is a question for B and E.
+import type { BotView, SessionView } from "@waifucave/clover-plugin-sdk";
+import { fieldText, plain } from "./local";
+import { Spot, useCore, useSpotEntries, usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useState, type ReactNode } from "react";
-import type { BotView, SessionView } from "../../shell/runtime/types";
-import { isCloverTree } from "../../shell/runtime/ui";
-import { fieldText, plain } from "../../shell/runtime/views";
 import { Sidebar } from "./Sidebar";
-import { Spot, useCore, useSpotEntries, usePluginApi } from "./sdk";
 import type { AgentStatus, AppGlyph, BotStatus, SidebarApp, SidebarBot, SidebarProject, SidebarRoute, SidebarSide } from "./types";
 
 /** `main`'s route, as the shell holds it. */
@@ -175,9 +174,10 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
     const opens = e.fields?.opens;
     const title = fieldText(e.fields?.title);
     if (typeof opens !== "string" || title === undefined) return [];
-    // The apps Clover ships wear the shell's own glyphs, drawn in the text colour; another plugin's, its icon.
+    // A button whose `opens` names a place the shell has a glyph for wears that glyph, drawn in the text colour, whichever
+    // plugin's it is (no plugin's id decides it, F2b); any other wears its own icon.
     const glyph = GLYPHS[opens];
-    const icon = isCloverTree(e.pluginId) && glyph ? { glyph } : typeof e.fields?.icon === "string" ? { url: e.fields.icon } : glyph ? { glyph } : undefined;
+    const icon = glyph ? { glyph } : typeof e.fields?.icon === "string" ? { url: e.fields.icon } : undefined;
     // Its component, the button's badge: by its ref (the runtime's `ref`, or `<plugin>#<id>` in the gallery's).
     const badgeRef = (e as { ref?: string }).ref ?? `${e.pluginId}#${(e as { id?: string }).id ?? ""}`;
     return [{ id: opens, title, ...(icon ? { icon } : {}), badgeRef }];

@@ -5,11 +5,11 @@
 // SDK's, and what reaches the bridge is what would reach the app. Any plugin's tests and galleries may use it; it names
 // no plugin. Rendering is the test's own (`@testing-library/react` or a gallery's root).
 import { useMemo, type ReactNode } from "react";
-import type { CardMeta } from "@waifucave/clover-protocol";
+import type { BotView, CardMeta, ComputerView, DeviceView, PluginDetail, PluginSummary, SessionView } from "../views";
 import type { TokenValue } from "../catalogs/tokens";
-import { STOCK_PANEL_KEYS } from "../catalogs/spots";
+import { spotInfo, STOCK_PANEL_KEYS } from "../catalogs/spots";
 import type { EntryProps, UiComponent } from "../api/ui-api";
-import type { Unsubscribe } from "../api/plugin-api";
+import type { PluginApi, PointEntry, Unsubscribe } from "../api/plugin-api";
 import { configureLayer, LayerRoot, type ClientModule } from "./index";
 import type { LayerBridge, LayerMessage, MountContext, MountInfo, SpotEntryView, SpotItem, SpotView, UserSendTarget } from "./bridge";
 import type { StringTable } from "./strings";
@@ -86,6 +86,13 @@ export interface TestRuntime {
   context?: Partial<MountContext>;
 }
 
+/** A well-known spot's declaration, from the SDK's spot catalog (its shape and the keys it keeps); undefined for a name
+ *  the catalog doesn't know (a plugin's own spot is the test's to declare). */
+export function catalogSpot(name: string): TestSpot | undefined {
+  const info = spotInfo(name);
+  return info === undefined ? undefined : { shape: info.shape, ...(info.keep !== undefined ? { keep: info.keep } : {}) };
+}
+
 /** A runtime with only some members: no spots, no entries, no components, unless given. */
 export function runtimeWith(partial: Partial<TestRuntime>): TestRuntime {
   return { spot: () => undefined, entries: [], component: () => undefined, ...partial };
@@ -127,7 +134,7 @@ export function fakeCore(handlers: Record<string, (params: any) => unknown> = {}
   };
 }
 
-/** The pending cards, changed by the test (`raise`, `resolve`). */
+/** The pending cards, changed by the test (`set` the whole list, `raise` one, `resolve` one). */
 export function fakeApprovals(initial: readonly CardMeta[] = []) {
   let cards = [...initial];
   const listeners = new Set<() => void>();
@@ -135,10 +142,80 @@ export function fakeApprovals(initial: readonly CardMeta[] = []) {
   return {
     cards: () => cards,
     subscribe(listener: () => void): Unsubscribe { listeners.add(listener); return () => void listeners.delete(listener); },
+    set(next: readonly CardMeta[]) { cards = [...next]; tell(); },
     raise(card: CardMeta) { cards = [...cards.filter((c) => c.id !== card.id), card]; tell(); },
     resolve(id: string) { cards = cards.filter((c) => c.id !== id); tell(); },
   };
 }
+
+/** A plugin API with the members given, settings in memory (`stored`), points from a table, and every other member a
+ *  stub that fails, naming what it lacks. `pluginId` names the plugin it answers as. */
+export function fakeApi(
+  members: Partial<Omit<PluginApi, "plugin" | "t" | "settings" | "points">> & { pluginId?: string; computer?: string; settings?: Record<string, unknown>; points?: Record<string, PointEntry[]> } = {},
+): PluginApi & { readonly stored: Map<string, unknown> } {
+  const { pluginId = "test.plugin", computer = "Studio", settings = {}, points = {}, ...rest } = members;
+  const stored = new Map<string, unknown>(Object.entries(settings));
+  const none = (what: string) => async () => {
+    throw new Error(`the fake API has no ${what}`);
+  };
+  const api = {
+    plugin: { id: pluginId, namespace: pluginId.split(/[/.]/)[0]!, version: "0.0.0", computer },
+    t: (key: string) => key,
+    settings: {
+      get: async <T,>(key: string) => stored.get(key) as T | undefined,
+      set: async (key: string, value: unknown) => void stored.set(key, value),
+      watch: () => () => undefined,
+    },
+    commands: { run: none("commands.run"), list: async () => [] },
+    memory: { list: none("memory.list"), read: none("memory.read") },
+    routines: { list: none("routines.list"), runs: none("routines.runs"), fire: none("routines.fire") },
+    logs: { read: none("logs.read"), follow: () => () => undefined },
+    turns: { take: none("turns.take"), done: none("turns.done"), extend: none("turns.extend"), state: none("turns.state"), watch: () => () => undefined },
+    streams: { open: none("streams.open"), accept: () => Object.assign(() => undefined, { opened: Promise.resolve() }), write: none("streams.write"), end: none("streams.end"), cancel: none("streams.cancel"), ack: none("streams.ack") },
+    points: {
+      entries: async <T,>(point: string) => (points[point] ?? []) as PointEntry<T>[],
+      watch: () => () => undefined,
+      call: none("point handlers"),
+      stream: none("point handlers' streams"),
+      active: async () => undefined,
+      onActive: () => () => undefined,
+    },
+    host: { call: none("host half"), on: () => () => undefined },
+    ui: { send: () => undefined },
+    storage: { synced: { get: async () => undefined, set: async () => undefined, delete: async () => undefined, keys: async () => [], watch: () => () => undefined } },
+    net: { fetch: none("network") },
+    confirm: async () => false,
+    stored,
+    ...rest,
+  };
+  return api as unknown as PluginApi & { readonly stored: Map<string, unknown> };
+}
+
+/** The `files` member from the calls a test gives; the rest fail. */
+export function fakeFiles(members: Partial<NonNullable<PluginApi["files"]>>): NonNullable<PluginApi["files"]> {
+  const no = async () => {
+    throw new Error("the fake files API has no such call");
+  };
+  return { stat: no, readText: no, readBytes: no, write: no, list: no, remove: no, move: no, glob: no, grep: no, ...members } as NonNullable<PluginApi["files"]>;
+}
+
+// The core's views with every field, for fixtures: what a test cares about, over plain defaults.
+export const botView = (id: string, name: string, extra: Partial<BotView> = {}): BotView => ({ id, name, model: "openai/gpt-6", userLayer: [], state: "idle", mainSession: `s_${id}`, ...extra });
+export const sessionView = (id: string, extra: Partial<SessionView> = {}): SessionView =>
+  ({ id, kind: "agent", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra }) as SessionView;
+export const computerView = (name: string, extra: Partial<ComputerView> = {}): ComputerView =>
+  ({ name, aliases: [], device: `d-${name}`, os: "macos", hasDisplay: true, agents: [], level: "ask", state: "online", isMain: false, ...extra }) as ComputerView;
+export const deviceView = (id: string, name: string, extra: Partial<DeviceView> = {}): DeviceView =>
+  ({ id, name, kind: "desktop", runsCore: true, online: true, isThis: false, isMain: false, addedAt: 0, ...extra }) as DeviceView;
+export const pluginSummary = (id: string, name: string, extra: Partial<PluginSummary> = {}): PluginSummary =>
+  ({ id, name, version: "1.0.0", state: "running", enabled: true, source: "bundled", class: "code", namespace: id.split("/")[0]!, scope: "both", adult: false, children: [], dev: false, ...extra }) as PluginSummary;
+export const pluginDetail = (summary: PluginSummary, extra: Partial<PluginDetail> = {}): PluginDetail =>
+  ({ ...summary, manifest: {}, provenance: { by: "user-app", at: 0 }, capabilities: [], networkHosts: [], helperPermissions: [], issues: [], logTail: [], pinned: false, ...extra }) as PluginDetail;
+/** A card as a plugin hears of it. */
+export const card = (id: string, extra: Partial<CardMeta> = {}): CardMeta => ({
+  id, kind: "change", computer: "Studio", origin: "user", issuedAt: 0, expiresAt: null,
+  options: [{ id: "approve", kind: "approve" }, { id: "deny", kind: "deny" }], ...extra,
+} as CardMeta);
 
 /** Lets the promises a render started settle (a few rounds of the microtask queue). */
 export async function settle(rounds = 4): Promise<void> {
@@ -223,7 +300,14 @@ export interface TestLayerLog {
   readonly calls: { kind: string; mount: string; pluginId: string; args: unknown[] }[];
 }
 
-let current: { emit(m: LayerMessage): void; pluginIds(): readonly string[] } | undefined;
+let current: { emit(m: LayerMessage): void; pluginIds(): readonly string[]; log: TestLayerLog } | undefined;
+
+/** What reached the current test layer's bridge, in order (of one `kind` when given: `viewFrame`, `open`, `menu`,
+ *  `windowDrag`, `userSend`, `api`…), each with the part's mount and plugin and the call's arguments. */
+export function bridgeCalls(kind?: string): TestLayerLog["calls"] {
+  const all = current?.log.calls ?? [];
+  return kind === undefined ? all : all.filter((c) => c.kind === kind);
+}
 
 /** A layer message to the current test layer's parts (an app command, `respot`, a core event as `api-event`). */
 export function emitLayerMessage(m: LayerMessage): void {
@@ -385,9 +469,9 @@ export function setUpTestLayer(runtime: TestRuntime, root: { pluginId: string; e
     css: [],
     strings: strings(root.pluginId),
   };
-  configureLayer({ bridge, modules });
+  configureLayer({ bridge, modules, ...(runtime.api !== undefined ? { testApi: (pluginId: string) => runtime.api!(pluginId) as PluginApi | undefined } : {}) });
   if (runtime.approvals !== undefined) cardsSeen = new Map(runtime.approvals.cards().map((c) => [c.id, c] as const));
-  current = { emit, pluginIds };
+  current = { emit, pluginIds, log };
   return { info, log };
 }
 

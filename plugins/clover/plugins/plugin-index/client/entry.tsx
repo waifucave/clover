@@ -3,14 +3,14 @@
 // (`plugin.install`, user-only: the `clover` layer's call is the user's, §5.5). An install starts with the plugin's
 // OK, a sealed card the core raises; the page says the plugin waits on it. Opened from a placeholder, `params.spot`
 // and `params.key` say what the user is looking for, and the first search is for the key.
+import { type CoreClient, useCore, useKept } from "@waifucave/clover-plugin-sdk/ui";
+import type { IndexEntryView, IndexView, PluginDetail, PluginSummary } from "@waifucave/clover-plugin-sdk";
+import { plain } from "./local";
 import { useCallback, useEffect, useState } from "react";
-import type { CoreClient, IndexEntryView, IndexView, PluginDetail, PluginSummary } from "../../shell/runtime/types";
-import { plain } from "../../shell/runtime/views";
 import { Add } from "./Add";
 import { Detail, Installed } from "./Installed";
 import { Indexes, Updates } from "./Manage";
 import { PluginIndex } from "./PluginIndex";
-import { useCore, useKept } from "./sdk";
 import { S } from "./strings";
 import type { AddSource, DetailSetting, DevRow, GrantRow, DetailStatus, IndexResult, IndexRow, InstalledPlugin, InstallState, PickKind, PluginDetailView, PluginsTab, SettingControl, UpdateRow } from "./types";
 

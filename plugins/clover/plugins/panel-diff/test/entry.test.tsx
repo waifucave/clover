@@ -1,10 +1,8 @@
 // The changes on the runtime: the session's diff from the core, its base and target in the panel's header row.
+import { fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { fakeCore, settle } from "../../shell/runtime/testkit";
-import { runtimeWith } from "../../shell/runtime/ui";
 import { DiffEntry } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 import { FILES } from "../gallery/fixtures";
 
 afterEach(cleanup);
@@ -15,9 +13,9 @@ describe("the diff entry", () => {
     const header = document.createElement("div");
     document.body.append(header);
     render(
-      <UiRuntimeProvider runtime={runtimeWith({ core: () => core })}>
+      <TestLayer runtime={runtimeWith({ core: () => core })}>
         <DiffEntry props={{ session: "code-1", header }} />
-      </UiRuntimeProvider>,
+      </TestLayer>,
     );
     await act(() => settle());
     expect(within(header).getByLabelText("Comparing main with working tree")).toBeTruthy();
@@ -34,31 +32,32 @@ describe("the diff entry", () => {
   test("a refusal shows why; an empty list shows the core's notice and No changes", async () => {
     const refusing = fakeCore({ "session.diff": () => { throw new Error("no session code-1"); } });
     render(
-      <UiRuntimeProvider runtime={runtimeWith({ core: () => refusing })}>
+      <TestLayer runtime={runtimeWith({ core: () => refusing })}>
         <DiffEntry props={{ session: "code-1" }} />
-      </UiRuntimeProvider>,
+      </TestLayer>,
     );
     await act(() => settle());
     expect(screen.getByRole("status").textContent).toBe("The changes couldn't be read: no session code-1");
     cleanup();
     const empty = fakeCore({ "session.diff": () => ({ base: "", target: "working tree", targets: [], files: [], notice: "This folder isn't a git repository, so there are no changes to compare." }) });
     render(
-      <UiRuntimeProvider runtime={runtimeWith({ core: () => empty })}>
+      <TestLayer runtime={runtimeWith({ core: () => empty })}>
         <DiffEntry props={{ session: "code-1" }} />
-      </UiRuntimeProvider>,
+      </TestLayer>,
     );
     await act(() => settle());
     expect(screen.getByText("This folder isn't a git repository, so there are no changes to compare.")).toBeTruthy();
     expect(screen.getByText("No changes")).toBeTruthy();
   });
 
-  test("outside the clover tree there is no core, and nothing draws", async () => {
-    const { container } = render(
-      <UiRuntimeProvider runtime={runtimeWith({})}>
+  test("a plugin whose call the core refuses (no capability for the session's diff) shows why, and no list", async () => {
+    const core = fakeCore({ "session.diff": () => { throw new Error("session.diff needs the conversation.read capability"); } });
+    render(
+      <TestLayer runtime={runtimeWith({ core: () => core })}>
         <DiffEntry props={{ session: "code-1" }} />
-      </UiRuntimeProvider>,
+      </TestLayer>,
     );
     await act(() => settle());
-    expect(container.innerHTML).toBe("");
+    expect(screen.getByRole("status").textContent).toContain("needs the conversation.read capability");
   });
 });

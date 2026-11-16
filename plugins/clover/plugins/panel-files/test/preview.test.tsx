@@ -1,14 +1,11 @@
 // A picture in the files panel goes to the `file.preview` spot, keyed by its media type: the part that fills it draws it
 // (a stand-in with the acceptance fixture's own shape: it draws the file's name and media type), none says so, and no text read is made.
+import { fakeApi, fakeFiles, settle, type TestEntry as UiEntry, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { FileStat, SessionView } from "@waifucave/clover-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { fakeApi, fakeFiles, settle } from "../../shell/runtime/testkit";
-import type { FileStat, SessionView } from "../../shell/runtime/types";
-import type { UiEntry } from "../../shell/runtime/resolve";
-import { runtimeWith } from "../../shell/runtime/ui";
 import { FilesEntry } from "../client/entry";
 import { previewTypeOf } from "../client/media";
-import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
 
@@ -36,7 +33,7 @@ function mount(withFiller: boolean) {
     entries: withFiller ? [FILLER] : [],
     component: (pluginId, name) => (pluginId === "acceptance-preview" && name === "ImagePreview" ? (ImagePreview as never) : undefined),
   });
-  render(<UiRuntimeProvider runtime={runtime}><FilesEntry props={{ session: "code-1" }} /></UiRuntimeProvider>);
+  render(<TestLayer runtime={runtime}><FilesEntry props={{ session: "code-1" }} /></TestLayer>);
   return reads;
 }
 

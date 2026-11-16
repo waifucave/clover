@@ -1,11 +1,11 @@
 // Every conversation state the gallery shows. Each story is plain data rendered through the real
 // components, with the mock runtime drawing what the core would (sealed frames, MCP Apps views).
+import { TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import type { ReactNode } from "react";
 import { ConversationView, type ConversationViewProps } from "../client/ConversationView";
 import type { MessageContext } from "../client/context";
 import { QuestionMessage } from "../client/messages/QuestionMessage";
 import { ThinkingRow } from "../client/messages/ThinkingRow";
-import { UiRuntimeProvider } from "../client/sdk";
 import type { BotItem, ConversationItem, ToolCall } from "../client/types";
 import {
   APPROVAL_PENDING,
@@ -85,9 +85,9 @@ const COMMON: Omit<ConversationViewProps, "items"> = {
 
 function View(props: Partial<ConversationViewProps> & { items: readonly ConversationItem[] }) {
   return (
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <ConversationView {...COMMON} {...props} />
-    </UiRuntimeProvider>
+    </TestLayer>
   );
 }
 
@@ -95,11 +95,11 @@ function View(props: Partial<ConversationViewProps> & { items: readonly Conversa
  *  still (an opened row, a half-made answer). */
 function Parts({ children }: { children: ReactNode }) {
   return (
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <div className="cl-conv" style={{ height: "auto" }}>
         <div className="cl-conv__column">{children}</div>
       </div>
-    </UiRuntimeProvider>
+    </TestLayer>
   );
 }
 

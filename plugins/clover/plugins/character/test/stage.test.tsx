@@ -1,16 +1,14 @@
 // The character plugin's stage: it asks the `avatar` spot, keyed by the avatar file's format, for the bot's file; a bot with
 // no avatar has nothing on its stage; a format nothing draws shows the portrait.
+import { type TestEntry as UiEntry, fakeApi, fakeApprovals, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { BotView } from "@waifucave/clover-plugin-sdk";
+import type { EntryComponent } from "../client/local";
+import { catalogSpot } from "@waifucave/clover-plugin-sdk/ui/testing";
+import { useAvatarSpeech } from "@waifucave/clover-plugin-sdk/ui";
 import * as React from "react";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
-import type { UiEntry } from "../../shell/runtime/resolve";
-import { fakeApi, fakeApprovals, fakeCore, settle } from "../../shell/runtime/testkit";
-import type { BotView, EntryComponent } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
-import { SPOT_DECLS } from "../../shell/runtime/catalog";
-import { UiRuntimeProvider } from "../../shell/client/sdk";
-import { useAvatarSpeech } from "../client/sdk";
 import { BotStage } from "../client";
 import { readFraming } from "../client/stage";
 
@@ -26,11 +24,11 @@ async function mount(b: BotView, entries: UiEntry[]) {
     api: () => api,
     core: () => fakeCore({}),
     approvals: fakeApprovals(),
-    spot: (name) => SPOT_DECLS[name],
+    spot: catalogSpot,
     entries,
     component: (_p, name) => (name === "Draw" ? Stub : undefined),
   });
-  render(<UiRuntimeProvider runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: b.id, name: b.name } } } as never)}</UiRuntimeProvider>);
+  render(<TestLayer runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: b.id, name: b.name } } } as never)}</TestLayer>);
   await act(() => settle(6));
 }
 
@@ -47,8 +45,8 @@ describe("the character stage's figure calls", () => {
     } as never);
     (api as { host: { on: (e: string, l: (v: unknown) => void) => () => void } }).host = { ...(api.host as object), on: (event: string, l: (v: unknown) => void) => { if (event === "clover.avatar.cue") onCue.push(l); return () => undefined; } } as never;
     const Draw: EntryComponent = () => <i data-draw />;
-    const runtime = runtimeWith({ api: () => api, core: () => fakeCore({}), approvals: fakeApprovals(), spot: (name) => SPOT_DECLS[name], entries: [renderer("vrm")], component: (_p, name) => (name === "Draw" ? Draw : undefined) });
-    const view = render(<UiRuntimeProvider runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: luna.id, name: luna.name } } } as never)}</UiRuntimeProvider>);
+    const runtime = runtimeWith({ api: () => api, core: () => fakeCore({}), approvals: fakeApprovals(), spot: catalogSpot, entries: [renderer("vrm")], component: (_p, name) => (name === "Draw" ? Draw : undefined) });
+    const view = render(<TestLayer runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: luna.id, name: luna.name } } } as never)}</TestLayer>);
     await act(() => settle(6));
     expect(reports.at(-1)).toEqual(["luna", { format: "vrm", renderer: "clover/vrm", capabilities: ["expressions", "lookat"] }]);
     // The stage listens for the core's cue message for its own bot, once for the renderer's cues and once for its speech
@@ -94,8 +92,8 @@ describe("the character stage", () => {
     const api = fakeApi({ bots: { list: async () => [luna], get: async () => luna, watch: () => () => undefined } });
     const Chip: EntryComponent = ({ props }) => <button type="button" data-chip={(props as { bot: { id: string } }).bot.id}>chip</button>;
     const Stub: EntryComponent = () => <div data-stub="avatar" />;
-    const runtime = runtimeWith({ api: () => api, core: () => fakeCore({}), approvals: fakeApprovals(), spot: (name) => SPOT_DECLS[name], entries: [renderer("vrm"), control], component: (_p, name) => (name === "Draw" ? Stub : name === "Chip" ? Chip : undefined) });
-    render(<UiRuntimeProvider runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: luna.id, name: luna.name } } } as never)}</UiRuntimeProvider>);
+    const runtime = runtimeWith({ api: () => api, core: () => fakeCore({}), approvals: fakeApprovals(), spot: catalogSpot, entries: [renderer("vrm"), control], component: (_p, name) => (name === "Draw" ? Stub : name === "Chip" ? Chip : undefined) });
+    render(<TestLayer runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: luna.id, name: luna.name } } } as never)}</TestLayer>);
     await act(() => settle(6));
     expect(document.querySelector(".cl-bot-stage [data-chip]")!.getAttribute("data-chip")).toBe("luna");
   });
@@ -119,8 +117,8 @@ describe("the stage's mouth: speech from the avatar cue API", () => {
       React.useEffect(() => { speaking.push(now); }, [now]);
       return <i data-mouth />;
     };
-    const runtime = runtimeWith({ api: () => api, core: () => fakeCore({}), approvals: fakeApprovals(), spot: (name) => SPOT_DECLS[name], entries: [{ pluginId: "x/vrm", id: "vrm", spot: "avatar", key: "vrm", component: "Draw" } as UiEntry], component: (_p, name) => (name === "Draw" ? Mouth : undefined) });
-    render(<UiRuntimeProvider runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: luna.id, name: luna.name } } } as never)}</UiRuntimeProvider>);
+    const runtime = runtimeWith({ api: () => api, core: () => fakeCore({}), approvals: fakeApprovals(), spot: catalogSpot, entries: [{ pluginId: "x/vrm", id: "vrm", spot: "avatar", key: "vrm", component: "Draw" } as UiEntry], component: (_p, name) => (name === "Draw" ? Mouth : undefined) });
+    render(<TestLayer runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: luna.id, name: luna.name } } } as never)}</TestLayer>);
     await act(() => settle(6));
     // The core's message reaches every listener the stage holds, as it does in the app.
     return { heard, speaking, send: (cue: unknown, bot = "luna") => { for (const l of onCue) l({ bot, cue }); } };

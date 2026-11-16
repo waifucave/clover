@@ -18,13 +18,13 @@
 // goes to that plugin alone, as the command's args (`argsFor`); the line never goes to the bot. The result, or why it
 // didn't run, shows as a row above the box, here only: it isn't added to the conversation, so neither the bot nor any
 // other plugin reads it.
+import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useTokens, useUserSend } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Composer } from "./Composer";
 import { argsFor, inScope, refusalText, resultText, type SlashCommand } from "./slash";
 import { CLOVER_LEVELS } from "./levels";
 import { appendHeard } from "./keys";
 import { S } from "./strings";
-import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useTokens, useUserSend } from "./sdk";
 import type { ComposerActionId, ComposerModel, ComposerModelChoice, ComposerSlash, ComposerVoice } from "./types";
 
 type SessionKind = "bot" | "side-thread" | "agent" | "coding";

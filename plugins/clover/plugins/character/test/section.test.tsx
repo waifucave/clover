@@ -1,15 +1,13 @@
 // The Avatar section of a bot's editor (`bot.editor.section`), filled by this plugin: packs, the user's own model through
 // main's picker and `bot.importAvatar`, and the model's credit note. With no renderer installed it says so and offers
 // neither; the bot editor draws it only while this plugin fills the spot.
+import { type TestEntry as UiEntry, fakeApi, fakeApprovals, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import { catalogSpot } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { BotView } from "@waifucave/clover-plugin-sdk";
+import type { EntryComponent } from "../client/local";
 import * as React from "react";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import type { UiEntry } from "../../shell/runtime/resolve";
-import { SPOT_DECLS } from "../../shell/runtime/catalog";
-import { fakeApi, fakeApprovals, fakeCore, settle } from "../../shell/runtime/testkit";
-import type { BotView, EntryComponent } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
-import { UiRuntimeProvider } from "../../shell/client/sdk";
 import { BotEditorEntry } from "../../bot-editor/client/entry";
 import { AvatarSection } from "../client";
 
@@ -39,14 +37,14 @@ async function editor(view: BotView, o: { entries?: UiEntry[]; formats?: unknown
     points: { "avatar.formats": o.formats ?? [VRM, LIVE2D], "avatar.packs": o.packs ?? PACKS },
   } as never);
   const runtime = runtimeWith({
-    api: () => api, core: () => core, approvals: fakeApprovals(), spot: (name) => SPOT_DECLS[name],
+    api: () => api, core: () => core, approvals: fakeApprovals(), spot: catalogSpot,
     entries: o.entries ?? [sectionEntry],
     component: (_p, name) => (name === "AvatarSection" ? (AvatarSection as unknown as EntryComponent) : undefined),
   });
   render(
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <BotEditorEntry props={{ route: "bot-editor", params: { bot: view.id }, navigate: noop }} />
-    </UiRuntimeProvider>,
+    </TestLayer>,
   );
   await act(() => settle(6));
   return { core };

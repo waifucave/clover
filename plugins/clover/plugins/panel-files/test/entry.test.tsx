@@ -1,11 +1,9 @@
 // The files on the runtime: the session's folder and nothing outside it, through the plugin API's `files`.
+import { fakeApi, fakeFiles, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { FileStat, SessionView } from "@waifucave/clover-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { fakeApi, fakeFiles, settle } from "../../shell/runtime/testkit";
-import type { FileStat, SessionView } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
 import { FilesEntry, inside } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 import { LISTING, OPEN_FILE, ROOT } from "../gallery/fixtures";
 
 afterEach(cleanup);
@@ -34,9 +32,9 @@ describe("the files entry", () => {
       }),
     });
     const { unmount } = render(
-      <UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>
+      <TestLayer runtime={runtimeWith({ api: () => api })}>
         <FilesEntry props={{ session: "code-1" }} />
-      </UiRuntimeProvider>,
+      </TestLayer>,
     );
     await act(() => settle());
     fireEvent.click(screen.getByRole("treeitem", { name: "docs" }));
@@ -83,9 +81,9 @@ describe("the files entry", () => {
     const header = document.createElement("div");
     document.body.append(header);
     render(
-      <UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>
+      <TestLayer runtime={runtimeWith({ api: () => api })}>
         <FilesEntry props={{ session: "code-1", header }} />
-      </UiRuntimeProvider>,
+      </TestLayer>,
     );
     await act(() => settle());
     expect(within(header).getByLabelText("Files in clover, on Studio")).toBeTruthy();

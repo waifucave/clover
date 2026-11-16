@@ -2,9 +2,10 @@
 // format (`vrm`, `live2d`, or a renderer plugin's own); a bot with no avatar has nothing on its stage, and one whose
 // format no installed renderer draws shows its portrait. Its mouth takes the speech from the avatar cue API (a plugin's
 // `avatar.cue({ type: "speech", frames })`, kept by time in `cue-speech.ts`), never from the app's own player.
+import type { BotRef } from "./local";
+import type { BotView, EntryProps } from "@waifucave/clover-plugin-sdk";
+import { AvatarControlHub, AvatarControlProvider, AvatarSpeechProvider, Spot, cleanAvatarCue, usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useMemo, useState } from "react";
-import type { BotRef, BotView, EntryProps } from "../../shell/runtime/types";
-import { AvatarControlHub, AvatarControlProvider, AvatarSpeechProvider, Spot, cleanAvatarCue, usePluginApi } from "./sdk";
 import { CueSpeech, type CueSpeechStats } from "./cue-speech";
 
 declare const __CLOVER_TEST_BUILD__: string | false | undefined;

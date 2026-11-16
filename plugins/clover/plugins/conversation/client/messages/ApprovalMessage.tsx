@@ -7,10 +7,10 @@
 // island's does: the app's composed line and preview (`summary`, `preview`) and what "Always allow" would
 // store, never the call's raw input (`detail`, the owner's rule: no card shows raw JSON); the other kinds
 // place their own fields.
+import { Card } from "@waifucave/clover-plugin-sdk/ui";
 import type { ReactElement } from "react";
 import type { MessageContext } from "../context";
 import { IconCheck, IconClock, IconCross, IconDash, IconShield } from "../icons";
-import { Card, type SealedField } from "../sdk";
 import { S } from "../strings";
 import type { ApprovalItem, ApprovalOption } from "../types";
 

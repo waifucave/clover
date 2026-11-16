@@ -2,8 +2,9 @@
 // MCP Apps views would, so the conversation's layout around them can be seen. The text in a sealed
 // field and an option's label here are the MOCK CORE's, handed to the frame, never to the
 // conversation plugin — exactly the split the real runtime keeps (spec §5.5).
+import { runtimeWith } from "@waifucave/clover-plugin-sdk/ui/testing";
+// F2b TODO @@UNKNOWN:ui: type CardButtonProps, type SealedField, type SealedRenderers, type UiRuntime
 import { createContext, useContext, type ReactNode } from "react";
-import { runtimeWith, type CardButtonProps, type SealedField, type SealedRenderers, type UiRuntime } from "../../shell/runtime/ui";
 
 export type SealedCardData = Partial<Record<SealedField, string>>;
 

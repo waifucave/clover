@@ -1,6 +1,6 @@
 // Mocked indexes and what they hold, as the core's `plugin.index.list` and `plugin.index.search` answer (lane B's
 // `IndexView`, `IndexEntryView`), for the gallery and the tests.
-import type { IndexEntryView, IndexView, PluginDetail, PluginSummary } from "../../shell/runtime/types";
+import type { IndexEntryView, IndexView, PluginDetail, PluginSummary } from "@waifucave/clover-plugin-sdk";
 import type { SettingRow } from "../client/entry";
 
 /** Thursday, November 5, 2026, 16:30 UTC (the gallery's clock). */

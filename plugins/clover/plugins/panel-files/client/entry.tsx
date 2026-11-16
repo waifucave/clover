@@ -4,12 +4,12 @@
 // Folders are listed as they open, a file is read when it opens, and `?word` searches inside files. It watches the
 // folder (J's `filesWatch`): a change lists the folders it touched again and reads the open file again, and a resync
 // lists every folder shown. The folder's name and its computer sit in the panel's header row.
+import type { FilesWithWatch } from "./local";
+import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { previewTypeOf } from "./media";
 import { FilesPanel, FilesTitle } from "./FilesPanel";
-import type { FilesWithWatch } from "../../shell/runtime/types";
-import { usePluginApi } from "./sdk";
 import type { FileEntry } from "./types";
 
 export interface FilesEntryProps {

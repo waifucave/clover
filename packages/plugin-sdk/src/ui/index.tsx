@@ -48,6 +48,8 @@ interface Runtime {
   modules: Map<string, ClientModule>;
   /** Loads a plugin's module on demand (a third-party layer's own). */
   load?: (pluginId: string) => Promise<ClientModule | undefined>;
+  /** A test layer's plugin API (`ui/testing`): `usePluginApi` hands a part this object as it is. Never set in the app. */
+  testApi?: (pluginId: string) => PluginApi | undefined;
   listeners: Set<(m: LayerMessage) => void>;
   /** The callbacks each child frame was handed, by child mount. */
   callbacks: Map<string, Map<string, (...args: unknown[]) => unknown>>;
@@ -71,11 +73,12 @@ function rt(): Runtime {
 }
 
 /** Sets the layer up (the app's layer boot calls it once, before rendering). Not for plugins. */
-export function configureLayer(input: { bridge: LayerBridge; modules?: Record<string, ClientModule>; load?: Runtime["load"]; sleepAfterMs?: number }): void {
+export function configureLayer(input: { bridge: LayerBridge; modules?: Record<string, ClientModule>; load?: Runtime["load"]; sleepAfterMs?: number; testApi?: Runtime["testApi"] }): void {
   const r: Runtime = {
     bridge: input.bridge,
     modules: new Map(Object.entries(input.modules ?? {})),
     ...(input.load ? { load: input.load } : {}),
+    ...(input.testApi ? { testApi: input.testApi } : {}),
     listeners: new Set(),
     callbacks: new Map(),
     tokens: new Map(),
@@ -1169,7 +1172,9 @@ function layerStreams(mount: string, pluginId: string): StreamsTransport {
 export function usePluginApi(): PluginApi {
   const part = usePart();
   const t = useT();
+  const fake = rt().testApi?.(part.entry.pluginId);
   return useMemo(() => {
+    if (fake !== undefined) return fake;
     const call = <T,>(method: string, params: unknown) => rt().bridge.api(part.mount, method, params) as Promise<T>;
     return layOver(catalogMembers(part.mount, part.entry.pluginId), {
       turns: {
@@ -1402,7 +1407,7 @@ export function usePluginApi(): PluginApi {
       } as unknown as PluginApi["plugins"],
       t,
     }) as unknown as PluginApi;
-  }, [part.entry.pluginId, part.mount, t]);
+  }, [part.entry.pluginId, part.mount, t, fake]);
 }
 
 /** A menu the core shows for this part (it crosses the frame's edge, so the core draws it, natively): data only,

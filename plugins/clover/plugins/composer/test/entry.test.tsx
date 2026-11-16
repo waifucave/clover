@@ -1,11 +1,10 @@
 // The composer on the runtime: sends, stops, model and level changes through the core.
+import { card, computerView, fakeApi, fakeApprovals, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { BotView, ComputerView, SessionView } from "@waifucave/clover-plugin-sdk";
+import type { EntryComponent } from "../client/local";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { card, computerView, fakeApi, fakeApprovals, fakeCore, settle } from "../../shell/runtime/testkit";
-import type { BotView, ComputerView, EntryComponent, SessionView } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
 import { ComposerEntry } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 import type { SlashCommand } from "../client/slash";
 
 afterEach(cleanup);
@@ -66,9 +65,9 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     ...(opts.tokens ? { tokens: () => opts.tokens! } : {}),
   });
   render(
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <ComposerEntry props={{ bot: { id: s.kind === "bot" ? "alpha" : "codex", name: s.kind === "bot" ? "Alpha" : "Codex" }, session: s.id }} />
-    </UiRuntimeProvider>,
+    </TestLayer>,
   );
   await act(() => settle());
   return { core, approvals, sends, host };

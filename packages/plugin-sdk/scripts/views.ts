@@ -17,6 +17,9 @@ export const VIEWS: Readonly<Record<string, z.ZodType>> = {
   IndexEntryView: Proto.IndexEntryView,
   CardMeta: Proto.CardMeta,
   SessionKind: Proto.SessionKind,
+  FileStat: Proto.FileStat,
+  UiPluginView: Proto.UiPluginView,
+  UiSettings: Proto.UiSettings,
 };
 
 type Schema = {

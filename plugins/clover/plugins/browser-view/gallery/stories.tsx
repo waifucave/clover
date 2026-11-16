@@ -1,10 +1,10 @@
 // Every browser panel state the gallery shows. The container stories run the real panel over a stand-in browser API
 // (`fake-api.ts`) that never draws a live view, so the frame shows its placeholder: the dashed box is where the
 // browser's live view goes.
+import { runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { useState } from "react";
 import { BrowserChrome } from "../client/BrowserChrome";
 import { BrowserPanel } from "../client/BrowserPanel";
-import { PluginApiProvider } from "../client/sdk";
 import type { AnnotateTool, TabView } from "../client/types";
 import { fakeBrowser } from "./fake-api";
 import { TAB_VIEWS, TABS, tabView } from "./fixtures";
@@ -14,12 +14,15 @@ const noop = () => undefined;
 
 /** The real panel, over a browser holding `tabs`. */
 function Panel({ tabs }: { tabs: TabView[] }) {
-  const [api] = useState(() => fakeBrowser(tabs, { shows: false }));
+  const [runtime] = useState(() => {
+    const api = fakeBrowser(tabs, { shows: false });
+    return runtimeWith({ api: () => ({ browser: api }) });
+  });
   return (
     <div className="story-browser">
-      <PluginApiProvider api={{ browser: api }}>
+      <TestLayer runtime={runtime}>
         <BrowserPanel props={{ app: "browser", bot: "alpha" }} />
-      </PluginApiProvider>
+      </TestLayer>
     </div>
   );
 }

@@ -3,11 +3,11 @@
 // draws the sections other plugins add (`bot.editor.section`: the avatar's is the character plugin's), and writes the user layer through
 // the core (`bot.setUserLayer`, user-only: the `clover` layer's call is the user's, §5.5). A change that comes back as
 // a card waits on it, and the field says so.
+import type { BotView, PluginSummary, UiPluginView, UiSettings } from "@waifucave/clover-plugin-sdk";
+import { type CoreClient, Spot, useApprovals, useCore, usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
+import { plain } from "./local";
 import { useEffect, useState } from "react";
-import type { BotView, CoreClient } from "../../shell/runtime/types";
-import { plain } from "../../shell/runtime/views";
 import { BotEditor } from "./BotEditor";
-import { Spot, useApprovals, useCore, usePluginApi } from "./sdk";
 import { S } from "./strings";
 import { SettingsSection } from "./SettingsSection";
 import type { BotEditorModel, BotField, BotPatch, HiddenPartChoice, StockSetting, TabPatchChoice } from "./types";
@@ -36,7 +36,7 @@ const PLAIN_THEME_PLUGIN = "clover/base-theme";
 
 async function themesOf(core: CoreClient | undefined): Promise<{ id: string; name: string }[]> {
   if (!core) return [];
-  const [ui, list] = await Promise.all([core.call("plugin.ui", {}).catch(() => undefined), core.call("plugin.list", {}).catch(() => undefined)]);
+  const [ui, list] = await Promise.all([(core.call("plugin.ui", {}) as Promise<{ plugins: UiPluginView[] }>).catch(() => undefined), (core.call("plugin.list", {}) as Promise<{ plugins: PluginSummary[] }>).catch(() => undefined)]);
   const name = (id: string) => (id === PLAIN_THEME_PLUGIN ? "Plain" : plain(list?.plugins.find((p) => p.id === id)?.name) || id);
   return (ui?.plugins ?? []).flatMap((p) => p.themes.map((t) => ({ id: `${p.pluginId}#${t.id}`, name: p.themes.length > 1 ? `${name(p.pluginId)}: ${t.id}` : name(p.pluginId) })));
 }
@@ -47,9 +47,9 @@ async function themesOf(core: CoreClient | undefined): Promise<{ id: string; nam
 export async function tabPatchesOf(core: CoreClient | undefined, bot: string): Promise<TabPatchChoice[]> {
   if (!core) return [];
   const [ui, list, settings] = await Promise.all([
-    core.call("plugin.ui", {}).catch(() => undefined),
-    core.call("plugin.list", {}).catch(() => undefined),
-    core.call("ui.settings", {}).catch(() => undefined),
+    (core.call("plugin.ui", {}) as Promise<{ plugins: UiPluginView[] }>).catch(() => undefined),
+    (core.call("plugin.list", {}) as Promise<{ plugins: PluginSummary[] }>).catch(() => undefined),
+    (core.call("ui.settings", {}) as Promise<UiSettings>).catch(() => undefined),
   ]);
   const off = ((settings as { lists?: { spot: string; bot?: string; hidden: string[] }[] } | undefined)?.lists ?? []).filter((l) => l.spot === "bot.tab" && (l.bot === undefined || l.bot === bot)).flatMap((l) => l.hidden);
   const name = (id: string) => plain(list?.plugins.find((p) => p.id === id)?.name) || id;
@@ -75,9 +75,9 @@ export async function tabPatchesOf(core: CoreClient | undefined, bot: string): P
 export async function hiddenPartsOf(core: CoreClient | undefined, bot: string): Promise<{ parts: HiddenPartChoice[]; lists: { spot: string; bot?: string; order: string[]; hidden: string[]; shown?: string[] }[] }> {
   if (!core) return { parts: [], lists: [] };
   const [ui, list, settings] = await Promise.all([
-    core.call("plugin.ui", {}).catch(() => undefined),
-    core.call("plugin.list", {}).catch(() => undefined),
-    core.call("ui.settings", {}).catch(() => undefined),
+    (core.call("plugin.ui", {}) as Promise<{ plugins: UiPluginView[] }>).catch(() => undefined),
+    (core.call("plugin.list", {}) as Promise<{ plugins: PluginSummary[] }>).catch(() => undefined),
+    (core.call("ui.settings", {}) as Promise<UiSettings>).catch(() => undefined),
   ]);
   const lists = ((settings as { lists?: { spot: string; bot?: string; order: string[]; hidden: string[]; shown?: string[] }[] } | undefined)?.lists ?? []);
   const name = (id: string) => plain(list?.plugins.find((p) => p.id === id)?.name) || id;

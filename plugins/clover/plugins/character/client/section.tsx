@@ -3,11 +3,11 @@
 // path) through `bot.importAvatar`, and keeps the model's own credit note. What an import takes comes from the renderers'
 // `avatar.formats`; with none installed and on the section says so and offers neither packs nor an import. The user layer
 // is written through the core's door for this part (`bot.setUserLayer`, only `avatar` and `avatarCredit`).
+import { type AvatarPackEntry, type BotRef, plain } from "./local";
+import type { BotView, EntryProps, PointEntry } from "@waifucave/clover-plugin-sdk";
+import { useCore, usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useId, useState } from "react";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
-import type { AvatarPackEntry, BotRef, BotView, EntryProps, PointEntry } from "../../shell/runtime/types";
-import { plain } from "../../shell/runtime/views";
-import { useCore, usePluginApi } from "./sdk";
 import { S } from "./strings";
 
 /** What the section reads of an `avatar.formats` entry (a renderer's declaration of the format it draws). */

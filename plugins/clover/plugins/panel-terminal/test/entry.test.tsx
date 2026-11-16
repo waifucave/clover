@@ -1,11 +1,9 @@
 // The terminal on the runtime: a shell on the session's computer, in its folder, through the plugin API's `terminal`.
+import { fakeApi, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { SessionView } from "@waifucave/clover-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { fakeApi, settle } from "../../shell/runtime/testkit";
-import type { SessionView } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
 import { TerminalEntry } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
 
@@ -36,9 +34,9 @@ describe("the terminal entry", () => {
     const header = document.createElement("div");
     document.body.append(header);
     render(
-      <UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>
+      <TestLayer runtime={runtimeWith({ api: () => api })}>
         <TerminalEntry props={{ session: "code-1", header }} />
-      </UiRuntimeProvider>,
+      </TestLayer>,
     );
     await act(() => settle());
     expect(opens).toEqual([{ computer: "Laptop", cwd: "home/Laptop/code/tarot", session: "code-1", cols: 100, rows: 30 }]);

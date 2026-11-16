@@ -1,12 +1,10 @@
 // The Devices tab as another plugin's entry of the island's `island.tab` slot: its manifest, and its rows from `devices.read`.
+import { settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
-import { settle } from "../../shell/runtime/testkit";
-import { runtimeWith } from "../../shell/runtime/ui";
 import manifest from "../clover.json" with { type: "json" };
 import { DevicesTabEntry } from "../client/entries";
 import * as client from "../client";
-import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
 
@@ -22,12 +20,12 @@ describe("the Devices plugin", () => {
 
   test("draws the devices it reads, and nothing without devices.read", async () => {
     const withApi = runtimeWith({ api: () => ({ devices: { list: async () => [DEVICE], watch: () => () => {} } }) as never, t: (_id, key) => key });
-    const view = render(<UiRuntimeProvider runtime={withApi}><DevicesTabEntry props={{ expanded: true }} /></UiRuntimeProvider>);
+    const view = render(<TestLayer runtime={withApi}><DevicesTabEntry props={{ expanded: true }} /></TestLayer>);
     await act(() => settle());
     expect(view.container.textContent ?? "").toContain("Studio");
     cleanup();
     const without = runtimeWith({ api: () => ({}) as never, t: (_id, key) => key });
-    const empty = render(<UiRuntimeProvider runtime={without}><DevicesTabEntry props={{ expanded: true }} /></UiRuntimeProvider>);
+    const empty = render(<TestLayer runtime={without}><DevicesTabEntry props={{ expanded: true }} /></TestLayer>);
     await act(() => settle());
     expect(empty.container.innerHTML).toBe("");
   });

@@ -8,12 +8,12 @@
 // device) comes back as a sealed card, and the window closes Settings while it waits (the shell's `cardPending`).
 // Light, dark or system and the text size have no place in B's `UiSettings` yet, so they are this plugin's own
 // settings until B says where they live.
+import { type CoreClient, Spot, useCore, usePluginApi, useSpotEntries } from "@waifucave/clover-plugin-sdk/ui";
+import type { PluginDetail, PluginSummary, UiPluginView, UiSettings } from "@waifucave/clover-plugin-sdk";
+import { deviceKind, fieldText, plain } from "./local";
 import { useEffect, useState } from "react";
-import type { CoreClient, PluginDetail, PluginSummary } from "../../shell/runtime/types";
-import { deviceKind, fieldText, plain } from "../../shell/runtime/views";
 import { APPEARANCE_KEYS, NOTIFICATION_KEYS, OWN_SETTING_KEYS, settingKey } from "./keys";
 import { LanguageChooser } from "./LanguageChooser";
-import { Spot, useCore, usePluginApi, useSpotEntries } from "./sdk";
 import { SettingsModal } from "./SettingsModal";
 import { S } from "./strings";
 import type { ExtraSection, Language, OneAtATimeView, SettingsSection, SettingsValues, ToolPermission } from "./types";
@@ -104,10 +104,10 @@ interface Loaded {
 async function load(core: CoreClient): Promise<Loaded> {
   const quiet = <T,>(p: Promise<T>) => p.catch(() => undefined);
   const [list, account, ui, pluginUi] = await Promise.all([
-    quiet(core.call("plugin.list", {})),
+    quiet((core.call("plugin.list", {}) as Promise<{ plugins: PluginSummary[] }>)),
     quiet(core.call("account.status", {})),
-    quiet(core.call("ui.settings", {})),
-    quiet(core.call("plugin.ui", {})),
+    quiet((core.call("ui.settings", {}) as Promise<UiSettings>)),
+    quiet((core.call("plugin.ui", {}) as Promise<{ plugins: UiPluginView[] }>)),
   ]);
   // One plugin.list, never a call per plugin: what each may do is on the Plugins page, for the one opened.
   const plugins = list?.plugins ?? [];

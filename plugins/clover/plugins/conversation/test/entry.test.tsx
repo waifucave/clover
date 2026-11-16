@@ -1,14 +1,12 @@
 // The conversation on the runtime: the core's events projected into the view's items, and the entry that reads them.
+import { card, fakeApi, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { EntryComponent } from "../client/local";
+import type { CardMeta } from "@waifucave/clover-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { card, fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
-import type { EntryComponent } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
-import type { CardMeta } from "../../shell/runtime/types";
 import { mockSealed } from "../gallery/mock-runtime";
 import { ConversationEntry } from "../client/entry";
 import { project, toolHint, type CoreEvent } from "../client/project";
-import { UiRuntimeProvider } from "../client/sdk";
 import type { ApprovalItem, BotItem, ToolItem } from "../client/types";
 
 afterEach(cleanup);
@@ -157,9 +155,9 @@ describe("the conversation entry", () => {
         : {}),
     });
     render(
-      <UiRuntimeProvider runtime={runtime}>
+      <TestLayer runtime={runtime}>
         <ConversationEntry props={{ bot: { id: "alpha", name: "Alpha" }, session: "s_alpha", now: 2_000, ...(extra.archived ? { archived: true } : {}) }} />
-      </UiRuntimeProvider>,
+      </TestLayer>,
     );
     return { core, push: (e: CoreEvent) => listener?.(e) };
   }

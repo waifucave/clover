@@ -3,9 +3,10 @@
 // such). Voices come with the voice providers that fill this plugin's providers point (Fish Audio, or another you add);
 // when the provider isn't set up, it says why the voice can't speak. Its switch turns this one bot's voice off (the
 // user's own bot setting, `silent`), whatever voice it has.
+import type { BotRef } from "./local";
+import type { EntryProps } from "@waifucave/clover-plugin-sdk";
+import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useId, useState } from "react";
-import type { BotRef, EntryProps } from "../../shell/runtime/types";
-import { usePluginApi } from "./sdk";
 import { S } from "./strings";
 
 export function BotVoiceSection({ props }: EntryProps<{ bot: BotRef }>) {

@@ -4,7 +4,6 @@
 export { BrowserPanel, VIEW } from "./BrowserPanel";
 export { BrowserChrome } from "./BrowserChrome";
 export { BrowserTabs } from "./BrowserTabs";
-export { PluginApiProvider } from "./sdk";
 export { normalizeAddress } from "./url";
 export { TOKENS } from "./tokens";
 export type * from "./types";

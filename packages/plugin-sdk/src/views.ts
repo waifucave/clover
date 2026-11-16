@@ -271,3 +271,101 @@ export type CardMeta = {
 };
 
 export type SessionKind = "bot" | "side-thread" | "agent" | "coding";
+
+export type FileStat = {
+  path: string;
+  type: "file" | "dir" | "symlink" | "other";
+  size: number;
+  modifiedAt: number;
+  executable: boolean;
+};
+
+export type UiPluginView = {
+  pluginId: string;
+  name: string | {
+    en: string;
+    [key: string]: string;
+  };
+  treeHash: string;
+  source?: "bundled" | "index" | "npm" | "local" | "wrapped" | "dev";
+  enabledAt?: number;
+  capabilities?: string[];
+  css?: string[];
+  networkHosts?: string[];
+  bot?: {
+    name: string | {
+      en: string;
+      [key: string]: string;
+    };
+    theme?: string;
+    layout?: string;
+    userLayout?: string;
+    avatar?: {
+      file: string;
+      format: string;
+    };
+  };
+  avatarFormats?: {
+    format: string;
+    extensions: string[];
+    kinds: {
+      ext: string[];
+      type: "json" | "binary" | "image" | "audio" | "text";
+      maxBytes: number;
+    }[];
+    find: "folder" | "cubism-model3";
+    maxFiles?: number;
+  }[];
+  layer: string;
+  icon?: string;
+  assetBase: string;
+  clientEntry?: string;
+  isolated?: true;
+  clientBuild?: {
+    base: string;
+    file: string;
+    sha256: string;
+  };
+  ui: {
+    [key: string]: unknown;
+  }[];
+  themes: {
+    id: string;
+    file: string;
+  }[];
+  locales: {
+    lang: string;
+    file: string;
+  }[];
+  bots: "all" | string[];
+};
+
+export type UiSettings = {
+  picks: {
+    spot: string;
+    key?: string;
+    bot?: string;
+    entry: string | null;
+  }[];
+  lists: {
+    spot: string;
+    bot?: string;
+    order: string[];
+    hidden: string[];
+    shown?: string[];
+  }[];
+  baseTheme?: string;
+  globalTheme?: string;
+  overrides?: {
+    tokens?: {
+      [key: string]: string | number;
+    };
+    css?: string;
+  };
+  language?: string;
+  appearance?: "light" | "dark" | "system";
+  textSize?: "small" | "default" | "large";
+  packs?: {
+    [key: string]: string;
+  };
+};

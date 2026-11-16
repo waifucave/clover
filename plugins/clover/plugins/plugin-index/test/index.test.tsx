@@ -1,10 +1,8 @@
+import { fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import { plain } from "../client/local";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { fakeCore, settle } from "../../shell/runtime/testkit";
-import { runtimeWith } from "../../shell/runtime/ui";
-import { plain } from "../../shell/runtime/views";
 import { iconUrl, PluginIndexEntry, toDetail, toInstalled, toResults } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 import { Detail, Installed, PluginIcon, stateText } from "../client/Installed";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
@@ -62,9 +60,9 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
   });
   const routes: unknown[] = [];
   render(
-    <UiRuntimeProvider runtime={runtimeWith({ core: () => core, ...(kept ? { kept } : {}) })}>
+    <TestLayer runtime={runtimeWith({ core: () => core, ...(kept ? { kept } : {}) })}>
       <PluginIndexEntry props={{ route: "plugins", params, navigate: (r) => routes.push(r), now: NOW }} />
-    </UiRuntimeProvider>,
+    </TestLayer>,
   );
   await act(() => settle());
   return { core, routes };

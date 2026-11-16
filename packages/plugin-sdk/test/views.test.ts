@@ -18,6 +18,9 @@ same<Same<Views.PluginSummary, Proto.PluginSummary>>(true);
 same<Same<Views.PluginDetail, Proto.PluginDetail>>(true);
 same<Same<Views.CardMeta, Proto.CardMeta>>(true);
 same<Same<Views.SessionKind, Proto.SessionKind>>(true);
+same<Same<Views.FileStat, Proto.FileStat>>(true);
+same<Same<Views.UiPluginView, Proto.UiPluginView>>(true);
+same<Same<Views.UiSettings, Proto.UiSettings>>(true);
 
 describe("the view types", () => {
   test("src/views.ts is what the generator writes now (run `bun run generate` after a schema changes)", () => {

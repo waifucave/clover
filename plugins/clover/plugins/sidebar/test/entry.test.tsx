@@ -1,11 +1,10 @@
 // The sidebar on the runtime: bots, coding projects and app buttons from the API, and routes to the shell.
+import { computerView, fakeApi, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { BotView, SessionView } from "@waifucave/clover-plugin-sdk";
+import type { EntryComponent } from "../client/local";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { computerView, fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
-import type { BotView, EntryComponent, SessionView } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
 import { agentStatus, botStatus, SidebarEntry, toShellRoute, toSidebarRoute, type ShellRoute } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
 
@@ -41,9 +40,9 @@ async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" 
     component: () => opts.component,
   });
   render(
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <SidebarEntry props={{ route, navigate: (r) => routes.push(r) }} />
-    </UiRuntimeProvider>,
+    </TestLayer>,
   );
   await act(() => settle());
   return { routes };
