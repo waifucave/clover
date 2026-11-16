@@ -148,7 +148,8 @@ export const SPOTS: readonly SpotInfo[] = [
     props: z.object({ bot: BotRef }),
     doc: "Small controls on a bot's stage, over its figure (a corner each places itself in): a voice plugin's mute and stop, say. Each entry draws its own control for the bot it is given." },
   { name: "composer.action", shape: "keyed", declaredBy: "composer", botsOffer: true, context: ["bot"], fields: titledOpt,
-    props: z.object({ bot: BotRef, session: z.string() }), doc: "The composer's buttons, keyed by action id." },
+    props: z.object({ bot: BotRef, session: z.string() }),
+    doc: "The composer's buttons, keyed by action id: an entry keyed `attach`, `model`, `level`, `send` or `stop` draws that button another way (or hides it); one with any other key adds a button of its own, drawn among the buttons plugins add, in the spot's order (`order`, then plugin and id)." },
   { name: "conversation.message", shape: "keyed", declaredBy: "conversation", botsOffer: true, keys: MESSAGE_KINDS, keep: ["approval"],
     needs: ["conversation.read"], context: ["bot"], fields: none, props: z.object(inConversation),
     doc: "One message, keyed by kind; the `approval` cell can't be hidden. The `tool` cell gets a run of calls." },
@@ -193,7 +194,27 @@ export const OWN_PANEL_KEY_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 /** Whether a `panel` entry with this key adds a panel of its own rather than replacing a stock one. */
 export function isOwnPanelKey(key: string | undefined): boolean {
-  return key !== undefined && !STOCK_PANEL_KEYS.includes(key);
+  return isAddedKey("panel", key);
+}
+
+/** The composer's own buttons, each a `composer.action` entry's key: an entry with one of these keys draws that button
+ *  another way (or hides it); with any other key it adds a button of its own, which the composer draws among the others
+ *  plugins add, in the spot's order (an entry's `order`, then plugin and id). */
+export const STOCK_COMPOSER_ACTION_KEYS: readonly string[] = ["attach", "model", "level", "send", "stop"];
+
+/** The keyed spots whose declarer draws, beside its own keys, every entry a plugin ADDS under a key of its own, each
+ *  spot with its stock keys. A part lists the added entries by asking the spot with `ADDED_KEY`. */
+export const STOCK_KEYS: Readonly<Record<string, readonly string[]>> = {
+  panel: STOCK_PANEL_KEYS,
+  "composer.action": STOCK_COMPOSER_ACTION_KEYS,
+};
+/** The key a part asks such a spot's entries with to get the added ones (`STOCK_KEYS`), instead of one key's. */
+export const ADDED_KEY = "*";
+
+/** Whether an entry of `spot` with this key adds something of its own rather than replacing a stock key's. */
+export function isAddedKey(spot: string, key: string | undefined): boolean {
+  const stock = STOCK_KEYS[spot];
+  return stock !== undefined && key !== undefined && key !== ADDED_KEY && !stock.includes(key);
 }
 
 /** Whether Bots offers `spot` (and `key`, in a keyed spot it offers by key) to a bot's plugin. A keyed spot offered by

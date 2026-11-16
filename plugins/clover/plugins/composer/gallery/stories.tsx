@@ -163,24 +163,21 @@ export const stories: Story[] = [
   },
   {
     id: "composer/minimal",
-    title: "With no attach, model, level or voice",
-    notes: "A bot with no voice plugin, in a host that offers nothing else.",
+    title: "With no attach, model or level",
+    notes: "A bot in a host that offers nothing else, with no button of a plugin's own.",
     render: () => <Demo model={undefined} level={undefined} onAttach={undefined} />,
   },
   {
     id: "composer/replaced-action",
     title: "A plugin dressing one button",
-    notes: "composer.action in use: the voice button replaced, attach hidden.",
+    notes: "composer.action in use: a plugin's own button added, attach hidden.",
     render: () => (
       <Demo
-        renderAction={(id, standard) =>
-          id === "voice" ? (
-            <button type="button" className="story-suggest">
-              ✦ Suggest
-            </button>
-          ) : id === "attach" ? null : (
-            standard
-          )
+        renderAction={(id, standard) => (id === "attach" ? null : standard)}
+        added={
+          <button type="button" className="story-suggest">
+            ✦ Suggest
+          </button>
         }
       />
     ),

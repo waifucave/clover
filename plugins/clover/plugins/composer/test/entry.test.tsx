@@ -151,6 +151,13 @@ describe("the composer entry", () => {
     expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
   });
 
+  test("a plugin's own button (a `composer.action` key that isn't one of the composer's) is drawn among the added ones, beside Send", async () => {
+    const Talk: EntryComponent = ({ props }) => <button type="button">{`Talk to ${(props.bot as { name: string }).name}`}</button>;
+    await mount(session({}), { component: Talk, entries: [{ pluginId: "any-voice", id: "talk", spot: "composer.action", key: "hold-to-talk", component: "Talk", source: "installed", enabledAt: 1 }] });
+    expect(screen.getByRole("button", { name: "Talk to Alpha" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+  });
+
   test("the model menu lists the signed-in providers' models first; the rest are one press away", async () => {
     const { host } = await mount(session({}), {
       models: [

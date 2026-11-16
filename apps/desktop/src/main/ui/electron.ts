@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, withMicrophone } from "./documents";
+import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, layerMicrophone, withMicrophone } from "./documents";
 import { checkMenu, frameGesture, openRefusal, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { SEALED_PRESS_WORDS } from "../sealed-pages";
@@ -143,9 +143,10 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const mount = runtime.serveDocument(layer, url.searchParams.get("mount"));
       if (mount === undefined) return forbidden();
       const doc = runtime.mountForDocument(mount);
-      // The clover layer's document hands the policy down to the frames it holds (`*`); a plugin's own document opens it to itself
-      // while its plugin holds `microphone`. The permission itself is main's (microphone.ts), for a layer that holds it.
-      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", doc.layer === "clover" ? "*" : runtime.layerHolds(doc.layer, "microphone"));
+      // The microphone policy by one rule for every layer (`layerMicrophone`): open to itself while its own layer holds
+      // `microphone`, handed on while a layer it may frame does. The permission itself is main's (microphone.ts), by the frame's own layer.
+      const microphone = layerMicrophone(doc.layer, doc.layers, (l) => runtime.layerHolds(l, "microphone"));
+      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", microphone);
       // The DNS probe's positive control (the UI test, unpackaged runs only): the same document without its allowlist.
       if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];
       return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });

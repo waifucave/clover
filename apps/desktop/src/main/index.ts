@@ -285,8 +285,8 @@ async function ready(): Promise<void> {
   await hardenSession(session.defaultSession, log);
   const ui = session.fromPartition(UI_PARTITION);
   await hardenSession(ui, log);
-  // The microphone (ui/microphone.ts): a frame whose layer holds `microphone` may open it, for audio alone (the clover layer
-  // too, by the same rule: Clover Voice holds it for its hold-to-talk button). `hardenSession` refused every permission to
+  // The microphone (ui/microphone.ts): a frame whose own layer holds `microphone` may open it, for audio alone, by one rule
+  // for every layer. `hardenSession` refused every permission to
   // every frame; these two handlers (the request and the check, Chromium asks both) are the only exception, for this session
   // alone. On a real build the system's own question comes first (the first time, on a Mac); a test or acceptance build
   // answers the check and the request but never asks the system (nothing in a test calls getUserMedia).

@@ -2,8 +2,8 @@
 // works in a frame of a plugin that holds it, for audio alone, and in no other frame. `hardenSession` refuses every
 // permission to every frame; the two handlers here (Chromium asks the check, then the request) are the one exception.
 //
-// The bundled `clover` tree's plugins share one layer, so a `clover/*` plugin that holds it (Clover Voice, for its
-// hold-to-talk button) opens it for that layer's document. On a real build the system's own question comes first (the
+// A plugin and its children share one layer (a third party's tree as the bundled one), so any of them that holds it opens
+// it for that layer's frames, by the same rule for every layer. On a real build the system's own question comes first (the
 // first time, on a Mac); a test or acceptance build answers the check and the request but never asks the system, and no
 // test calls getUserMedia.
 

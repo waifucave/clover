@@ -244,10 +244,11 @@ describe("model, voice and actions", () => {
     expect(stop.className).toBe("cl-composer__stop");
   });
 
-  test("composer.action: a plugin replaces one button and hides another", () => {
+  test("composer.action: a plugin adds a button of its own and hides another", () => {
     setup({
       onAttach: () => undefined,
-      renderAction: (id, standard) => (id === "voice" ? <button type="button">Suggest</button> : id === "attach" ? null : standard),
+      renderAction: (id, standard) => (id === "attach" ? null : standard),
+      added: <button type="button">Suggest</button>,
     });
     expect(screen.getByRole("button", { name: "Suggest" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Hold to talk" })).toBeNull();

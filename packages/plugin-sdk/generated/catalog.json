@@ -2563,7 +2563,7 @@
       "context": [
         "bot"
       ],
-      "doc": "The composer's buttons, keyed by action id.",
+      "doc": "The composer's buttons, keyed by action id: an entry keyed `attach`, `model`, `level`, `send` or `stop` draws that button another way (or hides it); one with any other key adds a button of its own, drawn among the buttons plugins add, in the spot's order (`order`, then plugin and id).",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

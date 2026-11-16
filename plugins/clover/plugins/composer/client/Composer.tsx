@@ -178,6 +178,7 @@ export function Composer(props: ComposerProps) {
     placeholder,
     autoFocus,
     renderAction,
+    added,
     slash,
     initialMenu,
     controlsInside = false,
@@ -377,9 +378,6 @@ export function Composer(props: ComposerProps) {
       )
     : null;
 
-  // Hold-to-talk is a voice plugin's own button (`composer.action`, key `voice`): the slot is open, with nothing of the
-  // composer's own behind it.
-  const voiceButton = action("voice", null);
 
   // Mid-turn with nothing typed, Stop takes Send's place; with a draft, Send (which interrupts) sits
   // beside Stop. Stop is a square on the control colour, Send an arrow on the accent: never alike.
@@ -611,7 +609,7 @@ export function Composer(props: ComposerProps) {
               onAddFiles(files);
             }}
           />
-          {voiceButton}
+          {added}
           {!controlsInside && stopButton}
           {!controlsInside && sendButton}
         </div>

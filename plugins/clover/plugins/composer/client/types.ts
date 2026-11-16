@@ -45,7 +45,7 @@ export interface ComposerModelChoice {
 }
 
 /** The composer's buttons, keyed like the `composer.action` spot (spec §5.5). */
-export type ComposerActionId = "attach" | "model" | "level" | "voice" | "send" | "stop";
+export type ComposerActionId = "attach" | "model" | "level" | "send" | "stop";
 
 /** One of the computer's approval levels (spec §9.1). */
 export interface ComposerLevelOption {
@@ -116,6 +116,8 @@ export interface ComposerProps {
   autoFocus?: boolean;
   /** The `composer.action` spot: draw one button another way, or not at all (null). */
   renderAction?: (id: ComposerActionId, standard: ReactNode) => ReactNode;
+  /** The buttons plugins add (`composer.action` entries under keys of their own), in the spot's order, before stop and send. */
+  added?: ReactNode;
   /** The slash menu of plugin commands; without it a `/` is just text. */
   slash?: ComposerSlash;
   /** Open a menu at first (the gallery's still frame of it). */

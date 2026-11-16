@@ -5,7 +5,8 @@
 // (the computer's level shows as a label: a change is a sealed card, which the core can't raise for the app yet).
 // Each button draws through `composer.action`, keyed by action id, falling back to its own.
 //
-// Hold-to-talk is a voice plugin's own button in the row (`composer.action`, key `voice`): the composer has none of its own.
+// A plugin's own button (a `composer.action` entry under a key that isn't one of the composer's, hold-to-talk among them) is
+// drawn among the buttons plugins add, before stop and send, in the spot's order: the composer looks for no key of theirs.
 //
 // The model list comes from the core's `models.list` (the models a session can switch to).
 //
@@ -19,7 +20,7 @@ import { Composer } from "./Composer";
 import { argsFor, inScope, refusalText, resultText, type SlashCommand } from "./slash";
 import { CLOVER_LEVELS } from "./levels";
 import { S } from "./strings";
-import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useTokens, useUserSend } from "./sdk";
+import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useSpotEntries, useTokens, useUserSend } from "./sdk";
 import type { ComposerActionId, ComposerModel, ComposerModelChoice, ComposerSlash } from "./types";
 
 type SessionKind = "bot" | "side-thread" | "agent" | "coding";
@@ -69,6 +70,8 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const host = useComposerHost();
   const send = useUserSend();
   const { cards } = useApprovals();
+  // The buttons plugins add under keys of their own (the spot's `*`), in its order.
+  const added = useSpotEntries("composer.action", "*", { bot: props.bot }).entries.filter((e) => e.key !== undefined);
   // A pick changes the model the daemon holds (a bot's user layer, or the session's own): the bot and the session are read again
   // after it, so the label says what the next turn runs on.
   const [rev, setRev] = useState(0);
@@ -193,6 +196,9 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
       renderAction={(id: ComposerActionId, standard: ReactNode) => (
         <Spot name="composer.action" spotKey={id} props={{ bot: props.bot, session: props.session }} fallback={standard} />
       )}
+      added={added.map((e) => (
+        <Spot key={`${e.pluginId}#${e.id}`} name="composer.action" spotKey={e.key} entry={`${e.pluginId}#${e.id}`} props={{ bot: props.bot, session: props.session }} />
+      ))}
     />
   );
 }

@@ -12,10 +12,10 @@
 import { randomBytes } from "node:crypto";
 import type { AvatarDown, AvatarUp, LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
-import { spotInfo } from "@waifucave/clover-plugin-sdk";
+import { STOCK_KEYS, spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, patchScope, withTabPatches, type UiEntry, type UiPlugin } from "./model";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
-import { NO_CHOICES, OWN_PANELS_KEY, SpotTree, botScope, entryRef, ownPanelCandidates, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
+import { NO_CHOICES, OWN_PANELS_KEY, SpotTree, addedCandidates, botScope, entryRef, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
@@ -27,7 +27,7 @@ import { isSealedLookAllowed } from "@waifucave/clover-plugin-sdk";
 import { fieldPage, buttonPage, ownCardPage, placeholderPage, summaryFieldPage, labelOf } from "../sealed-pages";
 import { alwaysSentence, summarize as summarizeCard } from "../card-summary";
 import { homedir } from "node:os";
-import { sealHeaders } from "./documents";
+import { layerMicrophone, sealHeaders } from "./documents";
 import type { SealedCard, SealedFrames, SealedValue } from "../sealed";
 
 /** A frame as Electron describes it. */
@@ -763,9 +763,10 @@ export class UiRuntime {
     const part = this.partIn(frame, mountId);
     if (!this.declares(part, spot)) return [];
     const { cellKey, ctx } = this.cellOf(doc, part, spot, key, { ...(bot !== undefined ? { bot } : {}), ...(session !== undefined ? { session } : {}) });
-    // Every panel a plugin adds, as the shell's toggles list them (the panel spot's `*`).
-    if (spot === "panel" && key === OWN_PANELS_KEY) {
-      return ownPanelCandidates({ plugins: this.plugins, ctx }).map((c) => ({
+    // Every entry a plugin adds under a key of its own (the spot's `*`): the panels the shell's toggles list, the buttons the
+    // composer adds to its row.
+    if (key === OWN_PANELS_KEY && STOCK_KEYS[spot] !== undefined) {
+      return addedCandidates({ plugins: this.plugins, ctx }, spot).map((c) => ({
         ref: entryRef(c.entry),
         id: c.entry.id,
         pluginId: c.plugin.id,
@@ -889,8 +890,9 @@ export class UiRuntime {
         ...(m.plugin!.isolated === true ? { isolated: true as const } : {}),
         // A background part's frame may play sound with no press from the user when its plugin holds `audio`.
         ...(m.spot === "app.background" && m.plugin!.capabilities.has("audio") ? { autoplay: true as const } : {}),
-        // A plugin holding `microphone` has its frames allowed to open it (main's permission handlers say yes for its origin only).
-        ...(m.plugin!.capabilities.has("microphone") ? { microphone: true as const } : {}),
+        // `allow="microphone"` exactly when the frame's document policy is open (`layerMicrophone`: its own layer holds it, or it
+        // hands it on to a layer that does); main's permission handlers say yes for a holding layer's origin only.
+        ...(layerMicrophone(m.layer, this.layerLabels(), (l) => this.layerHolds(l, "microphone")) !== false ? { microphone: true as const } : {}),
       };
       if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true, ...isolated };
       return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m), ...isolated };
