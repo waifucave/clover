@@ -37,6 +37,7 @@ import { DRAG_STEP } from "./drag-step";
 import { REVIEW_STEP } from "./review-step";
 import { SURFACE_COPY_STEP } from "./surface-copy-step";
 import { CONVERSATION_COPY_STEP } from "./conversation-copy-step";
+import { STAGE_COPY_STEP } from "./stage-copy-step";
 import { ADDONS_STEP } from "./addons-step";
 import { ARCHIVE_STEP } from "./archive-step";
 import { ACP_BACKEND_STEP } from "./acp-backend-step";
@@ -70,7 +71,7 @@ const OTHERS: readonly Unit[] = [
   { id: "acp", rows: [ACP_BACKEND_STEP], phase: "parallel", estimate: 40 },
   { id: "builder-examples", rows: [BUILDER_EXAMPLES_STEP], phase: "parallel", estimate: 150 },
   { id: "workshop-points", rows: [WORKSHOP_POINTS_STEP], phase: "parallel", estimate: 60 },
-  { id: "plugin-app", rows: [CHILD_STEP, NOTIFY_STEP, LISTEN_STEP, WEB_STEP, DRAG_STEP, REVIEW_STEP, SURFACE_COPY_STEP, CONVERSATION_COPY_STEP], phase: "parallel", estimate: 240 },
+  { id: "plugin-app", rows: [CHILD_STEP, NOTIFY_STEP, LISTEN_STEP, WEB_STEP, DRAG_STEP, REVIEW_STEP, SURFACE_COPY_STEP, CONVERSATION_COPY_STEP, STAGE_COPY_STEP], phase: "parallel", estimate: 330 },
   { id: "browser", rows: [BROWSER_STEP], phase: "parallel", estimate: 60 },
   { id: "models", rows: [CODE_ADAPTER_STEP, THIRD_PARTY_MODEL_STEP, OAUTH_SIGN_IN_STEP, SCHEDULED_ROUTINE_STEP], phase: "parallel", estimate: 90 },
   { id: "stage", rows: [STAGE_STEP], phase: "serial", estimate: 125 },
