@@ -140,6 +140,21 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
     await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${RETRY}')].at(-1); b?.click(); return !!b; })()`).catch(() => undefined);
     await sleep(2_000);
     if (mine(await log()).length !== 1) fail("the copy sent the user's message again on a click the page made itself");
+    // A press in another frame is not the copy's (F2, read 52): a real click in the copy gives its page the user's activation,
+    // then a real click on the window's own root (another frame, or none) is the latest press; the copy's call right after it is
+    // refused, though its page still holds the activation, and the app logs that the press was not in the copy's frame.
+    const rootDoc = (await cdp.documents()).find((d) => d.url.startsWith("clover-core://app/") && !d.url.includes("?"));
+    if (rootDoc === undefined) fail("no main window root to press on");
+    const pressLines = () => ctx.appLog().split("\n").filter((l) => l.includes("press: a call from frame")).length;
+    const linesBefore = pressLines();
+    await cdp.click(button.session, 4, 4);
+    await sleep(300);
+    await cdp.click(rootDoc!.session, 2, 2);
+    await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${RETRY}')].at(-1); b?.click(); return !!b; })()`).catch(() => undefined);
+    await sleep(2_000);
+    if (mine(await log()).length !== 1) fail("the copy sent the user's message again on a press that landed outside its frame");
+    if (pressLines() <= linesBefore) fail("the app logged no refusal for the copy's call after a press in another frame");
+    said.push("a real click in the copy and then one on the window's own root: the copy's call right after was refused (the latest press was not in its frame), and nothing was sent");
     await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${RETRY}')].at(-1); if (b) b.scrollIntoView({ block: "center" }); return !!b; })()`);
     await sleep(400);
     const there = await until("Try again still on the copy's screen", 10_000, async () => cdp.centerOf(button.session, RETRY, "Try again").catch(() => undefined));
