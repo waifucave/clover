@@ -1,8 +1,8 @@
 # Clover — direction spec
 
-Date: November 5, 2026 (revision 18: the owner's decisions 76–94, the spikes' results and the controller's rulings)
-Status: **draft for the owner's review**, and the contract the lanes build to ([the plan](clover-plan.md)). It records the direction and the decisions made so far. **[D]** The plugin section (§5) is frozen as of revision 16, by the owner's stopping rule; later changes to it come from building C1 and C2 (§14.2 item 73). Revision 17 renames the product Clover and moves computer use after 1.111.1 (items 74 and 75), by the owner's decision; neither changes how plugins work. Revision 18 changes §5 where the owner decided it (items 77, 83, 84, 86, 87, 90, 91 and 94: shared parts, the default shell, the two plugin hosts, avatars, card answers and WebRTC), and adds **[P]** details from building C1 and C2: S9's mounts, input and state, and the controller's rulings on the keyed fetch, theme tokens and per-computer keys.
-Source repo at writing: `yanlingLabs/winter` @ `eccdda6c2` (Winter 0.124.0); revision 18 against `waifucave/clover` @ `7b1c56911`
+Date: November 16, 2026 (revision 19: the split into two apps, MOSS and MOSS Code, on one shared engine: the owner's decisions 95–108, the controller's rulings, and the open items 109–124; revision 18 of November 5: the owner's decisions 76–94, the spikes' results and the controller's rulings)
+Status: **draft for the owner's review**, and the contract the lanes build to ([the plan](clover-plan.md)). It records the direction and the decisions made so far. **[D]** The plugin section (§5) was frozen as of revision 16, by the owner's stopping rule (§14.2 item 73); revision 19 reopens it only where the split changes it (§3.4, §5.1 to §5.9), by the owner's decision, and later changes still come from building. Revision 17 renames the product Clover and moves computer use after 1.111.1 (items 74 and 75), by the owner's decision; neither changes how plugins work. **[D]** Revision 19 (2026-11-16) records the owner's split of the product into two apps on one engine: **MOSS**, the app for bots, with a fixed window, and **MOSS Code**, the app for coding agents, with the full plugin system and a window made of plugin parts, both on one shared engine, `moss-core`, and one home, `~/.moss` (§1, §3). It rewrites §1 to §3, §5, §6, §9.3, §10, §12 and §13, adds §3.4 to §3.6, §6.9, §6.10 and §9.4, and adds items 95 to 124 to §14.2. Items 95 to 108 are the owner's decisions, marked **[D]**; the controller's rulings that fill the gaps are marked **[P]**, to accept or change; the points still open are **[Q]** items with no recommendation (109 to 124). This revision writes the new names (MOSS, MOSS Code, `moss-core`, `~/.moss`); text it did not rewrite keeps the old names, which the rename pass changes. Wherever older text says "the app" or "the daemon" for the program that shows plugin parts, the program that runs bots or the one that carries the plugin runtime, §3.1 and §3.4 say which program that is now. Revision 18 changes §5 where the owner decided it (items 77, 83, 84, 86, 87, 90, 91 and 94: shared parts, the default shell, the two plugin hosts, avatars, card answers and WebRTC), and adds **[P]** details from building C1 and C2: S9's mounts, input and state, and the controller's rulings on the keyed fetch, theme tokens and per-computer keys.
+Source repo at writing: `yanlingLabs/winter` @ `eccdda6c2` (Winter 0.124.0); revision 18 against `waifucave/clover` @ `7b1c56911`; revision 19 against the `lane-int/moss` integration branch @ `3a3e247e3`
 Companion research: [Claude mods vs DeepSeek Harness plugins](research/2026-11-02-claude-mods-vs-deepseek-harness.md), [the plugin model proposals](research/2026-11-03-wyrmhole-plugin-model-proposals.md), [the final review of revision 11](research/2026-11-03-wyrmhole-spec-final-review.md), [the second review of revision 12](research/2026-11-04-wyrmhole-spec-second-review.md), [the plugin-ecosystem review of revision 13](research/2026-11-04-wyrmhole-plugin-ecosystem-review.md), [the check of revision 14](research/2026-11-04-wyrmhole-spec-rev14-check.md), [the last check, of revision 15](research/2026-11-04-wyrmhole-spec-rev15-check.md)
 Spike reports (November 5): [S1 transport](research/2026-11-05-s1-transport.md), [S2 and S8 fence and secrets](research/2026-11-05-s2-s8-fence-and-secrets.md), [S5 ACP](research/2026-11-05-s5-acp.md), [S6 mounts](research/2026-11-05-s6-mounts.md), [S7 browser](research/2026-11-05-s7-browser.md), [S9 layers](research/2026-11-05-s9-layers.md)
 
@@ -14,29 +14,50 @@ Each statement below is marked:
 
 ---
 
-## 1. What Clover is
+## 1. What MOSS is
 
-Clover is the next major version of Winter, with a new name, a new home and a new shape. It is a **bot-first, endlessly moddable desktop agent platform** for macOS, Windows and Linux.
+MOSS is the next major version of Winter, with a new name, a new home and a new shape. It is a **desktop agent platform** for macOS, Windows and Linux, made of **two apps on one shared engine** [D] (revision 19, item 95):
 
-* **[D] Bots are the centre.** Each bot is a plugin. **Alpha** is the only bot that ships, and it is not special in any way; users install or create the rest.
+* **[D] MOSS is the app for bots.** Its window is fixed, closed and minimalistic: a list of bots, one conversation per bot, and a side panel with the bot's own screen and its routines (§6.10). It takes tools, models and voices from plugins, and no plugin changes its interface. It is meant to feel like Grok Bot.
+* **[D] MOSS Code is the app for coding agents.** A session in it is a session with a coding agent the user picks, and its window is made of plugin parts, with the full plugin system, the browser, Office and customization (§9.4). It is meant to feel like Claude's desktop app.
+* **[D] The engine, `moss-core`, is shared.** It holds the home (`~/.moss`: bots, sessions, plugins, keys, settings), runs every session, bot, model, voice, coding agent, skill and tool, hosts every plugin, and routes everything that needs the user (§3). Each app carries a copy of it and runs alone; with both installed, one engine runs for the one home (§3.1).
+
+What the product is, in the engine's terms:
+
+* **[D] Bots are the centre of MOSS.** A bot is an engine feature, shown only by MOSS (§6), not a plugin. **Alpha** is an ordinary bot that MOSS offers as a default (§6.2); users make the rest.
 * **[D] All bots are equal.** Every bot has the same tools and sees every plugin, MCP server and skill scoped to bots (§5.1). A bot changes only its own `<bot-instructions>` block; the harness owns the rest of the system prompt.
 * **[D] Each bot lives one continuous life.** There is one conversation per bot, compacted over time, with persistent memory (a `MEMORY.md` index linking to memory files) and routines that wake it on schedules, webhooks and integrations.
 * **[D] The user's messages interrupt a bot immediately,** to be as fast as possible. Messages from other bots and routines fold into the running turn instead.
 * **[D] Bots reach the user's computers.** They run bash, tools and, once opensky arrives, computer use on every computer the user connects, including cloud computers, through one folder tree with a folder per computer (§9.1). By default a bot asks before risky actions.
 * **[D] Bots work together.** They message each other (`SendMessage`) and delegate work to coding agents over ACP (`Agent`).
 * **[D] A bot is live on every device that is on.** It thinks on the user's **main computer**, and the device in use takes over while the main is offline. Transcripts and memories stay in sync without a cloud server.
-* **[D] Bots can talk and listen** through voice provider plugins, with the avatar lip-syncing. Alpha ships with a Fish Audio voice.
-* **[D] Everything outside a fixed core is a plugin.** That includes models, UI, themes, floating surfaces (island, Dispatch pill), voice, computer use, relays, companion apps and bots themselves. The agent runtime and core app functions are **not** replaceable.
-* **[D] A plugin is just a folder with files.** Making one never needs a tool: the user or a bot writes the folder, and the app finds it. A plugin can hold other plugins (§5.1).
-* **[D] The default look is waifu-themed.** Each bot can have an animated avatar, a VRM model or a Live2D Cubism model (item 87). The whole app starts from `clover`'s base theme, every bot tab included, and the bot's own plugin styles its tab on top, as Alpha's own tab theme does (§5.5). Users restyle by editing the bot's plugin, or with plugins that dress any part of the app (§5.5). **[D]** The default shell around the tabs is laid out and measured like Claude's desktop app, with Clover's own marks, icons and wording (items 83 and 86, §5.5).
+* **[D] Bots can talk and listen** through voice provider plugins (§6.6).
+* **[D] Everything outside a fixed core is a plugin.** That includes models, UI, themes, floating surfaces (island, Dispatch pill), voice, computer use, relays, companion apps and the avatar. Bots are not plugins: they are engine data (§6.1). The agent runtime and core app functions are **not** replaceable. **[D]** Every plugin belongs to the engine, and a part shows wherever its place exists (§3.4): tools, models and voices need only the engine; parts that draw on the screen need the engine's background host; parts inside a window need MOSS Code's window.
+* **[D] A plugin is just a folder with files.** Making one never needs a tool: the user or a bot writes the folder, and the engine finds it. A plugin can hold other plugins (§5.1).
+* **[D] The look.** MOSS draws its bots with the living-bots kit: each bot is a flat shape in one colour with two eyes, made from its name (§6.9). MOSS Code uses the Shards kit for its icon and mark and wears its look. The avatar, an animated figure on the screen, is an ordinary bundled plugin that applies to every session, like a desktop pet, not a part of any bot (§10). **[D]** MOSS Code's default shell is laid out and measured like Claude's desktop app, with its own marks, icons and wording (items 83 and 86, §5.5).
 
-It is much closer to Grok Bot (bots with memory, routines and their own computer) than to a chat window like Claude Desktop.
+MOSS is much closer to Grok Bot (bots with memory, routines and their own computer) than to a chat window; MOSS Code is the one that is like Claude's desktop app.
+
+### 1.2 The two apps
+
+| | MOSS | MOSS Code |
+| :- | :- | :- |
+| For | Bots: a conversation, a face, routines and a screen for each | Sessions with a coding agent the user picks (§9.4) |
+| Window | Built in and fixed (§6.10); no plugin part is mounted in it | Made of plugin parts: the default shell, replaceable, with the panels (§5.5) |
+| What plugins give it | Tools, models and voices, and, through the background host, on-screen parts such as a desktop avatar or a replaced island; its Plugins page adds them behind the normal OK card | Everything: any part, in the window or on the screen; the browser, Office, themes and customization |
+| Look | The living-bots kit | The Shards kit |
+| Alone | Runs every bot, tool, model, voice, ACP agent, skill and plugin that needs no window of MOSS Code | Runs sessions with any coding agent, with every plugin part |
+
+* **[D]** Each app exists on its own, in case the other is not installed. Plugins that change an app's interface need MOSS Code.
+* **[D]** Bots are only in MOSS. MOSS Code shows sessions with coding agents and no bots; with both installed, a bot's coding task carries an "open in MOSS Code" link (§9.4).
+* **[P]** MOSS is a second build of the same app code, not a new codebase. Each app says which it is when it connects, and the engine tells it what to mount (§3.1).
+* **[D]** A third app, an installer and hub called 550W, is parked: the owner does not know whether it should exist. Each app updates itself and refreshes the shared engine (§3.1).
 
 ### 1.1 Non-goals
 
 * **[D] Replacing the agent runtime is not allowed.** DeepSeek Harness lets a plugin replace the agent loop, storage or the model plumbing; Clover does not.
-* **[D] No relation to Discord Waifus.** Discord Waifus is an ordinary plugin (§11), and nothing in Clover's design comes from it.
-* **[D] No group rooms for now.** Conversations are one user to one bot; bots coordinate with `SendMessage`. Rooms could come later as a plugin.
+* **[D] No relation to Discord Waifus.** Discord Waifus is an ordinary plugin (§11), and nothing in the product's design comes from it.
+* **[D] No group rooms for now.** Conversations are one user to one bot; bots coordinate with `SendMessage`. **[D]** Teams of bots in one conversation (two faces in one row of MOSS's list) come later, after single bots (item 106); rooms could come later as a plugin.
 * **[D] No paid cloud backup.**
 * **[D] No spending limits or loop guards.** Bots spend freely, and the user watches their provider dashboards.
 * **[P] No promise of a full sandbox for plugins.** Plugins are trusted code, as with DeepSeek Harness and Claude Code mods. The core keeps them away only from other plugins' UI and the sealed cards, keeps their UI code to the hosts they declare (WebRTC aside, a known gap, §5.3), and on macOS keeps host code from Clover's Keychain items and the daemon's socket (§5.2, §5.5, §5.6).
@@ -47,7 +68,9 @@ It is much closer to Grok Bot (bots with memory, routines and their own computer
 
 | Item | Winter today | Clover |
 | :- | :- | :- |
-| Product | Winter | **Clover** [D] (revision 17; called Wyrmhole until then) |
+| Product | Winter | **MOSS** [D] (revision 19): two apps, **MOSS** for bots and **MOSS Code** for coding agents, on one engine; earlier revisions used older names (revision 17, Wyrmhole before it) |
+| The engine | `winter-core`, the daemon | **`moss-core`** [D]: one process per home, shared by both apps (§3.1) |
+| The apps | Winter.app, one menu-bar app | **MOSS** and **MOSS Code** [D], each with its own window; a third app, 550W (an installer and hub), is parked (§1.2, item 108) |
 | First version | 0.124.0 | **1.111.1** [D], on macOS, Windows and Linux at once [D]; nothing ships on Windows until bash works there [D] |
 | GitHub org | `yanlingLabs` (deprecated) | `waifucave` [D] |
 | Main repo | `yanlingLabs/winter` (public, Apache-2.0) | `waifucave/clover` — **transfer + rename, history kept** [D] |
@@ -57,7 +80,7 @@ It is much closer to Grok Bot (bots with memory, routines and their own computer
 | npm scope | `@yanlinglabs/*` | `@waifucave/*` [D] (`@waifucave/clover-protocol`, `-core`, `-cli`, `-sdk`…) |
 | Local folder | `Xcode progects/Norma v2` | `Xcode progects/WaifuCave/clover` [D] (Claude memory copied to the new path key the same day) |
 | Web | — | `clover.waifucave.com` (web companion, §8.4), `hooks.waifucave.com` (webhooks, §7) |
-| Home folder | `~/.winter` (dev `~/.winter-dev`) | `~/.clover` (dev `~/.clover-dev`) [P] |
+| Home folder | `~/.winter` (dev `~/.winter-dev`) | `~/.moss` [D], one home for both apps (item 95); the dev profile's home and the apps' ids follow the rename's names table (item 120) |
 | App identity | `com.winter.app` / Keychain `com.winter.core` (dev: `com.winter.app.dev` / `com.winter.core.dev`) | `com.waifucave.clover` / `com.waifucave.clover.core` (dev: `com.waifucave.clover.dev` / `com.waifucave.clover.core.dev`) [P] |
 
 ---
