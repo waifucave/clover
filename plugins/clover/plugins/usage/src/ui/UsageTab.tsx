@@ -3,7 +3,8 @@
 // island's row language (`LiftRow`, `GroupTitle`): quiet at rest, the details under the pointer.
 
 import { useState, type ReactElement } from "react";
-import { EmptyTab, GroupTitle, LiftRow, RowWords, StatusWord, TabScroll, type StatusMark } from "@waifucave/clover-plugin-island";
+import { GroupTitle, LiftRow, RowWords, StatusWord, type StatusMark } from "./kit/rows";
+import { EmptyTab, TabScroll } from "./kit/tab";
 import { amountWords, planRows, sourceTitle, startOfDay, tokensOf, totals, type PlanLevel, type UsageApi } from "../model/usage";
 import { t } from "../strings";
 import { useUsageRead } from "./data";

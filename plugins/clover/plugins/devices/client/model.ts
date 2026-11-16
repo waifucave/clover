@@ -1,8 +1,8 @@
-// The island's Devices tab (spec §8): every paired device, which one is this, which one is the main computer, and how
+// The Devices tab (spec §8), this plugin's `island.tab` entry: every paired device, which one is this, which one is the main computer, and how
 // each link reaches its peer. The data is `devices.read`'s `DeviceView`, mirrored here from lane B's protocol
 // (`packages/protocol/src/devices.ts` on `lane/b-m0`) until #157 merges and the parts import it. Pure.
 
-import { t } from "../strings";
+import { t } from "./strings";
 
 export type DeviceKind = "desktop" | "server" | "cloud" | "phone" | "browser";
 export type LinkPath = "lan" | "direct" | "relay";

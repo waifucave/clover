@@ -343,7 +343,6 @@
       "name": "@waifucave/clover-plugin-devices",
       "version": "0.0.0",
       "dependencies": {
-        "@waifucave/clover-plugin-island": "workspace:*",
         "@waifucave/clover-plugin-sdk": "workspace:*",
       },
       "devDependencies": {
@@ -751,7 +750,6 @@
       "name": "@waifucave/clover-plugin-usage",
       "version": "0.0.0",
       "dependencies": {
-        "@waifucave/clover-plugin-island": "workspace:*",
         "@waifucave/clover-plugin-sdk": "workspace:*",
       },
       "devDependencies": {

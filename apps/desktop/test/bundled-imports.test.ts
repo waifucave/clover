@@ -99,10 +99,8 @@ export function cloverDependencies(pluginDir: string): string[] {
  *  pattern of `<file>: <specifier>` lines. The test fails on any other, and on a pattern that no longer matches (the
  *  list only shrinks). */
 const PENDING_RULING: Record<string, readonly RegExp[]> = {
-  // Shared parts of the island's: the sealed card's content and buttons, its names, its gallery fixtures.
-  devices: [/^devices\/client\/entries\.tsx: @waifucave\/clover-plugin-island$/],
   pill: [/^pill\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
-  usage: [/^usage\/src\/.*: @waifucave\/clover-plugin-island(\/fixtures|\/gallery)?$/, /^usage\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
+  usage: [/^usage\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
   live2d: [/^live2d\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
   // The base theme's token tables and CSS checks, in other parts' style tests.
   island: [/^island\/test\/.*: \.\.\/\.\.\/base-theme\/src\//],
@@ -110,14 +108,11 @@ const PENDING_RULING: Record<string, readonly RegExp[]> = {
   // The whole-window gallery, which draws every bundled part together.
   shell: [/^shell\/(gallery\/[^:]+|test\/gallery\.test\.ts):/],
   // The look gallery (lane G's), which draws the island, the pill, the avatars, usage and notifications together.
-  "base-theme": [/^base-theme\/gallery\/src\/(main|alpha)\.tsx: \.\.\/\.\.\/\.\.\//],
+  "base-theme": [/^base-theme\/gallery\/src\/(main|alpha|island-tabs)\.tsx: \.\.\/\.\.\/\.\.\//],
 };
 
 /** The same, for package.json dependencies (pending the same rulings). */
-const PENDING_DEPENDENCY: Record<string, readonly RegExp[]> = {
-  usage: [/^usage\/package\.json: @waifucave\/clover-plugin-island$/],
-  devices: [/^devices\/package\.json: @waifucave\/clover-plugin-island$/],
-};
+const PENDING_DEPENDENCY: Record<string, readonly RegExp[]> = {};
 
 describe("each bundled plugin is a folder of its own (F2b)", () => {
   for (const name of plugins) {

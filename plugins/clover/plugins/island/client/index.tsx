@@ -10,7 +10,6 @@ export { useCoalesced } from "../src/ui/use-coalesced";
 export { islandCards, type IslandStripCard } from "../src/model/strip-cards";
 export { Island, BROWSER_TIMERS, type IslandProps, type IslandTabEntry, type IslandTimers } from "../src/ui/Island";
 export { IslandSurface, type IslandSurfaceProps, type SurfaceHostApi } from "../src/ui/IslandSurface";
-export { DevicesTab, DevicesList, type DevicesSource } from "../src/ui/DevicesTab";
 export { LineRows, useLines, type LineSource, type LinesProps } from "../src/ui/Lines";
 export * from "../src/model/lines";
 export { Strip, stripLabel, type StripProps } from "../src/ui/Strip";
@@ -46,7 +45,6 @@ export { NEEDS_YOU, OWN_PLUGIN, isOwnPlugin, guestTabs, isReservedTab, isReserve
 export { nameSkeleton, readsAs, shownName } from "../src/model/names";
 export { hoverScale, isOver, grownFromTop } from "../src/model/hover";
 export * from "../src/model/placement";
-export * from "../src/model/devices";
 
 // The words: the app installs its translator (lane E's `useT()`) for parts with no host context, such as an avatar.
 export { setTranslator, t, type Translator } from "../src/strings";

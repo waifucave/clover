@@ -1,14 +1,14 @@
-// The island's Devices tab (spec §8): an `island.tab` entry of the island's own. The computers, then the phones and
+// The Devices tab (spec §8): this plugin's `island.tab` entry. The computers, then the phones and
 // browsers, one quiet row each, this device first and then the main computer; a dot for a device online, a hollow
 // ring for one away; how each link reaches its peer, and the round trip under the pointer. Reads `devices.read` (`DevicesApi.list` and `watch`).
 // An at-a-glance status (ruling R3): pairing, revoking and choosing the main computer are Settings → Devices, lane F's
 // page, which a row and "Manage devices" open.
 
 import { Fragment, useEffect, useState, type ReactElement } from "react";
-import { deviceGroups, type DeviceView } from "../model/devices";
-import { t } from "../strings";
-import { EmptyTab, TabScroll } from "./OpenIsland";
-import { GroupTitle, LiftRow, LinkWords, RowWords, StatusWord, type StatusMark } from "./rows";
+import { deviceGroups, type DeviceView } from "./model";
+import { t } from "./strings";
+import { EmptyTab, TabScroll } from "./ui/tab";
+import { GroupTitle, LiftRow, LinkWords, RowWords, StatusWord, type StatusMark } from "./ui/rows";
 
 /** `devices.read`, as lane B's plugin API gives it. */
 export interface DevicesSource {

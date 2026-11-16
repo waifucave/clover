@@ -15,10 +15,8 @@ import { mockSealedKit } from "./mock-kit";
 import { SealedKitContext } from "./ui/sealed";
 import { Strip } from "./ui/Strip";
 import { WaitingPill } from "./ui/WaitingPill";
-import { DevicesList } from "./ui/DevicesTab";
 import { IslandSurface, type SurfaceHostApi } from "./ui/IslandSurface";
 import { islandPlacement, type SurfaceEnvironment, type SurfaceWindowSpec } from "./model/placement";
-import type { DeviceView } from "./model/devices";
 import type { IslandCard } from "./model/cards";
 
 export interface Story {
@@ -34,10 +32,10 @@ export interface Story {
 
 const kit = mockSealedKit(SEALED);
 
-/** The island's tabs in every story: Needs you, then the usage plugin's Usage and the island's own Devices. */
+/** The island's tabs in every story: Needs you, then the usage plugin's Usage and the devices plugin's Devices. */
 const USAGE = { id: "usage", title: "Usage" };
 const DEVICES = { id: "devices", title: "Devices" };
-/** In the manifests' order: the usage plugin's tab (800) before the island's own Devices (900). */
+/** In the manifests' order: the usage plugin's tab (800) before the devices plugin's (900). */
 export const ISLAND_TABS = [NEEDS_YOU, USAGE, DEVICES];
 const TABS = ISLAND_TABS;
 
@@ -115,15 +113,6 @@ function filmstrip(times: number[], frame: (t: number) => ReactNode, width: numb
     </div>
   );
 }
-
-/** Sample devices for the Devices tab (sample data). */
-const NOW = Date.UTC(2026, 10, 5, 12, 0, 0);
-export const SAMPLE_DEVICES: DeviceView[] = [
-  { id: "studio", name: "Studio", kind: "desktop", os: "macos", runsCore: true, online: true, isThis: true, isMain: true, addedAt: 0 },
-  { id: "laptop", name: "Pocket laptop", kind: "desktop", os: "windows", runsCore: true, online: true, isThis: false, isMain: false, addedAt: 0, link: { peer: "laptop", up: true, path: "lan", rttMs: 3.4 } },
-  { id: "box", name: "Box", kind: "server", os: "linux", runsCore: true, online: true, isThis: false, isMain: false, addedAt: 0, link: { peer: "box", up: true, path: "relay", relay: "waifucave relay", rttMs: 48 } },
-  { id: "phone", name: "Phone", kind: "phone", os: "ios", runsCore: false, online: false, isThis: false, isMain: false, addedAt: 0, lastSeenAt: NOW - 3 * 3_600_000, link: { peer: "phone", up: false, path: "relay", relay: "waifucave relay" } },
-];
 
 /** The island's desktop for another plugin's tab stories (the usage plugin's): wallpaper, menu bar and housing. */
 export const IslandDesktop = Desktop;
@@ -322,33 +311,6 @@ export const ISLAND_STORIES: Story[] = [
       <Desktop shape={NOTCH} width={W} height={220} dark>
         <OpenIsland shape={NOTCH} tabs={tabState(TABS)}>
           <NeedsYou cards={[]} />
-        </OpenIsland>
-      </Desktop>
-    ),
-  },
-  {
-    id: "island/open-devices",
-    title: "Open island: Devices, the computers then the phones, one row under the pointer",
-    width: W,
-    height: 220,
-    render: () => (
-      <Desktop shape={NOTCH} width={W} height={220}>
-        <Strip shape={NOTCH} counts={{ waiting: 0, working: 2 }} />
-        <OpenIsland shape={NOTCH} tabs={tabState(TABS, 2)}>
-          <DevicesList devices={SAMPLE_DEVICES} now={NOW} hovered="laptop" onOpenDevices={() => {}} />
-        </OpenIsland>
-      </Desktop>
-    ),
-  },
-  {
-    id: "island/open-devices-no-housing",
-    title: "Open island: Devices on a screen with no housing, an offline phone under the pointer",
-    width: W,
-    height: 220,
-    render: () => (
-      <Desktop shape={NO_NOTCH} width={W} height={220}>
-        <OpenIsland shape={NO_NOTCH} tabs={tabState(TABS, 2)}>
-          <DevicesList devices={SAMPLE_DEVICES} now={NOW} hovered="phone" />
         </OpenIsland>
       </Desktop>
     ),
