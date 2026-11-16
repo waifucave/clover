@@ -14,7 +14,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import { CLIENT_BARE_IMPORTS } from "../../packages/plugin-sdk/src/index";
+import { CLIENT_BARE_IMPORTS, capabilityOkText } from "../../packages/plugin-sdk/src/index";
 import { fail, layerDocs, sleep, toAlphasTab, until, type ExampleCtx } from "./example-steps";
 
 export const CONVERSATION_COPY_STEP = "a folder-installed copy of the conversation, under another id and behind its OK card (reads your conversations, sends as you), takes the bundled one's place in Alpha's tab: it draws her turn, shows Try again on a failed turn, a click the page makes itself sends nothing, and one real click sends the user's message again through the app's door by its user.send, never its id";
@@ -25,11 +25,9 @@ const COPY_NAME = "Mirror conversation";
 /** The bundled plugin the copy stands in for (switched off while the copy runs, on again after). */
 const BUNDLED = "clover/conversation";
 
-/** The OK card's plain lines for what the copy holds (the catalog's `ok` words). */
-export const COPY_OK_LINES: readonly string[] = [
-  "reads your conversations with all your bots",
-  "sends messages to your bots and sessions as you, with text it chooses, whenever you click or press a key in its window",
-];
+/** The OK card's plain lines for what the copy holds: the catalog's own `ok` words for its `conversation.read` and its
+ *  `user.send` (read from the catalog, so a reworded line is still the one checked). */
+export const COPY_OK_LINES: readonly string[] = ["conversation.read", "user.send"].map((c) => capabilityOkText(c) ?? c);
 
 /** The copy's manifest: the bundled one's, with an id and a name of its own and its client built to one module. Its
  *  capabilities and its spot's `declares` are the bundled plugin's own, so what it may do is what its OK card says. */
