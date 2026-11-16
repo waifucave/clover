@@ -177,10 +177,12 @@ async function keyHoldClause(ctx: ExampleCtx, sentWith: (words: string) => Promi
   await send("Space", ["control", "shift"], "repeat");
   await send("Space", ["control", "shift"], "repeat");
   await sleep(500);
+  // The shift let go first ends the hold: the words go on that release alone (main's held-binding allowance; the space, still
+  // down, gives no release of its own yet), and the space let go after the send gives no second one.
   await send("Shift", ["control"], "up");
-  await send("Space", ["control"], "up");
-  await until(`the user's message "${HEARD}" in Alpha's conversation after the key's release`, 40_000, async () => ((await sentWith(HEARD)) > before ? true : undefined),
+  await until(`the user's message "${HEARD}" in Alpha's conversation after the shift's release`, 40_000, async () => ((await sentWith(HEARD)) > before ? true : undefined),
     async () => `the button says "${String(await cdp.evaluate(doc, "document.querySelector('.cl-voice-talk')?.innerText ?? ''").catch(() => "?")).slice(0, 160)}"; app: ${ctx.appLog().split("\n").filter((l) => /send:|keys:/.test(l)).slice(-5).join(" | ").slice(-900)}`);
+  await send("Space", ["control"], "up");
   await sleep(1_500);
   const sent = (await sentWith(HEARD)) - before;
   if (sent !== 1) fail(`the held key sent the words ${sent} time(s), not once`);
@@ -193,5 +195,5 @@ async function keyHoldClause(ctx: ExampleCtx, sentWith: (words: string) => Promi
   const boxAfter = String(await cdp.evaluate(doc, `document.querySelector('${BOX}') ? document.querySelector('${BOX}').value : null`).catch(() => null));
   if (boxAfter !== boxBefore) fail(`the composer's box changed while the chord was held: ${JSON.stringify(boxBefore)} became ${JSON.stringify(boxAfter)}`);
   if ((await cdp.evaluate(doc, "!!document.querySelector('.cl-voice-talk[data-voice-talk=listening]')")) === true) fail("the talk button still says it is listening after the key's release");
-  return [`Ctrl+Shift+Space held with real key events (its down with the box focused, 2 auto-repeats, the shift let go first, then the space): main delivered Clover Voice's held binding one down and one up, the button recorded once (1 start), the words "${HEARD}" were sent to Alpha once as the user's message, and the box stayed ${JSON.stringify(boxBefore)} (the chord never typed)`];
+  return [`Ctrl+Shift+Space held with real key events (its down with the box focused, 2 auto-repeats, the shift let go first and the words sent on that release, then the space let go): main delivered Clover Voice's held binding one down and one up, the button recorded once (1 start), the words "${HEARD}" were sent to Alpha once as the user's message, and the box stayed ${JSON.stringify(boxBefore)} (the chord never typed)`];
 }

@@ -463,9 +463,6 @@ export class SendGate {
   creditHeld(windowId: number, hold: Hold, frames: readonly string[]): void {
     if (this.lastPress.get(windowId) !== hold || hold.spent || this.now() - hold.at > SEND_HOLD_MAX_MS) return;
     hold.releasedAt ??= this.now();
-    // The binding's release is the press's release: a modifier let go first credits the press's own frames now too, and the
-    // key's own up, later, credits nothing again (one press, one send).
-    if (this.holds.get(windowId) === hold) this.credit(windowId, hold);
     for (const f of frames) this.releases.set(f, { windowId, at: hold.releasedAt, hold });
   }
 
@@ -485,7 +482,11 @@ export class SendGate {
     if (r === undefined || r.windowId !== windowId) return false; // another window's call spends nothing
     const fresh = this.now() - r.at <= SEND_RELEASE_WINDOW_MS;
     for (const [f, x] of this.releases) if (x.hold === r.hold) this.releases.delete(f);
-    if (fresh) this.lastInput.delete(windowId);
+    if (fresh) {
+      this.lastInput.delete(windowId);
+      // Spent: a release of that press still to come (a held key binding's key let go after its modifier) gives nothing more.
+      r.hold.spent = true;
+    }
     return fresh;
   }
 

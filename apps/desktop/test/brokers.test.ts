@@ -534,7 +534,7 @@ describe("a held key binding's release (§5.4 `hold`): its owner's documents get
     expect(g.takeRelease(1, OWNER)).toBe(false);
   });
 
-  test("a modifier let go first: that release credits the press's frames and the owner's once; the key's own up later gives no second send", () => {
+  test("a modifier let go first: the owner's documents send once; the key's own up after that send gives no second one", () => {
     const now = { t: 0 };
     const g = new SendGate(() => now.t);
     const h = down(g);
