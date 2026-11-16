@@ -192,7 +192,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // when it does not draw the stock one shows in its place until the person asks to try the bot's again.
   const replacedOnTab = (id: string): boolean => {
     const i = PANEL_KEYS.indexOf(id as (typeof PANEL_KEYS)[number]);
-    return botRef !== undefined && (REPLACEABLE as readonly string[]).includes(id) && i >= 0 && entryLists[i + 1]?.[0] !== undefined && !entryLists[i + 1]![0]!.pluginId.startsWith("clover/");
+    return botRef !== undefined && (REPLACEABLE as readonly string[]).includes(id) && i >= 0 && entryLists[i + 1]?.[0] !== undefined && !entryLists[i + 1]![0]!.bundled;
   };
   const [fell, setFell] = useState<Record<string, boolean>>({});
   const [tries, setTries] = useState<Record<string, number>>({});
