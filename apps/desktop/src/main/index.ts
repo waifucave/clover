@@ -2439,10 +2439,10 @@ const heldPresses = new Map<number, Hold>();
 /** Each window's held-binding calls, in order: a binding's up goes only once its down's call has settled. */
 const heldCalls = new Map<number, Promise<unknown>>();
 
-/** A held key binding's down or up (`commands[].hold`, §5.4) goes to its command, as a press runs it: `command.run` with
- *  `{ key: "down" }` or `{ key: "up" }`, as the user. A release the user made gives the binding's owner its documents in this
- *  window the send allowance of the press (`creditHeld`: one `user.send`, 30 s); one the window made (it lost the focus or
- *  closed) gives nothing. */
+/** A held key binding's down, up or cancel (`commands[].hold`, §5.4) goes to its command: `command.run` with `held`, on the
+ *  app's own connection, the one route the core takes a held command from (its handler gets `{ key: <phase> }`). The user's
+ *  release (`up`) gives the binding's owner its documents in this window the send allowance of the press (`creditHeld`: one
+ *  `user.send`, 30 s); a `cancel` (the window lost the focus or closed, or a stale hold ended) gives nothing. */
 function heldKey(windowId: number, step: HoldStep): void {
   const { binding: b, phase } = step;
   if (phase === undefined) return;
@@ -2453,11 +2453,11 @@ function heldKey(windowId: number, step: HoldStep): void {
   } else {
     const press = heldPresses.get(windowId);
     heldPresses.delete(windowId);
-    if (step.released === true && press !== undefined) sends.creditHeld(windowId, press, runtime.heldKeyFrames(windowId, b.pluginId));
+    if (phase === "up" && press !== undefined) sends.creditHeld(windowId, press, runtime.heldKeyFrames(windowId, b.pluginId));
   }
-  log(`keys: ${b.name} ${phase} from its key${phase === "up" && step.released !== true ? " (the window let go of it)" : ""}`);
+  log(`keys: ${b.name} ${phase} from its key`);
   const next = (heldCalls.get(windowId) ?? Promise.resolve())
-    .then(() => pair.client?.request("command.run", { name: b.name, args: { key: phase } }, 30_000))
+    .then(() => pair.client?.request("command.run", { name: b.name, held: phase }, 30_000))
     .catch((err: unknown) => log(`keys: ${b.name} ${phase} failed: ${why(err)}`));
   heldCalls.set(windowId, next);
 }
@@ -2486,7 +2486,7 @@ function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void
     if (held !== undefined) {
       if (held.consume) event.preventDefault();
       heldKey(win.id, held);
-      return;
+      if (held.passOn !== true) return;
     }
     // A test-marked or acceptance build says which up passed a held binding by (the harness reads it).
     if (input.type === "keyUp" && pluginKeys.holding(win.id) !== undefined && (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")) {

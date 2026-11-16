@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { catalogPointDecl } from "@waifucave/clover-plugin-sdk";
 import { commandViews } from "../../commands/views";
 import { registryCommand, runCommand } from "../commands";
+import type { Caller } from "@waifucave/clover-protocol";
 import type { Manifest } from "../../contracts/sdk-types";
 import { currentPlatform, hostedRecordOf } from "../../plugin-host/daemon-host";
 import { filePluginSettings, PluginSettings } from "../../plugin-host/api/settings";
@@ -57,22 +58,44 @@ describe("commands[].key", () => {
 });
 
 describe("commands[].hold", () => {
-  test("a held key's command says so in its view, and command.run takes { key: down | up } (the core's own args) and nothing else", async () => {
+  test("a held key's command says so in its view", () => {
     const reg = registryOf([
       { id: "a", manifest: m({ id: "a", contributes: { commands: [{ name: "talk", description: "talk", handler: "talk", key: "ctrl+shift+space", hold: true }, { name: "go", description: "go", handler: "go", key: "mod+shift+k" }] } }), treeHash: "sha256:a", approved: true },
     ]);
     const views = commandViews(reg, "darwin");
     expect(views.find((c) => c.name === "a.talk")).toMatchObject({ key: "ctrl+shift+space", hold: true, keyState: { state: "bound", chord: "ctrl+shift+space" } });
     expect(views.find((c) => c.name === "a.go")!.hold).toBeUndefined();
+  });
+
+  test("a held command runs only from its key: the app's own connection with `held` reaches it; the CLI, the palette, a session and a plugin with call: are refused, and its handler is never reached", async () => {
+    const reg = registryOf([
+      { id: "a", manifest: m({ id: "a", contributes: { commands: [{ name: "talk", description: "talk", handler: "talk", key: "ctrl+shift+space", hold: true }, { name: "go", description: "go", handler: "go", key: "mod+shift+k" }] } }), treeHash: "sha256:a", approved: true },
+    ]);
     const calls: unknown[] = [];
-    const o = { find: (name: string) => registryCommand(reg, name), host: { invoke: async <R>(req: { args: unknown }) => { calls.push(req.args); return null as R; } } };
-    const user = { kind: "user", client: "app" } as const;
-    for (const key of ["down", "up"]) await runCommand(o, { name: "a.talk", args: { key } }, user);
-    await runCommand(o, { name: "a.talk" }, user);
-    expect(calls).toEqual([{ key: "down" }, { key: "up" }, {}]);
-    for (const args of [{ key: "sideways" }, { key: "down", extra: 1 }]) await expect(runCommand(o, { name: "a.talk", args }, user)).rejects.toMatchObject({ code: "invalid_args" });
-    // A press binding still takes no args it didn't declare.
-    await expect(runCommand(o, { name: "a.go", args: { key: "down" } }, user)).rejects.toMatchObject({ code: "invalid_args" });
+    const o = { find: (name: string) => registryCommand(reg, name), host: { invoke: async <R>(req: { args: unknown }) => { calls.push(req.args); return null as R; } }, grantedOf: () => ["call:a"] };
+    const app = { kind: "user", client: "app" } as const;
+    // Main's own run, from the key it saw: the handler gets { key } and nothing else.
+    for (const held of ["down", "up", "cancel"] as const) await runCommand(o, { name: "a.talk", held }, app);
+    expect(calls).toEqual([{ key: "down" }, { key: "up" }, { key: "cancel" }]);
+    const refusals: [string, Caller, { args?: unknown; held?: "down" }][] = [
+      ["the CLI", { kind: "user", client: "cli" }, { held: "down" }],
+      ["the CLI with args", { kind: "user", client: "cli" }, { args: { key: "down" } }],
+      // The palette is the app's connection with args a part chose (no `held`: no route of a part's sets it).
+      ["the palette", app, { args: { key: "down" } }],
+      ["the palette, no args", app, {}],
+      ["a session", { kind: "session", sessionId: "s_1", sessionKind: "bot", bot: "alpha" } as Caller, { held: "down" }],
+      ["a plugin with call:a", { kind: "plugin", pluginId: "friend" }, { held: "down" }],
+      ["its own plugin", { kind: "plugin", pluginId: "a" }, { args: { key: "down" } }],
+    ];
+    for (const [who, caller, p] of refusals) {
+      const err = await runCommand(o, { name: "a.talk", ...p } as never, caller).then(() => undefined, (e: unknown) => e as { code?: string; message?: string });
+      expect([who, err?.code, err?.message]).toEqual([who, "refused", "a.talk: a held command runs only from its key"]);
+    }
+    expect(calls).toHaveLength(3);
+    // `held` on a command that isn't a held key's is refused too; a press binding still takes no args it didn't declare.
+    await expect(runCommand(o, { name: "a.go", held: "down" }, app)).rejects.toMatchObject({ code: "refused" });
+    await expect(runCommand(o, { name: "a.go", args: { key: "down" } }, app)).rejects.toMatchObject({ code: "invalid_args" });
+    expect(calls).toHaveLength(3);
   });
 });
 

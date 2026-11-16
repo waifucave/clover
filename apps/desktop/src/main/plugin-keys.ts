@@ -28,13 +28,15 @@ export interface BoundKey {
   chord: string;
 }
 
-/** What a held binding's key event comes to: deliver `phase` to its command (none: nothing to deliver), and whether main
- *  consumes the event (only its key's up: a down or repeat goes on, for the preload to keep from the page). `released`: an up the user made (the window losing the focus ends a hold with none). */
+/** What a held binding's key event comes to: deliver `phase` to its command (none: nothing to deliver; `up` is the user's
+ *  release, `cancel` a hold that ended with none), and whether main consumes the event (only its key's up: a down or repeat
+ *  goes on, for the preload to keep from the page). `passOn`: the event is still an ordinary press after that (a stale
+ *  hold's end). */
 export interface HoldStep {
   binding: BoundKey;
   phase?: HoldPhase;
-  released?: boolean;
   consume: boolean;
+  passOn?: boolean;
 }
 
 /** The modifier keys a key event names (`input.key`), as a chord writes them. */
@@ -101,12 +103,23 @@ export class PluginKeys {
    *  * While held, the chord's key going down again (a repeat) is nothing new: nothing delivered (the preload keeps it too).
    *  * The up of its key ends it (`up`, consumed); so does the up of one of its modifiers, or any up whose modifier state has
    *    lost one of them (`up`, not consumed, so the page sees the modifier let go); its key's later repeats and up are still
-   *    kept from the page. Another key's up, its modifiers still down, is not it. */
+   *    kept from the page. Another key's up, its modifiers still down, is not it.
+   *  * A stale hold (its up never came: the Mac slept, no blur): the chord's key going down afresh (not a repeat) without all
+   *    of its modifiers ends it as a `cancel` (no release), is not kept from the page, and goes on as an ordinary press. */
   hold(windowId: number, input: KeyPress & { type: string; isAutoRepeat?: boolean }, mayRun: boolean): HoldStep | undefined {
     const h = this.#held.get(windowId);
     const down = input.type === "keyDown" || input.type === "rawKeyDown";
     if (down) {
-      if (h !== undefined && keyPart(input) === h.key && (input.isAutoRepeat === true || !h.ended)) return { binding: h.binding, consume: false };
+      if (h !== undefined && keyPart(input) === h.key) {
+        if (input.isAutoRepeat === true) return { binding: h.binding, consume: false };
+        if (!h.ended) {
+          const isDown: Record<string, boolean> = { ctrl: input.control, shift: input.shift, alt: input.alt, meta: input.meta };
+          // The chord again while held (an up that never came, the chord pressed anew): no new press.
+          if ([...h.mods].every((m) => isDown[m] === true)) return { binding: h.binding, consume: false };
+          this.#held.delete(windowId);
+          return { binding: h.binding, phase: "cancel", consume: false, passOn: true };
+        }
+      }
       // Any other press: what was left of an ended hold goes (the press goes on as any other).
       if (h?.ended === true) this.#held.delete(windowId);
       if (h !== undefined && !h.ended) return undefined;
@@ -119,7 +132,7 @@ export class PluginKeys {
     if (input.type !== "keyUp" || h === undefined) return undefined;
     if (keyPart(input) === h.key) {
       this.#held.delete(windowId);
-      return h.ended ? { binding: h.binding, consume: true } : { binding: h.binding, phase: "up", released: true, consume: true };
+      return h.ended ? { binding: h.binding, consume: true } : { binding: h.binding, phase: "up", consume: true };
     }
     // One of its modifiers let go: that key's up, or an up whose modifier state no longer has one of them (a synthesized
     // modifier's up may name no key Chromium knows, but its state says which modifiers are still down).
@@ -127,7 +140,7 @@ export class PluginKeys {
     const still: Record<string, boolean> = { ctrl: input.control, shift: input.shift, alt: input.alt, meta: input.meta };
     if (!h.ended && ((mod !== undefined && h.mods.has(mod)) || [...h.mods].some((m) => still[m] !== true))) {
       h.ended = true;
-      return { binding: h.binding, phase: "up", released: true, consume: false };
+      return { binding: h.binding, phase: "up", consume: false };
     }
     return undefined;
   }
@@ -145,12 +158,12 @@ export class PluginKeys {
     return h === undefined || h.ended ? undefined : h.binding.name;
   }
 
-  /** The window lost the focus or closed: a hold still on ends with no release of the user's (its `up` is delivered, and
-   *  counts for nothing). */
+  /** The window lost the focus or closed: a hold still on ends with no release of the user's (a `cancel`, which counts for
+   *  nothing). */
   cancel(windowId: number): HoldStep | undefined {
     const h = this.#held.get(windowId);
     this.#held.delete(windowId);
-    return h === undefined || h.ended ? undefined : { binding: h.binding, phase: "up", released: false, consume: false };
+    return h === undefined || h.ended ? undefined : { binding: h.binding, phase: "cancel", consume: false };
   }
 
   /** Fills the table from the daemon: only commands of plugins that are on, OK'd and running count. */

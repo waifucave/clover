@@ -4366,7 +4366,15 @@
             "maxLength": 128,
             "minLength": 3
           },
-          "args": {}
+          "args": {},
+          "held": {
+            "type": "string",
+            "enum": [
+              "down",
+              "up",
+              "cancel"
+            ]
+          }
         },
         "required": [
           "name"

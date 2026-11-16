@@ -23,6 +23,7 @@ import { isRange, satisfies } from "../semver";
 import { FORMATS, MANIFEST_FILE, PLUGIN_API_VERSION } from "../version";
 import { DOTTED_POINT_NAME_RE, NAMESPACE_RE, POINT_NAME_RE } from "./fields";
 import { checkArgsSchema } from "./args";
+import { TEXT_EDITING_KEYS } from "./keys";
 import { hookOptionEnvName, parseInterpolation, SETTING_FED_PARTS, usesSecretFiles, usesSecrets } from "./interpolation";
 import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
@@ -995,13 +996,17 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
       return ok;
     }
     case "commands": {
-      // A held key binding (`hold`) is a key's: it needs `key`, and its args are the core's own (`HOLD_ARGS`).
+      // A held key binding (`hold`) is a key's: it needs `key`, never a text-editing one, and it runs only from its key, so no args.
       if (e.hold === true && e.key === undefined) {
         f.error("entry", "hold_without_key", [...at, "hold"], "`hold` asks for a key's release as well as its press: give the command a `key`");
         return false;
       }
       if (e.hold === true && e.args !== undefined) {
-        f.error("entry", "hold_args", [...at, "args"], "a held key's command declares no `args`: its handler gets `{ key: \"down\" }` on the press and `{ key: \"up\" }` on the release");
+        f.error("entry", "hold_args", [...at, "args"], "a held key's command declares no `args`: it runs only from its key, and its handler gets `{ key: \"down\" }` on the press, `{ key: \"up\" }` on the release and `{ key: \"cancel\" }` when it ended with none");
+        return false;
+      }
+      if (e.hold === true && typeof e.key === "string" && TEXT_EDITING_KEYS.has(e.key.split("+").pop() ?? "")) {
+        f.error("entry", "hold_editing_key", [...at, "key"], `\`hold\` can't take ${e.key}: its key edits text where you type (the arrows, Home, End, Backspace, Delete, Enter and Tab), so holding it in the message box would count as the binding's presses; pick another key`);
         return false;
       }
       // A command's args schema in the subset `command.run` enforces (F-M3's review N4), or it takes no call.

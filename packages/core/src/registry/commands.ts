@@ -10,7 +10,7 @@
 // scope or its plugin's, §5.5) runs for the user and for that bot's own sessions (its conversation, side threads and
 // the agents it starts), never another bot's or a coding session's. The checks are before the args check, so a refused
 // caller learns nothing of the command's schema.
-import { HOLD_ARGS, validateArgs } from "@waifucave/clover-plugin-sdk";
+import { validateArgs, type HoldPhase } from "@waifucave/clover-plugin-sdk";
 import { PLUGINS_METHODS, type Caller } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
@@ -26,7 +26,12 @@ export interface RunnableCommand {
   args?: Record<string, unknown>;
   /** Its scope: its own, else its plugin's (`own-bot`: inside the plugin's bot). */
   scope?: PluginScope;
+  /** A held key binding's command (`hold`): it runs only from its key. */
+  hold?: boolean;
 }
+
+/** Who a held key's run may come from: the app's own connection, whose main process sends it from the key it saw. */
+const fromTheKey = (caller: Caller): boolean => caller.kind === "user" && (caller as { client?: unknown }).client === "app";
 
 export interface CommandRunnerOptions {
   /** The installed, running command of that full name, or undefined. */
@@ -48,9 +53,18 @@ export function mayRunCommand(caller: Caller, owner: string, granted: readonly s
 
 /** Runs `command.run` for `caller`: `not_installed` for an unknown command, `invalid_args` for args that don't fit
  *  its schema (detail: `path`, `keyword`), else the handler's result. */
-export async function runCommand(o: CommandRunnerOptions, params: { name: string; args?: unknown }, caller: Caller): Promise<{ result: unknown }> {
+export async function runCommand(o: CommandRunnerOptions, params: { name: string; args?: unknown; held?: HoldPhase }, caller: Caller): Promise<{ result: unknown }> {
   const command = o.find(params.name);
   if (command === undefined) throw new ContractError("not_installed", `no command ${params.name}`);
+  // A held key binding's command (§5.4 `hold`) runs only from its key: the down, release or cancel the app's main process saw
+  // and sends (`held`), never from the CLI, the palette, a session or another plugin, whatever args they give. Its handler
+  // gets `{ key: <held> }` and nothing else.
+  if (command.hold === true || params.held !== undefined) {
+    if (command.hold !== true) throw new ContractError("refused", `${params.name} is not a held key's command`);
+    if (params.held === undefined || !fromTheKey(caller)) throw new ContractError("refused", `${params.name}: a held command runs only from its key`);
+    const result = await o.host.invoke({ pluginId: command.pluginId, handler: command.handler, args: { key: params.held }, caller });
+    return { result };
+  }
   if (caller.kind === "plugin" && !mayRunCommand(caller, command.pluginId, o.grantedOf?.(caller.pluginId))) {
     throw new ContractError("refused", `${params.name} is ${topOf(command.pluginId)}'s: running it needs the capability call:${topOf(command.pluginId)}, which ${caller.pluginId}'s OK doesn't list`);
   }
@@ -74,11 +88,10 @@ export function registryCommand(registry: Pick<PluginRegistry, "entries"> & Part
   const c = registry.entries("commands").find((e) => e.state === "active" && e.entryId === name);
   if (c === undefined) return undefined;
   const v = c.value as { handler: string; args?: Record<string, unknown>; scope?: unknown; hold?: unknown };
+  const hold = v.hold === true;
   // Its scope as the registry reads it (its own, else its plugin's or tree's); without the records, only its own.
   const scope = registry.get !== undefined ? scopeOf(registry as Pick<PluginRegistry, "get">, c.pluginId, v.scope) : v.scope === "own-bot" ? "own-bot" : undefined;
-  // A held key's command (`hold`) takes the core's own args: `{ key: "down" | "up" }` (it declares none).
-  const args = v.hold === true ? HOLD_ARGS : v.args;
-  return { name, pluginId: c.pluginId, handler: v.handler, ...(args === undefined ? {} : { args }), ...(scope === undefined ? {} : { scope }) };
+  return { name, pluginId: c.pluginId, handler: v.handler, ...(v.args === undefined ? {} : { args: v.args }), ...(scope === undefined ? {} : { scope }), ...(hold ? { hold } : {}) };
 }
 
 /** `command.run` on Clover's connections: every caller's call goes through `runCommand`, the args check first. */
@@ -86,6 +99,6 @@ export function commandMethods(deps: { registry: Pick<PluginRegistry, "entries">
   const M = PLUGINS_METHODS;
   const o: CommandRunnerOptions = { find: (name) => registryCommand(deps.registry, name), host: deps.host, grantedOf: (id) => grantsInForce(deps.registry.get?.(id)) };
   return {
-    [M.commandRun.name]: handler(M.commandRun, (p, ctx) => runCommand(o, { name: p.name, ...(p.args === undefined ? {} : { args: p.args }) }, ctx.caller)),
+    [M.commandRun.name]: handler(M.commandRun, (p, ctx) => runCommand(o, { name: p.name, ...(p.args === undefined ? {} : { args: p.args }), ...(p.held === undefined ? {} : { held: p.held }) }, ctx.caller)),
   };
 }

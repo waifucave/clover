@@ -146,7 +146,7 @@ describe("code, engines and platforms", () => {
     }
   });
 
-  test("a held key's command (`hold`) needs its `key` and declares no args (its args are the core's: HOLD_ARGS)", () => {
+  test("a held key's command (`hold`) needs its `key` and declares no args (it runs only from its key)", () => {
     const held = (cmd: Record<string, unknown>) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" },
       contributes: { commands: [{ name: "talk", description: "Talk", handler: "talk", ...cmd }] } });
     expect(held({ key: "ctrl+shift+space", hold: true }).manifest?.contributes?.commands).toEqual([{ name: "talk", description: "Talk", handler: "talk", key: "ctrl+shift+space", hold: true }]);
@@ -157,6 +157,19 @@ describe("code, engines and platforms", () => {
     expect(withArgs.manifest?.contributes?.commands).toEqual([]);
     expect(codes(withArgs)).toContain("error:entry:hold_args:/contributes/commands/0/args");
     expect(codes(held({ key: "ctrl+shift+space", hold: "yes" }))).toContain("error:entry:schema:/contributes/commands/0/hold");
+  });
+
+  test("`hold` is refused on a text-editing key (the arrows, Home, End, Backspace, Delete, Enter, Tab), with a plain message; a press binding may still use one", () => {
+    const held = (key: string, hold: boolean) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" },
+      contributes: { commands: [{ name: "go", description: "Go", handler: "go", key, ...(hold ? { hold: true } : {}) }] } });
+    for (const key of ["mod+left", "mod+right", "ctrl+up", "ctrl+down", "mod+home", "mod+end", "mod+backspace", "mod+delete", "mod+shift+enter", "ctrl+tab"]) {
+      const r = held(key, true);
+      expect([key, r.manifest?.contributes?.commands]).toEqual([key, []]);
+      expect([key, codes(r)]).toEqual([key, expect.arrayContaining(["error:entry:hold_editing_key:/contributes/commands/0/key"])]);
+      expect(r.issues.find((i) => i.code === "hold_editing_key")!.message).toContain("edits text where you type");
+      expect([key, held(key, false).manifest?.contributes?.commands?.length]).toEqual([key, 1]);
+    }
+    expect(held("ctrl+shift+space", true).manifest?.contributes?.commands?.length).toBe(1);
   });
 
   test("`availability: not-yet` is Clover's own mark: its parked plugins carry it; any other plugin is refused for it", () => {
