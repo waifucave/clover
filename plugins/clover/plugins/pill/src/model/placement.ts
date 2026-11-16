@@ -5,7 +5,7 @@
 // and lets none place itself, so there the pill is a normal window the user moves, without the shadow's margin. Pure:
 // the surface host (lane E) supplies the display and applies the window and the regions, as it does the island's.
 
-import type { Rect, SurfaceEnvironment, SurfaceWindowSpec } from "@waifucave/clover-plugin-island";
+import type { Rect, SurfaceEnvironment, SurfaceWindowSpec } from "../surface/window";
 import { PILL, type Size } from "./metrics";
 
 /** `overlay`: a transparent panel over everything, bottom centre. `window`: a normal window (Linux on Wayland). */

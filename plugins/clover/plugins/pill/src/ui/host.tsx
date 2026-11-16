@@ -4,7 +4,7 @@
 
 import { createContext, useContext, useMemo, useState, type ReactElement } from "react";
 import { chooseTarget, pillTargets, storageMemory, userSendTarget, type PillBot, type PillTargetEntry, type ResolvedTarget, type TargetMemory, type TargetRef, type UserSendTarget } from "../model/targets";
-import type { SurfaceEnvironment, SurfaceHostApi } from "@waifucave/clover-plugin-island";
+import type { SurfaceEnvironment, SurfaceHostApi } from "../surface/window";
 import { DispatchPill, type DispatchPillProps } from "./DispatchPill";
 import { PillSurface } from "./PillSurface";
 import { setTranslator, type Translator } from "../strings";

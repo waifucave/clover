@@ -3,7 +3,7 @@
 import { useMemo, type ReactElement } from "react";
 import { useSpotEntries, useSurface, useSurfaceEnvironment, usePluginApi, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { PillApp as PillView, PillHostContext, type PillHost } from "./host";
-import { useCoalesced, type SurfaceHostApi } from "@waifucave/clover-plugin-island";
+import { useCoalesced, type SurfaceHostApi } from "../surface/window";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { usePillBots } from "./pill-bots";
 
