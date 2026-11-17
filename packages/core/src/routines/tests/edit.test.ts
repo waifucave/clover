@@ -11,7 +11,7 @@ import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import type { SideThreadRun } from "../../bots/service";
 import { RoutineEngine, routineFilePath } from "../engine";
-import { parseRoutine } from "../file";
+import { parseRoutine, patchRoutine, type RoutinePatch } from "../file";
 import { routineMethods } from "../rpc";
 
 const M = SESSIONS_METHODS;
@@ -323,6 +323,118 @@ describe("routine.edit: a generated sequence of hand writes and edits", () => {
         expect(readdirSync(join(home, "routines", "alpha")).filter((f) => f.endsWith(".md"))).toHaveLength(1);
       }
       engine.stop();
+    }
+  });
+});
+
+describe("routine.edit changes only what the patch names", () => {
+  const FRONT = [
+    "# Alpha's weekday brief: keep it short.",
+    "id: r_three001",
+    "name: \"Brief\" # shown in the panel",
+    "owner-note: hand-kept, unknown to MOSS",
+    "triggers:",
+    "  - schedule: \"0 8 * * 1-5\" # weekdays",
+    "  - webhook: true",
+    "  - type: slack",
+    "    channel: general",
+    "missed: skip",
+    "# the end of the fields",
+  ];
+  const TEXT = `---\n${FRONT.join("\n")}\n---\nRead my inbox.\n`;
+
+  test("three triggers and the comments survive pause, resume, rename and new instructions, byte for byte elsewhere", async () => {
+    const home = tempHome();
+    const path = routineFilePath(home, "alpha", "brief");
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, TEXT);
+    const { engine } = engineOn(home, new FakeClock());
+    await engine.start();
+    await engine.edit("r_three001", "alpha", { paused: true });
+    expect(readFileSync(path, "utf8")).toBe(`---\n${FRONT.join("\n")}\npaused: true\n---\nRead my inbox.\n`);
+    await engine.edit("r_three001", "alpha", { paused: false });
+    expect(readFileSync(path, "utf8")).toBe(TEXT);
+    await engine.edit("r_three001", "alpha", { instructions: "Read my inbox, then the calendar." });
+    expect(readFileSync(path, "utf8")).toBe(TEXT.replace("Read my inbox.", "Read my inbox, then the calendar."));
+    const renamed = routineFilePath(home, "alpha", "morning-brief");
+    const view = await engine.edit("r_three001", "alpha", { name: "Morning brief" });
+    expect(view.triggers.map((t) => t.type)).toEqual(["schedule", "webhook", "slack"]);
+    expect(readFileSync(renamed, "utf8")).toBe(TEXT.replace("Read my inbox.", "Read my inbox, then the calendar.").replace('name: "Brief" # shown in the panel', 'name: "Morning brief" # shown in the panel'));
+    // Its one schedule changes in place, its comment kept; the other triggers stay.
+    await engine.edit("r_three001", "alpha", { schedule: "every 2h" });
+    const now = readFileSync(renamed, "utf8");
+    expect(now).toContain('  - schedule: "every 2h" # weekdays\n  - webhook: true\n  - type: slack\n    channel: general\n');
+    expect(now).toContain("# Alpha's weekday brief: keep it short.\n");
+    expect(now).toContain("owner-note: hand-kept, unknown to MOSS\n");
+    expect(now).toContain("# the end of the fields\n");
+    engine.stop();
+  });
+
+  test("with two schedules a schedule change can't say which it means: refused, edit the file; name, instructions and pause still change", async () => {
+    const home = tempHome();
+    const path = write(home, "two", "id: r_twotwo01\nname: Two\ntriggers:\n  - schedule: every 1h\n  - schedule: \"0 8 * * *\"");
+    const { engine } = engineOn(home, new FakeClock());
+    await engine.start();
+    const before = readFileSync(path, "utf8");
+    const err = await engine.edit("r_twotwo01", "alpha", { schedule: "every 3h" }).catch((e: unknown) => e);
+    expect(code(err)).toBe("invalid");
+    expect(String((err as Error).message)).toContain("edit the routine's file");
+    expect(readFileSync(path, "utf8")).toBe(before);
+    await engine.edit("r_twotwo01", "alpha", { paused: true, instructions: "Tick." });
+    const view = await engine.edit("r_twotwo01", "alpha", { name: "Ticks" });
+    expect(view.triggers.map((t) => t.summary)).toEqual(["every 1h", "0 8 * * *"]);
+    expect(view.state).toBe("paused");
+    engine.stop();
+  });
+
+  test("a generated sequence of patches: everything a patch didn't name is unchanged", () => {
+    let seed = 0xbeef;
+    const rand = (n: number) => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed % n;
+    };
+    const extras = ["# a comment", "owner: someone", "level: ask", "timezone: \"Europe/London\"", "missed: run-once", "x-flag: 3 # kept"];
+    const named = (line: string, p: RoutinePatch) =>
+      (p.name !== undefined && /^name\s*:/.test(line)) || (p.paused !== undefined && /^paused\s*:/.test(line)) || (p.schedule !== undefined && /^\s*-\s*schedule\s*:/.test(line));
+    for (let round = 0; round < 40; round++) {
+      const fm = ["id: r_gen00001", `name: "Gen ${round}"`];
+      for (const e of extras) if (rand(2) === 0) fm.splice(rand(fm.length + 1), 0, e);
+      fm.push("triggers:");
+      const schedules = rand(3);
+      for (let i = 0; i < schedules; i++) fm.push(`  - schedule: every ${i + 1}h`);
+      if (rand(2) === 0) fm.push("  - webhook: true");
+      if (rand(2) === 0) fm.push("  - type: linear", "    team: core");
+      if (rand(3) === 0) fm.push("paused: true");
+      let text = `---\n${fm.join("\n")}\n---\nDo ${round}.\n`;
+      for (let step = 0; step < 12; step++) {
+        const p: RoutinePatch = {};
+        if (rand(3) === 0) p.name = `Gen ${round}.${step}`;
+        if (rand(3) === 0) p.paused = rand(2) === 0;
+        if (rand(3) === 0) p.instructions = `Do ${round}.${step}.`;
+        if (rand(4) === 0) p.schedule = `every ${rand(9) + 1}m`;
+        const before = parseRoutine(text, "gen");
+        const out = patchRoutine(text, "gen", p);
+        if (!before.ok) throw new Error("the generated file doesn't read");
+        if (!out.ok) {
+          // Only a schedule change on a routine with several schedules is refused.
+          expect(p.schedule !== undefined && before.routine.triggers.filter((t) => t.type === "schedule").length > 1).toBe(true);
+          continue;
+        }
+        const a = text.split("\n---\n");
+        const b = out.text.split("\n---\n");
+        const keep = (front: string) => front.split("\n").filter((l) => !named(l, p));
+        expect(keep(b[0]!).filter((l) => !(p.schedule !== undefined && /^triggers:/.test(l)))).toEqual(keep(a[0]!).filter((l) => !(p.schedule !== undefined && /^triggers:/.test(l))));
+        if (p.instructions === undefined) expect(b[1]).toBe(a[1]);
+        const after = out.routine;
+        expect(after.id).toBe("r_gen00001");
+        expect(after.name).toBe(p.name ?? before.routine.name);
+        expect(after.paused === true).toBe(p.paused ?? before.routine.paused === true);
+        expect(after.level).toBe(before.routine.level);
+        expect(after.timezone).toBe(before.routine.timezone);
+        expect(after.triggers.filter((t) => t.type !== "schedule")).toEqual(before.routine.triggers.filter((t) => t.type !== "schedule"));
+        if (p.schedule === undefined) expect(JSON.stringify(after.triggers)).toBe(JSON.stringify(before.routine.triggers));
+        text = out.text;
+      }
     }
   });
 });
