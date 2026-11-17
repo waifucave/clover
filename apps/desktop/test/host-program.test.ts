@@ -125,7 +125,8 @@ describe("a tab's pictures to the engine", () => {
   });
 });
 
-test("the dev helper is the dev profile on its own home, never the dist home; the packaged host follows the app's rule", () => {
+// macOS only: the dev helper is a macOS bundle.
+test.if(process.platform === "darwin")("the dev helper is the dev profile on its own home, never the dist home; the packaged host follows the app's rule", () => {
   const dev = "/r/dist/dev/app/MOSS Code Dev.app/Contents/Frameworks/MOSS Host Dev.app/Contents/MacOS/MOSS Host Dev";
   const dist = "/Applications/MOSS Code.app/Contents/Frameworks/MOSS Host.app/Contents/MacOS/MOSS Host";
   expect(hostProfileAndHome({}, dev, "/Users/u")).toEqual({ profile: "dev", home: join("/Users/u", ".moss-dev") });

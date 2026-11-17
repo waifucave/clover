@@ -71,7 +71,8 @@ test("electron-builder runs it after packing, before the fuses and the signature
   expect(yml).toMatch(/^afterPack: scripts\/host-helper\.mjs$/m);
 });
 
-test("the dev app's helper runs the checkout's built main from a two-file stub", () => {
+// macOS only: the dev helper is a macOS bundle.
+test.if(process.platform === "darwin")("the dev app's helper runs the checkout's built main from a two-file stub", () => {
   const app = fakeApp("Electron");
   const host = makeHostHelper({ appPath: app, appName: "Electron", appId: "com.waifucave.moss.code.dev", devMain: "/r/apps/desktop/out/main/index.js", devPackage: { name: "@waifucave/moss-desktop", version: "0.124.0" } }) as string;
   expect(host.endsWith("MOSS Host Dev.app")).toBe(true);
