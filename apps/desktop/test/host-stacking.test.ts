@@ -1,12 +1,11 @@
 import { expect, test } from "bun:test";
 import { overlayStandsDown, surfacesReport } from "../src/main/host-stacking";
 
-test("R12: while a card is pending here a plugin's overlay stands down; the tree's surfaces and plain parts never do", () => {
-  const overlay = { pluginId: "acceptance-hold", floats: true };
-  expect(overlayStandsDown(overlay, true)).toBe(true);
-  expect(overlayStandsDown(overlay, false)).toBe(false);
-  expect(overlayStandsDown({ pluginId: "moss", floats: true }, true)).toBe(false);
-  expect(overlayStandsDown({ pluginId: "acceptance-tab", floats: false }, true)).toBe(false);
+test("R12: while any card is pending every third-party on-screen part stands down, floating or not; the tree's never does", () => {
+  expect(overlayStandsDown({ pluginId: "acceptance-hold" }, true)).toBe(true);
+  expect(overlayStandsDown({ pluginId: "acceptance-tab" }, true)).toBe(true);
+  expect(overlayStandsDown({ pluginId: "acceptance-hold" }, false)).toBe(false);
+  expect(overlayStandsDown({ pluginId: "moss" }, true)).toBe(false);
 });
 
 test("the surfaces report lists the visible ones only, bounded", () => {

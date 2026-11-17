@@ -591,21 +591,32 @@ async function browserPictureEndToEnd(c: MossClient, session: string): Promise<s
  *  on the island hides it (the host's log says so by the surface's ref) and its answer brings it back; the engine logged
  *  the host's surfaces report (`host.surfaces`). */
 async function overlayStandsDownForCard(c: MossClient, hostCdp: Cdp, hostLog: string, daemonLog: string): Promise<string> {
-  const overlay = "acceptance-hold";
-  await c.request("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", overlay) } }, 60_000);
-  const ok = await until("the overlay fixture's OK card", 60_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === overlay), 300);
-  await pressOnIsland(hostCdp, ok, hostLog);
-  await until("the overlay's part in the host", 60_000, async () => ((await hostCdp.documents()).some((d) => d.url.startsWith(`moss-plugin://${overlay}/`)) ? true : undefined), 500);
+  // Two third-party on-screen parts: the hold fixture's (always on top, bottom centre) and the cover's, a panel painted where
+  // the island draws its cards with no click region of its own (every click passes through it).
+  const parts = ["acceptance-hold", "acceptance-cover"] as const;
+  const refs = { "acceptance-hold": "acceptance-hold#hold", "acceptance-cover": "acceptance-cover#cover" } as const;
+  for (const id of parts) {
+    await c.request("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", id) } }, 60_000);
+    const ok = await until(`${id}'s OK card`, 60_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === id), 300);
+    await pressOnIsland(hostCdp, ok, hostLog);
+    await until(`${id}'s part in the host`, 60_000, async () => ((await hostCdp.documents()).some((d) => d.url.startsWith(`moss-plugin://${id}/`)) ? true : undefined), 500);
+    await until(`${id}'s part back once its OK card is answered`, 30_000, () => (new RegExp(`surface: ${refs[id]} back \\(no card pending here\\)`).test(readLog(hostLog)) ? true : undefined), 300).catch(() => undefined);
+  }
   const from = readLog(hostLog).length;
   const other = "acceptance-router";
   await c.request("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", other) } }, 60_000);
-  const card = await until("a second OK card on the island", 60_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === other), 300);
-  await until("the overlay hidden while the card is pending", 30_000, () => (readLog(hostLog).slice(from).includes(`surface: ${overlay}#hold hidden while a card is pending`) ? true : undefined), 300);
+  const card = await until("a third plugin's OK card on the island", 60_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === other), 300);
+  for (const id of parts) await until(`${id}'s part hidden while the card is pending`, 30_000, () => (readLog(hostLog).slice(from).includes(`surface: ${refs[id]} hidden while a card is pending`) ? true : undefined), 300);
   await pressOnIsland(hostCdp, card, hostLog);
-  await until("the overlay back once the card is answered", 30_000, () => (readLog(hostLog).slice(from).includes(`surface: ${overlay}#hold back (no card pending here)`) ? true : undefined), 300);
+  // Gone before the press could land: each part's hiding comes before the island's first press on the card in the host's log.
+  const after = readLog(hostLog).slice(from);
+  const pressAt = after.search(new RegExp(`sealed: press on ${card.id}[^\\n]*received`));
+  if (pressAt < 0) fail("the host's log names no press on the card");
+  for (const id of parts) if (after.indexOf(`surface: ${refs[id]} hidden while a card is pending`) > pressAt) fail(`${id}'s part was hidden only after the press on the card`);
+  for (const id of parts) await until(`${id}'s part back once the card is answered`, 30_000, () => (readLog(hostLog).slice(from).includes(`surface: ${refs[id]} back (no card pending here)`) ? true : undefined), 300);
   await until("the engine hearing where the host's surfaces are", 30_000, () => (/\[host\] surfaces: \d+ on the screen/.test(readLog(daemonLog)) ? true : undefined), 300);
-  for (const id of [overlay, other]) await c.request("plugin.remove", { id, deleteData: true }, 30_000).catch(() => undefined);
-  return `the hold fixture's always-on-top overlay ran in the host, was hidden while a second plugin's OK card was pending on the island and came back once it was pressed there; the engine heard the host's surfaces`;
+  for (const id of [...parts, other]) await c.request("plugin.remove", { id, deleteData: true }, 30_000).catch(() => undefined);
+  return `the hold fixture's overlay and a click-through part painted over the island were each hidden as a third plugin's OK card arrived, before its press on the island landed, and came back once it was answered; the engine heard the host's surfaces`;
 }
 
 /** Unregisters from Launch Services whatever the run left registered under its temp folder (scripts/try/run.sh's rule). */

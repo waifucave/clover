@@ -1140,6 +1140,7 @@ function cardArrivedNow(card: { id: string; kind: string }, waiting = false): vo
   if (cardArrived.has(card.id)) return;
   sealed.fromCore(card);
   if (!sealed.isPending(card.id)) return;
+  restack(); // lane HS (R12): every third-party on-screen part hides at once, before any of the card's buttons can show
   cardArrived.set(card.id, { at: Date.now(), seen: new Set() });
   armFallback(card.id);
   placeArrivedCard(card.id);
@@ -1173,12 +1174,6 @@ function disarmFallback(cardId: string): void {
 // lane HS: start. R12's host half (host-stacking.ts).
 /** The surfaces standing down for a pending card, by ref (said once each way). */
 const stoodDown = new Set<string>();
-/** Whether this program draws a pending card now: on its island, or its own card's window. */
-function cardShownHere(): boolean {
-  if (!sealed.anyPending()) return false;
-  if (mountNow.surfaces && islandHoldsCard()) return true;
-  return [...fallbacks.values()].some((f) => f.win !== undefined && !f.win.isDestroyed() && f.win.isVisible());
-}
 /** Every surface follows the stacking rule again (a card came, was answered, or its own card showed or went). */
 function restack(): void {
   for (const s of surfaces.values()) applyVisibility(s);
@@ -2322,10 +2317,10 @@ function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed()) return;
   // lane HS (R12): a plugin's overlay stands down while a card is pending here, so nothing it draws is over a sealed button
   // (decided, and said, whether or not the part has asked to show yet).
-  const down = overlayStandsDown(s, cardShownHere());
+  const down = overlayStandsDown(s, sealed.anyPending());
   if (down !== stoodDown.has(s.ref)) {
     if (down) stoodDown.add(s.ref); else stoodDown.delete(s.ref);
-    log(`surface: ${s.ref} ${down ? "hidden while a card is pending (a plugin's overlay)" : "back (no card pending here)"}`);
+    log(`surface: ${s.ref} ${down ? "hidden while a card is pending (a plugin's on-screen part)" : "back (no card pending here)"}`);
   }
   if (down && s.win.isVisible()) s.win.hide();
   if (s.wantsVisible === undefined) return;

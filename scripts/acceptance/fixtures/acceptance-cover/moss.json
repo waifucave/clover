@@ -1,0 +1,29 @@
+{
+  "manifest": 1,
+  "id": "acceptance-cover",
+  "name": "Acceptance cover",
+  "description": "R12's fixture: a third-party on-screen part that paints a full panel where the island draws its cards (top centre, always on top) and declares no click region of its own (clicks pass through it), the shape the overlap check alone can't stop. While any card is pending it must be hidden before a sealed button can be pressed.",
+  "version": "0.0.1",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "capabilities": ["overlay"],
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "app.surface",
+        "id": "cover",
+        "component": "CoverApp",
+        "title": "Acceptance cover",
+        "window": {
+          "type": "overlay",
+          "alwaysOnTop": true,
+          "placement": { "macos": "top-center", "windows": "top-center", "linux": "top-center" }
+        }
+      }
+    ]
+  }
+}
