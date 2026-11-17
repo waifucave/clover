@@ -2637,6 +2637,7 @@ async function main(): Promise<void> {
   }
   // A code session's tools are the ones there when it starts: the rows that call step 4's plugin run in one started after
   // its OK (the first one keeps step 3's turn, which the restart reads back).
+  // AG: remove the restart when list changes reach a running session
   if (pluginOk && turnsWork) {
     try {
       session = await keyedCodeSession(c, "acceptance-work-plugin");
@@ -3771,6 +3772,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
       // Its own setup: a failure here is the reopen rows' alone, never the shard's other units'.
       try { await installEcho(c); } catch (err) { for (const r of REOPEN_STEPS) record(stepNumber(FULL_STEPS, r.name), statusOf(err), `the reopen shard's setup (step 4's plugin): ${why(err)}`); echoMissing = true; }
       // Its turns call the plugin's tool: in a code session started after the plugin's OK (the newest, which the window opens on).
+      // AG: remove the restart when list changes reach a running session
       if (!echoMissing) session = await keyedCodeSession(c, "acceptance-work-plugin");
     }
     if (ids.includes("stage")) {

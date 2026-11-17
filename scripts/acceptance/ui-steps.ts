@@ -2357,6 +2357,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
       await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined));
       // A turn that calls the plugin's tool, in a code session started after its OK and open in the window while it runs.
+      // AG: remove the restart when list changes reach a running session
       const session = await freshWindowSession(ctx, "window-spots-work");
       const tag = `WINDOW-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
       await rpc.request("session.send", { id: session, message: { text: `ACCEPTANCE-CALL Window {"text":"${tag}"}`, clientMessageId: `window-${tag}` } }, 30_000);

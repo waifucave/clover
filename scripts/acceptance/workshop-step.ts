@@ -407,16 +407,14 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   // 6. Another bot: no status, no edit.
   let peerSession: string | undefined;
   await own(() => stepOf("6. another bot can't read its status or edit it", async () => {
-    await installFromPage(ctx, join(FIXTURES, PEER_ID), PEER_ID);
-    const peer = await until("the peer bot in bot.list", 60_000, async () => (await ctx.rpc.request<{ bots: { id: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.id === PEER_ID && b.mainSession !== undefined));
-    const other = peer.mainSession!;
-    peerSession = other;
-    // The model the user gives it, as in the bot editor: Alpha's (the run's one keyed model). A new bot starts on the
-    // user's default, which this home doesn't have signed in.
+    // No plugin ships a bot (G8): the other bot is one the person makes (bot.create), on Alpha's model (the run's one keyed
+    // model; a new bot starts on the person's default, which this home doesn't have signed in).
     const alphaModel = (await ctx.rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.model;
     if (alphaModel === undefined) fail("bot.list gives Alpha no model to give the peer");
-    const set = await ctx.rpc.request<{ applied: boolean; card?: string }>("bot.setUserLayer", { id: PEER_ID, patch: { model: alphaModel } });
-    if (!set.applied && set.card !== undefined) await ctx.approveCard(set.card);
+    await ctx.rpc.request("bot.create", { name: "Workshop peer", model: alphaModel });
+    const peer = await until("the peer bot in bot.list", 60_000, async () => (await ctx.rpc.request<{ bots: { id: string; name?: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.name === "Workshop peer" && b.mainSession !== undefined));
+    const other = peer.mainSession!;
+    peerSession = other;
     const status = await callOnce(ctx, other, "PluginStatus", { id: WORKSHOP_ID });
     if (!status.result!.isError) fail(`the other bot's PluginStatus answered "${status.result!.text.slice(0, 200)}"`);
     const hostFile = join(installed, "host", "index.ts");

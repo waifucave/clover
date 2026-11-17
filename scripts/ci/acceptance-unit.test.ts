@@ -95,8 +95,8 @@ describe("the acceptance unit's verdict", () => {
     expect(mine.map((u) => u.id as string).sort()).toEqual([...matrix].sort());
     const names = mine.flatMap((u) => u.rows);
     expect(new Set(names).size).toBe(names.length);
-    // 57 since lane MC: the rows that need a bot's tab run elsewhere (scripts/acceptance/elsewhere.ts).
-    expect(names.length).toBeGreaterThan(56);
+    // 56 since lane MC: the rows that need a bot's tab run elsewhere (scripts/acceptance/elsewhere.ts).
+    expect(names.length).toBeGreaterThan(55);
   });
 
   test("the moss unit (MOSS, the bots app) owns its 19 rows", () => {

@@ -18,6 +18,7 @@ import { LISTEN_STEP } from "./listen-step";
 import { DRAG_STEP } from "./drag-step";
 import { STAGE_COPY_STEP } from "./stage-copy-step";
 import { SURFACE_COPY_STEP } from "./surface-copy-step";
+import { CARDS_STEP } from "./cards-step";
 import { AGENT_STEP, FULL_STEPS, OUTSIDE_STEP, SHELL_STEP, STAGE_STEP, ELSEWHERE_NOTES } from "./steps";
 import { EXAMPLE_NOTES_STEP } from "./example-steps";
 
@@ -42,6 +43,8 @@ export const ROWS_ELSEWHERE: ReadonlyMap<string, Elsewhere> = new Map<string, El
   [SHELL_STEP, { owner: "MOSS", why: "a bot's shell and RequestAccess, its card pressed where the bot's conversation is drawn" }],
   [OUTSIDE_STEP, { owner: "MOSS", why: "a command outside the sandbox, only in a bot's own conversation, its card pressed where that is drawn" }],
   [AGENT_STEP, { owner: "MOSS", why: "Alpha's study-buddy agent and its card, pressed where her conversation is drawn" }],
+  [ui(16), { owner: "MOSS", why: "Try again on a failed turn stays a bots' feature this round (the MOSS unit's own Try again row); a failed turn in a code session shows its error row, with no Try again" }],
+  [CARDS_STEP, { owner: "retired", why: "a plugin placing its own bot's tool cards in a page of its own: no plugin ships a bot (G8)" }],
   [TAB_FLASH_STEP, { owner: "MOSS", why: "Alpha's tab never flashing on the way back to it" }],
   [NOTIFY_STEP, { owner: "MOSS", why: "a turn a bot runs on its own reaching the notifier, from a bot's tab" }],
   [LISTEN_STEP, { owner: "MOSS", why: "push-to-talk where a bot's voice listens" }],
