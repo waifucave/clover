@@ -212,7 +212,7 @@ export function PngtuberAvatar({ props }: EntryProps) {
   const framed = framePicture(props.framing, happy ? { width: 200, height: 200 } : natural, hostSize);
   const place = framed === undefined ? undefined : ({ left: framed.left, top: framed.top, width: framed.width, height: framed.height } as const);
   return (
-    <div ref={stage} className="pt" data-pngtuber={pictures === null ? "broken" : shown === undefined ? "loading" : happy ? "happy" : mouthOpen ? "talk" : blinking ? "blink" : "idle"}>
+    <div ref={stage} className="pt" data-pngtuber={/* the mouth shows on either face, so talking is said first */ pictures === null ? "broken" : shown === undefined ? "loading" : mouthOpen ? "talk" : happy ? "happy" : blinking ? "blink" : "idle"}>
       <style>{CSS}</style>
       {pictures === null ? <span className="pt__note">{t("example-pngtuber.cant")}</span> : shown === undefined ? null : happy
         ? <span ref={(el) => { picture.current = el; }} {...(place === undefined ? { style: { display: "contents" } } : { "data-framed": "", style: { ...place, display: "block" } })}><HappyFace open={mouthOpen} label={t("example-pngtuber.label", { name: botName })} /></span>

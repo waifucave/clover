@@ -330,7 +330,7 @@ export async function figureReactsStep(f: FigureCtx): Promise<string> {
     void happy;
 
     // Speech: Alpha speaks in the run's fixture voice; MOSS Voice tells the renderer (which fills its speech point).
-    // Her `long` voice (2.5 s): a page drawn offscreen in a headless run renders about once a second, which a 0.6 s tone can miss.
+    // Her `long` voice (2.5 s): long enough to be seen beside the happy picture her turn's end may still be playing.
     await setVoice("alpha", { provider: "acceptance-voice", voice: "long" });
     voiced.push("alpha");
     const before = (await seen()).length;
