@@ -109,6 +109,9 @@ import { commandListMethods } from "./commands/views";
 import { ActiveNotices } from "./registry/active-one";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
 import { appTabPort } from "./browser/app-port";
+import { startHostSupervision, type HostSupervision } from "./host/engine";
+import { hostOwnsScreen } from "./host/mounts";
+import { pagesOwner } from "./host/tab-frames";
 import { browserCallerOf } from "./browser/service";
 import { noteCheckedHost } from "./browser/checked-hosts";
 import { hearsTabsOf } from "./browser/rpc-handlers";
@@ -3437,6 +3440,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const pairStopped = new Promise<string>((r) => { resolvePairStopped = r; });
   let stopping = false;
   let mossServer: MossServer | undefined;
+  // lane HS: start. The background host's supervision (below, once the socket listens); read by the server's door.
+  let hostSupervision: HostSupervision | undefined;
+  // lane HS: end
   const pairSide: DaemonPairSide | undefined = opts.pair === false ? undefined : await startDaemonPairSide({
     runDir: dirs.runDir,
     os: process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux",
@@ -3444,6 +3450,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     execPath: process.execPath,
     env: process.env,
     tellAppQuit: (reason, ids) => mossServer?.tellAppQuit(reason, ids),
+    // lane HS: no app started by the pair while a background host owns the screen.
+    appStartHeld: () => hostOwnsScreen(hostSupervision?.supervisor.status().state),
     // Deferred a moment, so the answer to the `pair.quit` that stopped the pair reaches its caller;
     // nothing when `stop()` itself stopped the pair.
     // The listener goes at once (no new connection reaches a daemon that is going away: an app reopened now finds nothing
@@ -3478,7 +3486,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     get: (id) => { const v = daemonParts?.bots?.host.get(id); return v === undefined ? undefined : { kind: dataKindOfSession(v), ...(v.bot !== undefined ? { bot: v.bot } : {}) }; },
   };
   let activityTracker: ActivityTracker | undefined;
-  const browserDrives = browserPictureBridge({ pictures: livePictures, sessions: pictureSessions, frames: opts.tabFrames });
+  // lane HS: the browser's own picture from the pages owner's frames (`host/tab-frames.ts`, fed by `host.tab.frame`), in the
+  // bridge's shape; a test's `opts.tabFrames` stands in when given.
+  const hostTabFrames: TabFrames = {
+    subscribe: (tab, fn) => {
+      const frames = hostSupervision?.frames;
+      if (frames === undefined) return () => {};
+      return frames.subscribe(tab, (f) => fn({ format: f.format, width: f.width, height: f.height, bytes: Buffer.from(f.data, "base64") }));
+    },
+  };
+  const browserDrives = browserPictureBridge({ pictures: livePictures, sessions: pictureSessions, frames: opts.tabFrames ?? hostTabFrames });
   Object.assign(mossLaneHandlers, pictureWindowHandlers({ pictures: livePictures, now: () => Date.now() }), laneMethodHandlers(Object.fromEntries(
     Object.entries(activityMossHandlers(activityFeed)).map(([name, h]) => [name, async (params: unknown) => h(params)]),
   )));
@@ -3519,6 +3536,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // The user's look at what this computer's app draws (`moss-core app screenshot`): the app's own capture of its windows.
   const appDoors = {
     connections: () => mossServer?.connections() ?? [],
+    // lane HS: the window runs no pages while a background host owns the screen.
+    hostOwnsScreen: () => hostOwnsScreen(hostSupervision?.supervisor.status().state),
     ask: (conn: Parameters<MossServer["ask"]>[0], method: string, params: unknown, ms: number) => mossServer === undefined ? Promise.reject(new Error("the daemon's endpoint isn't open")) : mossServer.ask(conn, method, params, ms),
   };
   mossLaneHandlers["app.capture"] = appCaptureHandler(appDoors);
@@ -3609,9 +3628,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const releaseRestart = new Promise<void>((resolve) => { releaseRestartNow = resolve; });
   const releaseService = new ReleaseService({
     home: releaseHome, engine: { release: engineRelease, path: process.execPath }, gate: updateGate, policy: releasePolicy, homeDir: dirs.home,
-    // TODO(lane HS): the background host's supervisor (`HostSupervisor.stop("update")`, and `boot()` after a swap that failed). Until it
-    // lands there is no host to stop.
-    host: { stop: () => {} },
+    // lane HS: the background host's supervisor: stopped for the swap, and started again after one that failed.
+    host: { stop: (reason) => hostSupervision?.supervisor.stop(reason), boot: async () => hostSupervision?.boot() },
     emit: (event) => void mossServer?.coreEvent({ ...event }), restart: () => releaseRestartNow(), log: (line) => console.error(line),
   });
   Object.assign(mossLaneHandlers, releaseHandlers(releaseService, { error: (code, message) => new MossRpcError(code, message) }));
@@ -3650,6 +3668,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const mossTokens = new MossTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   mossServer = createMossServer({
     handlers: mossLaneHandlers,
+    // lane HS: a code window mounts the screen too only while no background host owns it.
+    hostOwnsScreen: () => hostOwnsScreen(hostSupervision?.supervisor.status().state),
+    hostGaveUp: () => hostSupervision?.supervisor.status().gaveUp === true,
     lateDoors,
     codeAgent: agentDoors.codeAgent,
     bridge: agentDoors.bridge,
@@ -3876,6 +3897,38 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   } catch (err) {
     console.error(`[browser-host] could not listen on ${join(dirs.runDir, BROWSER_HOST_SOCKET_NAME)}: ${err instanceof Error ? err.message : String(err)}`);
   }
+  // Lane HS: the engine starts and supervises the background host from the newest app that carries it (§3.1); with none
+  // on disk (a server, a checkout, a test's home) it runs headless and says so. Its door joins the MOSS handlers.
+  // lane HS: start
+  hostSupervision = opts.pair === false ? undefined : startHostSupervision({
+    home: mossHome, os: process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux",
+    profile: resolveMossProfile(), release: CORE_VERSION, run: bunRunner, dist: DIST_BUILD,
+    testBuild: typeof __MOSS_TEST_BUILD__ === "string", env: process.env,
+    connections: () => mossServer?.connections() ?? [],
+    ask: (conn, method, params, ms) => mossServer === undefined ? Promise.reject(new Error("the daemon's endpoint isn't open")) : mossServer.ask(conn, method, params, ms),
+    coreEvent: (event) => void mossServer?.coreEvent(event as Parameters<MossServer["coreEvent"]>[0]),
+    busy: () => updateGate.verdict().busy,
+    tabs: () => daemonParts?.browser?.service.tabs({ kind: "user" }) ?? [],
+    quitEverything: () => { if (pairSide) pairSide.pair.quit("quit"); else if (!stopping) { server.stopAccepting(); setTimeout(() => resolvePairStopped("quit everything"), 50); } },
+    // Lane RL's one source of the app that carries the host (its records, checked against the bundles, with its grace).
+    source: () => releaseHome.hostSource(),
+    // The windows' mounts (and the router's island) and the pair follow the host's state.
+    screenChanged: (owns) => mossServer?.hostScreen(owns),
+    // R12: the host's surfaces are this computer's own windows, which a computer-use plugin must not act on.
+    surfacesAt: (windows) => { const r = daemonParts?.node?.registry; if (r) r.setMossWindows(r.self().name, [...windows]); },
+    // Whether a window is in front (the router's presence): the host's island hides its strip line then.
+    windowFront: () => mossServer?.surfaces.router.front() ?? false,
+  });
+  if (hostSupervision) {
+    const hs = hostSupervision;
+    Object.assign(mossLaneHandlers, hs.handlers);
+    // Every close goes to the host's door (the host's own is its exit); a window that connects makes it look for an app again.
+    mossServer.onClosed((conn) => hs.door.closed(conn));
+    mossServer.surfaces.router.watchFront((front) => hs.door.frontChanged(front));
+    mossServer.surfaces.door.watch((live) => { if (live.some((l) => l.program === "moss" || l.program === "code")) hs.supervisor.poke(); });
+  }
+  void hostSupervision?.boot().catch((err: unknown) => console.error(`[host] boot failed: ${(err as Error).message}`));
+  // lane HS: end
   // C-M2 and the daemon integration: H's links, then J's computer node and D's bot side over them (daemon-parts.ts),
   // started in the background so a slow sidecar never holds the daemon's start; their methods join the MOSS server's
   // handlers when they're up. A daemon with no sidecar (run from source, a build without it) runs them local-only,
@@ -4816,6 +4869,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // bundled Browser tool reaches it through the plugin host's router. `browser: false` starts none (a test's seam).
         browser: p.browser === false ? false : {
           app: appTabPort(appDoors),
+          // lane HS: only the program that runs the pages reports and holds its tabs.
+          pagesOwnerIs: (conn) => pagesOwner(appDoors.connections(), { hostOwnsScreen: appDoors.hostOwnsScreen() })?.connId === conn.connId,
           computer: computerNameFor(defaultDeviceName(hostname())) || "Computer",
           // The tabs' changes go to the app and to the layers of plugins holding `browser` (F5: by capability): the events
           // are a live view's way to hear them (a listener can't cross a layer's call), and no other plugin hears a tab.
@@ -4993,6 +5048,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       if (o?.keepApp !== true) pairSide?.pair.quit("quit");
       else pairSide?.keepApp();
       pairSide?.dispose();
+      hostSupervision?.dispose();
       mossServer?.dispose();
       mark("the pair and the MOSS server");
       // The first thing in the bounded tail: every bot conversation and side thread lets its driver go, each running

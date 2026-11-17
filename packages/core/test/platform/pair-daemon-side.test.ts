@@ -8,7 +8,7 @@ import type { AppLauncher } from "../../src/platform/pair/launch";
 
 const os = (process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux") as "darwin" | "linux" | "win32";
 
-function setup(launcher: AppLauncher | null) {
+function setup(launcher: AppLauncher | null, held?: () => boolean) {
   const runDir = mkdtempSync(join(tmpdir(), "moss-pair-"));
   const timers: Array<{ ms: number; fn: () => void }> = [];
   const stops: string[] = [];
@@ -17,6 +17,7 @@ function setup(launcher: AppLauncher | null) {
     tellAppQuit() {}, stopDaemon(why) { stops.push(why); },
     run: async (argv) => ({ ok: true, out: argv[0] === "whoami" ? '"pc\\\\u","S-1-5-21-1-2-3-1001"' : "" }),
     launcher, now: () => 7, after(ms, fn) { timers.push({ ms, fn }); return () => {}; },
+    ...(held !== undefined ? { appStartHeld: held } : {}),
   });
   return { runDir, timers, stops, side };
 }
@@ -43,6 +44,23 @@ describe("the daemon's side of the pair, assembled", () => {
     expect(s.timers).toHaveLength(0);
     side.pair.quit("quit");
     expect(s.stops).toHaveLength(1);
+    side.dispose();
+  });
+
+  // lane HS: while a background host owns the screen the pair starts no app: "not ready yet", tried again, never a crash.
+  test("while a background host owns the screen, no app is started and nothing counts as a crash", async () => {
+    let held = true;
+    const started: number[] = [];
+    const s = setup({ how: "fake", async start() { started.push(1); return "started"; } }, () => held);
+    const side = await s.side;
+    s.timers.shift()!.fn();
+    await Bun.sleep(20);
+    expect(started).toEqual([]);
+    expect(side.pair.status().safeMode).toBe(false);
+    // Tried again later (not a crash's backoff); once no host owns the screen, the app starts.
+    held = false;
+    for (let i = 0; i < 5 && started.length === 0; i++) { const t = s.timers.shift(); t?.fn(); await Bun.sleep(20); }
+    expect(started).toEqual([1]);
     side.dispose();
   });
 });

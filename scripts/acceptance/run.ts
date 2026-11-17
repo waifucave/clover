@@ -67,7 +67,7 @@
 // load guard under a dot-folder; a wrapped skill folder missing from Glossary), the last two in a shipped build.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync, lstatSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync, chmodSync, closeSync, lstatSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -79,9 +79,12 @@ import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { MossClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
+// lane HS
+import { BROWSER_HOST_STEP, HOST_GAVE_UP_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
+import { BACKGROUND_IDS, writeBackground } from "./manifest-fields-step";
 import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
-import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
+import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, SIDEBAR_ITEMS, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { TOOL_SETTING_STEP, toolSettingStep } from "./tool-setting-step";
 import { CODE_TOOLS_STEP, codeToolsStep } from "./code-tools-step";
@@ -464,6 +467,173 @@ async function endChild(proc: ChildProcess, graceMs = 10_000): Promise<boolean> 
   return alone;
 }
 
+// lane HS: the hosts this run's engines started through Launch Services (in none of the run's process groups): each is
+// ended by its own pid, the one its engine's lock names, at the host unit's end and at cleanup.
+const startedHosts = new Set<number>();
+/** The run's own copy of the source Electron.app for the host it starts through Launch Services: marked `LSUIElement` (no
+ *  Dock icon, ever), ad hoc signed again, under the run's temp folder; unregistered from Launch Services at the end. */
+const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+function hostAppCopy(app: { exe: string; args: string[] }): { exe: string; args: string[] } {
+  const i = app.exe.indexOf(".app/");
+  if (i < 0) return app;
+  const dst = join(root, "host-app", "MOSS Host Acceptance.app");
+  mkdirSync(dirname(dst), { recursive: true });
+  for (const argv of [["cp", "-cR", app.exe.slice(0, i + 4), dst], ["plutil", "-replace", "LSUIElement", "-bool", "true", join(dst, "Contents", "Info.plist")], ["plutil", "-replace", "CFBundleIdentifier", "-string", "com.waifucave.moss.host.acceptance", join(dst, "Contents", "Info.plist")], ["codesign", "--force", "--sign", "-", dst]]) {
+    const r = spawnSync(argv[0]!, argv.slice(1), { encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`the host's app copy: ${argv[0]} failed: ${(r.stderr ?? "").trim().slice(0, 200)}`);
+  }
+  return { exe: join(dst, app.exe.slice(i + 5)), args: app.args };
+}
+/** The reviewer's B1 with a host running and MOSS Code's window focused: a card the router put in the window's conversation
+ *  (Alpha's tab showing, a Browser call's tool card) and one in its strip (a plugin's OK card, no session) are each drawn in
+ *  one place: by the window, never also by the host (its island or its own card), past the fallback's 2-second timer. The
+ *  conversation's card is answered by the run, the strip's pressed in the window; the Browser call's page loads in the host. */
+async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: string, c: MossClient, session: string, front: (on: boolean) => void, viewportPressFile: string): Promise<string> {
+  const drawn = async (cdp: Cdp, id: string) => (await cdp.documents()).filter((d) => d.url.startsWith(`moss-sealed://card/${encodeURIComponent(id)}/`)).map((d) => d.url.replace(/^moss-sealed:\/\/card\/[^/]+\//, "").split("?")[0]!);
+  const placed = (id: string, re: string) => until(`the router placing ${id} ${re}`, 30_000, () => (new RegExp(`router: ${id} placed ${re}`).test(readLog(appLog)) ? true : undefined), 300);
+  const onlyWindow = async (id: string, what: string): Promise<string[]> => {
+    await sleep(3_000);
+    const host = await drawn(hostCdp, id);
+    if (host.length > 0 || new RegExp(`fallback card for ${id}[^\n]*(is shown|drawn offscreen)`).test(readLog(hostLog))) fail(`${what}: the host drew it too (${host.join(", ") || "its own card"})`);
+    const win = await drawn(appCdp, id);
+    if (win.length === 0) fail(`${what}: MOSS Code's window drew nothing`);
+    return win;
+  };
+  // The strip: the cards fixture's OK card (no session or bot), pressed in the window.
+  const fixtureId = "acceptance-cards-a";
+  await c.request("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", fixtureId) } }, 60_000);
+  const ok = await until("the cards fixture's OK card", 60_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === fixtureId), 300);
+  await placed(ok.id, "strip \\(code main\\)");
+  const inStrip = await onlyWindow(ok.id, "the strip's card");
+  const from = await pressApprove(appCdp, ok, appLog);
+  await until(`${fixtureId} running`, 60_000, async () => ((await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: fixtureId }).catch(() => undefined))?.plugin?.state === "running" ? true : undefined), 500);
+  // The conversation: Alpha's tab shows, and Alpha's call to the fixture's tool (which always asks) raises its card.
+  const before = new Set((await cards(c)).map((k) => k.id));
+  await c.request("session.send", { id: session, message: { text: "ACCEPTANCE-CALL ask_card {}", clientMessageId: `host-b1-${randomBytes(3).toString("hex")}` } }, 30_000);
+  const tool = await until("Alpha's tool card", 90_000, async () => (await cards(c)).find((k) => !before.has(k.id) && k.kind === "tool" && k.session === session), 300);
+  await placed(tool.id, "conversation \\(code main\\)");
+  // The host draws none of it (B1). Inside the window, its own card may stand in for the conversation's whose buttons a
+  // headless window never reads as visible (the window's own 2-second net, one program's): said, not failed.
+  const inConversation = await onlyWindow(tool.id, "the conversation's card");
+  // Answered on the island: the window goes back, the router moves the card to the host's island, which takes the press.
+  front(false);
+  await placed(tool.id, "island from conversation");
+  const onIsland = await pressOnIsland(hostCdp, tool, hostLog);
+  front(true);
+  await c.request("plugin.remove", { id: fixtureId, deleteData: true }, 30_000).then(async () => {
+    const rm = await until("the removal card", 30_000, async () => (await cards(c)).find((k) => k.pluginId === fixtureId), 300).catch(() => undefined);
+    if (rm !== undefined) await approve(c, rm, { log: appLog });
+  }).catch(() => undefined);
+  // The window half of the browser: MOSS Code's panel shows the person's own tab the host runs, from its pictures, and
+  // only a real press in the panel reaches the page.
+  const panel = await panelShowsHostTab(appCdp, appLog, hostCdp, c, viewportPressFile);
+  // The Browser tool with the window and the host both up: the page loads in the host (its pages stay there).
+  const seen = browserFixture!.seen.length;
+  await turn(c, session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "open", url: browserFixture!.url })}`, 150_000, { always: true, log: appLog });
+  await until("the bot's page loaded with the window and the host up", 60_000, () => (browserFixture!.seen.slice(seen).some((r) => r.path === "/") ? true : undefined), 300);
+  if (![...hostCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url))) await until("the bot's page in the host", 30_000, () => ([...hostCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url)) ? true : undefined), 500);
+  if ([...appCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url))) fail("the bot's page loaded in MOSS Code's window while the host runs the pages");
+  return `a plugin's OK card was placed in the window's strip, drawn there only (${inStrip.join(", ")}) and pressed there (${from}); Alpha's tool card with her tab focused was placed in the window's conversation and drawn there only (${inConversation.join(", ")}), then with the window back moved to the host's island and pressed there (${onIsland.slice(0, 120)}); the host drew neither past the fallback's 2 s; ${panel}; with both up, the Browser tool's page loaded in the host and not in the window`;
+}
+
+/** The window half of the browser (lane HS): the browser panel opened in Alpha's tab gives MOSS Code's view "browser" its
+ *  place; the person's own tab, opened by the run into that view, runs in the host. The window draws it from the engine's
+ *  `picture.frame`s (its viewport's canvas painted); an input its page makes up (no real press) never reaches the tab; a
+ *  real press at the page's button (DevTools input on the viewport's own contents) clicks it in the host's page. */
+async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: MossClient, viewportPressFile: string): Promise<string> {
+  const header = await until("the Browser button in Alpha's tab", 30_000, async () => {
+    for (const d of (await appCdp.documents()).filter((x) => x.url.startsWith("moss-plugin://"))) {
+      const at = await appCdp.centerOf(d.session, "button", "Browser").catch(() => undefined);
+      if (at !== undefined) return { session: d.session, at };
+    }
+    return undefined;
+  }, 300);
+  await appCdp.click(header.session, header.at.x, header.at.y);
+  await until("the browser panel's frame in the window", 30_000, () => (readLog(appLog).includes("browser: view browser has a place in the window") ? true : undefined), 300);
+  await sleep(1_500);
+  // The panel in Alpha's tab lists Alpha's tabs and keeps its frame only while one is chosen: the tab is hers. MOSS Code's
+  // window shows a bot's tab while the bots are its own (lane BT's switch at its default; the controller's ruling).
+  const opened = await c.request<{ tab: { id: string } }>("browser.open", { owner: { kind: "bot", bot: "alpha" }, url: browserFixture!.url, show: { view: "browser", viewport: { width: 800, height: 600 } } }, 60_000);
+  const id = opened.tab.id;
+  try {
+    await until("the window's panel showing the host's tab", 30_000, () => (readLog(appLog).includes(`browser: view browser shows the host's tab ${id}`) ? true : undefined), 300);
+    // The browser's contents are closed to DevTools (the window's debug guard): the panel says when it drew a picture, and
+    // the run's press reaches it through the test build's seam, the main process's own click into the view's contents.
+    const drew = await until("the panel's viewport drawing the host's pictures", 30_000, () => /browser: the panel drew the host's tab \((\d+x\d+)\)/.exec(readLog(appLog))?.[1], 300);
+    const page = await until("the tab's page in the host", 30_000, async () => (await hostCdp.documents()).find((d) => d.url.startsWith(browserFixture!.url)), 300);
+    const button = await until("the page's Say hello button", 15_000, async () => hostCdp.centerOf(page.session, "button", "Say hello").catch(() => undefined), 300);
+    const clicked = async () => String(await hostCdp.evaluate(page.session, "document.body.innerText").catch(() => "")).includes("hello was clicked");
+    // Input with no press the main process saw is refused (the unit's own case: test/remote-view.test.ts); here, no input
+    // at all for a while leaves the page as it was.
+    await sleep(1_000);
+    if (await clicked()) fail("the host's page was clicked before any press in the panel");
+    writeFileSync(viewportPressFile, `${Math.round(button.x)},${Math.round(button.y)}`);
+    await until("the host's page clicked by the press in the panel", 20_000, async () => ((await clicked()) ? true : undefined), 300);
+    return `MOSS Code's panel showed Alpha's tab the host runs (the bot switch at its default), drawn from picture.frame (${drew}); a press in the panel's own view (the main process's click into it) went out as browser.view.input and clicked the page's button in the host`;
+  } finally {
+    await c.request("browser.close", { id }, 30_000).catch(() => undefined);
+  }
+}
+
+/** The Browser tool's live picture from the host's tab (lane AF's `picture-bridge.ts` over `host/tab-frames.ts`): listed for
+ *  Alpha's session, and followed with `picture.open`, its frames come as `picture.frame` jpegs of a real size. */
+async function browserPictureEndToEnd(c: MossClient, session: string): Promise<string> {
+  const pic = await until("the Browser tool's live picture of Alpha's session", 60_000, async () => (await c.request<{ pictures: { id: string; session: string; publisher: string; format?: string }[] }>("picture.list", { kind: "bots", bot: "alpha" }).catch(() => ({ pictures: [] }))).pictures.find((p) => p.session === session), 500);
+  const frames: { stream?: string; format?: string; width?: number; height?: number }[] = [];
+  c.onNotification((method, params) => { if (method === "picture.frame") frames.push(params as never); });
+  const { stream } = await c.request<{ stream: string }>("picture.open", { id: pic.id, maxFps: 5 });
+  const f = await until("a frame of the live picture", 30_000, () => frames.find((x) => x.stream === stream && (x.width ?? 0) > 0), 200);
+  await c.request("picture.close", { stream }).catch(() => undefined);
+  return `listed for Alpha's session (by ${pic.publisher}), followed, and its frames came (${f.format} ${f.width}x${f.height}) from the host's tab`;
+}
+
+/** R12's host half in the host row: the hold fixture's overlay surface runs in the host; a second plugin's OK card pending
+ *  on the island hides it (the host's log says so by the surface's ref) and its answer brings it back; the engine logged
+ *  the host's surfaces report (`host.surfaces`). */
+async function overlayStandsDownForCard(c: MossClient, hostCdp: Cdp, hostLog: string, daemonLog: string): Promise<string> {
+  // Two third-party on-screen parts: the hold fixture's (always on top, bottom centre) and the cover's, a panel painted where
+  // the island draws its cards with no click region of its own (every click passes through it).
+  const parts = ["acceptance-hold", "acceptance-cover"] as const;
+  const refs = { "acceptance-hold": "acceptance-hold#hold", "acceptance-cover": "acceptance-cover#cover" } as const;
+  for (const id of parts) {
+    await c.request("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", id) } }, 60_000);
+    const ok = await until(`${id}'s OK card`, 60_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === id), 300);
+    await pressOnIsland(hostCdp, ok, hostLog);
+    await until(`${id}'s part in the host`, 60_000, async () => ((await hostCdp.documents()).some((d) => d.url.startsWith(`moss-plugin://${id}/`)) ? true : undefined), 500);
+    await until(`${id}'s part back once its OK card is answered`, 30_000, () => (new RegExp(`surface: ${refs[id]} back \\(no card pending here\\)`).test(readLog(hostLog)) ? true : undefined), 300).catch(() => undefined);
+  }
+  const from = readLog(hostLog).length;
+  const other = "acceptance-router";
+  await c.request("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", other) } }, 60_000);
+  const card = await until("a third plugin's OK card on the island", 60_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === other), 300);
+  for (const id of parts) await until(`${id}'s part hidden while the card is pending`, 30_000, () => (readLog(hostLog).slice(from).includes(`surface: ${refs[id]} hidden while a card is pending`) ? true : undefined), 300);
+  await pressOnIsland(hostCdp, card, hostLog);
+  // Gone before the press could land: each part's hiding comes before the island's first press on the card in the host's log.
+  const after = readLog(hostLog).slice(from);
+  const pressAt = after.search(new RegExp(`sealed: press on ${card.id}[^\\n]*received`));
+  if (pressAt < 0) fail("the host's log names no press on the card");
+  for (const id of parts) if (after.indexOf(`surface: ${refs[id]} hidden while a card is pending`) > pressAt) fail(`${id}'s part was hidden only after the press on the card`);
+  for (const id of parts) await until(`${id}'s part back once the card is answered`, 30_000, () => (readLog(hostLog).slice(from).includes(`surface: ${refs[id]} back (no card pending here)`) ? true : undefined), 300);
+  await until("the engine hearing where the host's surfaces are", 30_000, () => (/\[host\] surfaces: \d+ on the screen/.test(readLog(daemonLog)) ? true : undefined), 300);
+  for (const id of [...parts, other]) await c.request("plugin.remove", { id, deleteData: true }, 30_000).catch(() => undefined);
+  return `the hold fixture's overlay and a click-through part painted over the island were each hidden as a third plugin's OK card arrived, before its press on the island landed, and came back once it was answered; the engine heard the host's surfaces`;
+}
+
+/** Unregisters from Launch Services whatever the run left registered under its temp folder (scripts/try/run.sh's rule). */
+function unregisterRunApps(): number {
+  if (process.platform !== "darwin") return 0;
+  const dump = spawnSync(LSREGISTER, ["-dump"], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }).stdout ?? "";
+  const paths = [...new Set(dump.split("\n").filter((l) => l.startsWith("path:")).map((l) => l.replace(/^path: */, "").replace(/ \(0x[0-9a-f]+\)$/, "")).filter((p) => p.startsWith(`${root}/`) || p.startsWith(`${realpathOr(root)}/`)))];
+  for (const p of paths) spawnSync(LSREGISTER, ["-u", p], { stdio: "ignore" });
+  return paths.length;
+}
+function realpathOr(p: string): string { try { return realpathSync(p); } catch { return p; } }
+function endStartedHosts(): void {
+  const now = hostLockPid(home);
+  if (now !== undefined) startedHosts.add(now);
+  for (const pid of startedHosts) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+  startedHosts.clear();
+}
 let cleaned = false;
 /** The run itself is stopping the daemon (step 8, cleanup), so its exit isn't a crash. */
 let stoppingDaemon = false;
@@ -473,6 +643,8 @@ async function cleanup(): Promise<void> {
   stoppingDaemon = true;
   for (const c of clients) c.close();
   pressCdp?.close();
+  endStartedHosts();
+  unregisterRunApps();
   // The app first (so the daemon never sees it go and starts another), then the daemon.
   for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
   fake?.close();
@@ -1116,7 +1288,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: MossClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
+async function turn(c: MossClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean; always?: boolean; pick?: (card: Card) => { cdp: Cdp; log: string; onIsland?: boolean } }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -1138,9 +1310,17 @@ async function turn(c: MossClient, session: string, text: string, timeoutMs = 12
           // A turn that presses (step 7's write) presses its cards in the window, the real way; the rest are answered
           // over RPC.
           if (o.press !== undefined && o.press !== false) {
-            const by = o.press === true ? (pressCdp === undefined ? undefined : { cdp: pressCdp, log: join(logs, "app.log") }) : o.press;
+            const by0 = o.press === true ? (pressCdp === undefined ? undefined : { cdp: pressCdp, log: join(logs, "app.log") }) : o.press;
+            // lane HS: a run with a host picks where to press by the card's placement.
+            const by = by0 !== undefined && "pick" in by0 && typeof by0.pick === "function" ? { ...by0, ...by0.pick(card) } : by0;
             if (by === undefined) fail("the first app has no DevTools connection (step 1), so the card can't be pressed the real way");
-            if (by!.onIsland === true) { const how = await pressOnIsland(by!.cdp, card, by!.log); o.onPressed?.(how); seenCards.push(`a ${card.kind} card, ${how}`); continue; }
+            if (by!.onIsland === true) {
+              const always = (by as { always?: boolean }).always === true && card.options.some((x) => x.kind === "approve" && (x as { remember?: string }).remember === "always");
+              const how = await pressOnIsland(by!.cdp, card, by!.log, always ? "always" : "approve");
+              o.onPressed?.(how);
+              seenCards.push(always ? `a ${card.kind} card, answered with Always allow (${how})` : `a ${card.kind} card, ${how}`);
+              continue;
+            }
             if (by!.inConversation === true) { const how = await pressInHerTab(by!.cdp, card, by!.log, by!.narrow === true); o.onPressed?.(how); seenCards.push(`a ${card.kind} card, ${how}`); continue; }
             await pressApprove(by!.cdp, card, by!.log);
             seenCards.push(`a ${card.kind} card, its Approve pressed in the window (the app signed, the broker checked the proof)`);
@@ -1298,8 +1478,32 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
  *  page ready by its own gates), and asserts what the owner's card needs: the press is accepted by the app and the core, and the
  *  app's fallback card was never drawn for it. Only frames in the island window's own tree count: the conversation's, the pill's
  *  and the fallback's do not. */
-async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log")): Promise<string> {
+/** lane HS: where the island lays out a card's sealed buttons (each frame's box, the window's size, the button row's box and
+ *  overflow, and for each frame and its ancestors the styles a visibility tracker counts): what a "never ready" press says. */
+async function islandCardLayout(cdp: Cdp, cardId: string): Promise<string> {
+  const expr = `(() => {
+    const id = ${JSON.stringify(encodeURIComponent(cardId))};
+    const frames = [...document.querySelectorAll('iframe')].filter((f) => (f.getAttribute('src') || '').includes(id));
+    if (frames.length === 0) return '';
+    const box = (e) => { const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round).join(','); };
+    const styled = (e) => { const out = []; for (let n = e; n && n !== document.documentElement; n = n.parentElement) { const c = getComputedStyle(n); const odd = [c.opacity !== '1' ? 'opacity ' + c.opacity : '', c.visibility !== 'visible' ? 'visibility ' + c.visibility : '', c.transform !== 'none' ? 'transform ' + c.transform : '', c.filter !== 'none' ? 'filter ' + c.filter : '', c.overflow !== 'visible' ? 'overflow ' + c.overflow : ''].filter(Boolean); if (odd.length) out.push((n.className || n.tagName).toString().slice(0, 40) + ': ' + odd.join(' ')); } return out.join(' / '); };
+    const row = document.querySelector('.clv-tool-actions');
+    return 'window ' + innerWidth + 'x' + innerHeight + (row ? '; row ' + box(row) + ' scroll ' + row.scrollWidth + '/' + row.clientWidth : '') + '; ' + frames.map((f) => decodeURIComponent(f.getAttribute('src')).replace(/^.*\\/(button:[a-z]+).*$/, '$1') + ' at ' + box(f) + ' [' + styled(f) + ']').join('; ');
+  })()`;
+  const out: string[] = [];
+  for (const d of await cdp.documents()) {
+    if (!d.url.startsWith("moss-plugin://") && !/[?&]surface=island/.test(d.url)) continue;
+    const where = d.url.slice(0, 40);
+    const v = await cdp.evaluate(d.session, expr).catch(() => "");
+    if (typeof v === "string" && v !== "") out.push(`${where}: ${v.slice(0, 1500)}`);
+  }
+  return out.join(" || ") || "no island document holds the card's frames";
+}
+
+async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"), which: "approve" | "always" = "approve"): Promise<string> {
   await appGotCard(card, appLog);
+  // lane HS: the island's Always allow too, for a run whose cards are answered only where they are drawn (a host's island).
+  const BUTTON = which === "always" ? ".seal-button[data-kind=approve].quiet, .seal-button[data-kind=approve][data-remember]" : PLAIN_APPROVE;
   const from = readLog(appLog).length;
   const cardUrl = `moss-sealed://card/${encodeURIComponent(card.id)}/`;
   const island = () => [...cdp.frames.values()].find((f) => f.type === "page" && f.url.startsWith("moss-core://app/?surface=island"));
@@ -1315,19 +1519,44 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
     }
     return out;
   };
-  const found = await until("the card's Approve button in the island's own window", 30_000, async () => {
+  const buttonDocs = async () => {
     const conv = await inConversation();
+    const out: { session: string }[] = [];
     for (const d of await cdp.documents()) {
       if (!decodeURIComponent(d.url).startsWith(`${cardUrl}button:`) || conv.has(decodeURIComponent(d.url))) continue;
-      if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(PLAIN_APPROVE)})`).catch(() => false)) === true) return d;
+      if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(BUTTON)})`).catch(() => false)) === true) out.push(d);
+    }
+    return out;
+  };
+  const found = await until("the card's Approve button in the island's own window", 30_000, async () => (await buttonDocs())[0], 300);
+  const btn0 = await until("the island's Approve button's place", 10_000, () => cdp.centerOf(found.session, BUTTON), 300);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn0.x, y: btn0.y, button: "none", buttons: 0 }, found.session).catch(() => undefined);
+  // lane HS: a measurement on demand (`MOSS_ACCEPT_ISLAND_ROOM=400x340`, a local run): the island's page held at a GitHub
+  // runner's room, and where its card's buttons land then; the room is let go before the press.
+  const room = /^(\d+)x(\d+)$/.exec(process.env.MOSS_ACCEPT_ISLAND_ROOM ?? "");
+  if (room !== null) {
+    const page = (await cdp.documents()).find((d) => /^moss-core:\/\/app\/\?surface=island/.test(d.url));
+    if (page !== undefined) {
+      say(`island room as given for ${card.id}: ${await islandCardLayout(cdp, card.id)}`);
+      await cdp.send("Emulation.setDeviceMetricsOverride", { width: Number(room[1]), height: Number(room[2]), deviceScaleFactor: 0, mobile: false }, page.session).catch(() => undefined);
+      await sleep(1_500);
+      say(`island room ${room[1]}x${room[2]} for ${card.id}: ${await islandCardLayout(cdp, card.id)}`);
+      await cdp.send("Emulation.clearDeviceMetricsOverride", {}, page.session).catch(() => undefined);
+      await sleep(800);
+    } else say("island room: no island page to hold");
+  }
+  // lane HS: the button's page as it is now: the island can fold the card and draw it again while it settles (a slower
+  // machine's first frames), which replaces the page the first look found; the ready mark is read on the live one.
+  const ready = await until("the sealed page's ready-to-answer mark on the island", 30_000, async () => {
+    for (const d of await buttonDocs()) {
+      if ((await cdp.evaluate(d.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) !== "yes") continue;
+      const at = await cdp.centerOf(d.session, BUTTON).catch(() => undefined);
+      if (at !== undefined) return { s: d.session, btn: at };
     }
     return undefined;
-  }, 300);
-  const s = found.session;
-  const btn = await until("the island's Approve button's place", 10_000, () => cdp.centerOf(s, PLAIN_APPROVE), 300);
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s).catch(() => undefined);
-  await until("the sealed page's ready-to-answer mark on the island", 15_000, async () => ((await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes" ? true : undefined), 100)
-    .catch(async (err: unknown) => fail(`${why(err)} (the island's Approve was never ready; the app logged: ${readLog(appLog).slice(from).split("\n").filter((l) => /sealed: .*(visible|press)|fallback/.test(l)).slice(-8).join(" | ") || "nothing"})`));
+  }, 100)
+    .catch(async (err: unknown) => fail(`${why(err)} (the island's Approve was never ready; the app logged: ${readLog(appLog).slice(from).split("\n").filter((l) => /sealed: .*(visible|press)|fallback/.test(l)).slice(-8).join(" | ") || "nothing"}; the island's layout: ${await islandCardLayout(cdp, card.id)})`));
+  const { s, btn } = ready;
   await sleep(300);
   await cdp.click(s, btn.x, btn.y);
   const verdict = await until(`the app's answer for the ${card.kind} card pressed on the island`, 8_000, () => {
@@ -1340,7 +1569,7 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
   if (new RegExp(`fallback card for ${card.id}`).test(log)) fail(`the app drew its fallback card for the ${card.kind} card though the island showed its buttons`);
   // The answer came from the island's own press (read fresh and uncovered there), not from a press on the main window's card.
   const idRe = card.id.replace(/[^A-Za-z0-9_]/g, ".");
-  if (!new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in moss/island#island: fresh report uncovered after \\d+ ms`).test(log)) fail(`the ${card.kind} card was answered, but the app logged no island press read as uncovered for it (the answer did not come from the island's own press): ${log.split("\n").filter((l) => l.includes("sealed: press on")).slice(-4).join(" | ").slice(0, 400)}`);
+  if (!new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in \\S+#island: fresh report uncovered after \\d+ ms`).test(log)) fail(`the ${card.kind} card was answered, but the app logged no island press read as uncovered for it (the answer did not come from the island's own press): ${log.split("\n").filter((l) => l.includes("sealed: press on")).slice(-4).join(" | ").slice(0, 400)}`);
   if (new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in the main window`).test(log)) fail(`the ${card.kind} card was also pressed in the main window, so the island's press is not what answered it`);
   return "pressed on the island (its own window's sealed Approve, the page ready, read uncovered fresh at the press, accepted by the app and the core, the fallback card never drawn, no press in the main window)";
 }
@@ -3474,6 +3703,10 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
   let echoMissing = false;
   let session: string | undefined;
   let c: MossClient | undefined;
+  // lane HS: the host unit runs alone (its own daemon starts the host).
+  if (ids.includes("host")) { await hostOnlyRun(app); await hostGaveUpRun(app); return; }
+  if (ids.includes("browser-host")) { await browserOnlyRun(app, { withHost: true }); return; }
+  if (ids.includes("surface-copy-host")) { await browserOnlyRun(app, { withHost: true, row: "surface-copy" }); return; }
   try {
     // The previous app's session in the home's store before the daemon first opens it (the archive row).
     if (ids.includes("archive")) seedArchive(home);
@@ -4261,13 +4494,27 @@ async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<vo
 
 /** The Browser-tool row alone (--only-browser): the daemon, the dummy key through the app's own methods, Alpha on the
  *  keyed model, then the app over it (headless, its DevTools port, the window's start sampled) and the row. */
-async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
-  const n = stepNumber(FULL_STEPS, BROWSER_STEP);
+async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHost?: boolean; row?: "browser" | "surface-copy" } = {}): Promise<void> {
+  // lane HS: with `row: "surface-copy"`, the island and pill copies' row (65) runs on this same hosted setup instead.
+  const n = stepNumber(FULL_STEPS, o.row === "surface-copy" ? SURFACE_COPY_HOST_STEP : o.withHost === true ? BROWSER_HOST_STEP : BROWSER_STEP);
   let c: MossClient | undefined;
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
+  // lane HS: with the background host (`--units browser-host`): the engine starts it from this checkout, the pages run in
+  // it, and a card is pressed where the router put it (the host's island, or the window).
+  let hostCdp: Cdp | undefined;
+  const hostLog = join(home, "logs", "host.out.log");
   try {
-    await startDaemonProc();
+    if (o.withHost === true) {
+      if (target !== "source") fail("the browser rows with a host need the engine's source seam (MOSS_HOST_COMMAND)");
+      browserFixture = startBrowserFixture();
+      const hostPort = freePort();
+      const hostApp = hostAppCopy(app);
+      const hostCommand = JSON.stringify([hostApp.exe, ...hostApp.args, "--moss-program=host", "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${hostPort}`]);
+      const d = await startDaemonProc({ MOSS_HOST_COMMAND: hostCommand, MOSS_TEST_BROWSER_NAMES: browserFixture.names, MOSS_TEST_SEALED_PRESS: "1", MOSS_DEV_DEBUG: "1" });
+      await until("the host the engine started, ready", 120_000, () => { const p = hostLockPid(home); if (p !== undefined) startedHosts.add(p); return readyCount(readLog(d.log)) > 0 ? true : undefined; }, 500);
+      hostCdp = await until("the host's DevTools port", 60_000, async () => { try { return await Cdp.connect(hostPort); } catch { return undefined; } }, 250);
+    } else await startDaemonProc();
     c = (await appDriver()).client;
     const plugin = "moss/model-anthropic";
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
@@ -4288,7 +4535,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
     const pickFile = join(root, "folder.pick");
     writeFileSync(pickFile, `${join(import.meta.dir, "fixtures", "acceptance-page")}\n`);
     const port = freePort();
-    browserFixture = startBrowserFixture();
+    browserFixture ??= startBrowserFixture();
     const frontFile = join(root, "main-front");
     const env = { ...baseEnv(), MOSS_TEST_BROWSER_NAMES: browserFixture.names, MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_TEST_PICK: pickFile, MOSS_TEST_MAIN_FRONT_FILE: frontFile, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
     proc = startChild("browser-app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
@@ -4301,33 +4548,239 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
     const log = proc.log;
+    // Where the router put a card (the window's log): the host's island takes its press there, the window elsewhere.
+    let hostPresses = 0;
+    let windowPresses = 0;
+    const lastPlace = (card: Card) => [...readLog(log).matchAll(new RegExp(`router: ${card.id} placed (\\w+)`, "g"))].at(-1)?.[1];
+    const onHostIsland = (card: Card) => hostCdp !== undefined && (lastPlace(card) === "island" || lastPlace(card) === "elsewhere");
+    const pick = (card: Card) => (onHostIsland(card) ? { cdp: hostCdp!, log: hostLog, onIsland: true } : { cdp: cdp!, log });
+    const pressWhereHeld = async (card: Card) => {
+      if (hostCdp !== undefined) await until(`the router placing ${card.id}`, 20_000, () => (lastPlace(card) !== undefined ? true : undefined), 200).catch(() => undefined);
+      if (onHostIsland(card)) { hostPresses++; await pressOnIsland(hostCdp!, card, hostLog); } else { windowPresses++; await pressApprove(cdp!, card, log); }
+    };
     const ctx: ExampleCtx = {
-      cdp: cdp!, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
+      cdp: cdp!, islandCdp: hostCdp, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
       appLog: () => `${readLog(log)}\n${readLog(join(home, "logs", "app.log"))}`,
       requests: () => fake?.requests ?? [],
       pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
       pressCard: async (what, match) => {
         const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);
-        await pressApprove(cdp!, card, log);
+        await pressWhereHeld(card);
         return card.id;
       },
-      approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await approve(rpc, card, { log }); },
+      // With a host, a card the router put on the host's island is answered only there: it is pressed where it is.
+      approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) { if (hostCdp !== undefined) await pressWhereHeld(card); else await approve(rpc, card, { log }); } },
       denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
-      turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
-      alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true, log }),
-      inspectTurn: (s2, text, ms, inspect) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log }, inspect: async () => inspect() }),
+      turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick } }),
+      alwaysTurn: (s2, text, ms) => (hostCdp !== undefined ? turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick, always: true } }) : turn(rpc, s2, text, ms, { always: true, log })),
+      inspectTurn: (s2, text, ms, inspect) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick }, inspect: async () => inspect() }),
       history: (s2) => history(rpc, s2),
       setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back"),
     };
-    record(n, "PASS", await browserStep(ctx, session, browserFixture, panelOpener(rpc)));
+    record(n, "PASS", `${o.row === "surface-copy" ? await surfaceCopyStep(ctx, session) : await browserStep(ctx, session, browserFixture, panelOpener(rpc))}${o.withHost === true ? `; with the host running: ${hostPresses} card(s) pressed on the host's island, ${windowPresses} in the window, the pages in the host` : ""}`);
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {
     c?.close();
     cdp?.close();
+    hostCdp?.close();
     if (proc !== undefined) await endChild(proc.proc);
+    if (o.withHost === true) { endStartedHosts(); unregisterRunApps(); }
   }
 }
+
+// lane HS: start. ----------------------------------------------------------------------------------------------------
+/** The background host's row (`--units host`, serial; host-step.ts): its own daemon starts the host from this checkout
+ *  (`MOSS_HOST_COMMAND`, the engine's source seam, as its own child: the run's cleanup of the daemon's group ends it). */
+/** lane HS (the reviewer's B2): a host command that always fails, so the engine gives up after its bounded starts; MOSS Code's
+ *  window (not in front) then keeps the fallback card for a card the router placed with no island: it is shown and pressed. */
+async function hostGaveUpRun(app: { exe: string; args: string[] }): Promise<void> {
+  const n = stepNumber(FULL_STEPS, HOST_GAVE_UP_STEP);
+  let c: MossClient | undefined;
+  let appCdp: Cdp | undefined;
+  let appProc: { proc: ChildProcess; log: string } | undefined;
+  try {
+    if (target !== "source") fail("the gave-up row needs the engine's source seam (MOSS_HOST_COMMAND)");
+    // The host row's last daemon goes first: one daemon per home.
+    if (lastDaemon !== undefined && alive(lastDaemon.proc)) {
+      const gone = new Promise<void>((r) => lastDaemon!.proc.once("exit", () => r()));
+      stoppingDaemon = true;
+      try { process.kill(lastDaemon.proc.pid!, "SIGTERM"); } catch { /* gone */ }
+      await Promise.race([gone, sleep(30_000)]);
+      stoppingDaemon = false;
+    }
+    endStartedHosts();
+    const d = await startDaemonProc({ MOSS_HOST_COMMAND: JSON.stringify(["/usr/bin/false"]), MOSS_TEST_SEALED_PRESS: "1", MOSS_DEV_DEBUG: "1" });
+    await until("the engine giving up on the host", 120_000, () => (/\[host\] the host did not start \d+ times in a row/.test(readLog(d.log)) ? true : undefined), 500);
+    const appPort = freePort();
+    const frontFile = join(root, "gave-up-front");
+    writeFileSync(frontFile, "back");
+    appProc = startChild("gave-up-app", app.exe, [...app.args, "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${appPort}`], { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_DEV_DEBUG: "1", MOSS_TEST_MAIN_FRONT_FILE: frontFile });
+    const proc = appProc;
+    appCdp = await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(proc.proc)) fail(`the app exited (${proc.proc.exitCode ?? proc.proc.signalCode}): ${lastLines(proc.log)}`);
+      try { return await Cdp.connect(appPort); } catch { return undefined; }
+    }, 200);
+    await until("the window's mount with the host given up (no island)", 60_000, () => (/mount: \{"mainWindow":true,"surfaces":false,"background":true/.test(readLog(proc.log)) ? true : undefined), 300);
+    c = (await appDriver()).client;
+    const fixture = join(import.meta.dir, "fixtures", "acceptance-island");
+    const r = await c.request<{ id: string }>("plugin.install", { source: { from: "folder", path: fixture } }, 60_000);
+    const card = await until("the plugin's OK card", 30_000, async () => (await cards(c!)).find((x) => x.kind === "plugin-ok" && x.pluginId === r.id), 300);
+    const place = await until("the router placing the card", 20_000, () => [...readLog(proc.log).matchAll(new RegExp(`router: ${card.id} placed (\\w+)`, "g"))].at(-1)?.[1], 200);
+    if (place !== "elsewhere" && place !== "island") fail(`the card was placed ${place}, not with no island and no window in front`);
+    const how = await pressApprove(appCdp, card, proc.log);
+    if (how !== "fallback") fail(`the card was pressed on the ${how}, not on the window's fallback card`);
+    await until("the plugin running after the press", 60_000, async () => ((await c!.request<{ plugin: { state: string } }>("plugin.get", { id: r.id }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
+    record(n, "PASS", `the engine gave up on a host that never started; the card placed ${place} with no window in front was shown on MOSS Code's window's fallback card and a real press there answered it`);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
+    appCdp?.close();
+    if (appProc !== undefined) await endChild(appProc.proc);
+  }
+}
+
+async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
+  const n = stepNumber(FULL_STEPS, HOST_STEP);
+  const lines: string[] = [];
+  let c: MossClient | undefined;
+  let hostCdp: Cdp | undefined;
+  // The host's own output (its card ids whole; the home's app.log writes them as [x]): the engine's seam sends it here.
+  const appLogFile = join(home, "logs", "host.out.log");
+  try {
+    if (target !== "source") fail("the host's row needs the engine's source seam (MOSS_HOST_COMMAND), which a packaged core ignores");
+    const hostPort = freePort();
+    browserFixture = startBrowserFixture();
+    const shared = { MOSS_TEST_BROWSER_NAMES: browserFixture.names, MOSS_TEST_SEALED_PRESS: "1", MOSS_DEV_DEBUG: "1" };
+    // Through the run's own LSUIElement copy (no Dock icon at any moment), unregistered at the end.
+    const hostApp = hostAppCopy(app);
+    const hostCommand = JSON.stringify([hostApp.exe, ...hostApp.args, "--moss-program=host", "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${hostPort}`]);
+    const daemonEnv = { MOSS_HOST_COMMAND: hostCommand, ...shared };
+    const first = await startDaemonProc(daemonEnv);
+    c = (await appDriver()).client;
+    await signInKey(c);
+    const session = await keyedSession(c);
+    // 1. The engine started the host by itself (no app window anywhere), which holds its lock and says it is ready.
+    const hostPid = await until("the host the engine started, ready and holding its lock", 120_000, () => { const p = hostLockPid(home); if (p !== undefined) startedHosts.add(p); return readyCount(readLog(first.log)) > 0 ? p : undefined; }, 500);
+    // Nothing of the host on the screen, read from the window server itself at each stage (no window of a host pid on screen).
+    let screenChecks = 0;
+    const offScreen = (stage: string): void => {
+      const wins = onscreenWindows(join(import.meta.dir, "onscreen-windows.swift"));
+      if (wins === undefined) fail(`the window server's list couldn't be read (${stage})`);
+      const pids = new Set([...startedHosts, ...(hostLockPid(home) !== undefined ? [hostLockPid(home)!] : [])]);
+      const seen = wins!.filter((w) => pids.has(w.pid) && w.alpha > 0);
+      if (seen.length > 0) fail(`a host window was on the screen ${stage}: ${JSON.stringify(seen).slice(0, 200)}`);
+      screenChecks++;
+    };
+    const connectHost = async (what: string) => until(what, 60_000, async () => { try { return await Cdp.connect(hostPort); } catch { return undefined; } }, 250);
+    hostCdp = await connectHost("the host's DevTools port");
+    await until("the island's window in the host", 60_000, () => islandTarget(hostCdp!), 300);
+    offScreen("after it started");
+    lines.push(`started: the engine started the host (pid ${hostPid}), which holds its lock, said it was ready and draws the island`);
+    // 2. MOSS Code's window mounts no island of its own while the host owns the screen; then its process quits.
+    const appPort = freePort();
+    const frontFile = join(root, "host-unit-front");
+    writeFileSync(frontFile, "front");
+    const viewportPressFile = join(root, "host-unit-viewport-press");
+    const appProc = startChild("host-unit-app", app.exe, [...app.args, "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${appPort}`], { ...baseEnv(), ...shared, MOSS_DAEMON_BIN: stubBin, MOSS_TEST_MAIN_FRONT_FILE: frontFile, MOSS_TEST_VIEWPORT_PRESS_FILE: viewportPressFile });
+    const appCdp = await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(appProc.proc)) fail(`the app exited (${appProc.proc.exitCode ?? appProc.proc.signalCode}): ${lastLines(appProc.log)}`);
+      try { return await Cdp.connect(appPort); } catch { return undefined; }
+    }, 200);
+    await until("the window's mount (its own points only)", 60_000, () => (/mount: \{"mainWindow":true,"surfaces":false,"background":false,"tray":"none","browser":false/.test(readLog(appProc.log)) ? true : undefined), 300);
+    await sleep(2_000);
+    if (islandTarget(appCdp) !== undefined) fail("MOSS Code's window drew an island of its own while the host owns the screen");
+    lines.push(`one card in one place: ${await oneCardEach(appCdp, appProc.log, hostCdp, appLogFile, c, session, (on) => writeFileSync(frontFile, on ? "front" : "back"), viewportPressFile)}`);
+    appCdp.close();
+    await endChild(appProc.proc);
+    lines.push("one island: MOSS Code's window mounted its own points only (no island, no background part, no pages, no menu-bar icon), and its process quit");
+    // 3. With no app window: a plugin's OK card is placed on the host's island, which takes its press; its background part runs in
+    //    the host and makes its tone (the run is muted at the output).
+    const parent = mkdtempSync(join(tmpdir(), "moss-host-bg-"));
+    const id = BACKGROUND_IDS.sound;
+    const installed = await c.request<{ id: string }>("plugin.install", { source: { from: "folder", path: writeBackground(parent, id, { audio: true }) } }, 60_000);
+    if (installed.id !== id) fail(`the background fixture installed as ${installed.id}`);
+    const ok = await until("the background fixture's OK card", 30_000, async () => (await cards(c!)).find((k) => k.kind === "plugin-ok" && k.pluginId === id), 500);
+    lines.push(`island press with no window: ${await pressOnIsland(hostCdp, ok, appLogFile)}`);
+    await until(`${id} running`, 30_000, async () => ((await c!.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
+    const num = (a: Record<string, string>, k: string) => Number(a[`data-${k}`]);
+    const tone = await until("the background part's tone in the host", 60_000, async () => { const a = await backgroundPart(hostCdp!, id); return a !== undefined && num(a, "ticks") >= 10 && a["data-ctx"] === "running" && num(a, "rms") > 0.01 ? a : undefined; }, 500);
+    offScreen("with a card on its island");
+    lines.push(`background part with no window: ${tone["data-ticks"]} ticks, its audio context running, level ${tone["data-rms"]}`);
+    // 3b. R12's host half: a plugin's overlay (the hold fixture's, always on top) is hidden while a card is pending on the
+    //     host's island, and back once it is answered; the host tells the engine where its surfaces are.
+    lines.push(`R12 with a fixture overlay: ${await overlayStandsDownForCard(c, hostCdp, appLogFile, first.log)}`);
+    // 4. A bot's Browser tool opens a page with no app window: the page loads in the host, offscreen.
+    const wasAppless = appless;
+    appless = true;
+    try {
+      await turn(c, session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "open", url: browserFixture.url })}`, 150_000, { always: true, log: appLogFile });
+    } finally { appless = wasAppless; }
+    // The open answers as the page starts loading: the request comes a moment later.
+    await until("the fixture site's request from the bot's tab", 30_000, () => (browserFixture!.seen.some((r) => r.path === "/") ? true : undefined), 200).catch(() => undefined);
+    if (!browserFixture.seen.some((r) => r.path === "/")) {
+      const result = [...(fake?.requests ?? [])].reverse().find((r) => r.toolResult !== undefined)?.toolResult;
+      fail(`the bot's Browser tool loaded nothing: the fixture site saw no request (the tool said: ${result === undefined ? "nothing" : `${result.isError ? "error: " : ""}${result.text.slice(0, 300)}`})`);
+    }
+    await until("the bot's page among the host's targets", 30_000, () => ([...hostCdp!.frames.values()].some((f) => f.url.startsWith(browserFixture!.url)) ? true : undefined), 500).catch(() => undefined);
+    offScreen("with the bot's page open");
+    lines.push("browser with no window: the bot's Browser tool opened the fixture page, loaded by the host's browser");
+    // 4b. The browser's own picture, end to end (lane AF's bridge over the host's frames): the tab the tool drove is a live
+    //     picture of Alpha's session, and a window that follows it gets its frames, drawn by the host's tab.
+    lines.push(`the browser's live picture: ${await browserPictureEndToEnd(c, session)}`);
+    // 5. The engine restarts on the same home: it adopts the running host (its lock) and starts no second.
+    stoppingDaemon = true;
+    const gone = new Promise<void>((r) => first.proc.once("exit", () => r()));
+    try { process.kill(first.proc.pid!, "SIGTERM"); } catch { /* gone */ }
+    await Promise.race([gone, sleep(30_000)]);
+    stoppingDaemon = false;
+    if (alive(first.proc)) fail("the first daemon did not stop on SIGTERM");
+    if (!processAlive(hostPid)) fail("the host went with the engine");
+    const second = await startDaemonProc(daemonEnv);
+    c.close();
+    c = (await appDriver()).client;
+    await until("the restarted engine adopting the host", 60_000, () => { const t = readLog(second.log); return /\[host\] a host holds the lock \(pid \d+\): adopted/.test(t) && readyCount(t) > 0 ? true : undefined; }, 500);
+    if (/\[host\] starting the host/.test(readLog(second.log))) fail("the restarted engine started a second host");
+    if (hostLockPid(home) !== hostPid || !processAlive(hostPid)) fail(`the host after the restart is not the same one (lock pid ${hostLockPid(home)}, first ${hostPid})`);
+    lines.push(`adopted: the restarted engine found the host (pid ${hostPid}) by its lock, heard it ready again, and started none`);
+    // 6. Three crashes in two minutes: the next start is in safe mode, which covers the host's UI parts only.
+    hostCdp.close();
+    hostCdp = undefined;
+    let pid = hostPid;
+    for (let i = 1; i <= 3; i++) {
+      const before = readyCount(readLog(second.log));
+      try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
+      pid = await until(`the host started again after crash ${i}`, 90_000, () => { const p = hostLockPid(home); if (p !== undefined) startedHosts.add(p); return p !== undefined && p !== pid && processAlive(p) && readyCount(readLog(second.log)) > before ? p : undefined; }, 300);
+    }
+    const daemonText = readLog(second.log);
+    if (!/\[host\] ready: [^\n]*, in safe mode/.test(daemonText)) fail(`the host after three crashes is not in safe mode (the engine logged: ${daemonText.split("\n").filter((l) => l.includes("[host]")).slice(-6).join(" | ")})`);
+    hostCdp = await connectHost("the safe-mode host's DevTools port");
+    await until("the island in the safe-mode host", 60_000, () => islandTarget(hostCdp!), 300);
+    await sleep(3_000);
+    if ((await backgroundPart(hostCdp, id)) !== undefined) fail("the safe-mode host still mounted the third-party background part");
+    const still = (await c.request<{ plugin: { state: string; enabled?: boolean } }>("plugin.get", { id }).catch(() => undefined))?.plugin;
+    if (still === undefined || still.state !== "running") fail(`the engine's copy of the plugin left running in safe mode: ${JSON.stringify(still)}`);
+    lines.push("safe mode: after three crashes the host came back in safe mode with its island and no third-party part, while the engine kept the plugin running");
+    offScreen("in safe mode");
+    // 7. Nothing of the host reached the screen or the speakers: no window of its shown while headless, every start muted.
+    const out = readLog(appLogFile);
+    const shown = out.split("\n").find((l) => /window: shown while headless/.test(l));
+    if (shown !== undefined) fail(`the host showed a window while headless: ${shown.slice(0, 200)}`);
+    const starts = (out.match(/audio: muted/g) ?? []).length;
+    if (starts === 0 || /audio: (NOT muted|played unmuted)/.test(out)) fail(`the host's starts were not all muted (${starts} muted; ${out.split("\n").find((l) => /audio: (NOT|played)/.test(l))?.slice(0, 160) ?? ""})`);
+    lines.push(`nothing seen or heard: the window server listed no host window on the screen at ${screenChecks} checks, the host's log naming no window put on the screen, ${starts} host start(s) muted, no Dock icon (its app copy is LSUIElement), no menu-bar icon (never made headless)`);
+    record(n, "PASS", lines.join("; "));
+  } catch (err) {
+    record(n, statusOf(err), `${why(err)}${lines.length > 0 ? ` (after: ${lines.join("; ").slice(0, 600)})` : ""}`);
+  } finally {
+    c?.close();
+    hostCdp?.close();
+    endStartedHosts();
+    say(`the host's Launch Services entries unregistered: ${unregisterRunApps()}`);
+  }
+}
+// lane HS: end. ------------------------------------------------------------------------------------------------------
 
 /** CPU seconds a process has used so far (`ps`'s cumulative time), or undefined when it is gone. */
 function cpuSeconds(pid: number): number | undefined {

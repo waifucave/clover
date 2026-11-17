@@ -27,7 +27,7 @@
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { answerKeyHolderFor, ERR, type AnswerKeyHolder } from "@waifucave/moss-protocol";
+import { answerKeyHolderFor, ERR, programAnswerKeyStatement, type AnswerKeyHolder } from "@waifucave/moss-protocol";
 import { CLIENT_ERR } from "./protocol/client";
 
 /** Where the key's private half is kept: the current key, and a replacement staged while its card waits. */
@@ -212,7 +212,12 @@ export class AnswerKey {
   private key: KeyObject | undefined;
   private readonly now: () => number;
 
-  constructor(private readonly vault: KeyVault, private readonly log: (line: string) => void = () => {}, opts: { now?: () => number } = {}) {
+  // lane HS: start. A program other than MOSS Code (the background host) registers its own key, `device.programKey.set`
+  // over the program statement (ruling C); MOSS Code keeps the device's single key.
+  program: "host" | "moss" | undefined;
+  // lane HS: end
+  constructor(private readonly vault: KeyVault, private readonly log: (line: string) => void = () => {}, opts: { now?: () => number; program?: "host" | "moss" } = {}) {
+    this.program = opts.program;
     this.now = opts.now ?? Date.now;
   }
 
@@ -358,8 +363,12 @@ export class AnswerKey {
     if (st && (await this.adoptIfHeld(client, deviceId, st.key)) === "held") return { registered: true };
     try {
       const publicKey = this.publicKey();
-      const signature = Buffer.from(this.sign(answerKeyStatement(deviceId, publicKey, this.held))).toString("base64");
-      await client.request("device.answerKey.set", { publicKey, held: this.held, signature }, 10_000);
+      // lane HS: start
+      const program = this.program;
+      const statement = program === undefined ? answerKeyStatement(deviceId, publicKey, this.held) : new TextEncoder().encode(programAnswerKeyStatement({ device: deviceId, program, publicKey, held: this.held }));
+      const signature = Buffer.from(this.sign(statement)).toString("base64");
+      await client.request(program === undefined ? "device.answerKey.set" : "device.programKey.set", { publicKey, held: this.held, signature }, 10_000);
+      // lane HS: end
       this.log(`answer key: registered (${this.held})`);
     } catch (err) {
       const why = err instanceof Error ? err.message.slice(0, 200) : "refused";

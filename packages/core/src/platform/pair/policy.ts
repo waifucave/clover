@@ -174,6 +174,14 @@ export class DaemonPair {
     this.log(`the app stopped answering (${connId}): it restarts in safe mode`);
   }
 
+  // lane HS: start
+  /** A background host took the screen: the window is no half of the pair any more (its quit stops nothing, its exit is
+   *  no crash and is never restarted). Stand-in until the pair is retired (lanes RT, RL, then HS). */
+  appReleased(connId: string): void {
+    this.apps.delete(connId);
+  }
+  // lane HS: end
+
   /** An app connection closed. */
   appDisconnected(connId: string): void {
     const app = this.apps.get(connId);

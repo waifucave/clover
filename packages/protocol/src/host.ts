@@ -14,12 +14,15 @@
 // * The MOSS Browser's tabs live in the host (item 111): the engine's tab requests (`app.tab.*`, browser.ts) go to the
 //   host's connection. A window shows a tab as a picture (`browser.view.open`, its frames as `picture.frame`
 //   notifications, activity.ts) and MOSS Code's panel forwards the person's input (`browser.view.input` → `host.tab.input`).
-//   MOSS's side panel only watches.
+//   MOSS's side panel only watches. The frames come to the engine from the program that runs the pages
+//   (`host.tab.frame`, a request: the server takes no client notification), at most one in flight, latest wins.
 import { z } from "zod";
 import { utf16 } from "./strings";
 import { Ok, Timestamp } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 import { Release } from "./release";
+import { PictureFrame } from "./activity";
+import { MossWindow } from "./computers";
 
 /** The host's single-instance lock, under the home (one host per home, not per user). */
 export const HOST_LOCK_FILE = "run/host.lock";
@@ -28,6 +31,25 @@ export const HOST_CRASH_LIMIT = 3;
 export const HOST_CRASH_WINDOW_MS = 120_000;
 /** The engine's waits before each restart of a crashed host, the last repeated. */
 export const HOST_RESTART_DELAYS_MS = [500, 2_000, 8_000, 30_000] as const;
+/** A host that never says it is ready is started this many times in a row (once, then after each restart delay), then
+ *  no more until the engine starts again: the state is `absent` with `gaveUp`, the screen is the windows' again (the
+ *  router has no island; cards draw in a focused window) and each window shows one plain notice. A host that says it is
+ *  ready starts the count over. */
+export const HOST_START_ATTEMPTS = HOST_RESTART_DELAYS_MS.length + 1;
+/** How long a host the engine started (or found holding the lock) has to say `host.ready` before the engine counts it as
+ *  a crash: a host that never connects, or dies before its hello, never closes a connection, so without this the engine
+ *  would wait in `starting` for ever. Longer than the longest restart delay, and than a cold start at login. */
+export const HOST_START_TIMEOUT_MS = 45_000;
+/** An app's record can be missing for a moment (its bundle is being replaced by an update): the engine looks again
+ *  every `HOST_SOURCE_RECHECK_MS` for `HOST_SOURCE_GRACE_MS` before it takes "no app carries a host" as so, and runs
+ *  headless. A window that connects later makes it look again too. */
+export const HOST_SOURCE_GRACE_MS = 120_000;
+export const HOST_SOURCE_RECHECK_MS = 5_000;
+/** What the engine leaves for the host it starts (`{ by, safeMode, at }`), under the home: none of the OS starts
+ *  (`open -a`, `systemctl --user start`, `schtasks /Run`) passes arguments reliably. The host reads it once, deletes it
+ *  and honours it for `HOST_START_FILE_TTL_MS`. */
+export const HOST_START_FILE = "run/host-start.json";
+export const HOST_START_FILE_TTL_MS = 60_000;
 
 /** Why the host exits or is stopped. */
 export const HostExitReason = z.enum([
@@ -35,7 +57,8 @@ export const HostExitReason = z.enum([
   "update",
   /** The menu's "quit everything". */
   "quit-everything",
-  /** Too many crashes: it starts again in safe mode. */
+  /** Restart in safe mode: the host goes and the engine starts it again at once with its UI parts in safe mode (no
+   *  third-party part mounted). The one reason after which the engine starts the host again. */
   "safe-mode",
   /** No app that carries a host is left on disk (item 109: the engine then runs headless). */
   "no-app",
@@ -87,7 +110,11 @@ export const HostChangedEvent = coreEvent("host_changed", {
   /** The app bundle it runs from. */
   bundlePath: utf16(4096).optional(),
   since: Timestamp,
+  /** The engine stopped trying (`HOST_START_ATTEMPTS` starts that never said ready): with `absent`, until it starts again. */
+  gaveUp: z.boolean().optional(),
 });
+/** What `host.status` answers: `host_changed` now, without its type and time. */
+export const HostStatusResult = z.object({ state: HostState, crashes: z.number().int().nonnegative(), release: Release.optional(), bundlePath: utf16(4096).optional(), since: Timestamp, gaveUp: z.boolean().optional() });
 
 export const HOST_METHODS = {
   hostReady: defineMethod({
@@ -136,6 +163,38 @@ export const HOST_METHODS = {
     params: z.object({ id: utf16(128, 1), events: z.array(TabInputEvent).min(1).max(256) }),
     result: Ok,
     doc: "The person's input to one of the host's tabs, forwarded from MOSS Code's browser panel.",
+  }),
+  hostFront: defineMethod({
+    name: "host.front", owner: "HS", roles: ["app"], direction: "from-daemon",
+    params: z.object({ front: z.boolean() }),
+    result: Ok,
+    doc: "Whether a MOSS or MOSS Code window is focused and visible now (the router's presence): the host's island hides its strip line then.",
+  }),
+  hostSurfaces: defineMethod({
+    /** R12's host half: where the host's surfaces are on this computer's screen now (the island, the pill, its own card,
+     *  the parts it shows), sent when they move, show or hide. The engine keeps them as this computer's MOSS windows
+     *  (`computers.mossWindows`), which a computer-use plugin must not act on and blacks out. */
+    name: "host.surfaces", owner: "HS", roles: ["app"],
+    params: z.object({ windows: z.array(MossWindow).max(64) }).strict(),
+    result: Ok,
+    doc: "The background host's surfaces on the screen now, for the product's own-windows list.",
+  }),
+  hostStatus: defineMethod({
+    /** A window reads the host's state when it connects (a `host_changed` before its subscription would be missed). */
+    name: "host.status", owner: "HS", roles: ["app", "cli"],
+    params: z.object({}).strict(),
+    result: HostStatusResult,
+    doc: "The background host's state now, as host_changed says it.",
+  }),
+  hostTabFrame: defineMethod({
+    /** From the program that runs the browser's pages (the host; today's app until the host runs them), one frame of a
+     *  tab stream the engine started (`app.tab.command` `stream` with `codecs: ["jpeg"]`). The sender keeps at most one in
+     *  flight and sends only its latest, so a slow engine drops frames, never queues them. The engine refuses a frame from
+     *  any other connection, over the stream's declared size, or not a jpeg, png or webp by its own header. */
+    name: "host.tab.frame", owner: "HS", roles: ["app"],
+    params: PictureFrame,
+    result: Ok,
+    doc: "One picture of a MOSS Browser tab, from the program that runs its pages, for the windows and tools that show it.",
   }),
   browserViewOpen: defineMethod({
     /** A window asks for a tab's picture; its frames come as `picture.frame` notifications on this connection. MOSS's

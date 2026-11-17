@@ -24,6 +24,8 @@ export interface HostStatus {
   pid?: number;
   bundlePath?: string;
   release?: string;
+  /** The supervisor stopped trying: `HOST_START_ATTEMPTS` starts in a row never said ready. */
+  gaveUp?: boolean;
 }
 
 /** What the supervisor asks the OS to do, and what it reads of it: the drivers a test or the real engine gives it. */

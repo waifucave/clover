@@ -26,6 +26,9 @@ const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins", "moss", "plugins
 const FIXTURE = resolve(import.meta.dir, "fixtures", "acceptance-island");
 const FIXTURE_ID = "acceptance-island";
 const HOLD = resolve(import.meta.dir, "fixtures", "acceptance-hold");
+/** R12's fixture: a third-party click-through part painted where the island draws (it holds no card). */
+const COVER = resolve(import.meta.dir, "fixtures", "acceptance-cover");
+const COVER_ID = "acceptance-cover";
 const HOLD_ID = "acceptance-hold";
 
 export type Mirror = "island" | "pill";
@@ -68,15 +71,19 @@ const okCardOf = (ctx: ExampleCtx, id: string) => async (): Promise<PluginCard |
 /** The count of sealed frames a document of `plugin` holds for a card. */
 async function sealedFramesOf(ctx: ExampleCtx, plugin: string, cardId: string): Promise<number> {
   let most = 0;
-  for (const d of await layerDocs(ctx.cdp, plugin)) {
-    const n = Number(await ctx.cdp.evaluate(d.session, `document.querySelectorAll('[data-moss-card="${cardId}"] iframe[data-moss-sealed]').length`).catch(() => 0));
+  const cdp = ctx.islandCdp ?? ctx.cdp;
+  for (const d of await layerDocs(cdp, plugin)) {
+    const n = Number(await cdp.evaluate(d.session, `document.querySelectorAll('[data-moss-card="${cardId}"] iframe[data-moss-sealed]').length`).catch(() => 0));
     most = Math.max(most, n);
   }
   return most;
 }
 
 export async function surfaceCopyStep(ctx: ExampleCtx, session: string): Promise<string> {
-  const { rpc, cdp } = ctx;
+  // lane HS: the screen's surfaces (the copies, the hold fixture, the cover) are the background host's documents while one
+  // runs; the window's own card is the window's.
+  const { rpc } = ctx;
+  const cdp = ctx.islandCdp ?? ctx.cdp;
   const setFront = ctx.setMainFront;
   if (setFront === undefined) return fail("this run has no seam to say the window is in front");
   const said: string[] = [];
@@ -98,6 +105,16 @@ export async function surfaceCopyStep(ctx: ExampleCtx, session: string): Promise
         async () => JSON.stringify(await rpc.request("plugin.get", { id: r.id }).catch(() => null)).slice(0, 300));
     }
     said.push("both copies installed behind OK cards that name what they hold, and run after the press");
+    // R12 (the controller's ruling): a third-party on-screen part that holds no card, painted where the island draws, stands
+    // down while the copy island (the card's drawer) draws the card and takes its press.
+    {
+      const cr = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: COVER } }, 60_000);
+      if (cr.id !== COVER_ID) fail(`${COVER_ID} installed as ${cr.id}`);
+      installed.push(cr.id);
+      const ccard = await until(`${COVER_ID}'s OK card`, 30_000, okCardOf(ctx, COVER_ID));
+      await ctx.pressCard(`${COVER_ID}'s OK card`, (c) => c.id === ccard.id);
+      await until(`${COVER_ID}'s part on the screen`, 60_000, async () => ((await layerDocs(cdp, COVER_ID)).length > 0 ? true : undefined));
+    }
 
     // 2. The copies take the bundled two's place: they are switched off (as a user would in the Plugins page), the copies' windows
     // draw. (Two islands at once would be two windows; the clause is about the copy alone.)
@@ -120,6 +137,12 @@ export async function surfaceCopyStep(ctx: ExampleCtx, session: string): Promise
       return n >= 3 ? n : undefined;
     }, async () => `the copy island's documents: ${(await layerDocs(cdp, MIRROR_ID.island)).map((d) => d.url.slice(0, 60)).join(" ")}; log: ${ctx.appLog().split("\n").filter((l) => /sealed|card:/.test(l)).slice(-4).join(" | ")}`);
     said.push(`the copy island drew the plugin OK card's ${frames} sealed frames, a card of no bot`);
+    const surfaceLines = (ref: string) => ctx.appLog().split("\n").filter((l) => l.includes(`surface: ${ref} `));
+    const coverRef = `${COVER_ID}#cover`;
+    const islandRef = `${MIRROR_ID.island}#island`;
+    await until("the cover hidden while the card waits", 20_000, async () => (/hidden while a card is pending/.test(surfaceLines(coverRef).at(-1) ?? "") ? true : undefined), async () => surfaceLines(coverRef).slice(-2).join(" | ") || "no line for the cover");
+    if (/hidden while a card is pending/.test(surfaceLines(islandRef).at(-1) ?? "")) fail(`the copy island, the card's drawer, is still hidden: ${surfaceLines(islandRef).slice(-2).join(" | ")}`);
+    said.push("R12: the cover (a third-party part holding no card) stood down while the copy island, the card's drawer, stayed");
 
     // 4. One place at a time, as the bundled island does: the window in front, the copy lets go; the window back, it draws again.
     const times = (re: RegExp) => ctx.appLog().split("\n").filter((l) => re.test(l) && l.includes(card.id)).length;
@@ -138,6 +161,7 @@ export async function surfaceCopyStep(ctx: ExampleCtx, session: string): Promise
     said.push("one place at a time: the copy island let go of the frames with the window in front and drew them again with it back");
 
     // 5. The press on the copy's own sealed buttons answers the card.
+    if (!/hidden while a card is pending/.test(surfaceLines(coverRef).at(-1) ?? "")) fail(`the cover was not hidden when the copy island's card was pressed: ${surfaceLines(coverRef).slice(-2).join(" | ")}`);
     await ctx.pressCard("the plugin OK card, pressed on the copy island", (c) => c.id === card.id);
     await until(`${FIXTURE_ID} running`, 60_000, async () => ((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: FIXTURE_ID }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
     fixtureCard = undefined;

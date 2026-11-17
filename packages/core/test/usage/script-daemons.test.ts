@@ -44,6 +44,7 @@ const CARRIES_INERT = /\bUSAGE_INERT_ENV\b|\bUSAGE_INERT\b|\busage\s*:\s*\{[^}]*
 const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/dev-daemon.ts": "the developer's own dev daemon — real, on purpose",
   "scripts/acceptance/ui-steps.ts": "the window steps over DevTools; names the app's `moss-core://app/` page URL (for a screenshot), starts no daemon",
+  "scripts/acceptance/host-step.ts": "the host row's helpers over DevTools; names the island's `moss-core://app/` page, starts no daemon (run.ts starts the row's)",
   "scripts/acceptance/cdp.ts": "a DevTools client; names the app's `moss-core://app/` page URL, starts no daemon",
   "scripts/acceptance/cdp.test.ts": "tests the DevTools client against a stand-in socket; names `moss-core://app/` page URLs, starts no daemon",
   "scripts/acceptance/web-step.ts": "the web page part's step over DevTools; names the `moss-core://` scheme (a page that must not be the app's), starts no daemon",

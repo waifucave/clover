@@ -44,6 +44,11 @@ export class EngineCardRouter implements CardRouter {
   readonly #listeners = new Listeners<PlacementChange>();
   #host: boolean;
   #seq = 0;
+  // lane HS: start. Whether a window of the product is focused and visible now: the host's island hides its strip line
+  // then, as a window's own island does (the owner's ruling: the island only when MOSS isn't in front).
+  readonly #fronts = new Listeners<boolean>();
+  #front = false;
+  // lane HS: end
 
   constructor(opts: { clock: Clock; ttlMs?: number; hostLive?: boolean }) {
     this.#clock = opts.clock;
@@ -110,7 +115,23 @@ export class EngineCardRouter implements CardRouter {
       held.place = place;
       this.#listeners.emit({ card: id, place: { ...place }, before: { ...before } });
     }
+    // lane HS: start. After the cards' moves, so a card placed in the window is heard before the island is told the window is in front.
+    const front = this.#focused() !== undefined;
+    if (front !== this.#front) { this.#front = front; this.#fronts.emit(front); }
+    // lane HS: end
   }
+
+  // lane HS: start
+  /** Whether a window of the product is focused and visible now (by the same reports that place the cards). */
+  front(): boolean {
+    return this.#front;
+  }
+
+  /** Hears each change of `front()`. */
+  watchFront(fn: (front: boolean) => void): Unsubscribe {
+    return this.#fronts.add(fn);
+  }
+  // lane HS: end
 
   pending(card: RoutedCard): CardPlacement {
     const known = this.#cards.get(card.id);
@@ -136,7 +157,13 @@ export class EngineCardRouter implements CardRouter {
 
   mayPress(id: string, from: PressPlace): boolean {
     const place = this.#cards.get(id)?.place;
-    return place !== undefined && pressMatchesPlacement(place, from);
+    if (place === undefined) return false;
+    // lane HS (the reviewer's B2, never nowhere): a card placed `elsewhere` (nothing draws the island: no host, or one the
+    // engine gave up on) is shown on MOSS Code's window's own fallback card, the one place left on this computer, so a press
+    // from that window is taken. MOSS draws no such card (it waits for MOSS to come forward), and the sealed frame's own
+    // press checks still judge the press.
+    if (place.kind === "elsewhere" && from.kind === "window" && from.program === "code") return true;
+    return pressMatchesPlacement(place, from);
   }
 
   watch(fn: (change: PlacementChange) => void): Unsubscribe {

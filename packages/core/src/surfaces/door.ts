@@ -22,15 +22,27 @@ interface Held extends LiveSurface {
 export class EngineSurfaceDoor implements SurfaceDoor {
   readonly #live = new Map<number, Held>();
   readonly #listeners = new Listeners<LiveSurface[]>();
-  readonly #legacy: boolean;
+  readonly #legacy: boolean | (() => boolean);
+  // lane HS: a host the engine gave up on leaves no island: a legacy window then mounts all but the screen's surfaces.
+  readonly #noIsland: () => boolean;
+  #noIslandCode: MountList | undefined;
 
-  /** `legacy` (default true): today's engine, before the background host, where a `code` window mounts the screen too. */
-  constructor(opts: { legacy?: boolean } = {}) {
+  /** `legacy` (default true): today's engine, before the background host, where a `code` window mounts the screen too.
+   *  Lane HS: it may be asked at each hello (`() => boolean`): legacy while no background host owns the screen. */
+  constructor(opts: { legacy?: boolean | (() => boolean); noIsland?: () => boolean } = {}) {
     this.#legacy = opts.legacy ?? true;
+    this.#noIsland = opts.noIsland ?? (() => false);
   }
 
   #mount(surface: Surface): MountList {
-    return surface === "code" && this.#legacy ? LEGACY_CODE_MOUNTS : SURFACE_MOUNTS[surface];
+    // lane HS: start
+    const legacy = typeof this.#legacy === "function" ? this.#legacy() : this.#legacy;
+    if (surface === "code" && legacy && this.#noIsland()) {
+      this.#noIslandCode ??= { ...LEGACY_CODE_MOUNTS, points: LEGACY_CODE_MOUNTS.points.filter((p) => p !== "app.surface") };
+      return this.#noIslandCode;
+    }
+    // lane HS: end
+    return surface === "code" && legacy ? LEGACY_CODE_MOUNTS : SURFACE_MOUNTS[surface];
   }
 
   admit(client: SurfaceClient): SurfaceAdmission | { ok: true; surface: undefined } {
@@ -87,6 +99,20 @@ export class EngineSurfaceDoor implements SurfaceDoor {
     const l = this.#live.get(connId);
     return l !== undefined && l.mount.drawsCards && l.mount.points.includes("app.surface");
   }
+
+  // lane HS: start
+  /** The background host's state changed (lane HS): each live `code` window's mount follows it, as the window itself
+   *  re-mounts on `host_changed`, so `islandLive` and `islandDrawer` say who draws the island now. Heard only on a change. */
+  remount(): void {
+    let changed = false;
+    for (const l of this.#live.values()) {
+      if (l.surface !== "code") continue;
+      const m = this.#mount("code");
+      if (m !== l.mount) { l.mount = m; changed = true; }
+    }
+    if (changed) this.#listeners.emit(this.live());
+  }
+  // lane HS: end
 
   watch(fn: (live: LiveSurface[]) => void): Unsubscribe {
     return this.#listeners.add(fn);

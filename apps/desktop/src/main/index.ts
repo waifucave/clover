@@ -8,8 +8,8 @@
 // A headless run (`--moss-headless`, the smoke run, the tests) never shows a window, a Dock icon or a tray icon and
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
-import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "node:fs";
-import { hostname, release as osRelease, userInfo } from "node:os";
+import { existsSync, mkdirSync, readFileSync, rmSync, watchFile, writeFileSync } from "node:fs";
+import { homedir, hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ import { RENDER_CONSOLE_MAX, RenderQueue, renderPlace, type RenderConsoleLine, t
 import type { ShellState } from "@waifucave/moss-plugin-sdk";
 import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, ipcMain, Menu, webContents, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, MOSS_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, ReleaseChangedEvent, compareReleases, CardPlacedEvent, CardRequestedEvent, CardResolvedEvent, PairStatus, PRESENCE_REFRESH_MS, SURFACES_METHODS, UiSettings, UiSettingsChangedEvent, type CardPlacement } from "@waifucave/moss-protocol";
+import { APP_METHODS, BROWSER_METHODS, TabChangedEvent, TabClosedEvent, TabView, PLUGINS_METHODS, MOSS_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, ReleaseChangedEvent, compareReleases, CardPlacedEvent, CardRequestedEvent, CardResolvedEvent, PairStatus, PRESENCE_REFRESH_MS, SURFACES_METHODS, UiSettings, UiSettingsChangedEvent, type CardPlacement } from "@waifucave/moss-protocol";
 import { systemAccentFromOs } from "@waifucave/moss-plugin-sdk";
 import { testBrowserNames } from "./browser/test-names";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
@@ -56,6 +56,18 @@ import { appShortcut, fallbackMayShow, fallbackOnVisibility, sealedInputAllowed 
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
+// lane HS: start
+import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostProfileAndHome, hostStartInfo, hostTrayMenu, midWorkWarning, takeHostLock, type HostLock, type HostTrayActions } from "./host-program";
+import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
+import { fallbackHere as fallbackHereOf, fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
+import { drawerExempt, overlayStandsDown, surfacesReport } from "./host-stacking";
+import { FocusHandBack } from "./focus-handback";
+import { RemoteViews } from "./browser/remote-view";
+import { streamCommandOf } from "./browser/stream-command";
+import { electronRemoteViewport } from "./browser/remote-viewport";
+import { TabFrameSender } from "./browser/frame-sender";
+import { SURFACE_MOUNTS, type HostState, type MountList } from "@waifucave/moss-protocol";
+// lane HS: end
 import { DEFAULT_PREFS, readPrefs, withLegacyHidden, writePrefs, type AppPrefs } from "./prefs";
 import { FourFingerTap, loadTouches, type TouchAddon } from "./touch-tap";
 import type { TrayState } from "./tray-menu";
@@ -88,7 +100,24 @@ import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webP
   }
 }
 
-const identity = appIdentity(resolveAppProfile(process.env));
+// lane HS: start. Which program this process is: MOSS Code's window, or the background host (host-program.ts), and its
+// identity; the host's lock, taken once the single-instance lock is (below).
+const program = desktopProgram(process.argv, process.execPath);
+// lane HS: the host's profile and home (the dev helper is the dev profile on its own home, whatever Launch Services passed).
+const hostWhere = program === "host" ? hostProfileAndHome(process.env, process.execPath, homedir()) : undefined;
+const identity = hostWhere !== undefined ? hostIdentity(hostWhere.profile) : appIdentity(resolveAppProfile(process.env));
+let hostLock: HostLock | null | undefined;
+/** What this process runs (mount-plan.ts): from the hello's mount list, and the host's state for a window. */
+// lane HS: a window mounts only its own points until the engine's hello says more (never an island the host may own,
+// drawn for a moment before the mount comes); an engine whose hello names no mount gets today's whole list then.
+let mountNow: MountPlan = mountPlan(program, program === "host" ? SURFACE_MOUNTS.host : SURFACE_MOUNTS.code);
+let helloMount: MountList | undefined;
+let mountSaid = false;
+let hostStateNow: HostState | undefined;
+/** lane HS: the engine stopped trying to start the host (`host_changed`'s `gaveUp`), and whether the notice was shown. */
+let hostGaveUp = false;
+let hostDownNoticed = false;
+// lane HS: end
 const args = parseLaunchArgs(process.argv, process.env);
 const headless = args.headless;
 /** A measuring run (`MOSS_TEST_INVISIBLE=1`, or `hidden` to leave the main window away; headless, no `--moss-capture`; unpackaged or
@@ -98,7 +127,7 @@ const headless = args.headless;
 const invisible: "shown" | "hidden" | undefined = headless && args.capture === undefined && (!app.isPackaged || typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string")
   ? (process.env.MOSS_TEST_INVISIBLE === "1" ? "shown" : process.env.MOSS_TEST_INVISIBLE === "hidden" ? "hidden" : undefined)
   : undefined;
-const home = daemonHome(process.env);
+const home = hostWhere?.home ?? daemonHome(process.env);
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
 declare const __MOSS_TEST_BUILD__: string | false | undefined;
 // The source acceptance run's own build of the app (apps/desktop/scripts/build.ts --acceptance, which only
@@ -136,8 +165,9 @@ app.setName(identity.productName);
 if (process.platform === "win32") app.setAppUserModelId(identity.appId);
 // A headless run keeps everything it writes in its own (temporary) home; so does a test-marked build.
 if (headless || typeof __MOSS_TEST_BUILD__ === "string") {
-  app.setPath("userData", join(home, "app-data", identity.profile));
-  app.setPath("sessionData", join(home, "app-data", identity.profile, "session"));
+  // lane HS: the host's own folder, never the window's (host-program.ts).
+  app.setPath("userData", headlessUserData(home, program, identity.profile));
+  app.setPath("sessionData", join(headlessUserData(home, program, identity.profile), "session"));
 }
 // A headless run, a test-marked build and the acceptance run's build play no sound: the bots' voices still play through
 // the player (its clock and counters run), muted at Chromium's output.
@@ -172,13 +202,15 @@ if (app.isPackaged && typeof __MOSS_TEST_BUILD__ !== "string" && typeof __MOSS_A
 
 // The dev overrides (the daemon binary, the app token) count only in a dev or unpackaged run.
 const env = pairEnv(process.env, devOverridesAllowed({ packaged: app.isPackaged, profile: identity.profile }));
-const start = readStartInfo(home, process.argv);
+// lane HS: the host reads the engine's start file for it (host-program.ts), the window the pair's.
+const start = program === "host" ? hostStartInfo(home) : readStartInfo(home, process.argv);
 const safeMode = start.safeMode || args.safeMode;
 
 let runtime: UiRuntime;
 let pair: Pair;
 let browser: BrowserHost | undefined;
-let tray: AppTray | undefined;
+// lane HS: MOSS Code's tray or the host's (the one menu-bar icon once a host runs).
+let tray: { show(state: TrayState): void; destroy(): void } | undefined;
 let mainWindow: BrowserWindow | undefined;
 let leaving = false;
 let shuttingDown = false;
@@ -240,6 +272,15 @@ const installs = new InstallGate({
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
 } else {
+  // lane HS: start. The host lock, an OS lock for this process's life: a second live host quits before its hello.
+  if (program === "host") {
+    hostLock = takeHostLock(home, process.platform);
+    if (hostLock === null) {
+      process.stdout.write("[moss-app] another background host holds the lock: this one leaves\n");
+      app.exit(0);
+    }
+  }
+  // lane HS: end
   app.on("second-instance", (_event, argv) => {
     const second = parseLaunchArgs(argv);
     if (second.quit) void requestQuit("launcher");
@@ -250,6 +291,19 @@ if (!app.requestSingleInstanceLock()) {
   });
   // The app's guards on every webContents but the MOSS Browser's (its tabs, the windows its pages open and its
   // viewport pages), which lane L's own policy covers (ruling R11); `isBrowserContents` holds from creation on.
+  // lane HS: start. A headless run (the tests', the host's from a checkout) may never draw on the screen: any window of either
+  // program shown at more than zero opacity is said in the log, which the acceptance run fails on.
+  app.on("browser-window-created", (_event, win) => {
+    win.on("show", () => {
+      if (!headless) return;
+      let opacity = 1;
+      try { opacity = win.getOpacity(); } catch { /* a platform without window opacity */ }
+      if (opacity > 0) log(`window: shown while headless (${program}: ${win.getTitle().slice(0, 80)})`);
+    });
+    // R12: the program that draws the screen's surfaces says where they are whenever one shows, hides or moves.
+    for (const e of ["show", "hide", "moved", "resize", "closed"] as const) win.on(e as "show", () => scheduleSurfacesReport());
+  });
+  // lane HS: end
   app.on("web-contents-created", (_event, contents) => {
     // The app's one mute: a page made after it was turned on is muted from the start.
     if (prefs.soundMuted) contents.setAudioMuted(true);
@@ -355,7 +409,9 @@ async function ready(): Promise<void> {
   // What came of each part's ask for a card's frames, before the first one was made (the narrow card's diagnosis).
   runtime.onSealedAsk = noteAsk;
   // One place at a time (lane RT): the island is given a card's frames only for a card the engine's router placed on it.
-  runtime.cardSurfaceMayDraw = (cardId) => islandMayDraw(enginePlaces.get(cardId), mainWindowFront(mainState()));
+  // lane HS: the host's island draws only what the router placed on it (`card_placed`), never a card it hasn't placed yet
+  // (one the router then puts in MOSS Code's window would be drawn twice).
+  runtime.cardSurfaceMayDraw = (cardId) => (program === "host" ? enginePlaces.get(cardId) !== undefined && islandMayDraw(enginePlaces.get(cardId), false) : islandMayDraw(enginePlaces.get(cardId), mainWindowFront(mainState())));
   // A part's Review on a plugin's card: the app's own page for that card, shown now (a fallback already up stays).
   runtime.onCardPage = async (cardId) => {
     if (sealed.get(cardId) === undefined || !sealed.isPending(cardId)) return false;
@@ -540,7 +596,8 @@ async function ready(): Promise<void> {
       const source: PressSource = [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.cards) ? "island"
         : sealed.elementOf(token) === OWN_ELEMENT ? "fallback" : "window";
       const placed = cardOfPress === undefined ? undefined : enginePlaces.get(cardOfPress);
-      if (!pressMayBeTaken({ from: source, placed, front: mainWindowFront(mainState()) })) {
+      // lane HS (B1): the app's own card takes a press only in the program the placement names.
+      if (!pressMayBeTaken({ from: source, placed, front: mainWindowFront(mainState()) }) || (source === "fallback" && !fallbackMayDraw(placed, fallbackHereOf(mountNow, hostGaveUp)))) {
         log(`sealed: answer refused (a press ${source === "island" ? "on the island" : "in the window"} for a card the router placed ${placed?.kind === "island" ? "on the island" : "in the window"})`);
         return { accepted: false, reason: placed?.kind === "island" ? "this card is on the island now" : "this card is in MOSS's window now" };
       }
@@ -573,7 +630,8 @@ async function ready(): Promise<void> {
         if (ready !== undefined && "refused" in ready) return { accepted: false, key: "changed", reason: `this desktop's answer key isn't the one MOSS holds for it (${why.slice(0, 120)})` };
         return { accepted: false, reason: "this desktop's answer key isn't registered yet" };
       }
-      const out = sealed.buildAnswer(token, option_, children, senderKey, key, signedDevice ?? "");
+      // lane HS: the host's proof names its program (card-answer/3).
+      const out = sealed.buildAnswer(token, option_, children, senderKey, key, signedDevice ?? "", undefined, program === "host" ? "host" : undefined);
       if ("error" in out) { log(`sealed: answer refused (${out.error})`); return { accepted: false, reason: out.error }; }
       disarmFallback(out.card.id); // a part's own button answered first: the fallback's timer is gone.
       const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option: option_, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
@@ -783,18 +841,21 @@ async function ready(): Promise<void> {
     startProcessDiag();
   }
   startFrontSeam();
+  startViewportPressSeam();
   startWindowSeam();
   syncAppearance();
   nativeTheme.on("updated", syncAppearance);
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);
 
   for (const e of ["display-metrics-changed", "display-added", "display-removed"] as const) screen.on(e as "display-added", () => tellSurfaces());
-  startBrowser();
+  // lane HS: the browser's pages only where the mount puts them (applyMount starts or stops them as it changes).
+  if (mountNow.browser) startBrowser();
   // One release for everything (spec §3.1): this app's record under the home (before any engine runs), then its engine put under
   // the home under the install lock, so the login item and every start use the NEWEST installed copy, not this app's own.
-  if (app.isPackaged || typeof __MOSS_TEST_BUILD__ === "string") writeOwnRecord(home, { program: "code", bundlePath: ownBundle, release: ownRelease }, log);
+  // lane HS: the host is no app of its own: it records nothing and puts no engine under the home.
+  if (program === "code" && (app.isPackaged || typeof __MOSS_TEST_BUILD__ === "string")) writeOwnRecord(home, { program: "code", bundlePath: ownBundle, release: ownRelease }, log);
   const bundledEngine = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
-  if (bundledEngine !== undefined && app.isPackaged && typeof __MOSS_TEST_BUILD__ !== "string") {
+  if (program === "code" && bundledEngine !== undefined && app.isPackaged && typeof __MOSS_TEST_BUILD__ !== "string") {
     const placed = await adoptHomeEngine(identity.profile, {
       install: () => installEngineCopy({ binary: bundledEngine, home, profile: identity.profile, bundlePath: ownBundle }),
       launcherFor: (binary) => cliLauncher({ binary, home, profile: identity.profile }),
@@ -808,7 +869,15 @@ async function ready(): Promise<void> {
   // The install marker: this home's daemon is the app's (or a package's), so it never updates itself (updater.ts).
   if (app.isPackaged) writeInstallMarker(home, installKindOf(process.platform, process.env), log);
   // A test-marked build never updates itself: a real release in its place would reach the login keychain.
-  if (!headless && typeof __MOSS_TEST_BUILD__ !== "string") {
+  // lane HS: start. The host's own menu-bar icon (item 112); it never updates itself (its app does, and stops it first).
+  if (program === "host" && !headless && typeof __MOSS_TEST_BUILD__ !== "string") {
+    tray = new AppTray<HostTrayActions>(join(here, "icons"), hostTrayActions(), log, hostTrayMenu, identity.productName);
+    trayState = { safeMode, strings: runtime.coreStrings(), soundMuted: prefs.soundMuted };
+    syncFourFingerTap();
+    refreshTray();
+  }
+  // lane HS: end
+  if (program === "code" && !headless && typeof __MOSS_TEST_BUILD__ !== "string") {
     // The app's own updates (updater.ts): packaged builds only, never a headless or test run (no network from those).
     void startUpdater({
       packaged: app.isPackaged,
@@ -839,7 +908,12 @@ async function ready(): Promise<void> {
 // signed by the answer key. The store holds them; the sealed scheme serves the frames; nothing logs the fields.
 const sealed = new SealedFrames();
 // The timing lines: when a surface first asks for a card's frames (the fallback's own page aside).
-sealed.onMinted = (cardId, element, windowId) => { if (element !== "own") noteStep(cardId, windowId, "frames asked"); };
+sealed.onMinted = (cardId, element, windowId) => {
+  if (element !== "own") noteStep(cardId, windowId, "frames asked");
+  // lane HS (R12): the surface that asked for a pending card's frames is its drawer, shown again if it stood down.
+  const drawer = windowId === undefined ? undefined : [...surfaces.values()].find((x) => !x.win.isDestroyed() && x.win.id === windowId);
+  if (drawer !== undefined && stoodDown.has(drawer.ref)) applyVisibility(drawer);
+};
 /** The bots' names by id, as the daemon lists them (`bot.list`), so a card says "Alpha wants to…" and not an id. Refilled
  *  on each connection and when a card's bot isn't known yet; a name never decides anything, it only fills a sentence. */
 const botNames = new Map<string, string>();
@@ -1003,21 +1077,34 @@ const windowDraws = new Set<string>();
 /** Where the engine's router placed each pending card (lane RT: `card_placed` wins; a `card.placement` answer only fills in
  *  a card no event placed; card-place.ts `PlacementBook`). */
 const enginePlaces = new PlacementBook();
+/** lane HS: whether the router has placed a pending card in a window (the host's island then steps aside, as a window's
+ *  island does for its own window in front: the host has no window of its own to watch). */
+/** lane HS: the engine's word (`host.front`) that a MOSS or MOSS Code window is in front: the host's island then draws no
+ *  strip line, as a window's own island doesn't. A card placed on the island still wins (`surfaceEnvironment`). */
+let engineFront = false;
+const windowHoldsCard = (): boolean => [...enginePlaces.entries()].some(([id, p]) => (p.kind === "strip" || p.kind === "conversation") && sealed.isPending(id));
 /** Whether the router has placed any pending card on the island (it then never steps aside, §3.5). */
 const islandHoldsCard = (): boolean => [...enginePlaces.entries()].some(([id, p]) => (p.kind === "island" || p.kind === "elsewhere") && sealed.isPending(id));
 /** The engine's word on a card's place (a `card_placed` event, or a snapshot's entry the book took): kept, and the card placed
  *  again; the surfaces hear it (the island takes or lets go). */
 function enginePlaced(cardId: string, place: CardPlacement, from: "event" | "snapshot" = "event"): void {
   const was = islandHoldsCard();
+  const onIsland = (p: CardPlacement | undefined) => p !== undefined && (p.kind === "island" || p.kind === "elsewhere");
+  const cardMoved = onIsland(enginePlaces.get(cardId)) !== onIsland(place);
+  const wasWindow = windowHoldsCard();
   if (from === "event") enginePlaces.placed(cardId, place);
   else if (enginePlaces.snapshot([{ card: cardId, place }]).length === 0) return;
+  // lane HS (B1): each placement decides again whether this program keeps a fallback for the card: one stood down for its
+  // placement is armed again when the card comes to this program (a card whose own buttons showed stays disarmed).
+  if (!fallbackHere(cardId)) { if (fallbacks.has(cardId)) { disarmFallback(cardId); heldOffFallbacks.add(cardId); } }
+  else if (heldOffFallbacks.delete(cardId) && sealed.isPending(cardId)) void armFallback(cardId);
   if (cardPlaces.has(cardId)) placeCardNow(cardId);
   // The surfaces hear it only when the island's hold changes (their `mainFront`): a message on every placement made the
   // island measure itself again under the pointer.
   if (was !== islandHoldsCard()) {
     for (const s of surfaces.values()) applyVisibility(s);
     tellSurfaces();
-  }
+  } else if (program === "host" && (cardMoved || wasWindow !== windowHoldsCard())) tellSurfaces(); // lane HS: the host's island draws only placed cards: each one it takes or lets go
 }
 const CONVERSATION_ASK_GRACE_MS = 400;
 function drawnInWindow(cardId: string): void {
@@ -1068,6 +1155,7 @@ function cardArrivedNow(card: { id: string; kind: string }, waiting = false): vo
   if (cardArrived.has(card.id)) return;
   sealed.fromCore(card);
   if (!sealed.isPending(card.id)) return;
+  restack(); // lane HS (R12): every third-party on-screen part hides at once, before any of the card's buttons can show
   cardArrived.set(card.id, { at: Date.now(), seen: new Set() });
   armFallback(card.id);
   placeArrivedCard(card.id);
@@ -1081,6 +1169,9 @@ function cardWaitingAtConnect(c: unknown): void {
 
 async function armFallback(cardId: string): Promise<void> {
   disarmFallback(cardId);
+  // lane HS (B1): one card in one place: only the program the router's placement names arms its own card (and one held
+  // off is armed when a later placement brings it here).
+  if (!fallbackHere(cardId)) { heldOffFallbacks.add(cardId); return; }
   const timer = setTimeout(() => void showFallbackCard(cardId), FALLBACK_DELAY_MS);
   timer.unref?.();
   fallbacks.set(cardId, { timer });
@@ -1092,13 +1183,46 @@ function disarmFallback(cardId: string): void {
   clearTimeout(own.timer);
   if (own.win !== undefined && !own.win.isDestroyed()) own.win.close();
   fallbacks.delete(cardId);
+  restack();
 }
+
+// lane HS: start. R12's host half (host-stacking.ts).
+/** The surfaces standing down for a pending card, by ref (said once each way). */
+const stoodDown = new Set<string>();
+/** Every surface follows the stacking rule again (a card came, was answered, or its own card showed or went). */
+function restack(): void {
+  for (const s of surfaces.values()) applyVisibility(s);
+  // lane HS (the reviewer's S): decided again at the earliest expiry, when a card stops being pending with no event.
+  clearTimeout(expiryRestack);
+  const next = sealed.nextExpiry();
+  if (next !== undefined) { expiryRestack = setTimeout(restack, Math.min(Math.max(0, next - Date.now()) + 50, 2 ** 31 - 1)); expiryRestack.unref?.(); }
+}
+let expiryRestack: ReturnType<typeof setTimeout> | undefined;
+let surfacesTimer: ReturnType<typeof setTimeout> | undefined;
+let lastSurfaces = "";
+function scheduleSurfacesReport(): void {
+  if (program !== "host" || surfacesTimer !== undefined) return;
+  surfacesTimer = setTimeout(() => {
+    surfacesTimer = undefined;
+    const wins = [...[...surfaces.values()].map((s) => ({ id: s.ref, win: s.win })), ...[...fallbacks].filter(([, f]) => f.win !== undefined).map(([id, f]) => ({ id: `card:${id}`, win: f.win! }))]
+      .filter((w) => !w.win.isDestroyed()).map((w) => ({ id: w.id, visible: w.win.isVisible(), bounds: w.win.getBounds() }));
+    const windows = surfacesReport(wins);
+    const said = JSON.stringify(windows);
+    if (said === lastSurfaces || pair?.client === undefined) return;
+    lastSurfaces = said;
+    pair.client.request("host.surfaces", { windows }, 5_000).catch(() => { lastSurfaces = ""; });
+  }, 200);
+  surfacesTimer.unref?.();
+}
+// lane HS: end
 
 /** The app's own card page: the whole card, its fields and buttons, from the app's own scheme (its own single-use
  *  channel), shown without taking the focus (the user's own app in front stays). */
 async function showFallbackCard(cardId: string, strip = false): Promise<void> {
   const card = sealed.get(cardId);
   if (card === undefined) return;
+  // lane HS (B1): and only it draws one (the host never docks a strip: it has no window; a window never draws the island's).
+  if (!fallbackHere(cardId)) { log(`card: ${strip ? "the window's strip" : "the fallback card"} for ${cardId} is another program's to draw (${enginePlaces.get(cardId)?.kind ?? "no place"})`); return; }
   const smokeFallback = SMOKE_SEALED_FALLBACK;
   // The acceptance run's real press (MOSS_TEST_SEALED_PRESS=1, a headless test-marked or unpackaged run only): the
   // fallback card is drawn OFFSCREEN (never shown, never on any screen), so the run can press its button with a trusted
@@ -1181,6 +1305,7 @@ async function showFallbackCard(cardId: string, strip = false): Promise<void> {
         showInvisible(win);
         log(`window: shown invisible while headless (the sealed smoke's fallback card ${cardId}: opacity 0, ignores the mouse)`);
       } else win.showInactive();
+      restack();
     }
   }).catch(() => win.close());
   held.win = win;
@@ -1204,11 +1329,13 @@ function makePair(): Pair {
     endpoint: daemonEndpoint(home),
     hello: () => {
       const token = readAppToken(home, env);
-      return token === undefined ? undefined : appHello(token, app.getVersion(), MOSS_PROTOCOL_VERSION, ownRelease);
+      // lane HS: the host's hello names its surface and its release (host-program.ts).
+      return token === undefined ? undefined : program === "host" ? hostHello(token, app.getVersion(), MOSS_PROTOCOL_VERSION) : appHello(token, app.getVersion(), MOSS_PROTOCOL_VERSION, ownRelease);
     },
     // A test-marked build never registers a login item or starts the daemon through the OS (its core is started by
     // the test itself): no launcher.
-    ...(binary !== undefined && typeof __MOSS_TEST_BUILD__ !== "string" ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
+    // lane HS: the host never starts the engine (the engine starts it; an app opening starts the engine, §3.1).
+    ...(binary !== undefined && program === "code" && typeof __MOSS_TEST_BUILD__ !== "string" ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
     // The token goes only to this user's own daemon, which proves it holds it (lane C's protocol.prove): on Windows a
     // pipe's name is in a namespace every user shares.
     prove: { pid: process.pid },
@@ -1234,8 +1361,20 @@ function makePair(): Pair {
       void refreshBotNames(client);
       // The engine's placements are this connection's from its first subscription (it tells each card's place then, lane RT).
       enginePlaces.follow(client);
-      void subscribeThenListCards(client, cardWaitingAtConnect);
-      return loadRegistry(client);
+      // lane HS (the reviewer's S): a card resolved while the connection was down is dropped once the list says so, and the
+      // third-party parts are decided again (they stood down for it).
+      const knownBefore = sealed.pendingIds();
+      void subscribeThenListCards(client, cardWaitingAtConnect).then((listed) => {
+        if (listed === undefined) return;
+        const gone = sealed.dropUnlisted(knownBefore, listed);
+        if (gone.length === 0) return;
+        for (const id of gone) { enginePlaces.delete(id); disarmFallback(id); heldOffFallbacks.delete(id); cardArrived.delete(id); cardPlaces.delete(id); windowDraws.delete(id); }
+        log(`card: ${gone.length} card(s) resolved while the connection was down, dropped`);
+        if (program === "host") tellSurfaces();
+        restack();
+      });
+      // lane HS: once the registry is in, the mount applies; the host then says it is up.
+      return loadRegistry(client).then(() => mounted(client, hello));
     },
     onState: (s) => stateChanged(s),
     onDaemonQuit: (reason) => {
@@ -1250,12 +1389,20 @@ function makePair(): Pair {
     return { tab: await browserHost().open({ id: a.id, owner: a.owner, ...(a.url !== undefined ? { url: a.url } : {}), place: a.place }) };
   });
   p.handle("app.tab.command", async (params) => {
+    // lane HS: the engine's stream commands (a tab's pictures for the windows and the live picture), checked here.
+    const stream = streamCommandOf(params);
+    if (stream !== undefined) {
+      if (stream.command.kind === "stream") log(`browser: the engine ${stream.command.on ? "starts" : "stops"} a tab's stream ${stream.command.stream} (${stream.command.codecs?.join(",") ?? "video"})`);
+      return { result: await browserHost().command(stream.id, stream.command) };
+    }
     const a = BROWSER_METHODS.appTabCommand.params.parse(params);
     return { result: await browserHost().command(a.id, a.command) };
   });
   p.handle("app.tab.list", () => ({ tabs: browserHost().list() }));
   // The heartbeat (ruling R9): answered at once, from the main process, so a hung app goes unanswered.
   p.handle("app.ping", () => ({ ok: true }));
+  // lane HS: the engine's requests to the host (host-runtime.ts).
+  if (program === "host") installHostHandlers(p, hostDeps());
   // Desktop notifications for the bundled notifier (lane G): shown unless the app is in front showing that session.
   p.handle("app.notify", (params) => {
     const raw = (params ?? {}) as Record<string, unknown>;
@@ -1327,6 +1474,8 @@ function makePair(): Pair {
   });
   // Every message from the daemon is checked against lane B's schemas before it changes anything.
   p.onNotification((method, params) => {
+    // lane HS: a view's picture of a host's tab (`browser.view.open`'s stream), drawn in the panel that opened it.
+    if (method === "picture.frame" && program === "code" && params !== null && typeof params === "object") { remoteViewsNow?.frame(params as never); return; }
     if (method !== CORE_EVENT_NOTIFICATION || params === null || typeof params !== "object") return;
     const type = (params as { type?: unknown }).type;
     if (type === "ui_settings_changed") {
@@ -1352,6 +1501,11 @@ function makePair(): Pair {
       if (parsed.success) cardArrivedNow(parsed.data.card);
       else log("pair: ignored a card_requested event that isn't one");
     }
+    // lane HS: the host's state, so a window lets the screen's parts go once a host owns them, and takes them back after.
+    if (type === "host_changed") hostStatusHeard(params);
+    // lane HS: the host's tabs, for the panel that shows them while the window runs no pages.
+    if (type === "tab_changed" && program === "code") { const t = TabChangedEvent.safeParse(params); if (t.success) remoteViews().tabChanged(t.data.tab); }
+    if (type === "tab_closed" && program === "code") { const t = TabClosedEvent.safeParse(params); if (t.success) remoteViews().tabClosed(t.data.id); }
     if (type === "card_placed") {
       const parsed = CardPlacedEvent.safeParse(params);
       if (parsed.success) {
@@ -1366,6 +1520,9 @@ function makePair(): Pair {
         enginePlaces.delete(parsed.data.id);
         sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
         disarmFallback(parsed.data.id);
+        heldOffFallbacks.delete(parsed.data.id);
+        if (program === "host") tellSurfaces(); // lane HS: the host's island comes back once no window holds a card
+        restack(); // lane HS (R12): the overlays come back once no card is pending here
         cardArrived.delete(parsed.data.id);
         cardPlaces.delete(parsed.data.id);
         windowDraws.delete(parsed.data.id);
@@ -1381,6 +1538,127 @@ function makePair(): Pair {
   });
   return p;
 }
+
+// lane HS: start. ------------------------------------------------------------------------------------------------
+// The background host's glue (host-program.ts, host-runtime.ts, mount-plan.ts hold the decisions).
+const tabFrames = new TabFrameSender((params) => pair?.client?.request("host.tab.frame", params, 10_000) ?? Promise.resolve(), Date.now, (line) => log(line));
+
+/** The cards whose fallback this program stood down because the router placed them in another program (B1). */
+const heldOffFallbacks = new Set<string>();
+/** Whether this program keeps its own fallback card for a card (B1), from the router's placement and what it draws. */
+function fallbackHere(cardId: string): boolean {
+  return fallbackMayDraw(enginePlaces.get(cardId), fallbackHereOf(mountNow, hostGaveUp));
+}
+
+function hostDeps(): HostRuntimeDeps {
+  return {
+    release: app.getVersion(), bundlePath: hostBundlePath(process.execPath, process.platform), safeMode,
+    parts: () => ({ surfaces: surfaces.size, background: backgrounds.size, tabs: (browser?.list() ?? []).map((t) => t.id).slice(0, 1024) }),
+    client: () => pair?.client,
+    leave: () => { hostLock?.release(); exitApp(); },
+    tabInput: (id, events) => browserHost().input(id, events),
+    front: (front) => { if (front === engineFront) return; engineFront = front; log(`host: a window ${front ? "is" : "is no longer"} in front`); tellSurfaces(); },
+    log,
+  };
+}
+
+function hostTrayActions(): HostTrayActions {
+  const menu = (action: "open-moss" | "open-code") => void pair?.client?.request("host.menu", { action }, 10_000).catch((err: unknown) => log(`host: ${action} failed: ${why(err)}`));
+  return {
+    open: () => menu("open-code"),
+    openMoss: () => menu("open-moss"),
+    openCode: () => menu("open-code"),
+    stopEverything: () => void requestQuit("tray"),
+    safeMode: () => void leaveFor(hostDeps(), "safe-mode"),
+    line: (ref) => runTrayLine(ref),
+    toggleFourFingerTap: () => setFourFingerTap(!prefs.fourFingerTap),
+    toggleSoundMute: () => setSoundMuted(!prefs.soundMuted),
+  };
+}
+
+/** "Stop everything" from the host's menu, with the warning when something is mid-work (a headless run takes the test's
+ *  answer, MOSS_TEST_QUIT_CHOICE, and never shows a dialog). */
+async function hostStopEverything(): Promise<void> {
+  const outcome = await stopEverything(hostDeps(), async (working) => {
+    if (headless) return process.env.MOSS_TEST_QUIT_CHOICE !== "cancel";
+    const w = midWorkWarning(working, runtime.coreStrings());
+    const r = await dialog.showMessageBox({ type: "warning", message: w.message, detail: w.detail, buttons: w.buttons, defaultId: 0, cancelId: 0, noLink: true });
+    return r.response === 1;
+  }).catch((err: unknown) => { log(`host: stop everything failed: ${why(err)}`); return "kept" as const; });
+  log(`host: stop everything: ${outcome}`);
+}
+
+/** The hello's mount, once the registry is in: the parts this process runs follow it; the host then says it is up. A
+ *  window hears the host's state from then on (`host_changed`). */
+async function mounted(client: DaemonClient, hello: { mount?: MountList }): Promise<void> {
+  helloMount = hello.mount;
+  if (program === "code") {
+    await client.request("events.subscribe", { areas: ["host", "browser"] }, 5_000).catch((e: unknown) => { log(`browser: the tab events refused (${why(e)}); the host's state only`); return client.request("events.subscribe", { areas: ["host"] }, 5_000); }).catch(() => undefined);
+    // The state now (S2): a change between the hello and the subscription is not missed. An older engine has no read.
+    hostStatusHeard(await client.request("host.status", {}, 5_000).catch(() => undefined));
+  }
+  applyMount();
+  if (program === "host") await sayHostReady(client, hostDeps());
+}
+
+/** MOSS Code's panel over the host's tabs (the window half of the browser; browser/remote-view.ts), made on first use. */
+let remoteViewsNow: RemoteViews | undefined;
+function remoteViews(): RemoteViews {
+  remoteViewsNow ??= new RemoteViews({
+    request: (method, params) => (pair?.client === undefined ? Promise.reject(new Error("no daemon")) : pair.client.request(method, params, 10_000)),
+    makeViewport: () => {
+      return electronRemoteViewport({ preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) }, { log, testPress: viewportPressSeam });
+    },
+    log,
+  });
+  return remoteViewsNow;
+}
+
+/** `host_changed`, or `host.status`'s answer: the window's mount follows; a host the engine gave up on is said once. */
+function hostStatusHeard(params: unknown): void {
+  const p = (params ?? {}) as { state?: unknown; gaveUp?: unknown };
+  if (typeof p.state !== "string") return;
+  hostStateNow = p.state as HostState;
+  hostGaveUp = p.state === "absent" && p.gaveUp === true;
+  applyMount();
+  // B2 (never nowhere): a fallback held off for a card on the island is this window's again once nothing draws the island.
+  for (const id of [...heldOffFallbacks]) if (sealed.isPending(id) && fallbackHere(id) && heldOffFallbacks.delete(id)) void armFallback(id);
+  if (!hostGaveUp) { hostDownNoticed = false; return; }
+  if (hostDownNoticed || program !== "code") return;
+  hostDownNoticed = true;
+  const strings = runtime.coreStrings();
+  const title = translate(strings, "moss.core.host-down.title");
+  const body = translate(strings, "moss.core.host-down.body");
+  // One plain notice, silent; a headless run shows none and says so.
+  if (headless || !Notification.isSupported()) { log(`host: the engine gave up starting the host (the notice not shown: ${headless ? "headless" : "no notifications"})`); return; }
+  log("host: the engine gave up starting the host (the notice shown)");
+  try { new Notification({ title, body, silent: true }).show(); } catch { /* the desktop has no notifications */ }
+}
+
+/** Applies the mount plan now: the screen's surfaces, the background parts, the pages, and whose menu-bar icon. */
+function applyMount(): void {
+  const next = mountPlan(program, helloMount, hostStateNow, hostGaveUp);
+  const was = mountNow;
+  mountNow = next;
+  // Said on the first mount the engine's hello brings, and on every change after.
+  if (!mountSaid || JSON.stringify(was) !== JSON.stringify(next)) { mountSaid = true; log(`mount: ${JSON.stringify(next)}`); }
+  if (runtime !== undefined) { syncSurfaces(); syncBackgrounds(); }
+  if (next.browser && browser === undefined) startBrowser();
+  if (!next.browser && browser !== undefined) {
+    try { browser.shutdown(); } catch (err) { log(`browser: shutdown failed: ${why(err)}`); }
+    browser = undefined;
+  }
+  if (next.tray === "none" && program === "code" && tray !== undefined) { tray.destroy(); tray = undefined; }
+  // The window half of the browser: with no pages here, the panel shows the host's tabs (their list read once now).
+  if (program === "code") {
+    const remote = !next.browser;
+    if (remote && was?.browser !== false) {
+      void pair?.client?.request("browser.tabs", {}, 10_000).then((r) => { for (const t of ((r as { tabs?: unknown[] }).tabs ?? [])) { const p = TabView.safeParse(t); if (p.success) remoteViews().tabChanged(p.data); } }).catch(() => undefined);
+    }
+    remoteViews().enable(remote);
+  }
+}
+// lane HS: end. ----------------------------------------------------------------------------------------------------
 
 /** The answer key (a headless run's in memory: it never touches the OS's store) and the no-prompt rule's limits: an
  *  unpackaged app keeps it in memory alone (S4: no Keychain or keyring dialog from a dev build), and a Linux whose
@@ -1403,6 +1681,8 @@ function answerKey(): AnswerKey {
       log("answer key: this computer's secret store is plain text (no Secret Service); the key stays in memory");
       answerKeyValue = new AnswerKey(memoryVault("none"), log);
     } else answerKeyValue = new AnswerKey(safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage), log);
+    // lane HS: the host registers and signs with its own program's key (ruling C), MOSS Code with the device's single key.
+    if (program === "host") answerKeyValue.program = "host";
   }
   return answerKeyValue;
 }
@@ -1613,6 +1893,11 @@ async function openFor(pluginId: string, target: OpenTarget): Promise<void> {
 /** Quit (§3.1): says what would stop, offers Hand over and quit, then stops both halves. */
 async function requestQuit(source: string): Promise<void> {
   if (leaving) return;
+  // lane HS: the host never quits the pair: the OS's quit (a logout) is a leave on purpose, the menu's is "stop everything".
+  if (program === "host") { if (source === "tray") await hostStopEverything(); else await leaveFor(hostDeps(), "quit-everything"); return; }
+  // lane HS: with a background host owning the screen, quitting MOSS Code quits this window's program alone: the engine,
+  // the host and the bots keep working (spec §3.1). Stand-in until the pair is retired (lanes RT, RL, then HS).
+  if (program === "code" && mountNow.tray === "none" && pair?.client !== undefined) { log(`quit (${source}): MOSS Code only (the engine and the host keep working)`); exitApp(); return; }
   const client = pair?.client;
   let status: unknown;
   try {
@@ -1782,6 +2067,8 @@ async function openRenderWindow(size: { width: number; height: number }, deps: C
 }
 
 async function openMainWindow(): Promise<BrowserWindow | undefined> {
+  // lane HS: the host never has a window; "open" from it is the engine's (host.menu opens MOSS Code).
+  if (!mountNow.mainWindow) return undefined;
   if (mainWindow !== undefined && !mainWindow.isDestroyed()) {
     showMainWindow(mainWindow);
     return mainWindow;
@@ -1852,6 +2139,24 @@ interface Surface {
 /** A test-marked headless build's stand-in for the window being in front (its windows are never the focused ones): the file named
  *  by MOSS_TEST_MAIN_FRONT_FILE holds `front` or `back`, read every 100 ms. Compiled out of a release (the marker gate's TEST_ONLY_APP_STRINGS checks it). */
 let frontSeam: boolean | undefined;
+/** lane HS: a test-marked headless build's press into the panel's viewport (the run's DevTools can't reach that view: the
+ *  browser's contents are closed to debugging): the file named by MOSS_TEST_VIEWPORT_PRESS_FILE holds `x,y`, read every
+ *  100 ms, pressed once and removed. Compiled out of a release (TEST_ONLY_APP_STRINGS). */
+let viewportPressSeam = false;
+function startViewportPressSeam(): void {
+  if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && process.env.MOSS_TEST_VIEWPORT_PRESS_FILE) {
+    const file = process.env.MOSS_TEST_VIEWPORT_PRESS_FILE;
+    viewportPressSeam = true;
+    setInterval(() => {
+      let word = "";
+      try { word = readFileSync(file, "utf8").trim(); rmSync(file, { force: true }); } catch { return; }
+      const [x, y] = word.split(",").map(Number);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      log(`browser: the test seam pressed the panel at ${x},${y} (${remoteViewsNow?.testPress(x!, y!) ?? 0} view(s))`);
+    }, 100).unref?.();
+  }
+}
+
 function startFrontSeam(): void {
   // The marks first and the whole seam inside them (as MOSS_TEST_APPEARANCE_FILE's is): a release folds the test to
   // false and drops the block, the variable's name with it. An early return on `!headless || …` left the name in.
@@ -1907,6 +2212,8 @@ const presence = new PresenceReporter({
   read: () => { const st = mainState(); return { exists: st.exists, visible: st.visible, minimized: st.minimized, front: mainWindowFront(st) }; },
   showing: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? showingOf(shellStates.get(mainWindow.id)) : null),
   send: async (report) => {
+    // lane HS: the host has no windows: only windows report presence (§3.5).
+    if (program === "host") return "unserved";
     const client = pair?.client;
     if (client === undefined) return "failed";
     if (client !== presenceClient) { presenceClient = client; presence.reconnected(); }
@@ -2040,12 +2347,39 @@ function setFourFingerTap(on: boolean): void {
   log(`touches: four-finger tap turned ${on ? "on" : "off"}`);
 }
 
+// lane HS (row 53's cause): the island's fold hands key back to the window it took it from at the press (focus-handback.ts).
+const focusBack = new FocusHandBack();
+const isSurfaceWindow = (id: number): boolean => [...surfaces.values()].some((x) => !x.win.isDestroyed() && x.win.id === id);
+app.on("browser-window-focus", (_e, w) => focusBack.focused(w.id, isSurfaceWindow(w.id)));
+app.on("browser-window-blur", (_e, w) => focusBack.blurred(w.id, isSurfaceWindow(w.id)));
+app.on("browser-window-created", (_e, w) => { const id = w.id; w.once("closed", () => focusBack.closed(id)); });
+/** Hides a surface's window; one that is key and took key from a window of this program at a press gives it back to that
+ *  window (a press never focuses anything by itself, and nothing the person did not have in front is raised). */
+function hideSurface(s: Surface): void {
+  const back = focusBack.hiding(s.win.id, s.win.isFocused());
+  s.win.hide();
+  if (back === undefined) return;
+  const w = BrowserWindow.fromId(back);
+  if (w === null || w.isDestroyed() || !w.isVisible()) return;
+  w.focus();
+  log(`focus: ${s.ref} folded while key: key back to the window it took it from`);
+}
+
 function applyVisibility(s: Surface): void {
-  if (s.win.isDestroyed() || s.wantsVisible === undefined) return;
-  const show = surfaceShown({ stepsAside: s.stepsAside, holdsPlacedCard: s.cards && islandHoldsCard() }, s.wantsVisible, mainState(), modeOf(s));
+  if (s.win.isDestroyed()) return;
+  // lane HS (R12): a plugin's overlay stands down while a card is pending here, so nothing it draws is over a sealed button
+  // (decided, and said, whether or not the part has asked to show yet).
+  const down = overlayStandsDown(s, sealed.anyPending(), drawerExempt(s, sealed.pendingHeldIn(s.win.id), (id) => enginePlaces.get(id)?.kind === "island", (id) => runtime?.cardSurfaceMayDraw?.(id) !== false));
+  if (down !== stoodDown.has(s.ref)) {
+    if (down) stoodDown.add(s.ref); else stoodDown.delete(s.ref);
+    log(`surface: ${s.ref} ${down ? "hidden while a card is pending (a plugin's on-screen part)" : sealed.anyPending() ? "back (it draws the pending card)" : "back (no card pending here)"}`);
+  }
+  if (down && s.win.isVisible()) hideSurface(s);
+  if (s.wantsVisible === undefined) return;
+  const show = !down && surfaceShown({ stepsAside: s.stepsAside, holdsPlacedCard: s.cards && islandHoldsCard() }, s.wantsVisible, mainState(), modeOf(s));
   if (show && invisible !== undefined && !s.win.isVisible()) showInvisible(s.win);
   else if (show && !headless && !s.win.isVisible()) s.win.showInactive();
-  else if (!show && s.win.isVisible()) s.win.hide();
+  else if (!show && s.win.isVisible()) hideSurface(s);
   clickThrough(s);
 }
 
@@ -2092,7 +2426,8 @@ function isBackgroundWindow(id: number): boolean {
 }
 
 function syncBackgrounds(): void {
-  const wanted = runtime.backgroundEntries();
+  // lane HS: only where the mount puts the background parts.
+  const wanted = mountNow.background ? runtime.backgroundEntries() : [];
   for (const [ref, b] of [...backgrounds]) {
     const now = wanted.find((w) => w.ref === ref);
     // A plugin whose `audio` changed gets a new window: the autoplay policy is fixed at a window's creation. So does one whose
@@ -2126,7 +2461,8 @@ function syncBackgrounds(): void {
 app.on?.("before-quit", () => { for (const b of backgrounds.values()) if (!b.win.isDestroyed()) b.win.destroy(); });
 
 function syncSurfaces(): void {
-  const wanted = runtime.surfaceEntries();
+  // lane HS: only where the mount puts the screen's surfaces (one island: the host's once it runs).
+  const wanted = mountNow.surfaces ? runtime.surfaceEntries() : [];
   // By ref: a plugin's copy of an entry id another plugin has (a folder-installed copy of the island) is its own surface.
   for (const [ref, s] of [...surfaces]) {
     if (wanted.some((w) => w.ref === ref)) continue;
@@ -2312,7 +2648,7 @@ function surfaceEnvironment(windowId: number): SurfaceEnvironment | undefined {
   if (![...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === windowId)) return undefined;
   const d = screen.getPrimaryDisplay();
   if (screens === null) screens = loadScreens(join(here, "native", "screen.node"), log);
-  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) }, mainFront: mainWindowFront(mainState()) && !islandHoldsCard() } as SurfaceEnvironment; // `mainFront` rides along: the SDK's declaration doesn't name it (the island reads it)
+  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) }, mainFront: (program === "host" ? windowHoldsCard() || engineFront : mainWindowFront(mainState())) && !islandHoldsCard() } as SurfaceEnvironment; // `mainFront` rides along: the SDK's declaration doesn't name it (the island reads it)
 }
 
 /** The displays changed: each surface's part hears its environment as it is now. */
@@ -2515,6 +2851,8 @@ const compositorMs = args.smoke && !app.isPackaged && Number(process.env.MOSS_SM
 
 /** Where each native view goes (ruling R8: the place the person used last), as the MOSS Browser's `setView`. */
 const views = new ViewFrames((name, target) => {
+  // lane HS: with no browser here (the host runs the pages), the panel shows the host's tab (browser/remote-view.ts).
+  if (program === "code") remoteViews().setTarget(name, target === undefined ? undefined : { windowId: target.windowId, bounds: target.bounds });
   if (browser === undefined) return;
   const win = target === undefined ? null : BrowserWindow.fromId(target.windowId);
   browser.setView(name, win === null || win.isDestroyed() ? undefined : { window: win, bounds: target!.bounds });
@@ -2570,6 +2908,9 @@ function startBrowser(): void {
     report: (events) => send("browser.report", { events }),
     hold: (id, held) => send("browser.hold", { id, held }),
     assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },
+    // lane HS: a tab's pictures to the engine (host.tab.frame, one in flight, the newest waiting), for its windows' views.
+    streamData: (stream, chunk) => tabFrames.chunk(stream, chunk),
+    streamAssets: { preload: join(here, "..", "..", BROWSER_ASSETS.streamPreload.out), html: join(here, "..", "..", BROWSER_ASSETS.streamHtml.out) },
   });
   void browser.start().catch((err) => log(`browser: start failed: ${why(err)}`));
 }

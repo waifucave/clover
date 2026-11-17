@@ -45,7 +45,7 @@ import { ContractError, Listeners } from "./contracts/common";
 import { MossFence } from "./fence/fence";
 import { approvalCoreEvents } from "./approvals/core-events";
 import type { CoreEventInput, CoreEventOptions } from "./ipc/core-events";
-import { MossRpcError, type BridgeGate, type CodeAgentDoor } from "./ipc/moss";
+import { MossRpcError, type BridgeGate, type CodeAgentDoor, type MossConn } from "./ipc/moss";
 import { embeddedSessionOptions } from "./runtime-sdk/turn-loop/embedded-session";
 import { ERR } from "@waifucave/moss-protocol";
 import type { BotSide, BotSideOptions } from "./bots/wiring";
@@ -182,6 +182,10 @@ export interface DaemonBrowserInput {
   computer?: string;
   /** The app's port while the app is connected (`appTabPort` over the MOSS server's connections). */
   app?: () => AppTabPort | undefined;
+  // lane HS: start
+  /** Whether a connection is the one that runs the pages (`pagesOwner`): only it reports and holds tabs. */
+  pagesOwnerIs?: (conn: MossConn) => boolean;
+  // lane HS: end
   /** No app runs on this computer at all; by default, never (a desktop's tabs live in its app). */
   headless?: boolean;
   /** The browser's events (`tab_changed`, `tab_closed`), for the MOSS server's core events. */
@@ -576,7 +580,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       });
       closers.push(() => br.shutdown());
       browser = br;
-      Object.assign(input.handlers, browserAppHandlers(() => br.service), browserRpcHandlers(() => br.service, (id) => grantsInForce((input.bots === false ? undefined : input.bots)?.registry.get(id)).includes("browser")));
+      Object.assign(input.handlers, browserAppHandlers(() => br.service, o.pagesOwnerIs), browserRpcHandlers(() => br.service, (id) => grantsInForce((input.bots === false ? undefined : input.bots)?.registry.get(id)).includes("browser")));
     }
     // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
     // raised, so nothing the bot side or the agents wait on is left hanging while they stop.

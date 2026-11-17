@@ -69,6 +69,11 @@ extraResources:
       - "!**/.env"
       - "!**/.env.*"
       - "!**/.DS_Store"
+# The background host's helper app inside the app (lane HS, spec §3.1: one fixed identifier, `com.waifucave.moss.host`),
+# made after the app is laid out and before electron-builder flips the fuses and signs, so it is sealed with the app;
+# its own fuses are flipped there with the settings above (scripts/host-helper.mjs). macOS only: on Windows and Linux the
+# host is the app's own executable started with `--moss-program=host`.
+afterPack: scripts/host-helper.mjs
 # The main process is one bundle with no runtime dependencies: nothing to rebuild or collect.
 npmRebuild: false
 nodeGypRebuild: false

@@ -59,7 +59,7 @@ export function releaseMarkerProblems(what: string, bytes: Uint8Array, release: 
 
 /** What only the test-only code of the app reads: the environment variables that pick the kept test answer key and
  *  allow the offscreen press. A real build's app code carries none of them (nor the acceptance label). */
-export const TEST_ONLY_APP_STRINGS = ["MOSS_TEST_MAIN_FRONT_FILE", "MOSS_TEST_WINDOW_FILE", "MOSS_TEST_ANSWER_KEY", "MOSS_TEST_SEALED_PRESS", "MOSS_TEST_PICK", "MOSS_TEST_PICK_AVATAR", "MOSS_TEST_PICK_FILES", "MOSS_TEST_APPEARANCE_FILE", "MOSS_TEST_WINDOW_SIZE_FILE", "MOSS_TEST_KEY_FILE", "MOSS_TEST_SLEEP_AFTER_MS", "MOSS_TEST_APP_RELEASE", "MOSS_TEST_APP_BUNDLE", "MOSS_TEST_UPDATE_OUTCOME", "MOSS_TEST_RELEASE_RETRY_MS", "MOSS_SMOKE_SEALED_CLICK", "MOSS_SMOKE_SEALED_FALLBACK", "MOSS_SMOKE_DROP_FRESH", "MOSS_SMOKE_PIN_VISIBLE"] as const;
+export const TEST_ONLY_APP_STRINGS = ["MOSS_TEST_MAIN_FRONT_FILE", "MOSS_TEST_WINDOW_FILE", "MOSS_TEST_ANSWER_KEY", "MOSS_TEST_SEALED_PRESS", "MOSS_TEST_PICK", "MOSS_TEST_PICK_AVATAR", "MOSS_TEST_PICK_FILES", "MOSS_TEST_APPEARANCE_FILE", "MOSS_TEST_WINDOW_SIZE_FILE", "MOSS_TEST_KEY_FILE", "MOSS_TEST_SLEEP_AFTER_MS", "MOSS_TEST_APP_RELEASE", "MOSS_TEST_APP_BUNDLE", "MOSS_TEST_UPDATE_OUTCOME", "MOSS_TEST_RELEASE_RETRY_MS", "MOSS_SMOKE_SEALED_CLICK", "MOSS_SMOKE_SEALED_FALLBACK", "MOSS_SMOKE_DROP_FRESH", "MOSS_SMOKE_PIN_VISIBLE", /* lane HS */ "MOSS_TEST_VIEWPORT_PRESS_FILE"] as const;
 
 /** The `bun build --define` argument for a shell line: `false` in a real build (no quotes, so cmd.exe takes it), the
  *  label as a JSON string in a test build (macOS only, /bin/sh). */

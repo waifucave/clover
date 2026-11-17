@@ -105,6 +105,8 @@ export class FakeCardRouter implements CardRouter {
 
   mayPress(id: string, from: PressPlace): boolean {
     const place = this.#cards.get(id)?.place;
+    // As the engine's (lane HS, B2): an `elsewhere` card takes MOSS Code's window's press (its fallback card's place).
+    if (place?.kind === "elsewhere" && from.kind === "window" && from.program === "code") return true;
     return place !== undefined && pressMatchesPlacement(place, from);
   }
 

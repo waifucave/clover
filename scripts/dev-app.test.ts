@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describeDevAppPlan, DEV_APP_BUNDLE, devAppPlan, devAppSignSteps, devAppStale, electronBinaryMissing } from "./dev-app";
+import { hostRequirement } from "../packages/core/src/host/world";
 import { appRequirement } from "../packages/core/src/bundled-identities";
 
 const plan = (argv: string[], platform: NodeJS.Platform = "linux", env: NodeJS.ProcessEnv = {}) => devAppPlan({ argv, env, platform, userHome: "/home/u" });
@@ -105,4 +106,19 @@ describe("Electron's binary", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+test("the dev app carries the host's dev helper: made inside the copy, signed inside out as com.waifucave.moss.host.dev, checked, before the app seals it", () => {
+  const hash = "A".repeat(40);
+  const T = "/r/dist/dev/app/MOSS Code Dev.app";
+  const H = `${T}/Contents/Frameworks/MOSS Host Dev.app`;
+  const steps = devAppSignSteps({ source: "/n/Electron.app", target: T, identityHash: hash, teamId: "37N77U9RSZ", entitlements: "/e", nested: ["Electron Framework.framework", "Electron Helper (GPU).app"], host: { script: "/r/h.mjs", desktop: "/r/apps/desktop" } });
+  const at = steps.findIndex((s) => s[1] === "/r/h.mjs");
+  expect(steps[at]).toEqual(["bun", "/r/h.mjs", "make-dev", T, "/r/apps/desktop"]);
+  expect(steps.slice(at + 1, at + 3).map((s) => s.at(-1))).toEqual([`${H}/Contents/Frameworks/Electron Framework.framework`, `${H}/Contents/Frameworks/MOSS Host Dev Helper (GPU).app`]);
+  expect(steps[at + 3]![steps[at + 3]!.indexOf("--identifier") + 1]).toBe("com.waifucave.moss.host.dev");
+  expect(steps[at + 4]).toEqual(["codesign", "--verify", "--deep", "--strict", `-R=${hostRequirement("dev", "37N77U9RSZ")}`, H]);
+  // The app itself is signed after (it seals the helper), then checked.
+  expect(steps.at(-2)!.at(-1)).toBe(T);
+  expect(devAppStale(JSON.stringify({ electron: "45.2.3", identity: hash }), { electron: "45.2.3", identity: hash, host: 1 })).toBe(true);
 });

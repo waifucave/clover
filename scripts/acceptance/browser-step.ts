@@ -290,6 +290,8 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   // open (the click on the other site raises one; it is pressed after the tab is read). Offscreen, in the app's own frames.
   if (ctx.inspectTurn === undefined) lines.push("usage drawn: not run here (this run has no inspected turn)");
   else {
+    // lane HS: the island is the host's while one runs (the window then draws only its own cards and Settings).
+    const islandCdp = ctx.islandCdp ?? ctx.cdp;
     // A third-party plugin's tab, installed from its folder and OK'd on its card: it sits on the island's dots beside Usage and
     // Devices, labelled with its plugin's name, and is drawn by its own frame.
     const tabId = "acceptance-tab";
@@ -301,7 +303,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     // a little grown, and was once read as a bigger room: the window followed, the pointer left, and the card flipped between
     // two heights, its buttons not showing at each turn), and its buttons show.
     let logFrom = 0;
-    const held = await islandCardHolds(ctx.cdp, 5_000, () => { logFrom = ctx.appLog().length; });
+    const held = await islandCardHolds(islandCdp, 5_000, () => { logFrom = ctx.appLog().length; });
     const after = ctx.appLog().slice(logFrom).split("\n");
     const resized = after.filter((l) => /surface: island bounds/.test(l));
     const hidden = after.filter((l) => /sealed: .* button:(approve|deny) not visible/.test(l));
@@ -317,10 +319,10 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
       const seen = (re: RegExp) => ctx.appLog().split("\n").some((l) => re.test(l) && l.includes(okCard.id));
       ctx.setMainFront!(true);
       await until("the OK card moved to the window's own card", 20_000, async () => (seen(/moved to the window's own card \(window foreground\)/) ? true : undefined));
-      await until("the island let go of the OK card", 20_000, async () => ((await islandDrawsOkCard(ctx.cdp)) ? undefined : true));
+      await until("the island let go of the OK card", 20_000, async () => ((await islandDrawsOkCard(islandCdp)) ? undefined : true));
       ctx.setMainFront!(false);
       await until("the OK card moved back to the island", 20_000, async () => (seen(/moved to the island \(window not foreground\)/) ? true : undefined));
-      await until("the island drew the OK card again", 30_000, async () => ((await islandDrawsOkCard(ctx.cdp)) ? true : undefined));
+      await until("the island drew the OK card again", 30_000, async () => ((await islandDrawsOkCard(islandCdp)) ? true : undefined));
       lines.push("one place at a time: with the window in front the OK card left the island for the app's own card, and with it back the island drew it again");
     }
     const okText = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: okCard.id })).card);
@@ -340,8 +342,8 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     let islandError: string | undefined;
     await ctx.inspectTurn(session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "click", ref: otherButton })}`, 150_000, async () => {
       const renders = process.env.MOSS_ACCEPT_RENDERS;
-      const shooter = renders ? islandShooter(ctx.cdp, renders, ctx.setAppearance) : undefined;
-      try { island = await islandUsageText(ctx.cdp, shooter?.shoot, { label: "Weather · Acceptance tab", words: "21 degrees and clear", say: (line) => ctx.rpc.request("command.run", { name: "acceptance-tab.say", args: line }, 30_000) }); } catch (e) { islandError = (e as Error).message; }
+      const shooter = renders ? islandShooter(islandCdp, renders, ctx.setAppearance) : undefined;
+      try { island = await islandUsageText(islandCdp, shooter?.shoot, { label: "Weather · Acceptance tab", words: "21 degrees and clear", say: (line) => ctx.rpc.request("command.run", { name: "acceptance-tab.say", args: line }, 30_000) }); } catch (e) { islandError = (e as Error).message; }
       await shooter?.done();
     });
     if (islandError !== undefined || island === undefined) fail(`the island's Usage tab: ${islandError ?? "the click raised no card to hold the island open"}`);
@@ -357,14 +359,14 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     // is in front, back after; then a card waiting (the plugin's own removal card) takes the strip, and the line does not come back
     // over it.
     if (ctx.setMainFront === undefined) fail("this run has no seam to say the window is in front");
-    const stripRead = await islandStripLine(ctx.cdp, { say: (line) => ctx.rpc.request("command.run", { name: "acceptance-tab.say", args: line }, 30_000), front: ctx.setMainFront! }).catch((e: unknown) => fail(`the island's closed strip line: ${(e as Error).message}`));
+    const stripRead = await islandStripLine(islandCdp, { say: (line) => ctx.rpc.request("command.run", { name: "acceptance-tab.say", args: line }, 30_000), front: ctx.setMainFront! }).catch((e: unknown) => fail(`the island's closed strip line: ${(e as Error).message}`));
     lines.push(`closed strip line: ${stripRead}`);
     // Removed again, so no later step meets its tab.
     const gone = await ctx.rpc.request<{ card?: string }>("plugin.remove", { id: tabId }).catch(() => undefined);
     if (gone?.card !== undefined) {
-      await until("the strip's line gone while a card waits", 30_000, async () => ((await islandStripLineShown(ctx.cdp)) ? undefined : true));
+      await until("the strip's line gone while a card waits", 30_000, async () => ((await islandStripLineShown(islandCdp)) ? undefined : true));
       await sleep(2_500);
-      if (await islandStripLineShown(ctx.cdp)) fail("the strip's line came back over a waiting card");
+      if (await islandStripLineShown(islandCdp)) fail("the strip's line came back over a waiting card");
       lines.push("closed strip line: a waiting card took the strip (the line went, and stayed gone while the card waited)");
       await ctx.pressCard("the third-party tab's removal card", (c) => c.id === gone.card);
     }
@@ -448,8 +450,9 @@ async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixtur
     // A background part holding `browser`: refused.
     await install(F5_IDS.bg, folders.bg);
     const bg = await until("acc-bg's background part answered", 45_000, async () => {
-      for (const d of (await ctx.cdp.documents()).filter((x) => x.url.startsWith(`moss-plugin://${F5_IDS.bg}/`))) {
-        const v = await ctx.cdp.evaluate(d.session, "(() => { const e = document.querySelector('[data-acc-bg]'); return e ? e.getAttribute('data-acc-bg') : ''; })()").catch(() => "");
+      // lane HS: a background part runs in the host while one runs.
+      for (const cdp of ctx.islandCdp !== undefined ? [ctx.islandCdp, ctx.cdp] : [ctx.cdp]) for (const d of (await cdp.documents()).filter((x) => x.url.startsWith(`moss-plugin://${F5_IDS.bg}/`))) {
+        const v = await cdp.evaluate(d.session, "(() => { const e = document.querySelector('[data-acc-bg]'); return e ? e.getAttribute('data-acc-bg') : ''; })()").catch(() => "");
         if (typeof v === "string" && v !== "" && v !== "waiting") return v;
       }
       return undefined;
