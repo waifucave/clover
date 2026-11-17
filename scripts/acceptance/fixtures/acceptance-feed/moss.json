@@ -1,0 +1,32 @@
+{
+  "manifest": 1,
+  "id": "acceptance-feed",
+  "name": "Acceptance Feed",
+  "description": "The acceptance run's fixture for the activity feed and a tool's live picture: one host tool, Show, in a server that declares a picture, which publishes one frame of its own and leaves it up; and ApiFeedProbe, in a server that declares none, which says what the feed showed for the bots (the states in order, the keys they carry), what the picture list and its stream gave, and what was refused (the other kind of data, a picture from a server that declares none, a picture under a made-up session).",
+  "version": "0.0.1",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "capabilities": ["activity.read.bots", "picture.read.bots", "user.send", "app.settings", "tray", "tools.permissions"],
+  "contributes": {
+    "mcpServers": {
+      "cam": {
+        "type": "host",
+        "picture": true,
+        "tools": {
+          "Show": "preload"
+        }
+      },
+      "feed": {
+        "type": "host",
+        "tools": {
+          "FeedProbe": "preload"
+        }
+      }
+    }
+  }
+}

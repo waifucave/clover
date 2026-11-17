@@ -97,6 +97,7 @@ import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULE
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
+import { FEED_STEP, feedCardWrong, feedProbePairs, feedProbeWrong } from "./feed-step";
 import { turnsClause } from "./turns-step";
 import { streamsClause } from "./streams-step";
 import { ASKS_ALL_PAGE, asksAllWrong, ONCE_MOSS_OWN, writeAsksAll, AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, BOT_COMMAND, BOT_PARTS_BOT, BOT_PARTS_CHECKBOX, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, CLAUDE_SKILL, oldSidebarTaken, OWN_BOT_ITEMS, OWN_BOT_MARK, ownBotWrong, writeOldSidebarTheme, writeRefusals, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
@@ -747,6 +748,7 @@ let stdioOutcome: { status: Status; detail: string } | undefined;
 /** The plugin network step's outcome, from its turns on the first daemon, and the run's site it reaches. */
 let netOutcome: { status: Status; detail: string } | undefined;
 let apiOutcome: { status: Status; detail: string } | undefined;
+let feedOutcome: { status: Status; detail: string } | undefined;
 
 /** Row 2.14: an own-process plugin (fixtures/acceptance-vault) reads the key the run stored for its `auth` entry with
  *  `secrets.get` (it answers the key's digest, never the key), and a name it doesn't list is refused. Removed after. */
@@ -2949,6 +2951,44 @@ async function main(): Promise<void> {
     }
   }
 
+  // The activity feed and a tool's live picture (its two turns here, on the first daemon; recorded at the end): the acceptance-feed
+  // fixture from a folder, its OK card approved; Show publishes a picture of its own, then FeedProbe says what the feed and the
+  // pictures gave and what was refused (feed-step.ts).
+  if (!STEPS.includes(FEED_STEP)) { /* not in this run */ }
+  else if (session === undefined || !turnsWork) feedOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else {
+    try {
+      const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-feed");
+      cpSync(join(import.meta.dir, "fixtures", "acceptance-feed"), folder, { recursive: true });
+      const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      const card = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
+      const cardText = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: card.id })).card);
+      await approve(c, card);
+      await until(`${installed.id} to run after its OK`, 60_000, async () => {
+        const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
+        return st === "enabled" || st === "running" ? st : undefined;
+      });
+      const turnOf = async (tool: string) => {
+        const seen = fake.requests.length;
+        const { events } = await turn(c, session, `ACCEPTANCE-CALL ${tool} {}`, 150_000);
+        const mine = fake.requests.slice(seen);
+        const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+        const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes("acceptance-feed-pong"));
+        if (called === undefined) fail(`the bot was offered no ${tool} (${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "no plugin tools"})`);
+        if (result === undefined) fail(`${called} gave no answer of its own (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+        return result!.text;
+      };
+      const shown = await turnOf("Show");
+      if (!shown.includes("acceptance-feed-pong shown")) fail(`Show didn't publish its picture (${shown.slice(0, 300)})`);
+      const said = feedProbePairs(await turnOf("FeedProbe"));
+      const wrong = [...feedProbeWrong(said), ...feedCardWrong(cardText)];
+      if (wrong.length > 0) fail(`${wrong.join("; ")} (${JSON.stringify(said).slice(0, 600)})`);
+      feedOutcome = { status: "PASS", detail: `${installed.id}'s card says the corrected lines; the bot's states ${said.states}; its picture ${said.pictures}, opened as ${said.stream}; refused: the code sessions' feed (${said["other-activity"]}) and pictures (${said["other-pictures"]}), a picture from a server that declares none (${said["no-declare"]}) and under a made-up session (${said["made-up-session"]})` };
+    } catch (err) {
+      feedOutcome = { status: statusOf(err), detail: why(err) };
+    }
+  }
+
   // The manifest fields row (recorded at the end).
   await manifestFieldsStep();
 
@@ -3111,6 +3151,7 @@ async function main(): Promise<void> {
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   if (STEPS.includes(API_AREAS_STEP)) record(STEPS.indexOf(API_AREAS_STEP) + 1, apiOutcome?.status ?? "BLOCKED", apiOutcome?.detail ?? "the API areas' turn didn't run");
+  if (STEPS.includes(FEED_STEP)) record(STEPS.indexOf(FEED_STEP) + 1, feedOutcome?.status ?? "BLOCKED", feedOutcome?.detail ?? "the activity feed and pictures turns didn't run");
   if (STEPS.includes(MANIFEST_FIELDS_STEP)) record(STEPS.indexOf(MANIFEST_FIELDS_STEP) + 1, manifestOutcome?.status ?? "BLOCKED", manifestOutcome?.detail ?? "the manifest fields row didn't run");
   if (STEPS.includes(SCHEDULED_ROUTINE_STEP) && runs("models")) record(STEPS.indexOf(SCHEDULED_ROUTINE_STEP) + 1, routineOutcome?.status ?? "BLOCKED", routineOutcome?.detail ?? "the scheduled routine didn't run");
   if (STEPS.includes(OAUTH_SIGN_IN_STEP) && runs("models")) record(STEPS.indexOf(OAUTH_SIGN_IN_STEP) + 1, oauthOutcome?.status ?? "BLOCKED", oauthOutcome?.detail ?? "the oauth-pkce sign-in didn't run");
