@@ -116,6 +116,8 @@ describe("a press on a card MOSS draws", () => {
   test("taken: the engine checks MOSS's signature and the card resolves", async () => {
     const r = await rig();
     expect(await go(r, r.press("card_juniper_book"))).toEqual({ accepted: true });
+    const sent = r.e.calls().find((c) => c.method === "card.answer")?.params as { proof: Record<string, unknown> };
+    expect(sent.proof).toMatchObject({ via: "device", device: FAKE_DEVICE, program: "moss" });
     expect(r.e.answered()).toEqual([{ id: "card_juniper_book", option: "allow_once", program: "moss" }]);
     await until(() => !r.engine.view().cards.some((c) => c.id === "card_juniper_book"));
   });
@@ -186,7 +188,11 @@ describe("a press on a card MOSS draws", () => {
     const card = r.sealed.get("card_juniper_book")!;
     const at = Date.now();
     const asCode = r.key.sign(new TextEncoder().encode(programCardAnswerSigningInput({ program: "code", id: card.id, hash: card.hash, option: "allow_once", at })));
-    const out = await r.client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: card.id, hash: card.hash, option: "allow_once", proof: { via: "device", device: FAKE_DEVICE, at, signature: Buffer.from(asCode).toString("base64") } });
-    expect(out).toEqual({ accepted: false, reason: "the signature isn't this program's" });
+    const sig = Buffer.from(asCode).toString("base64");
+    // Named as moss but signed over code's input: the signature fails.
+    expect(await r.client.request("card.answer", { id: card.id, hash: card.hash, option: "allow_once", proof: { via: "device", device: FAKE_DEVICE, at, signature: sig, program: "moss" } })).toEqual({ accepted: false, reason: "the signature isn't this program's" });
+    // Named as another program than the connection's, or not named: refused.
+    expect(await r.client.request("card.answer", { id: card.id, hash: card.hash, option: "allow_once", proof: { via: "device", device: FAKE_DEVICE, at, signature: sig, program: "code" } })).toEqual({ accepted: false, reason: "the proof doesn't name this program" });
+    expect(await r.client.request("card.answer", { id: card.id, hash: card.hash, option: "allow_once", proof: { via: "device", device: FAKE_DEVICE, at, signature: sig } })).toEqual({ accepted: false, reason: "the proof doesn't name this program" });
   });
 });

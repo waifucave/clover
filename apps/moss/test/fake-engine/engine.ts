@@ -257,9 +257,12 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         if (params.hash !== card.hash) return { accepted: false, reason: "the card changed" };
         const option = String(params.option);
         if (!card.options.some((x) => x.id === option)) return { accepted: false, reason: "no such option" };
-        const proof = params.proof as { via?: string; device?: string; at?: number; signature?: string };
+        const proof = params.proof as { via?: string; device?: string; at?: number; signature?: string; program?: string };
+        // As lane RT's engine does: a proof that names its program verifies with that program's key alone. The fake also
+        // holds it to the connection's own program (no press forwarded between programs).
         const program = c.surface ?? "code";
         if (proof?.via !== "device" || proof.device !== FAKE_DEVICE || typeof proof.at !== "number" || typeof proof.signature !== "string") return { accepted: false, reason: "no device proof" };
+        if (proof.program !== program) return { accepted: false, reason: "the proof doesn't name this program" };
         const input = programCardAnswerSigningInput({ program, id: card.id, hash: card.hash, option, at: proof.at, ...(Array.isArray(params.children) ? { children: params.children as string[] } : {}) });
         const ok = await keys.verify(FAKE_DEVICE, program, new TextEncoder().encode(input), new Uint8Array(Buffer.from(proof.signature, "base64")));
         if (!ok) return { accepted: false, reason: "the signature isn't this program's" };
