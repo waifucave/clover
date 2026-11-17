@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // MOSS's window: its own built-in page (React and the DOM). No plugin code ever runs here (spec §1.2, §6.10).
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    // Node's types only because the protocol's index (whose shapes the window names as types) names Buffer; the
+    // window's own code never runs under Node.
+    "types": ["node"],
+    "jsx": "react-jsx"
+  },
+  "include": ["src/window", "src/shared"]
+}
