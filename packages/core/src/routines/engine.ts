@@ -22,7 +22,7 @@
 //   (last fires, last runs) in `<home>/transcripts/routines/state.json`; the OKs with the core's settings, in the fenced
 //   set (`<home>/settings/routine-oks.json`), so a bot can't approve its own raise.
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { appendFileSync, closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, watch, writeFileSync, writeSync, type FSWatcher } from "node:fs";
+import { appendFileSync, closeSync, constants, existsSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, watch, writeFileSync, writeSync, type FSWatcher } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { isAnyPluginId, levelAbove, pluginIdFromSegment, type Level, type RoutineRunView, type RoutineView } from "@waifucave/moss-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
@@ -81,8 +81,44 @@ export function moveRoutineFile(from: string, to: string, text: string, between:
   if (existsSync(to)) throw new ContractError("conflict", `${basename(to)} is another file in the bot's routines; choose another name`);
   replaceFile(from, text);
   between();
-  if (existsSync(to)) throw new ContractError("conflict", `${basename(to)} appeared meanwhile; the routine keeps its old file name`);
-  renameSync(from, to);
+  // A hard link refuses a name that is taken (EEXIST: never over a file that appeared there meanwhile), then the old name
+  // goes. Stopped between the two, both names are the same file: the next scan keeps the new name (dropLeftoverLink).
+  try {
+    linkSync(from, to);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") throw new ContractError("conflict", `${basename(to)} appeared meanwhile; the routine keeps its old file name`);
+    throw err;
+  }
+  unlinkSync(from);
+}
+
+/** A rename stopped between its link and its unlink (moveRoutineFile) leaves one file under two names in one bot's folder,
+ *  which a routine read refuses (a file with two links is never read as a bot's own). Before the folder is read: two
+ *  `.md` names in it that are one file, no other link to it, whose routine's name gives one of the two names: the other
+ *  name goes. Returns the names dropped. */
+export function dropLeftoverLinks(folder: string): string[] {
+  const byFile = new Map<string, string[]>();
+  for (const name of readdirSync(folder).filter((n) => n.endsWith(".md"))) {
+    try {
+      const st = lstatSync(join(folder, name));
+      if (!st.isFile() || st.nlink !== 2) continue;
+      const key = `${st.dev}:${st.ino}`;
+      byFile.set(key, [...(byFile.get(key) ?? []), name]);
+    } catch { /* gone meanwhile */ }
+  }
+  const dropped: string[] = [];
+  for (const names of byFile.values()) {
+    if (names.length !== 2) continue;
+    const text = readFileSync(join(folder, names[0]!), "utf8").slice(0, ROUTINE_FILE_MAX_BYTES);
+    const parsed = parseRoutine(text, basename(names[0]!, ".md"));
+    if (!parsed.ok) continue;
+    const wanted = `${routineFileName(parsed.routine.name)}.md`;
+    const drop = names[0] === wanted ? names[1] : names[1] === wanted ? names[0] : undefined;
+    if (drop === undefined) continue;
+    unlinkSync(join(folder, drop));
+    dropped.push(drop);
+  }
+  return dropped;
 }
 
 /** Whether two names are one file (a case-only rename on a case-insensitive disk). */
@@ -547,6 +583,7 @@ export class RoutineEngine {
       if (!folder.isDirectory()) continue;
       const bot = pluginIdFromSegment(folder.name);
       if (!isAnyPluginId(bot) || botSegment(bot) !== folder.name) continue;
+      for (const drop of dropLeftoverLinks(join(root, folder.name))) this.#warn(`${folder.name}/${drop} was a second name of a routine file (a rename cut short); it is dropped`);
       for (const file of readdirSync(join(root, folder.name)).filter((n) => n.endsWith(".md")).sort()) {
         const path = join(root, folder.name, file);
         try {
