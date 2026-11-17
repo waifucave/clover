@@ -474,6 +474,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         const send = input.coreEvent;
         closers.push(s.bots.onEvent((e) => {
           if (e.type === "bot_changed" || e.type === "bot_removed" || e.type === "bots_paused") send(e);
+          // Lane BT: bots as engine data (protocol bots.ts), with records as the source.
+          else if (e.type === "bot_record_changed" || e.type === "bot_record_removed" || e.type === "bot_summary_changed" || e.type === "bots_moved") send(e);
         }));
       }
       // Lane D's bot-side options, the receiving half: other computers' messages to the bots this computer runs.

@@ -790,6 +790,22 @@ export class DurableSessionHost implements SessionHost {
     if (!isEnded(s.view.status) && s.view.status !== "ready") this.#setStatus(s, "idle");
   }
 
+  /** Lane BT's archive: a released session whose files are about to leave `transcripts/` (its bot archived) is let go of
+   *  here too, so nothing is written back to where its files were. Refused while a driver holds it. */
+  forget(id: string): void {
+    const s = this.#sessions.get(id);
+    if (s === undefined) return;
+    if (s.driver !== undefined) throw new ContractError("conflict", `session ${id} is still open; release it first`);
+    this.#sessions.delete(id);
+  }
+
+  /** Lane BT's restore: picks up the sessions whose files came back into `transcripts/` (a bot brought back from the
+   *  archive), as a start does; one already known is left as it is. */
+  rescan(): void {
+    this.#restore();
+    this.#recountCards();
+  }
+
   /** Releases every attached session (a daemon shutdown) and stops counting cards. */
   async close(): Promise<void> {
     this.#offApprovals?.();

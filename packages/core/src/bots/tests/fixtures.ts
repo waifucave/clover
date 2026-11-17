@@ -125,6 +125,9 @@ export async function boot(opts: {
   askProvider?: boolean;
   /** The daemon's test of MOSS's own bundled plugin (service.ts `bundledChoice`); none by default, so nothing is. */
   bundledChoice?: BotSideOptions["bundledChoice"];
+  /** Lane BT: bots as engine data (`botSource: "records"`); plugins as the source by default, as the daemon's. */
+  botSource?: BotSideOptions["botSource"];
+  pluginSettings?: BotSideOptions["pluginSettings"];
 }): Promise<Boot & { side: BotSide; shutdown(): Promise<void> }> {
   const clock = opts.clock ?? new FakeClock();
   const warnings: string[] = [];
@@ -136,6 +139,8 @@ export async function boot(opts: {
     ...(opts.hasKeyFor === undefined ? {} : { hasKeyFor: opts.hasKeyFor }),
     ...(opts.modelOffer === undefined ? {} : { modelOffer: opts.modelOffer }),
     ...(opts.bundledChoice === undefined ? {} : { bundledChoice: opts.bundledChoice }),
+    ...(opts.botSource === undefined ? {} : { botSource: opts.botSource }),
+    ...(opts.pluginSettings === undefined ? {} : { pluginSettings: opts.pluginSettings }),
     ...(opts.main === undefined ? {} : { main: opts.main }),
     ...(opts.relay === undefined ? {} : { relay: opts.relay }),
     ...(opts.compaction === undefined ? {} : { compaction: opts.compaction }),

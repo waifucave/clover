@@ -33,6 +33,11 @@ import { WebhookIngress, type WebhookIngressOptions } from "../routines/webhooks
 import { readUiSettings } from "../plugin-host/ui-settings";
 import { workshopToolDefs, type PluginWorkshop } from "../registry/workshop";
 import { appScreenshotToolDef, type AppScreenshotDeps } from "./app-screenshot";
+import { pendingPluginBots } from "./move";
+import { BotRecordStore, type BotPluginSettingsPort } from "./records";
+import { botRecordMethods } from "./records-rpc";
+import { recordToolDefs } from "./records-tools";
+import { botSource, type BotSource } from "./source";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -53,6 +58,10 @@ export interface AgentsHandle {
 
 export interface BotSideOptions {
   home: string;
+  /** Where the bots come from (lane BT, `bots/source.ts`): THE switch's value, `MOSS_BOT_SOURCE` or `plugins`. */
+  botSource?: BotSource;
+  /** The plugins' bot-scoped settings, for the records' `bot.pluginSettings` (lane BT). */
+  pluginSettings?: BotPluginSettingsPort;
   /** This computer's name in the folder tree. */
   computer: string;
   clock: Clock;
@@ -166,7 +175,21 @@ export function createBotSide(o: BotSideOptions): BotSide {
   });
   // The computer's one SessionGrants, over this host and the broker; also what a bot's plugin-chosen provider asks with.
   const grants = o.approvals?.request === undefined ? undefined : new SessionGrants({ host, approvals: { request: o.approvals.request.bind(o.approvals) } });
+  // Bots as engine data (lane BT), with records as the source: the store, holding back the ids of plugin bots the move
+  // hasn't moved yet.
+  const source = o.botSource ?? botSource();
+  let records: BotRecordStore | undefined;
+  if (source === "records") {
+    const store: BotRecordStore = new BotRecordStore({
+      home: o.home, clock: o.clock,
+      reserved: () => (store.journal() !== undefined ? [] : pendingPluginBots(o.registry, (id) => store.has(id))),
+      ...(o.pluginSettings === undefined ? {} : { pluginSettings: o.pluginSettings }),
+      ...(o.warn === undefined ? {} : { warn: o.warn }),
+    });
+    records = store;
+  }
   const bots = new BotService({
+    source, ...(records === undefined ? {} : { records }),
     home: o.home, computer: o.computer, registry: o.registry, host, gate, drivers: o.drivers, clock: o.clock,
     providerConsent: o.providerConsent ?? new BotProviderConsent(grants === undefined ? {} : { grants }),
     defaultModel: o.defaultModel, cacheCold: (id) => compaction.cacheCold(id),
@@ -247,6 +270,13 @@ export function createBotSide(o: BotSideOptions): BotSide {
       if (o.workshop !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(...workshopToolDefs(o.workshop, { bot, sessionId }));
       // A look at this computer's app, for the same sessions (the bot builds and fixes what the user sees).
       if (o.appScreenshot !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(appScreenshotToolDef(o.appScreenshot, { bot }));
+      // Bots as engine data (lane BT): `MakeBot` and `EditBotInstructions` in a record bot's own sessions.
+      if (records !== undefined && bot !== undefined && records.has(bot) && host.get(sessionId)?.kind !== "agent") {
+        defs.push(...recordToolDefs({
+          bots, host, ...(o.approvals?.request === undefined ? {} : { approvals: { request: o.approvals.request.bind(o.approvals) } }),
+          setUp: (model) => (o.hasKeyFor?.(model) ?? true) && o.modelOffer?.(model) !== "absent",
+        }, sessionId));
+      }
       return defs;
     },
     methods: (deps) => {
@@ -262,6 +292,8 @@ export function createBotSide(o: BotSideOptions): BotSide {
       // `pill.target` entry's handler through the plugin host, when there is one.
       ...userSendMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
+      // Bots as engine data (lane BT): `bot.move.status` always; the record methods with records as the source.
+      ...botRecordMethods({ bots, host }),
       };
     },
     start: async () => {
