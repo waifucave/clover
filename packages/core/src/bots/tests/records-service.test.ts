@@ -47,11 +47,11 @@ async function press(broker: FakeApprovalBroker, clock: FakeClock, kind: "approv
 }
 
 describe("the switch", () => {
-  test("its default is today's: plugins; MOSS_BOT_SOURCE=records turns records on, anything else leaves it", () => {
-    expect(DEFAULT_BOT_SOURCE).toBe("plugins");
-    expect(botSource({})).toBe("plugins");
-    expect(botSource({ MOSS_BOT_SOURCE: "records" })).toBe("records");
-    expect(botSource({ MOSS_BOT_SOURCE: "yes" })).toBe("plugins");
+  test("its default is records (lane MC); MOSS_BOT_SOURCE=plugins turns the old source on, anything else leaves it", () => {
+    expect(DEFAULT_BOT_SOURCE).toBe("records");
+    expect(botSource({})).toBe("records");
+    expect(botSource({ MOSS_BOT_SOURCE: "plugins" })).toBe("plugins");
+    expect(botSource({ MOSS_BOT_SOURCE: "yes" })).toBe("records");
   });
 
   test("with plugins as the source the record methods aren't served (but the move's status is), and no record tool is offered", async () => {

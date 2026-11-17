@@ -178,9 +178,8 @@ describe("her pane: the conversation's and the composer's own style entries", ()
   const paneTheme = JSON.parse(readFileSync(join(TAB, "pane.json"), "utf8")) as { css: string; tokens: Record<string, string>; dark: { tokens: Record<string, string> } };
   const manifest = JSON.parse(readFileSync(join(ALPHA, "moss.json"), "utf8")) as { contributes: { ui: { spot: string; style?: string }[] } };
 
-  test("the manifest dresses the conversation and the composer with pane.json, and nothing else with it", () => {
-    const styled = manifest.contributes.ui.filter((e) => e.style !== undefined).map((e) => [e.spot, e.style]);
-    expect(styled).toEqual([["conversation", "tab/pane.json"], ["composer", "tab/pane.json"]]);
+  test("the manifest dresses nothing with pane.json any more: her tab left MOSS Code's window (lane MC)", () => {
+    expect(manifest.contributes.ui).toBeUndefined();
   });
 
   test("pane.json is a theme of catalog tokens only, in both appearances, no card's, and names pane.css", () => {

@@ -8,14 +8,9 @@ import { join } from "node:path";
 const ALPHA = join(import.meta.dir, "..", "..");
 const manifest = JSON.parse(readFileSync(join(ALPHA, "moss.json"), "utf8"));
 
-test("her pin is a message action of her own: data, her host's ui.pinReply, her bot only, finished replies", () => {
-  const ui = manifest.contributes.ui as Record<string, unknown>[];
-  expect(ui.filter((u) => u.spot === "conversation.message.action")).toEqual([
-    { spot: "conversation.message.action", id: "pin", title: "Pin to her stage", icon: "assets/pin.svg", call: "pinReply", on: "assistant", when: { bot: "alpha" } },
-  ]);
-  // No frame under every message: no component entry on the extra spot.
-  expect(ui.some((u) => u.spot === "conversation.message.extra")).toBe(false);
-  expect(manifest.capabilities).toContain("conversation.read");
+test("her pin left MOSS Code's window with her bot's tab (lane MC): no window entry names her bot", () => {
+  expect(manifest.contributes.ui).toBeUndefined();
+  expect(manifest.contributes.bot).toBeUndefined();
 });
 
 test("its icon: a 16 px stroke pin, a muted tone in the light and another in the dark, nothing that runs", () => {

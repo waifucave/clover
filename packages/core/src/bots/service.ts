@@ -59,6 +59,7 @@ import type { BotProviderConsent, ProviderConsent } from "./provider-consent";
 import type { ArchivedBot, BotFace, BotMaker, BotMoveJournal, BotPatch, BotRecordView, BotSummary } from "@waifucave/moss-protocol";
 import { projectRecords } from "../sessions/wire";
 import { readJson as readJsonFile } from "../sessions/atomic-file";
+import { defaultBotForMove } from "./default-bot";
 import { pendingPluginBots, pluginBotsForMove } from "./move";
 import { readMarkFile, type BotRecordStore } from "./records";
 import type { BotSource } from "./source";
@@ -168,6 +169,8 @@ export interface BotServiceOptions {
   source?: BotSource;
   /** The bots as engine data, with `source: "records"` (required then). */
   records?: BotRecordStore;
+  /** Whether the move offers the default bot (Alpha, default-bot.ts); true unless a test of something else says no. */
+  defaultBot?: boolean;
   /** Built with this gate's `mayStart` and its main computer's `epoch` (wiring.ts does both). */
   host: DurableSessionHost;
   /** When bots may think here: the runner (lane H's lease) and the pause switch. */
@@ -675,7 +678,9 @@ export class BotService {
     }
     let journal: BotMoveJournal;
     try {
-      journal = await store.move(pluginBotsForMove(this.#o.registry, this.#o.home));
+      // The plugin bots first, then the default bot MOSS offers (Alpha, default-bot.ts): a plugin that still brings a
+      // bot of her id (a home's own development folder) is moved as that plugin's, and she isn't offered over it.
+      journal = await store.move([...pluginBotsForMove(this.#o.registry, this.#o.home), ...(this.#o.defaultBot === false ? [] : [defaultBotForMove(this.#o.home)])]);
     } catch (err) {
       this.#warn(`moving the plugin bots into records failed: ${err instanceof Error ? err.message : String(err)}`);
       return;

@@ -65,6 +65,8 @@ export interface BotSideOptions {
   home: string;
   /** Where the bots come from (lane BT, `bots/source.ts`): THE switch's value, `MOSS_BOT_SOURCE` or `plugins`. */
   botSource?: BotSource;
+  /** Whether the move offers the default bot (Alpha, default-bot.ts); true unless a test of something else says no. */
+  defaultBot?: boolean;
   /** The plugins' bot-scoped settings, for the records' `bot.pluginSettings` (lane BT). */
   pluginSettings?: BotPluginSettingsPort & Partial<Pick<PluginBotSettings, "views">>;
   /** This computer's name in the folder tree. */
@@ -232,7 +234,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     records = store;
   }
   const bots = new BotService({
-    source, ...(records === undefined ? {} : { records }),
+    source, ...(records === undefined ? {} : { records }), ...(o.defaultBot === undefined ? {} : { defaultBot: o.defaultBot }),
     home: o.home, computer: o.computer, registry: o.registry, host, gate, drivers: o.drivers, clock: o.clock,
     providerConsent: o.providerConsent ?? new BotProviderConsent(grants === undefined ? {} : { grants }),
     defaultModel: o.defaultModel, cacheCold: (id) => compaction.cacheCold(id),

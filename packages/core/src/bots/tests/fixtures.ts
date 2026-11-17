@@ -21,7 +21,8 @@ import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
 
 /** The repo's root, from `packages/core/src/bots/tests/`. */
 export const REPO = resolve(import.meta.dir, "../../../../..");
-export const ALPHA_FOLDER = join(REPO, "plugins", "alpha");
+/** Alpha as the bundled plugin bot she was before bots became engine data (a fixture: `default-bot.ts` is her now). */
+export const ALPHA_FOLDER = join(import.meta.dir, "plugin-era", "alpha");
 
 export function diskReader(dir: string): PluginFolderReader {
   const at = (p: string) => join(dir, ...p.split("/"));
@@ -125,9 +126,12 @@ export async function boot(opts: {
   askProvider?: boolean;
   /** The daemon's test of MOSS's own bundled plugin (service.ts `bundledChoice`); none by default, so nothing is. */
   bundledChoice?: BotSideOptions["bundledChoice"];
-  /** Lane BT: bots as engine data (`botSource: "records"`); plugins as the source by default, as the daemon's. */
+  /** Lane BT: bots as engine data (`botSource: "records"`, the daemon's default since lane MC); these tests of the
+   *  plugin path keep plugins as the source unless they ask. */
   botSource?: BotSideOptions["botSource"];
   pluginSettings?: BotSideOptions["pluginSettings"];
+  /** The default bot (Alpha) offered by the move with records as the source; off unless a test asks for it. */
+  defaultBot?: boolean;
 }): Promise<Boot & { side: BotSide; shutdown(): Promise<void> }> {
   const clock = opts.clock ?? new FakeClock();
   const warnings: string[] = [];
@@ -139,7 +143,8 @@ export async function boot(opts: {
     ...(opts.hasKeyFor === undefined ? {} : { hasKeyFor: opts.hasKeyFor }),
     ...(opts.modelOffer === undefined ? {} : { modelOffer: opts.modelOffer }),
     ...(opts.bundledChoice === undefined ? {} : { bundledChoice: opts.bundledChoice }),
-    ...(opts.botSource === undefined ? {} : { botSource: opts.botSource }),
+    botSource: opts.botSource ?? "plugins",
+    defaultBot: opts.defaultBot ?? false,
     ...(opts.pluginSettings === undefined ? {} : { pluginSettings: opts.pluginSettings }),
     ...(opts.main === undefined ? {} : { main: opts.main }),
     ...(opts.relay === undefined ? {} : { relay: opts.relay }),

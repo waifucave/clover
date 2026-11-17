@@ -1,0 +1,22 @@
+{
+  "manifest": 1,
+  "id": "alpha",
+  "name": "Alpha",
+  "description": "A test fixture: Alpha as the bundled plugin bot she was before bots became engine data (lane MC). The bot side's tests of the plugin path and of the one-time move read it.",
+  "version": "1.0.0",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "contributes": {
+    "bot": {
+      "name": "Alpha",
+      "instructions": "bot/instructions.md",
+      "greeting": "bot/greeting.md",
+      "memory": "bot/memory",
+      "model": {
+        "default": "anthropic/claude-sonnet-5-5",
+        "effort": "medium"
+      }
+    }
+  }
+}

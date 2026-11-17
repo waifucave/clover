@@ -32,16 +32,15 @@ function packFolder(root: string): string {
 }
 
 describe("Alpha", () => {
-  test("Alpha's folder is a valid plugin with one bot, and nothing outside its own tab", async () => {
-    // Alpha is the reference plugin (her stage server and hooks are host code), so her class is `code`; her extras
-    // child is off by default.
+  test("the plugin-era Alpha fixture is a valid plugin with one bot and nothing else", async () => {
+    // Alpha as the bundled plugin bot she was (a fixture since lane MC: she is the default bot now, default-bot.ts).
     const { report } = await pluginFromFolder(ALPHA_FOLDER, { bundled: true });
     expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(report.top.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(report.ok).toBe(true);
     expect(report.top.bot).toBe(true);
-    expect(report.top.class).toBe("code");
-    expect(report.children.map((c) => c.folder)).toEqual(["extras"]);
+    expect(report.top.class).toBe("data");
+    expect(report.children).toEqual([]);
   });
 
   test("Alpha's manifest names lane G's look as soon as it is in the folder", () => {
@@ -70,7 +69,7 @@ describe("Alpha", () => {
     const alpha = BotView.parse(views[0]);
     expect(alpha).toEqual({
       id: "alpha", name: "Alpha", model: "anthropic/claude-sonnet-5-5", effort: "medium",
-      theme: "alpha", userLayer: [], state: "idle", computer: "Studio", mainSession: "b_alpha",
+      userLayer: [], state: "idle", computer: "Studio", mainSession: "b_alpha",
     });
     expect(b.host.get("b_alpha")).toMatchObject({ kind: "bot", bot: "alpha", title: "Alpha", model: "anthropic/claude-sonnet-5-5", effort: "medium" });
     const events = projectRecords(b.host.history("b_alpha"), { kind: "bot" });

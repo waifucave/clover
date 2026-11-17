@@ -70,6 +70,11 @@ export interface BotPluginSettingsPort {
 /** A plugin bot as the move takes it: the contract's, its plugin's starter memories, or why it couldn't be read. */
 export type MoveInput = PluginBotForMove & {
   memorySeed?: string;
+  /** Starter memory files by name (the default bot's, `default-bot.ts`), written when this computer never seeded the
+   *  bot's memory and never over a file that is there. */
+  memoryFiles?: Readonly<Record<string, string>>;
+  /** Who the record says made it: the move from `plugin` unless given (the default bot: `{ kind: "default" }`). */
+  madeBy?: BotMaker;
   failed?: string;
   /** Its plugin was switched off, invalid or refused: moved straight into the archive. */
   archive?: true;
@@ -603,7 +608,7 @@ export class BotRecordStore implements BotRecords {
     if (b.failed !== undefined) return { outcome: "failed", id: b.id, plugin: b.plugin, why: b.failed.slice(0, 500) };
     const there = this.#records.get(b.id)?.record;
     if (there !== undefined) {
-      const ours = there.madeBy.kind === "move" && there.madeBy.plugin === b.plugin;
+      const ours = b.madeBy !== undefined ? there.madeBy.kind === b.madeBy.kind : there.madeBy.kind === "move" && there.madeBy.plugin === b.plugin;
       return { outcome: ours ? "moved" : "kept", id: b.id, plugin: b.plugin };
     }
     if (this.#archive.has(b.id)) {
@@ -616,7 +621,7 @@ export class BotRecordStore implements BotRecords {
       const effort = layer.effort ?? b.effort;
       const greeting = b.greeting?.trim();
       const record = BotRecord.parse({
-        record: 1, id: b.id, name: layer.name ?? b.name, madeBy: { kind: "move", plugin: b.plugin }, createdAt: this.#o.clock.now(),
+        record: 1, id: b.id, name: layer.name ?? b.name, madeBy: b.madeBy ?? { kind: "move", plugin: b.plugin }, createdAt: this.#o.clock.now(),
         ...(model !== undefined && MODEL_ID_RE.test(model) ? { model } : {}),
         ...(effort !== undefined && EFFORT_RE.test(effort) ? { effort } : {}),
         ...(greeting !== undefined && greeting !== "" ? { greeting: greeting.slice(0, GREETING_MAX_CHARS) } : {}),
@@ -634,13 +639,17 @@ export class BotRecordStore implements BotRecords {
 
   /** The plugin's starter memories, when this computer never copied them (the bot service's state file says). */
   #seed(b: MoveInput): void {
-    if (b.memorySeed === undefined) return;
+    if (b.memorySeed === undefined && b.memoryFiles === undefined) return;
     const file = botStateFile(this.#home, b.id);
     const state = (readJson(file) as { seededMemory?: unknown; firstSeen?: unknown } | undefined) ?? {};
     if (state.seededMemory === true) return;
     const memory = join(plainFolders(this.#home, "bots", botSegment(b.id)), "memory");
     plainFolders(dirname(memory), "memory");
-    seedMemory(b.memorySeed, memory, { base: this.#home, warn: this.#warn });
+    if (b.memorySeed !== undefined) seedMemory(b.memorySeed, memory, { base: this.#home, warn: this.#warn });
+    for (const [name, text] of Object.entries(b.memoryFiles ?? {})) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) || existsSync(join(memory, name))) continue;
+      writeTextAtomic(join(memory, name), text);
+    }
     writeJsonAtomic(file, { bot: b.id, firstSeen: typeof state.firstSeen === "number" ? state.firstSeen : this.#o.clock.now(), seededMemory: true });
   }
 }
