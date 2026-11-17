@@ -4170,14 +4170,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // A component's watch values: to the one layer connection that opened it (its follows), never any other.
       emitTo: (follows, event) => void mossServer?.coreEvent(event, { to: (conn) => conn.follows === follows }),
       log: (line) => console.error(`[plugins] ${line}`),
-      // The user's own layout for a bot (its user layer), drawn over the bot's; read from the bot side once it runs.
-      userLayout: (botId) => {
-        try {
-          return daemonParts?.bots?.bots.userLayer(botId).layout;
-        } catch {
-          return undefined; // not a bot here
-        }
-      },
+      // A bot's tab layout is retired with the bot tab (G8): the user layer's stored `layout` is kept in its file and not read.
     });
     // B: the registry's transitions as plugin_changed / plugin_removed / plugin_found (ids and states only).
     const stopEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void mossServer?.coreEvent(event) });
@@ -4966,12 +4959,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         });
         activityTracker.start();
       }
-      // A user layer's layout changed: the app draws that bot's tab again (only when the layout itself did).
-      const botsHere = daemonParts?.bots?.bots;
-      if (botsHere !== undefined) {
-        botsHere.onEvent((e) => { if (e.type === "bot_changed") pluginUiParts?.userLayoutChanged(e.bot.id); });
-        pluginUiParts?.userLayoutChanged();
-      } else console.error("[plugins] ui: no bot side here; the user layers' layouts aren't followed");
       // The node is up with its ticks loaded: list the plugins' servers again, so a per-computer server this computer
       // ticks starts now (the registry's first listing ran before the node, when no server was ticked here yet).
       void pluginMcp?.refresh();
