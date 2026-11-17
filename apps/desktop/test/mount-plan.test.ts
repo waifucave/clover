@@ -1,7 +1,7 @@
 // What each program runs from its mount list (lane HS).
 import { expect, test } from "bun:test";
 import { LEGACY_CODE_MOUNTS, SURFACE_MOUNTS } from "@waifucave/moss-protocol";
-import { mountPlan } from "../src/main/mount-plan";
+import { fallbackMayDraw, mountPlan } from "../src/main/mount-plan";
 
 test("the host: no window, the screen's parts, the pages and the one menu-bar icon", () => {
   expect(mountPlan("host", SURFACE_MOUNTS.host)).toEqual({ mainWindow: false, surfaces: true, background: true, tray: "host", browser: true, drawsCards: true });
@@ -17,4 +17,18 @@ test("MOSS Code's window: everything while no host runs; only its window once on
   expect(mountPlan("code", SURFACE_MOUNTS.code, "stopped")).toEqual(mountPlan("code", LEGACY_CODE_MOUNTS));
   // An engine from before the split names no mount: today's app, whole.
   expect(mountPlan("code", undefined).surfaces).toBe(true);
+});
+
+test("one card in one place: the host draws a fallback only for the island's cards, MOSS Code's window only for its own", () => {
+  const host = { drawsIsland: true, hasWindow: false };
+  const window = { drawsIsland: false, hasWindow: true };
+  const alone = { drawsIsland: true, hasWindow: true };
+  const strip = { kind: "strip", program: "code", window: "main" } as const;
+  const conversation = { kind: "conversation", program: "code", window: "main" } as const;
+  expect([fallbackMayDraw({ kind: "island" }, host), fallbackMayDraw({ kind: "elsewhere" }, host), fallbackMayDraw(strip, host), fallbackMayDraw(conversation, host)]).toEqual([true, true, false, false]);
+  expect([fallbackMayDraw({ kind: "island" }, window), fallbackMayDraw(strip, window), fallbackMayDraw(conversation, window)]).toEqual([false, true, true]);
+  // MOSS's own window is another program: not this app's to draw.
+  expect(fallbackMayDraw({ kind: "strip", program: "moss", window: "main" }, window)).toBe(false);
+  // A window with no host draws both, as today; before any placement, either may (the net).
+  expect([fallbackMayDraw({ kind: "island" }, alone), fallbackMayDraw(strip, alone), fallbackMayDraw(undefined, host), fallbackMayDraw(undefined, window)]).toEqual([true, true, true, true]);
 });

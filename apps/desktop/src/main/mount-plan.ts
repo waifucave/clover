@@ -9,7 +9,7 @@
 //   today's whole list; once a host owns the screen (`host_changed`), it lets the screen's parts and the pages go, and it
 //   takes them back if the host goes away for good (stopped or absent), so there is never a second island.
 // Pure: no Electron import (test/mount-plan.test.ts).
-import { SURFACE_MOUNTS, type HostState, type MountList } from "@waifucave/moss-protocol";
+import { SURFACE_MOUNTS, type CardPlacement, type HostState, type MountList } from "@waifucave/moss-protocol";
 import type { DesktopProgram } from "./host-program";
 
 export interface MountPlan {
@@ -45,4 +45,14 @@ export function mountPlan(program: DesktopProgram, mount: MountList | undefined,
     browser: list.browserPages,
     drawsCards: list.drawsCards,
   };
+}
+
+/** Whether this process may arm and draw its own fallback card for a card the router placed so (the reviewer's B1): one
+ *  card is drawn in one place. The program that draws the island (the host, or a window with no host) for a card on the
+ *  island or with no surface; MOSS Code's window for a card in its conversation or its strip; either while no placement
+ *  has come yet (the safety net, re-decided when it comes). */
+export function fallbackMayDraw(placed: CardPlacement | undefined, here: { drawsIsland: boolean; hasWindow: boolean }): boolean {
+  if (placed === undefined) return true;
+  if (placed.kind === "island" || placed.kind === "elsewhere") return here.drawsIsland;
+  return here.hasWindow && placed.program === "code";
 }

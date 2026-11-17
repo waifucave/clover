@@ -58,7 +58,7 @@ import { AppTray } from "./tray";
 // lane HS: start
 import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostStartInfo, hostTrayMenu, midWorkWarning, takeHostLock, type HostLock, type HostTrayActions } from "./host-program";
 import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
-import { mountPlan, type MountPlan } from "./mount-plan";
+import { fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
 import { TabFrameSender } from "./browser/frame-sender";
 import { SURFACE_MOUNTS, type HostState, type MountList } from "@waifucave/moss-protocol";
 // lane HS: end
@@ -578,7 +578,8 @@ async function ready(): Promise<void> {
       const source: PressSource = [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.cards) ? "island"
         : sealed.elementOf(token) === OWN_ELEMENT ? "fallback" : "window";
       const placed = cardOfPress === undefined ? undefined : enginePlaces.get(cardOfPress);
-      if (!pressMayBeTaken({ from: source, placed, front: mainWindowFront(mainState()) })) {
+      // lane HS (B1): the app's own card takes a press only in the program the placement names.
+      if (!pressMayBeTaken({ from: source, placed, front: mainWindowFront(mainState()) }) || (source === "fallback" && !fallbackMayDraw(placed, { drawsIsland: mountNow.surfaces, hasWindow: mountNow.mainWindow }))) {
         log(`sealed: answer refused (a press ${source === "island" ? "on the island" : "in the window"} for a card the router placed ${placed?.kind === "island" ? "on the island" : "in the window"})`);
         return { accepted: false, reason: placed?.kind === "island" ? "this card is on the island now" : "this card is in MOSS's window now" };
       }
@@ -1055,6 +1056,10 @@ function enginePlaced(cardId: string, place: CardPlacement, from: "event" | "sna
   const was = islandHoldsCard();
   if (from === "event") enginePlaces.placed(cardId, place);
   else if (enginePlaces.snapshot([{ card: cardId, place }]).length === 0) return;
+  // lane HS (B1): each placement decides again whether this program keeps a fallback for the card: one stood down for its
+  // placement is armed again when the card comes to this program (a card whose own buttons showed stays disarmed).
+  if (!fallbackHere(cardId)) { if (fallbacks.has(cardId)) { disarmFallback(cardId); heldOffFallbacks.add(cardId); } }
+  else if (heldOffFallbacks.delete(cardId) && sealed.isPending(cardId)) void armFallback(cardId);
   if (cardPlaces.has(cardId)) placeCardNow(cardId);
   // The surfaces hear it only when the island's hold changes (their `mainFront`): a message on every placement made the
   // island measure itself again under the pointer.
@@ -1125,6 +1130,8 @@ function cardWaitingAtConnect(c: unknown): void {
 
 async function armFallback(cardId: string): Promise<void> {
   disarmFallback(cardId);
+  // lane HS (B1): one card in one place: only the program the router's placement names arms its own card.
+  if (!fallbackHere(cardId)) return;
   const timer = setTimeout(() => void showFallbackCard(cardId), FALLBACK_DELAY_MS);
   timer.unref?.();
   fallbacks.set(cardId, { timer });
@@ -1143,6 +1150,8 @@ function disarmFallback(cardId: string): void {
 async function showFallbackCard(cardId: string, strip = false): Promise<void> {
   const card = sealed.get(cardId);
   if (card === undefined) return;
+  // lane HS (B1): and only it draws one (the host never docks a strip: it has no window; a window never draws the island's).
+  if (!fallbackHere(cardId)) { log(`card: ${strip ? "the window's strip" : "the fallback card"} for ${cardId} is another program's to draw (${enginePlaces.get(cardId)?.kind ?? "no place"})`); return; }
   const smokeFallback = SMOKE_SEALED_FALLBACK;
   // The acceptance run's real press (MOSS_TEST_SEALED_PRESS=1, a headless test-marked or unpackaged run only): the
   // fallback card is drawn OFFSCREEN (never shown, never on any screen), so the run can press its button with a trusted
@@ -1439,6 +1448,13 @@ function makePair(): Pair {
 // lane HS: start. ------------------------------------------------------------------------------------------------
 // The background host's glue (host-program.ts, host-runtime.ts, mount-plan.ts hold the decisions).
 const tabFrames = new TabFrameSender((params) => pair?.client?.request("host.tab.frame", params, 10_000) ?? Promise.resolve());
+
+/** The cards whose fallback this program stood down because the router placed them in another program (B1). */
+const heldOffFallbacks = new Set<string>();
+/** Whether this program keeps its own fallback card for a card (B1), from the router's placement and what it draws. */
+function fallbackHere(cardId: string): boolean {
+  return fallbackMayDraw(enginePlaces.get(cardId), { drawsIsland: mountNow.surfaces, hasWindow: mountNow.mainWindow });
+}
 
 function hostDeps(): HostRuntimeDeps {
   return {

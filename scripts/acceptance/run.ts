@@ -4406,7 +4406,12 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     try {
       await turn(c, session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "open", url: browserFixture.url })}`, 150_000, { always: true, log: appLogFile });
     } finally { appless = wasAppless; }
-    if (!browserFixture.seen.some((r) => r.path === "/")) fail("the bot's Browser tool loaded nothing: the fixture site saw no request");
+    // The open answers as the page starts loading: the request comes a moment later.
+    await until("the fixture site's request from the bot's tab", 30_000, () => (browserFixture!.seen.some((r) => r.path === "/") ? true : undefined), 200).catch(() => undefined);
+    if (!browserFixture.seen.some((r) => r.path === "/")) {
+      const result = [...(fake?.requests ?? [])].reverse().find((r) => r.toolResult !== undefined)?.toolResult;
+      fail(`the bot's Browser tool loaded nothing: the fixture site saw no request (the tool said: ${result === undefined ? "nothing" : `${result.isError ? "error: " : ""}${result.text.slice(0, 300)}`})`);
+    }
     await until("the bot's page among the host's targets", 30_000, () => ([...hostCdp!.frames.values()].some((f) => f.url.startsWith(browserFixture!.url)) ? true : undefined), 500).catch(() => undefined);
     offScreen("with the bot's page open");
     lines.push("browser with no window: the bot's Browser tool opened the fixture page, loaded by the host's browser");
