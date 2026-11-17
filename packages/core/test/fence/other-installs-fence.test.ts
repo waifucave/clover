@@ -14,6 +14,7 @@ import { callerPlaces } from "../../src/fence/per-caller";
 import { runLaterExtras } from "../../src/fence/run-later";
 import { OTHER_INSTALL_APP_DATA_DIRS, OTHER_INSTALL_HOMES, OLD_INSTALL_DEV_HOME_DIR, OLD_INSTALL_HOME_DIR, otherInstallPlaces } from "../../src/other-installs";
 import { persistencePlaces } from "../../src/registry/plugin-fence";
+import { darwinDescribe } from "../helpers/darwin-only";
 import { persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
 
 const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
@@ -99,7 +100,7 @@ describe("a sandboxed command can't write it (the session sandbox's denyWrite)",
   });
 });
 
-(process.platform === "darwin" ? describe : describe.skip)("the fence's own Seatbelt, as a bot's and a plugin's commands run under it", () => {
+darwinDescribe("the fence's own Seatbelt, as a bot's and a plugin's commands run under it", () => {
   test("write, rename the folder away, plant a link, make it when absent, case and `..`: each refused; reads go through", () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-other-installs-sb-")));
     const at = (...p: string[]) => join(home, ...p);

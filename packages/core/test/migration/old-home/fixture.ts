@@ -157,11 +157,14 @@ export function buildOldHome(user: string, scratch: string, dirName = ".old-home
     mkdirSync(join(old, "runtimes"), { recursive: true });
     copyFileSync(src, join(old, "runtimes", "runtime-state.db"));
   }
-  // Links: relative inside, absolute inside, one leading out; and a hard link.
-  symlinkSync(join("sdk", "agents"), join(old, "agents"));
-  symlinkSync(join(old, "memory"), join(old, "bots", "alpha", "shared-memory"));
-  symlinkSync(scratch, join(old, "bots", "alpha", "outside"));
-  linkSync(join(old, "memory", "notes.md"), join(old, "bots", "alpha", "notes-hard.md"));
+  // Links: relative inside, absolute inside, one leading out; and a hard link (not on Windows, where making a link
+  // needs a privilege a test run doesn't have).
+  if (process.platform !== "win32") {
+    symlinkSync(join("sdk", "agents"), join(old, "agents"));
+    symlinkSync(join(old, "memory"), join(old, "bots", "alpha", "shared-memory"));
+    symlinkSync(scratch, join(old, "bots", "alpha", "outside"));
+    linkSync(join(old, "memory", "notes.md"), join(old, "bots", "alpha", "notes-hard.md"));
+  }
   return { old, wal: { usage, routines }, ruleKeys: { mapped, plain } };
 }
 

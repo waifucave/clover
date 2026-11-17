@@ -196,6 +196,7 @@ describe("where the old home is", () => {
 
 describe("the old engine's liveness, read only", () => {
   test("its socket answering, or its lock naming a live process beside its socket; neither, not running", async () => {
+    if (process.platform === "win32") return; // a named pipe there, not a socket file
     const old = temp("moss-old-alive-");
     mkdirSync(join(old, "run"));
     expect(await oldEngineAlive(old)).toEqual({ alive: false });
@@ -258,6 +259,7 @@ describe("the old login item", () => {
     expect(oldLoginItem(old, "win32")).toBeUndefined();
   });
   test("its own autostart disable, run with a plain environment naming the old home; a refusal says why", async () => {
+    if (process.platform === "win32") return; // the stand-in program is a shell script
     const user = temp("moss-old-login-");
     const old = join(user, OLD_INSTALL_HOME_DIR);
     mkdirSync(old);

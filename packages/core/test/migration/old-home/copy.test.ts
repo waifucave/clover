@@ -65,9 +65,11 @@ describe("the copy", () => {
     applyStagedCopy(home);
     expect(treeHash(fx.old)).toBe(before);
     // The new engine writes through what was copied: the links that pointed into the old home now point here.
-    writeFileSync(join(home, "bots", "alpha", "shared-memory", "new-note.md"), "written by MOSS\n");
-    writeFileSync(join(home, "agents", "new-agent.md"), "written by MOSS\n");
-    writeFileSync(join(home, "bots", "alpha", "notes-hard.md"), "changed through the copied hard link\n");
+    if (process.platform !== "win32") {
+      writeFileSync(join(home, "bots", "alpha", "shared-memory", "new-note.md"), "written by MOSS\n");
+      writeFileSync(join(home, "agents", "new-agent.md"), "written by MOSS\n");
+      writeFileSync(join(home, "bots", "alpha", "notes-hard.md"), "changed through the copied hard link\n");
+    }
     const ledger = new Database(join(home, ...NEW_USAGE_LEDGER.split("/")));
     ledger.run("INSERT INTO fixture_rows (v) VALUES ('after')");
     ledger.close();
@@ -125,7 +127,7 @@ describe("the copy", () => {
     expect(existsSync(join(home, "sdk", "MOSS.md"))).toBe(true);
     expect(existsSync(join(home, "sdk", NEW_SDK_CONFIG))).toBe(true);
     // Modes kept.
-    expect(statSync(join(home, "settings.json")).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(join(home, "settings.json")).mode & 0o777).toBe(0o600);
     // What the fresh home held where the copy took its place is set aside, never deleted.
     const aside = readdirSync(oldHomePaths(home).replaced);
     expect(aside.length).toBe(1);
@@ -183,7 +185,7 @@ describe("the copy", () => {
     expect(report.plugins).toEqual(["acceptance-echo"]);
   });
 
-  test("links: into the old home now point at the same place here, out of it are left out; a hard link is a new file", async () => {
+  test.skipIf(process.platform === "win32")("links: into the old home now point at the same place here, out of it are left out; a hard link is a new file", async () => {
     const { fx, home } = setup();
     const report = await copyOldHome({ oldHome: fx.old, home, alive: notAlive });
     applyStagedCopy(home);
