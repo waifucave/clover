@@ -3391,7 +3391,7 @@ async function main(): Promise<void> {
 
   c.close();
   const restarted = await restartStep(daemon, appProc.proc, session);
-  await uiPhase(app, restarted, session, pressing && pluginOk && turnsWork);
+  await uiPhase(app, restarted, session, pressing && pluginOk && turnsWork, undefined, botSession);
   if (keepState !== undefined) await keepFacts(session, pluginOk ? pluginId : undefined);
   await bundledMcpStep();
   searchStep();
@@ -3809,7 +3809,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
       const welcomeDone = join(home, "app-data", profile, "welcome-done");
       mkdirSync(dirname(welcomeDone), { recursive: true });
       if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
-      await uiPhase(app, true, session, pressing, new Set(windowIds.flatMap((id) => windowIndexes(id)!)));
+      await uiPhase(app, true, session, pressing, new Set(windowIds.flatMap((id) => windowIndexes(id)!)), bot);
     }
   }
   const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "acp" || id === "builder-examples" || id === "workshop-points" || id === "tab-flash" || id === "browser" || id === "plugin-app");
@@ -6115,7 +6115,7 @@ function windowStepsHere(): Set<number> | undefined {
 
 /** The window's steps, then (unless only some were asked for) the reopened app's press and the rows after them. `only`: the steps a
  *  window unit runs (its place in UI_STEPS), in an app of its own. */
-async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, session: string | undefined, pressable: boolean, only?: ReadonlySet<number>): Promise<void> {
+async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, session: string | undefined, pressable: boolean, only?: ReadonlySet<number>, bot?: string): Promise<void> {
   const first = UI_FIRST_ROW;
   const reopened = first + UI_STEPS.length; // after quit and reopen: the same key, one more real press
   const blockAll = (why: string) => { for (let i = 0; i <= UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
@@ -6203,7 +6203,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     // The SDK's two full examples, third-party plugins installed from their folders on the Plugins page (example-steps.ts),
     // and the rows after them (a shard's units leave out the ones another shard runs).
     const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, appearanceFile, join(root, "main-front"), pressKey);
-    for (const [name, run] of uiRowRunners(exampleCtx, session!)) {
+    // The rows about a bot (the tool setting, a bot's builds) in Alpha's conversation, as the units run them.
+    for (const [name, run] of uiRowRunners(exampleCtx, session!, undefined, bot ?? session!)) {
       if (!runs(unitOf(name))) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
       try {
