@@ -68,7 +68,7 @@ import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun, type HoldStep } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
-import { mossFront, FrontWatcher, islandMayDraw, placeFromEngine, presenceOf, pressMayBeTaken, placeLine, showingOf, type CardPlace, type PressSource } from "./card-place";
+import { mossFront, FrontWatcher, islandMayDraw, placeFromEngine, PresenceReporter, pressMayBeTaken, placeLine, showingOf, type CardPlace, type PressSource } from "./card-place";
 import { afterTap, afterTray, appIsRegular, mainWindowFront, surfaceShown, type MainWindowState, type PutAway } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
@@ -370,7 +370,7 @@ async function ready(): Promise<void> {
     shellState: (id, state) => {
       shellStates.set(id, state);
       // What the main window shows is its presence too (lane RT): a new tab is reported at once.
-      if (mainWindow !== undefined && !mainWindow.isDestroyed() && id === mainWindow.id && JSON.stringify(showingOf(state)) !== lastShowing) void reportPresence();
+      if (mainWindow !== undefined && !mainWindow.isDestroyed() && id === mainWindow.id && presence.showingChanged(showingOf(state))) void reportPresence();
     },
     rootCommand: (_id, name) => {
       if (name === "restart-normally") void restart(false);
@@ -1359,7 +1359,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   // was never told of a card (the acceptance run's first card-arrival check found it).
   // `surfaces` (lane RT): where the engine's router places each card (`card_placed`).
   await client.request("events.subscribe", { areas: ["plugins", "app", "approvals", "surfaces"] }).catch(() => undefined);
-  void reportPresence(client).then(() => client.request<unknown>("card.placement", {})).then((raw) => {
+  void reportPresence().then(() => client.request<unknown>("card.placement", {})).then((raw) => {
     const r = SURFACES_METHODS.cardPlacement.result.safeParse(raw);
     if (r.success) for (const p of r.data.placements) enginePlaced(p.card, p.place);
   }).catch(() => undefined);
@@ -1801,49 +1801,34 @@ function mainState(): MainWindowState {
   return mossFront(mainWindow, [...fallbacks.values()].map((f) => f.win));
 }
 
-/** This program's presence to the engine's router (lane RT, §3.5): its main window, focused or not (in front, its own card
- *  windows counting, the front watcher's settled state), visible, and which session or bot it shows. Sent on every change
- *  and at least every `PRESENCE_REFRESH_MS`; an engine that doesn't serve it yet is asked again on the next connection. */
-let lastShowing = "null";
+/** This program's presence to the engine's router (lane RT, §3.5; `PresenceReporter`): its main window, focused or not (the
+ *  front watcher's settled state), visible, and which session or bot it shows. Sent on every change and at least every
+ *  `PRESENCE_REFRESH_MS`; an engine that doesn't serve it yet is asked again on the next connection. */
 let lastSaid = "";
-/** The front watcher's settled state (going out only after it held a beat: a click between MOSS's own windows shows neither
- *  focused for an instant, and reporting that would move the card from under the pointer). */
-let settledFront = false;
-/** The report on its way, so a press waits for the placement it brings (the core sends `card_placed` before its answer). */
-let presenceInFlight: Promise<void> | undefined;
-let lastFocused: boolean | undefined;
-let presenceUnserved: DaemonClient | undefined;
-function reportPresence(client: DaemonClient | undefined = pair?.client): Promise<void> {
-  const p = sendPresence(client);
-  presenceInFlight = p;
-  void p.finally(() => { if (presenceInFlight === p) presenceInFlight = undefined; });
-  return p;
+let presenceClient: DaemonClient | undefined;
+const presence = new PresenceReporter({
+  read: () => { const st = mainState(); return { exists: st.exists, visible: st.visible, minimized: st.minimized, front: mainWindowFront(st) }; },
+  showing: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? showingOf(shellStates.get(mainWindow.id)) : null),
+  send: async (report) => {
+    const client = pair?.client;
+    if (client === undefined) return "failed";
+    if (client !== presenceClient) { presenceClient = client; presence.reconnected(); }
+    try {
+      await client.request("presence.report", report, 5_000);
+      return "sent";
+    } catch (err) {
+      return err instanceof RpcCallError && err.code === -32601 ? "unserved" : "failed";
+    }
+  },
+  // Said once per change (ids and kinds only).
+  log: (line) => { if (line !== lastSaid) { lastSaid = line; log(line); } },
+});
+function reportPresence(): Promise<void> {
+  return presence.report();
 }
-async function sendPresence(client: DaemonClient | undefined): Promise<void> {
-  if (client === undefined || presenceUnserved === client) return;
-  const exists = mainWindow !== undefined && !mainWindow.isDestroyed();
-  const st = mainState();
-  const showing = exists ? showingOf(shellStates.get(mainWindow!.id)) : null;
-  const focused = settledFront;
-  const report = presenceOf({ exists: st.exists, visible: st.visible, minimized: st.minimized, front: focused }, showing);
-  const said = `${focused ? "focused" : "not focused"}, showing ${showing === null ? "nothing" : showing.kind}`;
-  if (said !== lastSaid) { lastSaid = said; log(`presence: the window ${exists ? said : "closed"}`); }
-  lastShowing = JSON.stringify(showing);
-  lastFocused = focused;
-  try {
-    await client.request("presence.report", report, 5_000);
-  } catch (err) {
-    if (err instanceof RpcCallError && err.code === -32601) presenceUnserved = client;
-    else lastFocused = undefined;
-  }
-}
-/** Before a press is judged: the report on its way is waited for, and a focus change not reported yet is reported now, so the
- *  placement the press reads is current. Going to the front counts at once (as the front watcher does); going out only once
- *  settled, so a click on the window's own strip never reads the window as left. */
-async function presenceIfStale(): Promise<void> {
-  if (mainWindowFront(mainState()) && !settledFront) settledFront = true;
-  if (lastFocused !== settledFront) await reportPresence();
-  else if (presenceInFlight !== undefined) await presenceInFlight.catch(() => undefined);
+/** Before a press is judged: the placement it reads is the one the press was made in. */
+function presenceIfStale(): Promise<void> {
+  return presence.beforePress();
 }
 if (process.type === "browser") setInterval(() => void reportPresence(), PRESENCE_REFRESH_MS).unref?.();
 
@@ -1975,7 +1960,7 @@ function followFront(): void {
 }
 const frontWatcher = new FrontWatcher({
   read: () => mainWindowFront(mainState()),
-  changed: (front) => { settledFront = front; tellSurfaces(); movePendingCards(); void reportPresence(); },
+  changed: (front) => { presence.settled(front); tellSurfaces(); movePendingCards(); void reportPresence(); },
   settleMs: 120,
 });
 const surfaces = new Map<string, Surface>();
