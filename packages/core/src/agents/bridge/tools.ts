@@ -56,6 +56,9 @@ export interface BridgeToolSource {
   call(sessionId: string, call: { callId: string; tool: string; input: unknown }, ctx: BridgeCallContext): Promise<{ content: unknown[]; isError: boolean }>;
   /** The plugins' own instructions, which the bridge sends as its server instructions and `Glossary` also serves. */
   instructions?(sessionId: string, session?: AgentSessionFacts): Promise<string>;
+  /** Waits, at most `timeoutMs`, for the plugins' servers installed or enabled a moment ago to have listed their tools, so a
+   *  list read right after reads them. Absent: the list is read as it is. */
+  settled?(timeoutMs: number): Promise<void>;
 }
 
 export const NO_PLUGIN_TOOLS: BridgeToolSource = {

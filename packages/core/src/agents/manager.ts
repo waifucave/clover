@@ -262,6 +262,8 @@ export function toolsSignature(v: { tools: readonly BridgeToolDef[]; instruction
 
 /** How long the plugins' changes settle before the running sessions' parts are placed again. */
 const PARTS_SETTLE_MS = 250;
+/** How long a turn waits at its start for a plugin server just installed or enabled to list its tools (the bots' wait, `MCP_FIRST_LISTING_WAIT_MS`). */
+const MCP_SETTLE_WAIT_MS = 5_000;
 
 /** The bridge's server name starts with this; a random suffix follows, new for each session. */
 export const BRIDGE_SERVER_PREFIX = "moss_";
@@ -728,6 +730,10 @@ export class AgentManager {
       beforeTurn: async (session) => {
         // A turn withdrawn while held ends `interrupted` (the driver checks its signal next).
         await this.#hold(entry).catch(() => {});
+        // The plugins as they are now: a change made a moment ago (an install the debounce has not reported yet, a server still
+        // listing its tools) is in the list this turn starts with, whatever the watchers have said.
+        await (this.#o.pluginTools?.settled?.(MCP_SETTLE_WAIT_MS) ?? Promise.resolve()).catch(() => {});
+        await this.#refreshing.then(() => this.#syncTools(entry)).catch(() => {});
         const renewed = await this.#renewIfOld(entry, session);
         // Its tools changed and it takes that by being opened again (`toolListChanges: "next-turn"`).
         const reopened = renewed === undefined ? await this.#reopenForTools(entry, session) : undefined;
@@ -1341,21 +1347,25 @@ export class AgentManager {
   }
 
   async #refreshBridgeToolsNow(): Promise<void> {
-    for (const e of [...this.#entries.values()]) {
-      if (e.peer || e.session === undefined || e.gone.signal.aborted) continue;
-      const view = await this.#bridgeView(e).catch(() => undefined);
-      if (view === undefined || e.gone.signal.aborted || this.#entries.get(e.id) !== e) continue;
-      const sig = toolsSignature(view);
-      if (sig === e.toolsSig) continue;
-      const before = e.toolNames ?? [];
-      e.toolsSig = sig;
-      e.toolNames = view.tools.map((t) => t.name);
-      e.bridgeTools = e.toolNames;
-      const mode = this.#listChangeMode(e);
-      if (mode === "next-turn") e.toolsRestart = true;
-      else if (mode === "next-session" && e.toolsUntold === undefined) e.toolsUntold = before;
-      try { e.bridgeLink?.notify(BRIDGE_TOOLS_CHANGED_NOTIFICATION, {}); } catch { /* the bridge has gone; the agent's own exit ends the session */ }
-    }
+    for (const e of [...this.#entries.values()]) await this.#syncTools(e);
+  }
+
+  /** One session's tool list made again and compared with what its agent holds; what a difference does is above. */
+  async #syncTools(e: Entry): Promise<void> {
+    if (e.peer || e.session === undefined || e.gone.signal.aborted) return;
+    const view = await this.#bridgeView(e).catch(() => undefined);
+    if (view === undefined || e.gone.signal.aborted || this.#entries.get(e.id) !== e || e.session === undefined) return;
+    const sig = toolsSignature(view);
+    if (sig === e.toolsSig) return;
+    const before = e.toolNames ?? [];
+    e.toolsSig = sig;
+    e.toolNames = view.tools.map((t) => t.name);
+    e.bridgeTools = e.toolNames;
+    const mode = this.#listChangeMode(e);
+    this.#o.log?.(`[agents] ${e.id}: the plugins' tools changed (${before.length} before, ${e.toolNames.length} now); ${mode === "live" ? "its agent is told" : mode === "next-turn" ? "it is opened again before its next turn" : "it keeps its list until its next session"}`);
+    if (mode === "next-turn") e.toolsRestart = true;
+    else if (mode === "next-session" && e.toolsUntold === undefined) e.toolsUntold = before;
+    try { e.bridgeLink?.notify(BRIDGE_TOOLS_CHANGED_NOTIFICATION, {}); } catch { /* the bridge has gone; the agent's own exit ends the session */ }
   }
 
   /** At a turn's start: an agent opened again for a changed tool list (`next-turn`), by the way a token near its expiry is

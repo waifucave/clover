@@ -4586,6 +4586,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // saved rules, or the user's coding session's own), and runs where its server is, as the agent's session.
         agentReach = {
           servers: (kind, backend, bot, opts) => mcp.servers(kind, backend, bot, opts),
+          settled: (ms) => mcp.settled(ms),
           runner: node?.mcp ?? localMcpRunner(mcp, thisComputer),
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
           registry,

@@ -84,6 +84,7 @@ import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, U
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { TOOL_SETTING_STEP, toolSettingStep } from "./tool-setting-step";
+import { CODE_TOOLS_STEP, codeToolsStep } from "./code-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { ROUTER_STEP, routerStep } from "./router-step";
 import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
@@ -3628,6 +3629,8 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
       : target !== "source" && outsideWorld === undefined ? "this packaged core has no test seam for the outside world" : true)],
     // The user's tool setting (off, on demand, always on) on the fixture plugin's tool, on the real path (lane TS).
     [TOOL_SETTING_STEP, () => toolSettingStep(ctx, session)],
+    // A change to the plugins' tools reaches a coding session on MOSS's own agent that is already running (lane AG).
+    [CODE_TOOLS_STEP, () => codeToolsStep(ctx)],
     [CARDS_STEP, () => cardsStep(ctx)],
     // The engine's router (lane RT): a card with no session in the focused window's strip, the island with the window unfocused.
     [ROUTER_STEP, () => routerStep(ctx)],

@@ -31,13 +31,13 @@ function offeredEcho(ctx: ExampleCtx, from: number): { listed: boolean; deferred
   return { listed: (first?.tools ?? []).some((t) => t.endsWith("__Echo")) || deferred, deferred, glossary: mine.some((r) => r.toolUse?.endsWith("Glossary") === true) };
 }
 
-async function installed(ctx: ExampleCtx): Promise<boolean> {
+export async function installed(ctx: ExampleCtx): Promise<boolean> {
   return ctx.rpc.request("plugin.get", { id: PLUGIN }).then(() => true, () => false);
 }
 
 /** The fixture plugin, installed from its folder and OK'd over RPC when this run's home doesn't have it already (a shard
  *  of its own has none; the full run's step 4 left it). Answers whether this step installed it. */
-async function ensurePlugin(ctx: ExampleCtx): Promise<boolean> {
+export async function ensurePlugin(ctx: ExampleCtx): Promise<boolean> {
   if (await installed(ctx)) return false;
   // The registry takes a folder named for the plugin's id, so the copy has the id for its name, under a folder of its own.
   const parent = join(ctx.root, "plugin-src", "tool-setting");
