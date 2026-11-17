@@ -79,6 +79,9 @@ import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { MossClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
+// lane HS
+import { HOST_STEP, backgroundPart, hostLockPid, islandTarget, processAlive, readyCount } from "./host-step";
+import { BACKGROUND_IDS, writeBackground } from "./manifest-fields-step";
 import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
@@ -3440,6 +3443,8 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
   let echoMissing = false;
   let session: string | undefined;
   let c: MossClient | undefined;
+  // lane HS: the host unit runs alone (its own daemon starts the host).
+  if (ids.includes("host")) { await hostOnlyRun(app); return; }
   try {
     // The previous app's session in the home's store before the daemon first opens it (the archive row).
     if (ids.includes("archive")) seedArchive(home);
@@ -4294,6 +4299,109 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
     if (proc !== undefined) await endChild(proc.proc);
   }
 }
+
+// lane HS: start. ----------------------------------------------------------------------------------------------------
+/** The background host's row (`--units host`, serial; host-step.ts): its own daemon starts the host from this checkout
+ *  (`MOSS_HOST_COMMAND`, the engine's source seam, as its own child: the run's cleanup of the daemon's group ends it). */
+async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
+  const n = stepNumber(FULL_STEPS, HOST_STEP);
+  const lines: string[] = [];
+  let c: MossClient | undefined;
+  let hostCdp: Cdp | undefined;
+  const appLogFile = join(home, "logs", "app.log");
+  try {
+    if (target !== "source") fail("the host's row needs the engine's source seam (MOSS_HOST_COMMAND), which a packaged core ignores");
+    const hostPort = freePort();
+    browserFixture = startBrowserFixture();
+    const shared = { MOSS_TEST_BROWSER_NAMES: browserFixture.names, MOSS_TEST_SEALED_PRESS: "1", MOSS_DEV_DEBUG: "1" };
+    const hostCommand = JSON.stringify([app.exe, ...app.args, "--moss-program=host", "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${hostPort}`]);
+    const daemonEnv = { MOSS_HOST_COMMAND: hostCommand, ...shared };
+    const first = await startDaemonProc(daemonEnv);
+    c = (await appDriver()).client;
+    await signInKey(c);
+    const session = await keyedSession(c);
+    // 1. The engine started the host by itself (no app window anywhere), which holds its lock and says it is ready.
+    const hostPid = await until("the host the engine started, ready and holding its lock", 120_000, () => (readyCount(readLog(first.log)) > 0 ? hostLockPid(home) : undefined), 500);
+    const connectHost = async (what: string) => until(what, 60_000, async () => { try { return await Cdp.connect(hostPort); } catch { return undefined; } }, 250);
+    hostCdp = await connectHost("the host's DevTools port");
+    await until("the island's window in the host", 60_000, () => islandTarget(hostCdp!), 300);
+    lines.push(`started: the engine started the host (pid ${hostPid}), which holds its lock, said it was ready and draws the island`);
+    // 2. MOSS Code's window mounts no island of its own while the host owns the screen; then its process quits.
+    const appPort = freePort();
+    const appProc = startChild("host-unit-app", app.exe, [...app.args, "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${appPort}`], { ...baseEnv(), ...shared, MOSS_DAEMON_BIN: stubBin });
+    const appCdp = await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(appProc.proc)) fail(`the app exited (${appProc.proc.exitCode ?? appProc.proc.signalCode}): ${lastLines(appProc.log)}`);
+      try { return await Cdp.connect(appPort); } catch { return undefined; }
+    }, 200);
+    await until("the window's mount (its own points only)", 60_000, () => (/mount: \{"mainWindow":true,"surfaces":false,"background":false,"tray":"none","browser":false/.test(readLog(appProc.log)) ? true : undefined), 300);
+    await sleep(2_000);
+    if (islandTarget(appCdp) !== undefined) fail("MOSS Code's window drew an island of its own while the host owns the screen");
+    appCdp.close();
+    await endChild(appProc.proc);
+    lines.push("one island: MOSS Code's window mounted its own points only (no island, no background part, no pages, no menu-bar icon), and its process quit");
+    // 3. With no app window: a plugin's OK card is placed on the host's island, which takes its press; its background part runs in
+    //    the host and makes its tone (the run is muted at the output).
+    const parent = mkdtempSync(join(tmpdir(), "moss-host-bg-"));
+    const id = BACKGROUND_IDS.sound;
+    const installed = await c.request<{ id: string }>("plugin.install", { source: { from: "folder", path: writeBackground(parent, id, { audio: true }) } }, 60_000);
+    if (installed.id !== id) fail(`the background fixture installed as ${installed.id}`);
+    const ok = await until("the background fixture's OK card", 30_000, async () => (await cards(c!)).find((k) => k.kind === "plugin-ok" && k.pluginId === id), 500);
+    lines.push(`island press with no window: ${await pressOnIsland(hostCdp, ok, appLogFile)}`);
+    await until(`${id} running`, 30_000, async () => ((await c!.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
+    const num = (a: Record<string, string>, k: string) => Number(a[`data-${k}`]);
+    const tone = await until("the background part's tone in the host", 60_000, async () => { const a = await backgroundPart(hostCdp!, id); return a !== undefined && num(a, "ticks") >= 10 && a["data-ctx"] === "running" && num(a, "rms") > 0.01 ? a : undefined; }, 500);
+    lines.push(`background part with no window: ${tone["data-ticks"]} ticks, its audio context running, level ${tone["data-rms"]}`);
+    // 4. A bot's Browser tool opens a page with no app window: the page loads in the host, offscreen.
+    const wasAppless = appless;
+    appless = true;
+    try {
+      await turn(c, session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "open", url: browserFixture.url })}`, 150_000, { always: true, log: appLogFile });
+    } finally { appless = wasAppless; }
+    if (!browserFixture.seen.some((r) => r.path === "/")) fail("the bot's Browser tool loaded nothing: the fixture site saw no request");
+    await until("the bot's page among the host's targets", 30_000, () => ([...hostCdp!.frames.values()].some((f) => f.url.startsWith(browserFixture!.url)) ? true : undefined), 500).catch(() => undefined);
+    lines.push("browser with no window: the bot's Browser tool opened the fixture page, loaded by the host's browser");
+    // 5. The engine restarts on the same home: it adopts the running host (its lock) and starts no second.
+    stoppingDaemon = true;
+    const gone = new Promise<void>((r) => first.proc.once("exit", () => r()));
+    try { process.kill(first.proc.pid!, "SIGTERM"); } catch { /* gone */ }
+    await Promise.race([gone, sleep(30_000)]);
+    stoppingDaemon = false;
+    if (alive(first.proc)) fail("the first daemon did not stop on SIGTERM");
+    if (!processAlive(hostPid)) fail("the host went with the engine");
+    const second = await startDaemonProc(daemonEnv);
+    c.close();
+    c = (await appDriver()).client;
+    await until("the restarted engine adopting the host", 60_000, () => { const t = readLog(second.log); return /\[host\] a host holds the lock \(pid \d+\): adopted/.test(t) && readyCount(t) > 0 ? true : undefined; }, 500);
+    if (/\[host\] starting the host/.test(readLog(second.log))) fail("the restarted engine started a second host");
+    if (hostLockPid(home) !== hostPid || !processAlive(hostPid)) fail(`the host after the restart is not the same one (lock pid ${hostLockPid(home)}, first ${hostPid})`);
+    lines.push(`adopted: the restarted engine found the host (pid ${hostPid}) by its lock, heard it ready again, and started none`);
+    // 6. Three crashes in two minutes: the next start is in safe mode, which covers the host's UI parts only.
+    hostCdp.close();
+    hostCdp = undefined;
+    let pid = hostPid;
+    for (let i = 1; i <= 3; i++) {
+      const before = readyCount(readLog(second.log));
+      try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
+      pid = await until(`the host started again after crash ${i}`, 90_000, () => { const p = hostLockPid(home); return p !== undefined && p !== pid && processAlive(p) && readyCount(readLog(second.log)) > before ? p : undefined; }, 300);
+    }
+    const daemonText = readLog(second.log);
+    if (!/\[host\] ready: [^\n]*, in safe mode/.test(daemonText)) fail(`the host after three crashes is not in safe mode (the engine logged: ${daemonText.split("\n").filter((l) => l.includes("[host]")).slice(-6).join(" | ")})`);
+    hostCdp = await connectHost("the safe-mode host's DevTools port");
+    await until("the island in the safe-mode host", 60_000, () => islandTarget(hostCdp!), 300);
+    await sleep(3_000);
+    if ((await backgroundPart(hostCdp, id)) !== undefined) fail("the safe-mode host still mounted the third-party background part");
+    const still = (await c.request<{ plugin: { state: string; enabled?: boolean } }>("plugin.get", { id }).catch(() => undefined))?.plugin;
+    if (still === undefined || still.state !== "running") fail(`the engine's copy of the plugin left running in safe mode: ${JSON.stringify(still)}`);
+    lines.push("safe mode: after three crashes the host came back in safe mode with its island and no third-party part, while the engine kept the plugin running");
+    record(n, "PASS", lines.join("; "));
+  } catch (err) {
+    record(n, statusOf(err), `${why(err)}${lines.length > 0 ? ` (after: ${lines.join("; ").slice(0, 600)})` : ""}`);
+  } finally {
+    c?.close();
+    hostCdp?.close();
+  }
+}
+// lane HS: end. ------------------------------------------------------------------------------------------------------
 
 /** CPU seconds a process has used so far (`ps`'s cumulative time), or undefined when it is gone. */
 function cpuSeconds(pid: number): number | undefined {

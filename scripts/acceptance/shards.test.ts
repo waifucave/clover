@@ -45,7 +45,8 @@ describe("the split", () => {
   });
 
   test("the rows that measure run alone after the parallel phase: the stage (card timing, stream cost), the tab flash, the cold start, idle", () => {
-    expect(serialUnits()).toEqual(["stage", "tab-flash", "cold", "idle"]);
+    // lane HS: and the host's row, alone too (its own daemon starts the host, so it shares no shard's home).
+    expect(serialUnits()).toEqual(["stage", "tab-flash", "cold", "idle", "host"]);
     for (const s of [STAGE_STEP, TAB_FLASH_STEP, COLD_START_STEP, IDLE_STEP]) expect(units().find((u) => u.rows.includes(s))!.phase).toBe("serial");
     for (const n of [1, 2, 3, 4]) expect(planShards(n).flat()).not.toEqual(expect.arrayContaining(["stage"]));
   });

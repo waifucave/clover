@@ -1242,7 +1242,8 @@ function makePair(): Pair {
     },
     // A test-marked build never registers a login item or starts the daemon through the OS (its core is started by
     // the test itself): no launcher.
-    ...(binary !== undefined && typeof __MOSS_TEST_BUILD__ !== "string" ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
+    // lane HS: the host never starts the engine (the engine starts it; an app opening starts the engine, §3.1).
+    ...(binary !== undefined && program === "code" && typeof __MOSS_TEST_BUILD__ !== "string" ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
     // The token goes only to this user's own daemon, which proves it holds it (lane C's protocol.prove): on Windows a
     // pipe's name is in a namespace every user shares.
     prove: { pid: process.pid },
