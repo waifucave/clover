@@ -314,7 +314,7 @@ function FacePicker(props: { name: string; face?: BotFace; onPick: (face: BotFac
   });
   const set = (change: Partial<Record<keyof BotFace, string | undefined>>): void => {
     const all = { ...pinned, ...change };
-    const next: BotFace = Object.fromEntries(Object.entries(all).filter(([, v]) => v !== undefined)) as BotFace;
+    const next = Object.fromEntries(Object.entries(all).filter(([, v]) => v !== undefined)) as BotFace;
     props.onPick(Object.keys(next).length === 0 ? null : next, "Face saved.");
   };
   const pick = (shape: string | undefined, color: string | undefined): void => set({ shape, color });

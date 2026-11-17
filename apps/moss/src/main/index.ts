@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TOOL_AVAILABILITIES, type MossHelloResult, type ToolAvailability } from "@waifucave/moss-protocol";
+import { BotFace as ProtocolBotFace, TOOL_AVAILABILITIES, type MossHelloResult, type ToolAvailability } from "@waifucave/moss-protocol";
 import { daemonEndpoint, type DaemonClient } from "./client";
 import { EngineConnection, locateEngine, osLauncher, tokenPath, type ConnectionState } from "./connection";
 import { MossEngine } from "./engine";
@@ -491,13 +491,11 @@ function wireBridge(): void {
     if (typeof p.instructions === "string") patch.instructions = p.instructions.slice(0, 200_000);
     for (const k of ["model", "effort"] as const) if (p[k] === null || typeof p[k] === "string") patch[k] = p[k] === null ? null : String(p[k]).slice(0, 200);
     if (p.face === null) patch.face = null;
-    else if (p.face !== null && typeof p.face === "object") {
-      const f = p.face as { shape?: unknown; color?: unknown; eyes?: unknown; temper?: unknown };
-      const pin = (v: unknown) => (typeof v === "string" && /^[A-Za-z0-9#-]{1,32}$/.test(v) ? v : undefined);
-      patch.face = {
-        ...(pin(f.shape) !== undefined ? { shape: pin(f.shape)! } : {}), ...(pin(f.color) !== undefined ? { color: pin(f.color)! } : {}),
-        ...(pin(f.eyes) !== undefined ? { eyes: pin(f.eyes)! } : {}), ...(pin(f.temper) !== undefined ? { temper: pin(f.temper)! } : {}),
-      };
+    else if (p.face !== undefined) {
+      // The record's own schema (four traits, the kit's names or a #rrggbb colour): anything else isn't sent.
+      const face = ProtocolBotFace.safeParse(p.face);
+      if (!face.success) return false;
+      patch.face = face.data;
     }
     return engine.editBot(id, patch);
   });

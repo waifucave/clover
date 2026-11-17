@@ -1,12 +1,10 @@
 // What MOSS's main process hands its window (spec §3.6 "What the engine gives MOSS as plain data", §6.10): plain data,
 // states and names, never a sealed card's text and never markup. The window draws it with React text nodes only. Types
 // alone, shared by the main process and the window (no Node, no DOM).
-import type { ActivityState, BotFace as ProtocolBotFace, ToolAvailability } from "@waifucave/moss-protocol";
+import type { ActivityState, BotFace, ToolAvailability } from "@waifucave/moss-protocol";
 
-/** A face's pinned traits (§6.9): shape, colour, eyes and temper, each optional, the rest made from the name. The record's
- *  `BotFace` is being widened to the four (the controller's ruling of 2026-11-17, lane BT); until it is, an engine keeps
- *  what its shape knows. */
-export type BotFace = ProtocolBotFace & { eyes?: string; temper?: string };
+/** A face's pinned traits (§6.9, lane BT's record): shape, colour, eyes and temper, each optional, the rest from the name. */
+export type { BotFace };
 
 /** The engine pieces the window stands on, each served by its own lane: until a piece is served, the window says it is
  *  waiting for it, never shows something made up. */

@@ -3,7 +3,7 @@
 // plugins with tools, and Settings' data. Made-up data for the tests and the renders only; nothing here is a real
 // person's, and the real engine never sees it.
 import { createHash } from "node:crypto";
-import { cardHashInput, type ActivityState, type Card, type RoutineView } from "@waifucave/moss-protocol";
+import { cardHashInput, type ActivityState, type BotFace, type Card, type RoutineView } from "@waifucave/moss-protocol";
 
 export interface FixtureBot {
   name: string;
@@ -11,7 +11,7 @@ export interface FixtureBot {
   instructions?: string;
   mood: ActivityState;
   tool?: string;
-  face?: { shape?: string; color?: string };
+  face?: BotFace;
   unread?: boolean;
   /** Minutes ago of the last line. */
   ago: number;
