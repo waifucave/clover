@@ -460,17 +460,21 @@ export class MossEngine {
     };
   }
 
-  /** The bot-scoped settings plugins declare (a voice plugin's voice for this bot), with this bot's values. */
+  /** Every plugin's bot-scoped settings for one bot (a voice plugin's voice), with this bot's values (`bot.pluginSettings`),
+   *  for the window to draw from their schema. A secret is never drawn here. */
   async botSettings(bot: string): Promise<BotSetting[] | { waiting: true }> {
-    const plugins = await this.read<{ plugins: { id: string; name: string; enabled: boolean }[] }>("plugins", "plugin.list");
-    if (plugins === undefined) return { waiting: true };
+    type Row = Omit<BotSetting, "pluginId" | "pluginName" | "options"> & { scope?: string; options?: (string | { value: string; title: string | { en: string } })[]; title: string | { en: string }; description?: string | { en: string } };
+    const r = await this.read<{ plugins: { pluginId: string; name: string | { en: string }; settings: Row[] }[] }>("bots", "bot.pluginSettings", { id: bot });
+    if (r === undefined) return { waiting: true };
     const out: BotSetting[] = [];
-    for (const p of plugins.plugins.filter((x) => x.enabled)) {
-      const r = await this.client?.request<{ settings: (Omit<BotSetting, "pluginId" | "pluginName" | "options"> & { scope: string; options?: (string | { value: string; title: string })[] })[] }>("plugin.settings.get", { id: p.id, bot }, 5_000).catch(() => undefined);
-      for (const s of r?.settings ?? []) {
-        if (s.scope !== "bot" || s.type === "secret") continue;
-        const { scope: _scope, options, ...rest } = s;
-        out.push({ ...rest, pluginId: p.id, pluginName: p.name, ...(options !== undefined ? { options: options.map((o) => typeof o === "string" ? { value: o, title: o } : o) } : {}) });
+    for (const p of r.plugins) {
+      for (const s of p.settings) {
+        if ((s.scope !== undefined && s.scope !== "bot") || s.type === "secret") continue;
+        const { scope: _scope, options, title, description, ...rest } = s;
+        out.push({
+          ...rest, title: textOf(title), ...(description !== undefined ? { description: textOf(description) } : {}), pluginId: p.pluginId, pluginName: textOf(p.name),
+          ...(options !== undefined ? { options: options.map((o) => typeof o === "string" ? { value: o, title: o } : { value: o.value, title: textOf(o.title) }) } : {}),
+        });
       }
     }
     return out;

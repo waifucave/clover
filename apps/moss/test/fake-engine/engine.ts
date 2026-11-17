@@ -327,6 +327,12 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
           ] };
         }
         return { settings: [] };
+      case "bot.pluginSettings":
+        piece("bots", method);
+        return { plugins: [{ pluginId: "moss/voice", name: "MOSS Voice", settings: [
+          { key: "voice", type: "enum", title: "Voice", scope: "bot", required: false, options: [{ value: "fish:river", title: "River (Fish Audio)" }, { value: "fish:sol", title: "Sol (Fish Audio)" }], value: "fish:river", set: true },
+          { key: "silent", type: "boolean", title: "No voice for this bot", scope: "bot", required: false, value: false, set: false },
+        ] }] };
       case "plugin.settings.set":
         return { applied: true };
       default:
