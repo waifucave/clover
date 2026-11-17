@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ownDataRequest } from "../src/main/ui/files";
+import { declaredKind, ownDataRequest } from "../src/main/ui/files";
 
 mock.module("electron", () => ({ app: {}, ipcMain: {}, protocol: {}, webFrameMain: {}, BrowserWindow: class {} }));
 
@@ -53,6 +53,11 @@ describe("files that come with a point entry, on /_t/", () => {
       expect(r.headers.get("x-content-type-options")).toBe("nosniff");
       expect(r.headers.get("content-security-policy")).toContain("default-src 'none'");
     }
+  });
+  test("a manifest is never a data file, whichever separator its real path is written with (Windows uses \\)", () => {
+    const kinds = [{ kinds: [{ ext: [".json"], type: "json" as const, maxBytes: 1024 }] }];
+    for (const f of ["/p/lists/en/moss.json", "C:\\p\\lists\\en\\moss.json", "C:\\p\\lists\\en\\package.json"]) expect([f, declaredKind(kinds as never, f)]).toEqual([f, undefined]);
+    expect(declaredKind(kinds as never, "C:\\p\\lists\\en\\animals.json")).toBeDefined();
   });
   test("not a declared kind, not inside the folder, the manifest, a link out, traversal: refused", async () => {
     for (const p of ["lists/en/x.svg", "lists/en/run.js", "lists/fr/chat.json", "moss.json", "lists/en/moss.json"]) expect((await get("wordgame", p)).status, p).toBe(403);

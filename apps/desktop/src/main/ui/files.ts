@@ -87,7 +87,8 @@ function kindMedia(type: DataFilesView["kinds"][number]["type"], file: string): 
  *  two kinds claim an extension the first declared wins. */
 export function declaredKind(declared: readonly Pick<DataFilesView, "kinds">[], file: string): ModelServe | undefined {
   const lower = file.toLowerCase();
-  if (NOT_MODEL.test(lower.slice(lower.lastIndexOf("/") + 1))) return undefined;
+  // The base name, after either separator (a real path on Windows uses `\`).
+  if (NOT_MODEL.test(lower.slice(Math.max(lower.lastIndexOf("/"), lower.lastIndexOf("\\")) + 1))) return undefined;
   for (const f of declared) {
     for (const k of f.kinds) {
       if (!k.ext.some((e) => lower.endsWith(e))) continue;
