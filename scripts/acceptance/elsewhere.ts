@@ -21,6 +21,7 @@ import { SURFACE_COPY_STEP } from "./surface-copy-step";
 import { CARDS_STEP } from "./cards-step";
 import { AGENT_STEP, FULL_STEPS, OUTSIDE_STEP, SHELL_STEP, STAGE_STEP, ELSEWHERE_NOTES } from "./steps";
 import { EXAMPLE_NOTES_STEP } from "./example-steps";
+export { PARTS_ELSEWHERE, partElsewhere, type PartElsewhere } from "./elsewhere-parts";
 
 export type Elsewhere = { owner: "MC2" | "MOSS" | "retired"; why: string };
 

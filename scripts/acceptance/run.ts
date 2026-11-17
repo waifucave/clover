@@ -2850,7 +2850,8 @@ async function main(): Promise<void> {
         const r = (await c.request<{ result: { answer?: string } }>("command.run", { name: `${pageId}.report`, args: {} }).catch(() => ({ result: {} as { answer?: string } }))).result;
         return fail(`${why(err)} (the page said ${JSON.stringify(r.answer ?? "nothing")})`);
       });
-      const pageAnswer = (await c.request<{ result: { answer?: string } }>("command.run", { name: `${pageId}.report`, args: {} })).result.answer ?? "";
+      // The page hands its outcome to its host half once its call has come back, which is after the question resolved.
+      const pageAnswer = await until("the page's own word of its answer", 15_000, async () => (await c.request<{ result: { answer?: string } }>("command.run", { name: `${pageId}.report`, args: {} })).result.answer, 300).catch(() => "");
       const resolvedAnswers = (resolved.answers ?? {}) as Record<string, string>;
       if (!pageAnswer.startsWith("answered ") || resolvedAnswers[question] !== answerLabel) wrong.push(`its page's conversation.answer: the page said ${JSON.stringify(pageAnswer)}, the question resolved with ${JSON.stringify(resolvedAnswers)}`);
       else {
@@ -3058,9 +3059,16 @@ async function main(): Promise<void> {
       netSite = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => (new URL(req.url).pathname === "/net-page" ? new Response(NET_BODY) : new Response("not here", { status: 404 })) });
       const port = netSite.port;
       const parse = (text: string, mark: string) => Object.fromEntries(text.slice(text.indexOf(mark)).split(/\s+/).slice(1).map((kv) => [kv.slice(0, kv.indexOf("=")), kv.slice(kv.indexOf("=") + 1)]));
+      // A code session's tools are the ones there when it starts: each probe runs in one started after its plugin's OK.
+      // AG: remove the restart when list changes reach a running session
+      let probeSession = session!;
+      const freshProbeSession = async (folder: string) => {
+        probeSession = await keyedCodeSession(c, folder);
+        await c.request("session.attach", { id: probeSession });
+      };
       const probeTurn = async (ask: string, mark: string) => {
         const seen = fake!.requests.length;
-        const { events, cards: carded } = await turn(c, session!, ask, 150_000);
+        const { events, cards: carded } = await turn(c, probeSession, ask, 150_000);
         const mine = fake!.requests.slice(seen);
         // The probe's own call and answer (a deferred probe is loaded through Glossary first).
         const called = mine.map((r) => r.toolUse).find((t) => t !== undefined && /(NetProbe|StdioProbe)$/.test(t)) ?? mine.find((r) => r.toolUse !== undefined)?.toolUse;
@@ -3087,6 +3095,7 @@ async function main(): Promise<void> {
       writeFileSync(join(folder, "stdio", "targets"), `${port}\n${hookTarget?.port ?? 9}\n`);
       const net = await install({ from: "folder", path: folder });
       if (!net.text.includes(`localhost:${port}`)) fail(`${net.id}'s OK card doesn't name the host it's granted (localhost:${port}): ${net.text.slice(0, 300)}`);
+      await freshProbeSession("acceptance-work-net");
       // Every part runs and is said, the wrong ones together at the end (one run shows all of them).
       const wrong: string[] = [];
       const listeners = hookTarget?.connections ?? 0;
@@ -3120,6 +3129,7 @@ async function main(): Promise<void> {
         pastedId = wrapped.id;
         if (!wrapped.text.includes(OPEN_NETWORK_LINE)) wrong.push(`${wrapped.id}'s OK card doesn't say it reaches any host ("${OPEN_NETWORK_LINE}…"): ${wrapped.text.slice(0, 300)}`);
         try {
+          await freshProbeSession("acceptance-work-net-pasted");
           const pasted = await probeTurn("ACCEPTANCE-NETPROBE accnet", "acceptance-net-pong");
           pastedSeen = pasted.text.slice(pasted.text.indexOf("acceptance-net-pong") + 20, pasted.text.indexOf("acceptance-net-pong") + 200);
           if (!pasted.said.granted?.startsWith("200:") || !pasted.said.granted.includes(NET_BODY)) wrong.push(`${pasted.called} (a pasted config, open network) didn't reach the run's site: granted=${pasted.said.granted}`);
@@ -3133,8 +3143,9 @@ async function main(): Promise<void> {
         try {
           const pastedUrl = await install({ from: "wrap", kind: "mcp-url", value: remote.url });
           pastedUrlId = pastedUrl.id;
+          await freshProbeSession("acceptance-work-net-url");
           const seen = fake!.requests.length;
-          const { events } = await turn(c, session!, `ACCEPTANCE-CALL HttpEcho {"text":"from-the-bot"}`, 150_000);
+          const { events } = await turn(c, probeSession, `ACCEPTANCE-CALL HttpEcho {"text":"from-the-bot"}`, 150_000);
           const mine = fake!.requests.slice(seen);
           const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes(HTTP_MCP_MARK));
           if (result === undefined || !result.text.includes("text=from-the-bot")) {

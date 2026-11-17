@@ -598,6 +598,11 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
     //    its host through its proxy, with the key, which never shows in an answer.
     // Its tools in a code session started after its install (a code session's tools are the ones there when it starts).
     // AG: remove the restart when list changes reach a running session
+    // Its server starts once the key is set: the session starts after it has listed its tools (else it starts without them).
+    await until("example-weather's tools listed after its key", 30_000, async () => {
+      const r = await rpc.request<{ plugins: { pluginId: string; tools: { name: string }[] }[] }>("tool.permissions", {}).catch(() => ({ plugins: [] }));
+      return r.plugins.some((p) => p.pluginId === id && p.tools.some((t) => t.name === "save_place")) ? true : undefined;
+    });
     const work = ctx.codeSession !== undefined ? await ctx.codeSession("example-weather-work") : session;
     const saved = await callTurn(ctx, work, "save_place", { place: "Lisbon" });
     if (saved.cards.length === 0) fail("save_place (contained, on a networked plugin) ran with no card");

@@ -44,6 +44,7 @@
 //    within a few seconds (the sidebar follows `bot_removed`).
 //
 // Each step's failure starts with its number and clause, so a red row names the step.
+import { partElsewhere } from "./elsewhere-parts";
 import { ownTurnCompleted } from "./turn-end";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -432,7 +433,9 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   // at her tab draws the card as placeholders: every card frame in the render window is moss-sealed://placeholder,
   // none moss-sealed://card, and the app logs no sealed ask for a render window. Then her card is pressed in the
   // user's own window as usual.
-  await own(() => stepOf("6b. while her card waits, a look at her tab draws it as placeholders, never a live card frame", async () => {
+  const away6b = partElsewhere("workshop", "6b");
+  if (away6b !== undefined) done.push(`6b runs elsewhere (${away6b.owner === "MOSS" ? "lane MA's moss unit" : away6b.owner}): ${away6b.why}`);
+  else await own(() => stepOf("6b. while her card waits, a look at her tab draws it as placeholders, never a live card frame", async () => {
     if (peerSession === undefined) fail("no peer session (step 6 didn't make one)");
     let look: { text: string; isError: boolean } | undefined;
     const looking: ExampleCtx = {
