@@ -228,7 +228,9 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
     // packages/runtime/src/provider/keychain-store.ts` EMPTY; the mirror stands.
     // 0.0.80 → 0.0.81 (a tool that returns in one session is never referenced against an eager declaration):
     // `git diff v0.0.80 v0.0.81 -- packages/runtime/src/provider/keychain-store.ts` EMPTY; the mirror stands.
-    expect(pkg.version).toBe("0.0.81");
+    // 0.0.81 → 0.0.82 (a tool the request offers is never refused after a reopen): `git diff v0.0.81 v0.0.82 --
+    // packages/runtime/src/provider/keychain-store.ts` EMPTY; the mirror stands.
+    expect(pkg.version).toBe("0.0.82");
   });
 
 
