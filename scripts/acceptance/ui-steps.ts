@@ -2870,11 +2870,21 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // A plugin that is off is not a target: switched off, the pill's menu no longer lists it (and the daemon refuses a send to it).
       await rpc.request("plugin.setEnabled", { id, enabled: false }, 30_000);
       await until(`${id} off`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "off") ? true : undefined));
-      await sleep(800);
-      if ((await cdp.evaluate(s, "document.querySelectorAll('[role=menuitemradio]').length").catch(() => 0)) === 0) await pillPress("the pill's target button again", "button[data-menu-toggle=targets]");
-      await sleep(600);
-      const stillListed = await cdp.evaluate(s, "[...document.querySelectorAll('[role=menuitemradio]')].some((e) => (e.textContent || '').includes('Acceptance window'))").catch(() => undefined);
-      const listed = await cdp.evaluate(s, "[...document.querySelectorAll('[role=menuitemradio]')].map((e) => (e.textContent || '').trim()).join(' | ')").catch(() => "?");
+      // The pill learns of the plugin going off by an event, and its menu is the list it holds when it is read: read it until it
+      // no longer lists the plugin (the menu closed and opened again between readings, so each one is a fresh read), for at
+      // most 20 s. A fixed wait read a list the event had not reached yet on a loaded runner.
+      let stillListed: boolean | undefined = true;
+      let listed = "?";
+      for (const end = Date.now() + 20_000; Date.now() < end; ) {
+        await sleep(800);
+        if ((await cdp.evaluate(s, "document.querySelectorAll('[role=menuitemradio]').length").catch(() => 0)) === 0) await pillPress("the pill's target button again", "button[data-menu-toggle=targets]");
+        await sleep(600);
+        stillListed = await cdp.evaluate(s, "[...document.querySelectorAll('[role=menuitemradio]')].some((e) => (e.textContent || '').includes('Acceptance window'))").then((v) => v as boolean, () => undefined);
+        listed = String(await cdp.evaluate(s, "[...document.querySelectorAll('[role=menuitemradio]')].map((e) => (e.textContent || '').trim()).join(' | ')").catch(() => "?"));
+        if (stillListed === false) break;
+        // Close it, so the next reading opens it afresh.
+        await pillPress("the pill's target button, to close the list", "button[data-menu-toggle=targets]").catch(() => undefined);
+      }
       if (stillListed !== false) fail(`the pill still lists the plugin as a target while it is off (menu: ${String(listed)})`);
       const offSaid = `switched off (plugin.setEnabled), the pill's menu no longer lists it (it lists: ${String(listed).slice(0, 80)})`;
       return `${id} installed from its folder, OK'd on its card ${ok}; in Alpha's tab it filled composer.action (its button pressed in the window), conversation.message keyed user (it drew ${JSON.stringify(user.slice(0, 40))}), the tool call's card (${carded}), conversation.message.extra (${extra.attrs["data-kind"]} under a message) and tool.result for ${toolResult.attrs["data-tool"]} (the call's result in its cell); the Dispatch pill listed its pill.target, a pick and the Send circle sent the words to its host handler (${reported.slice(0, 80)}); its probe: ${listsSaid}; ${hooksSaid}; useUserSend and useComposerHost are undefined for it; useKept kept 2 over a remount; useDrag offered text and claimed it; useMenu from a click answered ${menuSaid}; useOpen answered ${openSaid.slice(0, 80)}; ${offSaid}`;
