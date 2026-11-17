@@ -233,7 +233,7 @@ function BotPage(props: { bot: BotRow }) {
         )}
       </Card>
       <PluginSettings bot={id} />
-      <Card title="Face" id="face" note="A face is made from the name. Pin a shape or a colour to keep it.">
+      <Card title="Face" id="face" note="A face is made from the name. Pin any of its four traits to keep it.">
         <FacePicker name={rec.name} {...(rec.face !== undefined ? { face: rec.face } : {})} onPick={(face, said) => void edit({ face }, said)} />
       </Card>
       <Card title="Instructions" id="instructions" note="Who the bot is, how it talks, what it cares about.">
