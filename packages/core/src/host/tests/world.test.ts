@@ -152,7 +152,9 @@ test("a checkout's start on macOS goes through Launch Services with the run's en
   const w = engineHostWorld({ home, os: "darwin", profile: "dev", release: "1.111.1", run, dist: false, testBuild: false, env: { MOSS_HOST_COMMAND: cmd, MOSS_HOME: home, HOME: "/tmp/u", SECRET_THING: "x" }, stopHost: () => false, startFailed: () => {} });
   w.start(w.source()!.bundlePath, { safeMode: true });
   await new Promise((r) => setTimeout(r, 5));
-  expect(runs[0]!.slice(0, 5)).toEqual(["open", "-n", "-g", "-a", "/x/node_modules/electron/dist/Electron.app"]);
+  expect(runs[0]!.slice(0, 3)).toEqual(["open", "-n", "-g"]);
+  expect(runs[0]!.slice(runs[0]!.indexOf("-a"), runs[0]!.indexOf("-a") + 2)).toEqual(["-a", "/x/node_modules/electron/dist/Electron.app"]);
+  expect(runs[0]).toContain(join(home, "logs", "host.out.log"));
   expect(runs[0]).toContain(`MOSS_HOME=${home}`);
   expect(runs[0]).toContain("HOME=/tmp/u");
   expect(runs[0]!.join(" ")).not.toContain("SECRET_THING");

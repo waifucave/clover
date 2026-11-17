@@ -14,6 +14,7 @@ import type { PeerFacts } from "../../packages/core/src/platform/caller-probe";
 import { MemoryNetwork } from "../../packages/core/src/links/memory-wire";
 import { USAGE_INERT } from "../../packages/core/src/usage/wiring";
 import { fakeExa, searchOnlySeam } from "./fake-exa";
+import { hostLockPid } from "./host-step";
 
 const runPid = Number(process.env.MOSS_ACCEPTANCE_RUN_PID);
 const userHome = process.env.MOSS_ACCEPTANCE_USER_HOME;
@@ -26,7 +27,10 @@ if (!process.env.MOSS_HOME || !process.env.MOSS_TEST_KEYCHAIN) {
   process.exit(2);
 }
 
-const appPeer = (peer: PeerFacts): boolean => peer.pid !== null && (peer.pid === runPid || peer.ancestors[0] === runPid);
+// lane HS: and the background host this daemon's engine started from the checkout (MOSS_HOST_COMMAND, through Launch
+// Services, so launchd's child and not the run's): the process holding the home's host lock (an OS lock, host-step.ts).
+const hostRun = process.env.MOSS_HOST_COMMAND !== undefined;
+const appPeer = (peer: PeerFacts): boolean => peer.pid !== null && (peer.pid === runPid || peer.ancestors[0] === runPid || (hostRun && peer.pid === hostLockPid(process.env.MOSS_HOME!)));
 
 // Links up and public time, as a packaged daemon has them (its link sidecar), so the source run sees what they change
 // (a fractional SNTP offset once kept every card from the app, and only the packaged run showed it). Nothing leaves the

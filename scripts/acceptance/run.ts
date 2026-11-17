@@ -4318,7 +4318,8 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
   const lines: string[] = [];
   let c: MossClient | undefined;
   let hostCdp: Cdp | undefined;
-  const appLogFile = join(home, "logs", "app.log");
+  // The host's own output (its card ids whole; the home's app.log writes them as [x]): the engine's seam sends it here.
+  const appLogFile = join(home, "logs", "host.out.log");
   try {
     if (target !== "source") fail("the host's row needs the engine's source seam (MOSS_HOST_COMMAND), which a packaged core ignores");
     const hostPort = freePort();

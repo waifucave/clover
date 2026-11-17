@@ -16,8 +16,8 @@
 // * A source checkout (not a dist build) may name its own start (`MOSS_HOST_COMMAND`, a JSON argv), which the engine
 //   runs as its child in its own process group, so a run that started the engine ends the host with it.
 import { execFileSync, spawn } from "node:child_process";
-import { closeSync, constants, existsSync, openSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
-import { join, posix } from "node:path";
+import { closeSync, constants, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join, posix } from "node:path";
 import { APP_RECORDS_DIR, AppInstallRecord, HOST_LOCK_FILE, HOST_START_FILE, PROGRAM_IDENTIFIERS, compareReleases, type HostExitReason } from "@waifucave/moss-protocol";
 import { DEVELOPER_ID_CLAUSES, MOSS_TEAM_ID } from "../bundled-identities";
 import type { HostWorld } from "../contracts/host-supervisor";
@@ -125,6 +125,9 @@ export function parseHostCommand(raw: string | undefined): string[] | undefined 
   }
 }
 
+/** Where a host started from a checkout writes its output (under the home). */
+export const HOST_SOURCE_LOG = "logs/host.out.log";
+
 /** The `.app` a checkout's program sits in (its Electron.app), or undefined. */
 export function sourceBundleOf(program: string): string | undefined {
   const i = program.indexOf(".app/");
@@ -224,7 +227,10 @@ export function engineHostWorld(input: EngineHostWorldInput): HostWorld & HostWo
         if (bundle !== undefined) {
           // Through Launch Services, as the real start is: the host is then launchd's child and its own responsible
           // process, never the engine's (whose children the caller check never takes for the app).
-          const argv = ["open", "-n", "-g", "-a", bundle, ...hostEnvArgs(input.env), "--args", ...command.slice(1), ...(opts.safeMode ? ["--safe-mode"] : [])];
+          // Its output to the home's logs (a checkout's run only: a release's host has none).
+          const out = join(input.home, HOST_SOURCE_LOG);
+          try { mkdirSync(dirname(out), { recursive: true }); } catch { /* open says so */ }
+          const argv = ["open", "-n", "-g", "--stdout", out, "--stderr", out, "-a", bundle, ...hostEnvArgs(input.env), "--args", ...command.slice(1), ...(opts.safeMode ? ["--safe-mode"] : [])];
           void input.run(argv).then((r) => { if (!r.ok) input.startFailed("Launch Services refused the host"); });
           return;
         }

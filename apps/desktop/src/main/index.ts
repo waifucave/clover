@@ -1726,6 +1726,9 @@ async function requestQuit(source: string): Promise<void> {
   if (leaving) return;
   // lane HS: the host never quits the pair: the OS's quit (a logout) is a leave on purpose, the menu's is "stop everything".
   if (program === "host") { if (source === "tray") await hostStopEverything(); else await leaveFor(hostDeps(), "quit-everything"); return; }
+  // lane HS: with a background host owning the screen, quitting MOSS Code quits this window's program alone: the engine,
+  // the host and the bots keep working (spec §3.1). Stand-in until the pair is retired (lanes RT, RL, then HS).
+  if (program === "code" && mountNow.tray === "none" && pair?.client !== undefined) { log(`quit (${source}): MOSS Code only (the engine and the host keep working)`); exitApp(); return; }
   const client = pair?.client;
   let status: unknown;
   try {
