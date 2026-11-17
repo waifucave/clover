@@ -3,7 +3,8 @@
 //
 //   * each model they imported (`user:<folder>/<entry>` in a bot's layer, its files under
 //     `<home>/user-layers/avatars/<bot>/<folder>/`) is copied into the avatar plugin's own data folder,
-//     `<home>/plugin-data/moss/character/own/<bot>/<folder>/` (served to its tree's layer alone at `/_d/character/…`), and listed in its
+//     `<home>/plugin-data/moss/character/shared/own/<bot>/<folder>/` (what it shares with its own pages: served to its layer
+//     alone at `/_d/moss%2Fcharacter/own/…`), and listed in its
 //     `ownModels` setting with its format and the person's credit note;
 //   * the figure they chose becomes the plugin's `figure` setting: Alpha's when she had one, else the first bot's in
 //     name order (an own model as `own:<format>:<path>`, any other file as `url:<file>`, matched to the pack that has it);
@@ -67,7 +68,7 @@ export function moveFigureToAvatarPlugin(home: string, o: { log?: (line: string)
     } catch {
       own = [];
     }
-    const data = pluginDataFolder(home, AVATAR_PLUGIN);
+    const data = join(pluginDataFolder(home, AVATAR_PLUGIN), "shared");
     const picks = new Map<string, string>();
 
     for (const l of layers) {

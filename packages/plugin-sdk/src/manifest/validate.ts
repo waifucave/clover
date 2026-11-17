@@ -13,6 +13,9 @@ import {
 } from "@waifucave/moss-protocol";
 import { capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
 import { RETIRED_BOT_AVATAR, retiredCapability, retiredMessage, retiredPoint } from "../catalogs/retired";
+
+/** Extensions a data file is never: a document, a script, a style, SVG or wasm. */
+const ACTIVE_EXTENSIONS = /\.(html?|xhtml|xml|svgz?|m?js|cjs|mjs|ts|tsx|jsx|css|wasm|php|sh)$/i;
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { hookReadsStdinAsScript } from "./hook-command";
 import { CORE_POINTS, CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo, isPlatformDataPoint } from "../catalogs/points";
@@ -339,6 +342,14 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
       const wrong = Object.keys(d.files).filter((k) => !(isObject(props[k]) && (props[k] as Record<string, unknown>).format === "path"));
       if (wrong.length > 0) {
         f.error(refuses, "point_files", [...at, "files"], `\`files\` names the entry fields whose files come along; ${wrong.map((k) => `"${k}"`).join(", ")} ${wrong.length === 1 ? "isn't a field" : "aren't fields"} of \`fields\` with format \`path\``);
+        continue;
+      }
+      // A kind is inert data: an extension that names a page, a script, a style, SVG or wasm is refused, whatever type it
+      // is given (the app would serve it inert anyway; the declaration says what it means).
+      const active = Object.values(d.files).flatMap((spec) => (isObject(spec) && Array.isArray(spec.kinds) ? spec.kinds : []))
+        .flatMap((k) => (isObject(k) && Array.isArray(k.ext) ? k.ext : [])).filter((e) => typeof e === "string" && ACTIVE_EXTENSIONS.test(e));
+      if (active.length > 0) {
+        f.error(refuses, "point_files", [...at, "files"], `a point's files are inert data; ${[...new Set(active)].join(", ")} would be a page, a script, a style, SVG or wasm`);
         continue;
       }
     }

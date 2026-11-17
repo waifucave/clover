@@ -172,13 +172,25 @@ export function ownDataRequest(frameLayer: string | undefined, url: string): "no
   return frameLayer !== undefined && frameLayer === u.host ? "allow" : "refuse";
 }
 
-/** `/_d/<path…>`: a file of the layer's own data folder (`<home>/plugin-data/<its top-level id>/`), by the path the layer
- *  asked, to that layer only (whose plugins the folder is). The path is plain names (no dot files); the REAL path (links
- *  followed, at serve time) must still be inside the folder; and only the inert kinds above, never SVG. */
-export function ownDataFile(dataDir: string, pathname: string): { file: string; type: string; maxBytes: number } | "forbidden" | "missing" {
+/** The plugin a `/_d/<plugin id>/…` URL names (its first segment, percent-encoded), or undefined. */
+export function ownDataPlugin(pathname: string): string | undefined {
+  try {
+    const id = decodeURIComponent(pathname.slice("/_d/".length).split("/")[0] ?? "");
+    return /^[a-z0-9][a-z0-9-]{0,63}(?:\/[a-z0-9][a-z0-9-]{0,63})?$/.test(id) ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `/_d/<plugin id>/<path…>`: a file a plugin chose to share with its own pages, in the `shared/` folder of its data
+ *  folder (`<home>/plugin-data/<id>/shared/`), to its own layer only. Nothing else of its data folder (what its host code
+ *  keeps) is served. The path is plain names (no dot files); the REAL path (links followed, at serve time) must still be
+ *  inside that folder; and only the inert kinds above, never SVG. `sharedDir` is that folder. */
+export function ownDataFile(sharedDir: string, pathname: string): { file: string; type: string; maxBytes: number } | "forbidden" | "missing" {
+  const dataDir = sharedDir;
   let rel: string[];
   try {
-    rel = pathname.slice("/_d/".length).split("/").map((p) => decodeURIComponent(p));
+    rel = pathname.slice("/_d/".length).split("/").slice(1).map((p) => decodeURIComponent(p));
   } catch {
     return "missing";
   }

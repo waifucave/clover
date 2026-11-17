@@ -54,7 +54,7 @@ describe("which figure shows (the plugin's own one-at-a-time rule)", () => {
     const own = ownModelsOf(JSON.stringify([{ name: "Hero", format: "live2d", file: "own/alpha/k3x9q2/hero.model3.json", credit: "by someone" }, { format: "vrm", file: "../out.vrm" }, { file: "x" }]));
     expect(own).toEqual([{ name: "Hero", format: "live2d", file: "own/alpha/k3x9q2/hero.model3.json", credit: "by someone" }]);
     const c = chosen("own:live2d:own/alpha/k3x9q2/hero.model3.json", choicesOf(packs, own), formats);
-    expect(c).toMatchObject({ src: "/_d/character/own/alpha/k3x9q2/hero.model3.json", format: "live2d", from: "own", license: "by someone" });
+    expect(c).toMatchObject({ src: "/_d/moss%2Fcharacter/own/alpha/k3x9q2/hero.model3.json", format: "live2d", from: "own", license: "by someone" });
     expect(ownModelsOf("not json")).toEqual([]);
     expect(ownModelsOf(undefined)).toEqual([]);
   });

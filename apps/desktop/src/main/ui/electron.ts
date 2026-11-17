@@ -11,7 +11,7 @@ import type { ShellApp, ShellState } from "@waifucave/moss-plugin-sdk";
 import { type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, layerMicrophone, withMicrophone } from "./documents";
 import { checkMenu, frameGesture, openRefusal, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
-import { builtClientFile, dataFile, isInside, mediaType, modelResponse, ownDataFile, ownDataRequest, pluginFile } from "./files";
+import { builtClientFile, dataFile, isInside, mediaType, modelResponse, ownDataFile, ownDataPlugin, ownDataRequest, pluginFile } from "./files";
 import { SEALED_PRESS_WORDS } from "../sealed-pages";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { FileGrants, PICK_METHODS, grantResponse, routeDrop, routePick, type DialogRequest, type Grant } from "./file-grants";
@@ -78,8 +78,8 @@ export interface UiSessionOptions {
   /** Layers served without `Connection-Allowlist`: only the UI test's positive control for the DNS probe, and only in
    *  an unpackaged run (index.ts decides). */
   unguardedLayers?: ReadonlySet<string>;
-  /** The home's plugin data folders, `<home>/plugin-data`: a layer's own (its top-level plugin's) is served at `/_d/…`
-   *  to that layer only, inert data and media. */
+  /** The home's plugin data folders, `<home>/plugin-data`: what a plugin shares with its own pages (its `shared/`
+   *  folder) is served at `/_d/<id>/…` to its own layer only, inert data and media. */
   pluginDataDir?: string;
   /** A plugin's own icon for the Plugins page's lists (`plugin-icon.ts`): served at `/_icon/<id>` in the moss tree's
    *  layer only, a raster picture or nothing. */
@@ -224,11 +224,12 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       return new Response(bytes, { headers: { ...layerHeaders(type), "Content-Type": type } });
     }
     if (url.pathname.startsWith("/_d/") && options.pluginDataDir !== undefined) {
-      // The layer's own data folder (`<home>/plugin-data/<its top-level id>/`), to that layer only: inert data and media.
-      // A layer's label is its top-level plugin's id with `/` written `--`; the bundled tree's is `moss`.
-      const top = runtime.registry.find((p) => p.layer === layer)?.topId;
-      if (top === undefined || top.includes("/")) return forbidden();
-      const served = ownDataFile(join(options.pluginDataDir, top), url.pathname);
+      // What a plugin of this layer shares with its own pages (`<home>/plugin-data/<id>/shared/`): inert data and media, to
+      // this layer only (the frame was checked before, `ownDataRequest`; this host check is a second lock).
+      const id = ownDataPlugin(url.pathname);
+      const owner = id === undefined ? undefined : runtime.registry.find((p) => p.id === id && p.layer === layer);
+      if (owner === undefined) return forbidden();
+      const served = ownDataFile(join(options.pluginDataDir, ...owner.id.split("/"), "shared"), url.pathname);
       if (served === "forbidden") return forbidden();
       if (served === "missing") return notFound();
       return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, served.maxBytes);

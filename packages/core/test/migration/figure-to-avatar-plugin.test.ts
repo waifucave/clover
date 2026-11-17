@@ -50,8 +50,8 @@ test("Alpha's own model and her pick move into the avatar plugin; Luna's model i
     { name: "hero", format: "live2d", file: "own/alpha/k3x9/hero.model3.json", credit: "by someone" },
     { name: "luna", format: "vrm", file: "own/luna/q1/luna.vrm" },
   ]);
-  const data = pluginDataFolder(h, "moss/character");
-  expect(data).toBe(join(h, "plugin-data", "moss", "character"));
+  const data = join(pluginDataFolder(h, "moss/character"), "shared");
+  expect(data).toBe(join(h, "plugin-data", "moss", "character", "shared"));
   for (const f of ["own/alpha/k3x9/hero.model3.json", "own/alpha/k3x9/hero.moc3", "own/alpha/k3x9/motions/idle.motion3.json", "own/luna/q1/luna.vrm"]) expect([f, existsSync(join(data, f))]).toEqual([f, true]);
   // The planted link: not visible in the copy (false), the original untouched.
   expect(existsSync(join(data, "own/alpha/k3x9/link.json"))).toBe(false);
@@ -80,7 +80,7 @@ test("a pack's file kept as the pick becomes `url:`; a pick the plugin already h
   const lines = moveFigureToAvatarPlugin(h2);
   expect(lines.filter((l) => l.includes("was not found"))).toHaveLength(2);
   expect(filePluginSettings(h2).read("moss/character").account.figure).toBe("pack:acme#fox");
-  expect(existsSync(join(h2, "plugin-data", "moss", "character", "own"))).toBe(false);
+  expect(existsSync(join(h2, "plugin-data", "moss", "character", "shared", "own"))).toBe(false);
   // The fields leave even so: the core no longer reads them.
   expect(existsSync(userLayerFile(h2, "alpha"))).toBe(false);
 });

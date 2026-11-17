@@ -1,6 +1,6 @@
 // `/_t/` and the files that come with a plugin's point entries (`dataFiles`, a general capability: a point declares
 // `files` on a path field, and the core names each entry's folder and kinds), proven with a fixture that has nothing to
-// do with figures: a word-game plugin's word lists and sound bank. And `/_d/`: a layer's own data folder, to that layer
+// do with figures: a word-game plugin's word lists and sound bank. And `/_d/<id>/`: what a plugin shares with its own pages (its data folder's `shared/`), to its layer
 // only. Everything is judged by real path; nothing else changes on `/_t/` (themes keep images only).
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
@@ -31,9 +31,10 @@ beforeAll(async () => {
   symlinkSync(join(dir, "outside", "o.json"), join(words, "lists/en/link.json"));
   const plain = folder("plain", { "lists/en/animals.json": "[]", "a.png": "png" });
   const data = join(dir, "plugin-data");
-  folder("plugin-data/wordgame", { "own/saved.json": "{\"score\":1}", "own/pic.png": "png", "own/page.html": "<p>", "own/v.svg": "<svg/>", ".hidden.json": "{}" });
-  folder("plugin-data/other", { "theirs.json": "{}" });
-  symlinkSync(join(dir, "plugin-data", "other", "theirs.json"), join(dir, "plugin-data", "wordgame", "own", "link.json"));
+  // What each plugin shares with its pages is its data folder's `shared/`; the rest (its host code's) is never served.
+  folder("plugin-data/wordgame", { "shared/own/saved.json": "{\"score\":1}", "shared/own/pic.png": "png", "shared/own/page.html": "<p>", "shared/own/v.svg": "<svg/>", "shared/own/run.js": "x", "shared/own/m.wasm": "w", "shared/.hidden.json": "{}", "db.json": "{\"PROBE_SECRET\":\"dummy123\"}" });
+  folder("plugin-data/other", { "shared/theirs.json": "{}" });
+  symlinkSync(join(dir, "plugin-data", "other", "shared", "theirs.json"), join(dir, "plugin-data", "wordgame", "shared", "own", "link.json"));
   const registry = [plugin("wordgame", words, { dataFiles: [WORDS] }), plugin("plain", plain), plugin("other", plain)];
   const { installUiSession } = await import("../src/main/ui/electron");
   const ses = { protocol: { handle: (scheme: string, h: typeof handler) => { if (scheme === "moss-plugin") handler = h; } }, webRequest: { onBeforeRequest: () => {} } };
@@ -71,24 +72,36 @@ describe("files that come with a point entry, on /_t/", () => {
   });
 });
 
-describe("a layer's own data, on /_d/", () => {
-  test("its own folder's inert files, by real path; never HTML or SVG, never a dot file, never a link to another plugin's data", async () => {
-    const r = await own("wordgame", "own/saved.json");
+describe("what a plugin shares with its own pages, on /_d/<id>/", () => {
+  test("its shared folder's inert files, by real path; never HTML, SVG, a script or wasm, never a dot file, never a link to another's", async () => {
+    const r = await own("wordgame", "wordgame/own/saved.json");
     expect(r.status).toBe(200);
     expect(r.headers.get("content-type") ?? "").toContain("application/json");
-    expect((await own("wordgame", "own/pic.png")).status).toBe(200);
-    for (const p of ["own/page.html", "own/v.svg", "own/link.json"]) expect((await own("wordgame", p)).status, p).toBe(403);
-    for (const p of [".hidden.json", "own/../../other/theirs.json", "own/%2e%2e/%2e%2e/other/theirs.json", "own/nothing.json"]) expect((await own("wordgame", p)).status, p).toBe(404);
+    expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+    expect((await own("wordgame", "wordgame/own/pic.png")).status).toBe(200);
+    for (const p of ["own/page.html", "own/v.svg", "own/run.js", "own/m.wasm", "own/link.json"]) expect((await own("wordgame", `wordgame/${p}`)).status, p).toBe(403);
+    for (const p of [".hidden.json", "own/../../db.json", "own/%2e%2e/%2e%2e/db.json", "own/nothing.json", "OWN/../../DB.JSON"]) {
+      const st = (await own("wordgame", `wordgame/${p}`)).status;
+      expect(st === 403 || st === 404, `${p}: ${st}`).toBe(true);
+    }
   });
-  test("each layer reaches only its own folder; a frame of another layer is cancelled before the handler", async () => {
-    expect((await own("other", "theirs.json")).status).toBe(200);
-    expect((await own("other", "own/saved.json")).status).toBe(404);
-    expect(ownDataRequest("wordgame", "moss-plugin://wordgame/_d/own/saved.json")).toBe("allow");
-    expect(ownDataRequest("other", "moss-plugin://wordgame/_d/own/saved.json")).toBe("refuse");
-    expect(ownDataRequest(undefined, "moss-plugin://wordgame/_d/own/saved.json")).toBe("refuse");
-    expect(ownDataRequest("moss", "moss-plugin://wordgame/_d/own/saved.json")).toBe("refuse");
+  test("the data folder outside shared/ (its host code's) is never served: the planted dummy is not visible", async () => {
+    const r = await own("wordgame", "wordgame/../db.json");
+    const body = r.status === 200 ? await r.text() : "";
+    expect(body.includes("dummy123")).toBe(false);
+  });
+  test("each layer reaches only its own plugins' shared folders; a frame of another layer is cancelled before the handler", async () => {
+    expect((await own("other", "other/theirs.json")).status).toBe(200);
+    // Another layer's plugin named in the URL: refused on this host.
+    expect((await own("other", "wordgame/own/saved.json")).status).toBe(403);
+    expect((await own("wordgame", "other/theirs.json")).status).toBe(403);
+    expect(ownDataRequest("wordgame", "moss-plugin://wordgame/_d/wordgame/own/saved.json")).toBe("allow");
+    expect(ownDataRequest("other", "moss-plugin://wordgame/_d/wordgame/own/saved.json")).toBe("refuse");
+    expect(ownDataRequest(undefined, "moss-plugin://wordgame/_d/wordgame/own/saved.json")).toBe("refuse");
+    expect(ownDataRequest("moss", "moss-plugin://wordgame/_d/wordgame/own/saved.json")).toBe("refuse");
     expect(ownDataRequest("other", "moss-plugin://wordgame/_t/wordgame/x.json")).toBe("not-own-data");
-    // A layer no plugin is on is refused.
-    expect((await own("nobody", "x.json")).status).toBe(403);
+    // A layer no plugin is on, or an id that isn't one, is refused.
+    expect((await own("nobody", "nobody/x.json")).status).toBe(403);
+    expect((await own("wordgame", "..%2Fx/x.json")).status).toBe(403);
   });
 });

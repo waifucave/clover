@@ -861,6 +861,11 @@ describe("a hook's command never runs its stdin (its input) as a script", () => 
 
   describe("files that come with a point's entries (`files` on a declaration; a word-list point, nothing about figures)", () => {
     const declares = (files: unknown, list: Record<string, unknown> = { type: "string", format: "path" }) => validateManifest({ ...min(), engines: { moss: "^1.0.0" }, contributes: {}, ...{ host: { entry: "host/index.ts", declares: { "luna.lists": { shape: "list", fields: { type: "object", properties: { id: { type: "string" }, list } }, files } } } } });
+    test("a kind that names a page, a script, a style, SVG or wasm is refused, whatever its type", () => {
+      for (const ext of [".svg", ".html", ".js", ".mjs", ".css", ".wasm"]) {
+        expect([ext, declares({ list: { kinds: [{ ext: [".json"], type: "json" }, { ext: [ext], type: ext === ".svg" ? "image" : "text" }] } }).issues.map((i) => i.code)]).toEqual([ext, ["point_files"]]);
+      }
+    });
     test("kinds from the closed set on a `path` field pass", () => {
       expect(declares({ list: { kinds: [{ ext: [".json"], type: "json", maxBytes: 65536 }, { ext: [".mp3", ".ogg"], type: "audio" }] } }).issues).toEqual([]);
     });
