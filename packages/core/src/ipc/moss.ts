@@ -16,7 +16,7 @@
 import {
   MOSS_ERR, MOSS_METHODS, MOSS_PROTOCOL_MIN_VERSION, MOSS_ROLES, MOSS_PROTOCOL_VERSION, MossHelloParams, CODE_AGENT_LINE_NOTIFICATION, CODE_AGENT_MAX_LINE, ERR,
   PairStatus, encodeLine, helloVersionServed, type Caller, type MossHelloResult, type MossRole, type SessionKind,
-  CardPlacement, PresenceReport, type Program, type Surface,
+  CardPlacement, PresenceReport, type Program, type Surface, PLUGIN_ROLES, dataKindOfSession, kindCapability, type DataKind,
 } from "@waifucave/moss-protocol";
 import { createHash } from "node:crypto";
 import { ERR_UNAUTHORIZED, isRefusal, type MossTokens } from "../auth/moss-tokens";
@@ -171,6 +171,10 @@ export interface MossServerDeps {
   /** A plugin's granted capabilities (lane B's registry), for the `core.event`s that need one; without it a plugin's
    *  connection gets none of those. */
   pluginCapabilities?(pluginId: string): readonly string[] | undefined;
+  /** The kind of data a session is (`dataKindOfSession` over the session host's view; undefined: no such session), for the
+   *  capability gate of a read by kind (§3.6): a plugin reads a code session with `sessions.read`, a bot's conversation
+   *  with `conversation.read`, never one with the other's. */
+  sessionKind?(id: string): DataKind | undefined;
   /** Whether a plugin is on and running (a plugin's own settings events go only to one that is). */
   pluginRunning?(pluginId: string): boolean;
   readonly os?: DaemonPlatform;
@@ -395,7 +399,7 @@ export function createMossServer(deps: MossServerDeps): MossServer {
     const caller: Caller = answered ? { kind: "user", client: "app" } : conn.caller;
     // A plugin's connection: the method's capability, as its OK granted it (the registry's record, read per call).
     const lacking = gateMossRequest(conn.role, caller, method) === null
-      ? capabilityRefusal(conn.role, caller, method, caller.kind === "plugin" ? deps.pluginCapabilities?.(caller.pluginId) : undefined)
+      ? capabilityRefusal(conn.role, caller, method, caller.kind === "plugin" ? deps.pluginCapabilities?.(caller.pluginId) : undefined, params, { sessionKind: (id) => deps.sessionKind?.(id) })
       : null;
     if (lacking !== null && caller.kind === "plugin" && !capabilityLogged.has(`${caller.pluginId}\0${method}`)) {
       // Once per plugin and method (never what the call carried), so a dead button leaves a trace in the daemon's log.
@@ -418,7 +422,15 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       handler = own[method] ?? deps.handlers?.[method];
     }
     if (handler === undefined) throw new MossRpcError(ERR.METHOD_NOT_FOUND, `${method} is not served yet`);
-    return handler(conn, p.data);
+    const result = await handler(conn, p.data);
+    // A list of sessions is cut to the kinds the plugin reads (`conversation.*`, §3.6), as its watch is: the gate let the call
+    // through for a plugin that reads either kind.
+    if (method === "session.list" && caller.kind === "plugin" && PLUGIN_ROLES.includes(conn.role)) {
+      const have = deps.pluginCapabilities?.(caller.pluginId) ?? [];
+      const list = result as { sessions: { kind: SessionKind }[] };
+      return { ...list, sessions: list.sessions.filter((s) => have.includes(kindCapability("conversation.*", dataKindOfSession(s)))) };
+    }
+    return result;
   };
 
   const parseHello = (params: unknown): MossHelloParams => {

@@ -17,6 +17,7 @@
     "bots.read",
     "computers.read",
     "conversation.read",
+    "sessions.read",
     "account.read"
   ],
   "contributes": {
@@ -257,7 +258,8 @@
               "bot"
             ],
             "needs": [
-              "conversation.read"
+              "conversation.read",
+              "sessions.read"
             ],
             "doc": "The conversation view."
           },

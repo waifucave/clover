@@ -25,7 +25,7 @@
 //   `onData` listener directly. A plugin's terminals close when it stops or is removed (`forget`).
 import type { grantFiles } from "../../fence/plugin-grants";
 import { foldTitle, ROUTINE_FIRE_PAYLOAD_MAX } from "@waifucave/moss-plugin-sdk";
-import { topPluginIdOf, USAGE_METHODS, type BotView, type Caller, type DeviceView, type PlanReading, type SessionView } from "@waifucave/moss-protocol";
+import { dataKindOfSession, topPluginIdOf, USAGE_METHODS, type BotView, type DataKind, type Caller, type DeviceView, type PlanReading, type SessionView } from "@waifucave/moss-protocol";
 import type { UsageLedger } from "../../usage/ledger";
 import { listMemory, readMemory } from "../../bots/memory";
 import { botPaths } from "../../bots/paths";
@@ -40,7 +40,7 @@ import { deviceView } from "../../devices/rpc";
 import type { DeviceLinks } from "../../links/node";
 import type { TerminalOutput } from "../../tree/terminals";
 import { projectRecord, projectRecords, readsSealed, transientFor, type WireEvent } from "../../sessions/wire";
-import { listenerArg, stringArg, type ApiCallContext, type ApiHandlers } from "./router";
+import { listenerArg, stringArg, type ApiCallContext, type ApiHandler, type ApiHandlers } from "./router";
 
 /** Where each service is, read when a call arrives (undefined while it isn't running here). */
 export interface AreaServices {
@@ -49,6 +49,8 @@ export interface AreaServices {
   links(): DeviceLinks | undefined;
   /** The MOSS Browser (the bundled Browser tool's `browser.*`), once the daemon's parts have started it. */
   browser?(): BrowserService | undefined;
+  /** The Browser tool drove a tab (`browser.open`, `navigate`, `screenshot`, `cdp`): its live picture follows (`browser/picture-bridge.ts`). */
+  browserDrives?(ctx: ApiCallContext, tabId: string): void;
   /** Sends a core event to the app's connections (a layer's terminal output). */
   emitToApp?(event: { type: string; [key: string]: unknown }): void;
   now?(): number;
@@ -200,24 +202,31 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     return t;
   };
 
-  const handlers: ApiHandlers = {
-    "conversation.list": (_ctx, args) => {
+  /** The sessions of one kind only (`dataKindOfSession`): a session of the other kind is `not_found`. */
+  const readsOf = (kind: DataKind): Record<"list" | "get" | "watch" | "history" | "follow", ApiHandler> => {
+    const sessionOfKind = (id: string) => {
+      const v = sessionOf(id);
+      if (dataKindOfSession(v) !== kind) throw new ContractError("not_found", `no session ${id}`);
+      return v;
+    };
+    return {
+    list: (_ctx, args) => {
       const f = opt(args[0]);
       const kinds = Array.isArray(f.kinds) ? (f.kinds as string[]) : undefined;
-      return side().host.list(typeof f.bot === "string" ? { bot: f.bot } : {}).filter((v) => kinds === undefined || kinds.includes(v.kind));
+      return side().host.list(typeof f.bot === "string" ? { bot: f.bot } : {}).filter((v) => dataKindOfSession(v) === kind && (kinds === undefined || kinds.includes(v.kind)));
     },
-    "conversation.get": (_ctx, args) => sessionOf(stringArg(args, 0, "the session")),
-    "conversation.watch": (ctx, args) => {
+    get: (_ctx, args) => sessionOfKind(stringArg(args, 0, "the session")),
+    watch: (ctx, args) => {
       const listener = listenerArg<SessionView>(args, 0);
       const host = side().host;
-      return watch(ctx, () => host.watch((view) => listener(view)));
+      return watch(ctx, () => host.watch((view) => { if (dataKindOfSession(view) === kind) listener(view); }));
     },
-    "conversation.history": (ctx, args) => {
+    history: (ctx, args) => {
       const id = stringArg(args, 0, "the session");
       const page = opt(args[1]);
       const limit = typeof page.limit === "number" && page.limit >= 1 ? Math.min(Math.floor(page.limit), HISTORY_PAGE_MAX) : 50;
       const host = side().host;
-      const v = sessionOf(id);
+      const v = sessionOfKind(id);
       const opts = { kind: v.kind, sealed: sealedFor(ctx) };
       const eventsIn = (start: number, end: number) => projectRecords(host.history(id, { afterSeq: start - 1, limit: end - start }), opts);
       let end = Math.min(typeof page.before === "number" ? page.before : host.length(id), host.length(id));
@@ -244,13 +253,13 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     // `since` (an integer, -1 for everything) replays after the watch opens, a page at a time with a yield between
     // pages, at most the latest REPLAY_MAX events; what lands meanwhile, records and transient events alike, waits for
     // the replay and then follows in the order it came (#333/#334's review: a transient never overtakes the replay).
-    "conversation.follow": (ctx, args) => {
+    follow: (ctx, args) => {
       const id = stringArg(args, 0, "the session");
       const listener = listenerArg<WireEvent>(args, 1);
       const since = opt(args[2]).since;
       if (since !== undefined && !(Number.isInteger(since) && (since as number) >= -1)) throw new ContractError("invalid", "since is an event's seq, or -1 for every event");
       const host = side().host;
-      const v = sessionOf(id);
+      const v = sessionOfKind(id);
       const opts = { kind: v.kind, sealed: sealedFor(ctx) };
       const me = asPlugin(ctx);
       // The whole watch, its slot included, for a replay that fails (set once `watch` returns, before any page runs).
@@ -332,6 +341,15 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       });
       return unsubscribe;
     },
+    };
+  };
+
+  const handlers: ApiHandlers = {
+    // The reads of a conversation, by kind (§3.6): `conversation.*` serves bots' conversations (`conversation.read`) and
+    // `sessions.*` code sessions (`sessions.read`), each the same code over the sessions of its kind; a session of the
+    // other kind answers `not_found`, as a session that isn't there does.
+    ...Object.fromEntries(Object.entries(readsOf("bots")).map(([k, v]) => [`conversation.${k}`, v])),
+    ...Object.fromEntries(Object.entries(readsOf("sessions")).map(([k, v]) => [`sessions.${k}`, v])),
     "conversation.note": async (ctx, args) => {
       const id = stringArg(args, 0, "the session");
       const n = opt(args[1]);
@@ -615,7 +633,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
   };
   return {
     // The Browser tool's `browser.*` (bundled `moss` tree, `browser` capability): the browser read at each call.
-    handlers: { ...handlers, ...browserApiHandlers(() => s.browser?.()) },
+    handlers: { ...handlers, ...browserApiHandlers(() => s.browser?.(), s.browserDrives) },
     async forget(pluginId) {
       for (const [id, t] of [...terminals]) {
         if (t.pluginId !== pluginId) continue;

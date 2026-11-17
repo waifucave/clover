@@ -27,6 +27,7 @@
   },
   "capabilities": [
     "terminal",
-    "conversation.read"
+    "conversation.read",
+    "sessions.read"
   ]
 }

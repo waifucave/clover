@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { MOSS_METHODS } from "@waifucave/moss-protocol";
+import { isKindFamily, kindCapability, MOSS_METHODS } from "@waifucave/moss-protocol";
 
 const ROOT = resolve(import.meta.dir, "../../..");
 
@@ -82,7 +82,9 @@ describe("a bundled part's manifest lists the capability of each layer method it
     test(`${p.id}`, () => {
       const manifest = JSON.parse(readFileSync(join(p.dir, "moss.json"), "utf8")) as { capabilities?: string[] };
       const listed = manifest.capabilities ?? [];
-      const missed = walk(p.dir).filter((c) => !listed.includes(c.capability)).map((c) => `${c.method} needs ${c.capability} (${c.file})`);
+      // A family by kind (`session.*`: `conversation.*`) is met by either kind's capability; which one a call needs is the call's own (by the session it names).
+      const holds = (cap: string) => (isKindFamily(cap) ? (["sessions", "bots"] as const).some((k) => listed.includes(kindCapability(cap, k))) : listed.includes(cap));
+      const missed = walk(p.dir).filter((c) => !holds(c.capability)).map((c) => `${c.method} needs ${c.capability} (${c.file})`);
       expect(missed).toEqual([]);
     });
   }

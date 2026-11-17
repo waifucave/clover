@@ -12,7 +12,8 @@
     ]
   },
   "capabilities": [
-    "conversation.read"
+    "conversation.read",
+    "sessions.read"
   ],
   "contributes": {
     "ui": [
@@ -46,7 +47,8 @@
               "bot"
             ],
             "needs": [
-              "conversation.read"
+              "conversation.read",
+              "sessions.read"
             ],
             "doc": "The conversation view."
           }

@@ -13,6 +13,7 @@
   },
   "capabilities": [
     "conversation.read",
+    "sessions.read",
     "conversation.post",
     "approvals",
     "approvals.all",
@@ -57,7 +58,8 @@
               "approval"
             ],
             "needs": [
-              "conversation.read"
+              "conversation.read",
+              "sessions.read"
             ],
             "context": [
               "bot"
@@ -92,7 +94,8 @@
               }
             },
             "needs": [
-              "conversation.read"
+              "conversation.read",
+              "sessions.read"
             ],
             "context": [
               "bot"
@@ -161,7 +164,8 @@
               }
             },
             "needs": [
-              "conversation.read"
+              "conversation.read",
+              "sessions.read"
             ],
             "context": [
               "bot"

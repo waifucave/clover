@@ -49,6 +49,13 @@ import { MossFence } from "./fence/fence";
 import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
 import { dropPluginServers, pruneDroppedTools, toolPermissionMethods, toolSettingFor } from "./approvals/tool-permissions";
 import { createMossServer, laneMethodHandlers, type MossHandler, type MossServer } from "./ipc/moss";
+import { activityMossHandlers } from "./activity/api";
+import { ActivityTracker } from "./activity/derive";
+import { EngineActivityFeed } from "./activity/feed";
+import { browserPictureBridge, type TabFrames } from "./browser/picture-bridge";
+import { pictureWindowHandlers, type PictureSessions } from "./pictures/api";
+import { wireFeedEvents } from "./pictures/events";
+import { EngineLivePictures } from "./pictures/live-pictures";
 import { APP_RENDER_FEATURE, APP_RENDER_TIMEOUT_MS, appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
 import type { AppPeerPolicy } from "./platform/peer-signature";
 import { archiveMethods } from "./sessions/archive-rpc";
@@ -267,7 +274,7 @@ export interface BrowserHostInjection {
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
 import type { Level, NewSessionEvent, PluginProvenance } from "@waifucave/moss-protocol";
-import { AppRenderResult, BUNDLED_ROOT_PLUGIN, topPluginIdOf } from "@waifucave/moss-protocol";
+import { AppRenderResult, BUNDLED_ROOT_PLUGIN, topPluginIdOf, dataKindOfSession } from "@waifucave/moss-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, loginShellPathRetrier, type LoginShellPathDeps } from "./login-shell-path";
 import { describeDeadLegacyFiles, findDeadLegacyFiles } from "./migration/dead-legacy-files";
@@ -565,6 +572,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** B-M2: the daemon's one plugin host, injected (a test's). Absent: it starts over the plugin registry when the bot
    *  side opens it (`startPluginHost`). */
   pluginHost?: (registry: OpenedRegistry["registry"]) => Promise<DaemonPluginHost>;
+  /** The frames of the tabs the Browser tool drives (lane HS's `host.tab.frame`), for its live picture. Absent: no picture
+   *  is made (the host's source is wired where the background host lands; a test passes a fixture). */
+  tabFrames?: TabFrames;
   /** B-M2: false starts no plugin registry or host (and so no bot side over them). Default: they start once the store
    *  answers, with or without the links. */
   plugins?: false;
@@ -3409,6 +3419,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const mossLaneHandlers: Record<string, MossHandler> = {};
+  // The activity feed and the live pictures (spec revision 19, §3.6): one of each per daemon. The feed is read from the
+  // session host once the bot side is up (`activityTracker`), a picture is published by a tool through the plugin host.
+  const activityFeed = new EngineActivityFeed();
+  const livePictures = new EngineLivePictures({ clock: { now: () => Date.now() }, log: (line) => console.error(`[${line.split(":")[0]}] ${line.slice(line.indexOf(":") + 2)}`) });
+  const pictureSessions: PictureSessions = {
+    get: (id) => { const v = daemonParts?.bots?.host.get(id); return v === undefined ? undefined : { kind: dataKindOfSession(v), ...(v.bot !== undefined ? { bot: v.bot } : {}) }; },
+  };
+  let activityTracker: ActivityTracker | undefined;
+  const browserDrives = browserPictureBridge({ pictures: livePictures, sessions: pictureSessions, frames: opts.tabFrames });
+  Object.assign(mossLaneHandlers, pictureWindowHandlers({ pictures: livePictures, now: () => Date.now() }), laneMethodHandlers(Object.fromEntries(
+    Object.entries(activityMossHandlers(activityFeed)).map(([name, h]) => [name, async (params: unknown) => h(params)]),
+  )));
+  const stopFeedEvents = wireFeedEvents({ feed: activityFeed, pictures: livePictures, emit: (event) => void mossServer?.coreEvent(event) });
   // The late doors (the plugin registry's and the parts' methods, which join `mossLaneHandlers` after the socket
   // listens): each part says when its first start is done, or that it waits on the user (a locked store); a call for a
   // method not in yet waits for both (`MossServerDeps.lateDoors`), at most LATE_DOORS_MAX_MS.
@@ -3559,6 +3582,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // B: a plugin's granted capabilities, for the core events that need one (its OK's, from the registry).
     // What the plugin may use now, as its host half would (none while it is off, stopped, blocked or waiting for its OK).
     pluginCapabilities: (pluginId) => grantsInForce(partsRegistry?.registry.get(pluginId)),
+    // The kind of a session (code or bot), for a plugin's read by kind (`session.*`, §3.6).
+    sessionKind: (id) => { const v = daemonParts?.bots?.host.get(id); return v === undefined ? undefined : dataKindOfSession(v); },
     pluginRunning: (pluginId) => { const r = partsRegistry?.registry.get(pluginId); return r !== undefined && r.enabled && RUNNING_STATES.has(r.state); },
   });
   const server: IpcServer = startIpcServer({
@@ -3946,10 +3971,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // host half's confirm answered "not served on this computer" (the acceptance's add-ons row, 2026-11-13).
       approvals: pluginsBroker,
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
+      activity: activityFeed, pictures: livePictures, pictureSessions,
       log: (line) => console.error(line), emit: (event) => void mossServer?.coreEvent(event),
       // The API's areas on the other lanes' services, which come up with the links after this: read at each call.
       areas: {
         bots: () => daemonParts?.bots, node: () => daemonParts?.node, links: () => daemonLinks?.links ?? undefined, browser: () => daemonParts?.browser?.service,
+        browserDrives: browserDrives,
         emitToApp: (event) => void mossServer?.coreEvent(event, { to: (conn) => conn.role === "app" }),
         grants: () => pickedFiles,
         // `usage.*`: lane D's ledger (with the bot side) and this computer's plan readings.
@@ -3999,6 +4026,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     // B: the registry's transitions as plugin_changed / plugin_removed / plugin_found (ids and states only).
     const stopEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void mossServer?.coreEvent(event) });
+    // A plugin OK'd before revision 19 that holds a grant the split narrowed (`conversation.read`, `sessions.read`) reads
+    // neither kind of data until it asks again: its OK card is raised for the tree it runs, and its other grants go on.
+    void opened.registry.askStaleGrantsAgain().then((ids) => { if (ids.length > 0) console.error(`[plugins] asking again, for the split's reads by kind: ${ids.join(", ")}`); }, (err: unknown) => console.error(`[plugins] the split's OK cards weren't raised: ${(err as Error).message}`));
     // A removed plugin's picked files go with it.
     grantRegistry = opened.registry;
     const stopGrantDrops = opened.registry.watch((change) => {
@@ -4541,6 +4571,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const closeStarted = async (): Promise<void> => {
     const parts = daemonParts;
     daemonParts = undefined;
+    activityTracker?.stop();
+    activityTracker = undefined;
+    stopFeedEvents();
     // The plugins' hooks went with the bot side: an in-process delegation still running is refused until they're back.
     agentTurnHooks = undefined;
     if (parts !== undefined) await tracked("the parts' close (the approval broker, the sync, the bot side and its agents, the node)", parts.close());
@@ -4735,6 +4768,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // The lease is read now: a `host.start: "main"` host half starts here when this computer is the main (no lease
       // here: it is its own).
       setPluginMain(daemonParts.main);
+      // The activity feed reads the session host: its sessions' states, tools and cards, never their words. A session that
+      // stops takes its live pictures with it.
+      const sessionHost = daemonParts?.bots?.host;
+      if (sessionHost !== undefined) {
+        activityTracker = new ActivityTracker({
+          host: sessionHost, feed: activityFeed, now: () => Date.now(),
+          botName: (id) => { const name = daemonParts?.bots?.bots.get(id)?.name; return typeof name === "string" ? name : undefined; },
+          onSessionEnded: (id) => livePictures.sessionEnded(id),
+        });
+        activityTracker.start();
+      }
       // A user layer's layout changed: the app draws that bot's tab again (only when the layout itself did).
       const botsHere = daemonParts?.bots?.bots;
       if (botsHere !== undefined) {

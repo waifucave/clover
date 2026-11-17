@@ -58,6 +58,10 @@ export interface PluginRecord extends PluginSummary {
   folder: string;
   /** The tree hash the user last OK'd (an OK card's approve); `treeHash` is the folder now. */
   okHash?: string;
+  /** The catalog revision its OK was given at (`GRANT_REVISION`); absent for an OK from before revisions were kept. A grant
+   *  made before revision 19 reads neither kind of data (`granted` leaves `conversation.read` and `sessions.read` out)
+   *  until the plugin asks again (§3.6). */
+  okRevision?: number;
   /** A change to its card styling waits for its OK: approval cards keep the styling of `okHash`. */
   cardStylingHeld?: boolean;
   /** As validated: refused contributions and entries left out; undefined when the plugin itself is refused. */

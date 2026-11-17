@@ -24,7 +24,7 @@ export { apiHas, apiMember, HARMLESS_KEYS, isDataFolder } from "./api-members";
 import { ContractError } from "../contracts/common";
 import { MCP_INVOCATION_META, resolveHandler } from "../contracts/plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../contracts/sdk-types";
-import { acceptStreams, openStream, pointStream, STREAM_CHUNK_MAX, type StreamsTransport } from "@waifucave/moss-plugin-sdk/streams";
+import { acceptStreams, openPicture, openStream, pointStream, publishPicture, STREAM_CHUNK_MAX, type StreamsTransport } from "@waifucave/moss-plugin-sdk/streams";
 import { LISTENER_ARG } from "./api-channel";
 import type { RpcPeer } from "./link";
 import { WorkerFetches } from "./fetch-worker";
@@ -551,6 +551,9 @@ export class HostRuntime {
           // A stream's two ends and a handler's stream are Web streams made from watches (the SDK's streams.ts).
           if (call === "streams.open") return openStream(this.#streamsOf(pluginId, inside), args[0] as string, args[1] as never, args[2] as never);
           if (call === "streams.accept") return acceptStreams(this.#streamsOf(pluginId, inside), args[0] as string, args[1] as never);
+          // A live picture's two ends are streams too: the frames a plugin reads (`open`) and the frames a tool publishes.
+          if (call === "pictures.open") return openPicture(this.#streamsOf(pluginId, inside), args[0] as string, args[1] as never);
+          if (call === "pictures.publish") return publishPicture(this.#streamsOf(pluginId, inside), args[0], args[1] as never);
           if (call === "points.stream") return pointStream(this.#streamsOf(pluginId, inside), args[0] as string, args[1], args[2] as string, args[3], args[4] as never, args[5] as never);
           const listeners = args.filter((a) => typeof a === "function");
           const wire = args.map((a) => (typeof a === "function" ? { [LISTENER_ARG]: true } : a));

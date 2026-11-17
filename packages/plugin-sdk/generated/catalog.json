@@ -65,7 +65,7 @@
     {
       "name": "user.send",
       "lets": "Send text the part chooses to any bot, any session (coding sessions too) or any `pill.target` entry, as the user, on any real click or key press inside its own frames (`useUserSend`); one send for one press, or one send after a press the app saw held and released, within 30 s of the release (hold-to-talk), the release of its own held key binding (`commands[].hold`) included, wherever the window's focus was",
-      "ok": "sends messages to your bots and sessions as you, with text it chooses, when you click or press a key in its window, or press its own key anywhere in MOSS's window, or up to 30 seconds after you let go",
+      "ok": "sends messages to your bots and sessions as you, with text it chooses, when you click or press a key in its window, or press its own key anywhere in MOSS Code's window, or up to 30 seconds after you let go",
       "warns": true
     },
     {
@@ -77,7 +77,7 @@
     {
       "name": "tray",
       "lets": "Add items to MOSS's menu-bar (tray) menu (`app.tray` entries): one that hides and shows a surface of its own, or runs a command of its own",
-      "ok": "adds items to MOSS's menu in your menu bar",
+      "ok": "adds items to the menu in your menu bar",
       "warns": false
     },
     {
@@ -185,7 +185,7 @@
     {
       "name": "app.settings",
       "lets": "Read MOSS's own settings (its look, theme, language, layout lists, and which plugin is active for each one-at-a-time job) and, on the user's own press in its frame, change the look, the theme, the language and which plugin does each job",
-      "ok": "reads MOSS's settings, and changes its look, language and which plugin does each job when you press its controls",
+      "ok": "reads MOSS Code's settings, and changes its window's look, language and which plugin does each job when you press its controls",
       "warns": true
     },
     {
@@ -215,7 +215,7 @@
     {
       "name": "tools.permissions",
       "lets": "Read and, on the user's own press in its frame, change what each plugin tool may do (always allow, ask, always block): every installed plugin's tools, MOSS's own bundled plugins' included, so a tool set to always allow then acts with no card; not MOSS's built-in shell and file tools. It can also take back the card rules saved for a bot",
-      "ok": "sets any plugin's tools, MOSS's own plugins' included, to act without asking you, with no card (not MOSS's built-in shell and file tools)",
+      "ok": "shows and changes, for each plugin tool, whether it may be used and whether it asks first, and can set any plugin's tools, MOSS's own plugins' included, to act without asking you, with no card (not MOSS's built-in shell and file tools)",
       "warns": true
     },
     {
@@ -4684,57 +4684,46 @@
     },
     "sessions.list": {
       "capability": "sessions.read",
-      "where": "both",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "both"
     },
     "sessions.get": {
       "capability": "sessions.read",
-      "where": "both",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "both"
     },
     "sessions.watch": {
       "capability": "sessions.read",
-      "where": "both",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "both"
     },
     "sessions.history": {
       "capability": "sessions.read",
-      "where": "both",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "both"
     },
     "sessions.follow": {
       "capability": "sessions.read",
-      "where": "both",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "both"
     },
     "activity.list": {
       "capability": "activity.read.*",
-      "where": "both",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "both"
     },
     "activity.watch": {
       "capability": "activity.read.*",
-      "where": "both",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "both"
     },
     "pictures.list": {
       "capability": "picture.read.*",
-      "where": "both",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "both"
     },
     "pictures.watch": {
       "capability": "picture.read.*",
-      "where": "both",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "both"
     },
     "pictures.open": {
       "capability": "picture.read.*",
-      "where": "both",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "both"
     },
     "pictures.publish": {
-      "where": "host",
-      "notYet": "comes with the split's engine pieces (spec revision 19, §3.6)"
+      "where": "host"
     }
   },
   "deviceTurns": [

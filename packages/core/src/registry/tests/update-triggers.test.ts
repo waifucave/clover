@@ -82,7 +82,7 @@ describe("every OK-card line an update adds or alters asks again", () => {
     const h0 = await snap(host(), { "host/index.js": "export {};\n" });
     const h1 = await snap({ ...host("main"), version: "1.2.0" }, { "host/index.js": "export {};\n" });
     const h2 = await snap({ ...host("each"), version: "1.3.0" }, { "host/index.js": "export {};\n" });
-    expect(updateAddsTrigger(h0.snapshot, h1.snapshot)).toContain("It runs in the background from the moment MOSS starts, on your main computer.");
+    expect(updateAddsTrigger(h0.snapshot, h1.snapshot)).toContain("It runs in the background from the moment MOSS or MOSS Code starts, on your main computer.");
     expect(updateAddsTrigger(h1.snapshot, h2.snapshot)).toContain("on every computer it's installed on");
     // A data plugin that now runs code: its first line alters.
     const data = await snap({ manifest: 1, id: "luna", name: "Luna", version: "1.0.0" }, {});

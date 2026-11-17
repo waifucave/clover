@@ -541,7 +541,7 @@ export interface ConversationApi {
 }
 
 /** `sessions.read` (spec revision 19, §3.6, G6): the user's code sessions, and nothing of bots' conversations, which
- *  are `conversation.read`'s. Sealed card fields never reach a plugin. Not served yet (lane AF). */
+ *  are `conversation.read`'s. Sealed card fields never reach a plugin. */
 export interface SessionsApi {
   list(): Promise<SessionView[]>;
   get(session: string): Promise<SessionView>;
@@ -551,7 +551,7 @@ export interface SessionsApi {
 }
 
 /** The activity feed (spec revision 19, §3.6, G4), by kind: `activity.read.sessions` for code sessions,
- *  `activity.read.bots` for bots. States and names only, never words. Not served yet (lane AF). */
+ *  `activity.read.bots` for bots. States and names only, never words: a code session's `name` is its title. */
 export interface ActivityApi {
   list(kind: DataKind): Promise<ActivityView[]>;
   watch(kind: DataKind, listener: (activity: ActivityView) => void): Unsubscribe;
@@ -560,7 +560,7 @@ export interface ActivityApi {
 /** A tool's live picture (spec revision 19, §3.6, G5). Reading is by kind (`picture.read.sessions`,
  *  `picture.read.bots`); `open` gives the picture's frames as a byte stream (each frame a 4-byte big-endian length and one
  *  image). `publish` is a tool's host half's, while it serves a tool call, when its server declares `picture: true`: the
- *  engine keys the picture to that call's session, never to anything the plugin names. Not served yet (lane AF). */
+ *  engine keys the picture to that call's session, never to anything the plugin names. */
 export interface PicturesApi {
   list(kind: DataKind, of?: { session?: string; bot?: string }): Promise<PictureView[]>;
   watch(kind: DataKind, listener: (event: { picture: PictureView } | { ended: string }) => void): Unsubscribe;
@@ -1053,9 +1053,10 @@ export interface PluginApi {
   readonly turns: TurnsApi;
   /** Byte streams between its own two halves (§5.4 "Streams"). */
   readonly streams: StreamsApi;
-  /** Spec revision 19 (§3.6), not served yet: code sessions (`sessions.read`), the activity feed and live pictures by
-   *  kind. */
-  readonly sessions?: NotYet<SessionsApi>;
-  readonly activity?: NotYet<ActivityApi>;
-  readonly pictures?: NotYet<PicturesApi>;
+  /** Spec revision 19 (§3.6): code sessions (`sessions.read`), the activity feed (`activity.read.sessions`,
+   *  `activity.read.bots`) and live pictures (`picture.read.sessions`, `picture.read.bots`) by kind. `pictures.publish`
+   *  is a host half's alone, for a server whose manifest says `picture: true`. */
+  readonly sessions?: SessionsApi;
+  readonly activity?: ActivityApi;
+  readonly pictures?: PicturesApi;
 }

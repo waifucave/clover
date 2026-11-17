@@ -16,7 +16,7 @@
 // The handlers get the caller the core bound (R7): the session whose tool call the plugin is serving, or the plugin
 // itself, and never anything the plugin wrote.
 import { apiCallAllowed, API_CALLS, withImplied, type ApiCallInfo, type ApiCallPath } from "@waifucave/moss-plugin-sdk";
-import type { Caller, HostProcess } from "@waifucave/moss-protocol";
+import type { Caller, DataKind, HostProcess } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import type { ApiRouter } from "../../contracts/plugin-host";
 import { RUNNING_STATES, type PluginRecord, type PluginRegistry } from "../../contracts/plugin-registry";
@@ -30,6 +30,9 @@ export interface ApiCallContext {
   path: ApiCallPath;
   /** A component's call: the session it shows. */
   session?: string;
+  /** The core's own record of the call this one was made inside, when it was made inside one (`InvocationTable`): its
+   *  id, and for a tool call the `host` MCP server and tool it runs. A live picture is keyed to it. */
+  invocation?: { id: string; server?: string; tool?: string };
 }
 
 export type ApiHandler = (ctx: ApiCallContext, args: readonly unknown[]) => unknown;
@@ -48,6 +51,9 @@ export interface ApiRouterOptions {
    *  user-endpoint.ts), read at each call: the plugin's `net.fetch` reaches that origin as if its OK listed it, beside
    *  the hosts its OK does list. */
   userEndpoint?: (pluginId: string) => string | undefined;
+  /** The kind (`sessions` or `bots`) of a live picture by its id: `pictures.open` is gated by the kind of the picture it
+   *  opens (`picture.read.<kind>`), never by anything the call says. A picture that isn't there has none. */
+  pictureKind?: (id: string) => DataKind | undefined;
 }
 
 /** The states in which a plugin's host half may use the API (`grantsInForce`'s, for its other connections). */
@@ -74,7 +80,7 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
     if (!record.enabled || !LIVE.has(record.state)) {
       throw new ContractError("plugin_stopped", `${call.pluginId} is ${record.enabled ? record.state : "off"}${record.reason ? `: ${record.reason}` : ""}`);
     }
-    const target = targetOf(path, call.args, o.commandOwner);
+    const target = targetOf(path, call.args, o.commandOwner, o.pictureKind);
     // A plugin runs its own tree's commands with no `call:` (§5.4: `call:<plugin-id>` is for another plugin's).
     const ownCommand = path === "commands.run" && target?.plugin !== undefined && target.plugin.split("/")[0] === call.pluginId.split("/")[0];
     // The user's own endpoint for this plugin's provider counts as a granted host, for that origin's host and port.
@@ -87,7 +93,7 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
     }
     const fn = handlerOf(o.handlers, path);
     if (fn === undefined) throw new ContractError("refused", `${path} is not served on this computer`, { call: path });
-    return await fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path, ...(call.session !== undefined ? { session: call.session } : {}) }, call.args);
+    return await fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path, ...(call.session !== undefined ? { session: call.session } : {}), ...(call.invocation !== undefined ? { invocation: call.invocation } : {}) }, call.args);
   };
 }
 
@@ -108,7 +114,17 @@ function hostEntryOf(host: string, port: number | undefined): string {
 }
 
 /** The target a capability is checked against: a command's plugin, a URL's host. */
-function targetOf(path: ApiCallPath, args: readonly unknown[], commandOwner?: (name: string) => string | undefined): { plugin?: string; host?: string; port?: number } | undefined {
+function targetOf(path: ApiCallPath, args: readonly unknown[], commandOwner?: (name: string) => string | undefined, pictureKind?: (id: string) => DataKind | undefined): { plugin?: string; host?: string; port?: number; kind?: DataKind } | undefined {
+  // A family by kind (`activity.read.*`, `picture.read.*`): the kind the call reaches. A call naming none has no target,
+  // and the capability check refuses it (`apiCallAllowed`).
+  if (path === "activity.list" || path === "activity.watch" || path === "pictures.list" || path === "pictures.watch") {
+    return args[0] === "sessions" || args[0] === "bots" ? { kind: args[0] } : undefined;
+  }
+  if (path === "pictures.open") {
+    const kind = typeof args[0] === "string" ? pictureKind?.(args[0]) : undefined;
+    if (kind === undefined) throw new ContractError("not_found", "no such live picture");
+    return { kind };
+  }
   if (path === "commands.run") {
     const name = args[0];
     if (typeof name !== "string") return undefined;

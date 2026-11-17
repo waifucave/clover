@@ -20,7 +20,8 @@ function world(o: { granted?: string[]; running?: boolean; length?: number; reco
   const closed: string[] = [];
   const opened: unknown[] = [];
   const grepped: unknown[] = [];
-  const sessions = [{ id: "s_1", kind: "code" }, { id: "s_2", kind: "bot", bot: "luna" }];
+  // s_1 is a side thread (a bot's, so `conversation.*` reads it), s_2 the bot's main conversation, s_code a code session.
+  const sessions = [{ id: "s_1", kind: "side-thread" }, { id: "s_2", kind: "bot", bot: "luna" }, { id: "s_code", kind: "coding" }];
   const services: AreaServices = {
     bots: () => o.running === false ? undefined : ({
       host: {
@@ -88,6 +89,27 @@ describe("the API's areas", () => {
     expect((await failure(ungranted.call("conversation.send", ["s_1", "x"])))?.message).toContain("conversation.post");
   });
 
+  test("reads by kind: `conversation.*` reads bots' sessions only, `sessions.*` code sessions only, each a session of the other kind not_found", async () => {
+    const w = world({ granted: ["conversation.read", "sessions.read"] });
+    expect(((await w.call("conversation.list", [])) as { id: string }[]).map((s) => s.id)).toEqual(["s_1", "s_2"]);
+    expect(((await w.call("sessions.list", [])) as { id: string }[]).map((s) => s.id)).toEqual(["s_code"]);
+    expect((await w.call("sessions.get", ["s_code"]) as { id: string }).id).toBe("s_code");
+    for (const [call, id] of [["conversation.get", "s_code"], ["conversation.history", "s_code"], ["conversation.follow", "s_code"], ["sessions.get", "s_2"], ["sessions.history", "s_1"], ["sessions.follow", "s_2"]] as const) {
+      const args = call.endsWith("follow") ? [id, () => {}] : call.endsWith("history") ? [id, { limit: 5 }] : [id];
+      expect([call, (await failure(w.call(call, args)))?.code]).toEqual([call, "not_found"]);
+    }
+    // The router gates each by its own capability: a plugin with one kind's grant is refused the other's calls.
+    const botsOnly = world({ granted: ["conversation.read"] });
+    expect((await failure(botsOnly.call("sessions.list", [])))?.message).toContain("sessions.read");
+    const codeOnly = world({ granted: ["sessions.read"] });
+    expect((await failure(codeOnly.call("conversation.list", [])))?.message).toContain("conversation.read");
+    // A watch of each hears its own kind only.
+    const got: string[] = [];
+    await w.call("sessions.watch", [(v: { id: string }) => got.push(v.id)]);
+    for (const fn of w.viewWatchers) { fn({ id: "b", kind: "bot" }); fn({ id: "c", kind: "agent" }); }
+    expect(got).toEqual(["c"]);
+  });
+
   test("a service that isn't running here is refused with why", async () => {
     const w = world({ running: false });
     expect((await failure(w.call("bots.list", [])))?.message).toBe("the bot side isn't running on this computer");
@@ -146,8 +168,10 @@ describe("the API's areas", () => {
     const got: unknown[] = [];
     const stop = (await w.call("conversation.watch", [(v: unknown) => got.push(v)])) as () => void;
     expect(w.viewWatchers.size).toBe(1);
+    for (const fn of w.viewWatchers) fn({ id: "bot-9", kind: "bot" });
+    // A code session's change isn't a bot conversation's: `conversation.watch` never hears it.
     for (const fn of w.viewWatchers) fn({ id: "code-9", kind: "coding" });
-    expect(got).toEqual([{ id: "code-9", kind: "coding" }]);
+    expect(got).toEqual([{ id: "bot-9", kind: "bot" }]);
     stop();
     expect(w.viewWatchers.size).toBe(0);
   });

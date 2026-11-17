@@ -132,7 +132,7 @@ function ownerArg(v: unknown): TabOwner {
  *  serving: the tool refuses every call it can't tell), and `show` and `hide`, which the person's panel's own call
  *  reaches (`plugin.layer.api`'s route; the panel's component calls the core's `browser.*` methods, `rpc-handlers.ts`,
  *  on its layer connection, and hears the tabs change as core events). */
-export function browserApiHandlers(getService: () => BrowserService | undefined): ApiHandlers {
+export function browserApiHandlers(getService: () => BrowserService | undefined, drives?: (ctx: ApiCallContext, tabId: string) => void): ApiHandlers {
   // Read at each call: the browser comes up with the daemon's parts, after the plugin host.
   const svc = (): BrowserService => getService() ?? failNotRunning();
   const panelOnly = (ctx: ApiCallContext): Actor => {
@@ -177,6 +177,7 @@ export function browserApiHandlers(getService: () => BrowserService | undefined)
       const mine = await run(() => svc().list(a.caller, { owner: a.own! }));
       if (mine.length > 0) throw new ContractError("refused", `${a.session!.bot !== undefined ? `${a.session!.bot} has` : "this session has"} a tab open already (${mine[0]!.id}): navigate it instead of opening another`, { code: "one_tab" });
       const tab: TabView = await run(() => svc().open(a.caller, { owner: a.own!, ...(url !== undefined ? { url } : {}) }));
+      drives?.(ctx, tab.id);
       return tab;
     },
     "browser.close": async (ctx, args) => {
@@ -185,7 +186,10 @@ export function browserApiHandlers(getService: () => BrowserService | undefined)
     },
     "browser.navigate": async (ctx, args) => {
       const a = actorOf(ctx);
-      return run(() => svc().navigate(a.caller, str(args[0], "the tab id", 128), str(args[1], "url")));
+      const tabId = str(args[0], "the tab id", 128);
+      const view = await run(() => svc().navigate(a.caller, tabId, str(args[1], "url")));
+      if (a.own !== undefined) drives?.(ctx, tabId);
+      return view;
     },
     "browser.screenshot": async (ctx, args) => {
       const a = actorOf(ctx);
@@ -193,6 +197,7 @@ export function browserApiHandlers(getService: () => BrowserService | undefined)
       const format = o.format === "png" || o.format === "jpeg" || o.format === "webp" ? o.format : undefined;
       const quality = typeof o.quality === "number" ? o.quality : undefined;
       const shot: Screenshot = await run(() => svc().screenshot(a.caller, str(args[0], "the tab id", 128), { ...(format !== undefined ? { format } : {}), ...(quality !== undefined ? { quality } : {}) }));
+      if (a.own !== undefined) drives?.(ctx, str(args[0], "the tab id", 128));
       return shot;
     },
     "browser.cdp": async (ctx, args) => {
@@ -202,7 +207,9 @@ export function browserApiHandlers(getService: () => BrowserService | undefined)
       const params = args[2] === undefined ? undefined : obj(args[2]);
       const opts = obj(args[3]);
       const viewport = opts.viewport as { width: number; height: number } | undefined;
-      return run(() => svc().cdp(a.caller, str(args[0], "the tab id", 128), method, params, viewport !== undefined ? { viewport } : {}));
+      const result = await run(() => svc().cdp(a.caller, str(args[0], "the tab id", 128), method, params, viewport !== undefined ? { viewport } : {}));
+      if (a.own !== undefined) drives?.(ctx, str(args[0], "the tab id", 128));
+      return result;
     },
     "browser.show": async (ctx, args) => {
       const a = panelOnly(ctx);

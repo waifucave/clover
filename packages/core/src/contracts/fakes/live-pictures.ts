@@ -4,12 +4,15 @@ import { randomBytes } from "node:crypto";
 import type { Clock } from "../clock";
 import { readerMay, type FeedReader } from "../activity-feed";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
-import { isImageOf, type LivePictures, type PictureEvent, type PicturePublisher, type PictureReader, type ToolCallContext } from "../live-pictures";
+import { frameVerdict, type LivePictures, type PictureEndWhy, type PictureEvent, type PicturePublisher, type PictureReader, type ToolCallContext } from "../live-pictures";
 
 interface Held {
   view: PictureView;
   latest: Uint8Array | undefined;
   frames: Listeners<Uint8Array>;
+  meta: PicturePublishMeta;
+  callId: string;
+  endsWithCall: boolean;
 }
 
 export class FakeLivePictures implements LivePictures {
@@ -21,7 +24,7 @@ export class FakeLivePictures implements LivePictures {
     this.#clock = opts.clock;
   }
 
-  #end(id: string, why: "publisher" | "session" | "plugin-stopped" | "too-large"): void {
+  #end(id: string, why: PictureEndWhy): void {
     const held = this.#pictures.get(id);
     if (!held) return;
     this.#pictures.delete(id);
@@ -39,15 +42,16 @@ export class FakeLivePictures implements LivePictures {
       id, kind: call.kind, session: call.session, ...(call.bot !== undefined ? { bot: call.bot } : {}), publisher: call.pluginId, tool: call.tool,
       format: parsed.data.format, width: parsed.data.width, height: parsed.data.height, screen: parsed.data.screen ?? false, startedAt: this.#clock.now(),
     };
-    const held: Held = { view, latest: undefined, frames: new Listeners() };
+    const held: Held = { view, latest: undefined, frames: new Listeners(), meta: parsed.data, callId: call.callId, endsWithCall: parsed.data.endsWithCall === true };
     this.#pictures.set(id, held);
     this.#events[view.kind].emit({ picture: view });
     return {
       id,
       frame: (bytes) => {
         if (this.#pictures.get(id) !== held) return;
-        if (bytes.length > PICTURE_FRAME_MAX_BYTES) return this.#end(id, "too-large");
-        if (!isImageOf(view.format, bytes)) return this.#end(id, "publisher");
+        const verdict = frameVerdict(held.meta, bytes, PICTURE_FRAME_MAX_BYTES);
+        if (verdict === "too-large") return this.#end(id, "too-large");
+        if (verdict !== "ok") return this.#end(id, "publisher");
         held.latest = bytes;
         held.frames.emit(bytes);
       },
@@ -78,6 +82,10 @@ export class FakeLivePictures implements LivePictures {
 
   sessionEnded(session: string): void {
     for (const [id, h] of [...this.#pictures]) if (h.view.session === session) this.#end(id, "session");
+  }
+
+  callEnded(callId: string): void {
+    for (const [id, h] of [...this.#pictures]) if (h.endsWithCall && h.callId === callId) this.#end(id, "call-ended");
   }
 
   pluginStopped(pluginId: string): void {

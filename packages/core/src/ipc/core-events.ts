@@ -14,7 +14,7 @@
 //     plugin's own connections.
 // A connection whose send throws (it just closed) doesn't stop the others. Remote and web clients, which lane H's
 // link brings in as MOSS connections, are routed the same way.
-import { MOSS_EVENTS, CORE_EVENT_NOTIFICATION, PLUGIN_ROLES } from "@waifucave/moss-protocol";
+import { MOSS_EVENTS, CORE_EVENT_NOTIFICATION, PLUGIN_ROLES, pluginMayHear } from "@waifucave/moss-protocol";
 import type { MossConn } from "./moss";
 
 /** Events that belong to one owner (a session's or a plugin's terminal, tab, call or watch), sent only with `to`. */
@@ -101,7 +101,9 @@ export function sendCoreEvent(r: CoreEventRouting, event: CoreEventInput, opts: 
     if (!spec.roles.includes(conn.role) || !conn.areas.has(spec.area)) continue;
     if (spec.capability !== undefined && PLUGIN_ROLES.includes(conn.role)) {
       const plugin = pluginOf(conn);
-      if (plugin === undefined || !(r.pluginCapabilities?.(plugin) ?? []).includes(spec.capability)) continue;
+      // A capability by kind (`activity.read.*`, `conversation.*`, `picture.read.*`) is the one of the event's own kind, read
+      // from its payload (`pluginMayHear`); an event that names no kind is heard by no plugin, never matched by prefix.
+      if (plugin === undefined || !pluginMayHear(spec, r.pluginCapabilities?.(plugin) ?? [], parsed.data)) continue;
     }
     if (PLUGIN_OWN_EVENTS.has(spec.type) && (!PLUGIN_ROLES.includes(conn.role) || pluginOf(conn) !== (parsed.data as { pluginId?: unknown }).pluginId)) continue;
     // A plugin's settings changes reach its own connection only while it is on and running (a turned-off plugin's

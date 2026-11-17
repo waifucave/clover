@@ -23,7 +23,8 @@
           "Browser"
         ],
         "instructions": "instructions.md",
-        "perComputer": true
+        "perComputer": true,
+        "picture": true
       }
     }
   }

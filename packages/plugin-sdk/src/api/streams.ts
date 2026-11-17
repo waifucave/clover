@@ -45,8 +45,18 @@ const reasonText = (r: unknown, fallback: string): string => {
 
 /** `streams.open`: the writable end, once an acceptor took the stream. */
 export function openStream(t: StreamsTransport, name: string, options?: StreamOpenOptions, onEvent?: (event: StreamOpenEvent) => void): Promise<WritableStream<Uint8Array>> {
-  const signal = options?.signal;
   const wire = options?.meta !== undefined ? { meta: options.meta } : {};
+  return writableWatch(t, "streams.open", [name, wire, undefined], 2, options?.signal, onEvent);
+}
+
+/** `pictures.publish`: the writable end of a live picture's frames (each a 4-byte big-endian length and one image), once
+ *  the engine took the picture. Its watch is the picture's: the stream ending ends the picture. */
+export function publishPicture(t: StreamsTransport, meta: unknown, options?: { signal?: AbortSignal }, onEvent?: (event: StreamOpenEvent) => void): Promise<WritableStream<Uint8Array>> {
+  return writableWatch(t, "pictures.publish", [meta, undefined], 1, options?.signal, onEvent);
+}
+
+/** A stream's writable end made from a watch at `path`: `args[at]` is where the listener goes. */
+function writableWatch(t: StreamsTransport, path: string, args: unknown[], at: number, signal: AbortSignal | undefined, onEvent?: (event: StreamOpenEvent) => void): Promise<WritableStream<Uint8Array>> {
   return new Promise((resolve, reject) => {
     let id: string | undefined;
     let over: Error | undefined;
@@ -116,7 +126,7 @@ export function openStream(t: StreamsTransport, name: string, options?: StreamOp
     };
     if (signal?.aborted) return reject(new Error(reasonText(signal.reason, "aborted")));
     signal?.addEventListener("abort", onAbort);
-    watch = t.watch("streams.open", [name, wire, listener], 2);
+    watch = t.watch(path, args.map((a, i) => (i === at ? listener : a)), at);
     watch.opened.catch((err: unknown) => {
       if (over !== undefined || finished) return;
       over = err instanceof Error ? err : new Error(String(err));
@@ -265,8 +275,19 @@ export function pointStream(
   options?: { method?: string; timeoutMs?: number; signal?: AbortSignal },
   onEvent?: (event: StreamReadEvent) => void,
 ): Promise<ReadableStream<Uint8Array>> {
-  const signal = options?.signal;
   const wire = { ...(options?.method !== undefined ? { method: options.method } : {}), ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}) };
+  return readableWatch(t, "points.stream", [point, entry, field, args ?? null, wire, undefined], 5, options?.signal, onEvent);
+}
+
+/** `pictures.open`: the readable end of a live picture's frames (each a 4-byte big-endian length and one image), latest
+ *  frames only: a reader that falls behind skips frames, never queues them. */
+export function openPicture(t: StreamsTransport, picture: string, options?: { maxFps?: number; signal?: AbortSignal }, onEvent?: (event: StreamReadEvent) => void): Promise<ReadableStream<Uint8Array>> {
+  const wire = options?.maxFps !== undefined ? { maxFps: options.maxFps } : {};
+  return readableWatch(t, "pictures.open", [picture, wire, undefined], 2, options?.signal, onEvent);
+}
+
+/** A stream's readable end made from a watch at `path`: `args[at]` is where the listener goes. */
+function readableWatch(t: StreamsTransport, path: string, args: unknown[], at: number, signal: AbortSignal | undefined, onEvent?: (event: StreamReadEvent) => void): Promise<ReadableStream<Uint8Array>> {
   return new Promise((resolve, reject) => {
     let incoming: Incoming | undefined;
     let over = false;
@@ -312,7 +333,7 @@ export function pointStream(
     };
     if (signal?.aborted) return reject(new Error(reasonText(signal.reason, "aborted")));
     signal?.addEventListener("abort", onAbort);
-    watch = t.watch("points.stream", [point, entry, field, args ?? null, wire, listener], 5);
+    watch = t.watch(path, args.map((a, i) => (i === at ? listener : a)), at);
     watch.opened.catch((err: unknown) => {
       if (over) return;
       over = true;

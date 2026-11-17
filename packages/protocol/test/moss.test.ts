@@ -326,8 +326,13 @@ describe("the allow lists", () => {
     expect(pluginMayCall(run, ["call:luna"], "weather")).toBe(false);
     expect(pluginMayCall(run, ["call:luna"])).toBe(false);
     const read = MOSS_METHODS.get("session.history")!;
-    expect(pluginMayCall(read, ["conversation.read"])).toBe(true);
-    expect(pluginMayCall(read, ["conversation.post"])).toBe(false);
+    // `session.*` is by kind: bots' conversations by `conversation.read`, code sessions by `sessions.read`, none without a kind.
+    expect(pluginMayCall(read, ["conversation.read"], "bots")).toBe(true);
+    expect(pluginMayCall(read, ["conversation.read"], "sessions")).toBe(false);
+    expect(pluginMayCall(read, ["sessions.read"], "sessions")).toBe(true);
+    expect(pluginMayCall(read, ["sessions.read"], "bots")).toBe(false);
+    expect(pluginMayCall(read, ["conversation.read"])).toBe(false);
+    expect(pluginMayCall(read, ["conversation.post"], "bots")).toBe(false);
   });
 });
 

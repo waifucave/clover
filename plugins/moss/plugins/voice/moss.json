@@ -121,6 +121,7 @@
     "audio",
     "avatar.control.all",
     "conversation.read",
+    "sessions.read",
     "microphone",
     "user.send"
   ],

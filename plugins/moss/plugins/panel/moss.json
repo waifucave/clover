@@ -13,6 +13,7 @@
   },
   "capabilities": [
     "conversation.read",
+    "sessions.read",
     "computers.read"
   ],
   "contributes": {
