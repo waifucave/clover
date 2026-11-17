@@ -3628,6 +3628,12 @@ async function keyedCodeSession(c: MossClient, folder = "acceptance-work"): Prom
   return (await c.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/${folder}`, model: KEYED_MODEL }, 60_000)).session;
 }
 
+/** The newest code session (`session.list`, kind coding), the one MOSS Code's window opens on. */
+async function newestCodeSession(c: MossClient): Promise<string | undefined> {
+  const list = await c.request<{ sessions: { id: string; kind?: string; startedAt?: number }[] }>("session.list", { kinds: ["coding"] }).catch(() => ({ sessions: [] }));
+  return list.sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0))[0]?.id;
+}
+
 /** This computer's name in the tree (`computer.list`'s `self`). */
 async function selfComputer(c: MossClient): Promise<string> {
   const name = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name;
@@ -5368,8 +5374,9 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
         } else {
           // A turn that keeps running, then the app quits as the owner's does (the tray's Quit stops both halves).
           const c = (await appDriver()).client;
-          const session = (await c.request<{ bots: { mainSession: string }[] }>("bot.list", {})).bots[0]?.mainSession;
-          if (session === undefined) block("no bot conversation to run a turn in");
+          // The code session the window opens on (the newest; the unit's setup started it on MOSS's own agent).
+          const session = await newestCodeSession(c);
+          if (session === undefined) block("no code session to run a turn in");
           // Mid text (a held model stream), or mid tool call (the fixture's Echo given `acceptance-hold`, never answered).
           const toolCall = "toolCall" in step;
           const tag = `${toolCall ? "ACCEPTANCE-HOLDTOOL" : "ACCEPTANCE-SLOW"}-${randomBytes(3).toString("hex").toUpperCase()}`;
@@ -5424,7 +5431,7 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
           const at = events.findIndex((e) => JSON.stringify(e).includes(tag));
           const after = at < 0 ? [] : events.slice(at + 1);
           const ends = after.filter((e) => /turn_completed|turn_interrupted|interrupted|agent_error|turn_failed/.test(String(e.type)));
-          const status = (await d.request<{ bots: { mainSession: string; status?: string }[] }>("bot.list", {}).catch(() => ({ bots: [] }))).bots.find((b) => b.mainSession === session)?.status;
+          const status = (await d.request<{ session?: { status?: string } }>("session.get", { id: session }).catch(() => ({ session: undefined }))).session?.status;
           d.close();
           if (at < 0) fail("the quit turn's message isn't in the conversation after the reopen");
           if (ends.length === 0) fail(`the interrupted turn has no end in the conversation (events after it: ${[...new Set(after.map((e) => String(e.type)))].join(", ") || "none"}; bot status ${status ?? "?"})`);
