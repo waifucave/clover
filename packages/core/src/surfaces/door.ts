@@ -82,6 +82,12 @@ export class EngineSurfaceDoor implements SurfaceDoor {
     return false;
   }
 
+  /** Whether this connection is one that draws the island (`islandLive`'s rule, for one connection). */
+  islandDrawer(connId: number): boolean {
+    const l = this.#live.get(connId);
+    return l !== undefined && l.mount.drawsCards && l.mount.points.includes("app.surface");
+  }
+
   watch(fn: (live: LiveSurface[]) => void): Unsubscribe {
     return this.#listeners.add(fn);
   }

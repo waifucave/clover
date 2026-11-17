@@ -241,7 +241,7 @@ export class MossApprovalBroker implements ApprovalBroker {
     const binds = allowed && p.card.binds !== undefined ? { binds: structuredClone(p.card.binds) } : {};
     // ...and, answered by a device's signature, that proof, for the binding's computer (a `SignedCardAnswer`).
     const signed = allowed && p.card.binds !== undefined && a.proof.via === "device"
-      ? { signed: { device: a.proof.device, at: a.proof.at, signature: a.proof.signature, ...(children.length > 0 ? { children: [...children] } : {}) } }
+      ? { signed: { device: a.proof.device, at: a.proof.at, signature: a.proof.signature, ...(children.length > 0 ? { children: [...children] } : {}), ...(a.proof.program !== undefined ? { program: a.proof.program } : {}) } }
       : {};
     this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}), ...binds, ...signed }, option.id, device, children);
     return "accepted";

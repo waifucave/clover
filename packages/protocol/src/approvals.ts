@@ -192,8 +192,12 @@ export const CardAnswerProof = z.discriminatedUnion("via", [
     via: z.literal("device"),
     device: DeviceId,
     at: Timestamp,
-    /** Ed25519 with the device's answer key over `cardAnswerSigningInput(...)`, base64. */
+    /** Ed25519 with the device's answer key over `cardAnswerSigningInput(...)`, base64; with `program`, with that
+     *  program's key over `programCardAnswerSigningInput(...)` (surfaces.ts; spec revision 19, ruling C). */
     signature: utf16(256, 1),
+    /** The desktop program whose key signed it (`moss`, `code`, `host`; lane RT): the proof names its key. Absent: the
+     *  device's single answer key (a phone's, or MOSS Code's from before the split). */
+    program: z.enum(["moss", "code", "host"]).optional(),
   }),
 ]);
 export type CardAnswerProof = z.infer<typeof CardAnswerProof>;

@@ -16,7 +16,7 @@
 import {
   MOSS_ERR, MOSS_METHODS, MOSS_PROTOCOL_MIN_VERSION, MOSS_ROLES, MOSS_PROTOCOL_VERSION, MossHelloParams, CODE_AGENT_LINE_NOTIFICATION, CODE_AGENT_MAX_LINE, ERR,
   PairStatus, encodeLine, helloVersionServed, type Caller, type MossHelloResult, type MossRole, type SessionKind,
-  DEFAULT_SURFACE, LEGACY_CODE_MOUNTS, SURFACE_MOUNTS, type Surface,
+  CardPlacement, PresenceReport, type Program, type Surface,
 } from "@waifucave/moss-protocol";
 import { createHash } from "node:crypto";
 import { ERR_UNAUTHORIZED, isRefusal, type MossTokens } from "../auth/moss-tokens";
@@ -25,6 +25,10 @@ import { capabilityRefusal, gateMossRequest, resolveMossCaller, type SessionProc
 import { probePeer, socketFd, WindowsPipePeers, type PeerFacts } from "../platform/caller-probe";
 import { peerHandle, type PeerHandle } from "../platform/peer-handle";
 import { defaultAppPeerCheck, type AppPeerPolicy } from "../platform/peer-signature";
+import { SystemClock } from "../clock/system-clock";
+import type { Clock } from "../contracts/clock";
+import { EngineCardRouter } from "../surfaces/card-router";
+import { EngineSurfaceDoor } from "../surfaces/door";
 import { resolveMossProfile } from "../profile";
 import type { DaemonPair, PairStopReason } from "../platform/pair/policy";
 import type { DaemonPlatform } from "../platform/transport";
@@ -44,6 +48,9 @@ export interface MossConn {
   readonly clientName: string;
   /** An `app` connection's surface (spec revision 19, G1): `code` when its hello named none. Undefined for other roles. */
   readonly surface?: Surface;
+  /** An `app` connection's program (lane RT, `surfaces/door.ts`): its signed identity on macOS, its surface where the OS
+   *  signs no running image. What its answers, its answer key and its presses belong to; never what a call says. */
+  readonly program?: Program;
   /** A plugin-host connection's verified process (review S1): handlers take the call's process from here, never
    *  from a plugin id a plugin could share. */
   readonly hostProcess?: { readonly hostProcess: "moss" | "shared" | "own"; readonly pluginId?: string };
@@ -184,6 +191,8 @@ export interface MossServerDeps {
   /** End a hung app's process: by default through the connection's handle (review S5: its audit token's start time,
    *  its pidfd, its process handle), so a pid reused since never is; SIGKILL by pid only where the OS gave none. */
   killApp?(pid: number, handle?: PeerHandle): void;
+  /** The router's clock, for a presence report's hold (`surfaces/card-router.ts`); the system's by default. */
+  readonly clock?: Clock;
   log?(line: string): void;
 }
 
@@ -239,6 +248,9 @@ export interface MossServer {
    *  binds (`canonicalCallHash`). It stands in for the user on a `userOnly` method only for this method and these
    *  params, and once (review S7). */
   dispatch(method: string, params: unknown, as: { caller: Caller; role: MossRole; answer?: { cardId: string; callHash: string } }): Promise<unknown>;
+  /** Lane RT: the surface door (which surface and program each `app` connection is) and the router (where each pending
+   *  card is drawn, from the windows' presence). The daemon feeds the router the broker's cards (`surfaces/routing.ts`). */
+  readonly surfaces: { readonly door: EngineSurfaceDoor; readonly router: EngineCardRouter };
   dispose(): void;
 }
 
@@ -247,6 +259,15 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   const pipePeers = os === "win32" ? new WindowsPipePeers(deps.endpoint) : null;
   const spentAnswers = new Set<string>();
   const conns = new Map<number, MossConn>();
+  // Lane RT: the hello's surface and program (the door) and where each pending card is drawn (the router). The island is
+  // live while a connection that draws it is (the host; until lane HS builds it, today's `code` window).
+  const door = new EngineSurfaceDoor();
+  const router = new EngineCardRouter({ clock: deps.clock ?? new SystemClock(), hostLive: false });
+  const undoor = door.watch(() => router.hostLive(door.islandLive()));
+  // Each card that moved, or was first placed, to the `app` connections subscribed to `surfaces` (`card_placed`).
+  const unplaced = router.watch((c) => {
+    sendCoreEvent({ connections: () => conns.values(), log: (line) => deps.log?.(line) }, { type: "card_placed", ts: Date.now(), card: c.card, place: c.place as CardPlacement, ...(c.before !== undefined ? { before: c.before } : {}) });
+  });
   let requestSeq = 0;
   // The daemon's requests waiting on an answer (`ask`), by the connection and the request's id.
   const asked = new Map<string, { connId: number; resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
@@ -381,6 +402,11 @@ export function createMossServer(deps: MossServerDeps): MossServer {
     if (refused) throw new MossRpcError(refused.code, refused.message);
     const p = spec.params.safeParse(params ?? {});
     if (!p.success) throw new MossRpcError(ERR.INVALID_PARAMS, `invalid params for ${method}`);
+    // The device's single answer key is MOSS Code's (lane RT, ruling C): another program registers its own key with
+    // `device.programKey.set`, never this one.
+    if (method === "device.answerKey.set" && conn.program !== undefined && conn.program !== "code") {
+      throw new MossRpcError(MOSS_ERR.NOT_THE_USER, "this desktop's single answer key is MOSS Code's: another program registers its own (device.programKey.set)");
+    }
     let handler = own[method] ?? deps.handlers?.[method];
     if (handler === undefined && deps.lateDoors !== undefined) {
       // A door that comes up after the socket listens: this call waits for it rather than racing the daemon's start.
@@ -401,25 +427,19 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   };
 
   // A connection after its hello: kept for routing (`coreEvent`) and closing.
-  // An `app` hello's surface (G1): absent is `code`, today's app; on any other role it is refused, and so is a second live
-  // `host` for this home (one per home, §3.1). It picks the mount list only; it grants no method.
-  const surfaceOf = (h: MossHelloParams): Surface | undefined => {
-    if (h.role !== "app") {
-      if (h.surface !== undefined) throw new MossRpcError(MOSS_ERR.SURFACE_REFUSED, "surface is the app role's alone", { reason: "not-app", surface: h.surface });
-      return undefined;
-    }
-    const surface = h.surface ?? DEFAULT_SURFACE;
-    if (surface === "host" && [...conns.values()].some((c) => c.surface === "host")) {
-      throw new MossRpcError(MOSS_ERR.SURFACE_REFUSED, "a background host is already live for this home", { reason: "second-host", surface });
-    }
-    return surface;
-  };
-
-  const register = (connId: number, h: MossHelloParams, caller: Caller, write: (bytes: Uint8Array) => void, extra: Pick<MossConn, "hostProcess" | "bridgeConnection">): { conn: MossConn; result: MossHelloResult } => {
+  // An `app` hello's surface (G1), through the door (lane RT, `surfaces/door.ts`): absent is `code`, today's app; on any
+  // other role it is refused; a second live `host` for this home is refused (one per home, §3.1); a surface that isn't
+  // the connection's signed program is refused (`signed`, macOS); an older second copy of a program stops. It picks the
+  // mount list only; it grants no method.
+  const SURFACE_WHY = { "not-app": "surface is the app role's alone", "second-host": "a background host is already live for this home", "program-mismatch": "this connection's signature is another program's", "older-copy": "a newer copy of this program is running" } as const;
+  const register = (connId: number, h: MossHelloParams, caller: Caller, write: (bytes: Uint8Array) => void, extra: Pick<MossConn, "hostProcess" | "bridgeConnection">, signed?: Program): { conn: MossConn; result: MossHelloResult } => {
     if (conns.has(connId)) throw new MossRpcError(ERR.INVALID_REQUEST, "that connection already said hello");
-    const surface = surfaceOf(h);
+    const admitted = door.admit({ connId, role: h.role, ...(h.surface !== undefined ? { surface: h.surface } : {}), ...(signed !== undefined ? { signed } : {}), ...(h.release !== undefined ? { release: h.release } : {}) });
+    if (!admitted.ok) throw new MossRpcError(MOSS_ERR.SURFACE_REFUSED, SURFACE_WHY[admitted.refusal.reason], admitted.refusal);
+    const surface = admitted.surface;
     const conn: MossConn = {
-      connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...extra, ...(surface !== undefined ? { surface } : {}),
+      connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...extra,
+      ...(admitted.surface !== undefined ? { surface: admitted.surface, program: admitted.program } : {}),
       send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
       notify(method, p) {
         if (conn.relayed === true && method !== CODE_AGENT_LINE_NOTIFICATION) return;
@@ -428,13 +448,15 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       follows: new Map(),
     };
     conns.set(connId, conn);
-    deps.log?.(`[moss] ${h.role} connection ${connId} (${h.clientName}) counts as ${caller.kind}`);
+    deps.log?.(`[moss] ${h.role} connection ${connId} (${h.clientName}) counts as ${caller.kind}${admitted.surface !== undefined ? ` (surface ${admitted.surface}, program ${admitted.program})` : ""}`);
+    // An older copy of the same program goes: told the way the daemon tells an app to leave for an update.
+    if (admitted.surface !== undefined) for (const older of admitted.stop) conns.get(older)?.send("app.quit", { reason: "update" });
     return {
       conn,
       result: {
         ok: true, serverVersion: deps.serverVersion, protocolVersion: MOSS_PROTOCOL_VERSION, caller, device: deps.deviceId, features: [...(deps.features ?? [])],
         // Until the background host runs (lane HS), a `code` window still mounts the screen's points itself.
-        ...(surface !== undefined ? { surface, mount: surface === "code" ? LEGACY_CODE_MOUNTS : SURFACE_MOUNTS[surface] } : {}),
+        ...(admitted.surface !== undefined ? { surface, mount: admitted.mount } : {}),
       },
     };
   };
@@ -445,6 +467,16 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   };
 
   const own: Record<string, MossHandler> = {
+    // Lane RT: a window program's presence (§3.5), from its main process on its own connection; the host has no windows.
+    "presence.report": (conn, p) => {
+      if (conn.program !== "moss" && conn.program !== "code") throw new MossRpcError(MOSS_ERR.SURFACE_REFUSED, "presence comes from MOSS's or MOSS Code's window program", { reason: "not-app", ...(conn.surface !== undefined ? { surface: conn.surface } : {}) });
+      return router.report({ connId: conn.connId, program: conn.program }, p as PresenceReport);
+    },
+    "card.placement": (_conn, p) => {
+      const ids = (p as { ids?: string[] }).ids;
+      const all = router.list();
+      return { placements: ids === undefined ? all : all.filter((c) => ids.includes(c.card)) };
+    },
     "events.subscribe": (conn, p) => { for (const a of (p as { areas: string[] }).areas) conn.areas.add(a); return { ok: true }; },
     "events.unsubscribe": (conn, p) => { for (const a of (p as { areas: string[] }).areas) conn.areas.delete(a); return { ok: true }; },
     "pair.status": () => pairStatus(),
@@ -549,6 +581,7 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       let peer: PeerFacts;
       let bridge: { sessionId: string; connection: number } | undefined;
       let hostProcess: MossConn["hostProcess"];
+      let signed: Program | undefined;
       if (h.role === "bridge" && deps.bridge) {
         peer = peerOf(socket);
         const b = await bridgeHello(socket, h, peer, end);
@@ -560,16 +593,24 @@ export function createMossServer(deps: MossServerDeps): MossServer {
         peer = peerOf(socket);
         const hostPid = binding.role === "plugin-host" ? deps.hostPidOf?.(binding.hostProcess, binding.pluginId) : undefined;
         const linkPid = deps.linkPid?.();
-        const resolved = resolveMossCaller({ binding, peer, processes: deps.processes, appPeer, ...(hostPid !== undefined ? { hostPid } : {}), ...(linkPid !== undefined ? { linkPid } : {}) });
+        // The peer check names the program it found (macOS): the door holds the hello's surface to it (lane RT).
+        const namesProgram: AppPeerPolicy = appPeer === "none" ? "none" : (p) => {
+          const r = appPeer(p);
+          if (typeof r === "string") signed = r;
+          return r;
+        };
+        const resolved = resolveMossCaller({ binding, peer, processes: deps.processes, appPeer: namesProgram, ...(hostPid !== undefined ? { hostPid } : {}), ...(linkPid !== undefined ? { linkPid } : {}) });
         if ("code" in resolved) throw new MossRpcError(resolved.code, resolved.message);
         caller = resolved;
         if (binding.role === "plugin-host") hostProcess = { hostProcess: binding.hostProcess, ...(binding.pluginId ? { pluginId: binding.pluginId } : {}) };
         if (gone.has(socket)) throw new MossRpcError(MOSS_ERR.ROLE_REFUSED, "closed");
       }
       if (bridge) bridged.set(connId, { ...bridge, ...(end ? { end } : {}) });
-      const r = register(connId, h, caller, write, { ...(hostProcess ? { hostProcess } : {}), ...(bridge ? { bridgeConnection: bridge.connection } : {}) });
+      const r = register(connId, h, caller, write, { ...(hostProcess ? { hostProcess } : {}), ...(bridge ? { bridgeConnection: bridge.connection } : {}) }, signed);
       if (end) ends.set(connId, end);
-      if (h.role === "app") { deps.pair?.appConnected(String(connId), r.conn.features); startBeat(r.conn, peer.pid, peer.handle); }
+      // The pair (`pair.*`, the heartbeat and the kill of a hung app) is today's one app, MOSS Code's window: a `moss` or
+      // `host` connection is never taken for it (lanes RT, then HS and RL, retire the pair).
+      if (r.conn.surface === "code") { deps.pair?.appConnected(String(connId), r.conn.features); startBeat(r.conn, peer.pid, peer.handle); }
       return r;
     },
 
@@ -636,7 +677,10 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       const b = bridged.get(conn.connId);
       if (b) { bridged.delete(conn.connId); deps.bridge?.gate.release(b.sessionId, b.connection); }
       if (relayed.delete(conn.connId)) deps.codeAgent?.close(conn.connId);
-      if (conn.role === "app") deps.pair?.appDisconnected(String(conn.connId));
+      if (conn.surface === "code") deps.pair?.appDisconnected(String(conn.connId));
+      // Its presence goes at once, and the door lets its surface go (the island with it, if it drew one).
+      router.dropped(conn.connId);
+      door.closed(conn.connId);
     },
 
     // Any answer to a ping, a result or an error, shows the app's main process is responsive.
@@ -693,8 +737,12 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       }, event, opts);
     },
 
+    surfaces: { door, router },
+
     dispose() {
       unrevoke?.();
+      undoor();
+      unplaced();
       for (const connId of [...beats.keys()]) stopBeat(connId);
     },
   };

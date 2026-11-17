@@ -49,7 +49,16 @@ function usersOwn(conn: MossConn, method: string): void {
   if (!isTheUsersOwn(conn.caller)) throw new MossRpcError(MOSS_ERR.NOT_THE_USER, `${method} is read for the user alone`);
 }
 
-export function cardMethods(broker: () => CardBroker | undefined, capabilitiesOf: (pluginId: string) => readonly string[] | undefined = () => undefined): Record<string, MossHandler> {
+/** What `card.answer` checks on this computer's own app connections before the broker (lane RT, spec revision 19 §3.5,
+ *  §5.5): where the router placed the card (`surfaces/routing.ts`'s `cardPressGate`: the press is taken only by the
+ *  program and window, or the island, drawing it), and whether computer use is acting here, read at the answer itself
+ *  rather than by a round trip from the app before it (a 3 s request at the press, refused under load). */
+export interface AnswerGates {
+  press?(conn: MossConn, cardId: string): string | undefined;
+  acting?(): boolean;
+}
+
+export function cardMethods(broker: () => CardBroker | undefined, capabilitiesOf: (pluginId: string) => readonly string[] | undefined = () => undefined, gates: AnswerGates = {}): Record<string, MossHandler> {
   const up = (): CardBroker => {
     const b = broker();
     if (!b) throw notRunning();
@@ -100,6 +109,16 @@ export function cardMethods(broker: () => CardBroker | undefined, capabilitiesOf
       if (conn.caller.kind === "user" && conn.role === "remote" && p.proof.via === "device" && p.proof.device !== device) {
         up();
         return { accepted: false, reason: REASONS["bad-origin"] };
+      }
+      if (conn.role === "app") {
+        up();
+        // A click counts only while no computer-use action runs on this computer (§5.5).
+        if (gates.acting?.() === true) return { accepted: false, reason: "computer use is acting right now" };
+        // No press is forwarded from one program to another: a proof names the key of the program whose connection
+        // sends it (MOSS Code's may still use the device's single key, which is its own).
+        if (p.proof.via === "device" && conn.program !== undefined && (p.proof.program ?? "code") !== conn.program) return { accepted: false, reason: REASONS["bad-origin"] };
+        const placed = gates.press?.(conn, p.id);
+        if (placed !== undefined) return { accepted: false, reason: placed };
       }
       const result = await up().answer(p.id, { optionId: p.option, hash: p.hash, proof: p.proof, ...(p.children ? { children: p.children } : {}) }, from);
       return result === "accepted" ? { accepted: true } : { accepted: false, reason: REASONS[result] };
