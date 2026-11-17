@@ -11,7 +11,7 @@ import { loadProjectAgentDefinitions } from "../src/agent/agent-definitions";
 import { readPluginFolder } from "../src/registry/folders";
 import { treeEntries } from "../src/registry/tree";
 import {
-  OLD_INSTRUCTIONS_FILE, OLD_NAMES, OLD_PLUGIN_MANIFEST, OLD_PROJECT_DIR, instructionsFileIn, manifestPathIn, newManifestFor, newThenOld, oldManifestFor, projectDirOf,
+  OLD_INSTRUCTIONS_FILE, OLD_NAMES, OLD_PLUGIN_MANIFEST, OLD_PLUGIN_SDK, OLD_PROJECT_DIR, instructionsFileIn, manifestPathIn, newManifestFor, newThenOld, oldManifestFor, projectDirOf,
 } from "../src/old-names";
 
 const temps: string[] = [];
@@ -30,8 +30,8 @@ function write(dir: string, files: Record<string, string>): void {
 }
 
 describe("the one list", () => {
-  test("three names, and the helpers give the new name first, the old second, the new when neither is there", () => {
-    expect([...OLD_NAMES]).toEqual([OLD_PROJECT_DIR, OLD_INSTRUCTIONS_FILE, OLD_PLUGIN_MANIFEST]);
+  test("four names, and the helpers give the new name first, the old second, the new when neither is there", () => {
+    expect([...OLD_NAMES]).toEqual([OLD_PROJECT_DIR, OLD_INSTRUCTIONS_FILE, OLD_PLUGIN_MANIFEST, OLD_PLUGIN_SDK]);
     const d = temp();
     expect([projectDirOf(d), instructionsFileIn(d), manifestPathIn(d)]).toEqual([join(d, ".moss"), join(d, "MOSS.md"), join(d, "moss.json")]);
     write(d, { [`${OLD_PROJECT_DIR}/x`]: "", [OLD_INSTRUCTIONS_FILE]: "old", [OLD_PLUGIN_MANIFEST]: "{}" });

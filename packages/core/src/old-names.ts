@@ -11,6 +11,11 @@ export const OLD_PROJECT_DIR = ".clover";
 export const OLD_INSTRUCTIONS_FILE = "CLOVER.md";
 /** A folder plugin's manifest before the rename. */
 export const OLD_PLUGIN_MANIFEST = "clover.json";
+/** The plugin SDK's import specifier before the rename, which a folder plugin not yet updated still imports: the
+ *  build resolves it (and each subpath) to the new package, read second (`registry/build.ts`), and the load guard
+ *  lets it in as a shared package (`registry/loader-config.ts`). */
+export const OLD_PLUGIN_SDK = "@waifucave/clover-plugin-sdk";
+export const NEW_PLUGIN_SDK = "@waifucave/moss-plugin-sdk";
 
 /** Every folder name the build reads a project's config from, the new name first. A fence that names the new project
  *  folder names these: a name the build reads second is fenced like the first. */
@@ -19,7 +24,17 @@ export const PROJECT_DIR_NAMES: readonly string[] = [".moss", OLD_PROJECT_DIR];
 export const PROJECT_DIR_PATTERN = `(?:${PROJECT_DIR_NAMES.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`;
 
 /** Every name above, for the one test that holds this file to them. */
-export const OLD_NAMES = [OLD_PROJECT_DIR, OLD_INSTRUCTIONS_FILE, OLD_PLUGIN_MANIFEST] as const;
+export const OLD_NAMES = [OLD_PROJECT_DIR, OLD_INSTRUCTIONS_FILE, OLD_PLUGIN_MANIFEST, OLD_PLUGIN_SDK] as const;
+
+/** The old SDK's specifiers as a bundler's resolve filter: the package and its subpaths. */
+export const OLD_PLUGIN_SDK_FILTER = new RegExp(`^${OLD_PLUGIN_SDK.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}(?:/|$)`);
+
+/** An import specifier with the old SDK's name as the new one's (`<old>` → `<new>`, `<old>/ui` → `<new>/ui`), or
+ *  `undefined` when it isn't the old SDK's. */
+export function newSdkSpecifier(spec: string): string | undefined {
+  if (spec === OLD_PLUGIN_SDK) return NEW_PLUGIN_SDK;
+  return spec.startsWith(`${OLD_PLUGIN_SDK}/`) ? `${NEW_PLUGIN_SDK}${spec.slice(OLD_PLUGIN_SDK.length)}` : undefined;
+}
 
 /** `newPath` when it exists, else `oldPath` when it exists, else `newPath`. */
 export function newThenOld(newPath: string, oldPath: string): string {

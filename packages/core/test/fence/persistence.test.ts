@@ -19,6 +19,7 @@ import { FakeClock } from "../../src/contracts/fakes/clock";
 import { MossFence } from "../../src/fence/fence";
 import { GIT_CONFIG_READ_CAP, expandWindowsEnv, gitConfiguredDirs, parseRegValue, readGitConfigFile, runLaterExtras, runLaterExtrasFrom, stampOf } from "../../src/fence/run-later";
 import { persistenceLinkHolds, persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
+import { otherInstallPlaces } from "../../src/other-installs";
 import { fenceContextFor } from "../../src/contracts/fence";
 import { fencedSpawner } from "../../src/fence/fenced-process";
 import { makeHolderFolders } from "../../src/fence/holder-folders";
@@ -87,7 +88,7 @@ describe("the shared list", () => {
     ].join("\n"), "linux", "/home/me")).toEqual(["/home/me/.githooks", "/opt/tmpl"]);
     const files: Record<string, string> = { "/home/me/.config/git/config": "[init]\n\ttemplatedir = ~/tmpl\n" };
     const extras = runLaterExtrasFrom("linux", "/home/me", { env: { ZDOTDIR: "/home/me/.zdot", PYTHONSTARTUP: "/home/me/.py.py" }, read: (f) => files[f] });
-    expect(extras).toEqual({ gitDirs: ["/home/me/tmpl"], envPaths: ["/home/me/.zdot"], envFiles: ["/home/me/.py.py"] });
+    expect(extras).toEqual({ gitDirs: ["/home/me/tmpl"], envPaths: ["/home/me/.zdot"], envFiles: ["/home/me/.py.py"], otherInstalls: otherInstallPlaces("linux", "/home/me") });
     expect(autoRunEntries("linux", "/home/me", extras).filter((e) => e.path === "/home/me/.py.py" || e.path === "/home/me/.zdot"))
       .toEqual([{ path: "/home/me/.zdot", file: false }, { path: "/home/me/.py.py", file: true }]);
     // git's includes are followed, conditional ones too, relative to the including file, each file once (#308's check 2).

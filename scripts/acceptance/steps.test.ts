@@ -2,7 +2,7 @@ import { UI_STEPS } from "./ui-steps";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, parseOnlyUi, stepNumber, uiRowNumbers, type Row } from "./steps";
+import { AGENT_STEP, COLD_START_STEP, COPY_UPGRADE_STEPS, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, parseOnlyUi, stepNumber, uiRowNumbers, type Row } from "./steps";
 
 const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
 /** Every `stepNo("<prefix>")` run.ts looks a step up by. */
@@ -10,7 +10,7 @@ const prefixes = [...run.matchAll(/stepNo\(\s*"((?:[^"\\]|\\.)*)"\s*\)/g)].map((
 
 describe("the acceptance table: every row gets exactly one result", () => {
   test("no two steps share a name, so a lookup by name lands on one row", () => {
-    for (const steps of [FULL_STEPS, UPGRADE_STEPS]) expect(new Set(steps).size).toBe(steps.length);
+    for (const steps of [FULL_STEPS, UPGRADE_STEPS, COPY_UPGRADE_STEPS]) expect(new Set(steps).size).toBe(steps.length);
   });
 
   test("the cold start takes its own row, not the last one: the idle row after it keeps its own (try 14b's table)", () => {
@@ -30,7 +30,7 @@ describe("the acceptance table: every row gets exactly one result", () => {
   test("each prefix run.ts looks up names exactly one step of a table", () => {
     expect(prefixes.length).toBeGreaterThan(5);
     for (const prefix of prefixes) {
-      const counts = [FULL_STEPS, UPGRADE_STEPS].map((steps) => steps.filter((s) => s.startsWith(prefix)).length);
+      const counts = [FULL_STEPS, UPGRADE_STEPS, COPY_UPGRADE_STEPS].map((steps) => steps.filter((s) => s.startsWith(prefix)).length);
       expect({ prefix, counts: counts.some((c) => c === 1) && counts.every((c) => c <= 1) }).toEqual({ prefix, counts: true });
     }
   });

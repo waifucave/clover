@@ -747,6 +747,9 @@ export interface RunLaterExtras {
   readonly envFiles?: readonly string[];
   /** Windows: the Documents known folder, when OneDrive (or the user) moved it from `<home>\Documents`. */
   readonly documents?: string;
+  /** The other installs' homes and the old app's data folders (`other-installs.ts`'s `otherInstallPlaces`): another
+   *  install runs what is written there, outside MOSS's sandbox. Folders. */
+  readonly otherInstalls?: readonly string[];
 }
 
 /** A path under `home` in `os`'s own form. */
@@ -815,6 +818,7 @@ export function autoRunEntries(os: Os, home: string, extras: RunLaterExtras = {}
   for (const p of extras.gitFiles ?? []) out.push({ path: p, file: true });
   for (const p of extras.envPaths ?? []) out.push({ path: p, file: false });
   for (const p of extras.envFiles ?? []) out.push({ path: p, file: true });
+  for (const p of extras.otherInstalls ?? []) out.push({ path: p, file: false });
   const seen = new Set<string>();
   return out.filter((e) => (seen.has(e.path) ? false : (seen.add(e.path), true)));
 }

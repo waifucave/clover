@@ -17,7 +17,7 @@ import { join, posix, win32 } from "node:path";
 import { isAnyPluginId, type Caller, type Os } from "@waifucave/moss-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  agentConfigPaths, BOT_READ_DENIED, CLOSED_DOORS, foldName, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, isBotCaller, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
+  agentConfigPaths, BOT_READ_DENIED, segmentMatches, CLOSED_DOORS, foldName, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, isBotCaller, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
   READ_DENIED_KINDS, writesPluginLoadDeny,
   type CallerFence, type Fence, type FenceContext, type FencedKind, type FencedPath, type FenceOp, type FenceVerdict,
   type SandboxPolicy,
@@ -25,6 +25,7 @@ import {
 import { canonicalPath, linksOnTheWay, TooManyLinks } from "./canonical";
 import { foldPath, nonAsciiAlias } from "./fold";
 import { instructionsReach } from "../bots/made-by";
+import { otherInstallReadDenied, otherInstallReadPatterns } from "../other-installs";
 import { botFolders, fenceLayout, globalHooksPathDirs, loginStartPaths, pendingFenced, type LaidOutKind } from "./layout";
 
 /** Pending kinds this fence enforces before B's contract has them. */
@@ -201,6 +202,12 @@ export class MossFence implements Fence {
     // partitions (always both shipped and dev profiles from the OS app-data folder, so neither app build can read
     // the other's sign-ins, plus an explicitly passed userData and a headless sessionData when given), and the
     // OK'd agent installs.
+    // The other installs' run folders, secret files and the old app's browser partitions: read-denied as each install's
+    // own fence held them (their homes are write-denied whole through the run-later list). Listed before that list, so a refusal inside
+    // one names its own kind, not the home's.
+    if (this.#layout["browser-profiles"] === undefined) {
+      for (const { kind, path } of otherInstallReadDenied(this.os, this.#home)) out.push({ kind, ...this.#held(path), deny: "read-write" });
+    }
     for (const p of this.#layout["login-start"] ?? loginStartPaths(this.#home, this.#mossHome, this.os)) add("login-start", p);
     // Python's user site folders (one `site-packages` per `python*` folder read on this disk).
     if (this.#layout["login-start"] === undefined) {
@@ -278,6 +285,17 @@ export class MossFence implements Fence {
     } catch { return null; } // more links than the walk follows (`TooManyLinks`): refused
   }
 
+  /** The other install's home a path matches a `*` entry of `otherInstallReadPatterns` under, or undefined. */
+  #otherInstallPattern(path: string): string | undefined {
+    const jp = this.os === "windows" && !this.#home.startsWith("/") ? win32 : posix;
+    for (const { home, rel } of otherInstallReadPatterns(this.os, this.#home)) {
+      if (!inside(path, home, this.os) || path === home) continue;
+      const segs = path.slice(home.length + 1).split(/[\\/]/).filter((x) => x !== "");
+      if (segs.length >= rel.length && rel.every((n, i) => segmentMatches(segs[i]!, n, this.os))) return jp.join(home, ...segs.slice(0, rel.length));
+    }
+    return undefined;
+  }
+
   check(op: FenceOp, given?: FenceContext): FenceVerdict {
     let ctx = this.#withWorkshop(given);
     const write = op.op === "write" || op.op === "delete" || op.op === "move";
@@ -323,6 +341,14 @@ export class MossFence implements Fence {
         try { own = posix.join(this.#canonical(posix.dirname(raw)), posix.basename(raw)); } catch { continue; }
         const hit = held.find((h) => inside(h.l, own, this.os));
         if (hit) return { allowed: false, reason: hit.kind, path: own };
+      }
+    }
+    // The other installs' `*` entries (`otherInstallReadPatterns`): the provider-state sidecars beside each transcript
+    // there, unread by every runner as their own fence kept them.
+    if (!write && this.#layout["browser-profiles"] === undefined) {
+      for (const p of all) {
+        const hit = this.#otherInstallPattern(p);
+        if (hit !== undefined) return { allowed: false, reason: "transcripts", path: hit };
       }
     }
     for (const p of all) {
@@ -517,7 +543,9 @@ export class MossFence implements Fence {
       // secret), and what they still can't read named one by one (`BOT_READ_DENIED`),
       // so the open read can't re-open it (a deny always wins).
       denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path),
-        ...(isBotCaller(ctx) ? BOT_READ_DENIED.map((rel) => joinHome(this.#mossHome, this.os, ...rel)) : patterns), this.#mossHome],
+        ...(isBotCaller(ctx) ? BOT_READ_DENIED.map((rel) => joinHome(this.#mossHome, this.os, ...rel)) : patterns), this.#mossHome,
+        // The other installs' `*` entries, as globs the runtime renders (the bots' own list above is written so too).
+        ...(this.#layout["browser-profiles"] === undefined ? otherInstallReadPatterns(this.os, this.#home).map(({ home, rel }) => joinHome(home, this.os, ...rel)) : [])],
       ...(() => { const h = [...new Set(set.flatMap((i) => i.links ?? []))]; return h.length > 0 ? { holdLinks: h } : {}; })(),
       closedDoors: [...CLOSED_DOORS[this.os]],
       // The cloud metadata address first, then the browser filter's ports on both loopbacks (`host:port`).

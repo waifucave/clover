@@ -112,8 +112,8 @@ import { REVIEW_STEP, reviewStep } from "./review-step";
 import { SURFACE_COPY_STEP, surfaceCopyStep } from "./surface-copy-step";
 import { CONVERSATION_COPY_STEP, conversationCopyStep } from "./conversation-copy-step";
 import { STAGE_COPY_STEP, stageCopyStep } from "./stage-copy-step";
-import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
-import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
+import { AGENT_STEP, COLD_START_STEP, COPY_UPGRADE_STEPS, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
+import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, treeDigest, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
 import { CODE_ADAPTER_STEP, codeAdapterWrong, GEMINI_MODEL, GEMINI_REPLY, GOOGLE_PLUGIN, OAUTH_MODEL, OAUTH_PLUGIN, OAUTH_REPLY, OAUTH_SIGN_IN_STEP, OPENAI_REPLY, OPENAI_WIRE_PROVIDERS, openAiWireWrong, THIRD_PARTY_KEY, THIRD_PARTY_MODEL, THIRD_PARTY_MODEL_STEP, THIRD_PARTY_PLUGIN, THIRD_PARTY_REPLY } from "./code-adapter-step";
@@ -287,7 +287,9 @@ const stateDir = keepState ?? upgradeFrom;
 // ── the result table ─────────────────────────────────────────────────────────────────────────────────────────────
 /** The most of one core the supervisor or the daemon may use while idle (`idleStep`). */
 const IDLE_CPU_MAX = 2;
-const STEPS: readonly string[] = upgrade ? UPGRADE_STEPS : FULL_STEPS;
+/** An upgrade over the state the old install's own run left (the build before the rename): the one-time copy's run. */
+const copyUpgrade = upgradeFrom !== undefined && statePaths(upgradeFrom).oldHome !== undefined;
+const STEPS: readonly string[] = upgrade ? (copyUpgrade ? COPY_UPGRADE_STEPS : UPGRADE_STEPS) : FULL_STEPS;
 const TOTAL = STEPS.length;
 /** A step's number by the start of its name (the steps after the reopen ones move as steps are added). */
 const stepNo = (prefix: string): number => {
@@ -330,11 +332,13 @@ const home = kept_?.home ?? join(userHome, ".moss");
 const logs = join(root, "logs");
 /** The run's fake plugin index and npm registry: what it publishes (fake-exa.ts pluginWorldResponse). */
 const pluginWorld = join(root, "plugin-world");
-const keychain = kept_?.keychain ?? join(root, "kc", "acceptance.keychain-db");
+// The copy's upgrade starts on a keychain file and service of its own: the old run's keys stay with the old install
+// (MOSS never reads its Keychain service), so this build must not see them.
+const keychain = (copyUpgrade ? undefined : kept_?.keychain) ?? join(root, "kc", "acceptance.keychain-db");
 const answerKeyFile = answerKeyFileFor(keychain);
 const stubBin = join(root, "bin", "moss-core-stub");
 for (const d of [home, userHome, logs, dirname(keychain), dirname(stubBin)]) mkdirSync(d, { recursive: true, mode: 0o700 });
-const service = kept?.service ?? `com.waifucave.moss.core.test.acceptance-${randomBytes(4).toString("hex")}`;
+const service = (copyUpgrade ? undefined : kept?.service) ?? `com.waifucave.moss.core.test.acceptance-${randomBytes(4).toString("hex")}`;
 const dummyKey = kept?.key ?? `sk-ant-acceptance-dummy-${randomBytes(12).toString("hex")}`;
 // An upgrade writes a file of its own: the old run's is already there.
 // A sensitive place (a dot-folder in the home): a bot's write there still asks at "ask for risky actions" (§9.1).
@@ -417,6 +421,9 @@ function baseEnv(): Record<string, string> {
     // The test app's answer key, kept beside the keychain file (a test-marked or unpackaged headless app only): every
     // app of the run, and an upgrade's, registers the same key.
     MOSS_TEST_ANSWER_KEY: answerKeyFile,
+    // The copy's upgrade: the old install's home, beside this one in the run's user home, named through the override a
+    // source or test-marked build takes (packages/core/src/migration/old-home/locate.ts).
+    ...(copyUpgrade ? { MOSS_OLD_HOME: kept_!.oldHome! } : {}),
     ...(tabFlashAlone ? { MOSS_TEST_SLEEP_AFTER_MS: String(TAB_FLASH_SLEEP_MS) } : {}),
   };
 }
@@ -479,7 +486,7 @@ async function cleanup(): Promise<void> {
     try { cpSync(join(home, "logs", "plugins"), join(keepLogs, "plugins"), { recursive: true }); } catch { /* none, or best effort */ }
   }
   // A kept keychain file stays for the upgrade run (its state dir's owner deletes it); a run's own goes.
-  if (keychainMade && stateDir === undefined) spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
+  if (keychainMade && (stateDir === undefined || copyUpgrade)) spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
   if (keepState !== undefined) {
     try {
       writeState(keepState, { v: 1, made: appBundle ?? (spawnSync("git", ["rev-parse", "--short=9", "HEAD"], { cwd: REPO, encoding: "utf8" }).stdout ?? "").trim(), target, service, key: dummyKey, ...keptFacts, answerKeyKept: existsSync(answerKeyFile) });
@@ -510,8 +517,8 @@ const firstLine = (path: string, re: RegExp): string | undefined => readLog(path
 // ── setup ────────────────────────────────────────────────────────────────────────────────────────────────────────
 function makeKeychain(): void {
   keychainsBefore = listKeychains();
-  // An upgrade opens the file the earlier run made; it is never made again here.
-  if (upgrade) {
+  // An upgrade opens the file the earlier run made; it is never made again here (the copy's upgrade makes its own).
+  if (upgrade && !copyUpgrade) {
     if (!existsSync(keychain)) throw new Error(`${keychain} isn't there: the earlier run's keychain file is gone`);
     return;
   }
@@ -996,7 +1003,9 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
       if (!/\bWebSearch\b/.test(settled) || !/\bWebFetch\b/.test(settled)) fail(`daemon ${b.run}: moss/web/web ${settled}, not WebSearch and WebFetch`);
       // A boot after the plugin's install (daemon 1 listed it once installed): its server lists within the time too.
       // An upgrade's boot has the old run's plugin from the start.
-      const installed = upgrade ? kept?.pluginId !== undefined : ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
+      // The copy's upgrade: its first boot is a fresh home (no plugin yet), and the old plugin's server starts on the
+      // next only after its new OK (step 6 calls its tool): its timing isn't a boot's.
+      const installed = upgrade ? !copyUpgrade && kept?.pluginId !== undefined : ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
       if ((b.run > 1 || upgrade) && installed && (b.echoMs === undefined || b.echoMs > limit)) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${limit / 1000} s of ${b.graceMs > 0 ? "the registry opening" : "the socket answering"}${first === undefined ? " (no turn on this boot)" : ""}`);
       if (first === undefined) continue; // no turn on this boot
       // Offered under their exact names.
@@ -1749,7 +1758,8 @@ async function main(): Promise<void> {
   if (target === "packaged" && packagedCoreSays("MOSS_TEST_OUTSIDE_WORLD")) startOutsideWorld();
   // An upgrade: the home an earlier build made, copied in (its run/ sockets and tokens left behind), then this build's settings.
   if (coldHome !== undefined) cpSync(coldHome, home, { recursive: true, filter: (src) => !/[\\/]run([\\/]|$)/.test(src.slice(coldHome.length)) });
-  writeSettings(fake.url);
+  // The copy's upgrade starts on a home with nothing in it (its settings come with the copy, and move to the fakes then).
+  if (!copyUpgrade) writeSettings(fake.url);
   let app: { exe: string; args: string[] };
   try {
     if (target === "source") { say("building the dev bundled plugins"); await buildBundledPlugins(); }
@@ -4913,12 +4923,14 @@ async function coldStartStep(app: { exe: string; args: string[] }, runs: number)
  *  and the daemon's trust in what the old build signed. */
 async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   const k = kept!;
+  // The copy's upgrade: the old install's home, hashed before anything of this build runs (its last row compares).
+  const oldBefore = copyUpgrade ? treeDigest(kept_!.oldHome!) : undefined;
   // The old run's harness token (a test-marked core's, test-only) would be read before the new core writes its own:
   // it goes. Everything else the old build left in run/ stays, as on a real upgrade.
   rmSync(join(home, "run", HARNESS_TOKEN_FILE), { force: true });
   // What an earlier build's home holds once a botless agent ran on it (14e: a Review on an OK card): its transcript in
   // `agents/`, as the writer makes it. The first 14f table's row 7 refused this home as the "old layout" on its next boot.
-  if (!existsSync(join(home, "migration", "c", "CURRENT_LAYOUT"))) {
+  if (!copyUpgrade && !existsSync(join(home, "migration", "c", "CURRENT_LAYOUT"))) {
     const t = new AgentTranscript(home, "acceptance-old-agent");
     t.writeRecord({ v: 1, sessionId: "acceptance-old-agent", backend: "fake", computer: "this", root: "/", startedAt: Date.now() });
     t.call({ acceptance: "an earlier build's botless agent" });
@@ -4944,13 +4956,14 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     const delay: Record<string, string> = target === "source" ? { MOSS_ACCEPTANCE_REGISTRY_DELAY_MS: "5000", MOSS_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS: "8000" } : {};
     const daemon = await startDaemonProc(delay);
     daemonUp = true;
-    daemon.proc.once("exit", () => { if (!stoppingDaemon) { say("the daemon exited under the app: ending the app"); void endChild(appProc.proc, 2_000); } });
+    upgradeDaemon = daemon;
+    daemon.proc.once("exit", () => { if (!stoppingDaemon && !restartingForCopy) { say("the daemon exited under the app: ending the app"); void endChild(appProc.proc, 2_000); } });
     await until(`the shell to fill the window within ${COLD_START_SECONDS} s of the daemon's start`, COLD_START_SECONDS * 1000, () => shellDoc(cdp!)).catch(async (e: unknown) => fail(`${why(e)} (frames: ${await dumpFrames(cdp!).catch(() => "?")}; app.log: ${readLog(appLog).slice(logFrom).split("\n").filter((l) => /pair:|layers:|registry/.test(l)).slice(-6).join(" | ").slice(0, 500)})`));
     const took = Date.now() - at;
     if (/Nothing fills this window/.test(readLog(appLog).slice(logFrom))) fail("the fallback note was drawn");
     // No Migration C on a current home. One line is not a migration: an earlier build that did read its own home as the
     // old layout left `agents` a link into sdk/, and this build puts the folder back ("is a real folder again").
-    const migLines = readLog(daemon.log).split("\n").filter((l) => /^migration C:/.test(l));
+    const migLines = copyUpgrade ? [] : readLog(daemon.log).split("\n").filter((l) => /^migration C:/.test(l));
     const migC = migLines.find((l) => !/ is a real folder again /.test(l))?.slice(0, 400);
     if (migC !== undefined) fail(`the old home (an earlier build's, with a botless agent's transcript) was read as Migration C's old layout: ${migC}`);
     const putBack = migLines.length > 0;
@@ -4958,12 +4971,22 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     // Never read as the old layout again: this build's own mark, or Migration C's COMPLETE where the earlier build ran
     // it on its own home (that home has a manifest, so this build adds no mark of its own; COMPLETE answers the same).
     const mark = existsSync(join(home, "migration", "c", "CURRENT_LAYOUT")) ? "marked current" : existsSync(join(home, "migration", "c", "COMPLETE")) ? "the earlier build's Migration C left it COMPLETE" : undefined;
-    if (oldLayoutMarkers(home).length > 0 || mark === undefined) fail(`the daemon didn't mark the old home current (${oldLayoutMarkers(home).join("; ") || "no marker"})`);
-    record(1, "PASS", `the app waited, the daemon started on the old home (no Migration C: ${mark}${putBack ? "; the agents folder an earlier build linked into sdk/ is a real folder again" : ""}), and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
+    if (oldLayoutMarkers(home).length > 0 || mark === undefined) fail(`the daemon didn't mark the ${copyUpgrade ? "fresh" : "old"} home current (${oldLayoutMarkers(home).join("; ") || "no marker"})`);
+    record(1, "PASS", copyUpgrade
+      ? `the app waited, the daemon started on a fresh home beside the old install's (${mark}), and the shell filled the window ${(took / 1000).toFixed(1)} s later`
+      : `the app waited, the daemon started on the old home (no Migration C: ${mark}${putBack ? "; the agents folder an earlier build linked into sdk/ is a real folder again" : ""}), and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
   } catch (err) {
     record(1, statusOf(err), why(err));
   }
-  if (!daemonUp) { blockFrom(2, "the daemon didn't start on the old home (step 1)"); trustStep(); return; }
+  if (!daemonUp) { if (oldBefore !== undefined) oldHomeStep(oldBefore); blockFrom(2, "the daemon didn't start on the old home (step 1)"); trustStep(); return; }
+
+  // The copy's upgrade: the offer, the press, the restart into the copy, and its notice.
+  let noticeLines: string[] = [];
+  if (copyUpgrade) {
+    const taken = await copyOffered(cdp);
+    if (taken === undefined) { oldHomeStep(oldBefore!); trustStep(); blockFrom(3, "the copy wasn't taken (step 2)"); return; }
+    noticeLines = taken.notice;
+  }
 
   let c: MossClient;
   try {
@@ -4996,6 +5019,28 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   } catch (err) {
     keyWhy = why(err);
   }
+  // The copy's upgrade: the key did not come over (it stays in the old install's Keychain service), the notice named
+  // it, and it works once entered again.
+  if (copyUpgrade) {
+    try {
+      if (keyWhy !== "") fail(`models.list: ${keyWhy}`);
+      if (signedIn !== 0) fail(`models.list shows ${signedIn} Anthropic model(s) signed in on the copied home before the key was entered again: a key came over from the old install`);
+      const named = noticeLines.find((l) => /Anthropic/.test(l));
+      if (named === undefined) fail(`the notice after the copy doesn't name Anthropic (it says: ${noticeLines.join(" | ").slice(0, 300) || "nothing"})`);
+      const plugin = "moss/model-anthropic";
+      const auth = await c.request<{ auth: { index: number; method: string; state: string }[] }>("plugin.auth.list", { id: plugin });
+      const entry = auth.auth.find((a) => a.method === "api-key");
+      if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
+      const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
+      if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+      const after = await c.request<{ models: { signedIn: boolean }[] }>("models.list", {});
+      signedIn = after.models.filter((m) => JSON.stringify(m).includes("anthropic") && m.signedIn).length;
+      if (signedIn === 0) fail("plugin.auth.signIn said signed-in, but models.list shows no Anthropic model signed in");
+      record(stepNo("the old run's model key does not come over"), "PASS", `not signed in on the copied home; the notice said "${named!.slice(0, 160)}"; entered again: ${signedIn} Anthropic models signed in`);
+    } catch (err) {
+      record(stepNo("the old run's model key does not come over"), statusOf(err), why(err));
+    }
+  }
 
   // 3: the old conversation: listed, its history kept, and drawn in the window.
   let session: string | undefined;
@@ -5010,9 +5055,9 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     if (!JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK")) fail(`session.history of ${session} has ${events.length} event(s) and not the old run's reply`);
     if (cdp === undefined) fail("the window couldn't be driven (step 1)");
     await until("the old reply drawn in the window", 30_000, async () => ((await treeText(cdp!)).includes("ACCEPTANCE-REPLY-OK") ? true : undefined), 500);
-    record(3, "PASS", `bot.list lists ${bot!.id}'s conversation ${session}; its history (${events.length} events) has the old run's reply, and the window draws it`);
+    record(stepNo("the old conversation is listed"), "PASS", `bot.list lists ${bot!.id}'s conversation ${session}; its history (${events.length} events) has the old run's reply, and the window draws it`);
   } catch (err) {
-    record(3, statusOf(err), why(err));
+    record(stepNo("the old conversation is listed"), statusOf(err), why(err));
     // A conversation not listed: the new turns go to the bot's current one, if there is one.
     if (session === undefined && bots !== undefined && bots.length > 0) session = bots[0]!.mainSession;
   }
@@ -5030,13 +5075,13 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     if (!turnsWork && mine.some((r) => r.answered === "slow")) fail(`the fake held this turn as a slow one (its user text carried an ACCEPTANCE-SLOW directive after the tag): stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     if (!turnsWork && torn.length > 0) fail(`the turn's request reached the fake but its body never arrived whole (${torn.map((r) => r.torn).join("; ")}); the turn ended: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     if (!turnsWork) fail(mine.length === 0 ? `the turn never reached the fake provider: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}` : `the fake answered (${mine.length} request(s)), but this turn's reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
-    record(4, "PASS", `this turn's own reply came from the fake (${mine.length} request(s))${carded.length ? `; ${carded.join("; ")}` : ""}`);
+    record(stepNo("a new turn runs on the upgraded home"), "PASS", `this turn's own reply came from the fake (${mine.length} request(s))${carded.length ? `; ${carded.join("; ")}` : ""}`);
   } catch (err) {
-    record(4, statusOf(err), why(err));
+    record(stepNo("a new turn runs on the upgraded home"), statusOf(err), why(err));
   }
 
   // 2: the key, with no re-entry: models.list sees it, and the fake got it on step 4's turn.
-  try {
+  if (!copyUpgrade) try {
     if (keyWhy !== "") fail(`models.list: ${keyWhy}`);
     if (signedIn === 0) fail("models.list shows no Anthropic model signed in: the key the old run stored isn't seen");
     const mine = fake!.requests.slice(seen4).filter((r) => r.path.endsWith("/messages"));
@@ -5047,15 +5092,19 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     record(2, statusOf(err), why(err));
   }
 
-  // 5: the old plugin, still installed and approved: its tool answers and no new OK card is asked.
+  // 5: the old plugin, still installed and approved: its tool answers and no new OK card is asked. On the copy's
+  // upgrade its files were updated for MOSS, so it asks for its OK once (the normal card), and is approved here.
   let echoTurn: { events: Ev[]; cards: string[] } | undefined;
   let echoWhy: string | undefined;
+  let okAgainSaid = "";
   try {
     if (k.pluginId === undefined) block("the old run left no approved plugin (its step 4 didn't pass)");
+    if (copyUpgrade) okAgainSaid = await okOldPluginAgain(c, k.pluginId!);
     const got = await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: k.pluginId });
     const state = got.plugin?.state;
     if (state !== "enabled" && state !== "running") fail(`plugin.get ${k.pluginId}: ${state ?? "not installed"}`);
-    const waiting = [...(await cards(c).catch(() => [])), ...raised].filter((card) => card.pluginId === k.pluginId);
+    // On the copy's upgrade its one new OK was asked and answered above: only a card still waiting counts.
+    const waiting = [...(await cards(c).catch(() => [])), ...(copyUpgrade ? [] : raised)].filter((card) => card.pluginId === k.pluginId);
     if (waiting.length > 0) fail(`the old plugin asks again: ${waiting.map((card) => `a ${card.kind} card`).join(", ")}`);
     if (session === undefined || !turnsWork) block("no turn runs on the upgraded home (step 4)");
     const seen = fake!.requests.length;
@@ -5069,10 +5118,10 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     if (called === undefined) fail(`the bot was offered no Echo tool (plugin tools: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
     if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
     if (result!.isError || !result!.text.includes("acceptance-echo-pong")) fail(`${called} answered with an error: ${result!.text.slice(0, 200)}`);
-    record(5, "PASS", `${k.pluginId} is ${state}; the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`);
+    record(stepNo("the old run's plugin is still installed"), "PASS", `${okAgainSaid}${k.pluginId} is ${state}; the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`);
   } catch (err) {
     echoWhy = why(err);
-    record(5, statusOf(err), why(err));
+    record(stepNo("the old run's plugin is still installed"), statusOf(err), why(err));
   }
 
   // 6: the fence still asks.
@@ -5096,13 +5145,13 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     if (answered === undefined && landed) fail("the write landed outside the bot's folders with no approval card (the fence didn't ask)");
     if (answered === undefined) fail(`no approval card was raised; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
     if (!landed) fail(`${answered} — but the file didn't land; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
-    record(6, "PASS", `${called} raised ${answered}; the file landed`);
+    record(stepNo("a fenced write still raises"), "PASS", `${called} raised ${answered}; the file landed`);
   } catch (err) {
-    record(6, statusOf(err), why(err));
+    record(stepNo("a fenced write still raises"), statusOf(err), why(err));
   }
 
   // 7: the bundled web tools and the old plugin's server, on this boot.
-  await bundledMcpStep(7);
+  await bundledMcpStep(stepNo("the bundled web tools and the old plugin's server"));
 
   // 8: the setting.
   try {
@@ -5113,9 +5162,9 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     const stored = await c.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "moss/settings" });
     const v = stored.settings.find((x) => x.key === "notifications.needsYou")?.value;
     if (v !== k.needsYou) fail(`notifications.needsYou is ${String(v)}; the old run left it ${String(k.needsYou)}`);
-    record(8, "PASS", `notifications.needsYou is still ${String(v)}, as the old run left it`);
+    record(stepNo("a setting the old run changed"), "PASS", `notifications.needsYou is still ${String(v)}, as the old run left it`);
   } catch (err) {
-    record(8, statusOf(err), why(err));
+    record(stepNo("a setting the old run changed"), statusOf(err), why(err));
   }
 
   // 9: the "Always allow" the old build gave the Echo call's card, against step 5's same call on this build. A card
@@ -5127,10 +5176,11 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     const errors = errorsOf(echoTurn!.events);
     if (errors.length > 0) fail(`the same call (${k.always!.tool}) erred on this build: ${errors[0]}`);
     const toolCards = echoTurn!.cards.filter((x) => !/plugin-ok/.test(x));
-    if (toolCards.length === 0) record(9, "PASS", `the Always rule saved on the old build answered ${k.always!.tool}: no card`);
-    else record(9, "PASS", `the old Always rule no longer matches ${k.always!.tool} on this build: the user sees a card again (${toolCards.join("; ")}), which is acceptable; no error`);
+    const n = stepNo("an \"Always allow\" the old build saved");
+    if (toolCards.length === 0) record(n, "PASS", `the Always rule saved on the old build answered ${k.always!.tool}: no card`);
+    else record(n, "PASS", `the old Always rule no longer matches ${k.always!.tool} on this build: the user sees a card again (${toolCards.join("; ")}), which is acceptable; no error`);
   } catch (err) {
-    record(9, statusOf(err), why(err));
+    record(stepNo("an \"Always allow\" the old build saved"), statusOf(err), why(err));
   }
 
   // 10: MOSS's own plugin this build can't run yet, which the old build ran: listed off as not available, its switch
@@ -5151,6 +5201,94 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   c.close();
   cdp?.close();
   trustStep();
+  if (oldBefore !== undefined) oldHomeStep(oldBefore);
+}
+
+/** The copy's upgrade's last row: the old install's home, hashed again after both of this build's daemons ran (the
+ *  second on the copy), is byte for byte what it was before this build started. */
+function oldHomeStep(before: { hash: string; files: number }): void {
+  const n = stepNo("the old install's home is byte for byte");
+  try {
+    const after = treeDigest(kept_!.oldHome!);
+    if (after.hash !== before.hash) fail(`the old install's home changed during the run (${before.files} files before, ${after.files} after)`);
+    record(n, "PASS", `${before.files} files, the same hash before and after (${before.hash.slice(0, 12)}…)`);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  }
+}
+
+/** The run's daemon in the upgrade run, and whether the run is restarting it for the copy (its exit 76 isn't a crash). */
+let upgradeDaemon: { proc: ChildProcess; log: string } | undefined;
+let restartingForCopy = false;
+/** The daemon's exit for "start me again now" (packages/core/src/platform/login/supervise.ts). */
+const RESTART_EXIT = 76;
+
+/** Step 2 of the copy's upgrade: the core's own card offers the copy (pressed in the window when it can be, else over
+ *  the app's methods), the daemon stages it and exits to restart, the run starts it again (as the supervisor and the app
+ *  do), the copy is swapped in, and the notice after it is answered. The fakes' endpoints are moved into the staged
+ *  settings first (as every upgrade's are). Its notice's lines come back for step 3, or undefined when it failed. */
+async function copyOffered(cdp: Cdp | undefined): Promise<{ notice: string[] } | undefined> {
+  const n = stepNo("the copy from the old install's home is offered");
+  try {
+    const d = await appDriver();
+    const c = d.client;
+    const homeCard = async (title: RegExp) => until(`the core's own card (${title.source})`, 60_000, async () => (await cards(c)).find((x) => x.kind === "change" && (x as { change?: string }).change === "home-copy" && title.test(JSON.stringify(x.fields))), 500);
+    const offer = await homeCard(/Bring your data over from/);
+    if (offer.pluginId !== undefined) fail(`the offer names a plugin (${offer.pluginId}): it is the core's own card`);
+    if (!JSON.stringify(offer.fields).includes("left exactly as it is")) fail(`the offer doesn't say the old install is left as it is: ${JSON.stringify(offer.fields).slice(0, 300)}`);
+    restartingForCopy = true;
+    const exited = new Promise<number | null>((r) => upgradeDaemon!.proc.once("exit", (code) => r(code)));
+    await approve(c, offer);
+    c.close();
+    const code = await Promise.race([exited, sleep(180_000).then(() => "timeout" as const)]);
+    if (code === "timeout") fail("the daemon didn't restart within 3 minutes of the press (the copy, or its exit)");
+    if (code !== RESTART_EXIT) fail(`the daemon exited ${code} after the press, not ${RESTART_EXIT} (start me again): ${lastLines(upgradeDaemon!.log)}`);
+    const staged = join(home, "migration", "old-home", "staging");
+    if (!existsSync(join(home, "migration", "old-home", "staging.complete.json"))) fail("the daemon exited, but no whole copy is staged");
+    // The fakes' endpoints, in the staged settings (the old run's point at its own fakes, gone with it).
+    const stagedSettings = join(staged, "settings.json");
+    writeFileSync(stagedSettings, settingsWithFake(existsSync(stagedSettings) ? readFileSync(stagedSettings, "utf8") : undefined, fake!.url, {
+      ...(gemini === undefined ? {} : { google: gemini.url }),
+      ...Object.fromEntries(OPENAI_WIRE_PROVIDERS.filter((p) => openAiWires.has(p.provider)).map((p) => [p.provider, `${openAiWires.get(p.provider)!.fake.url}${p.basePath}`])),
+    }), { mode: 0o600 });
+    const again = await startDaemonProc();
+    upgradeDaemon = again;
+    restartingForCopy = false;
+    const swapped = readLog(again.log).split("\n").find((l) => l.startsWith("old home: the copy from"));
+    if (swapped === undefined) fail(`the restarted daemon didn't say the copy is in place: ${lastLines(again.log)}`);
+    const c2 = (await appDriver()).client;
+    await c2.request("events.subscribe", { areas: ["approvals"] }).catch(() => undefined);
+    const notice = await until("the core's own card (the notice after the copy)", 60_000, async () => (await cards(c2)).find((x) => x.kind === "change" && (x as { change?: string }).change === "home-copy"), 500);
+    const detail = (notice.fields as { detail?: { items?: string[] } }).detail?.items ?? [];
+    await approve(c2, notice);
+    c2.close();
+    record(n, "PASS", `the offer was the core's own card (no plugin); the press staged the copy, the daemon exited ${RESTART_EXIT} and its next start swapped it in ("${swapped!.slice(0, 120)}…"); the notice was answered${cdp === undefined ? "" : " (over the app's methods)"}`);
+    return { notice: detail };
+  } catch (err) {
+    restartingForCopy = false;
+    record(n, statusOf(err), why(err));
+    return undefined;
+  }
+}
+
+/** The copy's upgrade's old plugin: its files were updated for MOSS, so it asks for its OK again on the normal card
+ *  (raised when the registry finds it, or when its switch is set), which the run approves once. What it saw, for the row. */
+async function okOldPluginAgain(c: MossClient, id: string): Promise<string> {
+  let card = (await cards(c)).find((x) => x.kind === "plugin-ok" && x.pluginId === id);
+  if (card === undefined) {
+    const got = await c.request<{ plugin?: { state?: string } }>("plugin.get", { id });
+    const state = got.plugin?.state;
+    if (got.plugin === undefined) fail(`plugin.get ${id}: not installed on the copied home`);
+    if (state === "running" || state === "enabled") fail(`${id} runs on the copied home with no new OK, though its files changed`);
+    const switched = await c.request<{ applied?: boolean; card?: string }>("plugin.setEnabled", { id, enabled: true });
+    card = await until(`${id}'s OK card`, 60_000, async () => (await cards(c)).find((x) => x.kind === "plugin-ok" && x.pluginId === id && (switched.card === undefined || x.id === switched.card)), 500);
+  }
+  await approve(c, card!);
+  await until(`${id} running after its new OK`, 90_000, async () => {
+    const s = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id })).plugin?.state;
+    return s === "running" || s === "enabled" ? true : undefined;
+  }, 1_000);
+  return `its OK card came once (its files were updated for MOSS) and was approved; `;
 }
 
 /** The upgrade's last step: no daemon of the run distrusts state the old build signed (the plugin registry's MAC, the

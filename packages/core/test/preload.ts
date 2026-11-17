@@ -24,6 +24,11 @@ process.env.MOSS_CLAUDE_RESUME_SCAN_ROOT = mkdtempSync(join(tmpdir(), "moss-test
 // the developer's REAL legacy dev/dist home. A test that exercises Migration B passes its own
 // `migration.legacyHome` to `startDaemon` (see `daemon-migration-boot.test.ts`).
 process.env[LEGACY_HOME_ENV] = mkdtempSync(join(tmpdir(), "moss-test-legacy-home-"));
+// The one-time copy of an old install's home (`migration/old-home/locate.ts`): a test-marked or source run offers it only
+// through this override, and the default (the real old home) only on the real profile's own home, which no test uses.
+// Pointed at a throwaway, empty folder for the whole run (spawned children inherit it), as a second fence: no test may
+// read the developer's REAL old home. A test that copies one names its own fixture.
+process.env.MOSS_OLD_HOME = mkdtempSync(join(tmpdir(), "moss-test-old-home-"));
 // Test-keychain-isolation fix: a real-binary e2e test's spawned `winter`/`claude` child resolves
 // its OWN Keychain credential refs (`profile.ts`'s `keychainService()`, `runtime-sdk/keychain.ts`)
 // against a REAL Keychain service (`com.waifucave.moss.core[.dev]`) — never the test's own injected

@@ -75,6 +75,10 @@ export const ChangeSubject = z.enum([
   "plugin-update",
   /** The user's statement that they are 18 or older, asked from a part (F2): only their yes on the card makes it. */
   "plugin-confirm-adult",
+  /** The one-time copy of the old install's home (spec §12, item 125): the core's own card at a fresh home's first start
+   *  (bring the data over, or start fresh; quit the old app first while it runs), and its notice after the copy (what
+   *  to set up again, and the old engine's own `autostart disable`). */
+  "home-copy",
 ]);
 export type ChangeSubject = z.infer<typeof ChangeSubject>;
 

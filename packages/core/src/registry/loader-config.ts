@@ -8,6 +8,7 @@ import { builtinModules } from "node:module";
 import { join } from "node:path";
 import { CLIENT_BARE_IMPORTS, parseJsonc } from "@waifucave/moss-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/moss-protocol";
+import { newSdkSpecifier } from "../old-names";
 
 /** The biggest loader config read when following `extends` and `paths`. */
 const LOADER_CONFIG_MAX_BYTES = 1024 * 1024;
@@ -84,6 +85,8 @@ export function loaderOutsideIssues(reach: LoaderReach): ValidationIssue[] {
       severity: "error", refuses: "plugin", code: "dependency_missing", file: m.file, path: "",
       message: m.field === "size"
         ? `${m.file} is too big for its imports to be checked`
+        : m.field === "old-sdk"
+          ? `${m.file} imports "${m.target}", the plugin SDK's old name, from code that runs outside the page: change the import to "${newSdkSpecifier(m.target)}"`
         : m.field === "import"
           ? `${m.file} imports "${m.target}", which the plugin doesn't ship: add "${m.target}" to the plugin's own node_modules (an optional import in a try/catch counts too, since Bun would look for it in the folders above the plugin)`
           : `${m.file} declares "${m.target}" in ${m.field}, which the plugin doesn't ship: add "${m.target}" to the plugin's own node_modules`,
@@ -102,7 +105,9 @@ export interface LoaderReach {
   missing: { file: string; field: string; target: string }[];
 }
 
-/** What a plugin may import without shipping it: MOSS's shared packages, which the load guard lets in. */
+/** What a plugin may import without shipping it: MOSS's shared packages, which the load guard lets in. The plugin SDK's
+ *  old name (`old-names.ts`) is not one: the builder resolves it in a page's code, and code that runs from source (a
+ *  host, a hook, a server, a command) is told to take the new name (`loaderReach`). */
 export const SHARED_PLUGIN_PACKAGES: readonly string[] = ["@waifucave/moss-plugin-sdk", "@waifucave/moss-protocol", "zod"];
 
 const CODE = /\.(?:[mc]?[jt]s|[jt]sx)$/i;
@@ -397,6 +402,12 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
   const clientOnly = (file: string) => !otherReach.opaque && clientReach.has(file) && !otherReach.files.has(file);
   for (const { file, spec } of unshipped) {
     if (clientOnly(file) && (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)) continue;
+    // The plugin SDK's old name: a page's code builds through the registry's builder, which reads the name second; code
+    // that runs from source doesn't, so its author is told the new name.
+    if (newSdkSpecifier(spec) !== undefined) {
+      if (!clientOnly(file)) missing.push({ file, field: "old-sdk", target: spec });
+      continue;
+    }
     missing.push({ file, field: "import", target: spec });
   }
   for (const file of files.filter((f) => PACKAGE.test(f) && !f.split("/").includes("node_modules"))) {

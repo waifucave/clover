@@ -138,6 +138,26 @@ export const UPGRADE_STEPS = [
   "the daemon trusts the state the old build signed (plugin registry, device key)",
 ] as const;
 
+/** The upgrade run's steps over a state the old install's own run left (the build before the rename): the one-time
+ *  copy (spec §12, item 125). This build starts on a fresh home beside the old one, offers the copy on the core's own
+ *  card, takes the press and restarts into the copy; the keys don't come over (they stay in the old install's
+ *  Keychain service, which MOSS never reads), and the old home is left byte for byte as it was. */
+export const COPY_UPGRADE_STEPS = [
+  "upgrade cold start: the app opens first on a fresh home beside the old install's, the daemon after, and the shell fills the window",
+  "the copy from the old install's home is offered on the core's own card, taken on the press, and swapped in at the restart",
+  "the old run's model key does not come over: the notice names it, it isn't signed in, and it works once entered again",
+  "the old conversation is listed and opens in the window",
+  "a new turn runs on the upgraded home",
+  "the old run's plugin is still installed, asks for its OK again once (its files were updated), and its tool answers",
+  "a fenced write still raises an approval card, then lands",
+  "the bundled web tools and the old plugin's server list within 5 s, and the first turn offers them",
+  "a setting the old run changed is still set",
+  "an \"Always allow\" the old build saved still answers the same call (asking again is acceptable; an error is not)",
+  "a bundled plugin this build parks (the forwarder, on in the old run) is listed as not available, its switch kept on, with no card",
+  "the daemon trusts the state the old build signed (plugin registry, device key)",
+  "the old install's home is byte for byte what it was",
+] as const;
+
 /** A step's number (1-based) in `steps` by its exact name; throws for a name the table doesn't have. */
 export function stepNumber(steps: readonly string[], name: string): number {
   const i = steps.indexOf(name);

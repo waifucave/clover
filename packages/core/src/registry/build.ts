@@ -24,6 +24,7 @@
 //   bundler's own `__require` shim, `process.getBuiltinModule` of `module` or of a computed name, a `Worker`,
 //   `Bun.resolve`/`Bun.resolveSync`, `import.meta.resolve` and `process.dlopen`.
 import { CLIENT_BARE_IMPORTS } from "@waifucave/moss-plugin-sdk";
+import { newSdkSpecifier, OLD_PLUGIN_SDK_FILTER } from "../old-names";
 import { mkdirSync, readFileSync, renameSync } from "node:fs";
 import { isBuiltin } from "node:module";
 import { basename, dirname, extname, resolve } from "node:path";
@@ -90,6 +91,31 @@ export function isRuntimeBuiltin(spec: string): boolean {
   return spec === "bun" || spec.startsWith("bun:") || spec.startsWith("node:") || isBuiltin(spec);
 }
 
+/** The plugin SDK's old import specifier, read second (`old-names.ts`): a folder plugin that still imports it builds
+ *  against the new package, as if it imported that. A client keeps the UI API's import for its layer's import map,
+ *  under the new name; anything else resolves where the new name does (from the importer, else from MOSS's own
+ *  install, where the plugin SDK always is). */
+function oldSdkNames(client: boolean): Bun.BunPlugin {
+  return {
+    name: "moss-old-sdk-name",
+    setup(build) {
+      build.onResolve({ filter: OLD_PLUGIN_SDK_FILTER }, (args) => {
+        const spec = newSdkSpecifier(args.path);
+        if (spec === undefined) return undefined;
+        if (client && (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)) return { path: spec, external: true };
+        for (const from of [args.importer ? dirname(args.importer) : args.resolveDir, import.meta.dir]) {
+          try {
+            return { path: Bun.resolveSync(spec, from) };
+          } catch {
+            /* the next place */
+          }
+        }
+        return undefined;
+      });
+    },
+  };
+}
+
 const isBare = (spec: string) => !spec.startsWith(".") && !spec.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(spec) && !/^[a-z][a-z0-9+.-]*:/i.test(spec);
 
 /** Builds one entry (see the file's header). Throws `PluginBuildError` with the bundler's messages, or with the
@@ -117,7 +143,7 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
       define: { __dirname: DIRNAME, __filename: FILENAME, ...(client ? { "process.env.NODE_ENV": JSON.stringify("production") } : {}) },
       banner: client ? `const ${DIRNAME} = "/", ${FILENAME} = "/index.js";` : `const ${DIRNAME} = import.meta.dirname, ${FILENAME} = import.meta.filename;`,
       ...(client ? { external: [...CLIENT_BARE_IMPORTS] } : {}),
-      plugins: client || keepExternal === undefined ? [] : [{
+      plugins: [oldSdkNames(client), ...(client || keepExternal === undefined ? [] : [<Bun.BunPlugin>{
         name: "moss-keep-external",
         setup(build) {
           build.onResolve({ filter: /^[^./]/ }, (args) => {
@@ -127,7 +153,7 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
             return { path: args.path, external: true };
           });
         },
-      }],
+      }])],
       // NO MACROS. A plugin file importing `with { type: "macro" }` would run that function in THIS process at build
       // time and inline what it returns (a file it read, the builder's environment): plugin code running in the
       // builder, which can be the daemon. Off, such an import fails the build ("Macros are disabled"). bun-types has

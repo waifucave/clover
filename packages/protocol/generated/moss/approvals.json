@@ -184,7 +184,8 @@
                     "plugin-sign-out",
                     "plugin-index-remove",
                     "plugin-update",
-                    "plugin-confirm-adult"
+                    "plugin-confirm-adult",
+                    "home-copy"
                   ]
                 },
                 "binds": {
@@ -603,7 +604,8 @@
                   "plugin-sign-out",
                   "plugin-index-remove",
                   "plugin-update",
-                  "plugin-confirm-adult"
+                  "plugin-confirm-adult",
+                  "home-copy"
                 ]
               },
               "binds": {
@@ -1408,7 +1410,8 @@
                   "plugin-sign-out",
                   "plugin-index-remove",
                   "plugin-update",
-                  "plugin-confirm-adult"
+                  "plugin-confirm-adult",
+                  "home-copy"
                 ]
               },
               "binds": {

@@ -457,7 +457,9 @@ describe("Clover→MOSS rename residue", () => {
     const { hits } = scan();
     const spelled = hits.filter((h) => /(?<![A-Za-z0-9_])\.clover(?![A-Za-z0-9_-])|CLOVER\.md|\bclover\.json\b/.test(h.context)).map((h) => h.file);
     // The spec (docs/moss-spec.md) is prose, not live code: it names `.clover` as the old project folder the build still reads second.
-    const allowed = new Set(["docs/moss-spec.md", "packages/core/src/old-names.ts", "packages/core/test/old-names.test.ts", "packages/core/src/other-installs.ts", "packages/core/test/other-installs.test.ts"]);
+    // The one-time copy's table (`migration/old-home/names.ts`) names what the old engine wrote INSIDE its home (the
+    // runtime home's config file, its instructions file), which the copy renames once and nothing reads afterwards.
+    const allowed = new Set(["docs/moss-spec.md", "packages/core/src/old-names.ts", "packages/core/test/old-names.test.ts", "packages/core/src/other-installs.ts", "packages/core/test/other-installs.test.ts", "packages/core/src/migration/old-home/names.ts"]);
     const stray = [...new Set(spelled)].filter((f) => !allowed.has(f));
     expect(stray, `files other than the old-name helper that spell an old name:\n${stray.join("\n")}`).toHaveLength(0);
   }, 120_000);

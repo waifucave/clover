@@ -107,7 +107,8 @@ describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute s
     const moss = new Set(RUN_LATER());
     // The router's list names `.moss` only; the old project folder name is MOSS's own addition (a name read second is fenced like the first).
     const rules = ["Edit", "Write"].flatMap((t) => protectedPathsFor("/h", "/r").filter((p) => !moss.has(p) && !p.includes(`/${OLD}/`)).map((p) => `${t}(${p})`));
-    expect(protectedPathsFor("/h", "/r").filter((p) => p.includes(`/${OLD}/`))).toEqual(["skills", "commands", "rules", "output-styles"].map((k) => `//r/${OLD}/${k}/**`));
+    // (The old install's home shares the old folder's name, and is one of MOSS's persistence places: not a project item.)
+    expect(protectedPathsFor("/h", "/r").filter((p) => !moss.has(p) && p.includes(`/${OLD}/`))).toEqual(["skills", "commands", "rules", "output-styles"].map((k) => `//r/${OLD}/${k}/**`));
     expect(protectedPathsFor("/h", "/r").filter((p) => moss.has(p))).toEqual([...moss]);
     const routerMirror = ["Edit", "Write"].flatMap((t) => [
       "//h/sdk/skills/**", "//h/sdk/commands/**", "//h/sdk/rules/**", "//h/sdk/output-styles/**", "//h/sdk/MOSS.md",

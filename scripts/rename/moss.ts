@@ -163,9 +163,9 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
   // ── Old names a user wrote on disk outside the home, read by the one helper ───────────────────
   {
     id: "old-names",
-    regex: /\.clover(?![A-Za-z0-9_-])|CLOVER\.md|\bclover\.json\b/g,
+    regex: /\.clover(?![A-Za-z0-9_-])|CLOVER\.md|\bclover\.json\b|@waifucave\/clover-plugin-sdk(?![A-Za-z0-9_-])/g,
     files: ["packages/core/src/old-names.ts", "packages/core/test/old-names.test.ts"],
-    why: "the names a user wrote outside the home — a project's `.clover/` folder, a `CLOVER.md`, a folder plugin's `clover.json` — which the new build still reads second, through `old-names.ts`, the one place that lists them",
+    why: "the names a user wrote outside the home — a project's `.clover/` folder, a `CLOVER.md`, a folder plugin's `clover.json` and its import of the plugin SDK under its old name — which the new build still reads second, through `old-names.ts`, the one place that lists them",
   },
   // ── The spec's own record of the rename, and of the names before it (docs/moss-spec.md only) ──────
   {
@@ -179,6 +179,19 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
     regex: /`~\/\.clover(?:-dev)?`|Existing Clover homes|the old `\.clover`|`Xcode progects\/WaifuCave\/clover`/g,
     files: ["docs/moss-spec.md"],
     why: "the old install's names where the spec names them as the OLD ones: the home that is copied once to `~/.moss` and then left untouched, the project folder the build still reads second, and the owner's checkout folder",
+  },
+  // ── The old home's own names, which the one-time copy maps (stage 2) ─────────────────────────────
+  {
+    id: "old-home-map",
+    regex: /[A-Za-z0-9_./@-]*(?:clover|Clover|CLOVER)[A-Za-z0-9_./:-]*/g,
+    files: ["packages/core/src/migration/old-home/names.ts", "packages/core/test/migration/old-home/**"],
+    why: "the one table of what the old install's home calls things that the renamed code calls something else (the old root plugin's id, its standing server's tool names, its turn ledger, the runtime home's config file, the manifest file name, the plugin SDK's import specifier, the plugin API's variables, CSS tokens and URL schemes): the one-time copy of an old home (spec §12, item 125) maps each through this file, and its tests build old homes from the same names",
+  },
+  {
+    id: "old-tree-build",
+    regex: /\bCLOVER_MAC_IDENTITY\b|\bCLOVER_HEAVY_EXCLUSIVE\b/g,
+    files: ["scripts/try/run.sh", "scripts/acceptance/upgrade.ts"],
+    why: "the variables a tree from before the rename reads its signing identity and the machine's hold from: the upgrade pair builds and runs that tree's test twin with its own harness, whose run leaves the old install's home for the one-time copy",
   },
   // ── The installed Clover app, which MOSS never touches ───────────────────────────────────────────
   {
