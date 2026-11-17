@@ -51,7 +51,7 @@ export function Face(props: { name: string; face?: BotFace; mood: Mood; size: nu
 /** The mood in words, beside every face (`working` names its tool's short name when the feed gives one). */
 export function MoodWords(props: { mood: Mood; tool?: string }) {
   const tool = props.mood === "working" && props.tool !== undefined ? toolName(props.tool) : undefined;
-  return <span className={`mood mood--${props.mood}`} data-mood-words={props.mood}>{MOOD_WORDS[props.mood]}{tool !== undefined ? ` · ${tool}` : ""}</span>;
+  return <span className={`mood mood--${props.mood}`} data-mood-words={props.mood}>{MOOD_WORDS[props.mood]}{tool !== undefined ? <span className="mood__tool">{` · ${tool}`}</span> : null}</span>;
 }
 
 /** A tool's wire name (`mcp__moss__Browser`) as a person reads it (`Browser`). */
