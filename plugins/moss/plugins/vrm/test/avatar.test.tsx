@@ -11,7 +11,7 @@ import { vowel } from "../src/lipsync/synth";
 import type { Mesh } from "three";
 import type { FigureBox, FigureCue, FigureNames } from "../src/control";
 
-const file = readFileSync(join(import.meta.dir, "..", "..", "..", "..", "alpha", "assets", "alpha.vrm"));
+const file = readFileSync(join(import.meta.dir, "..", "..", "alpha-figure", "vrm", "alpha.vrm"));
 const bytes = () => file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
 
 /**

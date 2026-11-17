@@ -22,7 +22,7 @@ export interface Story {
 }
 
 /** Where the gallery serves Alpha's assets (the same path they have in the repo). */
-export const ALPHA_VRM = "plugins/alpha/assets/alpha.vrm";
+export const ALPHA_VRM = "plugins/moss/plugins/alpha-figure/vrm/alpha.vrm";
 export const ALPHA_PORTRAIT = "plugins/alpha/assets/portrait.svg";
 
 /** Resolves once every avatar in the frame has drawn (or failed), and one more frame has passed. */

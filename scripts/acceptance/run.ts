@@ -5614,7 +5614,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   // note beside it, so the import shows the model's own note.
   const avatarFolder = join(root, "avatar-fixture");
   mkdirSync(avatarFolder, { recursive: true });
-  for (const f of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(import.meta.dir, "..", "..", "plugins", "alpha", "assets", "live2d", f), join(avatarFolder, f));
+  for (const f of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(import.meta.dir, "..", "..", "plugins", "moss", "plugins", "alpha-figure", "live2d", f), join(avatarFolder, f));
   writeFileSync(join(avatarFolder, "Credits.txt"), "Acceptance fixture model. Free for personal use; credit the acceptance suite.\n");
   // The media plugin's step: main's file pickers (MOSS_TEST_PICK_FILES, test-marked builds only) answer from this file, by kind: the
   // generated test video to open, a new file in the run's folder to save. Generated media only; nothing of anyone's own.

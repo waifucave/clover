@@ -120,7 +120,7 @@ export const TOKENS: readonly TokenSpec[] = [
   t("radius.small", "dimension", "Small corners: chips, rows."),
   t("radius.medium", "dimension", "Medium corners: buttons, fields."),
   t("radius.large", "dimension", "Large corners: panels, inner cards."),
-  t("radius.huge", "dimension", "The largest corners: sheets, the stage."),
+  t("radius.huge", "dimension", "The largest corners: sheets."),
   t("radius.round", "dimension", "A capsule's end."),
   t("space.xs", "dimension", "4 on the grid."),
   t("space.s", "dimension", "8 on the grid."),
@@ -177,17 +177,6 @@ export const TOKENS: readonly TokenSpec[] = [
   t("pill.plume.tail", "color", "The working plume where it cools."),
   t("pill.plume.body", "color", "The working plume's body."),
   t("pill.plume.hot", "color", "The working plume at the nozzle."),
-  // The bot's stage and its avatar.
-  t("stage.background", "paint", "The stage behind the avatar."),
-  t("stage.floor", "color", "The soft pool of shadow under the avatar."),
-  t("stage.glow", "color", "The light behind the avatar."),
-  t("stage.foreground", "paint", "A paint over the avatar's lower edge (grass, mist), so a figure the stage crops reads as standing behind it."),
-  t("stage.foreground.height", "dimension", "How far up the stage that paint reaches."),
-  t("stage.text", "color", "Credits and notes on the stage."),
-  t("avatar.light.key", "color", "The avatar's key light."),
-  t("avatar.light.fill", "color", "The avatar's fill light."),
-  t("avatar.light.rim", "color", "The avatar's rim light."),
-  t("avatar.exposure", "number", "The avatar's exposure: 1 is neutral."),
 ];
 
 const NAME = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*$/;

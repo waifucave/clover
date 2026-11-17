@@ -60,8 +60,6 @@ describe("Alpha's theme", () => {
     ["color.success", "color.surface", 4.5],
     ["bubble.user.text", "bubble.user.background", 7],
     ["composer.text", "composer.background", 7],
-    // The avatar's credit line sits on a plate of the surface colour, below the avatar.
-    ["stage.text", "color.surface", 4.5],
     ["color.text.placeholder", "color.surface", 4.5],
     ["composer.placeholder", "composer.background", 4.5],
   ];
