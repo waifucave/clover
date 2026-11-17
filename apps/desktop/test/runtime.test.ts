@@ -958,7 +958,7 @@ describe("what a conversation's inner spots need is the data's own kind (spec re
     const conv = s.rt.resolve(shell.shellFrame, tab.mount, "conversation").items[0]!;
     return { s, shell, conv };
   }
-  const refs = (v: { items: { ref?: string }[] }) => v.items.map((i) => i.ref?.split("#")[0]).sort();
+  const refs = (v: { items: readonly object[] }) => v.items.map((i) => (i as { ref?: string }).ref?.split("#")[0]).sort();
 
   test("the conversation part (the moss layer) says the session's kind: a code session's add-ons come from sessions.read plugins only, a bot's from conversation.read ones only, an archived one's from neither", () => {
     const { s, shell, conv } = conversationPart();
