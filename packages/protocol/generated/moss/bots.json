@@ -71,21 +71,58 @@
                   "properties": {
                     "shape": {
                       "type": "string",
-                      "minLength": 1,
-                      "maxLength": 32
+                      "enum": [
+                        "ball",
+                        "drop",
+                        "dome",
+                        "bowl",
+                        "pill",
+                        "loaf",
+                        "tile",
+                        "peak",
+                        "gem",
+                        "cup"
+                      ]
                     },
                     "color": {
                       "anyOf": [
                         {
                           "type": "string",
-                          "minLength": 1,
-                          "maxLength": 32,
-                          "pattern": "^[a-z-]+$"
+                          "enum": [
+                            "gold",
+                            "coral",
+                            "sky",
+                            "mint",
+                            "violet",
+                            "lagoon",
+                            "lime",
+                            "orchid",
+                            "ember",
+                            "iris"
+                          ]
                         },
                         {
                           "type": "string",
                           "pattern": "^#[0-9a-f]{6}$"
                         }
+                      ]
+                    },
+                    "eyes": {
+                      "type": "string",
+                      "enum": [
+                        "round",
+                        "tall",
+                        "dot",
+                        "calm"
+                      ]
+                    },
+                    "temper": {
+                      "type": "string",
+                      "enum": [
+                        "steady",
+                        "restless",
+                        "slow",
+                        "bright"
                       ]
                     }
                   },
@@ -245,24 +282,62 @@
             "properties": {
               "shape": {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 32
+                "enum": [
+                  "ball",
+                  "drop",
+                  "dome",
+                  "bowl",
+                  "pill",
+                  "loaf",
+                  "tile",
+                  "peak",
+                  "gem",
+                  "cup"
+                ]
               },
               "color": {
                 "anyOf": [
                   {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 32,
-                    "pattern": "^[a-z-]+$"
+                    "enum": [
+                      "gold",
+                      "coral",
+                      "sky",
+                      "mint",
+                      "violet",
+                      "lagoon",
+                      "lime",
+                      "orchid",
+                      "ember",
+                      "iris"
+                    ]
                   },
                   {
                     "type": "string",
                     "pattern": "^#[0-9a-f]{6}$"
                   }
                 ]
+              },
+              "eyes": {
+                "type": "string",
+                "enum": [
+                  "round",
+                  "tall",
+                  "dot",
+                  "calm"
+                ]
+              },
+              "temper": {
+                "type": "string",
+                "enum": [
+                  "steady",
+                  "restless",
+                  "slow",
+                  "bright"
+                ]
               }
-            }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
@@ -319,21 +394,58 @@
                 "properties": {
                   "shape": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 32
+                    "enum": [
+                      "ball",
+                      "drop",
+                      "dome",
+                      "bowl",
+                      "pill",
+                      "loaf",
+                      "tile",
+                      "peak",
+                      "gem",
+                      "cup"
+                    ]
                   },
                   "color": {
                     "anyOf": [
                       {
                         "type": "string",
-                        "minLength": 1,
-                        "maxLength": 32,
-                        "pattern": "^[a-z-]+$"
+                        "enum": [
+                          "gold",
+                          "coral",
+                          "sky",
+                          "mint",
+                          "violet",
+                          "lagoon",
+                          "lime",
+                          "orchid",
+                          "ember",
+                          "iris"
+                        ]
                       },
                       {
                         "type": "string",
                         "pattern": "^#[0-9a-f]{6}$"
                       }
+                    ]
+                  },
+                  "eyes": {
+                    "type": "string",
+                    "enum": [
+                      "round",
+                      "tall",
+                      "dot",
+                      "calm"
+                    ]
+                  },
+                  "temper": {
+                    "type": "string",
+                    "enum": [
+                      "steady",
+                      "restless",
+                      "slow",
+                      "bright"
                     ]
                   }
                 },
@@ -528,24 +640,62 @@
                     "properties": {
                       "shape": {
                         "type": "string",
-                        "minLength": 1,
-                        "maxLength": 32
+                        "enum": [
+                          "ball",
+                          "drop",
+                          "dome",
+                          "bowl",
+                          "pill",
+                          "loaf",
+                          "tile",
+                          "peak",
+                          "gem",
+                          "cup"
+                        ]
                       },
                       "color": {
                         "anyOf": [
                           {
                             "type": "string",
-                            "minLength": 1,
-                            "maxLength": 32,
-                            "pattern": "^[a-z-]+$"
+                            "enum": [
+                              "gold",
+                              "coral",
+                              "sky",
+                              "mint",
+                              "violet",
+                              "lagoon",
+                              "lime",
+                              "orchid",
+                              "ember",
+                              "iris"
+                            ]
                           },
                           {
                             "type": "string",
                             "pattern": "^#[0-9a-f]{6}$"
                           }
                         ]
+                      },
+                      "eyes": {
+                        "type": "string",
+                        "enum": [
+                          "round",
+                          "tall",
+                          "dot",
+                          "calm"
+                        ]
+                      },
+                      "temper": {
+                        "type": "string",
+                        "enum": [
+                          "steady",
+                          "restless",
+                          "slow",
+                          "bright"
+                        ]
                       }
-                    }
+                    },
+                    "additionalProperties": false
                   },
                   {
                     "type": "null"
@@ -778,21 +928,58 @@
                 "properties": {
                   "shape": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 32
+                    "enum": [
+                      "ball",
+                      "drop",
+                      "dome",
+                      "bowl",
+                      "pill",
+                      "loaf",
+                      "tile",
+                      "peak",
+                      "gem",
+                      "cup"
+                    ]
                   },
                   "color": {
                     "anyOf": [
                       {
                         "type": "string",
-                        "minLength": 1,
-                        "maxLength": 32,
-                        "pattern": "^[a-z-]+$"
+                        "enum": [
+                          "gold",
+                          "coral",
+                          "sky",
+                          "mint",
+                          "violet",
+                          "lagoon",
+                          "lime",
+                          "orchid",
+                          "ember",
+                          "iris"
+                        ]
                       },
                       {
                         "type": "string",
                         "pattern": "^#[0-9a-f]{6}$"
                       }
+                    ]
+                  },
+                  "eyes": {
+                    "type": "string",
+                    "enum": [
+                      "round",
+                      "tall",
+                      "dot",
+                      "calm"
+                    ]
+                  },
+                  "temper": {
+                    "type": "string",
+                    "enum": [
+                      "steady",
+                      "restless",
+                      "slow",
+                      "bright"
                     ]
                   }
                 },
@@ -896,6 +1083,45 @@
         },
         "required": [
           "bot"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "bot.instructions.get": {
+      "doc": "A bot's instructions file as it is now, for the person editing it.",
+      "owner": "BT",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 200000
+          }
+        },
+        "required": [
+          "text"
         ],
         "additionalProperties": false
       }
@@ -1528,24 +1754,62 @@
                 "properties": {
                   "shape": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 32
+                    "enum": [
+                      "ball",
+                      "drop",
+                      "dome",
+                      "bowl",
+                      "pill",
+                      "loaf",
+                      "tile",
+                      "peak",
+                      "gem",
+                      "cup"
+                    ]
                   },
                   "color": {
                     "anyOf": [
                       {
                         "type": "string",
-                        "minLength": 1,
-                        "maxLength": 32,
-                        "pattern": "^[a-z-]+$"
+                        "enum": [
+                          "gold",
+                          "coral",
+                          "sky",
+                          "mint",
+                          "violet",
+                          "lagoon",
+                          "lime",
+                          "orchid",
+                          "ember",
+                          "iris"
+                        ]
                       },
                       {
                         "type": "string",
                         "pattern": "^#[0-9a-f]{6}$"
                       }
                     ]
+                  },
+                  "eyes": {
+                    "type": "string",
+                    "enum": [
+                      "round",
+                      "tall",
+                      "dot",
+                      "calm"
+                    ]
+                  },
+                  "temper": {
+                    "type": "string",
+                    "enum": [
+                      "steady",
+                      "restless",
+                      "slow",
+                      "bright"
+                    ]
                   }
-                }
+                },
+                "additionalProperties": false
               },
               "madeBy": {
                 "oneOf": [

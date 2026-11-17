@@ -93,7 +93,11 @@ describe("bots and tools as engine data (§6.1, §6.7)", () => {
   });
 
   test("MakeBot takes a name, instructions, a face and a model only", () => {
-    expect(MakeBotInput.safeParse({ name: "Scout", instructions: "x", face: { color: "teal" }, model: "acme/large" }).success).toBe(true);
+    expect(MakeBotInput.safeParse({ name: "Scout", instructions: "x", face: { color: "lagoon", eyes: "dot", temper: "slow", shape: "gem" }, model: "acme/large" }).success).toBe(true);
+    // The face's four traits take only the living-bots kit's values (a colour also any #rrggbb).
+    expect(MakeBotInput.safeParse({ name: "Scout", face: { color: "#12AB34" } }).success).toBe(true);
+    expect(MakeBotInput.safeParse({ name: "Scout", face: { color: "teal" } }).success).toBe(false);
+    expect(MakeBotInput.safeParse({ name: "Scout", face: { mood: "happy" } }).success).toBe(false);
     expect(MakeBotInput.safeParse({ name: "Scout", effort: "max" }).success).toBe(false);
   });
 

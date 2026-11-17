@@ -70,8 +70,8 @@ describe("a bot as engine data", () => {
     const home = tempDir();
     const b = await recordsBoot(home);
     const call = methods(b);
-    const made = (await call("bot.create", { name: "Nova", instructions: "You are Nova.", model: "acme/large", face: { color: "teal" } })).bot as Record<string, unknown>;
-    expect(made).toMatchObject({ id: "nova", model: "acme/large", face: { color: "teal" }, madeBy: { kind: "user" }, mainSession: "b_nova", instructionsBytes: 13 });
+    const made = (await call("bot.create", { name: "Nova", instructions: "You are Nova.", model: "acme/large", face: { color: "lagoon" } })).bot as Record<string, unknown>;
+    expect(made).toMatchObject({ id: "nova", model: "acme/large", face: { color: "lagoon" }, madeBy: { kind: "user" }, mainSession: "b_nova", instructionsBytes: 13 });
     expect(JSON.parse(readFileSync(recordFile(home, "nova"), "utf8"))).toMatchObject({ record: 1, id: "nova", name: "Nova" });
     expect(readFileSync(instructionsFile(home, "nova"), "utf8")).toBe("You are Nova.");
     // A bot's call never counts as the person's.
@@ -91,6 +91,11 @@ describe("a bot as engine data", () => {
     expect(summaries).toEqual([{ id: "nova", last: { text: "Hi! I'm Nova. How can I help?", from: "bot", at: expect.any(Number) }, unread: true }]);
     await call("bot.markRead", { id: "nova", at: summaries[0]!.last!.at });
     expect(((await call("bot.summaries", {})).summaries as { unread: boolean }[])[0]!.unread).toBe(false);
+    // Its instructions, for the person's own client only.
+    expect(await call("bot.instructions.get", { id: "nova" })).toEqual({ text: "You are Nova." });
+    for (const caller of [{ kind: "plugin", pluginId: "spy" }, { kind: "session", sessionId: "b_nova", sessionKind: "bot", bot: "nova" }, { kind: "session", sessionId: "a_1", sessionKind: "agent", bot: "nova" }, { kind: "peer", device: "d1" }] as Caller[]) {
+      await expect(call("bot.instructions.get", { id: "nova" }, caller)).rejects.toThrow();
+    }
     // The conversation, a page at a time, newest last.
     const page = await call("bot.conversation", { id: "nova", limit: 1 });
     expect(page).toMatchObject({ session: "b_nova", hasMore: true });

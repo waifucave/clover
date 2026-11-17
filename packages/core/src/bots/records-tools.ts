@@ -11,7 +11,7 @@
 //   in full; a text too long to show is refused, never cut.
 // Every value a model chose goes on the card as a code value with the hiding characters made visible; the card's own
 // words are MOSS's.
-import { MAKE_BOT_TOOL, MakeBotInput, utf16, type CardFieldName, type SealedValue, type Text } from "@waifucave/moss-protocol";
+import { BOT_FACE_COLORS, BOT_FACE_EYES, BOT_FACE_SHAPES, BOT_FACE_TEMPERS, MAKE_BOT_TOOL, MakeBotInput, utf16, type CardFieldName, type SealedValue, type Text } from "@waifucave/moss-protocol";
 import { z } from "zod";
 import type { ApprovalBroker, ApprovalDecision } from "../contracts/approval-broker";
 import { isContractError } from "../contracts/common";
@@ -74,8 +74,13 @@ export function recordToolDefs(deps: RecordToolsDeps, sessionId: string): CoreTo
           name: { type: "string", minLength: 1, maxLength: 80, description: "The new bot's name; its id comes from it." },
           instructions: { type: "string", maxLength: 200_000, description: "Its <bot-instructions>: who it is, how it talks, what it cares about." },
           face: {
-            type: "object", additionalProperties: false, description: "Pins for its living-bot face; unset, the face comes from its name.",
-            properties: { shape: { type: "string", maxLength: 32 }, color: { type: "string", maxLength: 32, description: "One of the kit's colour names, or #rrggbb." } },
+            type: "object", additionalProperties: false, description: "Pins for its living-bot face; a trait left out comes from its name.",
+            properties: {
+              shape: { type: "string", enum: [...BOT_FACE_SHAPES] },
+              color: { type: "string", description: `One of ${BOT_FACE_COLORS.join(", ")}, or #rrggbb.` },
+              eyes: { type: "string", enum: [...BOT_FACE_EYES] },
+              temper: { type: "string", enum: [...BOT_FACE_TEMPERS] },
+            },
           },
           model: { type: "string", maxLength: 200, description: "A qualified model id (<provider>/<model>) the person has set up; yours by default." },
         },
@@ -106,7 +111,7 @@ export function recordToolDefs(deps: RecordToolsDeps, sessionId: string): CoreTo
           detail: { type: "rows", rows: [
             { label: "Name", value: plainOf(p.input.name).toWellFormed().slice(0, 4000) },
             { label: "Model", value: plainOf(p.input.model ?? "your default model").toWellFormed().slice(0, 4000) },
-            ...(p.input.face === undefined ? [] : [{ label: "Face", value: plainOf([p.input.face.shape, p.input.face.color].filter(Boolean).join(", ") || "from its name").slice(0, 4000) }]),
+            ...(p.input.face === undefined ? [] : [{ label: "Face", value: plainOf([p.input.face.shape, p.input.face.color, p.input.face.eyes, p.input.face.temper].filter(Boolean).join(", ") || "from its name").slice(0, 4000) }]),
           ] },
           command: code(p.input.instructions ?? ""),
         });

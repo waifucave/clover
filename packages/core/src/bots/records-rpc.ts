@@ -52,6 +52,12 @@ export function botRecordMethods(deps: BotRecordMethodsDeps): Record<string, Met
       await bots.archiveBot(id);
       return { ok: true as const };
     }),
+    // The person's own client only (the method is `userOnly`; checked again here): the text they are about to edit.
+    [M.botInstructionsGet.name]: handler(M.botInstructionsGet, async ({ id }, ctx) => {
+      requireUser(ctx, "read a bot's instructions");
+      must(id);
+      return { text: store.instructions(id) };
+    }),
     [M.botArchived.name]: handler(M.botArchived, async () => ({ bots: bots.archivedBots() })),
     [M.botRestore.name]: handler(M.botRestore, async ({ id }, ctx) => {
       requireUser(ctx, "bring a bot back");

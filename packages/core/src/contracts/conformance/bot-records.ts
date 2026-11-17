@@ -21,10 +21,22 @@ export function runBotRecordsConformance(make: BotRecordsFactory): void {
       expect((await bots.create({ name: "Alpha" }, user)).id).toBe("alpha-2");
       expect((await bots.create({ name: "Zoë the 2nd!" }, user)).id).toBe("zoe-the-2nd");
       expect((await bots.create({ name: "42" }, user)).id).toBe("bot");
-      const nova = await bots.create({ name: "Nova", instructions: "You are Nova.", model: "acme/large", face: { color: "teal" } }, user);
-      expect(nova).toMatchObject({ id: "nova", model: "acme/large", face: { color: "teal" }, madeBy: { kind: "user" }, instructionsBytes: 13 });
+      const nova = await bots.create({ name: "Nova", instructions: "You are Nova.", model: "acme/large", face: { color: "lagoon" } }, user);
+      expect(nova).toMatchObject({ id: "nova", model: "acme/large", face: { color: "lagoon" }, madeBy: { kind: "user" }, instructionsBytes: 13 });
       expect(bots.instructions("nova")).toBe("You are Nova.");
       expect(isContractError(await bots.create({ name: "  " }, user).catch((e: unknown) => e), "invalid")).toBe(true);
+    });
+
+    test("a face pins any of the kit's four traits (shape, colour, eyes, temper); a value the kit doesn't have is refused", async () => {
+      const bots = setup();
+      const pinned = await bots.create({ name: "Nova", face: { shape: "gem", color: "#12ab34", eyes: "dot", temper: "slow" } }, user);
+      expect(pinned.face).toEqual({ shape: "gem", color: "#12ab34", eyes: "dot", temper: "slow" });
+      expect((await bots.edit("nova", { face: { eyes: "calm" } })).face).toEqual({ eyes: "calm" });
+      expect((await bots.edit("nova", { face: null })).face).toBeUndefined();
+      for (const face of [{ color: "teal" }, { shape: "star" }, { eyes: "wide" }, { temper: "angry" }, { mood: "happy" }]) {
+        expect(isContractError(await bots.create({ name: "Bad", face } as never, user).catch((e: unknown) => e), "invalid")).toBe(true);
+      }
+      expect(bots.get("bad")).toBeUndefined();
     });
 
     test("the user's edit sets and clears fields; the next read has it", async () => {

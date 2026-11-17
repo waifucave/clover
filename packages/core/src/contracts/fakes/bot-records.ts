@@ -1,7 +1,7 @@
 // FakeBotRecords: bots as records in memory, with the instructions rule, the MakeBot proposals, the archive, plugins'
 // bot-scoped settings and the one-time move. Its driver `declareBotSettings` stands in for the registry: which plugins
 // declare which settings, at which scope.
-import { instructionsEditRule, MakeBotInput, type ArchivedBot, type BotFace, type BotMaker, type BotMoveJournal, type BotMoveOutcome, type BotPatch, type BotRecord, type BotRecordView, type MakeBotResult, type Text } from "@waifucave/moss-protocol";
+import { BotFace as BotFaceSchema, instructionsEditRule, MakeBotInput, type ArchivedBot, type BotFace, type BotMaker, type BotMoveJournal, type BotMoveOutcome, type BotPatch, type BotRecord, type BotRecordView, type MakeBotResult, type Text } from "@waifucave/moss-protocol";
 import type { Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import { botIdFromName, type BotPluginSettings, type BotProposal, type BotRecords, type InstructionsEditor, type PluginBotForMove } from "../bot-records";
@@ -61,6 +61,7 @@ export class FakeBotRecords implements BotRecords {
 
   async create(input: { name: Text; instructions?: string; model?: string; effort?: string; face?: BotFace }, by: BotMaker): Promise<BotRecordView> {
     if (textOf(input.name).trim() === "") throw new ContractError("invalid", "a bot needs a name");
+    if (input.face !== undefined && !BotFaceSchema.safeParse(input.face).success) throw new ContractError("invalid", "a face pins the kit's shape, colour, eyes and temper only");
     const id = botIdFromName(textOf(input.name), this.#taken);
     const record: BotRecord = {
       record: 1, id, name: input.name, madeBy: by, createdAt: this.#clock.now(),
@@ -97,6 +98,7 @@ export class FakeBotRecords implements BotRecords {
 
   async edit(id: string, patch: BotPatch): Promise<BotRecordView> {
     const held = this.#held(id);
+    if (patch.face !== undefined && patch.face !== null && !BotFaceSchema.safeParse(patch.face).success) throw new ContractError("invalid", "a face pins the kit's shape, colour, eyes and temper only");
     const next: BotRecord = { ...held.record };
     if (patch.name !== undefined) next.name = patch.name;
     for (const k of ["model", "effort", "greeting", "face"] as const) {
