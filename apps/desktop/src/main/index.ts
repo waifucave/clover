@@ -27,7 +27,7 @@ import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost 
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
 import { testBuildAppRefusal } from "./test-build";
 import { housingFor, loadScreens } from "./housing";
-import { isOurProgram, loadWindowList, pressCover, windowIdOfMediaSource, type WindowList } from "./overlap";
+import { coverAdvice, coverName, isOurProgram, loadWindowList, pressCoverRead, windowIdOfMediaSource, type WindowList } from "./overlap";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
 import { adoptHomeEngine, cliLauncher, installEngineCopy, locateDaemonBinary, startEngineThroughOs } from "./pair/login";
@@ -70,7 +70,7 @@ import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun, type HoldStep } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
-import { APP_EVENT_AREAS, mossFront, FrontWatcher, islandMayDraw, placeFromEngine, PresenceReporter, pressMayBeTaken, placeLine, showingOf, subscribeThenListCards, type CardPlace, type PressSource } from "./card-place";
+import { APP_EVENT_AREAS, mossFront, FrontWatcher, islandMayDraw, placeFromEngine, PlacementBook, PresenceReporter, pressMayBeTaken, placeLine, showingOf, subscribeThenListCards, type CardPlace, type PressSource } from "./card-place";
 import { afterTap, afterTray, appIsRegular, mainWindowFront, surfaceShown, type MainWindowState, type PutAway } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
@@ -546,8 +546,8 @@ async function ready(): Promise<void> {
       // R12 (lane RT): no window of any app lies over the button, read from the OS's own window list (overlap.ts).
       const cover = osCoverOf(from);
       if (cover !== undefined) {
-        log(`sealed: answer refused (a window lies over the button: ${cover})`);
-        return { accepted: false, covered: true, reason: "another MOSS window lies over the button: move it away and press again" };
+        log(`sealed: answer refused (a window lies over the button: ${cover.advice})`);
+        return { accepted: false, covered: cover.name, reason: cover.advice };
       }
       const key = answerKeyValue;
       if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
@@ -994,15 +994,17 @@ function noteBothVisible(cardId: string, windowId: number | undefined): void {
  *  before it is the window's own card; a move (the window comes forward or goes back) is decided at once, on what is known. */
 const cardPlaces = new Map<string, CardPlace>();
 const windowDraws = new Set<string>();
-/** Where the engine's router placed each pending card (lane RT: `card_placed`, `card.placement`). */
-const enginePlaces = new Map<string, CardPlacement>();
+/** Where the engine's router placed each pending card (lane RT: `card_placed` wins; a `card.placement` answer only fills in
+ *  a card no event placed; card-place.ts `PlacementBook`). */
+const enginePlaces = new PlacementBook();
 /** Whether the router has placed any pending card on the island (it then never steps aside, §3.5). */
-const islandHoldsCard = (): boolean => [...enginePlaces].some(([id, p]) => (p.kind === "island" || p.kind === "elsewhere") && sealed.isPending(id));
-/** The engine's word on a card's place: kept, and the card placed again; the surfaces hear it (the island takes or lets go). */
-function enginePlaced(cardId: string, place: CardPlacement): void {
+const islandHoldsCard = (): boolean => [...enginePlaces.entries()].some(([id, p]) => (p.kind === "island" || p.kind === "elsewhere") && sealed.isPending(id));
+/** The engine's word on a card's place (a `card_placed` event, or a snapshot's entry the book took): kept, and the card placed
+ *  again; the surfaces hear it (the island takes or lets go). */
+function enginePlaced(cardId: string, place: CardPlacement, from: "event" | "snapshot" = "event"): void {
   const was = islandHoldsCard();
-  enginePlaces.set(cardId, place);
-  if (enginePlaces.size > 256) enginePlaces.delete(enginePlaces.keys().next().value!);
+  if (from === "event") enginePlaces.placed(cardId, place);
+  else if (enginePlaces.snapshot([{ card: cardId, place }]).length === 0) return;
   if (cardPlaces.has(cardId)) placeCardNow(cardId);
   // The surfaces hear it only when the island's hold changes (their `mainFront`): a message on every placement made the
   // island measure itself again under the pointer.
@@ -1224,6 +1226,8 @@ function makePair(): Pair {
       // The pending cards, and their outcomes as they come: subscribed first, then listed (`subscribeThenListCards`: listed
       // first, a card raised the moment the core's parts came up was told to no connection, the upgrade pair's step 2).
       void refreshBotNames(client);
+      // The engine's placements are this connection's from its first subscription (it tells each card's place then, lane RT).
+      enginePlaces.follow(client);
       void subscribeThenListCards(client, cardWaitingAtConnect);
       return loadRegistry(client);
     },
@@ -1437,10 +1441,13 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   // `approvals` too: the cards (`card_requested`, `card_resolved`) are that area's, and an app that didn't subscribe to it
   // was never told of a card (the acceptance run's first card-arrival check found it).
   // `surfaces` (lane RT): where the engine's router places each card (`card_placed`).
+  // A new connection's router starts the book afresh before its events can come (it is followed already, at the connection's
+  // first subscription); a registry reload on the same one keeps what its events said.
+  enginePlaces.follow(client);
   await client.request("events.subscribe", { areas: [...APP_EVENT_AREAS] }).catch(() => undefined);
   void reportPresence().then(() => client.request<unknown>("card.placement", {})).then((raw) => {
     const r = SURFACES_METHODS.cardPlacement.result.safeParse(raw);
-    if (r.success) for (const p of r.data.placements) enginePlaced(p.card, p.place);
+    if (r.success && pair.client === client) for (const p of r.data.placements) enginePlaced(p.card, p.place, "snapshot");
   }).catch(() => undefined);
   const [ui, settingsRaw, statusRaw] = await Promise.all([
     optional.call(client, "plugin.ui"),
@@ -2212,7 +2219,7 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
 let windowList: WindowList | undefined | null = null;
 let overlapUnread = false;
 let overlapRead = false;
-function osCoverOf(windowId: number | undefined): string | undefined {
+function osCoverOf(windowId: number | undefined): { name: ReturnType<typeof coverName>; advice: string } | undefined {
   if (windowId === undefined) return undefined;
   if (windowList === null) windowList = loadWindowList(join(here, "native", "screen.node"), log);
   const win = BrowserWindow.fromId(windowId);
@@ -2231,13 +2238,21 @@ function osCoverOf(windowId: number | undefined): string | undefined {
     const b = s.win.getContentBounds();
     if (sid !== undefined) own.set(sid, { origin: { x: b.x, y: b.y }, regions: s.regions });
   }
-  const above = list.above(id);
   const ours = (pid: number): boolean => pid === process.pid || (!headless && isOurProgram(list.bundleOf(pid)));
-  const hit = pressCover({ point: down === undefined ? undefined : { x: content.x + down.x, y: content.y + down.y }, above, ours, own });
+  // A read that throws fails open (the press goes on to the page's own fresh reading), said once.
+  const r = pressCoverRead({ point: down === undefined ? undefined : { x: content.x + down.x, y: content.y + down.y }, read: () => list.above(id), ours, own });
+  if (r.failed !== undefined) {
+    if (!overlapUnread) { overlapUnread = true; log(`overlap: the OS window list couldn't be read for a press (${r.failed}); the in-page check stands alone`); }
+    return undefined;
+  }
+  const above = r.above ?? [];
   // Said once (counts only): the OS's list was read for a press.
   if (!overlapRead) { overlapRead = true; log(`overlap: the OS window list read for a press (${above.length} above, ${above.filter((w) => w.pid === process.pid).length} of this program's own${headless ? "; headless: its own only" : ""}${down === undefined ? "; no point: a keyboard press" : ""})`); }
-  if (hit === undefined) return undefined;
-  return hit.pid === process.pid ? `one of this program's own windows (layer ${hit.layer})` : `another MOSS program's window (layer ${hit.layer})`;
+  if (r.cover === undefined) return undefined;
+  let bundle: string | undefined;
+  try { bundle = r.cover.pid === process.pid ? undefined : list.bundleOf(r.cover.pid); } catch { bundle = undefined; }
+  const name = coverName(r.cover, process.pid, bundle);
+  return { name, advice: coverAdvice(name) };
 }
 
 /** The screen add-on (macOS), for the camera housing; undefined where there is none. */
@@ -2909,9 +2924,11 @@ async function smoke(): Promise<void> {
       if (spec !== undefined) {
         try {
           const {
-            cardId, element, cover, opacity, doubleClick, coverLead, parentCoverLead, pulse,
+            cardId, element, cover, opacity, doubleClick, coverLead, parentCoverLead, pulse, classicBars,
           } = JSON.parse(spec) as {
             cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number; pulse?: number;
+            /** Classic scroll bars on the sealed page's own document (macOS "Show scroll bars: Always"): space-taking bars wherever it can scroll. */
+            classicBars?: boolean;
           };
           const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
             f.url.startsWith("moss-sealed://") &&
@@ -2920,6 +2937,10 @@ async function smoke(): Promise<void> {
           if (frame !== undefined) {
             // URLs carry single-use tokens (?token=, ?mount=): the logs keep origin and path only, never the token.
             log(`sealed-click: frame found ${frame.url.split("?")[0]!.slice(0, 80)}`);
+            if (classicBars === true) {
+              await frame.executeJavaScript(`(() => { const s = document.createElement("style"); s.textContent = "::-webkit-scrollbar { width: 15px; height: 15px; background: #888 } ::-webkit-scrollbar-thumb { background: #444 }"; document.head.append(s); const d = document.documentElement; return d.clientWidth + "x" + d.clientHeight + " of " + innerWidth + "x" + innerHeight; })()`, true)
+                .then((r) => log(`sealed-click: classic scroll bars on the sealed page (client ${String(r)})`)).catch(() => log("sealed-click: classic scroll bars couldn't be set"));
+            }
             // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
             // The covered run's own fact: whether the button had been reported visible BEFORE the cover went on (the page's last
             // verdict), so the press below waits for the verdict to flip, never for a delay.

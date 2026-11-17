@@ -16,7 +16,7 @@
 import {
   MOSS_ERR, MOSS_METHODS, MOSS_PROTOCOL_MIN_VERSION, MOSS_ROLES, MOSS_PROTOCOL_VERSION, MossHelloParams, CODE_AGENT_LINE_NOTIFICATION, CODE_AGENT_MAX_LINE, ERR,
   PairStatus, encodeLine, helloVersionServed, type Caller, type MossHelloResult, type MossRole, type SessionKind,
-  CardPlacement, PresenceReport, type Program, type Surface, PLUGIN_ROLES, dataKindOfSession, kindCapability, type DataKind,
+  CardPlacement, PresenceReport, type Program, type Surface, PLUGIN_ROLES, dataKindOfSession, kindCapability, type DataKind, type Card,
 } from "@waifucave/moss-protocol";
 import type { ReleaseHome } from "../contracts/release-home";
 import { doorMessage, inertAdmission, judgeHello, refusalMessage, type HelloVerdict } from "../update/release-door";
@@ -266,6 +266,10 @@ export interface MossServer {
   /** Lane RT: the surface door (which surface and program each `app` connection is) and the router (where each pending
    *  card is drawn, from the windows' presence). The daemon feeds the router the broker's cards (`surfaces/routing.ts`). */
   readonly surfaces: { readonly door: EngineSurfaceDoor; readonly router: EngineCardRouter };
+  /** The broker's pending cards in full (the daemon sets it once the broker is up): a connection that subscribes to
+   *  `approvals` is told each of them (`card_requested`) before the subscription's answer, so no client loses a card by the
+   *  order of its calls (a card raised before it subscribed reached no connection). */
+  pendingCards?: () => readonly Card[];
   /** Hears every connection that closed after its hello (its `surface` and `program` still on it), after the server let go
    *  of it: the hook for a lane that keeps state per connection (lane HS's host). Gives back the undo. */
   onClosed(fn: (conn: MossConn) => void): () => void;
@@ -518,7 +522,14 @@ export function createMossServer(deps: MossServerDeps): MossServer {
     "events.subscribe": (conn, p) => {
       // A connection with the release door only follows the release events: nothing else of the engine's is its to see yet.
       const areas = (p as { areas: string[] }).areas.filter((a) => conn.releaseDoor === undefined || a === "release");
+      const fresh = areas.filter((a) => !conn.areas.has(a));
       for (const a of areas) conn.areas.add(a);
+      // What is already there is told to this connection alone, before the answer, in the stream's own order (lane RT): the
+      // pending cards to one newly following `approvals`, and every card's place to one newly following `surfaces`, so a
+      // client that subscribes after a card was raised or placed still hears it, and nothing told later is overtaken by it.
+      const only = { connections: () => [conn][Symbol.iterator](), log: (line: string) => deps.log?.(line) };
+      if (fresh.includes("approvals")) for (const card of server.pendingCards?.() ?? []) sendCoreEvent(only, { type: "card_requested", ts: Date.now(), card });
+      if (fresh.includes("surfaces")) for (const c of router.list()) sendCoreEvent(only, { type: "card_placed", ts: Date.now(), card: c.card, place: c.place as CardPlacement });
       return { ok: true };
     },
     "events.unsubscribe": (conn, p) => { for (const a of (p as { areas: string[] }).areas) conn.areas.delete(a); return { ok: true }; },
@@ -590,7 +601,7 @@ export function createMossServer(deps: MossServerDeps): MossServer {
     },
   };
 
-  return {
+  const server: MossServer = {
     // The connection's process is held as the connection opens, on every OS (#205's S2): no pid read later can be
     // another process's.
     opened(socket) {
@@ -797,4 +808,5 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       for (const connId of [...beats.keys()]) stopBeat(connId);
     },
   };
+  return server;
 }

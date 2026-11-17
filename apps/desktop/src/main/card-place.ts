@@ -205,3 +205,49 @@ export async function subscribeThenListCards(client: { request<T>(method: string
   const listed = await client.request<unknown>("card.list").catch(() => undefined);
   for (const c of (listed as { cards?: unknown[] } | undefined)?.cards ?? []) waiting(c);
 }
+
+/** The engine's placements as this program heard them (lane RT, §3.5): the last word on each card wins. A `card_placed` event
+ *  always applies (the core sends one for every move after the program subscribed, in the order it made them); a
+ *  `card.placement` snapshot only fills in a card no event has placed on this connection, because its answer can come after
+ *  a newer event (the CI lane's plugin-app step 65: the card moved to the window's strip, a snapshot asked a moment before
+ *  came back with the island 56 ms later and put the card there, the router saw no change to send, and the card sat with no
+ *  surface drawing it). A new connection starts the book afresh. */
+export class PlacementBook {
+  readonly #places = new Map<string, CardPlacement>();
+  #connection: unknown;
+
+  /** The connection the book follows: a new one forgets what the last one said. */
+  follow(connection: unknown): void {
+    if (connection === this.#connection) return;
+    this.#connection = connection;
+    this.#places.clear();
+  }
+
+  /** A `card_placed` event: it wins. Returns whether the place changed. */
+  placed(card: string, place: CardPlacement): boolean {
+    const was = this.#places.get(card);
+    this.#places.delete(card);
+    this.#places.set(card, place);
+    if (this.#places.size > 256) this.#places.delete(this.#places.keys().next().value!);
+    return was === undefined || JSON.stringify(was) !== JSON.stringify(place);
+  }
+
+  /** A `card.placement` answer: only the cards no event has placed. Returns those it placed. */
+  snapshot(placements: readonly { card: string; place: CardPlacement }[]): string[] {
+    const took: string[] = [];
+    for (const p of placements) if (!this.#places.has(p.card) && this.placed(p.card, p.place)) took.push(p.card);
+    return took;
+  }
+
+  get(card: string): CardPlacement | undefined {
+    return this.#places.get(card);
+  }
+
+  delete(card: string): void {
+    this.#places.delete(card);
+  }
+
+  entries(): IterableIterator<[string, CardPlacement]> {
+    return this.#places.entries();
+  }
+}

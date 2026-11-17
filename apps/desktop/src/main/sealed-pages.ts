@@ -343,7 +343,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     // Nothing on the page changes before the fresh reading (a status line growing could move the button, and a button that moved is not
     // read as showing): the "…" and the answering mark come after it.
     // A refused answer says so on the card and the button answers again: never a "…" that stays.
-    const refused = (r) => { answering = false; document.body.dataset.answered = "no"; delete document.body.dataset.answering; const said = r !== null && typeof r === "object" && r.covered === true ? ${JSON.stringify(WINDOW_OVER_TEXT)} : r !== null && typeof r === "object" && r.again === true ? ${JSON.stringify(PRESS_AGAIN_TEXT)} : r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; if (state !== null) state.textContent = said; closest.title = said; };
+    const refused = (r) => { answering = false; document.body.dataset.answered = "no"; delete document.body.dataset.answering; const said = r !== null && typeof r === "object" && typeof r.covered === "string" ? (${JSON.stringify(WINDOW_OVER_TEXTS)}[r.covered] ?? ${JSON.stringify(WINDOW_OVER_TEXTS.ours)}) : r !== null && typeof r === "object" && r.again === true ? ${JSON.stringify(PRESS_AGAIN_TEXT)} : r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; if (state !== null) state.textContent = said; closest.title = said; };
     // The press counts only if the report that follows it says the button shows uncovered: asked for now, not read from the last one.
     askFresh(closest).then((ok) => {
       if (!ok) {
@@ -488,7 +488,7 @@ export function ownCardPage(input: {
     const state = document.querySelector(".state");
     if (state !== null) state.textContent = "…";
     // A refused answer says so on the card, and its buttons answer again.
-    const refused = (r) => { document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && r.covered === true ? ${JSON.stringify(WINDOW_OVER_TEXT)} : r !== null && typeof r === "object" && r.again === true ? ${JSON.stringify(PRESS_AGAIN_TEXT)} : r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
+    const refused = (r) => { document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && typeof r.covered === "string" ? (${JSON.stringify(WINDOW_OVER_TEXTS)}[r.covered] ?? ${JSON.stringify(WINDOW_OVER_TEXTS.ours)}) : r !== null && typeof r === "object" && r.again === true ? ${JSON.stringify(PRESS_AGAIN_TEXT)} : r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
     // The same rule as a part's button: the press counts only if the report that follows it says the button shows uncovered.
     void askFresh(b2).then((ok) => {
       if (!ok) {
@@ -566,8 +566,15 @@ export const PRESS_AGAIN_TEXT = "Not ready yet — press again.";
  *  drawn), or that came with no reading: the press didn't count, and pressing again will. The page shows PRESS_AGAIN_TEXT. */
 export const NOT_SHOWN_REASON = "the button wasn't fully showing yet: press it again";
 export const NOT_CHECKED_REASON = "the press wasn't checked just now: press it again";
-/** What the card says when a window of one of MOSS's programs lay over the button at the press (R12, the OS's own window list). */
-export const WINDOW_OVER_TEXT = "Another MOSS window is over this button — move it away and press again.";
+/** What the card says when a window of one of MOSS's programs lay over the button at the press (R12, the OS's own window list),
+ *  by what covers it, each a thing the person can do (main says which: `covered`). */
+export const WINDOW_OVER_TEXTS: Readonly<Record<"this" | "moss" | "code" | "host" | "ours", string>> = {
+  this: "Another MOSS Code window is over this button — answer or close it, then press again.",
+  moss: "MOSS's window is over this button — move it aside or minimise it, then press again.",
+  code: "MOSS Code's window is over this button — move it aside or minimise it, then press again.",
+  host: "A plugin's on-screen part is over this button — it steps aside while a card waits, so press again in a moment.",
+  ours: "Another MOSS window is over this button — move it aside or close it, then press again.",
+};
 /** The Review on a plugin's OK or update card (the owner's ruling, 2026-11-13). */
 export const REVIEW_BUTTON_TEXT = "Review";
 export const REVIEW_NOTE_TEXT = "Review sends this plugin's files to a model. It's advice: it doesn't answer this card.";
@@ -693,6 +700,19 @@ body {
 body[data-answering="yes"] .seal-button.glyph { opacity: 0.6 }
 body[data-answered="no"] .seal-button.glyph { outline: 2px solid #E5484D; outline-offset: -2px }
 body:has(.seal-button.glyph) { overflow: hidden }
+/* A button page fits its frame whole and never shows a scroll bar (lane RT): with classic scroll bars (macOS "Show scroll bars:
+   Always", or a mouse with no scroll surface) a page that overflowed its frame got space-taking bars, the button showed half of
+   itself, and every press was refused. The part sizes the frame to the button (the page's size report), so the button takes its
+   own box (its unwrapped width, capped where the part caps a frame, 1200 px, then wrapping), and the status line takes only the
+   room left over (none in a frame of the button's size: the button's title says the same). */
+.seal-approve, .seal-deny { overflow: hidden; scrollbar-width: none }
+.seal-approve body, .seal-deny body { box-sizing: border-box; height: 100vh; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start }
+.seal-approve .seal-button:not(.glyph), .seal-deny .seal-button:not(.glyph) { flex: none; box-sizing: border-box; width: max-content; max-width: 1200px; white-space: normal }
+.seal-approve .state, .seal-deny .state { flex: 1 1 0; min-height: 0; overflow: hidden; align-self: stretch }
+/* The own card (the fallback card, the window's strip) may run taller than its window (the window's cap); it scrolls under its
+   sticky buttons with no bar taking room, so its buttons never move or get cut by one. */
+.seal-own { scrollbar-width: none; overflow-x: hidden }
+.own .seal-button { box-sizing: border-box; max-width: 100%; white-space: normal }
 body:has(.seal-button.glyph) .state { display: none }
 .seal-button:disabled { opacity: 0.5; cursor: wait }
 .seal-button.quiet { background: color-mix(in srgb, var(--moss-card-text, var(--seal-text)) 14%, transparent); color: var(--moss-card-text, var(--seal-text)) }

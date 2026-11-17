@@ -1,12 +1,15 @@
 // The overlap check's OS-wide half (overlap.ts, R12; lane RT): a window of one of OUR programs above a sealed button refuses
 // the press, another app's window never does, our own surfaces cover only where they draw, a see-through window covers
 // nothing, and a keyboard press isn't checked here. The add-on's read is checked on a Mac where the build made it: windows'
-// numbers only, never a title, and nothing here is drawn, focused or printed.
+// numbers only, never a title, and nothing here is drawn, focused or printed. The rule's tests run on every OS's CI job; the
+// native read only where this test can build the add-on itself (macOS with Xcode's tools: the macOS job and a Mac).
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PROGRAM_IDENTIFIERS } from "@waifucave/moss-protocol";
-import { coverAt, isOurProgram, loadWindowList, PRESS_BOX_HALF, pressCover, windowIdOfMediaSource, type OsWindow } from "../src/main/overlap";
+import { coverAdvice, coverAt, coverName, isOurProgram, loadWindowList, PRESS_BOX_HALF, pressCover, pressCoverRead, windowIdOfMediaSource, type OsWindow } from "../src/main/overlap";
 
 const OURS = 4242;
 const OTHER_APP = 777;
@@ -58,6 +61,24 @@ describe("what lies over a sealed button", () => {
     expect(pressCover({ point: { x: 50, y: 50 }, above: [win({})], ours })?.id).toBe(7);
   });
 
+  test("a native read that throws fails OPEN: the press goes on to the page's own fresh reading", () => {
+    const point = { x: 50, y: 50 };
+    expect(pressCoverRead({ point, read: () => { throw new Error("CGWindowList refused"); }, ours })).toEqual({ failed: "CGWindowList refused" });
+    expect(pressCoverRead({ point, read: () => [win({ pid: OTHER_APP })], ours: () => { throw new Error("no bundle"); } })).toEqual({ failed: "no bundle" });
+    expect(pressCoverRead({ point, read: () => [win({})], ours }).cover?.id).toBe(7);
+    expect(pressCoverRead({ point: undefined, read: () => [win({})], ours }).cover).toBeUndefined();
+  });
+
+  test("the refusal names what covers the button and says what works", () => {
+    expect(coverName(win({ pid: 1 }), 1, undefined)).toBe("this");
+    expect(coverName(win({ pid: 2 }), 1, PROGRAM_IDENTIFIERS.moss.dev)).toBe("moss");
+    expect(coverName(win({ pid: 2 }), 1, PROGRAM_IDENTIFIERS.host.dist)).toBe("host");
+    expect(coverName(win({ pid: 2 }), 1, undefined)).toBe("ours");
+    for (const n of ["this", "moss", "code", "host", "ours"] as const) expect(coverAdvice(n)).toMatch(/press again/);
+    expect(coverAdvice("this")).toMatch(/answer or close/);
+    expect(coverAdvice("moss")).toMatch(/minimise/);
+  });
+
   test("a headless run counts its own windows only", () => {
     const self = (pid: number) => pid === 2;
     expect(coverAt({ x: 50, y: 50 }, [win({ pid: 1 })], { ours: self })).toBeUndefined();
@@ -75,13 +96,26 @@ describe("what lies over a sealed button", () => {
     expect(loadWindowList("/nowhere/screen.node", () => {}, "win32")).toBeUndefined();
   });
 
-  const built = process.env.MOSS_TEST_SCREEN_NODE ?? join(import.meta.dir, "..", "out", "main", "native", "screen.node");
-  test.if(process.platform === "darwin" && existsSync(built))("the add-on reads windows' bounds and numbers only, and a bundle id by pid", () => {
-    const list = loadWindowList(built, (l) => { throw new Error(l); })!;
-    expect(list.above(0)).toEqual([]);
-    for (const w of list.above(2 ** 31 - 2)) expect(Object.keys(w).sort()).toEqual(["alpha", "height", "id", "layer", "pid", "width", "x", "y"]);
-    // This test's own process is no app bundle; a pid nobody holds is none.
-    expect(list.bundleOf(0)).toBeUndefined();
-    expect(list.bundleOf(2 ** 31 - 2)).toBeUndefined();
-  });
+  // The native read, against an add-on this test builds itself from native/input/macos/screen.mm (the app build's own clang
+  // line, into a temp folder), never one another run left in out/: on macOS with Xcode's tools (the macOS CI job and a Mac);
+  // everywhere else (the Linux and Windows jobs) only the pure rule above runs.
+  const clang = process.platform === "darwin" && spawnSync("xcrun", ["--find", "clang++"], { encoding: "utf8" }).status === 0;
+  test.if(clang)("the add-on (built here) reads windows' bounds and numbers only, and a bundle id by pid", () => {
+    const dir = mkdtempSync(join(tmpdir(), "moss-overlap-addon-"));
+    try {
+      const built = join(dir, "screen.node");
+      const source = join(import.meta.dir, "..", "..", "..", "native", "input", "macos", "screen.mm");
+      const r = spawnSync("xcrun", ["clang++", "-x", "objective-c++", "-std=c++17", "-fobjc-arc", "-O2", "-arch", "arm64", "-mmacosx-version-min=14.0", "-shared", "-undefined", "dynamic_lookup", "-framework", "AppKit", "-o", built, source], { encoding: "utf8" });
+      expect(r.status, r.stderr).toBe(0);
+      const list = loadWindowList(built, (l) => { throw new Error(l); })!;
+      expect(list).toBeDefined();
+      expect(list.above(0)).toEqual([]);
+      for (const w of list.above(2 ** 31 - 2)) expect(Object.keys(w).sort()).toEqual(["alpha", "height", "id", "layer", "pid", "width", "x", "y"]);
+      // A pid nobody holds has no bundle.
+      expect(list.bundleOf(0)).toBeUndefined();
+      expect(list.bundleOf(2 ** 31 - 2)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
