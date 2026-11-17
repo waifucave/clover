@@ -1,8 +1,9 @@
-// The card-placing row: a third-party plugin with `approvals` places its own bot's approval card in a page of its own
-// (not the conversation, not the island) with the SDK's card kit, and the run presses Approve there, in that frame, for
-// real (a trusted click, which the main process sees as the person's): the tool runs. A second plugin that holds
-// `approvals` too, but has no bot, is not told of that card: it is mounted the whole time (its badge says so, and says its
-// own card list was answered), and it never lists it. With the first plugin's page out of the window, the card's buttons
+// The card-placing row: a third-party plugin with `approvals` places the approval card a call to its own tool raised (in a
+// code session of the user's: a plugin's own cards are its own tools' cards, the owner's ruling of 2026-11-17) in a page of
+// its own (not the conversation, not the island) with the SDK's card kit, and the run presses Approve there, in that frame,
+// for real (a trusted click, which the main process sees as the person's): the tool runs. A second plugin that holds
+// `approvals` too, but has no claim on that card (none of its tools was called), is not told of it: it is mounted the whole
+// time (its badge says so, and says its own card list was answered), and it never lists it. With the first plugin's page out of the window, the card's buttons
 // are drawn by what else shows them (the island; the app's own fallback card when nothing visible does), and one of
 // those is pressed: the tool runs again.
 //
@@ -12,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { clickTree, escape, fail, installFromPage, leave, SIDEBAR_ITEMS, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
 
-export const CARDS_STEP = "a third-party plugin with `approvals` places its own bot's tool card in a page of its own and the run presses Approve in that frame (the tool runs); a second plugin with `approvals` and no bot is mounted, lists its cards, and is never told of it; with the page out of the window the card is still pressable (the island's buttons or the app's fallback card)";
+export const CARDS_STEP = "a third-party plugin with `approvals` places the card its own tool's call raised in a code session in a page of its own and the run presses Approve in that frame (the tool runs); a second plugin with `approvals` and no claim on that card is mounted, lists its cards, and is never told of it; with the page out of the window the card is still pressable (the island's buttons or the app's fallback card)";
 
 const FIXTURES = resolve(import.meta.dir, "fixtures");
 const A = "acceptance-cards-a";
@@ -54,8 +55,15 @@ async function run(ctx: ExampleCtx): Promise<string> {
   // 1. Both installed the user's way, each OK card pressed.
   await installFromPage(ctx, join(FIXTURES, A), A);
   await installFromPage(ctx, join(FIXTURES, B), B);
-  const bot = await until("A's bot in bot.list", 60_000, async () => (await rpc.request<{ bots: { id: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.id === `${A}/bot` && b.mainSession !== undefined));
-  const session = bot.mainSession!;
+  // The user's code session, started after both OKs (a code session's tools are the ones there when it starts), on the model
+  // the run's key drives (Alpha's): A's tool is one of its tools.
+  const computer = (await rpc.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name;
+  if (computer === undefined) fail("computer.list lists no computer");
+  const model = (await rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.model;
+  if (model === undefined) fail("Alpha has no model to give the user's code session");
+  const { mkdirSync } = await import("node:fs");
+  mkdirSync(join(ctx.userHome, "cards-work"), { recursive: true });
+  const session = (await rpc.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/cards-work`, model }, 60_000)).session;
   // B's badge sits in the sidebar the whole time: mounted, and its own card list answered by the core (not refused).
   await until("B's badge, its card list answered", 60_000, async () => {
     const [mounted, listed] = [await attr(B, '[data-cards-b="badge"]', "data-mounted"), await attr(B, '[data-cards-b="badge"]', "data-listed")];
@@ -63,18 +71,19 @@ async function run(ctx: ExampleCtx): Promise<string> {
   }, async () => `B says mounted=${await attr(B, '[data-cards-b="badge"]', "data-mounted")} listed=${await attr(B, '[data-cards-b="badge"]', "data-listed")}`);
   done.push("both installed from their folders and OK'd; B's badge mounted and its card list answered");
 
-  // 2. A's page open, then a turn that calls its tool: the card is raised for A's own bot's session, and A's page is told of it.
+  // 2. A's page open, then a turn of the code session that calls A's tool: the card is raised for that session, A's own (its
+  // tool's call), and A's page is told of it.
   await clickTree(cdp, "A's sidebar entry", SIDEBAR_ITEMS, "Acceptance cards A");
   await until("A's page", 30_000, async () => ((await attr(A, '[data-cards-a="main"]', "data-ids")) !== undefined ? true : undefined));
   const first = await send(session, "ACCEPTANCE-CALL ask_card {}");
-  // A turn may open with the bot's provider card (a change); it is pressed where it is drawn, and this waits for the tool's own.
+  // A turn may open with a provider card (a change); it is pressed where it is drawn, and this waits for the tool's own.
   let tool: Card | undefined;
   const settled = new Set<string>();
-  await until("the tool card for A's bot's session", 90_000, async () => {
+  await until("the tool card for the code session's call to A's tool", 90_000, async () => {
     for (const c of await cardsNow()) {
       if (c.session !== session) continue;
       if (c.kind === "tool") { tool = c; return true; }
-      if (!settled.has(c.id)) { settled.add(c.id); await ctx.pressCard(`A's bot's ${c.kind}${c.change !== undefined ? ` (${c.change})` : ""} card`, (x) => x.id === c.id); }
+      if (!settled.has(c.id)) { settled.add(c.id); await ctx.pressCard(`the code session's ${c.kind}${c.change !== undefined ? ` (${c.change})` : ""} card`, (x) => x.id === c.id); }
     }
     return undefined;
   });
@@ -89,7 +98,7 @@ async function run(ctx: ExampleCtx): Promise<string> {
     }
     return undefined;
   });
-  done.push(`A's page, not the conversation, placed ${card.id} (${aFrames} sealed frames; the card is for ${A}'s bot's session)`);
+  done.push(`A's page, not the conversation, placed ${card.id} (${aFrames} sealed frames; the card is the code session's call to ${A}'s tool)`);
 
   // 3. B is told of nothing: sampled for four seconds against the control (A's own badge heard it), by the event and by the list.
   const aBadge = await attr(A, '[data-cards-a="badge"]', "data-ids");
@@ -98,7 +107,7 @@ async function run(ctx: ExampleCtx): Promise<string> {
     const ids = await attr(B, '[data-cards-b="badge"]', "data-ids");
     const listed = await attr(B, '[data-cards-b="badge"]', "data-listed");
     if (ids === undefined) fail("B's badge went away while the card was pending (the check would prove nothing)");
-    if (ids!.includes(card.id)) fail(`B (approvals, no bot) was told of A's bot's card: ${ids}`);
+    if (ids!.includes(card.id)) fail(`B (approvals, no claim on it) was told of the card of A's tool: ${ids}`);
     if (listed !== "answered") fail(`B's own card list was not answered while the card was pending (${listed})`);
     await sleep(500);
   }
