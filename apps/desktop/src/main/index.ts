@@ -109,6 +109,7 @@ let hostLock: HostLock | null | undefined;
 // drawn for a moment before the mount comes); an engine whose hello names no mount gets today's whole list then.
 let mountNow: MountPlan = mountPlan(program, program === "host" ? SURFACE_MOUNTS.host : SURFACE_MOUNTS.code);
 let helloMount: MountList | undefined;
+let mountSaid = false;
 let hostStateNow: HostState | undefined;
 /** lane HS: the engine stopped trying to start the host (`host_changed`'s `gaveUp`), and whether the notice was shown. */
 let hostGaveUp = false;
@@ -1592,7 +1593,8 @@ function applyMount(): void {
   const next = mountPlan(program, helloMount, hostStateNow, hostGaveUp);
   const was = mountNow;
   mountNow = next;
-  if (JSON.stringify(was) !== JSON.stringify(next)) log(`mount: ${JSON.stringify(next)}`);
+  // Said on the first mount the engine's hello brings, and on every change after.
+  if (!mountSaid || JSON.stringify(was) !== JSON.stringify(next)) { mountSaid = true; log(`mount: ${JSON.stringify(next)}`); }
   if (runtime !== undefined) { syncSurfaces(); syncBackgrounds(); }
   if (next.browser && browser === undefined) startBrowser();
   if (!next.browser && browser !== undefined) {

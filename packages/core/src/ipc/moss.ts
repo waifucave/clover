@@ -684,8 +684,11 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       // lane HS: start. A window that says hello while a background host owns the screen is no half of the pair: its
       // quit stops nothing and its exit is no crash (spec §3.1, "quitting an app never stops work"). Stand-in until the
       // pair is retired (lanes RT, RL, then HS).
+      // The heartbeat (R9) is the pair's app's and the host's: one that stops answering app.ping is ended, the pair's app to be
+      // restarted in safe mode, the host's close a crash for its supervisor. A window outside the pair has none: nothing would
+      // restart it, so ending it would only take the person's window away (and an `app` client that isn't a window, a test's,
+      // answers no ping).
       if (r.conn.surface === "code" && r.conn.releaseDoor === undefined && !(deps.hostOwnsScreen?.() ?? false)) { pairApps.add(connId); deps.pair?.appConnected(String(connId), r.conn.features); startBeat(r.conn, peer.pid, peer.handle); }
-      // The background host has the heartbeat too: one that stops answering app.ping is ended, and counts as a crash.
       else if (r.conn.surface === "host") startBeat(r.conn, peer.pid, peer.handle);
       // lane HS: end
       // An app AHEAD of this engine is open and waits (release door only): the pair starts no second one meanwhile.
@@ -824,7 +827,9 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       door.remount();
       for (const c of conns.values()) {
         if (c.role !== "app" || c.surface !== "code") continue;
-        if (owns && pairApps.delete(c.connId)) deps.pair?.appReleased(String(c.connId));
+        // Released from the pair, it loses the pair's heartbeat too (nothing restarts it; see the hello's rule). Back in the
+        // pair when no host owns the screen, it is the pair's app again, with no heartbeat until it says hello again.
+        if (owns && pairApps.delete(c.connId)) { stopBeat(c.connId); deps.pair?.appReleased(String(c.connId)); }
         else if (!owns && !pairApps.has(c.connId)) { pairApps.add(c.connId); deps.pair?.appConnected(String(c.connId), c.features); }
       }
     },
