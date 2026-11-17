@@ -614,6 +614,25 @@ describe("models and sessions", () => {
     rmSync(join(w.mossHome, "run", "agents", `${r.sessionId}.json`));
     expect(m2.reattach({ ...view, status: "idle" })).toBe(false);
   });
+
+  test("a code session the user opened and never typed into answers after a restart: its agent starts new in that turn", async () => {
+    const w = make({ script: [[{ say: "Hello after the restart." }]] });
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32) });
+    const { session } = (await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1" }, { caller: { kind: "user", client: "app" } })) as { session: string };
+    const view = w.host.get(session)!;
+    expect(view).toMatchObject({ kind: "coding", status: "ready" });
+    // The agent never launched, so its record has no agent session id to resume.
+    expect(readAgentRecord(w.mossHome, session)?.agentSessionId).toBeUndefined();
+    const { host2, m2 } = await restart(w, WELL_BEHAVED_QUIRKS);
+    m2.sessionHooks().reattach([view]);
+    expect(host2.get(session)).toMatchObject({ kind: "coding", backend: "fake" });
+    await host2.sendUser(session, { text: "Hi", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() });
+    await waitFor(() => host2.get(session)!.status === "idle" && w.report("prompt").length === 1, "the turn after the restart");
+    // Started new (no resume or load of an id it never had), and the record now holds the id for the next restart.
+    expect(w.report("session").map((x) => x["how"])).toEqual(["new"]);
+    expect(readAgentRecord(w.mossHome, session)?.agentSessionId).toBe("fake-session-1");
+    await host2.stop(session);
+  });
 });
 
 /** The daemon closes (every agent's process ends, its records stay) and a new one starts: a new host restored the

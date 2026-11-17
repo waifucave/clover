@@ -635,10 +635,14 @@ export class AgentManager {
     if (!view.backend || !view.root) return refuse("the host's view names no backend or root");
     if ((view.kind === "agent") !== (view.bot !== undefined)) return refuse("its kind and its bot disagree");
     const daemon = readAgentRecord(this.#o.home, view.id);
-    if (!daemon?.agentSessionId) return refuse("the daemon's record of it is missing");
+    if (!daemon) return refuse("the daemon's record of it is missing");
     if (daemon.backend !== view.backend || daemon.root !== view.root || daemon.computer !== view.computer || daemon.bot !== view.bot || daemon.parent !== view.parent) {
       return refuse("the daemon's record doesn't match the session");
     }
+    // A session whose agent never launched (a code session the user opened and hasn't typed into yet: the agent starts
+    // in the first turn) has no agent session id to resume: it reattaches all the same, and its next turn starts the
+    // agent new, as that first turn would have.
+    const resume = daemon.agentSessionId === undefined ? undefined : { agentSessionId: daemon.agentSessionId };
     const backend = this.#o.backends().find((b) => b.id === view.backend);
     if (!backend) return refuse(`no backend named ${view.backend}`);
     // Another plugin that took the id since (the bundled one switched off, a third party's on) never gets the session:
@@ -670,11 +674,11 @@ export class AgentManager {
     }
     const transcript = new AgentTranscript(this.#o.home, view.id, view.bot);
     const record: AgentRecordFile = {
-      v: 1, sessionId: view.id, backend: backend.id, computer: view.computer, root: view.root, startedAt: daemon.startedAt, agentSessionId: daemon.agentSessionId,
+      v: 1, sessionId: view.id, backend: backend.id, computer: view.computer, root: view.root, startedAt: daemon.startedAt, ...(resume ?? {}),
       ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
       ...(view.model === undefined ? {} : { model: view.model }), ...(view.effort === undefined ? {} : { effort: view.effort }),
     };
-    const entry = this.#entry(view.id, backend, transcript, record, daemon, rootPath, { agentSessionId: daemon.agentSessionId });
+    const entry = this.#entry(view.id, backend, transcript, record, daemon, rootPath, resume);
     this.#o.host.open({
       id: view.id, kind: view.kind, computer: view.computer, backend: backend.id, root: view.root,
       ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
