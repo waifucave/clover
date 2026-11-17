@@ -455,7 +455,7 @@ describe("a bot's layout (§5.5)", () => {
     const sheets = s.sent.filter((x) => x.m.type === "sheets").map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets).at(-1)!;
     expect(sheets.find((x) => x.id === `layout:luna:${tab.mount}`)!.css).toContain(".clv-luna__stage{border-right:1px solid}");
     // Its spots are the tab's, as a whole layout's are.
-    expect(s.rt.resolve(shell.shellFrame, tab.mount, "bot.stage").undeclared).not.toBe(true);
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "conversation").undeclared).not.toBe(true);
     s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna");
     expect(lines.filter((l) => l.includes("change 3 (remove bot.header): no such node; skipped"))).toEqual(["layout: luna/layout.json: change 3 (remove bot.header): no such node; skipped"]);
   });
@@ -698,65 +698,6 @@ describe("lane B's #179 hooks in the runtime", () => {
     return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id.replace(/\//g, "--"), assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.header.action", id: "act", component: "Act", title, order: enabledAt }], themes: [], locales: [], bots: "all", ...extra }] as never, { [id]: { enabledAt, source: "installed" } })[0]!;
   }
 
-  test("an avatar frame's speech: only from the document that placed it, only to an `avatar` frame, only once it is loaded", () => {
-    const pip = readUiPlugins([{ pluginId: "pip", name: "Pip", treeHash: `sha256:${"4".repeat(64)}`, layer: "pip", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "avatar", key: "pngtuber", id: "avatar", component: "PngtuberAvatar" }], themes: [], locales: [], bots: "all" }] as never, { pip: { enabledAt: 3, source: "installed" } })[0]!;
-    const s = setup([pip, tabbed("vn", "Visual novel", 2)]);
-    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, avatar: { shape: "keyed" }, "bot.header.action": { shape: "list" } } })) })));
-    const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
-    const avatar = s.rt.resolve(shell.shellFrame, tab.mount, "avatar", "pngtuber").items[0] as { kind: string; mount: string; url: string };
-    const action = s.rt.resolve(shell.shellFrame, tab.mount, "bot.header.action").items[0] as { kind: string; mount: string; url: string };
-    expect([avatar.kind, action.kind]).toEqual(["frame", "frame"]);
-    const batch = { speaking: true, clock: { audio: 3, wall: 1000 }, frames: [{ t: 3, rms: 0.2, centroid: 900 }] };
-    // Not loaded yet: nothing to hear it.
-    s.sent.length = 0;
-    s.rt.speech(shell.shellFrame, avatar.mount, batch);
-    expect(s.sent).toEqual([]);
-    const token = new URL(avatar.url).searchParams.get("mount")!;
-    s.rt.serveDocument("pip", token);
-    const child = frame(avatar.url, shell.shellFrame);
-    s.rt.describe(child, WIN, token);
-    s.sent.length = 0;
-    s.rt.speech(shell.shellFrame, avatar.mount, batch);
-    expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: { type: "speech", mount: avatar.mount, speech: batch } }]);
-    // Any other frame (not an avatar) gets none; and only the placing document sends it.
-    s.sent.length = 0;
-    s.rt.speech(shell.shellFrame, action.mount, batch);
-    expect(s.sent).toEqual([]);
-    expect(() => s.rt.speech(child, avatar.mount, batch)).toThrow();
-    expect(() => s.rt.speech(s.rootFrame, avatar.mount, batch)).toThrow();
-  });
-
-  test("an avatar frame's cues and state: a cue only from the document that placed it, to an `avatar` frame; its state only to its parent", () => {
-    const pip = readUiPlugins([{ pluginId: "pip", name: "Pip", treeHash: `sha256:${"4".repeat(64)}`, layer: "pip", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "avatar", key: "pngtuber", id: "avatar", component: "PngtuberAvatar" }], themes: [], locales: [], bots: "all" }] as never, { pip: { enabledAt: 3, source: "installed" } })[0]!;
-    const s = setup([pip, tabbed("vn", "Visual novel", 2)]);
-    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, avatar: { shape: "keyed" }, "bot.header.action": { shape: "list" } } })) })));
-    const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
-    const avatar = s.rt.resolve(shell.shellFrame, tab.mount, "avatar", "pngtuber").items[0] as { kind: string; mount: string; url: string };
-    const action = s.rt.resolve(shell.shellFrame, tab.mount, "bot.header.action").items[0] as { kind: string; mount: string; url: string };
-    const cue = { kind: "cue" as const, cue: { type: "expression" as const, name: "happy" } };
-    s.sent.length = 0;
-    s.rt.avatarDown(shell.shellFrame, avatar.mount, cue);
-    expect(s.sent).toEqual([]);
-    const token = new URL(avatar.url).searchParams.get("mount")!;
-    s.rt.serveDocument("pip", token);
-    const child = frame(avatar.url, shell.shellFrame);
-    s.rt.describe(child, WIN, token);
-    s.sent.length = 0;
-    s.rt.avatarDown(shell.shellFrame, avatar.mount, cue);
-    expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: { type: "avatar", mount: avatar.mount, message: cue } }]);
-    s.sent.length = 0;
-    s.rt.avatarDown(shell.shellFrame, action.mount, cue);
-    expect(s.sent).toEqual([]);
-    expect(() => s.rt.avatarDown(child, avatar.mount, cue)).toThrow();
-    // Its state goes up to the document that placed it, and says which child it is.
-    const state = { kind: "state" as const, names: { expressions: ["happy"], motions: [], outfits: [] }, box: null };
-    s.sent.length = 0;
-    s.rt.avatarUp(child, state);
-    expect(s.sent).toEqual([{ to: `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`, m: { type: "avatar-up", child: avatar.mount, message: state } }]);
-  });
-
   test("a spot's entries for the part that declares it, in the spot's order, with their fields; one shown by its ref", () => {
     const s = setup([tabbed("vn", "Visual novel", 2), tabbed("timer", "Timer", 1)]);
     // The tab's part declares bot.header.action (the fake shell's bot.tab declares the tab's spots).
@@ -780,7 +721,8 @@ describe("lane B's #179 hooks in the runtime", () => {
     const office = readUiPlugins([{ pluginId: "office", name: "Office", treeHash: `sha256:${"5".repeat(64)}`, layer: "office", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "panel", id: "sheets", key: "sheets", component: "Sheets", title: "Sheets" }], themes: [], locales: [], bots: "all" }] as never, { office: { enabledAt: 3, source: "installed" } });
     const s = setup(office);
     const shell = mountShell(s);
-    const own = s.rt.entries(shell.shellFrame, shell.info.mount, "panel", "*", "alpha", "bot");
+    // The bundled parts' own panels (the avatar plugin's figure) are listed too; the plugin's is by its own ref.
+    const own = s.rt.entries(shell.shellFrame, shell.info.mount, "panel", "*", "alpha", "bot").filter((e) => e.pluginId === "office");
     expect(own.map((e) => [e.ref, e.pluginId, e.key, e.fields.title])).toEqual([["office#sheets", "office", "sheets", "Sheets"]]);
     const view = s.rt.resolve(shell.shellFrame, shell.info.mount, "panel", "sheets", { entry: "office#sheets", session: "bot", bot: "alpha" });
     expect(view.undeclared).toBeUndefined();
@@ -944,7 +886,7 @@ describe("what a conversation's inner spots need is the data's own kind (spec re
   function filler(id: string, caps: string[], spot: string): UiPlugin {
     return {
       id, topId: id, layer: id, treeHash: "0".repeat(64), assetBase: `/plugins/${id}`, css: [], source: "installed", enabledAt: 1000, capabilities: new Set(caps),
-      bots: "all", isBot: false, themes: [], locales: [], avatarFormats: [], entries: [readUiEntry(id, { spot, component: "Extra" })!],
+      bots: "all", isBot: false, themes: [], locales: [], dataFiles: [], entries: [readUiEntry(id, { spot, component: "Extra" })!],
     } as UiPlugin;
   }
   const bots = filler("bots-only", ["conversation.read"], "conversation.message.extra");
@@ -1130,7 +1072,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
   test("the surfaces to open: app.surface entries with a window; their roots show only their own entry", () => {
     const surface = readUiPlugins([folderView(join(FIXTURES, "fixture-surface"))] as never);
     const s = setup(surface);
-    expect(s.rt.surfaceEntries().map((e) => e.id).sort()).toEqual(["fixture", "island", "pill"]);
+    expect(s.rt.surfaceEntries().map((e) => e.id).sort()).toEqual(["fixture", "island", "on-screen", "pill"]);
     s.rt.openWindow(7, { material: "none", surface: { id: "fixture", ref: "fixture-surface#fixture" } });
     const rootFrame = frame("moss-core://app/?surface=fixture");
     const root = s.rt.describe(rootFrame, 7, undefined);
@@ -1146,7 +1088,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(s.rt.surfaceOf(doc)).toBe(7);
     expect(s.rt.surfaceOf(mountShell(s).shellFrame)).toBeUndefined();
     // In safe mode only moss's surfaces open.
-    expect(setup(surface, { safeMode: true }).rt.surfaceEntries().map((e) => e.id).sort()).toEqual(["island", "pill"]);
+    expect(setup(surface, { safeMode: true }).rt.surfaceEntries().map((e) => e.id).sort()).toEqual(["island", "on-screen", "pill"]);
   });
 
   test("background parts: app.background components that may run, each in a window of its own whose root shows only it; audio only for a plugin holding it", () => {

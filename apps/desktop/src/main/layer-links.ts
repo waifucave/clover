@@ -21,23 +21,15 @@ export const MAIN_ONLY: ReadonlySet<string> = new Set(["terminal.write"]);
 export const LAYER_CALL_MAX = 2_000_000;
 
 /** A plugin's own events (its host half's `ui.send`, its store's changes), handed to its documents latest-wins: within
- *  one tick, only the last of each topic or key goes on (but every figure cue, below), and at most OWN_EVENT_KEYS
+ *  one tick, only the last of each topic or key goes on, and at most OWN_EVENT_KEYS
  *  distinct ones are held per plugin (the oldest goes first). So a burst, or documents slow to take them, never piles
  *  up here. */
 export const OWN_EVENT_KEYS = 64;
 export const OWN_EVENT_TICK_MS = 16;
 const OWN_EVENTS = new Set(["plugin_ui_message", "plugin_store_changed"]);
 
-/** The core's figure events (packages/core/src/plugin-host/api/avatar.ts). A cue is an order, not a state: every one goes
- *  on, in order (an outfit's "this one off" never gives way to "that one on"; the core holds a plugin to 20 cues a
- *  second). A figure's change is two states, its catalogue and its box: the last of each goes on. */
-export const AVATAR_CUE_EVENT = "moss.avatar.cue";
-export const AVATAR_CHANGED_EVENT = "moss.avatar.changed";
-let cueSeq = 0;
 function topicOf(e: { type: string; event?: unknown; key?: unknown; value?: unknown }): string {
   if (e.type !== "plugin_ui_message") return `${e.type}\u0000${String(e.key)}`;
-  if (e.event === AVATAR_CUE_EVENT) return `${e.type}\u0000${e.event}\u0000${++cueSeq}`;
-  if (e.event === AVATAR_CHANGED_EVENT) return `${e.type}\u0000${e.event}\u0000${String((e.value as { kind?: unknown } | null)?.kind)}`;
   return `${e.type}\u0000${String(e.event)}`;
 }
 

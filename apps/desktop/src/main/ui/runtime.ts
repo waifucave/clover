@@ -10,7 +10,7 @@
 // Electron-free: the Electron glue (ipc.ts) hands frames in as `FrameRef`s and delivers what `send` produces, so the
 // tests drive the whole runtime under Bun.
 import { randomBytes } from "node:crypto";
-import type { AvatarDown, AvatarUp, LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/moss-plugin-sdk/ui/bridge";
+import type { LayerMessage, LocaleValue, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/moss-plugin-sdk";
 import { STOCK_KEYS, spotInfo } from "@waifucave/moss-plugin-sdk";
 import { SAFE_MODE_PLUGINS, patchScope, withTabPatches, type UiEntry, type UiPlugin } from "./model";
@@ -1002,32 +1002,6 @@ export class UiRuntime {
     const same = JSON.stringify(m.props ?? null) === JSON.stringify(props ?? null);
     m.props = props;
     if (m.kind === "frame" && !same) this.post(m.id, { type: "props", mount: m.id, props });
-  }
-
-  /** The speech an `avatar` frame lip-syncs to, from the document that placed it (`childOf`: only its parent), already
-   *  numbers only (`cleanSpeechMessage`). Any other child gets none. */
-  speech(frame: FrameRef, child: string, speech: SpeechMessage): void {
-    const m = this.childOf(frame, child);
-    // Only a bound document hears it (an asleep or not-yet-loaded frame has none).
-    if (m.kind !== "frame" || m.spot !== "avatar" || m.frame === undefined) return;
-    this.post(m.id, { type: "speech", mount: m.id, speech });
-  }
-
-  /** A cue for an `avatar` frame, from the document that placed it (`childOf`: only its parent), already plain data
-   *  (`cleanAvatarDown`). Any other child gets none. */
-  avatarDown(frame: FrameRef, child: string, message: AvatarDown): void {
-    const m = this.childOf(frame, child);
-    if (m.kind !== "frame" || m.spot !== "avatar" || m.frame === undefined) return;
-    this.post(m.id, { type: "avatar", mount: m.id, message });
-  }
-
-  /** An `avatar` frame's state (what its model has, where the figure stands) for its parent document only, already
-   *  plain data (`cleanAvatarUp`). A frame that isn't an `avatar` entry says nothing this way. */
-  avatarUp(frame: FrameRef, message: AvatarUp): void {
-    const m = this.requireDoc(frame);
-    if (m.kind !== "frame" || m.spot !== "avatar" || m.parent === undefined) return;
-    const parentDoc = this.docOf(this.mounts.get(m.parent)!);
-    if (parentDoc !== undefined) this.post(parentDoc.id, { type: "avatar-up", child: m.id, message });
   }
 
   /** A frame calls a callback its parent handed it: the call goes to the parent's document. */

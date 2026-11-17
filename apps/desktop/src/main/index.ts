@@ -376,7 +376,7 @@ async function ready(): Promise<void> {
   const fileGrants = new FileGrants();
   installUiSession(ui, runtime, dirs, log, {
     grants: fileGrants,
-    unguardedLayers: new Set(unguarded), avatarsDir: join(home, "user-layers", "avatars"),
+    unguardedLayers: new Set(unguarded), pluginDataDir: join(home, "plugin-data"),
     // A plugin's icon for the Plugins page's lists: where it is (`plugin.iconSource`, the app's alone), read here.
     pluginIcon: (id) => pluginIconFile(async (pid) => {
       const c = pair?.client;
@@ -436,15 +436,14 @@ async function ready(): Promise<void> {
       const client = pair.client;
       if (client === undefined) throw new LayerError("MOSS Code isn't running");
       // An install or an update downloads (up to 30 minutes for a large one); everything else answers within 30 s.
-      return client.request(method, params ?? {}, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : method === "bot.importAvatar" ? 5 * 60_000 : 30_000);
+      return client.request(method, params ?? {}, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : 30_000);
     },
     // The Plugins page's picker (tree-calls.ts `ui.pick`): main's own dialog over the window; a headless test-marked or
     // acceptance build takes the path the harness named instead (never in a release, which compiles both marks out; the
     // marker gate's TEST_ONLY_APP_STRINGS checks it).
     pick: async (windowId, kind, filters, use) => {
-      // An avatar's pick has its own answer (MOSS_TEST_PICK_AVATAR), so one run can pick a plugin folder and a model.
       if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless) {
-        const named = use === "bot.importAvatar" ? process.env.MOSS_TEST_PICK_AVATAR : process.env.MOSS_TEST_PICK;
+        const named = process.env.MOSS_TEST_PICK;
         // A `.pick` file names the folder at each pick, so one run picks several in turn (the harness rewrites it).
         const answer = named !== undefined && named.endsWith(".pick") ? (() => { try { return readFileSync(named, "utf8").split("\n")[0]!.trim(); } catch { return ""; } })() : named;
         if (answer !== undefined) return answer === "" ? undefined : answer;

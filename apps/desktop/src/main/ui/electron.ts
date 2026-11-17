@@ -8,10 +8,10 @@ import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { ShellApp, ShellState } from "@waifucave/moss-plugin-sdk";
-import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/moss-plugin-sdk/ui/bridge";
+import { type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, layerMicrophone, withMicrophone } from "./documents";
 import { checkMenu, frameGesture, openRefusal, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
-import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
+import { builtClientFile, dataFile, isInside, mediaType, modelResponse, ownDataFile, ownDataRequest, pluginFile } from "./files";
 import { SEALED_PRESS_WORDS } from "../sealed-pages";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { FileGrants, PICK_METHODS, grantResponse, routeDrop, routePick, type DialogRequest, type Grant } from "./file-grants";
@@ -78,9 +78,9 @@ export interface UiSessionOptions {
   /** Layers served without `Connection-Allowlist`: only the UI test's positive control for the DNS probe, and only in
    *  an unpackaged run (index.ts decides). */
   unguardedLayers?: ReadonlySet<string>;
-  /** The core's folder of the user's own avatar models, `<home>/user-layers/avatars` (`bot.importAvatar`): served at
-   *  `/_a/<bot>/…` to the layers, and only for a bot that is installed. */
-  avatarsDir?: string;
+  /** The home's plugin data folders, `<home>/plugin-data`: a layer's own (its top-level plugin's) is served at `/_d/…`
+   *  to that layer only, inert data and media. */
+  pluginDataDir?: string;
   /** A plugin's own icon for the Plugins page's lists (`plugin-icon.ts`): served at `/_icon/<id>` in the moss tree's
    *  layer only, a raster picture or nothing. */
   pluginIcon?: (id: string) => Promise<{ data: Buffer; type: string } | undefined>;
@@ -223,9 +223,12 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const type = "text/javascript; charset=utf-8";
       return new Response(bytes, { headers: { ...layerHeaders(type), "Content-Type": type } });
     }
-    if (url.pathname.startsWith("/_a/") && options.avatarsDir !== undefined) {
-      // The user's own avatar model (the core copied it here): data only, the kinds the installed renderers declared, one bot's folder.
-      const served = userAvatarFile(options.avatarsDir, runtime.registry, url.pathname);
+    if (url.pathname.startsWith("/_d/") && options.pluginDataDir !== undefined) {
+      // The layer's own data folder (`<home>/plugin-data/<its top-level id>/`), to that layer only: inert data and media.
+      // A layer's label is its top-level plugin's id with `/` written `--`; the bundled tree's is `moss`.
+      const top = runtime.registry.find((p) => p.layer === layer)?.topId;
+      if (top === undefined || top.includes("/")) return forbidden();
+      const served = ownDataFile(join(options.pluginDataDir, top), url.pathname);
       if (served === "forbidden") return forbidden();
       if (served === "missing") return notFound();
       return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, served.maxBytes);
@@ -245,7 +248,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     if (url.pathname.startsWith("/_t/")) {
       // A theme's or a layout's images and fonts, a bot's portrait (the core's `assetUrl`) and a plugin's icon, in every layer they
       // reach (§5.5): only a plugin with themes, style entries, a bot's layout or a bot, only images and fonts, inside
-      // its folder. Never a document: an SVG opened as a page gets no origin.
+      // its folder; and the files a plugin's point entries bring (`dataFiles`), by their declared kinds. Never a document: an SVG opened as a page gets no origin.
       const [, , encoded, ...rest] = url.pathname.split("/");
       let id: string;
       let path: string;
@@ -255,8 +258,10 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       } catch {
         return notFound();
       }
-      // A plugin's own picture (its view's `icon`) too, by that exact path: the Plugins page's lists.
-      const plugin = runtime.registry.find((p) => p.id === id && (p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined) || (p.icon !== undefined && p.icon === path)));
+      // A plugin's own picture (its view's `icon`) too, by that exact path: the Plugins page's lists; and a plugin whose point
+      // entries bring files (`dataFiles`).
+      const looks = (p: (typeof runtime.registry)[number]) => p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined) || (p.icon !== undefined && p.icon === path);
+      const plugin = runtime.registry.find((p) => p.id === id && (looks(p) || p.dataFiles.length > 0));
       if (plugin === undefined) return forbidden();
       let file: string;
       try {
@@ -264,11 +269,13 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       } catch {
         return notFound();
       }
-      // A bot's own model files (a VRM, a Live2D `.moc3` and its JSON, a sprite's picture list…) are the bot plugin's inert data its stage's
-      // avatar entry reads: served by the kinds the installed renderer of the bot's format declared (`avatar.formats`), inside the folder
-      // its avatar sits in, capped, nosniff and sandboxed, never as a document.
-      const model = avatarModelFile(plugin, runtime.registry, file);
+      // The files that come with a plugin's point entries (a model's binaries and JSON, a word list, a sound bank…) are its inert
+      // data: served by the kinds the point's declaration names (`dataFiles`), inside the folder of the entry's file, capped,
+      // nosniff and sandboxed, never as a document.
+      const model = dataFile(plugin, file);
       if (model !== undefined) return modelResponse(file, model.media, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, model.maxBytes);
+      // Let in by its data files alone: those files and nothing else of its folder.
+      if (!looks(plugin)) return forbidden();
       const type = mediaType(file);
       if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/"))) return forbidden();
       return fileResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP });
@@ -291,6 +298,11 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     if (protocolName === `${LAYER_SCHEME}:`) {
       const f = details.frame;
       const layer = f === undefined || f === null || f.detached ? undefined : runtime.layerOfFrame({ processId: f.processId, routingId: f.routingId });
+      // A layer's own data (`/_d/`): only for a frame main bound to that same layer.
+      if (ownDataRequest(layer, details.url) === "refuse") {
+        log(`layers: cancelled a request for another layer's own data from ${layer === undefined ? "a frame main doesn't know" : `the ${layer} layer's frame`}`);
+        return callback({ cancel: true });
+      }
       if (iconRequest(layer, details.url) === "refuse") {
         // Said once per icon and asker: a frame main doesn't know, or another layer's.
         const id = (() => {
@@ -532,25 +544,6 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       return;
     }
     runtime.setProps(sender(event).frame, child, a.props);
-  });
-  // An `avatar` child frame's speech, from the document that placed it: numbers only, or dropped.
-  on("moss:speech", (event, a) => {
-    const child = str(a.child, 32);
-    const message = cleanSpeechMessage(a.message);
-    if (child === undefined || message === undefined) return;
-    runtime.speech(sender(event).frame, child, message);
-  });
-  // An `avatar` child frame's cue, from the document that placed it; and its state, to its parent only: plain data, or dropped.
-  on("moss:avatar", (event, a) => {
-    const child = str(a.child, 32);
-    const message = cleanAvatarDown(a.message);
-    if (child === undefined || message === undefined) return;
-    runtime.avatarDown(sender(event).frame, child, message);
-  });
-  on("moss:avatar-up", (event, a) => {
-    const message = cleanAvatarUp(a.message);
-    if (message === undefined) return;
-    runtime.avatarUp(sender(event).frame, message);
   });
   on("moss:callback", (event, a) => {
     const id = str(a.id, 32);

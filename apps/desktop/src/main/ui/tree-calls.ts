@@ -33,7 +33,6 @@ export type Disposition = "read" | "gesture" | "card" | "unserved";
 /** The capabilities that gate this door (catalog: `packages/plugin-sdk/src/catalogs/capabilities.ts`). */
 export const APP_SETTINGS = "app.settings";
 export const BOTS_EDIT = "bots.edit";
-export const BOTS_AVATAR = "bots.avatar";
 export const PLUGINS_READ = "plugins.read";
 export const PLUGINS_MANAGE = "plugins.manage";
 export const TOOLS_PERMISSIONS = "tools.permissions";
@@ -62,20 +61,10 @@ export function uiSetShape(params: unknown): "lists" | "look" {
   return keys.length === 1 && keys[0] === "lists" ? "lists" : "look";
 }
 
-/** The user-layer fields only an avatar section writes. */
-const AVATAR_LAYER_FIELDS: readonly string[] = ["avatar", "avatarCredit"];
-
-/** Whether a `bot.setUserLayer` patch is the avatar's (its two fields only). */
-function avatarPatch(params: unknown): boolean {
-  const keys = Object.keys(obj(obj(params).patch));
-  return keys.length > 0 && keys.every((k) => AVATAR_LAYER_FIELDS.includes(k));
-}
-
 /** The pick uses each capability gives. */
-export type PickUse = "plugin.install" | "plugin.dev.add" | "bot.importAvatar";
+export type PickUse = "plugin.install" | "plugin.dev.add";
 const PICK_USES: Readonly<Record<string, readonly PickUse[]>> = {
   [PLUGINS_MANAGE]: ["plugin.install", "plugin.dev.add"],
-  [BOTS_AVATAR]: ["bot.importAvatar"],
 };
 
 /** A `plugin.settings.*` call that names a bot, from a holder of `bots.edit`, is a bot's Edit page's (its own bot's
@@ -106,12 +95,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // a page), or the edited bot's own plugin's at bot scope (`bots.edit`: main checks the id is a bot's).
   "plugin.settings.get": read((p) => (namesBot(p) ? [BOTS_EDIT, PLUGINS_READ] : PLUGINS_READ)),
   "plugin.settings.set": press((p) => (namesBot(p) ? [BOTS_EDIT, PLUGINS_MANAGE] : PLUGINS_MANAGE)),
-  // A bot's user layer: the avatar's two fields with `bots.avatar`, every other field with `bots.edit`, never both at once
-  // (`userLayerWhy`).
-  "bot.setUserLayer": press((p) => (avatarPatch(p) ? BOTS_AVATAR : BOTS_EDIT)),
-  // A model the user picked in main's own dialog, copied into the user's avatars for a bot and made its avatar: only a
-  // pick token of that use, only an existing bot's id (`botImport`).
-  "bot.importAvatar": press(BOTS_AVATAR),
+  // A bot's user layer, with `bots.edit` (`userLayerWhy`).
+  "bot.setUserLayer": press(BOTS_EDIT),
   // "Try again" on a turn that ended in an error: main reads that session's log and sends the user's own message that
   // began the failed turn again, as the user (`resend.ts`): less than `user.send` (no words of the part's).
   "session.resend": press("user.send"),
@@ -139,8 +124,7 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Off, on demand or always on (lane TS): what a model is offered is the user's own press, the same capability and gesture.
   "tool.setAvailability": press(TOOLS_PERMISSIONS),
   "tool.takeBackRule": press(TOOLS_PERMISSIONS),
-  // Main's own dialog, for the use the page names: `plugins.manage`'s folders (an install, a development folder),
-  // `bots.avatar`'s model file. The token is redeemable by that one use only.
+  // Main's own dialog, for the use the page names: `plugins.manage`'s folders (an install, a development folder). The token is redeemable by that one use only.
   "ui.pick": press((p) => PICK_USES_FOR(obj(p).use)),
   // The app's own key dialog for one plugin's one secret setting or `api-key` sign-in: any plugin's with
   // `plugins.manage`, the edited bot's own plugin's settings with `bots.edit` (`secret`). The key never passes the part.
@@ -491,15 +475,14 @@ export function pageSettingWhy(key: string, field: PageSettingField, value: unkn
   }
 }
 
-/** What a `bot.setUserLayer` patch may hold: the avatar's two fields alone (`bots.avatar`), or any other fields and
- *  neither of those (`bots.edit`). The capability the shape needs is the table's; this refuses a mixture and an empty one. */
+/** What a `bot.setUserLayer` patch may hold: some fields, never the retired `avatar` / `avatarCredit` (the figure is the
+ *  avatar plugin's own setting now). This refuses an empty one. */
 function userLayerWhy(params: unknown): string | undefined {
   const patch = (params as { patch?: unknown } | null | undefined)?.patch;
   if (patch === null || typeof patch !== "object" || Array.isArray(patch)) return "a change to a bot's layer is an object of fields";
   const keys = Object.keys(patch);
   if (keys.length === 0) return "a change to a bot's layer names a field";
-  if (keys.every((k) => AVATAR_LAYER_FIELDS.includes(k))) return undefined;
-  return keys.some((k) => AVATAR_LAYER_FIELDS.includes(k)) ? "the avatar is set on its own, not with a bot's other fields" : undefined;
+  return keys.some((k) => k === "avatar" || k === "avatarCredit") ? "a bot's figure is the avatar plugin's own setting now, not its layer" : undefined;
 }
 
 /** One call from a part, routed: a call this table names by the capability the part's plugin holds (on the app's own
@@ -551,7 +534,6 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
   // A bot's own plugin's settings, from its Edit page (`bots.edit`): the plugin is the bot's own, from main's bot listing.
   if ((r.method === "plugin.settings.get" || r.method === "plugin.settings.set") && namesBot(r.params) && verdict.by === BOTS_EDIT) return editorSetting(r, part);
   if (r.method === "ui.pick") return pick(r, part, c);
-  if (r.method === "bot.importAvatar") return botImport(r, part);
   if (r.method === "session.resend") return resend(r, part);
   if (r.method === "conversation.messageAction") return messageAction(r, part);
   if (r.method === "ui.secret") return secret(r, part, has(PLUGINS_MANAGE));
@@ -671,19 +653,6 @@ async function secret(r: TreeRoute, part: string, anyPlugin: boolean): Promise<{
   return { opened: true };
 }
 
-/** The avatar pick's filter: a .zip when a format imports one, and each single file a format imports, from the core's
- *  `bot.avatarFormats`. None (any file) when the core doesn't say; the import itself refuses what isn't a model. */
-async function avatarFilters(r: TreeRoute): Promise<{ name: string; extensions: string[] }[] | undefined> {
-  const got = (await r.request("bot.avatarFormats", {}).catch(() => undefined)) as { formats?: { accepts?: unknown; files?: unknown }[] } | undefined;
-  const exts: string[] = [];
-  const add = (e: string) => { if (/^[A-Za-z0-9]{1,10}$/.test(e) && !exts.includes(e)) exts.push(e); };
-  const formats = Array.isArray(got?.formats) ? got!.formats : [];
-  if (formats.some((f) => Array.isArray(f.accepts) && f.accepts.includes("zip"))) add("zip");
-  // A dialog filters by the last part of a name: `.model3.json` is `json`.
-  for (const f of formats) for (const e of Array.isArray(f.files) ? f.files : []) if (typeof e === "string") add(e.split(".").pop() ?? "");
-  return exts.length === 0 ? undefined : [{ name: "Avatar", extensions: exts.slice(0, 16) }];
-}
-
 /** `ui.pick`: main's own dialog; the page gets a token and the chosen item's name, never its path. */
 async function pick(r: TreeRoute, part: string, c: TreeCaller): Promise<{ token: string; name: string } | { cancelled: true }> {
   if (r.pick === undefined || r.tokens === undefined) throw r.refuse("this app has no picker for a part");
@@ -693,10 +662,8 @@ async function pick(r: TreeRoute, part: string, c: TreeCaller): Promise<{ token:
   // The uses the part's plugin's capabilities give (`PICK_USES`), never its id.
   const allowed = Object.entries(PICK_USES).flatMap(([cap, uses]) => (holds(c.capabilities, cap) ? uses : []));
   const use = allowed.find((u) => u === p.use);
-  if (use === undefined) throw r.refuse(allowed.length === 0 ? "a pick takes the plugins.manage or bots.avatar capability" : `a pick is for ${allowed.join(" or ")}, and says which`);
-  // An avatar is what the installed renderers import (the core's `bot.avatarFormats`): main sets the dialog's filter,
-  // not the page.
-  const filters = use === "bot.importAvatar" ? await avatarFilters(r) : Array.isArray(p.filters)
+  if (use === undefined) throw r.refuse(allowed.length === 0 ? "a pick takes the plugins.manage capability" : `a pick is for ${allowed.join(" or ")}, and says which`);
+  const filters = Array.isArray(p.filters)
     ? p.filters.slice(0, 8).flatMap((f: unknown) => {
       const x = (f ?? {}) as { name?: unknown; extensions?: unknown };
       const ext = Array.isArray(x.extensions) ? x.extensions.filter((e): e is string => typeof e === "string" && /^[A-Za-z0-9]{1,10}$/.test(e)).slice(0, 16) : [];
@@ -717,41 +684,4 @@ function pickedName(path: string): string {
   return neutralised(path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "", 80);
 }
 
-/** The most a refusal's reason shows a page. */
-const REASON_MAX = 300;
 
-/** `bot.importAvatar` from the character plugin's avatar section: `{id, path: <token>}`. The id must be a bot main's own listing holds; the
- *  token is the one `ui.pick` issued this part for this use, spent here; the daemon gets only `{id, path}` with the real
- *  path, and the page gets back `{format, files, bytes, credit?}` (the model's own note as plain text, 300 characters): no path, no listing, and a refusal's plain reason with any path
- *  in it cut out. The core's call already makes the imported model the bot's avatar. */
-async function botImport(r: TreeRoute, part: string): Promise<{ format: string; name?: string; files: number; bytes: number; credit?: string }> {
-  const raw = (r.params !== null && typeof r.params === "object" && !Array.isArray(r.params) ? r.params : {}) as Record<string, unknown>;
-  const id = raw.id;
-  const listed = (await r.request("bot.list", {})) as { bots?: { id?: unknown }[] } | undefined;
-  if (typeof id !== "string" || !(listed?.bots ?? []).some((b) => b.id === id)) {
-    r.log(`tree: ${part}: bot.importAvatar refused (not a bot)`);
-    throw r.refuse("which bot?");
-  }
-  const path = (r.tokens ?? new PickTokens()).redeem(raw.path, part, "bot.importAvatar");
-  if (path === undefined) {
-    r.log(`tree: ${part}: bot.importAvatar refused (no pick)`);
-    throw r.refuse("an avatar comes from the file picker (ui.pick), not from the page");
-  }
-  let got: unknown;
-  try {
-    got = await r.request("bot.importAvatar", { id, path });
-  } catch (e) {
-    const why = (e instanceof Error ? e.message : String(e)).split(path).join(pickedName(path));
-    const bare = why.replace(/(^|[\s("'`])(?:[A-Za-z]:)?[\\/][^\s"'`)]*/g, "$1…");
-    r.log(`tree: ${part}: bot.importAvatar refused by the core`);
-    throw r.refuse(neutralised(bare, REASON_MAX) || "that model couldn't be imported");
-  }
-  const g = (got ?? {}) as { format?: unknown; name?: unknown; files?: unknown; bytes?: unknown; credit?: unknown };
-  const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0);
-  // The model's own note, from a file the page's user picked: plain text again here (no control or bidi characters, 300).
-  const credit = typeof g.credit === "string" ? neutralised(g.credit, 300) : "";
-  // The format is the renderer's own id (`avatar.formats`) and its name in English: plain text either way.
-  const format = typeof g.format === "string" && /^[a-z0-9-]{1,32}$/.test(g.format) ? g.format : "live2d";
-  const name = typeof g.name === "string" ? neutralised(g.name, 200) : "";
-  return { format, ...(name === "" ? {} : { name }), files: count(g.files), bytes: count(g.bytes), ...(credit === "" ? {} : { credit }) };
-}
