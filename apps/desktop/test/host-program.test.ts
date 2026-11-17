@@ -26,8 +26,8 @@ describe("which program", () => {
   test("the host's identity and user data are its own, the same from either app's copy", () => {
     expect(hostIdentity("dist")).toEqual({ profile: "dist", appId: "com.waifucave.moss.host", productName: "MOSS Host" });
     expect(hostIdentity("dev").appId).toBe("com.waifucave.moss.host.dev");
-    expect(headlessUserData("/h", "host", "dist")).toBe("/h/app-data/host-dist");
-    expect(headlessUserData("/h", "code", "dist")).toBe("/h/app-data/dist");
+    expect(headlessUserData("/h", "host", "dist")).toBe(join("/h", "app-data", "host-dist"));
+    expect(headlessUserData("/h", "code", "dist")).toBe(join("/h", "app-data", "dist"));
   });
 });
 
@@ -128,8 +128,8 @@ describe("a tab's pictures to the engine", () => {
 test("the dev helper is the dev profile on its own home, never the dist home; the packaged host follows the app's rule", () => {
   const dev = "/r/dist/dev/app/MOSS Code Dev.app/Contents/Frameworks/MOSS Host Dev.app/Contents/MacOS/MOSS Host Dev";
   const dist = "/Applications/MOSS Code.app/Contents/Frameworks/MOSS Host.app/Contents/MacOS/MOSS Host";
-  expect(hostProfileAndHome({}, dev, "/Users/u")).toEqual({ profile: "dev", home: "/Users/u/.moss-dev" });
+  expect(hostProfileAndHome({}, dev, "/Users/u")).toEqual({ profile: "dev", home: join("/Users/u", ".moss-dev") });
   expect(hostProfileAndHome({ MOSS_HOME: "/t/h" }, dev, "/Users/u")).toEqual({ profile: "dev", home: "/t/h" });
   expect(() => hostProfileAndHome({ MOSS_HOME: "/Users/u/.moss" }, dev, "/Users/u")).toThrow(/dist home/);
-  expect(hostProfileAndHome({}, dist, "/Users/u")).toEqual({ profile: "dist", home: "/Users/u/.moss" });
+  expect(hostProfileAndHome({}, dist, "/Users/u")).toEqual({ profile: "dist", home: join("/Users/u", ".moss") });
 });

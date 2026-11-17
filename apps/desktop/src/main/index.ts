@@ -105,7 +105,9 @@ const hostWhere = program === "host" ? hostProfileAndHome(process.env, process.e
 const identity = hostWhere !== undefined ? hostIdentity(hostWhere.profile) : appIdentity(resolveAppProfile(process.env));
 let hostLock: HostLock | null | undefined;
 /** What this process runs (mount-plan.ts): from the hello's mount list, and the host's state for a window. */
-let mountNow: MountPlan = mountPlan(program, program === "host" ? SURFACE_MOUNTS.host : undefined);
+// lane HS: a window mounts only its own points until the engine's hello says more (never an island the host may own,
+// drawn for a moment before the mount comes); an engine whose hello names no mount gets today's whole list then.
+let mountNow: MountPlan = mountPlan(program, program === "host" ? SURFACE_MOUNTS.host : SURFACE_MOUNTS.code);
 let helloMount: MountList | undefined;
 let hostStateNow: HostState | undefined;
 /** lane HS: the engine stopped trying to start the host (`host_changed`'s `gaveUp`), and whether the notice was shown. */
@@ -1140,8 +1142,9 @@ function cardWaitingAtConnect(c: unknown): void {
 
 async function armFallback(cardId: string): Promise<void> {
   disarmFallback(cardId);
-  // lane HS (B1): one card in one place: only the program the router's placement names arms its own card.
-  if (!fallbackHere(cardId)) return;
+  // lane HS (B1): one card in one place: only the program the router's placement names arms its own card (and one held
+  // off is armed when a later placement brings it here).
+  if (!fallbackHere(cardId)) { heldOffFallbacks.add(cardId); return; }
   const timer = setTimeout(() => void showFallbackCard(cardId), FALLBACK_DELAY_MS);
   timer.unref?.();
   fallbacks.set(cardId, { timer });
@@ -1474,6 +1477,7 @@ function makePair(): Pair {
         enginePlaces.delete(parsed.data.id);
         sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
         disarmFallback(parsed.data.id);
+        heldOffFallbacks.delete(parsed.data.id);
         cardArrived.delete(parsed.data.id);
         cardPlaces.delete(parsed.data.id);
         windowDraws.delete(parsed.data.id);
@@ -2277,13 +2281,16 @@ function setFourFingerTap(on: boolean): void {
 }
 
 function applyVisibility(s: Surface): void {
-  if (s.win.isDestroyed() || s.wantsVisible === undefined) return;
-  // lane HS (R12): a plugin's overlay stands down while a card is pending here, so nothing it draws is over a sealed button.
+  if (s.win.isDestroyed()) return;
+  // lane HS (R12): a plugin's overlay stands down while a card is pending here, so nothing it draws is over a sealed button
+  // (decided, and said, whether or not the part has asked to show yet).
   const down = overlayStandsDown(s, cardShownHere());
   if (down !== stoodDown.has(s.ref)) {
     if (down) stoodDown.add(s.ref); else stoodDown.delete(s.ref);
     log(`surface: ${s.ref} ${down ? "hidden while a card is pending (a plugin's overlay)" : "back (no card pending here)"}`);
   }
+  if (down && s.win.isVisible()) s.win.hide();
+  if (s.wantsVisible === undefined) return;
   const show = !down && surfaceShown({ stepsAside: s.stepsAside, holdsPlacedCard: s.cards && islandHoldsCard() }, s.wantsVisible, mainState(), modeOf(s));
   if (show && invisible !== undefined && !s.win.isVisible()) showInvisible(s.win);
   else if (show && !headless && !s.win.isVisible()) s.win.showInactive();
