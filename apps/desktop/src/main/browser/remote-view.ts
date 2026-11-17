@@ -66,7 +66,7 @@ export class RemoteViews {
 
   tabChanged(tab: TabView): void {
     const before = this.#tabs.get(tab.id)?.view;
-    if (tab.view !== before && tab.view !== undefined) this.deps.log?.(`browser: the host's tab ${tab.id} is placed in view ${tab.view}`);
+    if (tab.view !== before) this.deps.log?.(`browser: the host's tab ${tab.id} is ${tab.view !== undefined ? `placed in view ${tab.view}` : `out of any view (${tab.place})`}`);
     this.#tabs.set(tab.id, tab);
     for (const view of new Set([before, tab.view].filter((v): v is string => v !== undefined))) this.#sync(view);
   }

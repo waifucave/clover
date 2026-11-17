@@ -113,6 +113,8 @@ export abstract class BrowserTab {
       viewport: { ...this.viewport },
       loading: destroyed ? false : c.isLoading(),
       heldByUser: false,
+      // lane HS: the view it is shown in, so a report never takes it away (the window half of the browser follows it).
+      ...(this.place === "shown" && this.view !== undefined ? { view: this.view } : {}),
     };
   }
 
