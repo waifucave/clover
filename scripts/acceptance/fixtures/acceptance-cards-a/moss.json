@@ -2,7 +2,7 @@
   "manifest": 1,
   "id": "acceptance-cards-a",
   "name": "Acceptance cards A",
-  "description": "The acceptance run's card fixture: a bot with one tool that asks (neither contained nor read-only), and a page that places its own bot's approval card with the SDK's card kit.",
+  "description": "The acceptance run's card fixture: a tool for bots and code sessions that asks (neither contained nor read-only), and a page that places its own bot's approval card with the SDK's card kit.",
   "version": "0.0.1",
   "engines": { "moss": "^1.0.0" },
   "capabilities": ["approvals"],
@@ -10,7 +10,7 @@
   "client": { "entry": "client/index.tsx" },
   "contributes": {
     "mcpServers": {
-      "cards": { "type": "host", "tools": { "*": "preload" }, "scope": "bots" }
+      "cards": { "type": "host", "tools": { "*": "preload" }, "scope": "both" }
     },
     "ui": [
       { "spot": "main", "key": "acceptance-cards-a", "component": "CardsMain" },

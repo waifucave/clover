@@ -508,10 +508,10 @@ async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: s
   const inStrip = await onlyWindow(ok.id, "the strip's card");
   const from = await pressApprove(appCdp, ok, appLog);
   await until(`${fixtureId} running`, 60_000, async () => ((await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: fixtureId }).catch(() => undefined))?.plugin?.state === "running" ? true : undefined), 500);
-  // The conversation: Alpha's tab shows, and Alpha's call to the fixture's tool (which always asks) raises its card.
+  // The conversation: the code session's tab shows, and its call to the fixture's tool (which always asks) raises its card.
   const before = new Set((await cards(c)).map((k) => k.id));
   await c.request("session.send", { id: session, message: { text: "ACCEPTANCE-CALL ask_card {}", clientMessageId: `host-b1-${randomBytes(3).toString("hex")}` } }, 30_000);
-  const tool = await until("Alpha's tool card", 90_000, async () => (await cards(c)).find((k) => !before.has(k.id) && k.kind === "tool" && k.session === session), 300);
+  const tool = await until("the code session's tool card", 90_000, async () => (await cards(c)).find((k) => !before.has(k.id) && k.kind === "tool" && k.session === session), 300);
   await placed(tool.id, "conversation \\(code main\\)");
   // The host draws none of it (B1). Inside the window, its own card may stand in for the conversation's whose buttons a
   // headless window never reads as visible (the window's own 2-second net, one program's): said, not failed.
@@ -527,22 +527,22 @@ async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: s
   }).catch(() => undefined);
   // The window half of the browser: MOSS Code's panel shows the person's own tab the host runs, from its pictures, and
   // only a real press in the panel reaches the page.
-  const panel = await panelShowsHostTab(appCdp, appLog, hostCdp, c, viewportPressFile);
+  const panel = await panelShowsHostTab(appCdp, appLog, hostCdp, c, viewportPressFile, session);
   // The Browser tool with the window and the host both up: the page loads in the host (its pages stay there).
   const seen = browserFixture!.seen.length;
   await turn(c, session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "open", url: browserFixture!.url })}`, 150_000, { always: true, log: appLog });
   await until("the bot's page loaded with the window and the host up", 60_000, () => (browserFixture!.seen.slice(seen).some((r) => r.path === "/") ? true : undefined), 300);
   if (![...hostCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url))) await until("the bot's page in the host", 30_000, () => ([...hostCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url)) ? true : undefined), 500);
   if ([...appCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url))) fail("the bot's page loaded in MOSS Code's window while the host runs the pages");
-  return `a plugin's OK card was placed in the window's strip, drawn there only (${inStrip.join(", ")}) and pressed there (${from}); Alpha's tool card with her tab focused was placed in the window's conversation and drawn there only (${inConversation.join(", ")}), then with the window back moved to the host's island and pressed there (${onIsland.slice(0, 120)}); the host drew neither past the fallback's 2 s; ${panel}; with both up, the Browser tool's page loaded in the host and not in the window`;
+  return `a plugin's OK card was placed in the window's strip, drawn there only (${inStrip.join(", ")}) and pressed there (${from}); the code session's tool card with its tab focused was placed in the window's conversation and drawn there only (${inConversation.join(", ")}), then with the window back moved to the host's island and pressed there (${onIsland.slice(0, 120)}); the host drew neither past the fallback's 2 s; ${panel}; with both up, the Browser tool's page loaded in the host and not in the window`;
 }
 
 /** The window half of the browser (lane HS): the browser panel opened in Alpha's tab gives MOSS Code's view "browser" its
  *  place; the person's own tab, opened by the run into that view, runs in the host. The window draws it from the engine's
  *  `picture.frame`s (its viewport's canvas painted); an input its page makes up (no real press) never reaches the tab; a
  *  real press at the page's button (DevTools input on the viewport's own contents) clicks it in the host's page. */
-async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: MossClient, viewportPressFile: string): Promise<string> {
-  const header = await until("the Browser button in Alpha's tab", 30_000, async () => {
+async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: MossClient, viewportPressFile: string, session: string): Promise<string> {
+  const header = await until("the Browser button in the code session's tab", 30_000, async () => {
     for (const d of (await appCdp.documents()).filter((x) => x.url.startsWith("moss-plugin://"))) {
       const at = await appCdp.centerOf(d.session, "button", "Browser").catch(() => undefined);
       if (at !== undefined) return { session: d.session, at };
@@ -552,9 +552,9 @@ async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: M
   await appCdp.click(header.session, header.at.x, header.at.y);
   await until("the browser panel's frame in the window", 30_000, () => (readLog(appLog).includes("browser: view browser has a place in the window") ? true : undefined), 300);
   await sleep(1_500);
-  // The panel in Alpha's tab lists Alpha's tabs and keeps its frame only while one is chosen: the tab is hers. MOSS Code's
-  // window shows a bot's tab while the bots are its own (lane BT's switch at its default; the controller's ruling).
-  const opened = await c.request<{ tab: { id: string } }>("browser.open", { owner: { kind: "bot", bot: "alpha" }, url: browserFixture!.url, show: { view: "browser", viewport: { width: 800, height: 600 } } }, 60_000);
+  // The panel in the code session's tab lists that session's tabs and keeps its frame only while one is chosen: the tab
+  // is the session's.
+  const opened = await c.request<{ tab: { id: string } }>("browser.open", { owner: { kind: "session", session }, url: browserFixture!.url, show: { view: "browser", viewport: { width: 800, height: 600 } } }, 60_000);
   const id = opened.tab.id;
   try {
     await until("the window's panel showing the host's tab", 30_000, () => (readLog(appLog).includes(`browser: view browser shows the host's tab ${id}`) ? true : undefined), 300);
@@ -570,7 +570,7 @@ async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: M
     if (await clicked()) fail("the host's page was clicked before any press in the panel");
     writeFileSync(viewportPressFile, `${Math.round(button.x)},${Math.round(button.y)}`);
     await until("the host's page clicked by the press in the panel", 20_000, async () => ((await clicked()) ? true : undefined), 300);
-    return `MOSS Code's panel showed Alpha's tab the host runs (the bot switch at its default), drawn from picture.frame (${drew}); a press in the panel's own view (the main process's click into it) went out as browser.view.input and clicked the page's button in the host`;
+    return `MOSS Code's panel showed the code session's tab the host runs, drawn from picture.frame (${drew}); a press in the panel's own view (the main process's click into it) went out as browser.view.input and clicked the page's button in the host`;
   } finally {
     await c.request("browser.close", { id }, 30_000).catch(() => undefined);
   }
@@ -4712,6 +4712,9 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     c = (await appDriver()).client;
     await signInKey(c);
     const session = await keyedSession(c);
+    // MOSS Code's window shows code sessions (lane MC): the one card in one place and the window's browser panel run on a
+    // code session of the user's, the newest, which the window opens on. The bot's own rows below keep Alpha's.
+    const codeSession = await keyedCodeSession(c, "host-cards");
     // 1. The engine started the host by itself (no app window anywhere), which holds its lock and says it is ready.
     const hostPid = await until("the host the engine started, ready and holding its lock", 120_000, () => { const p = hostLockPid(home); if (p !== undefined) startedHosts.add(p); return readyCount(readLog(first.log)) > 0 ? p : undefined; }, 500);
     // Nothing of the host on the screen, read from the window server itself at each stage (no window of a host pid on screen).
@@ -4742,7 +4745,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     await until("the window's mount (its own points only)", 60_000, () => (/mount: \{"mainWindow":true,"surfaces":false,"background":false,"tray":"none","browser":false/.test(readLog(appProc.log)) ? true : undefined), 300);
     await sleep(2_000);
     if (islandTarget(appCdp) !== undefined) fail("MOSS Code's window drew an island of its own while the host owns the screen");
-    lines.push(`one card in one place: ${await oneCardEach(appCdp, appProc.log, hostCdp, appLogFile, c, session, (on) => writeFileSync(frontFile, on ? "front" : "back"), viewportPressFile)}`);
+    lines.push(`one card in one place: ${await oneCardEach(appCdp, appProc.log, hostCdp, appLogFile, c, codeSession, (on) => writeFileSync(frontFile, on ? "front" : "back"), viewportPressFile)}`);
     appCdp.close();
     await endChild(appProc.proc);
     lines.push("one island: MOSS Code's window mounted its own points only (no island, no background part, no pages, no menu-bar icon), and its process quit");
