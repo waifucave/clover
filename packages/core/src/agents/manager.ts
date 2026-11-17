@@ -202,6 +202,9 @@ interface Entry {
   toolsRestart?: boolean;
   /** The list changed and this agent takes it at its next session only: the names it had when the person was last told. */
   toolsUntold?: string[] | undefined;
+  /** The agent has produced something in this session (text, a thought, a tool call, usage): its history exists, so a new
+   *  process can resume it. Before that there is nothing to resume, and a `session/resume` of it dies before init. */
+  heard?: boolean;
   unwatch?: () => void;
   /** The bot's copy (`agent.json`) and the daemon's own (records.ts). */
   record: AgentRecordFile;
@@ -832,7 +835,7 @@ export class AgentManager {
     e.token = this.#o.tokens.mint(e.id);
     e.transcript.redact(e.token);
     e.transcript.call({ ts: this.#o.clock.now(), type: "token-renewed" });
-    return this.#startAgent(e, { agentSessionId });
+    return this.#startAgent(e, this.#reattachOf(e, agentSessionId));
   }
 
   /** At each turn, the computer's level as it is now (check 2's minor 5): the session's mode floor is held against it,
@@ -953,6 +956,9 @@ export class AgentManager {
     e.record = { ...e.record, agentSessionId: session.agentSessionId };
     e.transcript.writeRecord(e.record);
     session.onPermission((ask) => this.#permission(e, ask));
+    // A fresh session has no history until the agent says something; a reattached one has kept the one it had.
+    e.heard = reattach !== undefined;
+    session.onEvent((ev) => { if (ev.type === "text" || ev.type === "thought" || ev.type === "tool_call" || ev.type === "usage") e.heard = true; });
     // An agent that acts without asking can't be held at a call it never asks about: paused, its turn is cancelled at
     // its next tool call instead, and the next turn waits for the switch.
     if (e.backend.quirks.marks.includes("unasked-actions")) {
@@ -1380,7 +1386,13 @@ export class AgentManager {
     e.token = this.#o.tokens.mint(e.id);
     e.transcript.redact(e.token);
     e.transcript.call({ ts: this.#o.clock.now(), type: "tools-reopened" });
-    return this.#startAgent(e, { agentSessionId });
+    return this.#startAgent(e, this.#reattachOf(e, agentSessionId));
+  }
+
+  /** How an agent opened again takes up its session: by its history when it has one, and afresh when it has said nothing yet
+   *  (a session whose first turn is only beginning has no history, and resuming one fails before the new process starts). */
+  #reattachOf(e: Entry, agentSessionId: string): { agentSessionId: string } | undefined {
+    return e.heard === true ? { agentSessionId } : undefined;
   }
 
   /** What the person is told at a turn's start when their agent keeps the tool list it started with (`next-session`):
