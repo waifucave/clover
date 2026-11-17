@@ -162,6 +162,13 @@ export class MossEngine {
     return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}) };
   }
 
+  /** How many pending cards MOSS knows that the router hasn't placed yet (anywhere): the smoke run waits for none. */
+  unplacedCards(): number {
+    let n = 0;
+    for (const c of this.cards.values()) if (this.sealed.isPending(c.id) && !this.placements.has(c.id)) n++;
+    return n;
+  }
+
   onView(fn: (v: MossView) => void): () => void {
     this.viewListeners.add(fn);
     return () => this.viewListeners.delete(fn);

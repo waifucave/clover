@@ -54,10 +54,15 @@ export async function runSmoke(o: { win: BrowserWindow; engine: MossEngine; file
   await until(async () => (await win.webContents.executeJavaScript(`document.querySelectorAll("[data-bubble]").length`).catch(() => 0) as number) > 0, 10_000);
   // The router's placements come after the presence report: wait until every card placed in this window is drawn with its
   // frame (a slow runner draws them a beat after the conversation).
+  // Every card MOSS knows is placed (one placed early must not end the wait while another's placement is on its way), and
+  // the window draws as many as are placed here, the same for two looks in a row.
+  let last = -1;
   await until(async () => {
     const placed = engine.view().cards.length;
     const drawn = await win.webContents.executeJavaScript(`document.querySelectorAll("iframe[data-card-frame]").length`).catch(() => -1) as number;
-    return placed > 0 && drawn === placed;
+    const settled = placed > 0 && drawn === placed && engine.unplacedCards() === 0 && placed === last;
+    last = drawn === placed && engine.unplacedCards() === 0 ? placed : -1;
+    return settled;
   }, 15_000);
   await sleep(800);
   const facts = await win.webContents.executeJavaScript(PROBE).catch((err: unknown) => ({ error: String(err) })) as Record<string, unknown>;
