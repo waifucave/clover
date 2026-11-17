@@ -812,6 +812,10 @@ export type LayerUnsubscribe = Unsubscribe & { readonly opened: Promise<void>; r
 /** A member that takes a listener, watched on the part's own plugin's connection (`plugin.layer.watch`): the core puts
  *  its own listener in that place and each value comes back as `plugin_api_event` to this connection alone. Values
  *  that land before the watch's id is known wait for it. */
+/** How often, and how long apart, a watch refused for the page's calls-per-second cap is opened again. */
+const WATCH_BUSY_TRIES = 5;
+const WATCH_BUSY_RETRY_MS = 1_000;
+const BUSY = /calls this second/;
 function layerWatch(mount: string, pluginId: string, path: string, args: readonly unknown[], at: number): { stop: LayerUnsubscribe; opened: Promise<void> } {
   const listener = args[at];
   if (typeof listener !== "function") throw new Error(`${path} takes a listener`);
@@ -843,16 +847,21 @@ function layerWatch(mount: string, pluginId: string, path: string, args: readonl
     if (e.watch === id) deliver(e);
   });
   const unwatch = (watch: string) => void rt().bridge.api(mount, "plugin.layer.unwatch", { watch }).catch(() => undefined);
-  const opened = (rt().bridge.api(mount, "plugin.layer.watch", { call: path, args: toLayerWire(sent) }) as Promise<{ watch: string }>).then((r) => {
+  // A watch refused only for the page's calls-per-second cap (many parts mounting at once) is opened again a moment
+  // later, a few times, so a listener isn't lost to a busy second.
+  const open = (tries: number): Promise<void> => (rt().bridge.api(mount, "plugin.layer.watch", { call: path, args: toLayerWire(sent) }) as Promise<{ watch: string }>).then((r) => {
     id = r.watch;
     if (stopped) return unwatch(r.watch);
     for (const e of early.splice(0)) if (e.watch === id) deliver(e);
   }, (err: unknown) => {
+    const why = err instanceof Error ? err.message : String(err);
+    if (!stopped && tries < WATCH_BUSY_TRIES && BUSY.test(why)) return new Promise<void>((resolve, reject) => setTimeout(() => open(tries + 1).then(resolve, reject), WATCH_BUSY_RETRY_MS));
     off();
     early.length = 0;
-    endedWith(err instanceof Error ? err.message : String(err));
+    endedWith(why);
     throw err;
   });
+  const opened = open(0);
   const stop = Object.assign(() => {
     if (stopped) return;
     stopped = true;
