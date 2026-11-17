@@ -18,7 +18,7 @@ import { LISTEN_STEP } from "./listen-step";
 import { DRAG_STEP } from "./drag-step";
 import { STAGE_COPY_STEP } from "./stage-copy-step";
 import { SURFACE_COPY_STEP } from "./surface-copy-step";
-import { STAGE_STEP, ELSEWHERE_NOTES } from "./steps";
+import { AGENT_STEP, FULL_STEPS, OUTSIDE_STEP, SHELL_STEP, STAGE_STEP, ELSEWHERE_NOTES } from "./steps";
 import { EXAMPLE_NOTES_STEP } from "./example-steps";
 
 export type Elsewhere = { owner: "MC2" | "MOSS" | "retired"; why: string };
@@ -38,6 +38,10 @@ export const ROWS_ELSEWHERE: ReadonlyMap<string, Elsewhere> = new Map<string, El
   [ui(26), { owner: "retired", why: "a bot plugin's panel replacing a stock one on its bot's tab only: the plug went with the bot tab (G8)" }],
   [ui(27), { owner: "MOSS", why: "panels a plugin adds on Alpha's tab and a bot plugin's panels inside its bot (its coding-tab half, Slides on a coding session, is the MOSS unit's to keep with the rest)" }],
   [SURFACE_COPY_STEP, { owner: "MOSS", why: "a copy of the Dispatch pill sending to a bot's conversation" }],
+  [FULL_STEPS[6], { owner: "MOSS", why: "a bot's level for writes, its card pressed where the bot's conversation is drawn (MOSS Code's window is told of code sessions' cards only)" }],
+  [SHELL_STEP, { owner: "MOSS", why: "a bot's shell and RequestAccess, its card pressed where the bot's conversation is drawn" }],
+  [OUTSIDE_STEP, { owner: "MOSS", why: "a command outside the sandbox, only in a bot's own conversation, its card pressed where that is drawn" }],
+  [AGENT_STEP, { owner: "MOSS", why: "Alpha's study-buddy agent and its card, pressed where her conversation is drawn" }],
   [TAB_FLASH_STEP, { owner: "MOSS", why: "Alpha's tab never flashing on the way back to it" }],
   [NOTIFY_STEP, { owner: "MOSS", why: "a turn a bot runs on its own reaching the notifier, from a bot's tab" }],
   [LISTEN_STEP, { owner: "MOSS", why: "push-to-talk where a bot's voice listens" }],

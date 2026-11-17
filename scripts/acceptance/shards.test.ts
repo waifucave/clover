@@ -31,7 +31,7 @@ describe("the split", () => {
   test("the rows that share a home and an order stay together: main's chain, the reopen steps in order, the examples in order", () => {
     const main = units().find((u) => u.id === "chain")!.rows;
     // The first start, the key, the turns and the restart are the chain's, in the table's order; the window's steps are not.
-    for (const s of [FULL_STEPS[0], FULL_STEPS[1], FULL_STEPS[2], FULL_STEPS[3], FULL_STEPS[4], FULL_STEPS[5], FULL_STEPS[6]]) expect(main).toContain(s);
+    for (const s of [FULL_STEPS[0], FULL_STEPS[1], FULL_STEPS[2], FULL_STEPS[3], FULL_STEPS[4], FULL_STEPS[5]]) expect(main).toContain(s);
     for (const u of UI_STEPS) expect(main).not.toContain(`window: ${u}`);
     expect(main).toEqual(FULL_STEPS.filter((s) => main.includes(s)));
     expect(units().find((u) => u.id === "reopen")!.rows).toEqual(REOPEN_STEPS.map((s) => s.name));
