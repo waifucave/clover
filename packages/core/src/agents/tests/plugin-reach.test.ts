@@ -169,14 +169,14 @@ const askingQuery = (script: (can: CanUseTool) => Promise<void>) => ((args: { pr
   return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
 }) as unknown as MossCodeDeps["query"];
 
-async function setup(o: WorldOptions & { parts?: boolean; long?: boolean; toolSetting?: ToolSetting; availability?: Parameters<typeof plugins>[1] extends infer X ? (X extends { availability?: infer A } ? A : never) : never; computers?: () => string[] } = {}) {
+async function setup(o: WorldOptions & { parts?: boolean; long?: boolean; toolSetting?: ToolSetting; availability?: Parameters<typeof plugins>[1] extends infer X ? (X extends { availability?: infer A } ? A : never) : never; computers?: () => string[]; settle?: () => Promise<void> } = {}) {
   let tools: BridgeToolSource | undefined;
   let parts: PluginPartsSource | undefined;
   const watchers = new Set<() => void>();
   const w = (world = new World({
     ...o,
     watchTools: (fn) => { watchers.add(fn); return () => void watchers.delete(fn); },
-    pluginTools: { tools: (id, s) => tools!.tools(id, s), instructions: (id, s) => tools!.instructions!(id, s), call: (id, c, ctx) => tools!.call(id, c, ctx) },
+    pluginTools: { ...(o.settle ? { settled: () => o.settle!() } : {}), tools: (id, s) => tools!.tools(id, s), instructions: (id, s) => tools!.instructions!(id, s), call: (id, c, ctx) => tools!.call(id, c, ctx) },
     ...(o.parts ? {
       pluginParts: { parts: (id, s) => parts!.parts(id, s) },
       place: (p, ctx) => placeInClaudeCode(p, { dir: ctx.dir, shim: { command: "/bin/echo", args: [] } }),
@@ -562,6 +562,38 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     await changed();
     await w.host.sendUser(r.sessionId, { text: `CALL mcp__${CODE_BRIDGE}__${TOOL} {"n":10}`, device: "d".repeat(16), clientMessageId: "m-on2", sentAt: w.clock.now() });
     await waitFor(() => ran(10), "the tool's answer after it came back", 30_000);
+  });
+
+  test("a reopen for a changed tool list never costs the person's next message: many changes in a row, each turn reaches the model and ends normally", async () => {
+    const { w, p, changed } = await setup({ ...codeBackend(spawn), level: "automatic" });
+    const r = await code(w, `mcp__${CODE_BRIDGE}__Glossary {}`);
+    const ends = () => w.host.history(r.sessionId).filter((x) => x.type === "turn_ended") as unknown as { end: { reason: string } }[];
+    await waitFor(() => ends().length >= 1, "the first turn", 30_000);
+    for (let i = 1; i <= 8; i++) {
+      // A change of the list (the plugin off, then on), then the person's next message.
+      await p.registry.setEnabled("toolbox", i % 2 === 0);
+      await changed();
+      await w.host.sendUser(r.sessionId, { text: `CALL mcp__${CODE_BRIDGE}__Glossary {}`, device: "d".repeat(16), clientMessageId: `m-${i}`, sentAt: w.clock.now() });
+      await waitFor(() => ends().length >= i + 1, `turn ${i + 1}'s end`, 60_000);
+      expect(ends().map((e) => e.end.reason)).toEqual(Array(i + 1).fill("end_turn"));
+    }
+  });
+
+  test("the list changes before the session's FIRST turn (a server finished listing as it began): the reopen starts it afresh, there is no transcript to resume, and the first message is answered", async () => {
+    let flip: (() => Promise<void>) | undefined;
+    const { w, p } = await setup({ ...codeBackend(spawn), level: "automatic", settle: async () => { const f = flip; flip = undefined; await f?.(); } });
+    // Started with the plugin's tool listed; as the first turn begins, the plugin is gone from the list.
+    flip = async () => { await p.registry.setEnabled("toolbox", false); await p.mcp.refresh(); };
+    const r = await code(w, `mcp__${CODE_BRIDGE}__Glossary {}`);
+    await waitFor(() => w.host.history(r.sessionId).some((x) => x.type === "turn_ended"), "the first turn's end", 60_000);
+    const end = (w.host.history(r.sessionId).find((x) => x.type === "turn_ended") as unknown as { end: { reason: string } }).end;
+    expect(end.reason).toBe("end_turn");
+    // And the session keeps working: a later change is a resume of a transcript that now exists.
+    await p.registry.setEnabled("toolbox", true);
+    await p.mcp.refresh();
+    await w.host.sendUser(r.sessionId, { text: `CALL mcp__${CODE_BRIDGE}__Glossary {}`, device: "d".repeat(16), clientMessageId: "m-2", sentAt: w.clock.now() });
+    await waitFor(() => w.host.history(r.sessionId).filter((x) => x.type === "turn_ended").length >= 2, "the second turn's end", 60_000);
+    expect((w.host.history(r.sessionId).filter((x) => x.type === "turn_ended") as unknown as { end: { reason: string } }[]).map((x) => x.end.reason)).toEqual(["end_turn", "end_turn"]);
   });
 
   test("Settings' Tools decide it with no card at all: Always block refuses it, Always allow runs it", async () => {
