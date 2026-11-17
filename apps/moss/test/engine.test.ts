@@ -13,6 +13,7 @@ import { PresenceReporter } from "../src/main/presence";
 import { SealedFrames } from "../src/main/sealed";
 import { mossHello } from "../src/main/connection";
 import { startFakeEngine, type FakeEngine, type FakePiece } from "./fake-engine/engine";
+import { sealedCard } from "./fake-engine/fixtures";
 
 const homes: string[] = [];
 const closers: (() => unknown)[] = [];
@@ -180,6 +181,36 @@ describe("presence and the router's placement", () => {
     presence.update({ focused: false, visible: true, showing: { kind: "bot", id: "juniper" } });
     await until(() => engine.view().cards.length === 0);
     expect(engine.placementOf("card_kite_delete")).toEqual({ kind: "island" });
+  });
+
+  test("a connection follows the events BEFORE it lists the cards: one raised in between, and one waiting at connect, are both placed and drawn, once", async () => {
+    const { e, client } = await setup();
+    const presence = new PresenceReporter(() => {}, 60_000);
+    closers.push(() => presence.stop());
+    presence.connected(client);
+    presence.update({ focused: true, visible: true, showing: { kind: "bot", id: "juniper" } });
+    // A new connection (a first connect or a reconnect): a card raised after its subscribe, before its list is answered.
+    const raced = sealedCard({ id: "card_juniper_raced", kind: "tool", computer: "Studio", session: "bot:juniper", bot: "juniper", origin: "user", issuedAt: Date.now(), expiresAt: null, fields: { title: { type: "text", text: "Raced" } }, options: [{ id: "allow_once", kind: "approve", label: "Approve" }, { id: "deny", kind: "deny", label: "Deny" }] } as never);
+    e.beforeCardList(() => e.raise(raced));
+    for (const round of ["first", "again"]) {
+      const conn = (await dial(daemonEndpoint(e.home)))!;
+      closers.push(() => conn.close());
+      await conn.request("protocol.prove", { nonce: "n" });
+      await conn.request("protocol.hello", mossHello(e.token, "0.124.0", 1));
+      const fresh = new MossEngine(new SealedFrames("moss"));
+      conn.onNotification((m, p) => fresh.notification(m, p));
+      fresh.setConnection("connected");
+      const from = e.calls().length;
+      await fresh.attach(conn);
+      const mine = e.calls().slice(from).map((c) => c.method);
+      expect({ round, order: mine.indexOf("events.subscribe") < mine.indexOf("card.list") && mine.indexOf("events.subscribe") >= 0 }).toEqual({ round, order: true });
+      await until(() => fresh.view().cards.some((c) => c.id === "card_juniper_raced"));
+      const ids = fresh.view().cards.map((c) => c.id);
+      // The one that was waiting at connect (the fixtures' Juniper card) and the raced one, each placed and drawn once.
+      expect(ids.filter((id) => id === "card_juniper_book")).toHaveLength(1);
+      expect(ids.filter((id) => id === "card_juniper_raced")).toHaveLength(1);
+      expect(fresh.placementOf("card_juniper_raced")).toEqual({ kind: "conversation", program: "moss", window: "main" });
+    }
   });
 
   test("a reconnect reads the placements again", async () => {

@@ -64,7 +64,7 @@ export function routinesOf(bot: string, now: number): RoutineView[] {
   return [];
 }
 
-function sealedCard(c: Omit<Card, "hash">): Card {
+export function sealedCard(c: Omit<Card, "hash">): Card {
   return { ...c, hash: createHash("sha256").update(cardHashInput(c)).digest("hex") } as Card;
 }
 

@@ -81,6 +81,10 @@ export interface FakeEngine {
   placements(): { card: string; place: CardPlacement }[];
   /** Computer use acting on this computer: the engine then refuses every program's `card.answer`, as the real one does. */
   setActing(acting: boolean): void;
+  /** A card the engine raises now: pending, routed, and told to every connection that follows the approvals. */
+  raise(card: Card): void;
+  /** Runs before the next `card.list` is answered (a card raised between a connection's subscribe and its list). */
+  beforeCardList(fn: () => void): void;
   /** Asks every app connection a request of the engine's own (`app.ping`, `app.quit`). */
   ask(method: string, params?: unknown): Promise<unknown[]>;
   close(): Promise<void>;
@@ -98,6 +102,7 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
   const log: { method: string; params: unknown; conn: number }[] = [];
   const answered: { id: string; option: string; program: string }[] = [];
   let actingNow = false;
+  let beforeList: (() => void) | undefined;
 
   const now = Date.now();
   const bots = new FakeBotRecords({ clock: realClock });
@@ -238,8 +243,12 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         c.streams.delete(String(params.stream));
         return { ok: true };
       }
-      case "card.list":
+      case "card.list": {
+        const first = beforeList;
+        beforeList = undefined;
+        first?.();
         return { cards: [...cards.values()] };
+      }
       case "card.placement":
         piece("router", method);
         return { placements: router.list() };
@@ -434,6 +443,12 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
     answered: () => [...answered],
     placements: () => router.list(),
     setActing: (acting) => { actingNow = acting; },
+    raise: (card) => {
+      cards.set(card.id, card);
+      router.pending({ id: card.id, ...(card.session !== undefined ? { session: card.session } : {}), ...(card.bot !== undefined ? { bot: card.bot } : {}) });
+      event("approvals", { type: "card_requested", card });
+    },
+    beforeCardList: (fn) => { beforeList = fn; },
     ask: async (method, params = {}) => Promise.all([...conns.values()].filter((c) => c.authed).map((c) => new Promise((resolve) => {
       const id = nextReq++;
       waiting.set(id, resolve);
