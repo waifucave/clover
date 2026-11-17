@@ -31,6 +31,13 @@ function offeredEcho(ctx: ExampleCtx, from: number): { listed: boolean; deferred
   return { listed: (first?.tools ?? []).some((t) => t.endsWith("__Echo")) || deferred, deferred, glossary: mine.some((r) => r.toolUse?.endsWith("Glossary") === true) };
 }
 
+export /** Whether the first request since `from` leaves `Echo` among the tools the model may call: the request's `tools` with the
+ *  conversation's additions and removals applied (a tool taken away by a removal stays declared in `tools`, which is why the
+ *  declaration alone says nothing about whether it is offered). */
+function callableEcho(ctx: ExampleCtx, from: number): boolean {
+  return (ctx.requests()[from]?.tools ?? []).some((t) => t.endsWith("__Echo"));
+}
+
 export async function installed(ctx: ExampleCtx): Promise<boolean> {
   return ctx.rpc.request("plugin.get", { id: PLUGIN }).then(() => true, () => false);
 }
@@ -94,44 +101,47 @@ export async function toolSettingStep(ctx: ExampleCtx, session: string): Promise
     if (!baseOffer.listed || baseOffer.deferred) fail(`with nothing chosen Echo was ${baseOffer.listed ? "deferred" : "not offered"}; a preloaded tool is offered loaded`);
     done.push("by default it is preloaded and answers");
 
-    // Off: not offered; the model, asked to call it, finds no such tool, and the plugin never runs.
+    // On demand, for the conversation that already has the tool: it keeps it until the conversation starts over (the agent
+    // SDK's tool epoch: what the model may call changes by entries in the transcript, and an eager tool it holds is not taken
+    // back by a setting that only defers it). The call still answers, and no request of it is refused by the provider
+    // (`callTurn` fails on a 400). The Settings row says as much.
+    await setTo(server, "on-demand");
+    const kept = await callTurn(ctx, session, "Echo", { text: "kept" });
+    if (!kept.result.text.includes(PONG) || kept.result.isError) fail(`set on demand, the conversation that had Echo no longer had it: ${kept.result.text.slice(0, 160)}`);
+    done.push("on demand: the conversation that already had it keeps it, answered");
+
+    // The conversation starts over (a compaction opens a new tool epoch): now the setting is whole. Deferred: not callable
+    // until loaded, found by a Glossary search, and loaded through Glossary it is called.
+    await ctx.rpc.request("session.compact", { id: session }, 150_000);
+    const found = await callTurn(ctx, session, "Glossary", { query: "Echo" });
+    if (found.result.isError || !found.result.text.includes(`${server}__Echo`)) fail(`on demand, a Glossary search for Echo didn't name it (${found.result.text.slice(0, 200) || "nothing"})`);
+    from = ctx.requests().length;
+    const loaded = await callTurn(ctx, session, "Echo", { text: "loaded" });
+    const freshOffer = offeredEcho(ctx, from);
+    if (!freshOffer.deferred) fail(`after the conversation started over, the request did not list Echo deferred (${freshOffer.listed ? "listed loaded" : "not listed"})`);
+    if (!freshOffer.glossary) fail("on demand, in a fresh conversation, the bot called Echo without finding and loading it through Glossary first");
+    if (!loaded.result.text.includes(PONG) || loaded.result.isError) fail(`the on-demand call after Glossary loaded it answered ${loaded.result.text.slice(0, 160)}`);
+    done.push("on demand, fresh conversation: deferred, found by a Glossary search, loaded through it and then answered");
+
+    // Off: at once, whatever the conversation has: not offered, a direct call finds no such tool, the plugin never runs.
     await setTo(server, "off");
     from = ctx.requests().length;
     const off = await ctx.turn(session, `ACCEPTANCE-CALL Echo ${JSON.stringify({ text: "off" })}`, 150_000);
-    const offOffer = offeredEcho(ctx, from);
     const said = ctx.requests().slice(from).map((r) => r.toolResult?.text ?? "").join(" ") + JSON.stringify(off.events);
-    if (offOffer.listed) fail("the tool set to off was still offered to the bot");
+    if (callableEcho(ctx, from)) fail("the tool set to off was still offered to the bot");
     if (!said.includes("ACCEPTANCE-NO-CALL-TOOL Echo")) fail(`with Echo off the turn didn't end as a model finding no such tool (${said.slice(0, 200)})`);
     if (ctx.requests().slice(from).some((r) => r.toolUse?.endsWith("__Echo") === true)) fail("the bot called Echo while it was off");
     const hidden = await callTurn(ctx, session, "Glossary", { query: "Echo" });
     if (hidden.result.text.includes(`${server}__Echo`)) fail(`with Echo off a Glossary search still named it (${hidden.result.text.slice(0, 200)})`);
     const offRow = (await read()).echo;
     if (offRow.permission !== "ask") fail(`turning Echo off changed its permission to ${offRow.permission}`);
-    done.push("off: not offered, no call possible, its permission still ask");
-
-    // On demand: not a tool the model may call yet, and found by a `Glossary` search. The request's shape depends on how the
-    // conversation began: a tool in its first request's tools stays listed there undeferred (the cached prefix does not change)
-    // and the conversation takes it away with a `tool_removal`; one added since is listed deferred. Either way it is not
-    // callable until loaded, which is what is asserted (the load and the call after it is the driver's own end-to-end test:
-    // this conversation held the tool added by definition and then removed, and the scripted model works out what it may
-    // call from that history, which a tool loaded by reference afterwards doesn't change).
-    await setTo(server, "on-demand");
-    from = ctx.requests().length;
-    const direct = await ctx.turn(session, `ACCEPTANCE-CALL Echo ${JSON.stringify({ text: "on demand" })}`, 150_000);
-    const directSaid = ctx.requests().slice(from).map((r) => r.toolResult?.text ?? "").join(" ") + JSON.stringify(direct.events);
-    if (ctx.requests().slice(from).some((r) => r.toolUse?.endsWith("__Echo") === true)) fail("on demand, the bot called Echo without loading it first");
-    if (!directSaid.includes("ACCEPTANCE-NO-CALL-TOOL Echo")) fail(`on demand, the turn didn't end as a model with no loaded tool to call (${directSaid.slice(0, 200)})`);
-    const found = await callTurn(ctx, session, "Glossary", { query: "Echo" });
-    if (found.result.isError || !found.result.text.includes(`${server}__Echo`)) fail(`on demand, a Glossary search for Echo didn't name it (${found.result.text.slice(0, 200) || "nothing"})`);
-    done.push("on demand: not callable until loaded, and found by a Glossary search");
+    done.push("off: not offered at once, no call possible, its permission still ask");
 
     // Always on: offered loaded at once, and called with no Glossary.
     await setTo(server, "always");
     from = ctx.requests().length;
     const always = await callTurn(ctx, session, "Echo", { text: "always" });
     const alwaysOffer = offeredEcho(ctx, from);
-    // (A tool the request lists deferred can still be callable here: added back by reference, with no search; what shows it
-    // is loaded is that the call came with no Glossary before it.)
     if (!alwaysOffer.listed) fail("always on, Echo was not offered");
     if (alwaysOffer.glossary) fail("always on, the bot still went through Glossary before calling Echo");
     if (!always.result.text.includes(PONG) || always.result.isError) fail(`the always-on call answered ${always.result.text.slice(0, 160)}`);

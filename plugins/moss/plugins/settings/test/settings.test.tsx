@@ -225,6 +225,16 @@ describe("the Tools tab", () => {
     expect(onSetAvailability).toHaveBeenLastCalledWith("reel-reel", undefined, "always");
   });
 
+  test("a tool set to on demand says a conversation already running keeps it until it starts over; off and always on say nothing of the kind", () => {
+    const withSetting = { plugins: [{ pluginId: "reel", name: "Reel", server: "reel-reel", tools: [
+      { name: "Export", permission: "ask" as const, availability: "on-demand" as const, declared: "on-demand" as const, cardRules: [] },
+      { name: "Trim", permission: "ask" as const, availability: "off" as const, declared: "preload" as const, cardRules: [] },
+      { name: "Cut", permission: "ask" as const, availability: "always" as const, declared: "preload" as const, cardRules: [] },
+    ] }] };
+    setup({ section: "tools", tools: withSetting, onSetAvailability: mock(() => undefined) });
+    expect(screen.getAllByText("A conversation already running keeps it until it starts over.")).toHaveLength(1);
+  });
+
   test("an engine that doesn't serve the tool setting shows the three permissions only", () => {
     setup({ section: "tools", tools });
     expect(screen.queryByRole("radiogroup", { name: "Whether Export is offered" })).toBeNull();
