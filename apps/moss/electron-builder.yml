@@ -1,0 +1,85 @@
+# MOSS, the app for bots, packaged by electron-builder (lane MA). `bun run dist` builds the unsigned, unpacked app
+# (`--dir`). It is a second build of the product, with its own identity (spec §2, item 120: `com.waifucave.moss`, named
+# "MOSS"), its own fixed window and no plugin UI runtime. Like MOSS Code it carries the engine (spec §3.1: each app carries
+# a copy of the engine and runs alone), staged by the release scripts in out/daemon and out/plugins; a plain `bun run dist`
+# stages none and packages the app alone. Nothing here holds a secret, and nothing is ever published from a build.
+appId: com.waifucave.moss
+productName: MOSS
+copyright: Copyright © 2026 waifucave
+directories:
+  output: out/dist
+  buildResources: build
+files:
+  - out/main/**
+  - out/renderer/**
+  - package.json
+asar: true
+# The same fuses as MOSS Code's (spec §3.1, the apps' peer image): the engine takes MOSS's `app` hello only from the signed
+# program, which is worth something only while that binary runs nothing but its own sealed code.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: true
+  grantFileProtocolExtraPrivileges: false
+extraResources:
+  - from: out/daemon
+    to: daemon
+    filter:
+      - moss-core
+      - moss-core.exe
+      - moss-link
+      - moss-link.exe
+      - moss-plugin-bun
+      - moss-plugin-bun.exe
+      - moss-process-holder
+  - from: out/plugins
+    to: plugins
+    filter:
+      - "**/*"
+      - "!**/.env"
+      - "!**/.env.*"
+      - "!**/.DS_Store"
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+publish:
+  provider: github
+  owner: waifucave
+  repo: moss
+mac:
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+  category: public.app-category.productivity
+  artifactName: MOSS-${version}-mac.${ext}
+  # MOSS's own icon is not drawn yet (the living-bots kit carries no app icon; the Shards kit's is MOSS Code's): Electron's
+  # default stands in until the owner says which (spec item 110).
+  identity: null
+  notarize: false
+  hardenedRuntime: true
+  entitlements: ../../packaging/macos/entitlements.mac.plist
+  entitlementsInherit: ../../packaging/macos/entitlements.mac.plist
+  signIgnore:
+    - Contents/Resources/daemon/
+    - Contents/Resources/plugins/
+win:
+  target:
+    - target: nsis
+      arch: x64
+linux:
+  target:
+    - target: dir
+  category: Utility
+  executableName: moss-app
+  synopsis: Bots that live on your computers
+  maintainer: MOSS <w@waifucave.com>
+dmg:
+  artifactName: MOSS-${version}.${ext}
+nsis:
+  artifactName: MOSS-Setup-${version}.${ext}
+  oneClick: true
+  perMachine: false

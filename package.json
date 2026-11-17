@@ -17,6 +17,7 @@
     "build:winter": "bun run scripts/build-winter.ts",
     "build:daemon": "bun run scripts/build-daemon.ts",
     "build:app": "cd apps/desktop && bun run dist",
+    "build:moss": "cd apps/moss && bun run dist",
     "runtimes:stage": "bun run scripts/stage-runtimes.ts",
     "verify:workflow": "bun run scripts/verify-workflow-compiled.ts",
     "verify:automation-worker": "bun run scripts/verify-automation-worker-compiled.ts",
