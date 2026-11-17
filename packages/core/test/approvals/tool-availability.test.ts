@@ -204,6 +204,8 @@ describe("on demand and always on", () => {
     try {
       w.store.setAvailability(ACME, undefined, "off");
       expect(w.loads("bot")).toEqual({});
+      // Every tool off: the server itself is not offered.
+      for (const kind of KINDS) expect(w.mcp.servers(kind).map((s) => s.server)).toEqual(["web"]);
       await w.redeclare({ Render: "preload", Export: "on-demand", Bake: "preload" }, ["Render", "Export", "Bake"]);
       expect(w.store.list().filter((r) => r.server === ACME).map((r) => [r.tool, r.availability])).toEqual([["Bake", "always"], ["Export", "off"], ["Render", "off"]]);
       expect(w.loads("bot")).toEqual({ Bake: "preload" });

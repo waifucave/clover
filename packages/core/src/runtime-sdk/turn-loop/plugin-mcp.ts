@@ -824,6 +824,8 @@ export class PluginMcp {
         load: loads[t.name] ?? loads["*"] ?? "on-demand",
         ...(t.title === undefined ? {} : { title: t.title }),
       })), opts?.keepOff === true);
+      // Every tool of it turned off: the server is not offered at all (no empty block, no instructions about nothing).
+      if (tools.length === 0 && offered.length > 0) continue;
       out.push({ server, plugin: l.plugin, tools, ...(l.instructions === undefined ? {} : { instructions: l.instructions }), ...(p.kind === "local" ? { computers: p.computers } : {}), reachable: true });
     }
     // Servers other computers run fill the names this one doesn't list. This computer's own listing wins, a server it
@@ -845,7 +847,9 @@ export class PluginMcp {
       if (RESERVED_NAMES.includes(r.server) || !isServerKey(r.server)) continue;
       const owner = declared.get(r.server);
       if (owner !== undefined && owner !== r.plugin) continue;
-      out.push({ ...r, tools: this.#withSetting(r.server, r.tools, opts?.keepOff === true) });
+      const tools = this.#withSetting(r.server, r.tools, opts?.keepOff === true);
+      if (tools.length === 0 && r.tools.length > 0) continue;
+      out.push({ ...r, tools });
     }
     return out;
   }
