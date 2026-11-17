@@ -585,6 +585,22 @@ async function makeRow(s: UnitState): Promise<string> {
   const made = await s.x.until(`${name} as a record`, 15_000, async () => (await records(s.c)).find((b) => nameOf(b.name) === name), 300);
   if (made.madeBy.kind !== "user") s.x.fail(`${name}'s record says it was made by ${JSON.stringify(made.madeBy)}`);
   s.made = made.id;
+  // Its model, picked in its Settings page as the person does (a new bot is on the person's default model, and this home's
+  // default has no key: the run's key is the Anthropic plugin's, which Alpha runs on).
+  const model = (await alpha(s.c)).model;
+  let picked = "the default model";
+  if (model !== undefined && model !== made.model) {
+    await s.w.click(".list__bottom .nav-item.account");
+    await s.w.click(`[data-section=${JSON.stringify(`bot:${made.id}`)}]`);
+    const has = await s.w.waitFor<string>(`${name}'s model picker offering ${model}`, `(() => { const e = document.querySelector('[data-model-picker]'); return e && [...e.options].some((o) => o.value === ${JSON.stringify(model)}) ? 'yes' : null; })()`, 20_000);
+    void has;
+    await s.w.eval(`(() => { const e = document.querySelector('[data-model-picker]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, ${JSON.stringify(model)}); e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await s.w.click("[data-settings=model] .text-button--solid", "Save");
+    await s.x.until(`${name}'s record on ${model}`, 15_000, async () => ((await records(s.c)).find((b) => b.id === made.id)?.model === model ? true : undefined), 300)
+      .catch(async () => s.x.fail(`${name}'s model didn't change: ${await s.w.eval<string>("[...document.querySelectorAll('.add__note')].map((n) => n.textContent).join(' | ') || 'nothing said'")}`));
+    picked = `${model}, picked in its Settings`;
+    await openBot(s, made.id, name);
+  }
   const t = tag("NOVA");
   await sendInMoss(s, name, t);
   await botSaid(s, `ACCEPTANCE-REPLY-OK ${t}`);
@@ -601,7 +617,7 @@ async function makeRow(s: UnitState): Promise<string> {
   const kid = await s.x.until(`${child} as a record`, 60_000, async () => (await records(s.c)).find((b) => nameOf(b.name) === child), 500);
   if (kid.madeBy.kind !== "bot" || kid.madeBy.id !== made.id) s.x.fail(`${child} says it was made by ${JSON.stringify(kid.madeBy)}, not ${made.id}`);
   await s.w.waitFor(`${child} in MOSS's list`, `!!document.querySelector(${JSON.stringify(`[data-bot-row="${kid.id}"]`)})`, 20_000);
-  return `${name} made from the list's + (madeBy user), its conversation opened and answered; its MakeBot raised a ${card.kind} card in MOSS naming ${name} and ${child}, pressed; ${child} listed, made by ${made.id}`;
+  return `${name} made from the list's + (madeBy user), on ${picked}, its conversation opened and answered; its MakeBot raised a ${card.kind} card in MOSS naming ${name} and ${child}, pressed; ${child} listed, made by ${made.id}`;
 }
 
 async function archiveRow(s: UnitState): Promise<string> {
