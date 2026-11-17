@@ -11,6 +11,7 @@
 //   * the app logged no refusal of the copy's calls at the door, and the bundled conversation comes back when switched on.
 // Nothing here names the bundled plugin's id but to switch it off and on: the copy is the conversation's own source, built
 // into a client module and given another id and name.
+import { partElsewhere } from "./elsewhere-parts";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -111,6 +112,15 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
     }, async () => (await copyText(ctx)).replace(/\s+/g, " ").slice(-300));
     said.push(`the copy drew the code session's turn (${hello} and its reply) in its own document (${doc.url.slice(0, 40)}…)`);
 
+    // 4. Try again, and the door's press rule on it: a bots' feature this round (a failed turn in a code session shows its error
+    //    row with no Try again), so the MOSS unit's; what still holds here is that the door refused the copy nothing it holds.
+    const away = partElsewhere("plugin-app", "4");
+    if (away !== undefined) {
+      const refused = refusals();
+      if (refused.length > 0) fail(`the door refused the copy's calls: ${refused.slice(-3).join(" | ")}`);
+      said.push(`the door refused the copy nothing; 4 and the press rule on its Try again run elsewhere (${away.owner === "MOSS" ? "lane MA's moss unit" : away.owner}): ${away.why}`);
+      return said.join("; ");
+    }
     // 4. Try again: a failed turn's error row in the copy; a page-made click sends nothing; one real click sends it again.
     const tag = `ACCEPTANCE-FAIL-${randomBytes(4).toString("hex").toUpperCase()}`;
     const words = `${tag} say hello again from the copy`;

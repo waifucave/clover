@@ -5,6 +5,7 @@ export type PartElsewhere = { unit: string; part: string; owner: "MC2" | "MOSS" 
 
 export const PARTS_ELSEWHERE: readonly PartElsewhere[] = [
   { unit: "workshop", part: "6b", owner: "MOSS", why: "a peer bot's AppScreenshot of Alpha's tab while her card waits: MOSS Code's window draws no bot's tab" },
+  { unit: "plugin-app", part: "4", owner: "MOSS", why: "the conversation copy's Try again on a failed turn and the door's press rule on it: Try again is a bots' feature this round (a failed turn in a code session shows its error row, with no Try again)" },
   { unit: "workshop", part: "9", owner: "retired", why: "a bot built as a plugin (PluginNew's bot template): PluginInstall refuses a plugin that brings a bot (G8; a bot makes a bot with MakeBot, the spine's ruling 3, which is the MOSS unit's)" },
 ];
 
