@@ -62,7 +62,7 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
       <div className="messages" role="log" aria-live="polite">
         {state === "waiting" ? <p className="messages__note">Waiting for the engine to serve {props.bot.name}'s conversation.</p> : null}
         {state === "ready" && messages.length === 0 ? <p className="messages__note">Say hello to {props.bot.name}.</p> : null}
-        {messages.map((m, i) => <Bubble key={m.id} m={m} showTime={i === messages.length - 1 || messages[i + 1]?.from !== m.from} />)}
+        {messages.map((m, i) => <Bubble key={m.id} m={m} showTime={i === messages.length - 1 || messages[i + 1]?.from !== m.from} {...(m.failed === true && i === messages.length - 1 ? { bot: props.bot.id } : {})} />)}
         {props.cards.map((c) => <CardFrame key={c.id} card={c} />)}
         <div ref={end} />
       </div>
@@ -71,8 +71,9 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
   );
 }
 
-function Bubble(props: { m: Message; showTime: boolean }) {
+function Bubble(props: { m: Message; showTime: boolean; /** The failed turn's note while it is the last thing: Try again. */ bot?: string }) {
   const m = props.m;
+  if (m.from === "note" && props.bot !== undefined) return <FailedNote text={m.text} bot={props.bot} />;
   if (m.from === "note") return <p className="note" data-bubble="note">{m.text}</p>;
   return (
     <div className={`bubble-row bubble-row--${m.from}`}>
@@ -94,6 +95,25 @@ function Bubble(props: { m: Message; showTime: boolean }) {
 }
 
 /** A file's kind from its name, in a word ("PDF", "Image", "File"). */
+/** A failed turn's note with Try again: one press sends the same words once more; the button goes once they are sent
+ *  (the next message is no longer this note). */
+function FailedNote(props: { text: string; bot: string }) {
+  const [state, setState] = useState<"ready" | "sending" | { why: string }>("ready");
+  const again = async (): Promise<void> => {
+    setState("sending");
+    const r = await bridge().retry(props.bot);
+    setState(r.ok ? "sending" : { why: r.why });
+  };
+  return (
+    <div className="note note--failed" data-bubble="note" data-failed>
+      <span>{props.text}</span>
+      {state === "ready" ? <button type="button" className="text-button" data-try-again onClick={() => void again()}>Try again</button> : null}
+      {state === "sending" ? <span className="muted" data-try-again-sending>Sending…</span> : null}
+      {typeof state === "object" ? <span className="composer__why" role="status">{state.why}</span> : null}
+    </div>
+  );
+}
+
 export function kindOf(name: string): string {
   const ext = /\.([A-Za-z0-9]{1,6})$/.exec(name)?.[1]?.toLowerCase();
   if (ext === undefined) return "File";

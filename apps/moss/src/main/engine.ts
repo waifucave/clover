@@ -46,6 +46,8 @@ export function messageOf(e: Record<string, unknown>): Message | undefined {
   }
   if (e.type === "assistant_message" && typeof e.text === "string" && e.text.trim() !== "") return { id, from: "bot", text: e.text, at };
   if (e.type === "agent_error" && typeof e.message === "string") return { id, from: "note", text: e.message.slice(0, 500), at };
+  // A turn that ended in an error: the conversation's note, with Try again while it is the last thing there.
+  if (e.type === "turn_completed" && e.stopReason === "error") return { id: `${id}:failed`, from: "note", text: "The turn ended with an error.", at, failed: true };
   return undefined;
 }
 
@@ -581,6 +583,19 @@ export class MossEngine {
     const ok = (await this.read("bots", "bot.remove", { id })) !== undefined;
     if (ok) { this.records.delete(id); this.changed(); }
     return ok;
+  }
+
+  /** Try again on a bot's failed latest turn: the engine resends the person's own message that began it, once. */
+  async retry(bot: string): Promise<{ ok: true } | { ok: false; why: string }> {
+    const client = this.client;
+    const session = this.records.get(bot)?.mainSession;
+    if (client === undefined || session === undefined) return { ok: false, why: "MOSS isn't connected to its engine." };
+    try {
+      await client.request("session.resend", { session }, 15_000);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, why: notServed(err) ? "Trying again isn't served by this engine yet." : "It could not be sent again: send it from the composer." };
+    }
   }
 
   /** The archived bots, to bring one back. */

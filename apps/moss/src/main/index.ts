@@ -557,6 +557,12 @@ function wireBridge(): void {
     return engine.archiveBot(id);
   });
   handle("moss:archived-bots", () => engine.archivedBots());
+  handle("moss:retry", (w, a) => {
+    const bot = str(a.bot, 64);
+    if (bot === undefined) return { ok: false, why: "No bot." };
+    if (!personPressed(w)) return { ok: false, why: "Try again goes only right after your own click." };
+    return engine.retry(bot);
+  });
   handle("moss:restore-bot", (w, a) => {
     const id = str(a.id, 64);
     if (id === undefined || !personPressed(w)) return false;

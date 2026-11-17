@@ -59,6 +59,8 @@ export interface Message {
   text: string;
   at: number;
   files?: Attachment[];
+  /** A note that a turn ended in an error: the conversation offers Try again while it is the last thing there. */
+  failed?: true;
 }
 
 export interface ConversationPage {
@@ -219,6 +221,9 @@ export interface MossBridge {
   archiveBot(id: string): Promise<boolean>;
   archivedBots(): Promise<{ id: string; name: string }[] | { waiting: true }>;
   restoreBot(id: string): Promise<boolean>;
+  /** Try again on the bot's failed latest turn (`session.resend`): the engine sends the same words once more, after the
+   *  person's own press. */
+  retry(bot: string): Promise<{ ok: true } | { ok: false; why: string }>;
   /** The person tried to act on a bot's screen (a click, a key, a scroll): it is watch only, and main says so. */
   pictureInput(kind: "pointer" | "key" | "wheel"): void;
   models(): Promise<ModelRow[] | { waiting: true }>;

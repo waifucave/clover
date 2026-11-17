@@ -28,6 +28,7 @@ function view(over: Partial<MossView> = {}): MossView {
   };
 }
 
+let retried: string[] = [];
 function stub(v: MossView, page: ConversationPage | { waiting: true }): MossBridge {
   const none = () => () => {};
   return {
@@ -39,7 +40,7 @@ function stub(v: MossView, page: ConversationPage | { waiting: true }): MossBrid
     botSettings: async () => ({ waiting: true }), setBotSetting: async () => false, setLevel: async () => false,
     setPermission: async () => false, signIn: async () => ({ ok: false, why: "no" }), signOut: async () => false,
     botRecord: async () => ({ waiting: true }), botInstructions: async () => ({ waiting: true }), editBot: async () => false, models: async () => ({ waiting: true }),
-    archiveBot: async () => false, archivedBots: async () => [], restoreBot: async () => false, pictureInput: () => {},
+    archiveBot: async () => false, archivedBots: async () => [], restoreBot: async () => false, retry: async (bot) => { retried.push(bot); return { ok: true }; }, pictureInput: () => {},
   };
 }
 
@@ -80,6 +81,21 @@ describe("MOSS's window", () => {
     const r = await draw(view(), { waiting: true });
     expect(r.container.textContent).toContain("Waiting for the engine to serve Juniper's conversation.");
     r.unmount();
+  });
+
+  test("a failed turn shows Try again while it is the last thing; one press asks for it once, and an older failure offers none", async () => {
+    retried = [];
+    const failed = { id: "f1", from: "note" as const, text: "The turn ended with an error.", at: Date.now(), failed: true as const };
+    const r = await draw(view(), { bot: "juniper", hasMore: false, messages: [{ id: "u1", from: "user", text: "hello", at: Date.now() }, failed] });
+    const button = r.container.querySelector<HTMLButtonElement>("[data-try-again]");
+    expect(button?.textContent).toBe("Try again");
+    await act(async () => { button!.click(); await new Promise((res) => setTimeout(res, 20)); });
+    expect(retried).toEqual(["juniper"]);
+    expect(r.container.querySelector("[data-try-again]")).toBeNull();
+    r.unmount();
+    const later = await draw(view(), { bot: "juniper", hasMore: false, messages: [failed, { id: "u2", from: "user", text: "again", at: Date.now() }] });
+    expect(later.container.querySelector("[data-try-again]")).toBeNull();
+    later.unmount();
   });
 
   test("the cards go where the router placed them", async () => {

@@ -31,11 +31,13 @@ export const MOSS_PANEL_STEP = "MOSS's side panel: Alpha's live picture from her
 export const MOSS_TOOLS_STEP = "MOSS's Plugins page: a plugin's tool set off there is off in the engine's tool.permissions, and Alpha's next turn isn't offered it (it was before)";
 export const MOSS_INSTRUCTIONS_STEP = "MOSS's Settings: Alpha's instructions shown as they are now, edited in place and saved by the person with no card (instructionsEditRule: the person's own edit is free); her next turn is given them";
 export const MOSS_MAKE_STEP = "MOSS: a bot made from the list's + (the person's bot.create) opens on its own conversation and answers; that bot's MakeBot raises the person's OK card in MOSS naming the maker, and once pressed the new bot is listed, made by it";
+export const MOSS_EDITOR_STEP = "MOSS's Settings, a bot's own page (the bot editor, MOSS Code's old rows 14 and 15): its name, model and instructions edited there are kept: the engine's record has them, the list shows the new name, and the page opened again shows all three";
+export const MOSS_TRY_AGAIN_STEP = "MOSS: a turn that fails in Alpha's conversation shows Try again; one press sends the same words once more (session.resend), the next turn completes, and the button goes";
 export const MOSS_ARCHIVE_STEP = "MOSS's Settings: a bot archived leaves the list and is listed under Archived bots; brought back, it is in the list again with its conversation whole";
 export const MOSS_BOTH_KEYS_STEP = "MOSS beside MOSS Code on one computer: with MOSS Code's own answer key registered too, MOSS still answers its card with its own key (program moss), and MOSS Code's connection can't answer a card MOSS draws, even signed with MOSS Code's own key";
 
 /** The unit's rows, in the order it runs them. */
-export const MOSS_STEPS: readonly string[] = [MOSS_LIST_STEP, MOSS_MESSAGE_STEP, MOSS_CARD_STEP, MOSS_AWAY_STEP, MOSS_PANEL_STEP, MOSS_TOOLS_STEP, MOSS_INSTRUCTIONS_STEP, MOSS_MAKE_STEP, MOSS_ARCHIVE_STEP, MOSS_BOTH_KEYS_STEP];
+export const MOSS_STEPS: readonly string[] = [MOSS_LIST_STEP, MOSS_MESSAGE_STEP, MOSS_CARD_STEP, MOSS_AWAY_STEP, MOSS_PANEL_STEP, MOSS_TOOLS_STEP, MOSS_INSTRUCTIONS_STEP, MOSS_MAKE_STEP, MOSS_EDITOR_STEP, MOSS_TRY_AGAIN_STEP, MOSS_ARCHIVE_STEP, MOSS_BOTH_KEYS_STEP];
 
 /** The unit's daemon: the bots as engine data (lane MC1 makes it the default; until then the unit sets it). */
 export const MOSS_ENV: Readonly<Record<string, string>> = { MOSS_BOT_SOURCE: "records" };
@@ -131,6 +133,8 @@ export async function mossUnit(x: MossUnitCtx): Promise<void> {
     await row(MOSS_TOOLS_STEP, () => toolsRow(s));
     await row(MOSS_INSTRUCTIONS_STEP, () => instructionsRow(s));
     await row(MOSS_MAKE_STEP, () => makeRow(s));
+    await row(MOSS_EDITOR_STEP, () => editorRow(s));
+    await row(MOSS_TRY_AGAIN_STEP, () => tryAgainRow(s));
     await row(MOSS_ARCHIVE_STEP, () => archiveRow(s));
     // Last: it registers MOSS Code's key, so the home is no longer one where only MOSS has run.
     await row(MOSS_BOTH_KEYS_STEP, () => bothKeysRow(s));
@@ -699,4 +703,68 @@ async function bothKeysRow(s: UnitState): Promise<string> {
     // connection and stops when that one goes (the background host's lane changes it), which would take MOSS's engine away.
     void code;
   }
+}
+
+/** The bot editor: the made bot's own Settings page, its name, model and instructions edited, then the page left and
+ *  opened again. */
+async function editorRow(s: UnitState): Promise<string> {
+  const id = s.made;
+  if (id === undefined) s.x.fail("the make row made no bot to edit");
+  const rec = (await records(s.c)).find((b) => b.id === id);
+  if (rec === undefined) s.x.fail(`${id} isn't a record`);
+  const name = `${nameOf(rec!.name)} Two`;
+  const open = async () => {
+    await s.w.click(".list__bottom .nav-item.account");
+    await s.w.click(`[data-section=${JSON.stringify(`bot:${id}`)}]`);
+    await s.w.waitFor("the bot's own Settings page", `!!document.querySelector(${JSON.stringify(`[data-bot-page="${id}"] .ma2-name`)})`, 20_000);
+  };
+  await open();
+  // Its name.
+  await s.w.type(`[data-bot-page=${JSON.stringify(id)}] .ma2-name`, name);
+  await s.w.click("[data-settings=name] .text-button--solid", "Save");
+  await s.x.until("the record's new name", 15_000, async () => ((await records(s.c)).find((b) => b.id === id) !== undefined && nameOf((await records(s.c)).find((b) => b.id === id)!.name) === name ? true : undefined), 300)
+    .catch(async () => s.x.fail(`the name didn't change: ${await s.w.eval<string>("[...document.querySelectorAll('.add__note')].map((n) => n.textContent).join(' | ') || 'nothing said'")}`));
+  // Its instructions.
+  const t = tag("EDIT");
+  const text = `You are ${name}, edited in MOSS. Say ${t} when asked.`;
+  await s.w.waitFor("its instructions field", `(() => { const e = document.querySelector('[data-instructions-text]'); return e && !e.disabled ? true : null; })()`, 20_000);
+  await s.w.type("[data-instructions-text]", text);
+  await s.w.click("[data-settings=instructions] .text-button--solid", "Save instructions");
+  await s.x.until("the instructions kept", 15_000, async () => ((await s.c.request<{ text: string }>("bot.instructions.get", { id })).text === text ? true : undefined), 300);
+  const model = (await records(s.c)).find((b) => b.id === id)?.model;
+  // Left (its conversation) and opened again: all three shown as kept.
+  await openBot(s, id!, name);
+  await open();
+  const shown = await s.w.waitFor<{ name: string; model: string; instructions: string }>("the page opened again with what was kept", `(() => {
+    const page = document.querySelector(${JSON.stringify(`[data-bot-page="${id}"]`)});
+    const ins = document.querySelector('[data-instructions-text]');
+    if (!page || !ins || ins.disabled) return null;
+    return { name: page.querySelector('.ma2-name')?.value ?? '', model: document.querySelector('[data-model-picker]')?.value ?? '', instructions: ins.value };
+  })()`, 20_000);
+  if (shown.name !== name) s.x.fail(`the page opened again shows the name "${shown.name}", not "${name}"`);
+  if (shown.instructions !== text) s.x.fail("the page opened again doesn't show the edited instructions");
+  if (model !== undefined && shown.model !== model) s.x.fail(`the page opened again shows the model "${shown.model}", not ${model}`);
+  const listed = await s.w.eval<string>(`document.querySelector(${JSON.stringify(`[data-bot-row="${id}"] .row__name`)})?.textContent ?? ''`);
+  if (listed !== name) s.x.fail(`the list names the bot "${listed}", not "${name}"`);
+  return `${id}'s page in Settings: renamed "${name}" (the record and the list say so), its model ${model ?? "(the default)"} and its instructions kept; left for its conversation and opened again, the page shows all three`;
+}
+
+/** Try again: a turn that fails (the fake provider's 400, until it is healed), its note in MOSS with Try again, one press. */
+async function tryAgainRow(s: UnitState): Promise<string> {
+  const a = await alpha(s.c);
+  await openBot(s, "alpha", "Alpha");
+  const id = randomBytes(3).toString("hex").toUpperCase();
+  const words = `ACCEPTANCE-FAIL-${id}`;
+  await sendInMoss(s, "Alpha", words);
+  await s.w.waitFor("the failed turn's Try again in her conversation", "!!document.querySelector('.messages [data-try-again]')", 120_000);
+  const sentBefore = (await s.c.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: "alpha", limit: 200 })).events.filter((e) => e.type === "user_message" && e.text === words).length;
+  s.x.fake.heal(id);
+  await s.w.click(".messages [data-try-again]");
+  const said = await botSaid(s, `ACCEPTANCE-REPLY-OK ${words}`);
+  await s.w.waitFor("Try again gone", "!document.querySelector('.messages [data-try-again]') ? 'gone' : null", 15_000);
+  const page = await s.c.request<{ session: string; events: { type: string; text?: string }[] }>("bot.conversation", { id: "alpha", limit: 200 });
+  const sent = page.events.filter((e) => e.type === "user_message" && e.text === words).length;
+  if (sentBefore !== 1 || sent !== 2) s.x.fail(`the words were in her conversation ${sentBefore} time(s) before the press and ${sent} after (want 1, then 2: sent once more)`);
+  if (page.session !== a.mainSession) s.x.fail("Try again went to another session");
+  return `her turn failed and MOSS showed Try again; one press sent the same words once more (in her conversation 1, then 2 times), the next turn completed ("${said.slice(0, 50)}"), and the button went`;
 }

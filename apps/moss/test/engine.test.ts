@@ -96,6 +96,11 @@ describe("the conversation", () => {
     expect(m?.text).toBe("<img src=x onerror=alert(1)><b>hi</b>");
   });
 
+  test("a turn that ended in an error is the conversation's failed note; one that ended well is no message", () => {
+    expect(messageOf({ type: "turn_completed", seq: 7, sessionId: "s", ts: 1, stopReason: "error" })).toMatchObject({ from: "note", failed: true });
+    expect(messageOf({ type: "turn_completed", seq: 8, sessionId: "s", ts: 1, stopReason: "end_turn" })).toBeUndefined();
+  });
+
   test("the person's words arrive live in the conversation it follows", async () => {
     const { engine } = await setup();
     const got: string[] = [];
