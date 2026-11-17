@@ -350,6 +350,59 @@ describe("a bot's record: an event always wins over an answer taken before it", 
   });
 });
 
+describe("MOSS with the background host (lane HS)", () => {
+  test("Quit tells the engine pair.quit with no hand-over; a quit the engine asked for, or a closed window on macOS, tells nothing", async () => {
+    const { tellQuit, windowsClosedQuits } = await import("../src/main/quit");
+    const { e, client } = await setup();
+    const lines: string[] = [];
+    expect(await tellQuit({ client, engineAsked: false, log: (l) => lines.push(l) })).toBe("told");
+    expect(e.calls().filter((c) => c.method === "pair.quit").map((c) => c.params)).toEqual([{ handOver: false }]);
+    expect(await tellQuit({ client, engineAsked: true, log: (l) => lines.push(l) })).toBe("not-told");
+    expect(await tellQuit({ client: undefined, engineAsked: false, log: (l) => lines.push(l) })).toBe("not-told");
+    expect(e.calls().filter((c) => c.method === "pair.quit")).toHaveLength(1);
+    // Closing MOSS's last window on macOS keeps MOSS running: no quit, so nothing is told.
+    expect(windowsClosedQuits("darwin", false)).toBe(false);
+    expect(windowsClosedQuits("linux", false)).toBe(true);
+    expect(windowsClosedQuits("darwin", true)).toBe(true);
+  });
+
+  test("a host the engine gave up on is one plain notice in the window, from host.status at connect and from host_changed", async () => {
+    const { HOST_DOWN_NOTICE } = await import("../src/main/engine");
+    const { engine } = await setup();
+    expect(engine.view().notice).toBeUndefined();
+    engine.notification("core.event", { type: "host_changed", state: "absent", crashes: 3, since: 1, gaveUp: true });
+    expect(engine.view().notice).toBe(HOST_DOWN_NOTICE);
+    engine.notification("core.event", { type: "host_changed", state: "running", crashes: 0, since: 2 });
+    expect(engine.view().notice).toBeUndefined();
+    const h = mkdtempSync(join(tmpdir(), "ma-host-"));
+    homes.push(h);
+    const e2 = await startFakeEngine({ home: h, host: { state: "absent", crashes: 3, since: 1, gaveUp: true } });
+    closers.push(() => e2.close());
+    const c2 = (await dial(daemonEndpoint(h)))!;
+    closers.push(() => c2.close());
+    await c2.request("protocol.prove", { nonce: "n" });
+    await c2.request("protocol.hello", mossHello(e2.token, "0.124.0", 1));
+    const fresh = new MossEngine(new SealedFrames("moss"));
+    await fresh.attach(c2);
+    expect(fresh.view().notice).toBe(HOST_DOWN_NOTICE);
+  });
+
+  test("a card placed elsewhere (no window in front, no host) is told once; drawn again then elsewhere again, told again", async () => {
+    const { engine } = await setup();
+    const told: { id: string; botName?: string }[] = [];
+    engine.onElsewhere((c) => told.push(c));
+    engine.notification("core.event", { type: "card_placed", card: "card_juniper_book", place: { kind: "elsewhere" } });
+    engine.notification("core.event", { type: "card_placed", card: "card_juniper_book", place: { kind: "elsewhere" } });
+    expect(told).toEqual([{ id: "card_juniper_book", bot: "juniper", botName: "Juniper" }]);
+    engine.notification("core.event", { type: "card_placed", card: "card_juniper_book", place: { kind: "conversation", program: "moss", window: "main" } });
+    engine.notification("core.event", { type: "card_placed", card: "card_juniper_book", place: { kind: "elsewhere" } });
+    expect(told).toHaveLength(2);
+    // An unknown or answered card is never told.
+    engine.notification("core.event", { type: "card_placed", card: "card_nobody", place: { kind: "elsewhere" } });
+    expect(told).toHaveLength(2);
+  });
+});
+
 describe("the status line's inputs", () => {
   test("the open bot's running call gives its safe detail only; its result clears it; no message is made of either", async () => {
     const { engine } = await setup([], undefined, { running: { juniper: { name: "mcp__moss__Browser", argsJson: JSON.stringify({ url: "https://www.example.com/a?secret=1" }), displayTitle: "Page reader" } } });

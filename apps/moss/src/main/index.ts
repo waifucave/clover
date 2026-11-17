@@ -3,7 +3,7 @@
 // one window is its own page (`moss-app://app/`), and the only other documents in it are the sealed card frames MOSS's
 // own store mints (`moss-sealed://card/…`), whose presses MOSS's main process judges itself (press.ts) and answers with
 // MOSS's own key (answer-key.ts). Quitting MOSS stops nothing: the engine, the host and every bot keep working.
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebFrameMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebFrameMain } from "electron";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, normalize, sep } from "node:path";
@@ -13,6 +13,7 @@ import { daemonEndpoint, type DaemonClient } from "./client";
 import { bundlePathOf, writeOwnRecord } from "./install-record";
 import { EngineConnection, locateEngine, osLauncher, tokenPath, type ConnectionState } from "./connection";
 import { MossEngine, routineEditOf } from "./engine";
+import { tellQuit, windowsClosedQuits } from "./quit";
 import type { BotEdit } from "../shared/view";
 import { engineHome, MAIN_WINDOW_ID, mossIdentity, parseLaunchArgs, resolveProfile, WINDOW_PARTITION } from "./identity";
 import { fileVault, memoryVault, ProgramAnswerKey, safeStorageVault, vaultChoice } from "./answer-key";
@@ -616,6 +617,18 @@ function wireBridge(): void {
     pushPresence();
   });
   engine.onMessage((bot, m) => mainWindow?.webContents.send("moss:message", bot, m));
+  // Never nowhere: a bot's card no window or island draws (no host, MOSS not in front) is told with one notification;
+  // its click brings MOSS forward, where the router then places the card in the bot's conversation to be pressed.
+  engine.onElsewhere((card) => {
+    const who = card.botName ?? "A bot";
+    if (headless || !Notification.isSupported()) { log(`card: ${card.id} is drawn nowhere now; the notification "${who} needs you" (not shown: ${headless ? "headless" : "no notifications"})`); return; }
+    log(`card: ${card.id} is drawn nowhere now; the notification "${who} needs you" shown`);
+    try {
+      const n = new Notification({ title: `${who} needs you`, body: "Open MOSS to answer.", silent: true });
+      n.on("click", () => { void openWindow().then((w) => { if (!w.isDestroyed()) { w.show(); w.focus(); } }); });
+      n.show();
+    } catch { /* the desktop has no notifications */ }
+  });
   engine.onPictureFrame((f) => mainWindow?.webContents.send("moss:picture-frame", f));
 }
 
@@ -783,15 +796,27 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", () => { if (!headless) void openWindow(); });
   // Closing the window only closes it; on macOS the app stays until quit, elsewhere it leaves. Neither stops any work.
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin" || headless) app.quit();
+    if (windowsClosedQuits(process.platform, headless)) app.quit();
   });
   app.on("activate", () => { if (!headless) void openWindow(); });
   app.on("web-contents-created", (_e, contents) => {
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
     contents.on("will-attach-webview", (e) => e.preventDefault());
   });
-  app.on("before-quit", () => {
-    // Quitting MOSS stops nothing (§3.1, item 112): no pair.quit, no hand-over; the connection just closes.
+  // The person's Quit tells the engine first (quit.ts: `pair.quit { handOver: false }`; the engine stops itself only when
+  // MOSS is the last window of ours and no host owns the screen), then the connection closes.
+  let quitTold = false;
+  app.on("before-quit", (e) => {
+    if (!quitTold) {
+      e.preventDefault();
+      quitTold = true;
+      void tellQuit({ client: connection.client, engineAsked: connection.engineStopped, log }).finally(() => {
+        presence.stop();
+        connection.stop();
+        app.quit();
+      });
+      return;
+    }
     presence.stop();
     connection.stop();
   });

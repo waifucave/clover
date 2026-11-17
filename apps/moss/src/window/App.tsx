@@ -77,6 +77,7 @@ export function App() {
       <BotList view={view} page={shown ?? { page: "plugins" }} onPage={(p) => { setSettingsBot(undefined); setPage(p); }} />
       <div className="middle">
         {banner !== "" ? <p className="banner" role="status">{view.connection.reason ?? banner}</p> : null}
+        {view.notice !== undefined ? <p className="banner banner--notice" role="status" data-notice>{view.notice}</p> : null}
         {shown !== undefined && "page" in shown && shown.page === "plugins" ? <PluginsPage strip={strip} />
           : shown !== undefined && "page" in shown && shown.page === "settings" ? <SettingsPage bots={view.bots} strip={strip} {...(settingsBot !== undefined ? { bot: settingsBot } : {})} />
           : bot !== undefined ? <Conversation bot={bot} cards={inConversation} strip={strip} panelOpen={panel} onPanel={() => setPanel((p) => !p)} {...(view.talk !== undefined ? { talk: view.talk } : {})} />

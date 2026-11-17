@@ -26,7 +26,7 @@ export interface EngineClient {
 }
 
 /** The areas whose events MOSS follows. */
-export const MOSS_EVENT_AREAS = ["bots", "activity", "approvals", "surfaces", "plugins"] as const;
+export const MOSS_EVENT_AREAS = ["bots", "activity", "approvals", "surfaces", "plugins", "host"] as const;
 
 /** Whether an error is the engine's "not served yet" (a method with no handler). */
 export function notServed(err: unknown): boolean {
@@ -100,6 +100,9 @@ export function routineEditOf(v: unknown): RoutineEdit | undefined {
   return Object.keys(out).length === 0 ? undefined : out;
 }
 
+/** What MOSS says when the engine gave up starting the background host (MOSS Code's `host-down`, MOSS's own words). */
+export const HOST_DOWN_NOTICE = "The island couldn't start: MOSS tried several times and stopped. Cards show in this window while it's in front; when it isn't, MOSS tells you a bot needs you and brings this window forward when you click. Quit and open MOSS again to try once more.";
+
 /** A routine as the side panel shows it. */
 export function routineRowOf(x: RoutineView): RoutineRow {
   const spec = x.triggers.find((t) => t.type === "schedule")?.summary;
@@ -130,6 +133,12 @@ export class MossEngine {
   private removedBots = new Set<string>();
   private resolvedCards = new Set<string>();
   private viewListeners = new Set<(v: MossView) => void>();
+  /** The background host as the engine last said (`host.status`, `host_changed`): whether it gave up starting it. */
+  private hostGaveUp = false;
+  /** Cards the router placed `elsewhere` (no window in front and no host drawing the island): each said once, so the
+   *  person is told a bot needs them and can bring MOSS forward to answer it (never nowhere). */
+  private elsewhereSaid = new Set<string>();
+  private elsewhereListeners = new Set<(card: { id: string; bot?: string; botName?: string }) => void>();
   private messageListeners = new Set<(bot: string, m: Message) => void>();
   private frameListeners = new Set<(f: PictureFrameView) => void>();
   /** The tool call running now on a bot's main session (the open bot's), for the status line: its name and the safe
@@ -176,7 +185,7 @@ export class MossEngine {
       cards.push({ id: c.id, ...(c.bot !== undefined ? { bot: c.bot } : {}), kind: c.kind, place: p.kind });
     }
     const talk = "command" in this.talk ? { ready: true as const } : { ready: false as const, why: this.talk.why };
-    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}) };
+    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}), ...(this.hostGaveUp ? { notice: HOST_DOWN_NOTICE } : {}) };
   }
 
   /** How many pending cards MOSS knows that the router hasn't placed yet (anywhere): the smoke run waits for none. */
@@ -184,6 +193,33 @@ export class MossEngine {
     let n = 0;
     for (const c of this.cards.values()) if (this.sealed.isPending(c.id) && !this.placements.has(c.id)) n++;
     return n;
+  }
+
+  /** A card no window or island draws now (`elsewhere`): main tells the person (a notification that brings MOSS forward). */
+  onElsewhere(fn: (card: { id: string; bot?: string; botName?: string }) => void): () => void {
+    this.elsewhereListeners.add(fn);
+    return () => this.elsewhereListeners.delete(fn);
+  }
+
+  /** A placement heard (an event or a snapshot): an `elsewhere` card of MOSS's is said once. */
+  private placedAt(id: string, place: CardPlacement): void {
+    if (place.kind !== "elsewhere") return;
+    if (this.elsewhereSaid.has(id) || !this.sealed.isPending(id)) return;
+    MossEngine.remember(this.elsewhereSaid, id);
+    const c = this.cards.get(id);
+    const botName = c?.bot === undefined ? undefined : this.records.get(c.bot) === undefined ? undefined : textOf(this.records.get(c.bot)!.name);
+    for (const l of this.elsewhereListeners) l({ id, ...(c?.bot !== undefined ? { bot: c.bot } : {}), ...(botName !== undefined ? { botName } : {}) });
+  }
+
+  private hostHeard(p: unknown): void {
+    const h = (p ?? {}) as { state?: unknown; gaveUp?: unknown };
+    if (typeof h.state !== "string") return;
+    const gaveUp = h.state === "absent" && h.gaveUp === true;
+    if (gaveUp !== this.hostGaveUp) {
+      this.hostGaveUp = gaveUp;
+      this.log(gaveUp ? "host: the engine gave up starting the host (MOSS says so in its window)" : "host: the host is back");
+      this.changed();
+    }
   }
 
   onView(fn: (v: MossView) => void): () => void {
@@ -263,7 +299,7 @@ export class MossEngine {
     this.removedBots.clear();
     this.resolvedCards.clear();
     await client.request("events.subscribe", { areas: MOSS_EVENT_AREAS }, 10_000).catch((err: unknown) => this.log(`engine: events.subscribe failed (${err instanceof Error ? err.message.slice(0, 120) : "error"})`));
-    await Promise.all([this.loadBots(), this.loadSummaries(), this.loadActivity(), this.loadCards(), this.loadTalk()]);
+    await Promise.all([this.loadBots(), this.loadSummaries(), this.loadActivity(), this.loadCards(), this.loadTalk(), this.loadHost()]);
     this.changed();
   }
 
@@ -287,6 +323,13 @@ export class MossEngine {
       this.log("command" in next ? `voice: the talk command is ${next.command} (${next.pluginId})` : `voice: no talk command (${next.why})`);
       this.changed();
     }
+  }
+
+  /** The host's state at connect (a `host_changed` before the subscription would be missed); none from an older engine. */
+  private async loadHost(): Promise<void> {
+    const client = this.client;
+    const r = await client?.request<unknown>("host.status", {}, 10_000).catch(() => undefined);
+    if (r !== undefined && client === this.client) this.hostHeard(r);
   }
 
   private async loadBots(): Promise<void> {
@@ -324,7 +367,7 @@ export class MossEngine {
     for (const p of r.placements) {
       if (this.placedByEvent.has(p.card) || this.resolvedCards.has(p.card)) continue;
       const place = CardPlacement.safeParse(p.place);
-      if (place.success) this.placements.set(p.card, place.data);
+      if (place.success) { this.placements.set(p.card, place.data); this.placedAt(p.card, place.data); }
     }
   }
 
@@ -383,6 +426,9 @@ export class MossEngine {
           MossEngine.remember(this.resolvedCards, e.id);
         }
         break;
+      case "host_changed":
+        this.hostHeard(e);
+        return;
       case "plugin_changed":
       case "plugin_point_changed":
         // A plugin on, off or changed may change who fills the voice point or which command holds the key.
@@ -393,6 +439,9 @@ export class MossEngine {
         if (typeof e.card === "string" && place.success) {
           this.placements.set(e.card, place.data);
           MossEngine.remember(this.placedByEvent, e.card);
+          // Placed somewhere drawn again: a later `elsewhere` is said again.
+          if (place.data.kind !== "elsewhere") this.elsewhereSaid.delete(e.card);
+          this.placedAt(e.card, place.data);
         }
         break;
       }

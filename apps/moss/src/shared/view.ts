@@ -48,6 +48,8 @@ export interface MossView {
   talk?: { ready: true } | { ready: false; why: string };
   /** The engine's release, when connected. */
   engine?: string;
+  /** One plain notice for the person (the background host the engine gave up starting), or none. */
+  notice?: string;
 }
 
 export interface Attachment {

@@ -124,6 +124,11 @@ export class EngineConnection {
     this.handlers.set("app.ping", () => ({ ok: true }));
   }
 
+  /** Whether the engine asked MOSS to leave (`app.quit`), or refused it for good. */
+  get engineStopped(): boolean {
+    return this.stopped;
+  }
+
   get state(): ConnectionState {
     return this.stateValue;
   }

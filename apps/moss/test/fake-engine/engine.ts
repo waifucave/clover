@@ -53,6 +53,8 @@ export interface FakeEngineOptions {
    *  status line takes a file's base name or a site's host from its input; the conversation never draws it). */
   running?: Record<string, { name: string; argsJson: string; displayTitle?: string }>;
   longTalk?: { bot: string; messages: number; /** The words of message `i` (0-based; even ones are the person's). Default: "Long message N". */ text?: (i: number) => string };
+  /** What `host.status` answers (the background host's state). */
+  host?: { state: string; crashes: number; since: number; gaveUp?: boolean };
 }
 
 interface Conn {
@@ -440,6 +442,10 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         event("bots", { type: "bot_record_changed", bot: v });
         return { applied: true };
       }
+      case "pair.quit":
+        return { ok: true };
+      case "host.status":
+        return o.host ?? { state: "running", crashes: 0, since: now };
       case "models.list":
         return { models: MODELS, default: "anthropic/claude-sonnet" };
       case "plugin.install":
