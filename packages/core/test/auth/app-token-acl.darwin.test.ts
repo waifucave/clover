@@ -299,6 +299,18 @@ describe("who the wide ACL trusts", () => {
     expect(trustFor({ profile: "dist", executable: "/opt/dist/moss-core", lookup: () => ["/x/MOSS Code.app"], inspect, exists: () => true })).toBeUndefined();
   });
 
+  test("dist, MOSS and the host too: the bundle moss-core lives in, never what Launch Services says com.waifucave.moss or com.waifucave.moss.host is", () => {
+    const asked: string[] = [];
+    const lookup = (id: string) => { asked.push(id); return ["/out/release/MOSS.app", "/out/release/MOSS Code.app/Contents/Frameworks/MOSS Host.app"]; };
+    const inspect = signed({ "/Applications/MOSS.app": { teamId: MOSS_TEAM_ID, requirement: "R-moss" }, "/Applications/MOSS.app/Contents/Resources/moss-core": { teamId: MOSS_TEAM_ID, requirement: "R-core" } });
+    const t = trustFor({ profile: "dist", executable: "/Applications/MOSS.app/Contents/Resources/moss-core", lookup, inspect, exists: () => true });
+    expect(t).toEqual({ apps: ["/Applications/MOSS.app"], requirements: ["R-core", "R-moss"] });
+    // A Release build under either id is never looked up, so never trusted.
+    expect(asked).toEqual([]);
+    expect(trustFor({ profile: "dist", executable: "/opt/dist/moss-core", lookup, inspect, exists: () => true })).toBeUndefined();
+    expect(asked).toEqual([]);
+  });
+
   test("dev: MOSS Code Dev bundles signed by MOSS's team only, one per designated requirement; bun by its requirement", () => {
     const lookups: string[] = [];
     const inspect = signed({
@@ -313,7 +325,7 @@ describe("who the wide ACL trusts", () => {
       lookup: (id) => { lookups.push(id); return ["/dd/b/Winter Dev.app", "/dd/evil/Winter Dev.app", "/dd/a/Winter Dev.app", "/dd/adhoc/Winter Dev.app", "/dd/gone/Winter Dev.app"]; },
       inspect, exists: (p) => !p.includes("gone"),
     });
-    expect(lookups).toEqual(["com.waifucave.moss.code.dev"]);
+    expect(lookups).toEqual(["com.waifucave.moss.code.dev", "com.waifucave.moss.dev", "com.waifucave.moss.host.dev"]);
     // bun is another team's binary: the items it creates are partitioned `teamid:7FRXF46ZSN` alone, so the
     // MOSS Code Dev team is named as the gap (the app is asked once per item — see `app-token-acl.ts`).
     expect(t).toEqual({ apps: ["/dd/a/Winter Dev.app"], requirements: ["R-bun", "R-dev"], unpartitionedTeams: [MOSS_TEAM_ID] });

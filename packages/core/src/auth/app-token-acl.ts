@@ -30,9 +30,10 @@
 //
 // WHO IS TRUSTED. Dist: the app bundle `moss-core` itself lives in (`<MOSS Code.app>/Contents/Resources/
 // moss-core`, realpath'd — the Homebrew `moss` link resolves there too). Nothing else: Launch Services
-// can resolve `com.waifucave.moss.code` to a local Release build (CLAUDE.md), which must not be granted the dist
-// tokens. Dev (spec §7 B's "bun + MOSS Code Dev"): this process (`bun`, or a compiled dev binary) plus the
-// `com.waifucave.moss.code.dev` bundles Launch Services knows THAT ARE SIGNED BY MOSS'S TEAM (`MOSS_TEAM_ID`,
+// can resolve `com.waifucave.moss.code` (or `com.waifucave.moss`, or the host's `com.waifucave.moss.host`) to a local
+// Release build (CLAUDE.md), which must not be granted the dist tokens. Dev (spec §7 B's "bun + MOSS Code Dev"): this
+// process (`bun`, or a compiled dev binary) plus the `com.waifucave.moss.code.dev`, `com.waifucave.moss.dev` and
+// `com.waifucave.moss.host.dev` bundles Launch Services knows THAT ARE SIGNED BY MOSS'S TEAM (`MOSS_TEAM_ID`,
 // `project.yml`'s `DEVELOPMENT_TEAM`), one per designated requirement. Never a path from an environment
 // variable: a dev daemon runs under `bun` from a repository checkout, and `bun` autoloads that `.env`.
 //
@@ -59,7 +60,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { MOSS_TEAM_ID } from "../bundled-identities";
+import { MOSS_PROGRAM_IDENTIFIERS, MOSS_TEAM_ID } from "../bundled-identities";
 import { MIGRATION_SHADOW_SUFFIX } from "./secret-store";
 import { TOKEN_NAMES } from "./tokens";
 import { addGenericPassword, createKeychainAccess, deleteGenericPassword, genericPasswordPresent, readGenericPassword, ERR_SEC_DUPLICATE_ITEM, KeychainFfiError, type KeychainAccess, type KeychainTarget } from "./keychain-ffi";
@@ -367,7 +368,10 @@ export function trustFor(input: { profile: "dist" | "dev"; executable: string; l
   const selfFacts = inspect(input.executable, Math.max(MIN_INSPECT_MS, left()));
   const self = requirementOf(input.executable, selfFacts);
   if (input.profile === "dev" && left() > 0) {
-    for (const path of [...input.lookup("com.waifucave.moss.code.dev")].sort()) {
+    // The three programs' dev forms (spec revision 19: MOSS Code Dev, MOSS Dev and the dev host), each by its own id.
+    const found = new Set<string>();
+    for (const ids of Object.values(MOSS_PROGRAM_IDENTIFIERS)) for (const path of input.lookup(ids.dev)) found.add(path);
+    for (const path of [...found].sort()) {
       if (left() <= 0) break; // budget spent: what is not inspected is not trusted
       if (!exists(path)) continue;
       const facts = inspect(path, left());

@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { constants, type Stats } from "node:fs";
 import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { MOSS_TEAM_ID } from "../bundled-identities";
+import { MOSS_PROGRAM_IDENTIFIERS, MOSS_TEAM_ID } from "../bundled-identities";
 import type { HostCodeOutputTransportFactory } from "./host-code-broker";
 
 export const HOST_OUTPUT_PROTOCOL_VERSION = 1;
@@ -114,6 +114,8 @@ function codesign(args: string[]): Promise<{ stdout: string; stderr: string }> {
     });
   });
 }
+/** The apps whose `Resources/moss-core` may load the host-output add-on. */
+export const HOST_OUTPUT_APP_IDENTIFIERS = [MOSS_PROGRAM_IDENTIFIERS.code.dist, MOSS_PROGRAM_IDENTIFIERS.code.dev, MOSS_PROGRAM_IDENTIFIERS.moss.dist, MOSS_PROGRAM_IDENTIFIERS.moss.dev] as const;
 const signatures: SignatureVerifier = async (app, core, addon) => {
   const team = `anchor apple generic and certificate leaf[subject.OU] = "${TEAM}"`;
   const flags = await codesign(["-dv", core]);
@@ -127,7 +129,9 @@ const signatures: SignatureVerifier = async (app, core, addon) => {
   await verify(core, team);
   await verify(addon, `(${team}) and identifier "com.winter.host-output"`);
   // Last: seal-check the manifest/image tree pinned before verification.
-  await verify(app, `(${team}) and (identifier "com.waifucave.moss.code" or identifier "com.waifucave.moss.code.dev")`);
+  // The bundle moss-core lives in: either app carries a copy of the engine (spec revision 19, §3.1), MOSS Code or MOSS,
+  // dist or dev. Never the host's id: the host is a helper nested in an app and carries no engine.
+  await verify(app, `(${team}) and (${HOST_OUTPUT_APP_IDENTIFIERS.map((id) => `identifier "${id}"`).join(" or ")})`);
   return true;
 };
 async function load(corePath: string, verify: SignatureVerifier, loadAddon: (fd: number) => Addon, retainMapping: boolean): Promise<HostCodeOutputTransportFactory> {

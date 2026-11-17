@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { chmodSync,copyFileSync,linkSync,mkdtempSync,mkdirSync,readFileSync,realpathSync,rmSync,symlinkSync,writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HOST_OUTPUT_IMPLEMENTATION_ID,HostOutputUnavailable,loadBundledHostOutputFactory,loadFixtureHostOutputFactory,createFixtureLazyHostOutputFactory } from "../../src/runtime-sdk/host-output-loader";
+import { HOST_OUTPUT_APP_IDENTIFIERS,HOST_OUTPUT_IMPLEMENTATION_ID,HostOutputUnavailable,loadBundledHostOutputFactory,loadFixtureHostOutputFactory,createFixtureLazyHostOutputFactory } from "../../src/runtime-sdk/host-output-loader";
 import { darwinTest } from "../helpers/darwin-only";
 const roots:string[]=[];afterEach(()=>{for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true})});
 function fixture(){
@@ -144,4 +144,8 @@ test("hardening refusals are permanent and unclassified errors log only sanitize
     expect(checks).toBe(hardening?1:2);expect(logs.length).toBe(1);
     expect(logs[0]).not.toContain("fixture-private-detail");
   }
+});
+
+test("the add-on loads only inside an app that carries the engine: MOSS Code or MOSS, dist or dev, never the host helper", () => {
+  expect([...HOST_OUTPUT_APP_IDENTIFIERS]).toEqual(["com.waifucave.moss.code", "com.waifucave.moss.code.dev", "com.waifucave.moss", "com.waifucave.moss.dev"]);
 });
