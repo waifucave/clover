@@ -80,7 +80,6 @@ export const FULL_STEPS = [
   EXAMPLE_WEATHER_STEP,
   BUNDLED_TOOLS_STEP,
   CARDS_STEP,
-  ROUTER_STEP,
   WORKSHOP_STEP,
   TAB_FLASH_STEP,
   CHILD_STEP,
@@ -114,6 +113,8 @@ export const FULL_STEPS = [
   ACP_BACKEND_STEP,
   BUILDER_EXAMPLES_STEP,
   WORKSHOP_POINTS_STEP,
+  // Lane RT's row: after every row it could renumber but the cold start and the idle row, which stays last.
+  ROUTER_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;
