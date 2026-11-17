@@ -2581,7 +2581,7 @@ if (import.meta.main) {
     const budget = typeof __MOSS_TEST_BUILD__ === "string" ? Number(process.env.MOSS_TEST_STOP_BUDGET_MS) : Number.NaN;
     const shutdown = async () => { await stopWithin(daemon, Number.isFinite(budget) && budget > 0 ? budget : undefined); bootWasGood(home, serverBin ?? process.execPath); process.exit(0); };
     // A newer app brought its engine in (RL, `release.bring`): stop as for a signal and exit so `moss-core supervise` starts the installed copy.
-    void daemon.releaseRestart.then(async () => { clearTimeout(goodBoot); await stopWithin(daemon); process.exit(UPDATE_RESTART_EXIT_CODE); });
+    void daemon.releaseRestart.then(async () => { clearTimeout(goodBoot); await stopWithin(daemon, undefined, { keepApp: true }); process.exit(UPDATE_RESTART_EXIT_CODE); });
     // A server install (`<home>/install.json` says server, and this is its binary) updates itself.
     const target = bootTarget;
     const marker = bootMarker;

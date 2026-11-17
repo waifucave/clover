@@ -6,6 +6,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeClock } from "../../src/contracts/fakes/clock";
+import { stopWithin } from "../../src/daemon";
 import { engineBinaryPath, placeEngine, locateEngineIn, verifyStagedEngine, type CopyPolicy } from "../../src/update/engine-copy";
 import { UpdateGate } from "../../src/update/gate";
 import { EngineReleaseHome } from "../../src/update/release-home";
@@ -154,6 +155,39 @@ describe("release.bring", () => {
     const later = new ReleaseService({ home: t.home_, engine: { release: "1.1.0", path: "/engine" }, gate: new UpdateGate(), host: { stop: () => {} }, policy: { platform: "linux", profile: "dist", developerId: true, records: () => t.home_.apps() }, homeDir: t.home, emit: () => {}, restart: () => {} });
     const dir2 = t.app("1.2.0");
     expect(await later.bring("code", { release: "1.2.0", bundlePath: dir2 })).toEqual({ state: "waiting" });
+  });
+
+  test("the old-home copy's exit-76 restart is not a release restart: it writes no marker, clears none, and blocks no bring", async () => {
+    const marker = (home: string) => join(home, "bin", ".restarted-into.json");
+    const t = setup();
+    // The home copy's restart (`requestRestart` in `daemon run`): a bounded stop that keeps the app, then exit 76. No release service is involved.
+    const homeCopyStop = async () => { const stops: unknown[] = []; await stopWithin({ stop: (o?: unknown) => { stops.push(o); } } as Parameters<typeof stopWithin>[0], 50, { keepApp: true }); return stops; };
+    expect(await homeCopyStop()).toEqual([{ keepApp: true }]);
+    expect(existsSync(marker(t.home))).toBe(false);
+    // So a bring right after it is taken, and only THAT restart writes the marker.
+    const dir = t.app("1.1.0");
+    await t.service.bring("code", { release: "1.1.0", bundlePath: dir });
+    await until(() => t.calls.includes("restart"));
+    const written = readFileSync(marker(t.home), "utf8");
+    expect(JSON.parse(written)).toEqual({ release: "1.1.0" });
+    // A home-copy restart after it leaves the marker as it was (still on 1.0.0, the loop guard holds) ...
+    await homeCopyStop();
+    expect(readFileSync(marker(t.home), "utf8")).toBe(written);
+    const same = new ReleaseService({ home: t.home_, engine: { release: "1.0.0", path: "/engine" }, gate: new UpdateGate(), host: { stop: () => {} }, policy: { platform: "linux", profile: "dist", developerId: true, records: () => t.home_.apps() }, homeDir: t.home, emit: () => {}, restart: () => {} });
+    await expect(same.bring("code", { release: "1.1.0", bundlePath: dir })).rejects.toMatchObject({ code: "loop" });
+    // ... and once the engine is on 1.1.0 (after both restarts) the next release is free, the home copy's restart having counted for nothing.
+    await homeCopyStop();
+    const on = new ReleaseService({ home: t.home_, engine: { release: "1.1.0", path: "/engine" }, gate: new UpdateGate(), host: { stop: () => {} }, policy: { platform: "linux", profile: "dist", developerId: true, records: () => t.home_.apps() }, homeDir: t.home, emit: () => {}, restart: () => {} });
+    expect(await on.bring("code", { release: "1.2.0", bundlePath: t.app("1.2.0") })).toEqual({ state: "waiting" });
+  });
+
+  test("a release restart and the home copy's restart together stop the daemon once, the first one's options standing", async () => {
+    const stops: unknown[] = [];
+    const daemon = { stop: (o?: unknown) => { stops.push(o); } } as Parameters<typeof stopWithin>[0];
+    const a = stopWithin(daemon, 50, { keepApp: true });
+    const b = stopWithin(daemon, 50);
+    await Promise.all([a, b]);
+    expect(stops).toEqual([{ keepApp: true }]);
   });
 
   test("macOS: the requirement asked is the engine's identifier, the team and Developer ID", async () => {

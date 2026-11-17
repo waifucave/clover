@@ -10,6 +10,7 @@ import { basename, dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BotFace as ProtocolBotFace, TOOL_AVAILABILITIES, type MossHelloResult, type ToolAvailability } from "@waifucave/moss-protocol";
 import { daemonEndpoint, type DaemonClient } from "./client";
+import { bundlePathOf, writeOwnRecord } from "./install-record";
 import { EngineConnection, locateEngine, osLauncher, tokenPath, type ConnectionState } from "./connection";
 import { MossEngine } from "./engine";
 import type { BotEdit } from "../shared/view";
@@ -132,12 +133,15 @@ function stateChanged(s: ConnectionState): void {
   engine.setConnection(s.kind, "reason" in s ? s.reason : s.kind === "behind" ? `MOSS needs release ${s.needs} to talk to this engine.` : undefined);
 }
 
-/** Where this copy of MOSS is (§3.1 "Where the copies are found"): lane RL owns the record's rules; MOSS asks the
- *  engine to keep it (`release.record`), at every start. */
+/** Where this copy of MOSS is (§3.1 "Where the copies are found"): written under the home before the first dial (install-record.ts;
+ *  the engine reads it when this app, ahead of it, asks `release.bring`), and again through the engine once connected
+ *  (`release.record`, lane RL's: the engine checks the program is this connection's own). */
+function ownBundle(): string {
+  return bundlePathOf({ packaged: app.isPackaged, platform: process.platform, resourcesPath: process.resourcesPath, execPath: process.execPath, appPath: app.getAppPath() });
+}
+const carriesEngine = (): boolean => locateEngine({ env: {}, packaged: app.isPackaged, resourcesPath: process.resourcesPath }) !== undefined;
 async function recordInstall(client: DaemonClient): Promise<void> {
-  const bundlePath = app.isPackaged ? (process.platform === "darwin" ? join(process.resourcesPath, "..", "..") : dirname(process.execPath)) : app.getAppPath();
-  const carries = { engine: locateEngine({ env: {}, packaged: app.isPackaged, resourcesPath: process.resourcesPath }) !== undefined, host: false };
-  await client.request("release.record", { program: "moss", bundlePath: normalize(bundlePath), release, carries }, 10_000)
+  await client.request("release.record", { program: "moss", bundlePath: ownBundle(), release, carries: { engine: carriesEngine(), host: false } }, 10_000)
     .then(() => log("release: this copy of MOSS is recorded"))
     .catch((err: unknown) => log(`release: not recorded (${err instanceof Error ? err.message.slice(0, 120) : "refused"})`));
 }
@@ -614,6 +618,8 @@ if (!app.requestSingleInstanceLock()) {
     wireBridge();
     wireSealed();
     const win = await openWindow();
+    // Where this copy is, under the home, before the first dial (a packaged run or a test build; a source run records nothing).
+    if (app.isPackaged || testBuild) writeOwnRecord(home, { bundlePath: ownBundle(), release, carriesEngine: carriesEngine() }, log);
     void connection.start();
     if (testBuild && args.smoke !== undefined) void runSmoke({ win, engine, file: args.smoke, log, logLines, connection });
     else if (testBuild && args.render !== undefined) void runRender({ win, engine, dir: args.render, log, logLines });

@@ -2,12 +2,12 @@
 // the engine is refused and told which release it needs; one ahead is served the release door only; the same release
 // is served as today; an `app` that names no release counts as behind; other roles aren't judged.
 import { afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MOSS_ERR, MOSS_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/moss-protocol";
 import { startIpcServer } from "../../src/ipc/server";
-import { createMossServer } from "../../src/ipc/moss";
+import { createMossServer, MossRpcError } from "../../src/ipc/moss";
 import { MossTokens } from "../../src/auth/moss-tokens";
 import { SessionProcesses } from "../../src/auth/moss-caller";
 import { SessionStore } from "../../src/sessions/store";
@@ -17,7 +17,7 @@ import type { PeerFacts } from "../../src/platform/caller-probe";
 import { resolveEndpoint } from "../../src/platform/transport";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { EngineReleaseHome } from "../../src/update/release-home";
-import { ReleaseService } from "../../src/update/release-service";
+import { ReleaseService, releaseHandlers } from "../../src/update/release-service";
 import { UpdateGate } from "../../src/update/gate";
 
 class Client {
@@ -71,11 +71,11 @@ async function boot() {
   const moss = createMossServer({
     tokens: new MossTokens({ appToken, verifyCli: (t) => authority.verify("harness", t) }), processes: new SessionProcesses(),
     serverVersion: "test", deviceId: "d".repeat(32), appToken, appPeer: "none", probe: () => outside, release: releaseHome,
-    handlers: { "release.status": () => service.status() },
+    handlers: releaseHandlers(service, { error: (code, message) => new MossRpcError(code, message) }),
   });
   const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, mossConnections: moss });
   stop = () => { moss.dispose(); server.stop(); store.close(); };
-  return { socketPath, appToken, legacy, moss };
+  return { socketPath, appToken, legacy, moss, home, releaseHome };
 }
 
 test("the same release is served, and the hello says so", async () => {
@@ -140,5 +140,42 @@ test("an app ahead of the engine is kept out of the surface door: it holds no ho
   const sub = await ahead.request("events.subscribe", { areas: ["surfaces", "approvals", "release"] });
   expect(sub.error).toBeUndefined();
   live.close();
+  ahead.close();
+});
+
+// MOSS (apps/moss, `surface: "moss"`) is judged by the same check as MOSS Code, and its record is the engine's for it.
+test("MOSS's hello is judged like MOSS Code's: behind refused, none counts as behind, same served, ahead the release door only", async () => {
+  const b = await boot();
+  const behind = await Client.connect(b.socketPath);
+  expect((await behind.hello("app", b.appToken, { surface: "moss", release: "1.1.9" })).error).toMatchObject({ code: MOSS_ERR.RELEASE_REFUSED, data: { standing: "behind", needs: "1.2.0" } });
+  const none = await Client.connect(b.socketPath);
+  expect((await none.hello("app", b.appToken, { surface: "moss" })).error).toMatchObject({ code: MOSS_ERR.RELEASE_REFUSED, data: { standing: "behind" } });
+  expect(b.moss.connections()).toEqual([]);
+  const same = await Client.connect(b.socketPath);
+  expect((await same.hello("app", b.appToken, { surface: "moss", release: "1.2.0" })).result).toMatchObject({ surface: "moss", release: { standing: "same" } });
+  same.close();
+  const ahead = await Client.connect(b.socketPath);
+  expect((await ahead.hello("app", b.appToken, { surface: "moss", release: "1.3.0" })).result).toMatchObject({ release: { standing: "ahead" } });
+  expect((await ahead.request("pair.status", {})).error).toMatchObject({ code: MOSS_ERR.ROLE_REFUSED });
+  behind.close(); none.close(); ahead.close();
+});
+
+test("MOSS's record: the engine keeps it for the connection's own program, under apps/moss.json, and an ahead MOSS can only bring from the one it wrote itself", async () => {
+  const b = await boot();
+  const bundle = join(b.home, "MOSS.app");
+  mkdirSync(bundle, { recursive: true });
+  const c = await Client.connect(b.socketPath);
+  await c.hello("app", b.appToken, { surface: "moss", release: "1.2.0" });
+  // Another program's record is refused: the program is the connection's, never the call's.
+  expect((await c.request("release.record", { program: "code", bundlePath: bundle, release: "1.2.0", carries: { engine: true, host: false } })).error).toBeDefined();
+  expect(existsSync(join(b.home, "apps", "code.json"))).toBe(false);
+  expect((await c.request("release.record", { program: "moss", bundlePath: bundle, release: "1.2.0", carries: { engine: true, host: false } })).result).toEqual({ ok: true });
+  expect(JSON.parse(readFileSync(join(b.home, "apps", "moss.json"), "utf8"))).toMatchObject({ program: "moss", release: "1.2.0", bundlePath: bundle });
+  c.close();
+  // Ahead: release.record is not on the door, so a MOSS ahead of the engine must have written its record before it dialled.
+  const ahead = await Client.connect(b.socketPath);
+  await ahead.hello("app", b.appToken, { surface: "moss", release: "1.3.0" });
+  expect((await ahead.request("release.record", { program: "moss", bundlePath: bundle, release: "1.3.0", carries: { engine: true, host: false } })).error).toMatchObject({ code: MOSS_ERR.ROLE_REFUSED });
+  expect((await ahead.request("release.bring", { release: "1.3.0", bundlePath: bundle })).error).toBeDefined();
   ahead.close();
 });

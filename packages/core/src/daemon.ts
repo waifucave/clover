@@ -5116,7 +5116,7 @@ export function stopOnSignals(daemon: RunningDaemon): void {
   const shutdown = async () => { await stopWithin(daemon); process.exit(0); };
   void daemon.pairStopped.then(shutdown);
   // A newer app brought its engine in (RL): stop as for a signal, and exit so `moss-core supervise` starts the installed copy.
-  void daemon.releaseRestart.then(async () => { await stopWithin(daemon); process.exit(UPDATE_RESTART_EXIT_CODE); });
+  void daemon.releaseRestart.then(async () => { await stopWithin(daemon, undefined, { keepApp: true }); process.exit(UPDATE_RESTART_EXIT_CODE); });
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 }
