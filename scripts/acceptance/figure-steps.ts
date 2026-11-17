@@ -33,6 +33,9 @@ export interface FigureCtx {
   /** Closes what is open over the window (a menu, a sheet). */
   escape(): Promise<void>;
   /** A session's turn that calls one tool (`ACCEPTANCE-CALL`, a deferred one loaded first), its cards answered: the result. */
+  /** A new coding session of the person's, on the model the run's key drives (Alpha's), so its later turns reach the run's
+   *  fake model; it is then the newest, the one `toCodingSession` shows. Its id. */
+  startCodingSession?(): Promise<string>;
   callTool?(session: string, tool: string, input: Record<string, unknown>): Promise<{ called: string; result: { text: string; isError: boolean }; cards: string[] }>;
 }
 
@@ -321,6 +324,8 @@ export async function figureRendererStep(f: FigureCtx): Promise<string> {
     installed.push("acceptance-figure-moves");
     await pick(f.rpc, "pack:example-pngtuber#sunny");
     await f.escape();
+    // A coding session whose turns the run's model answers (its tool calls below), shown beside the figure.
+    if (f.startCodingSession !== undefined) await f.startCodingSession();
     const place = await figureBesideCode(f);
     const frame = await pictureFrame(f);
     const happy = await until("the controller's happy cue answered ok", 30_000, async () => {

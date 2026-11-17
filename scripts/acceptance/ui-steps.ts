@@ -1592,6 +1592,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     cdp, rpc,
     // One turn of `session` that calls `tool` (the fake's ACCEPTANCE-CALL, loading a deferred tool first); a tool card it
     // raises is pressed in the window, as the person does; the call's result as the model got it.
+    startCodingSession: async () => {
+      const computer = (await rpc.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? fail("no computer");
+      const model = (await rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.model ?? fail("Alpha has no model");
+      if (ctx.home === undefined) fail("this run gives no home");
+      mkdirSync(join(dirname(ctx.home!), "alpha-code-work"), { recursive: true });
+      const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
+      return (await rpc.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/alpha-code-work`, model, prompt: tag }, 60_000)).session;
+    },
     callTool: async (session, tool, input) => {
       const seen = ctx.requests().length;
       const tag = randomBytes(4).toString("hex");
