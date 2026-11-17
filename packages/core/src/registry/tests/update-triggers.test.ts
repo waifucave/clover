@@ -63,6 +63,8 @@ describe("every OK-card line an update adds or alters asks again", () => {
       // backgroundOkLines: what it runs without being asked.
       ["host code that starts at once (host.start)", withContrib({}, { host: { entry: "host/index.js", start: "each" } }), { "host/index.js": "export {};\n" }],
       ["routine triggers", withContrib({ triggers: [{ type: "luna-ping", title: "Ping", handler: "ping" }] }, { host: { entry: "host/index.js" } }), { "host/index.js": "export const ping = {};\n" }],
+      // A tool that shows a live picture of what it is doing (spec revision 19, item 115): its line is on the card.
+      ["a live picture", { ...withContrib({ mcpServers: { ...BASE.contributes.mcpServers, cu: { type: "host", tools: { Click: "preload" }, picture: true } } }), host: { entry: "host/index.js" } }, { "host/index.js": "export {};\n" }],
       // The card's title and the plugin list name it: the label.
       ["its name", { ...BASE, version: "1.1.0", name: "MOSS Settings" }],
       ["its author", { ...BASE, version: "1.1.0", author: { name: "waifucave" } }],

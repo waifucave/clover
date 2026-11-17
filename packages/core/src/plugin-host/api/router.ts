@@ -16,7 +16,7 @@
 // The handlers get the caller the core bound (R7): the session whose tool call the plugin is serving, or the plugin
 // itself, and never anything the plugin wrote.
 import { apiCallAllowed, API_CALLS, withImplied, type ApiCallInfo, type ApiCallPath } from "@waifucave/moss-plugin-sdk";
-import type { Caller, DataKind, HostProcess } from "@waifucave/moss-protocol";
+import { isKindFamily, kindCapability, type Caller, type DataKind, type HostProcess } from "@waifucave/moss-protocol";
 import { ContractError } from "../../contracts/common";
 import type { ApiRouter } from "../../contracts/plugin-host";
 import { RUNNING_STATES, type PluginRecord, type PluginRegistry } from "../../contracts/plugin-registry";
@@ -147,13 +147,16 @@ function targetOf(path: ApiCallPath, args: readonly unknown[], commandOwner?: (n
   return undefined;
 }
 
-function refusal(path: ApiCallPath, process: HostProcess | "ui", target?: { plugin?: string; host?: string }): string {
+function refusal(path: ApiCallPath, process: HostProcess | "ui", target?: { plugin?: string; host?: string; kind?: DataKind }): string {
   const info: ApiCallInfo = API_CALLS[path];
   if (info.where === "ui" && process !== "ui") return `${path} exists only in components`;
   if (process === "ui" && info.where !== "both" && info.where !== "ui") return `${path} exists only in a plugin's host code`;
   if (info.where === "own" && process !== "own") return `${path} exists only in a process of the plugin's own`;
   if (info.where === "moss" && process !== "moss") return `${path} exists only in the moss plugin host`;
-  const capability = info.capability === "call:*" ? `call:${target?.plugin ?? "<plugin>"}` : info.capability === "network:*" ? `network:${target?.host ?? "<host>"}` : info.capability;
+  // A family by kind names the capability of the kind the call reaches, or both when it named none.
+  const family = info.capability !== undefined && isKindFamily(info.capability) ? info.capability : undefined;
+  const capability = info.capability === "call:*" ? `call:${target?.plugin ?? "<plugin>"}` : info.capability === "network:*" ? `network:${target?.host ?? "<host>"}`
+    : family !== undefined ? (target?.kind !== undefined ? [target.kind] : (["bots", "sessions"] as const)).map((k) => kindCapability(family, k)).join(" or ") : info.capability;
   return `${path} needs the capability ${capability}, which this plugin's OK doesn't list`;
 }
 

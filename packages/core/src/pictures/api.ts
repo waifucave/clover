@@ -74,7 +74,7 @@ export function latestWins(deliver: (frame: Uint8Array) => Promise<void> | void,
   let pending: Uint8Array | undefined;
   let busy = false;
   let stopped = false;
-  let last = 0;
+  let last = -Infinity;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const gap = 1000 / Math.max(1, Math.min(maxFps, PICTURE_MAX_FPS));
   const run = async (): Promise<void> => {

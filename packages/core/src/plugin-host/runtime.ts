@@ -138,6 +138,9 @@ function apiFailure(err: unknown, call: string): unknown {
   return err;
 }
 
+/** The calls that move a stream's bytes: they carry no caller (see `#streamsOf`). */
+const STREAM_DATA_CALLS: ReadonlySet<string> = new Set(["streams.write", "streams.end", "streams.cancel", "streams.ack"]);
+
 export class HostRuntime {
   readonly #o: HostRuntimeOptions;
   readonly #running = new Map<string, Running>();
@@ -389,7 +392,9 @@ export class HostRuntime {
    *  end of its watches, and a watch the daemon ends tells its listener first (`aborted`). */
   #streamsOf(pluginId: string, inside: string | undefined): StreamsTransport {
     const peer = this.#o.peer;
-    const request = (call: string, args: unknown[]) => peer.request("pluginHost.api", { pluginId, callId: `api_${++this.#apiSeq}`, call, args, ...(inside === undefined ? {} : { invocation: inside }) });
+    // A stream's own calls (`write`, `end`, `cancel`, `ack`) act as the plugin and never as a caller (`streamsApi` reads none), so a
+    // stream a tool call opened goes on after that call: a live picture outlives the tool call that opened it.
+    const request = (call: string, args: unknown[]) => peer.request("pluginHost.api", { pluginId, callId: `api_${++this.#apiSeq}`, call, args, ...(inside === undefined || STREAM_DATA_CALLS.has(call) ? {} : { invocation: inside }) });
     return {
       call: (call, args) => request(call, args).then((r) => (r as { result: unknown }).result, (err: unknown) => { throw apiFailure(err, call); }),
       watch: (call, args, at) => {
