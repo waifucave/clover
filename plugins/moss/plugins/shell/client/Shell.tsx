@@ -126,7 +126,13 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const dialog = route?.route === "settings" ? route : undefined;
   const shown = dialog ? under : route;
   // Read once and followed through `conversation.watch`: a session started outside the window (the CLI, another window, a bot's agent) is known at once.
-  const sessions = useLiveList<SessionView>(() => api.conversation?.list?.() ?? Promise.resolve([] as SessionView[]), api.conversation?.watch, (a, b) => a.id === b.id, [api]);
+  // Bots' sessions are followed through `conversation.watch` and code sessions through `sessions.watch` (each by the kind its capability reads).
+  const watchSessions = (listener: (item: SessionView) => void): (() => void) => {
+    const bots = api.conversation?.watch?.(listener);
+    const code = api.sessions?.watch?.(listener);
+    return () => { bots?.(); code?.(); };
+  };
+  const sessions = useLiveList<SessionView>(() => api.conversation?.list?.() ?? Promise.resolve([] as SessionView[]), watchSessions, (a, b) => a.id === b.id, [api]);
   const bot = shown?.route === "bot" ? bots?.find((b) => b.id === shown.params.bot) : undefined;
   const botRef: BotRef | undefined = bot ? { id: bot.id, name: plain(bot.name) } : undefined;
   const session = shown?.route === "agent" ? sessions?.find((s) => s.id === shown.params.session) : undefined;
