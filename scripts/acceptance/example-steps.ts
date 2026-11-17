@@ -36,8 +36,8 @@ interface Card { id: string; kind: string; change?: string; session?: string; pl
 
 export interface ExampleCtx {
   cdp: Cdp;
-  /** lane HS: the DevTools whose documents hold the island: the background host's when the run starts one (the host owns the
-   *  island then), else the window's own (`cdp`). */
+  /** lane HS: the background host's DevTools when the run starts one: the island and the background parts are its documents
+   *  then; without it they are the window's own (`cdp`). */
   islandCdp?: Cdp;
   rpc: MossClient;
   /** The daemon's home (the plugin stores, the plugins' folders). */

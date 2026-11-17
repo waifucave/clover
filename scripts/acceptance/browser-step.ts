@@ -450,8 +450,9 @@ async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixtur
     // A background part holding `browser`: refused.
     await install(F5_IDS.bg, folders.bg);
     const bg = await until("acc-bg's background part answered", 45_000, async () => {
-      for (const d of (await ctx.cdp.documents()).filter((x) => x.url.startsWith(`moss-plugin://${F5_IDS.bg}/`))) {
-        const v = await ctx.cdp.evaluate(d.session, "(() => { const e = document.querySelector('[data-acc-bg]'); return e ? e.getAttribute('data-acc-bg') : ''; })()").catch(() => "");
+      // lane HS: a background part runs in the host while one runs.
+      for (const cdp of ctx.islandCdp !== undefined ? [ctx.islandCdp, ctx.cdp] : [ctx.cdp]) for (const d of (await cdp.documents()).filter((x) => x.url.startsWith(`moss-plugin://${F5_IDS.bg}/`))) {
+        const v = await cdp.evaluate(d.session, "(() => { const e = document.querySelector('[data-acc-bg]'); return e ? e.getAttribute('data-acc-bg') : ''; })()").catch(() => "");
         if (typeof v === "string" && v !== "" && v !== "waiting") return v;
       }
       return undefined;

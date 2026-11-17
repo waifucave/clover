@@ -164,6 +164,12 @@ export const HOST_METHODS = {
     result: Ok,
     doc: "The person's input to one of the host's tabs, forwarded from MOSS Code's browser panel.",
   }),
+  hostFront: defineMethod({
+    name: "host.front", owner: "HS", roles: ["app"], direction: "from-daemon",
+    params: z.object({ front: z.boolean() }),
+    result: Ok,
+    doc: "Whether a MOSS or MOSS Code window is focused and visible now (the router's presence): the host's island hides its strip line then.",
+  }),
   hostSurfaces: defineMethod({
     /** R12's host half: where the host's surfaces are on this computer's screen now (the island, the pill, its own card,
      *  the parts it shows), sent when they move, show or hide. The engine keeps them as this computer's MOSS windows

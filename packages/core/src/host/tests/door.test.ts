@@ -10,6 +10,7 @@ import { hostDoor, viewMayShow, viewTakesInput } from "../door";
 import { EngineHostSupervisor } from "../supervisor";
 import { EngineTabFrames, pagesOwner } from "../tab-frames";
 import { APP_BROWSER_FEATURE } from "../../browser/app-port";
+import { EngineCardRouter } from "../../surfaces/card-router";
 
 const app: AppInstallRecord = { record: 1, program: "code", bundlePath: "/Applications/MOSS Code.app", release: "1.111.1", carries: { engine: true, host: true }, seenAt: 1 };
 
@@ -308,5 +309,46 @@ describe("the views follow lane BT's bot switch (the controller's ruling)", () =
       const opened = t.call(w.c, "browser.view.open", { tab: "bot-tab", viewport: { width: 640, height: 480 } });
       if (opens) await expect(opened).resolves.toMatchObject({ stream: expect.any(String) }); else await expect(opened).rejects.toThrow("shows no bot's tab");
     }
+  });
+});
+
+describe("the host's island hears whether a window is in front (the strip line's rule with a host running)", () => {
+  test("the router's front() follows the focused and visible window, its drop and its report's expiry", () => {
+    const clock = new FakeClock();
+    const router = new EngineCardRouter({ clock, ttlMs: 1_000, hostLive: true });
+    const heard: boolean[] = [];
+    router.watchFront((f) => heard.push(f));
+    const win = (focused: boolean, visible = true) => ({ windows: [{ window: "w1", focused, visible, showing: null }] }) as Parameters<EngineCardRouter["report"]>[1];
+    router.report({ connId: 7, program: "code" }, win(false));
+    expect(router.front()).toBe(false);
+    router.report({ connId: 7, program: "code" }, win(true, false));
+    expect(router.front()).toBe(false);
+    router.report({ connId: 7, program: "code" }, win(true));
+    expect(router.front()).toBe(true);
+    router.dropped(7);
+    expect(router.front()).toBe(false);
+    router.report({ connId: 8, program: "moss" }, win(true));
+    clock.advance(1_001);
+    expect(router.front()).toBe(false);
+    expect(heard).toEqual([true, false, true, false]);
+  });
+
+  test("the ready host hears it on ready (true or false) and on each change; no host, nothing is sent", async () => {
+    let front = true;
+    const t = setup({ windowFront: () => front });
+    const fronts = () => t.asked.filter((a) => a.method === "host.front").map((a) => (a.params as { front: boolean }).front);
+    t.door.frontChanged(false);
+    expect(fronts()).toEqual([]);
+    const h = conn("host");
+    await t.supervisor.boot();
+    await t.call(h.c, "host.ready", ready);
+    await Promise.resolve();
+    expect(fronts()).toEqual([true]);
+    front = false;
+    t.door.frontChanged(false);
+    expect(fronts()).toEqual([true, false]);
+    t.door.closed(h.c);
+    t.door.frontChanged(true);
+    expect(fronts()).toEqual([true, false]);
   });
 });

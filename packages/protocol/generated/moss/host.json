@@ -533,6 +533,40 @@
         "additionalProperties": false
       }
     },
+    "host.front": {
+      "doc": "Whether a MOSS or MOSS Code window is focused and visible now (the router's presence): the host's island hides its strip line then.",
+      "owner": "HS",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "front": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "front"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
     "host.surfaces": {
       "doc": "The background host's surfaces on the screen now, for the product's own-windows list.",
       "owner": "HS",

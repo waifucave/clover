@@ -40,6 +40,8 @@ export interface HostSupervisionInput {
   surfacesAt?(windows: readonly MossWindow[]): void;
   /** The supervisor's state changed: whether a host owns the screen now (the MOSS server's `hostScreen`). */
   screenChanged?(owns: boolean): void;
+  /** Whether a window of the product is focused and visible now (the router's `front()`). */
+  windowFront?(): boolean;
   log?(line: string): void;
 }
 
@@ -83,6 +85,7 @@ export function startHostSupervision(input: HostSupervisionInput): HostSupervisi
     emit: (e) => input.coreEvent(e),
     screenChanged: (s) => input.screenChanged?.(hostOwnsScreen(s.state)),
     surfacesAt: (w) => input.surfacesAt?.(w),
+    windowFront: () => input.windowFront?.() ?? false,
     lockPid: () => hostLockHolder(input.home, input.os),
     midWork: () => midWorkOf(input.busy()),
     tab: (id) => input.tabs().find((t) => t.id === id),

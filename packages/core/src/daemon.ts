@@ -3916,12 +3916,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     screenChanged: (owns) => mossServer?.hostScreen(owns),
     // R12: the host's surfaces are this computer's own windows, which a computer-use plugin must not act on.
     surfacesAt: (windows) => { const r = daemonParts?.node?.registry; if (r) r.setMossWindows(r.self().name, [...windows]); },
+    // Whether a window is in front (the router's presence): the host's island hides its strip line then.
+    windowFront: () => mossServer?.surfaces.router.front() ?? false,
   });
   if (hostSupervision) {
     const hs = hostSupervision;
     Object.assign(mossLaneHandlers, hs.handlers);
     // Every close goes to the host's door (the host's own is its exit); a window that connects makes it look for an app again.
     mossServer.onClosed((conn) => hs.door.closed(conn));
+    mossServer.surfaces.router.watchFront((front) => hs.door.frontChanged(front));
     mossServer.surfaces.door.watch((live) => { if (live.some((l) => l.program === "moss" || l.program === "code")) hs.supervisor.poke(); });
   }
   void hostSupervision?.boot().catch((err: unknown) => console.error(`[host] boot failed: ${(err as Error).message}`));

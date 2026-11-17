@@ -44,6 +44,11 @@ export class EngineCardRouter implements CardRouter {
   readonly #listeners = new Listeners<PlacementChange>();
   #host: boolean;
   #seq = 0;
+  // lane HS: start. Whether a window of the product is focused and visible now: the host's island hides its strip line
+  // then, as a window's own island does (the owner's ruling: the island only when MOSS isn't in front).
+  readonly #fronts = new Listeners<boolean>();
+  #front = false;
+  // lane HS: end
 
   constructor(opts: { clock: Clock; ttlMs?: number; hostLive?: boolean }) {
     this.#clock = opts.clock;
@@ -110,7 +115,23 @@ export class EngineCardRouter implements CardRouter {
       held.place = place;
       this.#listeners.emit({ card: id, place: { ...place }, before: { ...before } });
     }
+    // lane HS: start. After the cards' moves, so a card placed in the window is heard before the island is told the window is in front.
+    const front = this.#focused() !== undefined;
+    if (front !== this.#front) { this.#front = front; this.#fronts.emit(front); }
+    // lane HS: end
   }
+
+  // lane HS: start
+  /** Whether a window of the product is focused and visible now (by the same reports that place the cards). */
+  front(): boolean {
+    return this.#front;
+  }
+
+  /** Hears each change of `front()`. */
+  watchFront(fn: (front: boolean) => void): Unsubscribe {
+    return this.#fronts.add(fn);
+  }
+  // lane HS: end
 
   pending(card: RoutedCard): CardPlacement {
     const known = this.#cards.get(card.id);

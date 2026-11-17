@@ -1067,6 +1067,9 @@ const windowDraws = new Set<string>();
 const enginePlaces = new PlacementBook();
 /** lane HS: whether the router has placed a pending card in a window (the host's island then steps aside, as a window's
  *  island does for its own window in front: the host has no window of its own to watch). */
+/** lane HS: the engine's word (`host.front`) that a MOSS or MOSS Code window is in front: the host's island then draws no
+ *  strip line, as a window's own island doesn't. A card placed on the island still wins (`surfaceEnvironment`). */
+let engineFront = false;
 const windowHoldsCard = (): boolean => [...enginePlaces.entries()].some(([id, p]) => (p.kind === "strip" || p.kind === "conversation") && sealed.isPending(id));
 /** Whether the router has placed any pending card on the island (it then never steps aside, §3.5). */
 const islandHoldsCard = (): boolean => [...enginePlaces.entries()].some(([id, p]) => (p.kind === "island" || p.kind === "elsewhere") && sealed.isPending(id));
@@ -1526,6 +1529,7 @@ function hostDeps(): HostRuntimeDeps {
     client: () => pair?.client,
     leave: () => { hostLock?.release(); exitApp(); },
     tabInput: (id, events) => browserHost().input(id, events),
+    front: (front) => { if (front === engineFront) return; engineFront = front; log(`host: a window ${front ? "is" : "is no longer"} in front`); tellSurfaces(); },
     log,
   };
 }
@@ -2554,7 +2558,7 @@ function surfaceEnvironment(windowId: number): SurfaceEnvironment | undefined {
   if (![...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === windowId)) return undefined;
   const d = screen.getPrimaryDisplay();
   if (screens === null) screens = loadScreens(join(here, "native", "screen.node"), log);
-  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) }, mainFront: (program === "host" ? windowHoldsCard() : mainWindowFront(mainState())) && !islandHoldsCard() } as SurfaceEnvironment; // `mainFront` rides along: the SDK's declaration doesn't name it (the island reads it)
+  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) }, mainFront: (program === "host" ? windowHoldsCard() || engineFront : mainWindowFront(mainState())) && !islandHoldsCard() } as SurfaceEnvironment; // `mainFront` rides along: the SDK's declaration doesn't name it (the island reads it)
 }
 
 /** The displays changed: each surface's part hears its environment as it is now. */

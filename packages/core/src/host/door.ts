@@ -66,6 +66,8 @@ export interface HostDoorDeps {
   quitEverything(): void;
   /** Where the bots are shown now (lane BT's switch); default `moss`, the rule after the bots have left MOSS Code. */
   botsShownIn?(): BotsShownIn;
+  /** Whether a window of the product is focused and visible now (the router's `front()`); the host hears it on ready. */
+  windowFront?(): boolean;
   /** A tab the browser knows, by id (the MOSS Browser's `BrowserService`). */
   tab(id: string): TabView | undefined;
   /** A tab's pictures (`tab-frames.ts`); `accept` takes `host.tab.frame`. */
@@ -82,6 +84,8 @@ export interface HostDoor {
   /** A connection closed (the MOSS server's `onClosed`): the host's is its exit; a window's views and a pages owner's
    *  streams end with it. */
   closed(conn: MossConn): void;
+  /** The router's `front()` changed: the live host hears it (`host.front`). */
+  frontChanged(front: boolean): void;
   dispose(): void;
 }
 
@@ -120,6 +124,10 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
     deps.supervisor.exited();
   };
 
+  const tellFront = (conn: MossConn, front: boolean): void => {
+    deps.ask(conn, HOST_METHODS.hostFront.name, { front }, HOST_STOP_TIMEOUT_MS).catch((e: unknown) => log(`[host] host.front went unanswered: ${(e as Error).message}`));
+  };
+
   const stopHost = (reason: HostExitReason): boolean => {
     const conn = host;
     if (conn === undefined) return false;
@@ -138,6 +146,9 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
       host = conn;
       // The pages' owner may have changed (a host took them from the window): open views' streams move to it.
       queueMicrotask(() => deps.frames.reown());
+      // Whether a window is in front now, on every ready (a host that comes up under a window in front hides its strip line at
+      // once; one that reconnected forgets what it heard on its last connection).
+      if (deps.windowFront !== undefined) queueMicrotask(() => { if (host?.connId === conn.connId) tellFront(conn, deps.windowFront!()); });
       deps.supervisor.ready({ pid: deps.lockPid() ?? 0, release: p.release, bundlePath: p.bundlePath, safeMode: p.safeMode });
       log(`[host] ready: ${p.parts.surfaces} surfaces, ${p.parts.background} background parts, ${p.parts.tabs.length} tabs${p.safeMode ? ", in safe mode" : ""}`);
       return { ok: true };
@@ -229,6 +240,9 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
       deps.frames.ownerGone(conn.connId);
       hostClosed(conn);
       deps.frames.reown();
+    },
+    frontChanged(front) {
+      if (host !== undefined) tellFront(host, front);
     },
     dispose() {
       unwatch();

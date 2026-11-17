@@ -1,6 +1,6 @@
 // The background host's side of its connection to the engine (spec revision 19, §3.1, §5.8, items 98, 112 and 116;
 // lane HS): it says it is up (`host.ready`) on every connection, answers the engine's requests (`host.stop`,
-// `host.adopt`, `host.safeMode`, `host.tab.input`), and tells the engine before it leaves on purpose (`host.exiting`).
+// `host.adopt`, `host.safeMode`, `host.tab.input`, `host.front`), and tells the engine before it leaves on purpose (`host.exiting`).
 // Its menu's "stop everything" asks the engine (`host.menu`), which says what is mid-work before it acts. The main
 // process gives the deps; nothing here imports Electron (test/host-runtime.test.ts).
 import { HOST_METHODS, type HostExitReason, type HostParts, type MidWork, type TabInputEvent } from "@waifucave/moss-protocol";
@@ -20,6 +20,8 @@ export interface HostRuntimeDeps {
   /** Leaves the process (its windows, its tabs, its lock), with no question asked. */
   leave(): void;
   tabInput(id: string, events: readonly TabInputEvent[]): void;
+  /** The engine says whether a MOSS or MOSS Code window is in front now (`host.front`). */
+  front?(front: boolean): void;
   log(line: string): void;
   /** Runs `fn` after `ms` (default: a timer). */
   after?(ms: number, fn: () => void): void;
@@ -61,6 +63,11 @@ export function installHostHandlers(pair: HandlerHost, d: HostRuntimeDeps): void
   pair.handle(HOST_METHODS.hostTabInput.name, (raw) => {
     const p = HOST_METHODS.hostTabInput.params.parse(raw);
     d.tabInput(p.id, p.events);
+    return { ok: true };
+  });
+  pair.handle(HOST_METHODS.hostFront.name, (raw) => {
+    const p = HOST_METHODS.hostFront.params.parse(raw);
+    d.front?.(p.front);
     return { ok: true };
   });
 }

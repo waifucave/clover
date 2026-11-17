@@ -232,6 +232,7 @@
       "app.window.open",
       "app.window.render",
       "host.adopt",
+      "host.front",
       "host.safeMode",
       "host.stop",
       "host.tab.input"

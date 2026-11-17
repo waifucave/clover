@@ -74,3 +74,14 @@ test("the person's input as Electron's: mouse, wheel, keys with known modifiers 
   expect(electronInput({ kind: "key", type: "char", key: "a" })).toEqual({ type: "char", keyCode: "a" });
   expect(electronInput({ kind: "ime", text: "日本" })).toEqual({ type: "insertText", text: "日本" });
 });
+
+test("host.front: the engine's word that a window is in front reaches the host's island", () => {
+  const heard: boolean[] = [];
+  const t = deps({ front: (f) => { heard.push(f); } });
+  const handlers = new Map<string, (p: unknown) => unknown>();
+  installHostHandlers({ handle: (m, fn) => handlers.set(m, fn) }, t.d);
+  expect(handlers.get("host.front")!({ front: true })).toEqual({ ok: true });
+  handlers.get("host.front")!({ front: false });
+  expect(heard).toEqual([true, false]);
+  expect(() => handlers.get("host.front")!({ front: "yes" })).toThrow();
+});
