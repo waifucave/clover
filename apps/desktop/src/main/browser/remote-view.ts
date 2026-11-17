@@ -24,6 +24,9 @@ export interface RemoteViewport {
   onInput(fn: (ev: ViewportInput, focused: boolean) => void): void;
   /** The real input the main process saw on the view's own contents. */
   real: RealInput;
+  /** A test-marked build's press seam (`MOSS_TEST_VIEWPORT_PRESS_FILE`): the main process sends a click into the view's
+   *  own contents, as the OS does for the person's (its `before-mouse-event` sees it). Absent in a real build. */
+  press?(x: number, y: number): void;
   destroy(): void;
 }
 
@@ -54,12 +57,14 @@ export class RemoteViews {
   }
 
   setTarget(view: string, target: RemoteTarget | undefined): void {
+    if ((target === undefined) !== !this.#targets.has(view)) this.deps.log?.(`browser: view ${view} ${target === undefined ? "has no place in the window now" : "has a place in the window"}`);
     if (target === undefined) this.#targets.delete(view); else this.#targets.set(view, target);
     this.#sync(view);
   }
 
   tabChanged(tab: TabView): void {
     const before = this.#tabs.get(tab.id)?.view;
+    if (tab.view !== before && tab.view !== undefined) this.deps.log?.(`browser: the host's tab ${tab.id} is placed in view ${tab.view}`);
     this.#tabs.set(tab.id, tab);
     for (const view of new Set([before, tab.view].filter((v): v is string => v !== undefined))) this.#sync(view);
   }
@@ -75,6 +80,13 @@ export class RemoteViews {
     const o = typeof p.stream === "string" ? this.#byStream.get(p.stream) : undefined;
     if (o === undefined || o.closed || typeof p.data !== "string" || typeof p.format !== "string") return;
     o.vp.draw({ format: p.format, width: Number(p.width) || 0, height: Number(p.height) || 0, data: p.data });
+  }
+
+  /** The test seam's click, in every view showing a tab (a test-marked build only; see `RemoteViewport.press`). */
+  testPress(x: number, y: number): number {
+    let n = 0;
+    for (const o of this.#open.values()) if (!o.closed && o.vp.press !== undefined) { o.vp.press(x, y); n++; }
+    return n;
   }
 
   /** The views showing a tab now (diagnostics and tests). */

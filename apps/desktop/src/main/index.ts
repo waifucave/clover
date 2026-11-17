@@ -8,7 +8,7 @@
 // A headless run (`--moss-headless`, the smoke run, the tests) never shows a window, a Dock icon or a tray icon and
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
-import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, watchFile, writeFileSync } from "node:fs";
 import { homedir, hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
@@ -61,6 +61,7 @@ import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEveryt
 import { fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
 import { overlayStandsDown, surfacesReport } from "./host-stacking";
 import { RemoteViews } from "./browser/remote-view";
+import { streamCommandOf } from "./browser/stream-command";
 import { electronRemoteViewport } from "./browser/remote-viewport";
 import { TabFrameSender } from "./browser/frame-sender";
 import { SURFACE_MOUNTS, type HostState, type MountList } from "@waifucave/moss-protocol";
@@ -833,6 +834,7 @@ async function ready(): Promise<void> {
     startProcessDiag();
   }
   startFrontSeam();
+  startViewportPressSeam();
   startWindowSeam();
   syncAppearance();
   nativeTheme.on("updated", syncAppearance);
@@ -1361,6 +1363,9 @@ function makePair(): Pair {
     return { tab: await browserHost().open({ id: a.id, owner: a.owner, ...(a.url !== undefined ? { url: a.url } : {}), place: a.place }) };
   });
   p.handle("app.tab.command", async (params) => {
+    // lane HS: the engine's stream commands (a tab's pictures for the windows and the live picture), checked here.
+    const stream = streamCommandOf(params);
+    if (stream !== undefined) return { result: await browserHost().command(stream.id, stream.command) };
     const a = BROWSER_METHODS.appTabCommand.params.parse(params);
     return { result: await browserHost().command(a.id, a.command) };
   });
@@ -1558,7 +1563,7 @@ async function hostStopEverything(): Promise<void> {
 async function mounted(client: DaemonClient, hello: { mount?: MountList }): Promise<void> {
   helloMount = hello.mount;
   if (program === "code") {
-    await client.request("events.subscribe", { areas: ["host", "browser"] }, 5_000).catch(() => client.request("events.subscribe", { areas: ["host"] }, 5_000)).catch(() => undefined);
+    await client.request("events.subscribe", { areas: ["host", "browser"] }, 5_000).catch((e: unknown) => { log(`browser: the tab events refused (${why(e)}); the host's state only`); return client.request("events.subscribe", { areas: ["host"] }, 5_000); }).catch(() => undefined);
     // The state now (S2): a change between the hello and the subscription is not missed. An older engine has no read.
     hostStatusHeard(await client.request("host.status", {}, 5_000).catch(() => undefined));
   }
@@ -1572,7 +1577,7 @@ function remoteViews(): RemoteViews {
   remoteViewsNow ??= new RemoteViews({
     request: (method, params) => (pair?.client === undefined ? Promise.reject(new Error("no daemon")) : pair.client.request(method, params, 10_000)),
     makeViewport: () => {
-      return electronRemoteViewport({ preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) });
+      return electronRemoteViewport({ preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) }, { log, testPress: viewportPressSeam });
     },
     log,
   });
@@ -2102,6 +2107,24 @@ interface Surface {
 /** A test-marked headless build's stand-in for the window being in front (its windows are never the focused ones): the file named
  *  by MOSS_TEST_MAIN_FRONT_FILE holds `front` or `back`, read every 100 ms. Compiled out of a release (the marker gate's TEST_ONLY_APP_STRINGS checks it). */
 let frontSeam: boolean | undefined;
+/** lane HS: a test-marked headless build's press into the panel's viewport (the run's DevTools can't reach that view: the
+ *  browser's contents are closed to debugging): the file named by MOSS_TEST_VIEWPORT_PRESS_FILE holds `x,y`, read every
+ *  100 ms, pressed once and removed. Compiled out of a release (TEST_ONLY_APP_STRINGS). */
+let viewportPressSeam = false;
+function startViewportPressSeam(): void {
+  if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && process.env.MOSS_TEST_VIEWPORT_PRESS_FILE) {
+    const file = process.env.MOSS_TEST_VIEWPORT_PRESS_FILE;
+    viewportPressSeam = true;
+    setInterval(() => {
+      let word = "";
+      try { word = readFileSync(file, "utf8").trim(); rmSync(file, { force: true }); } catch { return; }
+      const [x, y] = word.split(",").map(Number);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      log(`browser: the test seam pressed the panel at ${x},${y} (${remoteViewsNow?.testPress(x!, y!) ?? 0} view(s))`);
+    }, 100).unref?.();
+  }
+}
+
 function startFrontSeam(): void {
   // The marks first and the whole seam inside them (as MOSS_TEST_APPEARANCE_FILE's is): a release folds the test to
   // false and drops the block, the variable's name with it. An early return on `!headless || …` left the name in.

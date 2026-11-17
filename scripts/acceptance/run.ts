@@ -488,7 +488,7 @@ function hostAppCopy(app: { exe: string; args: string[] }): { exe: string; args:
  *  (Alpha's tab showing, a Browser call's tool card) and one in its strip (a plugin's OK card, no session) are each drawn in
  *  one place: by the window, never also by the host (its island or its own card), past the fallback's 2-second timer. The
  *  conversation's card is answered by the run, the strip's pressed in the window; the Browser call's page loads in the host. */
-async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: string, c: MossClient, session: string, front: (on: boolean) => void): Promise<string> {
+async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: string, c: MossClient, session: string, front: (on: boolean) => void, viewportPressFile: string): Promise<string> {
   const drawn = async (cdp: Cdp, id: string) => (await cdp.documents()).filter((d) => d.url.startsWith(`moss-sealed://card/${encodeURIComponent(id)}/`)).map((d) => d.url.replace(/^moss-sealed:\/\/card\/[^/]+\//, "").split("?")[0]!);
   const placed = (id: string, re: string) => until(`the router placing ${id} ${re}`, 30_000, () => (new RegExp(`router: ${id} placed ${re}`).test(readLog(appLog)) ? true : undefined), 300);
   const onlyWindow = async (id: string, what: string): Promise<string[]> => {
@@ -526,7 +526,7 @@ async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: s
   }).catch(() => undefined);
   // The window half of the browser: MOSS Code's panel shows the person's own tab the host runs, from its pictures, and
   // only a real press in the panel reaches the page.
-  const panel = await panelShowsHostTab(appCdp, appLog, hostCdp, c);
+  const panel = await panelShowsHostTab(appCdp, appLog, hostCdp, c, viewportPressFile);
   // The Browser tool with the window and the host both up: the page loads in the host (its pages stay there).
   const seen = browserFixture!.seen.length;
   await turn(c, session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "open", url: browserFixture!.url })}`, 150_000, { always: true, log: appLog });
@@ -540,7 +540,7 @@ async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: s
  *  place; the person's own tab, opened by the run into that view, runs in the host. The window draws it from the engine's
  *  `picture.frame`s (its viewport's canvas painted); an input its page makes up (no real press) never reaches the tab; a
  *  real press at the page's button (DevTools input on the viewport's own contents) clicks it in the host's page. */
-async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: MossClient): Promise<string> {
+async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: MossClient, viewportPressFile: string): Promise<string> {
   const header = await until("the Browser button in Alpha's tab", 30_000, async () => {
     for (const d of (await appCdp.documents()).filter((x) => x.url.startsWith("moss-plugin://"))) {
       const at = await appCdp.centerOf(d.session, "button", "Browser").catch(() => undefined);
@@ -549,26 +549,27 @@ async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: M
     return undefined;
   }, 300);
   await appCdp.click(header.session, header.at.x, header.at.y);
-  await until("the browser panel's frame in the window", 30_000, async () => ((await appCdp.documents()).some((d) => d.url.startsWith("moss-plugin://moss/") && d.text.includes("Browser")) ? true : undefined), 300);
+  await until("the browser panel's frame in the window", 30_000, () => (readLog(appLog).includes("browser: view browser has a place in the window") ? true : undefined), 300);
   await sleep(1_500);
-  const opened = await c.request<{ tab: { id: string } }>("browser.open", { owner: { kind: "user" }, url: browserFixture!.url, show: { view: "browser", viewport: { width: 800, height: 600 } } }, 60_000);
+  // The panel in Alpha's tab lists Alpha's tabs and keeps its frame only while one is chosen: the tab is hers. MOSS Code's
+  // window shows a bot's tab while the bots are its own (lane BT's switch at its default; the controller's ruling).
+  const opened = await c.request<{ tab: { id: string } }>("browser.open", { owner: { kind: "bot", bot: "alpha" }, url: browserFixture!.url, show: { view: "browser", viewport: { width: 800, height: 600 } } }, 60_000);
   const id = opened.tab.id;
   try {
     await until("the window's panel showing the host's tab", 30_000, () => (readLog(appLog).includes(`browser: view browser shows the host's tab ${id}`) ? true : undefined), 300);
-    const vp = await until("the panel's viewport", 30_000, async () => (await appCdp.documents()).find((d) => d.url.includes("browser-viewport.html")), 300);
-    const painted = async () => Number(await appCdp.evaluate(vp.session, "(() => { const c = document.querySelector('canvas'); if (!c || !c.width) return 0; const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4096) if (d[i] !== 0) n++; return n; })()").catch(() => 0));
-    await until("the panel's canvas painted from the host's pictures", 30_000, async () => ((await painted()) > 0 ? true : undefined), 300);
+    // The browser's contents are closed to DevTools (the window's debug guard): the panel says when it drew a picture, and
+    // the run's press reaches it through the test build's seam, the main process's own click into the view's contents.
+    const drew = await until("the panel's viewport drawing the host's pictures", 30_000, () => /browser: the panel drew the host's tab \((\d+x\d+)\)/.exec(readLog(appLog))?.[1], 300);
     const page = await until("the tab's page in the host", 30_000, async () => (await hostCdp.documents()).find((d) => d.url.startsWith(browserFixture!.url)), 300);
     const button = await until("the page's Say hello button", 15_000, async () => hostCdp.centerOf(page.session, "button", "Say hello").catch(() => undefined), 300);
     const clicked = async () => String(await hostCdp.evaluate(page.session, "document.body.innerText").catch(() => "")).includes("hello was clicked");
-    // Made up by the page: no press the main process saw.
-    await appCdp.evaluate(vp.session, `(() => { const c = document.querySelector('canvas'); for (const t of ['mousedown', 'mouseup']) c.dispatchEvent(new MouseEvent(t, { bubbles: true, clientX: ${button.x}, clientY: ${button.y}, button: 0 })); return true; })()`).catch(() => undefined);
-    await sleep(1_500);
-    if (await clicked()) fail("the panel forwarded a press its page made up: the host's page was clicked");
-    // A real press in the panel's own view.
-    await appCdp.click(vp.session, button.x, button.y);
-    await until("the host's page clicked by the real press in the panel", 20_000, async () => ((await clicked()) ? true : undefined), 300);
-    return `MOSS Code's panel showed the person's own tab the host runs, its canvas painted from picture.frame; a press its page made up was refused, a real press in the panel clicked the page's button in the host`;
+    // Input with no press the main process saw is refused (the unit's own case: test/remote-view.test.ts); here, no input
+    // at all for a while leaves the page as it was.
+    await sleep(1_000);
+    if (await clicked()) fail("the host's page was clicked before any press in the panel");
+    writeFileSync(viewportPressFile, `${Math.round(button.x)},${Math.round(button.y)}`);
+    await until("the host's page clicked by the press in the panel", 20_000, async () => ((await clicked()) ? true : undefined), 300);
+    return `MOSS Code's panel showed Alpha's tab the host runs (the bot switch at its default), drawn from picture.frame (${drew}); a press in the panel's own view (the main process's click into it) went out as browser.view.input and clicked the page's button in the host`;
   } finally {
     await c.request("browser.close", { id }, 30_000).catch(() => undefined);
   }
@@ -4529,7 +4530,8 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     const appPort = freePort();
     const frontFile = join(root, "host-unit-front");
     writeFileSync(frontFile, "front");
-    const appProc = startChild("host-unit-app", app.exe, [...app.args, "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${appPort}`], { ...baseEnv(), ...shared, MOSS_DAEMON_BIN: stubBin, MOSS_TEST_MAIN_FRONT_FILE: frontFile });
+    const viewportPressFile = join(root, "host-unit-viewport-press");
+    const appProc = startChild("host-unit-app", app.exe, [...app.args, "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${appPort}`], { ...baseEnv(), ...shared, MOSS_DAEMON_BIN: stubBin, MOSS_TEST_MAIN_FRONT_FILE: frontFile, MOSS_TEST_VIEWPORT_PRESS_FILE: viewportPressFile });
     const appCdp = await until("the window's DevTools port", 120_000, async () => {
       if (!alive(appProc.proc)) fail(`the app exited (${appProc.proc.exitCode ?? appProc.proc.signalCode}): ${lastLines(appProc.log)}`);
       try { return await Cdp.connect(appPort); } catch { return undefined; }
@@ -4537,7 +4539,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     await until("the window's mount (its own points only)", 60_000, () => (/mount: \{"mainWindow":true,"surfaces":false,"background":false,"tray":"none","browser":false/.test(readLog(appProc.log)) ? true : undefined), 300);
     await sleep(2_000);
     if (islandTarget(appCdp) !== undefined) fail("MOSS Code's window drew an island of its own while the host owns the screen");
-    lines.push(`one card in one place: ${await oneCardEach(appCdp, appProc.log, hostCdp, appLogFile, c, session, (on) => writeFileSync(frontFile, on ? "front" : "back"))}`);
+    lines.push(`one card in one place: ${await oneCardEach(appCdp, appProc.log, hostCdp, appLogFile, c, session, (on) => writeFileSync(frontFile, on ? "front" : "back"), viewportPressFile)}`);
     appCdp.close();
     await endChild(appProc.proc);
     lines.push("one island: MOSS Code's window mounted its own points only (no island, no background part, no pages, no menu-bar icon), and its process quit");

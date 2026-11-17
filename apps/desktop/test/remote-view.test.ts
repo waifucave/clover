@@ -88,3 +88,10 @@ test("the viewport's events as the protocol's: mouse, wheel, keys and text; the 
   expect(tabInputOf({ kind: "paste" })).toBeUndefined();
   expect(tabInputOf({ kind: "edit", cmd: "copy" })).toBeUndefined();
 });
+
+test("the engine's stream commands are taken field by field; anything else is the protocol schema's to judge", async () => {
+  const { streamCommandOf } = await import("../src/main/browser/stream-command");
+  expect(streamCommandOf({ id: "t1", command: { kind: "stream", stream: "frames-1", on: true, codecs: ["jpeg"] } })).toEqual({ id: "t1", command: { kind: "stream", stream: "frames-1", on: true, codecs: ["jpeg"] } });
+  expect(streamCommandOf({ id: "t1", command: { kind: "stream-control", stream: "s", keyframe: true } })).toEqual({ id: "t1", command: { kind: "stream-control", stream: "s", keyframe: true } });
+  for (const bad of [{ id: "t1", command: { kind: "stream", stream: "s", on: "yes" } }, { id: "t1", command: { kind: "stream", stream: "s", on: true, codecs: ["gif"] } }, { id: "", command: { kind: "stream", stream: "s", on: false } }, { id: "t1", command: { kind: "navigate", url: "x" } }]) expect(streamCommandOf(bad)).toBeUndefined();
+});

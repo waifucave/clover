@@ -7,7 +7,7 @@ import type { RemoteTarget, RemoteViewport } from "./remote-view";
 import { BROWSER_WEBRTC_POLICY, prepareViewportSession, VIEWPORT_PARTITION } from "./session";
 import { VIEWPORT_CHANNEL, type ViewportAssets, type ViewportInput } from "./viewport";
 
-export function electronRemoteViewport(assets: ViewportAssets): RemoteViewport {
+export function electronRemoteViewport(assets: ViewportAssets, o: { log?: (line: string) => void; testPress?: boolean } = {}): RemoteViewport {
   prepareViewportSession(assets.html);
   const view = new WebContentsView({
     webPreferences: { partition: VIEWPORT_PARTITION, preload: assets.preload, sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false, backgroundThrottling: false, spellcheck: false },
@@ -52,10 +52,19 @@ export function electronRemoteViewport(assets: ViewportAssets): RemoteViewport {
         const image = nativeImage.createFromBuffer(Buffer.from(frame.data, "base64"));
         if (image.isEmpty()) return;
         const { width, height } = image.getSize();
+        if (seq === 0) o.log?.(`browser: the panel drew the host's tab (${width}x${height})`);
         wc.send(`${VIEWPORT_CHANNEL}:frame`, { seq: ++seq, fullW: width, fullH: height, x: 0, y: 0, w: width, h: height }, image.toBitmap());
       });
     },
     onInput(fn) { listener = fn; },
+    ...(o.testPress === true ? {
+      press(x: number, y: number) {
+        if (wc.isDestroyed()) return;
+        wc.focus();
+        wc.sendInputEvent({ type: "mouseDown", x: Math.round(x), y: Math.round(y), button: "left", clickCount: 1 });
+        wc.sendInputEvent({ type: "mouseUp", x: Math.round(x), y: Math.round(y), button: "left", clickCount: 1 });
+      },
+    } : {}),
     destroy() {
       ipcMain.removeListener(`${VIEWPORT_CHANNEL}:input`, onInput);
       if (parent !== undefined && !parent.isDestroyed()) parent.contentView.removeChildView(view);
