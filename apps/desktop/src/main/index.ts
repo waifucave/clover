@@ -29,7 +29,7 @@ import { testBuildAppRefusal } from "./test-build";
 import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
-import { cliLauncher, installEngineCopy, locateDaemonBinary } from "./pair/login";
+import { adoptHomeEngine, cliLauncher, installEngineCopy, locateDaemonBinary } from "./pair/login";
 import { appRelease, bundlePathOf, createRelease, writeOwnRecord } from "./release";
 import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
@@ -769,9 +769,13 @@ async function ready(): Promise<void> {
   if (app.isPackaged || typeof __MOSS_TEST_BUILD__ === "string") writeOwnRecord(home, { program: "code", bundlePath: ownBundle, release: ownRelease }, log);
   const bundledEngine = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
   if (bundledEngine !== undefined && app.isPackaged && typeof __MOSS_TEST_BUILD__ !== "string") {
-    const placed = await installEngineCopy({ binary: bundledEngine, home, profile: identity.profile, bundlePath: ownBundle });
+    const placed = await adoptHomeEngine(identity.profile, {
+      install: () => installEngineCopy({ binary: bundledEngine, home, profile: identity.profile, bundlePath: ownBundle }),
+      launcherFor: (binary) => cliLauncher({ binary, home, profile: identity.profile }),
+      log,
+    });
     if (placed === undefined) log("release: the engine wasn't put under the home; this app starts its own copy");
-    else { installedEngine = placed.binary; log(`release: the engine starts from the home's copy (release ${placed.release}${placed.installed ? ", this app's was newer" : ""})`); }
+    else { installedEngine = placed.binary; log(`release: the engine starts from the home's copy (release ${placed.release}${placed.reregistered ? ", the login item re-registered from it" : ""})`); }
   }
   pair = makePair();
   setMenu();

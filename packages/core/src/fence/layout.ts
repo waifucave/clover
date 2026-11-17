@@ -256,17 +256,28 @@ function loginStartUnsafeFilesOwn(home: string, os: Os): string[] {
  *  covers them, so they never hold anything; inside the default-deny view nothing is created for them. */
 export function selfUpdateDirs(mossHome: string, os: Os): string[] {
   if (os === "windows") return [];
-  return [pathFor(os, mossHome).join(mossHome, "update")];
+  const p = pathFor(os, mossHome);
+  // The engine install's bundled tree and its swap copies (`placeEngine`, update/engine-copy.ts): a runner that planted a
+  // plugin file there would run it as the engine's own.
+  return [p.join(mossHome, "update"), p.join(mossHome, "bin", "plugins"), p.join(mossHome, "bin", "plugins.new"), p.join(mossHome, "bin", "plugins.old")];
 }
 
-/** Lane M's self-update files under the MOSS home: the `bin/` daemon binary, its `.new`/`.old` swap copies,
- *  and the install record. Never owned by any caller, read-only. None is ever created by the sandbox (an install
+/** Lane M's self-update files under the MOSS home: the engine at `bin/daemon/moss-core` (and the earlier `bin/moss-core`),
+ *  its `.new`/`.old` swap copies, the marker and lock the engine install writes, and the install record. Never owned by any caller, read-only. None is ever created by the sandbox (an install
  *  record is the installer's to write); the Linux supervisor refuses plants, with the post-command belt behind
  *  it. */
 export function selfUpdateFiles(mossHome: string, os: Os): string[] {
   if (os === "windows") return [];
   const p = pathFor(os, mossHome);
   return [
+    // What `placeEngine` and the install lock write (update/engine-copy.ts, release-home.ts): the engine at its one place,
+    // its swap copies, the marker, the lock, and the daemon folder beside the engine (plain Bun for plugins).
+    p.join(mossHome, "bin", "daemon", "moss-core"),
+    p.join(mossHome, "bin", "daemon", "moss-core.new"),
+    p.join(mossHome, "bin", "daemon", "moss-core.old"),
+    p.join(mossHome, "bin", "engine.json"),
+    p.join(mossHome, "bin", ".install.lock"),
+    // The earlier layout's files (`<home>/bin/moss-core`), which a dev or test server still runs and a migration copies from.
     p.join(mossHome, "bin", "moss-core"),
     p.join(mossHome, "bin", "moss-core.new"),
     p.join(mossHome, "bin", "moss-core.old"),

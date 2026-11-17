@@ -8,6 +8,7 @@ import { join } from "node:path";
 import type { MossHelloParams } from "@waifucave/moss-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
 import { Pair } from "../src/main/pair/pair";
+import { adoptHomeEngine } from "../src/main/pair/login";
 import { appHello, readAppToken } from "../src/main/pair/start";
 import { checkAndDownload, isOfflineError } from "../src/main/updater";
 import { appRelease, behindFrom, createRelease, testUpdateOutcome, BringWatch, bundlePathOf, ReleaseCatchUp, recordPath, writeOwnRecord, type ReleaseNotice, type UpdateOutcome } from "../src/main/release";
@@ -199,5 +200,40 @@ describe("a test build's stand-ins", () => {
     await new Promise((res) => setTimeout(res, 5));
     expect(installs).toBe(1);
     expect(r.notice()).toEqual({ kind: "updating", phase: "installing", needs: "2.0.0" });
+  });
+});
+
+describe("the login item points at the home's engine", () => {
+  const fakeLauncher = (registered: boolean) => {
+    const l = { enabled: 0, binaries: [] as string[], async status() { return { registered }; }, async enable() { l.enabled++; return { ok: true, code: 0, out: "" }; }, async start() { return { ok: true, code: 0, out: "" }; } };
+    return l;
+  };
+  const placed = (h: string) => async () => ({ installed: true, binary: join(h, "bin", "daemon", "moss-core"), release: "2.0.0" });
+
+  test("an item already registered is registered again from the home's copy, run from that binary", async () => {
+    const h = home();
+    const l = fakeLauncher(true);
+    const asked: string[] = [];
+    const r = await adoptHomeEngine("dist", { install: placed(h), launcherFor: (b) => { asked.push(b); return l; }, log: () => {} });
+    expect(r).toEqual({ binary: join(h, "bin", "daemon", "moss-core"), release: "2.0.0", reregistered: true });
+    expect(asked).toEqual([join(h, "bin", "daemon", "moss-core")]);
+    expect(l.enabled).toBe(1);
+  });
+  test("no item registered: nothing is registered here (the pair asks, through the same copy); the dev profile's item is left alone; no copy: nothing", async () => {
+    const h = home();
+    const none = fakeLauncher(false);
+    expect((await adoptHomeEngine("dist", { install: placed(h), launcherFor: () => none, log: () => {} }))?.reregistered).toBe(false);
+    expect(none.enabled).toBe(0);
+    const dev = fakeLauncher(true);
+    expect((await adoptHomeEngine("dev", { install: placed(h), launcherFor: () => dev, log: () => {} }))?.reregistered).toBe(false);
+    expect(dev.enabled).toBe(0);
+    expect(await adoptHomeEngine("dist", { install: async () => undefined, launcherFor: () => dev, log: () => {} })).toBeUndefined();
+  });
+  test("a launcher that throws leaves the app on the home's copy and says so", async () => {
+    const h = home();
+    const log: string[] = [];
+    const r = await adoptHomeEngine("dist", { install: placed(h), launcherFor: () => ({ status: async () => { throw new Error("boom"); }, enable: async () => ({ ok: false, code: 1, out: "" }), start: async () => ({ ok: false, code: 1, out: "" }) }), log: (l) => log.push(l) });
+    expect(r?.reregistered).toBe(false);
+    expect(log[0]).toContain("not re-registered");
   });
 });

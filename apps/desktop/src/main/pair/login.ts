@@ -139,5 +139,40 @@ export function parseEngineInstall(out: string): { installed: boolean; binary: s
  */
 export async function installEngineCopy(cfg: LauncherConfig & { bundlePath: string; build?: string }): Promise<{ installed: boolean; binary: string; release: string } | undefined> {
   const r = await run(cfg, ["engine", "install", "--app", cfg.bundlePath, ...(cfg.build !== undefined ? ["--build", cfg.build] : [])]);
-  return r.ok ? parseEngineInstall(r.out) : undefined;
+  const placed = r.ok ? parseEngineInstall(r.out) : undefined;
+  // An engine already running from an app's own copy defers the install (nothing is placed under it): no home copy yet, none to start from.
+  return placed !== undefined && existsSync(placed.binary) ? placed : undefined;
+}
+
+export interface AdoptDeps {
+  /** `moss-core engine install` (default: `installEngineCopy`). */
+  install(): Promise<{ installed: boolean; binary: string; release: string } | undefined>;
+  /** A launcher that runs the login commands from `binary` (default: `cliLauncher`). */
+  launcherFor(binary: string): DaemonLauncher;
+  log(line: string): void;
+}
+
+/**
+ * The login item points at the engine installed under the home, never into an app's bundle (spec §3.1: removing one app must not
+ * break the login start of the other). After `engine install` has placed, or found, the home's engine, a login item that is
+ * ALREADY registered is registered again from that copy (`autostart enable`, idempotent, run from `<home>/bin/daemon/moss-core`);
+ * one that isn't registered is left to the pair, which asks for it (through the same copy) when no engine answers. The dev
+ * profile's own item is left alone. Never throws; returns the installed engine's binary, or undefined when none was placed.
+ */
+export async function adoptHomeEngine(profile: "dist" | "dev", d: AdoptDeps): Promise<{ binary: string; release: string; reregistered: boolean } | undefined> {
+  const placed = await d.install();
+  if (placed === undefined) return undefined;
+  if (profile === "dev") return { binary: placed.binary, release: placed.release, reregistered: false };
+  let reregistered = false;
+  try {
+    const l = d.launcherFor(placed.binary);
+    if ((await l.status())?.registered === true) {
+      const r = await l.enable();
+      reregistered = r.ok;
+      if (!r.ok) d.log(`release: the login item was not re-registered from the home's engine (exit ${r.code})`);
+    }
+  } catch (err) {
+    d.log(`release: the login item was not re-registered from the home's engine: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return { binary: placed.binary, release: placed.release, reregistered };
 }
