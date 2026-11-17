@@ -43,7 +43,7 @@ import { AppLog, appLogPath } from "./app-log";
 import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
-import { SealedFrames } from "./sealed";
+import { OWN_ELEMENT, SealedFrames } from "./sealed";
 import { BrowserAreaFrames, isBrowserEvent, ViewBindings } from "./ui/browser-calls";
 import { FRESH_LIMIT_MS, ownCardPage, pinVisible } from "./sealed-pages";
 import { translate } from "@waifucave/moss-plugin-sdk/ui/bridge";
@@ -499,13 +499,15 @@ async function ready(): Promise<void> {
         return { accepted: false, reason: fresh === "covered" ? "the button wasn't fully showing when it was pressed" : "the press wasn't checked just now" };
       }
       // One place at a time (lane RT): a press is taken only where the engine's router placed the card (the island's frame
-      // for a card on the island, the window's for one in the window); the app's own fallback card answers wherever it is.
+      // for a card on the island, the window's for one in the window). The app's own card page (the window's strip, or the
+      // safety net's fallback card) is the core's own sealed card in this program and answers wherever the card is: a strip
+      // that is closing as the card moves to the island is still the card's own page under the pointer.
       // A focus this program hasn't reported yet is reported first, so the placement read is the one the press was made in.
       const from = sealed.windowOf(token);
       const cardOfPress = sealed.cardOf(token);
       await presenceIfStale();
       const source: PressSource = [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.cards) ? "island"
-        : [...fallbacks.values()].some((f) => f.win !== undefined && !f.win.isDestroyed() && f.win.id === from && f.strip !== true) ? "fallback" : "window";
+        : sealed.elementOf(token) === OWN_ELEMENT ? "fallback" : "window";
       const placed = cardOfPress === undefined ? undefined : enginePlaces.get(cardOfPress);
       if (!pressMayBeTaken({ from: source, placed, front: mainWindowFront(mainState()) })) {
         log(`sealed: answer refused (a press ${source === "island" ? "on the island" : "in the window"} for a card the router placed ${placed?.kind === "island" ? "on the island" : "in the window"})`);
@@ -953,8 +955,12 @@ function enginePlaced(cardId: string, place: CardPlacement): void {
   enginePlaces.set(cardId, place);
   if (enginePlaces.size > 256) enginePlaces.delete(enginePlaces.keys().next().value!);
   if (cardPlaces.has(cardId)) placeCardNow(cardId);
-  if (was !== islandHoldsCard()) { for (const s of surfaces.values()) applyVisibility(s); }
-  tellSurfaces();
+  // The surfaces hear it only when the island's hold changes (their `mainFront`): a message on every placement made the
+  // island measure itself again under the pointer.
+  if (was !== islandHoldsCard()) {
+    for (const s of surfaces.values()) applyVisibility(s);
+    tellSurfaces();
+  }
 }
 const CONVERSATION_ASK_GRACE_MS = 400;
 function drawnInWindow(cardId: string): void {
