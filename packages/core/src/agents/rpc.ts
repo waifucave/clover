@@ -12,6 +12,7 @@ import type { PluginRegistry } from "../contracts/plugin-registry";
 import { ContractError } from "../contracts/common";
 import { MethodError, toMethodError } from "../rpc/handler";
 import type { AgentManager } from "./manager";
+import { agentTaskText, type AgentDefinitionView } from "./tools";
 
 export interface AgentMethodsOptions {
   manager: AgentManager;
@@ -22,6 +23,10 @@ export interface AgentMethodsOptions {
   names?: Readonly<Record<string, string>>;
   /** Agent definitions from plugins (`pluginAgentDefinitions` over B-M2's registry). */
   definitions?: () => AgentDefView[];
+  /** A plugin's agent definition by the name Glossary gives it (`<plugin>:<id>`), among those that reach a code session
+   *  on `backend` (the plugin's scope and `onlyBackends`). As for a bot's `Agent` call it brings words only: its
+   *  instructions go before the user's prompt; the backend, folder, computer, model and effort are the user's. */
+  definition?: (name: string, backend: string) => AgentDefinitionView | undefined;
   /** This computer's device id: the device of a user's call made on this computer (the app or the terminal here), whose
    *  caller names none. */
   localDevice: () => string;
@@ -68,10 +73,15 @@ export function agentMethods(o: AgentMethodsOptions): Record<string, AgentMethod
     [AGENTS_METHODS.agentStart.name]: async (raw, ctx) => {
       const p = parse(AGENTS_METHODS.agentStart, raw);
       if (ctx.caller.kind !== "user") throw new ContractError("refused", "only the user starts a coding session");
-      if (p.definition !== undefined) throw new ContractError("invalid", "agent definitions come with K-M2");
+      const def = p.definition === undefined ? undefined : o.definition?.(p.definition, p.backend);
+      if (p.definition !== undefined && def === undefined) throw new ContractError("not_found", `no agent definition ${p.definition.slice(0, 120)} reaches a code session on ${p.backend.slice(0, 64)} (Glossary lists them as <plugin>:<id>)`);
+      const brief = p.prompt ?? "";
+      // The definition's instructions, then the user's words; with none of the user's, its instructions are the task.
+      const prompt = def === undefined ? brief : brief === "" ? def.prompt : agentTaskText(def, brief);
       const r = await o.manager.start({
         caller: { kind: "user", device: ctx.caller.device ?? o.localDevice(), clientMessageId: randomUUID() },
-        backend: p.backend, computer: p.computer, root: p.root, prompt: p.prompt ?? "",
+        backend: p.backend, computer: p.computer, root: p.root, prompt,
+        ...(def === undefined ? {} : { definition: { pluginId: def.pluginId, id: def.id }, title: def.name }),
         ...(p.model === undefined ? {} : { model: p.model }), ...(p.effort === undefined ? {} : { effort: p.effort }),
       });
       return { session: r.sessionId };
@@ -104,12 +114,12 @@ export function pluginAgentDefinitions(registry: Pick<PluginRegistry, "entries">
  *  getter, and is refused while none run. A thrown `ContractError` becomes its JSON-RPC code (`toMethodError`). */
 export function lateAgentMethods(
   agents: () => RunningAgents | undefined,
-  o: Pick<AgentMethodsOptions, "localDevice" | "definitions">,
+  o: Pick<AgentMethodsOptions, "localDevice" | "definitions" | "definition">,
 ): Record<string, AgentMethod> {
   const made = new WeakMap<RunningAgents, Record<string, AgentMethod>>();
   const methodsOf = (a: RunningAgents): Record<string, AgentMethod> => {
     let m = made.get(a);
-    if (!m) made.set(a, (m = agentMethods({ manager: a.manager, backends: a.backends, computer: a.computer, localDevice: o.localDevice, ...(o.definitions ? { definitions: o.definitions } : {}) })));
+    if (!m) made.set(a, (m = agentMethods({ manager: a.manager, backends: a.backends, computer: a.computer, localDevice: o.localDevice, ...(o.definitions ? { definitions: o.definitions } : {}), ...(o.definition ? { definition: o.definition } : {}) })));
     return m;
   };
   const names = [AGENTS_METHODS.agentBackends.name, AGENTS_METHODS.agentDefinitions.name, AGENTS_METHODS.agentStart.name];

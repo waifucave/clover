@@ -1081,6 +1081,29 @@ describe("the agent methods", () => {
     void WELL_BEHAVED_QUIRKS;
   });
 
+  test("agent.start with a plugin's agent definition: its words go before the user's, the session names it; one that reaches no code session is refused", async () => {
+    const w = make({ script: [[{ say: "Tidied." }]] });
+    const asked: { name: string; backend: string }[] = [];
+    const definition = (name: string, backend: string) => {
+      asked.push({ name, backend });
+      return name === "notes:tidier" ? { pluginId: "notes", id: "tidier", name: "Tidier", prompt: "Tidy the notes file." } : undefined;
+    };
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32), definition });
+    const user = { caller: { kind: "user" as const, client: "app" as const } };
+    const { session } = (await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1", definition: "notes:tidier", prompt: "Say when you're done." }, user)) as { session: string };
+    expect(asked).toEqual([{ name: "notes:tidier", backend: "fake" }]);
+    expect(w.host.get(session)).toMatchObject({ kind: "coding", definition: "notes:tidier", title: "Tidier" });
+    expect(readAgentRecord(w.mossHome, session)).toMatchObject({ definition: "notes:tidier" });
+    await waitFor(() => w.report("prompt").length === 1, "the first turn");
+    expect(String(w.report("prompt")[0]!["text"])).toContain("Tidy the notes file.\n\n---\n\nSay when you're done.");
+    // A name no plugin gives a code session (another plugin's, or one scoped to bots) starts nothing.
+    const none = await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1", definition: "notes:other", prompt: "Hi" }, user).catch((e: unknown) => e);
+    expect(isContractError(none, "not_found")).toBe(true);
+    // With no lookup at all (a daemon with no plugins yet), a definition is refused too, never ignored.
+    const bare = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32) });
+    expect(isContractError(await bare["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1", definition: "notes:tidier" }, user).catch((e: unknown) => e), "not_found")).toBe(true);
+  });
+
   test("a code session's turn reports what it saw as a bot's does: an address in the user's message counts as seen", async () => {
     const seen = new SeenUrls();
     const turns: { id: string; origin: string | undefined }[] = [];

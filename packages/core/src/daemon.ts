@@ -3668,6 +3668,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // A user's call made on this computer (the app or the terminal here) is this computer's device.
     localDevice: () => liveDeviceId,
     definitions: () => daemonParts?.agentDefinitions?.() ?? [],
+    // `agent.start` with a definition: one that reaches a code session on that backend, as the session's Glossary lists it.
+    definition: (name, backend) => {
+      const registry = partsRegistry?.registry;
+      return registry === undefined ? undefined : agentDefinitionOf(registry, name, (pluginId, entryScope) => partsServe(registry, pluginId, { kind: "coding", backend }, entryScope));
+    },
   })));
   const mossTokens = new MossTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   mossServer = createMossServer({
