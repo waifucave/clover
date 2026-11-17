@@ -52,6 +52,13 @@ export async function runSmoke(o: { win: BrowserWindow; engine: MossEngine; file
   // Open a bot and its side panel, as a person would: the three columns.
   await win.webContents.executeJavaScript(`window.__mossTest && window.__mossTest.go({ bot: ${JSON.stringify(process.env.MOSS_TEST_BOT ?? "")}, panel: true })`).catch(() => undefined);
   await until(async () => (await win.webContents.executeJavaScript(`document.querySelectorAll("[data-bubble]").length`).catch(() => 0) as number) > 0, 10_000);
+  // The router's placements come after the presence report: wait until every card placed in this window is drawn with its
+  // frame (a slow runner draws them a beat after the conversation).
+  await until(async () => {
+    const placed = engine.view().cards.length;
+    const drawn = await win.webContents.executeJavaScript(`document.querySelectorAll("iframe[data-card-frame]").length`).catch(() => -1) as number;
+    return placed > 0 && drawn === placed;
+  }, 15_000);
   await sleep(800);
   const facts = await win.webContents.executeJavaScript(PROBE).catch((err: unknown) => ({ error: String(err) })) as Record<string, unknown>;
   const state = o.connection.state;
