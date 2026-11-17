@@ -185,6 +185,12 @@ export function programAnswerKeyStatement(a: { device: string; program: Program;
   return `moss/program-answer-key/1\n${a.device}\n${a.program}\n${a.publicKey}\n${a.held}\n${a.alg ?? "ed25519"}`;
 }
 
+/** What a program's current key signs to hand over to its next one (`device.programKey.set`'s `rotation`): the device, the
+ *  program, both keys and the time, so one program's hand-over never replaces another program's key. */
+export function programAnswerKeyRotateStatement(a: { device: string; program: Program; from: string; to: string; at: number }): string {
+  return `moss/program-answer-key-rotate/1\n${a.device}\n${a.program}\n${a.from}\n${a.to}\n${a.at}`;
+}
+
 /** The input a program-keyed answer signs: the single-key answer's (`cardAnswerSigningInput`) with its program first, so a
  *  proof names its key and one program's signature never passes as another's. */
 export function programCardAnswerSigningInput(a: { program: Program; id: string; hash: string; option: string; at: number; children?: readonly string[] }): string {

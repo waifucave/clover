@@ -28,6 +28,16 @@ describe("the pill steps aside while MOSS's own window is in front", () => {
   });
 });
 
+describe("lane RT: a surface never steps aside while the router has placed a card on it", () => {
+  test("a steps-aside surface holding a placed card stays over the focused window; without one it steps aside", () => {
+    const front = { exists: true, visible: true, minimized: false, focused: true };
+    expect(surfaceShown({ stepsAside: true, holdsPlacedCard: true }, true, front)).toBe(true);
+    expect(surfaceShown({ stepsAside: true, holdsPlacedCard: false }, true, front)).toBe(false);
+    // Visible but not focused moves nothing.
+    expect(surfaceShown({ stepsAside: true }, true, { ...front, focused: false })).toBe(true);
+  });
+});
+
 describe("the pill: put away, summoned, stepping aside", () => {
   const IN_FRONT: MainWindowState = { exists: true, visible: true, minimized: false, focused: true };
   const BEHIND: MainWindowState = { exists: true, visible: true, minimized: false, focused: false };

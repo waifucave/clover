@@ -8,6 +8,8 @@ interface HeldReport {
   program: WindowProgram;
   report: PresenceReport;
   timer: TimerHandle;
+  /** The order reports came in: the newest wins a tie. */
+  seq: number;
 }
 
 const same = (a: CardPlacement | undefined, b: CardPlacement): boolean => JSON.stringify(a) === JSON.stringify(b);
@@ -19,6 +21,7 @@ export class FakeCardRouter implements CardRouter {
   readonly #cards = new Map<string, { card: RoutedCard; place: CardPlacement }>();
   readonly #listeners = new Listeners<PlacementChange>();
   #host = true;
+  #seq = 0;
 
   constructor(opts: { clock: Clock; ttlMs?: number; hostLive?: boolean }) {
     this.#clock = opts.clock;
@@ -30,7 +33,7 @@ export class FakeCardRouter implements CardRouter {
     const old = this.#reports.get(from.connId);
     if (old) this.#clock.clearTimeout(old.timer);
     const timer = this.#clock.setTimeout(() => this.dropped(from.connId), this.#ttlMs);
-    this.#reports.set(from.connId, { program: from.program, report, timer });
+    this.#reports.set(from.connId, { program: from.program, report, timer, seq: ++this.#seq });
     this.#replace();
     return { ttlMs: this.#ttlMs };
   }
@@ -48,10 +51,16 @@ export class FakeCardRouter implements CardRouter {
     this.#replace();
   }
 
-  /** The one focused and visible window of the product, if any (the latest report wins a tie). */
+  /** The one focused and visible window of the product, if any (the latest report wins a tie: a `Map` keeps a key's first
+   *  place, so the order is the reports' own sequence number). A card with no session goes to it too, never to the window
+   *  that asked (`askedFrom` is not read: the controller's ruling 1). */
   #focused(): { program: WindowProgram; w: WindowPresence } | undefined {
-    let found: { program: WindowProgram; w: WindowPresence } | undefined;
-    for (const r of this.#reports.values()) for (const w of r.report.windows) if (w.focused && w.visible) found = { program: r.program, w };
+    let found: { program: WindowProgram; w: WindowPresence; seq: number } | undefined;
+    for (const r of this.#reports.values()) {
+      if (found !== undefined && r.seq < found.seq) continue;
+      const w = r.report.windows.find((x) => x.focused && x.visible);
+      if (w !== undefined) found = { program: r.program, w, seq: r.seq };
+    }
     return found;
   }
 

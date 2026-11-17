@@ -40,7 +40,7 @@ import { pathFolders, pathsClassOnDisk } from "./approvals/ordinary-paths";
 import { requestReviewer } from "./approvals/request-reviewer";
 import { hostOs } from "./tree/names";
 import { fileRuleStore } from "./approvals/rule-store";
-import { deviceProofVerifier } from "./contracts/approval-broker";
+import { deviceProofVerifier, type ProgramAnswerVerifier } from "./contracts/approval-broker";
 import { ContractError, Listeners } from "./contracts/common";
 import { MossFence } from "./fence/fence";
 import { approvalCoreEvents } from "./approvals/core-events";
@@ -159,6 +159,10 @@ export interface DaemonPartsInput {
   /** The MOSS server's `core.event` sender: the terminal panel's output (`terminal_output`) goes to the connection
    *  that opened each terminal. Without it, the app's `terminal.*` methods aren't served. */
   coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
+  /** Lane RT: the per-program answer keys, for a proof that names its program (`deviceProofVerifier`). */
+  programKeys?: ProgramAnswerVerifier;
+  /** Lane RT: feeds the broker's cards to the router (`surfaces/routing.ts`); its undo. */
+  cardRouting?: (broker: MossApprovalBroker) => () => void;
   /** Lane C's fenced process on this computer (`fencedSpawner({ fence })` over the daemon's one MossFence): the
    *  computer node's Bash runs through it (`fencedExecutor`, lane J). Without it the node has no executor and Bash on
    *  its tree is refused; it never runs unsandboxed. A test's own `node.executor` wins. */
@@ -380,7 +384,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         clock: input.clock,
         // A computer the registry doesn't know is judged at read-only, failing closed as the agents' manager does.
         levels: (c) => n.registry.get(c)?.level ?? "read-only", fence: (c) => (c === here ? fence : undefined),
-        verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.mossHome), localComputer: here,
+        verify: deviceProofVerifier(links.registry, input.programKeys), rules: fileRuleStore(input.mossHome), localComputer: here,
         // §9.1 at ask for risky actions: an edit of the user's ordinary files runs (the owner's ruling), and what is
         // left goes to the daemon's one safety reviewer (the node's), a card when it can't judge.
         // R1: the user's PATH is the login shell's, merged into the daemon's own at start (`login-shell-path.ts`).
@@ -397,6 +401,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         const send = input.coreEvent;
         closers.push(approvalCoreEvents(broker, (e, o) => send(e, o), () => links.clock.now()));
       }
+      if (input.cardRouting) closers.push(input.cardRouting(broker));
     }
 
     let agents: DaemonAgents | undefined;

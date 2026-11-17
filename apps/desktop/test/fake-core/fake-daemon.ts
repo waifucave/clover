@@ -205,6 +205,9 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         // A channel minted for one card's sealed frame; a fake's own count of the only shape it holds.
         return reply({ channel: `fake-card-${String(params.id).slice(-8)}-${randomBytes(8).toString("hex")}` });
       case "card.answer": {
+        // Computer use acting on this computer: the core refuses an app's answer at the answer itself (lane RT), and it
+        // doesn't land.
+        if (opts.acting === true) return reply({ accepted: false, reason: "computer use is acting right now" });
         // The protocol's own contracts first (the review's own ask), then the fake's own verdict.
         const proof = CardAnswerProof.safeParse(params.proof);
         if (!proof.success) return fail(-32602, `card.answer's proof isn't one: ${proof.error.issues[0]?.message ?? "no proof"}`);

@@ -54,6 +54,9 @@ import type { AppPeerPolicy } from "./platform/peer-signature";
 import { archiveMethods } from "./sessions/archive-rpc";
 import { planReadings, usagePlansMethods } from "./usage/rpc";
 import { cardMethods } from "./approvals/card-methods";
+import { ProgramKeyTable } from "./surfaces/program-keys";
+import { cardPressGate, routeBrokerCards } from "./surfaces/routing";
+import { programKeyMethods } from "./surfaces/rpc";
 import { lateAgentMethods } from "./agents/rpc";
 import { commandMethods } from "./registry/commands";
 import { grantsInForce, RUNNING_STATES } from "./contracts/plugin-registry";
@@ -3523,7 +3526,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     savedFor: (hash) => daemonParts?.broker?.savedFor(hash) ?? [],
     forgetSaved: (hash, bot) => daemonParts?.broker?.forgetSaved(hash, bot) ?? 0,
   })));
-  Object.assign(mossLaneHandlers, cardMethods(() => daemonParts?.broker, (pluginId) => grantsInForce(partsRegistry?.registry.get(pluginId))), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents, {
+  // Lane RT: a card is answered from where the router placed it, and computer use is read at the answer itself.
+  Object.assign(mossLaneHandlers, cardMethods(() => daemonParts?.broker, (pluginId) => grantsInForce(partsRegistry?.registry.get(pluginId)), {
+    press: (conn, id) => (mossServer === undefined ? "MOSS isn't taking answers yet" : cardPressGate(mossServer.surfaces, conn.connId, id)),
+    acting: () => computerUse?.anyActing() ?? false,
+  }), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents, {
     // A user's call made on this computer (the app or the terminal here) is this computer's device.
     localDevice: () => liveDeviceId,
     definitions: () => daemonParts?.agentDefinitions?.() ?? [],
@@ -3765,6 +3772,22 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // starts with the parts, after the links), so a key registered on the app's first tries is in place before any card.
   // A replacement (a hand-over from the current key) shows its change card on the parts' broker once it is up.
   let ownDevices: FileDeviceRegistry | undefined;
+  // Lane RT: one answer key per (device, program) (`device.programKey.set`); MOSS Code's is the device's single key.
+  const programKeys = new ProgramKeyTable({
+    file: join(dirs.home, "devices", "program-keys.json"),
+    legacy: (d) => ownDevices?.get(d)?.answerKey,
+    isRevoked: (d) => { const r = ownDevices?.get(d); return r !== undefined && r.revokedAt !== undefined; },
+  });
+  Object.assign(mossLaneHandlers, programKeyMethods({
+    table: () => programKeys,
+    device: () => liveDeviceId,
+    rotation: () => {
+      const broker = daemonParts?.broker;
+      const self = ownDevices?.self();
+      return broker === undefined || self === undefined ? undefined : { broker, computer: self.computer ?? self.name };
+    },
+    log: (line) => console.error(line),
+  }));
   Object.assign(mossLaneHandlers, laneMethodHandlers(answerKeyMethods({
     registry: () => ownDevices, clock: partsClock,
     answerKeyRotation: () => {
@@ -4702,6 +4725,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // The MOSS server's core events: the terminal panel's output (owner-scoped: the opener only), and the broker's
         // cards to the app, remote clients and plugins with `approvals` (C-M3 item 2), from before the bot side starts.
         coreEvent: (event, o) => mossServer?.coreEvent(event, o) ?? 0,
+        // Lane RT: program-named answers verify with their program's key; the broker's cards go to the router.
+        programKeys,
+        cardRouting: (broker) => (mossServer === undefined ? () => {} : routeBrokerCards(broker, mossServer.surfaces.router)),
         log: (line) => console.error(line),
       });
       okTicks.flush();

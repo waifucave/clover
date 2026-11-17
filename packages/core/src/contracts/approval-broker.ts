@@ -52,7 +52,7 @@ import {
   type Card, type CardAnswerProof, type CardFieldName, type CardKind, type CardMeta, type CardOption, type CardOutcome,
   type ChangeSubject, type MossRole, type DeviceKind, type Level, LEVELS, type SealedValue, type SignedCardAnswer,
   type CallBinding, type CardContent, type TurnOrigin, TREE_TRANSFER, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardContentInput,
-  cardHashInput, isUserTurn,
+  cardHashInput, isUserTurn, programCardAnswerSigningInput,
 } from "@waifucave/moss-protocol";
 import { fromBase64, type Unsubscribe } from "./common";
 import { mayAnswerCards, type DeviceRegistry } from "./device-registry";
@@ -205,7 +205,7 @@ export interface ApprovalDecision {
    *  children it covers, so the asking computer can hand the binding's computer a `SignedCardAnswer` (the card itself
    *  is `get(cardId)`'s). Absent for an answer through a sealed frame (the app without an answer key), for a deny and
    *  for an unbound card: a taker that needs the signature fails closed without it. */
-  signed?: { device: string; at: number; signature: string; children?: string[] };
+  signed?: { device: string; at: number; signature: string; children?: string[]; program?: "moss" | "code" | "host" };
 }
 
 /** The approved card record behind a bound decision (rule 9), for a `{ via: "card" }` proof: only when a card decided,
@@ -378,6 +378,9 @@ export function cardMetaOf(card: Card): CardMeta {
   };
 }
 
+/** The per-program answer keys (lane RT's `ProgramKeyTable`), as the answer check uses them. */
+export type ProgramAnswerVerifier = { verify(device: string, program: "moss" | "code" | "host", data: Uint8Array, signature: Uint8Array): Promise<boolean> };
+
 /** What a verifier needs of the device registry. */
 /** The device registry, as the answer checks use it: the record and the answer key's signature check. */
 export type AnswerDevices = Pick<DeviceRegistry, "get" | "verifyAnswer">;
@@ -385,7 +388,7 @@ export type AnswerDevices = Pick<DeviceRegistry, "get" | "verifyAnswer">;
 /** Builds the verifier for device answers: the signing device may answer cards (`mayAnswerCards`), and its answer
  *  key's Ed25519 signature covers `cardAnswerSigningInput` with the option and children. The signature holds end to
  *  end, so any computer may relay it (review N4); a sealed-frame proof never reaches this (the broker checks those). */
-export function deviceProofVerifier(devices: AnswerDevices): ProofVerifier {
+export function deviceProofVerifier(devices: AnswerDevices, programs?: ProgramAnswerVerifier): ProofVerifier {
   return async (card, answer) => {
     const proof = answer.proof;
     if (proof.via !== "device") return false;
@@ -393,6 +396,13 @@ export function deviceProofVerifier(devices: AnswerDevices): ProofVerifier {
     if (!device || !mayAnswerCards(device)) return false;
     const signature = fromBase64(proof.signature);
     if (!signature) return false;
+    // A proof that names its program (lane RT, ruling C) verifies with that program's key alone, over the input that
+    // names the program: one program's signature never passes as another's, nor as the device's single key.
+    if (proof.program !== undefined) {
+      if (programs === undefined) return false;
+      const signed = programCardAnswerSigningInput({ program: proof.program, id: card.id, hash: card.hash, option: answer.optionId, at: proof.at, children: answer.children ?? [] });
+      return programs.verify(proof.device, proof.program, new TextEncoder().encode(signed), signature);
+    }
     const input = cardAnswerSigningInput({ id: card.id, hash: card.hash, option: answer.optionId, at: proof.at, children: answer.children ?? [] });
     return devices.verifyAnswer(proof.device, new TextEncoder().encode(input), signature);
   };

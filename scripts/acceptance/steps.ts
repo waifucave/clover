@@ -4,6 +4,7 @@ import { UI_STEPS } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
 import { CARDS_STEP } from "./cards-step";
+import { ROUTER_STEP } from "./router-step";
 import { ARRIVALS_STEP } from "./arrivals-step";
 import { ADDONS_STEP } from "./addons-step";
 import { ARCHIVE_STEP } from "./archive-step";
@@ -114,6 +115,8 @@ export const FULL_STEPS = [
   BUILDER_EXAMPLES_STEP,
   WORKSHOP_POINTS_STEP,
   BOT_RECORDS_STEP,
+  // Lane RT's row: after every row it could renumber but the cold start and the idle row, which stays last.
+  ROUTER_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;

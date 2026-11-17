@@ -314,6 +314,66 @@ describe("MOSS connections (C-M1)", () => {
     for (const c of [code, second, moss, cli, again]) c.close();
   });
 
+  test("lane RT: the signed program wins over the hello's word; presence from a window program places a card; the pair is MOSS Code's alone", async () => {
+    // A peer check that names MOSS (macOS's signed identity), for this test's own process.
+    let signedAs: "moss" | "code" | "host" | false = "moss";
+    const b = await boot({ appPeer: () => signedAs });
+    const asCode = await Client.connect(b.socketPath);
+    // Signed as MOSS, saying it is MOSS Code's window (or the host): refused.
+    expect((await asCode.hello("app", b.appToken)).error).toMatchObject({ code: MOSS_ERR.SURFACE_REFUSED, data: { reason: "program-mismatch", surface: "code" } });
+    const asHost = await Client.connect(b.socketPath);
+    expect((await asHost.hello("app", b.appToken, { surface: "host" })).error).toMatchObject({ data: { reason: "program-mismatch" } });
+    const moss = await Client.connect(b.socketPath);
+    expect((await moss.hello("app", b.appToken, { surface: "moss" })).result).toMatchObject({ surface: "moss" });
+    // MOSS's window is not the pair's app: no beat, no `pair.appConnected`, never killed as a hung app.
+    expect(b.pair.status().appConnected).toBe(false);
+    // Its single answer key is MOSS Code's: refused before any handler.
+    expect((await moss.request("device.answerKey.set", { publicKey: "AAAA", held: "app-keychain", signature: "AAAA" })).error.code).toBe(MOSS_ERR.NOT_THE_USER);
+    // No window and no island drawer yet: a card would be elsewhere; MOSS's window reports, focused on bot A.
+    await moss.request("events.subscribe", { areas: ["surfaces"] });
+    const report = await moss.request("presence.report", { windows: [{ window: "moss", focused: true, visible: true, showing: { kind: "bot", id: "bot-a" } }] });
+    expect(report.result).toEqual({ ttlMs: 10_000 });
+    b.moss.surfaces.router.pending({ id: "card_aaaaaa", bot: "bot-b" });
+    b.moss.surfaces.router.pending({ id: "card_bbbbbb", bot: "bot-a" });
+    expect((await moss.request("card.placement", {})).result.placements).toEqual([
+      { card: "card_aaaaaa", place: { kind: "strip", program: "moss", window: "moss" } },
+      { card: "card_bbbbbb", place: { kind: "conversation", program: "moss", window: "moss" } },
+    ]);
+    expect((await moss.request("card.placement", { ids: ["card_bbbbbb"] })).result.placements.length).toBe(1);
+    // Signed as MOSS Code, today's app: the pair's, and it draws the island; the host has no windows to report.
+    signedAs = "code";
+    const code = await Client.connect(b.socketPath);
+    expect((await code.hello("app", b.appToken)).result).toMatchObject({ surface: "code" });
+    expect(b.pair.status().appConnected).toBe(true);
+    signedAs = "host";
+    const host = await Client.connect(b.socketPath);
+    expect((await host.hello("app", b.appToken, { surface: "host" })).result).toMatchObject({ surface: "host" });
+    expect((await host.request("presence.report", { windows: [] })).error.code).toBe(MOSS_ERR.SURFACE_REFUSED);
+    // MOSS's window goes: its report with it; the cards move to the island (drawn by MOSS Code's window today), heard.
+    moss.close();
+    await Bun.sleep(50);
+    expect(b.moss.surfaces.router.placementOf("card_aaaaaa")).toEqual({ kind: "island" });
+    await code.request("events.subscribe", { areas: ["surfaces"] });
+    await code.request("presence.report", { windows: [{ window: "main", focused: true, visible: true, showing: { kind: "session", id: "s_1" } }] });
+    await Bun.sleep(50);
+    const placed = code.fromDaemon.filter((m) => m.method === "core.event" && m.params?.type === "card_placed").map((m) => [m.params.card, m.params.place.kind, m.params.before?.kind]);
+    expect(placed).toEqual([["card_aaaaaa", "strip", "island"], ["card_bbbbbb", "strip", "island"]]);
+    for (const c of [asCode, asHost, code, host]) c.close();
+  });
+
+  test("lane RT: an older second copy of a window program is told to go; an older newcomer is refused", async () => {
+    const b = await boot();
+    const a = await Client.connect(b.socketPath);
+    expect((await a.hello("app", b.appToken, { surface: "moss", release: "1.111.1" })).result).toMatchObject({ surface: "moss" });
+    const older = await Client.connect(b.socketPath);
+    expect((await older.hello("app", b.appToken, { surface: "moss", release: "1.111.0" })).error).toMatchObject({ code: MOSS_ERR.SURFACE_REFUSED, data: { reason: "older-copy" } });
+    const newer = await Client.connect(b.socketPath);
+    expect((await newer.hello("app", b.appToken, { surface: "moss", release: "1.111.2" })).result).toMatchObject({ surface: "moss" });
+    await Bun.sleep(50);
+    expect(a.fromDaemon.filter((m) => m.method === "app.quit").map((m) => m.params)).toEqual([{ reason: "update" }]);
+    for (const c of [a, older, newer]) c.close();
+  });
+
   // The peer-image check over a real socket (macOS): the server's default checks the connection's audit token against
   // the profile's MOSS app, and this test's own process (bun) isn't it. A check against bun's own signature (the
   // requirement alone: bun's entitlements open it, so the hardened check refuses it too) lets the same hello in, so

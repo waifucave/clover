@@ -44,6 +44,22 @@ export function runCardRouterConformance(make: CardRouterFactory): void {
       expect(router.placementOf("card_aaaaaa")).toEqual({ kind: "strip", program: "moss", window: "moss" });
     });
 
+    test("two reports both claiming focus: the newest wins, whichever connection reported first", () => {
+      const { router } = setup();
+      router.report({ connId: 1, program: "code" }, codeShows(null));
+      router.report({ connId: 2, program: "moss" }, mossShows("alpha"));
+      expect(router.pending({ id: "card_aaaaaa", session: "s_1" })).toEqual({ kind: "strip", program: "moss", window: "moss" });
+      router.report({ connId: 1, program: "code" }, codeShows(null));
+      expect(router.placementOf("card_aaaaaa")).toEqual({ kind: "strip", program: "code", window: "main" });
+    });
+
+    test("a card with no session asked from one window while another is focused: the focused window's strip (ruling 1)", () => {
+      const { router } = setup();
+      router.report({ connId: 1, program: "code" }, { windows: [{ window: "a", focused: false, visible: true, showing: null }, { window: "b", focused: true, visible: true, showing: { kind: "session", id: "s_1" } }] });
+      expect(router.pending({ id: "card_aaaaaa", askedFrom: { program: "code", window: "a" } })).toEqual({ kind: "strip", program: "code", window: "b" });
+      expect(router.pending({ id: "card_bbbbbb", askedFrom: { program: "moss", window: "moss" } })).toEqual({ kind: "strip", program: "code", window: "b" });
+    });
+
     test("a window that is visible but not focused draws nothing: the island does", () => {
       const { router } = setup();
       router.report({ connId: 1, program: "code" }, codeShows("s_1", false));

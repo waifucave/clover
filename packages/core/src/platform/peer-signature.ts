@@ -1,5 +1,7 @@
 // The `app` role's peer-image check (the caller check, spec §3.1): an `app` hello counts only from a process whose
-// code signature is the MOSS app's for this profile. The token alone isn't enough: any unfenced process of the
+// code signature is one of the product's three programs' for this profile (spec revision 19: MOSS Code, MOSS and the
+// background host, `MOSS_PROGRAM_IDENTIFIERS`), and the check says WHICH: the program an answer key and a press record
+// belong to is that signed identity, never the hello's `surface` (`surfaces/door.ts`). The token alone isn't enough: any unfenced process of the
 // user's can read `<home>/run/app.token`, and #418's known gap (an unfenced child that disclaims itself) passes the
 // floor and the lineage checks. With this check such a process must also BE the signed app.
 //
@@ -7,10 +9,11 @@
 //            process by pid and pid version, so a pid reused since names nothing and the check fails. The code
 //            object comes from `SecCodeCopyGuestWithAttributes` with `kSecGuestAttributeAudit`, and
 //            `SecCodeCheckValidity` checks it DYNAMICALLY (the running process's own signing state) against
-//              dist  identifier "com.waifucave.moss.code", Apple's chain, a Developer ID Application leaf, MOSS's team
+//              dist  identifier "com.waifucave.moss.code" (or "com.waifucave.moss", or "com.waifucave.moss.host": one
+//                    requirement per program, tried in turn), Apple's chain, a Developer ID Application leaf, MOSS's team
 //                    (without the Developer ID clauses only when this daemon is not itself Developer ID signed: the
 //                    owner's --sign-dev alpha, or a daemon run from a checkout)
-//              dev   identifier "com.waifucave.moss.code.dev", Apple's chain and the team (`bun run dev:app` signs its
+//              dev   identifier "com.waifucave.moss.code.dev" (and the other two programs' ".dev" forms), Apple's chain and the team (`bun run dev:app` signs its
 //                    Electron copy with the dev identity, `scripts/dev-app.ts`)
 //            and then the signing information (`SecCodeCopySigningInformation`, dynamic): the hardened runtime in the
 //            signature and in the running process, never get-task-allow or a debugged process, and none of the
@@ -31,13 +34,14 @@
 //
 // Never throws: any failure (a symbol missing, a non-zero OSStatus) is "not the app".
 import { dlopen, FFIType, ptr, read, type Pointer } from "bun:ffi";
-import { appRequirement, MOSS_TEAM_ID, DEVELOPER_ID_CLAUSES } from "../bundled-identities";
+import { appRequirement, MOSS_TEAM_ID, DEVELOPER_ID_CLAUSES, type MossProgramName } from "../bundled-identities";
 import type { MossProfile } from "../profile";
 import type { PeerFacts } from "./caller-probe";
 import type { DaemonPlatform } from "./transport";
 
-/** Whether the peer of an `app` hello is the MOSS app. Injected in tests. */
-export type AppPeerCheck = (peer: PeerFacts) => boolean;
+/** Whether the peer of an `app` hello is one of the product's programs: the program its signature names, `false` when it
+ *  is none, or `true` for a check that passes without naming one (a test's). Injected in tests. */
+export type AppPeerCheck = (peer: PeerFacts) => boolean | MossProgramName;
 /** The caller check's `app` image check: a check, or `"none"` where the OS has none to make (named, never omitted). */
 export type AppPeerPolicy = AppPeerCheck | "none";
 
@@ -218,11 +222,34 @@ export function appPeerByRequirement(requirement: string): AppPeerCheck {
   return (peer) => peer.handle?.via === "token" && auditTokenSatisfies(peer.handle.auditToken, requirement);
 }
 
-/** The requirement this daemon holds an `app` peer to on macOS: `appRequirement(profile)`, whose dist form names a
- *  Developer ID leaf unless this daemon itself has none (`selfDeveloperId`: the owner's dev-signed alpha, a daemon
- *  run from a checkout), which would otherwise refuse its own app. */
-export function appPeerRequirement(profile: MossProfile, selfDeveloperId: () => boolean = () => selfSatisfies(appRequirementSelf())): string {
-  return profile === "dist" ? appRequirement("dist", undefined, selfDeveloperId()) : appRequirement("dev");
+/** The requirement this daemon holds an `app` peer to on macOS to be `program` (MOSS Code by default):
+ *  `appRequirement(profile)`, whose dist form names a Developer ID leaf unless this daemon itself has none
+ *  (`selfDeveloperId`: the owner's dev-signed alpha, a daemon run from a checkout), which would otherwise refuse its own
+ *  app. */
+export function appPeerRequirement(profile: MossProfile, selfDeveloperId: () => boolean = () => selfSatisfies(appRequirementSelf()), program: MossProgramName = "code"): string {
+  return profile === "dist" ? appRequirement("dist", undefined, selfDeveloperId(), program) : appRequirement("dev", undefined, false, program);
+}
+
+/** The programs an `app` peer is tried as, in turn: MOSS Code first (today's app), then MOSS, then the host. */
+export const PEER_PROGRAMS: readonly MossProgramName[] = ["code", "moss", "host"];
+
+/** The `app` peer check that names the program: each program's requirement (`appPeerRequirement`) through the
+ *  connection's audit token, in turn, the first that holds being the program; `false` when none does. `satisfies` is the
+ *  check of one requirement (`appPeerByRequirement`'s by default; injected in tests). The daemon's own Developer ID is
+ *  read once. */
+export function appPeerProgram(profile: MossProfile, o: { selfDeveloperId?: () => boolean; satisfies?: (requirement: string) => AppPeerCheck } = {}): AppPeerCheck {
+  let developerId: boolean | undefined;
+  const self = () => (developerId ??= (o.selfDeveloperId ?? (() => selfSatisfies(appRequirementSelf())))());
+  const checks = new Map<MossProgramName, AppPeerCheck>();
+  const checkOf = (p: MossProgramName): AppPeerCheck => {
+    let c = checks.get(p);
+    if (c === undefined) checks.set(p, (c = (o.satisfies ?? appPeerByRequirement)(appPeerRequirement(profile, self, p))));
+    return c;
+  };
+  return (peer) => {
+    for (const p of PEER_PROGRAMS) if (checkOf(p)(peer) === true) return p;
+    return false;
+  };
 }
 
 /** Any Developer ID Application signature of MOSS's team (the daemon's own, whatever its identifier). */
@@ -230,8 +257,9 @@ function appRequirementSelf(): string {
   return `anchor apple generic and ${DEVELOPER_ID_CLAUSES} and certificate leaf[subject.OU] = "${MOSS_TEAM_ID}"`;
 }
 
-/** The daemon's `app` peer check on `os` for `profile`: macOS checks the signature; Linux and Windows have none to
- *  make (`"none"`; see the head of this file). */
+/** The daemon's `app` peer check on `os` for `profile`: macOS checks the signature and names the program
+ *  (`appPeerProgram`); Linux and Windows have none to make (`"none"`; see the head of this file), so the hello's
+ *  `surface` and the caller check stand in for the program there. */
 export function defaultAppPeerCheck(os: DaemonPlatform, profile: MossProfile): AppPeerPolicy {
-  return os === "darwin" ? appPeerByRequirement(appPeerRequirement(profile)) : "none";
+  return os === "darwin" ? appPeerProgram(profile) : "none";
 }

@@ -1,11 +1,23 @@
-// To be replaced by spec revision 19 (§3.5, ruling A, R1): the engine's router places each card from every program's
-// presence (`card.placement`, `card_placed`, `pressMatchesPlacement`); this window-local rule retires with lane RT's work.
-// Where a pending permission card is drawn, one place at a time (the owner's ruling, 2026-11-13: "island should only show when
-// the app window is not foreground"). While MOSS's main window is in front the island shows none, and the window draws the
-// card: in the conversation on screen when that conversation draws it, else in the app's own card. While it is not in front the
-// island draws it. Pure, so each placement and each move is tested; index.ts feeds it the window's state and which cards the
-// main window's own frames asked for.
+// Where a pending card is drawn in this program (MOSS Code's window process, which draws the island too until lane HS moves
+// it to the background host), one place at a time, by the ENGINE's router (spec revision 19, §3.5, ruling A, R1; lane RT):
+// this main process reports its window's presence (`presence.report`: focused or not, which session or bot it shows) and
+// follows the placement the engine sends back (`card_placed`, `card.placement`). The engine's place maps to this window's:
+//   conversation  the window shows the card's session or bot: its conversation draws it in place;
+//   strip         the window is focused and shows something else (or the card has no session): the window's own strip,
+//                 drawn by the core (the app's own card page, docked inside the window), unless the conversation on screen
+//                 already draws it;
+//   island        no window of the product is focused: the island draws it; `elsewhere` cannot happen while this program
+//                 draws the island, and is drawn there too, so a card is never left where nobody sees it.
+// Until the engine has placed a card (an engine before lane RT's, or the beat before its first `card_placed`), the old
+// window-local rule stands in (the owner's ruling, 2026-11-13: the island shows cards only while the window is not in front).
+// The press gate follows the placement (`pressMatchesPlacement`), never window focus. Pure, so each placement and each move
+// is tested; index.ts feeds it the engine's placement, the window's state and which cards its own frames asked for.
+import { pressMatchesPlacement, type CardPlacement, type PresenceReport, type Showing } from "@waifucave/moss-protocol";
 
+/** This program's one window, as it names itself to the router. */
+export const MAIN_WINDOW = "main";
+
+/** Where this program draws a card: its conversation, the window's own strip (`window`), or the island. */
 export type CardPlace = "conversation" | "window" | "island";
 
 /** The place for a card now. `drawnInWindow`: a part of the main window (its conversation) has asked for the card's frames, so
@@ -27,15 +39,50 @@ export function placeLine(cardId: string, now: CardPlace, before?: CardPlace): s
   return before === undefined ? `card: ${cardId} ${WHY[now]}` : `card: ${cardId} moved to ${now === "island" ? "the island (window not foreground)" : now === "conversation" ? "the conversation (window foreground)" : "the window's own card (window foreground)"} from ${before === "island" ? "the island" : before === "conversation" ? "the conversation" : "the window's own card"}`;
 }
 
-/** Whether a surface of the island may place a card's frames or take a press right now: never while the window is in front. */
-export function islandMayDraw(front: boolean): boolean {
-  return !front;
+/** The place for a card by the engine's placement (`placed`), or by the window-local rule while the engine has placed none. */
+export function placeFromEngine(placed: CardPlacement | undefined, input: { front: boolean; drawnInWindow: boolean }): CardPlace {
+  if (placed === undefined) return placeCard(input);
+  if (placed.kind === "conversation") return "conversation";
+  if (placed.kind === "strip") return input.drawnInWindow ? "conversation" : "window";
+  return "island";
 }
 
-/** Whether a press is taken: a press from the island's frame is not while MOSS is in front; a press from anywhere else (the
- *  app's own card, a conversation's frame) is taken by the sealed page's own gates alone. */
-export function pressMayBeTaken(input: { fromIsland: boolean; front: boolean }): boolean {
-  return !(input.fromIsland && input.front);
+/** Whether a surface of the island may place a card's frames right now: only for a card the engine placed on the island (or,
+ *  while it has placed none, while the window is not in front). */
+export function islandMayDraw(placed: CardPlacement | undefined, front: boolean): boolean {
+  if (placed === undefined) return !front;
+  return placed.kind === "island" || placed.kind === "elsewhere";
+}
+
+/** Where a press came from in this program: the island's frame, the window (its conversation or its strip), or the app's own
+ *  fallback card, the 2-second safety net shown when no surface put the buttons up (it answers wherever the card is placed:
+ *  it is the one place left that shows it). */
+export type PressSource = "island" | "window" | "fallback";
+
+/** Whether a press is taken, by the engine's placement (`pressMatchesPlacement`): the island only for a card placed there, the
+ *  window only for one placed in it. While the engine has placed none, the window-local rule: no island press while the
+ *  window is in front. The sealed page's own gates (and the engine's own placement check at `card.answer`) still judge it. */
+export function pressMayBeTaken(input: { from: PressSource; placed: CardPlacement | undefined; front: boolean }): boolean {
+  if (input.from === "fallback") return true;
+  if (input.placed === undefined) return !(input.from === "island" && input.front);
+  const placed: CardPlacement = input.placed.kind === "elsewhere" ? { kind: "island" } : input.placed;
+  return pressMatchesPlacement(placed, input.from === "island" ? { kind: "island" } : { kind: "window", program: "code", window: MAIN_WINDOW });
+}
+
+/** What the window shows that a card can belong to, from the shell's state: a bot's tab, or a coding session's or an agent's
+ *  (`agent`, its id the session's). Settings over the tab, or any other page, shows none. */
+export function showingOf(state: { tab: { kind: string; id?: string }; dialog?: string } | undefined): Showing | null {
+  if (state === undefined || state.dialog === "settings" || state.tab.id === undefined || state.tab.id === "") return null;
+  if (state.tab.kind === "bot") return { kind: "bot", id: state.tab.id };
+  if (state.tab.kind === "agent") return { kind: "session", id: state.tab.id };
+  return null;
+}
+
+/** This program's presence: its one window, focused (in front, its own card windows counting) or not, visible, and what it
+ *  shows. No window: no window in the report. */
+export function presenceOf(main: { exists: boolean; visible: boolean; minimized: boolean; front: boolean }, showing: Showing | null): PresenceReport {
+  if (!main.exists) return { windows: [] };
+  return { windows: [{ window: MAIN_WINDOW, focused: main.front, visible: main.visible && !main.minimized, showing }] };
 }
 
 /** What the front rules read of a window (Electron's BrowserWindow answers all four). */
