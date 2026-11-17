@@ -1,6 +1,6 @@
 // The plugin host for real: the daemon side starts a plugin-host process (`process-main.ts`, linked on fd 3), which runs
 // each plugin in a worker of its own. Plain Bun here; the daemon runs it on the plugin Bun with #234's guard.
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import { SystemClock } from "../../clock/system-clock";
 import { CorePluginHost, type HostedRecord } from "../core-host";
 import { HOST_PROCESS_ENTRY, spawnHostProcess } from "../launch";
 import { HostMux, type WorkerHandle } from "../mux";
+import { becomeSubreaper, running } from "../../../test/helpers/process-state";
 import { loopbackPeers, type RpcPeer } from "../link";
 import { MCP_INVOCATION_META } from "../../contracts/plugin-host";
 
@@ -302,7 +303,12 @@ export const nested = () => new Promise((resolve) => {
 
 // #322's review, S4: a host process is its group's leader, and ending it ends what its plugins started.
 describe.skipIf(process.platform === "win32")("what a plugin starts ends with its host process", () => {
-  const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  // A running process, never a zombie: a daemon test earlier in this process leaves it a child subreaper, and the
+  // killed worker child is then a zombie of the test process, which `kill(pid, 0)` still signals (helpers/process-state.ts).
+  let release = (): void => {};
+  beforeAll(() => { release = becomeSubreaper(); });
+  afterAll(() => { release(); });
+  const alive = running;
   const gone = async (pid: number) => { for (let i = 0; i < 100 && alive(pid); i++) await Bun.sleep(50); return !alive(pid); };
   const start = async () => {
     const { hostProcessLaunch } = await import("../launch");

@@ -3,7 +3,7 @@
 // unticked for the server. Each case runs a REAL server process through lane J's launcher, opened by lane A's
 // PluginMcp, which also starts a child of its own; after the change, both pids are gone within the bound and the
 // launcher holds nothing.
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,7 @@ import { Listeners } from "../../src/contracts/common";
 import type { Contribution, PluginRecord, RegistryChange } from "../../src/contracts/plugin-registry";
 import { StdioMcpLauncher } from "../../src/computers/stdio-mcp";
 import { PluginMcp } from "../../src/runtime-sdk/turn-loop/plugin-mcp";
+import { becomeSubreaper, running } from "../helpers/process-state";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -39,9 +40,15 @@ process.stdin.on("data", (c) => {
 });
 `;
 
-const alive = (pid: number): boolean => {
-  try { process.kill(pid, 0); return true; } catch { return false; }
-};
+// "Alive" is a process that runs, never a zombie: a daemon test earlier in the same process leaves it a child subreaper,
+// and then the server's killed child is re-parented to the test process and stays a zombie, which `kill(pid, 0)` still
+// signals (helpers/process-state.ts).
+const alive = running;
+
+// The suite runs in that state whatever ran before it, so it passes or fails by itself and not by its shard.
+let release = (): void => {};
+beforeAll(() => { release = becomeSubreaper(); });
+afterAll(() => { release(); });
 
 async function until(what: string, ms: number, ok: () => boolean): Promise<void> {
   const end = Date.now() + ms;

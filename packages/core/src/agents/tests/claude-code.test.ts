@@ -1,7 +1,7 @@
 // What MOSS places in Claude Code (spec §9.3): the plugins' skills, agent definitions and command hooks, as one
 // local Claude Code plugin per session in the fenced run folder, with every hook run through the shim that drops an
 // allow. Whether Claude Code itself loads them through the adapter is a live gate; these check what MOSS writes.
-import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { HOOK_SHIM_PATH, dropAllow, hookShimCommand, parseShimArgs, runHook } from "../claude-code/hook-shim";
 import { CLAUDE_PLUGIN_FOLDER, MAX_HOOK_TIMEOUT_MS, matcherOf, placeInClaudeCode, shellQuote } from "../claude-code/placement";
 import type { PluginParts } from "../placement";
+import { becomeSubreaper, running } from "../../../test/helpers/process-state";
 import { waitFor, World } from "./world";
 
 setDefaultTimeout(60_000);
@@ -100,6 +101,12 @@ describe("placing plugins' parts in Claude Code", () => {
 });
 
 describe("the hook shim", () => {
+  // Run as a daemon test earlier in the process leaves it (a child subreaper): a killed grandchild then stays a zombie
+  // of this process, which `kill(pid, 0)` still signals, so the tests below ask `running` (helpers/process-state.ts).
+  let release = (): void => {};
+  beforeAll(() => { release = becomeSubreaper(); });
+  afterAll(() => { release(); });
+
   test("an allow is dropped; deny, ask and a replaced input pass", () => {
     const allow = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "trusted" } };
     expect(JSON.parse(dropAllow(JSON.stringify(allow)))).toEqual({ hookSpecificOutput: { hookEventName: "PreToolUse" } });
@@ -139,7 +146,7 @@ describe("the hook shim", () => {
     expect(r.code).toBe(0);
     const pid = Number(readFileSync(pidFile, "utf8").trim());
     await new Promise((res) => setTimeout(res, 200));
-    const alive = (() => { try { process.kill(pid, 0); return true; } catch { return false; } })();
+    const alive = running(pid);
     expect(alive).toBe(false);
   });
 
@@ -148,7 +155,7 @@ describe("the hook shim", () => {
     await runHook("/bin/sh", ["-c", `sleep 30 & echo $! > ${pidFile}; wait`], "{}", 300);
     const pid = Number(readFileSync(pidFile, "utf8").trim());
     await new Promise((r) => setTimeout(r, 200));
-    const alive = (() => { try { process.kill(pid, 0); return true; } catch { return false; } })();
+    const alive = running(pid);
     expect(alive).toBe(false);
   });
 
