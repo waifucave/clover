@@ -315,6 +315,9 @@ describe("a card raised the moment the core's parts come up reaches an app that 
     await old.partsUp();
     await Promise.all([list, sub]);
     expect([...old.told, ...listedOld]).toEqual([]);
+  });
+});
+
 import { PlacementBook } from "../src/main/card-place";
 
 describe("lane RT: the last placement wins (the CI lane's plugin-app step 65)", () => {
@@ -346,6 +349,20 @@ describe("lane RT: the last placement wins (the CI lane's plugin-app step 65)", 
     expect(islandMayDraw(book.get("card_aaaaaa"), true)).toBe(true);
     expect(pressMayBeTaken({ from: "island", placed: book.get("card_aaaaaa"), front: true })).toBe(true);
     expect(pressMayBeTaken({ from: "window", placed: book.get("card_aaaaaa"), front: true })).toBe(false);
+  });
+
+  test("a reconnect in the middle of a flip: the new connection's own telling (its subscription, then its snapshot) is the place, the old one's word is gone", () => {
+    const book = new PlacementBook();
+    book.follow("conn-1");
+    book.placed("card_aaaaaa", island);
+    book.placed("card_aaaaaa", strip);
+    // The connection drops before the move back reached the app; the router moved the card to the island meanwhile.
+    book.follow("conn-2");
+    expect(book.get("card_aaaaaa")).toBeUndefined();
+    // The engine tells the new connection each card's place as it subscribes (before its answer), then the snapshot comes.
+    expect(book.placed("card_aaaaaa", island)).toBe(true);
+    expect(book.snapshot([{ card: "card_aaaaaa", place: strip }])).toEqual([]);
+    expect(book.get("card_aaaaaa")).toEqual(island);
   });
 
   test("a snapshot fills in a card no event placed; a new connection starts afresh; the same event again is no change", () => {

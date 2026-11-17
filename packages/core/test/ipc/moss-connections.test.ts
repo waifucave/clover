@@ -357,7 +357,8 @@ describe("MOSS connections (C-M1)", () => {
     await code.request("presence.report", { windows: [{ window: "main", focused: true, visible: true, showing: { kind: "session", id: "s_1" } }] });
     await Bun.sleep(50);
     const placed = code.fromDaemon.filter((m) => m.method === "core.event" && m.params?.type === "card_placed").map((m) => [m.params.card, m.params.place.kind, m.params.before?.kind]);
-    expect(placed).toEqual([["card_aaaaaa", "strip", "island"], ["card_bbbbbb", "strip", "island"]]);
+    // First what was there when it subscribed (each card's place, told to it alone), then the moves its report made.
+    expect(placed).toEqual([["card_aaaaaa", "island", undefined], ["card_bbbbbb", "island", undefined], ["card_aaaaaa", "strip", "island"], ["card_bbbbbb", "strip", "island"]]);
     for (const c of [asCode, asHost, code, host]) c.close();
   });
 
@@ -374,6 +375,26 @@ describe("MOSS connections (C-M1)", () => {
     // No wait: the move was written on the connection before the answer.
     const moved = code.fromDaemon.slice(before).filter((m) => m.method === "core.event" && m.params?.type === "card_placed").map((m) => m.params.place);
     expect(moved).toEqual([{ kind: "conversation", program: "code", window: "main" }]);
+    code.close();
+  });
+
+  test("lane RT: a connection that subscribes after a card was raised and placed is told both, before the subscription's answer", async () => {
+    const b = await boot();
+    const card = { id: "card_bbbbbb", hash: "b".repeat(64), kind: "tool", computer: "Studio", origin: "user", issuedAt: 1, expiresAt: null, fields: { title: { type: "text", text: "Run a command?" } }, options: [{ id: "allow_once", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }] };
+    b.moss.pendingCards = () => [card as never];
+    b.moss.surfaces.router.pending({ id: "card_bbbbbb" });
+    const code = await Client.connect(b.socketPath);
+    await code.hello("app", b.appToken);
+    const before = code.fromDaemon.length;
+    const r = await code.request("events.subscribe", { areas: ["approvals", "surfaces"] });
+    expect(r.result).toEqual({ ok: true });
+    // No wait: both were written on this connection before the answer.
+    const told = code.fromDaemon.slice(before).filter((m) => m.method === "core.event").map((m) => [m.params?.type, m.params?.card?.id ?? m.params?.card]);
+    expect(told).toEqual([["card_requested", "card_bbbbbb"], ["card_placed", "card_bbbbbb"]]);
+    // Subscribing again to an area it follows tells nothing again.
+    const again = code.fromDaemon.length;
+    await code.request("events.subscribe", { areas: ["approvals", "surfaces"] });
+    expect(code.fromDaemon.slice(again).filter((m) => m.method === "core.event")).toEqual([]);
     code.close();
   });
 

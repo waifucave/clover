@@ -4853,7 +4853,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         coreEvent: (event, o) => mossServer?.coreEvent(event, o) ?? 0,
         // Lane RT: program-named answers verify with their program's key; the broker's cards go to the router.
         programKeys,
-        cardRouting: (broker) => (mossServer === undefined ? () => {} : routeBrokerCards(broker, mossServer.surfaces.router)),
+        cardRouting: (broker) => {
+          if (mossServer === undefined) return () => {};
+          // A connection that subscribes to `approvals` is told the cards already pending (ipc/moss.ts `pendingCards`).
+          const server = mossServer;
+          server.pendingCards = () => broker.cards();
+          const unroute = routeBrokerCards(broker, server.surfaces.router);
+          return () => { unroute(); server.pendingCards = undefined; };
+        },
         log: (line) => console.error(line),
       });
       okTicks.flush();

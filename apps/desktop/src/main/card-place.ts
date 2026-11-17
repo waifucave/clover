@@ -204,6 +204,8 @@ export async function subscribeThenListCards(client: { request<T>(method: string
   await client.request("events.subscribe", { areas: [...APP_EVENT_AREAS] }).catch(() => undefined);
   const listed = await client.request<unknown>("card.list").catch(() => undefined);
   for (const c of (listed as { cards?: unknown[] } | undefined)?.cards ?? []) waiting(c);
+}
+
 /** The engine's placements as this program heard them (lane RT, §3.5): the last word on each card wins. A `card_placed` event
  *  always applies (the core sends one for every move after the program subscribed, in the order it made them); a
  *  `card.placement` snapshot only fills in a card no event has placed on this connection, because its answer can come after
