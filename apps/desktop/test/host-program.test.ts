@@ -61,7 +61,7 @@ test("the engine's start file is read once, honoured only while fresh", () => {
 
 test("the host's hello names the host surface and the browser, and retries a second-host refusal only", () => {
   const h = hostHello("t", "1.111.1", 7);
-  expect(h).toMatchObject({ role: "app", surface: "host", token: "t", protocolVersion: 7 });
+  expect(h).toMatchObject({ role: "app", surface: "host", token: "t", protocolVersion: 7, release: "1.111.1" });
   expect(h.features).toContain("browser");
   expect(h.features).not.toContain("app.show");
   expect(secondHostRetryMs({ code: MOSS_ERR.SURFACE_REFUSED, data: { reason: "second-host" } }, 0)).toBe(1_000);

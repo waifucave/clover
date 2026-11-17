@@ -96,14 +96,16 @@ export function readHostStart(home: string, now: number = Date.now()): { byEngin
   }
 }
 
-/** The host's hello: the `app` role with `surface: "host"`. It handles the engine's tab requests (`browser`), plugin
- *  layers and `app.quit`; it shows no window (`app.show` is the windows'). */
-export function hostHello(token: string, version: string, protocolVersion: number): MossHelloParams {
+/** The host's hello: the `app` role with `surface: "host"` and its own build's `release` (one release, lane RL: a hello
+ *  with none counts as behind). It handles the engine's tab requests (`browser`), plugin layers and `app.quit`; it shows
+ *  no window (`app.show` is the windows'). */
+export function hostHello(token: string, version: string, protocolVersion: number, release: string = version): MossHelloParams {
   return {
     protocolVersion,
     role: "app",
     token,
     surface: "host",
+    release,
     clientName: `MOSS Host ${version}`.slice(0, 128),
     features: ["app.quit", "layers", "browser"],
   };
