@@ -31,7 +31,17 @@ function offeredEcho(ctx: ExampleCtx, from: number): { listed: boolean; deferred
   return { listed: (first?.tools ?? []).some((t) => t.endsWith("__Echo")) || deferred, deferred, glossary: mine.some((r) => r.toolUse?.endsWith("Glossary") === true) };
 }
 
-export /** Whether the first request since `from` leaves `Echo` among the tools the model may call: the request's `tools` with the
+/** What each request since `from` said of `Echo`, for a failure message: the number of tools it declared, whether `Echo` was
+ *  declared (deferred or not) and callable, and whether the conversation carried a start of its tool list. */
+function requestShapes(ctx: ExampleCtx, from: number): string {
+  return ctx.requests().slice(from).map((r) => {
+    const declared = ((r.body as { tools?: Offered } | undefined)?.tools ?? []);
+    const echo = declared.find((t) => t.name.endsWith("__Echo"));
+    return `${declared.length} declared, Echo ${echo === undefined ? "not declared" : echo.defer_loading === true ? "declared deferred" : "declared"}, ${(r.tools ?? []).some((t) => t.endsWith("__Echo")) ? "callable" : "not callable"}`;
+  }).join("; ");
+}
+
+/** Whether the first request since `from` leaves `Echo` among the tools the model may call: the request's `tools` with the
  *  conversation's additions and removals applied (a tool taken away by a removal stays declared in `tools`, which is why the
  *  declaration alone says nothing about whether it is offered). */
 function callableEcho(ctx: ExampleCtx, from: number): boolean {
@@ -106,8 +116,9 @@ export async function toolSettingStep(ctx: ExampleCtx, session: string): Promise
     // back by a setting that only defers it). The call still answers, and no request of it is refused by the provider
     // (`callTurn` fails on a 400). The Settings row says as much.
     await setTo(server, "on-demand");
-    const kept = await callTurn(ctx, session, "Echo", { text: "kept" });
-    if (!kept.result.text.includes(PONG) || kept.result.isError) fail(`set on demand, the conversation that had Echo no longer had it: ${kept.result.text.slice(0, 160)}`);
+    const fromKept = ctx.requests().length;
+    const kept =await callTurn(ctx, session, "Echo", { text: "kept" });
+    if (!kept.result.text.includes(PONG) || kept.result.isError) fail(`set on demand, the conversation that had Echo no longer had it: ${kept.result.text.slice(0, 160)} (requests since the setting: ${requestShapes(ctx, fromKept)})`);
     done.push("on demand: the conversation that already had it keeps it, answered");
 
     // The conversation starts over (a compaction opens a new tool epoch): now the setting is whole. Deferred: not callable
