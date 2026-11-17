@@ -393,16 +393,17 @@ export function deviceProofVerifier(devices: AnswerDevices, programs?: ProgramAn
     const proof = answer.proof;
     if (proof.via !== "device") return false;
     const device = devices.get(proof.device);
-    if (!device || !mayAnswerCards(device)) return false;
     const signature = fromBase64(proof.signature);
-    if (!signature) return false;
+    if (!device || !signature) return false;
     // A proof that names its program (lane RT, ruling C) verifies with that program's key alone, over the input that
-    // names the program: one program's signature never passes as another's, nor as the device's single key.
+    // names the program: one program's signature never passes as another's, nor as the device's single key. A program is a
+    // desktop's, and a revoked desktop answers nothing; its key may be one the program table alone holds (no single key).
     if (proof.program !== undefined) {
-      if (programs === undefined) return false;
+      if (programs === undefined || device.kind !== "desktop" || device.revokedAt !== undefined) return false;
       const signed = programCardAnswerSigningInput({ program: proof.program, id: card.id, hash: card.hash, option: answer.optionId, at: proof.at, children: answer.children ?? [] });
       return programs.verify(proof.device, proof.program, new TextEncoder().encode(signed), signature);
     }
+    if (!mayAnswerCards(device)) return false;
     const input = cardAnswerSigningInput({ id: card.id, hash: card.hash, option: answer.optionId, at: proof.at, children: answer.children ?? [] });
     return devices.verifyAnswer(proof.device, new TextEncoder().encode(input), signature);
   };

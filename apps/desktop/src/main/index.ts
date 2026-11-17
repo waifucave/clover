@@ -45,7 +45,7 @@ import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { OWN_ELEMENT, SealedFrames } from "./sealed";
 import { BrowserAreaFrames, isBrowserEvent, ViewBindings } from "./ui/browser-calls";
-import { FRESH_LIMIT_MS, ownCardPage, pinVisible } from "./sealed-pages";
+import { FRESH_LIMIT_MS, NOT_CHECKED_REASON, NOT_SHOWN_REASON, ownCardPage, pinVisible } from "./sealed-pages";
 import { translate } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { gateAnswer } from "./registry-gate";
@@ -496,7 +496,9 @@ async function ready(): Promise<void> {
       const fresh = sealed.takeFresh(token);
       if (fresh !== "ok") {
         log(`sealed: answer refused (${fresh === "covered" ? "the button was covered or not shown at the press" : "no visibility report came with the press"})`);
-        return { accepted: false, reason: fresh === "covered" ? "the button wasn't fully showing when it was pressed" : "the press wasn't checked just now" };
+        // Most often the button wasn't laid out yet (it had only just been drawn): nothing is wrong with it, and the page says to
+        // press again (`again`), never that the answer failed.
+        return { accepted: false, again: true, reason: fresh === "covered" ? NOT_SHOWN_REASON : NOT_CHECKED_REASON };
       }
       // One place at a time (lane RT): a press is taken only where the engine's router placed the card (the island's frame
       // for a card on the island, the window's for one in the window). The app's own card page (the window's strip, or the
