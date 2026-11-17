@@ -10,7 +10,6 @@ export const NOT_ON_GITHUB: Readonly<Record<string, string>> = {
   "tab-flash": "measures the tab flash, alone on the machine: the Mac's merge check runs it",
   cold: "measures the cold start's deadline, alone on the machine: the Mac's merge check runs it",
   idle: "measures idle CPU, alone on the machine: the Mac's merge check runs it",
-  cards: "its row 56, \"the sealed page ready to answer\", is red on a GitHub runner on every attempt: the runner has no pointing device, so macOS draws classic 15 px scrollbars, the sealed button's frame (86 x 34, its page 85 x 48) shows them, and the button is 48% shown, never ready to press (measured, run 44066986653). With overlay scrollbars (`defaults write -g AppleShowScrollBars -string WhenScrolling`) the row passes. The Mac, with a trackpad, runs it at every merge batch",
   release: "needs a packaged test build signed with the Developer ID, which a GitHub runner does not have: the Mac's merge check runs it on the try build",
   arrivals: "not yet on GitHub (about 45 s of rows): the Mac's merge check runs it",
   addons: "not yet on GitHub (about 60 s of rows): the Mac's merge check runs it",
@@ -19,5 +18,4 @@ export const NOT_ON_GITHUB: Readonly<Record<string, string>> = {
   "builder-examples": "not yet on GitHub (about 150 s of rows): the Mac's merge check runs it",
   "workshop-points": "not yet on GitHub (about 60 s of rows): the Mac's merge check runs it",
   models: "not yet on GitHub (about 90 s of rows, no app): the Mac's merge check runs it",
-  moss: "presses sealed buttons, which never read as visible on a runner until the sealed-page fix lands (lane RT); runs MOSS from source on the Mac until then, and moves to the matrix after that fix",
 };
