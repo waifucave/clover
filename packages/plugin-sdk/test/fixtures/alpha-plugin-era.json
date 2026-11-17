@@ -55,7 +55,7 @@
         {
           "value": "meadow",
           "title": {
-            "en": "Meadow",
+            "en": "Clover meadow",
             "ja": "クローバーの草原"
           }
         },
@@ -214,11 +214,6 @@
         "default": "anthropic/claude-sonnet-5-5",
         "effort": "medium"
       },
-      "avatar": {
-        "file": "assets/alpha.vrm",
-        "format": "vrm",
-        "portrait": "assets/portrait.svg"
-      },
       "theme": "alpha",
       "layout": "tab/layout.json"
     },
@@ -236,11 +231,8 @@
         },
         "instructions": "server/instructions.md",
         "contained": [
-          "set_expression",
-          "play_motion",
           "set_scene",
           "set_mood",
-          "toggle_outfit",
           "pin_note",
           "unpin_note",
           "celebrate"
@@ -430,8 +422,6 @@
     "bots.read",
     "conversation.read",
     "shell.control",
-    "shell.read",
-    "avatar.read",
-    "avatar.control"
+    "shell.read"
   ]
 }
