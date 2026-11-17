@@ -6,7 +6,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, protocol, safeStorage, session, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebFrameMain } from "electron";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, extname, join, normalize, sep } from "node:path";
+import { basename, dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TOOL_AVAILABILITIES, type MossHelloResult, type ToolAvailability } from "@waifucave/moss-protocol";
 import { daemonEndpoint, type DaemonClient } from "./client";
@@ -305,6 +305,9 @@ function fromPage(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | und
   return w;
 }
 
+/** Pictures the person picked for the composer, by id, until sent (the window holds only their names). */
+const picked = new Map<string, { name: string; mediaType: "image/png" | "image/jpeg" | "image/webp"; data: string }>();
+
 const str = (v: unknown, max: number): string | undefined => (typeof v === "string" && v.length > 0 && v.length <= max ? v : undefined);
 
 function handle(channel: string, fn: (w: BrowserWindow, a: Record<string, unknown>) => unknown): void {
@@ -355,12 +358,35 @@ function wireBridge(): void {
   handle("moss:send", async (w, a) => {
     const bot = str(a.bot, 64);
     const text = typeof a.text === "string" ? a.text.slice(0, 100_000).trim() : "";
-    if (bot === undefined || text === "") return { ok: false, why: "Nothing to send." };
+    const ids = Array.isArray(a.images) ? a.images.filter((x): x is string => typeof x === "string").slice(0, 4) : [];
+    const images = ids.flatMap((id) => { const p = picked.get(id); return p === undefined ? [] : [p]; });
+    if (bot === undefined || (text === "" && images.length === 0)) return { ok: false, why: "Nothing to send." };
     if (!personPressed(w)) {
       log("send: refused (no press of the person's own just before)");
       return { ok: false, why: "Words go only right after your own key press or click." };
     }
-    return engine.send(bot, text, randomUUID());
+    const r = await engine.send(bot, text === "" ? "(a picture)" : text, randomUUID(), images.map((p) => ({ mediaType: p.mediaType, data: p.data })));
+    if (r.ok) for (const id of ids) picked.delete(id);
+    return r;
+  });
+  handle("moss:pick-images", async (w) => {
+    if (headless) return [];
+    const r = await dialog.showOpenDialog(w, { properties: ["openFile", "multiSelections"], filters: [{ name: "Pictures", extensions: ["png", "jpg", "jpeg", "webp"] }] });
+    if (r.canceled) return [];
+    const out: { id: string; name: string }[] = [];
+    for (const path of r.filePaths.slice(0, 4)) {
+      const ext = extname(path).toLowerCase();
+      const mediaType = ext === ".png" ? "image/png" as const : ext === ".webp" ? "image/webp" as const : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" as const : undefined;
+      if (mediaType === undefined) continue;
+      let bytes: Buffer;
+      try { bytes = readFileSync(path); } catch { continue; }
+      if (bytes.length > 10 * 1024 * 1024) continue;
+      const id = randomUUID();
+      picked.set(id, { name: basename(path), mediaType, data: bytes.toString("base64") });
+      while (picked.size > 8) picked.delete(picked.keys().next().value!);
+      out.push({ id, name: basename(path) });
+    }
+    return out;
   });
   handle("moss:create-bot", async (w, a) => {
     const name = typeof a.name === "string" ? a.name.trim().slice(0, 80) : "";
