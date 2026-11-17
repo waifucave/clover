@@ -481,6 +481,7 @@ function wireBridge(): void {
     return engine.signOut(pluginId, index);
   });
   handle("moss:bot-record", (_w, a) => engine.botRecord(str(a.id, 64) ?? ""));
+  handle("moss:bot-instructions", (_w, a) => engine.botInstructions(str(a.id, 64) ?? ""));
   handle("moss:edit-bot", (w, a) => {
     const id = str(a.id, 64);
     const p = (a.patch ?? {}) as Record<string, unknown>;

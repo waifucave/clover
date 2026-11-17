@@ -523,6 +523,11 @@ export class MossEngine {
     return { id: b.id, name: textOf(b.name), ...(b.model !== undefined ? { model: b.model } : {}), ...(b.effort !== undefined ? { effort: b.effort } : {}), ...(b.face !== undefined ? { face: b.face } : {}), instructionsBytes: b.instructionsBytes };
   }
 
+  async botInstructions(id: string): Promise<{ text: string } | { waiting: true }> {
+    const r = await this.read<{ text: string }>("bots", "bot.instructions.get", { id });
+    return r === undefined || typeof r.text !== "string" ? { waiting: true } : { text: r.text };
+  }
+
   async editBot(id: string, patch: BotEdit): Promise<boolean> {
     return (await this.read("bots", "bot.edit", { id, patch })) !== undefined;
   }

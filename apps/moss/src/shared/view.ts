@@ -137,8 +137,8 @@ export interface BotSetting {
   set: boolean;
 }
 
-/** A bot's own record for its Edit view (the person's: name, model, effort, face pins). The instructions file's text is not
- *  served by any engine method yet (only its size, `instructionsBytes`): the controller decides who adds a read. */
+/** A bot's own record for its Edit view (the person's: name, model, effort, face pins). The instructions' text is read on
+ *  its own (`botInstructions`). */
 export interface BotRecordRow {
   id: string;
   name: string;
@@ -210,6 +210,9 @@ export interface MossBridge {
   /** Signs out of one entry, after the person's yes on a sealed card the router places here. */
   signOut(pluginId: string, index: number): Promise<boolean>;
   botRecord(id: string): Promise<BotRecordRow | { waiting: true }>;
+  /** The bot's instructions as they are now (`bot.instructions.get`, the person's own client only), so an edit never
+   *  writes over text the person couldn't see; waiting while the engine doesn't serve it. */
+  botInstructions(id: string): Promise<{ text: string } | { waiting: true }>;
   editBot(id: string, patch: BotEdit): Promise<boolean>;
   models(): Promise<ModelRow[] | { waiting: true }>;
 }

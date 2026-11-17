@@ -38,7 +38,7 @@ function stub(v: MossView, page: ConversationPage | { waiting: true }): MossBrid
     addPlugin: async () => ({ ok: false, why: "no" }), settings: async () => ({ account: "waiting", signIns: "waiting", computers: "waiting", devices: "waiting" }),
     botSettings: async () => ({ waiting: true }), setBotSetting: async () => false, setLevel: async () => false,
     setPermission: async () => false, signIn: async () => ({ ok: false, why: "no" }), signOut: async () => false,
-    botRecord: async () => ({ waiting: true }), editBot: async () => false, models: async () => ({ waiting: true }),
+    botRecord: async () => ({ waiting: true }), botInstructions: async () => ({ waiting: true }), editBot: async () => false, models: async () => ({ waiting: true }),
   };
 }
 

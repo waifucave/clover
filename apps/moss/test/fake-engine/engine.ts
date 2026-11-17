@@ -321,6 +321,9 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         return { state: typeof params.key === "string" ? "signed-in" : "signed-out", ...(typeof params.key === "string" ? {} : { authorizeUrl: "https://example.test/authorize" }) };
       case "plugin.auth.signOut":
         return { applied: false, card: "card_signout_000001" };
+      case "bot.instructions.get":
+        piece("bots", method);
+        return { text: bots.instructions(String(params.id)) };
       case "bot.edit": {
         piece("bots", method);
         const v = await bots.edit(String(params.id), params.patch as never);

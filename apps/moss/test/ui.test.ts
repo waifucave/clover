@@ -63,7 +63,8 @@ beforeAll(() => {
   tmp.push(work);
   const built = spawnSync(process.execPath, ["run", "scripts/build.ts", "--test-build"], { cwd: root, encoding: "utf8" });
   expect(built.status, built.stderr).toBe(0);
-});
+  // The build takes longer than a hook's default 5 s on a slow runner.
+}, 180_000);
 
 afterAll(() => {
   for (const d of tmp) rmSync(d, { recursive: true, force: true });

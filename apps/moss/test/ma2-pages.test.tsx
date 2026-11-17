@@ -72,6 +72,7 @@ async function setup(): Promise<{ e: FakeEngine; engine: MossEngine; bridge: Mos
     plugins: () => engine.plugins(), setAvailability: (s, t, a) => engine.setAvailability(s, t, a),
     addPlugin: (from) => engine.addPlugin("link" in from ? from : { folder: "/nowhere" }),
     settings: () => engine.settings(), botSettings: (b) => engine.botSettings(b), setBotSetting: (b, p, k, v) => engine.setBotSetting(b, p, k, v),
+    botInstructions: (id) => engine.botInstructions(id),
     setLevel: (c, l) => engine.setLevel(c, l), setPermission: (s, t, p) => engine.setPermission(s, t, p),
     signIn: (p, i, k) => engine.signIn(p, i, k), signOut: (p, i) => engine.signOut(p, i),
     botRecord: (id) => engine.botRecord(id), editBot: (id, patch) => engine.editBot(id, patch), models: () => engine.models(),
@@ -261,10 +262,9 @@ describe("Settings", () => {
     const model = page.querySelector("[data-model-picker]") as HTMLSelectElement;
     expect(model.value).toBe("anthropic/claude-sonnet");
     expect([...model.options].map((o) => o.textContent)).toContain("GPT-5.4 mini · OpenAI (not signed in)");
-    // Until the engine serves the instructions' text, the editor is shut: nothing replaces a file the person can't see.
-    expect(page.querySelector("[data-instructions-size]")?.textContent).toContain("holds");
-    expect((page.querySelector("textarea") as HTMLTextAreaElement).disabled).toBe(true);
-    expect(page.querySelector("[data-instructions-why]")?.textContent).toContain("nothing is replaced unseen");
+    // The instructions as they are now (`bot.instructions.get`), edited in place.
+    await until(() => page.querySelector("[data-instructions-text]") !== null);
+    expect((page.querySelector("[data-instructions-text]") as HTMLTextAreaElement).value).toBe("You plan trips. Book nothing without asking, keep receipts in the Travel folder, prefer window seats.");
     expect(page.querySelectorAll("[data-shape]").length).toBe(10);
     expect(page.querySelectorAll("[data-color]").length).toBe(10);
     expect(page.querySelectorAll("[data-eyes]").length).toBe(4);
@@ -284,9 +284,13 @@ describe("Settings", () => {
     await act(async () => { fireEvent.click([...r.container.querySelectorAll("[data-settings=model] button")].find((b) => b.textContent === "Save")!); });
     await until(() => callsOf(e, "bot.edit").length === 3);
     expect(callsOf(e, "bot.edit")[2]).toEqual({ id: "juniper", patch: { model: null } });
-    // An empty instructions box is never sent.
-    const save = [...r.container.querySelectorAll("[data-settings=instructions] button")][0] as HTMLButtonElement;
-    expect(save.disabled).toBe(true);
+    // Unchanged instructions are never sent; a change is saved whole.
+    const save = () => [...r.container.querySelectorAll("[data-settings=instructions] button")].find((b) => b.textContent === "Save instructions") as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+    await act(async () => { fireEvent.change(r.container.querySelector("[data-instructions-text]")!, { target: { value: "You plan trips. Ask first." } }); });
+    await act(async () => { fireEvent.click(save()); });
+    await until(() => callsOf(e, "bot.edit").length === 4);
+    expect(callsOf(e, "bot.edit")[3]).toEqual({ id: "juniper", patch: { instructions: "You plan trips. Ask first." } });
     // The bot's settings from plugins: the fake's voice plugin, drawn from its schema.
     await until(() => r.container.querySelector("[data-plugin-settings=\"moss/voice\"] [data-bot-setting=voice] select") !== null);
     r.unmount();

@@ -237,7 +237,7 @@ function BotPage(props: { bot: BotRow }) {
         <FacePicker name={rec.name} {...(rec.face !== undefined ? { face: rec.face } : {})} onPick={(face, said) => void edit({ face }, said)} />
       </Card>
       <Card title="Instructions" id="instructions" note="Who the bot is, how it talks, what it cares about.">
-        <Instructions name={rec.name} bytes={rec.instructionsBytes} onSave={(instructions) => edit({ instructions }, "Instructions replaced.")} />
+        <Instructions bot={rec.id} name={rec.name} bytes={rec.instructionsBytes} onSave={(instructions) => edit({ instructions }, "Instructions saved.")} />
       </Card>
     </div>
   );
@@ -256,14 +256,38 @@ function NameField(props: { name: string; onSave: (name: string) => Promise<bool
   );
 }
 
-/** The instructions file's text is not served by the engine yet (only its size): until the person's own client can read it
- *  (`bot.instructions.get`, lane BT), the editor stays shut, so nothing ever overwrites a file the person can't see. */
-function Instructions(props: { name: string; bytes: number; onSave: (text: string) => Promise<boolean> }) {
+/** The bot's instructions as they are now (`bot.instructions.get`), edited in place and saved whole. While the engine
+ *  doesn't serve the read, the editor stays shut, so nothing ever overwrites a file the person can't see. */
+function Instructions(props: { bot: string; name: string; bytes: number; onSave: (text: string) => Promise<boolean> }) {
+  const [now, setNow] = useState<string | "waiting" | undefined>(undefined);
+  const [v, setV] = useState("");
+  useEffect(() => {
+    let live = true;
+    setNow(undefined);
+    void bridge().botInstructions(props.bot).then((r) => {
+      if (!live) return;
+      if ("waiting" in r) setNow("waiting");
+      else { setNow(r.text); setV(r.text); }
+    });
+    return () => { live = false; };
+  }, [props.bot]);
+  const save = async (): Promise<void> => { if (typeof now === "string" && v !== now && await props.onSave(v)) setNow(v); };
+  if (now !== "waiting" && now !== undefined) {
+    return (
+      <>
+        <textarea className="ma2-field ma2-instructions" rows={8} value={v} onChange={(e) => setV(e.target.value)} placeholder={`Who ${props.name} is, how ${props.name} talks…`} aria-label={`${props.name}'s instructions`} data-instructions-text />
+        <div className="ma2-inline ma2-inline--end">
+          <button type="button" className="text-button" disabled={v === now} onClick={() => setV(now)}>Undo changes</button>
+          <button type="button" className="text-button text-button--solid" disabled={v === now} onClick={() => void save()}>Save instructions</button>
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <p className="muted small" data-instructions-size>{props.bytes === 0 ? `${props.name} has no instructions yet.` : `${props.name}'s instructions file holds ${sizeWords(props.bytes)}.`}</p>
       <textarea className="ma2-field ma2-instructions" rows={5} value="" disabled readOnly placeholder={`Who ${props.name} is, how ${props.name} talks…`} aria-label={`${props.name}'s instructions`} />
-      <p className="muted small" data-instructions-why>Editing comes once MOSS can show you what the file says now, so nothing is replaced unseen.</p>
+      {now === "waiting" ? <p className="muted small" data-instructions-why>Editing comes once MOSS can show you what the file says now, so nothing is replaced unseen.</p> : null}
       <div className="ma2-inline ma2-inline--end">
         <button type="button" className="text-button text-button--solid" disabled>Save instructions</button>
       </div>

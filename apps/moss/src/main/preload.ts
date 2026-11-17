@@ -63,6 +63,7 @@ if (where === "moss-app:" && location.host === "app" && window.top === window) {
     signIn: (pluginId, index, key) => ipcRenderer.invoke("moss:sign-in", { pluginId, index, ...(key !== undefined ? { key } : {}) }),
     signOut: (pluginId, index) => ipcRenderer.invoke("moss:sign-out", { pluginId, index }),
     botRecord: (id) => ipcRenderer.invoke("moss:bot-record", { id }),
+    botInstructions: (id) => ipcRenderer.invoke("moss:bot-instructions", { id }),
     editBot: (id, patch) => ipcRenderer.invoke("moss:edit-bot", { id, patch }),
     models: () => ipcRenderer.invoke("moss:models"),
   };
