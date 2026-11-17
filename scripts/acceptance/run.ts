@@ -488,7 +488,7 @@ function hostAppCopy(app: { exe: string; args: string[] }): { exe: string; args:
  *  (Alpha's tab showing, a Browser call's tool card) and one in its strip (a plugin's OK card, no session) are each drawn in
  *  one place: by the window, never also by the host (its island or its own card), past the fallback's 2-second timer. The
  *  conversation's card is answered by the run, the strip's pressed in the window; the Browser call's page loads in the host. */
-async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: string, c: MossClient, session: string): Promise<string> {
+async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: string, c: MossClient, session: string, front: (on: boolean) => void): Promise<string> {
   const drawn = async (cdp: Cdp, id: string) => (await cdp.documents()).filter((d) => d.url.startsWith(`moss-sealed://card/${encodeURIComponent(id)}/`)).map((d) => d.url.replace(/^moss-sealed:\/\/card\/[^/]+\//, "").split("?")[0]!);
   const placed = (id: string, re: string) => until(`the router placing ${id} ${re}`, 30_000, () => (new RegExp(`router: ${id} placed ${re}`).test(readLog(appLog)) ? true : undefined), 300);
   const onlyWindow = async (id: string, what: string): Promise<string[]> => {
@@ -514,7 +514,11 @@ async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: s
   await placed(tool.id, "conversation \\(code main\\)");
   const inConversation = await onlyWindow(tool.id, "the conversation's card");
   if (inConversation.includes("own")) fail("the conversation's card: the window drew its own card beside the conversation's");
-  await approve(c, tool, { log: appLog });
+  // Answered on the island: the window goes back, the router moves the card to the host's island, which takes the press.
+  front(false);
+  await placed(tool.id, "island from conversation");
+  const onIsland = await pressOnIsland(hostCdp, tool, hostLog);
+  front(true);
   await c.request("plugin.remove", { id: fixtureId, deleteData: true }, 30_000).then(async () => {
     const rm = await until("the removal card", 30_000, async () => (await cards(c)).find((k) => k.pluginId === fixtureId), 300).catch(() => undefined);
     if (rm !== undefined) await approve(c, rm, { log: appLog });
@@ -525,7 +529,7 @@ async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: s
   await until("the bot's page loaded with the window and the host up", 60_000, () => (browserFixture!.seen.slice(seen).some((r) => r.path === "/") ? true : undefined), 300);
   if (![...hostCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url))) await until("the bot's page in the host", 30_000, () => ([...hostCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url)) ? true : undefined), 500);
   if ([...appCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url))) fail("the bot's page loaded in MOSS Code's window while the host runs the pages");
-  return `a plugin's OK card was placed in the window's strip, drawn there only (${inStrip.join(", ")}) and pressed there (${from}); Alpha's tool card with her tab focused was placed in the window's conversation and drawn there only (${inConversation.join(", ")}); the host drew neither past the fallback's 2 s; with both up, the Browser tool's page loaded in the host and not in the window`;
+  return `a plugin's OK card was placed in the window's strip, drawn there only (${inStrip.join(", ")}) and pressed there (${from}); Alpha's tool card with her tab focused was placed in the window's conversation and drawn there only (${inConversation.join(", ")}), then with the window back moved to the host's island and pressed there (${onIsland.slice(0, 120)}); the host drew neither past the fallback's 2 s; with both up, the Browser tool's page loaded in the host and not in the window`;
 }
 
 /** Unregisters from Launch Services whatever the run left registered under its temp folder (scripts/try/run.sh's rule). */
@@ -4430,7 +4434,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     await until("the window's mount (its own points only)", 60_000, () => (/mount: \{"mainWindow":true,"surfaces":false,"background":false,"tray":"none","browser":false/.test(readLog(appProc.log)) ? true : undefined), 300);
     await sleep(2_000);
     if (islandTarget(appCdp) !== undefined) fail("MOSS Code's window drew an island of its own while the host owns the screen");
-    lines.push(`one card in one place: ${await oneCardEach(appCdp, appProc.log, hostCdp, appLogFile, c, session)}`);
+    lines.push(`one card in one place: ${await oneCardEach(appCdp, appProc.log, hostCdp, appLogFile, c, session, (on) => writeFileSync(frontFile, on ? "front" : "back"))}`);
     appCdp.close();
     await endChild(appProc.proc);
     lines.push("one island: MOSS Code's window mounted its own points only (no island, no background part, no pages, no menu-bar icon), and its process quit");
