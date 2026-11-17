@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mossFront, FrontWatcher, islandMayDraw, placeCard, placeLine, pressMayBeTaken, type WatchedWindow } from "../src/main/card-place";
+import { mossFront, FrontWatcher, islandMayDraw, placeCard, placeFromEngine, placeLine, presenceOf, pressMayBeTaken, showingOf, type WatchedWindow } from "../src/main/card-place";
 import { SealedFrames } from "../src/main/sealed";
 
 /** The app's bookkeeping for where a pending card is drawn, as index.ts keeps it, over a fake front state: the three
@@ -33,8 +33,8 @@ describe("where a pending card is drawn", () => {
   });
 
   test("the island may draw only while the window is not in front", () => {
-    expect(islandMayDraw(false)).toBe(true);
-    expect(islandMayDraw(true)).toBe(false);
+    expect(islandMayDraw(undefined, false)).toBe(true);
+    expect(islandMayDraw(undefined, true)).toBe(false);
   });
 
   test("three placements, one line each: where it went and why", () => {
@@ -132,7 +132,7 @@ describe("the app's own card is MOSS's own window: answering it is not leaving t
     w.advance(500);
     expect(w.moves).toEqual([true]);
     expect(placeCard({ front: w.front(), drawnInWindow: false })).toBe("window");
-    expect(pressMayBeTaken({ fromIsland: false, front: w.front() })).toBe(true);
+    expect(pressMayBeTaken({ from: "window", placed: undefined, front: w.front() })).toBe(true);
     // Back to the main window and onto the card again: still MOSS.
     w.card.focused = false; w.main.focused = true;
     w.watcher.event();
@@ -146,8 +146,8 @@ describe("the app's own card is MOSS's own window: answering it is not leaving t
     expect(w.moves).toEqual([true, false]);
     expect(placeCard({ front: w.front(), drawnInWindow: false })).toBe("island");
     // The island's frame is refused while MOSS is in front, and not otherwise.
-    expect(pressMayBeTaken({ fromIsland: true, front: true })).toBe(false);
-    expect(pressMayBeTaken({ fromIsland: true, front: false })).toBe(true);
+    expect(pressMayBeTaken({ from: "island", placed: undefined, front: true })).toBe(false);
+    expect(pressMayBeTaken({ from: "island", placed: undefined, front: false })).toBe(true);
   });
 
   test("reading only the main window (the first version) moved the card on the click that was meant to answer it", () => {
@@ -156,5 +156,47 @@ describe("the app's own card is MOSS's own window: answering it is not leaving t
     expect(mossFront(main, []).focused).toBe(false);
     expect(mossFront(main, [card]).focused).toBe(true);
     expect(mossFront(undefined, [card]).exists).toBe(false);
+  });
+});
+
+describe("lane RT: the engine's router places the card, and the press gate follows the placement", () => {
+  const strip = { kind: "strip", program: "code", window: "main" } as const;
+  const conversation = { kind: "conversation", program: "code", window: "main" } as const;
+  const island = { kind: "island" } as const;
+
+  test("the engine's place: the conversation; the strip (unless the conversation on screen draws it); the island", () => {
+    expect(placeFromEngine(conversation, { front: true, drawnInWindow: false })).toBe("conversation");
+    expect(placeFromEngine(strip, { front: true, drawnInWindow: false })).toBe("window");
+    expect(placeFromEngine(strip, { front: true, drawnInWindow: true })).toBe("conversation");
+    expect(placeFromEngine(island, { front: true, drawnInWindow: true })).toBe("island");
+    expect(placeFromEngine({ kind: "elsewhere" }, { front: false, drawnInWindow: false })).toBe("island");
+    // Before the engine has placed it: the old rule.
+    expect(placeFromEngine(undefined, { front: false, drawnInWindow: true })).toBe("island");
+  });
+
+  test("the island draws only a card placed on it, whatever the window's focus", () => {
+    expect(islandMayDraw(island, true)).toBe(true);
+    expect(islandMayDraw(strip, false)).toBe(false);
+    expect(islandMayDraw(conversation, false)).toBe(false);
+  });
+
+  test("the press gate follows the placement, never focus; the fallback card answers wherever the card is", () => {
+    expect(pressMayBeTaken({ from: "island", placed: island, front: true })).toBe(true);
+    expect(pressMayBeTaken({ from: "island", placed: strip, front: false })).toBe(false);
+    expect(pressMayBeTaken({ from: "window", placed: strip, front: false })).toBe(true);
+    expect(pressMayBeTaken({ from: "window", placed: island, front: true })).toBe(false);
+    expect(pressMayBeTaken({ from: "window", placed: { kind: "strip", program: "moss", window: "moss" }, front: true })).toBe(false);
+    expect(pressMayBeTaken({ from: "fallback", placed: island, front: true })).toBe(true);
+  });
+
+  test("presence: the one window, focused when in front, what its tab shows; Settings over it shows nothing", () => {
+    expect(showingOf({ tab: { kind: "bot", id: "alpha" } })).toEqual({ kind: "bot", id: "alpha" });
+    expect(showingOf({ tab: { kind: "agent", id: "s_1" } })).toEqual({ kind: "session", id: "s_1" });
+    expect(showingOf({ tab: { kind: "bot", id: "alpha" }, dialog: "settings" })).toBeNull();
+    expect(showingOf({ tab: { kind: "plugins" } })).toBeNull();
+    expect(showingOf(undefined)).toBeNull();
+    expect(presenceOf({ exists: true, visible: true, minimized: false, front: true }, { kind: "bot", id: "alpha" })).toEqual({ windows: [{ window: "main", focused: true, visible: true, showing: { kind: "bot", id: "alpha" } }] });
+    expect(presenceOf({ exists: true, visible: true, minimized: true, front: false }, null)).toEqual({ windows: [{ window: "main", focused: false, visible: false, showing: null }] });
+    expect(presenceOf({ exists: false, visible: false, minimized: false, front: false }, null)).toEqual({ windows: [] });
   });
 });

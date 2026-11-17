@@ -1,5 +1,6 @@
-// To be replaced by spec revision 19 (§3.5, ruling A): stepping aside follows the presence the windows report to the engine,
-// and the surfaces move to the background host (lanes RT and HS; `presence.report`, `card_placed`).
+// Spec revision 19 (§3.5, ruling A; lane RT): a surface steps aside only for a FOCUSED window of the product (the presence
+// this program reports to the engine: a window that is visible but not focused moves nothing), and never while the router
+// has placed a card on it (`holdsPlacedCard`). The surfaces move to the background host with lane HS.
 // Which surfaces stand aside while MOSS's own window is the one in front, by what each surface's manifest says (`window.front`).
 // The Dispatch pill is a second place to type to a bot; with the window's composer in front it only covers the window's own
 // composer and picker, so it says `steps-aside` and comes back when the window is closed, hidden, minimised, or another app is in
@@ -30,6 +31,8 @@ export type PutAway = "auto" | "hidden" | "summoned";
 export interface FrontRule {
   /** `front: "steps-aside"`: the surface leaves the screen while the main window is in front. */
   stepsAside: boolean;
+  /** The router has placed a pending card on this surface (one that draws cards, `window.cards`): it stays. */
+  holdsPlacedCard?: boolean;
 }
 
 /** Whether a surface may be shown right now: what it asked for, unless it steps aside for the window in front (it does not once
@@ -37,7 +40,7 @@ export interface FrontRule {
 export function surfaceShown(rule: FrontRule, wantsVisible: boolean, main: MainWindowState, mode: PutAway = "auto"): boolean {
   if (mode === "hidden") return false;
   if (mode === "summoned") return wantsVisible;
-  return wantsVisible && !(rule.stepsAside && mainWindowFront(main));
+  return wantsVisible && !(rule.stepsAside && rule.holdsPlacedCard !== true && mainWindowFront(main));
 }
 
 /** A four-finger tap toggles what the person sees: a surface on screen is put away, one that is not (put away, or stepped aside

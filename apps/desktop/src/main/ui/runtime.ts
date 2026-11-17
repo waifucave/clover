@@ -1303,9 +1303,9 @@ export class UiRuntime {
     return (await this.onCardPage?.(cardId)) ?? false;
   }
 
-  /** Whether a surface that draws the cards (`window.cards`) may be given a card's frames now: not while MOSS's own window is in
-   *  front (the card is drawn there). */
-  cardSurfaceMayDraw?: () => boolean;
+  /** Whether a surface that draws the cards (`window.cards`) may be given this card's frames now: only for a card the engine's
+   *  router placed on the island (lane RT, §3.5). */
+  cardSurfaceMayDraw?: (cardId: string) => boolean;
 
   /** Whether a plugin may place a card's sealed frames: any card with `approvals.all`, else a card of its own bot's. */
   #mayPlace(plugin: UiPlugin, card: { bot?: string }): boolean {
@@ -1374,9 +1374,9 @@ export class UiRuntime {
     // made): a plugin with `approvals.all` places any card, every other plugin the cards of its own bots, by top-level id on both
     // sides. A card with no bot (the user's own session, a plugin's OK, a change from Settings) is `approvals.all`'s alone.
     if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot, or the approvals.all capability");
-    // One place at a time: a surface that declares `window.cards` is given no frame while the window is in front ("not yet": it asks
-    // again when it shows the card).
-    if (part.plugin.capabilities.has("approvals.all") && this.#surfaceEntryOf(part)?.window?.cards === true && this.cardSurfaceMayDraw?.() === false) return undefined;
+    // One place at a time: a surface that declares `window.cards` is given no frame of a card the router placed elsewhere ("not
+    // yet": it asks again when it shows the card).
+    if (part.plugin.capabilities.has("approvals.all") && this.#surfaceEntryOf(part)?.window?.cards === true && this.cardSurfaceMayDraw?.(cardId) === false) return undefined;
     // A field the card lacks draws nothing: the part's holder stays empty and takes no room.
     if (element.startsWith("field:") && !this.hasField(card, element.slice("field:".length))) return "";
     // A glyph only on the button it fits (✓ approves, ✕ denies, ↗ opens a link); any other pairing is the label.

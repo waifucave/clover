@@ -20,7 +20,7 @@ import { RENDER_CONSOLE_MAX, RenderQueue, renderPlace, type RenderConsoleLine, t
 import type { ShellState } from "@waifucave/moss-plugin-sdk";
 import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, ipcMain, Menu, webContents, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, MOSS_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/moss-protocol";
+import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, MOSS_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardPlacedEvent, CardRequestedEvent, CardResolvedEvent, PairStatus, PRESENCE_REFRESH_MS, SURFACES_METHODS, UiSettings, UiSettingsChangedEvent, type CardPlacement } from "@waifucave/moss-protocol";
 import { systemAccentFromOs } from "@waifucave/moss-plugin-sdk";
 import { testBrowserNames } from "./browser/test-names";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
@@ -68,7 +68,7 @@ import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun, type HoldStep } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
-import { mossFront, FrontWatcher, islandMayDraw, placeCard, pressMayBeTaken, placeLine, type CardPlace } from "./card-place";
+import { mossFront, FrontWatcher, islandMayDraw, placeFromEngine, presenceOf, pressMayBeTaken, placeLine, showingOf, type CardPlace, type PressSource } from "./card-place";
 import { afterTap, afterTray, appIsRegular, mainWindowFront, surfaceShown, type MainWindowState, type PutAway } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
@@ -325,8 +325,8 @@ async function ready(): Promise<void> {
   runtime.botName = (id) => botNames.get(id);
   // What came of each part's ask for a card's frames, before the first one was made (the narrow card's diagnosis).
   runtime.onSealedAsk = noteAsk;
-  // One place at a time: while MOSS's window is in front the island is given no frame of a card (the window draws it).
-  runtime.cardSurfaceMayDraw = () => islandMayDraw(mainWindowFront(mainState()));
+  // One place at a time (lane RT): the island is given a card's frames only for a card the engine's router placed on it.
+  runtime.cardSurfaceMayDraw = (cardId) => islandMayDraw(enginePlaces.get(cardId), mainWindowFront(mainState()));
   // A part's Review on a plugin's card: the app's own page for that card, shown now (a fallback already up stays).
   runtime.onCardPage = async (cardId) => {
     if (sealed.get(cardId) === undefined || !sealed.isPending(cardId)) return false;
@@ -367,7 +367,11 @@ async function ready(): Promise<void> {
   installIpc(runtime, {
     frameWatches,
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
-    shellState: (id, state) => shellStates.set(id, state),
+    shellState: (id, state) => {
+      shellStates.set(id, state);
+      // What the main window shows is its presence too (lane RT): a new tab is reported at once.
+      if (mainWindow !== undefined && !mainWindow.isDestroyed() && id === mainWindow.id && JSON.stringify(showingOf(state)) !== lastShowing) void reportPresence();
+    },
     rootCommand: (_id, name) => {
       if (name === "restart-normally") void restart(false);
       if (name === "restart-safe-mode") void restart(true);
@@ -494,21 +498,26 @@ async function ready(): Promise<void> {
         log(`sealed: answer refused (${fresh === "covered" ? "the button was covered or not shown at the press" : "no visibility report came with the press"})`);
         return { accepted: false, reason: fresh === "covered" ? "the button wasn't fully showing when it was pressed" : "the press wasn't checked just now" };
       }
-      // One place at a time: a press from the island's frame while MOSS's window is in front is not taken (the card is drawn
-      // in the window now; the island's frame was a beat behind the move).
+      // One place at a time (lane RT): a press is taken only where the engine's router placed the card (the island's frame
+      // for a card on the island, the window's for one in the window); the app's own fallback card answers wherever it is.
+      // A focus this program hasn't reported yet is reported first, so the placement read is the one the press was made in.
       const from = sealed.windowOf(token);
-      if (!pressMayBeTaken({ fromIsland: [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.cards), front: mainWindowFront(mainState()) })) {
-        log(`sealed: answer refused (the island's frame while the window is in front: the card is drawn in the window)`);
-        return { accepted: false, reason: "this card is in MOSS's window now" };
+      const cardOfPress = sealed.cardOf(token);
+      await presenceIfStale();
+      const source: PressSource = [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.cards) ? "island"
+        : [...fallbacks.values()].some((f) => f.win !== undefined && !f.win.isDestroyed() && f.win.id === from && f.strip !== true) ? "fallback" : "window";
+      const placed = cardOfPress === undefined ? undefined : enginePlaces.get(cardOfPress);
+      if (!pressMayBeTaken({ from: source, placed, front: mainWindowFront(mainState()) })) {
+        log(`sealed: answer refused (a press ${source === "island" ? "on the island" : "in the window"} for a card the router placed ${placed?.kind === "island" ? "on the island" : "in the window"})`);
+        return { accepted: false, reason: placed?.kind === "island" ? "this card is on the island now" : "this card is in MOSS's window now" };
       }
       const key = answerKeyValue;
       if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
       const client = pair.client;
       if (client === undefined) { log(`sealed: answer refused (no client)`); return { accepted: false, reason: "MOSS Code isn't running" }; }
-      // The gate first, before anything else moves: any computer use driving this desktop's computer, no.
-      const acting = await client.request<{ running?: boolean }>("computer.acting", {}, 3_000).catch(() => undefined);
-      if (acting === undefined) { log(`sealed: answer refused (computer-use check failed)`); return { accepted: false, reason: "the computer-use check couldn't run" }; }
-      if (acting.running === true) { log(`sealed: answer refused (computer use acting)`); return { accepted: false, reason: "computer use is acting right now" }; }
+      // Computer use driving this computer refuses the press too (B3): the core reads it at `card.answer` itself, in the same
+      // step that takes the answer (lane RT). A round trip from here first (a 3 s `computer.acting`) was refused under load
+      // with "computer-use check failed", the person's press spent on a check that couldn't run.
       const option_ = option ?? sealed.optionOf(token);
       if (option_ === undefined) { log(`sealed: answer refused (no option)`); return { accepted: false, reason: "no option named" }; }
       // The key that signs the answer is registered first, or the answer isn't sent (the core could only refuse it, and
@@ -529,7 +538,12 @@ async function ready(): Promise<void> {
       if ("error" in out) { log(`sealed: answer refused (${out.error})`); return { accepted: false, reason: out.error }; }
       disarmFallback(out.card.id); // a part's own button answered first: the fallback's timer is gone.
       const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option: option_, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
-      if (r.accepted !== true) { sealed.confirmedAnswer(out.card.id, false); log(`sealed: core refused answer (${typeof r.reason === "string" ? r.reason.slice(0, 120) : "no reason"})`); return { accepted: false, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) }; }
+      if (r.accepted !== true) {
+        sealed.confirmedAnswer(out.card.id, false);
+        if (r.reason === "computer use is acting right now") log(`sealed: answer refused (computer use acting)`);
+        log(`sealed: core refused answer (${typeof r.reason === "string" ? r.reason.slice(0, 120) : "no reason"})`);
+        return { accepted: false, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) };
+      }
       sealed.confirmedAnswer(out.card.id, true);
       log(`sealed: answer accepted for ${out.card.id}`);
       return { accepted: true };
@@ -785,7 +799,7 @@ let signedDevice: string | undefined;
 // own page answers on its own channel.
 /** The last visibility verdict of each sealed frame (by its token), so a change is logged once. */
 const sealedSeen = new Map<string, boolean>();
-const fallbacks = new Map<string, { timer: ReturnType<typeof setTimeout>; win?: Electron.BrowserWindow; token?: string }>();
+const fallbacks = new Map<string, { timer: ReturnType<typeof setTimeout>; win?: Electron.BrowserWindow; token?: string; strip?: boolean }>();
 const FALLBACK_DELAY_MS = 2_000;
 /** The fallback card's window: a card's own width, a height that fits what it says up to a sane most (it scrolls inside
  *  beyond that, its buttons staying in view). */
@@ -927,6 +941,19 @@ function noteBothVisible(cardId: string, windowId: number | undefined): void {
  *  before it is the window's own card; a move (the window comes forward or goes back) is decided at once, on what is known. */
 const cardPlaces = new Map<string, CardPlace>();
 const windowDraws = new Set<string>();
+/** Where the engine's router placed each pending card (lane RT: `card_placed`, `card.placement`). */
+const enginePlaces = new Map<string, CardPlacement>();
+/** Whether the router has placed any pending card on the island (it then never steps aside, §3.5). */
+const islandHoldsCard = (): boolean => [...enginePlaces].some(([id, p]) => (p.kind === "island" || p.kind === "elsewhere") && sealed.isPending(id));
+/** The engine's word on a card's place: kept, and the card placed again; the surfaces hear it (the island takes or lets go). */
+function enginePlaced(cardId: string, place: CardPlacement): void {
+  const was = islandHoldsCard();
+  enginePlaces.set(cardId, place);
+  if (enginePlaces.size > 256) enginePlaces.delete(enginePlaces.keys().next().value!);
+  if (cardPlaces.has(cardId)) placeCardNow(cardId);
+  if (was !== islandHoldsCard()) { for (const s of surfaces.values()) applyVisibility(s); }
+  tellSurfaces();
+}
 const CONVERSATION_ASK_GRACE_MS = 400;
 function drawnInWindow(cardId: string): void {
   if (windowDraws.has(cardId)) return;
@@ -936,7 +963,7 @@ function drawnInWindow(cardId: string): void {
 }
 function placeCardNow(cardId: string): void {
   if (!sealed.isPending(cardId)) { cardPlaces.delete(cardId); return; }
-  const now = placeCard({ front: mainWindowFront(mainState()), drawnInWindow: windowDraws.has(cardId) });
+  const now = placeFromEngine(enginePlaces.get(cardId), { front: mainWindowFront(mainState()), drawnInWindow: windowDraws.has(cardId) });
   const before = cardPlaces.get(cardId);
   if (before === now) return;
   cardPlaces.set(cardId, now);
@@ -949,17 +976,18 @@ function placeCardNow(cardId: string): void {
     // the move back, or the answer, closes it. Without one the window was open for good, beside the island's card.
     if (own?.win === undefined) {
       if (own !== undefined) clearTimeout(own.timer);
-      fallbacks.set(cardId, { timer: setTimeout(() => undefined, 0) });
-      void showFallbackCard(cardId);
+      fallbacks.set(cardId, { timer: setTimeout(() => undefined, 0), strip: true });
+      void showFallbackCard(cardId, true);
     }
   } else {
     // The conversation draws it, or the island does: the app's own card stands down, its timer starts over as the safety net.
     if (own?.win !== undefined && !own.win.isDestroyed()) { disarmFallback(cardId); void armFallback(cardId); }
   }
 }
-/** A card arrives: the island's at once while the window isn't in front; else the conversation gets a beat to ask for it. */
+/** A card arrives: the island's at once; one for the window gets a beat for its conversation to ask for it. */
 function placeArrivedCard(cardId: string): void {
-  if (!mainWindowFront(mainState())) { placeCardNow(cardId); return; }
+  const placed = enginePlaces.get(cardId);
+  if (placed !== undefined ? placed.kind !== "strip" && placed.kind !== "conversation" : !mainWindowFront(mainState())) { placeCardNow(cardId); return; }
   const t = setTimeout(() => placeCardNow(cardId), CONVERSATION_ASK_GRACE_MS);
   t.unref?.();
 }
@@ -985,7 +1013,7 @@ function disarmFallback(cardId: string): void {
 
 /** The app's own card page: the whole card, its fields and buttons, from the app's own scheme (its own single-use
  *  channel), shown without taking the focus (the user's own app in front stays). */
-async function showFallbackCard(cardId: string): Promise<void> {
+async function showFallbackCard(cardId: string, strip = false): Promise<void> {
   const card = sealed.get(cardId);
   if (card === undefined) return;
   const smokeFallback = SMOKE_SEALED_FALLBACK;
@@ -1012,7 +1040,13 @@ async function showFallbackCard(cardId: string): Promise<void> {
   // A plain window of its own size (never the main window's plan: that one's minimum size is a whole app's, which is
   // what made this card a giant at the corner of the screen). It is sized by its page, within a range, and shown
   // without taking the focus.
+  // The window's strip (lane RT, §3.5): the core's own card page docked inside MOSS Code's window, a child of it that moves
+  // with it, for a card the router placed in this window while it shows another session (or none). The safety net's card
+  // (no strip) stands at the screen's top corner away from the cursor, as before.
+  // A headless or test run's card is never docked (nothing there is on a screen, and the press runs offscreen).
+  const dock = strip && !headless && !offscreenPress && mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined;
   const win = new BrowserWindow({
+    ...(dock !== undefined ? { parent: dock } : {}),
     width: FALLBACK_WIDTH, height: 280, useContentSize: true,
     minWidth: FALLBACK_WIDTH, maxWidth: FALLBACK_WIDTH, minHeight: FALLBACK_MIN_HEIGHT, maxHeight: FALLBACK_MAX_HEIGHT,
     title: identity.productName, show: false, resizable: false, minimizable: false, maximizable: false, fullscreenable: false,
@@ -1033,13 +1067,20 @@ async function showFallbackCard(cardId: string): Promise<void> {
   // cursor's display's work area, at the top on the side the cursor is not on (the top is where a notification stands, and
   // where the page grows from as it fits), before showing it, never after, so it never appears first in its default place.
   try {
-    const cursor = screen.getCursorScreenPoint();
-    const display = screen.getDisplayNearestPoint(cursor);
-    const area = display.workArea;
     const bounds = win.getBounds();
-    const x = cursor.x < area.x + area.width / 2 ? area.x + area.width - bounds.width - 16 : area.x + 16;
-    const y = area.y + 12;
-    win.setBounds({ x: Math.round(x), y: Math.round(y), width: bounds.width, height: bounds.height });
+    if (dock !== undefined) {
+      // The strip: at the top of the window's content, centred, each further strip card below the one before.
+      const content = dock.getContentBounds();
+      const below = [...fallbacks.values()].filter((f) => f.strip === true && f.win !== undefined && !f.win.isDestroyed() && f.win !== win).length;
+      win.setBounds({ x: Math.round(content.x + Math.max(0, (content.width - bounds.width) / 2)), y: Math.round(content.y + 12 + below * 24), width: bounds.width, height: bounds.height });
+    } else {
+      const cursor = screen.getCursorScreenPoint();
+      const display = screen.getDisplayNearestPoint(cursor);
+      const area = display.workArea;
+      const x = cursor.x < area.x + area.width / 2 ? area.x + area.width - bounds.width - 16 : area.x + 16;
+      const y = area.y + 12;
+      win.setBounds({ x: Math.round(x), y: Math.round(y), width: bounds.width, height: bounds.height });
+    }
   } catch { /* best effort */ }
   // Bind the fallback's channel to its window's main frame once the page loads (B3): a plugin can't guess the
   // window's frame ids, and a frame from another window can't answer with this token.
@@ -1212,9 +1253,18 @@ function makePair(): Pair {
         log(`card: a ${parsed.data.card.kind} card ${parsed.data.card.id} arrived`);
       } else log("pair: ignored a card_requested event that isn't one");
     }
+    if (type === "card_placed") {
+      const parsed = CardPlacedEvent.safeParse(params);
+      if (parsed.success) {
+        // Ids and places only: the acceptance run reads where the router put each card.
+        log(`router: ${parsed.data.card} placed ${parsed.data.place.kind}${"window" in parsed.data.place ? ` (${parsed.data.place.program} ${parsed.data.place.window})` : ""}${parsed.data.before !== undefined ? ` from ${parsed.data.before.kind}` : ""}`);
+        enginePlaced(parsed.data.card, parsed.data.place);
+      } else log("pair: ignored a card_placed event that isn't one");
+    }
     if (type === "card_resolved") {
       const parsed = CardResolvedEvent.safeParse(params);
       if (parsed.success) {
+        enginePlaces.delete(parsed.data.id);
         sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
         disarmFallback(parsed.data.id);
         cardArrived.delete(parsed.data.id);
@@ -1297,7 +1347,12 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   clearTimeout(registryRetry);
   // `approvals` too: the cards (`card_requested`, `card_resolved`) are that area's, and an app that didn't subscribe to it
   // was never told of a card (the acceptance run's first card-arrival check found it).
-  await client.request("events.subscribe", { areas: ["plugins", "app", "approvals"] }).catch(() => undefined);
+  // `surfaces` (lane RT): where the engine's router places each card (`card_placed`).
+  await client.request("events.subscribe", { areas: ["plugins", "app", "approvals", "surfaces"] }).catch(() => undefined);
+  void reportPresence(client).then(() => client.request<unknown>("card.placement", {})).then((raw) => {
+    const r = SURFACES_METHODS.cardPlacement.result.safeParse(raw);
+    if (r.success) for (const p of r.data.placements) enginePlaced(p.card, p.place);
+  }).catch(() => undefined);
   const [ui, settingsRaw, statusRaw] = await Promise.all([
     optional.call(client, "plugin.ui"),
     optional.call(client, "ui.settings"),
@@ -1736,6 +1791,33 @@ function mainState(): MainWindowState {
   return mossFront(mainWindow, [...fallbacks.values()].map((f) => f.win));
 }
 
+/** This program's presence to the engine's router (lane RT, §3.5): its main window, focused or not (in front, its own card
+ *  windows counting, the front watcher's settled state), visible, and which session or bot it shows. Sent on every change
+ *  and at least every `PRESENCE_REFRESH_MS`; an engine that doesn't serve it yet is asked again on the next connection. */
+let lastShowing = "null";
+let lastFocused: boolean | undefined;
+let presenceUnserved: DaemonClient | undefined;
+async function reportPresence(client: DaemonClient | undefined = pair?.client): Promise<void> {
+  if (client === undefined || presenceUnserved === client) return;
+  const exists = mainWindow !== undefined && !mainWindow.isDestroyed();
+  const st = mainState();
+  const showing = exists ? showingOf(shellStates.get(mainWindow!.id)) : null;
+  const report = presenceOf({ exists: st.exists, visible: st.visible, minimized: st.minimized, front: mainWindowFront(st) }, showing);
+  lastShowing = JSON.stringify(showing);
+  lastFocused = mainWindowFront(st);
+  try {
+    await client.request("presence.report", report, 5_000);
+  } catch (err) {
+    if (err instanceof RpcCallError && err.code === -32601) presenceUnserved = client;
+    else lastFocused = undefined;
+  }
+}
+/** Before a press is judged: a focus change not reported yet is reported now, so the placement it reads is current. */
+async function presenceIfStale(): Promise<void> {
+  if (lastFocused !== mainWindowFront(mainState())) await reportPresence();
+}
+if (process.type === "browser") setInterval(() => void reportPresence(), PRESENCE_REFRESH_MS).unref?.();
+
 /** The choices this computer keeps across restarts (the surfaces put away). */
 const prefsFile = (): string => join(app.getPath("userData"), "prefs.json");
 let prefs: AppPrefs = process.type === "browser" ? readPrefs(prefsFile()) : { ...DEFAULT_PREFS };
@@ -1849,7 +1931,7 @@ function setFourFingerTap(on: boolean): void {
 
 function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed() || s.wantsVisible === undefined) return;
-  const show = surfaceShown({ stepsAside: s.stepsAside }, s.wantsVisible, mainState(), modeOf(s));
+  const show = surfaceShown({ stepsAside: s.stepsAside, holdsPlacedCard: s.cards && islandHoldsCard() }, s.wantsVisible, mainState(), modeOf(s));
   if (show && invisible !== undefined && !s.win.isVisible()) showInvisible(s.win);
   else if (show && !headless && !s.win.isVisible()) s.win.showInactive();
   else if (!show && s.win.isVisible()) s.win.hide();
@@ -1864,7 +1946,7 @@ function followFront(): void {
 }
 const frontWatcher = new FrontWatcher({
   read: () => mainWindowFront(mainState()),
-  changed: () => { tellSurfaces(); movePendingCards(); },
+  changed: () => { tellSurfaces(); movePendingCards(); void reportPresence(); },
   settleMs: 120,
 });
 const surfaces = new Map<string, Surface>();
@@ -2033,7 +2115,7 @@ function surfaceEnvironment(windowId: number): SurfaceEnvironment | undefined {
   if (![...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === windowId)) return undefined;
   const d = screen.getPrimaryDisplay();
   if (screens === null) screens = loadScreens(join(here, "native", "screen.node"), log);
-  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) }, mainFront: mainWindowFront(mainState()) } as SurfaceEnvironment; // `mainFront` rides along: the SDK's declaration doesn't name it (the island reads it)
+  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) }, mainFront: mainWindowFront(mainState()) && !islandHoldsCard() } as SurfaceEnvironment; // `mainFront` rides along: the SDK's declaration doesn't name it (the island reads it)
 }
 
 /** The displays changed: each surface's part hears its environment as it is now. */

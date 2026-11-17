@@ -251,6 +251,9 @@ export interface MossServer {
   /** Lane RT: the surface door (which surface and program each `app` connection is) and the router (where each pending
    *  card is drawn, from the windows' presence). The daemon feeds the router the broker's cards (`surfaces/routing.ts`). */
   readonly surfaces: { readonly door: EngineSurfaceDoor; readonly router: EngineCardRouter };
+  /** Hears every connection that closed after its hello (its `surface` and `program` still on it), after the server let go
+   *  of it: the hook for a lane that keeps state per connection (lane HS's host). Gives back the undo. */
+  onClosed(fn: (conn: MossConn) => void): () => void;
   dispose(): void;
 }
 
@@ -264,6 +267,7 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   const door = new EngineSurfaceDoor();
   const router = new EngineCardRouter({ clock: deps.clock ?? new SystemClock(), hostLive: false });
   const undoor = door.watch(() => router.hostLive(door.islandLive()));
+  const closedHooks = new Set<(conn: MossConn) => void>();
   // Each card that moved, or was first placed, to the `app` connections subscribed to `surfaces` (`card_placed`).
   const unplaced = router.watch((c) => {
     sendCoreEvent({ connections: () => conns.values(), log: (line) => deps.log?.(line) }, { type: "card_placed", ts: Date.now(), card: c.card, place: c.place as CardPlacement, ...(c.before !== undefined ? { before: c.before } : {}) });
@@ -681,6 +685,7 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       // Its presence goes at once, and the door lets its surface go (the island with it, if it drew one).
       router.dropped(conn.connId);
       door.closed(conn.connId);
+      for (const fn of closedHooks) { try { fn(conn); } catch { /* a hook's fault is its own */ } }
     },
 
     // Any answer to a ping, a result or an error, shows the app's main process is responsive.
@@ -738,6 +743,8 @@ export function createMossServer(deps: MossServerDeps): MossServer {
     },
 
     surfaces: { door, router },
+
+    onClosed(fn) { closedHooks.add(fn); return () => { closedHooks.delete(fn); }; },
 
     dispose() {
       unrevoke?.();
