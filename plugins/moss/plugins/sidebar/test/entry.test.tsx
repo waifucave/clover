@@ -1,38 +1,34 @@
-// The sidebar on the runtime: bots, coding projects and app buttons from the API, and routes to the shell.
+// The sidebar on the runtime: code sessions by project and app buttons from the API, and routes to the shell. MOSS
+// Code's window has no bots (spec §9.4): the sidebar reads code sessions only (`sessions.read`).
 import { computerView, fakeApi, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
-import type { BotView, SessionView } from "@waifucave/moss-plugin-sdk";
+import type { SessionView } from "@waifucave/moss-plugin-sdk";
 import type { EntryComponent } from "../client/local";
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { agentStatus, botStatus, SidebarEntry, toShellRoute, toSidebarRoute, type ShellRoute } from "../client/entry";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { agentStatus, SidebarEntry, toShellRoute, toSidebarRoute, type ShellRoute } from "../client/entry";
 
 afterEach(cleanup);
 
-const bot = (id: string, name: string, extra: Partial<BotView> = {}): BotView => ({ id, name, model: "m", userLayer: [], state: "idle", mainSession: `s_${id}`, ...extra });
 const s = (id: string, extra: Partial<SessionView>): SessionView => ({ id, kind: "agent", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-const BOTS = [bot("alpha", "Alpha", { state: "thinking" }), bot("luna", "Luna")];
 const SESSIONS = [
-  s("s_alpha", { kind: "bot", bot: "alpha", status: "prompting" }),
-  s("s_luna", { kind: "bot", bot: "luna", needsYou: { cards: 1, questions: 0 } }),
   s("agent-1", { parent: "s_alpha", bot: "alpha", backend: "Codex", title: "Fix the dates", status: "prompting" }),
   s("code-1", { kind: "coding", root: "home/Studio/projects/moss", title: "The panels", backend: "Codex" }),
   s("code-2", { kind: "coding", root: "home/Studio/projects/moss", title: "The docs", status: "failed" }),
   s("code-3", { kind: "coding", root: "home/Laptop/code/tarot", title: "Spreads" }),
 ];
 
-async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" } }, opts: { entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; onWatch?: (listener: (s: SessionView) => void) => void; onBotRemoved?: (removed: (id: string) => void) => void } = {}) {
+async function mount(route: ShellRoute = { route: "agent", params: { session: "code-1" } }, opts: { entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; onWatch?: (listener: (s: SessionView) => void) => void } = {}) {
   const core = fakeCore({ "account.status": () => ({ signedIn: true, user: { id: "u1", name: "Sam" } }) });
   const api = fakeApi({
-    bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: (_l, r) => { opts.onBotRemoved?.(r!); return () => undefined; } },
-    conversation: { list: async () => SESSIONS, watch: (l) => { opts.onWatch?.(l); return () => undefined; } },
+    sessions: { list: async () => SESSIONS, get: async (id) => SESSIONS.find((x) => x.id === id)!, watch: (l) => { opts.onWatch?.(l); return () => undefined; }, history: async () => ({ events: [], hasMore: false }), follow: () => () => undefined },
     computers: { list: async () => [computerView("Studio", { device: "d1", level: "ask", link: "self", isMain: true })] },
   });
   const routes: ShellRoute[] = [];
   const runtime = runtimeWith({
     api: () => api,
     core: () => core,
-    spot: (name) => (name === "sidebar.app" ? { shape: "list" } : name === "sidebar.bot" ? { shape: "keyed" } : undefined),
+    spot: (name) => (name === "sidebar.app" ? { shape: "list" } : undefined),
     entries: opts.entries ?? [
       { pluginId: "moss/archive", id: "archive-app", spot: "sidebar.app", component: "ArchiveAppBadge", fields: { title: "Archive", icon: "assets/archive.svg", opens: "archive" }, order: 900, source: "bundled", enabledAt: 0 },
       { pluginId: "discord-waifus", id: "app", spot: "sidebar.app", component: "Badge", fields: { title: "Discord Waifus", icon: "moss-asset://discord-waifus/dw.png", opens: "discord-waifus" }, source: "installed", enabledAt: 0 },
@@ -49,18 +45,8 @@ async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" 
 }
 
 describe("the sidebar entry", () => {
-  test("a bot that is removed leaves the list at once, with no reload", async () => {
-    let removed: ((id: string) => void) | undefined;
-    await mount(undefined, { onBotRemoved: (r) => (removed = r) });
-    expect(screen.queryByText("Luna")).not.toBeNull();
-    await act(async () => removed!("luna"));
-    await act(() => settle());
-    expect(screen.queryByText("Luna")).toBeNull();
-    expect(screen.queryByText("Alpha")).not.toBeNull();
-  });
-
-  test("routes map both ways", () => {
-    const all: ShellRoute[] = [{ route: "bot", params: { bot: "alpha" } }, { route: "agent", params: { session: "a" } }, { route: "settings", params: {} }, { route: "plugins", params: {} }, { route: "archive", params: {} }];
+  test("routes map both ways; a bot's route has no place here", () => {
+    const all: ShellRoute[] = [{ route: "new", params: {} }, { route: "agent", params: { session: "a" } }, { route: "settings", params: {} }, { route: "plugins", params: {} }, { route: "archive", params: {} }];
     for (const r of all) {
       expect(toShellRoute(toSidebarRoute(r))).toEqual(r);
     }
@@ -69,15 +55,12 @@ describe("the sidebar entry", () => {
   test("states: what waits for the user comes first", () => {
     expect(agentStatus(s("x", { status: "prompting", needsYou: { cards: 0, questions: 1 } }))).toBe("needs-you");
     expect(agentStatus(s("x", { status: "failed", failure: "stalled" }))).toBe("stalled");
-    expect(botStatus(bot("a", "A", { state: "thinking" }), s("m", { status: "prompting" }))).toBe("working");
-    expect(botStatus(bot("a", "A", { state: "asleep" }), s("m", { needsYou: { cards: 1, questions: 0 } }))).toBe("needs-you");
   });
 
-  test("a coding session started outside the window shows on the Code side without a remount, and a change to it is followed", async () => {
+  test("a coding session started outside the window shows without a remount, and a change to it is followed", async () => {
     let emit: ((v: SessionView) => void) | undefined;
-    await mount({ route: "bot", params: { bot: "alpha" } }, { onWatch: (l) => (emit = l) });
+    await mount(undefined, { onWatch: (l) => (emit = l) });
     expect(emit).toBeDefined();
-    fireEvent.click(screen.getByRole("radio", { name: /Code/ }));
     expect(screen.queryByText("From the CLI")).toBeNull();
     await act(async () => emit!(s("code-9", { kind: "coding", root: "home/Studio/projects/cli", title: "From the CLI", status: "ready" })));
     expect(screen.getByText("From the CLI")).toBeTruthy();
@@ -95,18 +78,20 @@ describe("the sidebar entry", () => {
     expect(screen.getByText("Broke")).toBeTruthy();
   });
 
-  test("the bots, each with its agents, the account and the apps", async () => {
+
+  test("no bot and no switch; a bot's coding task is a code session under its folder; the account, New and the apps", async () => {
     const { routes } = await mount();
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.queryByText("Alpha")).toBeNull();
     expect(screen.getByRole("button", { name: "Account: Sam" })).toBeTruthy();
-    const agents = screen.getByRole("list", { name: "Alpha's agents" });
-    fireEvent.click(within(agents).getByRole("button", { name: /Fix the dates/ }));
-    fireEvent.click(screen.getByRole("button", { name: /^Luna/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Fix the dates/ }));
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
     fireEvent.click(screen.getByRole("button", { name: "Archive" }));
     fireEvent.click(screen.getByRole("button", { name: /Discord Waifus/ }));
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(routes).toEqual([
       { route: "agent", params: { session: "agent-1" } },
-      { route: "bot", params: { bot: "luna" } },
+      { route: "new", params: {} },
       { route: "archive", params: { title: "Archive" } },
       { route: "discord-waifus", params: { title: "Discord Waifus" } },
       { route: "settings", params: {} },
@@ -117,7 +102,7 @@ describe("the sidebar entry", () => {
   });
 
   test("an app whose title is words by language (a plugin's manifest may say it so) is listed in the user's words, not dropped", async () => {
-    const { routes } = await mount({ route: "bot", params: { bot: "alpha" } }, { entries: [
+    const { routes } = await mount(undefined, { entries: [
       { pluginId: "example-notes", id: "notes-app", spot: "sidebar.app", component: "NotesBadge", fields: { title: { en: "Notes", ja: "ノート" }, icon: "moss-asset://example-notes/icon.svg", opens: "example-notes" }, source: "installed", enabledAt: 0 },
       { pluginId: "odd", id: "odd-app", spot: "sidebar.app", component: "Badge", fields: { title: { ja: "英語なし" }, opens: "odd" }, source: "installed", enabledAt: 0 },
     ] });
@@ -127,9 +112,9 @@ describe("the sidebar entry", () => {
     expect(screen.queryByRole("button", { name: /英語なし/ })).toBeNull();
   });
 
-  test("the code side groups coding sessions by their folder; a coding session's tab opens on it", async () => {
+
+  test("code sessions are grouped by their folder; a coding session's tab opens on it", async () => {
     const { routes } = await mount({ route: "agent", params: { session: "code-1" } });
-    expect(screen.getByRole("radio", { name: /Code/ }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByRole("button", { name: /The panels/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /The docs/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Fold tarot" })).toBeTruthy();
@@ -137,10 +122,4 @@ describe("the sidebar entry", () => {
     expect(routes).toEqual([{ route: "agent", params: { session: "code-3" } }]);
   });
 
-  test("a plugin that fills `sidebar.bot` for a bot draws its row", async () => {
-    const Row: EntryComponent = ({ props }) => <p>{`custom ${(props.bot as { name: string }).name} ${String(props.selected)}`}</p>;
-    await mount(undefined, { component: Row, entries: [{ pluginId: "alpha", id: "row", spot: "sidebar.bot", key: "alpha", component: "Row", source: "installed", enabledAt: 1 }] });
-    expect(screen.getByText("custom Alpha true")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Luna/ })).toBeTruthy();
-  });
 });

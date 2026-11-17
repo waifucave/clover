@@ -4,13 +4,12 @@ import { join } from "node:path";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Sidebar } from "../client/Sidebar";
 import type { SidebarProps } from "../client/types";
-import { ACCOUNT, APPS, BOTS, PROJECTS } from "../gallery/fixtures";
+import { ACCOUNT, APPS, PROJECTS } from "../gallery/fixtures";
 
 afterEach(cleanup);
 
 function setup(props: Partial<SidebarProps> = {}) {
   const handlers = {
-    onSideChange: mock((_s: string) => undefined),
     onNavigate: mock((_r: unknown) => undefined),
     onOpenSettings: mock(() => undefined),
     onNew: mock(() => undefined),
@@ -22,20 +21,19 @@ function setup(props: Partial<SidebarProps> = {}) {
     onCloseAgent: mock((_id: string) => undefined),
   };
   const result = render(
-    <Sidebar side="bots" route={{ kind: "bot", botId: "alpha" }} bots={BOTS} projects={PROJECTS} apps={APPS} account={ACCOUNT} {...handlers} {...props} />,
+    <Sidebar route={{ kind: "agent", agentId: "session-panels" }} projects={PROJECTS} apps={APPS} account={ACCOUNT} {...handlers} {...props} />,
   );
   return { ...result, ...handlers };
 }
 
-describe("the switch and the actions", () => {
-  test("a switch between the bots and the code; each action reaches the host", () => {
+describe("the actions (no bots in MOSS Code's window)", () => {
+  test("no switch to a bots side and no bot anywhere; each action reaches the host, New starts a session", () => {
     const h = setup();
-    const bots = screen.getByRole("radio", { name: /Bots/ });
-    expect(bots.getAttribute("aria-checked")).toBe("true");
-    fireEvent.click(screen.getByRole("radio", { name: /Code/ }));
-    expect(h.onSideChange).toHaveBeenCalledWith("code");
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.queryByText("Bots")).toBeNull();
+    expect(document.querySelector(".cl-sidebar__bot, .cl-sidebar__portrait")).toBeNull();
     for (const [name, fn] of [
-      ["New chat", h.onNew],
+      ["New session", h.onNew],
       ["Search", h.onSearch],
       ["Outputs", h.onOutputs],
       ["Plugins", h.onPlugins],
@@ -54,46 +52,9 @@ describe("the switch and the actions", () => {
   });
 });
 
-describe("the bots side", () => {
-  test("each bot shows what it's doing and what needs the user; its agents are live tabs under it", () => {
-    const h = setup();
-    const luna = screen.getByRole("button", { name: /Luna/ });
-    expect(within(luna).getByLabelText("2 things need you").textContent).toBe("2");
-    expect(luna.textContent).toContain("Needs you");
-    const agents = screen.getByRole("list", { name: "Alpha's agents" });
-    expect(within(agents).getAllByRole("listitem")).toHaveLength(4);
-    fireEvent.click(within(agents).getByRole("button", { name: /Rebuild the island/ }));
-    expect(h.onNavigate).toHaveBeenCalledWith({ kind: "agent", agentId: "agent-island" });
-  });
-
-  test("a live tab's state comes before its title, so a long title never hides it", () => {
-    setup();
-    const row = screen.getByRole("button", { name: /Profile the hub/ });
-    const parts = [...row.children].map((c) => c.className);
-    expect(parts.indexOf("cl-sidebar__state")).toBeLessThan(parts.indexOf("cl-sidebar__title"));
-    expect(row.querySelector(".cl-sidebar__state")?.textContent).toBe("Stalled");
-  });
-
-  test("Close is on finished tabs only, as a real button the keyboard reaches (review item 8)", () => {
-    const h = setup();
-    const close = screen.getByRole("button", { name: "Close Write the plugin SDK docs" });
-    close.focus();
-    expect(document.activeElement).toBe(close);
-    fireEvent.click(close);
-    expect(h.onCloseAgent).toHaveBeenCalledWith("agent-docs");
-    expect(screen.queryByRole("button", { name: "Close Rebuild the island as a plugin" })).toBeNull();
-  });
-
-  test("sidebar.bot: a plugin can draw a bot's row its own way", () => {
-    setup({ renderBot: (bot, standard) => (bot.id === "mira" ? <div data-testid="custom">Mira, drawn by a plugin</div> : standard) });
-    expect(screen.getByTestId("custom").textContent).toBe("Mira, drawn by a plugin");
-    expect(screen.queryByRole("button", { name: /^Mira/ })).toBeNull();
-  });
-});
-
 describe("the code side", () => {
   test("sessions sit under their project folder, with their branch and change count", () => {
-    const h = setup({ side: "code", route: { kind: "agent", agentId: "session-panels" } });
+    const h = setup({ route: { kind: "agent", agentId: "session-panels" } });
     const row = screen.getByRole("button", { name: /The panels as plugins/ });
     expect(row.getAttribute("aria-current")).toBe("page");
     expect(within(row).getByLabelText("On lane/f-m1, 14 files changed").textContent).toBe("14");
@@ -103,7 +64,7 @@ describe("the code side", () => {
   });
 
   test("a project folds and unfolds", () => {
-    setup({ side: "code", initialFoldedProjects: ["tarot"] });
+    setup({ initialFoldedProjects: ["tarot"] });
     expect(screen.queryByText("Three-card spread layout")).toBeNull();
     const toggle = screen.getByRole("button", { name: "Unfold tarot-panel" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -127,16 +88,12 @@ describe("banners and the rail", () => {
     expect(onOpenPluginManager).toHaveBeenCalledTimes(1);
   });
 
-  test("collapsed, every row and banner keeps an accessible name, and the code side keeps its projects", () => {
+  test("collapsed, every row and banner keeps an accessible name, and the projects stay", () => {
     const onResume = mock(() => undefined);
-    const { rerender } = setup({ collapsed: true, paused: true, onResume, link: { state: "offline" } });
-    expect(screen.getByRole("button", { name: /^Luna, Needs you, 2 things need you$/ })).toBeTruthy();
+    setup({ collapsed: true, paused: true, onResume, link: { state: "offline" } });
     fireEvent.click(screen.getByRole("button", { name: "Every bot and routine is paused." }));
     expect(onResume).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Offline: other devices can't be reached." })).toBeTruthy();
-    rerender(
-      <Sidebar side="code" collapsed route={{ kind: "bot", botId: "alpha" }} bots={BOTS} projects={PROJECTS} account={ACCOUNT} onSideChange={() => undefined} onNavigate={() => undefined} onOpenSettings={() => undefined} />,
-    );
     expect(screen.getByRole("button", { name: "moss: 3" })).toBeTruthy();
   });
 });
@@ -152,21 +109,19 @@ describe("the room for the window's controls, and ids", () => {
 
   test("a project's list gets an id from React, so a project id with a space never breaks aria-controls", () => {
     const projects = [{ id: "my project", name: "my project", path: "home/Studio/my project", sessions: [{ id: "s1", title: "One", status: "idle" as const }] }];
-    setup({ side: "code", projects });
+    setup({ projects });
     const toggle = screen.getByRole("button", { name: "Fold my project" });
     const controls = toggle.getAttribute("aria-controls")!;
     expect(controls).not.toContain(" ");
     expect(document.getElementById(controls)?.textContent).toContain("One");
   });
 
-  test("unread and running never share a mark, nor needs-you and stalled", () => {
-    const { container } = setup();
-    expect(container.querySelector(".cl-sidebar__unread")).toBeTruthy();
+  test("running never shares a mark with needs-you or stalled", () => {
+    const { container } = setup({ projects: [...PROJECTS, { id: "stuck", name: "stuck", path: "home/Studio/stuck", sessions: [{ id: "st", title: "Stuck", status: "stalled" as const }] }] });
     expect(container.querySelector('.cl-sidebar__dot[data-status="running"]')).toBeTruthy();
     expect(container.querySelector('.cl-sidebar__dot[data-status="stalled"]')).toBeTruthy();
     const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
     const rule = (sel: string) => css.slice(css.indexOf(sel), css.indexOf("}", css.indexOf(sel)));
-    expect(rule(".cl-sidebar__unread {")).toContain("--moss-plugin-moss-unread");
     expect(rule('.cl-sidebar__dot[data-status="running"]')).toContain("--moss-color-accent");
     expect(rule('.cl-sidebar__dot[data-status="stalled"]')).toContain("--moss-color-danger");
     expect(rule('.cl-sidebar__dot[data-status="needs-you"]')).toContain("--moss-color-attention");
