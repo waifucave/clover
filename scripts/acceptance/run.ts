@@ -5504,7 +5504,7 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
             const again = later.filter((e) => e.type === "tool_call" && /Echo$/.test(String(e.name)));
             if (again.length > 0) wrong.push(`the next turn ran the call again (${again.length} Echo call(s))`);
             else seen.push("the call wasn't run again");
-            if (wrong.length > 0) fail(`after quitting mid tool call: ${wrong.join("; ")} (seen: ${seen.join("; ")})`);
+            if (wrong.length > 0) fail(`after quitting mid tool call: ${wrong.join("; ")} (seen: ${seen.join("; ")}; the next turn asked the fake: ${shapes() || "nothing"})`);
             cappedNote = `; mid tool call: ${seen.join("; ")}`;
           }
           if (capped) {

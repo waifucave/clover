@@ -436,6 +436,20 @@ describe("calls that never ended", () => {
     d.emit(acpCall("q1"));
     await host.release("s_code");
     expect(driverEvents(host.history("s_code"), "tool_result")).toEqual([interrupted("q1")]);
+    // The daemon's stop lets a code session go first too, its open call closed before its agent is asked anything: the
+    // agent's own word on the call as it is stopped (MOSS's agent reports it completed, `[interrupted]`) isn't recorded.
+    const quit = hostOn();
+    const q = codeSession(quit.host);
+    await quit.host.sendUser("s_code", user("go"));
+    await flush();
+    q.emit(acpCall("s1"));
+    const stopping = quit.host.endTurnsForStop();
+    q.emit({ type: "agent_tool_call_update", id: "s1", status: "completed", output: "[interrupted]" });
+    await stopping;
+    const atQuit = quit.host.history("s_code");
+    expect(driverEvents(atQuit, "tool_result")).toEqual([interrupted("s1")]);
+    expect(driverEvents(atQuit, "agent_tool_call_update")).toEqual([]);
+    expect(atQuit.filter((r) => r.type === "turn_ended")).toMatchObject([{ end: { reason: "interrupted" } }]);
     // Its agent's turn that ends (it stopped, or failed) with a call it never closed.
     const other = hostOn();
     const e = codeSession(other.host);

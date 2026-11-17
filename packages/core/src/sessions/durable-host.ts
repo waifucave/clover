@@ -776,11 +776,12 @@ export class DurableSessionHost implements SessionHost {
     return done;
   }
 
-  /** The daemon's stop, before anything else in its bounded tail: every bot conversation and side thread lets its
-   *  driver go, and each running turn's end is recorded at once (synchronously, as each release starts). Resolves when
-   *  every driver has stopped; the bot side's own close waits for the same releases. */
+  /** The daemon's stop, before anything else in its bounded tail: every session with a driver lets it go, and each
+   *  running turn's end is recorded at once (synchronously, as each release starts). Resolves when every driver has stopped; the bot side's own close waits for the same releases. */
   endTurnsForStop(): Promise<void> {
-    const ids = [...this.#sessions.values()].filter((s) => s.driver !== undefined && (s.meta.kind === "bot" || s.meta.kind === "side-thread")).map((s) => s.meta.id);
+    // Every attached session, a code session and an agent too: a call still open in one is closed interrupted before its
+    // agent is asked to stop (an agent cut off reports its own end for it, which must not read as done).
+    const ids = [...this.#sessions.values()].filter((s) => s.driver !== undefined).map((s) => s.meta.id);
     return Promise.all(ids.map((id) => this.release(id))).then(() => undefined);
   }
 
