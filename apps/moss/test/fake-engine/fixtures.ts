@@ -39,13 +39,21 @@ export function botId(name: string): string {
   return name.toLowerCase();
 }
 
+/** The next time it is `hour`:`minute` on a day `days` allows (0 Sunday), after `now`. */
+function nextAt(now: number, hour: number, minute: number, days: readonly number[] = [0, 1, 2, 3, 4, 5, 6]): number {
+  const d = new Date(now);
+  d.setHours(hour, minute, 0, 0);
+  while (d.getTime() <= now || !days.includes(d.getDay())) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
 export function routinesOf(bot: string, now: number): RoutineView[] {
   const base = { bot, computer: "Studio", level: "ask-risky" };
   const file = (n: string) => `home/Studio/.moss/routines/${bot}/${n}.md`;
   if (bot === "juniper") {
     return [
-      { ...base, id: `${bot}-prices`, name: "Watch flight prices", file: file("prices"), triggers: [{ type: "schedule", summary: "Every day at 7:00" }], state: "active", nextRunAt: now + 9 * 3600_000 },
-      { ...base, id: `${bot}-inbox`, name: "Sort the travel inbox", file: file("inbox"), triggers: [{ type: "schedule", summary: "Weekdays at 9:00" }], state: "active", nextRunAt: now + 26 * 3600_000 },
+      { ...base, id: `${bot}-prices`, name: "Watch flight prices", file: file("prices"), triggers: [{ type: "schedule", summary: "Every day at 7:00" }], state: "active", nextRunAt: nextAt(now, 7, 0) },
+      { ...base, id: `${bot}-inbox`, name: "Sort the travel inbox", file: file("inbox"), triggers: [{ type: "schedule", summary: "Weekdays at 9:00" }], state: "active", nextRunAt: nextAt(now, 9, 0, [1, 2, 3, 4, 5]) },
       { ...base, id: `${bot}-visa`, name: "Visa paperwork reminders", file: file("visa"), triggers: [{ type: "schedule", summary: "Mondays at 8:30" }], state: "paused" },
     ];
   }
