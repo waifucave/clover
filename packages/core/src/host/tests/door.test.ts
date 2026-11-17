@@ -34,7 +34,7 @@ function tab(id: string, owner: TabView["owner"]): TabView {
   return { id, computer: "c", owner, partition: "p", url: "about:blank", title: "", place: "headless", viewport: { width: 1280, height: 800 }, loading: false, heldByUser: false };
 }
 
-function setup() {
+function setup(extra: Partial<Parameters<typeof hostDoor>[0]> = {}) {
   const clock = new FakeClock();
   const world = new FakeHostWorld();
   world.app = app;
@@ -56,6 +56,7 @@ function setup() {
   const door = hostDoor({
     supervisor, frames, ask, now: () => now, lockPid: () => 4321,
     emit: (e) => events.push(e), midWork: () => midWork, openApp: async (p) => { opened.push(p); }, quitEverything: () => { quits++; }, tab: (id) => tabs.get(id),
+    ...extra,
   });
   const call = (c: MossConn, method: string, params: unknown) => Promise.resolve().then(() => door.handlers[method]!(c, params));
   return {
@@ -265,4 +266,20 @@ test("browser.report and browser.hold are the pages' owner's alone; with the hos
   expect(held).toEqual(["t1"]);
   const port = appTabPort({ connections: () => [win], ask: async () => ({}), hostOwnsScreen: () => true })();
   await expect(port!.list()).rejects.toThrow(/background host that runs the browser's pages isn't running; it starts again by itself/);
+});
+
+test("R12: host.surfaces is the ready host's alone, kept as this computer's MOSS windows, and cleared when it goes", async () => {
+  const kept: unknown[][] = [];
+  const t = setup({ surfacesAt: (w) => { kept.push([...w]); } });
+  const island = { id: "moss#island", x: 600, y: 0, width: 400, height: 340 };
+  const w = conn("code");
+  await expect(t.call(w.c, "host.surfaces", { windows: [island] })).rejects.toThrow(/background host's alone/);
+  const h = conn("host");
+  await expect(t.call(h.c, "host.surfaces", { windows: [island] })).rejects.toThrow(/ready first/);
+  await t.supervisor.boot();
+  await t.call(h.c, "host.ready", ready);
+  await t.call(h.c, "host.surfaces", { windows: [island] });
+  expect(kept).toEqual([[island]]);
+  t.door.closed(h.c);
+  expect(kept.at(-1)).toEqual([]);
 });

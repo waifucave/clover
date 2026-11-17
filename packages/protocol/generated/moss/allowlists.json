@@ -70,6 +70,7 @@
       "host.menu",
       "host.ready",
       "host.status",
+      "host.surfaces",
       "host.tab.frame",
       "layer.token",
       "link.list",

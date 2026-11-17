@@ -59,6 +59,7 @@ import { AppTray } from "./tray";
 import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostProfileAndHome, hostStartInfo, hostTrayMenu, midWorkWarning, takeHostLock, type HostLock, type HostTrayActions } from "./host-program";
 import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
 import { fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
+import { overlayStandsDown, surfacesReport } from "./host-stacking";
 import { TabFrameSender } from "./browser/frame-sender";
 import { SURFACE_MOUNTS, type HostState, type MountList } from "@waifucave/moss-protocol";
 // lane HS: end
@@ -291,6 +292,8 @@ if (!app.requestSingleInstanceLock()) {
       try { opacity = win.getOpacity(); } catch { /* a platform without window opacity */ }
       if (opacity > 0) log(`window: shown while headless (${program}: ${win.getTitle().slice(0, 80)})`);
     });
+    // R12: the program that draws the screen's surfaces says where they are whenever one shows, hides or moves.
+    for (const e of ["show", "hide", "moved", "resize", "closed"] as const) win.on(e as "show", () => scheduleSurfacesReport());
   });
   // lane HS: end
   app.on("web-contents-created", (_event, contents) => {
@@ -1148,7 +1151,39 @@ function disarmFallback(cardId: string): void {
   clearTimeout(own.timer);
   if (own.win !== undefined && !own.win.isDestroyed()) own.win.close();
   fallbacks.delete(cardId);
+  restack();
 }
+
+// lane HS: start. R12's host half (host-stacking.ts).
+/** The surfaces standing down for a pending card, by ref (said once each way). */
+const stoodDown = new Set<string>();
+/** Whether this program draws a pending card now: on its island, or its own card's window. */
+function cardShownHere(): boolean {
+  if (!sealed.anyPending()) return false;
+  if (mountNow.surfaces && islandHoldsCard()) return true;
+  return [...fallbacks.values()].some((f) => f.win !== undefined && !f.win.isDestroyed() && f.win.isVisible());
+}
+/** Every surface follows the stacking rule again (a card came, was answered, or its own card showed or went). */
+function restack(): void {
+  for (const s of surfaces.values()) applyVisibility(s);
+}
+let surfacesTimer: ReturnType<typeof setTimeout> | undefined;
+let lastSurfaces = "";
+function scheduleSurfacesReport(): void {
+  if (program !== "host" || surfacesTimer !== undefined) return;
+  surfacesTimer = setTimeout(() => {
+    surfacesTimer = undefined;
+    const wins = [...[...surfaces.values()].map((s) => ({ id: s.ref, win: s.win })), ...[...fallbacks].filter(([, f]) => f.win !== undefined).map(([id, f]) => ({ id: `card:${id}`, win: f.win! }))]
+      .filter((w) => !w.win.isDestroyed()).map((w) => ({ id: w.id, visible: w.win.isVisible(), bounds: w.win.getBounds() }));
+    const windows = surfacesReport(wins);
+    const said = JSON.stringify(windows);
+    if (said === lastSurfaces || pair?.client === undefined) return;
+    lastSurfaces = said;
+    pair.client.request("host.surfaces", { windows }, 5_000).catch(() => { lastSurfaces = ""; });
+  }, 200);
+  surfacesTimer.unref?.();
+}
+// lane HS: end
 
 /** The app's own card page: the whole card, its fields and buttons, from the app's own scheme (its own single-use
  *  channel), shown without taking the focus (the user's own app in front stays). */
@@ -1239,6 +1274,7 @@ async function showFallbackCard(cardId: string, strip = false): Promise<void> {
         showInvisible(win);
         log(`window: shown invisible while headless (the sealed smoke's fallback card ${cardId}: opacity 0, ignores the mouse)`);
       } else win.showInactive();
+      restack();
     }
   }).catch(() => win.close());
   held.win = win;
@@ -2214,7 +2250,13 @@ function setFourFingerTap(on: boolean): void {
 
 function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed() || s.wantsVisible === undefined) return;
-  const show = surfaceShown({ stepsAside: s.stepsAside, holdsPlacedCard: s.cards && islandHoldsCard() }, s.wantsVisible, mainState(), modeOf(s));
+  // lane HS (R12): a plugin's overlay stands down while a card is pending here, so nothing it draws is over a sealed button.
+  const down = overlayStandsDown(s, cardShownHere());
+  if (down !== stoodDown.has(s.ref)) {
+    if (down) stoodDown.add(s.ref); else stoodDown.delete(s.ref);
+    log(`surface: ${s.ref} ${down ? "hidden while a card is pending (a plugin's overlay)" : "back (no card pending here)"}`);
+  }
+  const show = !down && surfaceShown({ stepsAside: s.stepsAside, holdsPlacedCard: s.cards && islandHoldsCard() }, s.wantsVisible, mainState(), modeOf(s));
   if (show && invisible !== undefined && !s.win.isVisible()) showInvisible(s.win);
   else if (show && !headless && !s.win.isVisible()) s.win.showInactive();
   else if (!show && s.win.isVisible()) s.win.hide();

@@ -532,6 +532,27 @@ async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: s
   return `a plugin's OK card was placed in the window's strip, drawn there only (${inStrip.join(", ")}) and pressed there (${from}); Alpha's tool card with her tab focused was placed in the window's conversation and drawn there only (${inConversation.join(", ")}), then with the window back moved to the host's island and pressed there (${onIsland.slice(0, 120)}); the host drew neither past the fallback's 2 s; with both up, the Browser tool's page loaded in the host and not in the window`;
 }
 
+/** R12's host half in the host row: the hold fixture's overlay surface runs in the host; a second plugin's OK card pending
+ *  on the island hides it (the host's log says so by the surface's ref) and its answer brings it back; the engine logged
+ *  the host's surfaces report (`host.surfaces`). */
+async function overlayStandsDownForCard(c: MossClient, hostCdp: Cdp, hostLog: string, daemonLog: string): Promise<string> {
+  const overlay = "acceptance-hold";
+  await c.request("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", overlay) } }, 60_000);
+  const ok = await until("the overlay fixture's OK card", 60_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === overlay), 300);
+  await pressOnIsland(hostCdp, ok, hostLog);
+  await until("the overlay's part in the host", 60_000, async () => ((await hostCdp.documents()).some((d) => d.url.startsWith(`moss-plugin://${overlay}/`)) ? true : undefined), 500);
+  const from = readLog(hostLog).length;
+  const other = "acceptance-router";
+  await c.request("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", other) } }, 60_000);
+  const card = await until("a second OK card on the island", 60_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === other), 300);
+  await until("the overlay hidden while the card is pending", 30_000, () => (readLog(hostLog).slice(from).includes(`surface: ${overlay}#hold hidden while a card is pending`) ? true : undefined), 300);
+  await pressOnIsland(hostCdp, card, hostLog);
+  await until("the overlay back once the card is answered", 30_000, () => (readLog(hostLog).slice(from).includes(`surface: ${overlay}#hold back (no card pending here)`) ? true : undefined), 300);
+  await until("the engine hearing where the host's surfaces are", 30_000, () => (/\[host\] surfaces: \d+ on the screen/.test(readLog(daemonLog)) ? true : undefined), 300);
+  for (const id of [overlay, other]) await c.request("plugin.remove", { id, deleteData: true }, 30_000).catch(() => undefined);
+  return `the hold fixture's always-on-top overlay ran in the host, was hidden while a second plugin's OK card was pending on the island and came back once it was pressed there; the engine heard the host's surfaces`;
+}
+
 /** Unregisters from Launch Services whatever the run left registered under its temp folder (scripts/try/run.sh's rule). */
 function unregisterRunApps(): number {
   if (process.platform !== "darwin") return 0;
@@ -4451,6 +4472,9 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     const tone = await until("the background part's tone in the host", 60_000, async () => { const a = await backgroundPart(hostCdp!, id); return a !== undefined && num(a, "ticks") >= 10 && a["data-ctx"] === "running" && num(a, "rms") > 0.01 ? a : undefined; }, 500);
     offScreen("with a card on its island");
     lines.push(`background part with no window: ${tone["data-ticks"]} ticks, its audio context running, level ${tone["data-rms"]}`);
+    // 3b. R12's host half: a plugin's overlay (the hold fixture's, always on top) is hidden while a card is pending on the
+    //     host's island, and back once it is answered; the host tells the engine where its surfaces are.
+    lines.push(`R12 with a fixture overlay: ${await overlayStandsDownForCard(c, hostCdp, appLogFile, first.log)}`);
     // 4. A bot's Browser tool opens a page with no app window: the page loads in the host, offscreen.
     const wasAppless = appless;
     appless = true;

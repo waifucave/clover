@@ -10,7 +10,7 @@
 // * `browser.view.input` is the person's input: only from program `code` (MOSS Code's window, which saw the press come
 //   from the hardware), only on a stream that connection opened, and only to a code session's tab or the person's own.
 //   MOSS's window (`moss`) is watch only, and sees only bots' tabs; MOSS Code's sees no bot's tab.
-import { ERR, MOSS_ERR, HOST_METHODS, type HostExitReason, type MidWork, type Program, type TabInputEvent, type TabView } from "@waifucave/moss-protocol";
+import { ERR, MOSS_ERR, HOST_METHODS, type HostExitReason, type MidWork, type MossWindow, type Program, type TabInputEvent, type TabView } from "@waifucave/moss-protocol";
 import { randomUUID } from "node:crypto";
 import { MossRpcError, type MossConn, type MossHandler } from "../ipc/moss";
 import type { HostStatus } from "../contracts/host-supervisor";
@@ -43,6 +43,8 @@ export interface HostDoorDeps {
   supervisor: EngineHostSupervisor;
   /** Sends `host_changed` to the connections that may have it. */
   emit(event: { type: "host_changed"; state: HostStatus["state"]; crashes: number; release?: string; bundlePath?: string; since: number; gaveUp?: boolean }): void;
+  /** R12: where the host's surfaces are now (`host.surfaces`), or none once it is gone: this computer's MOSS windows. */
+  surfacesAt?(windows: readonly MossWindow[]): void;
   /** The supervisor's state changed: the windows' mounts and the pair follow (the MOSS server's `hostScreen`). */
   screenChanged?(status: HostStatus): void;
   now(): number;
@@ -105,6 +107,7 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
     if (host?.connId !== conn.connId) return;
     host = undefined;
     for (const id of [...views.keys()]) closeView(id);
+    deps.surfacesAt?.([]);
     deps.supervisor.exited();
   };
 
@@ -148,6 +151,14 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
       // After the answer has gone: the host is told to stop as part of quitting everything.
       setTimeout(() => deps.quitEverything(), 0);
       return { done: true };
+    },
+    [HOST_METHODS.hostSurfaces.name]: (conn, raw) => {
+      fromHost(conn, "host.surfaces");
+      const p = HOST_METHODS.hostSurfaces.params.parse(raw);
+      if (host?.connId !== conn.connId) throw new MossRpcError(ERR.RETRY, "the host says it is ready first");
+      deps.surfacesAt?.(p.windows);
+      log(`[host] surfaces: ${p.windows.length} on the screen (${p.windows.map((w) => w.id).join(", ").slice(0, 200)})`);
+      return { ok: true };
     },
     [HOST_METHODS.hostStatus.name]: (_conn, raw) => {
       HOST_METHODS.hostStatus.params.parse(raw ?? {});

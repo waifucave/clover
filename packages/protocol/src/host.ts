@@ -22,6 +22,7 @@ import { Ok, Timestamp } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 import { Release } from "./release";
 import { PictureFrame } from "./activity";
+import { MossWindow } from "./computers";
 
 /** The host's single-instance lock, under the home (one host per home, not per user). */
 export const HOST_LOCK_FILE = "run/host.lock";
@@ -162,6 +163,15 @@ export const HOST_METHODS = {
     params: z.object({ id: utf16(128, 1), events: z.array(TabInputEvent).min(1).max(256) }),
     result: Ok,
     doc: "The person's input to one of the host's tabs, forwarded from MOSS Code's browser panel.",
+  }),
+  hostSurfaces: defineMethod({
+    /** R12's host half: where the host's surfaces are on this computer's screen now (the island, the pill, its own card,
+     *  the parts it shows), sent when they move, show or hide. The engine keeps them as this computer's MOSS windows
+     *  (`computers.mossWindows`), which a computer-use plugin must not act on and blacks out. */
+    name: "host.surfaces", owner: "HS", roles: ["app"],
+    params: z.object({ windows: z.array(MossWindow).max(64) }).strict(),
+    result: Ok,
+    doc: "The background host's surfaces on the screen now, for the product's own-windows list.",
   }),
   hostStatus: defineMethod({
     /** A window reads the host's state when it connects (a `host_changed` before its subscription would be missed). */

@@ -3904,6 +3904,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     quitEverything: () => { if (pairSide) pairSide.pair.quit("quit"); else if (!stopping) { server.stopAccepting(); setTimeout(() => resolvePairStopped("quit everything"), 50); } },
     // The windows' mounts (and the router's island) and the pair follow the host's state.
     screenChanged: (owns) => mossServer?.hostScreen(owns),
+    // R12: the host's surfaces are this computer's own windows, which a computer-use plugin must not act on.
+    surfacesAt: (windows) => { const r = daemonParts?.node?.registry; if (r) r.setMossWindows(r.self().name, [...windows]); },
   });
   if (hostSupervision) {
     const hs = hostSupervision;

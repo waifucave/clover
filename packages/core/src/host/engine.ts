@@ -1,7 +1,7 @@
 // The background host's side of the engine, put together for `daemon.ts` (lane HS): the real world, the supervisor,
 // the tab frames and the door, over the MOSS server's connections. The daemon adds `handlers` to its MOSS handlers,
 // calls `boot` once its socket listens, and `dispose` as it stops.
-import { type MidWork, type TabView, type Viewport } from "@waifucave/moss-protocol";
+import { type MidWork, type MossWindow, type TabView, type Viewport } from "@waifucave/moss-protocol";
 import { SystemClock } from "../clock/system-clock";
 import type { MossConn, MossHandler } from "../ipc/moss";
 import type { Runner } from "../platform/login/live";
@@ -33,6 +33,8 @@ export interface HostSupervisionInput {
   quitEverything(): void;
   /** Starts an app through the OS when it isn't running (the newest record of that program). */
   launchApp?(program: "moss" | "code"): Promise<void>;
+  /** R12: the host's surfaces on the screen (this computer's MOSS windows, `computers.mossWindows`). */
+  surfacesAt?(windows: readonly MossWindow[]): void;
   /** The supervisor's state changed: whether a host owns the screen now (the MOSS server's `hostScreen`). */
   screenChanged?(owns: boolean): void;
   log?(line: string): void;
@@ -76,6 +78,7 @@ export function startHostSupervision(input: HostSupervisionInput): HostSupervisi
     supervisor, frames, ask: input.ask, now: Date.now, log,
     emit: (e) => input.coreEvent(e),
     screenChanged: (s) => input.screenChanged?.(hostOwnsScreen(s.state)),
+    surfacesAt: (w) => input.surfacesAt?.(w),
     lockPid: () => hostLockHolder(input.home, input.os),
     midWork: () => midWorkOf(input.busy()),
     tab: (id) => input.tabs().find((t) => t.id === id),
