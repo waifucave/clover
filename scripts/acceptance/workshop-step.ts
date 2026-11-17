@@ -524,7 +524,9 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   }));
 
   // 9. A bot builds a bot: a plugin with a `bot` entry, made, installed and edited as her tool plugin was.
-  await own(() => stepOf("9. a bot plugin she makes lands behind its OK card naming her; its bot is listed, in the sidebar, its tab answers a turn; her edit of its instructions applies with no card; removed, it leaves bot.list", async () => {
+  const away9 = partElsewhere("workshop", "9");
+  if (away9 !== undefined) done.push(`9 runs elsewhere (${away9.owner === "MOSS" ? "lane MA's moss unit" : away9.owner}): ${away9.why}`);
+  else await own(() => stepOf("9. a bot plugin she makes lands behind its OK card naming her; its bot is listed, in the sidebar, its tab answers a turn; her edit of its instructions applies with no card; removed, it leaves bot.list", async () => {
     const said: string[] = [];
     const from = join(scratch, BOT_ID);
     const made = await ok(ctx, session, "PluginNew", { template: "bot", id: BOT_ID, name: BOT_NAME });
