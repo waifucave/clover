@@ -14,6 +14,7 @@ import {
 } from "@waifucave/moss-protocol";
 import { RpcCallError } from "./client";
 import { MAIN_WINDOW_ID } from "./identity";
+import { oneLine, safeDetail } from "../shared/status-line";
 import type { SealedFrames } from "./sealed";
 import { talkCommandOf, type TalkCommand } from "./voice";
 import type {
@@ -129,6 +130,9 @@ export class MossEngine {
   private viewListeners = new Set<(v: MossView) => void>();
   private messageListeners = new Set<(bot: string, m: Message) => void>();
   private frameListeners = new Set<(f: PictureFrameView) => void>();
+  /** The tool call running now on a bot's main session (the open bot's), for the status line: its name and the safe
+   *  detail and title only (status-line.ts), never its arguments. Cleared by its result, a reply or the turn's end. */
+  private liveCall = new Map<string, { name: string; detail?: string; title?: string }>();
   /** Which bot's main session is which, for the conversation's live events. */
   private sessionBot = new Map<string, string>();
   /** The live pictures this window follows: stream → picture id. */
@@ -156,6 +160,7 @@ export class MossEngine {
       return {
         id: r.id, name: textOf(r.name), ...(r.face !== undefined ? { face: r.face } : {}), mood,
         ...(mood === "working" && a?.tool !== undefined ? { tool: a.tool } : {}),
+        ...(mood === "working" && this.liveCall.has(r.id) && (a?.tool === undefined || a.tool === this.liveCall.get(r.id)!.name) ? { ...(this.liveCall.get(r.id)!.detail !== undefined ? { detail: this.liveCall.get(r.id)!.detail! } : {}), ...(this.liveCall.get(r.id)!.title !== undefined ? { title: this.liveCall.get(r.id)!.title! } : {}) } : {}),
         ...(s?.last !== undefined ? { last: s.last } : {}), unread: s?.unread === true,
       };
     });
@@ -398,6 +403,13 @@ export class MossEngine {
     const e = params as Record<string, unknown>;
     const bot = typeof e?.sessionId === "string" ? this.sessionBot.get(e.sessionId) : undefined;
     if (bot === undefined) return;
+    // The running call, for the status line only (a tool call is never drawn as a row).
+    if (e.type === "tool_call" && typeof e.name === "string") {
+      const detail = typeof e.argsJson === "string" ? safeDetail(e.name, e.argsJson) : undefined;
+      const title = typeof e.displayTitle === "string" ? oneLine(e.displayTitle, 40) : "";
+      this.liveCall.set(bot, { name: e.name, ...(detail !== undefined ? { detail } : {}), ...(title !== "" ? { title } : {}) });
+      this.changed();
+    } else if ((e.type === "tool_result" || e.type === "assistant_message" || e.type === "turn_completed" || e.type === "user_message") && this.liveCall.delete(bot)) this.changed();
     const m = messageOf(e);
     if (m === undefined) return;
     for (const l of this.messageListeners) l(bot, m);

@@ -665,11 +665,11 @@ const PAGE_CSS = `
 :root {
   color-scheme: light dark;
   --seal-surface: #FFFFFF; --seal-raised: #F7F7F7; --seal-hairline: #DCDCDC; --seal-text: #1F1F1F; --seal-muted: #6B6B6B;
-  --seal-control: #EDEDED; --seal-accent: #4180E3; --seal-accent-text: #FFFFFF;
+  --seal-control: #EDEDED; --seal-accent: #0A0A0A; --seal-accent-text: #FFFFFF;
   --seal-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --seal-surface: #202020; --seal-raised: #2A2A2A; --seal-hairline: #3F3F3F; --seal-text: #F2F2F2; --seal-muted: #9E9E9E; --seal-control: #3B3B3B; }
+  :root { --seal-surface: #202020; --seal-raised: #2A2A2A; --seal-hairline: #3F3F3F; --seal-text: #F2F2F2; --seal-muted: #9E9E9E; --seal-control: #3B3B3B; --seal-accent: #F2F2F2; --seal-accent-text: #111111; }
 }
 html, body { margin: 0; background: transparent; }
 body {

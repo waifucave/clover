@@ -80,6 +80,23 @@ describe("MOSS's window", () => {
     r.unmount();
   });
 
+  test("a running turn shows ONE status line, not a control; no tool row is drawn; an idle bot shows none", async () => {
+    const page = { bot: "juniper", hasMore: false, messages: [{ id: "1", from: "user" as const, text: "go", at: Date.now() }] };
+    const r = await draw(view({ bots: [{ id: "juniper", name: "Juniper", mood: "working", tool: "Read", detail: "notes.txt", unread: false }] }), page);
+    const lines = r.container.querySelectorAll("[data-status-line]");
+    expect(lines.length).toBe(1);
+    expect(lines[0]?.querySelector("[data-status-text]")?.textContent).toBe("Reading notes.txt");
+    expect(lines[0]?.querySelector("button, a, input, [tabindex], [role=button]")).toBeNull();
+    expect(lines[0]?.querySelector("[role=status][aria-live=polite]")).not.toBeNull();
+    // The words of a tool call never appear as a row of the conversation.
+    expect(r.container.querySelectorAll("[data-bubble]").length).toBe(1);
+    expect(r.container.textContent).not.toMatch(/Used |Bash|tool_/);
+    r.unmount();
+    const idle = await draw(view({ bots: [{ id: "juniper", name: "Juniper", mood: "idle", unread: false }] }), page);
+    expect(idle.container.querySelector("[data-status-line]")).toBeNull();
+    idle.unmount();
+  });
+
   test("a conversation the engine doesn't serve yet says so", async () => {
     const r = await draw(view(), { waiting: true });
     expect(r.container.textContent).toContain("Waiting for the engine to serve Juniper's conversation.");

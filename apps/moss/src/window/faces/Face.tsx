@@ -3,7 +3,7 @@
 // off screen, and leaves out jumps and turns for people who ask their system for less motion. A mood is shown by motion
 // alone, so every place that shows a face also says the mood in words (MoodWords).
 import { useEffect, useRef } from "react";
-import { COLORS, mount, type Handle, type Mood } from "./living-bots";
+import { mount, type Handle, type Mood } from "./living-bots";
 import { MOOD_WORDS } from "../../shared/view";
 import type { BotFace } from "../../shared/view";
 
@@ -12,6 +12,15 @@ export const faceMotion = { calm: undefined as boolean | undefined };
 
 function dark(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+/** The colour the face stands on (a sleeping bot fades toward it): the list's grey in the list, the page's own white or
+ *  black elsewhere, read from the theme's tokens so the two never drift apart. */
+function surfaceColor(where: "list" | "page" | "header" | undefined): string {
+  const fallback = dark() ? "#1A1A1A" : "#F7F7F7";
+  if (typeof getComputedStyle !== "function" || typeof document === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(where === "list" || where === undefined ? "--list-bg" : "--bg").trim();
+  return v === "" ? fallback : v;
 }
 
 export function Face(props: { name: string; face?: BotFace; mood: Mood; size: number; surface?: "list" | "page" | "header" }) {
@@ -28,11 +37,11 @@ export function Face(props: { name: string; face?: BotFace; mood: Mood; size: nu
     if (c === null) return;
     const d = dark();
     // The surface behind the face, so a sleeping bot fades toward it.
-    const surface = d ? COLORS.night : "#FFFFFF";
+    const surface = surfaceColor(props.surface);
     const h = mount(c, props.name, { ...traits, mood: props.mood, scale: 1.2, dark: d, surface, ...(faceMotion.calm !== undefined ? { calm: faceMotion.calm } : {}) });
     handle.current = h;
     const scheme = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
-    const onScheme = () => h.set({ dark: dark(), surface: dark() ? COLORS.night : "#FFFFFF" });
+    const onScheme = () => h.set({ dark: dark(), surface: surfaceColor(props.surface) });
     scheme?.addEventListener("change", onScheme);
     return () => {
       scheme?.removeEventListener("change", onScheme);

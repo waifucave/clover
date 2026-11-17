@@ -22,6 +22,10 @@ export interface BotRow {
   mood: ActivityState;
   /** The tool's wire name while `working`, never its arguments. */
   tool?: string;
+  /** While `working`: the running call's file base name or site host, and a plugin tool's own title, when this window
+   *  has the call (the open bot's session); the status line's only inputs besides `mood` and `tool`. */
+  detail?: string;
+  title?: string;
   last?: { text: string; from: "user" | "bot" | "note"; at: number };
   unread: boolean;
 }
