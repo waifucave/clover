@@ -19,12 +19,18 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { MOSS_ERR, APP_METHODS, type MossHelloParams, type MossHelloResult } from "@waifucave/moss-protocol";
 import { dial as dialSocket, RpcCallError, type DaemonClient, type RequestHandler } from "../protocol/client";
+import { behindFrom } from "../release";
 import type { DaemonLauncher } from "./login";
 
 export type PairState =
   | { kind: "connecting" }
   | { kind: "starting-daemon" }
   | { kind: "connected"; hello: MossHelloResult }
+  /** The daemon refused the hello: this app is on an older release than the engine (`needs`). The app updates itself; the
+   *  pair doesn't dial again until `resume()` (RL, spec §3.1). */
+  | { kind: "behind"; engine: string; needs: string }
+  /** Connected to an engine on an older release: the connection serves the release door only until its engine is brought in. */
+  | { kind: "ahead"; hello: MossHelloResult }
   | { kind: "reconnecting"; since: number }
   | { kind: "unavailable"; reason: string }
   | { kind: "unverified"; reason: string }
@@ -88,6 +94,10 @@ export interface PairOptions {
   /** Each new connection, after its hello: the runtime fetches the registry and the user's choices, subscribes. */
   onConnected?: (client: DaemonClient, hello: MossHelloResult) => void | Promise<void>;
   onState?: (state: PairState) => void;
+  /** The engine refused the hello because this app is behind its release (`MOSS_ERR.RELEASE_REFUSED`); `needs` is the release. */
+  onBehind?: (b: { engine: string; client: string; needs: string }) => void;
+  /** The hello was served as `ahead` (the release door only): `onConnected` isn't called; this is, instead. */
+  onAhead?: (client: DaemonClient, hello: MossHelloResult) => void | Promise<void>;
   /** The daemon asked the app to quit (`app.quit`): the pair is stopping, for a Quit elsewhere or an update. */
   onDaemonQuit?: (reason: "quit" | "update") => void;
 }
@@ -138,6 +148,13 @@ export class Pair {
   private stuckReason: string | undefined;
   /** How many times the app started the daemon itself (for the log and the tests). */
   kicks = 0;
+  /** Set when the engine said this app is behind: it dials no more (the app is updating itself) until `resume()`. */
+  private held = false;
+
+  /** Dial again (the update didn't come, or the app is staying on this release for now). */
+  resume(): void {
+    this.held = false;
+  }
 
   constructor(private readonly opts: PairOptions) {
     this.timing = { ...PAIR_TIMING, ...opts.timing };
@@ -217,6 +234,11 @@ export class Pair {
 
   /** Dials once and says hello; true when connected. */
   private async connectOnce(): Promise<boolean> {
+    // An app that is behind the engine's release doesn't dial while it updates: something answered, and it is not for lack of a daemon.
+    if (this.held) {
+      this.answered = true;
+      return false;
+    }
     const client = await (this.opts.dial ?? dialSocket)(this.opts.endpoint);
     this.refusal = undefined;
     this.answered = client !== undefined;
@@ -274,6 +296,16 @@ export class Pair {
     } catch (err) {
       client.close();
       const why = err instanceof RpcCallError ? `${err.code}: ${err.message}` : String(err);
+      const behind = behindFrom(err);
+      if (behind !== undefined) {
+        // Not a failure to retry: the app is on an older release than the engine, and updates itself before it connects.
+        this.held = true;
+        this.log(`pair: this app (release ${behind.client}) is behind the engine (${behind.engine}); it updates to ${behind.needs} before it connects`);
+        this.refusal = `this app is behind the engine's release; it needs ${behind.needs}`;
+        this.setState({ kind: "behind", engine: behind.engine, needs: behind.needs });
+        this.opts.onBehind?.(behind);
+        return false;
+      }
       this.log(`pair: the daemon refused the hello (${why})`);
       this.refusal = `the daemon refused the app (${why})`;
       this.setState({ kind: "unavailable", reason: this.refusal });
@@ -287,6 +319,17 @@ export class Pair {
     client.onClose(() => this.lost(client));
     if (this.stuckReason !== undefined) this.log("pair: connected after the window said MOSS can't start");
     this.stuckReason = undefined;
+    if (hello.release?.standing === "ahead") {
+      // This app is newer than the engine: the connection serves the release door only, so none of the usual setup is asked.
+      this.log(`pair: this app is ahead of the engine (${hello.release.engine}); only the release door is open`);
+      this.setState({ kind: "ahead", hello });
+      try {
+        await this.opts.onAhead?.(client, hello);
+      } catch (err) {
+        this.log(`pair: the release door's setup failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
     this.setState({ kind: "connected", hello });
     try {
       await this.opts.onConnected?.(client, hello);
@@ -389,7 +432,7 @@ export class Pair {
           await this.kick(`nothing answers for ${quiet} ms (no daemon for ${down} ms)`);
         }
       }
-      if (this.stuckReason === undefined && down >= this.timing.stuckAfterMs) {
+      if (this.stuckReason === undefined && !this.held && down >= this.timing.stuckAfterMs) {
         this.stuckReason = STUCK_REASON;
         this.log(`pair: no daemon for ${Math.round(down / 1000)} s: the window says MOSS can't start; still trying`);
         this.setState({ kind: "unavailable", reason: STUCK_REASON });

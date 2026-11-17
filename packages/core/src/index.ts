@@ -52,7 +52,8 @@ export {
   type PoolLockGuard, type LeaseStore, type LeasesDirSecurity,
 } from "./fence/win-sandbox";
 export { claimDaemonChildren, spawnDisclaimed, type DisclaimedProcess } from "./platform/daemon-children";
-export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
+export { runEngineInstall, runEngineReset, ENGINE_INSTALL_USAGE, ENGINE_RESET_USAGE } from "./update/engine-install-command";
+export { acquireLock, tryFileLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
 export { resolveMossProfile, keychainService, profileDisplayName, cliCommandName, type MossProfile } from "./profile";
 export {
   LEGACY_LAUNCHD_LABEL, LEGACY_HOME_DIR, LEGACY_DEV_HOME_DIR, LEGACY_HOME_ENV, LEGACY_PROFILE_ENV,

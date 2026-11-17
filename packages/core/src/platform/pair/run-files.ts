@@ -12,13 +12,18 @@
 // the app never reads a half-written file and the token is never readable by anyone else, even for a
 // moment (review S6); `lockRunDir` also makes the run folder itself the user's alone.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { chmodSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Runner } from "../login/live";
 import type { DaemonPlatform } from "../transport";
 
 export const APP_TOKEN_FILE = "app.token";
 export const APP_START_FILE = "app-start.json";
+/** Left by a daemon that stopped to start again at once and kept the app open (`stop({ keepApp })`): the next daemon's pair then
+ *  gives the app the restart's wait, not the start-up's. */
+export const APP_KEPT_FILE = "app-kept.json";
+/** How long that mark counts: a daemon that comes back later than this is a start of its own. */
+export const APP_KEPT_MAX_AGE_MS = 120_000;
 
 export function appTokenPath(runDir: string): string {
   return join(runDir, APP_TOKEN_FILE);
@@ -123,4 +128,30 @@ export function checkDaemonProof(appToken: string, nonce: string, proof: string,
   const want = Buffer.from(proveDaemon(appToken, nonce, pid));
   const got = Buffer.from(proof);
   return got.length === want.length && timingSafeEqual(got, want);
+}
+
+/** Marks that the app was kept open through this daemon's stop. Best-effort (the run folder is the user's alone; no mark is the
+ *  ordinary start-up wait). */
+export function markAppKept(runDir: string, at: number): void {
+  const path = join(runDir, APP_KEPT_FILE);
+  const tmp = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify({ at }), { mode: 0o600 });
+    renameSync(tmp, path);
+  } catch {
+    rmSync(tmp, { force: true });
+  }
+}
+
+/** Reads and removes the mark; true when a fresh one (within `APP_KEPT_MAX_AGE_MS`, never from the future) was there. */
+export function takeAppKept(runDir: string, now: number): boolean {
+  const path = join(runDir, APP_KEPT_FILE);
+  try {
+    const at = (JSON.parse(readFileSync(path, "utf8")) as { at?: unknown }).at;
+    return typeof at === "number" && at <= now && now - at <= APP_KEPT_MAX_AGE_MS;
+  } catch {
+    return false;
+  } finally {
+    rmSync(path, { force: true });
+  }
 }

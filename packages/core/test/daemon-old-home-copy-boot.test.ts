@@ -127,6 +127,9 @@ test("offered at a fresh home's first start; the press stages the copy; the next
   await press(daemon, OFFER_TEXT.offer.title, "copy");
   await restarted;
   expect(existsSync(oldHomePaths(home).complete)).toBe(true);
+  // Its exit-76 restart is not a release restart (RL): the engine's release switch neither fired nor left its one-shot marker.
+  expect(existsSync(join(home, "bin", ".restarted-into.json"))).toBe(false);
+  expect(await Promise.race([daemon.releaseRestart.then(() => "restarted"), Bun.sleep(50).then(() => "not asked")])).toBe("not asked");
   await daemon.stop();
   daemon = undefined;
   expect(treeHash(fx.old)).toBe(before);

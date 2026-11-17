@@ -45,6 +45,12 @@ describe("one release (§3.1)", () => {
     expect(releaseStanding("1.111.1", "1.112.0")).toBe("ahead");
     expect(compareReleases("1.111.1-rc.1", "1.111.1")).toBeLessThan(0);
     expect(compareReleases("1.111.1+build.7", "1.111.1")).toBe(0);
+    // Prerelease identifiers compare as semver says: numbers by value, a number before a word, a prefix before its extension.
+    expect(compareReleases("1.111.1-rc.9", "1.111.1-rc.10")).toBeLessThan(0);
+    expect(compareReleases("1.111.1-rc.10", "1.111.1-rc.9")).toBeGreaterThan(0);
+    expect(compareReleases("1.111.1-1", "1.111.1-alpha")).toBeLessThan(0);
+    expect(compareReleases("1.111.1-rc", "1.111.1-rc.1")).toBeLessThan(0);
+    expect(compareReleases("1.111.1-rc.1", "1.111.1-rc.1")).toBe(0);
     expect(() => compareReleases("one", "1.0.0")).toThrow();
   });
 });

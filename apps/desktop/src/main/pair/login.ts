@@ -117,3 +117,87 @@ export function copyOutOfAppImage(bundled: string, env: NodeJS.ProcessEnv, userH
   }
   return target;
 }
+
+/** What `moss-core engine install` printed: the binary every start goes through, whichever app's copy won the lock. */
+export function parseEngineInstall(out: string): { installed: boolean; binary: string; release: string; build?: string; unsafe?: true } | undefined {
+  const line = out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("{")).pop();
+  if (line === undefined) return undefined;
+  try {
+    const p = JSON.parse(line) as { installed?: unknown; binary?: unknown; release?: unknown; build?: unknown; unsafe?: unknown };
+    if (typeof p.installed !== "boolean" || typeof p.binary !== "string" || p.binary === "" || typeof p.release !== "string") return undefined;
+    return { installed: p.installed, binary: p.binary, release: p.release, ...(typeof p.build === "string" ? { build: p.build } : {}), ...(p.unsafe === true ? { unsafe: true as const } : {}) };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Puts this app's own engine (and its bundled tree) under the home, under the install lock, and says which binary to start
+ * the engine from: `<home>/bin/daemon/moss-core`, the NEWEST installed copy, whichever of two apps starting at once won
+ * (spec §3.1 "Where the copies are found"). The login item the app then registers (`autostart enable`) names that copy, never
+ * this app's own resources. Undefined when it couldn't (the app then starts its own bundled engine, as a single app did).
+ */
+export async function installEngineCopy(cfg: LauncherConfig & { bundlePath: string; build?: string }): Promise<{ installed: boolean; binary: string; release: string } | undefined> {
+  const r = await run(cfg, ["engine", "install", "--app", cfg.bundlePath, ...(cfg.build !== undefined ? ["--build", cfg.build] : [])]);
+  const placed = r.ok ? parseEngineInstall(r.out) : undefined;
+  // An engine already running from an app's own copy defers the install (nothing is placed under it): no home copy yet, none to start from.
+  // A copy the engine's own check says doesn't meet its code requirement (macOS) is never started: the app keeps its bundled engine.
+  return placed !== undefined && placed.unsafe !== true && existsSync(placed.binary) ? placed : undefined;
+}
+
+export interface AdoptDeps {
+  /** `moss-core engine install` (default: `installEngineCopy`). */
+  install(): Promise<{ installed: boolean; binary: string; release: string } | undefined>;
+  /** A launcher that runs the login commands from `binary` (default: `cliLauncher`). */
+  launcherFor(binary: string): DaemonLauncher;
+  log(line: string): void;
+}
+
+/**
+ * The login item points at the engine installed under the home, never into an app's bundle (spec §3.1: removing one app must not
+ * break the login start of the other). After `engine install` has placed, or found, the home's engine, a login item that is
+ * ALREADY registered is registered again from that copy (`autostart enable`, idempotent, run from `<home>/bin/daemon/moss-core`);
+ * one that isn't registered is left to the pair, which asks for it (through the same copy) when no engine answers. The dev
+ * profile's own item is left alone. Never throws; returns the installed engine's binary, or undefined when none was placed.
+ */
+export async function adoptHomeEngine(profile: "dist" | "dev", d: AdoptDeps): Promise<{ binary: string; release: string; reregistered: boolean } | undefined> {
+  const placed = await d.install();
+  if (placed === undefined) return undefined;
+  if (profile === "dev") return { binary: placed.binary, release: placed.release, reregistered: false };
+  let reregistered = false;
+  try {
+    const l = d.launcherFor(placed.binary);
+    if ((await l.status())?.registered === true) {
+      const r = await l.enable();
+      reregistered = r.ok;
+      if (!r.ok) d.log(`release: the login item was not re-registered from the home's engine (exit ${r.code})`);
+    }
+  } catch (err) {
+    d.log(`release: the login item was not re-registered from the home's engine: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return { binary: placed.binary, release: placed.release, reregistered };
+}
+
+/**
+ * Starts the engine through the OS for a release switch whose new engine hasn't answered (RL, S2): the same two steps an ordinary
+ * launch takes when no engine answers (`Pair.start`, pair.ts): register the login item only when none is INSTALLED, then ask the OS
+ * to start the engine (`autostart start`) for this session. `status().registered` is `autostart status --json`'s "installed", so an
+ * item the person turned off (`autostart disable`: the parked plist on macOS, a disabled unit, a task with its logon trigger off)
+ * counts as registered and stays off; only a missing item (never registered, or `autostart remove`d), or a status the binary
+ * couldn't give, is registered, exactly as a launch does. The dev profile's own item is never registered here. Never throws; true
+ * when the OS took the start.
+ */
+export async function startEngineThroughOs(profile: "dist" | "dev", l: DaemonLauncher, log: (line: string) => void): Promise<boolean> {
+  try {
+    if (profile !== "dev" && (await l.status())?.registered !== true) {
+      const r = await l.enable();
+      log(`release: the engine has no login item; registered it so the new engine starts under supervise (${r.ok ? "ok" : `failed, ${r.code}`})`);
+    }
+    const r = await l.start();
+    log(`release: asked the OS to start the new engine (${r.ok ? "ok" : `failed, ${r.code}`})`);
+    return r.ok;
+  } catch (err) {
+    log(`release: starting the new engine failed: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}

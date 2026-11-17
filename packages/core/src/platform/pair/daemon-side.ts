@@ -7,7 +7,7 @@ import type { MossProfile } from "../../profile";
 import type { DaemonPlatform } from "../transport";
 import { appStarter, resolveAppLauncher, type AppLauncher } from "./launch";
 import { DaemonPair, type DaemonPairOptions, type PairStopReason } from "./policy";
-import { lockRunDir, mintAppToken, removeAppToken } from "./run-files";
+import { lockRunDir, markAppKept, mintAppToken, removeAppToken, takeAppKept } from "./run-files";
 
 export interface DaemonPairSideInput {
   readonly runDir: string;
@@ -36,6 +36,8 @@ export interface DaemonPairSide {
   readonly launcher: AppLauncher | null;
   /** Stop the timers and remove the token file (the daemon is stopping). */
   dispose(): void;
+  /** The daemon stops to start again at once and leaves the app open: the next one's pair waits for it to come back. */
+  keepApp(): void;
 }
 
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
@@ -71,11 +73,12 @@ export async function startDaemonPairSide(input: DaemonPairSideInput): Promise<D
     ...(input.log ? { log: input.log } : {}),
   }, { ...input.options, desktop: launcher !== null });
   input.log?.(`[pair] ${typeof __MOSS_TEST_BUILD__ === "string" ? "a test-marked build: the daemon never starts the app" : launcher === null ? "no app installed: the daemon runs alone" : `the app starts with: ${launcher.how}`}`);
-  pair.start();
+  pair.start({ appKept: takeAppKept(input.runDir, now()) });
   return {
     pair,
     appToken,
     launcher,
     dispose() { pair!.dispose(); removeAppToken(input.runDir); },
+    keepApp() { markAppKept(input.runDir, now()); },
   };
 }

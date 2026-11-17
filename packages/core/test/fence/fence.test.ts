@@ -319,7 +319,9 @@ describe("the real fence on a real disk", () => {
     // pendingFenced names them under the MOSS home on macOS and Linux, in that OS's form (lane M's `<home>`
     // is the MOSS home). Windows keeps its updater in Task Scheduler (a closed door): none.
     expect(pendingFenced({ home: "/h", mossHome: "/h/.moss", os: "linux" })["self-update"]).toEqual([
-      "/h/.moss/update",
+      "/h/.moss/update", "/h/.moss/bin/plugins", "/h/.moss/bin/plugins.new", "/h/.moss/bin/plugins.old",
+      "/h/.moss/bin/daemon/moss-core", "/h/.moss/bin/daemon/moss-core.new", "/h/.moss/bin/daemon/moss-core.old",
+      "/h/.moss/bin/engine.json", "/h/.moss/bin/.install.lock", "/h/.moss/bin/.restarted-into.json",
       "/h/.moss/bin/moss-core", "/h/.moss/bin/moss-core.new", "/h/.moss/bin/moss-core.old",
       "/h/.moss/bin/.new", "/h/.moss/bin/.old", "/h/.moss/install.json",
     ]);

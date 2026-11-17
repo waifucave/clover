@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startDaemonPairSide } from "../../src/platform/pair/daemon-side";
-import { appStartPath, appTokenPath } from "../../src/platform/pair/run-files";
+import { APP_KEPT_FILE, appStartPath, appTokenPath, markAppKept, takeAppKept } from "../../src/platform/pair/run-files";
 import type { AppLauncher } from "../../src/platform/pair/launch";
 
 const os = (process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux") as "darwin" | "linux" | "win32";
@@ -44,5 +44,48 @@ describe("the daemon's side of the pair, assembled", () => {
     side.pair.quit("quit");
     expect(s.stops).toHaveLength(1);
     side.dispose();
+  });
+});
+
+describe("a stop that keeps the app open (a release switch, the old home's copy)", () => {
+  const quiet: AppLauncher = { how: "fake", async start() { return "started"; } };
+
+  test("it leaves a mark; the next daemon's pair takes it and gives the app the restart's wait, once", async () => {
+    const first = setup(quiet);
+    const a = await first.side;
+    a.keepApp();
+    expect(existsSync(join(first.runDir, APP_KEPT_FILE))).toBe(true);
+    a.dispose();
+    // The next daemon in the same run folder: the restart's 10 s, and the mark is gone.
+    const timers: number[] = [];
+    const b = await startDaemonPairSide({
+      runDir: first.runDir, os, profile: "dev", execPath: "/x/moss-core", env: {}, tellAppQuit() {}, stopDaemon() {},
+      run: async (argv) => ({ ok: true, out: argv[0] === "whoami" ? '"pc\\\\u","S-1-5-21-1-2-3-1001"' : "" }),
+      launcher: quiet, now: () => 9, after(ms) { timers.push(ms); return () => {}; },
+    });
+    expect(timers).toEqual([10_000]);
+    expect(existsSync(join(first.runDir, APP_KEPT_FILE))).toBe(false);
+    b.dispose();
+  });
+
+  test("a daemon stopped any other way leaves no mark, and the start-up wait stays 2 s", async () => {
+    const s = setup(quiet);
+    const side = await s.side;
+    side.pair.quit("quit");
+    side.dispose();
+    expect(existsSync(join(s.runDir, APP_KEPT_FILE))).toBe(false);
+  });
+
+  test("a stale, future or unreadable mark is not taken (and is removed)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "moss-kept-"));
+    markAppKept(dir, 1_000);
+    expect(takeAppKept(dir, 1_000 + 120_001)).toBe(false);
+    markAppKept(dir, 5_000);
+    expect(takeAppKept(dir, 4_000)).toBe(false);
+    writeFileSync(join(dir, APP_KEPT_FILE), "not json");
+    expect(takeAppKept(dir, 6_000)).toBe(false);
+    expect(existsSync(join(dir, APP_KEPT_FILE))).toBe(false);
+    markAppKept(dir, 1_000);
+    expect(takeAppKept(dir, 1_000 + 120_000)).toBe(true);
   });
 });

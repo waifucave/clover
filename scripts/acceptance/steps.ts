@@ -12,6 +12,7 @@ import { ARCHIVE_STEP } from "./archive-step";
 import { ACP_BACKEND_STEP } from "./acp-backend-step";
 import { BUILDER_EXAMPLES_STEP } from "./builder-examples-step";
 import { WORKSHOP_POINTS_STEP } from "./workshop-points-step";
+import { RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP } from "./release-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { CHILD_STEP, NOTIFY_STEP } from "./child-notify-step";
@@ -121,6 +122,8 @@ export const FULL_STEPS = [
   BOT_RECORDS_STEP,
   // Lane RT's row: after every row it could renumber but the cold start and the idle row, which stays last.
   ROUTER_STEP,
+  RELEASE_BEHIND_STEP,
+  RELEASE_AHEAD_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;

@@ -54,6 +54,37 @@ function note(lines: string[], action?: { label: string; run: () => void }): voi
   stage.append(box);
 }
 
+/** What the app says of its release (the main process's `ReleaseNotice`, release.ts): the words, and "Switch now" while a newer app waits. */
+interface ReleaseNoticeView { kind: string; phase?: string; needs?: string; incoming?: string; turns?: number; agents?: number; command?: string }
+function releaseWords(n: ReleaseNoticeView): { text: string; action?: { label: string; run: () => void } } {
+  const p = { needs: n.needs ?? "", incoming: n.incoming ?? "", turns: n.turns ?? 0, agents: n.agents ?? 0, command: n.command ?? "" };
+  if (n.kind === "cannot" && n.command !== undefined) return { text: t("release.cannot-reset", p) };
+  if (n.kind === "updating") return { text: t(`release.${n.phase ?? "checking"}`, p) };
+  if (n.kind === "waiting") {
+    return { text: t(p.turns + p.agents > 0 ? "release.waiting-for" : "release.waiting", p), action: { label: t("release.switch-now"), run: () => void root.call("release.switchNow") } };
+  }
+  if (n.kind === "engine-down") return { text: t("release.engine-down", p), action: { label: t("release.retry"), run: () => void root.call("release.retry") } };
+  return { text: t(`release.${n.kind}`, p) };
+}
+const releaseBanner = document.getElementById("moss-release")!;
+/** The release notice as a banner over a shell that is showing (the older app that is already open, updating itself). */
+async function drawRelease(): Promise<void> {
+  const state = await root.call("registry.state").catch(() => undefined) as { release?: ReleaseNoticeView } | undefined;
+  releaseBanner.replaceChildren();
+  // With no shell mounted the stage's note says it (renderOrNote); the banner is for a shell that is showing.
+  if (state?.release === undefined || shown === undefined) { releaseBanner.hidden = true; return; }
+  const w = releaseWords(state.release);
+  releaseBanner.hidden = false;
+  releaseBanner.append(w.text);
+  if (w.action !== undefined) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = w.action.label;
+    b.addEventListener("click", w.action.run);
+    releaseBanner.append(b);
+  }
+}
+
 let info: MountInfo;
 let shown: { mount: string; url: string } | undefined;
 let strings: StringTable = EMPTY_STRINGS;
@@ -149,6 +180,14 @@ async function render(): Promise<void> {
     // a daemon that answered with its registry open and nothing to fill the window.
     if (!info.context.safeMode && info.context.surface === undefined) {
       const state = await root.call("registry.state").catch(() => undefined);
+      const release = (state as { release?: ReleaseNoticeView } | undefined)?.release;
+      if (release !== undefined) {
+        // Behind or ahead of the engine's release: that, and not "Starting MOSS…", is what the window is waiting for.
+        const w = releaseWords(release);
+        note([w.text], w.action);
+        syncDrag();
+        return;
+      }
       if ((state as { ready?: unknown } | undefined)?.ready !== true) {
         // "Starting MOSS…" is never the end: after a long time with no daemon the root says so, and what to do (the
         // app keeps trying, and draws the shell as soon as a daemon answers).
@@ -175,7 +214,7 @@ function syncDrag(): void {
 }
 
 function onMessage(m: LayerMessage): void {
-  if (m.type === "respot") void render();
+  if (m.type === "respot") { void render(); void drawRelease(); }
   if (m.type === "rect-query") {
     // The menu broker asks where the frame is in the window.
     const el = Array.from(stage.querySelectorAll("iframe")).find((f) => f.dataset.mossMount === m.child);

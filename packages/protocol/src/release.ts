@@ -34,8 +34,7 @@ function parts(v: string): [number, number, number, string | undefined] | undefi
   return m ? [Number(m[1]), Number(m[2]), Number(m[3]), m[4]] : undefined;
 }
 
-/** Semver order of two releases (build metadata ignored; a prerelease sorts before its release, prereleases compare as
- *  text): negative when `a` is older. Throws on text that isn't a release. */
+/** Semver order of two releases (build metadata ignored; a prerelease sorts before its release, prereleases compare by semver's identifiers): negative when `a` is older. Throws on text that isn't a release. */
 export function compareReleases(a: string, b: string): number {
   const x = parts(a);
   const y = parts(b);
@@ -44,7 +43,20 @@ export function compareReleases(a: string, b: string): number {
   if (x[3] === y[3]) return 0;
   if (x[3] === undefined) return 1;
   if (y[3] === undefined) return -1;
-  return x[3] < y[3] ? -1 : 1;
+  // Semver's order for prereleases: dot-separated identifiers, numeric ones by value (rc.9 before rc.10), a numeric one
+  // before a text one, and a shorter list before a longer one it begins.
+  const xs = x[3].split("."), ys = y[3].split(".");
+  for (let i = 0; i < Math.max(xs.length, ys.length); i++) {
+    const p = xs[i], q = ys[i];
+    if (p === undefined) return -1;
+    if (q === undefined) return 1;
+    if (p === q) continue;
+    const pn = /^\d+$/.test(p), qn = /^\d+$/.test(q);
+    if (pn && qn) return Number(p) < Number(q) ? -1 : 1;
+    if (pn !== qn) return pn ? -1 : 1;
+    return p < q ? -1 : 1;
+  }
+  return 0;
 }
 
 /** Where a client's release stands against the engine's: the range is one release wide (item 117). */

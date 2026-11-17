@@ -40,6 +40,9 @@ export interface FakeOptions {
   /** Events to send to each newly authed connection (app or layer) right after its hello, as raw JSON-RPC
    *  notifications. Used to deliver `card_pending` to layers before they open their own channel. */
   events?: readonly unknown[];
+  /** The release check (RL): `behind` refuses an app's hello with `RELEASE_REFUSED` and what it needs; `ahead` serves it
+   *  the release door only (`release.bring`, `events.subscribe`); an app that names no release counts as behind. */
+  release?: { engine: string; mode: "behind" | "ahead" };
 }
 
 export interface FakeModel {
@@ -115,6 +118,7 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
   let resolveQuit!: (p: { handOver: boolean }) => void;
   const quitRequested = new Promise<{ handOver: boolean }>((r) => (resolveQuit = r));
   const authed = new WeakSet<Socket>();
+  const doorOnly = new WeakSet<Socket>();
   const signedIn = new Set<string>();
   const layerTokens = new Map<string, string>();
   const layerOf = new WeakMap<Socket, string>();
@@ -161,9 +165,14 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "plugin", pluginId: params.pluginId }, device: "devfake0000000001", features: [] });
       }
       if (params.role !== "app" || params.token !== token) return fail(-32001, "unauthorized");
+      if (opts.release?.mode === "behind" || (opts.release !== undefined && params.release === undefined)) {
+        if (id !== undefined) send(s, { jsonrpc: "2.0", id, error: { code: -32022, message: "behind", data: { standing: "behind", engine: opts.release.engine, client: String(params.release ?? "0.0.0"), needs: opts.release.engine } } });
+        return;
+      }
       authed.add(s);
+      if (opts.release?.mode === "ahead") doorOnly.add(s);
       void sendInitialEvents(s);
-      return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "user", via: "app" }, device: "devfake0000000001", features: [] });
+      return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "user", via: "app" }, device: "devfake0000000001", features: [], ...(opts.release !== undefined ? { release: { standing: "ahead", engine: opts.release.engine } } : {}) });
     }
     // A layer's calls: what the fake knows a layer may ask (the terminal's, events), answered as that plugin.
     const layer = layerOf.get(s);
@@ -190,6 +199,11 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
       return fail(-32003, `a layer doesn't call ${method} here`);
     }
     if (!authed.has(s)) return fail(-32001, "hello required first");
+    if (doorOnly.has(s)) {
+      if (method === "events.subscribe") return reply({ ok: true });
+      if (method === "release.bring") return reply({ state: params.now === true ? "switching" : "waiting" });
+      return fail(-32001, "this app is newer than the engine: wait for release.bring");
+    }
     switch (method) {
       case "events.subscribe":
         return reply({ ok: true });
