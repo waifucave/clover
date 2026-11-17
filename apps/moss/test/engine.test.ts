@@ -30,10 +30,10 @@ const until = async (what: () => boolean, ms = 2_000): Promise<void> => {
   }
 };
 
-async function setup(drop: FakePiece[] = [], still?: { frameMs: number; picturePng: Uint8Array }): Promise<{ e: FakeEngine; client: DaemonClient; engine: MossEngine; sealed: SealedFrames }> {
+async function setup(drop: FakePiece[] = [], still?: { frameMs: number; picturePng: Uint8Array }, more: { running?: Record<string, { name: string; argsJson: string; displayTitle?: string }> } = {}): Promise<{ e: FakeEngine; client: DaemonClient; engine: MossEngine; sealed: SealedFrames }> {
   const h = mkdtempSync(join(tmpdir(), "ma-"));
   homes.push(h);
-  const e = await startFakeEngine({ home: h, drop, ...(still ?? {}) });
+  const e = await startFakeEngine({ home: h, drop, ...(still ?? {}), ...more });
   closers.push(() => e.close());
   const client = (await dial(daemonEndpoint(h)))!;
   closers.push(() => client.close());
@@ -307,5 +307,20 @@ describe("placements: an event always wins over a snapshot", () => {
     again.answers[0]!({ placements: [{ card: "card_gone", place: strip }] });
     await reattached;
     expect(engine.placementOf("card_gone")).toEqual(strip);
+  });
+});
+
+describe("the status line's inputs", () => {
+  test("the open bot's running call gives its safe detail only; its result clears it; no message is made of either", async () => {
+    const { engine } = await setup([], undefined, { running: { juniper: { name: "mcp__moss__Browser", argsJson: JSON.stringify({ url: "https://www.example.com/a?secret=1" }), displayTitle: "Page reader" } } });
+    const messages: string[] = [];
+    engine.onMessage((_b, m) => messages.push(m.text));
+    expect(engine.view().bots.find((b) => b.id === "juniper")?.detail).toBeUndefined();
+    await engine.conversation("juniper");
+    // The browser tool has no safe detail, only its title.
+    await until(() => engine.view().bots.find((b) => b.id === "juniper")?.title === "Page reader");
+    expect(engine.view().bots.find((b) => b.id === "juniper")).not.toHaveProperty("detail");
+    expect(JSON.stringify(engine.view())).not.toContain("secret");
+    expect(messages).toEqual([]);
   });
 });

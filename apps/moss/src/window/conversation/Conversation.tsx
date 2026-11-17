@@ -11,6 +11,7 @@ import { Face, MoodWords } from "../faces/Face";
 import { bridge, shortTime } from "../bridge";
 import { CardFrame } from "../cards/CardFrame";
 import type { BotRow, CardRow, Message, MossView } from "../../shared/view";
+import { statusPhrase } from "../../shared/status-line";
 
 /** How close to the top (in pixels) a scroll starts reading the page before. */
 const OLDER_AT = 600;
@@ -102,6 +103,23 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
   }, [props.cards.length]);
   // A card in this conversation grows to its own height once its frame has drawn: keep the end, with the card's
   // buttons, in view.
+  // The status line: what the bot is doing while its turn runs. It goes when the turn ends (the feed leaves thinking and
+  // working) or when a reply of the bot's arrives (MOSS gets a reply whole, not as it streams), and comes back the next
+  // time the feed's state, tool or call changes.
+  const bot = props.bot;
+  const runKey = `${bot.mood}|${bot.tool ?? ""}|${bot.detail ?? ""}|${bot.title ?? ""}`;
+  const runKeyRef = useRef(runKey);
+  runKeyRef.current = runKey;
+  const [replied, setReplied] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    setReplied(undefined);
+    return bridge().onMessage((b, m) => { if (b === id && m.from === "bot") setReplied(runKeyRef.current); });
+  }, [id]);
+  const phrase = replied === runKey ? undefined : statusPhrase({ state: bot.mood, ...(bot.tool !== undefined ? { tool: bot.tool } : {}), ...(bot.detail !== undefined ? { detail: bot.detail } : {}), ...(bot.title !== undefined ? { title: bot.title } : {}) });
+  const showing = phrase !== undefined;
+  useLayoutEffect(() => {
+    if (showing) end.current?.scrollIntoView({ block: "end" });
+  }, [showing]);
   const cardIds = props.cards.map((c) => c.id).join(",");
   useEffect(() => {
     if (cardIds === "") return;
@@ -116,7 +134,7 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
         <Face name={props.bot.name} {...(props.bot.face !== undefined ? { face: props.bot.face } : {})} mood={props.bot.mood} size={36} surface="header" />
         <div className="conversation__who">
           <h1>{props.bot.name}</h1>
-          <MoodWords mood={props.bot.mood} {...(props.bot.tool !== undefined ? { tool: props.bot.tool } : {})} />
+          <MoodWords mood={props.bot.mood} />
         </div>
         <button type="button" className={`icon-button${props.panelOpen ? " is-on" : ""}`} aria-label={props.panelOpen ? "Close the side panel" : `Open ${props.bot.name}'s screen and routines`} aria-pressed={props.panelOpen} onClick={props.onPanel}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2" /><path d="M10 3v10" /></svg>
@@ -130,6 +148,7 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
         {state === "ready" && messages.length === 0 ? <p className="messages__note">Say hello to {props.bot.name}.</p> : null}
         {messages.map((m, i) => <Bubble key={m.id} m={m} showTime={i === messages.length - 1 || messages[i + 1]?.from !== m.from} {...(m.failed === true && i === messages.length - 1 ? { bot: props.bot.id } : {})} />)}
         {props.cards.map((c) => <CardFrame key={c.id} card={c} />)}
+        {phrase !== undefined && props.cards.length === 0 ? <StatusLine phrase={phrase} /> : null}
         <div ref={end} />
       </div>
       <Composer bot={props.bot} {...(props.talk !== undefined ? { talk: props.talk } : {})} />
@@ -168,6 +187,23 @@ const Bubble = memo(function Bubble(props: { m: Message; showTime: boolean; /** 
     </div>
   );
 });
+
+/** The status line: one line of plain words, a soft highlight moving across it. Not a control (no hover, no click, no
+ *  focus stop); a polite live status for a screen reader, told at most once every few seconds, not on every change. */
+function StatusLine(props: { phrase: string }) {
+  const [told, setTold] = useState(props.phrase);
+  const last = useRef(0);
+  useEffect(() => {
+    const t = setTimeout(() => { last.current = Date.now(); setTold(props.phrase); }, Math.max(0, last.current + 4_000 - Date.now()));
+    return () => clearTimeout(t);
+  }, [props.phrase]);
+  return (
+    <div className="status-line" data-status-line>
+      <span className="status-line__text" aria-hidden="true" data-status-text>{props.phrase}</span>
+      <span className="visually-hidden" role="status" aria-live="polite" data-status-told>{told}</span>
+    </div>
+  );
+}
 
 /** A file's kind from its name, in a word ("PDF", "Image", "File"). */
 /** A failed turn's note with Try again: one press sends the same words once more; the button goes once they are sent

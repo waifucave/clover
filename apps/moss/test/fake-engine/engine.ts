@@ -49,7 +49,10 @@ export interface FakeEngineOptions {
    *  read here). Default: this process's, for a client in the same process. */
   peerPid?: () => number | undefined;
   /** A bot whose conversation is this many generated messages instead of its fixture's (paging back through it). */
-  longTalk?: { bot: string; messages: number };
+  /** A tool call running on a bot's main session: sent as a `tool_call` event when MOSS attaches to that session (the
+   *  status line takes a file's base name or a site's host from its input; the conversation never draws it). */
+  running?: Record<string, { name: string; argsJson: string; displayTitle?: string }>;
+  longTalk?: { bot: string; messages: number; /** The words of message `i` (0-based; even ones are the person's). Default: "Long message N". */ text?: (i: number) => string };
 }
 
 interface Conn {
@@ -146,8 +149,8 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
       for (let i = 0; i < n; i++) {
         const ts = now - (n - i) * 1_000;
         events.push(i % 2 === 0
-          ? { type: "user_message", seq: i + 1, sessionId: session, ts, threadId: "main", text: `Long message ${i + 1}`, clientName: "MOSS" }
-          : { type: "assistant_message", seq: i + 1, sessionId: session, ts, threadId: "main", text: `Long message ${i + 1}` });
+          ? { type: "user_message", seq: i + 1, sessionId: session, ts, threadId: "main", text: o.longTalk.text?.(i) ?? `Long message ${i + 1}`, clientName: "MOSS" }
+          : { type: "assistant_message", seq: i + 1, sessionId: session, ts, threadId: "main", text: o.longTalk.text?.(i) ?? `Long message ${i + 1}` });
       }
     }
     talk.set(v.id, events);
@@ -375,9 +378,16 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         for (const k of conns.values()) if (k.attached.has(v.mainSession)) write(k, { jsonrpc: "2.0", method: "event", params: e });
         return { seq: e.seq };
       }
-      case "session.attach":
+      case "session.attach": {
         c.attached.add(String(params.id));
+        for (const [bot, call] of Object.entries(o.running ?? {})) {
+          const v = bots.get(bot);
+          if (v === undefined || v.mainSession !== String(params.id)) continue;
+          const seq = (talk.get(bot)?.length ?? 0) + 1000;
+          setTimeout(() => write(c, { jsonrpc: "2.0", method: "event", params: { type: "tool_call", seq, sessionId: v.mainSession, ts: Date.now(), threadId: "main", callId: `call_${bot}`, ...call } }), 300);
+        }
         return { lastSeq: 0 };
+      }
       case "session.detach":
         c.attached.delete(String(params.id));
         return { ok: true };

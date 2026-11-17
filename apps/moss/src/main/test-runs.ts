@@ -86,6 +86,10 @@ export async function runSmoke(o: { win: BrowserWindow; engine: MossEngine; file
 export interface Scene {
   name: string;
   go: Record<string, unknown>;
+  /** Page script run once the scene has loaded (a press on Edit, a folder opened), then a beat for it to draw. */
+  run?: string;
+  /** A refusal line under this card, as main sends one when a press is refused. */
+  said?: { card: string; words: string };
 }
 
 /** The scenes for the owner's renders (the brief's list). */
@@ -98,6 +102,16 @@ export const SCENES: readonly Scene[] = [
   { name: "ma2-plugins", go: { page: "plugins", strip: false } },
   { name: "ma2-settings-account", go: { page: "settings", strip: false } },
   { name: "ma2-settings-bot", go: { page: "settings", bot: "juniper", strip: false } },
+  // What was built since: a long conversation scrolled up, a routine being edited, a bot's memory, the + flow, a refusal.
+  // A running turn's one line: thinking, the browser, a file's name, a site's host.
+  { name: "status-thinking", go: { bot: "maple", panel: false, strip: false } },
+  { name: "status-file", go: { bot: "brook", panel: false, strip: false } },
+  { name: "status-web", go: { bot: "ada", panel: false, strip: false } },
+  { name: "long-scrolled", go: { bot: "maple", panel: false, strip: false }, run: `(() => { const m = document.querySelector(".messages"); m.scrollTop = Math.round(m.scrollHeight * 0.4); })()` },
+  { name: "routine-edit", go: { bot: "juniper", panel: true, strip: false }, run: `document.querySelector("[data-routine-edit]").click()` },
+  { name: "memory", go: { page: "settings", bot: "juniper", strip: false }, run: `(() => { document.querySelector("[data-memory-file] button").click(); setTimeout(() => document.querySelector("[data-settings=memory]").scrollIntoView({ block: "start" }), 300); })()` },
+  { name: "new-bot", go: { bot: "juniper", panel: false, strip: false }, run: `(() => { document.querySelector('button[aria-label="New bot"]').click(); setTimeout(() => { const i = document.querySelector(".new-bot input"); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(i, "Sparrow"); i.dispatchEvent(new Event("input", { bubbles: true })); }, 300); })()` },
+  { name: "card-refused", go: { bot: "juniper", panel: false, strip: false }, said: { card: "card_juniper_book", words: "Another window is covering the button: bring MOSS to the front, then press again." } },
 ];
 
 /** The file a scene's picture goes to. */
@@ -128,11 +142,19 @@ export async function runRender(o: { win: BrowserWindow; engine: MossEngine; dir
           await win.webContents.executeJavaScript(`window.__mossTest && window.__mossTest.go(${JSON.stringify({ ...scene.go, calm: true })})`).catch(() => undefined);
           // Let the conversation load, the sealed card frames draw and the faces settle.
           await sleep(1_600);
+          if (scene.run !== undefined) { await win.webContents.executeJavaScript(scene.run).catch((err: unknown) => o.log(`render: ${scene.name} script failed: ${String(err)}`)); await sleep(900); }
+          if (scene.said !== undefined) { win.webContents.send("moss:card-said", scene.said.card, scene.said.words); await sleep(500); }
           const image = await win.webContents.capturePage();
           const file = join(o.dir, sceneFile(scene.name, theme, size.name));
           writeFileSync(file, image.toPNG());
           written.push(file);
           o.log(`render: ${file} (${image.getSize().width}x${image.getSize().height})`);
+          // A scene that opened a form or said a refusal leaves the window as it was found for the next one.
+          if (scene.run !== undefined || scene.said !== undefined) {
+            win.webContents.reload();
+            await sleep(500);
+            await until(async () => (await win.webContents.executeJavaScript(`document.querySelectorAll("[data-bot-row]").length`).catch(() => 0) as number) > 0, 15_000);
+          }
         }
       }
     }
