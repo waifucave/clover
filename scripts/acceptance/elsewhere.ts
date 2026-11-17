@@ -6,8 +6,8 @@
 //   makes a bot's figure a pack, they need a bot's tab, which MOSS Code's window doesn't draw.
 // * `MOSS`: a bot's row that needs a bot's tab, the Dispatch pill's bot or a bot's voice in the window: lane MA's `moss`
 //   unit, on MOSS's own window (apps/moss).
-// * `retired`: the plug went with the bot tab (G8): a bot plugin's own tab layout and a panel that replaces a stock one on
-//   its bot's tab only.
+// * `retired`: the plug went with the bot tab (G8): a bot's tab layout (its own, or another plugin's patch) and a panel
+//   that replaces a stock one on its bot's tab only.
 //
 // The rows about a bot that need no window (the engine's bots as records, a bot's model plugins, its shell and its
 // agent) keep running on Alpha's record in this run: bots are the engine's data, whichever app is on top.
@@ -28,14 +28,14 @@ const ui = (i: number): string => `window: ${UI_STEPS[i]}`;
 
 export const ROWS_ELSEWHERE: ReadonlyMap<string, Elsewhere> = new Map<string, Elsewhere>([
   [ui(5), { owner: "MOSS", why: "the Dispatch pill sends to a bot" }],
-  [ui(7), { owner: "MOSS", why: "Alpha's tab drawn by her own layout" }],
+  [ui(7), { owner: "retired", why: "Alpha's tab drawn by her own layout: her tab layout is retired with the bot tab (G8), and MOSS draws its bots in its own window" }],
   [ui(14), { owner: "MOSS", why: "the bot editor, opened from a bot's tab and Settings › Bots" }],
   [ui(15), { owner: "MC2", why: "a bot's avatar imported in the bot editor" }],
   [ui(17), { owner: "MC2", why: "a bot plugin's Live2D figure on its stage" }],
   [ui(18), { owner: "MC2", why: "a character renderer drawing a bot's figure" }],
   [ui(19), { owner: "MC2", why: "a bot with a voice on its stage (the stage half MC2's; the voice half goes with it to the MOSS unit)" }],
   [ui(20), { owner: "MC2", why: "Alpha's tab under Bots' plug: the stock sidebar, her top bar, her stage's fold" }],
-  [ui(21), { owner: "retired", why: "a bot plugin's own tab layout: the plug went with the bot tab (G8)" }],
+  [ui(21), { owner: "retired", why: "a bot plugin's own tab layout and another plugin's patch to it: the plug went with the bot tab (G8), and its fixtures (acceptance-layout-patch, acceptance-layout-mover) with it" }],
   [ui(26), { owner: "retired", why: "a bot plugin's panel replacing a stock one on its bot's tab only: the plug went with the bot tab (G8)" }],
   [ui(27), { owner: "MOSS", why: "panels a plugin adds on Alpha's tab and a bot plugin's panels inside its bot (its coding-tab half, Slides on a coding session, is the MOSS unit's to keep with the rest)" }],
   [SURFACE_COPY_STEP, { owner: "MOSS", why: "a copy of the Dispatch pill sending to a bot's conversation" }],
