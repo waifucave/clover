@@ -32,9 +32,10 @@ Picture paths are relative to the JSON file.
 
 MOSS Voice sends every plugin with an entry in `moss.voice.speech` a point message as it speaks: `{ bot, frames: [{ t, rms,
 centroid? }], cut? }`, levels stamped in epoch milliseconds a little ahead of when they sound. The SDK's `TimedSpeech` keeps
-them by time as a speech feed (`feed.subscribe(listener)`, `feed.now()`), handing each level over a moment before it is due;
-`cut` drops what was not yet due. This renderer opens the mouth for a frame louder than 0.04, and looks only while speech is
-due. It never hears the audio itself.
+them by time as a speech feed (`feed.subscribe(listener)`, `feed.now()`, `feed.onSpeaking(listener)`), handing each level
+over a moment before it is due; `cut` drops what was not yet due. This renderer shows its talking picture while the feed says
+the bot is speaking (from its first level to a moment after its last), so it runs no timer of its own; a renderer that moves a
+real mouth reads the levels themselves (the SDK's `LipSync`). It never hears the audio itself.
 
 ## The framing
 

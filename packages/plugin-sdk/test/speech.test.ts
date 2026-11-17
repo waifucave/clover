@@ -144,4 +144,27 @@ describe("the stage's speech from the cue API", () => {
     speech.accept({ frames: levels(clock.now() + 10, 5) });
     expect(speech.ticking).toBe(false);
   });
+
+  test("a listener that subscribed in another effect still hears the levels after the feeding effect closes and reopens the feed", () => {
+    const clock = fakeClock();
+    const speech = new TimedSpeech(clock);
+    const heard: SpeechFrame[] = [];
+    const turns: boolean[] = [];
+    const off = speech.subscribe((f) => heard.push(...f));
+    speech.onSpeaking((on) => turns.push(on));
+    speech.accept({ frames: levels(clock.now() + 10, 5) });
+    clock.advance(30);
+    speech.close();
+    expect(turns).toEqual([true, false]);
+    speech.reopen();
+    const before = heard.length;
+    speech.accept({ frames: levels(clock.now() + 10, 5) });
+    clock.advance(400);
+    expect(heard.length - before).toBe(5);
+    expect(turns).toEqual([true, false, true, false]);
+    off();
+    speech.accept({ frames: levels(clock.now() + 10, 5) });
+    clock.advance(400);
+    expect(heard.length - before).toBe(5);
+  });
 });

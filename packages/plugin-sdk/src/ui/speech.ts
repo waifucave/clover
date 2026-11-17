@@ -148,15 +148,18 @@ export class TimedSpeech implements SpeechFeed {
     this.#closed = false;
   }
 
-  /** Stops (its part unmounts): no timer, no listener, nothing kept. */
+  /** Stops (its part unmounts, or the effect that feeds it runs again): no timer and no level kept, and no cue taken
+   *  until `reopen`. Its listeners stay, each ended by its own unsubscribe: a part's other effects that subscribed (a
+   *  mouth, a lip-sync) outlive one run of the effect that feeds it, and must hear the levels after its `reopen`. */
   close(): void {
     this.#closed = true;
     if (this.#timer !== undefined) this.#clock.clearTimeout(this.#timer);
     this.#timer = undefined;
     this.#queue = [];
     this.#recent = [];
-    this.#listeners.clear();
-    this.#speakingListeners.clear();
+    this.#start = undefined;
+    this.#end = undefined;
+    if (this.#speaking) this.#set(false, this.#clock.now());
   }
 
   /** Whether a timer is set (tests: a quiet bot has none). */

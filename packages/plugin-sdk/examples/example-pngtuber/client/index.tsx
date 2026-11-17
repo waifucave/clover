@@ -30,22 +30,15 @@ interface AvatarProps {
 }
 interface EntryProps { props: AvatarProps }
 
-/** The speech feed: loudness frames on the feed's clock, a little ahead of when they play. */
-interface SpeechFrame { t: number; rms: number; centroid: number }
-interface SpeechFeed {
-  subscribe(listener: (frames: readonly SpeechFrame[]) => void): () => void;
-  now(): number;
-}
-
-/** MOSS Voice's levels, as a speech feed. */
-function useVoiceFeed(): SpeechFeed {
+/** MOSS Voice's levels, kept by time (the SDK's `TimedSpeech`). */
+function useVoiceFeed(): TimedSpeech {
   const api = usePluginApi();
   const feed = useMemo(() => new TimedSpeech(), []);
   useEffect(() => {
     feed.reopen();
-    const off = api.points.onMessage(SPEECH_POINT, (m) => feed.accept(m.value, m.from));
-    return () => { off(); feed.close(); };
-  }, [api, feed]);
+    return () => feed.close();
+  }, [feed]);
+  useEffect(() => api.points.onMessage(SPEECH_POINT, (m) => feed.accept(m.value, m.from)), [api, feed]);
   return feed;
 }
 
@@ -71,11 +64,6 @@ function useFigure(mount: string | undefined) {
 /** The model's own file: three pictures, named relative to it. */
 interface Pictures { name?: string; idle: string; talk: string; blink: string }
 
-/** A frame this loud has the mouth open; a frame is heard for at most this long; the mouth is looked at this often while speech is due. */
-const OPEN_RMS = 0.04;
-const FRAME_SECONDS = 0.05;
-const LOOK_MS = 40;
-
 /** The three pictures, read from the model's JSON and resolved against its URL; undefined while loading, null if it can't be read. */
 function usePictures(file: string): { name?: string; urls: Record<"idle" | "talk" | "blink", string> } | null | undefined {
   const [state, setState] = useState<ReturnType<typeof usePictures>>(undefined);
@@ -100,32 +88,15 @@ function usePictures(file: string): { name?: string; urls: Record<"idle" | "talk
   return state;
 }
 
-/** Whether the mouth is open now, from the feed. With no feed (the app is not describing speech to this frame) it stays
- *  shut. It looks only while speech is still due: a quiet bot runs no timer. */
-function useMouthOpen(feed: SpeechFeed | undefined): boolean {
-  const [open, setOpen] = useState(false);
+/** Whether the bot is speaking now: from its first level's time to a moment after its last (the feed's `speaking`). A
+ *  picture-swap figure shows its talking picture for all of it; it runs no timer of its own. */
+function useTalking(feed: TimedSpeech): boolean {
+  const [talking, setTalking] = useState(feed.speaking);
   useEffect(() => {
-    if (feed === undefined) return;
-    let frames: SpeechFrame[] = [];
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const look = (): void => {
-      timer = undefined;
-      const now = feed.now();
-      frames = frames.filter((f) => f.t + FRAME_SECONDS >= now);
-      setOpen(frames.some((f) => f.t <= now && now < f.t + FRAME_SECONDS && f.rms > OPEN_RMS));
-      if (frames.length > 0) timer = setTimeout(look, LOOK_MS);
-    };
-    const off = feed.subscribe((more) => {
-      frames = frames.concat(more).slice(-400);
-      if (timer === undefined) look();
-    });
-    return () => {
-      off();
-      if (timer !== undefined) clearTimeout(timer);
-      setOpen(false);
-    };
+    setTalking(feed.speaking);
+    return feed.onSpeaking(setTalking);
   }, [feed]);
-  return open;
+  return talking;
 }
 
 /** A blink every few seconds, for a moment. */
@@ -210,7 +181,7 @@ export function PngtuberAvatar({ props }: EntryProps) {
   const t = useT();
   const botName = props.name ?? "";
   const pictures = usePictures(props.file);
-  const mouthOpen = useMouthOpen(useVoiceFeed());
+  const mouthOpen = useTalking(useVoiceFeed());
   const blinking = useBlink();
   const figure = useFigure(props.mount);
   const happy = useHappy(figure);
