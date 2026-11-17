@@ -14,6 +14,7 @@ import type { Cdp } from "./cdp";
 import type { MossClient } from "./client";
 import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, BACKGROUND_IDS, FIELDS_IDS, MIC_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBackground, writeBotParts, writeMicrophone, writeOfficePanels } from "./manifest-fields-step";
 import { ACTIVE_IDS, ACTIVE_NAMES, ACTIVE_POINT, ACTIVE_TITLE, activeWrong, writeActiveOne, type ActiveSeen } from "./active-one-step";
+import { FIGURE_PACK_STEP, FIGURE_REACTS_STEP, FIGURE_RENDERER_STEP, GENERAL_POINTS_STEP, figurePackStep, figureReactsStep, figureRendererStep, generalPointsStep, type FigureCtx } from "./figure-steps";
 import { scaled } from "./time-scale";
 import { MEASURED_ON_MAC_ONLY, MEASURED_ROWS, measuredOnMacOnly } from "./measured";
 
@@ -36,11 +37,11 @@ export const UI_STEPS = [
   "the Plugins page installs a plugin from a folder (main's picker), its OK card pressed; its detail shows its tools; it is removed on its sealed card; the page's own calls without a click are refused",
   "a third-party plugin with UI installed from its folder as it is (a TSX client importing React and the UI SDK, no react shipped) renders in its own layer once OK'd, its client built by the registry at load; turned off in the Plugins page it leaves the window, and its layer's own connection to the core closes",
   "the bot editor opens the user's way, from Alpha's Edit button and from Settings → Bots → Edit, and draws its controls",
-  "the bot editor imports a model the user picked: Choose avatar… (main's picker) → Import and use; no path on the page, the model's own credit note shown and on her header, and her stage draws it",
+  GENERAL_POINTS_STEP,
   "a bot's question card (AskUserQuestion) takes a pressed option and Send answer in the window and the turn goes on with the answer; a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
-  "a third-party bot plugin that ships its own Live2D model (the placeholder's files) draws it on its stage, with no \"can't be shown\" note",
-  "a third-party character renderer (the SDK's picture-swap example) installed from its folder: a bot plugin whose avatar format is its own draws its pictures on its stage; and the mouth: a folder plugin holding avatar.control.all sends speech levels for Alpha that her stage's renderer takes at their stamps, while one without it is refused for a bot that isn't its own",
-  "a bot with a voice speaks its reply (the run's fixture voice, a tone, on MOSS Voice's providers point): MOSS Voice's background part gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip (MOSS Voice's own) mutes at once and the next reply stays silent",
+  FIGURE_PACK_STEP,
+  FIGURE_RENDERER_STEP,
+  FIGURE_REACTS_STEP,
   "Alpha's tab shows the stock sidebar exactly as on a plain bot's tab (same rows, size and colours) and her own top bar; her toggle folds the stock sidebar and back, her panel control opens and closes the panel sheet; a plain bot's tab keeps the stock bar; more scoped wins: an all-bots composer style loses to Alpha's own on her tab and shows on the plain bot's; her stage tools are offered to her and not to the plain bot; her outfit is her setting (her Outfit tool, the setting and her tool agree with what her figure wears)",
   "a bot plugin changes one thing in its tab: a layout of a few lines that extends the stock tab stands its stage to the left of the transcript, wider, and a hide entry takes the composer's model button out of its tab only",
   "an idle app with Alpha's tab open stays cheap: the main process under a small CPU budget and the windows and main trading only a few messages a second, counted by channel",
@@ -60,7 +61,7 @@ const TINY_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADU
 /** A coding session in a folder of the run's user home (`alpha-code-work`, holding `tiny.png`), started with `agent.start` as the
  *  app starts one when the run has none; its id (the newest coding session `session.list` gives). It is started while the window
  *  is up and never announced to it: the window learns it from `conversation.watch`. */
-async function ensureCodingSession(ctx: Ctx, o: { withFile?: boolean } = {}): Promise<string | undefined> {
+export async function ensureCodingSession(ctx: Pick<Ctx, "rpc" | "home">, o: { withFile?: boolean } = {}): Promise<string | undefined> {
   const rpc = ctx.rpc;
   const newestView = async () => (await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number; root?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0))[0];
   const newest = async () => (await newestView())?.id;
@@ -78,7 +79,7 @@ async function ensureCodingSession(ctx: Ctx, o: { withFile?: boolean } = {}): Pr
 
 /** The window's own sidebar to a coding session: its Code switch pressed, the session's row (its id, the title a session with none
  *  of its own shows) listed and pressed, and the session's id then in the sidebar's current row. */
-async function toCodingSession(cdp: Cdp, codeId: string, press: (what: string, selector: string, text?: string, ms?: number) => Promise<unknown>): Promise<string> {
+export async function toCodingSession(cdp: Cdp, codeId: string, press: (what: string, selector: string, text?: string, ms?: number) => Promise<unknown>): Promise<string> {
   await press("the sidebar's Code switch", ".cl-sidebar__switch-option", "Code");
   await press(`the coding session ${codeId}'s row`, ".cl-sidebar__projects .cl-sidebar__row", codeId, 30_000);
   await until("the coding session shown (its id in the sidebar's current row)", 30_000, async () => ((await inTree<boolean>(cdp, `[...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(codeId)}))`)) !== undefined ? true : undefined), async () => (await treeText(cdp)).replace(/\s+/g, " ").slice(0, 400));
@@ -115,7 +116,7 @@ interface Ctx {
   only?: ReadonlySet<number>;
   /** Names the folder the test build's picker gives from now on (it reads its `.pick` file at each pick). */
   setPick?(folder: string): void;
-  /** The folder the test build's picker gives a bot editor's avatar import (MOSS_TEST_PICK_AVATAR): the stock model and a credit note. */
+  /** The placeholder Live2D model's files (copied from Alpha's pack into the run's folder), for a row whose bot shows one. */
   avatarFolder?: string;
   /** The media plugin's pickers (MOSS_TEST_PICK_FILES): the answers file, the generated test video it opens and the file it saves. */
   mediaPicks?: { answers: string; video: string; saved: string; folder: string };
@@ -1597,82 +1598,30 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     return `the bot editor drew its heading, name, model and avatar controls from ${one} and from ${two}`;
   });
 
-  // 15: the picker, on the editor: Choose avatar… (main's own picker, which the test build answers with
-  // MOSS_TEST_PICK_AVATAR: a copy of the stock model with a credit note, never anyone's own) → the name shows, never the
-  // path → Import and use → imported, the model's own note shown under the avatar, and it is her avatar (the core's `user:`
-  // copy); her header shows the note, and her stage fetches the model from the core's own `/_a/` folder. Her avatar is put
-  // back to the plugin's own after.
-  await step(15, async () => {
-    const id = "alpha";
-    const picked = ctx.avatarFolder;
-    if (picked === undefined) fail("this run has no model folder for the picker");
-    const waitText = (what: string, text: string, ms = 30_000) => until(what, ms, async () => ((await treeText(cdp)).includes(text) ? true : undefined), () => dumpFrames(cdp));
-    const avatarOf = async () => (await rpc.request<{ bots: { id: string; avatar?: { src: string; credit?: string }; userLayer: string[] }[] }>("bot.list", {})).bots.find((b) => b.id === id);
-    try {
-      await escape();
-      await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
-      await tabShown("Alpha's tab");
-      await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
-      await avatarSectionDrawn("Alpha's Edit button");
-      await waitText("the bot editor's avatar row", "Choose avatar");
-      await clickIn("Choose avatar…", "button", "Choose avatar…");
-      const name = picked!.split("/").pop()!;
-      await waitText("the picked name", `Picked: ${name}`);
-      const page = await treeText(cdp);
-      if (page.includes(picked!) || page.includes("/Users/") || page.includes("/private/")) fail("the page shows the picked model's path: it should hold only a token and the name");
-      await clickIn("Import and use", "button", "Import and use");
-      // The format's name as its renderer declares it (moss/live2d's `avatar.formats` entry).
-      await waitText("the import's result", "Imported a Live2D (Cubism) model");
-      await waitText("the model's own note under the avatar", "From the model's own notes");
-      const view = await until("her avatar from the core's own folder", 20_000, async () => {
-        const b = await avatarOf();
-        return b !== undefined && b.userLayer.includes("avatar") && b.avatar?.src.startsWith(`/_a/${id}/`) ? b : undefined;
-      });
-      if (!/credit the acceptance suite/.test(view.avatar?.credit ?? "")) fail(`the core's avatar listing has no credit note (${JSON.stringify(view.avatar)})`);
-      const text = await treeText(cdp);
-      // The note sits in the editor's text box (the user's to change or clear).
-      const boxed = await until("the note in the editor's text box", 10_000, async () => {
-        for (const d of await treeDocs(cdp)) {
-          const v = await cdp.evaluate(d.session, `document.querySelector('textarea[aria-label="Credit note"]')?.value ?? null`).catch(() => null);
-          if (typeof v === "string") return v;
-        }
-        return undefined;
-      });
-      if (!boxed.includes("credit the acceptance suite")) fail(`the note isn't in the editor's text box under the avatar (${boxed.slice(0, 80)})`);
-      if (/\/Users\/|\/private\//.test(text)) fail("a path is on screen after the import");
-      // The picture (--renders): the editor with the pick's result and the model's own note, dark and light.
-      if (process.env.MOSS_ACCEPT_RENDERS) await shootWindow(cdp, process.env.MOSS_ACCEPT_RENDERS, "bot-editor-avatar-import", ctx.setAppearance);
-      const result = text.match(/Imported a Live2D \(Cubism\) model \([^)]*\)/)?.[0] ?? "";
-      // Her tab: the header shows the note, and the stage fetches the model from the core's own folder.
-      await clickIn("Back to the bot", "button", "Back to the bot");
-      // Her header is her own layer's part (her plugin's document, not the bundled tree's).
-      await until("her header's credit line", 30_000, async () => {
-        for (const d of await cdp.documents()) {
-          const v = await cdp.evaluate(d.session, `document.querySelector('.rm__credit')?.textContent ?? null`).catch(() => null);
-          if (typeof v === "string" && v.includes("credit the acceptance suite")) return true;
-        }
-        return undefined;
-      }, () => dumpFrames(cdp));
-      // Her stage draws the imported model: its stage box (in the layout's own document) holds a canvas and no "can't be shown".
-      // (The page's resource timeline can't see a custom-scheme fetch, so the drawn stage is what is read.)
-      let stage = "";
-      await until("her stage drawing the imported model", 45_000, async () => {
-        for (const d of await treeDocs(cdp)) {
-          const st = await cdp.evaluate(d.session, "(() => { const st = document.querySelector('.cl-bot-stage'); if (!st) return null; const b = st.getBoundingClientRect(); return JSON.stringify({ canvas: st.querySelectorAll('canvas').length, w: Math.round(b.width), h: Math.round(b.height), text: (st.textContent || '').trim().slice(0, 100), format: st.dataset.format || '', live2d: st.querySelectorAll('.clvl-avatar').length, vrm: st.querySelectorAll('.clvr-avatar').length }); })()").catch(() => null);
-          if (typeof st !== "string") continue;
-          const o = JSON.parse(st) as { canvas: number; w: number; h: number; text: string; format: string; live2d: number; vrm: number };
-          stage = st;
-          // The renderer of the imported format is the one mounted (a VRM canvas of the plugin's own model would also have a canvas).
-          if (o.format === "live2d" && o.live2d > 0 && o.vrm === 0 && o.canvas > 0 && o.w > 100 && o.h > 100 && !/can't be shown|placeholder model/.test(o.text)) return true;
-        }
-        return undefined;
-      }, async () => `${stage} || ${await dumpFrames(cdp)}`);
-      const stageSaid = (JSON.parse(stage) as { w: number; h: number; text: string });
-      return `Choose avatar… showed only the name (${name}); Import and use said "${result}"; the model's own note is under the avatar and on her header; her avatar is the core's copy (${view.avatar!.src.replace(/m-[^/]*/, "m-…")}) and her stage (${stageSaid.w}x${stageSaid.h}) draws it on a canvas${stageSaid.text ? ` (${stageSaid.text})` : ""}`;
-    } finally {
-      await rpc.request("bot.setUserLayer", { id, patch: { avatar: null } }).catch(() => undefined);
-    }
+  // 15: the general pieces the figure stands on, for any plugin (figure-steps.ts): a point's messages and the files its
+  // entries bring, with a metronome, a dancer and a stranger that have nothing to do with figures.
+  const figureCtx = (): FigureCtx => ({
+    cdp, rpc,
+    pressCard: ctx.pressCard ?? (() => fail("this run can't press a card")),
+    escape: async () => { for (const type of ["keyDown", "keyUp"]) for (const d of await treeDocs(cdp)) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined); await sleep(300); },
+    toCodingSession: async () => {
+      const press = async (what: string, selector: string, text?: string, ms = 20_000) => {
+        const at = await until(what, ms, async () => {
+          for (const d of await treeDocs(cdp)) {
+            const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+            if (c !== undefined) return { session: d.session, c };
+          }
+          return undefined;
+        }, () => dumpFrames(cdp));
+        await cdp.click(at.session, at.c.x, at.c.y);
+        await sleep(700);
+      };
+      const id = await ensureCodingSession(ctx) ?? fail("this run could not start a coding session");
+      await toCodingSession(cdp, id, press);
+      return id;
+    },
   });
+  await step(15, () => generalPointsStep(figureCtx()));
 
   // 16: Try again. A turn the fake provider fails (ACCEPTANCE-FAIL-<id>: a 400 nothing retries) ends in an error; the
   // conversation's error row offers "Try again"; the fake is let to answer; ONE click sends the user's own message again
@@ -1763,344 +1712,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const asked = ctx.requests().filter((r) => r.lastUserText.includes(tag));
     return `the bot's question card (${qTag}) took a pressed option and "Send answer" in the window and the turn went on with "${choice}" as the tool's result (no "didn't go through"); a failed turn (${tag}) showed Try again on its error row; one click sent the same words again (the log holds two, equal byte for byte, ${sent[1]!.device ? "as the user's own message" : "as a user message"}), the next turn completed with its own reply, and the button is gone (${asked.length} request(s) reached the fake)`;
   });
-  // 17: a bot plugin of its own with its own Live2D model in its assets (the placeholder generator's files, copied into a temp
-  // folder), installed from that folder. Its tab's stage draws the model: the model's JSON files are served to that bot, so the
-  // avatar frame shows its canvas and no "can't be shown" note.
-  await step(17, async () => {
-    if (ctx.pressCard === undefined) fail("this run can't press a card");
-    const stock = ctx.avatarFolder;
-    if (stock === undefined) return fail("this run has no stock model folder");
-    const id = "acceptance-avatar-bot";
-    const name = "Acceptance Avatar Bot";
-    const parent = mkdtempSync(join(tmpdir(), "moss-avatar-bot-"));
-    const folder = join(parent, id); // a plugin's folder is named for its id
-    mkdirSync(folder);
-    mkdirSync(join(folder, "assets", "live2d"), { recursive: true });
-    mkdirSync(join(folder, "bot"), { recursive: true });
-    mkdirSync(join(folder, "tab"), { recursive: true });
-    for (const f of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(stock, f), join(folder, "assets", "live2d", f));
-    writeFileSync(join(folder, "bot", "instructions.md"), "You are a test bot.\n");
-    writeFileSync(join(folder, "tab", "layout.json"), JSON.stringify({ layout: 1, root: { stack: [{ spot: "conversation", grow: 1 }, { spot: "bot.stage", grow: 1 }], grow: 1 } }));
-    writeFileSync(join(folder, "moss.json"), JSON.stringify({
-      manifest: 1, id, name, description: "The acceptance run's bot with its own Live2D model.", version: "0.0.1", engines: { moss: "^1.0.0" },
-      contributes: { bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "assets/live2d/alpha.model3.json", format: "live2d" }, layout: "tab/layout.json" } },
-    }));
-    try {
-      const installed = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
-      if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
-      const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
-      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
-      await escape();
-      let lastPress = 0;
-      const seen = await until("its stage drawing the model", 60_000, async () => {
-        for (const d of await treeDocs(cdp)) {
-          const r = await cdp.evaluate(d.session, "(() => ({ canvas: !!document.querySelector('.clvl-canvas'), refused: (document.body.innerText || '').includes(\"can't be shown\") }))()").catch(() => undefined) as { canvas: boolean; refused: boolean } | undefined;
-          if (r?.refused) fail("the stage says the avatar can't be shown");
-          if (r?.canvas) return true;
-        }
-        if (Date.now() - lastPress > 6_000) {
-          lastPress = Date.now();
-          await clickIn(`${name} in the sidebar`, SIDEBAR_ITEMS, name, 5_000).catch(() => undefined);
-        }
-        return undefined;
-      }, () => dumpFrames(cdp));
-      return `${id} (a bot plugin shipping its own Live2D model, the placeholder's files) installed from its folder, OK card ${ok} pressed; its stage drew the model's canvas (${seen}), with no "can't be shown" note`;
-    } finally {
-      await rpc.request("plugin.remove", { id }).catch(() => undefined);
-      rmSync(parent, { recursive: true, force: true });
-    }
-  });
-  // 18: the format is a plugin's own. The SDK's picture-swap example (a character renderer) is installed from its folder; then a bot
-  // plugin whose avatar format is `pngtuber` (the example's sample model copied beside it) is installed, and its stage draws the
-  // renderer's pictures: the model's JSON and pictures were served to that bot because the renderer declared them. Then the mouth (the
-  // avatar cue API's speech cue): a plugin without avatar.control.all is refused for a bot that isn't its own, and a folder plugin
-  // holding it sends speech levels for Alpha that her stage's renderer takes at their stamps.
-  await step(18, async () => {
-    if (ctx.pressCard === undefined) fail("this run can't press a card");
-    const exampleDir = resolve(import.meta.dir, "..", "..", "packages", "plugin-sdk", "examples", "example-pngtuber");
-    const botId = "acceptance-pngtuber-bot";
-    const name = "Acceptance Picture Bot";
-    const parent = mkdtempSync(join(tmpdir(), "moss-pngtuber-bot-"));
-    const folder = join(parent, botId);
-    mkdirSync(join(folder, "model"), { recursive: true });
-    mkdirSync(join(folder, "bot"), { recursive: true });
-    mkdirSync(join(folder, "tab"), { recursive: true });
-    cpSync(join(exampleDir, "sample-model"), join(folder, "model"), { recursive: true });
-    writeFileSync(join(folder, "bot", "instructions.md"), "You are a test bot.\n");
-    writeFileSync(join(folder, "tab", "layout.json"), JSON.stringify({ layout: 1, root: { stack: [{ spot: "conversation", grow: 1 }, { spot: "bot.stage", grow: 1 }], grow: 1 } }));
-    // Its host half: one command that cues the figure's `happy` expression through the plugin API (`avatar.control`), the ordinary path
-    // a bot plugin takes; the answer is the app's own (`ok`, or why the cue wasn't played).
-    mkdirSync(join(folder, "host"), { recursive: true });
-    writeFileSync(join(folder, "host", "index.ts"), [
-      "// The acceptance run's picture bot: its one command cues the renderer's `happy` expression with `api.avatar.cue`.",
-      "let held: { avatar: { cue(cue: unknown): Promise<unknown> | unknown } } | undefined;",
-      "export async function start(api: { avatar: { cue(cue: unknown): Promise<unknown> | unknown } }): Promise<void> { held = api; }",
-      "export async function stop(): Promise<void> {}",
-      "export async function cue(): Promise<{ text: string }> {",
-      "  if (held === undefined) return { text: \"cue: no api\" };",
-      "  return { text: `cue: ${JSON.stringify(await held.avatar.cue({ type: \"expression\", name: \"happy\" }))}` };",
-      "}",
-      "// A bot that holds only avatar.control may not send the mouth's levels for a bot that is not its own.",
-      "export async function speakAlpha(): Promise<{ text: string }> {",
-      "  if (held === undefined) return { text: \"speak: no api\" };",
-      "  const t = Date.now() + 1500;",
-      "  try {",
-      "    return { text: `speak: ${JSON.stringify(await (held.avatar.cue as (c: unknown, o?: unknown) => Promise<unknown>)({ type: \"speech\", frames: [{ t, rms: 0.5 }, { t: t + 20, rms: 0.5 }] }, { bot: \"alpha\" }))}` };",
-      "  } catch (err) {",
-      "    return { text: `speak: threw ${err instanceof Error ? err.message : String(err)}` };",
-      "  }",
-      "}",
-      "",
-    ].join("\n"));
-    writeFileSync(join(folder, "moss.json"), JSON.stringify({
-      manifest: 1, id: botId, name, description: "The acceptance run's bot with a community-format avatar.", version: "0.0.1", engines: { moss: "^1.0.0" },
-      capabilities: ["avatar.control"], host: { entry: "host/index.ts", runtime: "bun" },
-      contributes: { commands: [{ name: "cue", description: "Cues the figure's happy expression", handler: "cue" }, { name: "speakAlpha", description: "Tries to send mouth levels for Alpha", handler: "speakAlpha" }], bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
-    }));
-    const installed: string[] = [];
-    try {
-      for (const [dir, id] of [[exampleDir, "example-pngtuber"], [folder, botId]] as const) {
-        const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: dir } }, 60_000);
-        if (r.id !== id) fail(`${id} installed as ${r.id}`);
-        installed.push(id);
-        await ctx.pressCard!(`${id}'s OK card`, (c) => c.kind === "plugin-ok" && c.pluginId === id);
-        await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
-      }
-      await escape();
-      // The renderer is a third-party part: its frame is its own layer's document (moss-plugin://example-pngtuber/), never
-      // one of the moss tree's, so it is looked for among every document, not the tree's.
-      const rendererDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith("moss-plugin://example-pngtuber/"));
-      const PROBE = "(() => { const e = document.querySelector('[data-pngtuber]'); const img = e && e.querySelector('img'); return e ? { state: e.getAttribute('data-pngtuber'), loaded: !!img && img.complete && img.naturalWidth > 0, src: img ? img.getAttribute('src') : null } : null; })()";
-      const allDocs = async () => (await cdp.documents()).map((d) => d.url.slice(0, 60)).join(" | ");
-      let lastPress = 0;
-      const first = await until("its stage drawing the renderer's picture", 60_000, async () => {
-        for (const d of await rendererDocs()) {
-          const r = await cdp.evaluate(d.session, PROBE).catch(() => undefined) as { state: string; loaded: boolean; src: string | null } | null | undefined;
-          if (r?.state === "broken") fail("the renderer says the picture set can't be shown");
-          if (r?.loaded) return { session: d.session, ...r };
-        }
-        if (Date.now() - lastPress > 6_000) {
-          lastPress = Date.now();
-          await clickIn(`${name} in the sidebar`, SIDEBAR_ITEMS, name, 5_000).catch(() => undefined);
-        }
-        return undefined;
-      }, async () => `${await dumpFrames(cdp)} || every document: ${await allDocs()}`);
-      // What the stage shows for a while (the bot is quiet: the idle picture, and the renderer's own blink every few seconds).
-      const states = new Map<string, string>();
-      for (const end = Date.now() + 7_000; Date.now() < end; await sleep(80)) {
-        const r = await cdp.evaluate(first.session, PROBE).catch(() => undefined) as { state: string; loaded: boolean; src: string | null } | null | undefined;
-        if (r?.loaded && !states.has(r.state)) states.set(r.state, (r.src ?? "").split("/").pop() ?? "");
-      }
-      if (!states.has("idle")) fail(`the quiet bot's stage never showed the idle picture (${[...states.keys()].join(", ") || "nothing"})`);
-      if (states.has("talk")) fail("the quiet bot's stage showed the talk picture");
-      const shown = [...states.entries()].map(([s, f]) => `${s} (${f})`).join(", ");
-      // useAvatarControl: the bot's own command cues `happy` through the plugin API; the renderer's frame (which called setCatalogue and onCue
-      // through the hook) swaps to its second picture set, drawn by code, and says so in its own attributes.
-      const CUED = "(() => { const e = document.querySelector('[data-pngtuber]'); const svg = e && e.querySelector('svg[role=img]'); return e ? { state: e.getAttribute('data-pngtuber'), label: svg ? svg.getAttribute('aria-label') : null, img: !!e.querySelector('img') } : null; })()";
-      const ran = await until("the bot's cue command to answer", 30_000, async () => {
-        const r = await rpc.request<{ result?: { text?: string }; text?: string }>("command.run", { name: `${botId}.cue` }).catch(() => undefined);
-        const text = r?.result?.text ?? r?.text;
-        return text?.startsWith("cue:") && text.includes('"ok":true') ? text : undefined;
-      }, async () => `command.run said ${JSON.stringify(await rpc.request("command.run", { name: `${botId}.cue` }).catch((e) => String(e)))}`);
-      const cued = await until("the renderer showing the cued picture set", 15_000, async () => {
-        const r = await cdp.evaluate(first.session, CUED).catch(() => undefined) as { state: string; label: string | null; img: boolean } | null | undefined;
-        return r?.state === "happy" && r.label !== null ? r : undefined;
-      }, async () => `the renderer says ${JSON.stringify(await cdp.evaluate(first.session, CUED).catch(() => "?"))}; ${ran}`);
-      if (cued.img) fail("the cued picture set still draws the files' pictures beside the code-drawn one");
-      const cuedSaid = `useAvatarControl: the bot's command cued happy (${ran}) and the renderer's frame switched from idle to its code-drawn picture set "${cued.label}" (data-pngtuber=happy)`;
-
-      // The mouth (the avatar cue API's speech cue): a plugin without avatar.control.all is refused for a bot that is not its own; a
-      // folder plugin holding it sends twelve levels for Alpha, stamped 1.5 s ahead of the clock, and her stage hands her renderer
-      // each at its stamp (the test build's counters on the tree's root: data-cue-speech).
-      const refusedRan = await until("the picture bot's try to speak for Alpha to answer", 30_000, async () => {
-        const r = await rpc.request<{ result?: { text?: string }; text?: string }>("command.run", { name: `${botId}.speakAlpha` }).catch(() => undefined);
-        const text = r?.result?.text ?? r?.text;
-        return text?.startsWith("speak:") ? text : undefined;
-      });
-      if (!refusedRan.includes("threw") || !refusedRan.includes("avatar.control.all")) fail(`a plugin without avatar.control.all speaking for a bot that is not its own wasn't refused with the reason: ${refusedRan}`);
-      const speakerDir = resolve(import.meta.dir, "fixtures", "acceptance-speaker");
-      const speakerInstalled = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: speakerDir } }, 60_000);
-      if (speakerInstalled.id !== "acceptance-speaker") fail(`acceptance-speaker installed as ${speakerInstalled.id}`);
-      installed.push("acceptance-speaker");
-      await ctx.pressCard!("acceptance-speaker's OK card", (c) => c.kind === "plugin-ok" && c.pluginId === "acceptance-speaker");
-      await until("acceptance-speaker running", 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: "acceptance-speaker" }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
-      await escape();
-      type CueSpeech = { bot: string; batches: number; levels: number; released: number; listeners: number; minAheadMs: number | null; maxAheadMs: number | null; onAt?: number; offAt?: number; firstT?: number; lastT?: number };
-      const readCue = async (): Promise<CueSpeech | undefined> => {
-        const r = await inTree<string>(cdp, "document.documentElement.dataset.cueSpeech || null");
-        return r === undefined ? undefined : JSON.parse(r.value) as CueSpeech;
-      };
-      let pressedAlpha = 0;
-      await until("Alpha's stage drawn (her tab open)", 60_000, async () => {
-        if ((await inTree<boolean>(cdp, "!!document.querySelector('.cl-bot-stage[data-format=\"vrm\"]')")) !== undefined) return true;
-        if (Date.now() - pressedAlpha > 6_000) {
-          pressedAlpha = Date.now();
-          await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha", 5_000).catch(() => undefined);
-        }
-        return undefined;
-      }, () => dumpFrames(cdp));
-      const heardBefore = await readCue();
-      const spoke = await until("acceptance-speaker's speech cue for Alpha to be answered", 30_000, async () => {
-        const r = await rpc.request<{ result?: { text?: string }; text?: string }>("command.run", { name: "acceptance-speaker.speak" }).catch(() => undefined);
-        const text = r?.result?.text ?? r?.text;
-        return text?.startsWith("speak:") ? text : undefined;
-      });
-      const said = JSON.parse(spoke.slice("speak:".length)) as { answer?: { ok?: boolean; reason?: string; message?: string }; t0?: number; n?: number; last?: number };
-      if (said.answer?.ok !== true || typeof said.t0 !== "number" || typeof said.last !== "number" || said.n === undefined) fail(`acceptance-speaker's speech cue for Alpha wasn't taken: ${spoke}`);
-      const sentAt = Date.now();
-      const heard = await until("Alpha's stage to hand her renderer the whole run and stop speaking", 30_000, async () => {
-        const c = await readCue();
-        return c !== undefined && c.bot === "alpha" && c.offAt !== undefined && c.released - (heardBefore?.released ?? 0) >= said.n! ? c : undefined;
-      }, async () => `the stage's counters: ${JSON.stringify(await readCue())}; sent ${spoke}`);
-      const t0 = said.t0!;
-      const last = said.last!;
-      const lag = (what: string, at: number | undefined, stamp: number, lo: number, hi: number) => {
-        if (at === undefined || at - stamp < lo || at - stamp > hi) fail(`${what} was at ${at === undefined ? "never" : `${at - stamp} ms from its stamp`}, not within ${lo} to ${hi} ms (stamps ${t0} to ${last}; counters ${JSON.stringify(heard)})`);
-      };
-      if (heard.levels - (heardBefore?.levels ?? 0) !== said.n) fail(`her stage took ${heard.levels - (heardBefore?.levels ?? 0)} levels, not the ${said.n} sent (${JSON.stringify(heard)})`);
-      if (heard.listeners < 1) fail(`no renderer was hearing her stage's speech feed (${JSON.stringify(heard)})`);
-      // At the stamps, not at receipt: the batch reached the stage ~1.5 s before its first level was due, yet she began to speak at
-      // that stamp (the renderer was handed each level a moment before its own stamp, never after it), and stopped a hold after the last.
-      if (heard.onAt === undefined || heard.onAt < t0 - 50) fail(`she began to speak at ${heard.onAt === undefined ? "never" : `${t0 - heard.onAt} ms before`} the first level's stamp, which was sent ${t0 - sentAt} ms ahead (${JSON.stringify(heard)})`);
-      lag("she began to speak", heard.onAt, t0, 0, 400);
-      lag("she stopped speaking", heard.offAt, last, 100, 600);
-      if (heard.minAheadMs === null || heard.minAheadMs < -150 || heard.maxAheadMs === null || heard.maxAheadMs > 260) fail(`her renderer was handed levels from ${heard.minAheadMs} to ${heard.maxAheadMs} ms before their stamps, not within -150 to 260 (${JSON.stringify(heard)})`);
-      const mouthSaid = `the mouth: a picture bot holding avatar.control only was refused speaking for Alpha (${refusedRan.slice(0, 160)}); acceptance-speaker (a folder plugin with avatar.control.all, its OK card pressed) sent ${said.n} speech levels for Alpha stamped ${t0 - sentAt} ms ahead, and her stage's renderer (${heard.listeners} listening) was handed all ${said.n} from ${heard.minAheadMs} to ${heard.maxAheadMs} ms before their stamps; she began to speak ${heard.onAt! - t0} ms after the first stamp and stopped ${heard.offAt! - last} ms after the last`;
-      return `${cuedSaid}; ${mouthSaid}; the picture-swap renderer installed from its folder (OK card pressed), then ${botId} (avatar format pngtuber, the example's sample model): its stage, the renderer's own frame (${first.src?.split("/").pop()}), drew the renderer's pictures, served by what the renderer declared; over 7 s quiet it showed ${shown}`;
-    } finally {
-      for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
-      rmSync(parent, { recursive: true, force: true });
-    }
-  });
-  // 19: a bot's voice (§6.6), MOSS Voice on general capabilities. The run's fixture voice (scripts/acceptance/fixtures/
-  // acceptance-voice: a generated tone, no key, no network, an entry on MOSS Voice's providers point) is installed from its
-  // folder and set as the voice of a picture-swap bot and of Alpha, the user's way (MOSS Voice's own bot settings). A turn of
-  // each: MOSS Voice's message.out observer streams the provider's audio to its background part, which plays it in the
-  // device's speech turn and counts it (the test build's counters on its document's root: data-voice-pieces, data-voice-frames,
-  // data-voice-speaking), the picture-swap renderer shows its talking picture while the bot speaks (the mouth: speech cues), and
-  // Alpha's stage gets frames. Then the stage's chip (MOSS Voice's `bot.stage.action` entry) mutes (its `speakReplies`): the
-  // next reply plays nothing, at once, with no restart.
-  await step(19, async () => {
-    if (ctx.pressCard === undefined) fail("this run can't press a card");
-    const voiceDir = resolve(import.meta.dir, "fixtures", "acceptance-voice");
-    const exampleDir = resolve(import.meta.dir, "..", "..", "packages", "plugin-sdk", "examples", "example-pngtuber");
-    const botId = "acceptance-voice-bot";
-    const name = "Acceptance Voice Bot";
-    const parent = mkdtempSync(join(tmpdir(), "moss-voice-bot-"));
-    const folder = join(parent, botId);
-    for (const d of ["model", "bot", "tab"]) mkdirSync(join(folder, d), { recursive: true });
-    cpSync(join(exampleDir, "sample-model"), join(folder, "model"), { recursive: true });
-    writeFileSync(join(folder, "bot", "instructions.md"), "You are a test bot.\n");
-    writeFileSync(join(folder, "tab", "layout.json"), JSON.stringify({ layout: 1, root: { stack: [{ spot: "conversation", grow: 1 }, { spot: "bot.stage", grow: 1 }], grow: 1 } }));
-    writeFileSync(join(folder, "moss.json"), JSON.stringify({
-      manifest: 1, id: botId, name, description: "The acceptance run's bot that speaks.", version: "0.0.1", engines: { moss: "^1.0.0" },
-      contributes: { bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
-    }));
-    /** A bot's voice, the user's way: MOSS Voice's own settings for that bot. */
-    const setVoice = async (bot: string, voice: { provider: string; voice: string } | null) => {
-      for (const [key, value] of [["provider", voice?.provider ?? null], ["voice", voice?.voice ?? null]] as const) await rpc.request("plugin.settings.set", { id: "moss/voice", key, value, bot });
-    };
-    const VOICE = { provider: "acceptance-voice", voice: "tone" };
-    const installed: string[] = [];
-    const voiced: string[] = [];
-    type Counters = { pieces: number; frames: number; speaking: string[]; overlap: number };
-    const counters = async (): Promise<Counters | undefined> => {
-      const r = await inTree<string>(cdp, "(() => { const d = document.documentElement.dataset; return d.voicePieces === undefined ? null : JSON.stringify({ pieces: +d.voicePieces, frames: +(d.voiceFrames || 0), speaking: (d.voiceSpeaking || '').split(',').filter(Boolean), overlap: +(d.voiceOverlap || 0) }); })()");
-      return r === undefined ? undefined : JSON.parse(r.value) as Counters;
-    };
-    const mainOf = async (id: string) => (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === id)?.mainSession ?? fail(`no bot ${id}`);
-    /** One turn of a bot's main conversation; resolves when its reply is in the log. `providerCard`: the turn first asks
-     *  the user before it spends the provider the bot's plugin chose (`bot-provider`, a third party's model choice:
-     *  packages/core/src/bots/provider-consent.ts), and its Approve is pressed in the window, as the user would. */
-    const turn = async (bot: string, words: string, providerCard = false) => {
-      const session = await mainOf(bot);
-      const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
-      await rpc.request("session.send", { id: session, message: { text: `${words} ${tag}`, clientMessageId: `voice-${tag}` } }, 30_000);
-      if (providerCard) await ctx.pressCard!(`${bot}'s provider card (its plugin chose its model)`, (c) => c.kind === "change" && c.change === "bot-provider" && (c.session === undefined || c.session === session));
-      await until(`${bot}'s reply`, 120_000, async () => {
-        const events = (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: session, limit: 200 })).events;
-        return events.some((e) => e.type === "assistant_message" && typeof e.text === "string" && e.text.includes(tag)) ? true : undefined;
-      });
-    };
-    const openTab = async (label: string) => {
-      await escape();
-      await clickIn(`${label} in the sidebar`, SIDEBAR_ITEMS, label);
-      await sleep(500);
-    };
-    try {
-      for (const [dir, id] of [[voiceDir, "acceptance-voice"], [exampleDir, "example-pngtuber"], [folder, botId]] as const) {
-        const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: dir } }, 60_000);
-        if (r.id !== id) fail(`${id} installed as ${r.id}`);
-        installed.push(id);
-        await ctx.pressCard!(`${id}'s OK card`, (c) => c.kind === "plugin-ok" && c.pluginId === id);
-        await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
-      }
-      for (const id of [botId, "alpha"]) {
-        await setVoice(id, VOICE);
-        voiced.push(id);
-      }
-
-      // The picture-swap bot: its stage drawn, a watcher in the renderer's frame keeps every picture state it shows.
-      await openTab(name);
-      // The renderer is a third-party part: its frame is its own layer's document (moss-plugin://example-pngtuber/),
-      // never one of the moss tree's (as row 26 finds it).
-      const frame = await until("the picture-swap renderer's frame", 60_000, async () => {
-        for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("moss-plugin://example-pngtuber/"))) {
-          if (await cdp.evaluate(d.session, "!!document.querySelector('[data-pngtuber]')").catch(() => false)) return { session: d.session };
-        }
-        return undefined;
-      }, () => dumpFrames(cdp));
-      await cdp.evaluate(frame.session, "(() => { const e = document.querySelector('[data-pngtuber]'); window.__voiceSeen = [e.getAttribute('data-pngtuber')]; new MutationObserver(() => window.__voiceSeen.push(e.getAttribute('data-pngtuber'))).observe(e, { attributes: true, attributeFilter: ['data-pngtuber'] }); return true; })()");
-      const before = await until("the shell's voice counters", 20_000, counters);
-      // A record of the player's counters as they change, for a failure's dump (who spoke when).
-      const voiceDoc = await inTree<boolean>(cdp, "(() => { const e = document.documentElement; if (e.dataset.voicePieces === undefined) return null; if (window.__vq) return true; const t0 = Date.now(); window.__vq = []; const note = () => { const d = e.dataset; window.__vq.push([Date.now() - t0, +d.voicePieces, d.voiceSpeaking || '-', +(d.voiceOverlap || 0)].join(' ')); if (window.__vq.length > 400) window.__vq.shift(); }; note(); new MutationObserver(note).observe(e, { attributes: true }); return true; })()");
-      const voiceRecord = async () => (voiceDoc === undefined ? "no record" : String(await cdp.evaluate(voiceDoc.session, "window.__vq ? window.__vq.join(' | ') : 'none'").catch(() => "?")).slice(-1500));
-      // The player's document as one the user has used: its AudioContext starts only after the user's activation there
-      // (a click in a third party's own frames, such as this bot's tab, gives it none), and a sound that can't start
-      // would sit in a suspended context and sound later over the next.
-      if (voiceDoc !== undefined) await cdp.send("Runtime.evaluate", { expression: "true", userGesture: true }, voiceDoc.session).catch(() => undefined);
-      // A third party's bot: its first turn asks once for the provider its plugin chose (Notes keeper's does too).
-      await turn(botId, "Say something.", true);
-      const after = await until("the reply's speech counted and its frames made", 30_000, async () => {
-        const c = await counters();
-        return c !== undefined && c.pieces > before.pieces && c.frames > before.frames ? c : undefined;
-      }, async () => `${JSON.stringify(await counters())}; ${ctx.appLog().split("\n").filter((l) => /voice/i.test(l)).slice(-5).join(" | ")}`);
-      const shown = await until("the talking picture, then idle again", 20_000, async () => {
-        const seen = (await cdp.evaluate(frame.session, "JSON.stringify(window.__voiceSeen || [])").catch(() => "[]")) as string;
-        const states = JSON.parse(seen) as string[];
-        return states.includes("talk") && states.at(-1) !== "talk" ? states : undefined;
-      }, async () => String(await cdp.evaluate(frame.session, "JSON.stringify(window.__voiceSeen || [])").catch(() => "?")));
-
-      // Alpha: her stage gets frames while she speaks.
-      await openTab("Alpha");
-      const alphaBefore = (await counters())!;
-      let alphaSpoke = false;
-      const alphaTurn = turn("alpha", "Say something too.");
-      const alphaAfter = await until("Alpha's speech counted and its frames made", 150_000, async () => {
-        const c = await counters();
-        if (c?.speaking.includes("alpha")) alphaSpoke = true;
-        return c !== undefined && c.pieces > alphaBefore.pieces && c.frames > alphaBefore.frames && alphaSpoke && !c.speaking.includes("alpha") ? c : undefined;
-      }, async () => JSON.stringify(await counters()));
-      await alphaTurn;
-
-      // The chip mutes at once: the next reply plays nothing.
-      await clickIn("the stage's mute chip", "button.cl-bot-stage__chip", undefined);
-      await until("the chip saying it is muted", 10_000, () => inTree<boolean>(cdp, "document.querySelector('button.cl-bot-stage__chip')?.getAttribute('data-voice') === 'muted'"));
-      const muted = (await counters())!;
-      await turn("alpha", "Stay quiet.");
-      await sleep(3_000);
-      const quiet = (await counters())!;
-      if (quiet.pieces !== muted.pieces) fail(`muted, the next reply still sent ${quiet.pieces - muted.pieces} piece(s)`);
-      await clickIn("the stage's chip again (unmute)", "button.cl-bot-stage__chip", undefined);
-      // Both bots' replies went through MOSS Voice's player, one at a time in the device's speech turn: never two at once.
-      if (quiet.overlap > 1) fail(`two bots sounded at once (data-voice-overlap ${quiet.overlap}); the player (ms pieces speaking overlap): ${await voiceRecord()}`);
-      return `the fixture voice on ${botId} and Alpha (MOSS Voice's bot settings), spoken by MOSS Voice's background part: ${botId}'s reply came as ${after.pieces - before.pieces} piece(s) and ${after.frames - before.frames} frame(s), and its renderer showed ${shown.join(" → ")}; Alpha's as ${alphaAfter.pieces - alphaBefore.pieces} piece(s) and ${alphaAfter.frames - alphaBefore.frames} frame(s) while she spoke; never two bots at once (data-voice-overlap ${quiet.overlap}); muted by the stage's chip, the next reply sent no piece`;
-    } finally {
-      for (const id of voiced) await setVoice(id, null).catch(() => undefined);
-      for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
-      rmSync(parent, { recursive: true, force: true });
-    }
-  });
+  // 17: the avatar plugin's figure beside a coding session: a third-party pack (the placeholder Live2D files), drawn by the
+  // bundled 2D renderer in the session's Avatar panel (figure-steps.ts).
+  await step(17, () => figurePackStep(figureCtx()));
+  // 18: a third-party renderer for the avatar plugin and a plugin that moves the figure (figure-steps.ts).
+  await step(18, () => figureRendererStep(figureCtx()));
+  // 19: the figure reacts to the session beside it and to speech (figure-steps.ts).
+  await step(19, () => figureReactsStep(figureCtx()));
   // 20: Alpha's tab under Bots' plug (the owner, November 14): the window's own sidebar beside her tab exactly as beside a plain
   // bot's (same rows, size and colours, not even tinted by her accent), her own top bar instead of the stock one, her toggle
   // folding the stock sidebar and back, her panel control opening the panel sheet; a plain bot's tab keeps the stock bar.

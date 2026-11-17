@@ -1,44 +1,64 @@
-// The stage's own clause (F6, the owner's ruling of 2026-11-15: the stage is a plugin that takes renderer plugins, and nothing
-// in the app or the core knows the bundled stage by id). A copy of the bundled character part, folder-installed under another id
-// behind its OK card, takes the bundled stage's place in a bot's tab:
-//   * its OK card says what it holds, in the catalog's plain lines, `avatar.report`'s (with its warning) and `bots.avatar`'s
-//     among them, and it runs after the press on its card;
-//   * with the bundled stage switched off, a bot with a community-format avatar (the picture-swap renderer, installed from
-//     its folder) has its figure drawn under the copy, and the copy's report is what the core answers a cue by: the bot's own
-//     command cues `happy`, the core answers ok and the renderer's frame swaps picture sets;
-//   * the bot editor's Avatar section on Alpha's Edit page is the copy's (the bundled one is off), drawn in a document of the
-//     copy's own plugin, whose card carries `bots.avatar`;
-//   * the bundled stage comes back when switched on again (and the copy off): the same cue answers ok;
+// The avatar plugin's own clause (spec revision 19, G7: there is no avatar in the platform; the owner's ruling of 2026-11-15:
+// the stage is a plugin that takes renderer plugins, and nothing in the app or the core knows it by id). A copy of the bundled
+// avatar plugin (moss/character), folder-installed under another id behind its OK card, is an avatar plugin like it: its points
+// are its own (`mirror-avatar.renderer`, `.formats`, `.packs`, `.figure`, as a third party's must be named), and a renderer, a
+// pack and a controller fill them as they fill the bundled one's:
+//   * its OK card says what it holds, in the catalog's plain lines (the activity feed, the overlay), and the renderer's card
+//     says the copy's own line for its renderer spot;
+//   * with the bundled avatar plugin switched off, the copy's figure stands beside a CODE session in MOSS Code's window (its
+//     own panel), drawn by the picture-swap renderer filling the copy's spot, and a controller filling the copy's `.figure`
+//     cues `happy`: the copy answers ok and the renderer's frame swaps picture sets;
+//   * the bundled avatar plugin comes back when switched on again (and the copy off): its own figure stands beside the session;
 //   * the app logged no refusal of the copy's calls (by id or by want of a capability).
-// Nothing here names the bundled plugin's id but to switch it off and on: the copy is the stage's own source, built into a
-// client module and given another id and name.
+// Nothing here names the bundled plugin's id but to switch it off and on: the copy is the avatar plugin's own source, built into
+// a client module, given another id and name and its points renamed to that id.
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CLIENT_BARE_IMPORTS, capabilityOkText } from "../../packages/plugin-sdk/src/index";
-import { EXAMPLES, SIDEBAR_ITEMS, clickTree, fail, layerDocs, sleep, toAlphasTab, treeDocs, until, type ExampleCtx } from "./example-steps";
+import { EXAMPLES, fail, layerDocs, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
+import { RENDERER_PROBE, command, controller, figureBesideCode, install, pick, pictureFrame, removeAll, type FigureCtx } from "./figure-steps";
+import { ensureCodingSession, toCodingSession } from "./ui-steps";
 
-export const STAGE_COPY_STEP = "a folder-installed copy of the stage, under another id and behind its OK card (reports figures, sets avatars), takes the bundled one's place: it draws a bot's figure with the installed renderer and its report answers the bot's cue; its own Avatar section is on the Edit page; the bundled stage comes back when switched on again; the app logs no refusal by id";
+export const STAGE_COPY_STEP = "a folder-installed copy of the avatar plugin, under another id with its own points and behind its OK card, is an avatar plugin like the bundled one: a renderer, a pack and a controller fill its points; with the bundled one off, its figure stands beside a coding session drawn by that renderer and its controller's cue is answered ok; the bundled one comes back when switched on again; the app logs no refusal by id";
 
 const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins", "moss", "plugins");
-export const COPY_ID = "mirror-stage";
-const COPY_NAME = "Mirror stage";
-/** The bundled plugin the copy stands in for (switched off while the copy runs, on again after). */
+export const COPY_ID = "mirror-avatar";
+const COPY_NAME = "Mirror avatar";
+export const RENDERER_ID = "mirror-pngtuber";
+/** The bundled plugin the copy stands beside (switched off while the copy shows, on again after). */
 const BUNDLED = "moss/character";
 
-/** The OK card's plain lines for what the copy holds: the catalog's own `ok` words for `avatar.report` and `bots.avatar`. */
-export const COPY_OK_LINES: readonly string[] = ["avatar.report", "bots.avatar"].map((c) => capabilityOkText(c) ?? c);
+/** The copy's own names for what the bundled plugin calls `moss.character.*` (a third party's points start with its id). */
+const renamed = (text: string): string => text.split("moss.character.").join(`${COPY_ID}.`).split('"moss/character"').join(JSON.stringify(COPY_ID)).split("moss%2Fcharacter").join(COPY_ID);
 
-/** The copy's manifest: the bundled stage's, with an id and a name of its own and its client built to one module. Its
- *  capabilities and what it declares are the bundled stage's own, so what it may do is what its OK card says. */
+/** The OK card's plain lines for what the copy holds: the catalog's own `ok` words for each capability. */
+export function copyOkLines(): string[] {
+  return (copyManifest().capabilities as string[]).map((c) => capabilityOkText(c) ?? c);
+}
+
+/** The copy's manifest: the bundled avatar plugin's, with an id and a name of its own, its points renamed to its id, and its
+ *  client built to one module. Its capabilities are the bundled plugin's own, so what it may do is what its OK card says. */
 export function copyManifest(): Record<string, unknown> {
-  const src = JSON.parse(readFileSync(join(PLUGINS, "character", "moss.json"), "utf8")) as Record<string, unknown> & { contributes: Record<string, unknown>; client: Record<string, unknown> };
+  const src = JSON.parse(renamed(readFileSync(join(PLUGINS, "character", "moss.json"), "utf8"))) as Record<string, unknown> & { contributes: Record<string, unknown>; client: Record<string, unknown> };
   const { locales: _locales, ...contributes } = src.contributes;
   return { ...src, id: COPY_ID, name: COPY_NAME, client: { ...src.client, entry: "client/index.js" }, contributes };
 }
 
-/** Writes the copy's folder under `root` and returns its path: the bundled stage's own source, unchanged, built to one module as
- *  the registry builds a client entry (everything bundled in but the layers' bare imports), and its stylesheets. */
+/** One client entry built to a module (everything bundled in but the layers' bare imports), with the copy's names. */
+async function buildClient(entry: string, outDir: string): Promise<void> {
+  mkdirSync(outDir, { recursive: true });
+  const result = await Bun.build({
+    entrypoints: [entry], outdir: outDir, target: "browser", format: "esm", splitting: false, minify: false,
+    naming: { entry: "index.[ext]" }, external: [...CLIENT_BARE_IMPORTS], define: { "process.env.NODE_ENV": JSON.stringify("production") }, throw: false,
+    ...{ macros: false },
+  });
+  const out = join(outDir, "index.js");
+  if (!result.success || !existsSync(out)) throw new Error(`${entry} wasn't built: ${result.logs.map((l) => String(l)).join("; ").slice(0, 400)}`);
+  writeFileSync(out, renamed(readFileSync(out, "utf8")));
+}
+
+/** Writes the copy's folder under `root` and returns its path: the avatar plugin's own source, its names the copy's. */
 export async function buildCopy(root: string): Promise<string> {
   const dir = join(root, COPY_ID);
   rmSync(dir, { recursive: true, force: true });
@@ -46,149 +66,95 @@ export async function buildCopy(root: string): Promise<string> {
   const manifest = copyManifest() as { client: { css?: string[] } };
   writeFileSync(join(dir, "moss.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const css of manifest.client.css ?? []) copyFileSync(join(PLUGINS, "character", css), join(dir, css));
-  const result = await Bun.build({
-    entrypoints: [join(PLUGINS, "character", "client", "index.tsx")], outdir: join(dir, "client"), target: "browser", format: "esm", splitting: false, minify: false,
-    naming: { entry: "index.[ext]" }, external: [...CLIENT_BARE_IMPORTS], define: { "process.env.NODE_ENV": JSON.stringify("production") }, throw: false,
-    ...{ macros: false },
-  });
-  if (!result.success || !existsSync(join(dir, "client", "index.js"))) throw new Error(`the stage copy's client wasn't built: ${result.logs.map((l) => String(l)).join("; ").slice(0, 400)}`);
+  await buildClient(join(PLUGINS, "character", "client", "index.tsx"), join(dir, "client"));
   return dir;
 }
 
-/** A bot plugin with a community-format avatar whose one command cues `happy` through the plugin API: the answer is the core's. */
-function pictureBot(parent: string, botId: string, name: string): string {
-  const folder = join(parent, botId);
-  mkdirSync(join(folder, "model"), { recursive: true });
-  mkdirSync(join(folder, "bot"), { recursive: true });
-  mkdirSync(join(folder, "tab"), { recursive: true });
-  mkdirSync(join(folder, "host"), { recursive: true });
-  cpSync(join(EXAMPLES, "example-pngtuber", "sample-model"), join(folder, "model"), { recursive: true });
-  writeFileSync(join(folder, "bot", "instructions.md"), "You are a test bot.\n");
-  writeFileSync(join(folder, "tab", "layout.json"), JSON.stringify({ layout: 1, root: { stack: [{ spot: "conversation", grow: 1 }, { spot: "bot.stage", grow: 1 }], grow: 1 } }));
-  writeFileSync(join(folder, "host", "index.ts"), [
-    "let held: { avatar: { cue(cue: unknown): Promise<unknown> | unknown } } | undefined;",
-    "export async function start(api: { avatar: { cue(cue: unknown): Promise<unknown> | unknown } }): Promise<void> { held = api; }",
-    "export async function stop(): Promise<void> {}",
-    "export async function cue(): Promise<{ text: string }> {",
-    "  if (held === undefined) return { text: \"cue: no api\" };",
-    "  return { text: `cue: ${JSON.stringify(await held.avatar.cue({ type: \"expression\", name: \"happy\" }))}` };",
-    "}",
-    "",
-  ].join("\n"));
-  writeFileSync(join(folder, "moss.json"), JSON.stringify({
-    manifest: 1, id: botId, name, description: "The stage clause's bot with a community-format avatar.", version: "0.0.1", engines: { moss: "^1.0.0" },
-    capabilities: ["avatar.control"], host: { entry: "host/index.ts", runtime: "bun" },
-    contributes: { commands: [{ name: "cue", description: "Cues the figure's happy expression", handler: "cue" }], bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
-  }));
-  return folder;
+/** The SDK's picture-swap renderer and its pack, filling the copy's points instead of the bundled plugin's. */
+export async function buildRenderer(root: string): Promise<string> {
+  const from = join(EXAMPLES, "example-pngtuber");
+  const dir = join(root, RENDERER_ID);
+  rmSync(dir, { recursive: true, force: true });
+  cpSync(join(from, "sample-model"), join(dir, "sample-model"), { recursive: true });
+  if (existsSync(join(from, "locales"))) cpSync(join(from, "locales"), join(dir, "locales"), { recursive: true });
+  const m = JSON.parse(renamed(readFileSync(join(from, "moss.json"), "utf8"))) as Record<string, unknown> & { client: Record<string, unknown> };
+  const client = { ...m.client, entry: "client/index.js" };
+  for (const css of (m.client.css as string[] | undefined) ?? []) { mkdirSync(join(dir, css, ".."), { recursive: true }); copyFileSync(join(from, css), join(dir, css)); }
+  writeFileSync(join(dir, "moss.json"), `${JSON.stringify({ ...m, id: RENDERER_ID, name: "Mirror picture-swap", client }, null, 2)}\n`);
+  await buildClient(join(from, "client", "index.tsx"), join(dir, "client"));
+  return dir;
 }
 
 export async function stageCopyStep(ctx: ExampleCtx, _session: string): Promise<string> {
   const { rpc, cdp } = ctx;
   const said: string[] = [];
-  const botId = "mirror-stage-bot";
-  const botName = "Mirror Stage Bot";
-  const parent = mkdtempSync(join(tmpdir(), "moss-stage-copy-"));
+  const parent = mkdtempSync(join(tmpdir(), "moss-avatar-copy-"));
   const installed: string[] = [];
   let switchedOff = false;
   const refusals = () => ctx.appLog().split("\n").filter((l) => l.includes(`tree: ${COPY_ID}:`) && l.includes("refused"));
-  const install = async (dir: string, id: string, lines: readonly string[] = []): Promise<void> => {
-    const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: dir } }, 60_000);
-    if (r.id !== id) fail(`${id} installed as ${r.id}`);
-    installed.push(id);
-    const card = await until(`${id}'s OK card`, 30_000, async () => (await rpc.request<{ cards: { id: string; kind: string; pluginId?: string }[] }>("card.list", {})).cards.find((c) => c.kind === "plugin-ok" && c.pluginId === id));
-    const text = JSON.stringify((await rpc.request<{ card: unknown }>("card.get", { id: card.id })).card);
-    for (const line of lines) if (!text.includes(line)) fail(`${id}'s OK card doesn't say "${line}": ${text.slice(0, 300)}`);
-    await ctx.pressCard(`${id}'s OK card`, (c) => c.id === card.id);
-    await until(`${id} running`, 60_000, async () => ((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running" ? true : undefined),
-      async () => JSON.stringify(await rpc.request("plugin.get", { id }).catch(() => null)).slice(0, 300));
+  const f: FigureCtx = {
+    cdp, rpc, pressCard: ctx.pressCard,
+    toCodingSession: async () => {
+      const id = await ensureCodingSession(ctx) ?? fail("this run could not start a coding session");
+      await toCodingSession(cdp, id, async (what, selector, text, ms = 20_000) => {
+        const at = await until(what, ms, async () => {
+          for (const d of await treeDocs(cdp)) {
+            const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+            if (c !== undefined) return { session: d.session, c };
+          }
+          return undefined;
+        });
+        await cdp.click(at.session, at.c.x, at.c.y);
+        await sleep(700);
+      });
+      return id;
+    },
+    escape: async () => { for (const type of ["keyDown", "keyUp"]) for (const d of await treeDocs(cdp)) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined); await sleep(300); },
   };
-  const cue = async (): Promise<string> => {
-    const r = await rpc.request<{ result?: { text?: string }; text?: string }>("command.run", { name: `${botId}.cue` }).catch((e: unknown) => ({ text: `cue: threw ${String(e)}` }));
-    return (r as { result?: { text?: string }; text?: string }).result?.text ?? (r as { text?: string }).text ?? "";
-  };
-  const ok = async (what: string): Promise<string> => until(what, 60_000, async () => {
-    const t = await cue();
-    return t.startsWith("cue:") && t.includes('"ok":true') ? t : undefined;
-  }, async () => `the cue answered ${await cue()}`);
-  const PROBE = "(() => { const e = document.querySelector('[data-pngtuber]'); const img = e && e.querySelector('img'); return e ? { state: e.getAttribute('data-pngtuber'), loaded: !!img && img.complete && img.naturalWidth > 0 } : null; })()";
-  const rendererDrawn = async (): Promise<string> => until("the renderer drawing the bot's picture", 60_000, async () => {
-    for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("moss-plugin://example-pngtuber/"))) {
-      const r = await cdp.evaluate(d.session, PROBE).catch(() => undefined) as { state: string; loaded: boolean } | null | undefined;
-      if (r?.loaded) return d.session;
-    }
-    await clickTree(cdp, `${botName} in the sidebar`, SIDEBAR_ITEMS, botName, 3_000).catch(() => undefined);
-    return undefined;
-  }, async () => (await cdp.documents()).map((d) => d.url.slice(0, 60)).join(" | "));
   try {
-    await toAlphasTab(ctx);
-    // 1. The renderer and the bot with its figure, under the bundled stage: the cue answers (a baseline), then the copy installs behind
-    //    its OK card, which says what it holds.
-    await install(join(EXAMPLES, "example-pngtuber"), "example-pngtuber");
-    await install(pictureBot(parent, botId, botName), botId);
-    await clickTree(cdp, `${botName} in the sidebar`, SIDEBAR_ITEMS, botName, 20_000);
-    await rendererDrawn();
-    await ok("the cue answered ok under the bundled stage");
-    const folder = await buildCopy(ctx.root);
-    await install(folder, COPY_ID, COPY_OK_LINES);
-    said.push("the copy installed behind an OK card that carries avatar.report's and bots.avatar's lines, and runs after the press");
+    // 1. The copy, then a renderer and a controller filling its points, each behind its OK card.
+    const copy = await buildCopy(ctx.root);
+    await install(f, copy, COPY_ID, copyOkLines());
+    installed.push(COPY_ID);
+    const renderer = await buildRenderer(parent);
+    await install(f, renderer, RENDERER_ID, ["it draws the figure the avatar plugin shows"]);
+    installed.push(RENDERER_ID);
+    const moves = controller(join(parent, "mirror-moves"), `${COPY_ID}.figure`, COPY_ID, "mirror-moves");
+    await install(f, moves, "mirror-moves", ["moves the figure"]);
+    installed.push("mirror-moves");
+    said.push(`the copy installed behind an OK card that carries its capabilities' lines, and its renderer's and controller's cards carried the copy's own lines for its points`);
 
-    // 2. The copy takes the place: the bundled stage off (as a user would in the Plugins page), the bot's tab drawn again.
+    // 2. The copy shows: the bundled one off (as a user would in the Plugins page), the copy's figure beside a coding session.
     await rpc.request("plugin.setEnabled", { id: BUNDLED, enabled: false }, 30_000);
     switchedOff = true;
-    await clickTree(cdp, "Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha", 20_000).catch(() => undefined);
-    await sleep(500);
-    await clickTree(cdp, `${botName} in the sidebar`, SIDEBAR_ITEMS, botName, 20_000);
-    const doc = await until("the stage copy's document in the bot's tab", 60_000, async () => (await layerDocs(cdp, COPY_ID))[0], async () => (await cdp.documents()).map((d) => d.url.slice(0, 70)).join(" || "));
-    const frame = await rendererDrawn();
-    const answered = await ok("the cue answered ok with the copy as the stage");
-    const happy = await until("the renderer's frame showing the cued picture set", 20_000, async () => {
-      const r = await cdp.evaluate(frame, PROBE).catch(() => undefined) as { state: string } | null | undefined;
-      return r?.state === "happy" ? true : undefined;
-    }, async () => `the renderer says ${JSON.stringify(await cdp.evaluate(frame, PROBE).catch(() => "?"))}`);
-    void happy;
-    said.push(`with the bundled stage off, the copy drew the bot's figure (${doc.url.slice(0, 40)}…) with the picture-swap renderer, and its report answered the bot's cue (${answered}): the renderer's frame swapped to the cued set`);
+    await pick(rpc, `pack:${RENDERER_ID}#sunny`, COPY_ID);
+    await f.escape();
+    const place = await figureBesideCode(f, () => layerDocs(cdp, COPY_ID));
+    const frame = await pictureFrame(f, RENDERER_ID);
+    const answered = await until("the controller's cue answered ok by the copy", 30_000, async () => {
+      const t = await command(rpc, "mirror-moves.happy");
+      return t.includes('"ok":true') ? t : undefined;
+    }, async () => command(rpc, "mirror-moves.happy"));
+    await until("the renderer's frame showing the cued picture set", 20_000, async () => ((await cdp.evaluate(frame, RENDERER_PROBE).catch(() => undefined)) as { state?: string } | null | undefined)?.state === "happy" ? true : undefined,
+      async () => `the renderer says ${JSON.stringify(await cdp.evaluate(frame, RENDERER_PROBE).catch(() => "?"))}`);
+    said.push(`with the bundled avatar plugin off, the copy's figure stood beside the coding session ${place.code} (its own panel, in its own layer), drawn by the renderer filling the copy's spot; the controller's cue was answered ${answered.slice(5)} and the renderer swapped to the cued set`);
 
-    // 3. The Edit page: Alpha's Edit button; the Avatar section is drawn in a document of the copy's own plugin.
-    await toAlphasTab(ctx);
-    const edit = await until("Alpha's Edit button", 30_000, async () => {
-      for (const d of await treeDocs(cdp)) {
-        const c = await cdp.centerOf(d.session, 'button[aria-label="Edit Alpha"]').catch(() => undefined);
-        if (c !== undefined) return { session: d.session, c };
-      }
-      return undefined;
-    });
-    await cdp.click(edit.session, edit.c.x, edit.c.y);
-    const section = await until("the copy's Avatar section on the Edit page", 30_000, async () => {
-      for (const d of await layerDocs(cdp, COPY_ID)) {
-        if ((await cdp.evaluate(d.session, "!!document.querySelector('.cl-avatar-section')").catch(() => false)) === true) return d.url;
-      }
-      return undefined;
-    }, async () => (await cdp.documents()).map((d) => d.url.slice(0, 70)).join(" || "));
-    said.push(`Alpha's Edit page showed the Avatar section drawn by the copy (${section.slice(0, 40)}…), which holds bots.avatar on its card`);
-    await toAlphasTab(ctx);
-
-    // 4. The bundled stage comes back when switched on again (the copy off): the same cue answers ok.
+    // 3. The bundled one comes back when switched on again (the copy off): its figure stands beside the session.
     await rpc.request("plugin.setEnabled", { id: COPY_ID, enabled: false }, 30_000);
     await rpc.request("plugin.setEnabled", { id: BUNDLED, enabled: true }, 30_000);
     switchedOff = false;
-    await clickTree(cdp, `${botName} in the sidebar`, SIDEBAR_ITEMS, botName, 20_000);
-    await until("the stage copy's document gone", 30_000, async () => ((await layerDocs(cdp, COPY_ID)).length === 0 ? true : undefined));
-    await rendererDrawn();
-    await ok("the cue answered ok with the bundled stage back");
-    said.push("the copy off and the bundled stage on again: the same cue answered ok");
+    await until("the copy's documents gone", 30_000, async () => ((await layerDocs(cdp, COPY_ID)).length === 0 ? true : undefined));
+    await figureBesideCode(f);
+    said.push("the copy off and the bundled avatar plugin on again: its own figure stood beside the session");
 
     // The app logged no refusal of the copy's calls: not by its id, not for want of a capability.
     const refused = refusals();
-    if (refused.length > 0) fail(`the app refused the stage copy's calls: ${refused.slice(-3).join(" | ")}`);
+    if (refused.length > 0) fail(`the app refused the copy's calls: ${refused.slice(-3).join(" | ")}`);
     said.push("the app logged no refusal of the copy's calls");
     return said.join("; ");
   } finally {
     if (switchedOff) await rpc.request("plugin.setEnabled", { id: BUNDLED, enabled: true }, 30_000).catch(() => undefined);
-    for (const id of installed.reverse()) {
-      const rm = await rpc.request<{ card?: string }>("plugin.remove", { id }).catch(() => undefined);
-      if (rm?.card !== undefined) await ctx.approveCard(rm.card).catch(() => undefined);
-    }
+    await removeAll(rpc, installed);
     for (let i = 0; i < 30 && (await layerDocs(cdp, COPY_ID)).length > 0; i++) await sleep(300);
     rmSync(join(ctx.root, COPY_ID), { recursive: true, force: true });
     rmSync(parent, { recursive: true, force: true });

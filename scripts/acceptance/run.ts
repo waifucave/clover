@@ -2373,7 +2373,6 @@ async function main(): Promise<void> {
         const asApp = target === "source";
         const world = target === "source" || outsideWorld !== undefined;
         let terminal: string | undefined;
-        let avatar: string | undefined;
         let asked: string | undefined;
         let fetched: string | undefined;
         if (asApp) {
@@ -2384,7 +2383,6 @@ async function main(): Promise<void> {
             await layer("terminal.close", [tid]).catch(() => undefined);
             return `opened ${tid}`;
           }, (err: unknown) => why(err));
-          avatar = await layer("avatar.report", [`${asks.id}-figure`, null]).then(() => "answered", (err: unknown) => why(err));
         }
         if (asApp && world) {
           const npmName = "acceptance-asked-npm";
@@ -2397,9 +2395,9 @@ async function main(): Promise<void> {
         }
         if (world) fetched = await c.request<{ result: unknown }>("command.run", { name: `${asks.id}.fetch-public`, args: {} }, 60_000).then((r) => JSON.stringify(r.result), (err: unknown) => why(err));
         const okLines = Object.fromEntries(ONCE_MOSS_OWN.map((cap) => [cap, CAPABILITIES.find((x) => x.name === cap)!.ok]));
-        const r1 = asksAllWrong({ card: asks.text, granted, okLines, ...(terminal === undefined ? {} : { terminal }), ...(avatar === undefined ? {} : { avatar }), ...(asked === undefined ? {} : { install: asked }), ...(fetched === undefined ? {} : { fetched }) });
+        const r1 = asksAllWrong({ card: asks.text, granted, okLines, ...(terminal === undefined ? {} : { terminal }), ...(asked === undefined ? {} : { install: asked }), ...(fetched === undefined ? {} : { fetched }) });
         if (r1.length > 0) wrong.push(`R1 ${r1.join("; ")}`);
-        else done.push(`R1 ${asks.id} asked for ${ONCE_MOSS_OWN.join(", ")}: its OK card carried each one's warning line and, OK'd, each was granted; ${asApp ? `terminal.open ${terminal} on this computer and closed, avatar.report answered (as its component, through plugin.layer.api)` : "its component's calls not made (a packaged core's CLI-role run can't make plugin.layer.api)"}; ${asked !== undefined ? `plugins.install from npm: ${asked} behind its own OK card` : "no npm install (no outside world or no app role)"}; ${fetched !== undefined ? `its host's net.fetch of ${ASKS_ALL_PAGE} answered keyless` : "no public page (no outside world)"}; browser.* is the F5 row's, plugins.watch is events only`);
+        else done.push(`R1 ${asks.id} asked for ${ONCE_MOSS_OWN.join(", ")}: its OK card carried each one's warning line and, OK'd, each was granted; ${asApp ? `terminal.open ${terminal} on this computer and closed (as its component, through plugin.layer.api)` : "its component's calls not made (a packaged core's CLI-role run can't make plugin.layer.api)"}; ${asked !== undefined ? `plugins.install from npm: ${asked} behind its own OK card` : "no npm install (no outside world or no app role)"}; ${fetched !== undefined ? `its host's net.fetch of ${ASKS_ALL_PAGE} answered keyless` : "no public page (no outside world)"}; browser.* is the F5 row's, plugins.watch is events only`);
       }
 
       if (wrong.length > 0) fail(`${wrong.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ") || "none"})`);
@@ -5610,8 +5608,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   // The picker reads its folder from this file at each pick (a `.pick` file), so the examples' steps pick theirs after.
   const pickFile = join(root, "folder.pick");
   writeFileSync(pickFile, `${pickFolder.path}\n`);
-  // The bot editor's avatar step: main's picker answers with a copy of the stock model (never anyone's own) with a credit
-  // note beside it, so the import shows the model's own note.
+  // The placeholder Live2D model (code-made, from Alpha's pack), for a row whose bot shows one (never anyone's own).
   const avatarFolder = join(root, "avatar-fixture");
   mkdirSync(avatarFolder, { recursive: true });
   for (const f of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(import.meta.dir, "..", "..", "plugins", "moss", "plugins", "alpha-figure", "live2d", f), join(avatarFolder, f));
@@ -5630,7 +5627,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const pressKey = keyPresser(keyFile);
   let windowSeam = 0;
   // The Browser row's fixture site by name too: on a run that isn't sharded (a packaged one) that row runs in this app.
-  const env = { ...baseEnv(), ...(browserFixture !== undefined ? { MOSS_TEST_BROWSER_NAMES: browserFixture.names } : {}), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_TEST_PICK: pickFile, MOSS_TEST_PICK_AVATAR: avatarFolder, MOSS_TEST_PICK_FILES: mediaPicks.answers, MOSS_TEST_APPEARANCE_FILE: appearanceFile, MOSS_TEST_MAIN_FRONT_FILE: join(root, "main-front"), MOSS_TEST_WINDOW_FILE: join(root, "main-window"), MOSS_TEST_KEY_FILE: keyFile, MOSS_IPC_STATS: "1", ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
+  const env = { ...baseEnv(), ...(browserFixture !== undefined ? { MOSS_TEST_BROWSER_NAMES: browserFixture.names } : {}), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_TEST_PICK: pickFile, MOSS_TEST_PICK_FILES: mediaPicks.answers, MOSS_TEST_APPEARANCE_FILE: appearanceFile, MOSS_TEST_MAIN_FRONT_FILE: join(root, "main-front"), MOSS_TEST_WINDOW_FILE: join(root, "main-window"), MOSS_TEST_KEY_FILE: keyFile, MOSS_IPC_STATS: "1", ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
