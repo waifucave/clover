@@ -4531,7 +4531,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     if (shown !== undefined) fail(`the host showed a window while headless: ${shown.slice(0, 200)}`);
     const starts = (out.match(/audio: muted/g) ?? []).length;
     if (starts === 0 || /audio: (NOT muted|played unmuted)/.test(out)) fail(`the host's starts were not all muted (${starts} muted; ${out.split("\n").find((l) => /audio: (NOT|played)/.test(l))?.slice(0, 160) ?? ""})`);
-    lines.push(`nothing seen or heard: the window server listed no host window on the screen at ${screenChecks} checks, no host window shown while headless, ${starts} host start(s) muted, no Dock icon (its app copy is LSUIElement), no menu-bar icon (never made headless)`);
+    lines.push(`nothing seen or heard: the window server listed no host window on the screen at ${screenChecks} checks, the host's log naming no window put on the screen, ${starts} host start(s) muted, no Dock icon (its app copy is LSUIElement), no menu-bar icon (never made headless)`);
     record(n, "PASS", lines.join("; "));
   } catch (err) {
     record(n, statusOf(err), `${why(err)}${lines.length > 0 ? ` (after: ${lines.join("; ").slice(0, 600)})` : ""}`);
