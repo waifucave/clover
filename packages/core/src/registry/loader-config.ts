@@ -8,6 +8,7 @@ import { builtinModules } from "node:module";
 import { join } from "node:path";
 import { CLIENT_BARE_IMPORTS, parseJsonc } from "@waifucave/moss-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/moss-protocol";
+import { OLD_PLUGIN_SDK } from "../old-names";
 
 /** The biggest loader config read when following `extends` and `paths`. */
 const LOADER_CONFIG_MAX_BYTES = 1024 * 1024;
@@ -102,8 +103,9 @@ export interface LoaderReach {
   missing: { file: string; field: string; target: string }[];
 }
 
-/** What a plugin may import without shipping it: MOSS's shared packages, which the load guard lets in. */
-export const SHARED_PLUGIN_PACKAGES: readonly string[] = ["@waifucave/moss-plugin-sdk", "@waifucave/moss-protocol", "zod"];
+/** What a plugin may import without shipping it: MOSS's shared packages, which the load guard lets in, and the plugin
+ *  SDK under its old name, read second (`old-names.ts`: the build resolves it to the new package). */
+export const SHARED_PLUGIN_PACKAGES: readonly string[] = ["@waifucave/moss-plugin-sdk", "@waifucave/moss-protocol", "zod", OLD_PLUGIN_SDK];
 
 const CODE = /\.(?:[mc]?[jt]s|[jt]sx)$/i;
 const loaderOf = (path: string): "js" | "jsx" | "ts" | "tsx" =>

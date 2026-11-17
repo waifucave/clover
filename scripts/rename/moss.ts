@@ -163,9 +163,9 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
   // ── Old names a user wrote on disk outside the home, read by the one helper ───────────────────
   {
     id: "old-names",
-    regex: /\.clover(?![A-Za-z0-9_-])|CLOVER\.md|\bclover\.json\b/g,
+    regex: /\.clover(?![A-Za-z0-9_-])|CLOVER\.md|\bclover\.json\b|@waifucave\/clover-plugin-sdk(?![A-Za-z0-9_-])/g,
     files: ["packages/core/src/old-names.ts", "packages/core/test/old-names.test.ts"],
-    why: "the names a user wrote outside the home — a project's `.clover/` folder, a `CLOVER.md`, a folder plugin's `clover.json` — which the new build still reads second, through `old-names.ts`, the one place that lists them",
+    why: "the names a user wrote outside the home — a project's `.clover/` folder, a `CLOVER.md`, a folder plugin's `clover.json` and its import of the plugin SDK under its old name — which the new build still reads second, through `old-names.ts`, the one place that lists them",
   },
   // ── The spec's own record of the rename, and of the names before it (docs/moss-spec.md only) ──────
   {

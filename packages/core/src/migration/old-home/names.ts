@@ -7,7 +7,7 @@
 // What is NOT here, on purpose: bot ids, conversations, memory and routines are copied as they are (no row maps
 // them); the wire and on-disk tags the rename kept (`moss-residue.test.ts`) need no row, since the renamed code still
 // reads them under their old spelling.
-import { OLD_INSTRUCTIONS_FILE, OLD_PLUGIN_MANIFEST } from "../../old-names";
+import { NEW_PLUGIN_SDK, OLD_INSTRUCTIONS_FILE, OLD_PLUGIN_MANIFEST, OLD_PLUGIN_SDK } from "../../old-names";
 
 /** The old root plugin's id, and the new one's. A child is `<root>/<name>` (spec §5.1). */
 export const OLD_ROOT_PLUGIN = "clover";
@@ -45,10 +45,9 @@ export const NEW_PLUGIN_MANIFEST_DIR = ".moss-plugin";
 export const OLD_MANIFEST_FILE = OLD_PLUGIN_MANIFEST;
 export const NEW_MANIFEST_FILE = "moss.json";
 
-/** The plugin SDK's import specifier before the rename. A folder plugin outside the home that still imports it builds:
- *  `old-names.ts` re-exports it, and the build resolves it to the new package (`registry/build.ts`). */
-export const OLD_PLUGIN_SDK = "@waifucave/clover-plugin-sdk";
-export const NEW_PLUGIN_SDK = "@waifucave/moss-plugin-sdk";
+/** The plugin SDK's import specifier before the rename (`old-names.ts`'s: a folder plugin outside the home that still
+ *  imports it builds, the build resolving it to the new package). */
+export { NEW_PLUGIN_SDK, OLD_PLUGIN_SDK };
 export const OLD_PROTOCOL_PACKAGE = "@waifucave/clover-protocol";
 export const NEW_PROTOCOL_PACKAGE = "@waifucave/moss-protocol";
 
