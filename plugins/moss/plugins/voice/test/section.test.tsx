@@ -1,18 +1,12 @@
-// MOSS Voice's parts in the window: Settings › Voice ("Speak replies" in its own settings; which voice speaks is the
-// platform's one-at-a-time picker, not this section's), the section of a bot's editor (the bot's voice: the user's, or
-// the default from the plugin that brings it, with why it can't speak).
+// MOSS Voice's part in the window: Settings › Voice ("Speak replies" in its own settings; which voice speaks is the
+// platform's one-at-a-time picker, not this section's).
 import { fakeApi, settle, runtimeWith, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
-import type { BotRef } from "../client/local";
-import type { EntryProps } from "@waifucave/moss-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { VoiceSection } from "../client";
 import type { PluginApi, PointEntry, TurnState } from "@waifucave/moss-plugin-sdk";
 
 afterEach(cleanup);
-
-/** The entry props a spot gives its component, for Alpha. */
-const alpha = { props: { bot: { id: "alpha", name: "Alpha" } } } as unknown as EntryProps<{ bot: BotRef }>;
 
 function mount(api: PluginApi, node: React.ReactNode) {
   render(<TestLayer runtime={runtimeWith({ api: () => api })}>{node}</TestLayer>);
