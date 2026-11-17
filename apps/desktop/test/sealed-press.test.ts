@@ -11,7 +11,7 @@ GlobalRegistrator.register();
 afterAll(async () => {
   await GlobalRegistrator.unregister();
 });
-import { PRESS_AGAIN_TEXT, buttonPage, ownCardPage } from "../src/main/sealed-pages";
+import { FRESH_SETTLE_MS, PRESS_AGAIN_TEXT, buttonPage, ownCardPage } from "../src/main/sealed-pages";
 
 function load(html: string, answers: string[]) {
   const g = globalThis as unknown as Record<string, unknown>;
@@ -51,7 +51,8 @@ describe("a press before the page is ready", () => {
     await wait(800);
     expect(doc.body.dataset.ready).toBe("yes");
     press(win, "pointerdown", btn);
-    await wait(20);
+    // A press is read twice, the second FRESH_SETTLE_MS after it (lane SV): the answer follows that.
+    await wait(FRESH_SETTLE_MS + 40);
     expect(answers).toEqual(["approve"]);
     window.dispatchEvent(new Event("pagehide"));
   });
@@ -69,7 +70,8 @@ describe("a press before the page is ready", () => {
     await wait(1_150);
     expect(doc.body.dataset.ready).toBe("yes");
     press(win, "click", btn);
-    await wait(20);
+    // A press is read twice, the second FRESH_SETTLE_MS after it (lane SV): the answer follows that.
+    await wait(FRESH_SETTLE_MS + 40);
     expect(answers).toEqual(["approve"]);
     window.dispatchEvent(new Event("pagehide"));
   });
@@ -117,7 +119,8 @@ describe("a page whose window hid and showed again starts its waits over", () =>
     expect(doc.querySelector(".state")!.textContent).toBe(PRESS_AGAIN_TEXT);
     await wait(500);
     press(win, "pointerdown", btn);
-    await wait(20);
+    // A press is read twice, the second FRESH_SETTLE_MS after it (lane SV): the answer follows that.
+    await wait(FRESH_SETTLE_MS + 40);
     expect(answers).toEqual(["approve"]);
     window.dispatchEvent(new Event("pagehide"));
   });
@@ -136,7 +139,8 @@ describe("a page whose window hid and showed again starts its waits over", () =>
     doc.dispatchEvent(new Event("pointerover"));
     await wait(1_150);
     press(win, "click", btn);
-    await wait(20);
+    // A press is read twice, the second FRESH_SETTLE_MS after it (lane SV): the answer follows that.
+    await wait(FRESH_SETTLE_MS + 40);
     expect(answers).toEqual(["approve"]);
   });
 });

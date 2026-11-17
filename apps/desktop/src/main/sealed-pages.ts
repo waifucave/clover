@@ -23,42 +23,67 @@ export const pinVisible = { on: false };
 
 export const FRESH_LIMIT_MS = 400;
 
-/** The page's way of asking for it, for every sealed page: a NEW observer on the pressed button, whose first report (made after the
- *  press, never an older timer-driven one) says whether the button shows whole, uncovered and at its size. The report goes to the app
- *  before the answer does, and the app takes the answer only on it; no report within the limit counts as covered. */
+/** How long after the press the second reading is taken (lane SV). A reading made right after a press can be computed before an
+ *  embedder's cover drawn a few ms before it has reached this page: the cover's occlusion passes down through each document above
+ *  the frame (the window's, the shell's, the part's), a frame and a process hop each, and a page that already had a frame ready reads
+ *  the state from before it (GitHub run 44189476546: a cover 2 ms before the press read "uncovered" 2 ms after it and the answer was
+ *  taken). So the press needs two readings: the first, as before, and a second taken at least this long after the press, with no
+ *  "not showing" entry between them. Covered readings came 1 to 24 ms after the press on the runners; this is the bound: a cover
+ *  whose occlusion takes longer than it to reach the page is still missed. */
+export const FRESH_SETTLE_MS = 100;
+
+/** The page's way of asking for it, for every sealed page: the pressed button observed afresh, whose first report (made after the
+ *  press, never an older timer-driven one) says whether the button shows whole, uncovered and at its size; then, FRESH_SETTLE_MS after
+ *  the press, observed afresh again. The press counts only if both say it shows and nothing between them said it didn't, so it
+ *  takes only presses the single reading also took. One report goes to the app (the verdict, with the time since the press) before
+ *  the answer does, and the app takes the answer only on it; no verdict within the limit counts as not checked. */
 const FRESH_SCRIPT = `
   const askFresh = (btn) => new Promise((resolve) => {
     const t0 = performance.now();
     let done = false;
     let o = null;
     let timer = 0;
+    let settle = 0;
+    // "first": waiting for the first reading; "between": until the second is asked, every entry must still say it shows; "second".
+    let phase = "first";
+    let spoiled = false;
+    let from = t0;
+    const shows = (e) => { const r = btn.getBoundingClientRect(); return e.intersectionRatio >= 1 && e.isVisible === true && r.width >= 24 && r.height >= 24; };
+    const own = typeof freshWatch !== "undefined";
+    const stop = () => { clearTimeout(timer); clearTimeout(settle); if (own) freshWatch = null; try { if (o !== null) o.disconnect(); } catch (e) { /* going */ } };
     const finish = (seen) => {
       if (done) return;
       done = true;
-      clearTimeout(timer);
-      try { if (o !== null) o.disconnect(); } catch (e) { /* going */ }
+      stop();
       try { b.fresh?.(seen, Math.round(performance.now() - t0)); } catch (e) { /* going */ }
       resolve(seen);
     };
+    const onEntries = (entries) => {
+      if (done) return;
+      const after = entries.filter((x) => typeof x.time === "number" && x.time >= from);
+      if (after.length === 0) return;
+      if (phase === "between") { if (after.some((x) => !shows(x))) spoiled = true; return; }
+      const seen = shows(after[after.length - 1]);
+      if (phase === "first") {
+        if (!seen || after.some((x) => !shows(x))) { finish(false); return; }
+        phase = "between";
+        settle = setTimeout(() => { if (done) return; phase = "second"; from = performance.now(); look(); }, Math.max(0, t0 + ${FRESH_SETTLE_MS} - performance.now()));
+        return;
+      }
+      finish(seen && !spoiled);
+    };
     // No reading within the limit: the page was too busy to read the button (a renderer starved, layers loading again around the
     // press), which is "not ready", never "covered": it resolves null, and the press is said as "late".
-    timer = setTimeout(() => { if (done) return; done = true; try { if (o !== null) o.disconnect(); } catch (e) { /* going */ } try { b.fresh?.(false, Math.round(performance.now() - t0)); } catch (e) { /* going */ } resolve(null); }, ${FRESH_LIMIT_MS});
-    if (typeof freshWaiter !== "undefined") {
-      // The page's own observer reads the button again (observed afresh: its first report is a new reading), so no second observer
-      // watches the same button: the report that follows is this page's next one.
-      freshFrom = performance.now();
-      freshWaiter = finish;
-      io.unobserve(btn);
-      io.observe(btn);
-      return;
-    }
-    o = new IntersectionObserver((entries) => {
-      const e = entries[entries.length - 1];
-      if (e === undefined) return;
-      const r = btn.getBoundingClientRect();
-      finish(e.intersectionRatio >= 1 && e.isVisible === true && r.width >= 24 && r.height >= 24);
-    }, { threshold: [0, 1], trackVisibility: true, delay: 100 });
-    o.observe(btn);
+    timer = setTimeout(() => { if (done) return; done = true; stop(); try { b.fresh?.(false, Math.round(performance.now() - t0)); } catch (e) { /* going */ } resolve(null); }, ${FRESH_LIMIT_MS});
+    // Observed afresh, its first report is a new reading. The page's own observer reads the button where there is one (no second
+    // observer watches the same button); otherwise one of its own.
+    const look = () => {
+      if (own) { io.unobserve(btn); io.observe(btn); return; }
+      o.unobserve(btn); o.observe(btn);
+    };
+    if (own) freshWatch = onEntries;
+    else o = new IntersectionObserver(onEntries, { threshold: [0, 1], trackVisibility: true, delay: 100 });
+    look();
   });`;
 
 /** The app's notice for a press this page never got (sealed-miss.ts): main saw a mouse-down over this page's button and no
@@ -271,10 +296,9 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   // The whole button, uncovered (IOv2), since enough time to have been seen (S4).
   let visible = false;
   let visibleAt = 0;
-  // The press's own reading: the waiter takes the first entry computed AFTER the press (on the entry's own clock, performance.now() at the
-  // press is freshFrom); an entry queued before it is never the press's reading.
-  let freshWaiter = null;
-  let freshFrom = 0;
+  // The press's own readings (FRESH_SCRIPT): while a press is being read, every entry this observer delivers goes to it too; it
+  // takes only entries computed AFTER the press (on the entry's own clock), never one queued before it.
+  let freshWatch = null;
   const readOf = (e) => {
     const whole = e.intersectionRatio >= 1;
     const enough = e.target instanceof HTMLElement && e.target.getBoundingClientRect().width >= 24 && e.target.getBoundingClientRect().height >= 24;
@@ -291,10 +315,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
       // Report visibility to the main process so it can disarm the fallback once all of a card's buttons show (S1).
       if (b !== undefined) b.visible?.(seen);
     }
-    if (freshWaiter !== null) {
-      const after = entries.filter((x) => typeof x.time === "number" && x.time >= freshFrom);
-      if (after.length > 0) { const w = freshWaiter; freshWaiter = null; w(readOf(after[after.length - 1])); }
-    }
+    if (freshWatch !== null) freshWatch(entries);
   }, { threshold: [0, 0.25, 0.5, 0.75, 1], trackVisibility: true, delay: 200 });
   // A part that takes its card's frames away (the island folding a card back into its strip) leaves nothing showing: the
   // page says so as it goes, so the fallback's timer runs again.
