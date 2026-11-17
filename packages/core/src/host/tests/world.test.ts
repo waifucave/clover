@@ -149,7 +149,7 @@ test("a checkout's start on macOS goes through Launch Services with the run's en
   const run: Runner = async (argv) => { runs.push([...argv]); return { ok: true, out: "" }; };
   const home = newHome();
   const cmd = JSON.stringify(["/x/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron", "/repo/apps/desktop", "--moss-program=host"]);
-  const w = engineHostWorld({ home, os: "darwin", profile: "dev", release: "1.111.1", run, dist: false, testBuild: false, env: { MOSS_HOST_COMMAND: cmd, MOSS_HOME: home, HOME: "/tmp/u", SECRET_THING: "x" }, stopHost: () => false, startFailed: () => {} });
+  const w = engineHostWorld({ home, os: "darwin", profile: "dev", release: "1.111.1", run, dist: false, testBuild: false, env: { MOSS_HOST_COMMAND: cmd, MOSS_HOME: home, HOME: "/tmp/u", SECRET_THING: "x", MOSS_APP_TOKEN: "dummy123" }, stopHost: () => false, startFailed: () => {} });
   w.start(w.source()!.bundlePath, { safeMode: true });
   await new Promise((r) => setTimeout(r, 5));
   expect(runs[0]!.slice(0, 3)).toEqual(["open", "-n", "-g"]);
@@ -158,6 +158,7 @@ test("a checkout's start on macOS goes through Launch Services with the run's en
   expect(runs[0]).toContain(`MOSS_HOME=${home}`);
   expect(runs[0]).toContain("HOME=/tmp/u");
   expect(runs[0]!.join(" ")).not.toContain("SECRET_THING");
+  expect(runs[0]!.join(" ")).not.toContain("dummy123");
   expect(runs[0]!.join(" ")).not.toContain("MOSS_HOST_COMMAND");
   expect(runs[0]!.slice(runs[0]!.indexOf("--args"))).toEqual(["--args", "/repo/apps/desktop", "--moss-program=host", "--safe-mode"]);
 });

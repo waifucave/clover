@@ -336,7 +336,8 @@ export function createMossServer(deps: MossServerDeps): MossServer {
         // With no pid it can't be ended, and a new one beside it would be a second app (review M6): its
         // connection closing counts as the crash instead.
         if (beat.pid === null) { deps.log?.("[moss] its process is unknown: waiting for its connection to close"); return; }
-        deps.pair?.appHung(String(conn.connId));
+        // lane HS: the pair hears of its own app only; a hung host is ended too, and its close is the supervisor's crash.
+        if (pairApps.has(conn.connId)) deps.pair?.appHung(String(conn.connId));
         killApp(beat.pid, beat.handle);
         return;
       }
@@ -677,6 +678,8 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       // quit stops nothing and its exit is no crash (spec §3.1, "quitting an app never stops work"). Stand-in until the
       // pair is retired (lanes RT, RL, then HS).
       if (r.conn.surface === "code" && r.conn.releaseDoor === undefined && !(deps.hostOwnsScreen?.() ?? false)) { pairApps.add(connId); deps.pair?.appConnected(String(connId), r.conn.features); startBeat(r.conn, peer.pid, peer.handle); }
+      // The background host has the heartbeat too: one that stops answering app.ping is ended, and counts as a crash.
+      else if (r.conn.surface === "host") startBeat(r.conn, peer.pid, peer.handle);
       // lane HS: end
       // An app AHEAD of this engine is open and waits (release door only): the pair starts no second one meanwhile.
       else if (r.conn.surface === "code" && r.conn.releaseDoor !== undefined) deps.pair?.appWaiting(String(connId));

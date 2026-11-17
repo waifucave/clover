@@ -3449,6 +3449,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     execPath: process.execPath,
     env: process.env,
     tellAppQuit: (reason, ids) => mossServer?.tellAppQuit(reason, ids),
+    // lane HS: no app started by the pair while a background host owns the screen.
+    appStartHeld: () => hostOwnsScreen(hostSupervision?.supervisor.status().state),
     // Deferred a moment, so the answer to the `pair.quit` that stopped the pair reaches its caller;
     // nothing when `stop()` itself stopped the pair.
     // The listener goes at once (no new connection reaches a daemon that is going away: an app reopened now finds nothing

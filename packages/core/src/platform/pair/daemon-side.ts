@@ -26,6 +26,10 @@ export interface DaemonPairSideInput {
   readonly now?: () => number;
   readonly after?: (ms: number, fn: () => void) => () => void;
   readonly options?: Omit<DaemonPairOptions, "desktop">;
+  /** Lane HS: while a background host owns the screen, the pair starts no app (its start is "not ready yet", tried again
+   *  later and never a crash), so no app window opens by itself and a quit window isn't brought back (§3.1, item 116). A
+   *  stand-in until the pair is retired (lanes RT, RL, then HS). */
+  appStartHeld?(): boolean;
 }
 
 export interface DaemonPairSide {
@@ -61,9 +65,11 @@ export async function startDaemonPairSide(input: DaemonPairSideInput): Promise<D
     : await resolveAppLauncher({ os: input.os, profile: input.profile, execPath: input.execPath, env: input.env }, run);
   const now = input.now ?? Date.now;
   let pair: DaemonPair | undefined;
-  const startApp = launcher === null
+  const started = launcher === null
     ? async () => "failed" as const
     : appStarter(launcher, input.runDir, { ...files, now, safeMode: () => pair?.status().safeMode ?? false });
+  // lane HS: held while a host owns the screen.
+  const startApp: typeof started = async (why) => (input.appStartHeld?.() === true ? "not-ready" : started(why));
   pair = new DaemonPair({
     now,
     after: input.after ?? realAfter,

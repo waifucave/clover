@@ -137,7 +137,10 @@ export function sourceBundleOf(program: string): string | undefined {
 /** What the engine hands the host it starts from a checkout through Launch Services, which passes no environment of its
  *  own: the home and profile, the run's test settings (`MOSS_*`), and the user home, temp folder, language and PATH. */
 export function hostEnvArgs(env: Record<string, string | undefined>): string[] {
-  const keep = (k: string) => k.startsWith("MOSS_") && k !== "MOSS_HOST_COMMAND" || ["HOME", "TMPDIR", "LANG", "PATH"].includes(k);
+  // `open`'s argv is visible to every process (`ps`): nothing named a token, a secret or a password goes through it (the
+  // host reads its app token from the home's run folder).
+  const secretish = /TOKEN|SECRET|PASSWORD|PASSPHRASE/i;
+  const keep = (k: string) => (k.startsWith("MOSS_") && k !== "MOSS_HOST_COMMAND" && !secretish.test(k)) || ["HOME", "TMPDIR", "LANG", "PATH"].includes(k);
   return Object.entries(env).filter(([k, v]) => v !== undefined && keep(k)).flatMap(([k, v]) => ["--env", `${k}=${v}`]);
 }
 
