@@ -61,6 +61,20 @@ const FRESH_SCRIPT = `
     o.observe(btn);
   });`;
 
+/** The app's notice for a press this page never got (sealed-miss.ts): main saw a mouse-down over this page's button and no
+ *  word from the page, so it asks the page to say "press again" on that button. It only shows words; it answers nothing and
+ *  spends nothing (a page script calling it shows the same words on its own card, no more). */
+const notReadyScript = (): string => `window.__mossNotReady = (option) => {
+    const all = [...document.querySelectorAll(".seal-button")];
+    const btn = all.find((x) => x instanceof HTMLElement && x.dataset.option === option) ?? all[0];
+    if (!(btn instanceof HTMLElement)) return false;
+    const st = document.querySelector(".state");
+    btn.dataset.again = "yes"; btn.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+    if (st !== null) st.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+    setTimeout(() => { delete btn.dataset.again; btn.removeAttribute("title"); if (st !== null && st.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) st.textContent = ""; }, 1800);
+    return true;
+  };`;
+
 export const SEALED_PRESS_WORDS: readonly string[] = ["received", "untrusted", "answering", "not-visible", "opening", "settling", "no-pointer", "covered", "late"];
 
 /** The card's own tokens as the page's custom properties: `card.*` alone (§5.5 "sealed frames take only these"), and
@@ -252,6 +266,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   const script = `(() => {
   const b = window.mossSealed;
   if (b === undefined) return;
+  ${notReadyScript()}
   let answering = false;
   // The whole button, uncovered (IOv2), since enough time to have been seen (S4).
   let visible = false;
@@ -447,6 +462,7 @@ export function ownCardPage(input: {
   const script = `(() => {
   const b = window.mossSealed;
   if (b === undefined) return;
+  ${notReadyScript()}
   // About a second after the page is shown (showInactive): the 1 s wait restarts when the window is shown or moved,
   // never on mouse movement, and the pointer must have entered the window after it showed, so a timed "click here"
   // prompt can't land on Approve (S3, check 3). The page is placed before it is shown, so shown is load time here.
