@@ -34,6 +34,16 @@ export interface FigureCtx {
   escape(): Promise<void>;
 }
 
+/** The sidebar back on its Bots switch, the Avatar panel closed (where the rows after these expect the window). */
+export async function backToBots(f: FigureCtx): Promise<void> {
+  for (const [selector, text] of [["button.cl-panel-toggle[aria-label=Avatar][aria-pressed=true]", undefined], [".cl-sidebar__switch-option", "Bots"]] as const) {
+    for (const d of await treeDocs(f.cdp)) {
+      const c = await f.cdp.centerOf(d.session, selector, text).catch(() => undefined);
+      if (c !== undefined) { await f.cdp.click(d.session, c.x, c.y); await sleep(500); break; }
+    }
+  }
+}
+
 type Rpc = MossClient;
 const running = async (rpc: Rpc, id: string) => until(`${id} running`, 60_000, async () => ((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running" ? true : undefined),
   async () => JSON.stringify(await rpc.request("plugin.get", { id }).catch(() => null)).slice(0, 300));
@@ -118,11 +128,12 @@ export async function generalPointsStep(f: FigureCtx): Promise<string> {
     ]);
     const dancer = hostPlugin(join(parent, "acceptance-dancer"), {
       id: "acceptance-dancer", name: "Acceptance dancer", description: "Fills the metronome's point with a list of steps, and answers each beat.",
-      contributes: { [POINT]: [{ id: "waltz", list: "lists/en/steps.json" }] },
+      contributes: { [POINT]: [{ id: "waltz", list: "lists/en/steps.json" }], commands: [{ name: "ready", description: "Wakes its host half", handler: "ready" }] },
     }, [
       "type Api = { points: { send(p: string, v: unknown): Promise<void>; onMessage(p: string, l: (m: { from: string; value: { n?: number } }) => void): () => void } };",
       `export async function start(a: Api): Promise<void> { a.points.onMessage(${JSON.stringify(POINT)}, (m) => { if (m.from === "acceptance-metronome") void a.points.send(${JSON.stringify(POINT)}, { echo: m.value.n, step: "waltz" }); }); }`,
       "export async function stop(): Promise<void> {}",
+      "export async function ready(): Promise<{ text: string }> { return { text: \"ready\" }; }",
     ]);
     mkdirSync(join(dancer, "lists", "en"), { recursive: true });
     writeFileSync(join(dancer, "lists", "en", "steps.json"), JSON.stringify(["box", "turn", "dip"]));
@@ -145,6 +156,8 @@ export async function generalPointsStep(f: FigureCtx): Promise<string> {
     await install(f, stranger, "acceptance-stranger");
     installed.push("acceptance-stranger");
 
+    // A host half hears point messages while it runs, and starts on its first call: the dancer's is woken first.
+    await until("the dancer's host half running", 30_000, async () => ((await command(f.rpc, "acceptance-dancer.ready")) === "ready" ? true : undefined), async () => command(f.rpc, "acceptance-dancer.ready"));
     // The messages: three beats out, three answers back, in order.
     const beat = await command(f.rpc, "acceptance-metronome.beat");
     if (beat !== "beat: sent") fail(`the metronome's beat: ${beat}`);
@@ -205,6 +218,7 @@ export async function figurePackStep(f: FigureCtx): Promise<string> {
     });
     return `${id} installed behind its OK card (the avatar plugin's packs line), picked in the avatar plugin's own setting; beside the coding session ${place.code}, its Avatar panel drew the pack's model with the bundled 2D renderer (format ${seen.format}, a canvas, no "can't be shown" note)`;
   } finally {
+    await backToBots(f).catch(() => undefined);
     await pick(f.rpc, "").catch(() => undefined);
     await removeAll(f.rpc, installed);
     rmSync(parent, { recursive: true, force: true });
@@ -258,6 +272,7 @@ export async function figureRendererStep(f: FigureCtx): Promise<string> {
     if (!angry.includes('"ok":false') || !angry.includes("unknown-name")) fail(`a cue the model has no name for wasn't answered plainly: ${angry}`);
     return `example-pngtuber (renderer and pack) and a controller installed behind their OK cards (the avatar plugin's renderer and figure lines); beside the coding session ${place.code} the picture-swap renderer drew Sunny; the controller's happy cue was answered ${happy.slice(5)} and the renderer swapped to its happy set; angry was answered ${angry.slice(5, 90)}`;
   } finally {
+    await backToBots(f).catch(() => undefined);
     await pick(f.rpc, "").catch(() => undefined);
     await removeAll(f.rpc, installed);
     rmSync(parent, { recursive: true, force: true });
@@ -311,6 +326,7 @@ export async function figureReactsStep(f: FigureCtx): Promise<string> {
     }, async () => `pictures ${JSON.stringify(await seen())}`);
     return `beside the coding session ${place.code} the figure followed the session's turn (${states.join(" → ")}) and played its happy picture as it ended; while Alpha spoke in the fixture voice, the renderer showed ${talked.join(" → ")}, from MOSS Voice's moss.voice.speech`;
   } finally {
+    await backToBots(f).catch(() => undefined);
     for (const id of voiced) await setVoice(id, null).catch(() => undefined);
     await pick(f.rpc, "").catch(() => undefined);
     await removeAll(f.rpc, installed);

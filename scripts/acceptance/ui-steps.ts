@@ -1528,7 +1528,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   });
 
   // 14: the bot editor, the user's way, both routes: Alpha's own Edit button (the pencil in her header), and Settings → Bots →
-  // Edit Alpha. Each time the editor is drawn: its heading, name, model and avatar controls are on screen.
+  // Edit Alpha. Each time the editor is drawn: its heading, name and model controls are on screen.
   const clickIn = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
     const at = await until(what, ms, async () => {
       for (const d of await treeDocs(cdp)) {
@@ -1550,27 +1550,15 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
     await sleep(400);
   };
-  // The bot editor's Avatar section is drawn by moss/character through `bot.editor.section`, which mounts a moment after the
-  // editor itself: wait (bounded) for the section element inside the editor before anything reads its controls. When it never
-  // comes the failure says so, not that a word is missing.
-  const AVATAR_SECTION_MS = 10_000;
-  const avatarSectionDrawn = async (how: string): Promise<void> => {
-    try {
-      await until(`the bot editor's Avatar section (${how})`, AVATAR_SECTION_MS, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-bot-editor:not(.cl-bot-editor--loading) .cl-avatar-section')").then((r) => (r?.value === true ? true : undefined), () => undefined), () => dumpFrames(cdp));
-    } catch {
-      fail(`the bot editor (${how}) opened, but its Avatar section (moss/character, bot.editor.section) never came within ${AVATAR_SECTION_MS / 1000} s`);
-    }
-  };
   const editorDrawn = async (how: string): Promise<string> => {
     await until(`the bot editor (${how})`, 30_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-bot-editor:not(.cl-bot-editor--loading)')").then((r) => (r?.value === true ? true : undefined), () => undefined), () => dumpFrames(cdp));
-    await avatarSectionDrawn(how);
     const seen = await until(`the bot editor (${how})`, 30_000, async () => {
       for (const d of await treeDocs(cdp)) {
         const r = await cdp.evaluate(d.session, `(() => {
           const e = document.querySelector('.cl-bot-editor:not(.cl-bot-editor--loading)');
           if (!e) return undefined;
           const t = e.innerText;
-          return JSON.stringify({ heading: /Edit Alpha/.test(t), name: !!e.querySelector('input[aria-label=Name]'), model: !!e.querySelector('select[aria-label=Model]'), choose: /Choose avatar/.test(t), back: /Back to the bot/.test(t) });
+          return JSON.stringify({ heading: /Edit Alpha/.test(t), name: !!e.querySelector('input[aria-label=Name]'), model: !!e.querySelector('select[aria-label=Model]'), back: /Back to the bot/.test(t) });
         })()`).catch(() => undefined);
         if (typeof r === "string") return r;
       }
@@ -1595,7 +1583,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await clickIn("Edit Alpha in Settings", '[class*=cl-settings__] button[aria-label="Edit Alpha"]', undefined);
     const two = await editorDrawn("Settings → Bots → Edit");
     await clickIn("Back to the bot", "button", "Back to the bot");
-    return `the bot editor drew its heading, name, model and avatar controls from ${one} and from ${two}`;
+    return `the bot editor drew its heading, name and model controls (the figure is the avatar plugin's own Settings section now) from ${one} and from ${two}`;
   });
 
   // 15: the general pieces the figure stands on, for any plugin (figure-steps.ts): a point's messages and the files its

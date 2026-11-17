@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CLIENT_BARE_IMPORTS, capabilityOkText } from "../../packages/plugin-sdk/src/index";
 import { EXAMPLES, fail, layerDocs, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
-import { RENDERER_PROBE, command, controller, figureBesideCode, install, pick, pictureFrame, removeAll, type FigureCtx } from "./figure-steps";
+import { RENDERER_PROBE, backToBots, command, controller, figureBesideCode, install, pick, pictureFrame, removeAll, type FigureCtx } from "./figure-steps";
 import { ensureCodingSession, toCodingSession } from "./ui-steps";
 
 export const STAGE_COPY_STEP = "a folder-installed copy of the avatar plugin, under another id with its own points and behind its OK card, is an avatar plugin like the bundled one: a renderer, a pack and a controller fill its points; with the bundled one off, its figure stands beside a coding session drawn by that renderer and its controller's cue is answered ok; the bundled one comes back when switched on again; the app logs no refusal by id";
@@ -153,6 +153,7 @@ export async function stageCopyStep(ctx: ExampleCtx, _session: string): Promise<
     said.push("the app logged no refusal of the copy's calls");
     return said.join("; ");
   } finally {
+    await backToBots(f).catch(() => undefined);
     if (switchedOff) await rpc.request("plugin.setEnabled", { id: BUNDLED, enabled: true }, 30_000).catch(() => undefined);
     await removeAll(rpc, installed);
     for (let i = 0; i < 30 && (await layerDocs(cdp, COPY_ID)).length > 0; i++) await sleep(300);
