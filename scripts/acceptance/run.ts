@@ -3210,9 +3210,12 @@ async function main(): Promise<void> {
       const card = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
       const cardText = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: card.id })).card);
       await approve(c, card);
-      await until(`${installed.id} to run after its OK`, 60_000, async () => {
+      // A follower of the feed is running before the turn it follows (`host.start: each`, the fixture's manifest): a host half
+      // that starts when a tool of it is first listed starts after the turn has begun, and a watch made then hears the turn
+      // from its second state on. `running` is set after the half's start() has returned, and its watch is made in start().
+      await until(`${installed.id}'s host half to be running after its OK`, 60_000, async () => {
         const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
-        return st === "enabled" || st === "running" ? st : undefined;
+        return st === "running" ? st : undefined;
       });
       const turnOf = async (tool: string) => {
         const seen = fake!.requests.length;
