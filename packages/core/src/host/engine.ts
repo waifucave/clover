@@ -1,7 +1,7 @@
 // The background host's side of the engine, put together for `daemon.ts` (lane HS): the real world, the supervisor,
 // the tab frames and the door, over the MOSS server's connections. The daemon adds `handlers` to its MOSS handlers,
 // calls `boot` once its socket listens, and `dispose` as it stops.
-import { type MidWork, type MossWindow, type TabView, type Viewport } from "@waifucave/moss-protocol";
+import { type AppInstallRecord, type MidWork, type MossWindow, type TabView, type Viewport } from "@waifucave/moss-protocol";
 import { SystemClock } from "../clock/system-clock";
 import type { MossConn, MossHandler } from "../ipc/moss";
 import type { Runner } from "../platform/login/live";
@@ -32,6 +32,8 @@ export interface HostSupervisionInput {
   tabs(): readonly TabView[];
   /** Stops the engine (and with it, by `app.quit`, the apps) after the host was told to go. */
   quitEverything(): void;
+  /** The newest app that carries the host (lane RL's `hostSource`); default: the world's own read of the records. */
+  source?(): AppInstallRecord | undefined;
   /** Starts an app through the OS when it isn't running (the newest record of that program). */
   launchApp?(program: "moss" | "code"): Promise<void>;
   /** R12: the host's surfaces on the screen (this computer's MOSS windows, `computers.mossWindows`). */
@@ -66,6 +68,7 @@ export function startHostSupervision(input: HostSupervisionInput): HostSupervisi
   const world = engineHostWorld({
     home: input.home, os: input.os, profile: input.profile, release: input.release, run: input.run, dist: input.dist, testBuild: input.testBuild, env: input.env,
     stopHost: (reason) => door?.stopHost(reason) ?? false,
+    ...(input.source !== undefined ? { source: input.source } : {}),
     startFailed: () => supervisor?.exited(),
     log,
   });

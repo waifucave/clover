@@ -3628,9 +3628,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const releaseRestart = new Promise<void>((resolve) => { releaseRestartNow = resolve; });
   const releaseService = new ReleaseService({
     home: releaseHome, engine: { release: engineRelease, path: process.execPath }, gate: updateGate, policy: releasePolicy, homeDir: dirs.home,
-    // TODO(lane HS): the background host's supervisor (`HostSupervisor.stop("update")`, and `boot()` after a swap that failed). Until it
-    // lands there is no host to stop.
-    host: { stop: () => {} },
+    // lane HS: the background host's supervisor: stopped for the swap, and started again after one that failed.
+    host: { stop: (reason) => hostSupervision?.supervisor.stop(reason), boot: async () => hostSupervision?.boot() },
     emit: (event) => void mossServer?.coreEvent({ ...event }), restart: () => releaseRestartNow(), log: (line) => console.error(line),
   });
   Object.assign(mossLaneHandlers, releaseHandlers(releaseService, { error: (code, message) => new MossRpcError(code, message) }));
@@ -3911,6 +3910,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     busy: () => updateGate.verdict().busy,
     tabs: () => daemonParts?.browser?.service.tabs({ kind: "user" }) ?? [],
     quitEverything: () => { if (pairSide) pairSide.pair.quit("quit"); else if (!stopping) { server.stopAccepting(); setTimeout(() => resolvePairStopped("quit everything"), 50); } },
+    // Lane RL's one source of the app that carries the host (its records, checked against the bundles, with its grace).
+    source: () => releaseHome.hostSource(),
     // The windows' mounts (and the router's island) and the pair follow the host's state.
     screenChanged: (owns) => mossServer?.hostScreen(owns),
     // R12: the host's surfaces are this computer's own windows, which a computer-use plugin must not act on.
