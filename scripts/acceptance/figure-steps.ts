@@ -16,7 +16,7 @@ import type { MossClient } from "./client";
 import { EXAMPLES, fail, layerDocs, sleep, treeDocs, until } from "./example-steps";
 
 export const GENERAL_POINTS_STEP = "a plugin's point carries messages and files, for any plugin (a metronome and a dancer, nothing about figures): the filler's OK card names the declarer's line; the declarer's message reaches the filler and its answer comes back, in order; a plugin with no entry is refused; the files the dancer's entry brings are served by the declared kinds, and nothing else of its folder";
-export const FIGURE_PACK_STEP = "the avatar plugin's figure beside a coding session in MOSS Code's window: a third-party avatar pack (the placeholder Live2D files) picked in the avatar plugin's own setting, drawn by the bundled 2D renderer in the session's Avatar panel, with no \"can't be shown\" note";
+export const FIGURE_PACK_STEP = "a home made by an earlier MOSS with the person's own models chosen draws them after the figure moved to the avatar plugin (the pick and a Live2D and a VRM own model came over into its own data; beside a coding session the bundled 2D renderer draws the one and the 3D renderer the other, from its own shared files); then the avatar plugin's figure beside a coding session in MOSS Code's window: a third-party avatar pack (the placeholder Live2D files) picked in the avatar plugin's own setting, drawn by the bundled 2D renderer in the session's Avatar panel, with no \"can't be shown\" note";
 export const FIGURE_RENDERER_STEP = "a third-party renderer for the avatar plugin (the SDK's picture-swap example, with its own pack) draws the figure beside a coding session; a plugin that fills the avatar plugin's moss.character.figure cues happy and is answered ok as the renderer swaps pictures, and is told plainly when the model has no such expression";
 export const FIGURE_REACTS_STEP = "the figure reacts: beside a coding session it follows that session's activity (a turn that ends plays the model's happy picture), and while a bot speaks (the run's fixture voice, on MOSS Voice) its renderer, which fills MOSS Voice's moss.voice.speech, shows its talking picture, then rests";
 
@@ -192,6 +192,12 @@ export async function generalPointsStep(f: FigureCtx): Promise<string> {
 // A third-party pack, drawn by the bundled 2D renderer, beside a coding session.
 
 export async function figurePackStep(f: FigureCtx): Promise<string> {
+  // First, the home's earlier figure (seedOldFigure, written before its first daemon): moved and drawn.
+  const migrated = await figureMigratedStep(f);
+  return `${migrated}; then ${await figurePackRow(f)}`;
+}
+
+async function figurePackRow(f: FigureCtx): Promise<string> {
   const parent = mkdtempSync(join(tmpdir(), "moss-figure-pack-"));
   const installed: string[] = [];
   const id = "acceptance-figure-pack";
@@ -224,6 +230,59 @@ export async function figurePackStep(f: FigureCtx): Promise<string> {
     await pick(f.rpc, "").catch(() => undefined);
     await removeAll(f.rpc, installed);
     rmSync(parent, { recursive: true, force: true });
+  }
+}
+
+// ------------------------------------------------------------------------------------------------------------------
+// A home an earlier MOSS made, with the person's own models: Alpha's figure their own Live2D model, Luna's their own VRM.
+
+/** What the migrated half of the pack row proves. */
+export const FIGURE_MIGRATED_CLAUSE = "a home made by an earlier MOSS with the person's own model chosen draws it after the figure moved to the avatar plugin: the pick and both own models (a Live2D one and a VRM one) came over into the plugin's own data, and beside a coding session the bundled 2D renderer draws the Live2D one and the 3D renderer the VRM one, each from the plugin's own shared files";
+/** The folders the earlier MOSS kept the models in (`user-layers/avatars/<bot>/<folder>/`). */
+const OLD_LIVE2D = "k1live2d";
+const OLD_VRM = "q1vrm";
+
+/** Writes, before the home's first daemon, what an earlier MOSS kept for a person who picked their own models: Alpha's
+ *  user layer naming her own Live2D model and Luna's naming a VRM one, their files in the old fenced folder. The
+ *  placeholder models are the code-made ones of Alpha's pack, copied into the run's home only. */
+export function seedOldFigure(home: string): void {
+  const stock = resolve(import.meta.dir, "..", "..", "plugins", "moss", "plugins", "alpha-figure");
+  const layers = join(home, "user-layers");
+  const live2d = join(layers, "avatars", "alpha", OLD_LIVE2D);
+  mkdirSync(live2d, { recursive: true });
+  for (const file of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(stock, "live2d", file), join(live2d, file));
+  const vrm = join(layers, "avatars", "luna", OLD_VRM);
+  mkdirSync(vrm, { recursive: true });
+  cpSync(join(stock, "vrm", "alpha.vrm"), join(vrm, "luna.vrm"));
+  writeFileSync(join(layers, "alpha.json"), JSON.stringify({ userLayer: 1, bot: "alpha", fields: { avatar: { file: `user:${OLD_LIVE2D}/alpha.model3.json`, format: "live2d", credit: "Acceptance fixture model, made by code." } } }));
+  writeFileSync(join(layers, "luna.json"), JSON.stringify({ userLayer: 1, bot: "luna", fields: { avatar: { file: `user:${OLD_VRM}/luna.vrm`, format: "vrm" } } }));
+}
+
+async function figureMigratedStep(f: FigureCtx): Promise<string> {
+  const settings = async () => Object.fromEntries((await f.rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: AVATAR })).settings.map((x) => [x.key, x.value]));
+  const live2dFile = `own/alpha/${OLD_LIVE2D}/alpha.model3.json`;
+  const vrmFile = `own/luna/${OLD_VRM}/luna.vrm`;
+  const before = await settings();
+  if (before.figure !== `own:live2d:${live2dFile}`) fail(`the earlier pick didn't come over as the avatar plugin's figure: ${JSON.stringify(before.figure)}`);
+  const own = JSON.parse(typeof before.ownModels === "string" ? before.ownModels : "[]") as { file: string; format: string }[];
+  if (!own.some((m) => m.file === live2dFile && m.format === "live2d") || !own.some((m) => m.file === vrmFile && m.format === "vrm")) fail(`the own models didn't come over: ${JSON.stringify(own)}`);
+  /** The panel's figure drawn by `format`'s renderer, with the model fetched from the plugin's own shared files. */
+  const drawn = (what: string, format: string, canvas: string, file: string) => until(what, 90_000, async () => {
+    for (const d of await treeDocs(f.cdp)) {
+      const r = await f.cdp.evaluate(d.session, `(() => { const fig = document.querySelector('.cl-figure[data-place=panel]'); if (!fig) return null; return { format: fig.getAttribute('data-format'), canvas: !!fig.querySelector(${JSON.stringify(canvas)}), refused: !!fig.querySelector('.cl-figure__empty'), fetched: performance.getEntriesByType('resource').some((e) => e.name.includes(${JSON.stringify(`/_d/moss%2Fcharacter/${file}`)})) }; })()`).catch(() => null) as { format: string; canvas: boolean; refused: boolean; fetched: boolean } | null;
+      if (r?.canvas && r.format === format && r.fetched) return r;
+    }
+    return undefined;
+  }, async () => JSON.stringify(await Promise.all((await treeDocs(f.cdp)).map((d) => f.cdp.evaluate(d.session, "(() => { const fig = document.querySelector('.cl-figure'); return fig ? fig.outerHTML.slice(0, 300) : null; })()").catch(() => null)))));
+  try {
+    const place = await figureBesideCode(f);
+    await drawn("the bundled 2D renderer drawing the moved Live2D model", "live2d", ".clvl-canvas", live2dFile);
+    await pick(f.rpc, `own:vrm:${vrmFile}`);
+    await drawn("the bundled 3D renderer drawing the moved VRM model", "vrm", "canvas", vrmFile);
+    return `the earlier MOSS's pick came over as the avatar plugin's figure (own:live2d:${live2dFile}) with both own models (${own.map((m) => m.format).join(", ")}); beside the coding session ${place.code} the bundled 2D renderer drew the Live2D one and, picked, the 3D renderer the VRM one, each fetched from /_d/moss%2Fcharacter/own/…`;
+  } finally {
+    await backToBots(f).catch(() => undefined);
+    await pick(f.rpc, "").catch(() => undefined);
   }
 }
 

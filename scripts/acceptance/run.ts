@@ -81,6 +81,7 @@ import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic,
 import { Cdp } from "./cdp";
 import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
+import { FIGURE_PACK_STEP, seedOldFigure } from "./figure-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { TOOL_SETTING_STEP, toolSettingStep } from "./tool-setting-step";
@@ -3475,6 +3476,8 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
   try {
     // The previous app's session in the home's store before the daemon first opens it (the archive row).
     if (ids.includes("archive")) seedArchive(home);
+    // What an earlier MOSS kept of the person's own figure, before the home's first daemon moves it (the figure pack row).
+    if (windowIds.some((id) => windowIndexes(id)!.includes(UI_STEPS.indexOf(FIGURE_PACK_STEP)))) seedOldFigure(home);
     await startDaemonProc();
     c = (await appDriver()).client;
     await signInKey(c);
@@ -4167,6 +4170,8 @@ async function onlyUiRun(app: { exe: string; args: string[] }): Promise<void> {
   let c: MossClient | undefined;
   let session: string | undefined;
   try {
+    // What an earlier MOSS kept of the person's own figure, before the home's first daemon moves it (the figure pack row).
+    if (onlyUi!.includes(UI_STEPS.indexOf(FIGURE_PACK_STEP))) seedOldFigure(home);
     await startDaemonProc();
     c = (await appDriver()).client;
     const plugin = "moss/model-anthropic";

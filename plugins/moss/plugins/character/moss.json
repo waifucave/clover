@@ -44,7 +44,7 @@
     "ownModels": {
       "type": "string",
       "title": "Your own models",
-      "description": "The models of your own this plugin keeps in its folder (moved from an earlier MOSS), as a list.",
+      "description": "The models of your own this plugin keeps in its own data (added in its Settings section, or moved from an earlier MOSS), as a list. They are shared with this plugin's own pages, where the bundled 2D and 3D renderers draw; a renderer plugin of another publisher can't draw them yet.",
       "default": ""
     }
   },
