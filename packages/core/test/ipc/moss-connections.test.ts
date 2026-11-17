@@ -690,6 +690,71 @@ describe("MOSS connections (C-M1)", () => {
     expect(b.pair.status()).toMatchObject({ appConnected: false, crashesInWindow: 0, startPending: null });
   });
 
+  // lane HS: the engine's lifetime with more than one program (the coordinator's four cases).
+  describe("the engine's lifetime with MOSS, MOSS Code and the host", () => {
+    const settle = () => Bun.sleep(100);
+    test("(1) MOSS and MOSS Code both up, no host: MOSS Code's Quit leaves alone; MOSS's close stops nothing; nothing restarts", async () => {
+      const b = await boot();
+      const code = await Client.connect(b.socketPath);
+      await code.hello("app", b.appToken, { surface: "code" });
+      const moss = await Client.connect(b.socketPath);
+      await moss.hello("app", b.appToken, { surface: "moss" });
+      expect((await code.request("pair.quit", { handOver: false })).result).toEqual({ ok: true });
+      code.close();
+      await settle();
+      expect(b.pair.status()).toMatchObject({ stopping: null, startPending: null, crashesInWindow: 0 });
+      expect(b.stops).toEqual([]);
+      moss.close();
+      await settle();
+      expect(b.pair.status()).toMatchObject({ stopping: null, startPending: null, crashesInWindow: 0 });
+    });
+    test("(1) with a host owning the screen: either window going stops nothing and restarts nothing", async () => {
+      const b = await boot();
+      const code = await Client.connect(b.socketPath);
+      await code.hello("app", b.appToken, { surface: "code" });
+      const moss = await Client.connect(b.socketPath);
+      await moss.hello("app", b.appToken, { surface: "moss" });
+      b.moss.hostScreen(true);
+      moss.close();
+      await settle();
+      code.close();
+      await settle();
+      expect(b.pair.status()).toMatchObject({ appConnected: false, stopping: null, startPending: null, crashesInWindow: 0 });
+    });
+    test("(2) the last window closes while a host runs: the engine stays (the host's menu stops everything)", async () => {
+      const b = await boot();
+      const code = await Client.connect(b.socketPath);
+      await code.hello("app", b.appToken, { surface: "code" });
+      // The host takes the screen (the supervisor's state, as the daemon tells the server): the window leaves the pair.
+      b.moss.hostScreen(true);
+      code.close();
+      await settle();
+      expect(b.pair.status()).toMatchObject({ stopping: null, startPending: null });
+      expect(b.stops).toEqual([]);
+    });
+    test("(3) no host and MOSS Code is the last window: its Quit stops the engine, as today's single app's does", async () => {
+      const b = await boot();
+      const code = await Client.connect(b.socketPath);
+      await code.hello("app", b.appToken, { surface: "code" });
+      await code.request("pair.quit", { handOver: false });
+      expect(b.pair.status().stopping).toBe("quit");
+      code.close();
+    });
+    test("(4) an extra app connection that is no window of ours opening and closing never stops the engine", async () => {
+      const b = await boot();
+      const code = await Client.connect(b.socketPath);
+      await code.hello("app", b.appToken, { surface: "code" });
+      for (let i = 0; i < 3; i++) {
+        const extra = await Client.connect(b.socketPath);
+        await extra.hello("app", b.appToken);
+        extra.close();
+        await settle();
+      }
+      expect(b.pair.status()).toMatchObject({ appConnected: true, stopping: null, startPending: null, crashesInWindow: 0 });
+      code.close();
+    });
+  });
+
   test("the heartbeat (R9): an app that answers app.ping stays; one that stops is ended and restarts in safe mode", async () => {
     const b = await boot({ heartbeat: { intervalMs: 20, timeoutMs: 150 } });
     const alive = await Client.connect(b.socketPath);

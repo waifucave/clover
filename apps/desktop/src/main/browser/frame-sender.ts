@@ -40,12 +40,13 @@ interface StreamState { jpeg: boolean; seq: number; busy: boolean; pending?: Hos
 export class TabFrameSender {
   readonly #streams = new Map<string, StreamState>();
 
-  constructor(private readonly send: (params: HostTabFrameParams) => Promise<unknown>, private readonly now: () => number = Date.now) {}
+  constructor(private readonly send: (params: HostTabFrameParams) => Promise<unknown>, private readonly now: () => number = Date.now, private readonly log: (line: string) => void = () => {}) {}
 
   /** One chunk of a tab stream; only a jpeg stream's pictures go on (video chunks are the other devices' stream). */
   chunk(stream: string, chunk: StreamChunk): void {
     if (chunk.kind === "config") {
       this.#streams.set(stream, { jpeg: chunk.codec === "jpeg", seq: 0, busy: false });
+      this.log(`browser: a tab's stream ${stream} started (${chunk.codec})`);
       return;
     }
     if (chunk.kind === "ended") {
@@ -63,7 +64,7 @@ export class TabFrameSender {
 
   #go(s: StreamState, frame: HostTabFrameParams): void {
     s.busy = true;
-    void this.send(frame).catch(() => undefined).finally(() => {
+    void this.send(frame).catch((e: unknown) => { if (s.seq <= 3) this.log(`browser: the engine refused a tab's picture (${frame.width}x${frame.height}): ${(e as Error).message}`); }).finally(() => {
       s.busy = false;
       const next = s.pending;
       s.pending = undefined;

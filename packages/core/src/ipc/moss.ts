@@ -550,6 +550,16 @@ export function createMossServer(deps: MossServerDeps): MossServer {
     "events.unsubscribe": (conn, p) => { for (const a of (p as { areas: string[] }).areas) conn.areas.delete(a); return { ok: true }; },
     "pair.status": () => pairStatus(),
     "pair.quit": async (conn, p) => {
+      // lane HS (the engine's lifetime with more than one program): a MOSS Code window's Quit while a MOSS window is up
+      // stops nothing: that window leaves alone (out of the pair, so its close is no crash and nothing restarts it), and
+      // the engine, the host and MOSS keep working. Quitting MOSS never stops the engine (§3.1, item 112).
+      if (conn.role === "app" && pairApps.has(conn.connId) && [...conns.values()].some((c) => c.connId !== conn.connId && c.role === "app" && c.surface === "moss")) {
+        pairApps.delete(conn.connId);
+        stopBeat(conn.connId);
+        deps.pair?.appReleased(String(conn.connId));
+        deps.log?.("[moss] MOSS Code quits alone: a MOSS window is up, so the engine keeps working");
+        return { ok: true };
+      }
       if ((p as { handOver: boolean }).handOver) await deps.handOver?.();
       // The app that asked leaves with the answer: no `app.quit` back to it (E-M1).
       deps.pair?.quit("quit", conn.role === "app" ? String(conn.connId) : undefined);

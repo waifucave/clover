@@ -1365,7 +1365,10 @@ function makePair(): Pair {
   p.handle("app.tab.command", async (params) => {
     // lane HS: the engine's stream commands (a tab's pictures for the windows and the live picture), checked here.
     const stream = streamCommandOf(params);
-    if (stream !== undefined) return { result: await browserHost().command(stream.id, stream.command) };
+    if (stream !== undefined) {
+      if (stream.command.kind === "stream") log(`browser: the engine ${stream.command.on ? "starts" : "stops"} a tab's stream ${stream.command.stream} (${stream.command.codecs?.join(",") ?? "video"})`);
+      return { result: await browserHost().command(stream.id, stream.command) };
+    }
     const a = BROWSER_METHODS.appTabCommand.params.parse(params);
     return { result: await browserHost().command(a.id, a.command) };
   });
@@ -1512,7 +1515,7 @@ function makePair(): Pair {
 
 // lane HS: start. ------------------------------------------------------------------------------------------------
 // The background host's glue (host-program.ts, host-runtime.ts, mount-plan.ts hold the decisions).
-const tabFrames = new TabFrameSender((params) => pair?.client?.request("host.tab.frame", params, 10_000) ?? Promise.resolve());
+const tabFrames = new TabFrameSender((params) => pair?.client?.request("host.tab.frame", params, 10_000) ?? Promise.resolve(), Date.now, (line) => log(line));
 
 /** The cards whose fallback this program stood down because the router placed them in another program (B1). */
 const heldOffFallbacks = new Set<string>();

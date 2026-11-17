@@ -144,7 +144,7 @@ export class EngineTabFrames implements TabFrames {
     if (format === undefined || format !== frame.format) return "refused";
     const size = imageDimensions(bytes);
     if (size === undefined || size.width !== frame.width || size.height !== frame.height) return "refused";
-    if (size.width > s.width || size.height > s.height) return "refused";
+    if (size.width > s.width || size.height > s.height) { this.#log(`[host] a tab's picture refused: ${size.width}x${size.height} over its stream's ${s.width}x${s.height}`); return "refused"; }
     const now = this.#now();
     if (now - s.lastAccepted < 1000 / PICTURE_MAX_FPS) return "dropped";
     s.lastAccepted = now;
@@ -188,6 +188,7 @@ export class EngineTabFrames implements TabFrames {
     const s: TabStream = { id: `frames-${randomUUID()}`, tab, owner: owner.connId, width: Math.min(vp.width, PICTURE_MAX_WIDTH), height: Math.min(vp.height, PICTURE_MAX_HEIGHT), lastAccepted: -Infinity, seq: 0 };
     this.#streams.set(s.id, s);
     this.#byTab.set(tab, s);
+    this.#log(`[host] a tab's pictures asked of the ${owner.program ?? "app"} program (${s.width}x${s.height})`);
     this.deps.ask(owner, "app.tab.command", { id: tab, command: { kind: "stream", stream: s.id, on: true, codecs: ["jpeg"] } }, 30_000)
       .catch((e: unknown) => this.#log(`[host] a tab's pictures did not start: ${(e as Error).message}`));
   }
