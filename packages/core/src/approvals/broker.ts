@@ -32,6 +32,8 @@ import type { Fence } from "../contracts/fence";
 import type { PathClass } from "./ordinary-paths";
 import { looksCredentialBearing, plainOf, ruleDisplay, ruleKeyHash } from "./strings";
 import { ruleShapeOf } from "./bot-check";
+import { botOwnerPlugin } from "../runtime-sdk/turn-loop/only-backends";
+import { isAnyPluginId, topPluginIdOf } from "@waifucave/moss-protocol";
 
 /** A saved rule as it sits on disk: its key's hash (what a request matches on) and a scrubbed display string. */
 export interface StoredRule {
@@ -354,6 +356,7 @@ export class MossApprovalBroker implements ApprovalBroker {
       ...(req.session === undefined ? {} : { session: req.session }),
       ...(req.bot === undefined ? {} : { bot: req.bot }),
       ...(req.pluginId === undefined ? {} : { pluginId: req.pluginId }),
+      ...ownedByOf(req),
       origin: req.origin,
       issuedAt,
       expiresAt: expires ? issuedAt + UNATTENDED_CARD_TIMEOUT_MS : null,
@@ -493,4 +496,19 @@ function ruleFieldOf(req: ApprovalRequest): { type: "rows"; rows: { label: strin
 function withoutRule<T extends Record<string, unknown>>(fields: T): Omit<T, "rule"> {
   const { rule: _dropped, ...rest } = structuredClone(fields) as Record<string, unknown>;
   return rest as Omit<T, "rule">;
+}
+
+/** A card's `ownedBy` (who hears it with plain `approvals`): the plugin whose tool's call raised it (`toolPlugin`, which
+ *  the core's approval check sets from the router's binding), and the plugin its bot was moved from (`botOwnerPlugin`),
+ *  by top-level id, each once. Written here from the request's core-set fields, never from a requester's words. */
+export function ownedByOf(req: Pick<ApprovalRequest, "toolPlugin" | "bot">): { ownedBy?: string[] } {
+  const out: string[] = [];
+  const add = (id: string | undefined) => {
+    if (id === undefined || !isAnyPluginId(id)) return;
+    const top = topPluginIdOf(id);
+    if (!out.includes(top)) out.push(top);
+  };
+  add(req.toolPlugin);
+  if (req.bot !== undefined) add(botOwnerPlugin(req.bot));
+  return out.length === 0 ? {} : { ownedBy: out };
 }

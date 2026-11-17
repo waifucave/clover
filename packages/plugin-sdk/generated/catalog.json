@@ -52,13 +52,13 @@
     },
     {
       "name": "approvals",
-      "lets": "Hear which cards are pending, never their text, and place their sealed frames",
-      "ok": "restyles approval cards",
+      "lets": "Hear which of the cards its own tools' calls raised are pending (in any session or bot's turn), never their text, and place their sealed frames",
+      "ok": "shows approval cards for its own tools",
       "warns": true
     },
     {
       "name": "approvals.all",
-      "lets": "Needs `approvals` too: hear the meta of every pending card, not only its own bots' (a plugin's OK card, a change from Settings), place their sealed frames in a surface of its own, and give each the look of its own `card.*` tokens; the card's words never reach it and the press stays the sealed frame's own",
+      "lets": "Needs `approvals` too: hear the meta of every pending card, not only its own tools' (a plugin's OK card, a change from Settings), place their sealed frames in a surface of its own, and give each the look of its own `card.*` tokens; the card's words never reach it and the press stays the sealed frame's own",
       "ok": "shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them",
       "warns": true
     },

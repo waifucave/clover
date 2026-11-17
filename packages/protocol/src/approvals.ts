@@ -135,6 +135,10 @@ export const CardMeta = z.object({
   bot: BotId.optional(),
   /** A plugin's card: whose. */
   pluginId: AnyPluginId.optional(),
+  /** The plugins whose own card this is, written by the core (never by a requester): the plugin whose tool's call
+   *  raised it, in any session or bot's turn, and the plugin its bot's record says the bot was moved from. A plugin with
+   *  plain `approvals` hears and places these alone; `approvals.all` hears every card. */
+  ownedBy: z.array(AnyPluginId).max(2).optional(),
   origin: TurnOrigin,
   issuedAt: Timestamp,
   /** Set when the turn's origin isn't the user's: denied then, 10 minutes after it was issued (§5.5). */

@@ -82,12 +82,13 @@ export function cardMethods(broker: () => CardBroker | undefined, capabilitiesOf
         ...(r.resolvedAt === undefined ? {} : { resolvedAt: r.resolvedAt }),
       };
     },
-    // A layer's own list of what waits, scoped like the events it hears: its plugin's bot's cards (a plugin with `approvals.all`:
-    // all), ids and places, never a card's text. A caller that is no plugin hears none.
+    // A layer's own list of what waits, scoped like the events it hears (`cardAudience`): the cards its plugin's own tools' calls
+    // raised and its moved bot's (a plugin with `approvals.all`: all), ids and places, never a card's text. A caller that is no
+    // plugin hears none.
     [APPROVALS_METHODS.cardPending.name]: async (conn) => {
       const mine = conn.caller.kind === "plugin" ? conn.caller.pluginId : undefined;
       if (mine === undefined) return { cards: [] };
-      return { cards: up().cards().filter((c) => cardAudience(c.bot)(mine, capabilitiesOf(mine) ?? [])).map(cardMetaOf) };
+      return { cards: up().cards().filter((c) => cardAudience(c)(mine, capabilitiesOf(mine) ?? [])).map(cardMetaOf) };
     },
     [APPROVALS_METHODS.cardFrame.name]: async (_conn, params) => {
       const { id } = params as { id: string };

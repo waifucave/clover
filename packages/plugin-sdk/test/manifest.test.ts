@@ -550,6 +550,8 @@ describe("the OK's text", () => {
     expect(lines).toContain("luna runs code on your computers.");
     expect(lines).toContain("Its code could read MOSS's logins and approve its own cards.");
     expect(lines).toContain("It restyles approval cards.");
+    // Plain `approvals`: the cards its own tools' calls raise (the owner's ruling of 2026-11-17), said as such.
+    expect(lines).toContain("It shows approval cards for its own tools.");
     expect(lines).toContain("Its components reach only api.luna.example; its host code can reach any host.");
     expect(lines).toContain("It fetches code when it runs: npx tarot-mcp.");
     expect(lines).toContain("It loads add-ons of its own, which MOSS doesn't check.");

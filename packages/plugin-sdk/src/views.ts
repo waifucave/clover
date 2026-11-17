@@ -260,6 +260,7 @@ export type CardMeta = {
   session?: string;
   bot?: string;
   pluginId?: string;
+  ownedBy?: string[];
   origin: "user" | "bot" | "routine" | "task-notification" | "agent" | "plugin" | "peer";
   issuedAt: number;
   expiresAt: number | null;

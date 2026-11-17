@@ -69,12 +69,19 @@ export function registerBotOwnership(fn: BotOwnership): () => void {
 }
 
 function ownsBot(pluginId: string, bot: string): boolean {
-  if (ownerships.size === 0) return topPluginIdOf(bot) === topPluginIdOf(pluginId);
+  const owner = botOwnerPlugin(bot);
+  return owner !== undefined && owner === topPluginIdOf(pluginId);
+}
+
+/** The top-level plugin a bot is its own bot of (`own-bot`, and a card's `ownedBy`): with records as the source, the
+ *  plugin its record says it was moved from, else none; with no records store registered, its id's own plugin. */
+export function botOwnerPlugin(bot: string): string | undefined {
+  if (ownerships.size === 0) return topPluginIdOf(bot);
   for (const fn of ownerships) {
     const o = fn(bot);
-    if (o.known) return o.plugin !== undefined && topPluginIdOf(o.plugin) === topPluginIdOf(pluginId);
+    if (o.known) return o.plugin === undefined ? undefined : topPluginIdOf(o.plugin);
   }
-  return false;
+  return undefined;
 }
 
 const SCOPES: ReadonlySet<string> = new Set(["bots", "agents", "both", "own-bot"]);

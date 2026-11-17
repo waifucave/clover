@@ -524,6 +524,12 @@ export function botApprovalCheck(
     if (known.command !== undefined) req.fields.command = { type: "code", code: plainOf(known.command) };
     if (known.host !== undefined) req.fields.host = { type: "code", code: plainOf(known.host) };
     if (known.cardAlways === true) req.cardAlways = true;
+    // A call to a plugin's tool: the plugin the router binds it to (never a core tool's, never read from the call's name), so
+    // the card is that plugin's own (`ownedBy`): its plain `approvals` hears and places it, in any session or bot's turn.
+    if (!hostTools.has(tool)) {
+      const plugin = opts.toolPlugin?.(ctx, tool);
+      if (plugin !== undefined) req.toolPlugin = plugin;
+    }
     // A bot's agent's call to a plugin tool (agents/plugin-reach.ts): its bot's saved rules answer it as they would the
     // bot's own, but its card offers no "always", which would be saved under the bot's id and answer the bot's own calls.
     if ((ctx as { offersAlways?: boolean }).offersAlways === false) req.options = [{ id: "approve", kind: "approve", label: "Approve" }, { id: "deny", kind: "deny", label: "Deny" }];

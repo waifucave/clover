@@ -1563,6 +1563,9 @@ export function ownPanelLines(manifest: Manifest | undefined): string[] {
   return lines;
 }
 
+/** The OK card's line for a plugin that restyles approval cards (`approvals`, or a theme setting `card.*` tokens). */
+export const RESTYLES_CARDS_OK_LINE = "It restyles approval cards.";
+
 export function describeOk(
   report: ManifestReport,
   opts: {
@@ -1603,7 +1606,9 @@ export function describeOk(
     const text = capabilityOkText(cap);
     if (text) lines.push(`It ${text}.`);
   }
-  if (opts.restylesCards && !report.capabilities.includes("approvals")) lines.push(`It ${capabilityOkText("approvals")}.`);
+  // A plugin that draws approval cards' surroundings (`approvals`, or a theme's `card.*` tokens) restyles them (§5.5's limit):
+  // its own line, beside what `approvals` lets it show.
+  if (opts.restylesCards || report.restylesCards) lines.push(RESTYLES_CARDS_OK_LINE);
   // Host code is held to the list only where the fence holds it to its proxy (#371's review: the sandbox there and on,
   // not merely macOS).
   const hostHeld = opts.hostNetworkHeld === true;

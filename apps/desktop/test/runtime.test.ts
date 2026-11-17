@@ -954,9 +954,9 @@ describe("the E-M1 review's fixes", () => {
   });
 });
 
-describe("a plugin's sealed frames: its own bot's cards only, bound to the document that placed them", () => {
-  const card = (id: string, bot?: string): SealedCard => ({
-    id, kind: "tool", computer: null, ...(bot === undefined ? {} : { bot }), origin: "user", issuedAt: 1, expiresAt: null, hash: "b".repeat(64),
+describe("a plugin's sealed frames: its own cards only (the core's `ownedBy`: its own tools' calls, its moved bot's), bound to the document that placed them", () => {
+  const card = (id: string, bot?: string, ownedBy?: string[]): SealedCard => ({
+    id, kind: "tool", computer: null, ...(bot === undefined ? {} : { bot }), ...(ownedBy === undefined ? {} : { ownedBy }), origin: "user", issuedAt: 1, expiresAt: null, hash: "b".repeat(64),
     fields: { title: { type: "text", text: "Run?" } }, options: [{ id: "allow_once", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }],
   });
   function placed(render = false, all = false) {
@@ -971,12 +971,15 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     const info = s.rt.describe(docFrame, WIN, token);
     const store = new SealedFrames();
     s.rt.sealed = store;
-    for (const c of [card("card_own", "fixture-card/bot"), card("card_other", "alpha"), card("card_none")]) store.fromCore(c);
+    // Its own: a call to its tool in a code session (no bot), and a bot's call to its tool. Not its own: another plugin's
+    // tool's card, a card of no plugin's tool, and a bot named like it that the core did not mark as its own (no id decides it).
+    for (const c of [card("card_own", undefined, ["fixture-card"]), card("card_ownbot", "alpha", ["fixture-card"]), card("card_other", "alpha", ["other-plugin"]), card("card_none"), card("card_named", "fixture-card/bot")]) store.fromCore(c);
     return { s, store, docFrame, mount: info.mount };
   }
 
-  test("its own bot's card gets a frame, bound to the frame of the document that placed it", () => {
+  test("its own card gets a frame (its tool's call, in a code session or a bot's turn), bound to the frame of the document that placed it", () => {
     const { s, store, docFrame, mount } = placed();
+    expect(s.rt.sealedFrameOf(docFrame, mount, "card_ownbot", "button:allow_once")).toMatch(/^moss-sealed:\/\/card\/card_ownbot\//);
     const url = s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")!;
     expect(url).toMatch(/^moss-sealed:\/\/card\/card_own\/button%3Aallow_once\?token=/);
     const token = new URL(url).searchParams.get("token")!;
@@ -984,16 +987,16 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     expect(store.boundOf(token)).toBe(`p:${docFrame.processId}:${docFrame.routingId}`);
   });
 
-  test("another bot's card, and a card of no bot, are refused, whatever the part holds", () => {
+  test("another plugin's card, a card of no plugin's tool, and a bot's card named like it but not its own, are refused, whatever the part holds", () => {
     const { s, docFrame, mount } = placed();
-    for (const id of ["card_other", "card_none"]) {
-      expect(() => s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toThrow("takes a card of this plugin's own bot");
+    for (const id of ["card_other", "card_none", "card_named"]) {
+      expect(() => s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toThrow("takes a card of this plugin's own tools");
     }
   });
 
   test("with approvals.all a plugin places any card, another bot's and a card of no bot too, whoever it is (no id decides it)", () => {
     const { s, docFrame, mount } = placed(false, true);
-    for (const id of ["card_own", "card_other", "card_none"]) expect(s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toMatch(/^moss-sealed:\/\/card\//);
+    for (const id of ["card_own", "card_other", "card_none", "card_named"]) expect(s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toMatch(/^moss-sealed:\/\/card\//);
   });
 
   test("approvals.all without approvals places nothing, and with both it places any card", () => {
@@ -1041,7 +1044,7 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     // The same rules as a frame: a field the card lacks is nothing, a card not yet here is asked again, another bot's is refused.
     expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "field:nothing")).toBe("");
     expect(s.rt.sealedFrameOf(docFrame, mount, "card_later", "button:allow_once")).toBeUndefined();
-    expect(() => s.rt.sealedFrameOf(docFrame, mount, "card_other", "button:allow_once")).toThrow("takes a card of this plugin's own bot");
+    expect(() => s.rt.sealedFrameOf(docFrame, mount, "card_other", "button:allow_once")).toThrow("takes a card of this plugin's own tools");
     expect({ minted, heard }).toEqual({ minted: [], heard: [] });
     const page = s.rt.servePlaceholder(new URL(button).pathname.slice(1))!;
     expect(page.html).toContain('<div class="seal-placeholder" aria-hidden="true">approval button</div>');
@@ -1069,7 +1072,7 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
 });
 
 describe("a part's Review on a plugin's card: the app's own page for it, by the same placing rule", () => {
-  test("a plugin's OK card of its own bot opens; another bot's card is refused; a tool card or an unknown one doesn't open", async () => {
+  test("a plugin's OK card that is its own (its moved bot's) opens; another's is refused; a tool card or an unknown one doesn't open", async () => {
     const s = setup([...readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never)]);
     const shell = mountShell(s);
     const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
@@ -1081,13 +1084,13 @@ describe("a part's Review on a plugin's card: the app's own page for it, by the 
     const store = new SealedFrames();
     s.rt.sealed = store;
     const base = { computer: null, origin: "user", issuedAt: 1, expiresAt: null, hash: "b".repeat(64), fields: {}, options: [{ id: "approve", kind: "approve", label: "Approve" }] } as const;
-    store.fromCore({ ...base, id: "card_okown", kind: "plugin-ok", bot: "fixture-card/bot" });
-    store.fromCore({ ...base, id: "card_okother", kind: "plugin-ok", bot: "alpha" });
-    store.fromCore({ ...base, id: "card_toolown", kind: "tool", bot: "fixture-card/bot" });
+    store.fromCore({ ...base, id: "card_okown", kind: "plugin-ok", bot: "fixture-card/bot", ownedBy: ["fixture-card"] });
+    store.fromCore({ ...base, id: "card_okother", kind: "plugin-ok", bot: "alpha", ownedBy: ["alpha"] });
+    store.fromCore({ ...base, id: "card_toolown", kind: "tool", ownedBy: ["fixture-card"] });
     const opened: string[] = [];
     s.rt.onCardPage = async (id) => { opened.push(id); return true; };
     expect(await s.rt.cardPageOf(docFrame, info.mount, "card_okown")).toBe(true);
-    await expect(s.rt.cardPageOf(docFrame, info.mount, "card_okother")).rejects.toThrow("takes a card of this plugin's own bot");
+    await expect(s.rt.cardPageOf(docFrame, info.mount, "card_okother")).rejects.toThrow("takes a card of this plugin's own tools");
     expect(await s.rt.cardPageOf(docFrame, info.mount, "card_toolown")).toBe(false);
     expect(await s.rt.cardPageOf(docFrame, info.mount, "card_unknown")).toBe(false);
     expect(opened).toEqual(["card_okown"]);

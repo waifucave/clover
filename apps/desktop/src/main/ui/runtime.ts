@@ -1346,7 +1346,7 @@ export class UiRuntime {
     if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("opening a card's page takes the approvals capability");
     const card = this.sealed?.get(cardId);
     if (card === undefined) return false;
-    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("opening a card's page takes a card of this plugin's own bot, or the approvals.all capability");
+    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("opening a card's page takes a card of this plugin's own tools, or the approvals.all capability");
     if (card.kind !== "plugin-ok" && !(card.kind === "change" && card.change === "plugin-update")) return false;
     return (await this.onCardPage?.(cardId)) ?? false;
   }
@@ -1355,11 +1355,12 @@ export class UiRuntime {
    *  router placed on the island (lane RT, §3.5). */
   cardSurfaceMayDraw?: (cardId: string) => boolean;
 
-  /** Whether a plugin may place a card's sealed frames: any card with `approvals.all`, else a card of its own bot's. */
-  #mayPlace(plugin: UiPlugin, card: { bot?: string }): boolean {
+  /** Whether a plugin may place a card's sealed frames: any card with `approvals.all`, else a card the core says is its own
+   *  (`ownedBy`, by top-level id: the card a call to its own tool raised, or its moved bot's), as the core tells it of them. */
+  #mayPlace(plugin: UiPlugin, card: { ownedBy?: readonly string[] }): boolean {
     if (plugin.capabilities.has("approvals") && plugin.capabilities.has("approvals.all")) return true;
-    const owner = plugin.id.split("/")[0];
-    return card.bot !== undefined && card.bot.split("/")[0] === owner;
+    const owner = plugin.id.split("/")[0]!;
+    return (card.ownedBy ?? []).includes(owner);
   }
 
   /** The `app.surface` entry a part is in or under (a surface's document draws its one entry), or undefined. */
@@ -1388,7 +1389,7 @@ export class UiRuntime {
     if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
     const card = this.sealed.get(cardId);
     if (card === undefined) return undefined;
-    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot, or the approvals.all capability");
+    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own tools, or the approvals.all capability");
     if (element.startsWith("field:") && !this.hasField(card, element.slice("field:".length))) return "";
     const tokens: Record<string, TokenValue> = {};
     for (const [name, value] of Object.entries(part.tokens)) if (name.startsWith("card.")) tokens[name] = value;
@@ -1418,10 +1419,11 @@ export class UiRuntime {
     if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
     const card = this.sealed.get(cardId);
     if (card === undefined) return undefined;
-    // A card is its own bot's plugin's to place (the core sends a plugin only those, and this holds the rule where the frame is
-    // made): a plugin with `approvals.all` places any card, every other plugin the cards of its own bots, by top-level id on both
-    // sides. A card with no bot (the user's own session, a plugin's OK, a change from Settings) is `approvals.all`'s alone.
-    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot, or the approvals.all capability");
+    // A card is its own plugin's to place (the core sends a plugin only those, and this holds the rule where the frame is made): a
+    // plugin with `approvals.all` places any card, every other plugin the cards its `ownedBy` names (a call to its own tool, in any
+    // session or bot's turn; its moved bot's). Any other card (a core tool's, a plugin's OK, a change from Settings) is
+    // `approvals.all`'s alone.
+    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own tools, or the approvals.all capability");
     // One place at a time: a surface that declares `window.cards` is given no frame of a card the router placed elsewhere ("not
     // yet": it asks again when it shows the card).
     if (part.plugin.capabilities.has("approvals.all") && this.#surfaceEntryOf(part)?.window?.cards === true && this.cardSurfaceMayDraw?.(cardId) === false) return undefined;

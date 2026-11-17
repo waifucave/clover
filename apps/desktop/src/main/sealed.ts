@@ -27,6 +27,9 @@ export interface SealedCard {
   session?: string;
   bot?: string;
   pluginId?: string;
+  /** The plugins whose own card this is, as the core wrote it (a call to that plugin's tool, its moved bot's): a part with
+   *  plain `approvals` places these alone. */
+  ownedBy?: readonly string[];
   origin: string;
   issuedAt: number;
   expiresAt: number | null;
@@ -131,7 +134,7 @@ export class SealedFrames {
     if (c === null || typeof c !== "object" || typeof c.id !== "string" || typeof c.hash !== "string" || !Array.isArray(c.options)) return;
     this.cards.set(c.id, {
       id: c.id, kind: String(c.kind ?? "tool"), ...(typeof c.change === "string" ? { change: c.change } : {}), computer: c.computer ?? null, session: c.session, bot: c.bot,
-      pluginId: c.pluginId, origin: String(c.origin ?? "user"), issuedAt: Number(c.issuedAt ?? this.now()),
+      pluginId: c.pluginId, ...(Array.isArray(c.ownedBy) ? { ownedBy: c.ownedBy.filter((x): x is string => typeof x === "string") } : {}), origin: String(c.origin ?? "user"), issuedAt: Number(c.issuedAt ?? this.now()),
       expiresAt: c.expiresAt == null ? null : Number(c.expiresAt), hash: c.hash, fields: c.fields ?? {}, options: c.options,
     });
   }
