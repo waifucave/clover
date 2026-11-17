@@ -389,7 +389,7 @@ describe("MOSS with the background host (lane HS)", () => {
 
   test("a card placed elsewhere (no window in front, no host) is told once; drawn again then elsewhere again, told again", async () => {
     const { engine } = await setup();
-    const told: { id: string; botName?: string }[] = [];
+    const told: { id: string; bot?: string; botName?: string }[] = [];
     engine.onElsewhere((c) => told.push(c));
     engine.notification("core.event", { type: "card_placed", card: "card_juniper_book", place: { kind: "elsewhere" } });
     engine.notification("core.event", { type: "card_placed", card: "card_juniper_book", place: { kind: "elsewhere" } });
