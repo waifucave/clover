@@ -7,6 +7,8 @@ import { cardHashInput, type ActivityState, type Card, type RoutineView } from "
 
 export interface FixtureBot {
   name: string;
+  model?: string;
+  instructions?: string;
   mood: ActivityState;
   tool?: string;
   face?: { shape?: string; color?: string };
@@ -19,14 +21,15 @@ export interface FixtureBot {
 
 export const BOTS: readonly FixtureBot[] = [
   {
-    name: "Juniper", mood: "working", tool: "mcp__moss__Browser", ago: 1, talk: [
+    name: "Juniper", mood: "working", tool: "mcp__moss__Browser", ago: 1, model: "anthropic/claude-sonnet",
+    instructions: "You plan trips. Book nothing without asking, keep receipts in the Travel folder, prefer window seats.", talk: [
       ["user", "Can you find me a flight to Lisbon for the 12th? Morning, window seat, under $350."],
       ["bot", "On it. I'll check three airlines and come back with the best two."],
       ["user", "Use my travel notes for the seat and the bag.", ["Travel notes.pdf"]],
       ["bot", "Got them: aisle is out, one checked bag. The 8:05 nonstop is $312.40 with a window seat. I've filled in the booking form; it needs your OK to submit."],
     ],
   },
-  { name: "Kite", mood: "asking", unread: true, ago: 3, talk: [["user", "Clean up the old build folders in the project."], ["bot", "Two folders are 4.2 GB together. I'd like to delete them; can I go ahead?"]] },
+  { name: "Kite", mood: "asking", unread: true, ago: 3, model: "openai/gpt-5.4-mini", instructions: "You keep the project tidy.", talk: [["user", "Clean up the old build folders in the project."], ["bot", "Two folders are 4.2 GB together. I'd like to delete them; can I go ahead?"]] },
   { name: "Maple", mood: "thinking", ago: 9, talk: [["user", "Plan the week's meals around what's in the fridge."], ["bot", "Thinking through the list you gave me…"]] },
   { name: "Cobalt", mood: "stuck", ago: 22, talk: [["user", "Sync the photos to the backup drive."], ["bot", "The backup drive isn't mounted, so I can't go on. Plug it in and I'll pick up where I stopped."]] },
   { name: "Fern", mood: "done", unread: true, ago: 41, talk: [["user", "Summarise the meeting notes from this morning."], ["bot", "Done: the summary is in your Notes folder, with the three action items at the top."]] },
@@ -91,6 +94,21 @@ export function cardsAt(now: number): Card[] {
     }),
   ];
 }
+
+/** The models the person has set up (`models.list`). */
+export const MODELS = [
+  { id: "anthropic/claude-sonnet", name: "Claude Sonnet", provider: "anthropic", providerName: "Anthropic", plugin: "moss/model-anthropic", efforts: ["low", "medium", "high"], images: true, signedIn: true },
+  { id: "anthropic/claude-haiku", name: "Claude Haiku", provider: "anthropic", providerName: "Anthropic", plugin: "moss/model-anthropic", efforts: [], images: true, signedIn: true },
+  { id: "openai/gpt-5.4-mini", name: "GPT-5.4 mini", provider: "openai", providerName: "OpenAI", plugin: "moss/model-openai", efforts: ["low", "high"], images: true, signedIn: false },
+];
+
+/** The person's own values on the tools (one differs from its declared default; permissions mixed). */
+export const TOOL_VALUES: readonly { server: string; tool: string; availability?: "off" | "on-demand" | "always"; permission?: "allow" | "ask" | "deny" }[] = [
+  { server: "moss_browser", tool: "Read", permission: "allow" },
+  { server: "moss_browser", tool: "Fill", availability: "off" },
+  { server: "opensky", tool: "Type", permission: "deny" },
+  { server: "opensky", tool: "Screenshot", availability: "on-demand", permission: "allow" },
+];
 
 export const PLUGINS = [
   { id: "moss/browser", name: "MOSS Browser", enabled: true, server: "moss_browser", tools: { Open: "preload", Read: "preload", Click: "on-demand", Fill: "on-demand" } },

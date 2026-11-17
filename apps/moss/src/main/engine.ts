@@ -16,7 +16,7 @@ import { RpcCallError } from "./client";
 import { MAIN_WINDOW_ID } from "./identity";
 import type { SealedFrames } from "./sealed";
 import type {
-  BotRow, BotSetting, CardRow, ConnectionKind, SettingsView, ConversationPage, Message, MossView, Piece, PieceState, PictureFrameView, PictureRow, PluginRow, RoutineRow, ToolRow,
+  BotEdit, BotRecordRow, BotRow, BotSetting, CardRow, ConnectionKind, ModelRow, SettingsView, ConversationPage, Message, MossView, Piece, PieceState, PictureFrameView, PictureRow, PluginRow, RoutineRow, ToolRow,
 } from "../shared/view";
 
 export interface EngineClient {
@@ -401,7 +401,10 @@ export class MossEngine {
     const perms = await this.read<{ plugins: { pluginId: string; server: string; tools: { name: string; permission: "allow" | "ask" | "deny"; availability?: ToolRow["availability"]; declared?: "preload" | "on-demand" }[] }[] }>("tools", "tool.permissions");
     const toolsOf = new Map<string, ToolRow[]>();
     for (const p of perms?.plugins ?? []) {
-      const rows = p.tools.map((t) => ({ server: p.server, tool: t.name, permission: t.permission, availability: t.availability ?? (t.declared === "on-demand" ? "on-demand" as const : "always" as const) }));
+      const rows = p.tools.map((t) => {
+        const declared = t.declared === undefined ? undefined : t.declared === "on-demand" ? "on-demand" as const : "always" as const;
+        return { server: p.server, tool: t.name, permission: t.permission, availability: t.availability ?? declared ?? "always", ...(declared !== undefined ? { declared } : {}) };
+      });
       toolsOf.set(p.pluginId, [...(toolsOf.get(p.pluginId) ?? []), ...rows]);
     }
     return list.plugins.filter((p) => p.parent === undefined).map((p) => ({ id: p.id, name: textOf(p.name), enabled: p.enabled, tools: toolsOf.get(p.id) ?? [] }));
@@ -486,6 +489,45 @@ export class MossEngine {
 
   async setLevel(computer: string, level: string): Promise<boolean> {
     return (await this.read("devices", "computer.setLevel", { name: computer, level })) !== undefined;
+  }
+
+  async setPermission(server: string, tool: string, permission: "allow" | "ask" | "deny"): Promise<boolean> {
+    return (await this.read("tools", "tool.setPermission", { server, tool, permission })) !== undefined;
+  }
+
+  /** One `auth` entry's sign-in: the key goes to the engine's credential store and never comes back; a browser sign-in
+   *  answers the page to open, which the caller (main) opens itself. */
+  async signIn(pluginId: string, index: number, key?: string): Promise<{ state: string; authorizeUrl?: string } | { ok: false; why: string }> {
+    const client = this.client;
+    if (client === undefined) return { ok: false, why: "MOSS isn't connected to its engine." };
+    try {
+      return await client.request<{ state: string; authorizeUrl?: string }>("plugin.auth.signIn", { id: pluginId, index, ...(key !== undefined ? { key } : {}) }, 30_000);
+    } catch (err) {
+      return { ok: false, why: notServed(err) ? "Signing in isn't served by this engine yet." : "The engine didn't take the sign-in." };
+    }
+  }
+
+  async signOut(pluginId: string, index: number): Promise<boolean> {
+    return (await this.read("account", "plugin.auth.signOut", { id: pluginId, index, card: true })) !== undefined;
+  }
+
+  async botRecord(id: string): Promise<BotRecordRow | { waiting: true }> {
+    const r = await this.read<{ bots: BotRecordView[] }>("bots", "bot.records");
+    if (r === undefined) return { waiting: true };
+    for (const b of r.bots) this.records.set(b.id, b);
+    const b = r.bots.find((x) => x.id === id);
+    if (b === undefined) return { waiting: true };
+    return { id: b.id, name: textOf(b.name), ...(b.model !== undefined ? { model: b.model } : {}), ...(b.effort !== undefined ? { effort: b.effort } : {}), ...(b.face !== undefined ? { face: b.face } : {}), instructionsBytes: b.instructionsBytes };
+  }
+
+  async editBot(id: string, patch: BotEdit): Promise<boolean> {
+    return (await this.read("bots", "bot.edit", { id, patch })) !== undefined;
+  }
+
+  async models(): Promise<ModelRow[] | { waiting: true }> {
+    const r = await this.read<{ models: { id: string; name: string | { en: string }; providerName: string | { en: string }; signedIn?: boolean }[] }>("models", "models.list", {});
+    if (r === undefined) return { waiting: true };
+    return r.models.map((m) => ({ id: m.id, title: textOf(m.name), provider: textOf(m.providerName), ready: m.signedIn !== false }));
   }
 
   /** For the tests and renders' facts: the placements MOSS holds now. */

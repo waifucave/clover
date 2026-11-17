@@ -37,6 +37,8 @@ function stub(v: MossView, page: ConversationPage | { waiting: true }): MossBrid
     cardFrame: async () => undefined, onCardHeight: none, talk: () => {}, plugins: async () => [], setAvailability: async () => false,
     addPlugin: async () => ({ ok: false, why: "no" }), settings: async () => ({ account: "waiting", signIns: "waiting", computers: "waiting", devices: "waiting" }),
     botSettings: async () => ({ waiting: true }), setBotSetting: async () => false, setLevel: async () => false,
+    setPermission: async () => false, signIn: async () => ({ ok: false, why: "no" }), signOut: async () => false,
+    botRecord: async () => ({ waiting: true }), editBot: async () => false, models: async () => ({ waiting: true }),
   };
 }
 

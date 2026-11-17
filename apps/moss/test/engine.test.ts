@@ -118,6 +118,24 @@ describe("a bot's own choices", () => {
   });
 });
 
+describe("the pages' data (Plugins, Settings, a bot's Edit view)", () => {
+  test("tools with their declared default, the person's value and permission; models; a bot's record; edits", async () => {
+    const { engine } = await setup();
+    const plugins = await engine.plugins();
+    if ("waiting" in plugins) throw new Error("waiting");
+    const fill = plugins.find((p) => p.id === "moss/browser")?.tools.find((t) => t.tool === "Fill");
+    expect(fill).toMatchObject({ availability: "off", declared: "on-demand", permission: "ask" });
+    expect(plugins.find((p) => p.id === "opensky")?.tools.find((t) => t.tool === "Type")?.permission).toBe("deny");
+    expect(await engine.setPermission("opensky", "Type", "ask")).toBe(true);
+    const models = await engine.models();
+    expect(Array.isArray(models) ? models.map((m) => m.ready) : models).toEqual([true, true, false]);
+    expect(await engine.botRecord("juniper")).toMatchObject({ id: "juniper", name: "Juniper", model: "anthropic/claude-sonnet" });
+    expect(await engine.editBot("juniper", { model: "anthropic/claude-haiku" })).toBe(true);
+    expect(await engine.botRecord("juniper")).toMatchObject({ model: "anthropic/claude-haiku" });
+    expect(await engine.signIn("fish-audio", 0, "dummy-key")).toEqual({ state: "signed-in" });
+  });
+});
+
 describe("presence and the router's placement", () => {
   test("in front showing Juniper: Juniper's card in the conversation, Kite's in the strip", async () => {
     const { client, engine } = await setup();

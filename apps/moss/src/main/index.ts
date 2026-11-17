@@ -3,7 +3,7 @@
 // one window is its own page (`moss-app://app/`), and the only other documents in it are the sealed card frames MOSS's
 // own store mints (`moss-sealed://card/…`), whose presses MOSS's main process judges itself (press.ts) and answers with
 // MOSS's own key (answer-key.ts). Quitting MOSS stops nothing: the engine, the host and every bot keep working.
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, protocol, safeStorage, session, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebFrameMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebFrameMain } from "electron";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, join, normalize, sep } from "node:path";
@@ -12,6 +12,7 @@ import { TOOL_AVAILABILITIES, type MossHelloResult, type ToolAvailability } from
 import { daemonEndpoint, type DaemonClient } from "./client";
 import { EngineConnection, locateEngine, osLauncher, tokenPath, type ConnectionState } from "./connection";
 import { MossEngine } from "./engine";
+import type { BotEdit } from "../shared/view";
 import { engineHome, MAIN_WINDOW_ID, mossIdentity, parseLaunchArgs, resolveProfile, WINDOW_PARTITION } from "./identity";
 import { memoryVault, ProgramAnswerKey, safeStorageVault } from "./answer-key";
 import { PresenceReporter } from "./presence";
@@ -451,6 +452,51 @@ function wireBridge(): void {
     if (computer === undefined || level === undefined || !personPressed(w)) return false;
     return engine.setLevel(computer, level);
   });
+
+  handle("moss:set-permission", (w, a) => {
+    const server = str(a.server, 256);
+    const tool = str(a.tool, 256);
+    const permission = a.permission === "allow" || a.permission === "ask" || a.permission === "deny" ? a.permission : undefined;
+    if (server === undefined || tool === undefined || permission === undefined || !personPressed(w)) return false;
+    return engine.setPermission(server, tool, permission);
+  });
+  handle("moss:sign-in", async (w, a) => {
+    const pluginId = str(a.pluginId, 200);
+    const index = typeof a.index === "number" && Number.isInteger(a.index) && a.index >= 0 && a.index < 32 ? a.index : undefined;
+    const key = typeof a.key === "string" && a.key.length > 0 && a.key.length <= 8192 ? a.key : undefined;
+    if (pluginId === undefined || index === undefined) return { ok: false, why: "Not a sign-in." };
+    if (!personPressed(w)) return { ok: false, why: "A sign-in starts only right after your own key press or click." };
+    const r = await engine.signIn(pluginId, index, key);
+    if ("authorizeUrl" in r && typeof r.authorizeUrl === "string") {
+      // The browser sign-in's page opens in the person's own browser, from main; the window never sees the link.
+      if (!headless && r.authorizeUrl.startsWith("https://")) void shell.openExternal(r.authorizeUrl);
+      return { state: r.state };
+    }
+    return r;
+  });
+  handle("moss:sign-out", (w, a) => {
+    const pluginId = str(a.pluginId, 200);
+    const index = typeof a.index === "number" && Number.isInteger(a.index) && a.index >= 0 && a.index < 32 ? a.index : undefined;
+    if (pluginId === undefined || index === undefined || !personPressed(w)) return false;
+    return engine.signOut(pluginId, index);
+  });
+  handle("moss:bot-record", (_w, a) => engine.botRecord(str(a.id, 64) ?? ""));
+  handle("moss:edit-bot", (w, a) => {
+    const id = str(a.id, 64);
+    const p = (a.patch ?? {}) as Record<string, unknown>;
+    if (id === undefined || !personPressed(w)) return false;
+    const patch: BotEdit = {};
+    if (typeof p.name === "string" && p.name.trim() !== "") patch.name = p.name.trim().slice(0, 80);
+    if (typeof p.instructions === "string") patch.instructions = p.instructions.slice(0, 200_000);
+    for (const k of ["model", "effort"] as const) if (p[k] === null || typeof p[k] === "string") patch[k] = p[k] === null ? null : String(p[k]).slice(0, 200);
+    if (p.face === null) patch.face = null;
+    else if (p.face !== null && typeof p.face === "object") {
+      const f = p.face as { shape?: unknown; color?: unknown };
+      patch.face = { ...(typeof f.shape === "string" ? { shape: f.shape.slice(0, 32) } : {}), ...(typeof f.color === "string" ? { color: f.color.slice(0, 32) } : {}) };
+    }
+    return engine.editBot(id, patch);
+  });
+  handle("moss:models", () => engine.models());
 
   engine.onView((v) => {
     const w = mainWindow;
