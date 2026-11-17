@@ -12,7 +12,7 @@ import { MossFence } from "../../src/fence/fence";
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
 import { runLaterExtras } from "../../src/fence/run-later";
-import { OTHER_INSTALL_APP_DATA_DIRS, OTHER_INSTALL_HOMES, OLD_INSTALL_DEV_HOME_DIR, OLD_INSTALL_HOME_DIR, otherInstallPlaces } from "../../src/other-installs";
+import { OTHER_INSTALL_APP_DATA_DIRS, OTHER_INSTALL_HOMES, OLD_INSTALL_DEV_HOME_DIR, OLD_INSTALL_HOME_DIR, otherInstallPlaces, otherInstallReadDenied } from "../../src/other-installs";
 import { persistencePlaces } from "../../src/registry/plugin-fence";
 import { darwinDescribe } from "../helpers/darwin-only";
 import { persistencePaths } from "../../src/runtime-sdk/mode-options";
@@ -69,6 +69,26 @@ describe("the fence refuses a write there for every kind of caller, and lets eve
     expect(fence.check({ op: "list", path: old }, ctx)).toEqual({ allowed: true });
     // A name that only starts like it is another folder.
     expect(fence.check({ op: "write", path: join(home, `${OLD_INSTALL_HOME_DIR}-notes`, "x") }, ctx).allowed).toBe(true);
+  });
+
+  test.each(callers)("%s: the old install's run folder, secret files and browser partitions can't be read either", (_name, ctx) => {
+    for (const os2 of ["macos", "linux", "windows"] as const) {
+      const h = os2 === "windows" ? "C:\\Users\\u" : os2 === "macos" ? "/Users/u" : "/home/u";
+      const f = new MossFence({ os: os2, home: h, mossHome: os2 === "windows" ? `${h}\\.moss` : `${h}/.moss`, canonical: (q) => q });
+      const denied = otherInstallReadDenied(os2, h);
+      expect(denied.some((d) => d.kind === "browser-profiles")).toBe(true);
+      expect(denied.filter((d) => d.kind === "secrets-file").length).toBe(os2 === "macos" ? 0 : OTHER_INSTALL_HOMES.length);
+      for (const d of denied) {
+        const inside = d.kind === "run-folder" || d.kind === "browser-profiles" ? `${d.path}${os2 === "windows" ? "\\" : "/"}x` : d.path;
+        expect([os2, d.kind, inside, f.check({ op: "read", path: inside }, ctx).allowed]).toEqual([os2, d.kind, inside, false]);
+        if (d.kind === "run-folder" || d.kind === "browser-profiles") expect(f.check({ op: "list", path: d.path }, ctx).allowed).toBe(false);
+      }
+      // The rest of the old home stays readable.
+      const settings = os2 === "windows" ? `${h}\\${OLD_INSTALL_HOME_DIR}\\settings.json` : `${h}/${OLD_INSTALL_HOME_DIR}/settings.json`;
+      expect(f.check({ op: "read", path: settings }, ctx)).toEqual({ allowed: true });
+    }
+    // On this computer's real fence too, by the same names.
+    expect(fence.check({ op: "read", path: join(old, "run", "harness-token") }, ctx).allowed).toBe(false);
   });
 
   test("a link planted in a writable folder leads into it: refused where it lands", () => {

@@ -25,6 +25,7 @@ import {
 import { canonicalPath, linksOnTheWay, TooManyLinks } from "./canonical";
 import { foldPath, nonAsciiAlias } from "./fold";
 import { instructionsReach } from "../bots/made-by";
+import { otherInstallReadDenied } from "../other-installs";
 import { botFolders, fenceLayout, globalHooksPathDirs, loginStartPaths, pendingFenced, type LaidOutKind } from "./layout";
 
 /** Pending kinds this fence enforces before B's contract has them. */
@@ -223,6 +224,9 @@ export class MossFence implements Fence {
       ...(this.#sessionData === undefined ? [] : [joinHome(this.#sessionData, this.os, "Partitions")]),
     ];
     for (const p of [...new Set(browserProfiles)]) add("browser-profiles", p);
+    // The other installs' run folders, secret files and the old app's browser partitions: read-denied as each install's
+    // own fence held them (their homes are write-denied whole through the run-later list).
+    if (this.#layout["browser-profiles"] === undefined) for (const { kind, path } of otherInstallReadDenied(this.os, this.#home)) add(kind, path);
     for (const p of this.#layout["agent-installs"] ?? [...this.#agentInstalls, ...agentConfigPaths(this.os, this.#home)]) add("agent-installs", p);
     // Each bot's memory, `<home>/bots/<bot>/memory/` (deny `caller`: `judge` binds it by pattern to the bot whose id
     // folds equal). The known bots by id, plus the folders on the disk, so an unlisted leftover is still named.

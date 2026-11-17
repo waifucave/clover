@@ -207,7 +207,8 @@ describe("the real fence on a real disk", () => {
     expect(p["session-transcripts"]).toEqual(["/Users/me/.moss/projects", ...(linkedRouterSupportsRunHome() ? ["/Users/me/.moss/sdk/projects"] : [])]);
     expect(pendingFenced({ home: "C:\\Users\\me", mossHome: "C:\\Users\\me\\.moss", os: "windows" })["hook-shell"]).toEqual(["C:\\Users\\me\\AppData\\Local\\Programs\\Git"]);
     // The secrets key, and the systemd-creds-sealed key on headless Linux: key-file on Linux, neither on macOS.
-    expect(new MossFence({ os: "linux", home: "/h", mossHome: "/h/.moss", canonical: (p) => posix.normalize(p) }).fencedSet().filter((i) => i.kind === "key-file").map((i) => i.path).sort())
+    // (The other installs' key files beside them: `other-installs-fence.test.ts`.)
+    expect(new MossFence({ os: "linux", home: "/h", mossHome: "/h/.moss", canonical: (p) => posix.normalize(p) }).fencedSet().filter((i) => i.kind === "key-file" && i.path.startsWith("/h/.moss/")).map((i) => i.path).sort())
       .toEqual(["/h/.moss/secrets.key", "/h/.moss/secrets.key.cred"]);
     expect(new MossFence({ os: "macos", home: "/h", mossHome: "/h/.moss", canonical: (p) => posix.normalize(p) }).fencedSet().some((i) => i.kind === "key-file")).toBe(false);
     const { moss, fence } = make("macos");
@@ -221,15 +222,16 @@ describe("the real fence on a real disk", () => {
       join(root, "home", "Library", "LaunchAgents"), join(root, "home", "Library", "LaunchDaemons"),
       join(root, "home", ".zshrc"), join(root, "home", ".bashrc"), join(root, "home", ".config", "fish"),
     ]));
-    expect(fence.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "MOSS Code", "Partitions"), join(root, "home", "Library", "Application Support", "MOSS Code Dev", "Partitions")]);
+    // (The other installs' partitions beside them: `other-installs-fence.test.ts`.)
+    expect(fence.fencedSet().filter((i) => i.kind === "browser-profiles" && i.path.includes("MOSS Code")).map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "MOSS Code", "Partitions"), join(root, "home", "Library", "Application Support", "MOSS Code Dev", "Partitions")]);
     // A headless session data dir fences its own Partitions (lane E passes app.getPath("sessionData")).
     const headless = new MossFence({ home: join(root, "home"), mossHome: join(root, "home", ".moss"), sessionData: join(root, "home", "app-data", "default", "session"), canonical: (x) => x });
     expect(headless.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toContain(join(root, "home", "app-data", "default", "session", "Partitions"));
     // Both orders: a dev app passing its own userData, and the shipped app passing its own, still fence both profiles.
     const devApp = new MossFence({ os: "macos", home: join(root, "home"), mossHome: join(root, "home", ".moss"), userData: join(root, "home", "Library", "Application Support", "MOSS Code Dev"), canonical: (x) => x });
-    expect(devApp.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "MOSS Code", "Partitions"), join(root, "home", "Library", "Application Support", "MOSS Code Dev", "Partitions")]);
+    expect(devApp.fencedSet().filter((i) => i.kind === "browser-profiles" && i.path.includes("MOSS Code")).map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "MOSS Code", "Partitions"), join(root, "home", "Library", "Application Support", "MOSS Code Dev", "Partitions")]);
     const shippedApp = new MossFence({ os: "macos", home: join(root, "home"), mossHome: join(root, "home", ".moss"), userData: join(root, "home", "Library", "Application Support", "MOSS Code"), canonical: (x) => x });
-    expect(shippedApp.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "MOSS Code", "Partitions"), join(root, "home", "Library", "Application Support", "MOSS Code Dev", "Partitions")]);
+    expect(shippedApp.fencedSet().filter((i) => i.kind === "browser-profiles" && i.path.includes("MOSS Code")).map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "MOSS Code", "Partitions"), join(root, "home", "Library", "Application Support", "MOSS Code Dev", "Partitions")]);
   });
 
   test("login-start kinds partition the list: every path is a made dir, a safe file, an unsafe file, or MOSS's own", () => {

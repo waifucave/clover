@@ -58,6 +58,22 @@ export function otherInstallPlaces(os: "macos" | "linux" | "windows", home: stri
   return [...OTHER_INSTALL_HOMES.map((o) => p.join(home, o.dir)), ...OTHER_INSTALL_APP_DATA_DIRS.map((d) => p.join(appData, d))];
 }
 
+/** What the fence hides from READS of every tool runner in the other installs (as each install's own fence did): each
+ *  home's run folder (its tokens and sockets), its secret store's file and key files (Windows and Linux; macOS keeps
+ *  them in the Keychain), and the old app's browser partitions (its signed-in sites), by the fence's own kinds. */
+export function otherInstallReadDenied(os: "macos" | "linux" | "windows", home: string): { kind: "run-folder" | "secrets-file" | "key-file" | "browser-profiles"; path: string }[] {
+  const p = os === "windows" ? win32 : posix;
+  const appData = os === "macos" ? p.join(home, "Library", "Application Support") : os === "windows" ? p.join(home, "AppData", "Roaming") : p.join(home, ".config");
+  const out: { kind: "run-folder" | "secrets-file" | "key-file" | "browser-profiles"; path: string }[] = [];
+  for (const o of OTHER_INSTALL_HOMES) {
+    const h = p.join(home, o.dir);
+    out.push({ kind: "run-folder", path: p.join(h, "run") });
+    if (os !== "macos") out.push({ kind: "secrets-file", path: p.join(h, "secrets.enc") }, { kind: "key-file", path: p.join(h, "secrets.key") }, { kind: "key-file", path: p.join(h, "secrets.key.cred") });
+  }
+  for (const d of OTHER_INSTALL_APP_DATA_DIRS) out.push({ kind: "browser-profiles", path: p.join(appData, d, "Partitions") });
+  return out;
+}
+
 /** Their Keychain services, and what each is: a MOSS daemon, script or test never reads or writes one. */
 export const OTHER_INSTALL_KEYCHAIN_SERVICES: readonly { service: string; what: string }[] = [
   { service: WINTER_KEYCHAIN_SERVICE, what: "the live Winter install's Keychain service" },

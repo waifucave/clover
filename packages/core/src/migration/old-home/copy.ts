@@ -77,7 +77,11 @@ export interface CopyReport {
 }
 
 /** Top-level entries of the old home that never travel (see the file's header). */
-export const LEFT_OUT_TOP: readonly string[] = ["run", "logs", "cache", "bin", "login", "update", "install.json", "credentials", "devices", "plugins-state"];
+export const LEFT_OUT_TOP: readonly string[] = [
+  "run", "logs", "cache", "bin", "login", "update", "install.json", "credentials", "devices", "plugins-state",
+  // The old secret store's file and key files (Windows and Linux): its secrets never come over (ruling 7).
+  "secrets.enc", "secrets.key", "secrets.key.cred",
+];
 /** The one file of `runtimes/` and the marks of `migration/` that do travel. */
 const KEPT_UNDER: Readonly<Record<string, readonly string[]>> = {
   runtimes: ["runtimes/runtime-state.db"],
