@@ -40,7 +40,12 @@ export function readReport(file: string): Report[] {
   } catch {
     return [];
   }
-  return text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Report);
+  // The agent is another process appending one line per `appendFileSync`: a read that lands mid-write sees the line cut short
+  // (a write across a page boundary shows its first page first; review 12's flood on a Linux runner: "Unterminated string").
+  // Only lines whose newline has arrived are read; the cut one comes whole on the next look (the callers poll).
+  const lines = text.split("\n");
+  if (!text.endsWith("\n")) lines.pop();
+  return lines.filter(Boolean).map((l) => JSON.parse(l) as Report);
 }
 
 /** Waits until the agent has reported `n` blocks in all. */

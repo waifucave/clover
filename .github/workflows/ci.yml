@@ -286,6 +286,9 @@ jobs:
         working-directory: apps/desktop
         env:
           MOSS_UI_TESTS: "1"
+          # A macOS runner's software VP8 encoder made 2.5 fps once with the machine busy (14 on its other runs; a Mac 10 to 30): the
+          # stream step's floor is 5 fps unset, 2 here, which still tells a working stream from a stuck one.
+          MOSS_STREAM_MIN_FPS: ${{ runner.os == 'macOS' && '2' || '' }}
         run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/browser.test.ts test/browser-stream.test.ts
 
       # Lane L-M3: the same fixtures where the display changes. Windows at 150 % and 200 % (a viewport that draws at

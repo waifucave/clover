@@ -122,12 +122,17 @@ export async function surfaceCopyStep(ctx: ExampleCtx, session: string): Promise
     said.push(`the copy island drew the plugin OK card's ${frames} sealed frames, a card of no bot`);
 
     // 4. One place at a time, as the bundled island does: the window in front, the copy lets go; the window back, it draws again.
-    const seen = (re: RegExp) => ctx.appLog().split("\n").some((l) => re.test(l) && l.includes(card.id));
+    const times = (re: RegExp) => ctx.appLog().split("\n").filter((l) => re.test(l) && l.includes(card.id)).length;
+    const seen = (re: RegExp) => times(re) > 0;
     setFront(true);
     await until("the OK card moved to the window's own card", 20_000, async () => (seen(/moved to the window's own card \(window foreground\)/) ? true : undefined));
     await until("the copy island to let go of the frames", 20_000, async () => ((await sealedFramesOf(ctx, MIRROR_ID.island, card.id)) === 0 ? true : undefined));
+    // The card's first move back to the island came with the window's first move to the front (the log has that line already): the
+    // move this wait is for is the NEXT one, after the window goes back.
+    const toIsland = /moved to the island \(window not foreground\)/;
+    const movesBefore = times(toIsland);
     setFront(false);
-    await until("the OK card moved back to the island", 20_000, async () => (seen(/moved to the island \(window not foreground\)/) ? true : undefined));
+    await until("the OK card moved back to the island", 20_000, async () => (times(toIsland) > movesBefore ? true : undefined));
     await until("the copy island to draw the frames again", 30_000, async () => ((await sealedFramesOf(ctx, MIRROR_ID.island, card.id)) >= 3 ? true : undefined));
     if (!(await islandDrawsOkCard(cdp))) fail("no document draws the OK card's Review after the copy island took it back");
     said.push("one place at a time: the copy island let go of the frames with the window in front and drew them again with it back");
