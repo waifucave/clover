@@ -69,7 +69,8 @@ const releaseBanner = document.getElementById("moss-release")!;
 async function drawRelease(): Promise<void> {
   const state = await root.call("registry.state").catch(() => undefined) as { release?: ReleaseNoticeView } | undefined;
   releaseBanner.replaceChildren();
-  if (state?.release === undefined) { releaseBanner.hidden = true; return; }
+  // With no shell mounted the stage's note says it (renderOrNote); the banner is for a shell that is showing.
+  if (state?.release === undefined || shown === undefined) { releaseBanner.hidden = true; return; }
   const w = releaseWords(state.release);
   releaseBanner.hidden = false;
   releaseBanner.append(w.text);

@@ -30,7 +30,7 @@ import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
 import { cliLauncher, installEngineCopy, locateDaemonBinary } from "./pair/login";
-import { appRelease, bundlePathOf, BringWatch, ReleaseCatchUp, writeOwnRecord, type ReleaseNotice, type UpdateOutcome } from "./release";
+import { appRelease, bundlePathOf, createRelease, writeOwnRecord } from "./release";
 import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
@@ -186,34 +186,14 @@ let updater: Updater | undefined;
 // engine to be brought in and says it waits for work to finish).
 const ownRelease = appRelease(app.getVersion(), typeof __MOSS_TEST_BUILD__ === "string" ? process.env.MOSS_TEST_APP_RELEASE : undefined);
 const ownBundle = bundlePathOf(app.getPath("exe"), process.platform, process.env);
-let releaseNotice: ReleaseNotice | undefined;
-function setReleaseNotice(n: ReleaseNotice | undefined): void {
-  releaseNotice = n;
-  log(`release: ${n === undefined ? "no notice" : `notice ${n.kind}${"phase" in n ? ` (${n.phase})` : ""}`}`);
-  if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });
-  tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(n === undefined ? {} : { status: n.kind === "waiting" || n.kind === "switching" ? "Waiting to switch to a newer MOSS…" : n.kind === "offline" ? "Offline: MOSS Code can't update yet" : "Updating MOSS Code…" }) });
-}
-/** A test build's stand-in for the update server (`MOSS_TEST_UPDATE_OUTCOME`: offline, none, failed, ready:<version>): no real update is ever fetched. */
-function testUpdateOutcome(): UpdateOutcome | undefined {
-  if (typeof __MOSS_TEST_BUILD__ !== "string") return undefined;
-  const v = process.env.MOSS_TEST_UPDATE_OUTCOME;
-  if (v === undefined) return undefined;
-  if (v.startsWith("ready:")) return { kind: "ready", version: v.slice(6) };
-  return v === "offline" || v === "none" ? { kind: v } : { kind: "failed", why: "a test's stand-in" };
-}
-const catchUp = new ReleaseCatchUp({
-  check: async () => testUpdateOutcome() ?? (updater !== undefined ? updater.checkNow() : { kind: "unavailable" }),
-  install: () => {
-    if (testUpdateOutcome() !== undefined) { log("release: a test build's stand-in update installs here (nothing is installed)"); return true; }
-    return updater?.install(true) ?? false;
+const { catchUp, bringWatch, notice: releaseNotice } = createRelease({
+  testEnv: typeof __MOSS_TEST_BUILD__ === "string" ? process.env : undefined,
+  updater: () => updater,
+  bring: async (p) => await pair.client!.request<{ state: "waiting" | "switching" }>("release.bring", p, 10_000),
+  changed: (n) => {
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });
+    tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(n === undefined ? {} : { status: n.kind === "waiting" || n.kind === "switching" ? "Waiting to switch to a newer MOSS…" : n.kind === "offline" ? "Offline: MOSS Code can't update yet" : "Updating MOSS Code…" }) });
   },
-  notice: setReleaseNotice,
-  after: (ms, fn) => { setTimeout(fn, typeof __MOSS_TEST_BUILD__ === "string" && Number(process.env.MOSS_TEST_RELEASE_RETRY_MS) > 0 ? Number(process.env.MOSS_TEST_RELEASE_RETRY_MS) : ms); },
-  log: (line) => log(line),
-});
-const bringWatch = new BringWatch({
-  bring: async (p) => (await pair.client!.request<{ state: "waiting" | "switching" }>("release.bring", p, 10_000)),
-  notice: setReleaseNotice,
   log: (line) => log(line),
 });
 /** When a downloaded update installs (updater.ts): at the daemon's first idle moment, or at the user's Quit. */
@@ -786,7 +766,7 @@ async function ready(): Promise<void> {
   startBrowser();
   // One release for everything (spec §3.1): this app's record under the home (before any engine runs), then its engine put under
   // the home under the install lock, so the login item and every start use the NEWEST installed copy, not this app's own.
-  if (app.isPackaged) writeOwnRecord(home, { program: "code", bundlePath: ownBundle, release: ownRelease }, log);
+  if (app.isPackaged || typeof __MOSS_TEST_BUILD__ === "string") writeOwnRecord(home, { program: "code", bundlePath: ownBundle, release: ownRelease }, log);
   const bundledEngine = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
   if (bundledEngine !== undefined && app.isPackaged && typeof __MOSS_TEST_BUILD__ !== "string") {
     const placed = await installEngineCopy({ binary: bundledEngine, home, profile: identity.profile, bundlePath: ownBundle });
@@ -1519,7 +1499,7 @@ const pageDeps = {
   keyTarget: () => (corePage === "key" ? keyTarget : undefined),
   registryReady: () => registryReady,
   daemonDown: () => pair.stuck !== undefined,
-  releaseNotice: () => releaseNotice,
+  releaseNotice,
   switchNow: () => void bringWatch.switchNow(),
 };
 

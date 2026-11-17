@@ -10,7 +10,7 @@ import { daemonEndpoint } from "../src/main/protocol/client";
 import { Pair } from "../src/main/pair/pair";
 import { appHello, readAppToken } from "../src/main/pair/start";
 import { checkAndDownload, isOfflineError } from "../src/main/updater";
-import { appRelease, behindFrom, BringWatch, bundlePathOf, ReleaseCatchUp, recordPath, writeOwnRecord, type ReleaseNotice, type UpdateOutcome } from "../src/main/release";
+import { appRelease, behindFrom, createRelease, testUpdateOutcome, BringWatch, bundlePathOf, ReleaseCatchUp, recordPath, writeOwnRecord, type ReleaseNotice, type UpdateOutcome } from "../src/main/release";
 import { readCalls, startFakeDaemon, type FakeDaemon } from "./fake-core/fake-daemon";
 
 const homes: string[] = [];
@@ -175,5 +175,29 @@ describe("an app that is ahead", () => {
     const w = new BringWatch({ bring: async () => { throw new Error("no"); }, notice: (n) => notices.push(n), log: () => {} });
     await w.start("2.0.0", "/x");
     expect(notices.at(-1)).toEqual({ kind: "cannot", needs: "2.0.0" });
+  });
+});
+
+describe("a test build's stand-ins", () => {
+  test("the update outcome is read from the environment of a test build only", () => {
+    expect(testUpdateOutcome(undefined)).toBeUndefined();
+    expect(testUpdateOutcome({})).toBeUndefined();
+    expect(testUpdateOutcome({ MOSS_TEST_UPDATE_OUTCOME: "offline" })).toEqual({ kind: "offline" });
+    expect(testUpdateOutcome({ MOSS_TEST_UPDATE_OUTCOME: "ready:2.0.0" })).toEqual({ kind: "ready", version: "2.0.0" });
+  });
+  test("a release build's catch-up goes to its updater, and its notice is held for the window", async () => {
+    const changed: (ReleaseNotice | undefined)[] = [];
+    let installs = 0;
+    const r = createRelease({
+      testEnv: undefined,
+      updater: () => ({ checkNow: async () => ({ kind: "ready", version: "2.0.0" }), install: () => { installs++; return true; } }),
+      bring: async () => ({ state: "waiting" }),
+      changed: (n) => changed.push(n),
+      log: () => {},
+    });
+    r.catchUp.start("2.0.0");
+    await new Promise((res) => setTimeout(res, 5));
+    expect(installs).toBe(1);
+    expect(r.notice()).toEqual({ kind: "updating", phase: "installing", needs: "2.0.0" });
   });
 });

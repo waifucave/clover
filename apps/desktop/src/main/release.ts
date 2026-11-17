@@ -177,3 +177,47 @@ export class BringWatch {
     this.d.notice(undefined);
   }
 }
+
+/** A test build's stand-in for the update server (`MOSS_TEST_UPDATE_OUTCOME`: offline, none, failed, ready:<version>): no real
+ *  update is ever fetched. Read only by a test-marked build (the caller passes `env` only then). */
+export function testUpdateOutcome(env: NodeJS.ProcessEnv | undefined): UpdateOutcome | undefined {
+  const v = env?.MOSS_TEST_UPDATE_OUTCOME;
+  if (v === undefined) return undefined;
+  if (v.startsWith("ready:")) return { kind: "ready", version: v.slice(6) };
+  return v === "offline" || v === "none" ? { kind: v } : { kind: "failed", why: "a test's stand-in" };
+}
+
+export interface ReleaseDeps {
+  /** The environment a TEST BUILD reads its stamps from; undefined in a release build. */
+  testEnv: NodeJS.ProcessEnv | undefined;
+  updater(): { checkNow(): Promise<UpdateOutcome>; install(now: boolean): boolean } | undefined;
+  /** `release.bring` on the pair's connection. */
+  bring(p: { release: string; bundlePath: string; now?: boolean }): Promise<{ state: "waiting" | "switching" }>;
+  /** The notice changed: the window and the tray say it. */
+  changed(n: ReleaseNotice | undefined): void;
+  log(line: string): void;
+}
+
+/** What the app holds of its release: the notice, the catch-up of an app that is behind, the watch of one that is ahead. */
+export function createRelease(d: ReleaseDeps): { catchUp: ReleaseCatchUp; bringWatch: BringWatch; notice(): ReleaseNotice | undefined } {
+  let current: ReleaseNotice | undefined;
+  const notice = (n: ReleaseNotice | undefined): void => {
+    current = n;
+    d.log(`release: ${n === undefined ? "no notice" : `notice ${n.kind}${"phase" in n ? ` (${n.phase})` : ""}`}`);
+    d.changed(n);
+  };
+  const stand = testUpdateOutcome(d.testEnv);
+  const retry = Number(d.testEnv?.MOSS_TEST_RELEASE_RETRY_MS);
+  const catchUp = new ReleaseCatchUp({
+    check: async () => stand ?? (await d.updater()?.checkNow()) ?? { kind: "unavailable" },
+    install: () => {
+      if (stand !== undefined) { d.log("release: a test build's stand-in update installs here (nothing is installed)"); return true; }
+      return d.updater()?.install(true) ?? false;
+    },
+    notice,
+    after: (ms, fn) => { setTimeout(fn, retry > 0 ? retry : ms); },
+    log: d.log,
+  });
+  const bringWatch = new BringWatch({ bring: d.bring, notice, log: d.log });
+  return { catchUp, bringWatch, notice: () => current };
+}

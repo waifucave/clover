@@ -16,6 +16,7 @@ import { SystemClock } from "../clock/system-clock";
 import { engineBinaryPath, placeEngine, verifyStagedEngine, type CopyPolicy } from "./engine-copy";
 import { EngineReleaseHome } from "./release-home";
 import { appPeerRequirement } from "../platform/peer-signature";
+import { endpointAnswers, resolveEndpoint } from "../platform/transport";
 import { DEVELOPER_ID_CLAUSES } from "../bundled-identities";
 
 export const ENGINE_INSTALL_USAGE = "usage: moss-core engine install --app <the app's bundle path> [--build <id>]";
@@ -25,6 +26,8 @@ export interface EngineInstallEnv {
   execPath?: string;
   release?: string;
   platform?: NodeJS.Platform;
+  /** Test seam: whether an engine answers on this home (default: a dial of its socket). */
+  engineRunning?: () => Promise<boolean>;
   /** Test seam: the staged copy's check (default: `verifyStagedEngine`). */
   verify?: (staged: string, release: string) => void;
   out(line: string): void;
@@ -40,6 +43,14 @@ export async function runEngineInstall(argv: readonly string[], env: EngineInsta
   const exec = realpathSync(env.execPath ?? process.execPath);
   const dest = engineBinaryPath(env.home, platform);
   try {
+    // A running engine reads its bundled tree and is the one to be swapped, by `release.bring` once nothing is mid-work: the app
+    // that starts beside it never places a copy under it (the engine's tree is checked file by file against its own manifest).
+    const running = await (env.engineRunning ?? (() => endpointAnswers(resolveEndpoint(join(env.home, "run"), platform === "win32" ? "win32" : platform === "darwin" ? "darwin" : "linux").path)))();
+    if (running) {
+      const have = new EngineReleaseHome({ home: env.home, engine: release, clock: new SystemClock(), place: () => {} }).installed();
+      env.out(JSON.stringify({ installed: false, deferred: true, binary: dest, release: have?.release ?? release, ...(have?.build !== undefined ? { build: have.build } : {}) }));
+      return 0;
+    }
     const profile = resolveMossProfile();
     const policy: CopyPolicy = { platform, profile, developerId: platform === "darwin" && appPeerRequirement(profile).includes(DEVELOPER_ID_CLAUSES), records: () => [] };
     const home = new EngineReleaseHome({

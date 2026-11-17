@@ -10,6 +10,7 @@ import { engineBinaryPath } from "../../src/update/engine-copy";
 const root = mkdtempSync(join(tmpdir(), "moss-rl-eic-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 let n = 0;
+let running = false;
 
 function app(release: string): { exec: string; bundle: string } {
   const bundle = join(root, `app${n++}`);
@@ -24,7 +25,7 @@ function app(release: string): { exec: string; bundle: string } {
 }
 async function run(home: string, a: { exec: string; bundle: string }, release: string, extra: string[] = []) {
   const out: string[] = [], err: string[] = [];
-  const code = await runEngineInstall(["--app", a.bundle, ...extra], { home, execPath: a.exec, release, platform: "linux", out: (l) => out.push(l), err: (l) => err.push(l) });
+  const code = await runEngineInstall(["--app", a.bundle, ...extra], { home, execPath: a.exec, release, platform: "linux", engineRunning: async () => running, out: (l) => out.push(l), err: (l) => err.push(l) });
   return { code, out: out.map((l) => JSON.parse(l)), err };
 }
 
@@ -46,6 +47,18 @@ describe("engine install", () => {
     expect((await run(home, app("1.1.0"), "1.1.0")).out[0]).toMatchObject({ installed: true, release: "1.1.0" });
     expect((await run(home, app("1.0.0"), "1.0.0", ["--build", "99"])).out[0]).toMatchObject({ installed: false, release: "1.1.0" });
     expect(readFileSync(engineBinaryPath(home), "utf8")).toContain("moss 1.1.0");
+  });
+
+  test("an engine that is already running is never swapped under: nothing is placed, and it says it was deferred", async () => {
+    const home = join(root, "h5");
+    await run(home, app("1.0.0"), "1.0.0");
+    running = true;
+    try {
+      const r = await run(home, app("2.0.0"), "2.0.0");
+      expect(r.out[0]).toMatchObject({ installed: false, deferred: true, release: "1.0.0" });
+      expect(readFileSync(engineBinaryPath(home), "utf8")).toContain("moss 1.0.0");
+      expect(readFileSync(join(home, "bin", "plugins", "p", "f"), "utf8")).toBe("1.0.0");
+    } finally { running = false; }
   });
 
   test("an engine that doesn't say it is its release is never placed", async () => {
