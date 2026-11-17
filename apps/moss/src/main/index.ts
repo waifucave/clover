@@ -247,10 +247,10 @@ async function openWindow(): Promise<BrowserWindow> {
   win.webContents.on("before-mouse-event", (_event, mouse) => {
     if (mouse.type === "mouseDown") record.mouseDown(id);
   });
-  win.webContents.on("before-input-event", (event, input) => {
-    if (isTalkKey(input)) {
-      // The talk key belongs to MOSS's main process alone: the page never gets it.
-      event.preventDefault();
+  win.webContents.on("before-input-event", (_event, input) => {
+    if (isTalkKey(input) || (talk.holding && input.type === "keyUp" && input.code === "Space")) {
+      // The talk key belongs to MOSS's main process: it reads the key here and never prevents it (Chromium would then drop
+      // the key's release, and the hold would never end); the preload keeps it from every page (preload.ts).
       if (input.type === "keyDown" && !input.isAutoRepeat) talk.down("key");
       else if (input.type === "keyUp") talk.up();
       return;
