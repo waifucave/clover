@@ -9,7 +9,7 @@ import { ruleKeyHash } from "../../../src/approvals/strings";
 import { applyCarry, carryFromOldRegistry } from "../../../src/migration/old-home/carry";
 import { readChoice } from "../../../src/migration/old-home/choice";
 import { copyOldHome, OldEngineRunning, stagedCopyReady } from "../../../src/migration/old-home/copy";
-import { leftBehindFrom, leftBehindLines } from "../../../src/migration/old-home/left-behind";
+import { leftBehindFrom, leftBehindLines, modelProvidersOf } from "../../../src/migration/old-home/left-behind";
 import { NEW_MANIFEST_FILE, NEW_PLUGIN_SDK, NEW_ROOT_PLUGIN, NEW_SDK_CONFIG, NEW_USAGE_LEDGER, OLD_MANIFEST_FILE, OLD_PLUGIN_SDK, OLD_ROOT_PLUGIN, OLD_USAGE_LEDGER } from "../../../src/migration/old-home/names";
 import { oldHomePaths } from "../../../src/migration/old-home/paths";
 import { applyStagedCopy } from "../../../src/migration/old-home/swap";
@@ -386,6 +386,24 @@ describe("the registry's carried records", () => {
     // Once.
     expect(existsSync(oldHomePaths(home).carry)).toBe(false);
     expect(applyCarry(home, memoryRegistryStore())).toBe(false);
+  });
+});
+
+describe("the models the old install ran on", () => {
+  test("their providers are named for their keys to be entered again, from the settings and the bots' records", () => {
+    const records = [
+      JSON.stringify({ provider: { model: "codex-oauth/gpt-5.6-sol" }, providers: { anthropic: { baseUrl: "http://127.0.0.1:1" } } }),
+      JSON.stringify({ bot: "alpha", layers: [{ model: "anthropic/claude-fable-5" }] }),
+      JSON.stringify({ model: "not a qualified id" }),
+      "not json",
+    ];
+    expect(modelProvidersOf(records)).toEqual(["anthropic", "codex-oauth"]);
+    const left = leftBehindFrom({ modelRecords: records });
+    expect(left.models).toEqual(["anthropic", "codex-oauth"]);
+    expect(leftBehindLines(left)[0]).toStartWith("Sign in again or enter your keys again for: Anthropic; Codex.");
+    // A provider named by its own sign-in already is not named twice.
+    const both = leftBehindLines({ ...left, plugins: [{ pluginId: "moss/model-anthropic", names: ["anthropic:default"] }] });
+    expect(both[0]).toStartWith("Sign in again or enter your keys again for: Anthropic (anthropic:default); Codex.");
   });
 });
 
