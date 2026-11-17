@@ -9,7 +9,7 @@
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
 import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "node:fs";
-import { hostname, release as osRelease, userInfo } from "node:os";
+import { homedir, hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,7 +56,7 @@ import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Upda
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
 // lane HS: start
-import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostStartInfo, hostTrayMenu, midWorkWarning, takeHostLock, type HostLock, type HostTrayActions } from "./host-program";
+import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostProfileAndHome, hostStartInfo, hostTrayMenu, midWorkWarning, takeHostLock, type HostLock, type HostTrayActions } from "./host-program";
 import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
 import { fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
 import { TabFrameSender } from "./browser/frame-sender";
@@ -97,7 +97,9 @@ import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webP
 // lane HS: start. Which program this process is: MOSS Code's window, or the background host (host-program.ts), and its
 // identity; the host's lock, taken once the single-instance lock is (below).
 const program = desktopProgram(process.argv, process.execPath);
-const identity = program === "host" ? hostIdentity(resolveAppProfile(process.env)) : appIdentity(resolveAppProfile(process.env));
+// lane HS: the host's profile and home (the dev helper is the dev profile on its own home, whatever Launch Services passed).
+const hostWhere = program === "host" ? hostProfileAndHome(process.env, process.execPath, homedir()) : undefined;
+const identity = hostWhere !== undefined ? hostIdentity(hostWhere.profile) : appIdentity(resolveAppProfile(process.env));
 let hostLock: HostLock | null | undefined;
 /** What this process runs (mount-plan.ts): from the hello's mount list, and the host's state for a window. */
 let mountNow: MountPlan = mountPlan(program, program === "host" ? SURFACE_MOUNTS.host : undefined);
@@ -116,7 +118,7 @@ const headless = args.headless;
 const invisible: "shown" | "hidden" | undefined = headless && args.capture === undefined && (!app.isPackaged || typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string")
   ? (process.env.MOSS_TEST_INVISIBLE === "1" ? "shown" : process.env.MOSS_TEST_INVISIBLE === "hidden" ? "hidden" : undefined)
   : undefined;
-const home = daemonHome(process.env);
+const home = hostWhere?.home ?? daemonHome(process.env);
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
 declare const __MOSS_TEST_BUILD__: string | false | undefined;
 // The source acceptance run's own build of the app (apps/desktop/scripts/build.ts --acceptance, which only

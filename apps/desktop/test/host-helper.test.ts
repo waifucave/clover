@@ -70,3 +70,12 @@ test("electron-builder runs it after packing, before the fuses and the signature
   const yml = readFileSync(join(import.meta.dir, "..", "electron-builder.yml"), "utf8");
   expect(yml).toMatch(/^afterPack: scripts\/host-helper\.mjs$/m);
 });
+
+test("the dev app's helper runs the checkout's built main from a two-file stub", () => {
+  const app = fakeApp("Electron");
+  const host = makeHostHelper({ appPath: app, appName: "Electron", appId: "com.waifucave.moss.code.dev", devMain: "/r/apps/desktop/out/main/index.js", devPackage: { name: "@waifucave/moss-desktop", version: "0.124.0" } }) as string;
+  expect(host.endsWith("MOSS Host Dev.app")).toBe(true);
+  const pkg = JSON.parse(readFileSync(join(host, "Contents", "Resources", "app", "package.json"), "utf8"));
+  expect(pkg).toEqual({ name: "@waifucave/moss-desktop", version: "0.124.0", type: "module", main: "boot.js" });
+  expect(readFileSync(join(host, "Contents", "Resources", "app", "boot.js"), "utf8")).toContain('import "file:///r/apps/desktop/out/main/index.js";');
+});

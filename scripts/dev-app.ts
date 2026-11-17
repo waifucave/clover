@@ -27,6 +27,8 @@ import { appRequirement, MOSS_APP_IDENTIFIER, MOSS_TEAM_ID } from "../packages/c
 import { OPENING_ENTITLEMENTS } from "../packages/core/src/platform/peer-signature";
 import { devDaemonHome, devOs, resolveDevSigningIdentity, type DevOs } from "./dev-daemon-lib";
 import { codesignDevArgs } from "./release/lib";
+import { PROGRAM_IDENTIFIERS } from "../packages/protocol/src/index";
+import { hostRequirement } from "../packages/core/src/host/world";
 
 export interface DevAppPlan {
   os: DevOs;
@@ -86,7 +88,14 @@ export interface DevAppSignInput {
   teamId: string;
   entitlements: string;
   keychain?: string;
+  /** The background host's dev helper (`MOSS Host Dev.app`, lane HS): made inside the copy by the packaging hook's own
+   *  code (`apps/desktop/scripts/host-helper.mjs make-dev`), then signed inside out as `com.waifucave.moss.host.dev`
+   *  and checked against the engine's requirement for it, before the app that seals it. */
+  host?: { script: string; desktop: string };
 }
+
+/** The dev helper inside the dev app, and the names of what it holds (its frameworks, its renamed helpers). */
+export const DEV_HOST_HELPER = "MOSS Host Dev";
 
 /**
  * The commands that make the dev app's signed copy, in order: copy Electron.app, give it the dev app's identifier and
@@ -108,17 +117,30 @@ export function devAppSignSteps(input: DevAppSignInput): string[][] {
     ["plutil", "-replace", "CFBundleDisplayName", "-string", "MOSS Code Dev", plist],
     ...nested.map((n) => ["codesign", "--force", "--deep", "--sign", input.identityHash, "--options", "runtime", "--timestamp=none",
       ...(n.endsWith(".app") ? ["--entitlements", input.entitlements] : []), ...keychain, join(input.target, "Contents", "Frameworks", n)]),
+    ...(input.host === undefined ? [] : devHostSteps(input, nested, keychain)),
     codesignDevArgs(input.target, input.identityHash, MOSS_APP_IDENTIFIER.dev, input.teamId, input.entitlements, input.keychain),
     ["codesign", "--verify", "--deep", "--strict", `-R=${appRequirement("dev", input.teamId)}`, input.target],
   ];
 }
 
+function devHostSteps(input: DevAppSignInput, nested: readonly string[], keychain: readonly string[]): string[][] {
+  const helper = join(input.target, "Contents", "Frameworks", `${DEV_HOST_HELPER}.app`);
+  const inside = nested.map((n) => (n.startsWith("Electron Helper") ? `${DEV_HOST_HELPER} Helper${n.slice("Electron Helper".length)}` : n));
+  return [
+    ["bun", input.host!.script, "make-dev", input.target, input.host!.desktop],
+    ...inside.map((n) => ["codesign", "--force", "--deep", "--sign", input.identityHash, "--options", "runtime", "--timestamp=none",
+      ...(n.endsWith(".app") ? ["--entitlements", input.entitlements] : []), ...keychain, join(helper, "Contents", "Frameworks", n)]),
+    codesignDevArgs(helper, input.identityHash, PROGRAM_IDENTIFIERS.host.dev, input.teamId, input.entitlements, input.keychain),
+    ["codesign", "--verify", "--deep", "--strict", `-R=${hostRequirement("dev", input.teamId)}`, helper],
+  ];
+}
+
 /** Whether the signed copy must be made again: none yet, or made from another Electron or with another identity. */
-export function devAppStale(stamp: string | null, want: { electron: string; identity: string }): boolean {
+export function devAppStale(stamp: string | null, want: { electron: string; identity: string; host?: number }): boolean {
   if (stamp === null) return true;
   try {
-    const got = JSON.parse(stamp) as { electron?: unknown; identity?: unknown };
-    return got.electron !== want.electron || got.identity !== want.identity;
+    const got = JSON.parse(stamp) as { electron?: unknown; identity?: unknown; host?: unknown };
+    return got.electron !== want.electron || got.identity !== want.identity || (want.host !== undefined && got.host !== want.host);
   } catch { return true; }
 }
 
@@ -162,7 +184,8 @@ function devSignedElectron(root: string, electron: string): string {
     },
   });
   const version = (JSON.parse(readFileSync(join(dirname(dirname(source)), "package.json"), "utf8")) as { version: string }).version;
-  const want = { electron: version, identity: identity.hash };
+  // `host`: the layout's version with the background host's dev helper inside (lane HS); a copy made before it is made again.
+  const want = { electron: version, identity: identity.hash, host: 1 };
   const stamp = existsSync(stampPath) ? readFileSync(stampPath, "utf8") : null;
   const executable = join(target, DEV_APP_EXECUTABLE);
   if (!devAppStale(stamp, want) && existsSync(executable)
@@ -171,6 +194,7 @@ function devSignedElectron(root: string, electron: string): string {
   const steps = devAppSignSteps({
     source, target, nested: readdirSync(join(source, "Contents", "Frameworks")), identityHash: identity.hash, teamId: MOSS_TEAM_ID,
     entitlements: join(root, "packaging", "macos", "entitlements.mac.plist"),
+    host: { script: join(root, "apps", "desktop", "scripts", "host-helper.mjs"), desktop: join(root, "apps", "desktop") },
     ...(process.env.MOSS_MAC_DEV_KEYCHAIN ? { keychain: process.env.MOSS_MAC_DEV_KEYCHAIN } : {}),
   });
   for (const step of steps) {

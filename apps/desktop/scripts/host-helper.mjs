@@ -17,10 +17,11 @@
 // Windows and Linux: no helper bundle. The host is the app's own executable started with `--moss-program=host` (the
 // engine's task `\MOSS\moss-host` and user unit `moss-host.service`, which those packages install), since neither OS
 // signs a running image (spec §3.1: the hello's `surface` and the caller check stand in there).
-import { cpSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 /** The helper's name and identifier per profile (the engine's own: packages/core/src/host/world.ts, protocol's
  *  PROGRAM_IDENTIFIERS). */
@@ -57,7 +58,10 @@ function toXml(path) {
 }
 
 /** Lays the helper out inside `appPath` (a packed, unsigned macOS app). Returns the helper's path. */
-export function makeHostHelper({ appPath, appName, appId }) {
+/** `devMain`: the dev app's helper (scripts/dev-app.ts), whose Electron runs the checkout's built main rather than an asar:
+ *  its `Resources/app` is a two-file stub (`package.json` with the desktop package's name and version, `boot.js`) that
+ *  imports `devMain`. */
+export function makeHostHelper({ appPath, appName, appId, devMain, devPackage }) {
   const { name, identifier } = hostHelperIdentity(appId);
   const contents = join(appPath, "Contents");
   const frameworks = join(contents, "Frameworks");
@@ -107,7 +111,21 @@ export function makeHostHelper({ appPath, appName, appId }) {
   xml = xml.replace(/\s*<key>CFBundleDocumentTypes<\/key>\s*<array>[\s\S]*?<\/array>/, "");
   writeFileSync(join(hc, "Info.plist"), xml);
   if (existsSync(join(contents, "PkgInfo"))) cpSync(join(contents, "PkgInfo"), join(hc, "PkgInfo"));
+  if (devMain !== undefined) {
+    const stub = join(hc, "Resources", "app");
+    mkdirSync(stub, { recursive: true });
+    writeFileSync(join(stub, "package.json"), `${JSON.stringify({ name: devPackage.name, version: devPackage.version, type: "module", main: "boot.js" }, null, 2)}\n`);
+    writeFileSync(join(stub, "boot.js"), `// The dev host runs the checkout's built main (scripts/dev-app.ts).\nimport ${JSON.stringify(pathToFileURL(devMain).href)};\n`);
+  }
   return host;
+}
+
+// `bun apps/desktop/scripts/host-helper.mjs make-dev <dev app> <desktop folder>`: the dev app's helper (scripts/dev-app.ts).
+if (process.argv[2] === "make-dev" && process.argv.length === 5) {
+  const [appPath, desktop] = [process.argv[3], process.argv[4]];
+  const pkg = JSON.parse(readFileSync(join(desktop, "package.json"), "utf8"));
+  const host = makeHostHelper({ appPath, appName: "Electron", appId: "com.waifucave.moss.code.dev", devMain: join(desktop, "out", "main", "index.js"), devPackage: { name: pkg.name, version: pkg.version } });
+  console.log(`  • dev host helper  ${host}`);
 }
 
 /** electron-builder's `afterPack`. */

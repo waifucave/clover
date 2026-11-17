@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOST_LOCK_FILE, HOST_START_FILE, MOSS_ERR } from "@waifucave/moss-protocol";
-import { HOST_PROGRAM_ARG, desktopProgram, headlessUserData, hostHello, hostIdentity, hostTrayMenu, midWorkWarning, readHostStart, secondHostRetryMs, takeHostLock } from "../src/main/host-program";
+import { HOST_PROGRAM_ARG, desktopProgram, headlessUserData, hostHello, hostIdentity, hostTrayMenu, midWorkWarning, readHostStart, secondHostRetryMs, takeHostLock, hostProfileAndHome } from "../src/main/host-program";
 import { TabFrameSender, jpegSize, type HostTabFrameParams } from "../src/main/browser/frame-sender";
 import { CORE_STRINGS_EN } from "../src/main/ui/core-strings";
 
@@ -123,4 +123,13 @@ describe("a tab's pictures to the engine", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sent).toHaveLength(2);
   });
+});
+
+test("the dev helper is the dev profile on its own home, never the dist home; the packaged host follows the app's rule", () => {
+  const dev = "/r/dist/dev/app/MOSS Code Dev.app/Contents/Frameworks/MOSS Host Dev.app/Contents/MacOS/MOSS Host Dev";
+  const dist = "/Applications/MOSS Code.app/Contents/Frameworks/MOSS Host.app/Contents/MacOS/MOSS Host";
+  expect(hostProfileAndHome({}, dev, "/Users/u")).toEqual({ profile: "dev", home: "/Users/u/.moss-dev" });
+  expect(hostProfileAndHome({ MOSS_HOME: "/t/h" }, dev, "/Users/u")).toEqual({ profile: "dev", home: "/t/h" });
+  expect(() => hostProfileAndHome({ MOSS_HOME: "/Users/u/.moss" }, dev, "/Users/u")).toThrow(/dist home/);
+  expect(hostProfileAndHome({}, dist, "/Users/u")).toEqual({ profile: "dist", home: "/Users/u/.moss" });
 });

@@ -37,6 +37,17 @@ export function desktopProgram(argv: readonly string[], execPath = ""): DesktopP
 }
 
 
+/** The host's profile and home: the dev helper (`MOSS Host Dev.app`, which Launch Services starts with no environment
+ *  unless the engine passes one) is always the dev profile, on `MOSS_HOME` or else `~/.moss-dev`, never the dist home;
+ *  anything else follows the app's own rule (`MOSS_PROFILE`, `MOSS_HOME` or `~/.moss`). */
+export function hostProfileAndHome(env: Record<string, string | undefined>, execPath: string, userHome: string): { profile: AppProfile; home: string } {
+  const devHelper = execPath.includes("/MOSS Host Dev.app/Contents/MacOS/");
+  const profile: AppProfile = devHelper || env.MOSS_PROFILE === "dev" ? "dev" : "dist";
+  const home = env.MOSS_HOME !== undefined && env.MOSS_HOME !== "" ? env.MOSS_HOME : join(userHome, devHelper ? ".moss-dev" : ".moss");
+  if (devHelper && home === join(userHome, ".moss")) throw new Error("the dev host never runs on MOSS's dist home");
+  return { profile, home };
+}
+
 /** The host's identity per profile: its fixed identifier, and the name its user data and protected storage take. */
 export function hostIdentity(profile: AppProfile): AppIdentity {
   return profile === "dev"

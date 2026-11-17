@@ -213,7 +213,9 @@ export function engineHostWorld(input: EngineHostWorldInput): HostWorld & HostWo
       if (!exists(helper)) throw new Error(`${bundlePath} carries no host helper`);
       const verify = await input.run(["codesign", "--verify", "--strict", `-R=${hostRequirement(input.profile)}`, helper]);
       if (!verify.ok) throw new Error(`the host helper in ${bundlePath} is not signed as MOSS's host`);
-      if (!(await input.run(["open", "-n", "-g", "-a", helper])).ok) throw new Error("Launch Services refused the host");
+      // The engine's own home and profile go with it (Launch Services passes no environment of its own); nothing else.
+      const env = ["MOSS_HOME", "MOSS_PROFILE"].flatMap((k) => (input.env[k] ? ["--env", `${k}=${input.env[k]}`] : []));
+      if (!(await input.run(["open", "-n", "-g", ...env, "-a", helper])).ok) throw new Error("Launch Services refused the host");
       return;
     }
     if (input.os === "linux") {
