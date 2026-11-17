@@ -18,7 +18,8 @@
   "capabilities": [
     "activity.read.sessions",
     "activity.read.bots",
-    "overlay"
+    "overlay",
+    "files"
   ],
   "settings": {
     "figure": {
@@ -189,11 +190,18 @@
                       "pace"
                     ]
                   }
+                },
+                "entry": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\.[A-Za-z0-9.]{1,24}$"
+                  }
                 }
               }
             },
             "title": "Figure formats",
-            "doc": "A model format a renderer draws (its entry in `moss.character.renderer` has this format as its key): its id, its name and what it can do beyond drawing (`lipsync`, `expressions`, `motions`, `outfits`, `lookat`, `pace`)."
+            "doc": "A model format a renderer draws (its entry in `moss.character.renderer` has this format as its key): its id, its name, what it can do beyond drawing (`lipsync`, `expressions`, `motions`, `outfits`, `lookat`, `pace`), and `entry`, the extensions of the file that names a model of it (`.model3.json`), when the person may add their own models of it in the avatar's Settings."
           },
           "moss.character.packs": {
             "shape": "list",

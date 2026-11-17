@@ -43,8 +43,8 @@ describe("moss.json (spec §5.9, format 1)", () => {
     expect(ui[2]!.declares!["moss.character.packs"]!.files).toMatchObject({ file: { kinds: expect.any(Array) } });
   });
 
-  test("it holds no retired capability; it reads the activity feed of sessions and of bots, and floats over the screen (`overlay`)", () => {
-    expect([...manifest.capabilities].sort()).toEqual(["activity.read.bots", "activity.read.sessions", "overlay"]);
+  test("it holds no retired capability; it reads the activity feed of sessions and of bots, floats over the screen (`overlay`), and reads the files the person picks for their own models (`files`)", () => {
+    expect([...manifest.capabilities].sort()).toEqual(["activity.read.bots", "activity.read.sessions", "files", "overlay"]);
     expect(manifest.settings.onScreen).toMatchObject({ type: "boolean", default: false, scope: "device" });
   });
 

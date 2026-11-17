@@ -34,7 +34,7 @@
         "capabilities": [
           "lipsync",
           "expressions"
-        ]
+        ], "entry": [".pngtuber.json"]
       }
     ],
     "moss.character.packs": [

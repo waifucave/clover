@@ -54,3 +54,8 @@
 .cl-figure-settings__figure:disabled { cursor: default; opacity: 0.6; }
 .cl-figure-settings__face { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--moss-color-hairline); }
 .cl-figure-settings__switch { display: flex; align-items: center; gap: var(--moss-space-s); }
+.cl-figure-settings__own { display: grid; gap: var(--moss-space-xs); }
+.cl-figure-settings__own-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--moss-space-xs); }
+.cl-figure-settings__own-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--moss-space-s); }
+.cl-figure-settings__add { display: flex; gap: var(--moss-space-s); flex-wrap: wrap; }
+.cl-figure-settings__said { margin: 0; color: var(--moss-color-text-muted); }

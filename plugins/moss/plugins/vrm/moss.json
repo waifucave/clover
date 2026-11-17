@@ -34,7 +34,7 @@
           "lookat",
           "pace",
           "outfits"
-        ]
+        ], "entry": [".vrm", ".glb"]
       }
     ],
     "moss.voice.speech": [

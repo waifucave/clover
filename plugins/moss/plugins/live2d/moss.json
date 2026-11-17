@@ -35,7 +35,7 @@
           "outfits",
           "lookat",
           "pace"
-        ]
+        ], "entry": [".model3.json"]
       }
     ],
     "moss.voice.speech": [
