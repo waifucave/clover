@@ -65,6 +65,10 @@ if (where === "moss-app:" && location.host === "app" && window.top === window) {
     botRecord: (id) => ipcRenderer.invoke("moss:bot-record", { id }),
     botInstructions: (id) => ipcRenderer.invoke("moss:bot-instructions", { id }),
     editBot: (id, patch) => ipcRenderer.invoke("moss:edit-bot", { id, patch }),
+    archiveBot: (id) => ipcRenderer.invoke("moss:archive-bot", { id }),
+    archivedBots: () => ipcRenderer.invoke("moss:archived-bots"),
+    restoreBot: (id) => ipcRenderer.invoke("moss:restore-bot", { id }),
+    pictureInput: (kind) => ipcRenderer.send("moss:picture-input", { kind }),
     models: () => ipcRenderer.invoke("moss:models"),
   };
   contextBridge.exposeInMainWorld("moss", bridge);

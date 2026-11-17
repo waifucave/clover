@@ -6,7 +6,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebFrameMain } from "electron";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, extname, join, normalize, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BotFace as ProtocolBotFace, TOOL_AVAILABILITIES, type MossHelloResult, type ToolAvailability } from "@waifucave/moss-protocol";
 import { daemonEndpoint, type DaemonClient } from "./client";
@@ -15,13 +15,14 @@ import { EngineConnection, locateEngine, osLauncher, tokenPath, type ConnectionS
 import { MossEngine } from "./engine";
 import type { BotEdit } from "../shared/view";
 import { engineHome, MAIN_WINDOW_ID, mossIdentity, parseLaunchArgs, resolveProfile, WINDOW_PARTITION } from "./identity";
-import { memoryVault, ProgramAnswerKey, safeStorageVault } from "./answer-key";
+import { fileVault, memoryVault, ProgramAnswerKey, safeStorageVault, vaultChoice } from "./answer-key";
+import { refusedLaunchSwitches } from "./debug-guard";
 import { PresenceReporter } from "./presence";
 import { answerPress, PressRecord } from "./press";
 import { OWN_ELEMENT, SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { alwaysSentence, summarize as summarizeCard } from "./card-summary";
-import { isTalkKey, Talk, TALK_COMMAND } from "./voice";
+import { isTalkKey, Talk } from "./voice";
 import { runSmoke, runRender } from "./test-runs";
 
 declare const __MOSS_TEST_BUILD__: string | false;
@@ -55,6 +56,17 @@ if (headless) {
   if (process.platform === "darwin") app.dock?.hide();
 }
 
+// No debugging door (debug-guard.ts): checked before any window or engine connection. A test-marked headless run that
+// asks for its DevTools port (the acceptance's) takes `--remote-debugging-port` alone.
+{
+  const testDebug = typeof __MOSS_TEST_BUILD__ === "string" && headless && process.env.MOSS_TEST_DEBUG === "1";
+  const refused = refusedLaunchSwitches({ argv: process.argv, hasSwitch: (n) => app.commandLine.hasSwitch(n), packaged: app.isPackaged, env: process.env, testDebug });
+  if (refused.length > 0) {
+    console.error(`moss: refusing to start with ${refused.map((n) => `--${n}`).join(", ")}: they would let another program drive MOSS's window`);
+    app.exit(2);
+  }
+}
+
 const APP_SCHEME = "moss-app";
 const SEALED_SCHEME = "moss-sealed";
 protocol.registerSchemesAsPrivileged([APP_SCHEME, SEALED_SCHEME].map((scheme) => ({ scheme, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } })));
@@ -71,7 +83,16 @@ const sealed = new SealedFrames("moss");
 const engine = new MossEngine(sealed, log);
 const record = new PressRecord();
 const presence = new PresenceReporter(log);
-const answerKey = new ProgramAnswerKey(app.isPackaged && !headless && !testBuild ? safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage) : memoryVault(), log);
+const answerKey = new ProgramAnswerKey((() => {
+  // The acceptance's kept key is read only in a test-marked build (the label tested inline, so a real build has none of it).
+  const testKeyFile = typeof __MOSS_TEST_BUILD__ === "string" ? process.env.MOSS_TEST_ANSWER_KEY : undefined;
+  const linuxPlainText = process.platform === "linux" && app.isPackaged && !headless && !testBuild ? (() => { try { return safeStorage.getSelectedStorageBackend() === "basic_text"; } catch { return true; } })() : false;
+  const choice = vaultChoice({ packaged: app.isPackaged, headless, testBuild, profile, platform: process.platform, ...(testKeyFile !== undefined && isAbsolute(testKeyFile) ? { testKeyFile } : {}), linuxPlainText });
+  if (choice.kind === "file") return fileVault(choice.file);
+  if (choice.kind === "dev-file") return fileVault(join(app.getPath("userData"), "answer-key.dev"));
+  if (choice.kind === "safe-storage") return safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage);
+  return memoryVault();
+})(), log);
 let device: string | undefined;
 let mainWindow: BrowserWindow | undefined;
 /** What the window shows now, as its page said (checked against the bots the engine has). */
@@ -227,7 +248,9 @@ async function openWindow(): Promise<BrowserWindow> {
     return mainWindow;
   }
   windowSession ??= session.fromPartition(WINDOW_PARTITION);
-  const offscreen = args.render !== undefined || args.smoke !== undefined;
+  // A test-marked headless run draws offscreen (a never-shown window paints nothing, and a card's visibility reading would
+  // never say it shows); a real headless run is never one a person presses in.
+  const offscreen = args.render !== undefined || args.smoke !== undefined || (testBuild && headless);
   const win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 640, minHeight: 480, show: false, title: identity.productName,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#161A33" : "#F6F4EE",
@@ -271,6 +294,8 @@ async function openWindow(): Promise<BrowserWindow> {
   win.once("ready-to-show", () => {
     if (!headless) win.show();
   });
+  // A headless run puts nothing on the screen: should anything ever show this window, it says so (the tests look for it).
+  win.on("show", () => { if (headless) log("window: shown while headless"); });
   await win.loadURL(`${APP_SCHEME}://app/index.html`);
   return win;
 }
@@ -281,10 +306,30 @@ function frameKey(f: WebFrameMain | null | undefined): string | undefined {
 
 /** The test build may say the window is in front while headless (the renders and the UI test place cards in it). */
 const testFront = testBuild && process.env.MOSS_TEST_FRONT === "1";
+/** A test-marked headless run's stand-in for the window coming to the front and going behind (a headless window is never
+ *  the focused one): the file `MOSS_TEST_MAIN_FRONT_FILE` names holds `front` or `back`, read every 100 ms; each change
+ *  is reported to the router at once. Compiled out of a real build (the label is tested inline). */
+let testFrontSeam: boolean | undefined;
+function startFrontSeam(): void {
+  if (typeof __MOSS_TEST_BUILD__ === "string" && headless && process.env.MOSS_TEST_MAIN_FRONT_FILE) {
+    const file = process.env.MOSS_TEST_MAIN_FRONT_FILE;
+    setInterval(() => {
+      let word = "";
+      try { word = readFileSync(file, "utf8").trim(); } catch { return; }
+      const next = word === "front" ? true : word === "back" ? false : undefined;
+      if (next === undefined || next === testFrontSeam) return;
+      testFrontSeam = next;
+      log(`window: the test seam says MOSS's window is ${next ? "in front" : "not in front"}`);
+      if (!next) talk.cancel();
+      pushPresence();
+    }, 100).unref?.();
+  }
+}
 
 function standing(windowId: number): { window: string; visible: boolean; focused: boolean; minimized: boolean } | undefined {
   const w = mainWindow;
   if (w === undefined || w.isDestroyed() || w.id !== windowId) return undefined;
+  if (testFrontSeam !== undefined) return { window: MAIN_WINDOW_ID, visible: true, focused: testFrontSeam, minimized: false };
   if (testFront) return { window: MAIN_WINDOW_ID, visible: true, focused: true, minimized: false };
   return { window: MAIN_WINDOW_ID, visible: w.isVisible(), focused: w.isFocused(), minimized: w.isMinimized() };
 }
@@ -340,9 +385,11 @@ function personPressed(w: BrowserWindow): boolean {
 
 const talk = new Talk(async (held) => {
   const client = connection.client;
-  if (client === undefined) return false;
+  // The active voice plugin's own held command (voice.ts `talkCommandOf`), read from the plugins' declarations.
+  const command = engine.talkCommand();
+  if (client === undefined || !("command" in command)) return false;
   try {
-    await client.request("command.run", { name: TALK_COMMAND, held }, 10_000);
+    await client.request("command.run", { name: command.command, held }, 10_000);
     return true;
   } catch {
     return false;
@@ -423,11 +470,11 @@ function wireBridge(): void {
     } else talk.up();
   });
   handle("moss:plugins", () => engine.plugins());
-  handle("moss:set-availability", (_w, a) => {
+  handle("moss:set-availability", (w, a) => {
     const server = str(a.server, 256);
     const tool = str(a.tool, 256);
     const availability = (TOOL_AVAILABILITIES as readonly string[]).includes(String(a.availability)) ? a.availability as ToolAvailability : undefined;
-    if (server === undefined || tool === undefined || availability === undefined) return false;
+    if (server === undefined || tool === undefined || availability === undefined || !personPressed(w)) return false;
     return engine.setAvailability(server, tool, availability);
   });
   handle("moss:add-plugin", async (w, a) => {
@@ -504,6 +551,22 @@ function wireBridge(): void {
     return engine.editBot(id, patch);
   });
   handle("moss:models", () => engine.models());
+  handle("moss:archive-bot", (w, a) => {
+    const id = str(a.id, 64);
+    if (id === undefined || !personPressed(w)) return false;
+    return engine.archiveBot(id);
+  });
+  handle("moss:archived-bots", () => engine.archivedBots());
+  handle("moss:restore-bot", (w, a) => {
+    const id = str(a.id, 64);
+    if (id === undefined || !personPressed(w)) return false;
+    return engine.restoreBot(id);
+  });
+  // A bot's screen is watch only (§6.10): a click, key or scroll on it reaches nothing; main says so, and sends nothing.
+  on("moss:picture-input", (_w, a) => {
+    const kind = a.kind === "pointer" || a.kind === "key" || a.kind === "wheel" ? a.kind : "input";
+    log(`picture: input refused (watch only): a ${kind} on the bot's screen reaches nothing`);
+  });
 
   engine.onView((v) => {
     const w = mainWindow;
@@ -613,6 +676,8 @@ if (!app.requestSingleInstanceLock()) {
     connection.stop();
   });
   void app.whenReady().then(async () => {
+    if (headless) log("audio: muted (headless: every page muted)");
+    startFrontSeam();
     windowSession = session.fromPartition(WINDOW_PARTITION);
     await hardenSession(windowSession);
     wireBridge();

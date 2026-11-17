@@ -279,6 +279,11 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         return { ok: true };
       case "command.run":
         return { result: null };
+      // The voice point and its plugin's held command, as MOSS Voice declares them (the talk command MOSS derives).
+      case "point.active.list":
+        return { points: [{ point: "moss.voice.modes", title: "Voice", declaredBy: "moss/voice", fillers: [{ pluginId: "moss/voice", entryId: "moss-voice", name: "MOSS Voice" }], active: { pluginId: "moss/voice", entryId: "moss-voice" } }] };
+      case "command.list":
+        return { commands: [{ name: "moss.push-to-talk", pluginId: "moss/voice", description: "Hold to talk", key: "ctrl+shift+space", hold: true }] };
       case "user.send": {
         const to = params.to as { bot?: string };
         const id = to?.bot;
@@ -321,6 +326,20 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         return { state: typeof params.key === "string" ? "signed-in" : "signed-out", ...(typeof params.key === "string" ? {} : { authorizeUrl: "https://example.test/authorize" }) };
       case "plugin.auth.signOut":
         return { applied: false, card: "card_signout_000001" };
+      case "bot.archived":
+        piece("bots", method);
+        return { bots: bots.archived() };
+      case "bot.remove":
+        piece("bots", method);
+        await bots.remove(String(params.id));
+        event("bots", { type: "bot_record_removed", id: String(params.id) });
+        return { ok: true };
+      case "bot.restore": {
+        piece("bots", method);
+        const v = await bots.restore(String(params.id));
+        event("bots", { type: "bot_record_changed", bot: v });
+        return { bot: v };
+      }
       case "bot.instructions.get":
         piece("bots", method);
         return { text: bots.instructions(String(params.id)) };

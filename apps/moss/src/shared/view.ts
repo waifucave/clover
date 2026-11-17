@@ -40,6 +40,8 @@ export interface MossView {
   pieces: Partial<Record<Piece, PieceState>>;
   bots: BotRow[];
   cards: CardRow[];
+  /** Whether the microphone can run the voice plugin's talk command now, and why not when it can't. */
+  talk?: { ready: true } | { ready: false; why: string };
   /** The engine's release, when connected. */
   engine?: string;
 }
@@ -212,6 +214,13 @@ export interface MossBridge {
    *  writes over text the person couldn't see; waiting while the engine doesn't serve it. */
   botInstructions(id: string): Promise<{ text: string } | { waiting: true }>;
   editBot(id: string, patch: BotEdit): Promise<boolean>;
+  /** Archives a bot after the person's press (nothing is deleted); `archivedBots` lists them and `restoreBot` brings one
+   *  back with its conversation whole. */
+  archiveBot(id: string): Promise<boolean>;
+  archivedBots(): Promise<{ id: string; name: string }[] | { waiting: true }>;
+  restoreBot(id: string): Promise<boolean>;
+  /** The person tried to act on a bot's screen (a click, a key, a scroll): it is watch only, and main says so. */
+  pictureInput(kind: "pointer" | "key" | "wheel"): void;
   models(): Promise<ModelRow[] | { waiting: true }>;
 }
 

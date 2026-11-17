@@ -15,6 +15,7 @@ import {
 import { RpcCallError } from "./client";
 import { MAIN_WINDOW_ID } from "./identity";
 import type { SealedFrames } from "./sealed";
+import { talkCommandOf, type TalkCommand } from "./voice";
 import type {
   BotEdit, BotRecordRow, BotRow, BotSetting, CardRow, ConnectionKind, ModelRow, SettingsView, ConversationPage, Message, MossView, Piece, PieceState, PictureFrameView, PictureRow, PluginRow, RoutineRow, ToolRow,
 } from "../shared/view";
@@ -24,7 +25,7 @@ export interface EngineClient {
 }
 
 /** The areas whose events MOSS follows. */
-export const MOSS_EVENT_AREAS = ["bots", "activity", "approvals", "surfaces"] as const;
+export const MOSS_EVENT_AREAS = ["bots", "activity", "approvals", "surfaces", "plugins"] as const;
 
 /** Whether an error is the engine's "not served yet" (a method with no handler). */
 export function notServed(err: unknown): boolean {
@@ -91,6 +92,8 @@ export class MossEngine {
   private emitTimer: ReturnType<typeof setTimeout> | undefined;
   /** The bot session the window follows live now. */
   private attached: string | undefined;
+  /** The voice plugin's talk command, from the plugins' declarations (voice.ts `talkCommandOf`). */
+  private talk: TalkCommand = { why: "Talking waits for the engine's voice plugin list." };
 
   constructor(private readonly sealed: SealedFrames, private readonly log: (line: string) => void = () => {}) {}
 
@@ -118,7 +121,8 @@ export class MossEngine {
       if (p === undefined || (p.kind !== "conversation" && p.kind !== "strip") || p.program !== "moss" || p.window !== MAIN_WINDOW_ID) continue;
       cards.push({ id: c.id, ...(c.bot !== undefined ? { bot: c.bot } : {}), kind: c.kind, place: p.kind });
     }
-    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}) };
+    const talk = "command" in this.talk ? { ready: true as const } : { ready: false as const, why: this.talk.why };
+    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}) };
   }
 
   onView(fn: (v: MossView) => void): () => void {
@@ -195,8 +199,30 @@ export class MossEngine {
     this.attached = undefined;
     this.placements.clear();
     await client.request("events.subscribe", { areas: MOSS_EVENT_AREAS }, 10_000).catch((err: unknown) => this.log(`engine: events.subscribe failed (${err instanceof Error ? err.message.slice(0, 120) : "error"})`));
-    await Promise.all([this.loadBots(), this.loadSummaries(), this.loadActivity(), this.loadCards()]);
+    await Promise.all([this.loadBots(), this.loadSummaries(), this.loadActivity(), this.loadCards(), this.loadTalk()]);
     this.changed();
+  }
+
+  /** The talk command the microphone runs now, or why there is none. */
+  talkCommand(): TalkCommand {
+    return this.talk;
+  }
+
+  /** Reads which plugin fills the voice point and its held command (again at each plugin change). */
+  private async loadTalk(): Promise<void> {
+    const client = this.client;
+    if (client === undefined) return;
+    const [points, commands] = await Promise.all([
+      client.request<{ points: { point: string; declaredBy: string; active?: { pluginId: string } }[] }>("point.active.list", {}, 10_000).catch(() => undefined),
+      client.request<{ commands: { name: string; pluginId: string; hold?: true }[] }>("command.list", {}, 10_000).catch(() => undefined),
+    ]);
+    if (client !== this.client) return;
+    const next = talkCommandOf(points?.points, commands?.commands);
+    if (JSON.stringify(next) !== JSON.stringify(this.talk)) {
+      this.talk = next;
+      this.log("command" in next ? `voice: the talk command is ${next.command} (${next.pluginId})` : `voice: no talk command (${next.why})`);
+      this.changed();
+    }
   }
 
   private async loadBots(): Promise<void> {
@@ -280,6 +306,11 @@ export class MossEngine {
           this.placements.delete(e.id);
         }
         break;
+      case "plugin_changed":
+      case "plugin_point_changed":
+        // A plugin on, off or changed may change who fills the voice point or which command holds the key.
+        void this.loadTalk();
+        return;
       case "card_placed": {
         const place = CardPlacement.safeParse(e.place);
         if (typeof e.card === "string" && place.success) this.placements.set(e.card, place.data);
@@ -530,6 +561,26 @@ export class MossEngine {
 
   async editBot(id: string, patch: BotEdit): Promise<boolean> {
     return (await this.read("bots", "bot.edit", { id, patch })) !== undefined;
+  }
+
+  /** Archives a bot (`bot.remove`, §6.1: nothing is deleted; its conversation, memory and routines stay with it). */
+  async archiveBot(id: string): Promise<boolean> {
+    const ok = (await this.read("bots", "bot.remove", { id })) !== undefined;
+    if (ok) { this.records.delete(id); this.changed(); }
+    return ok;
+  }
+
+  /** The archived bots, to bring one back. */
+  async archivedBots(): Promise<{ id: string; name: string }[] | { waiting: true }> {
+    const r = await this.read<{ bots: { id: string; name: string | { en: string } }[] }>("bots", "bot.archived");
+    return r === undefined ? { waiting: true } : r.bots.map((b) => ({ id: b.id, name: textOf(b.name) }));
+  }
+
+  /** Brings an archived bot back, with its conversation whole (`bot.restore`). */
+  async restoreBot(id: string): Promise<boolean> {
+    const ok = (await this.read("bots", "bot.restore", { id })) !== undefined;
+    if (ok) await this.loadBots().then(() => this.changed());
+    return ok;
   }
 
   async models(): Promise<ModelRow[] | { waiting: true }> {

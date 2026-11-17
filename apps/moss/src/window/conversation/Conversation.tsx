@@ -9,9 +9,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import { Face, MoodWords } from "../faces/Face";
 import { bridge, shortTime } from "../bridge";
 import { CardFrame } from "../cards/CardFrame";
-import type { BotRow, CardRow, Message } from "../../shared/view";
+import type { BotRow, CardRow, Message, MossView } from "../../shared/view";
 
-export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: ReactNode; panelOpen: boolean; onPanel: () => void }) {
+export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: ReactNode; panelOpen: boolean; onPanel: () => void; talk?: MossView["talk"] }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "waiting">("loading");
   const end = useRef<HTMLDivElement>(null);
@@ -66,7 +66,7 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
         {props.cards.map((c) => <CardFrame key={c.id} card={c} />)}
         <div ref={end} />
       </div>
-      <Composer bot={props.bot} />
+      <Composer bot={props.bot} {...(props.talk !== undefined ? { talk: props.talk } : {})} />
     </main>
   );
 }
@@ -101,7 +101,7 @@ export function kindOf(name: string): string {
   return ext.toUpperCase();
 }
 
-function Composer(props: { bot: BotRow }) {
+function Composer(props: { bot: BotRow; talk?: MossView["talk"] }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<{ id: string; name: string }[]>([]);
   const [why, setWhy] = useState<string | undefined>(undefined);
@@ -146,7 +146,9 @@ function Composer(props: { bot: BotRow }) {
         </button>
         <textarea rows={1} placeholder={`Message ${props.bot.name}`} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label={`Message ${props.bot.name}`} />
         <button
-          type="button" className={`icon-button mic${holding ? " is-on" : ""}`} aria-label="Hold to talk" title="Hold to talk (Ctrl+Shift+Space)" aria-pressed={holding}
+          type="button" className={`icon-button mic${holding ? " is-on" : ""}`} aria-label="Hold to talk" aria-pressed={holding}
+          // Without a voice plugin's talk command the button stays, dimmed, and says why (voice.ts talkCommandOf).
+          title={props.talk?.ready === false ? props.talk.why : "Hold to talk (Ctrl+Shift+Space)"} disabled={props.talk?.ready === false} data-talk={props.talk?.ready === false ? "none" : "ready"}
           onPointerDown={() => { setHolding(true); bridge().talk("down"); }} onPointerUp={release} onPointerLeave={release}
         >
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.8" width="5" height="8" rx="2.5" /><path d="M3.2 7.5a4.8 4.8 0 0 0 9.6 0M8 12.3v2" /></svg>
