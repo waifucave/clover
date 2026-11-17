@@ -300,11 +300,23 @@ export async function figureReactsStep(f: FigureCtx): Promise<string> {
     await pick(f.rpc, "pack:example-pngtuber#sunny");
     await f.escape();
     const place = await figureBesideCode(f);
-    const frame = await pictureFrame(f);
-    // Every picture the renderer shows, kept as it changes.
-    await f.cdp.evaluate(frame, "(() => { const e = document.querySelector('[data-pngtuber]'); window.__seen = [e.getAttribute('data-pngtuber')]; new MutationObserver(() => window.__seen.push(e.getAttribute('data-pngtuber'))).observe(e, { attributes: true, attributeFilter: ['data-pngtuber'] }); return true; })()");
+    // Every picture the renderer shows, kept as it changes (the whole document watched, so a picture redrawn in a new element
+    // still counts); a frame that was replaced is found again and watched from then on, its earlier pictures kept here.
+    const WATCH = "(() => { if (window.__seen) return true; const at = () => document.querySelector('[data-pngtuber]')?.getAttribute('data-pngtuber'); window.__seen = [at()].filter(Boolean); new MutationObserver(() => { const v = at(); if (v && window.__seen.at(-1) !== v) window.__seen.push(v); }).observe(document, { attributes: true, subtree: true, childList: true, attributeFilter: ['data-pngtuber'] }); return true; })()";
+    let frame = await pictureFrame(f);
+    await f.cdp.evaluate(frame, WATCH);
+    const earlier: string[] = [];
+    let last: string[] = [];
     await f.cdp.evaluate(place.session, "(() => { const e = document.querySelector('.cl-figure[data-place=panel]'); window.__act = [e.getAttribute('data-activity')]; new MutationObserver(() => window.__act.push(e.getAttribute('data-activity'))).observe(e, { attributes: true, attributeFilter: ['data-activity'] }); return true; })()");
-    const seen = async () => JSON.parse(String(await f.cdp.evaluate(frame, "JSON.stringify(window.__seen || [])").catch(() => "[]"))) as string[];
+    const seen = async (): Promise<string[]> => {
+      const got = await f.cdp.evaluate(frame, "window.__seen ? JSON.stringify(window.__seen) : null").catch(() => null);
+      if (typeof got === "string") { last = JSON.parse(got) as string[]; return [...earlier, ...last]; }
+      earlier.push(...last);
+      last = [];
+      const again = await pictureFrame(f).catch(() => undefined);
+      if (again !== undefined) { frame = again; await f.cdp.evaluate(frame, WATCH).catch(() => undefined); }
+      return earlier;
+    };
     const acts = async () => JSON.parse(String(await f.cdp.evaluate(place.session, "JSON.stringify(window.__act || [])").catch(() => "[]"))) as string[];
 
     // The session beside it works a turn and ends it: the figure follows (its activity), and `done` plays its happy picture.
