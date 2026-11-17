@@ -1488,6 +1488,7 @@ function makePair(): Pair {
         disarmFallback(parsed.data.id);
         heldOffFallbacks.delete(parsed.data.id);
         if (program === "host") tellSurfaces(); // lane HS: the host's island comes back once no window holds a card
+        restack(); // lane HS (R12): the overlays come back once no card is pending here
         cardArrived.delete(parsed.data.id);
         cardPlaces.delete(parsed.data.id);
         windowDraws.delete(parsed.data.id);
