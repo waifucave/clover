@@ -2,7 +2,7 @@
 // signature against the key MOSS registered for the `moss` program (FakeProgramAnswerKeys) and the router's placement:
 // a press counts only with the fresh visibility reading, MOSS's own press record (main saw the press and the sealed
 // frame's own trusted pointerdown named that frame), the stacking rule (placed in this window, the window in front), no
-// computer use acting, and MOSS's key registered. Each refusal is checked alone.
+// the engine's own refusal while computer use acts said as it came, and MOSS's key registered. Each refusal is checked alone.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,7 +45,6 @@ interface Rig {
   key: ProgramAnswerKey;
   record: PressRecord;
   front: { focused: boolean };
-  acting: { value: boolean | undefined };
   deps: PressDeps;
   /** A minted `own` frame for a card, with a fresh reading and a press that landed in it. */
   press(card: string, opts?: { fresh?: boolean | "none"; pressed?: boolean; frame?: string }): string;
@@ -74,19 +73,17 @@ async function rig(opts: { register?: boolean; surface?: "moss" | "code" } = {})
   if (opts.register !== false) expect(await key.register(client, FAKE_DEVICE, () => true)).toEqual({ kind: "registered" });
   const record = new PressRecord();
   const front = { focused: true };
-  const acting = { value: false as boolean | undefined };
   const deps: PressDeps = {
     sealed, record, log: () => {},
     placementOf: (id) => engine.placementOf(id),
     standing: (w) => (w === WIN ? { window: "main", visible: true, focused: front.focused, minimized: false } : undefined),
-    acting: async () => acting.value,
     keyReady: (ms) => key.ready(ms),
     signer: key,
     device: () => FAKE_DEVICE,
     answer: (a) => client.request("card.answer", a),
   };
   return {
-    e, client, sealed, engine, key, record, front, acting, deps,
+    e, client, sealed, engine, key, record, front, deps,
     press: (card, p = {}) => {
       const made = sealed.mint(card, OWN_ELEMENT, { parent: PARENT }, WIN)!;
       if (p.fresh !== "none") sealed.noteFresh(made.token, p.fresh ?? true);
@@ -147,9 +144,9 @@ describe("a press on a card MOSS draws", () => {
     const r = await rig();
     const token = r.press("card_juniper_book");
     // The same press, spent by a first answer that something else refused: no second answer rides it.
-    r.acting.value = true;
+    r.e.setActing(true);
     expect(await go(r, token)).toMatchObject({ accepted: false, reason: "computer use is acting right now" });
-    r.acting.value = false;
+    r.e.setActing(false);
     r.sealed.noteFresh(token, true);
     expect(await go(r, token)).toMatchObject({ accepted: false, reason: "the press didn't come to this button" });
   });
@@ -164,12 +161,17 @@ describe("a press on a card MOSS draws", () => {
     expect(stackingRule({ kind: "conversation", program: "moss", window: "main" }, { window: "main", visible: true, focused: true, minimized: false })).toBeUndefined();
   });
 
-  test("refused while computer use acts, or when that can't be asked", async () => {
+  test("while computer use acts the engine refuses the answer, and MOSS says its refusal plainly; MOSS asks no computer.acting of its own", async () => {
     const r = await rig();
-    r.acting.value = true;
-    expect(await go(r, r.press("card_juniper_book"))).toMatchObject({ accepted: false, reason: "computer use is acting right now" });
-    r.acting.value = undefined;
-    expect(await go(r, r.press("card_juniper_book"))).toMatchObject({ accepted: false, reason: "the computer-use check couldn't run" });
+    const lines: string[] = [];
+    r.e.setActing(true);
+    const token = r.press("card_juniper_book");
+    expect(await answerPress({ ...r.deps, log: (l) => lines.push(l) }, { token, option: "allow_once", senderKey: SENDER, frame: FRAME, windowId: WIN })).toEqual({ accepted: false, reason: "computer use is acting right now" });
+    expect(lines.some((l) => l.includes("the engine refused the answer (computer use is acting right now)"))).toBe(true);
+    // The card waits on, and the next press once it stops answers it.
+    r.e.setActing(false);
+    expect(await go(r, r.press("card_juniper_book"))).toEqual({ accepted: true });
+    expect(r.e.calls().some((c) => c.method === "computer.acting")).toBe(false);
   });
 
   test("refused while MOSS's key isn't registered", async () => {

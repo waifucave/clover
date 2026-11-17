@@ -79,6 +79,8 @@ export interface FakeEngine {
   /** The cards answered, and with which option. */
   answered(): { id: string; option: string; program: string }[];
   placements(): { card: string; place: CardPlacement }[];
+  /** Computer use acting on this computer: the engine then refuses every program's `card.answer`, as the real one does. */
+  setActing(acting: boolean): void;
   /** Asks every app connection a request of the engine's own (`app.ping`, `app.quit`). */
   ask(method: string, params?: unknown): Promise<unknown[]>;
   close(): Promise<void>;
@@ -95,6 +97,7 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
   rmSync(endpoint, { force: true });
   const log: { method: string; params: unknown; conn: number }[] = [];
   const answered: { id: string; option: string; program: string }[] = [];
+  let actingNow = false;
 
   const now = Date.now();
   const bots = new FakeBotRecords({ clock: realClock });
@@ -253,6 +256,8 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         }
       }
       case "card.answer": {
+        // As the real core does for every program: no answer while computer use acts on this computer.
+        if (actingNow) return { accepted: false, reason: "computer use is acting right now" };
         const card = cards.get(String(params.id));
         if (card === undefined) return { accepted: false, reason: "no such card" };
         if (params.hash !== card.hash) return { accepted: false, reason: "the card changed" };
@@ -428,6 +433,7 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
     calls: () => [...log],
     answered: () => [...answered],
     placements: () => router.list(),
+    setActing: (acting) => { actingNow = acting; },
     ask: async (method, params = {}) => Promise.all([...conns.values()].filter((c) => c.authed).map((c) => new Promise((resolve) => {
       const id = nextReq++;
       waiting.set(id, resolve);

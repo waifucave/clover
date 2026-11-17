@@ -17,9 +17,10 @@
 //      `card.placement` alone: MOSS keeps no placement of its own), and the window is visible, focused and not
 //      minimised. MOSS draws nothing of its own over a pending card, so anything over the button is another window, and
 //      that the fresh reading (2) already refuses.
-//   5. No computer use is acting on this computer (`computer.acting`, fail closed: no answer, no press).
-//   6. MOSS's answer key is registered with the engine for this device (a press waits a moment for it).
-// Then the store signs (`programCardAnswerSigningInput`, program `moss`) and the engine's `card.answer` decides.
+//   5. MOSS's answer key is registered with the engine for this device (a press waits a moment for it).
+// Then the store signs (`programCardAnswerSigningInput`, program `moss`) and the engine's `card.answer` decides; it also
+// refuses every program's answer while computer use acts on this computer, and MOSS says its refusal as it came (MOSS
+// asks `computer.acting` nothing of its own: a 3 s round trip there once refused a person's real press under load).
 //
 // §5.5 also names a hardware check (an event no other process posted: `eventSourceUnixProcessID`, `LLMHF_INJECTED`,
 // XTEST). Neither app has it yet; it is not built here either (the report says so).
@@ -111,8 +112,6 @@ export interface PressDeps {
   record: PressRecord;
   placementOf: (cardId: string) => CardPlacement | undefined;
   standing: (windowId: number) => WindowStanding | undefined;
-  /** `computer.acting` on the engine: undefined when it couldn't be asked. */
-  acting: () => Promise<boolean | undefined>;
   keyReady: (ms: number) => Promise<KeyState>;
   signer: AnswerSigner;
   device: () => string | undefined;
@@ -140,11 +139,7 @@ export async function answerPress(d: PressDeps, a: { token: string; option: stri
   const w = d.standing(a.windowId);
   const stacked = w === undefined ? "not MOSS's window" : stackingRule(d.placementOf(cardId), w);
   if (stacked !== undefined) return refuse(stacked);
-  // 5. Computer use, fail closed.
-  const acting = await d.acting();
-  if (acting === undefined) return refuse("the computer-use check couldn't run");
-  if (acting) return refuse("computer use is acting right now");
-  // 6. The key.
+  // 5. The key.
   const key = await d.keyReady(2_000);
   if (key.kind !== "registered") return refuse(`MOSS's answer key isn't registered (${key.kind === "refused" || key.kind === "waiting" ? key.why : key.kind})`, "this computer's answer key for MOSS isn't registered yet");
   const device = d.device();

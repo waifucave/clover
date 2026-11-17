@@ -613,10 +613,6 @@ function wireSealed(): void {
       sealed, record, log,
       placementOf: (id) => engine.placementOf(id),
       standing,
-      acting: async () => {
-        const r = await connection.client?.request<{ running?: unknown }>("computer.acting", {}, 3_000).catch(() => undefined);
-        return r === undefined ? undefined : r.running === true;
-      },
       keyReady: (ms) => answerKey.ready(ms),
       signer: answerKey,
       device: () => device,
