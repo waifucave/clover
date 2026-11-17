@@ -310,6 +310,46 @@ describe("placements: an event always wins over a snapshot", () => {
   });
 });
 
+describe("a bot's record: an event always wins over an answer taken before it", () => {
+  function heldRecords() {
+    const answers: ((v: unknown) => void)[] = [];
+    const nova = { id: "nova", name: "Nova", mainSession: "b_nova", madeBy: { kind: "user" }, createdAt: 1, instructionsBytes: 0 };
+    let holding = false;
+    const client = {
+      request: async <T,>(method: string): Promise<T> => {
+        if (method === "bot.records" && holding) return new Promise<T>((r) => answers.push(r as (v: unknown) => void));
+        const plain: Record<string, unknown> = { "events.subscribe": { ok: true }, "bot.records": { bots: [nova] }, "bot.summaries": { summaries: [] }, "activity.list": { activity: [] }, "card.list": { cards: [] }, "card.placement": { placements: [] }, "point.active.list": { points: [] }, "command.list": { commands: [] } };
+        return (plain[method] ?? {}) as T;
+      },
+    };
+    return { client, answers, nova, hold: () => { holding = true; } };
+  }
+
+  test("a Settings read answered after the bot was archived doesn't bring it back to the list (the archive row's flake)", async () => {
+    const { client, answers, nova, hold } = heldRecords();
+    const engine = new MossEngine(new SealedFrames("moss"));
+    await engine.attach(client);
+    expect(engine.view().bots.map((b) => b.id)).toEqual(["nova"]);
+    hold();
+    const page = engine.botRecord("nova");
+    await until(() => answers.length === 1);
+    // Archived while the page's read is on its way; then the read's answer, taken before, arrives.
+    engine.notification("core.event", { type: "bot_record_removed", id: "nova" });
+    answers[0]!({ bots: [nova] });
+    expect(await page).toEqual({ waiting: true });
+    expect(engine.view().bots).toEqual([]);
+  });
+
+  test("a read that fails (an engine too busy to answer in time) shows the record the events keep (the editor row's flake)", async () => {
+    const { client, nova } = heldRecords();
+    const engine = new MossEngine(new SealedFrames("moss"));
+    await engine.attach(client);
+    const failing = { request: async <T,>(method: string): Promise<T> => { if (method === "bot.records") throw new Error("timed out"); return client.request<T>(method); } };
+    (engine as unknown as { client: unknown }).client = failing;
+    expect(await engine.botRecord("nova")).toMatchObject({ id: "nova", name: nova.name });
+  });
+});
+
 describe("the status line's inputs", () => {
   test("the open bot's running call gives its safe detail only; its result clears it; no message is made of either", async () => {
     const { engine } = await setup([], undefined, { running: { juniper: { name: "mcp__moss__Browser", argsJson: JSON.stringify({ url: "https://www.example.com/a?secret=1" }), displayTitle: "Page reader" } } });

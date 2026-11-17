@@ -359,7 +359,8 @@ const tag = (what: string) => `ACCEPTANCE-TAG-MOSS${what.toUpperCase()}${randomB
 
 async function listRow(s: UnitState): Promise<string> {
   const a = await s.x.until("Alpha as a record (bot.records)", 60_000, async () => (await records(s.c).catch(() => [])).find((b) => b.id === "alpha"), 500);
-  if (a.madeBy.kind !== "move") s.x.fail(`Alpha's record says it was made by ${JSON.stringify(a.madeBy)}, not the move (offered by default)`);
+  // Offered by default: the move's record today, `default` once bots are records by default (lane MC1).
+  if (a.madeBy.kind !== "move" && a.madeBy.kind !== "default") s.x.fail(`Alpha's record says it was made by ${JSON.stringify(a.madeBy)}, not offered by default (the move's or default)`);
   const row = await s.w.waitFor<{ name: string; mood: string; face: boolean; n: number }>("Alpha's row in MOSS's list", `(() => {
     const r = document.querySelector('[data-bot-row="alpha"]');
     if (!r) return null;
@@ -641,8 +642,12 @@ async function makeRow(s: UnitState): Promise<string> {
   await sendInMoss(s, name, callText("MakeBot", { name: child, instructions: `You are ${child}, made by ${name}.` }));
   const card = await newCard(s, before, "MakeBot's card", (k) => k.session === made.mainSession || k.bot === made.id, 120_000);
   const frame = await s.w.cardFrame(card.id);
-  const text = String(await s.w.cdp.evaluate(frame.session, "document.body.innerText"));
-  if (!text.includes(name)) s.x.fail(`MakeBot's card doesn't name the maker ${name}: "${text.replace(/\s+/g, " ").slice(0, 200)}"`);
+  // The frame's document is there before its words are drawn (the flake of run 44172818738: "" read at once): wait for them.
+  let text = "";
+  await s.x.until(`MakeBot's card naming ${name}`, 20_000, async () => {
+    text = String(await s.w.cdp.evaluate(frame.session, "document.body ? document.body.innerText : ''").catch(() => ""));
+    return text.includes(name) ? true : undefined;
+  }, 250).catch(() => s.x.fail(`MakeBot's card doesn't name the maker ${name}: "${text.replace(/\s+/g, " ").slice(0, 200)}"`));
   if (!text.includes(child)) s.x.fail(`MakeBot's card doesn't name the new bot ${child}`);
   await s.w.pressApprove(card.id);
   const kid = await s.x.until(`${child} as a record`, 60_000, async () => (await records(s.c)).find((b) => nameOf(b.name) === child), 500);

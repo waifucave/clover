@@ -126,6 +126,8 @@ export class MossEngine {
    *  which may have been taken before it), and the cards resolved on it (a late answer never brings one back): MOSS
    *  Code's PlacementBook rule. A new connection starts both afresh. */
   private placedByEvent = new Set<string>();
+  /** Bots removed on this connection (`bot_record_removed`): a snapshot answer never brings one back. */
+  private removedBots = new Set<string>();
   private resolvedCards = new Set<string>();
   private viewListeners = new Set<(v: MossView) => void>();
   private messageListeners = new Set<(bot: string, m: Message) => void>();
@@ -258,6 +260,7 @@ export class MossEngine {
     this.attached = undefined;
     this.placements.clear();
     this.placedByEvent.clear();
+    this.removedBots.clear();
     this.resolvedCards.clear();
     await client.request("events.subscribe", { areas: MOSS_EVENT_AREAS }, 10_000).catch((err: unknown) => this.log(`engine: events.subscribe failed (${err instanceof Error ? err.message.slice(0, 120) : "error"})`));
     await Promise.all([this.loadBots(), this.loadSummaries(), this.loadActivity(), this.loadCards(), this.loadTalk()]);
@@ -351,10 +354,11 @@ export class MossEngine {
         if (typeof b?.id !== "string") return;
         this.records.set(b.id, b);
         this.sessionBot.set(b.mainSession, b.id);
+        this.removedBots.delete(b.id);
         break;
       }
       case "bot_record_removed":
-        if (typeof e.id === "string") { this.records.delete(e.id); this.summaries.delete(e.id); this.activity.delete(e.id); }
+        if (typeof e.id === "string") { this.records.delete(e.id); this.summaries.delete(e.id); this.activity.delete(e.id); MossEngine.remember(this.removedBots, e.id); }
         break;
       case "bot_summary_changed": {
         const s = e.summary as BotSummary;
@@ -676,12 +680,15 @@ export class MossEngine {
     return (await this.read("account", "plugin.auth.signOut", { id: pluginId, index, card: true })) !== undefined;
   }
 
+  /** One bot's record for its Settings page: the engine's answer when it comes, else the record the events keep. The
+   *  answer never goes back into the list: it may have been taken before a `bot_record_removed` or `bot_record_changed`
+   *  that came first, and would bring back a bot just archived (the archive row's flake) or an old name. */
   async botRecord(id: string): Promise<BotRecordRow | { waiting: true }> {
     const r = await this.read<{ bots: BotRecordView[] }>("bots", "bot.records");
-    if (r === undefined) return { waiting: true };
-    for (const b of r.bots) this.records.set(b.id, b);
-    const b = r.bots.find((x) => x.id === id);
-    if (b === undefined) return { waiting: true };
+    // A read that failed or timed out (an engine busy for longer than the read's 10 s) is no reason to show nothing: the
+    // record the events keep is there (the editor row's flake).
+    const b = r?.bots.find((x) => x.id === id) ?? (this.records.get(id) as BotRecordView | undefined);
+    if (b === undefined || (r !== undefined && !this.records.has(id) && this.removedBots.has(id))) return { waiting: true };
     return { id: b.id, name: textOf(b.name), ...(b.model !== undefined ? { model: b.model } : {}), ...(b.effort !== undefined ? { effort: b.effort } : {}), ...(b.face !== undefined ? { face: b.face } : {}), instructionsBytes: b.instructionsBytes };
   }
 
