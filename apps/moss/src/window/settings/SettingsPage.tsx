@@ -110,10 +110,10 @@ function General() {
             {s.computers.map((c) => (
               <li key={c.name} data-computer={c.name}>
                 <span>{c.name}</span>
-                <select value={c.level} onChange={(e) => void level(c.name, e.target.value)} aria-label={`${c.name}'s approval level`}>
-                  {LEVELS.some((l) => l.value === c.level) ? null : <option value={c.level}>{c.level}</option>}
-                  {LEVELS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
-                </select>
+                <Pick
+                  value={c.level} label={`${c.name}'s approval level`} button="Change" onSave={(v) => void level(c.name, v)}
+                  options={[...(LEVELS.some((l) => l.value === c.level) ? [] : [{ value: c.level, label: c.level }]), ...LEVELS]}
+                />
               </li>
             ))}
           </ul>
@@ -222,11 +222,14 @@ function BotPage(props: { bot: BotRow }) {
       {note !== undefined ? <p className="add__note" role="status">{note}</p> : null}
       <Card title="Model" id="model">
         {models === undefined ? null : models === "waiting" ? <Waiting what="models" /> : (
-          <select value={rec.model ?? ""} onChange={(e) => void edit({ model: e.target.value === "" ? null : e.target.value }, "Model saved.")} aria-label={`${rec.name}'s model`} data-model-picker>
-            <option value="">Your default model</option>
-            {rec.model !== undefined && !models.some((m) => m.id === rec.model) ? <option value={rec.model}>{rec.model}</option> : null}
-            {models.map((m) => <option key={m.id} value={m.id}>{m.title} · {m.provider}{m.ready ? "" : " (not signed in)"}</option>)}
-          </select>
+          <Pick
+            value={rec.model ?? ""} label={`${rec.name}'s model`} data="model-picker" onSave={(v) => void edit({ model: v === "" ? null : v }, "Model saved.")}
+            options={[
+              { value: "", label: "Your default model" },
+              ...(rec.model !== undefined && !models.some((m) => m.id === rec.model) ? [{ value: rec.model, label: rec.model }] : []),
+              ...models.map((m) => ({ value: m.id, label: `${m.title} · ${m.provider}${m.ready ? "" : " (not signed in)"}` })),
+            ]}
+          />
         )}
       </Card>
       <PluginSettings bot={id} />
@@ -358,16 +361,33 @@ function SettingField(props: { row: BotSetting; onSet: (value: unknown) => void 
   );
 }
 
+/** A choice from a list, sent with its own button: a native menu can stay open longer than main's press lasts, so the
+ *  write goes from the button's click (or Enter on the list), never from the menu's change. */
+function Pick(props: { value: string; label: string; options: readonly { value: string; label: string; disabled?: boolean }[]; onSave: (value: string) => void; button?: string; data?: string }) {
+  const [v, setV] = useState(props.value);
+  useEffect(() => { setV(props.value); }, [props.value]);
+  const changed = v !== props.value;
+  const save = (): void => { if (changed) props.onSave(v); };
+  return (
+    <span className="ma2-inline ma2-pick">
+      <select value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } }} aria-label={props.label} {...(props.data !== undefined ? { [`data-${props.data}`]: "" } : {})}>
+        {props.options.map((o) => <option key={o.value} value={o.value} {...(o.disabled === true ? { disabled: true } : {})}>{o.label}</option>)}
+      </select>
+      {changed ? <button type="button" className="text-button text-button--solid" onClick={save}>{props.button ?? "Save"}</button> : null}
+    </span>
+  );
+}
+
 function Control(props: { row: BotSetting; onSet: (value: unknown) => void }) {
   const r = props.row;
   if (r.type === "enum") {
     const opts = r.options ?? [];
     const value = typeof r.value === "string" ? r.value : "";
     return (
-      <select value={value} onChange={(e) => props.onSet(e.target.value)} aria-label={r.title}>
-        {value === "" || !opts.some((o) => o.value === value) ? <option value={value} disabled>Choose…</option> : null}
-        {opts.map((o) => <option key={o.value} value={o.value}>{o.title}</option>)}
-      </select>
+      <Pick
+        value={value} label={r.title} onSave={(v) => props.onSet(v)}
+        options={[...(value === "" || !opts.some((o) => o.value === value) ? [{ value, label: "Choose…", disabled: true }] : []), ...opts.map((o) => ({ value: o.value, label: o.title }))]}
+      />
     );
   }
   if (r.type === "boolean") {

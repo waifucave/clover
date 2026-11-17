@@ -242,6 +242,10 @@ describe("Settings", () => {
     const laptop = r.container.querySelector("[data-computer=Laptop] select") as HTMLSelectElement;
     expect(laptop.value).toBe("ask");
     await act(async () => { fireEvent.change(laptop, { target: { value: "automatic" } }); });
+    // Choosing alone sends nothing (a native menu outlasts main's press); the button sends it.
+    await settle();
+    expect(callsOf(e, "computer.setLevel").length).toBe(0);
+    await act(async () => { fireEvent.click([...r.container.querySelectorAll("[data-computer=Laptop] button")].find((b) => b.textContent === "Change")!); });
     await until(() => callsOf(e, "computer.setLevel").length === 1);
     expect(callsOf(e, "computer.setLevel")[0]).toEqual({ name: "Laptop", level: "automatic" });
     r.unmount();
@@ -267,6 +271,9 @@ describe("Settings", () => {
     await until(() => callsOf(e, "bot.edit").length === 1);
     expect(callsOf(e, "bot.edit")[0]).toEqual({ id: "juniper", patch: { face: { shape: "gem" } } });
     await act(async () => { fireEvent.change(r.container.querySelector("[data-model-picker]")!, { target: { value: "" } }); });
+    await settle();
+    expect(callsOf(e, "bot.edit").length).toBe(1);
+    await act(async () => { fireEvent.click([...r.container.querySelectorAll("[data-settings=model] button")].find((b) => b.textContent === "Save")!); });
     await until(() => callsOf(e, "bot.edit").length === 2);
     expect(callsOf(e, "bot.edit")[1]).toEqual({ id: "juniper", patch: { model: null } });
     // An empty instructions box is never sent.
@@ -311,6 +318,8 @@ describe("Settings", () => {
     expect([token.type, token.value]).toEqual(["password", ""]);
 
     await act(async () => { fireEvent.change(current, { target: { value: "still" } }); });
+    expect(set.length).toBe(0);
+    await act(async () => { fireEvent.click([...group("acme/tides").querySelectorAll("[data-bot-setting=current] button")].find((b) => b.textContent === "Save")!); });
     // Out of range: not sent; in range, with Enter: sent as a number.
     fireEvent.change(depth, { target: { value: "12" } });
     await act(async () => { fireEvent.keyDown(depth, { key: "Enter" }); });
