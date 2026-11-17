@@ -224,3 +224,36 @@ describe("the move, again and held", () => {
     await b.shutdown();
   });
 });
+
+describe("a state that can be passing at a start", () => {
+  test("a bot of an invalid or refused plugin isn't moved or archived: it is failed with its state and tried again at the next start", async () => {
+    const { pluginBotsForMove } = await import("../move");
+    const root = tempDir();
+    const folder = writePlugin(root, "flaky", { "moss.json": botManifest("flaky", "Flaky"), "bot/instructions.md": "You are Flaky." });
+    const off = writePlugin(root, "offbot", { "moss.json": botManifest("offbot", "Off"), "bot/instructions.md": "You are Off." });
+    const manifest = (id: string) => ({ contributes: { bot: { name: id, instructions: "bot/instructions.md" } } });
+    const rec = (id: string, f: string, state: string, enabled: boolean, reason?: string) => ({ id, folder: f, source: "local", okHash: "h", state, enabled, manifest: manifest(id), ...(reason === undefined ? {} : { reason }) });
+    let records: Record<string, unknown>[] = [rec("flaky", folder, "invalid", true, "its manifest didn't read"), rec("offbot", off, "off", false)];
+    const registry = { list: () => records, entries: () => [], get: (id: string) => records.find((r) => r.id === id) } as never;
+    const first = pluginBotsForMove(registry, tempDir());
+    expect(first.map((b) => [b.id, b.failed ?? "ok", b.archive ?? false])).toEqual([
+      ["flaky", "its plugin is invalid (its manifest didn't read); it is tried again at the next start", false],
+      ["offbot", "ok", true],
+    ]);
+    records = [rec("flaky", folder, "refused", true)];
+    expect(pluginBotsForMove(registry, tempDir())[0]).toMatchObject({ failed: expect.stringContaining("refused") });
+    // Through the store: failed, not archived; once the plugin reads again, moved live at the next start.
+    const { BotRecordStore } = await import("../records");
+    const home = tempDir();
+    const clock = new FakeClock();
+    const store = new BotRecordStore({ home, clock });
+    records = [rec("flaky", folder, "invalid", true)];
+    expect((await store.move(pluginBotsForMove(registry, home))).bots).toMatchObject([{ outcome: "failed", id: "flaky" }]);
+    expect(store.archived()).toEqual([]);
+    expect(store.get("flaky")).toBeUndefined();
+    records = [rec("flaky", folder, "running", true)];
+    expect((await store.move(pluginBotsForMove(registry, home))).bots).toEqual([{ outcome: "moved", id: "flaky", plugin: "flaky" }]);
+    expect(store.get("flaky")).toMatchObject({ madeBy: { kind: "move", plugin: "flaky" } });
+    expect(store.archived()).toEqual([]);
+  });
+});

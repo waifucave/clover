@@ -23,8 +23,9 @@
 //   qualified id): `failed`, with the loader's reason, nothing written;
 // * a user layer that doesn't parse: its fields that do parse are taken (the user layer's own reader), the rest ignored;
 // * a record already there under the id: `kept` (the move wrote it before a crash: `moved`);
-// * a plugin the person switched off, or invalid or refused with an OK: its bot is `moved` straight into the archive
+// * a plugin the person switched off, or one that is off: its bot is `moved` straight into the archive
 //   (`archive/bots/<seg>/`), its record, instructions, memory and conversation kept for the person to bring back;
+// * a plugin that is invalid or refused, which can be passing at a start: `failed`, with the state, nothing written;
 // * a `failed` entry is tried again at the next start, and a plugin bot the journal doesn't name yet is moved then;
 // * an unreadable journal: the move doesn't run, and `bot.move.status` says so (`held`, with the reason).
 import { isAnyPluginId, type Text } from "@waifucave/moss-protocol";
@@ -33,9 +34,6 @@ import type { BotEntry } from "../contracts/sdk-types";
 import { loadPluginBot } from "./plugin-bot";
 import type { MoveInput } from "./records";
 import { UserLayerStore } from "./user-layer";
-
-/** A plugin in one of these states, or switched off, has its bot moved into the archive. */
-const OFF_STATES: ReadonlySet<string> = new Set(["off", "invalid", "refused"]);
 
 /** Every plugin that brings a bot, whatever its state (an entry list holds only the plugins that are on, and a bot of
  *  one switched off must be moved too): its record, and its manifest's `bot` entry as validated. */
@@ -58,6 +56,12 @@ export function pluginBotsForMove(registry: Pick<PluginRegistry, "list" | "entri
   const out: MoveInput[] = [];
   for (const { record, entry } of pluginsWithBots(registry)) {
     const name: Text = (entry as { name?: Text }).name ?? record.id;
+    // A state that can be passing at a start (a manifest that didn't read, a refusal the person may not have made):
+    // the bot isn't moved, and is tried again at the next start.
+    if (record.state === "invalid" || record.state === "refused") {
+      out.push({ plugin: record.id, id: record.id, name, instructions: "", failed: `its plugin is ${record.state}${record.reason === undefined ? "" : ` (${record.reason.slice(0, 300)})`}; it is tried again at the next start` });
+      continue;
+    }
     if (record.source !== "bundled" && record.okHash === undefined) {
       out.push({ plugin: record.id, id: record.id, name, instructions: "", failed: "its plugin was never OK'd" });
       continue;
@@ -85,9 +89,9 @@ export function pluginBotsForMove(registry: Pick<PluginRegistry, "list" | "entri
       ...(b.entry.model?.effort === undefined || record.source !== "bundled" ? {} : { effort: b.entry.model.effort }),
       ...(Object.keys(userLayer).length === 0 ? {} : { userLayer }),
       ...(b.memorySeed === undefined ? {} : { memorySeed: b.memorySeed }),
-      // A plugin the person switched off, or one that is invalid or refused: its bot goes into the archive, whole, for
-      // the person to bring back on purpose, never live.
-      ...(!record.enabled || OFF_STATES.has(record.state) ? { archive: true as const } : {}),
+      // A plugin the person switched off (their recorded decision: the plugin's own switch), or one that is off: its bot
+      // goes into the archive, whole, for the person to bring back on purpose, never live.
+      ...(!record.enabled || record.state === "off" ? { archive: true as const } : {}),
     });
   }
   return out;
