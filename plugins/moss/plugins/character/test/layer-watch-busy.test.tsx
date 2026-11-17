@@ -3,7 +3,7 @@
 // figure mounting beside a session makes many calls in its first second; its renderer's word must not be lost to that.
 import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
-import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
+import { untilNotBusy, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 import { emitLayerMessage, fakeCore, runtimeWith, settle, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
 import { useEffect } from "react";
 
@@ -53,4 +53,19 @@ test("a watch refused for a busy second opens again and then hears its messages;
   );
   await act(async () => { await settle(); await Bun.sleep(1_300); });
   expect(others).toBe(1);
+}, 15_000);
+
+// A CALL (a settings or points read) refused for the same cap is sent again too; losing it left the figure without the
+// person's own models, so the later pick of one drew nothing (the SDK's untilNotBusy, behind every component call).
+test("a call refused for a busy second is sent again and answers; any other refusal answers at once; it gives up after a few tries", async () => {
+  let n = 0;
+  const busy = () => { n += 1; if (n <= 2) throw new Error("acme's UI made more than 20 calls this second"); return Promise.resolve("value"); };
+  expect(await untilNotBusy(async () => busy())).toBe("value");
+  expect(n).toBe(3);
+  let others = 0;
+  await expect(untilNotBusy(async () => { others += 1; throw new Error("acme's OK doesn't list what settings.get needs"); })).rejects.toThrow("doesn't list");
+  expect(others).toBe(1);
+  let always = 0;
+  await expect(untilNotBusy(async () => { always += 1; throw new Error("acme's UI made more than 20 calls this second"); })).rejects.toThrow("calls this second");
+  expect(always).toBe(6);
 }, 15_000);

@@ -2034,6 +2034,9 @@ async function main(): Promise<void> {
     // The previous app's session in the home's store before the daemon first opens it (the archive row; not on an
     // upgrade's home, which an earlier run made).
     if (runs("archive") && stateDir === undefined) seedArchive(home);
+    // What an earlier MOSS kept of the person's own figure, before the home's first daemon moves it (the figure pack row,
+    // when this run's window steps include it: the chain's home is the one that row's migration must find).
+    if (stateDir === undefined && (windowStepsHere()?.has(UI_STEPS.indexOf(FIGURE_PACK_STEP)) ?? true)) seedOldFigure(home);
     daemon = await startDaemonProc();
   } catch (err) {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `the daemon didn't start: ${why(err)}` : "no daemon");

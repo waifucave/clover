@@ -94,3 +94,43 @@ test("a home with no figures (or no user layers at all) is left as it was", () =
   temps.push(bare);
   expect(moveFigureToAvatarPlugin(bare)).toEqual([]);
 });
+
+// The orders a real upgrade can meet (the migration runs at every boot, under no condition but "a layer still holds an avatar").
+test("a home whose plugin already has settings of its own (it ran an earlier build, the plugin first approved before the move) keeps them and gains the pick and the models", () => {
+  const h = home();
+  const store = filePluginSettings(h);
+  store.write("moss/character", { account: { followBots: false }, device: { left: "1" }, bot: {} } as never);
+  const model = join(userLayersDir(h), "avatars", "alpha", "k1");
+  mkdirSync(model, { recursive: true });
+  writeFileSync(join(model, "a.model3.json"), "{}");
+  layer(h, "alpha", { avatar: { file: "user:k1/a.model3.json", format: "live2d" } });
+  moveFigureToAvatarPlugin(h);
+  const s = filePluginSettings(h).read("moss/character");
+  expect(s.account.followBots).toBe(false);
+  expect(s.device).toEqual({ left: "1" });
+  expect(s.account.figure).toBe("own:live2d:own/alpha/k1/a.model3.json");
+  expect(JSON.parse(s.account.ownModels as string)).toHaveLength(1);
+});
+
+test("a layer that reaches the home after the first boot (a sync, an older file reloaded) moves at the next boot; a boot with nothing to move changes nothing", () => {
+  const h = home();
+  expect(moveFigureToAvatarPlugin(h)).toEqual([]); // the first boot: no choice at all
+  expect(existsSync(join(h, "settings", "plugins", "moss%2Fcharacter.json"))).toBe(false);
+  const model = join(userLayersDir(h), "avatars", "luna", "q1");
+  mkdirSync(model, { recursive: true });
+  writeFileSync(join(model, "l.vrm"), "VRM");
+  layer(h, "luna", { avatar: { file: "user:q1/l.vrm", format: "vrm" } });
+  moveFigureToAvatarPlugin(h); // the next boot
+  expect(filePluginSettings(h).read("moss/character").account.figure).toBe("own:vrm:own/luna/q1/l.vrm");
+  const again = moveFigureToAvatarPlugin(h);
+  expect(again).toEqual([]);
+  expect(filePluginSettings(h).read("moss/character").account.figure).toBe("own:vrm:own/luna/q1/l.vrm");
+  // The person then picks another figure; a late reload of the old layer must not undo it.
+  const store = filePluginSettings(h);
+  const cur = store.read("moss/character");
+  cur.account.figure = "pack:acme#fox";
+  store.write("moss/character", cur);
+  layer(h, "luna", { avatar: { file: "user:q1/l.vrm", format: "vrm" } });
+  moveFigureToAvatarPlugin(h);
+  expect(filePluginSettings(h).read("moss/character").account.figure).toBe("pack:acme#fox");
+});
