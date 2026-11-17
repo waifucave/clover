@@ -74,7 +74,7 @@ export interface PanelLink {
   close(): void;
 }
 
-export async function browserStep(ctx: ExampleCtx, session: string, fixture: BrowserFixture, openLayer?: (pluginId: string) => Promise<PanelLink>): Promise<string> {
+export async function browserStep(ctx: ExampleCtx, session: string, fixture: BrowserFixture, openLayer?: (pluginId: string) => Promise<PanelLink>, codeSession: string = session): Promise<string> {
   const lines: string[] = [];
   // 1. Open the fixture page in the bot's own tab.
   const opened = await browse(ctx, session, { verb: "open", url: fixture.url });
@@ -191,8 +191,9 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
       usage.close();
     }
   }
-  // 9b. The terminal and files panels' own layers (rows 2.33, 4.16, 4.18): each reads the session as its component does
-  // (`conversation.get`: the folder and the computer it runs on), then the files panel lists that folder and reads a file in
+  // 9b. The terminal and files panels' own layers (rows 2.33, 4.16, 4.18), on the code session the window shows (lane MC: the
+  // panels read code sessions, `sessions.read`): each reads the session as its component does (`sessions.get`: the folder
+  // and the computer it runs on), then the files panel lists that folder and reads a file in
   // it through `files.*`, and the terminal panel opens a shell there, types a line and hears it come back as `terminal_output`.
   // The diff panel (4.17) reads a coding session's folder changes (`session.diff`), and the slim column its outputs, context
   // and connectors (`session.outputs`/`context`/`connectors`), each from its own layer.
@@ -200,11 +201,11 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   else {
     const filesLayer = await openLayer("moss/panel-files");
     try {
-      const conv = (await filesLayer.request("plugin.layer.call", { call: "conversation.get", args: [session] })) as { result: { root?: string; computer?: string } };
-      // A bot's conversation has no folder (a coding session's has: `root`); the clause uses the computer's home folder in the tree.
+      const conv = (await filesLayer.request("plugin.layer.call", { call: "sessions.get", args: [codeSession] })) as { result: { root?: string; computer?: string } };
+      // A session with no folder of its own would use the computer's home folder in the tree.
       const computer = conv.result.computer;
       const root = conv.result.root ?? `home/${computer}`;
-      if (typeof computer !== "string") fail(`the files panel's conversation.get gave no computer (${JSON.stringify(conv.result).slice(0, 200)})`);
+      if (typeof computer !== "string") fail(`the files panel's sessions.get gave no computer (${JSON.stringify(conv.result).slice(0, 200)})`);
       else {
         const listed = (await filesLayer.request("plugin.layer.call", { call: "files.list", args: [root] })) as { result: { path: string; type: string }[] };
         if (!Array.isArray(listed.result)) fail(`the files panel's files.list of the session folder gave ${JSON.stringify(listed).slice(0, 200)}`);
@@ -219,7 +220,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
         const term = await openLayer("moss/panel-terminal");
         try {
           await term.request("events.subscribe", { areas: ["computers"] });
-          const open = (await term.request("terminal.open", { computer, cwd: root, session, cols: 80, rows: 24 })) as { terminalId: string };
+          const open = (await term.request("terminal.open", { computer, cwd: root, session: codeSession, cols: 80, rows: 24 })) as { terminalId: string };
           await term.request("terminal.resize", { terminalId: open.terminalId, cols: 100, rows: 30 });
           await term.request("terminal.write", { terminalId: open.terminalId, data: "echo moss-panel-$((20+22))\r" });
           const until2 = Date.now() + scaled(15_000);
@@ -269,19 +270,20 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
       diffLayer.close();
     }
     // The column's reads (the slim column's context and outputs, a coding session's connectors), from the column's own
-    // layer: a file delivered to the coding session's outputs folder is listed by name and kind; Alpha's last measured
-    // turn against her model's window; the coding session's plugin MCP servers counted.
+    // layer: a file delivered to the coding session's outputs folder is listed by name and kind; the code session's last
+    // measured turn (one turn run here) against its model's window; the coding session's plugin MCP servers counted.
+    await ctx.turn(codeSession, "say hello for the column", 150_000);
     const column = await openLayer("moss/panel");
     try {
       mkdirSync(join(ctx.home, "outputs", coding), { recursive: true });
       writeFileSync(join(ctx.home, "outputs", coding, "summary.md"), "# What changed\n");
       const outs = (await column.request("session.outputs", { id: coding, limit: 4 })) as { items: { id: string; name: string; kind: string }[]; more: number };
       if (JSON.stringify(outs) !== JSON.stringify({ items: [{ id: "summary.md", name: "summary.md", kind: "page" }], more: 0 })) fail(`the column's session.outputs gave ${JSON.stringify(outs).slice(0, 300)}`);
-      const ctxUse = (await column.request("session.context", { id: session })) as { used: number; tokens: number; window: number } | null;
-      if (ctxUse === null || !(ctxUse.used > 0 && ctxUse.used <= 1) || !(ctxUse.tokens > 0) || !(ctxUse.window > 0)) fail(`the column's session.context for Alpha gave ${JSON.stringify(ctxUse)}`);
+      const ctxUse = (await column.request("session.context", { id: codeSession })) as { used: number; tokens: number; window: number } | null;
+      if (ctxUse === null || !(ctxUse.used > 0 && ctxUse.used <= 1) || !(ctxUse.tokens > 0) || !(ctxUse.window > 0)) fail(`the column's session.context for the code session gave ${JSON.stringify(ctxUse)}`);
       const conns = (await column.request("session.connectors", { id: coding })) as { total: number; needSignIn: number };
       if (!Number.isInteger(conns.total) || !Number.isInteger(conns.needSignIn) || conns.needSignIn > conns.total) fail(`the column's session.connectors gave ${JSON.stringify(conns)}`);
-      lines.push(`column: session.outputs lists summary.md (a page); session.context reads Alpha's last turn at ${ctxUse!.tokens} of ${ctxUse!.window} tokens; session.connectors counts ${conns.total} servers for the coding session, ${conns.needSignIn} waiting for a sign-in`);
+      lines.push(`column: session.outputs lists summary.md (a page); session.context reads the code session's last turn at ${ctxUse!.tokens} of ${ctxUse!.window} tokens; session.connectors counts ${conns.total} servers for the coding session, ${conns.needSignIn} waiting for a sign-in`);
     } finally {
       column.close();
     }
