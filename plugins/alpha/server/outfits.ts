@@ -4,7 +4,7 @@
 // her in it. With another avatar picked for her (the user layer's), the setting is ignored and that model's own parts switch as
 // they are. Pure: her server's store and her tab's room read it (the tab keeps its own copy, client/outfits.ts; a test holds
 // the two, her manifest's options and the model's marks together).
-import type { AvatarCue } from "../../../packages/plugin-sdk/src/catalogs/avatar-cues";
+import type { FigureCue as AvatarCue } from "../../moss/plugins/character/client/figure-cues";
 
 /** The setting's key in her manifest. */
 export const OUTFIT_SETTING = "outfit";

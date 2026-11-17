@@ -6,7 +6,15 @@
 // reaction is dropped; a tool says to try again).
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
 import type { PointsApi, SettingsApi, SyncedStore, UiSendApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
-import type { AvatarApi, AvatarCue, AvatarCueResult } from "../../../packages/plugin-sdk/src/catalogs/avatar-cues";
+import type { FigureCatalogue, FigureCue as AvatarCue, FigureCueResult as AvatarCueResult } from "../../moss/plugins/character/client/figure-cues";
+
+/** The figure calls her stage was written for. The platform's `api.avatar` is retired (the figure is the avatar plugin's,
+ *  `moss/character`): no API carries it, so these stay unset and her stage's cues are a no-op until lane MC1 reworks it. */
+export interface AvatarApi {
+  cue(cue: AvatarCue): Promise<AvatarCueResult>;
+  catalogue(): Promise<FigureCatalogue | undefined>;
+  watch(listener: (change: unknown) => void): () => void;
+}
 import { DEFAULT_OUTFIT, isOutfit, OUTFIT_SETTING, OUTFIT_VALUES, outfitCues, outfitOf, outfitTitle, pickOutfit, wearsHerOutfits } from "./outfits";
 import {
   applyStage, CATALOG_KEY, CATALOG_WRITES_PER_MINUTE, CONTROLS, OWN_SCENES, readCatalog, readStage, SCENES_KEY, STAGE_KEY, STAGE_MAX_BYTES, STAGE_TOPIC,

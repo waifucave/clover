@@ -13,11 +13,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { stageHooks, type HookArgs } from "./hooks";
 import { serveMcp, type McpServerTransport } from "./mcp";
-import { StageStore, type StageApi } from "./store";
+import { StageStore, type AvatarApi, type StageApi } from "./store";
 import { replyGist } from "./stage";
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
 import type { ConversationApi, PluginSelf, SettingsApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
-import type { AvatarApi } from "../../../packages/plugin-sdk/src/catalogs/avatar-cues";
 import { runStageTool, STAGE_TOOLS } from "./tools";
 
 interface AlphaApi extends StageApi {

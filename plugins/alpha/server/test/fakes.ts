@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import type { PointEntry } from "../../../../packages/plugin-sdk/src/api/plugin-api";
-import type { AvatarCatalogue, AvatarCue, AvatarCueResult } from "../../../../packages/plugin-sdk/src/catalogs/avatar-cues";
+import type { FigureCatalogue as AvatarCatalogue, FigureCue as AvatarCue, FigureCueResult as AvatarCueResult } from "../../../moss/plugins/character/client/figure-cues";
 import type { StageApi } from "../store";
 
 export const ALPHA = join(import.meta.dir, "..", "..");

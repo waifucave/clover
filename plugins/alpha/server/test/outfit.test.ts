@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AvatarCatalogue, AvatarCue, AvatarCueResult } from "../../../../packages/plugin-sdk/src/catalogs/avatar-cues";
+import type { FigureCatalogue as AvatarCatalogue, FigureCue as AvatarCue, FigureCueResult as AvatarCueResult } from "../../../moss/plugins/character/client/figure-cues";
 import * as tab from "../../client/outfits";
 import { glbJson } from "../../../moss/plugins/vrm/src/vrm/glb";
 import { OUTFITS as MODEL_OUTFITS } from "../../../moss/plugins/vrm/src/placeholder/model";
@@ -112,7 +112,7 @@ describe("one list of her outfits", () => {
     expect(tab.OUTFITS.map((o) => ({ ...o }))).toEqual(OUTFITS.map((o) => ({ ...o })));
     expect(tab.DEFAULT_OUTFIT).toBe(DEFAULT_OUTFIT);
     expect([...MODEL_OUTFITS]).toEqual([...OUTFIT_VALUES]);
-    const json = glbJson(new Uint8Array(readFileSync(join(ALPHA, "assets", "alpha.vrm")))) as { nodes: { extras?: { moss?: { outfit?: string; on?: boolean } } }[] };
+    const json = glbJson(new Uint8Array(readFileSync(join(ALPHA, "..", "moss", "plugins", "alpha-figure", "vrm", "alpha.vrm")))) as { nodes: { extras?: { moss?: { outfit?: string; on?: boolean } } }[] };
     const marked = [...new Set(json.nodes.flatMap((n) => (n.extras?.moss?.outfit !== undefined ? [n.extras.moss.outfit] : [])))];
     expect(marked).toEqual([...OUTFIT_VALUES]);
     // Shown at load: the default only, so her look with nothing set is the one she always had.
