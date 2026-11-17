@@ -153,6 +153,11 @@ export interface SandboxPolicy {
    *  conversation and side threads alone: read and write strictly inside, as `ownScratch` (the folders themselves never
    *  written over; a `.git` inside never written: every sandbox's run-later holds cover it). */
   ownPlugins?: string[];
+  /** The instructions rule (`FenceContext.instructionsOf`): `<home>/bots/<x>/instructions` for the runner's own bot and
+   *  each bot it made, for its main conversation and side threads alone: read and write strictly inside, as
+   *  `ownMemory` (the folder itself never written over). The record beside it (`bot.json`) stays write-denied to
+   *  every runner. The OS profiles that don't carry it (macOS's, bwrap's, Windows') leave the folder denied. */
+  ownInstructions?: string[];
   /** The drop (the owner's ask on 14c): `<home>/plugins` itself, for a bot's main conversation and side threads, whose
    *  shell may make a NEW folder there (the registry indexes it and asks the user's OK). Every entry already there that
    *  isn't in `ownPlugins` stays denied by name (`sandboxSettingsOf`), and the folder itself is never moved or removed. */
@@ -194,6 +199,17 @@ export interface FenceContext {
    *  `<home>/plugins/<id>/` for each (never the folder itself, never a `.git` in it). Filled by the fence from the
    *  registry's records (`MossFence` `workshopOf`) for a bot caller alone; ignored for any other caller. */
   workshop?: readonly string[];
+  /** The instructions rule (lane BT, spec §6.1, item 114): the bots whose `bots/<x>/instructions/` this bot caller
+   *  writes with the normal Write and Edit, with no card: itself, and each bot whose record (`bots/<x>/bot.json`) names
+   *  it as its maker. Filled by the fence from the records on the disk (`MossFence` `instructionsOf`), for a bot caller
+   *  alone; ignored for any other caller. Another bot's instructions change only through the core tool and its card. */
+  instructionsOf?: readonly string[];
+}
+
+/** The bot ids of a context's instructions reach: a bot caller's, valid ids only (a `..` would climb out of `bots/`). */
+export function instructionsReachOf(ctx: FenceContext | undefined): string[] {
+  if (!isBotCaller(ctx) || ctx?.instructionsOf === undefined) return [];
+  return [...new Set(ctx.instructionsOf.filter((id) => isAnyPluginId(id)))];
 }
 
 /** The `bot-memory` reach of a caller (`Fence.forCaller`), the owner's decision: a bot's main conversation and side
@@ -221,7 +237,7 @@ export function ownMemoryOf(ctx: FenceContext | undefined, mossHome: string): st
   return `${mossHome.replace(/[\\/]+$/, "")}/bots/${ctx.memoryOf.replace("/", "--")}/memory`;
 }
 
-type OwnFolder = "ownOutputs" | "ownScratch" | "ownBot" | "ownRoutines" | "ownPluginData" | "ownMemory" | "ownPlugins";
+type OwnFolder = "ownOutputs" | "ownScratch" | "ownBot" | "ownRoutines" | "ownPluginData" | "ownMemory" | "ownPlugins" | "ownInstructions";
 
 /** The plugin ids of a context's workshop: a bot caller's, valid plugin ids only (a `..` would climb out of `plugins/`). */
 export function workshopOf(ctx: FenceContext | undefined): string[] {
@@ -258,6 +274,8 @@ export function ownFoldersOf(ctx: FenceContext | undefined, mossHome: string): P
     out.ownMemory = memory;
     const workshop = workshopOf(ctx);
     if (workshop.length > 0) out.ownPlugins = workshop.map((id) => `${home}/plugins/${id.replace("/", "--")}`);
+    const instructions = instructionsReachOf(ctx);
+    if (instructions.length > 0) out.ownInstructions = instructions.map((id) => `${home}/bots/${id.replace("/", "--")}/instructions`);
   }
   return out;
 }
@@ -330,7 +348,7 @@ export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unli
     if (a.length < b.length || (strict && a.length === b.length)) return false;
     return b.every((n, i) => n === "*" || n === a[i] || (n.startsWith("*") && a[i]!.endsWith(n.slice(1))));
   };
-  const rw = [policy.ownMemory, policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, ...(policy.ownPlugins ?? [])].filter((p): p is string => p !== undefined);
+  const rw = [policy.ownMemory, policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, ...(policy.ownPlugins ?? []), ...(policy.ownInstructions ?? [])].filter((p): p is string => p !== undefined);
   const ro = [...rw, ...(policy.ownBot === undefined ? [] : [policy.ownBot])];
   // 2. An `own…` folder itself, and every folder that holds one, is never unlinked or renamed.
   if ((op === "unlink" || op === "rename") && rw.some((own) => under(own, realPath))) return false;
@@ -473,6 +491,10 @@ export function homeAllows(path: string, writes: boolean, ctx: FenceContext | un
     if (same(area, "scratch") && inside) return true;
     // Any bot's memory, written inside (the owner's amendment); never the memory folder itself.
     if (same(area, "bots") && sub !== undefined && same(sub, "memory") && deeper.length > 0) return true;
+    // The instructions rule (lane BT): its own and its made bots' `bots/<x>/instructions/`, written inside (never the
+    // folder itself, never the record beside it).
+    if (same(area, "bots") && sub !== undefined && same(sub, "instructions") && deeper.length > 0
+      && instructionsReachOf(ctx).some((id) => same(id.replace("/", "--"), x))) return true;
     // Its workshop: inside a plugin it built (never the folder itself, never a `.git` in it).
     if (same(area, "plugins") && insideWorkshop(path, [...home, area].join("/"), ctx, os)) return true;
   }

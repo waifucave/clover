@@ -24,6 +24,7 @@ import {
 } from "../contracts/fence";
 import { canonicalPath, linksOnTheWay, TooManyLinks } from "./canonical";
 import { foldPath, nonAsciiAlias } from "./fold";
+import { instructionsReach } from "../bots/made-by";
 import { botFolders, fenceLayout, globalHooksPathDirs, loginStartPaths, pendingFenced, type LaidOutKind } from "./layout";
 
 /** Pending kinds this fence enforces before B's contract has them. */
@@ -64,6 +65,10 @@ export interface MossFenceOptions {
   /** The plugins a bot built (its workshop, `FenceContext.workshop`): the ids whose install record says
    *  `provenance {by: "bot", bot}`. Default none; the daemon follows the registry (`followWorkshop`). */
   workshopOf?: (bot: string) => readonly string[];
+  /** The instructions rule (lane BT, `FenceContext.instructionsOf`): the bots whose instructions folder a bot writes,
+   *  itself and the bots it made. Default: read from the records on this home's disk at each check and policy
+   *  (`bots/made-by.ts`), failing closed (none) when they can't be read. */
+  instructionsOf?: (bot: string) => readonly string[];
 }
 
 /** How many entries of the fenced set a hard-link walk refuses instead of scanning. */
@@ -113,7 +118,10 @@ export class MossFence implements Fence {
     this.#loopbackPorts = opts.loopbackPorts ?? (() => []);
     this.#enforceAhead = opts.enforceAhead ?? true;
     this.#workshopOf = opts.workshopOf ?? (() => []);
+    this.#instructionsOf = opts.instructionsOf ?? ((bot) => instructionsReach(this.#mossHome, bot));
   }
+
+  #instructionsOf: (bot: string) => readonly string[];
 
   #workshopOf: (bot: string) => readonly string[];
   #knownPlugin: (name: string) => boolean = () => false;
@@ -121,10 +129,20 @@ export class MossFence implements Fence {
   /** A caller's context with what only this fence knows: a bot caller's workshop, read now (an install or a removal
    *  reaches the next check). A context that names one already keeps it; any other caller's is left as it is. */
   #withWorkshop(ctx: FenceContext | undefined): FenceContext | undefined {
-    if (ctx === undefined || !isBotCaller(ctx) || ctx.workshop !== undefined) return ctx;
-    let ids: readonly string[];
-    try { ids = this.#workshopOf(ctx.memoryOf!); } catch { ids = []; } // the records can't be read: no workshop
-    return ids.length === 0 ? ctx : { ...ctx, workshop: [...ids] };
+    if (ctx === undefined || !isBotCaller(ctx)) return ctx;
+    let out = ctx;
+    if (ctx.workshop === undefined) {
+      let ids: readonly string[];
+      try { ids = this.#workshopOf(ctx.memoryOf!); } catch { ids = []; } // the records can't be read: no workshop
+      if (ids.length > 0) out = { ...out, workshop: [...ids] };
+    }
+    // The instructions rule (lane BT): the bots whose instructions it writes, read now (a bot made since counts).
+    if (ctx.instructionsOf === undefined) {
+      let ids: readonly string[];
+      try { ids = this.#instructionsOf(ctx.memoryOf!); } catch { ids = []; } // fails closed: none
+      if (ids.length > 0) out = { ...out, instructionsOf: [...ids] };
+    }
+    return out;
   }
 
   contextFor(caller: Caller): FenceContext {

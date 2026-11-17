@@ -86,7 +86,9 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
   // The folders kept for writing and for reading.
   // A bot's workshop (`ownPlugins`, the plugins it built) is kept like its scratch: written inside, the folder itself held
   // by its pin, and every `.git` in it held by the run-later denies under each root.
-  const ownRw = [policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, policy.ownMemory, ...(policy.ownPlugins ?? [])].filter((x): x is string => x !== undefined);
+  // The instructions rule (lane BT, `ownInstructions`): the bot's own and its made bots' instructions folders, kept
+  // like its memory.
+  const ownRw = [policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, policy.ownMemory, ...(policy.ownPlugins ?? []), ...(policy.ownInstructions ?? [])].filter((x): x is string => x !== undefined);
   // The drop: the plugins folder itself kept for writing (a new folder made there; its own entry held by its pin),
   // and every entry already there that isn't one of this bot's own plugins denied by name.
   if (policy.pluginDrop !== undefined) ownRw.push(policy.pluginDrop);
