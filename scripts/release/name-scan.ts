@@ -604,7 +604,17 @@ function tool(name: string): string | undefined {
 }
 
 function sh(cmd: string[]): boolean {
-  return (spawnSync(cmd[0]!, cmd.slice(1), { stdio: ["ignore", "ignore", "pipe"] }).status ?? 1) === 0;
+  return shWhy(cmd).ok;
+}
+
+/** `sh`, with the command's own first line of complaint (stderr), so a refusal says why: `hdiutil` fails a mount for reasons only it
+ *  names ("Resource busy", "no mountable file systems"), and "doesn't open for the scan" alone left a one-in-eighty failure on a
+ *  runner unexplainable. Only the tool's message is kept, cut short; it names paths of this run's own temp folders. */
+function shWhy(cmd: string[]): { ok: boolean; why: string } {
+  const r = spawnSync(cmd[0]!, cmd.slice(1), { stdio: ["ignore", "ignore", "pipe"] });
+  const ok = (r.status ?? 1) === 0;
+  const first = String(r.stderr ?? "").split("\n").map((l) => l.trim()).find((l) => l !== "") ?? "";
+  return { ok, why: ok ? "" : `${cmd[0]}${r.status === null ? " was killed" : ` exit ${r.status}`}${first !== "" ? `: ${first.slice(0, 200)}` : ""}` };
 }
 
 export function nameScan(assets: readonly string[], apps: readonly string[], options: NameScanOptions = process.env.HOME): { problems: string[]; read: number; accepted: string[] } {
@@ -659,6 +669,7 @@ export function nameScan(assets: readonly string[], apps: readonly string[], opt
       writeFileSync(out, r.buffer);
       return true;
     };
+    let openFailure = "";
     const ok = ((): boolean => {
       try {
         return openWith();
@@ -668,11 +679,14 @@ export function nameScan(assets: readonly string[], apps: readonly string[], opt
     })();
     function openWith(): boolean {
       switch (how) {
-        case "dmg":
-          if (!sh(["hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint", into, file])) return false;
+        case "dmg": {
+          const attached = shWhy(["hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint", into, file]);
+          if (!attached.ok) { openFailure = attached.why; return false; }
           dmgRoots.add(into);
-          cleanup.push(() => { sh(["hdiutil", "detach", into, "-force"]); });
+          // A mount that doesn't let go is said, never ignored: the next image's mount is the one that would fail for it.
+          cleanup.push(() => { const d = shWhy(["hdiutil", "detach", into, "-force"]); if (!d.ok) console.error(`the identity scan couldn't unmount ${basename(file)}: ${d.why}`); });
           return true;
+        }
         case "zip": case "rpm": case "tar": case "ar": return sh(["bsdtar", "-xf", file, "-C", into]);
         case "7z": case "nsis": case "cab": case "msi": case "rar": case "crx": case "pe": case "appendedzip": return sh([tool("7z")!, "x", "-y", `-o${into}`, file]);
         case "deb": {
@@ -695,7 +709,7 @@ export function nameScan(assets: readonly string[], apps: readonly string[], opt
         case "raw": return false;
       }
     }
-    if (!ok) { problems.push(`${basename(file)} doesn't open for the scan`); return undefined; }
+    if (!ok) { problems.push(`${basename(file)} doesn't open for the scan${openFailure !== "" ? ` (${openFailure})` : ""}`); return undefined; }
     return into;
   };
   /**
