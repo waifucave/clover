@@ -214,7 +214,7 @@ describe("the real fence on a real disk", () => {
     const { moss, fence } = make("macos");
     const kinds = new Map(fence.fencedSet().map((i) => [i.kind, i.path] as const));
     expect(kinds.get("plugins")).toBe(join(moss, "plugins"));
-    const transcriptPaths = fence.fencedSet().filter((i) => i.kind === "transcripts").map((i) => i.path).sort();
+    const transcriptPaths = fence.fencedSet().filter((i) => i.kind === "transcripts" && i.path.startsWith(`${moss}/`)).map((i) => i.path).sort();
     expect(transcriptPaths).toEqual([join(moss, "sessions"), join(moss, "transcripts")].sort());
     expect(kinds.get("usage")).toBe(join(moss, "usage"));
     expect(kinds.get("sessions-runtime")).toBe(join(moss, "sessions-runtime"));

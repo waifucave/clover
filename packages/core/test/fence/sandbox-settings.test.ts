@@ -112,15 +112,17 @@ describe("sandboxSettingsOf", () => {
     expect(all.filter((x) => x.startsWith(`${MOSS}/outputs/`) && !x.startsWith(`${MOSS}/outputs/s1/`) && x !== `${MOSS}/outputs/s1`)).toEqual([]);
     expect(writable(fs, `${MOSS}/outputs/s9999/r.md`)).toBe(false);
     expect(writable(fs, `${MOSS}/outputs/s1/r.md`)).toBe(true);
-    expect(JSON.stringify(fs).length).toBeLessThan(8_000);
+    // (A fixed part of it, the same at any number of sessions, is the other installs' read-denied places: `otherInstallReadDenied`.)
+    expect(JSON.stringify(fs).length).toBeLessThan(16_000);
     // And as a Seatbelt profile (what goes through sandbox-exec's argv, 1 MB at most): the same size as with 3 sessions.
     const small = buildMandatoryFloorProfile(floorOf(sandboxSettingsOf(policyFor(BOT), MOSS, { list, plain }).filesystem!)).length;
     const big = buildMandatoryFloorProfile(floorOf(fs)).length;
-    expect(big).toBeLessThan(64_000);
+    // (A fixed part of it, the same at any number of sessions, is the other installs' read-denied places.)
+    expect(big).toBeLessThan(128_000);
     expect(Math.abs(big - small)).toBeLessThan(200);
     // The same for a runner that isn't a bot: its reads deny outputs/ whole.
     const coding = sandboxSettingsOf(policyFor({ sessionId: "s1" }), MOSS, { list: (d) => many[d] ?? [], plain }).filesystem!;
-    expect(JSON.stringify(coding).length).toBeLessThan(8_000);
+    expect(JSON.stringify(coding).length).toBeLessThan(16_000);
     expect(coding.denyRead).toContain(`${MOSS}/outputs`);
   });
 

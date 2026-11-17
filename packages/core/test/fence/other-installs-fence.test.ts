@@ -1,7 +1,13 @@
 // The old install is read-only for bots and plugins (the one-time copy's ruling 9): every other install's home (the
 // installed old app's and its dev profile's among them) and the old app's data folders, built from `other-installs.ts`,
 // are write-denied to every tool runner as places another install runs what is written there, outside MOSS's sandbox.
-// Reads stay open. Temp homes only: the user's real home is never named.
+// Reads are closed, for every runner, where each install's own fence closed them (`otherInstallReadDenied`): in each
+// home, its run folder and every `BOT_READ_DENIED` place relative to THAT home (its secret store's files,
+// `credentials/`, `runtimes/`, the runtime's `sdk/settings.json` and its config file under this product's name and the
+// install's own, `plugin-data/`, the headless browser's `browser/`, the runtime's file copies, tasks and caches, the
+// provider-state sidecars beside each transcript); and the old app's browser partitions. The rest of each home stays
+// readable: its conversations and transcripts, memory, scratch, settings and plugins. Temp homes only: the user's real
+// home is never named.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
@@ -13,7 +19,7 @@ import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
 import { runLaterExtras } from "../../src/fence/run-later";
 import { OTHER_INSTALL_APP_DATA_DIRS, OTHER_INSTALL_HOMES, OLD_INSTALL_DEV_HOME_DIR, OLD_INSTALL_HOME_DIR, otherInstallPlaces, otherInstallReadDenied } from "../../src/other-installs";
-import { persistencePlaces } from "../../src/registry/plugin-fence";
+import { persistencePlaces, pluginFenceProfile } from "../../src/registry/plugin-fence";
 import { darwinDescribe } from "../helpers/darwin-only";
 import { persistencePaths } from "../../src/runtime-sdk/mode-options";
 
@@ -37,7 +43,7 @@ describe("the other installs' places", () => {
   });
 });
 
-describe("the fence refuses a write there for every kind of caller, and lets every read through", () => {
+describe("the fence refuses a write there for every kind of caller, and a read of what each install kept unread", () => {
   const callers: [string, FenceContext][] = [
     ["a bot's conversation", fenceContextFor({ kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" })],
     ["a side thread", fenceContextFor({ kind: "session", sessionId: "s_side", sessionKind: "side-thread", bot: "alpha" })],
@@ -71,27 +77,55 @@ describe("the fence refuses a write there for every kind of caller, and lets eve
     expect(fence.check({ op: "write", path: join(home, `${OLD_INSTALL_HOME_DIR}-notes`, "x") }, ctx).allowed).toBe(true);
   });
 
-  test.each(callers)("%s: the old install's run folder, secret files and browser partitions can't be read either", (_name, ctx) => {
-    for (const os2 of ["macos", "linux", "windows"] as const) {
-      const h = os2 === "windows" ? "C:\\Users\\u" : os2 === "macos" ? "/Users/u" : "/home/u";
-      const f = new MossFence({ os: os2, home: h, mossHome: os2 === "windows" ? `${h}\\.moss` : `${h}/.moss`, canonical: (q) => q });
-      const denied = otherInstallReadDenied(os2, h);
-      expect(denied.some((d) => d.kind === "browser-profiles")).toBe(true);
+  // Each OS's fence, built once (a fence for another OS than this computer's reads nothing of the disk but is slow on
+  // Linux's names, so the Linux pass checks one place of each kind in each home).
+  const sample = (os2: "macos" | "linux" | "windows", denied: ReturnType<typeof otherInstallReadDenied>) => {
+    if (os2 !== "linux") return denied;
+    const seen = new Set<string>();
+    return denied.filter((d) => { const k = `${d.kind}:${d.path.split("/").slice(0, 4).join("/")}`; if (seen.has(k)) return false; seen.add(k); return true; });
+  };
+  const fences = (["macos", "linux", "windows"] as const).map((os2) => {
+    const h = os2 === "windows" ? "C:\\Users\\u" : os2 === "macos" ? "/Users/u" : "/home/u";
+    const s2 = os2 === "windows" ? "\\" : "/";
+    return { os2, h, s2, f: new MossFence({ os: os2, home: h, mossHome: `${h}${s2}.moss`, canonical: (q) => q }), denied: otherInstallReadDenied(os2, h) };
+  });
+
+  test.each(callers)("%s: in each other install's home, its run folder and every place a bot never reads can't be read; the rest can", (_name, ctx) => {
+    for (const { os2, h, s2, f, denied } of fences) {
+      const kinds = new Set(denied.map((d) => d.kind));
+      for (const k of ["run-folder", "browser-profiles", "credential-store", "plugin-data", "transcripts"] as const) expect([os2, k, kinds.has(k)]).toEqual([os2, k, true]);
       expect(denied.filter((d) => d.kind === "secrets-file").length).toBe(os2 === "macos" ? 0 : OTHER_INSTALL_HOMES.length);
-      for (const d of denied) {
-        const inside = d.kind === "run-folder" || d.kind === "browser-profiles" ? `${d.path}${os2 === "windows" ? "\\" : "/"}x` : d.path;
-        expect([os2, d.kind, inside, f.check({ op: "read", path: inside }, ctx).allowed]).toEqual([os2, d.kind, inside, false]);
-        if (d.kind === "run-folder" || d.kind === "browser-profiles") expect(f.check({ op: "list", path: d.path }, ctx).allowed).toBe(false);
+      const at = (...p: string[]) => [h, OLD_INSTALL_HOME_DIR, ...p].join(s2);
+      // The places the owner's rule names, by name, in the old home: its run folder, secret store, sign-ins, the
+      // runtime's settings (its `env` block can hold API keys) and config file under both names, plugins' tokens.
+      for (const p of [at("run", "harness-token"), at("credentials", "index.json"), at("sdk", "settings.json"), at("sdk", ".moss.json"), at("sdk", `${OLD_INSTALL_HOME_DIR}.json`), at("plugin-data", "x", "token"), at("browser", "Default", "Cookies"), at("runtimes", "runtime-state.db"), at("secrets.key")]) {
+        expect([os2, p, f.check({ op: "read", path: p }, ctx).allowed]).toEqual([os2, p, false]);
       }
-      // The rest of the old home stays readable.
-      const settings = os2 === "windows" ? `${h}\\${OLD_INSTALL_HOME_DIR}\\settings.json` : `${h}/${OLD_INSTALL_HOME_DIR}/settings.json`;
-      expect(f.check({ op: "read", path: settings }, ctx)).toEqual({ allowed: true });
+      // A provider-state sidecar beside a transcript (a `*` entry), and never the transcript itself.
+      expect(f.check({ op: "read", path: at("projects", "-x", "s1.provider-state.jsonl") }, ctx).allowed).toBe(false);
+      expect(f.check({ op: "read", path: at("sdk", "projects", "-x", "s1.provider-state.jsonl") }, ctx).allowed).toBe(false);
+      for (const d of sample(os2, denied)) {
+        const inside = `${d.path}${s2}x`;
+        expect([os2, d.kind, d.path, f.check({ op: "read", path: d.path }, ctx).allowed, f.check({ op: "read", path: inside }, ctx).allowed]).toEqual([os2, d.kind, d.path, false, false]);
+      }
+      // The rest of the old home stays readable: its conversations, memory, scratch, settings and plugins.
+      for (const p of [at("settings.json"), at("sessions", "index.db"), at("projects", "-x", "s1.jsonl"), at("memory", "notes.md"), at("bots", "alpha", "memory", "MEMORY.md"), at("scratch", "alpha", "draft.md"), at("plugins", "tarot", "index.ts")]) {
+        expect([os2, p, f.check({ op: "read", path: p }, ctx)]).toEqual([os2, p, { allowed: true }]);
+      }
     }
     // On this computer's real fence too, by the same names.
     expect(fence.check({ op: "read", path: join(old, "run", "harness-token") }, ctx).allowed).toBe(false);
-    // And a sandboxed command's denyRead (the runner's policy) names them.
-    expect(fence.policy(ctx).denyRead).toEqual(expect.arrayContaining([join(old, "run")]));
-  });
+    expect(fence.check({ op: "read", path: join(old, "sdk", "settings.json") }, ctx).allowed).toBe(false);
+    // And a sandboxed command's denyRead (the runner's policy) names them: the run folder, the secret files, the
+    // places a bot never reads, the `*` entries as globs, and the old app's partitions.
+    const denyRead = fence.policy(ctx).denyRead;
+    const real = otherInstallReadDenied(os, home);
+    expect(denyRead).toEqual(expect.arrayContaining([
+      join(old, "run"), join(old, "credentials"), join(old, "sdk", "settings.json"), join(old, "plugin-data"), join(old, "secrets.enc"), join(old, "secrets.key"), join(old, "secrets.key.cred"),
+      join(old, "projects", "*", "*.provider-state.jsonl"),
+      ...real.filter((d) => d.kind === "browser-profiles").map((d) => d.path),
+    ]));
+  }, 60_000);
 
   test("a link planted in a writable folder leads into it: refused where it lands", () => {
     mkdirSync(join(home, "w"), { recursive: true });
@@ -122,6 +156,26 @@ describe("a sandboxed command can't write it (the session sandbox's denyWrite)",
   });
 });
 
+darwinDescribe("the plugin host's fenced-process profile (every plugin process: its host half, hooks, stdio servers)", () => {
+  test("reading the old install's run folder or its runtime settings is refused; its own folder reads", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-other-installs-pf-")));
+    const old = join(home, OLD_INSTALL_HOME_DIR);
+    const own = join(home, "plugin");
+    for (const d of [join(old, "run"), join(old, "sdk"), own]) mkdirSync(d, { recursive: true });
+    writeFileSync(join(old, "run", "harness-token"), "PROBE_SECRET=dummy123\n");
+    writeFileSync(join(old, "sdk", "settings.json"), "{\"env\":{\"PROBE_SECRET\":\"dummy123\"}}\n");
+    writeFileSync(join(own, "index.ts"), "own-dummy456\n");
+    const profile = pluginFenceProfile({ mossHome: join(home, ".moss"), userHome: home, read: [own], write: [], exec: "any" });
+    const cat = (path: string) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/cat", path], { encoding: "utf8" });
+    for (const p of [join(old, "run", "harness-token"), join(old, "sdk", "settings.json")]) {
+      const r = cat(p);
+      // The probe says only whether the dummy value was seen.
+      expect([p, r.status === 0, r.stdout.includes("dummy123")]).toEqual([p, false, false]);
+    }
+    expect(cat(join(own, "index.ts")).stdout.includes("own-dummy456")).toBe(true);
+  });
+});
+
 darwinDescribe("the fence's own Seatbelt, as a bot's and a plugin's commands run under it", () => {
   test("write, rename the folder away, plant a link, make it when absent, case and `..`: each refused; reads go through", () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-other-installs-sb-")));
@@ -130,6 +184,10 @@ darwinDescribe("the fence's own Seatbelt, as a bot's and a plugin's commands run
     mkdirSync(join(old, "plugins"), { recursive: true });
     mkdirSync(at("w"), { recursive: true });
     writeFileSync(join(old, "settings.json"), "PROBE_SECRET=dummy123\n");
+    mkdirSync(join(old, "run"), { recursive: true });
+    mkdirSync(join(old, "sdk"), { recursive: true });
+    writeFileSync(join(old, "run", "harness-token"), "PROBE_SECRET=dummy123\n");
+    writeFileSync(join(old, "sdk", "settings.json"), "PROBE_SECRET=dummy123\n");
     const run = (profile: string, script: string, ...args: string[]) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", script, "sh", ...args], { encoding: "utf8" });
     for (const ctx of [fenceContextFor({ kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" }), fenceContextFor({ kind: "plugin", pluginId: "acceptance-echo" })]) {
       const fence = new MossFence({ os: "macos", home, mossHome: at(".moss"), temp: at("tmp") });
@@ -151,6 +209,10 @@ darwinDescribe("the fence's own Seatbelt, as a bot's and a plugin's commands run
       // Reading it is free (the probe says only whether the dummy value was seen).
       const read = run(profile, 'cat "$1"', join(old, "settings.json"));
       expect(read.stdout.includes("dummy123")).toBe(true);
+      // But not its run folder, nor the runtime's settings.
+      for (const p of [join(old, "run", "harness-token"), join(old, "sdk", "settings.json")]) {
+        expect([p, run(profile, 'cat "$1"', p).stdout.includes("dummy123")]).toEqual([p, false]);
+      }
     }
   });
 });

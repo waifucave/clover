@@ -8,6 +8,7 @@
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, posix, resolve, sep, win32 } from "node:path";
+import { BOT_READ_DENIED } from "./contracts/fence";
 import { LEGACY_DEV_HOME_DIR, LEGACY_HOME_DIR, LEGACY_KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE_DEV } from "./legacy-names";
 
 /** The installed Clover app's home folder, and its dev profile's: the app this one replaces, kept running beside it. */
@@ -60,20 +61,58 @@ export function otherInstallPlaces(os: "macos" | "linux" | "windows", home: stri
   return [...OTHER_INSTALL_HOMES.map((o) => p.join(home, o.dir)), ...OTHER_INSTALL_APP_DATA_DIRS.map((d) => p.join(appData, d))];
 }
 
-/** What the fence hides from READS of every tool runner in the other installs (as each install's own fence did): each
- *  home's run folder (its tokens and sockets), its secret store's file and key files (Windows and Linux; macOS keeps
- *  them in the Keychain), and the old app's browser partitions (its signed-in sites), by the fence's own kinds. */
-export function otherInstallReadDenied(os: "macos" | "linux" | "windows", home: string): { kind: "run-folder" | "secrets-file" | "key-file" | "browser-profiles"; path: string }[] {
+/** The kinds the other installs' read-denied places are named by (the fence's own kinds, each read-denied there). */
+export type OtherInstallReadKind = "run-folder" | "secrets-file" | "key-file" | "browser-profiles" | "credential-store" | "plugin-data" | "transcripts";
+
+/** The SDK config file's names an install's home may hold (`sdk/.moss.json`): this product's, and the install's own
+ *  (its folder's name, `-dev` dropped: `.<name>.json`). */
+function sdkConfigNames(dir: string): string[] {
+  return [...new Set([".moss.json", `.${dir.replace(/^\./, "").replace(/-dev$/, "")}.json`])];
+}
+
+/** The fence's kind for a `BOT_READ_DENIED` entry in another install's home: what it holds, as the refusal names it. */
+function kindOf(rel: readonly string[], os: "macos" | "linux" | "windows"): OtherInstallReadKind {
+  const [first, second] = rel;
+  if (first === "credentials" || first === "runtimes" || (first === "sdk" && (second === "settings.json" || /^\.[^/]+\.json$/.test(second ?? "")))) return "credential-store";
+  if (first === "plugin-data") return "plugin-data";
+  if (first === "browser") return "browser-profiles";
+  // macOS keeps the secret store in the Keychain, so a file of that name there is named a credential store.
+  if (first === "secrets.enc") return os === "macos" ? "credential-store" : "secrets-file";
+  if (first === "secrets.key" || first === "secrets.key.cred") return os === "macos" ? "credential-store" : "key-file";
+  // The runtime's copies of a session's files, its caches and builds.
+  return "transcripts";
+}
+
+/** What the fence hides from READS of every tool runner in each other install's home, as that install's own fence hid
+ *  it: its run folder (tokens and sockets) and every place a bot never reads in a home (`BOT_READ_DENIED`, the one
+ *  list: the secret store's files, `credentials/`, `runtimes/`, the runtime's settings, whose `env` block can carry API
+ *  keys, and its config file under each name, `plugin-data/` with plugins' tokens, the headless browser's profiles,
+ *  the runtime's file copies, tasks and caches), relative to THAT home; and the old app's browser partitions (its
+ *  signed-in sites). The entries with a `*` segment (the provider-state sidecars beside each transcript) are
+ *  `otherInstallReadPatterns`. The rest of each home (conversations, memory, scratch, settings, plugins) stays
+ *  readable; the whole home stays write-denied (`otherInstallPlaces`). */
+export function otherInstallReadDenied(os: "macos" | "linux" | "windows", home: string): { kind: OtherInstallReadKind; path: string }[] {
   const p = os === "windows" ? win32 : posix;
   const appData = os === "macos" ? p.join(home, "Library", "Application Support") : os === "windows" ? p.join(home, "AppData", "Roaming") : p.join(home, ".config");
-  const out: { kind: "run-folder" | "secrets-file" | "key-file" | "browser-profiles"; path: string }[] = [];
+  const out: { kind: OtherInstallReadKind; path: string }[] = [];
   for (const o of OTHER_INSTALL_HOMES) {
     const h = p.join(home, o.dir);
     out.push({ kind: "run-folder", path: p.join(h, "run") });
-    if (os !== "macos") out.push({ kind: "secrets-file", path: p.join(h, "secrets.enc") }, { kind: "key-file", path: p.join(h, "secrets.key") }, { kind: "key-file", path: p.join(h, "secrets.key.cred") });
+    for (const rel of BOT_READ_DENIED) {
+      if (rel.some((seg) => seg.includes("*"))) continue;
+      const names = rel[0] === "sdk" && rel[1] === ".moss.json" && rel.length === 2 ? sdkConfigNames(o.dir).map((n) => ["sdk", n]) : [rel];
+      for (const r of names) out.push({ kind: kindOf(r, os), path: p.join(h, ...r) });
+    }
   }
   for (const d of OTHER_INSTALL_APP_DATA_DIRS) out.push({ kind: "browser-profiles", path: p.join(appData, d, "Partitions") });
   return out;
+}
+
+/** The `BOT_READ_DENIED` entries with a `*` segment, relative to each other install's home: the home, and the
+ *  entry's segments (`*` any one name, `*.x` any name ending `.x`, as `segmentMatches` reads them). */
+export function otherInstallReadPatterns(os: "macos" | "linux" | "windows", home: string): { home: string; rel: readonly string[] }[] {
+  const p = os === "windows" ? win32 : posix;
+  return OTHER_INSTALL_HOMES.flatMap((o) => BOT_READ_DENIED.filter((rel) => rel.some((seg) => seg.includes("*"))).map((rel) => ({ home: p.join(home, o.dir), rel })));
 }
 
 /** Their Keychain services, and what each is: a MOSS daemon, script or test never reads or writes one. */
