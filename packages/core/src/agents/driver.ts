@@ -34,6 +34,9 @@ export interface AgentDriverOptions {
   /** A line the person should read before this turn runs (the agent keeps the plugin tools it started with): recorded
    *  in the session's log as a notice, never sent to the agent. Asked after `beforeTurn`; undefined says nothing. */
   noticeBeforeTurn?(): string | undefined;
+  /** A turn starts, from this input and origin (before the agent is started or asked anything): what the conversation
+   *  saw, as a bot's turn reports it (the addresses the user gave, the fetch budget's reset). */
+  turnStarted?(input: TurnInput, origin: TurnOrigin | undefined): void;
 }
 
 /** What the driver records in the session's log. */
@@ -109,6 +112,7 @@ export class AgentDriver implements SessionDriver {
     if (this.#stopping) return { reason: "stopped" };
     this.#origin = ctl.origin;
     this.#signal = ctl.signal;
+    try { this.#opts.turnStarted?.(input, ctl.origin); } catch { /* an observer never stops a turn */ }
     let session: AgentSession;
     try {
       const fresh = !this.#session;

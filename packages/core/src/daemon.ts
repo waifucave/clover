@@ -289,7 +289,8 @@ export interface BrowserHostInjection {
 }
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
-import type { Level, NewSessionEvent, PluginProvenance } from "@waifucave/moss-protocol";
+import type { Level, NewSessionEvent, PluginProvenance, TurnOrigin } from "@waifucave/moss-protocol";
+import type { TurnInput } from "./contracts/session-host";
 import { AppRenderResult, BUNDLED_ROOT_PLUGIN, topPluginIdOf, dataKindOfSession } from "@waifucave/moss-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, loginShellPathRetrier, type LoginShellPathDeps } from "./login-shell-path";
@@ -4390,6 +4391,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // The bot's own shell write roots as its sandbox draws them now, at a level (its grants among them); none before the
   // bot side is up.
   let botShellRoots: ((conversation: string | undefined, bot: string, level: Level | undefined) => readonly string[]) | undefined;
+  // An agent or coding session's turn starting: what its conversation saw, kept as a bot's turn keeps it (the addresses
+  // the user gave, the fetch budget); nothing kept before the bot side is up.
+  let agentTurnSeen: ((sessionId: string, input: TurnInput, origin: TurnOrigin | undefined) => void) | undefined;
   const workshopFor = (opened: OpenedRegistry): PluginWorkshop => {
     const leftovers = opened.leftovers;
     return new PluginWorkshop({
@@ -4411,6 +4415,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // Before the bot side is up no root can be known: no budget then, never a fresh one.
     const readElements = new ReadElements();
     const seenUrls = new SeenUrls({ rootOf: (id) => { const h = sessionsOf?.(); return h === undefined ? undefined : budgetRootOf(id, (s) => h.get(s)); } });
+    // A code session's (or a bot's agent's) turns feed it as a bot's do: its WebFetch is judged by the same check.
+    agentTurnSeen = (id, input, origin) => { seenUrls.turnStarted(id, origin); seenUrls.input(id, input); };
     // The conversations' shell grants (lane C's `SandboxGrants`, made with the drivers): a removed bot's go with it, and
     // a conversation's own when it ends.
     let shellGrants: SandboxGrants | undefined;
@@ -4902,6 +4908,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // write roots as drawn now at its level (agents/bot-child.ts, the coordinator's rulings on stage 2's review);
           // every other command of a bot's agent asks on a card.
           botWriteRoots: (conversation, bot, level) => botShellRoots?.(conversation, bot, level) ?? [],
+          turnStarted: (id, input, origin) => agentTurnSeen?.(id, input, origin),
           // The bots' plugin hooks (made with the bot side), so an in-process delegation's tool calls and an agent's
           // permission requests meet them too; none to wait for when plugins are off or their registry gave up.
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),

@@ -53,6 +53,8 @@ export function fakeAdmissions(sandbox: "protected" | "none", modeFloor?: (level
 export interface WorldOptions {
   /** The manager's log lines. */
   log?: (line: string) => void;
+  /** Each session's turn as it starts (`AgentManagerOptions.turnStarted`). */
+  turnStarted?: AgentManagerOptions["turnStarted"];
   /** The plugins' turn hooks, as the manager reads them (`AgentManagerOptions.hooks`). */
   hooks?: AgentManagerOptions["hooks"];
   quirks?: AgentQuirks;
@@ -188,6 +190,7 @@ export class World {
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
       ...(o.log ? { log: o.log } : {}),
+      ...(o.turnStarted ? { turnStarted: o.turnStarted } : {}),
       ...(o.hooks ? { hooks: o.hooks } : {}),
       ...(o.childCommandsHeld === undefined ? {} : { childCommandsHeld: o.childCommandsHeld }),
       levelOf: () => this.level,

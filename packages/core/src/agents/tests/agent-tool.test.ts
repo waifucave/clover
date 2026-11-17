@@ -31,6 +31,7 @@ import { agentToolDefs } from "../tools";
 import { readAgentRecord } from "../records";
 import { REDACTED_TOKEN } from "../transcript";
 import { StallWatchdog } from "../watchdog";
+import { SeenUrls } from "../../approvals/seen-urls";
 import { fakeAdmissions, waitFor, World, type WorldOptions } from "./world";
 
 // Real processes: generous on a loaded CI runner.
@@ -1078,6 +1079,25 @@ describe("the agent methods", () => {
     expect(backends).toMatchObject([{ id: "fake", protocol: "acp", placement: "local", computers: [{ computer: "Studio", installed: true, version: "1.0.0", sandboxed: true, marks: [] }] }]);
     expect(await methods["agent.definitions"]!({}, user)).toEqual({ definitions: [{ id: "reviewer", name: "Reviewer", pluginId: "acme", backend: "fake", model: "m1", root: "home/Studio/project1" }] });
     void WELL_BEHAVED_QUIRKS;
+  });
+
+  test("a code session's turn reports what it saw as a bot's does: an address in the user's message counts as seen", async () => {
+    const seen = new SeenUrls();
+    const turns: { id: string; origin: string | undefined }[] = [];
+    const w = make({
+      script: [[{ say: "Reading it." }]],
+      turnStarted: (id, input, origin) => { turns.push({ id, origin }); seen.turnStarted(id, origin); seen.input(id, input); },
+    });
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32) });
+    const { session } = (await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1" }, { caller: { kind: "user", client: "app" } })) as { session: string };
+    expect(seen.seen(session, "https://docs.example.com/guide")).toBe(false);
+    await w.host.sendUser(session, { text: "Read https://docs.example.com/guide please.", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() });
+    await waitFor(() => w.host.get(session)!.status === "idle" && w.report("prompt").length === 1, "the turn");
+    expect(turns).toEqual([{ id: session, origin: "user" }]);
+    expect(seen.seen(session, "https://docs.example.com/guide")).toBe(true);
+    // Never an address it didn't give, and never in another session.
+    expect(seen.seen(session, "https://docs.example.com/other")).toBe(false);
+    expect(seen.seen("agent_other", "https://docs.example.com/guide")).toBe(false);
   });
 
   test("the terminal here starts a session as this computer's device, and on a read-only computer it is held to read-only", async () => {

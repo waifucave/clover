@@ -124,6 +124,9 @@ export interface AgentManagerOptions {
   /** Whether a bot's agent's file change to `path` is a run-later place (agents/bot-child.ts `botChildRunsLater`):
    *  refused before any card, as the bot's own. Without it the run-later names alone are refused. */
   childRunsLater?: (child: { bot: string; rootPath: string; level: Level | undefined; fence: SandboxPolicy }, path: string) => boolean;
+  /** A turn of an agent or coding session starts from `input` (what the conversation saw, as a bot's turn reports it:
+   *  the addresses the user's own message gave, a turn of the user's resetting the fetch budget). */
+  turnStarted?: (sessionId: string, input: TurnInput, origin: TurnOrigin | undefined) => void;
   log?: (line: string) => void;
 }
 
@@ -730,6 +733,7 @@ export class AgentManager {
     } as Entry;
     entry.driver = new AgentDriver({
       start: () => this.#startAgent(entry, reattach),
+      turnStarted: (input, origin) => this.#o.turnStarted?.(id, input, origin),
       // A turn another computer sent carries the prompt it built there (its images read there).
       promptOf: async (input) => peerPromptOf(input) ?? promptOf(input),
       redact: (v) => transcript.redacted(v),
