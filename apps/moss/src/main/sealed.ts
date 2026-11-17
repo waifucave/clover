@@ -1,7 +1,8 @@
 // MOSS's own copy of the sealed frames' store (MOSS Code's is apps/desktop/src/main/sealed.ts; the spine's lane map gives
 // MOSS its own copy, spec §3.4 and §5.5 E7: MOSS's main process holds its own press record for the cards it draws). The one
 // change: an answer is signed as MOSS's program (`programCardAnswerSigningInput` with `program: "moss"`, ruling C), with
-// MOSS's own answer key, never MOSS Code's single-key input.
+// MOSS's own answer key, never MOSS Code's single-key input, and its proof names that program (`proof.program`, lane RT's
+// field: the engine verifies a proof that names its program with that program's key alone).
 //
 // The sealed frames' runtime (spec §5.5; plan §4 E M3): the store behind the per-card frames the sdk's `<Card>` places.
 // The app's main process hears the cards with their sealed fields (`card_requested`, the app's role), keeps them, and
@@ -311,7 +312,7 @@ export class SealedFrames {
    *  the answer on the store's own books until the core's own answer (`confirmedAnswer`) reads it: a lost `card.answer`
    *  call doesn't kill the card (S6's fix — the mark goes on accepted answers only). `frameKey` is the sender's own
    *  key, checked against the mint's binding (B4: the token's own sender, always). */
-  buildAnswer(token: string, option: string | undefined, children: readonly string[] | undefined, frameKey: string, signer: AnswerSigner, device: string, at = this.now()): { proof: { via: "device"; device: string; at: number; signature: string }; card: SealedCard; kids?: readonly string[] } | { error: string } {
+  buildAnswer(token: string, option: string | undefined, children: readonly string[] | undefined, frameKey: string, signer: AnswerSigner, device: string, at = this.now()): { proof: { via: "device"; device: string; at: number; signature: string; program: Program }; card: SealedCard; kids?: readonly string[] } | { error: string } {
     const ch = this.channels.get(token);
     const card = ch !== undefined ? this.cards.get(ch.cardId) : undefined;
     if (ch === undefined || card === undefined || this.now() - ch.at > ANSWER_TTL_MS || ch.bound !== frameKey) return { error: "no such sealed button" };
@@ -329,7 +330,7 @@ export class SealedFrames {
     const kids = children === undefined ? undefined : [...children];
     const sig = signer.sign(new TextEncoder().encode(programCardAnswerSigningInput({ program: this.program, id: card.id, hash: card.hash, option: pick, at, children: kids })));
     this.pending.set(card.id, pick);
-    return { proof: { via: "device", device, at, signature: Buffer.from(sig).toString("base64") }, card, ...(kids !== undefined ? { kids } : {}) };
+    return { proof: { via: "device", device, at, signature: Buffer.from(sig).toString("base64"), program: this.program }, card, ...(kids !== undefined ? { kids } : {}) };
   }
 
   /** The core's own answer marked the card's fate: its frames' business ends either way, and the store's own pending
