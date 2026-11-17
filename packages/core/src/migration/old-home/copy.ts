@@ -275,12 +275,15 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
       mkdirSync(dirname(target), { recursive: true });
       const db = new Database(scratchDb);
       try {
+        // No function a schema names (a view's, a trigger's, a default's) runs while the copy reads it.
+        db.run("PRAGMA trusted_schema = OFF");
         db.run("VACUUM INTO ?", [target]);
       } finally {
         db.close();
       }
       const staged = new Database(target);
       try {
+        staged.run("PRAGMA trusted_schema = OFF");
         const tables = staged.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[];
         for (const { name } of tables) {
           const cols = staged.query(`PRAGMA table_info("${name.replace(/"/g, '""')}")`).all() as { name: string }[];
@@ -347,6 +350,12 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
             continue;
           }
           const targetRel = posixRel(relative(into, resolved));
+          // Left out too: a link to something the copy leaves out (the old secret store, its run folder…), and every
+          // link in a bot's memory (its files are copied as written; a link there leads where the bot can't go).
+          if (LEFT_OUT_TOP.includes(targetRel.split("/")[0]!) || /^bots\/[^/]+\/memory(?:\/|$)/.test(rel)) {
+            report.linksLeftOut.push(rel);
+            continue;
+          }
           const mappedTarget = targetRel === "" ? home : join(home, ...mapHomePath(targetRel).split("/"));
           const linkAt = join(p.staging, ...to.split("/"));
           mkdirSync(dirname(linkAt), { recursive: true });
@@ -378,7 +387,10 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
           if (!inModules && PLUGIN_TEXT_EXT.test(name) && st.size <= TEXT_MAX) {
             const text = readOld(abs, TEXT_MAX);
             if (text !== undefined) {
-              stageFile(to, mapPluginText(text.toString("utf8")), st.mode);
+              const was = text.toString("utf8");
+              const mapped = mapPluginText(was);
+              // Unchanged by the map: its bytes as they were (a file that isn't UTF-8 stays as it was).
+              stageFile(to, mapped === was ? text : mapped, st.mode);
               report.files++;
               report.bytes += st.size;
               o.afterFile?.(rel);
@@ -393,7 +405,8 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
         if (TEXT_EXT.test(name) && st.size <= TEXT_MAX) {
           const raw = readOld(abs, TEXT_MAX);
           if (raw !== undefined && !raw.subarray(0, 8192).includes(0)) {
-            let text = raw.toString("utf8");
+            const was = raw.toString("utf8");
+            let text = was;
             if (!AS_WRITTEN.some((re) => re.test(rel))) {
               const pathed = rewriteHomePath(text, olds, home);
               if (pathed !== text) report.pathsRewritten.push(rel);
@@ -415,7 +428,7 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
                 // Not JSON: copied as it is.
               }
             }
-            stageFile(to, text, st.mode);
+            stageFile(to, text === was ? raw : text, st.mode);
             report.files++;
             report.bytes += st.size;
             o.afterFile?.(rel);
@@ -428,11 +441,17 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
       }
     };
     await walk("");
-    const carry: RegistryCarry = carryFromOldRegistry(readOld(join(oldRoot, "plugins-state", "installed.json"), 16 * 1024 * 1024)?.toString("utf8"));
-    const left: LeftBehind = leftBehindFrom({
-      credentialsIndex: readOld(join(oldRoot, "credentials", "index.json"), 16 * 1024 * 1024)?.toString("utf8"),
-      devices: readOld(join(oldRoot, "devices", "registry.json"), 16 * 1024 * 1024)?.toString("utf8"),
-    });
+    // The three records read from folders the walk leaves out: each folder must be a real folder, never a link.
+    const fixed = (dir: string, file: string): string | undefined => {
+      try {
+        if (!lstatSync(join(oldRoot, dir)).isDirectory()) return undefined;
+      } catch {
+        return undefined;
+      }
+      return readOld(join(oldRoot, dir, file), 16 * 1024 * 1024)?.toString("utf8");
+    };
+    const carry: RegistryCarry = carryFromOldRegistry(fixed("plugins-state", "installed.json"));
+    const left: LeftBehind = leftBehindFrom({ credentialsIndex: fixed("credentials", "index.json"), devices: fixed("devices", "registry.json") });
     const after = await o.alive();
     if (after.alive) throw new OldEngineRunning(after.how ?? "it answers");
     rmSync(p.scratch, { recursive: true, force: true });

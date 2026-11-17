@@ -114,6 +114,13 @@ export function buildOldHome(user: string, scratch: string, dirName = ".old-home
   // What never travels.
   put(old, "run/core.lock", `${JSON.stringify({ pid: 999_999_999 })}\n`);
   put(old, "run/harness-token", "token\n");
+  // The secret store's file and key files a Windows or Linux install keeps in its home (dummy values).
+  put(old, "secrets.enc", "PROBE_SECRET=dummy123\n");
+  put(old, "secrets.key", "dummy-key\n");
+  put(old, "secrets.key.cred", "dummy-cred\n");
+  // Text that isn't UTF-8, in a copied file and in a plugin's file: copied as its bytes.
+  mkdirSync(join(old, "notes"), { recursive: true });
+  writeFileSync(join(old, "notes", "latin1.txt"), Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]));
   put(old, "logs/daemon.log", "a log line\n");
   put(old, "cache/thing.bin", "cache\n");
   put(old, "bin/daemon/x", "binary\n");
@@ -157,12 +164,17 @@ export function buildOldHome(user: string, scratch: string, dirName = ".old-home
     mkdirSync(join(old, "runtimes"), { recursive: true });
     copyFileSync(src, join(old, "runtimes", "runtime-state.db"));
   }
+  writeFileSync(join(old, "plugins", "acceptance-echo", "latin1.css"), Buffer.from([0x2f, 0x2a, 0xe9, 0x2a, 0x2f, 0x0a]));
   // Links: relative inside, absolute inside, one leading out; and a hard link (not on Windows, where making a link
   // needs a privilege a test run doesn't have).
   if (process.platform !== "win32") {
     symlinkSync(join("sdk", "agents"), join(old, "agents"));
     symlinkSync(join(old, "memory"), join(old, "bots", "alpha", "shared-memory"));
     symlinkSync(scratch, join(old, "bots", "alpha", "outside"));
+    // Into the old home, but to what the copy leaves out; and one in a bot's memory: both left out.
+    symlinkSync(join(old, "run"), join(old, "bots", "alpha", "run-link"));
+    symlinkSync(join("..", "..", "secrets.key"), join(old, "bots", "alpha", "key-link"));
+    symlinkSync(join("..", "..", "..", "memory", "notes.md"), join(old, "bots", "alpha", "memory", "notes-link.md"));
     linkSync(join(old, "memory", "notes.md"), join(old, "bots", "alpha", "notes-hard.md"));
   }
   return { old, wal: { usage, routines }, ruleKeys: { mapped, plain } };

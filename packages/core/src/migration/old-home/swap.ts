@@ -67,18 +67,25 @@ export function applyStagedCopy(home: string, o: { now?: () => number; log?: (li
         const to = join(target, f);
         mkdirSync(dirname(to), { recursive: true });
         if (present(to)) {
-          mkdirSync(dirname(join(aside, entry, f)), { recursive: true });
-          renameSync(to, join(aside, entry, f));
+          const at = asideFor(aside, join(entry, f));
+          mkdirSync(dirname(at), { recursive: true });
+          renameSync(to, at);
         }
         renameSync(join(staged, f), to);
       }
       rmSync(staged, { recursive: true, force: true });
       continue;
     }
-    if (!existsSync(staged)) continue; // moved by the start that was cut short
+    if (!present(staged)) continue; // moved by the start that was cut short
     if (present(target)) {
-      mkdirSync(aside, { recursive: true });
-      renameSync(target, join(aside, entry));
+      // A start cut short between setting the fresh entry aside and moving the staged one in: the fresh entry is
+      // already aside, and what is at the target now is only the empty folders this start's own setup made again.
+      // They go, and the staged entry moves in. Anything else there is set aside beside it, under a numbered name.
+      if (present(join(aside, entry)) && onlyEmptyFolders(target)) rmSync(target, { recursive: true, force: true });
+      else {
+        mkdirSync(aside, { recursive: true });
+        renameSync(target, asideFor(aside, entry));
+      }
     }
     renameSync(staged, target);
   }
@@ -97,4 +104,18 @@ function present(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Where `rel` is set aside: `<aside>/<rel>`, or `<rel>.1`, `<rel>.2`… when a start cut short already put one there. */
+function asideFor(aside: string, rel: string): string {
+  let at = join(aside, rel);
+  for (let n = 1; present(at); n++) at = join(aside, `${rel}.${n}`);
+  return at;
+}
+
+/** Whether `path` is a real folder holding only real folders, all empty at the bottom (no file, no link). */
+function onlyEmptyFolders(path: string): boolean {
+  const st = lstatSync(path);
+  if (!st.isDirectory()) return false;
+  return readdirSync(path).every((n) => onlyEmptyFolders(join(path, n)));
 }

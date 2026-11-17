@@ -4,12 +4,12 @@ import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { ruleKeyHash } from "../../../src/approvals/strings";
-import { applyCarry } from "../../../src/migration/old-home/carry";
+import { applyCarry, carryFromOldRegistry } from "../../../src/migration/old-home/carry";
 import { readChoice } from "../../../src/migration/old-home/choice";
 import { copyOldHome, OldEngineRunning, stagedCopyReady } from "../../../src/migration/old-home/copy";
-import { leftBehindLines } from "../../../src/migration/old-home/left-behind";
+import { leftBehindFrom, leftBehindLines } from "../../../src/migration/old-home/left-behind";
 import { NEW_MANIFEST_FILE, NEW_PLUGIN_SDK, NEW_ROOT_PLUGIN, NEW_SDK_CONFIG, NEW_USAGE_LEDGER, OLD_MANIFEST_FILE, OLD_PLUGIN_SDK, OLD_ROOT_PLUGIN, OLD_USAGE_LEDGER } from "../../../src/migration/old-home/names";
 import { oldHomePaths } from "../../../src/migration/old-home/paths";
 import { applyStagedCopy } from "../../../src/migration/old-home/swap";
@@ -36,6 +36,7 @@ function freshHome(root: string): string {
   writeFileSync(join(home, "credentials", "index.json"), "{\"version\":1,\"items\":{\"new\":{}}}\n");
   writeFileSync(join(home, "devices", "registry.json"), "{\"v\":1,\"self\":\"d_new\"}\n");
   writeFileSync(join(home, "run", "core.lock"), "{\"pid\":1}\n");
+  writeFileSync(join(home, "secrets.key"), "fresh-key\n");
   return home;
 }
 
@@ -102,15 +103,19 @@ describe("the copy", () => {
     const { fx, home } = setup();
     const report = await copyOldHome({ oldHome: fx.old, home, alive: notAlive });
     applyStagedCopy(home);
-    for (const gone of ["logs/daemon.log", "cache", "bin", "login", "update", "install.json", "runtimes/backups/old.db.bak", "migration/manifest.json", "plugins/.acceptance-echo.previous-abc123", "run/harness-token"]) {
+    for (const gone of ["logs/daemon.log", "cache", "bin", "login", "update", "install.json", "runtimes/backups/old.db.bak", "migration/manifest.json", "plugins/.acceptance-echo.previous-abc123", "run/harness-token", "secrets.enc", "secrets.key.cred"]) {
       expect(existsSync(join(home, gone))).toBe(false);
     }
     // This home's own secret index, device registry and run files are its own, never replaced.
     expect(readFileSync(join(home, "credentials", "index.json"), "utf8")).toContain("\"new\"");
     expect(readFileSync(join(home, "devices", "registry.json"), "utf8")).toContain("d_new");
     expect(readFileSync(join(home, "run", "core.lock"), "utf8")).toBe("{\"pid\":1}\n");
+    expect(readFileSync(join(home, "secrets.key"), "utf8")).toBe("fresh-key\n");
+    // A file the mapping changed nothing in is its bytes as they were, UTF-8 or not.
+    expect(readFileSync(join(home, "notes", "latin1.txt"))).toEqual(readFileSync(join(fx.old, "notes", "latin1.txt")));
+    expect(readFileSync(join(home, "plugins", "acceptance-echo", "latin1.css"))).toEqual(readFileSync(join(fx.old, "plugins", "acceptance-echo", "latin1.css")));
     expect(readdirSync(join(home, "plugins-state"))).toEqual([]);
-    expect(report.leftOut).toEqual(expect.arrayContaining(["run", "logs", "cache", "bin", "login", "update", "install.json", "credentials", "devices", "plugins-state", "runtimes", "migration"]));
+    expect(report.leftOut).toEqual(expect.arrayContaining(["run", "logs", "cache", "bin", "login", "update", "install.json", "credentials", "devices", "plugins-state", "runtimes", "migration", "secrets.enc", "secrets.key", "secrets.key.cred"]));
     expect(readFileSync(join(home, "migration", "c", "CURRENT_LAYOUT"), "utf8")).toBe("1\n");
     // Copied as they are.
     expect(readFileSync(join(home, "memory", "notes.md"), "utf8")).toBe(readFileSync(join(fx.old, "memory", "notes.md"), "utf8"));
@@ -192,7 +197,8 @@ describe("the copy", () => {
     expect(readlinkSync(join(home, "agents"))).toBe(join("sdk", "agents"));
     expect(readlinkSync(join(home, "bots", "alpha", "shared-memory"))).toBe(join(resolve(home), "memory"));
     expect(existsSync(join(home, "bots", "alpha", "outside"))).toBe(false);
-    expect(report.linksLeftOut).toEqual(["bots/alpha/outside"]);
+    expect(report.linksLeftOut.sort()).toEqual(["bots/alpha/key-link", "bots/alpha/memory/notes-link.md", "bots/alpha/outside", "bots/alpha/run-link"]);
+    for (const gone of ["key-link", "run-link", join("memory", "notes-link.md")]) expect(existsSync(join(home, "bots", "alpha", gone))).toBe(false);
     expect(lstatSync(join(home, "bots", "alpha", "notes-hard.md")).nlink).toBe(1);
   });
 
@@ -282,6 +288,71 @@ describe("the copy", () => {
     expect(readChoice(home)).toEqual({ v: 1, choice: "copied", at: 5, from: fx.old });
     expect(existsSync(join(home, "sessions", "index.db"))).toBe(true);
     expect(existsSync(join(p.replaced, "5", "sessions"))).toBe(true);
+  });
+});
+
+describe("the records read from folders the walk leaves out", () => {
+  test.skipIf(process.platform === "win32")("a folder that is a link is never read through", async () => {
+    const { root, fx, home } = setup();
+    // Each folder moved out of the old home and a link left in its place.
+    for (const d of ["plugins-state", "credentials", "devices"]) {
+      const { renameSync, symlinkSync } = await import("node:fs");
+      renameSync(join(fx.old, d), join(root, `moved-${d}`));
+      symlinkSync(join(root, `moved-${d}`), join(fx.old, d));
+    }
+    await copyOldHome({ oldHome: fx.old, home, alive: notAlive });
+    const p = oldHomePaths(home);
+    expect(JSON.parse(readFileSync(p.carry, "utf8"))).toEqual(carryFromOldRegistry(undefined));
+    expect(JSON.parse(readFileSync(p.leftBehind, "utf8"))).toEqual(leftBehindFrom({}));
+  });
+});
+
+describe("the swap cut short between its two moves", () => {
+  test("the fresh entry set aside and the start's setup made its folders again: they go, and the staged entry moves in", async () => {
+    const { fx, home } = setup();
+    await copyOldHome({ oldHome: fx.old, home, alive: notAlive });
+    const p = oldHomePaths(home);
+    const entries = readdirSync(p.staging).sort();
+    writeFileSync(p.journal, JSON.stringify({ v: 1, at: 7, from: fx.old, entries }));
+    mkdirSync(join(p.replaced, "7"), { recursive: true });
+    const { renameSync } = await import("node:fs");
+    // The cut: the fresh `sessions/` set aside, the staged one not yet moved in.
+    renameSync(join(home, "sessions"), join(p.replaced, "7", "sessions"));
+    // The next start's setup (`bootstrapMossDir`) makes the home's folders again, empty, before the swap resumes.
+    mkdirSync(join(home, "sessions", "transcripts"), { recursive: true });
+    const r = applyStagedCopy(home);
+    expect(r.kind).toBe("swapped");
+    expect(existsSync(join(home, "sessions", "index.db"))).toBe(true);
+    expect(existsSync(join(p.replaced, "7", "sessions"))).toBe(true);
+    expect(existsSync(join(p.replaced, "7", "sessions.1"))).toBe(false);
+    expect(existsSync(p.journal)).toBe(false);
+    expect(readChoice(home)?.choice).toBe("copied");
+  });
+
+  test("anything but empty folders at the target then is set aside beside the first, under a numbered name", async () => {
+    const { fx, home } = setup();
+    await copyOldHome({ oldHome: fx.old, home, alive: notAlive });
+    const p = oldHomePaths(home);
+    const entries = readdirSync(p.staging).sort();
+    writeFileSync(p.journal, JSON.stringify({ v: 1, at: 8, from: fx.old, entries }));
+    mkdirSync(join(p.replaced, "8"), { recursive: true });
+    const { renameSync } = await import("node:fs");
+    renameSync(join(home, "sessions"), join(p.replaced, "8", "sessions"));
+    mkdirSync(join(home, "sessions"), { recursive: true });
+    writeFileSync(join(home, "sessions", "made-since.txt"), "kept\n");
+    // And a migration record already set aside by the cut start, with one at its place again.
+    const migFile = readdirSync(join(p.staging, "migration"), { recursive: true, withFileTypes: true }).find((e) => e.isFile());
+    expect(migFile).toBeDefined();
+    const migRel = join(relative(join(p.staging, "migration"), migFile!.parentPath), migFile!.name);
+    mkdirSync(dirname(join(home, "migration", migRel)), { recursive: true });
+    writeFileSync(join(home, "migration", migRel), "second\n");
+    mkdirSync(dirname(join(p.replaced, "8", "migration", migRel)), { recursive: true });
+    writeFileSync(join(p.replaced, "8", "migration", migRel), "first\n");
+    expect(applyStagedCopy(home).kind).toBe("swapped");
+    expect(existsSync(join(home, "sessions", "index.db"))).toBe(true);
+    expect(readFileSync(join(p.replaced, "8", "sessions.1", "made-since.txt"), "utf8")).toBe("kept\n");
+    expect(readFileSync(join(p.replaced, "8", "migration", migRel), "utf8")).toBe("first\n");
+    expect(readFileSync(join(p.replaced, "8", "migration", `${migRel}.1`), "utf8")).toBe("second\n");
   });
 });
 
