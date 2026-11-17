@@ -359,7 +359,7 @@ const tag = (what: string) => `ACCEPTANCE-TAG-MOSS${what.toUpperCase()}${randomB
 
 async function listRow(s: UnitState): Promise<string> {
   const a = await s.x.until("Alpha as a record (bot.records)", 60_000, async () => (await records(s.c).catch(() => [])).find((b) => b.id === "alpha"), 500);
-  // The unit's home is one this engine made (its own fresh one, or the run's shared one): no plugin bot was ever in it, so
+  // The unit's home is its own fresh one (`mossRun(true)`), made by this engine: no plugin bot was ever in it, so
   // Alpha is the default bot (`default`); only a home that had the old plugin Alpha gets her by the move (`move`).
   if (a.madeBy.kind !== "default") s.x.fail(`Alpha's record says it was made by ${JSON.stringify(a.madeBy)}, not by default (a home this engine made, with no plugin bot in it)`);
   const row = await s.w.waitFor<{ name: string; mood: string; face: boolean; n: number }>("Alpha's row in MOSS's list", `(() => {
