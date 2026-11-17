@@ -776,12 +776,26 @@ export class DurableSessionHost implements SessionHost {
     return done;
   }
 
-  /** The daemon's stop, before anything else in its bounded tail: every session with a driver lets it go, and each
-   *  running turn's end is recorded at once (synchronously, as each release starts). Resolves when every driver has stopped; the bot side's own close waits for the same releases. */
+  /** The daemon's stop, before anything else in its bounded tail: every bot conversation and side thread lets its
+   *  driver go, and each running turn's end is recorded at once (synchronously, as each release starts). Resolves when
+   *  every driver has stopped; the bot side's own close waits for the same releases. An agent's or a code session's
+   *  running turn is ended the same way at once, each call still open in it closed interrupted before its agent is
+   *  stopped (an agent cut off reports its own end for such a call, which must not read as done), while its driver is
+   *  left to the agents' manager, which detaches it so the session reattaches after the restart. */
   endTurnsForStop(): Promise<void> {
-    // Every attached session, a code session and an agent too: a call still open in one is closed interrupted before its
-    // agent is asked to stop (an agent cut off reports its own end for it, which must not read as done).
-    const ids = [...this.#sessions.values()].filter((s) => s.driver !== undefined).map((s) => s.meta.id);
+    const attached = [...this.#sessions.values()].filter((s) => s.driver !== undefined);
+    for (const s of attached) {
+      if (s.meta.kind === "bot" || s.meta.kind === "side-thread") continue;
+      const running = s.running;
+      if (running === undefined || s.stopping) continue;
+      // Nothing starts after this (the daemon is going): the turn's end, then what waits stays queued for the next daemon.
+      s.releasing = true;
+      running.abort.abort("released");
+      this.#approvals?.withdrawSession(s.meta.id);
+      this.#closeOpenCalls(s, running.openCalls);
+      this.#ended(s, running, { reason: "interrupted" });
+    }
+    const ids = attached.filter((s) => s.meta.kind === "bot" || s.meta.kind === "side-thread").map((s) => s.meta.id);
     return Promise.all(ids.map((id) => this.release(id))).then(() => undefined);
   }
 

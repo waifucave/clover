@@ -450,6 +450,11 @@ describe("calls that never ended", () => {
     expect(driverEvents(atQuit, "tool_result")).toEqual([interrupted("s1")]);
     expect(driverEvents(atQuit, "agent_tool_call_update")).toEqual([]);
     expect(atQuit.filter((r) => r.type === "turn_ended")).toMatchObject([{ end: { reason: "interrupted" } }]);
+    // Its driver is left to the agents' manager (which detaches it, so the session reattaches after the restart): not
+    // stopped, not interrupted, still attached.
+    expect(q.interrupts).toBe(0);
+    expect(q.stopped).toBe(false);
+    expect(quit.host.get("s_code")?.status).not.toBe("stopped");
     // Its agent's turn that ends (it stopped, or failed) with a call it never closed.
     const other = hostOn();
     const e = codeSession(other.host);
