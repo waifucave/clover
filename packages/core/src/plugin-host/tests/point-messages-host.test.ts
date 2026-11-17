@@ -6,7 +6,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
-import type { Caller } from "../../contracts/common";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -15,7 +14,7 @@ import { startPluginHost } from "../daemon-host";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
-const USER: Caller = { kind: "user", client: "app" };
+const USER = { kind: "user", client: "app" } as const;
 const POINT = "metronome.beats";
 
 async function until(f: () => boolean | Promise<boolean>, ms = 15_000): Promise<void> {
@@ -65,10 +64,18 @@ describe("point messages between host halves", () => {
       }
       await until(() => opened.registry.get("metronome")?.state === "running" && opened.registry.get("dancer")?.state === "running")
         .catch((e: Error) => { throw new Error(`${e.message}: ${opened.registry.get("metronome")?.state} ${opened.registry.get("dancer")?.state} ${JSON.stringify(opened.registry.get("dancer")?.issues)}`); });
-      // A host half starts on its first call: the dancer's runs (and opens its listener) once it is called.
+      // A host half starts on its first call: the dancer's runs (and opens its listener) once it is called. A card that asks
+      // again (the dancer's OK now carries the metronome's line, once the metronome runs) is answered yes as well.
       let woke: unknown;
-      await until(async () => { woke = await ph.host.invoke({ pluginId: "dancer", handler: "got", args: null, caller: USER }).catch((e: Error) => e.message); return Array.isArray(woke); }, 10_000)
-        .catch((e: Error) => { throw new Error(`${e.message}: the dancer's half answered ${JSON.stringify(woke)}`); });
+      await until(async () => {
+        // The folders were written just before the registry opened: its watch may find one again a moment later, to be
+        // installed again (as a person would, with its card answered).
+        for (const id of ["metronome", "dancer"]) if (opened.registry.get(id)?.state === "found") await opened.registry.installed(id, "app").catch(() => undefined);
+        for (const c of broker.cards()) await broker.answer(c.id, { optionId: "approve", hash: c.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(c.id)!, input: "click", at: Date.now() } }, { role: "app" }).catch(() => undefined);
+        woke = await ph.host.invoke({ pluginId: "dancer", handler: "got", args: null, caller: USER }).catch((e: Error) => e.message);
+        return Array.isArray(woke);
+      }, 20_000)
+        .catch((e: Error) => { const d = opened.registry.get("dancer"); throw new Error(`${e.message}: the dancer's half answered ${JSON.stringify(woke)} (state ${d?.state}, on ${d?.enabled}, host ${JSON.stringify(d?.manifest?.host)}, cards ${broker.cards().length}, issues ${JSON.stringify(d?.issues)})`); });
       await Bun.sleep(100);
       expect(await ph.host.invoke({ pluginId: "metronome", handler: "beat", args: null, caller: USER })).toEqual({ sent: 3 });
       let heard: unknown;
