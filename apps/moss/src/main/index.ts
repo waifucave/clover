@@ -19,6 +19,7 @@ import { fileVault, memoryVault, ProgramAnswerKey, safeStorageVault, vaultChoice
 import { refusedLaunchSwitches } from "./debug-guard";
 import { PresenceReporter } from "./presence";
 import { answerPress, PressRecord } from "./press";
+import { isOurProgram, loadWindowList, pressCover, windowIdOfMediaSource, type WindowList } from "./overlap";
 import { OWN_ELEMENT, SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { alwaysSentence, summarize as summarizeCard } from "./card-summary";
@@ -272,7 +273,7 @@ async function openWindow(): Promise<BrowserWindow> {
   });
   // The press record: what MOSS's main process saw come to its window (§5.5), never a page's word.
   win.webContents.on("before-mouse-event", (_event, mouse) => {
-    if (mouse.type === "mouseDown") record.mouseDown(id);
+    if (mouse.type === "mouseDown") record.mouseDown(id, { x: mouse.x, y: mouse.y });
   });
   win.webContents.on("before-input-event", (_event, input) => {
     if (isTalkKey(input) || (talk.holding && input.type === "keyUp" && input.code === "Space")) {
@@ -600,6 +601,36 @@ function sealedSender(event: IpcMainEvent | IpcMainInvokeEvent, token: unknown):
   return { token: t, key, frame: `${f.processId}:${f.routingId}`, windowId: w.id };
 }
 
+/** The tallest a card's frame grows (its own page's height, which it reports): high enough for a plugin's whole OK card,
+ *  so its page never overflows its frame (a page that overflowed kept resizing and never read as ready); the list that
+ *  holds a card (the conversation, the strip) scrolls instead. */
+const CARD_MAX_HEIGHT = 4_000;
+
+/** The OS-wide half of the overlap check (overlap.ts, R12): which of our programs' windows lies over the place the person
+ *  just pressed in MOSS's window (another app's window never counts), named by which, or undefined. With no window list
+ *  (Windows, Linux, a Mac without the add-on built) the in-page reading stands alone (said once). A headless run (a test's,
+ *  among other runs' windows) counts its own windows only. MOSS has no surfaces of its own (no island, no pill). */
+let windowList: WindowList | undefined | null = null;
+let overlapUnread = false;
+let overlapRead = false;
+function osCoverOf(windowId: number, point: { x: number; y: number } | undefined): string | undefined {
+  if (windowList === null) windowList = loadWindowList(join(here, "native", "screen.node"), log);
+  const win = BrowserWindow.fromId(windowId);
+  const id = win === null || win.isDestroyed() ? undefined : windowIdOfMediaSource(win.getMediaSourceId());
+  if (windowList === undefined || win === null || id === undefined) {
+    if (!overlapUnread) { overlapUnread = true; log(`overlap: the OS window list wasn't read for a press (${windowList === undefined ? "no window list here" : "no window id"}); the in-page check stands alone`); }
+    return undefined;
+  }
+  const list = windowList;
+  const content = win.getContentBounds();
+  const above = list.above(id);
+  const ours = (pid: number): boolean => pid === process.pid || (!headless && isOurProgram(list.bundleOf(pid)));
+  const hit = pressCover({ point: point === undefined ? undefined : { x: content.x + point.x, y: content.y + point.y }, above, ours });
+  if (!overlapRead) { overlapRead = true; log(`overlap: the OS window list read for a press (${above.length} above, ${above.filter((w) => w.pid === process.pid).length} of MOSS's own${headless ? "; headless: its own only" : ""}${point === undefined ? "; no point: a keyboard press" : ""})`); }
+  if (hit === undefined) return undefined;
+  return hit.pid === process.pid ? `one of MOSS's own windows (layer ${hit.layer})` : `another MOSS program's window (layer ${hit.layer})`;
+}
+
 function wireSealed(): void {
   ipcMain.on("moss:press-seen", (event) => {
     const w = BrowserWindow.fromWebContents(event.sender);
@@ -619,6 +650,7 @@ function wireSealed(): void {
       sealed, record, log,
       placementOf: (id) => engine.placementOf(id),
       standing,
+      cover: osCoverOf,
       keyReady: (ms) => answerKey.ready(ms),
       signer: answerKey,
       device: () => device,
@@ -644,7 +676,7 @@ function wireSealed(): void {
   ipcMain.on("moss:sealed-size", (event, a: { token?: unknown; height?: unknown }) => {
     const s = sealedSender(event, a?.token);
     const cardId = s === undefined ? undefined : sealed.cardOf(s.token);
-    if (cardId !== undefined && typeof a.height === "number" && Number.isFinite(a.height)) mainWindow?.webContents.send("moss:card-height", cardId, Math.max(60, Math.min(900, Math.round(a.height))));
+    if (cardId !== undefined && typeof a.height === "number" && Number.isFinite(a.height)) mainWindow?.webContents.send("moss:card-height", cardId, Math.max(60, Math.min(CARD_MAX_HEIGHT, Math.round(a.height))));
   });
   ipcMain.handle("moss:sealed-review", async (event, a: { token?: unknown; peek?: unknown }) => {
     const s = sealedSender(event, a?.token);

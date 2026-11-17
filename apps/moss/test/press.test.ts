@@ -174,6 +174,24 @@ describe("a press on a card MOSS draws", () => {
     expect(r.e.calls().some((c) => c.method === "computer.acting")).toBe(false);
   });
 
+  test("refused when one of our programs' windows lies over the click's own point (the overlap check); a key press isn't checked there", async () => {
+    const r = await rig();
+    const seen: { x: number; y: number }[] = [];
+    const cover = (_w: number, point: { x: number; y: number } | undefined) => { if (point !== undefined) seen.push(point); return point === undefined ? undefined : "another MOSS program's window (layer 3)"; };
+    const token = r.sealed.mint("card_juniper_book", OWN_ELEMENT, { parent: PARENT }, WIN)!.token;
+    r.sealed.noteFresh(token, true);
+    r.record.mouseDown(WIN, { x: 40, y: 60 });
+    r.record.frameSaw(WIN, FRAME);
+    expect(await answerPress({ ...r.deps, cover }, { token, option: "allow_once", senderKey: SENDER, frame: FRAME, windowId: WIN })).toEqual({ accepted: false, reason: "another MOSS window lies over the button: move it away and press again" });
+    expect(seen).toEqual([{ x: 40, y: 60 }]);
+    expect(r.e.answered()).toEqual([]);
+    // A key press: no point, so nothing over a point to find; it answers.
+    const keyed = r.sealed.mint("card_juniper_book", OWN_ELEMENT, { parent: PARENT }, WIN)!.token;
+    r.sealed.noteFresh(keyed, true);
+    r.record.keyDown(WIN, FRAME);
+    expect(await answerPress({ ...r.deps, cover }, { token: keyed, option: "allow_once", senderKey: SENDER, frame: FRAME, windowId: WIN })).toEqual({ accepted: true });
+  });
+
   test("refused while MOSS's key isn't registered", async () => {
     const r = await rig({ register: false });
     expect(await go(r, r.press("card_juniper_book"))).toMatchObject({ accepted: false, reason: "this computer's answer key for MOSS isn't registered yet" });

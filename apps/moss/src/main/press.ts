@@ -15,8 +15,10 @@
 //      for that same press. One press answers once: taking it spends it.
 //   4. The stacking rule: the router places the card in THIS window (`pressMatchesPlacement`, from `card_placed` and
 //      `card.placement` alone: MOSS keeps no placement of its own), and the window is visible, focused and not
-//      minimised. MOSS draws nothing of its own over a pending card, so anything over the button is another window, and
-//      that the fresh reading (2) already refuses.
+//      minimised. MOSS draws nothing of its own over a pending card.
+//   4b. The overlap check (R12, overlap.ts): no window of one of OUR programs (MOSS, MOSS Code, the background host) lies
+//      over the press point, read from the OS's own window list; another app's window never counts. A keyboard press has
+//      no point and isn't checked here (2 still is).
 //   5. MOSS's answer key is registered with the engine for this device (a press waits a moment for it).
 // Then the store signs (`programCardAnswerSigningInput`, program `moss`) and the engine's `card.answer` decides; it also
 // refuses every program's answer while computer use acts on this computer, and MOSS says its refusal as it came (MOSS
@@ -36,6 +38,8 @@ export const REPORT_MS = 1_000;
 
 interface Down {
   at: number;
+  /** Where in the window's content it landed (CSS pixels from the content's top left), for the overlap check. */
+  point?: { x: number; y: number };
   /** The frame whose own document reported a trusted pointerdown for this press. */
   frame?: string;
   spent?: boolean;
@@ -48,9 +52,15 @@ export class PressRecord {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  /** A mouse down main saw in a window (`before-mouse-event`). */
-  mouseDown(windowId: number): void {
-    this.downs.set(windowId, { at: this.now() });
+  /** A mouse down main saw in a window (`before-mouse-event`), and where it landed in the window's content. */
+  mouseDown(windowId: number, point?: { x: number; y: number }): void {
+    this.downs.set(windowId, { at: this.now(), ...(point !== undefined ? { point } : {}) });
+  }
+
+  /** Where the window's latest mouse down landed, while it is recent (the overlap check's press point). */
+  lastPoint(windowId: number, maxMs = PRESS_MS): { x: number; y: number } | undefined {
+    const d = this.downs.get(windowId);
+    return d === undefined || this.now() - d.at > maxMs ? undefined : d.point;
   }
 
   /** A frame's document reported a trusted pointerdown (the preload's `moss:press-seen`, bound to the sender frame): it
@@ -117,6 +127,9 @@ export interface PressDeps {
   device: () => string | undefined;
   answer: (a: { id: string; hash: string; option: string; proof: unknown; children?: readonly string[] }) => Promise<{ accepted: boolean; reason?: string }>;
   log: (line: string) => void;
+  /** The overlap check (4b): which of our programs' windows lies over this press point in that window, named (never a
+   *  title), or undefined. Absent: no window list here (the in-page reading stands alone). */
+  cover?: (windowId: number, point: { x: number; y: number } | undefined) => string | undefined;
 }
 
 export type PressResult = { accepted: true } | { accepted: false; reason: string };
@@ -139,6 +152,9 @@ export async function answerPress(d: PressDeps, a: { token: string; option: stri
   const w = d.standing(a.windowId);
   const stacked = w === undefined ? "not MOSS's window" : stackingRule(d.placementOf(cardId), w);
   if (stacked !== undefined) return refuse(stacked);
+  // 4b. The overlap check, at the click's own point.
+  const cover = d.cover?.(a.windowId, how === "click" ? d.record.lastPoint(a.windowId) : undefined);
+  if (cover !== undefined) return refuse(`a window lies over the button: ${cover}`, "another MOSS window lies over the button: move it away and press again");
   // 5. The key.
   const key = await d.keyReady(2_000);
   if (key.kind !== "registered") return refuse(`MOSS's answer key isn't registered (${key.kind === "refused" || key.kind === "waiting" ? key.why : key.kind})`, "this computer's answer key for MOSS isn't registered yet");
