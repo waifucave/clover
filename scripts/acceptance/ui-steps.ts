@@ -77,13 +77,12 @@ export async function ensureCodingSession(ctx: Pick<Ctx, "rpc" | "home">, o: { w
   return newest();
 }
 
-/** The window's own sidebar to a coding session: its Code switch pressed, the session's row (its id, the title a session with none
+/** The window's own sidebar to a coding session: the session's row under its project (its id, the title a session with none
  *  of its own shows) listed and pressed, and the session's id then in the sidebar's current row. */
 export async function toCodingSession(cdp: Cdp, codeId: string, press: (what: string, selector: string, text?: string, ms?: number) => Promise<unknown>): Promise<string> {
-  await press("the sidebar's Code switch", ".cl-sidebar__switch-option", "Code");
   await press(`the coding session ${codeId}'s row`, ".cl-sidebar__projects .cl-sidebar__row", codeId, 30_000);
   await until("the coding session shown (its id in the sidebar's current row)", 30_000, async () => ((await inTree<boolean>(cdp, `[...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(codeId)}))`)) !== undefined ? true : undefined), async () => (await treeText(cdp)).replace(/\s+/g, " ").slice(0, 400));
-  return `the sidebar's Code switch listed the coding session ${codeId} started just before from outside the window, and its row went to it (the current row in the sidebar)`;
+  return `the sidebar listed the coding session ${codeId} started just before from outside the window, and its row went to it (the current row in the sidebar)`;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

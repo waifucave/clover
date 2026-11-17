@@ -241,7 +241,7 @@ export function Sidebar(props: SidebarProps) {
         {(
           <section className="cl-sidebar__section" aria-label={S.projects}>
             {collapsed ? (
-              <ul className="cl-sidebar__list">
+              <ul className="cl-sidebar__list cl-sidebar__projects">
                 {(props.projects ?? []).map((project) => (
                   <li key={project.id}>
                     <button
