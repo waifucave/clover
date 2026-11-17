@@ -9,7 +9,8 @@
   },
   "host": {
     "entry": "host/index.ts",
-    "runtime": "bun"
+    "runtime": "bun",
+    "start": "each"
   },
   "capabilities": ["activity.read.bots", "picture.read.bots", "user.send", "app.settings", "tray", "tools.permissions"],
   "contributes": {

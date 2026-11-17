@@ -23,6 +23,9 @@ const FRAME = (() => {
 })();
 const FRAME_BYTES = FRAME.length - 4;
 
+/** The line the host half logs once the engine holds its watch of the bots' feed (the run waits for it before the first turn). */
+const WATCHING = "acceptance-feed: following the bots' feed";
+
 let api: Api | undefined;
 /** The states each bot went through, as the feed told this plugin (one entry per change), and the keys its views carried. */
 const seen = new Map<string, string[]>();
@@ -32,7 +35,8 @@ let writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
 
 export async function start(a: Api): Promise<void> {
   api = a;
-  a.activity.watch("bots", (v: Record<string, unknown>) => {
+  // The call is answered once the engine holds the watch; the line below tells the run the feed is being followed.
+  await a.activity.watch("bots", (v: Record<string, unknown>) => {
     for (const k of Object.keys(v)) keys.add(k);
     const id = String((v.subject as { id?: unknown })?.id ?? "?");
     const list = seen.get(id) ?? [];
@@ -40,6 +44,7 @@ export async function start(a: Api): Promise<void> {
     seen.set(id, list);
     if (typeof v.tool === "string") tools.add(v.tool);
   });
+  console.log(WATCHING);
 }
 
 const word = (v: string) => v.replace(/\s+/g, "_").slice(0, 80);

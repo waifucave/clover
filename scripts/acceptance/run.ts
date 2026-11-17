@@ -3210,9 +3210,12 @@ async function main(): Promise<void> {
       const card = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
       const cardText = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: card.id })).card);
       await approve(c, card);
-      await until(`${installed.id} to run after its OK`, 60_000, async () => {
-        const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
-        return st === "enabled" || st === "running" ? st : undefined;
+      // A follower of the feed is watching before the turn it follows (the fixture's manifest says `host.start: each`; its
+      // start() logs the line once the engine holds its watch, which comes some milliseconds after the plugin reads as
+      // running): a watch made mid-turn hears the turn from its next state on, and the feed gives no state it missed.
+      const feedLog = join(home, "logs", "plugins", `${installed.id}.log`);
+      await until(`${installed.id}'s host half to be following the feed (its log, ${feedLog.slice(home.length + 1)})`, 60_000, async () => {
+        try { return readFileSync(feedLog, "utf8").includes("acceptance-feed: following the bots' feed") ? true : undefined; } catch { return undefined; }
       });
       const turnOf = async (tool: string) => {
         const seen = fake!.requests.length;
