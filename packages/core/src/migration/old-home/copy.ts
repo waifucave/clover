@@ -304,7 +304,14 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
       rmSync(`${scratchDb}-journal`, { force: true });
       report.databases.push(to);
     };
-    const walk = (relDir: string) => {
+    // The engine answers its clients while a large home copies: the walk lets the event loop run every few files.
+    let sinceYield = 0;
+    const breathe = async () => {
+      if (++sinceYield < 32) return;
+      sinceYield = 0;
+      await new Promise((r) => setImmediate(r));
+    };
+    const walk = async (relDir: string): Promise<void> => {
       const dirAbs = relDir === "" ? oldRoot : join(oldRoot, ...relDir.split("/"));
       for (const name of readdirSync(dirAbs).sort()) {
         const rel = relDir === "" ? name : `${relDir}/${name}`;
@@ -348,10 +355,11 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
         if (st.isDirectory()) {
           mkdirSync(join(p.staging, ...to.split("/")), { recursive: true });
           if (process.platform !== "win32") chmodSync(join(p.staging, ...to.split("/")), (st.mode & 0o777) | 0o700);
-          walk(rel);
+          await walk(rel);
           continue;
         }
         if (!st.isFile()) continue; // a socket or a pipe: never copied
+        await breathe();
         // A database's own sidecars travel inside it (`VACUUM INTO`).
         if (/-(?:wal|shm|journal)$/.test(name) && existsSync(abs.replace(/-(?:wal|shm|journal)$/, "")) && isSqlite(abs.replace(/-(?:wal|shm|journal)$/, ""))) continue;
         if (isSqlite(abs)) {
@@ -415,7 +423,7 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
         o.afterFile?.(rel);
       }
     };
-    walk("");
+    await walk("");
     const carry: RegistryCarry = carryFromOldRegistry(readOld(join(oldRoot, "plugins-state", "installed.json"), 16 * 1024 * 1024)?.toString("utf8"));
     const left: LeftBehind = leftBehindFrom({
       credentialsIndex: readOld(join(oldRoot, "credentials", "index.json"), 16 * 1024 * 1024)?.toString("utf8"),
