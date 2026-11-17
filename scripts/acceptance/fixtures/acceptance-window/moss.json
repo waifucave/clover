@@ -5,7 +5,8 @@
   "description": "The acceptance run's third-party plugin that fills the window's spots: a composer button, its own look for the user's messages, an add-on under each message, a view of its own tool's result, a Dispatch pill target, and a probe under the user's message that tries the UI SDK's hooks. Generated data only; its one tool echoes a word and its target keeps the words it is sent.",
   "version": "0.0.1",
   "capabilities": [
-    "conversation.read"
+    "conversation.read",
+    "sessions.read"
   ],
   "engines": {
     "moss": "^1.0.0"

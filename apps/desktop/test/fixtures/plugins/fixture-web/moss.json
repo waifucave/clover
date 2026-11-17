@@ -4,7 +4,7 @@
   "name": "Fixture web page",
   "description": "A web page entry for the app's tests: a page in its own folder, in an isolated view with its own session.",
   "engines": { "moss": "^1.0.0" },
-  "capabilities": ["conversation.read"],
+  "capabilities": ["conversation.read", "sessions.read"],
   "contributes": {
     "ui": [{ "spot": "conversation", "web": { "entry": "page.html", "partition": "main" } }]
   }
