@@ -4476,7 +4476,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
       if (onHostIsland(card)) { hostPresses++; await pressOnIsland(hostCdp!, card, hostLog); } else { windowPresses++; await pressApprove(cdp!, card, log); }
     };
     const ctx: ExampleCtx = {
-      cdp: cdp!, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
+      cdp: cdp!, islandCdp: hostCdp, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
       appLog: () => `${readLog(log)}\n${readLog(join(home, "logs", "app.log"))}`,
       requests: () => fake?.requests ?? [],
       pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
