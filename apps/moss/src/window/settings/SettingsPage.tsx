@@ -212,23 +212,14 @@ function BotPage(props: { bot: BotRow }) {
   if (rec === "waiting") return <Card title={props.bot.name}><Waiting what="bots" /></Card>;
   return (
     <div className="ma2-bot" data-bot-page={id}>
-      <header className="ma2-bot__head">
-        <Face name={rec.name} {...(rec.face !== undefined ? { face: rec.face } : {})} mood={props.bot.mood} size={72} surface="page" />
-        <div>
-          <h2 className="ma2-bot__name">{rec.name}</h2>
+      <header className="ma2-bot__head" data-settings="name">
+        <Face name={rec.name} {...(rec.face !== undefined ? { face: rec.face } : {})} mood={props.bot.mood} size={56} surface="page" />
+        <div className="ma2-bot__who">
+          <NameField name={rec.name} onSave={(name) => edit({ name }, "Name saved.")} />
           <p className="muted small">Changes apply from {rec.name}'s next turn.</p>
         </div>
       </header>
       {note !== undefined ? <p className="add__note" role="status">{note}</p> : null}
-      <Card title="Name" id="name">
-        <NameField name={rec.name} onSave={(name) => edit({ name }, "Name saved.")} />
-      </Card>
-      <Card title="Face" id="face" note="A face is made from the name. Pin a shape or a colour to keep it.">
-        <FacePicker name={rec.name} {...(rec.face !== undefined ? { face: rec.face } : {})} onPick={(face, said) => void edit({ face }, said)} />
-      </Card>
-      <Card title="Instructions" id="instructions" note="Who the bot is, how it talks, what it cares about.">
-        <Instructions name={rec.name} bytes={rec.instructionsBytes} onSave={(instructions) => edit({ instructions }, "Instructions replaced.")} />
-      </Card>
       <Card title="Model" id="model">
         {models === undefined ? null : models === "waiting" ? <Waiting what="models" /> : (
           <select value={rec.model ?? ""} onChange={(e) => void edit({ model: e.target.value === "" ? null : e.target.value }, "Model saved.")} aria-label={`${rec.name}'s model`} data-model-picker>
@@ -239,6 +230,12 @@ function BotPage(props: { bot: BotRow }) {
         )}
       </Card>
       <PluginSettings bot={id} />
+      <Card title="Face" id="face" note="A face is made from the name. Pin a shape or a colour to keep it.">
+        <FacePicker name={rec.name} {...(rec.face !== undefined ? { face: rec.face } : {})} onPick={(face, said) => void edit({ face }, said)} />
+      </Card>
+      <Card title="Instructions" id="instructions" note="Who the bot is, how it talks, what it cares about.">
+        <Instructions name={rec.name} bytes={rec.instructionsBytes} onSave={(instructions) => edit({ instructions }, "Instructions replaced.")} />
+      </Card>
     </div>
   );
 }
@@ -250,7 +247,7 @@ function NameField(props: { name: string; onSave: (name: string) => Promise<bool
   const save = (): void => { if (changed) void props.onSave(v.trim()); };
   return (
     <div className="ma2-inline">
-      <input className="ma2-field" value={v} maxLength={80} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } }} aria-label="The bot's name" />
+      <input className="ma2-field ma2-name" value={v} maxLength={80} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } }} aria-label="The bot's name" />
       <button type="button" className="text-button text-button--solid" disabled={!changed} onClick={save}>Save</button>
     </div>
   );

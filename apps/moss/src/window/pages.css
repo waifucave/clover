@@ -62,8 +62,9 @@
 
 .ma2-bot { display: grid; gap: 14px; }
 .ma2-bot__head { display: flex; align-items: center; gap: 16px; padding: 4px 2px; }
-.ma2-bot__name { margin: 0 !important; font-size: 20px !important; font-weight: 700 !important; }
-.ma2-bot__head p { margin: 2px 0 0; }
+.ma2-bot__who { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.ma2-bot__head p { margin: 0; }
+.ma2-name { font-size: 17px; font-weight: 650; padding: 5px 10px; }
 .ma2-instructions { display: block; width: 100%; resize: vertical; min-height: 96px; line-height: 1.5; }
 .ma2-face { display: grid; gap: 8px; }
 .ma2-face__label { margin: 4px 0 0 !important; font-size: 12px; font-weight: 600; color: var(--muted); }
