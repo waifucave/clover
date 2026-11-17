@@ -54,7 +54,8 @@ describe("where the answer key is kept", () => {
     const file = join(dir, "user-data", "answer-key.dev");
     const first = new ProgramAnswerKey(fileVault(file));
     const key = first.publicKey();
-    expect((statSync(file).mode & 0o777).toString(8)).toBe("600");
+    // Owner-only where the OS keeps POSIX modes (Windows has none: its file is in the user's own profile folder).
+    if (process.platform !== "win32") expect((statSync(file).mode & 0o777).toString(8)).toBe("600");
     expect(new ProgramAnswerKey(fileVault(file)).publicKey()).toBe(key);
     expect(fileVault(file).held).toBe("none");
   });
