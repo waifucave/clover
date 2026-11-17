@@ -50,11 +50,11 @@ describe("the split", () => {
   });
 
   test("N shards: each parallel unit in one shard, the chain first in its own, the load spread", () => {
-    expect(planShards(1)).toEqual([["chain", "window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "plugin-app", "browser", "models"]]);
+    expect(planShards(1)).toEqual([["chain", "window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models"]]);
     for (const n of [2, 3, 4, 8]) {
       const plan = planShards(n);
       expect(plan.length).toBeLessThanOrEqual(n);
-      expect(plan.flat().sort()).toEqual(["acp", "addons", "archive", "arrivals", "browser", "builder-examples", "bundled-tools", "cards", "chain", "examples", "models", "plugin-app", "reopen", "window-1", "window-2", "window-3", "workshop", "workshop-points"]);
+      expect(plan.flat().sort()).toEqual(["acp", "addons", "archive", "arrivals", "browser", "builder-examples", "bundled-tools", "cards", "chain", "examples", "models", "plugin-app", "release", "reopen", "window-1", "window-2", "window-3", "workshop", "workshop-points"]);
       // The chain, the long pole, alone in the first from 2 shards (anything beside it lengthens the run).
       expect(plan[0]).toEqual(["chain"]);
     }

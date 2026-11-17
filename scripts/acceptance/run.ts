@@ -126,6 +126,7 @@ import { holdMachine } from "./exclusive";
 import { ownTurnEvents } from "./turn-end";
 import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
 import { AgentTranscript } from "../../packages/core/src/agents/transcript";
+import { APP_NEWER, APP_OLDER, ENGINE_NEWER, ENGINE_OLDER, RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP, WORDS as RELEASE_WORDS } from "./release-step";
 import { expandUnitIds, mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, windowIndexes, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
@@ -3415,6 +3416,7 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   }
   const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "acp" || id === "builder-examples" || id === "workshop-points" || id === "tab-flash" || id === "browser" || id === "plugin-app");
   if (windowed.length > 0) await unitWindow(app, windowed, session);
+  if (ids.includes("release")) await releaseSteps(app);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
   if (ids.includes("stage")) await stageLevelsStep(app);
@@ -4955,6 +4957,96 @@ async function coldStartStep(app: { exe: string; args: string[] }, runs: number)
     record(n, "PASS", `${runs} cold start(s): the shell filled the window ${took.map((t) => `${(t / 1000).toFixed(1)} s`).join(", ")} after the daemon started`);
   } catch (err) {
     record(n, statusOf(err), `${took.length + 1} of ${runs}: ${why(err)}`);
+  }
+}
+
+
+/** The two release rows (release-step.ts): a daemon and an app of the test builds, each stamped with the release the row needs.
+ *  Packaged target only: the stamps are a test build's seam, which the source target doesn't have. */
+async function releaseSteps(app: { exe: string; args: string[] }): Promise<void> {
+  const behindN = stepNumber(FULL_STEPS, RELEASE_BEHIND_STEP), aheadN = stepNumber(FULL_STEPS, RELEASE_AHEAD_STEP);
+  if (target !== "packaged" || !packagedCoreSays("MOSS_TEST_ENGINE_RELEASE")) {
+    const why0 = "the release stamps (MOSS_TEST_ENGINE_RELEASE, MOSS_TEST_APP_RELEASE) are a test build's seam; this core has none, so the run never makes an engine and an app of different releases";
+    record(behindN, "BLOCKED", why0);
+    record(aheadN, "BLOCKED", why0);
+    return;
+  }
+  const appLog = join(home, "logs", "app.log");
+  /** The window's root document as text, or "" while none draws. */
+  const windowText = async (cdp: Cdp): Promise<string> => {
+    const doc = (await cdp.documents()).find((d) => d.url.startsWith("moss-core://app/") && !d.url.includes("?"));
+    return doc === undefined ? "" : String(await cdp.evaluate(doc.session, "document.body ? document.body.innerText : ''").catch(() => ""));
+  };
+  /** An app stamped with a release (and a stand-in for its update server), headless over the home's daemon; its window's DevTools. */
+  const openApp = async (name: string, stamp: Record<string, string>): Promise<{ proc: { proc: ChildProcess; log: string }; cdp: Cdp }> => {
+    const port = freePort();
+    const env = { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_DEBUG: "1", ...stamp };
+    const proc = startChild(name, app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    let cdp: Cdp | undefined;
+    await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(proc.proc)) fail(`the app exited (${proc.proc.exitCode ?? proc.proc.signalCode}): ${firstLine(proc.log, /refusing|refused|failed|error/i) ?? lastLines(proc.log)}`);
+      try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
+    }, 500);
+    return { proc, cdp: cdp! };
+  };
+  const stopDaemon = async (): Promise<void> => { if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); } };
+
+  try {
+    // BEHIND: the engine is on 9.0.0, the app on 1.0.0.
+    await stopDaemon();
+    await startDaemonProc({ MOSS_TEST_ENGINE_RELEASE: ENGINE_NEWER });
+    const seen: string[] = [];
+    for (const [outcome, words] of [["ready:" + ENGINE_NEWER, RELEASE_WORDS.installing], ["offline", RELEASE_WORDS.offline]] as const) {
+      const logFrom = readLog(appLog).length;
+      const a = await openApp(`release-behind-${outcome.split(":")[0]}`, { MOSS_TEST_APP_RELEASE: APP_OLDER, MOSS_TEST_UPDATE_OUTCOME: outcome, MOSS_TEST_RELEASE_RETRY_MS: "60000" });
+      try {
+        const text = await until(`the window to say ${JSON.stringify(words)}`, 90_000, async () => { const t = await windowText(a.cdp); return t.includes(words) ? t : undefined; }, 500);
+        await sleep(2_500);
+        const since = readLog(appLog).slice(logFrom);
+        const refused = since.split("\n").filter((l) => /pair: this app \(release [^)]*\) is behind the engine/.test(l));
+        if (refused.length !== 1) fail(`the engine should have refused the app once and the app never dialled again (the app's log has ${refused.length} such lines: ${since.split("\n").filter((l) => /pair:|release:/.test(l)).slice(-5).join(" | ").slice(0, 400)})`);
+        if (/pair: connected/.test(since)) fail("the app connected while it was behind the engine");
+        if (/Starting MOSS/.test(text)) fail(`the window still says it is starting: ${text.slice(0, 200)}`);
+        seen.push(`${outcome.split(":")[0]}: "${text.replace(/\s+/g, " ").slice(0, 110)}"`);
+      } finally {
+        a.cdp.close();
+        await endChild(a.proc.proc);
+      }
+    }
+    record(behindN, "PASS", `the engine on ${ENGINE_NEWER} refused the app on ${APP_OLDER} once, and it never dialled again; its window said ${seen.join("; ")}`);
+  } catch (err) {
+    record(behindN, statusOf(err), why(err));
+  }
+
+  try {
+    // AHEAD: the engine on 1.0.0 with a turn still running, the app on 9.0.0.
+    await stopDaemon();
+    await startDaemonProc({ MOSS_TEST_ENGINE_RELEASE: ENGINE_OLDER });
+    const c = (await appDriver()).client;
+    let a: { proc: { proc: ChildProcess; log: string }; cdp: Cdp } | undefined;
+    try {
+      await signInKey(c);
+      const session = await keyedSession(c);
+      const tag = `ACCEPTANCE-SLOW-${randomBytes(3).toString("hex").toUpperCase()}`;
+      const asked = fake!.requests.length;
+      await c.request("session.send", { id: session, message: { text: `${tag} keep going`, clientMessageId: randomUUID() } }, 30_000);
+      await until("the turn to be running (the fake asked)", 60_000, () => (fake!.requests.slice(asked).some((r) => r.lastUserText.includes(tag)) ? true : undefined), 200);
+      const logFrom = readLog(appLog).length;
+      a = await openApp("release-ahead", { MOSS_TEST_APP_RELEASE: APP_NEWER });
+      const text = await until(`the window to say it waits for work to finish`, 90_000, async () => { const t = await windowText(a!.cdp); return t.includes(RELEASE_WORDS.waiting) && t.includes(RELEASE_WORDS.switchNow) ? t : undefined; }, 500);
+      if (!/1 running/.test(text)) fail(`the window doesn't say one turn is running: ${text.slice(0, 200)}`);
+      // The person's "Switch now", pressed in the window.
+      const doc = (await a.cdp.documents()).find((d) => d.url.startsWith("moss-core://app/") && !d.url.includes("?"))!;
+      const clicked = await a.cdp.evaluate(doc.session, `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent === ${JSON.stringify(RELEASE_WORDS.switchNow)}); if (!b) return false; b.click(); return true; })()`);
+      if (clicked !== true) fail("no Switch now button in the window");
+      await until("the app to be switching", 60_000, () => (/release: notice switching/.test(readLog(appLog).slice(logFrom)) ? true : undefined), 300);
+      record(aheadN, "PASS", `the app on ${APP_NEWER} over the engine on ${ENGINE_OLDER} with a turn running: its window said "${text.replace(/\s+/g, " ").slice(0, 120)}", and Switch now put the app to switching`);
+    } finally {
+      c.close();
+      if (a !== undefined) { a.cdp.close(); await endChild(a.proc.proc); }
+    }
+  } catch (err) {
+    record(aheadN, statusOf(err), why(err));
   }
 }
 
