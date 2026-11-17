@@ -14,17 +14,23 @@
 //     (`pruneDroppedTools`), so the tool, listed again, starts at Ask and is new; a plugin's whole server goes when the plugin
 //     is uninstalled (`dropPluginServers`; a stop or a switch-off keeps the user's choices).
 //   * The Always allow / Always block a tool takes is a per-tool value only: a tool literally named `*` is refused.
-import { PLUGINS_METHODS } from "@waifucave/moss-protocol";
+//   * The same rows carry the tool setting (spec §6.7, lane TS): `availability` (off, on demand, always on) and `declared`
+//     (what the plugin's manifest says, which is the default). It is a different thing from the permission: availability
+//     decides whether a model is OFFERED the tool at all, the permission decides whether a CALL raises a card or is refused.
+//     "Off" hides the tool and refuses its calls ("the user turned it off in Settings"); "Always block" leaves it offered and
+//     refuses with a card-less "the user blocked it". The store and the one reader are `approvals/tool-settings.ts`.
+import { PLUGINS_METHODS, type ToolAvailability } from "@waifucave/moss-protocol";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { connectorPermissionTable, type Settings } from "../settings";
 import { setConnectorToolPermission } from "../settings";
 import { connectorDenialMessage, connectorFactsFor, type ConnectorPermission, type ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
 import { OTHER_TOOL_KEY } from "./bot-check";
 import { ruleKeyHash } from "./strings";
+import { clearToolAvailability, toolOffMessage, type EngineToolSettings } from "./tool-settings";
 
 export interface ToolPermissionDeps {
   /** Every server listed here with its tools (`PluginMcp.toolListing`). */
-  listing(): { server: string; plugin: string; name: string; tools: { name: string; title?: string }[] }[];
+  listing(): { server: string; plugin: string; name: string; tools: { name: string; title?: string; declared?: "preload" | "on-demand" }[] }[];
   /** A plugin's own name, for its heading. */
   pluginName(pluginId: string): string | undefined;
   loadSettings(): Settings;
@@ -32,6 +38,8 @@ export interface ToolPermissionDeps {
   saveSettings(next: Settings): void;
   savedFor(keyHash: string): { bot?: string; computers: string[] }[];
   forgetSaved(keyHash: string, bot: string): number;
+  /** The tool setting's store: the rows' `availability` and `declared`, and every write (`tool.setAvailability`, `tool.setPermission`). */
+  toolSettings: EngineToolSettings;
 }
 
 /** The name a bot calls a plugin's tool by. */
@@ -43,10 +51,16 @@ const seenOf = (settings: Settings, server: string): readonly string[] | undefin
 };
 
 /** What a bot's approval check applies for one call: only a value set on this very tool (never a server-wide `*` row, which is
- *  an older connector's all-actions value) and only for a server a plugin lists. Ask is `undefined`. */
-export function toolSettingFor(source: ConnectorPermissionSource, listing: readonly { server: string }[], tool: string): { setting: "allow" } | { setting: "deny"; message: string } | undefined {
+ *  an older connector's all-actions value) and only for a server a plugin lists. Ask is `undefined`.
+ *
+ *  A tool the user turned OFF (the tool setting, `off`) is refused first, before any permission, so a stored Always allow can
+ *  not run it: this is what stops a call a running session makes by a name it cached before the setting changed. The message
+ *  says "turned off", never "blocked": they are two different settings. */
+export function toolSettingFor(source: ConnectorPermissionSource, listing: readonly { server: string }[], tool: string, availability?: (server: string, tool: string) => ToolAvailability | undefined): { setting: "allow" } | { setting: "deny"; message: string } | undefined {
   const facts = connectorFactsFor(source, tool);
-  if (facts === undefined || facts.settingSource !== "tool" || !listing.some((l) => l.server === facts.server)) return undefined;
+  if (facts === undefined || !listing.some((l) => l.server === facts.server)) return undefined;
+  if (availability?.(facts.server, facts.tool) === "off") return { setting: "deny", message: toolOffMessage(tool) };
+  if (facts.settingSource !== "tool") return undefined;
   if (facts.setting === "allow") return { setting: "allow" };
   return facts.setting === "deny" ? { setting: "deny", message: connectorDenialMessage(facts.server, facts.tool, { setting: "deny", policy: "ask" }) } : undefined;
 }
@@ -73,6 +87,10 @@ export function pruneDroppedTools(settings: Settings, listing: readonly { server
       next = { ...next, mcp: { ...(next.mcp ?? {}), toolsSeen: { ...mcp!.toolsSeen, [l.server]: seen.filter((n) => names.has(n)) } } } as Settings;
       changed = true;
     }
+    // A stored availability for a tool the plugin no longer lists goes the same way (a value the plugin's update left
+    // behind never returns when a tool of that name comes back).
+    const cleared = clearToolAvailability(next, l.server, (tool) => !names.has(tool));
+    if (cleared !== undefined) { next = cleared; changed = true; }
   }
   return changed ? next : undefined;
 }
@@ -83,6 +101,7 @@ export function dropPluginServers(settings: Settings, pluginId: string): Setting
   const servers = Object.entries(mcp?.toolsOwner ?? {}).filter(([, owner]) => owner === pluginId).map(([server]) => server);
   if (servers.length === 0) return undefined;
   let next = settings;
+  for (const server of servers) next = clearToolAvailability(next, server, () => true) ?? next;
   for (const server of servers) for (const tool of Object.keys(connectorPermissionTable(next)[server] ?? {})) next = setConnectorToolPermission(next, server, tool, undefined);
   const seen = { ...(((next.mcp as McpExtra | undefined)?.toolsSeen) ?? {}) };
   const owner = { ...(((next.mcp as McpExtra | undefined)?.toolsOwner) ?? {}) };
@@ -112,6 +131,8 @@ export function toolPermissionMethods(deps: ToolPermissionDeps): Record<string, 
                 name: t.name,
                 ...(t.title === undefined ? {} : { title: t.title }),
                 permission: stored ?? "ask",
+                declared: t.declared ?? "on-demand",
+                availability: deps.toolSettings.effective(l.server, t.name, t.declared ?? "on-demand"),
                 ...(seen !== undefined && !seen.includes(t.name) ? { isNew: true as const } : {}),
                 cardRules: deps.savedFor(ruleKeyHash(`${OTHER_TOOL_KEY}${pluginToolName(l.server, t.name)}`)).flatMap((r) => (r.bot === undefined ? [] : [{ bot: r.bot, computers: r.computers }])),
               };
@@ -128,16 +149,19 @@ export function toolPermissionMethods(deps: ToolPermissionDeps): Record<string, 
       const names = listed.tools.map((t) => t.name);
       if (p.tool === "*") throw new Error("a tool can't be named *");
       if (p.tool !== undefined && !names.includes(p.tool)) throw new Error("the plugin doesn't give that tool");
-      let next = deps.loadSettings();
-      // Values for tools the plugin no longer lists go.
-      const row = connectorPermissionTable(next)[p.server] ?? {};
-      for (const stale of Object.keys(row)) if (!names.includes(stale)) next = setConnectorToolPermission(next, p.server, stale, undefined);
-      for (const name of p.tool === undefined ? names : [p.tool]) next = setConnectorToolPermission(next, p.server, name, p.permission === "ask" ? undefined : p.permission);
-      // What the plugin lists now: a tool it adds later is new, and keeps Ask.
-      const seen = { ...((next.mcp as { toolsSeen?: Record<string, string[]> } | undefined)?.toolsSeen ?? {}), [p.server]: names };
-      const owner = { ...((next.mcp as McpExtra | undefined)?.toolsOwner ?? {}), [p.server]: listed.plugin };
-      next = { ...next, mcp: { ...(next.mcp ?? {}), toolsSeen: seen, toolsOwner: owner } } as Settings;
-      deps.saveSettings(next);
+      deps.toolSettings.setPermission(p.server, p.tool, p.permission);
+      return { ok: true as const };
+    }),
+
+    [M.toolSetAvailability.name]: handler(M.toolSetAvailability, async (p, ctx) => {
+      // The user's own press only: a plugin's layer, a bot or an agent never sets what a model is offered, least of all
+      // its own tool (`userOnly` also stops the call before it gets here).
+      requireUser(ctx, "set a tool's availability");
+      const listed = deps.listing().find((l) => l.server === p.server);
+      if (listed === undefined) throw new Error("that plugin gives no tools here");
+      if (p.tool === "*") throw new Error("a tool can't be named *");
+      if (p.tool !== undefined && !listed.tools.some((t) => t.name === p.tool)) throw new Error("the plugin doesn't give that tool");
+      deps.toolSettings.setAvailability(p.server, p.tool, p.availability);
       return { ok: true as const };
     }),
 

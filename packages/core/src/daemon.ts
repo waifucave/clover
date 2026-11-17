@@ -48,6 +48,7 @@ import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcSe
 import { MossFence } from "./fence/fence";
 import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
 import { dropPluginServers, pruneDroppedTools, toolPermissionMethods, toolSettingFor } from "./approvals/tool-permissions";
+import { EngineToolSettings } from "./approvals/tool-settings";
 import { createMossServer, laneMethodHandlers, type MossHandler, type MossServer } from "./ipc/moss";
 import { APP_RENDER_FEATURE, APP_RENDER_TIMEOUT_MS, appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
 import type { AppPeerPolicy } from "./platform/peer-signature";
@@ -3515,8 +3516,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // them, so each call reads them then; until they are up, and after they stop, a call is told to try again.
   // Settings' Tools tab: always allow / ask / always block per plugin tool (one store with the connector permissions, read live by
   // the same floor), and the card rules saved for single bots, which the user takes back there.
+  // The tool setting (off / on demand / always on, spec §6.7) beside it, one store: `PluginMcp` reads it for what a model is
+  // offered, the approval check for a call to a tool turned off, and the rows below for Settings.
+  const toolSettings = new EngineToolSettings({
+    read: () => settings,
+    load: () => loadSettings(dirs.settingsPath),
+    save: (next) => { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); },
+    listing: () => pluginMcp?.toolListing() ?? [],
+    emit: (event) => void mossServer?.coreEvent({ ...event }),
+  });
   Object.assign(mossLaneHandlers, laneMethodHandlers(toolPermissionMethods({
     listing: () => pluginMcp?.toolListing() ?? [],
+    toolSettings,
     pluginName: (id) => { const n = partsRegistry?.registry.get(id)?.name; return typeof n === "string" ? n : undefined; },
     loadSettings: () => loadSettings(dirs.settingsPath),
     saveSettings: (next) => { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); },
@@ -4119,6 +4130,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
     pluginMcp = new PluginMcp({
+      // The user's tool setting: the one input to what a model is offered and to whether a call to a tool runs.
+      availability: (server, tool) => toolSettings.availabilityOf(server, tool),
       // A listing that no longer names a tool drops the user's value and "seen" mark for it, so the tool, listed again, is new at Ask.
       onListed: () => {
         try {
@@ -4401,7 +4414,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool, { built });
           },
           // What the user set for this tool in Settings (Tools), read live from the connector store at each call.
-          toolSetting: (_ctx, tool) => toolSettingFor(connectorPermissions, pluginMcp?.toolListing() ?? [], tool),
+          toolSetting: (_ctx, tool) => toolSettingFor(connectorPermissions, pluginMcp?.toolListing() ?? [], tool, (server, name) => toolSettings.availabilityOf(server, name)),
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
           fetchBudget: (ctx, url) => seenUrls.take(ctx.sessionId, url),
           // Where a message goes (lane D's one resolution): the bot's own sessions, or a level no wider than its own.
@@ -4439,7 +4452,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // check as the same call in the session that owns it (the agent's own session on the card; its bot's level and
         // saved rules, or the user's coding session's own), and runs where its server is, as the agent's session.
         agentReach = {
-          servers: (kind, backend, bot) => mcp.servers(kind, backend, bot),
+          servers: (kind, backend, bot, opts) => mcp.servers(kind, backend, bot, opts),
           runner: node?.mcp ?? localMcpRunner(mcp, thisComputer),
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
           registry,

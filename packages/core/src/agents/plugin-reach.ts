@@ -24,6 +24,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import type { Caller, TurnOrigin } from "@waifucave/moss-protocol";
 import type { BotSessionContext } from "../bots/service";
+import { toolOffMessage } from "../approvals/tool-settings";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { glossaryIndex, parseFrontmatter, searchGlossary, SKILL_BODY_MAX_CHARS, type GlossaryItem } from "../runtime-sdk/turn-loop/glossary";
 import type { HookSession, HookSource } from "../runtime-sdk/turn-loop/hooks";
@@ -50,7 +51,7 @@ export type AgentToolJudge = (session: AgentSessionFacts, ctx: BridgeCallContext
 export interface AgentPluginReachDeps {
   /** This computer's PluginMcp: the servers a session of `kind` on `backend`, delegated by `bot` (none: the user's own),
    *  gets (scope, `onlyBackends`, placement). */
-  servers(kind: "agent" | "coding", backend: string, bot?: string): readonly BotMcpServer[];
+  servers(kind: "agent" | "coding", backend: string, bot?: string, opts?: { keepOff?: boolean }): readonly BotMcpServer[];
   /** J's router: runs a call where its server is. */
   runner: McpRunner;
   judge: AgentToolJudge;
@@ -195,7 +196,12 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
       if (s === undefined) return text(`No tool named ${c.tool} is available to this agent.`);
       // The listing now, not the one the session started with: a plugin turned off, stopped or refused since is gone.
       const found = listing(s).get(c.tool);
-      if (found === undefined) return text(`No tool named ${c.tool} is available to this agent.`);
+      if (found === undefined) {
+        // A tool the user turned off (the tool setting) is not on the listing, but the agent that cached its name is told why.
+        const off = bridgeToolsOf(d.servers(s.kind, s.backend, s.bot, { keepOff: true })).get(c.tool);
+        if (off?.tool.off === true) return text(toolOffMessage(`mcp__${off.server.server}__${off.tool.name}`));
+        return text(`No tool named ${c.tool} is available to this agent.`);
+      }
       if (c.input !== undefined && (typeof c.input !== "object" || c.input === null || Array.isArray(c.input))) return text(`${c.tool} was refused: its input must be an object.`);
       const served = `mcp__${found.server.server}__${found.tool.name}`;
       let input = (c.input ?? {}) as Record<string, unknown>;

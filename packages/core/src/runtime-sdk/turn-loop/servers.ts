@@ -46,6 +46,9 @@ export interface BotMcpTool {
   inputSchema: { type: "object"; [k: string]: unknown };
   /** `preload` is always visible; `on-demand` is found and loaded through `Glossary` (the default). */
   load?: "preload" | "on-demand";
+  /** The user turned it off (the tool setting): only a listing made to say why a call is refused carries it; no model is
+   *  ever offered it. */
+  off?: true;
   /** The tool's own title, for the conversation only (`tool_call.displayTitle`): never in what the runtime lists to the
    *  model, never on a card. */
   title?: string;

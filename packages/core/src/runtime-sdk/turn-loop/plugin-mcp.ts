@@ -42,6 +42,8 @@ import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type Mc
 import { isBundledMoss } from "../model-plugins/load";
 import { toolDisplayTitle } from "../tool-display";
 import type { BotMcpServer, BotMcpTool, McpRunner } from "./servers";
+import type { ToolAvailability } from "@waifucave/moss-protocol";
+import { toolOffMessage } from "../../approvals/tool-settings";
 import { scopeOf, servesBackend, servesScope, type PluginScope } from "./only-backends";
 
 /** The MCP protocol version the core asks for (the host's servers speak it: the web plugin's `PROTOCOL_VERSIONS`). */
@@ -266,6 +268,12 @@ export interface PluginMcpOptions {
    *  finding its server by the tool's name. Left out (today), each bundled server is offered under its own key: the
    *  agent runtime 0.0.76 reserves `moss` for its standing server and exits before init when a host server takes it. */
   bundledServer?: string;
+  /** The user's tool setting (spec §6.7, `approvals/tool-settings.ts`): what the user chose for one tool, by the name its
+   *  server is offered under, or undefined when they chose nothing (the plugin's declaration then stands). THE one input to
+   *  what a model is offered: `off` leaves the tool out of `servers()`, so no bot, side thread, agent or bridge lists it or
+   *  indexes it in `Glossary`, and a call to it is refused (`call`); `always` preloads it; `on-demand` puts it behind
+   *  `Glossary`. Read at each listing and each call, so a change reaches the next turn and the next call. */
+  availability?(server: string, tool: string): ToolAvailability | undefined;
 }
 
 /** One per-computer server as this computer lists it, for lane J's node to serve to the others (`mcp.list`): the raw
@@ -797,7 +805,7 @@ export class PluginMcp {
 
   /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`); an agent's or a
    *  coding session's only from plugins whose `onlyBackends` name its `backend` (default MOSS's own). */
-  servers(kind: "bot" | "side-thread" | "agent" | "coding", backend?: string, bot?: string): BotMcpServer[] {
+  servers(kind: "bot" | "side-thread" | "agent" | "coding", backend?: string, bot?: string, opts?: { keepOff?: boolean }): BotMcpServer[] {
     const out: BotMcpServer[] = [];
     const { clashes } = this.#bundledTools();
     for (const [key, l] of this.#listed) {
@@ -809,13 +817,13 @@ export class PluginMcp {
       const shared = l.bundled && this.#o.bundledServer !== undefined;
       const offered = shared ? l.tools.filter((t) => !clashes.has(t.name)) : l.tools;
       if (shared && offered.length === 0) continue;
-      const tools: BotMcpTool[] = placementFields(p, offered).tools.map((t) => ({
+      const tools: BotMcpTool[] = this.#withSetting(server, placementFields(p, offered).tools.map((t) => ({
         name: t.name,
         ...(t.description === undefined ? {} : { description: t.description }),
         inputSchema: t.inputSchema,
         load: loads[t.name] ?? loads["*"] ?? "on-demand",
         ...(t.title === undefined ? {} : { title: t.title }),
-      }));
+      })), opts?.keepOff === true);
       out.push({ server, plugin: l.plugin, tools, ...(l.instructions === undefined ? {} : { instructions: l.instructions }), ...(p.kind === "local" ? { computers: p.computers } : {}), reachable: true });
     }
     // Servers other computers run fill the names this one doesn't list. This computer's own listing wins, a server it
@@ -829,7 +837,7 @@ export class PluginMcp {
       if (this.#o.bundledServer !== undefined && r.server === this.#o.bundledServer) {
         const record = this.#o.registry.get(r.plugin);
         if (record === undefined || !isBundledMoss(record)) continue;
-        const tools = r.tools.filter((t) => !ownBundled.has(t.name) && !clashes.has(t.name));
+        const tools = this.#withSetting(r.server, r.tools.filter((t) => !ownBundled.has(t.name) && !clashes.has(t.name)), opts?.keepOff === true);
         if (tools.length > 0) out.push({ ...r, tools });
         continue;
       }
@@ -837,7 +845,23 @@ export class PluginMcp {
       if (RESERVED_NAMES.includes(r.server) || !isServerKey(r.server)) continue;
       const owner = declared.get(r.server);
       if (owner !== undefined && owner !== r.plugin) continue;
-      out.push(r);
+      out.push({ ...r, tools: this.#withSetting(r.server, r.tools, opts?.keepOff === true) });
+    }
+    return out;
+  }
+
+  /** The user's tool setting applied to one server's tools as they are offered (the one place it is read for a list):
+   *  `off` leaves a tool out (kept, marked `off`, only for a caller that must say why a call is refused), `always`
+   *  preloads it, `on-demand` puts it behind `Glossary`. A tool the user chose nothing for stays exactly as it was. */
+  #withSetting<T extends BotMcpTool>(server: string, tools: readonly T[], keepOff: boolean): T[] {
+    const get = this.#o.availability;
+    if (get === undefined) return [...tools];
+    const out: T[] = [];
+    for (const t of tools) {
+      const a = get(server, t.name);
+      if (a === undefined) out.push(t);
+      else if (a === "off") { if (keepOff) out.push({ ...t, off: true }); }
+      else out.push({ ...t, load: a === "always" ? "preload" : "on-demand" });
     }
     return out;
   }
@@ -874,11 +898,15 @@ export class PluginMcp {
   }
 
   /** Every server listed here with the tools it gives, local or not, by the key a bot sees it under: the Tools tab's list. */
-  toolListing(): { server: string; plugin: string; name: string; tools: { name: string; title?: string }[] }[] {
-    return [...this.#listed].map(([key, l]) => ({
-      server: this.#exposed(key, l.bundled), plugin: l.plugin, name: l.name,
-      tools: l.tools.map((t) => ({ name: t.name, ...(t.title === undefined ? {} : { title: t.title }) })),
-    }));
+  toolListing(): { server: string; plugin: string; name: string; tools: { name: string; title?: string; declared: "preload" | "on-demand" }[] }[] {
+    return [...this.#listed].map(([key, l]) => {
+      const loads = l.entry.tools ?? {};
+      return {
+        server: this.#exposed(key, l.bundled), plugin: l.plugin, name: l.name,
+        // `declared`: what the manifest says, which is the tool setting's default.
+        tools: l.tools.map((t) => ({ name: t.name, ...(t.title === undefined ? {} : { title: t.title }), declared: loads[t.name] ?? loads["*"] ?? "on-demand" })),
+      };
+    });
   }
 
   /** The per-computer servers listed here, for lane J's node to serve to the other computers (`mcp.list`; the node
@@ -916,6 +944,9 @@ export class PluginMcp {
     }
     if (l.stopped !== undefined) throw new ContractError("plugin_stopped", l.stopped);
     if (!l.tools.some((t) => t.name === tool)) throw new ContractError("not_found", `the MCP server ${server} has no tool ${tool}`);
+    // A tool the user turned off is refused whoever calls it and however the caller learned its name (a running session's
+    // cached list, a bridge's, a remote computer's call), read now and not as the session's list had it.
+    if (this.#o.availability?.(this.#exposed(server, l.bundled), tool) === "off") throw new ContractError("refused", toolOffMessage(mcpToolName(this.#exposed(server, l.bundled), tool)));
     const r = await this.#client(server, l.plugin, l.name, l.entry.type).request("tools/call", { name: tool, arguments: input }, { as, ...(signal === undefined ? {} : { signal }), timeoutMs: CALL_TIMEOUT_MS });
     if (!isObject(r)) return { content: [{ type: "text", text: "" }], isError: true };
     return capResult({ ...(r as McpResult), content: Array.isArray(r.content) ? r.content as McpResult["content"] : [] });
