@@ -10,6 +10,7 @@ export const NOT_ON_GITHUB: Readonly<Record<string, string>> = {
   "tab-flash": "measures the tab flash, alone on the machine: the Mac's merge check runs it",
   cold: "measures the cold start's deadline, alone on the machine: the Mac's merge check runs it",
   idle: "measures idle CPU, alone on the machine: the Mac's merge check runs it",
+  "browser-host": "presses its cards on the background host's island, and on a GitHub runner the island's sealed buttons never say ready: the runner has no pointing device, so macOS draws classic 15 px scrollbars that take a sealed button page's room, the button reads about half shown and the host's fallback card takes the card (runs 44089266815, 44101140442; as for `cards`). It moves to the matrix with `cards` when the sealed pages' fix lands (lane RT); the Mac's merge check runs it",
   release: "needs a packaged test build signed with the Developer ID, which a GitHub runner does not have: the Mac's merge check runs it on the try build",
   arrivals: "not yet on GitHub (about 45 s of rows): the Mac's merge check runs it",
   addons: "not yet on GitHub (about 60 s of rows): the Mac's merge check runs it",
