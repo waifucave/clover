@@ -20,7 +20,7 @@
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path. A part's OWN plugin's
 // settings are not here: every part reads and writes them through the plugin API (`settings.get`/`set`, the core's
 // `plugin.layer.call`), at every scope, as its host half does.
-import { TopPluginId, allowedMethods } from "@waifucave/moss-protocol";
+import { TopPluginId, allowedMethods, dataKindOfSession, kindCapability, type SessionKind } from "@waifucave/moss-protocol";
 import { withImplied } from "@waifucave/moss-plugin-sdk";
 import { displayText } from "@waifucave/moss-plugin-sdk/plain";
 import { resend } from "./resend";
@@ -45,12 +45,25 @@ export interface TreeCall {
    *  shape needs, or a list of which any one will do (the call itself then holds each to its own reach). Absent on a
    *  `read`/`gesture` call: no capability (each such call says why). */
   needs?: string | readonly string[] | ((params: unknown) => string | readonly string[]);
+  /** Every one of these, as well as `needs` (an archived session, whose kind the previous app didn't keep, is read
+   *  with both kinds' capabilities). */
+  needsAll?: readonly string[];
+  /** Reads by kind (spec revision 19, §3.6): the session the params name (`id` or `session`) decides the capability,
+   *  `kindCapability("conversation.*", <its kind>)`: `sessions.read` for a code session, `conversation.read` for a bot's
+   *  conversation. Main asks the core for the session on its own connection; `needs` lists both, so only a holder of
+   *  one of them gets that far. */
+  byKind?: true;
 }
 
 const READ: Disposition = "read";
 const GESTURE: Disposition = "gesture";
 const read = (needs: TreeCall["needs"]): TreeCall => ({ disposition: READ, needs });
 const press = (needs: TreeCall["needs"]): TreeCall => ({ disposition: GESTURE, needs });
+
+/** The two capabilities a session's reads are by kind (`kindCapability`'s for `conversation.*`). */
+const KIND_READS = [kindCapability("conversation.*", "sessions"), kindCapability("conversation.*", "bots")] as const;
+const SESSION_READ: TreeCall = { disposition: READ, needs: KIND_READS, byKind: true };
+const ARCHIVE_READ: TreeCall = { disposition: READ, needsAll: KIND_READS };
 
 const obj = (v: unknown): Record<string, unknown> => (v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
@@ -104,17 +117,18 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // `conversation.message.action` spot THE CALLING PART DECLARES (none: refused) and runs that plugin's own handler, which
   // chose to contribute it, with `{ session, seq }` only (`message-action.ts`).
   "conversation.messageAction": { disposition: GESTURE },
-  // A session's reads: its changes, outputs, context use and connectors; the archive.
-  "session.diff": read("conversation.read"),
-  "session.outputs": read("conversation.read"),
-  "session.context": read("conversation.read"),
-  "session.connectors": read("conversation.read"),
-  "archive.history": read("conversation.read"),
-  "archive.list": read("conversation.read"),
+  // A session's reads, by the kind of the session named (`byKind`): its changes, outputs, context use and connectors.
+  // The archive (the previous app's sessions, whose kind isn't kept): both kinds' capabilities.
+  "session.diff": SESSION_READ,
+  "session.outputs": SESSION_READ,
+  "session.context": SESSION_READ,
+  "session.connectors": SESSION_READ,
+  "archive.history": ARCHIVE_READ,
+  "archive.list": ARCHIVE_READ,
   // The account MOSS is signed in with: its name and email.
   "account.status": read(ACCOUNT_READ),
-  // The models a bot can be set to, with whether each provider is signed in.
-  "models.list": read("bots.read"),
+  // The models a session or a bot can be set to, with whether each provider is signed in (the catalog, no session's data).
+  "models.list": read(["sessions.read", "bots.read"]),
   "computer.list": read("computers.read"),
   "plugin.logs": read("logs.read"),
   // Settings' Tools tab: what each plugin tool may do and the card rules saved for one bot. A value decides whether a
@@ -188,8 +202,11 @@ export function treeVerdict(capabilities: ReadonlySet<string> | readonly string[
     case "card": return { ok: false, owned: true, why: `${method} changes what the app may do: it needs a card` };
     case "unserved": return { ok: false, owned: true, why: `${method} isn't served by the core` };
     default: {
+      const all = call.needsAll ?? [];
+      const lacking = all.filter((c) => !holds(capabilities, c));
+      if (lacking.length > 0) return { ok: false, owned: !LAYER_METHODS.has(method), why: `${method} needs the ${all.map((c) => `${c} capability`).join(" and the ")}` };
       const needs = needsOf(call, params);
-      if (needs.length === 0) return { ok: true, call };
+      if (needs.length === 0) return { ok: true, call, ...(all.length > 0 ? { by: all.join("+") } : {}) };
       const by = needs.find((c) => holds(capabilities, c));
       if (by !== undefined) return { ok: true, call, by };
       // Without it, as any plugin's part: the layer door for a method it has (the core's own rules), refused otherwise.
@@ -485,6 +502,26 @@ function userLayerWhy(params: unknown): string | undefined {
   return keys.some((k) => k === "avatar" || k === "avatarCredit") ? "a bot's figure is the avatar plugin's own setting now, not its layer" : undefined;
 }
 
+/** Why a read by kind (`byKind`) isn't the calling part's, or undefined: the session the params name, as the core holds
+ *  it (asked on the app's own connection, never the page's word for its kind), must be of a kind whose capability the
+ *  part's plugin holds. A session the core doesn't know is refused. */
+async function byKindWhy(r: TreeRoute, has: (cap: string) => boolean): Promise<string | undefined> {
+  const p = obj(r.params);
+  const id = typeof p.id === "string" ? p.id : typeof p.session === "string" ? p.session : undefined;
+  if (id === undefined) return `${r.method} names a session`;
+  let kind: SessionKind | undefined;
+  try {
+    const got = obj(await r.request("session.get", { id }));
+    const k = obj(got.session).kind;
+    kind = k === "bot" || k === "side-thread" || k === "agent" || k === "coding" ? k : undefined;
+  } catch {
+    kind = undefined;
+  }
+  if (kind === undefined) return `no session ${id.slice(0, 80)}`;
+  const cap = kindCapability("conversation.*", dataKindOfSession({ kind }));
+  return has(cap) ? undefined : `${r.method} on this session needs the ${cap} capability`;
+}
+
 /** One call from a part, routed: a call this table names by the capability the part's plugin holds (on the app's own
  *  connection), anything else through the layer door. */
 export async function routeCall(r: TreeRoute): Promise<unknown> {
@@ -498,6 +535,13 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     throw r.refuse(verdict.why);
   }
   const has = (cap: string) => holds(c.capabilities, cap);
+  if (verdict.call.byKind === true) {
+    const why = await byKindWhy(r, has);
+    if (why !== undefined) {
+      r.log(`tree: ${part}: ${r.method} refused (${why})`);
+      throw r.refuse(why);
+    }
+  }
   // Only listing what is newer is a read; applying one is the user's press.
   const listing = r.method === "plugin.update" && (r.params as { list?: unknown } | null | undefined)?.list === true;
   // A call refused for what it says spends nobody's press: the shapes that can be checked without the core first.

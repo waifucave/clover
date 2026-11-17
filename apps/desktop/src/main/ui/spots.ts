@@ -19,6 +19,7 @@
 // counting as its own plugin (a send-button plugin dresses the button, a bot's tab look the whole tab, a shell the
 // app). The spots form a tree: the catalog's declarations, and each plugin's `declares` under the spot its entry fills.
 import { ADDED_KEY, SAME_ON_EVERY_TAB, SPOTS, isAddedKey, keyMatches, spotInfo } from "@waifucave/moss-plugin-sdk";
+import { kindCapability } from "@waifucave/moss-protocol";
 import { SAFE_MODE_PLUGINS, type PointDeclaration, type UiEntry, type UiPlugin } from "./model";
 
 export type Os = "macos" | "windows" | "linux";
@@ -139,16 +140,22 @@ export class SpotTree {
   }
 }
 
-/** What a spot needs in this cell. A spot that needs `conversation.read` shows messages, and which capability reads them
- *  depends on the data (spec revision 19, §3.6): a code session (`coding`, `agent`) is read with `sessions.read`, a bot's
- *  conversation with `conversation.read`, an archived session (the previous app's, whose kind isn't told) with both. The kind
- *  is the cell's own (`ctx.session`): the bundled conversation part tells it from the session it shows, heard from the moss
- *  layer only, never from the part that placed the spot; a cell with no kind is a bot's, and draws no inner spot of that part. */
+/** The capabilities a spot's read means, by kind of data (`kindCapability`'s family `conversation.*`). */
+const KIND_READS: ReadonlySet<string> = new Set([kindCapability("conversation.*", "sessions"), kindCapability("conversation.*", "bots")]);
+
+/** What a spot needs in this cell. A spot that needs a read of messages (`sessions.read` in the catalog since lane MC, or
+ *  `conversation.read` in a plugin's own declaration) shows messages, and which capability reads them depends on the
+ *  data (spec revision 19, §3.6), through the one mapping, `kindCapability("conversation.*", kind)`: a code session
+ *  (`coding`, `agent`, every session of MOSS Code's window) is read with `sessions.read`, a bot's conversation (`bot`,
+ *  `side-thread`) with `conversation.read`, and an archived session (the previous app's, whose kind isn't told) or a
+ *  cell whose kind isn't told yet with both. The kind is the cell's own (`ctx.session`): the bundled conversation part
+ *  tells it from the session it shows, heard from the moss layer only, never from the part that placed the spot. */
 export function needsInCell(needs: readonly string[], ctx: Pick<CellContext, "session">): readonly string[] {
   const kind = ctx.session;
-  if (kind === "archived") return needs.flatMap((c) => (c === "conversation.read" ? ["conversation.read", "sessions.read"] : [c]));
-  if (kind === "coding" || kind === "agent") return needs.map((c) => (c === "conversation.read" ? "sessions.read" : c));
-  return needs;
+  const reads = kind === "coding" || kind === "agent" ? [kindCapability("conversation.*", "sessions")]
+    : kind === "bot" || kind === "side-thread" ? [kindCapability("conversation.*", "bots")]
+    : [...KIND_READS];
+  return [...new Set(needs.flatMap((c) => (KIND_READS.has(c) ? reads : [c])))];
 }
 
 /** A spot's declaration as the resolver needs it: the catalog's for a catalog name (a plugin that declares one must

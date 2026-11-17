@@ -24,14 +24,14 @@ const verdict = (part: string, method: string, params?: unknown) => treeVerdict(
 
 describe("the door for parts: by capability, never by id (F2)", () => {
   test("a read passes for a part whose plugin holds its capability, whichever plugin; a method the table doesn't name isn't its business", () => {
-    for (const m of ["archive.history", "archive.list"]) expect(verdict("moss/conversation", m)).toMatchObject({ ok: true, by: "conversation.read" });
+    for (const m of ["archive.history", "archive.list"]) expect(verdict("moss/archive", m)).toMatchObject({ ok: true, by: "sessions.read+conversation.read" });
     for (const m of ["plugin.list", "plugin.get", "plugin.ui"]) expect(verdict("moss/bot-editor", m)).toMatchObject({ ok: true, by: "plugins.read" });
     expect(verdict("moss/settings", "ui.settings")).toMatchObject({ ok: true, by: "app.settings" });
     expect(verdict("moss/bot-editor", "ui.settings")).toMatchObject({ ok: true, by: "bots.edit" });
     expect(verdict("moss/shell", "account.status")).toMatchObject({ ok: true, by: "account.read" });
     expect(verdict("moss/bot-editor", "models.list")).toMatchObject({ ok: true, by: "bots.read" });
     // Without the capability: not a door of this table's (models.list, account.status and ui.settings aren't the layer role's).
-    expect(verdict("moss/archive", "models.list")).toMatchObject({ ok: false, owned: true, why: "models.list needs the bots.read capability" });
+    expect(treeVerdict(["files"], "models.list")).toMatchObject({ ok: false, owned: true, why: "models.list needs the sessions.read or bots.read capability" });
     expect(verdict("moss/conversation", "account.status")).toMatchObject({ ok: false, owned: true, why: "account.status needs the account.read capability" });
     expect(verdict("moss/conversation", "ui.settings")).toMatchObject({ ok: false, owned: true });
     expect(verdict("moss/composer", "nonsense.method")).toMatchObject({ ok: false, owned: false });
@@ -72,12 +72,46 @@ describe("the door for parts: by capability, never by id (F2)", () => {
     }
   });
 
-  test("the session panels' reads: conversation.read, no gesture; without it the layer door (the layer role's own)", () => {
+  test("the session panels' reads: by the kind of the session named, no gesture; with neither read the layer door (the layer role's own)", () => {
     for (const m of ["session.diff", "session.outputs", "session.context", "session.connectors"]) {
-      expect(TREE_CALLS[m]).toEqual({ disposition: "read", needs: "conversation.read" });
+      expect(TREE_CALLS[m]).toEqual({ disposition: "read", needs: ["sessions.read", "conversation.read"], byKind: true });
       expect(verdict("moss/panel", m)).toMatchObject({ ok: true });
-      expect(treeVerdict(["conversation.read"], m)).toMatchObject({ ok: true });
+      expect(treeVerdict(["sessions.read"], m)).toMatchObject({ ok: true });
       expect(treeVerdict([], m)).toMatchObject({ ok: false, owned: false });
+    }
+  });
+
+  test("reads by kind (spec revision 19, §3.6): conversation.read alone reaches no code session, sessions.read alone no bot's conversation", async () => {
+    const kinds: Record<string, string> = { s_code: "coding", agent_task: "agent", b_alpha: "bot", st_alpha: "side-thread" };
+    const ask = async (caps: string[], method: string, id: string) => {
+      const calls: string[] = [];
+      const { r } = route({
+        tree: { windowId: 1, pluginId: THIRD }, caps, method, params: { id }, gesture: false,
+        request: async (m, p) => { calls.push(m); return m === "session.get" ? (kinds[(p as { id: string }).id] === undefined ? Promise.reject(new Error("no such session")) : { session: { id: (p as { id: string }).id, kind: kinds[(p as { id: string }).id] } }) : "app"; },
+      });
+      const got = await routeCall(r).then((v) => v, (e: Error) => e.message);
+      return { got, calls };
+    };
+    for (const m of ["session.diff", "session.outputs", "session.context", "session.connectors"]) {
+      // A code session (a coding session, or a bot's coding task): sessions.read, never conversation.read.
+      for (const id of ["s_code", "agent_task"]) {
+        expect(await ask(["sessions.read"], m, id)).toEqual({ got: "app", calls: ["session.get", m] });
+        expect(await ask(["conversation.read"], m, id)).toEqual({ got: `${m} on this session needs the sessions.read capability`, calls: ["session.get"] });
+      }
+      // A bot's conversation and its side threads: conversation.read, never sessions.read.
+      for (const id of ["b_alpha", "st_alpha"]) {
+        expect(await ask(["conversation.read"], m, id)).toEqual({ got: "app", calls: ["session.get", m] });
+        expect(await ask(["sessions.read"], m, id)).toEqual({ got: `${m} on this session needs the conversation.read capability`, calls: ["session.get"] });
+      }
+      // A session the core doesn't know, or none named: refused, nothing read.
+      expect(await ask(["sessions.read", "conversation.read"], m, "s_gone")).toEqual({ got: "no session s_gone", calls: ["session.get"] });
+      expect((await ask(["sessions.read"], m, undefined as never)).calls).toEqual([]);
+    }
+    // The archive (the previous app's sessions, whose kind isn't kept): both reads, neither alone.
+    for (const m of ["archive.list", "archive.history"]) {
+      expect(treeVerdict(["sessions.read"], m)).toMatchObject({ ok: false, owned: true });
+      expect(treeVerdict(["conversation.read"], m)).toMatchObject({ ok: false, owned: true });
+      expect(treeVerdict(["sessions.read", "conversation.read"], m)).toMatchObject({ ok: true });
     }
   });
 
@@ -330,12 +364,12 @@ describe("the Settings page's ui.set", () => {
 /** What each table entry needs (F2): the capabilities of which any one lets a part through (none: no capability; the
  *  call holds its own rule), and whether it needs the user's press. Shape-dependent entries are listed with the shape
  *  `paramsFor` sends; their other shapes are tested on their own. */
-const EXPECTED: Record<string, { needs: string[]; gesture: boolean }> = {
+const EXPECTED: Record<string, { needs: string[]; /** Every one of these as well (`needsAll`). */ all?: string[]; gesture: boolean }> = {
   "ui.settings": { needs: ["app.settings", "bots.edit"], gesture: false },
-  "session.diff": { needs: ["conversation.read"], gesture: false },
-  "session.outputs": { needs: ["conversation.read"], gesture: false },
-  "session.context": { needs: ["conversation.read"], gesture: false },
-  "session.connectors": { needs: ["conversation.read"], gesture: false },
+  "session.diff": { needs: ["sessions.read", "conversation.read"], gesture: false },
+  "session.outputs": { needs: ["sessions.read", "conversation.read"], gesture: false },
+  "session.context": { needs: ["sessions.read", "conversation.read"], gesture: false },
+  "session.connectors": { needs: ["sessions.read", "conversation.read"], gesture: false },
   "ui.set": { needs: ["app.settings"], gesture: true },
   "ui.secret": { needs: ["plugins.manage", "bots.edit"], gesture: true },
   "plugin.settings.get": { needs: ["plugins.read"], gesture: false },
@@ -345,9 +379,9 @@ const EXPECTED: Record<string, { needs: string[]; gesture: boolean }> = {
   "conversation.messageAction": { needs: [], gesture: true },
   "ui.pick": { needs: ["plugins.manage"], gesture: true },
   "account.status": { needs: ["account.read"], gesture: false },
-  "archive.history": { needs: ["conversation.read"], gesture: false },
-  "archive.list": { needs: ["conversation.read"], gesture: false },
-  "models.list": { needs: ["bots.read"], gesture: false },
+  "archive.history": { needs: [], all: ["sessions.read", "conversation.read"], gesture: false },
+  "archive.list": { needs: [], all: ["sessions.read", "conversation.read"], gesture: false },
+  "models.list": { needs: ["sessions.read", "bots.read"], gesture: false },
   "plugin.logs": { needs: ["logs.read"], gesture: false },
   "tool.permissions": { needs: ["tools.permissions"], gesture: false },
   "tool.setPermission": { needs: ["tools.permissions"], gesture: true },
@@ -366,7 +400,9 @@ const THIRD = "acme-panel";
 
 /** The app's connection as the door's own look-ups see it: a plugin with one plain setting (`k`, `region`) and one key
  *  (`token`), and one `api-key` sign-in (index 0) and one browser sign-in (index 1). */
-async function appConnection(method: string): Promise<unknown> {
+async function appConnection(method: string, params?: unknown): Promise<unknown> {
+  // The core's own session, for a read by kind: a bot's conversation (`b_…`), else a code session.
+  if (method === "session.get") return { session: { kind: String((params as { id?: unknown } | undefined)?.id ?? "").startsWith("b_") ? "bot" : "coding" } };
   if (method === "plugin.get") return { plugin: { id: "tarot", manifest: { settings: { k: { type: "string" }, region: { type: "string" }, token: { type: "secret" } } } } };
   if (method === "bot.list") return { bots: [{ id: "alpha" }, { id: "tarot-panel" }] };
   if (method === "session.resend") return { seq: 9 };
@@ -471,6 +507,12 @@ function paramsFor(method: string, part: string, tokens: PickTokens, cap = ""): 
       return { session: "b_alpha" };
     case "conversation.messageAction":
       return { entry: "alpha#pin", session: "b_alpha", seq: 7 };
+    case "session.diff":
+    case "session.outputs":
+    case "session.context":
+    case "session.connectors":
+      // A bot's conversation for a holder of conversation.read, a code session for any other.
+      return { id: cap === "conversation.read" ? "b_alpha" : "s_code" };
     default:
       return {};
   }
@@ -495,19 +537,20 @@ describe("the door, table by table: what each entry needs, with what press", () 
       expect([method, needsOf(TREE_CALLS[method]!, paramsFor(method, THIRD, new PickTokens())).slice().sort()]).toEqual([method, want.needs.slice().sort()]);
       expect([method, TREE_CALLS[method]!.disposition === "gesture"]).toEqual([method, want.gesture]);
       // plugins.manage carries plugins.read (IMPLIED_CAPABILITIES): its holder passes each read too.
+      expect([method, [...(TREE_CALLS[method]!.needsAll ?? [])].sort()]).toEqual([method, [...(want.all ?? [])].sort()]);
       const holders = want.needs.length === 0 ? [""] : want.needs.includes("plugins.read") ? [...want.needs, "plugins.manage"] : want.needs;
       for (const cap of holders) {
         for (const gesture of [true, false]) {
           const tokens = new PickTokens();
           const calls: string[] = [];
-          const { r } = route({ tree: { windowId: 1, pluginId: THIRD }, caps: cap === "" ? [] : [cap], method, params: paramsFor(method, THIRD, tokens, cap), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => true, entries: () => PIN_ENTRY, request: async (m) => { calls.push(m); return appConnection(m); } });
+          const { r } = route({ tree: { windowId: 1, pluginId: THIRD }, caps: [...(cap === "" ? [] : [cap]), ...(want.all ?? [])], method, params: paramsFor(method, THIRD, tokens, cap), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => true, entries: () => PIN_ENTRY, request: async (m, p) => { calls.push(m); return appConnection(m, p); } });
           const ok = gesture || !want.gesture;
           const got = await routeCall(r).then(() => "ok", (e: Error) => e.message);
           expect([method, cap, gesture, got]).toEqual([method, cap, gesture, ok ? "ok" : expect.stringContaining("only right after the user's own")]);
           if (!ok) expect([method, cap, calls]).toEqual([method, cap, []]);
         }
       }
-      if (want.needs.length === 0) continue;
+      if (want.needs.length === 0 && want.all === undefined) continue;
       // With none: refused with the capability it needs, or (a method the `layer` role has) the layer door's own rules.
       const { r, calls } = route({ tree: { windowId: 1, pluginId: THIRD }, caps: ["files", "notify"], method, params: paramsFor(method, THIRD, new PickTokens()), gesture: true });
       const got = await routeCall(r).then((v) => v, (e: Error) => e.message);

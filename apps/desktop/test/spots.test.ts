@@ -300,7 +300,7 @@ describe("entries: style and hide, `needs` and `keep`", () => {
 
   test("in a single or keyed cell, the user switches a plugin's hide off: the cell is drawn as without it", () => {
     const noNotes = plugin("hide-notes", [{ spot: "conversation.message", key: "note", hide: true }], { caps: ["conversation.read"] });
-    const at = (lists: UiChoices["lists"]) => resolveCell({ plugins: [...DEFAULT, noNotes], choices: { picks: [], lists }, ctx: inTab("alpha") }, "conversation.message", "note");
+    const at = (lists: UiChoices["lists"]) => resolveCell({ plugins: [...DEFAULT, noNotes], choices: { picks: [], lists }, ctx: inTab("alpha", { session: "bot" }) }, "conversation.message", "note");
     expect(at([]).hidden).toBe(true);
     const back = at([{ spot: "conversation.message", bot: "alpha", order: [], hidden: [], shown: ["hide-notes#conversation.message"] }]);
     expect(back.hidden).toBe(false);
@@ -309,14 +309,14 @@ describe("entries: style and hide, `needs` and `keep`", () => {
 
   test("a kept key can't be hidden, by an entry or by a pick", () => {
     const hideCards = plugin("hide-cards", [{ spot: "conversation.message", key: "approval", hide: true }], { caps: ["conversation.read"] });
-    const r = resolveCell({ plugins: [...DEFAULT, hideCards], ctx: inTab("alpha") }, "conversation.message", "approval");
+    const r = resolveCell({ plugins: [...DEFAULT, hideCards], ctx: inTab("alpha", { session: "bot" }) }, "conversation.message", "approval");
     expect(r.hidden).toBe(false);
     expect(shownRefs(r)).toEqual(["moss/conversation#conversation.message"]);
     const pickNothing: UiChoices = { picks: [{ spot: "conversation.message", key: "approval", entry: null }], lists: [] };
-    expect(resolveCell({ plugins: DEFAULT, choices: pickNothing, ctx: inTab("alpha") }, "conversation.message", "approval").hidden).toBe(false);
+    expect(resolveCell({ plugins: DEFAULT, choices: pickNothing, ctx: inTab("alpha", { session: "bot" }) }, "conversation.message", "approval").hidden).toBe(false);
     // Another key of the same spot can be hidden.
     const hideNotes = plugin("hide-notes", [{ spot: "conversation.message", key: "note", hide: true }], { caps: ["conversation.read"] });
-    expect(resolveCell({ plugins: [...DEFAULT, hideNotes], ctx: inTab("alpha") }, "conversation.message", "note").hidden).toBe(true);
+    expect(resolveCell({ plugins: [...DEFAULT, hideNotes], ctx: inTab("alpha", { session: "bot" }) }, "conversation.message", "note").hidden).toBe(true);
   });
 
   test("style-only entries don't compete, and apply in reverse rank so the would-be winner applies last", () => {
@@ -326,12 +326,12 @@ describe("entries: style and hide, `needs` and `keep`", () => {
     const r = resolveCell({ plugins: [...DEFAULT, bundledStyle, userStyle, lunaStyle], ctx: inTab("luna") }, "composer");
     expect(shownRefs(r)).toEqual(["moss/composer#composer"]);
     expect(r.styles.map((c) => c.plugin.id)).toEqual(["moss/look", "rounder", "luna-look"]);
-    expect(resolveCell({ plugins: [...DEFAULT, bundledStyle, userStyle, lunaStyle], ctx: inTab("alpha") }, "composer").styles.map((c) => c.plugin.id)).toEqual(["moss/look", "rounder"]);
+    expect(resolveCell({ plugins: [...DEFAULT, bundledStyle, userStyle, lunaStyle], ctx: inTab("alpha", { session: "bot" }) }, "composer").styles.map((c) => c.plugin.id)).toEqual(["moss/look", "rounder"]);
   });
 
   test("`needs`: an entry whose plugin lacks a capability the spot's props carry data for isn't mounted", () => {
     const blind = plugin("blind-bubbles", [{ spot: "conversation.message", key: "bot", component: "Bubble" }]);
-    const r = resolveCell({ plugins: [...DEFAULT, blind], ctx: inTab("alpha") }, "conversation.message", "bot");
+    const r = resolveCell({ plugins: [...DEFAULT, blind], ctx: inTab("alpha", { session: "bot" }) }, "conversation.message", "bot");
     expect(shownRefs(r)).toEqual(["moss/conversation#conversation.message"]);
     expect(r.skipped).toEqual([{ ref: "blind-bubbles#conversation.message", reason: "needs", detail: "conversation.read" }]);
   });
@@ -345,10 +345,13 @@ describe("entries: style and hide, `needs` and `keep`", () => {
       const r = resolveCell({ plugins: all, ctx: inTab("alpha", session === undefined ? {} : { session }) }, spot, key);
       return [...shownRefs(r)].map((x) => x.split("#")[0]).filter((x) => ["bots-only", "code-only", "both-kinds"].includes(x!)).sort();
     };
-    for (const session of [undefined, "bot", "side-thread"]) {
+    for (const session of ["bot", "side-thread"]) {
       expect([session, who("conversation.message.extra", session)]).toEqual([session, ["both-kinds", "bots-only"]]);
       expect([session, who("tool.result", session, "Window")]).toEqual([session, ["bots-only"]]);
     }
+    // A cell whose kind isn't told yet: both reads (MOSS Code's window shows no bots, so nothing assumes a bot's).
+    expect(who("conversation.message.extra", undefined)).toEqual(["both-kinds"]);
+    expect(who("tool.result", undefined, "Window")).toEqual([]);
     for (const session of ["coding", "agent"]) {
       expect([session, who("conversation.message.extra", session)]).toEqual([session, ["both-kinds", "code-only"]]);
       expect([session, who("tool.result", session, "Window")]).toEqual([session, ["code-only"]]);

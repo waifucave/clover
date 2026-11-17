@@ -906,7 +906,9 @@ describe("what a conversation's inner spots need is the data's own kind (spec re
     const { s, shell, conv } = conversationPart();
     const ask = (session: string | undefined) => refs(s.rt.resolve(shell.shellFrame, conv.mount, "conversation.message.extra", undefined, session === undefined ? {} : { session }));
     for (const session of ["coding", "agent"]) expect([session, ask(session)]).toEqual([session, ["code-only"]]);
-    for (const session of ["bot", "side-thread", undefined]) expect([session, ask(session)]).toEqual([session, ["bots-only"]]);
+    for (const session of ["bot", "side-thread"]) expect([session, ask(session)]).toEqual([session, ["bots-only"]]);
+    // A cell whose kind isn't told: both reads, so neither single-kind plugin.
+    expect(ask(undefined)).toEqual([]);
     expect(ask("archived")).toEqual([]);
   });
 });

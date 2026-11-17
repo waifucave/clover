@@ -10,6 +10,7 @@
 // Electron-free: the Electron glue (ipc.ts) hands frames in as `FrameRef`s and delivers what `send` produces, so the
 // tests drive the whole runtime under Bun.
 import { randomBytes } from "node:crypto";
+import { dataKindOfSession, kindCapability, type SessionKind } from "@waifucave/moss-protocol";
 import type { LayerMessage, LocaleValue, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/moss-plugin-sdk";
 import { STOCK_KEYS, spotInfo } from "@waifucave/moss-plugin-sdk";
@@ -715,7 +716,8 @@ export class UiRuntime {
     const strings = this.stringsFor(m);
     m.stringsKey = JSON.stringify(strings);
     // The questions waiting, for a plugin that may read them.
-    if (this.questions.length > 0 && this.readsQuestions(m)) queueMicrotask(() => this.post(m.id, { type: "questions", questions: this.questions }));
+    const heard = this.questionsFor(m);
+    if (heard.length > 0) queueMicrotask(() => this.post(m.id, { type: "questions", questions: heard }));
     return { ...this.info(m), sheets, strings };
   }
 
@@ -1567,20 +1569,45 @@ export class UiRuntime {
     }
   }
 
-  /** The questions waiting in every session (lane D's): each document whose plugin has `conversation.read` hears them,
-   *  with their text; no other does. */
-  setQuestions(questions: readonly PendingQuestion[]): void {
+  /** The questions waiting in every session (lane D's), by kind of data (spec revision 19, §3.6): a document hears a
+   *  session's questions, with their text, when its plugin holds the read of that session's kind
+   *  (`kindCapability("conversation.*", kind)`: `sessions.read` for a code session, `conversation.read` for a bot's
+   *  conversation); a session whose kind main doesn't know (`kindOf` gives none) needs both. No other document hears
+   *  them. */
+  setQuestions(questions: readonly PendingQuestion[], kindOf: (session: string) => SessionKind | undefined = () => undefined): void {
     this.questions = questions;
+    this.questionKind = kindOf;
     for (const m of this.mounts.values()) {
-      if (m.kind === "frame" && m.frame !== undefined && this.readsQuestions(m)) this.post(m.id, { type: "questions", questions });
+      if (m.kind !== "frame" || m.frame === undefined) continue;
+      const heard = this.questionsFor(m);
+      if (heard.length > 0 || this.readsAnyQuestion(m)) this.post(m.id, { type: "questions", questions: heard });
     }
   }
 
-  private readsQuestions(doc: Mount): boolean {
-    // The `moss` layer's document is shared by the bundled parts drawn in it: it hears them when any plugin drawn in
-    // that layer may read conversations. Any other document by its own plugin's capability.
-    if (doc.layer === "moss") return this.plugins.some((p) => p.layer === "moss" && p.capabilities.has("conversation.read"));
-    return doc.plugin?.capabilities.has("conversation.read") === true;
+  private questionKind: (session: string) => SessionKind | undefined = () => undefined;
+
+  /** The capabilities a document reads with: the `moss` layer's document is shared by the bundled parts drawn in it, so
+   *  any plugin drawn in that layer counts; any other document by its own plugin's. */
+  private readsWith(doc: Mount): (cap: string) => boolean {
+    if (doc.layer === "moss") return (cap) => this.plugins.some((p) => p.layer === "moss" && p.capabilities.has(cap));
+    return (cap) => doc.plugin?.capabilities.has(cap) === true;
+  }
+
+  /** Whether a document reads questions of either kind (so it hears that the list emptied). */
+  private readsAnyQuestion(doc: Mount): boolean {
+    const has = this.readsWith(doc);
+    return has(kindCapability("conversation.*", "sessions")) || has(kindCapability("conversation.*", "bots"));
+  }
+
+  /** The waiting questions a document may read, by each one's session's kind. */
+  private questionsFor(doc: Mount): readonly PendingQuestion[] {
+    if (this.questions.length === 0) return [];
+    const has = this.readsWith(doc);
+    return this.questions.filter((q) => {
+      const kind = this.questionKind(q.session);
+      if (kind === undefined) return has(kindCapability("conversation.*", "sessions")) && has(kindCapability("conversation.*", "bots"));
+      return has(kindCapability("conversation.*", dataKindOfSession({ kind })));
+    });
   }
 
   /** The part calling the app's door for parts (tree-calls.ts) in the document `frame` (throws if it isn't in the
