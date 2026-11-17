@@ -2,7 +2,7 @@
 // only for files inside the folder). Every path a layer or the theme engine asks for is resolved inside the plugin's
 // folder, symlinks included, or refused.
 import { createHash } from "node:crypto";
-import { closeSync, constants, createReadStream, fstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
+import { closeSync, constants, createReadStream, fstatSync, openSync, readSync, lstatSync, realpathSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import type { DataFilesView } from "@waifucave/moss-protocol";
@@ -184,11 +184,13 @@ export function ownDataPlugin(pathname: string): string | undefined {
 }
 
 /** `/_d/<plugin id>/<path…>`: a file a plugin chose to share with its own pages, in the `shared/` folder of its data
- *  folder (`<home>/plugin-data/<id>/shared/`), to its own layer only. Nothing else of its data folder (what its host code
- *  keeps) is served. The path is plain names (no dot files); the REAL path (links followed, at serve time) must still be
- *  inside that folder; and only the inert kinds above, never SVG. `sharedDir` is that folder. */
-export function ownDataFile(sharedDir: string, pathname: string): { file: string; type: string; maxBytes: number } | "forbidden" | "missing" {
-  const dataDir = sharedDir;
+ *  folder (`<plugin-data>/<id>/shared/`), to its own layer only. Nothing else of its data folder (what its host code
+ *  keeps) is served. The path is plain names (no dot files); and only the inert kinds above, never SVG.
+ *  The roots are never trusted before they are resolved: a plugin's host half writes its own data folder, so it could
+ *  make that folder, or `shared`, a link out (to another plugin's data, to anywhere the app's unfenced main process can
+ *  read). Every folder from `pluginData` down to `shared` must be a real folder (no link), its real path exactly where
+ *  it is named under the real `pluginData`; and the file's REAL path (links followed, at serve time) inside that. */
+export function ownDataFile(pluginData: string, pluginId: string, pathname: string): { file: string; type: string; maxBytes: number } | "forbidden" | "missing" {
   let rel: string[];
   try {
     rel = pathname.slice("/_d/".length).split("/").slice(1).map((p) => decodeURIComponent(p));
@@ -196,10 +198,26 @@ export function ownDataFile(sharedDir: string, pathname: string): { file: string
     return "missing";
   }
   if (rel.length === 0 || rel.some((p) => p === "" || p === "." || p === ".." || p.startsWith(".") || p.includes("\\") || p.includes("/") || p.includes("\0"))) return "missing";
-  const file = normalize(join(dataDir, ...rel));
-  if (!isInside(dataDir, file)) return "forbidden";
+  const parts = pluginId.split("/");
+  if (parts.some((p) => !/^[a-z0-9][a-z0-9-]{0,63}$/.test(p))) return "forbidden";
+  let shared: string;
   try {
-    if (!isInside(realpathSync(dataDir), realpathSync(file))) return "forbidden";
+    let at = realpathSync(pluginData);
+    for (const name of [...parts, "shared"]) {
+      const next = join(at, name);
+      const st = lstatSync(next);
+      if (st.isSymbolicLink() || !st.isDirectory()) return "forbidden";
+      if (realpathSync(next) !== next) return "forbidden";
+      at = next;
+    }
+    shared = at;
+  } catch {
+    return "missing";
+  }
+  const file = normalize(join(shared, ...rel));
+  if (!isInside(shared, file)) return "forbidden";
+  try {
+    if (!isInside(shared, realpathSync(file))) return "forbidden";
   } catch {
     return "missing";
   }

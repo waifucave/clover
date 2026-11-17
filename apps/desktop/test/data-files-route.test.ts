@@ -35,7 +35,16 @@ beforeAll(async () => {
   folder("plugin-data/wordgame", { "shared/own/saved.json": "{\"score\":1}", "shared/own/pic.png": "png", "shared/own/page.html": "<p>", "shared/own/v.svg": "<svg/>", "shared/own/run.js": "x", "shared/own/m.wasm": "w", "shared/.hidden.json": "{}", "db.json": "{\"PROBE_SECRET\":\"dummy123\"}" });
   folder("plugin-data/other", { "shared/theirs.json": "{}" });
   symlinkSync(join(dir, "plugin-data", "other", "shared", "theirs.json"), join(dir, "plugin-data", "wordgame", "shared", "own", "link.json"));
-  const registry = [plugin("wordgame", words, { dataFiles: [WORDS] }), plugin("plain", plain), plugin("other", plain)];
+  // A host half writes its own data folder, so it can plant links at its roots: `shared` itself a link to a folder
+  // outside, `shared` a link to another plugin's data, and its whole data folder a link out of plugin-data.
+  folder("elsewhere", { "stolen.json": "{\"PROBE_SECRET\":\"dummy123\"}" });
+  mkdirSync(join(data, "linkout"), { recursive: true });
+  symlinkSync(join(dir, "elsewhere"), join(data, "linkout", "shared"));
+  mkdirSync(join(data, "borrow"), { recursive: true });
+  symlinkSync(join(data, "other", "shared"), join(data, "borrow", "shared"));
+  folder("elsewhere-data", { "shared/stolen.json": "{\"PROBE_SECRET\":\"dummy123\"}" });
+  symlinkSync(join(dir, "elsewhere-data"), join(data, "wholelink"));
+  const registry = [plugin("wordgame", words, { dataFiles: [WORDS] }), plugin("plain", plain), plugin("other", plain), plugin("linkout", plain), plugin("borrow", plain), plugin("wholelink", plain)];
   const { installUiSession } = await import("../src/main/ui/electron");
   const ses = { protocol: { handle: (scheme: string, h: typeof handler) => { if (scheme === "moss-plugin") handler = h; } }, webRequest: { onBeforeRequest: () => {} } };
   installUiSession(ses as never, { registry } as never, { core: dir, layer: dir }, () => {}, { pluginDataDir: data } as never);
@@ -107,6 +116,12 @@ describe("what a plugin shares with its own pages, on /_d/<id>/", () => {
     expect(ownDataRequest("other", "moss-plugin://wordgame/_t/wordgame/x.json")).toBe("not-own-data");
     // A layer no plugin is on, or an id that isn't one, is refused.
     expect((await own("nobody", "nobody/x.json")).status).toBe(403);
+    // Roots linked out, by the plugin's own host half: `shared` a link outside, `shared` a link to another plugin's data,
+    // the whole data folder a link out of plugin-data. Each is refused; the ordinary case above is still served.
+    expect((await own("linkout", "linkout/stolen.json")).status).toBe(403);
+    expect((await own("borrow", "borrow/theirs.json")).status).toBe(403);
+    expect((await own("wholelink", "wholelink/stolen.json")).status).toBe(403);
+    expect((await own("other", "other/theirs.json")).status).toBe(200);
     expect((await own("wordgame", "..%2Fx/x.json")).status).toBe(403);
   });
 });

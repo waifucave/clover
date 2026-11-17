@@ -229,7 +229,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const id = ownDataPlugin(url.pathname);
       const owner = id === undefined ? undefined : runtime.registry.find((p) => p.id === id && p.layer === layer);
       if (owner === undefined) return forbidden();
-      const served = ownDataFile(join(options.pluginDataDir, ...owner.id.split("/"), "shared"), url.pathname);
+      const served = ownDataFile(options.pluginDataDir, owner.id, url.pathname);
       if (served === "forbidden") return forbidden();
       if (served === "missing") return notFound();
       return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, served.maxBytes);
