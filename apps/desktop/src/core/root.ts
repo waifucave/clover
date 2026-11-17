@@ -63,6 +63,7 @@ function releaseWords(n: ReleaseNoticeView): { text: string; action?: { label: s
   if (n.kind === "waiting") {
     return { text: t(p.turns + p.agents > 0 ? "release.waiting-for" : "release.waiting", p), action: { label: t("release.switch-now"), run: () => void root.call("release.switchNow") } };
   }
+  if (n.kind === "engine-down") return { text: t("release.engine-down", p), action: { label: t("release.retry"), run: () => void root.call("release.retry") } };
   return { text: t(`release.${n.kind}`, p) };
 }
 const releaseBanner = document.getElementById("moss-release")!;

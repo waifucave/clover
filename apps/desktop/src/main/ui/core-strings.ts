@@ -19,6 +19,8 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "moss.core.release.waiting-for": "A newer MOSS Code (release {incoming}) is waiting for work to finish: {turns} running, {agents} agents. It switches in when they are done.",
   "moss.core.release.switching": "Switching to release {incoming}…",
   "moss.core.release.switch-now": "Switch now",
+  "moss.core.release.engine-down": "MOSS Code switched to release {incoming}, and the new background service hasn't answered yet. MOSS Code keeps trying to start it.",
+  "moss.core.release.retry": "Try again",
   "moss.core.root.empty-safe": "Nothing fills this window, even in safe mode.",
   "moss.core.root.failed": "The window could not be drawn: {error}",
   "moss.core.root.stopped": "MOSS's window stopped drawing. Its layer will start again when you reload.",

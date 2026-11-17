@@ -4975,6 +4975,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       stopping = true;
       // A restart at once (`keepApp`) leaves the app running: it dials the daemon that comes back.
       if (o?.keepApp !== true) pairSide?.pair.quit("quit");
+      else pairSide?.keepApp();
       pairSide?.dispose();
       mossServer?.dispose();
       mark("the pair and the MOSS server");

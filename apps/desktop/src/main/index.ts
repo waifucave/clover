@@ -29,7 +29,7 @@ import { testBuildAppRefusal } from "./test-build";
 import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
-import { adoptHomeEngine, cliLauncher, installEngineCopy, locateDaemonBinary } from "./pair/login";
+import { adoptHomeEngine, cliLauncher, installEngineCopy, locateDaemonBinary, startEngineThroughOs } from "./pair/login";
 import { appRelease, bundlePathOf, createRelease, writeOwnRecord } from "./release";
 import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
@@ -194,9 +194,16 @@ const { catchUp, bringWatch, notice: releaseNotice } = createRelease({
   // The way out for an app that can never connect: the engine of its own bundle takes the home's engine out (`engine reset`), and the next start installs its own.
   resetCommand: () => { const b = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath }); return b === undefined ? undefined : `"${b}" engine reset`; },
   bring: async (p) => await pair.client!.request<{ state: "waiting" | "switching" }>("release.bring", p, 10_000),
+  // A switch whose new engine hasn't answered: start it through the OS (the login item runs it under `supervise`; with none registered, register it first).
+  // A test-marked build never registers a login item or starts the daemon through the OS.
+  startEngine: async () => {
+    const binary = installedEngine ?? locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
+    if (binary === undefined || typeof __MOSS_TEST_BUILD__ === "string") return false;
+    return await startEngineThroughOs(identity.profile, cliLauncher({ binary, home, profile: identity.profile }), log);
+  },
   changed: (n) => {
     if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });
-    tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(n === undefined ? {} : { status: n.kind === "waiting" || n.kind === "switching" ? "Waiting to switch to a newer MOSS…" : n.kind === "offline" ? "Offline: MOSS Code can't update yet" : "Updating MOSS Code…" }) });
+    tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(n === undefined ? {} : { status: n.kind === "waiting" || n.kind === "switching" ? "Waiting to switch to a newer MOSS…" : n.kind === "engine-down" ? "MOSS Code is waiting for the new engine to start" : n.kind === "offline" ? "Offline: MOSS Code can't update yet" : "Updating MOSS Code…" }) });
   },
   log: (line) => log(line),
 });
@@ -1509,6 +1516,7 @@ const pageDeps = {
   daemonDown: () => pair.stuck !== undefined,
   releaseNotice,
   switchNow: () => void bringWatch.switchNow(),
+  retryEngine: () => void bringWatch.retry(),
 };
 
 /** Shows one of the core's pages in the main window (opening it if need be). */
@@ -1533,6 +1541,8 @@ async function maybeWelcome(client: DaemonClient): Promise<void> {
 }
 
 function stateChanged(s: PairState): void {
+  // Through a release switch the engine goes away and the new one comes up: watched (release.ts `BringWatch.connection`).
+  bringWatch.connection(s.kind === "connected" || s.kind === "ahead" || s.kind === "behind");
   // The layers' connections go with the pair's; each opens again on its plugin's next call.
   if (s.kind !== "connected") layerLinks.closeAll();
   // A new connection asks the daemon afresh: the earlier run of empty answers and its waits don't carry over.

@@ -177,3 +177,26 @@ export async function adoptHomeEngine(profile: "dist" | "dev", d: AdoptDeps): Pr
   }
   return { binary: placed.binary, release: placed.release, reregistered };
 }
+
+/**
+ * Starts the engine through the OS for a release switch whose new engine hasn't answered (RL, S2): the old engine exited to be
+ * started again by `moss-core supervise`, and everything the OS or the app starts runs under it (the login item, `autostart
+ * start`), but an engine that was started any other way (`daemon run` from a terminal, a login item the person turned off) has
+ * no supervisor, and nothing starts the new one. So: with no login item registered, register it (its `supervise` is what keeps
+ * the engine up from then on), then ask the OS to start it. The dev profile's own item is never registered here: a dev daemon
+ * is the developer's to start. Never throws; true when the OS took the start.
+ */
+export async function startEngineThroughOs(profile: "dist" | "dev", l: DaemonLauncher, log: (line: string) => void): Promise<boolean> {
+  try {
+    if (profile !== "dev" && (await l.status())?.registered !== true) {
+      const r = await l.enable();
+      log(`release: the engine has no login item; registered it so the new engine starts under supervise (${r.ok ? "ok" : `failed, ${r.code}`})`);
+    }
+    const r = await l.start();
+    log(`release: asked the OS to start the new engine (${r.ok ? "ok" : `failed, ${r.code}`})`);
+    return r.ok;
+  } catch (err) {
+    log(`release: starting the new engine failed: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}

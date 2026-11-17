@@ -47,6 +47,48 @@ describe("appRestartPlan (S7 §5)", () => {
   });
 });
 
+describe("DaemonPair: an app ahead of the engine, and an app kept open through a restart (RL)", () => {
+  test("an app waiting for its engine holds the start-up start, and its leaving schedules nothing", async () => {
+    const h = harness();
+    h.pair.start();
+    await h.advance(1_000);
+    h.pair.appWaiting("9");
+    await h.advance(60_000);
+    expect(h.starts).toHaveLength(0);
+    h.pair.appWaitingGone("9");
+    await h.advance(60_000);
+    expect(h.starts).toHaveLength(0);
+    expect(h.pending()).toBe(0);
+    expect(h.pair.status().appConnected).toBe(false); // it isn't the pair's app: no heartbeat, no crash
+  });
+
+  test("a start already on its way when the waiting app says hello is let go: nothing launches", async () => {
+    const h = harness();
+    h.pair.start();
+    h.pair.appWaiting("9");
+    await h.advance(5_000);
+    expect(h.starts).toHaveLength(0);
+  });
+
+  test("after a stop that kept the app open, the new daemon waits the restart's 10 s, not the start-up's 2 s", async () => {
+    const h = harness();
+    h.pair.start({ appKept: true });
+    await h.advance(9_999);
+    expect(h.starts).toHaveLength(0);
+    await h.advance(1);
+    expect(h.starts).toEqual([{ at: 10_000, why: "restart", safeMode: false }]);
+  });
+
+  test("the app that redials within that wait is the pair's app and nothing is started", async () => {
+    const h = harness();
+    h.pair.start({ appKept: true });
+    await h.advance(4_000); // past the ordinary 2 s grace, the engine is still booting
+    h.pair.appConnected("1");
+    await h.advance(60_000);
+    expect(h.starts).toHaveLength(0);
+  });
+});
+
 describe("DaemonPair", () => {
   test("starts the app when none connects within the grace after boot", async () => {
     const h = harness();

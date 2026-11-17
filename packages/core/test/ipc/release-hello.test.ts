@@ -19,6 +19,7 @@ import { FakeClock } from "../../src/contracts/fakes/clock";
 import { EngineReleaseHome } from "../../src/update/release-home";
 import { ReleaseService, releaseHandlers } from "../../src/update/release-service";
 import { UpdateGate } from "../../src/update/gate";
+import { DaemonPair } from "../../src/platform/pair/policy";
 
 class Client {
   private decoder = new LineDecoder();
@@ -57,7 +58,7 @@ const outside: PeerFacts = { pid: 4242, ancestors: [1], probe: { sandboxedMac: f
 let stop: (() => void) | undefined;
 afterEach(() => { stop?.(); stop = undefined; });
 
-async function boot() {
+async function boot(pair?: DaemonPair) {
   const home = mkdtempSync(join(tmpdir(), "moss-rl-hello-"));
   const store = new SessionStore(home);
   const socketPath = resolveEndpoint(join(home, "run")).path;
@@ -70,7 +71,7 @@ async function boot() {
   const service = new ReleaseService({ home: releaseHome, engine: { release: "1.2.0", path: "/engine" }, gate: new UpdateGate(), host: { stop() {} }, policy: { platform: "linux", profile: "dist", developerId: true, records: () => releaseHome.apps() }, homeDir: home, emit: (e) => events.push(e), restart() {} });
   const moss = createMossServer({
     tokens: new MossTokens({ appToken, verifyCli: (t) => authority.verify("harness", t) }), processes: new SessionProcesses(),
-    serverVersion: "test", deviceId: "d".repeat(32), appToken, appPeer: "none", probe: () => outside, release: releaseHome,
+    serverVersion: "test", deviceId: "d".repeat(32), appToken, appPeer: "none", probe: () => outside, release: releaseHome, ...(pair ? { pair } : {}),
     handlers: releaseHandlers(service, { error: (code, message) => new MossRpcError(code, message) }),
   });
   const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, mossConnections: moss });
@@ -178,4 +179,47 @@ test("MOSS's record: the engine keeps it for the connection's own program, under
   expect((await ahead.request("release.record", { program: "moss", bundlePath: bundle, release: "1.3.0", carries: { engine: true, host: false } })).error).toMatchObject({ code: MOSS_ERR.ROLE_REFUSED });
   expect((await ahead.request("release.bring", { release: "1.3.0", bundlePath: bundle })).error).toBeDefined();
   ahead.close();
+});
+
+// S1 (the pair): an app ahead of the engine is open and waiting, so the pair's start-up start must not bring up another.
+function fakePair() {
+  const timers: Array<() => void> = [];
+  const starts: string[] = [];
+  const pair = new DaemonPair({
+    now: () => 0, after: (_ms, fn) => { timers.push(fn); return () => {}; },
+    async startApp(why) { starts.push(why); return "started"; }, tellAppQuit() {}, stopDaemon() {},
+  }, { desktop: true });
+  pair.start();
+  return { pair, starts, fire: async () => { for (const f of timers.splice(0)) f(); await Promise.resolve(); await Promise.resolve(); } };
+}
+
+test("an app ahead of the engine is held by the pair: nothing is started through the OS while it waits, and its leaving starts nothing", async () => {
+  const f = fakePair();
+  const b = await boot(f.pair);
+  const c = await Client.connect(b.socketPath);
+  expect((await c.hello("app", b.appToken, { surface: "code", release: "1.3.0" })).result).toMatchObject({ release: { standing: "ahead" } });
+  await f.fire(); // the start-up grace runs out with only the ahead app there
+  expect(f.starts).toEqual([]);
+  expect(f.pair.status().appConnected).toBe(false);
+  c.close();
+  await Bun.sleep(50);
+  await f.fire();
+  expect(f.starts).toEqual([]);
+});
+
+test("(the control) the same pair with no app at all starts one when the grace runs out", async () => {
+  const f = fakePair();
+  await boot(f.pair);
+  await f.fire();
+  expect(f.starts).toEqual(["boot"]);
+});
+
+test("a MOSS app ahead isn't MOSS Code's pair app: it doesn't hold the pair's start of MOSS Code", async () => {
+  const f = fakePair();
+  const b = await boot(f.pair);
+  const c = await Client.connect(b.socketPath);
+  await c.hello("app", b.appToken, { surface: "moss", release: "1.3.0" });
+  await f.fire();
+  expect(f.starts).toEqual(["boot"]);
+  c.close();
 });

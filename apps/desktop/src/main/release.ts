@@ -19,7 +19,9 @@ export type ReleaseNotice =
   | { kind: "offline"; needs: string }
   | { kind: "cannot"; needs: string; command?: string }
   | { kind: "waiting"; incoming: string; turns: number; agents: number }
-  | { kind: "switching"; incoming: string };
+  | { kind: "switching"; incoming: string }
+  /** The switch went on and the new engine hasn't answered: said plainly, with a way to ask again (`BringWatch.retry`). */
+  | { kind: "engine-down"; incoming: string };
 
 /** What an update check found (updater.ts's `checkNow`). */
 export type UpdateOutcome =
@@ -134,7 +136,16 @@ export class ReleaseCatchUp {
   }
 }
 
+/** A switch's new engine has not answered after this long: the app starts it through the OS itself (S2). */
+export const SWITCH_START_MS = 8_000;
+/** ... and after this long it says so, with a way to try again. */
+export const SWITCH_GIVE_UP_MS = 45_000;
+
 export interface BringDeps {
+  /** Runs `fn` after `ms`; returns the cancel (default: a timer). */
+  after?(ms: number, fn: () => void): () => void;
+  /** Starts the engine through the OS, registering the login item first when there is none (login.ts `startEngineThroughOs`). */
+  startEngine?(): Promise<unknown>;
   /** `release.bring` on the door connection. */
   bring(p: { release: string; bundlePath: string; now?: boolean }): Promise<{ state: "waiting" | "switching" }>;
   notice(n: ReleaseNotice | undefined): void;
@@ -145,11 +156,16 @@ export interface BringDeps {
 /** The app that is ahead: asks for its engine to be brought in, and says what it waits for. */
 export class BringWatch {
   #incoming: { release: string; bundlePath: string } | undefined;
+  /** The engine said it is switching: from then until the new one answers, a lost connection is expected and then watched. */
+  #switching = false;
+  #cancels: (() => void)[] = [];
   constructor(private readonly d: BringDeps) {}
 
   get active(): boolean { return this.#incoming !== undefined; }
 
   async start(release: string, bundlePath: string): Promise<void> {
+    this.#clear();
+    this.#switching = false;
     this.#incoming = { release, bundlePath };
     this.d.notice({ kind: "waiting", incoming: release, turns: 0, agents: 0 });
     await this.#ask(false);
@@ -164,7 +180,7 @@ export class BringWatch {
     const i = this.#incoming!;
     try {
       const r = await this.d.bring({ release: i.release, bundlePath: i.bundlePath, ...(now ? { now: true } : {}) });
-      if (r.state === "switching") this.d.notice({ kind: "switching", incoming: i.release });
+      if (r.state === "switching") this.#switch();
     } catch (err) {
       this.d.log(`release: the engine did not take release.bring: ${err instanceof Error ? err.message : String(err)}`);
       this.d.notice({ kind: "cannot", needs: i.release, ...(this.d.resetCommand?.() !== undefined ? { command: this.d.resetCommand() } : {}) });
@@ -175,12 +191,51 @@ export class BringWatch {
   event(e: { state: string; incoming?: string; waitingFor?: { turns: number; agents: number } }): void {
     if (this.#incoming === undefined) return;
     if (e.state === "waiting") this.d.notice({ kind: "waiting", incoming: this.#incoming.release, turns: e.waitingFor?.turns ?? 0, agents: e.waitingFor?.agents ?? 0 });
-    else if (e.state === "switching") this.d.notice({ kind: "switching", incoming: this.#incoming.release });
+    else if (e.state === "switching") this.#switch();
     else if (e.state === "current") this.d.notice({ kind: "cannot", needs: this.#incoming.release, ...(this.d.resetCommand?.() !== undefined ? { command: this.d.resetCommand() } : {}) });
+  }
+
+  #switch(): void {
+    this.#switching = true;
+    this.d.notice({ kind: "switching", incoming: this.#incoming!.release });
+  }
+
+  /** The connection's state, from the pair: through a switch the engine goes away and the new one comes up (S2, S3). The notice stays
+   *  up the whole time and clears only when the new connection says `same` (`done`). If no engine answers within `SWITCH_START_MS` the
+   *  app starts it through the OS itself (an engine nothing supervises is not restarted by its own exit); within `SWITCH_GIVE_UP_MS`
+   *  the notice says it is not answering and offers "Try again" (`retry`). */
+  connection(up: boolean): void {
+    if (this.#incoming === undefined || !this.#switching) return;
+    if (up) this.#clear();
+    else if (this.#cancels.length === 0) this.#arm(SWITCH_START_MS);
+  }
+
+  /** The person's "Try again" after the notice said the new engine did not answer. */
+  async retry(): Promise<void> {
+    if (this.#incoming === undefined || !this.#switching) return;
+    this.#clear();
+    this.d.notice({ kind: "switching", incoming: this.#incoming.release });
+    this.#arm(0);
+  }
+
+  #arm(startAfterMs: number): void {
+    const after = this.d.after ?? ((ms, fn) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); });
+    const incoming = this.#incoming!.release;
+    this.#cancels.push(after(startAfterMs, () => {
+      this.d.log("release: no engine answers after the switch; starting it through the OS");
+      void Promise.resolve(this.d.startEngine?.()).catch((err: unknown) => this.d.log(`release: starting the engine failed: ${err instanceof Error ? err.message : String(err)}`));
+    }));
+    this.#cancels.push(after(SWITCH_GIVE_UP_MS, () => { if (this.#incoming !== undefined) this.d.notice({ kind: "engine-down", incoming }); }));
+  }
+
+  #clear(): void {
+    for (const c of this.#cancels.splice(0)) c();
   }
 
   /** The engine is the app's release now (the connection came back served): nothing waits. */
   done(): void {
+    this.#clear();
+    this.#switching = false;
     this.#incoming = undefined;
     this.d.notice(undefined);
   }
@@ -201,6 +256,10 @@ export interface ReleaseDeps {
   updater(): { checkNow(): Promise<UpdateOutcome>; install(now: boolean): boolean } | undefined;
   /** The command that takes the home's engine out so this app installs its own (`moss-core engine reset`). */
   resetCommand?(): string | undefined;
+  /** Starts the engine through the OS (a switch whose new engine hasn't answered). */
+  startEngine?(): Promise<unknown>;
+  /** A timer (tests drive it). */
+  after?(ms: number, fn: () => void): () => void;
   /** `release.bring` on the pair's connection. */
   bring(p: { release: string; bundlePath: string; now?: boolean }): Promise<{ state: "waiting" | "switching" }>;
   /** The notice changed: the window and the tray say it. */
@@ -229,6 +288,6 @@ export function createRelease(d: ReleaseDeps): { catchUp: ReleaseCatchUp; bringW
     ...(d.resetCommand ? { resetCommand: d.resetCommand } : {}),
     log: d.log,
   });
-  const bringWatch = new BringWatch({ bring: d.bring, notice, ...(d.resetCommand ? { resetCommand: d.resetCommand } : {}), log: d.log });
+  const bringWatch = new BringWatch({ bring: d.bring, notice, ...(d.startEngine ? { startEngine: d.startEngine } : {}), ...(d.after ? { after: d.after } : {}), ...(d.resetCommand ? { resetCommand: d.resetCommand } : {}), log: d.log });
   return { catchUp, bringWatch, notice: () => current };
 }

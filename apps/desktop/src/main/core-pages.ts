@@ -114,10 +114,12 @@ export interface PageDeps {
   releaseNotice?(): unknown;
   /** The person's "Switch now" while a newer app waits to bring its engine in. */
   switchNow?(): void;
+  /** "Try again" after the new engine of a release switch did not answer. */
+  retryEngine?(): void;
 }
 
 /** The calls the root's pages make, by name. Anything else is refused. */
-export const PAGE_CALLS = ["page.current", "registry.state", "page.close", "welcome.providers", "welcome.signIn", "welcome.openTerms", "welcome.done", "plugins.list", "plugins.turnOff", "plugins.remove", "key.view", "key.save", "key.remove", "release.switchNow"] as const;
+export const PAGE_CALLS = ["page.current", "registry.state", "page.close", "welcome.providers", "welcome.signIn", "welcome.openTerms", "welcome.done", "plugins.list", "plugins.turnOff", "plugins.remove", "key.view", "key.save", "key.remove", "release.switchNow", "release.retry"] as const;
 export type PageCall = (typeof PAGE_CALLS)[number];
 
 const ID_RE = /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?$/;
@@ -149,6 +151,10 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
   }
   if (name === "release.switchNow") {
     deps.switchNow?.();
+    return { ok: true };
+  }
+  if (name === "release.retry") {
+    deps.retryEngine?.();
     return { ok: true };
   }
   if (name === "page.close") {

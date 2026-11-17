@@ -8,10 +8,10 @@ import { join } from "node:path";
 import type { MossHelloParams } from "@waifucave/moss-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
 import { Pair } from "../src/main/pair/pair";
-import { adoptHomeEngine } from "../src/main/pair/login";
+import { adoptHomeEngine, startEngineThroughOs, type DaemonLauncher } from "../src/main/pair/login";
 import { appHello, readAppToken } from "../src/main/pair/start";
 import { checkAndDownload, isOfflineError } from "../src/main/updater";
-import { appRelease, behindFrom, createRelease, testUpdateOutcome, BringWatch, bundlePathOf, ReleaseCatchUp, recordPath, writeOwnRecord, type ReleaseNotice, type UpdateOutcome } from "../src/main/release";
+import { appRelease, behindFrom, createRelease, testUpdateOutcome, BringWatch, SWITCH_GIVE_UP_MS, SWITCH_START_MS, bundlePathOf, ReleaseCatchUp, recordPath, writeOwnRecord, type ReleaseNotice, type UpdateOutcome } from "../src/main/release";
 import { readCalls, startFakeDaemon, type FakeDaemon } from "./fake-core/fake-daemon";
 
 const homes: string[] = [];
@@ -176,6 +176,113 @@ describe("an app that is ahead", () => {
     const w = new BringWatch({ bring: async () => { throw new Error("no"); }, notice: (n) => notices.push(n), log: () => {} });
     await w.start("2.0.0", "/x");
     expect(notices.at(-1)).toEqual({ kind: "cannot", needs: "2.0.0" });
+  });
+});
+
+describe("through a switch: the notice stays, the new engine is started if nothing supervises it, and it says plainly when none answers (S2, S3)", () => {
+  /** A manual clock for BringWatch's timers. */
+  function clock() {
+    const timers: Array<{ ms: number; fn: () => void; live: boolean }> = [];
+    return { timers, after: (ms: number, fn: () => void) => { const t = { ms, fn, live: true }; timers.push(t); return () => { t.live = false; }; }, live: () => timers.filter((t) => t.live), fire: (ms: number) => { for (const t of timers.filter((x) => x.live && x.ms === ms)) { t.live = false; t.fn(); } } };
+  }
+
+  test("the engine goes away mid-switch: the notice stays; the OS start comes after SWITCH_START_MS and the plain notice after SWITCH_GIVE_UP_MS; Try again starts it again; the new connection clears it", async () => {
+    const h = home();
+    fakes.push(await startFakeDaemon({ home: h, release: { engine: "1.0.0", mode: "ahead" } }));
+    const notices: (ReleaseNotice | undefined)[] = [];
+    const c = clock();
+    let starts = 0;
+    let watch!: BringWatch;
+    const pair = new Pair({
+      endpoint: daemonEndpoint(h),
+      hello: (): MossHelloParams | undefined => { const t = readAppToken(h, {}); return t === undefined ? undefined : appHello(t, "2.0.0", 1, "2.0.0"); },
+      timing: FAST,
+      onAhead: async (client) => {
+        await client.request("events.subscribe", { areas: ["release"] });
+        await watch.start("2.0.0", "/Applications/MOSS Code.app");
+      },
+      onConnected: () => watch.done(),
+      onState: (s) => watch.connection(s.kind === "connected" || s.kind === "ahead" || s.kind === "behind"),
+    });
+    watch = new BringWatch({ bring: (p) => pair.client!.request("release.bring", p), notice: (n) => notices.push(n), after: c.after, startEngine: async () => { starts++; }, log: () => {} });
+    pairs.push(pair);
+    await pair.start();
+    await until(() => pair.state.kind === "ahead" && notices.length > 0);
+    await watch.switchNow();
+    expect(notices.at(-1)).toEqual({ kind: "switching", incoming: "2.0.0" });
+    expect(c.live()).toHaveLength(0); // the connection is still up: nothing is timed yet
+
+    // The old engine goes away, as a restart does. The notice stays up; the timers are set; nothing is started yet.
+    await fakes.pop()!.close();
+    await until(() => c.live().length === 2);
+    expect(notices.at(-1)).toEqual({ kind: "switching", incoming: "2.0.0" });
+    expect(starts).toBe(0);
+    c.fire(SWITCH_START_MS);
+    await until(() => starts === 1);
+    expect(notices.at(-1)).toEqual({ kind: "switching", incoming: "2.0.0" });
+    // Nothing answers by then: it says so plainly, and offers to try again.
+    c.fire(SWITCH_GIVE_UP_MS);
+    expect(notices.at(-1)).toEqual({ kind: "engine-down", incoming: "2.0.0" });
+    await watch.retry();
+    expect(notices.at(-1)).toEqual({ kind: "switching", incoming: "2.0.0" });
+    c.fire(0);
+    await until(() => starts === 2);
+
+    // The new engine answers (same release): the app redials and connects; the notice clears at once and the timers are gone.
+    fakes.push(await startFakeDaemon({ home: h }));
+    await until(() => pair.state.kind === "connected");
+    expect(notices.at(-1)).toBeUndefined();
+    expect(c.live()).toHaveLength(0);
+  });
+
+  test("a connection that was never switching sets no timer, and a notice that isn't a switch's can't be retried", async () => {
+    const c = clock();
+    const w = new BringWatch({ bring: async () => ({ state: "waiting" }), notice: () => {}, after: c.after, startEngine: async () => { throw new Error("must not run"); }, log: () => {} });
+    await w.start("2.0.0", "/x");
+    w.connection(false);
+    expect(c.live()).toHaveLength(0);
+    await w.retry();
+    expect(c.live()).toHaveLength(0);
+  });
+
+  test("a failed OS start is logged and the notice still says so at the give-up time", async () => {
+    const c = clock();
+    const notices: (ReleaseNotice | undefined)[] = [];
+    const lines: string[] = [];
+    const w = new BringWatch({ bring: async () => ({ state: "switching" }), notice: (n) => notices.push(n), after: c.after, startEngine: async () => { throw new Error("launchctl refused"); }, log: (l) => lines.push(l) });
+    await w.start("2.0.0", "/x");
+    expect(notices.at(-1)).toEqual({ kind: "switching", incoming: "2.0.0" });
+    w.connection(false);
+    c.fire(SWITCH_START_MS);
+    await until(() => lines.some((l) => l.includes("launchctl refused")));
+    c.fire(SWITCH_GIVE_UP_MS);
+    expect(notices.at(-1)).toEqual({ kind: "engine-down", incoming: "2.0.0" });
+  });
+
+  test("an engine nothing supervises: with no login item the app registers it, then asks the OS to start it; with one, it only starts; the dev profile registers nothing", async () => {
+    const mk = (registered: boolean | undefined) => {
+      const calls: string[] = [];
+      const l: DaemonLauncher = {
+        status: async () => (registered === undefined ? undefined : { registered }),
+        enable: async () => { calls.push("enable"); return { ok: true, code: 0, out: "" }; },
+        start: async () => { calls.push("start"); return { ok: true, code: 0, out: "" }; },
+      };
+      return { calls, l };
+    };
+    const a = mk(false);
+    expect(await startEngineThroughOs("dist", a.l, () => {})).toBe(true);
+    expect(a.calls).toEqual(["enable", "start"]);
+    const b = mk(true);
+    await startEngineThroughOs("dist", b.l, () => {});
+    expect(b.calls).toEqual(["start"]);
+    const unknown = mk(undefined);
+    await startEngineThroughOs("dist", unknown.l, () => {});
+    expect(unknown.calls).toEqual(["enable", "start"]);
+    const dev = mk(false);
+    await startEngineThroughOs("dev", dev.l, () => {});
+    expect(dev.calls).toEqual(["start"]);
+    // A launcher that throws never throws out.
+    expect(await startEngineThroughOs("dist", { status: async () => { throw new Error("x"); }, enable: async () => ({ ok: false, code: 1, out: "" }), start: async () => ({ ok: false, code: 1, out: "" }) }, () => {})).toBe(false);
   });
 });
 
