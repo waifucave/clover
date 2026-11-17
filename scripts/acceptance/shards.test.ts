@@ -37,7 +37,9 @@ describe("the split", () => {
     expect(units().find((u) => u.id === "reopen")!.rows).toEqual(REOPEN_STEPS.map((s) => s.name));
     // The reopen shard installs step 4's plugin first (its mid-tool-call step calls the Echo tool).
     expect(readFileSync(join(import.meta.dir, "run.ts"), "utf8")).toContain("try { await installEcho(c); }");
-    expect(units().find((u) => u.id === "examples")!.rows).toEqual([EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP]);
+    // The notes example's row is the MOSS unit's (its child bot): weather alone here.
+    expect(units().find((u) => u.id === "examples")!.rows).toEqual([EXAMPLE_WEATHER_STEP]);
+    expect(ROWS_ELSEWHERE.has(EXAMPLE_NOTES_STEP)).toBe(true);
   });
 
   test("`main` names the chain and the window's three units; the window's steps are dealt out once each, in order", () => {
