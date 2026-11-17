@@ -27,8 +27,10 @@ const write = (root: string, files: Record<string, string>) => { for (const [rel
 test("a folder: the model under its entry file comes along, of the packs' kinds only, with its credit; nothing of a link or a dot file", async () => {
   const pick = temp();
   write(pick, { "README.txt": "Hero by someone. Personal use.\u0007", "hero/hero.model3.json": "{}", "hero/hero.moc3": "MOC3", "hero/tex/a.png": "PNG", "hero/run.sh": "rm -rf", "hero/.secret.json": "{}", "notes.psd": "PSD" });
+  // A link planted in the folder (where links can be made without a privilege: not on Windows).
+  const links = process.platform !== "win32";
   writeFileSync(join(pick, "outside.json"), "PROBE_SECRET=dummy123");
-  symlinkSync(join(pick, "outside.json"), join(pick, "hero", "link.json"));
+  if (links) symlinkSync(join(pick, "outside.json"), join(pick, "hero", "link.json"));
   const data = temp();
   const model = await importModel(reader(pick), "grant:pick", FORMATS, data, "m-1");
   expect(model).toEqual({ name: "hero", format: "live2d", file: "own/imported/m-1/hero.model3.json", credit: "Hero by someone. Personal use." });
@@ -36,7 +38,7 @@ test("a folder: the model under its entry file comes along, of the packs' kinds 
   expect(readdirSync(copied).sort()).toEqual(["hero.moc3", "hero.model3.json", "tex"]);
   // The planted link's target is not in the copy (false).
   expect(existsSync(join(copied, "link.json"))).toBe(false);
-  expect((statSync(join(copied, "hero.moc3")).mode & 0o777).toString(8)).toBe("600");
+  if (process.platform !== "win32") expect((statSync(join(copied, "hero.moc3")).mode & 0o777).toString(8)).toBe("600");
   removeModelFiles(data, model.file);
   expect(existsSync(copied)).toBe(false);
 });

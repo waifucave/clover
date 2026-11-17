@@ -49,7 +49,7 @@ const baseName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
 /** A credit note as plain text: control characters out, white space folded, at most 300 characters. */
 export function plainNote(text: string): string {
-  return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f​-‏‪-‮⁦-⁩]/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
+  return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
 }
 
 function decode(data: Uint8Array): string | undefined {

@@ -10,6 +10,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { API_CALLS, type ApiCallInfo } from "@waifucave/moss-plugin-sdk";
+import { isDataFolder } from "../api-members";
 
 const ROOT = resolve(import.meta.dir, "..", "..", "..", "..", "..");
 const PLUGINS = join(ROOT, "plugins");
@@ -33,6 +34,8 @@ const PREFIXES = new Set(Object.keys(CALLS).flatMap((call) => call.split(".").ma
 /** Why `api.<path>` is wrong in a host half, or undefined when it's a member a host half may reach. */
 function memberProblem(path: readonly string[]): string | undefined {
   if (path[0] === "plugin") return path.length === 1 || PLUGIN_SELF.has(path[1]!) ? undefined : `api.${path.join(".")} isn't a field of api.plugin`;
+  // `api.storage.dataFolder`: the one data member of an area (api-members.ts `isDataFolder`), answered by every host.
+  if (path.length === 2 && isDataFolder(path.slice(0, 1), path[1]!)) return undefined;
   for (let i = 1; i <= path.length; i++) {
     const dotted = path.slice(0, i).join(".");
     const info = CALLS[dotted];
@@ -151,6 +154,7 @@ describe("bundled host halves reach only the plugin API's host members", () => {
     expect(apiPaths("const o = api.env?.MOSS_HOOKS_ORIGIN; api.log('x'); ctx.api.net.fetch(u)")).toEqual([["env", "MOSS_HOOKS_ORIGIN"], ["log"], ["net", "fetch"]]);
     expect(memberProblem(["env", "MOSS_HOOKS_ORIGIN"])).toBe("api.env doesn't exist in the plugin API");
     expect(memberProblem(["computer"])).toBe("api.computer doesn't exist in the plugin API");
+    expect(memberProblem(["storage", "dataFolder"])).toBeUndefined();
     expect(memberProblem(["t"])).toBe("api.t is a component's alone");
     // No call a host half can reach is marked not-yet any more (the last, browser.onCdpEvent, is a component's alone).
     expect(memberProblem(["settings", "get", "x"])).toBe("api.settings.get.x reaches past the call settings.get");
