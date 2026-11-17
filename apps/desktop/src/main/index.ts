@@ -2287,7 +2287,7 @@ async function noticeMissedPress(win: BrowserWindow, windowId: number): Promise<
     const offsets: { x: number; y: number }[] = [];
     let ok = true;
     for (let child = f, parent = f.parent; parent !== null; child = parent, parent = parent.parent) {
-      const at = await within(parent.executeJavaScript(`(() => { const f = [...document.querySelectorAll("iframe")].find((x) => x.src === ${JSON.stringify(child.url)}); if (!f) return null; const r = f.getBoundingClientRect(); return { x: r.x + f.clientLeft, y: r.y + f.clientTop }; })()`, true) as Promise<unknown>);
+      const at = await within(parent.executeJavaScript(`(() => { const f = [...document.querySelectorAll("iframe")].find((x) => x.src === ${JSON.stringify(child.url)}); if (!f) return null; const r = f.getBoundingClientRect(); return { x: r.x + f.clientLeft, y: r.y + f.clientTop }; })()`, false) as Promise<unknown>);
       if (at === null || typeof at !== "object" || typeof (at as { x?: unknown }).x !== "number" || typeof (at as { y?: unknown }).y !== "number") { ok = false; break; }
       offsets.push(at as { x: number; y: number });
     }
