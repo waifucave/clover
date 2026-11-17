@@ -179,12 +179,13 @@ export async function adoptHomeEngine(profile: "dist" | "dev", d: AdoptDeps): Pr
 }
 
 /**
- * Starts the engine through the OS for a release switch whose new engine hasn't answered (RL, S2): the old engine exited to be
- * started again by `moss-core supervise`, and everything the OS or the app starts runs under it (the login item, `autostart
- * start`), but an engine that was started any other way (`daemon run` from a terminal, a login item the person turned off) has
- * no supervisor, and nothing starts the new one. So: with no login item registered, register it (its `supervise` is what keeps
- * the engine up from then on), then ask the OS to start it. The dev profile's own item is never registered here: a dev daemon
- * is the developer's to start. Never throws; true when the OS took the start.
+ * Starts the engine through the OS for a release switch whose new engine hasn't answered (RL, S2): the same two steps an ordinary
+ * launch takes when no engine answers (`Pair.start`, pair.ts): register the login item only when none is INSTALLED, then ask the OS
+ * to start the engine (`autostart start`) for this session. `status().registered` is `autostart status --json`'s "installed", so an
+ * item the person turned off (`autostart disable`: the parked plist on macOS, a disabled unit, a task with its logon trigger off)
+ * counts as registered and stays off; only a missing item (never registered, or `autostart remove`d), or a status the binary
+ * couldn't give, is registered, exactly as a launch does. The dev profile's own item is never registered here. Never throws; true
+ * when the OS took the start.
  */
 export async function startEngineThroughOs(profile: "dist" | "dev", l: DaemonLauncher, log: (line: string) => void): Promise<boolean> {
   try {

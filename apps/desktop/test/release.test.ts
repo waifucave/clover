@@ -8,7 +8,7 @@ import { join } from "node:path";
 import type { MossHelloParams } from "@waifucave/moss-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
 import { Pair } from "../src/main/pair/pair";
-import { adoptHomeEngine, startEngineThroughOs, type DaemonLauncher } from "../src/main/pair/login";
+import { adoptHomeEngine, parseAutostartStatus, startEngineThroughOs, type DaemonLauncher } from "../src/main/pair/login";
 import { appHello, readAppToken } from "../src/main/pair/start";
 import { checkAndDownload, isOfflineError } from "../src/main/updater";
 import { appRelease, behindFrom, createRelease, testUpdateOutcome, BringWatch, SWITCH_GIVE_UP_MS, SWITCH_START_MS, bundlePathOf, ReleaseCatchUp, recordPath, writeOwnRecord, type ReleaseNotice, type UpdateOutcome } from "../src/main/release";
@@ -259,6 +259,39 @@ describe("through a switch: the notice stays, the new engine is started if nothi
     expect(notices.at(-1)).toEqual({ kind: "engine-down", incoming: "2.0.0" });
   });
 
+  test("a login item the person turned off stays off after a release switch, and the switch does what an ordinary launch does", async () => {
+    // What `moss-core autostart status --json` really prints (cli/src/main.ts): "registered" is "installed", whether or not login start is on.
+    const printed = {
+      disabled: '{"state":"disabled","registered":true,"loginStart":false,"running":false,"label":"com.moss.core"}',
+      enabled: '{"state":"enabled","registered":true,"loginStart":true,"running":false,"label":"com.moss.core"}',
+      removed: '{"state":"not-installed","registered":false,"loginStart":false,"running":false,"label":"com.moss.core"}',
+    };
+    const mk = (out: string) => {
+      const calls: string[] = [];
+      const l: DaemonLauncher = {
+        status: async () => { calls.push("status"); return parseAutostartStatus(out); },
+        enable: async () => { calls.push("enable"); return { ok: true, code: 0, out: "" }; },
+        start: async () => { calls.push("start"); return { ok: true, code: 0, out: "" }; },
+      };
+      return { calls, l };
+    };
+    for (const [name, out, registers] of [["disabled", printed.disabled, false], ["enabled", printed.enabled, false], ["removed", printed.removed, true]] as const) {
+      // The release switch ...
+      const sw = mk(out);
+      await startEngineThroughOs("dist", sw.l, () => {});
+      // ... and an ordinary launch with no engine answering (Pair.start): the same calls.
+      const h = home();
+      const launch = mk(out);
+      const pair = new Pair({ endpoint: daemonEndpoint(h), hello: () => undefined, launcher: launch.l, timing: { ...FAST, firstStartWaitMs: 50, kickAfterMs: 10_000 } });
+      pairs.push(pair);
+      await pair.start();
+      pair.stop();
+      expect(sw.calls.includes("enable"), name).toBe(registers);
+      expect(sw.calls, name).toEqual(launch.calls.slice(0, sw.calls.length));
+      // The one it would not do is turn a disabled item on.
+      if (name === "disabled") expect(sw.calls).toEqual(["status", "start"]);
+    }
+  });
   test("an engine nothing supervises: with no login item the app registers it, then asks the OS to start it; with one, it only starts; the dev profile registers nothing", async () => {
     const mk = (registered: boolean | undefined) => {
       const calls: string[] = [];
