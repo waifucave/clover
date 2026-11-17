@@ -370,19 +370,3 @@ test("R12 across programs: every card reaches the host's connection, wherever th
   expect(sendCoreEvent(routing, resolvedSpec.fixture as Parameters<typeof sendCoreEvent>[1])).toBe(3);
   expect(host.notes.map((n) => (n.params as { type: string }).type)).toEqual(["card_requested", "card_resolved"]);
 });
-
-test("B2, never nowhere: with nothing drawing the island, a card goes to the newest window's strip (focused or not); elsewhere only with no window", () => {
-  const clock = new FakeClock();
-  const router = new EngineCardRouter({ clock, hostLive: false });
-  const win = (window: string) => ({ windows: [{ window, focused: false, visible: true, showing: null }] }) as Parameters<EngineCardRouter["report"]>[1];
-  expect(router.pending({ id: "card_1" })).toEqual({ kind: "elsewhere" });
-  router.report({ connId: 1, program: "code" }, win("main"));
-  expect(router.placementOf("card_1")).toEqual({ kind: "strip", program: "code", window: "main" });
-  router.report({ connId: 2, program: "moss" }, win("main"));
-  expect(router.pending({ id: "card_2" })).toEqual({ kind: "strip", program: "moss", window: "main" });
-  // A press from that window matches the placement (the window's own fallback card is where it is pressed).
-  expect(router.mayPress("card_1", { kind: "window", program: "moss", window: "main" })).toBe(true);
-  // The island drawn again (a host up): the island takes them.
-  router.hostLive(true);
-  expect(router.placementOf("card_2")).toEqual({ kind: "island" });
-});

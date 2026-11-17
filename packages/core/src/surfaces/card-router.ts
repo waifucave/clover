@@ -104,25 +104,8 @@ export class EngineCardRouter implements CardRouter {
       const shows = s !== null && ((s.kind === "session" && card.session !== undefined && s.id === card.session) || (s.kind === "bot" && card.bot !== undefined && s.id === card.bot));
       return { kind: shows ? "conversation" : "strip", program: f.program, window: f.w.window };
     }
-    if (this.#host) return { kind: "island" };
-    // lane HS (the reviewer's B2, never nowhere): with nothing drawing the island (no host, or one the engine gave up on, and no
-    // window mounting the screen), a card goes to the strip of the newest window that reported (focused or not), whose own
-    // fallback card shows it and whose press then matches its placement; `elsewhere` only with no window at all.
-    const w = this.#newestWindow();
-    return w !== undefined ? { kind: "strip", program: w.program, window: w.window } : { kind: "elsewhere" };
+    return this.#host ? { kind: "island" } : { kind: "elsewhere" };
   }
-
-  // lane HS: start
-  /** The newest report's first window, focused or not. */
-  #newestWindow(): { program: WindowProgram; window: string } | undefined {
-    let found: { program: WindowProgram; window: string; seq: number } | undefined;
-    for (const r of this.#reports.values()) {
-      const w = r.report.windows[0];
-      if (w !== undefined && (found === undefined || r.seq > found.seq)) found = { program: r.program, window: w.window, seq: r.seq };
-    }
-    return found === undefined ? undefined : { program: found.program, window: found.window };
-  }
-  // lane HS: end
 
   #place(): void {
     for (const [id, held] of this.#cards) {
