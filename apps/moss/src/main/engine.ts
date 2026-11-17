@@ -116,6 +116,11 @@ export class MossEngine {
   /** The pending cards MOSS knows (ids, bots, kinds), and where the router put each. */
   private cards = new Map<string, { id: string; bot?: string; kind: string }>();
   private placements = new Map<string, CardPlacement>();
+  /** The cards a `card_placed` event placed on this connection (an event always wins over a `card.placement` answer,
+   *  which may have been taken before it), and the cards resolved on it (a late answer never brings one back): MOSS
+   *  Code's PlacementBook rule. A new connection starts both afresh. */
+  private placedByEvent = new Set<string>();
+  private resolvedCards = new Set<string>();
   private viewListeners = new Set<(v: MossView) => void>();
   private messageListeners = new Set<(bot: string, m: Message) => void>();
   private frameListeners = new Set<(f: PictureFrameView) => void>();
@@ -242,6 +247,8 @@ export class MossEngine {
     this.client = client;
     this.attached = undefined;
     this.placements.clear();
+    this.placedByEvent.clear();
+    this.resolvedCards.clear();
     await client.request("events.subscribe", { areas: MOSS_EVENT_AREAS }, 10_000).catch((err: unknown) => this.log(`engine: events.subscribe failed (${err instanceof Error ? err.message.slice(0, 120) : "error"})`));
     await Promise.all([this.loadBots(), this.loadSummaries(), this.loadActivity(), this.loadCards(), this.loadTalk()]);
     this.changed();
@@ -295,13 +302,24 @@ export class MossEngine {
     await this.loadPlacements();
   }
 
+  /** The router's snapshot: it fills in only the cards no event has placed and none resolved, on the connection that
+   *  asked (an answer that comes after a reconnect is the old connection's, and is dropped). */
   private async loadPlacements(): Promise<void> {
+    const client = this.client;
     const r = await this.read<{ placements: { card: string; place: unknown }[] }>("router", "card.placement", {});
-    if (r === undefined) return;
+    if (r === undefined || client !== this.client) return;
     for (const p of r.placements) {
+      if (this.placedByEvent.has(p.card) || this.resolvedCards.has(p.card)) continue;
       const place = CardPlacement.safeParse(p.place);
       if (place.success) this.placements.set(p.card, place.data);
     }
+  }
+
+  /** Remembers a card in a bounded set (the oldest goes first). */
+  private static remember(set: Set<string>, id: string): void {
+    set.delete(id);
+    set.add(id);
+    if (set.size > 512) set.delete(set.values().next().value!);
   }
 
   private cardArrived(card: unknown): void {
@@ -348,6 +366,7 @@ export class MossEngine {
           this.sealed.resolvedOutcome(e.id, (typeof e.outcome === "string" ? e.outcome : "cancelled") as "approved");
           this.cards.delete(e.id);
           this.placements.delete(e.id);
+          MossEngine.remember(this.resolvedCards, e.id);
         }
         break;
       case "plugin_changed":
@@ -357,7 +376,10 @@ export class MossEngine {
         return;
       case "card_placed": {
         const place = CardPlacement.safeParse(e.place);
-        if (typeof e.card === "string" && place.success) this.placements.set(e.card, place.data);
+        if (typeof e.card === "string" && place.success) {
+          this.placements.set(e.card, place.data);
+          MossEngine.remember(this.placedByEvent, e.card);
+        }
         break;
       }
       default:

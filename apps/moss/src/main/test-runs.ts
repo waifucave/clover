@@ -56,9 +56,12 @@ export async function runSmoke(o: { win: BrowserWindow; engine: MossEngine; file
   // frame (a slow runner draws them a beat after the conversation).
   // Every card MOSS knows is placed (one placed early must not end the wait while another's placement is on its way), and
   // the window draws as many as are placed here, the same for two looks in a row.
+  // The test may say how many cards its fixture places here (MOSS_TEST_CARDS): the wait holds for that many.
+  const want = Number.parseInt(process.env.MOSS_TEST_CARDS ?? "1", 10) || 1;
   let last = -1;
   await until(async () => {
     const placed = engine.view().cards.length;
+    if (placed < want) return false;
     const drawn = await win.webContents.executeJavaScript(`document.querySelectorAll("iframe[data-card-frame]").length`).catch(() => -1) as number;
     const settled = placed > 0 && drawn === placed && engine.unplacedCards() === 0 && placed === last;
     last = drawn === placed && engine.unplacedCards() === 0 ? placed : -1;

@@ -248,3 +248,61 @@ describe("presence and the router's placement", () => {
     expect(reports[0]?.windows[0]).toMatchObject({ window: "main", focused: true, visible: true, showing: null });
   });
 });
+
+describe("placements: an event always wins over a snapshot", () => {
+  /** A client whose `card.placement` answers wait until the test lets each go; everything else answers at once. */
+  function heldClient(card: unknown) {
+    const answers: ((v: unknown) => void)[] = [];
+    const client = {
+      request: async <T,>(method: string): Promise<T> => {
+        const plain: Record<string, unknown> = {
+          "events.subscribe": { ok: true }, "bot.records": { bots: [] }, "bot.summaries": { summaries: [] }, "activity.list": { activity: [] },
+          "card.list": { cards: [card] }, "point.active.list": { points: [] }, "command.list": { commands: [] },
+        };
+        if (method === "card.placement") return new Promise<T>((r) => answers.push(r as (v: unknown) => void));
+        return (plain[method] ?? {}) as T;
+      },
+    };
+    return { client, answers };
+  }
+  const card = sealedCard({ id: "card_snap", kind: "tool", computer: "Studio", session: "bot:juniper", bot: "juniper", origin: "user", issuedAt: Date.now(), expiresAt: null, fields: { title: { type: "text", text: "Snap" } }, options: [{ id: "allow_once", kind: "approve", label: "Approve" }] } as never);
+  const conversation = { kind: "conversation", program: "moss", window: "main" } as const;
+  const strip = { kind: "strip", program: "moss", window: "main" } as const;
+
+  test("a card_placed that comes before an older card.placement answer keeps its place", async () => {
+    const { client, answers } = heldClient(card);
+    const engine = new MossEngine(new SealedFrames("moss"));
+    const attached = engine.attach(client);
+    await until(() => answers.length === 1);
+    // The router moves the card (an event), then the snapshot it took before arrives.
+    engine.notification("core.event", { type: "card_placed", card: "card_snap", place: strip });
+    answers[0]!({ placements: [{ card: "card_snap", place: conversation }] });
+    await attached;
+    expect(engine.placementOf("card_snap")).toEqual(strip);
+  });
+
+  test("a snapshot fills in a card no event placed, never one already resolved, and a reconnect starts fresh", async () => {
+    const { client, answers } = heldClient(card);
+    const engine = new MossEngine(new SealedFrames("moss"));
+    const attached = engine.attach(client);
+    await until(() => answers.length === 1);
+    answers[0]!({ placements: [{ card: "card_snap", place: conversation }, { card: "card_gone", place: strip }] });
+    await attached;
+    expect(engine.placementOf("card_snap")).toEqual(conversation);
+    // Resolved, then a late snapshot names it: it stays gone.
+    engine.notification("core.event", { type: "card_resolved", id: "card_snap", outcome: "approved" });
+    engine.notification("core.event", { type: "card_requested", card: { ...card, id: "card_other" } });
+    await until(() => answers.length === 2);
+    answers[1]!({ placements: [{ card: "card_snap", place: conversation }] });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(engine.placementOf("card_snap")).toBeUndefined();
+    // A reconnect: what the last connection's events said is forgotten; the new snapshot places it.
+    engine.notification("core.event", { type: "card_placed", card: "card_gone", place: { kind: "island" } });
+    const again = heldClient(card);
+    const reattached = engine.attach(again.client);
+    await until(() => again.answers.length === 1);
+    again.answers[0]!({ placements: [{ card: "card_gone", place: strip }] });
+    await reattached;
+    expect(engine.placementOf("card_gone")).toEqual(strip);
+  });
+});
