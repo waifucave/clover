@@ -121,7 +121,7 @@ function cardRegistry(path: string, withFixture = true, alpha = false): string {
 
 /** Start the app against the fake daemon, click via the smoke run, and return the run's output. */
 async function runApp(opts: {
-  click?: { cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number; pulse?: number; classicBars?: boolean };
+  click?: { cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number; pulse?: number; classicBars?: boolean; missFirst?: boolean };
   acting?: boolean;
   dropFresh?: boolean;
   pinVisible?: boolean;
@@ -329,6 +329,21 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     expect([m![1], m![2]]).toEqual([m![3], m![4]]);
     expect(r.output).toContain("presses=[[");
     expect(answerCallsOf(r.home), r.output).toHaveLength(1);
+  }, 120_000);
+
+  test("a press Chromium hands to the embedding document over a visible sealed button says press again, and the next press lands", async () => {
+    const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", missFirst: true } });
+    expect(r.output).toContain("sealed-click: missed press set up true");
+    expect(r.output).toMatch(/sealed: a press over card_0a1b2c3d button:allow_once in the main window reached no sealed page; it says press again/);
+    expect(r.output).toContain("sealed-click: after the missed press state=Not ready yet — press again.");
+    // The notice answers nothing; the next press does.
+    expect(r.output).toContain("presses=[[");
+    expect(answerCallsOf(r.home), r.output).toHaveLength(1);
+  }, 120_000);
+
+  test("a press that reached the sealed page gets no missed-press notice", async () => {
+    const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once" } });
+    expect(r.output).not.toContain("reached no sealed page");
   }, 120_000);
 
   onCi("a second press does not land", async () => {
