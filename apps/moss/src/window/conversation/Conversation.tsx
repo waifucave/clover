@@ -93,13 +93,18 @@ export function kindOf(name: string): string {
 
 function Composer(props: { bot: BotRow }) {
   const [text, setText] = useState("");
+  const [images, setImages] = useState<{ id: string; name: string }[]>([]);
   const [why, setWhy] = useState<string | undefined>(undefined);
   const [holding, setHolding] = useState(false);
   const send = async (): Promise<void> => {
     const t = text.trim();
-    if (t === "") return;
-    const r = await bridge().send(props.bot.id, t);
-    if (r.ok) { setText(""); setWhy(undefined); } else setWhy(r.why);
+    if (t === "" && images.length === 0) return;
+    const r = await bridge().send(props.bot.id, t, images.map((i) => i.id));
+    if (r.ok) { setText(""); setImages([]); setWhy(undefined); } else setWhy(r.why);
+  };
+  const attach = async (): Promise<void> => {
+    const got = await bridge().pickImages();
+    if (got.length > 0) setImages((now) => [...now, ...got].slice(0, 4));
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -115,8 +120,18 @@ function Composer(props: { bot: BotRow }) {
   return (
     <div className="composer" data-composer>
       {why !== undefined ? <p className="composer__why" role="status">{why}</p> : null}
+      {images.length > 0 ? (
+        <div className="composer__files">
+          {images.map((i) => (
+            <span key={i.id} className="file-chip">
+              {i.name}
+              <button type="button" aria-label={`Remove ${i.name}`} onClick={() => setImages((now) => now.filter((x) => x.id !== i.id))}>×</button>
+            </span>
+          ))}
+        </div>
+      ) : null}
       <div className="composer__box">
-        <button type="button" className="icon-button" aria-label="Attach" title="Attach">
+        <button type="button" className="icon-button" aria-label="Attach pictures" title="Attach pictures" onClick={() => void attach()}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 7.5 8 13a3.5 3.5 0 0 1-5-5l5.6-5.6a2.3 2.3 0 0 1 3.3 3.3L6.3 11.3a1.2 1.2 0 0 1-1.7-1.7L9.5 4.7" /></svg>
         </button>
         <textarea rows={1} placeholder={`Message ${props.bot.name}`} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label={`Message ${props.bot.name}`} />
@@ -126,7 +141,7 @@ function Composer(props: { bot: BotRow }) {
         >
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.8" width="5" height="8" rx="2.5" /><path d="M3.2 7.5a4.8 4.8 0 0 0 9.6 0M8 12.3v2" /></svg>
         </button>
-        <button type="button" className="send" aria-label="Send" disabled={text.trim() === ""} onClick={() => void send()}>
+        <button type="button" className="send" aria-label="Send" disabled={text.trim() === "" && images.length === 0} onClick={() => void send()}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /></svg>
         </button>
       </div>

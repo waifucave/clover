@@ -160,6 +160,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 .strip .card { margin: 0; }
 
 .composer { padding: 8px 18px 16px; flex: none; }
+.composer__files { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+.file-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); font-size: 12px; }
+.file-chip button { border: 0; background: transparent; color: var(--muted); padding: 0 4px; }
 .composer__why { margin: 0 0 6px; color: var(--muted); font-size: 12px; }
 .composer__box { display: flex; align-items: flex-end; gap: 4px; padding: 6px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line-strong); box-shadow: var(--shadow); }
 .composer__box textarea { flex: 1; min-height: 34px; max-height: 160px; padding: 7px 6px; border: 0; background: transparent; resize: none; outline: none; }

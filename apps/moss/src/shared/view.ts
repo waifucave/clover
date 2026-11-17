@@ -137,8 +137,12 @@ export interface MossBridge {
   showing(page: { bot: string } | { page: "plugins" | "settings" | "none" }): void;
   conversation(bot: string, before?: number): Promise<ConversationPage | { waiting: true }>;
   onMessage(fn: (bot: string, message: Message) => void): () => void;
-  /** Sends the person's words to a bot; main takes it only right after their own key press or click. */
-  send(bot: string, text: string): Promise<{ ok: true } | { ok: false; why: string }>;
+  /** Sends the person's words to a bot, with the pictures they picked (`pickImages`' ids); main takes it only right
+   *  after their own key press or click. */
+  send(bot: string, text: string, images?: readonly string[]): Promise<{ ok: true } | { ok: false; why: string }>;
+  /** The person picks pictures to attach (main's own file dialog; PNG, JPEG or WebP, at most 4, 10 MB each): their names
+   *  and the ids `send` takes. Never their bytes in the window. */
+  pickImages(): Promise<{ id: string; name: string }[]>;
   createBot(name: string): Promise<{ ok: true; id: string } | { ok: false; why: string }>;
   markRead(bot: string): void;
   routines(bot: string): Promise<RoutineRow[] | { waiting: true }>;

@@ -332,11 +332,11 @@ export class MossEngine {
     return { bot, messages, hasMore: r.hasMore, ...(first !== undefined ? { before: first.seq as number } : {}) };
   }
 
-  async send(bot: string, text: string, clientMessageId: string): Promise<{ ok: true } | { ok: false; why: string }> {
+  async send(bot: string, text: string, clientMessageId: string, images: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: string }[] = []): Promise<{ ok: true } | { ok: false; why: string }> {
     const client = this.client;
     if (client === undefined) return { ok: false, why: "MOSS isn't connected to its engine." };
     try {
-      await client.request("user.send", { to: { bot }, text, clientMessageId }, 30_000);
+      await client.request("user.send", { to: { bot }, text, clientMessageId, ...(images.length > 0 ? { images } : {}) }, 30_000);
       return { ok: true };
     } catch (err) {
       return { ok: false, why: notServed(err) ? "Sending isn't served by this engine yet." : "The engine didn't take the message." };
