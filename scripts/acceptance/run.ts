@@ -1478,6 +1478,28 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
  *  page ready by its own gates), and asserts what the owner's card needs: the press is accepted by the app and the core, and the
  *  app's fallback card was never drawn for it. Only frames in the island window's own tree count: the conversation's, the pill's
  *  and the fallback's do not. */
+/** lane HS: where the island lays out a card's sealed buttons (each frame's box, the window's size, the button row's box and
+ *  overflow, and for each frame and its ancestors the styles a visibility tracker counts): what a "never ready" press says. */
+async function islandCardLayout(cdp: Cdp, cardId: string): Promise<string> {
+  const expr = `(() => {
+    const id = ${JSON.stringify(encodeURIComponent(cardId))};
+    const frames = [...document.querySelectorAll('iframe')].filter((f) => (f.getAttribute('src') || '').includes(id));
+    if (frames.length === 0) return '';
+    const box = (e) => { const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round).join(','); };
+    const styled = (e) => { const out = []; for (let n = e; n && n !== document.documentElement; n = n.parentElement) { const c = getComputedStyle(n); const odd = [c.opacity !== '1' ? 'opacity ' + c.opacity : '', c.visibility !== 'visible' ? 'visibility ' + c.visibility : '', c.transform !== 'none' ? 'transform ' + c.transform : '', c.filter !== 'none' ? 'filter ' + c.filter : '', c.overflow !== 'visible' ? 'overflow ' + c.overflow : ''].filter(Boolean); if (odd.length) out.push((n.className || n.tagName).toString().slice(0, 40) + ': ' + odd.join(' ')); } return out.join(' / '); };
+    const row = document.querySelector('.clv-tool-actions');
+    return 'window ' + innerWidth + 'x' + innerHeight + (row ? '; row ' + box(row) + ' scroll ' + row.scrollWidth + '/' + row.clientWidth : '') + '; ' + frames.map((f) => decodeURIComponent(f.getAttribute('src')).replace(/^.*\\/(button:[a-z]+).*$/, '$1') + ' at ' + box(f) + ' [' + styled(f) + ']').join('; ');
+  })()`;
+  const out: string[] = [];
+  for (const d of await cdp.documents()) {
+    if (!d.url.startsWith("moss-plugin://") && !/[?&]surface=island/.test(d.url)) continue;
+    const where = d.url.slice(0, 40);
+    const v = await cdp.evaluate(d.session, expr).catch(() => "");
+    if (typeof v === "string" && v !== "") out.push(`${where}: ${v.slice(0, 1500)}`);
+  }
+  return out.join(" || ") || "no island document holds the card's frames";
+}
+
 async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"), which: "approve" | "always" = "approve"): Promise<string> {
   await appGotCard(card, appLog);
   // lane HS: the island's Always allow too, for a run whose cards are answered only where they are drawn (a host's island).
@@ -1519,7 +1541,7 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
     }
     return undefined;
   }, 100)
-    .catch(async (err: unknown) => fail(`${why(err)} (the island's Approve was never ready; the app logged: ${readLog(appLog).slice(from).split("\n").filter((l) => /sealed: .*(visible|press)|fallback/.test(l)).slice(-8).join(" | ") || "nothing"})`));
+    .catch(async (err: unknown) => fail(`${why(err)} (the island's Approve was never ready; the app logged: ${readLog(appLog).slice(from).split("\n").filter((l) => /sealed: .*(visible|press)|fallback/.test(l)).slice(-8).join(" | ") || "nothing"}; the island's layout: ${await islandCardLayout(cdp, card.id)})`));
   const { s, btn } = ready;
   await sleep(300);
   await cdp.click(s, btn.x, btn.y);
