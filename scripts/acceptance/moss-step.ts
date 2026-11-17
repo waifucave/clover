@@ -217,35 +217,48 @@ class MossWindow {
   /** Presses the card's Approve in MOSS's window for real: the pointer comes in, the page's own gate says ready (its
    *  visibility reading, its second), then a trusted click; MOSS's main process judges and signs. What MOSS logged. */
   async pressApprove(cardId: string): Promise<string> {
-    const from = this.x.readLog(this.log).length;
     const doc = await this.cardFrame(cardId);
     const sel = ".seal-button[data-kind=approve]:not([data-remember])";
-    const inFrame = await this.x.until("the card's Approve button", 15_000, () => this.cdp.centerOf(doc.session, sel), 250);
-    // The card's frame may sit in a list that scrolls (the strip holds at most 45% of the window): the person scrolls
-    // until the button shows, and so does the run (its scrolling list, never the frame's own page).
-    await this.eval(`((id, y) => {
-      const f = document.querySelector('iframe[data-card-frame="' + id + '"]');
-      if (!f) return false;
-      let p = f.parentElement;
-      while (p && !(p.scrollHeight > p.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(p).overflowY))) p = p.parentElement;
-      if (!p) return true;
-      const pr = p.getBoundingClientRect(), fr = f.getBoundingClientRect();
-      p.scrollTop += (fr.top + y) - (pr.top + pr.height / 2);
-      return true;
-    })(${JSON.stringify(cardId)}, ${inFrame.y})`);
-    await sleep(400);
-    const btn = await this.x.until("the card's Approve button", 15_000, () => this.cdp.centerOf(doc.session, sel), 250);
-    await this.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, doc.session).catch(() => undefined);
-    await this.x.until("the sealed page's ready-to-answer mark", 15_000, async () => ((await this.cdp.evaluate(doc.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes" ? true : undefined), 100);
-    await sleep(200);
-    await this.cdp.click(doc.session, btn.x, btn.y);
-    const said = await this.x.until(`MOSS's answer for the card ${cardId}`, 15_000, () => {
-      const text = this.x.readLog(this.log).slice(from);
-      if (text.includes(`sealed: answer accepted for ${cardId}`)) return "accepted";
-      return /sealed: answer refused \([^\n]*/.exec(text)?.[0];
-    }, 200);
-    if (said !== "accepted") this.x.fail(`the press on the card's Approve in MOSS: ${said}`);
-    return "accepted";
+    const tried: string[] = [];
+    // A card grows to its own height once its frame draws, and a list that scrolls may move under it: the person waits
+    // for it to settle, scrolls the button into view and presses; a press the page read as covered is made again.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let last = -1;
+      await this.x.until("the card's frame at its own height", 10_000, async () => {
+        const h = await this.eval<number>(`document.querySelector('iframe[data-card-frame=${JSON.stringify(cardId)}]')?.getBoundingClientRect().height ?? -1`);
+        const steady = h > 0 && h === last;
+        last = h;
+        return steady ? true : undefined;
+      }, 300).catch(() => undefined);
+      const inFrame = await this.x.until("the card's Approve button", 15_000, () => this.cdp.centerOf(doc.session, sel), 250);
+      await this.eval(`((id, y) => {
+        const f = document.querySelector('iframe[data-card-frame="' + id + '"]');
+        if (!f) return false;
+        let p = f.parentElement;
+        while (p && !(p.scrollHeight > p.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(p).overflowY))) p = p.parentElement;
+        if (!p) return true;
+        const pr = p.getBoundingClientRect(), fr = f.getBoundingClientRect();
+        p.scrollTop += (fr.top + y) - (pr.top + pr.height / 2);
+        return true;
+      })(${JSON.stringify(cardId)}, ${inFrame.y})`);
+      await sleep(400);
+      const btn = await this.x.until("the card's Approve button", 15_000, () => this.cdp.centerOf(doc.session, sel), 250);
+      const from = this.x.readLog(this.log).length;
+      await this.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, doc.session).catch(() => undefined);
+      await this.x.until("the sealed page's ready-to-answer mark", 15_000, async () => ((await this.cdp.evaluate(doc.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes" ? true : undefined), 100);
+      await sleep(200);
+      await this.cdp.click(doc.session, btn.x, btn.y);
+      const said = await this.x.until(`MOSS's answer for the card ${cardId}`, 15_000, () => {
+        const text = this.x.readLog(this.log).slice(from);
+        if (text.includes(`sealed: answer accepted for ${cardId}`)) return "accepted";
+        if (new RegExp(`sealed: press on ${cardId}: (covered|no-pointer|opening)`).test(text)) return /sealed: press on \S+: (\S+)/.exec(text.split("\n").reverse().find((l) => l.includes(`press on ${cardId}`)) ?? "")?.[1] ?? "again";
+        return /sealed: answer refused \([^\n]*/.exec(text)?.[0];
+      }, 200);
+      if (said === "accepted") return "accepted";
+      if (said === "covered" || said === "no-pointer" || said === "opening") { tried.push(said); continue; }
+      this.x.fail(`the press on the card's Approve in MOSS: ${said}`);
+    }
+    return this.x.fail(`the card's Approve in MOSS read as ${tried.join(", ")} at each of 3 presses`);
   }
 }
 
