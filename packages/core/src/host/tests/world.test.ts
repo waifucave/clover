@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOST_LOCK_FILE, HOST_START_FILE } from "@waifucave/moss-protocol";
 import type { Runner } from "../../platform/login/live";
+import { darwinDescribe } from "../../../test/helpers/darwin-only";
 import { appRecordsSource, bundleRelease, DARWIN_O_EXLOCK, engineHostWorld, hostHelperPath, hostLockHolder, hostRequirement, parseHostCommand } from "../world";
 
 const root = mkdtempSync(join(tmpdir(), "moss-host-world-"));
@@ -27,7 +28,7 @@ function holdLock(home: string): Promise<{ pid: number; end(): Promise<void> }> 
   });
 }
 
-describe.if(process.platform === "darwin")("the host lock (macOS)", () => {
+darwinDescribe("the host lock (macOS)", () => {
   test("held by a live process: its pid; once it dies the lock is free, whatever pid the file still names", async () => {
     const home = newHome();
     expect(hostLockHolder(home, "darwin")).toBeNull();

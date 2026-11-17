@@ -1,6 +1,7 @@
 // The background host's row (lane HS; spec revision 19 §3.1, §3.4, §12.1, items 98, 111, 116, 121): run.ts's `host` unit
 // (`--units host`, serial: its own home, its own daemon, which starts the host itself from this checkout through
 // `MOSS_HOST_COMMAND`, the engine's source seam). The probes and the row's name live here; run.ts drives the processes.
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Cdp } from "./cdp";
@@ -33,6 +34,14 @@ export async function backgroundPart(cdp: Cdp, id: string): Promise<Record<strin
     if (typeof v === "string" && v !== "") return JSON.parse(v) as Record<string, string>;
   }
   return undefined;
+}
+
+/** The on-screen windows (macOS's window server, `onscreen-windows.swift`): owner pid, opacity and size; never titles. */
+export function onscreenWindows(swiftScript: string): { pid: number; alpha: number; w: number; h: number }[] | undefined {
+  if (process.platform !== "darwin") return undefined;
+  const r = spawnSync("swift", [swiftScript], { encoding: "utf8", timeout: 120_000 });
+  if (r.status !== 0) return undefined;
+  return (r.stdout ?? "").split("\n").filter((l) => l.startsWith("{")).map((l) => JSON.parse(l) as { pid: number; alpha: number; w: number; h: number });
 }
 
 /** How many times a daemon log says the host was ready. */

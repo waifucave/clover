@@ -277,6 +277,17 @@ if (!app.requestSingleInstanceLock()) {
   });
   // The app's guards on every webContents but the MOSS Browser's (its tabs, the windows its pages open and its
   // viewport pages), which lane L's own policy covers (ruling R11); `isBrowserContents` holds from creation on.
+  // lane HS: start. A headless run (the tests', the host's from a checkout) may never draw on the screen: any window of either
+  // program shown at more than zero opacity is said in the log, which the acceptance run fails on.
+  app.on("browser-window-created", (_event, win) => {
+    win.on("show", () => {
+      if (!headless) return;
+      let opacity = 1;
+      try { opacity = win.getOpacity(); } catch { /* a platform without window opacity */ }
+      if (opacity > 0) log(`window: shown while headless (${program}: ${win.getTitle().slice(0, 80)})`);
+    });
+  });
+  // lane HS: end
   app.on("web-contents-created", (_event, contents) => {
     // The app's one mute: a page made after it was turned on is muted from the start.
     if (prefs.soundMuted) contents.setAudioMuted(true);

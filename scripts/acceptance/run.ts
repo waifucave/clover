@@ -67,7 +67,7 @@
 // load guard under a dot-folder; a wrapped skill folder missing from Glossary), the last two in a shipped build.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync, lstatSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync, chmodSync, closeSync, lstatSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -80,7 +80,7 @@ import { MossClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 // lane HS
-import { HOST_STEP, backgroundPart, hostLockPid, islandTarget, processAlive, readyCount } from "./host-step";
+import { HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
 import { BACKGROUND_IDS, writeBackground } from "./manifest-fields-step";
 import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
@@ -470,6 +470,29 @@ async function endChild(proc: ChildProcess, graceMs = 10_000): Promise<boolean> 
 // lane HS: the hosts this run's engines started through Launch Services (in none of the run's process groups): each is
 // ended by its own pid, the one its engine's lock names, at the host unit's end and at cleanup.
 const startedHosts = new Set<number>();
+/** The run's own copy of the source Electron.app for the host it starts through Launch Services: marked `LSUIElement` (no
+ *  Dock icon, ever), ad hoc signed again, under the run's temp folder; unregistered from Launch Services at the end. */
+const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+function hostAppCopy(app: { exe: string; args: string[] }): { exe: string; args: string[] } {
+  const i = app.exe.indexOf(".app/");
+  if (i < 0) return app;
+  const dst = join(root, "host-app", "MOSS Host Acceptance.app");
+  mkdirSync(dirname(dst), { recursive: true });
+  for (const argv of [["cp", "-cR", app.exe.slice(0, i + 4), dst], ["plutil", "-replace", "LSUIElement", "-bool", "true", join(dst, "Contents", "Info.plist")], ["plutil", "-replace", "CFBundleIdentifier", "-string", "com.waifucave.moss.host.acceptance", join(dst, "Contents", "Info.plist")], ["codesign", "--force", "--sign", "-", dst]]) {
+    const r = spawnSync(argv[0]!, argv.slice(1), { encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`the host's app copy: ${argv[0]} failed: ${(r.stderr ?? "").trim().slice(0, 200)}`);
+  }
+  return { exe: join(dst, app.exe.slice(i + 5)), args: app.args };
+}
+/** Unregisters from Launch Services whatever the run left registered under its temp folder (scripts/try/run.sh's rule). */
+function unregisterRunApps(): number {
+  if (process.platform !== "darwin") return 0;
+  const dump = spawnSync(LSREGISTER, ["-dump"], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }).stdout ?? "";
+  const paths = [...new Set(dump.split("\n").filter((l) => l.startsWith("path:")).map((l) => l.replace(/^path: */, "").replace(/ \(0x[0-9a-f]+\)$/, "")).filter((p) => p.startsWith(`${root}/`) || p.startsWith(`${realpathOr(root)}/`)))];
+  for (const p of paths) spawnSync(LSREGISTER, ["-u", p], { stdio: "ignore" });
+  return paths.length;
+}
+function realpathOr(p: string): string { try { return realpathSync(p); } catch { return p; } }
 function endStartedHosts(): void {
   const now = hostLockPid(home);
   if (now !== undefined) startedHosts.add(now);
@@ -486,6 +509,7 @@ async function cleanup(): Promise<void> {
   for (const c of clients) c.close();
   pressCdp?.close();
   endStartedHosts();
+  unregisterRunApps();
   // The app first (so the daemon never sees it go and starts another), then the daemon.
   for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
   fake?.close();
@@ -4325,7 +4349,9 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     const hostPort = freePort();
     browserFixture = startBrowserFixture();
     const shared = { MOSS_TEST_BROWSER_NAMES: browserFixture.names, MOSS_TEST_SEALED_PRESS: "1", MOSS_DEV_DEBUG: "1" };
-    const hostCommand = JSON.stringify([app.exe, ...app.args, "--moss-program=host", "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${hostPort}`]);
+    // Through the run's own LSUIElement copy (no Dock icon at any moment), unregistered at the end.
+    const hostApp = hostAppCopy(app);
+    const hostCommand = JSON.stringify([hostApp.exe, ...hostApp.args, "--moss-program=host", "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${hostPort}`]);
     const daemonEnv = { MOSS_HOST_COMMAND: hostCommand, ...shared };
     const first = await startDaemonProc(daemonEnv);
     c = (await appDriver()).client;
@@ -4333,9 +4359,20 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     const session = await keyedSession(c);
     // 1. The engine started the host by itself (no app window anywhere), which holds its lock and says it is ready.
     const hostPid = await until("the host the engine started, ready and holding its lock", 120_000, () => { const p = hostLockPid(home); if (p !== undefined) startedHosts.add(p); return readyCount(readLog(first.log)) > 0 ? p : undefined; }, 500);
+    // Nothing of the host on the screen, read from the window server itself at each stage (no window of a host pid on screen).
+    let screenChecks = 0;
+    const offScreen = (stage: string): void => {
+      const wins = onscreenWindows(join(import.meta.dir, "onscreen-windows.swift"));
+      if (wins === undefined) fail(`the window server's list couldn't be read (${stage})`);
+      const pids = new Set([...startedHosts, ...(hostLockPid(home) !== undefined ? [hostLockPid(home)!] : [])]);
+      const seen = wins!.filter((w) => pids.has(w.pid) && w.alpha > 0);
+      if (seen.length > 0) fail(`a host window was on the screen ${stage}: ${JSON.stringify(seen).slice(0, 200)}`);
+      screenChecks++;
+    };
     const connectHost = async (what: string) => until(what, 60_000, async () => { try { return await Cdp.connect(hostPort); } catch { return undefined; } }, 250);
     hostCdp = await connectHost("the host's DevTools port");
     await until("the island's window in the host", 60_000, () => islandTarget(hostCdp!), 300);
+    offScreen("after it started");
     lines.push(`started: the engine started the host (pid ${hostPid}), which holds its lock, said it was ready and draws the island`);
     // 2. MOSS Code's window mounts no island of its own while the host owns the screen; then its process quits.
     const appPort = freePort();
@@ -4361,6 +4398,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     await until(`${id} running`, 30_000, async () => ((await c!.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
     const num = (a: Record<string, string>, k: string) => Number(a[`data-${k}`]);
     const tone = await until("the background part's tone in the host", 60_000, async () => { const a = await backgroundPart(hostCdp!, id); return a !== undefined && num(a, "ticks") >= 10 && a["data-ctx"] === "running" && num(a, "rms") > 0.01 ? a : undefined; }, 500);
+    offScreen("with a card on its island");
     lines.push(`background part with no window: ${tone["data-ticks"]} ticks, its audio context running, level ${tone["data-rms"]}`);
     // 4. A bot's Browser tool opens a page with no app window: the page loads in the host, offscreen.
     const wasAppless = appless;
@@ -4370,6 +4408,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     } finally { appless = wasAppless; }
     if (!browserFixture.seen.some((r) => r.path === "/")) fail("the bot's Browser tool loaded nothing: the fixture site saw no request");
     await until("the bot's page among the host's targets", 30_000, () => ([...hostCdp!.frames.values()].some((f) => f.url.startsWith(browserFixture!.url)) ? true : undefined), 500).catch(() => undefined);
+    offScreen("with the bot's page open");
     lines.push("browser with no window: the bot's Browser tool opened the fixture page, loaded by the host's browser");
     // 5. The engine restarts on the same home: it adopts the running host (its lock) and starts no second.
     stoppingDaemon = true;
@@ -4404,6 +4443,14 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     const still = (await c.request<{ plugin: { state: string; enabled?: boolean } }>("plugin.get", { id }).catch(() => undefined))?.plugin;
     if (still === undefined || still.state !== "running") fail(`the engine's copy of the plugin left running in safe mode: ${JSON.stringify(still)}`);
     lines.push("safe mode: after three crashes the host came back in safe mode with its island and no third-party part, while the engine kept the plugin running");
+    offScreen("in safe mode");
+    // 7. Nothing of the host reached the screen or the speakers: no window of its shown while headless, every start muted.
+    const out = readLog(appLogFile);
+    const shown = out.split("\n").find((l) => /window: shown while headless/.test(l));
+    if (shown !== undefined) fail(`the host showed a window while headless: ${shown.slice(0, 200)}`);
+    const starts = (out.match(/audio: muted/g) ?? []).length;
+    if (starts === 0 || /audio: (NOT muted|played unmuted)/.test(out)) fail(`the host's starts were not all muted (${starts} muted; ${out.split("\n").find((l) => /audio: (NOT|played)/.test(l))?.slice(0, 160) ?? ""})`);
+    lines.push(`nothing seen or heard: the window server listed no host window on the screen at ${screenChecks} checks, no host window shown while headless, ${starts} host start(s) muted, no Dock icon (its app copy is LSUIElement), no menu-bar icon (never made headless)`);
     record(n, "PASS", lines.join("; "));
   } catch (err) {
     record(n, statusOf(err), `${why(err)}${lines.length > 0 ? ` (after: ${lines.join("; ").slice(0, 600)})` : ""}`);
@@ -4411,6 +4458,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     c?.close();
     hostCdp?.close();
     endStartedHosts();
+    say(`the host's Launch Services entries unregistered: ${unregisterRunApps()}`);
   }
 }
 // lane HS: end. ------------------------------------------------------------------------------------------------------
