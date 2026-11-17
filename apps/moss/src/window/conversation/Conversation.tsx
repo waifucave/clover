@@ -134,7 +134,7 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
         <Face name={props.bot.name} {...(props.bot.face !== undefined ? { face: props.bot.face } : {})} mood={props.bot.mood} size={36} surface="header" />
         <div className="conversation__who">
           <h1>{props.bot.name}</h1>
-          <MoodWords mood={props.bot.mood} />
+          <MoodWords mood={props.bot.mood} {...(props.bot.tool !== undefined ? { tool: props.bot.tool } : {})} />
         </div>
         <button type="button" className={`icon-button${props.panelOpen ? " is-on" : ""}`} aria-label={props.panelOpen ? "Close the side panel" : `Open ${props.bot.name}'s screen and routines`} aria-pressed={props.panelOpen} onClick={props.onPanel}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2" /><path d="M10 3v10" /></svg>
