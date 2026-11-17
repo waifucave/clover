@@ -12,7 +12,7 @@
 // * The user's interrupt is ACP's `session/cancel`; `stop` cancels, then ends the agent's process group.
 // * Everything recorded and the turn's final text pass `redact` first (review 9): the bridge's token must not reach the
 //   session's log through the agent's own words or a tool call's input.
-import type { AgentEvent, AgentSession } from "../contracts/agent-backend";
+import type { AgentEvent, AgentSession, AgentTurnEnd } from "../contracts/agent-backend";
 import { isContractError } from "../contracts/common";
 import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../contracts/session-host";
 import type { TurnOrigin } from "@waifucave/moss-protocol";
@@ -49,6 +49,13 @@ export type AgentLogEvent =
   | { type: "agent_started"; agentSessionId: string }
   /** MOSS's own word to the person about this agent, not the agent's (`hook_notice` on the wire). */
   | { type: "agent_notice"; text: string };
+
+/** A turn's usage as the session records it: the agent's counts, and the context it says it uses (`contextTokens`, which
+ *  the session's context reads), either alone. */
+export function usageOf(end: AgentTurnEnd): { usage?: { inputTokens: number; outputTokens: number; contextTokens?: number } } {
+  if (end.usage === undefined && end.contextTokens === undefined) return {};
+  return { usage: { inputTokens: end.usage?.inputTokens ?? 0, outputTokens: end.usage?.outputTokens ?? 0, ...(end.contextTokens === undefined ? {} : { contextTokens: end.contextTokens }) } };
+}
 
 export class AgentDriver implements SessionDriver {
   readonly canFold = false;
@@ -159,14 +166,14 @@ export class AgentDriver implements SessionDriver {
       if (this.#stopping) return { reason: "stopped", text: end.text };
       switch (end.stopReason) {
         case "cancelled":
-          return ctl.signal.aborted ? { reason: "interrupted", text: end.text } : { reason: "cancelled", text: end.text, ...(end.usage ? { usage: end.usage } : {}) };
+          return ctl.signal.aborted ? { reason: "interrupted", text: end.text } : { reason: "cancelled", text: end.text, ...usageOf(end) };
         case "refusal":
-          return { reason: "refusal", text: end.text, ...(end.usage ? { usage: end.usage } : {}) };
+          return { reason: "refusal", text: end.text, ...usageOf(end) };
         case "error":
           await this.#shutdown();
           return { reason: "failed", failure: "error", text: end.text };
         default:
-          return { reason: "end_turn", text: end.text, ...(end.usage ? { usage: end.usage } : {}) };
+          return { reason: "end_turn", text: end.text, ...usageOf(end) };
       }
     } catch (err) {
       flusher.flush();

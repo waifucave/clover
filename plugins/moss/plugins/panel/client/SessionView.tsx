@@ -65,7 +65,7 @@ export function SessionView(props: SessionViewProps) {
   const environment = code ? props.environment : undefined;
   const connectors = code ? props.connectors : undefined;
   const changes = code ? props.changes : undefined;
-  const pct = context ? Math.round(Math.min(1, Math.max(0, context.used)) * 100) : 0;
+  const pct = context && "used" in context ? Math.round(Math.min(1, Math.max(0, context.used)) * 100) : 0;
   return (
     <div className="cl-session" data-kind={kind}>
       {agents && agents.length > 0 && (
@@ -132,7 +132,13 @@ export function SessionView(props: SessionViewProps) {
         </Section>
       )}
 
-      {context && (
+      {context && "notReported" in context && (
+        <Section title={S.context} initiallyOpen={false} summary={<span className="cl-session__context">{S.contextNotReported}</span>}>
+          <p className="cl-session__note">{S.contextNotReportedNote}</p>
+        </Section>
+      )}
+
+      {context && "used" in context && (
         <Section
           title={S.context}
           initiallyOpen={false}

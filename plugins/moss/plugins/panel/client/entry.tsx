@@ -44,7 +44,7 @@ interface Loaded {
   computers: ComputerView[];
   changes?: SessionViewProps["changes"];
   outputs?: { items: { id: string; name: string; kind: "page" | "file" | "image" }[]; more: number };
-  context?: { used: number; tokens?: number; window?: number } | null;
+  context?: { used: number; tokens?: number; window?: number } | { reported: false } | null;
   connectors?: { total: number; needSignIn: number };
 }
 
@@ -82,7 +82,10 @@ function useColumn(api: PluginApi, core: CoreClient | undefined, id: string | un
 }
 
 const contextOf = (c: Loaded["context"]): SessionViewProps["context"] =>
-  c ? { used: c.used, ...(c.tokens && c.window ? { detail: `${c.tokens.toLocaleString("en-US")} of ${c.window.toLocaleString("en-US")} tokens. Older turns are summarized near the limit.` } : {}) } : undefined;
+  !c ? undefined
+    // The agent reports none: said as such, with no meter.
+    : "reported" in c ? { notReported: true }
+    : { used: c.used, ...(c.tokens && c.window ? { detail: `${c.tokens.toLocaleString("en-US")} of ${c.window.toLocaleString("en-US")} tokens. Older turns are summarized near the limit.` } : {}) };
 
 export interface ColumnProps {
   session?: string;

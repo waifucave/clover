@@ -330,8 +330,11 @@ export const SESSIONS_METHODS = {
   sessionContext: defineMethod({
     name: "session.context", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.*",
     params: SessionParams,
-    result: z.object({ used: z.number().min(0).max(1), tokens: z.number().int().nonnegative(), window: z.number().int().positive() }).nullable(),
-    doc: "How full a session's context is: its last turn's measured prompt (`turn_completed.contextTokens`) against its model's context window; null when either isn't known.",
+    result: z.union([
+      z.object({ used: z.number().min(0).max(1), tokens: z.number().int().nonnegative(), window: z.number().int().positive() }),
+      z.object({ reported: z.literal(false) }),
+    ]).nullable(),
+    doc: "How full a session's context is: its last turn's measured prompt (`turn_completed.contextTokens`, for an agent the context it reported) against its model's context window; `{ reported: false }` for a coding session or an agent whose agent has reported none; null when neither is known.",
   }),
   sessionConnectors: defineMethod({
     name: "session.connectors", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.*",

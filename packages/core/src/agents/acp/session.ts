@@ -150,6 +150,8 @@ interface Turn {
   /** The last permission answer was a refusal, and no text came after it. */
   endedOnRefusal: boolean;
   usage?: { inputTokens: number; outputTokens: number };
+  /** The context the agent last said it uses in this turn (`usage_update`'s `used`). */
+  contextTokens?: number;
 }
 
 export class AcpAgentSession implements AgentSession {
@@ -408,7 +410,7 @@ export class AcpAgentSession implements AgentSession {
       }
       if (stopReason === "end_turn" && this.#quirks.turns.refusal === "ends-turn" && turn.endedOnRefusal) stopReason = "refusal";
       if (stopReason === "cancelled") this.#closeOpenCalls(turn);
-      return { stopReason, text: turn.text || (errorText ?? ""), ...(turn.usage ? { usage: turn.usage } : {}) };
+      return { stopReason, text: turn.text || (errorText ?? ""), ...(turn.usage ? { usage: turn.usage } : {}), ...(turn.contextTokens === undefined ? {} : { contextTokens: turn.contextTokens }) };
     })();
     this.#turnDone = run.catch(() => undefined);
     try {
@@ -738,7 +740,12 @@ export class AcpAgentSession implements AgentSession {
         return;
       }
       default:
-        // Plans, commands, modes, titles, config and usage updates: progress, recorded on the wire.
+        // Plans, commands, modes, titles, config and usage updates: progress, recorded on the wire. A usage update's
+        // `used` (the tokens in its context now) is what the session's context reads at the turn's end.
+        if (str(update?.["sessionUpdate"]) === "usage_update" && turn) {
+          const used = Number(update?.["used"]);
+          if (Number.isInteger(used) && used >= 0) turn.contextTokens = used;
+        }
         if (str(update?.["sessionUpdate"]) === "config_option_update") this.#config = readConfigOptions(update?.["configOptions"]) ?? this.#config;
         if (str(update?.["sessionUpdate"]) === "current_mode_update" && this.#modes) {
           const id = str(update?.["currentModeId"]) ?? str(update?.["modeId"]);

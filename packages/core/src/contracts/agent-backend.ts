@@ -185,6 +185,9 @@ export interface AgentTurnEnd {
   /** The turn's final text, unchanged. */
   text: string;
   usage?: { inputTokens: number; outputTokens: number };
+  /** How much of its context window the agent says it uses after the turn, in tokens (ACP's `usage_update` `used`, its
+   *  last in the turn): what the session's context reads. Absent when the agent reports none. */
+  contextTokens?: number;
 }
 
 export interface AgentSession {
