@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import {
   MOSS_METHODS, PROGRAM_IDENTIFIERS, SURFACE_MOUNTS, compareReleases, defaultAvailability, instructionsEditRule, isKindFamily,
   kindCapability, pluginMayCall, pressMatchesPlacement, programAnswerKeyStatement, programCardAnswerSigningInput, programOfIdentifier,
-  releaseStanding, grantReadsBots, cardAnswerSigningInput,
+  releaseStanding, grantReadsBots, grantReadsSessions, cardAnswerSigningInput, GRANT_REVISION, MakeBotInput, ActivityView,
 } from "../src/index";
 
 describe("reads by kind (§3.6)", () => {
@@ -27,8 +27,14 @@ describe("reads by kind (§3.6)", () => {
     expect(pluginMayCall(feed, ["activity.read.bots"], "sessions")).toBe(false);
   });
 
-  test("a conversation.read OK'd before revision 19 reads no bot's conversation until the plugin asks again", () => {
-    expect([grantReadsBots(undefined), grantReadsBots(18), grantReadsBots(19)]).toEqual([false, false, true]);
+  test("a grant OK'd before revision 19 reads neither kind until the plugin asks again; an OK records GRANT_REVISION", () => {
+    expect([grantReadsBots(undefined), grantReadsBots(18), grantReadsBots(GRANT_REVISION)]).toEqual([false, false, true]);
+    expect([grantReadsSessions("conversation.read", 18), grantReadsSessions("conversation.read", GRANT_REVISION)]).toEqual([false, false]);
+    expect([grantReadsSessions("sessions.read", undefined), grantReadsSessions("sessions.read", GRANT_REVISION)]).toEqual([false, true]);
+  });
+
+  test("a bot's background coding task is a code session that carries its bot", () => {
+    expect(ActivityView.safeParse({ subject: { kind: "sessions", id: "s_task1", bot: "alpha" }, state: "working", tool: "Bash", since: 1 }).success).toBe(true);
   });
 });
 
@@ -84,6 +90,11 @@ describe("bots and tools as engine data (§6.1, §6.7)", () => {
     expect(instructionsEditRule({ kind: "bot", id: "nova" }, scout)).toBe("card");
     expect(instructionsEditRule({ kind: "other" }, scout)).toBe("refused");
     expect(instructionsEditRule({ kind: "user" }, { id: "alpha", madeBy: { kind: "default" } })).toBe("free");
+  });
+
+  test("MakeBot takes a name, instructions, a face and a model only", () => {
+    expect(MakeBotInput.safeParse({ name: "Scout", instructions: "x", face: { color: "teal" }, model: "acme/large" }).success).toBe(true);
+    expect(MakeBotInput.safeParse({ name: "Scout", effort: "max" }).success).toBe(false);
   });
 
   test("a tool's default availability is what its plugin declares", () => {

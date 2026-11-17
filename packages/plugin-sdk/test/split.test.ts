@@ -7,8 +7,8 @@ import { API_CALLS, CAPABILITIES, PICTURE_OK_LINE, apiCallAllowed, capabilityOkT
 describe("reads by kind (G6)", () => {
   test("code sessions and bots are separate capabilities, each with its own line; pictures warn", () => {
     expect(capabilityOkText("sessions.read")).toBe("reads your code sessions");
-    expect(capabilityOkText("activity.read.bots")).toBe("follows what all your bots are doing: their names and states, never their words");
-    expect(capabilityOkText("activity.read.sessions")).toBe("follows what your code sessions are doing: their names and states, never their words");
+    expect(capabilityOkText("activity.read.bots")).toBe("follows what all your bots are doing: their names, their states and which tool they are using, never their words");
+    expect(capabilityOkText("activity.read.sessions")).toBe("follows what your code sessions are doing: their names, their states and which tool they are using, never their words");
     for (const kind of ["sessions", "bots"]) {
       const c = CAPABILITIES.find((x) => x.name === `picture.read.${kind}`)!;
       expect(c.warns).toBe(true);
