@@ -86,6 +86,10 @@ export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Ma
   // that tool. Without this, every on-demand tool (Glob, Grep, a plugin's tool its manifest doesn't preload) cost a card
   // before its own call was judged at all (the 14c workshop row's red: the builder's PluginNew).
   ["Glossary", "read"],
+  // Lane BT (bots as engine data): asking costs nothing; making a bot, and changing another bot's instructions, wait for
+  // the person's yes on the tool's own card (bots/records-tools.ts), and a bot's own or made bot's instructions are the
+  // fence's rule. Never a second card for the call itself.
+  ["MakeBot", "read"], ["EditBotInstructions", "read"],
 ]);
 
 /** What a declared tool is (the daemon's word, `botApprovalCheck`'s `bundledTool`): a web search or a page fetch (a

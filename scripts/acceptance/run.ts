@@ -91,6 +91,7 @@ import { ACP_BACKEND_STEP, acpBackendStep } from "./acp-backend-step";
 import { BUILDER_EXAMPLES_STEP, builderExamplesStep } from "./builder-examples-step";
 import { WORKSHOP_POINTS_STEP, workshopPointsStep } from "./workshop-points-step";
 import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
+import { BOT_RECORDS_ENV, BOT_RECORDS_STEP, botRecordsWrong } from "./bot-records-step";
 import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
@@ -207,6 +208,9 @@ const browserOnly = argv.includes("--only-browser");
 // --only-scheduled-routine: only the scheduled routine row (Alpha's Routine tool makes one that runs every 15 s, its
 // schedule fires it, routine.runs lists the finished run): the daemon, the dummy key, the clause.
 const routineOnly = argv.includes("--only-scheduled-routine");
+// --only-bot-records: only the bots-as-engine-data row (lane BT): a daemon with records as the bots' source, the dummy
+// key, the clause over the app's methods; no app.
+const botRecordsOnly = argv.includes("--only-bot-records");
 // --only-install: the main chain's first rows alone (first start, the key, a turn, the folder install, the Review row),
 // then the run ends: the install and its Review proved apart from everything after them.
 const installOnly = argv.includes("--only-install");
@@ -216,7 +220,7 @@ const manifestOnly = argv.includes("--only-manifest");
 /** The rows that run alone with no app (their clauses go over the app's methods): no app is there to be told of a
  *  card, so their cards are answered over RPC only, without `appGotCard`'s look at the app's log. */
 // (`let`: a shard's `models` unit runs the same rows on its daemon before any app of the shard is up, appless too.)
-let appless = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly;
+let appless = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly || botRecordsOnly;
 // --only-kids | --only-listen | --only-web | --only-drag | --only-review | --only-surface-copy: the row(s) of the plugin-app unit (shards.ts) alone: the
 // daemon, the dummy key, Alpha on it, then the app over it and just those rows (the child-plugin and notifier rows together
 // for --only-kids; a web page part drawn sealed; Alpha's own handle dragging the window; the Review on an OK card).
@@ -1757,6 +1761,7 @@ async function main(): Promise<void> {
   if (oauthOnly) { await oauthOnlyRun(); return; }
   if (browserOnly) { await browserOnlyRun(app); return; }
   if (routineOnly) { await routineOnlyRun(); return; }
+  if (botRecordsOnly) { await botRecordsStep(true); return; }
   if (appRowsOnly !== undefined) { await appRowsOnlyRun(app, appRowsOnly); return; }
   // A shard with no part of the main chain: its units on a keyed daemon of its own.
   if (shardUnits !== undefined && !shardUnits.includes("chain")) { await unitsRun(app, shardUnits); return; }
@@ -3105,10 +3110,65 @@ async function main(): Promise<void> {
   if (STEPS.includes(CODE_ADAPTER_STEP) && runs("models")) record(STEPS.indexOf(CODE_ADAPTER_STEP) + 1, codeAdapterOutcome?.status ?? "BLOCKED", codeAdapterOutcome?.detail ?? "the code-adapter turn didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
   if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
+  // Last of the chain: its own daemon on the chain's home, with records as the bots' source (lane BT).
+  if (STEPS.includes(BOT_RECORDS_STEP) && runs(unitOf(BOT_RECORDS_STEP))) await botRecordsStep(false);
   if (runs("cold")) await coldStartStep(app, 1);
   if (runs("reopen")) await reopenSteps(app);
   if (runs("stage")) await stageLevelsStep(app);
   if (runs("idle")) await idleStep(app);
+}
+
+/** The bots-as-engine-data row (bot-records-step.ts): the daemon before it ended, one started with records as the bots'
+ *  source on the same home (`fresh`: a home of its own, so the key is signed in first), then the clause over the app's
+ *  methods with no app (its card answered over RPC). */
+async function botRecordsStep(fresh: boolean): Promise<void> {
+  const n = stepNumber(FULL_STEPS, BOT_RECORDS_STEP);
+  let c: MossClient | undefined;
+  const wasAppless = appless;
+  appless = true;
+  try {
+    if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
+    stoppingDaemon = false;
+    await startDaemonProc({ ...BOT_RECORDS_ENV });
+    c = (await appDriver()).client;
+    if (fresh) await signInKey(c);
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    type View = { id: string; model?: string; madeBy: { kind: string; id?: string; plugin?: string }; mainSession: string };
+    const journal = await until("the move's journal (bot.move.status)", 60_000, async () => {
+      const s = await c!.request<{ journal?: { bots: { outcome: string; id: string }[] } }>("bot.move.status", {}).catch(() => undefined);
+      return s?.journal;
+    }, 500);
+    const records = await until("Alpha as a record (bot.records)", 60_000, async () => {
+      const r = (await c!.request<{ bots: View[] }>("bot.records", {}).catch(() => undefined))?.bots;
+      return r?.some((b) => b.id === "alpha") ? r : undefined;
+    }, 500);
+    const model = records.find((b) => b.id === "alpha")?.model;
+    const made = (await c.request<{ bot: View }>("bot.create", { name: "Nova", instructions: "You are Nova, a bot made for the acceptance run.", ...(model === undefined ? {} : { model }) })).bot;
+    await c.request("session.attach", { id: made.mainSession });
+    const hello = await turn(c, made.mainSession, "hello Nova");
+    if (!hello.events.some((e) => e.type === "assistant_message")) fail(`Nova's turn got no reply (stop ${stopOf(hello.events)}; ${errorsOf(hello.events).join("; ") || "no error"})`);
+    const summary = await until("Nova's last line in bot.summaries", 30_000, async () => (await c!.request<{ summaries: { id: string; last?: { from: string }; unread: boolean }[] }>("bot.summaries", {})).summaries.find((x) => x.id === made.id && x.last?.from === "bot"), 500).catch(() => undefined);
+    const making = await turn(c, made.mainSession, callText("MakeBot", { name: "Scout", instructions: "You are Scout, made by Nova." }), 150_000);
+    const after = (await c.request<{ bots: View[] }>("bot.records", {})).bots;
+    const child = after.find((b) => b.id === "scout");
+    const wrong = botRecordsWrong({ journal, records, made, ...(summary === undefined ? {} : { summary }), maker: made.id, ...(child === undefined ? {} : { child }), cards: making.cards });
+    if (wrong !== undefined) fail(wrong);
+    // Removed: archived, not deleted; brought back with its conversation whole.
+    await c.request("bot.remove", { id: made.id });
+    const gone = (await c.request<{ bots: View[] }>("bot.records", {})).bots;
+    if (gone.some((b) => b.id === made.id)) fail(`${made.id} is still listed after bot.remove`);
+    const archived = (await c.request<{ bots: { id: string }[] }>("bot.archived", {})).bots;
+    if (!archived.some((b) => b.id === made.id)) fail(`${made.id} isn't in bot.archived after bot.remove`);
+    await c.request("bot.restore", { id: made.id });
+    const page = await c.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: made.id, limit: 200 });
+    if (!page.events.some((e) => e.type === "user_message" && e.text === "hello Nova")) fail(`${made.id}'s conversation came back without its first message`);
+    record(n, "PASS", `the move: ${journal.bots.map((b) => `${b.id} ${b.outcome}`).join(", ")}; ${made.id} made by bot.create answered its turn and is listed (last line from the bot, ${summary?.unread === true ? "unread" : "read"}); MakeBot raised ${making.cards.join("; ")} and made scout (madeBy ${made.id}); ${made.id} archived by bot.remove and back by bot.restore with its conversation (${page.events.length} events)`);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    appless = wasAppless;
+    c?.close();
+  }
 }
 
 /** The sharded run (--shards N): the desktop app built once, then the parallel phase's shards at once (shards.ts
@@ -5285,7 +5345,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : browserOnly ? stepNumber(FULL_STEPS, BROWSER_STEP) : routineOnly ? stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP) : installOnly ? [1, 2, 3, 4, 5] : manifestOnly ? [1, 2, 3, 4, stepNumber(FULL_STEPS, MANIFEST_FIELDS_STEP), FULL_STEPS.findIndex((x) => x.startsWith(CLI_PREFIX)) + 1] : onlyUi !== undefined ? uiRowNumbers(onlyUi) : appRowsOnly !== undefined ? appRowsOnly.map((n) => stepNumber(FULL_STEPS, n)) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : browserOnly ? stepNumber(FULL_STEPS, BROWSER_STEP) : routineOnly ? stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP) : botRecordsOnly ? stepNumber(FULL_STEPS, BOT_RECORDS_STEP) : installOnly ? [1, 2, 3, 4, 5] : manifestOnly ? [1, 2, 3, 4, stepNumber(FULL_STEPS, MANIFEST_FIELDS_STEP), FULL_STEPS.findIndex((x) => x.startsWith(CLI_PREFIX)) + 1] : onlyUi !== undefined ? uiRowNumbers(onlyUi) : appRowsOnly !== undefined ? appRowsOnly.map((n) => stepNumber(FULL_STEPS, n)) : undefined));
 // A shard's table: its own units' rows alone (the sharded run merges them, and the others are another shard's).
 if (shardUnits !== undefined) rows.splice(0, rows.length, ...rows.filter((r) => runs(unitOf(r.name))));
 if (rowsOut !== undefined) writeFileSync(rowsOut, JSON.stringify(rows));

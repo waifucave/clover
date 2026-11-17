@@ -25,6 +25,7 @@ import { MANIFEST_FIELDS_STEP } from "./manifest-fields-step";
 import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
 import { BROWSER_STEP } from "./browser-step";
 import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
+import { BOT_RECORDS_STEP } from "./bot-records-step";
 
 export type Status = "PASS" | "FAIL" | "BLOCKED";
 /** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
@@ -112,6 +113,7 @@ export const FULL_STEPS = [
   ACP_BACKEND_STEP,
   BUILDER_EXAMPLES_STEP,
   WORKSHOP_POINTS_STEP,
+  BOT_RECORDS_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;
