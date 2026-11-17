@@ -1,29 +1,49 @@
-// The middle column (spec §6.10): the selected bot's ONE conversation (item 106). The person's bubbles on the right,
+// The middle column (spec §6.10): the selected bot's ONE conversation (item 106), its latest page first; scrolling up
+// reads the pages before it from the engine (`bot.conversation`'s `before`), keeping the message under the eye in place. The person's bubbles on the right,
 // the bot's on the left, a card per attached file, the cards the router placed in this conversation, and the composer
 // ("Message <bot>") with attach and the microphone. The header has the bot's face, its name, its mood in words and the
 // button that opens the side panel.
 //
 // Everything a bot wrote is plain text drawn as React text nodes (with line breaks kept by CSS), never parsed as markup:
 // no `dangerouslySetInnerHTML`, no HTML from a message reaches the page.
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Face, MoodWords } from "../faces/Face";
 import { bridge, shortTime } from "../bridge";
 import { CardFrame } from "../cards/CardFrame";
 import type { BotRow, CardRow, Message, MossView } from "../../shared/view";
 
+/** How close to the top (in pixels) a scroll starts reading the page before. */
+const OLDER_AT = 600;
+/** Pages read in a row for one bubble at most, when the engine's pages hold no bubble (only tool events). */
+const EMPTY_PAGES_MAX = 20;
+
 export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: ReactNode; panelOpen: boolean; onPanel: () => void; talk?: MossView["talk"] }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "waiting">("loading");
+  const [older, setOlder] = useState<"idle" | "loading" | "start">("idle");
   const end = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  /** Where paging back goes on from (the engine's `before`), and whether anything is older. */
+  const more = useRef<{ before?: number; hasMore: boolean; loading: boolean; gen: number }>({ hasMore: false, loading: false, gen: 0 });
+  /** The scroll height and position before older messages went in above: the same message stays under the eye. */
+  const anchor = useRef<{ height: number; top: number } | undefined>(undefined);
+  const lastId = useRef<string | undefined>(undefined);
   const id = props.bot.id;
   useEffect(() => {
     let live = true;
+    const gen = more.current.gen + 1;
+    more.current = { hasMore: false, loading: false, gen };
+    anchor.current = undefined;
+    lastId.current = undefined;
     setState("loading");
+    setOlder("idle");
     setMessages([]);
     void bridge().conversation(id).then((page) => {
       if (!live) return;
       if ("waiting" in page) { setState("waiting"); return; }
-      setMessages(page.messages);
+      more.current = { ...(page.before !== undefined ? { before: page.before } : {}), hasMore: page.hasMore && page.before !== undefined, loading: false, gen };
+      if (!more.current.hasMore) setOlder("start");
+      setMessages((now) => merge(page.messages, now));
       setState("ready");
     });
     const off = bridge().onMessage((bot, m) => {
@@ -33,9 +53,53 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
     bridge().markRead(id);
     return () => { live = false; off(); };
   }, [id]);
+  /** Reads the page before the oldest message shown and puts it in above, keeping the scroll where it was. */
+  const loadOlder = async (): Promise<void> => {
+    const m = more.current;
+    if (m.loading || !m.hasMore || m.before === undefined) return;
+    const gen = m.gen;
+    m.loading = true;
+    setOlder("loading");
+    let before: number | undefined = m.before;
+    let hasMore = true;
+    let got: Message[] = [];
+    for (let i = 0; i < EMPTY_PAGES_MAX && got.length === 0 && hasMore && before !== undefined; i++) {
+      const page = await bridge().conversation(id, before);
+      if (more.current.gen !== gen) return;
+      if ("waiting" in page) break;
+      got = [...page.messages, ...got];
+      hasMore = page.hasMore && page.before !== undefined && page.before < before;
+      before = page.before;
+    }
+    if (more.current.gen !== gen) return;
+    const el = scroller.current;
+    anchor.current = el !== null ? { height: el.scrollHeight, top: el.scrollTop } : undefined;
+    more.current = { ...(before !== undefined ? { before } : {}), hasMore, loading: false, gen };
+    setOlder(hasMore ? "idle" : "start");
+    if (got.length > 0) setMessages((now) => merge(got, now));
+    else anchor.current = undefined;
+  };
+  const onScroll = (): void => {
+    const el = scroller.current;
+    if (el !== null && el.scrollTop < OLDER_AT) void loadOlder();
+  };
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const a = anchor.current;
+    if (el !== null && a !== undefined) {
+      // Older messages went in above: the one that was under the eye stays there.
+      anchor.current = undefined;
+      el.scrollTop = el.scrollHeight - a.height + a.top;
+    } else if (messages.at(-1)?.id !== lastId.current) {
+      end.current?.scrollIntoView({ block: "end" });
+    }
+    lastId.current = messages.at(-1)?.id;
+    // A first page too short to scroll can't be scrolled up: the next one is read at once.
+    if (el !== null && el.clientHeight > 0 && el.scrollHeight <= el.clientHeight + OLDER_AT && more.current.hasMore) void loadOlder();
+  }, [messages]);
   useLayoutEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, props.cards.length]);
+  }, [props.cards.length]);
   // A card in this conversation grows to its own height once its frame has drawn: keep the end, with the card's
   // buttons, in view.
   const cardIds = props.cards.map((c) => c.id).join(",");
@@ -59,7 +123,9 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
         </button>
       </header>
       {props.strip}
-      <div className="messages" role="log" aria-live="polite">
+      <div className="messages" role="log" aria-live="polite" ref={scroller} onScroll={onScroll} data-older={older} data-count={messages.length}>
+        {older === "loading" ? <p className="messages__note" data-older-loading>Reading earlier messages…</p> : null}
+        {older === "start" && messages.length > 0 ? <p className="messages__note" data-conversation-start>The start of your conversation with {props.bot.name}.</p> : null}
         {state === "waiting" ? <p className="messages__note">Waiting for the engine to serve {props.bot.name}'s conversation.</p> : null}
         {state === "ready" && messages.length === 0 ? <p className="messages__note">Say hello to {props.bot.name}.</p> : null}
         {messages.map((m, i) => <Bubble key={m.id} m={m} showTime={i === messages.length - 1 || messages[i + 1]?.from !== m.from} {...(m.failed === true && i === messages.length - 1 ? { bot: props.bot.id } : {})} />)}
@@ -71,7 +137,16 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
   );
 }
 
-function Bubble(props: { m: Message; showTime: boolean; /** The failed turn's note while it is the last thing: Try again. */ bot?: string }) {
+/** Older messages before the ones shown, each once (a message that came live while a page was read is not doubled). */
+export function merge(older: readonly Message[], now: readonly Message[]): Message[] {
+  if (older.length === 0) return now as Message[];
+  const seen = new Set(now.map((m) => m.id));
+  const add = older.filter((m) => !seen.has(m.id));
+  return add.length === 0 ? (now as Message[]) : [...add, ...now];
+}
+
+/** One message; drawn again only when it or its neighbours' grouping changes, so a page put in above costs only its own. */
+const Bubble = memo(function Bubble(props: { m: Message; showTime: boolean; /** The failed turn's note while it is the last thing: Try again. */ bot?: string }) {
   const m = props.m;
   if (m.from === "note" && props.bot !== undefined) return <FailedNote text={m.text} bot={props.bot} />;
   if (m.from === "note") return <p className="note" data-bubble="note">{m.text}</p>;
@@ -92,7 +167,7 @@ function Bubble(props: { m: Message; showTime: boolean; /** The failed turn's no
       {props.showTime ? <span className="bubble__time">{shortTime(m.at)}</span> : null}
     </div>
   );
-}
+});
 
 /** A file's kind from its name, in a word ("PDF", "Image", "File"). */
 /** A failed turn's note with Try again: one press sends the same words once more; the button goes once they are sent

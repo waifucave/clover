@@ -12,12 +12,12 @@ import { createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import {
   encodeLine, LineDecoder, programCardAnswerSigningInput, SURFACE_MOUNTS, MOSS_ERR,
-  type ActivityState, type Card, type CardPlacement, type Surface,
+  type ActivityState, type Card, type CardPlacement, type RoutineView, type Surface,
 } from "@waifucave/moss-protocol";
 import { FakeActivityFeed, FakeBotRecords, FakeCardRouter, FakeLivePictures, FakeProgramAnswerKeys, FakeToolSettings } from "@waifucave/moss-core/contracts/fakes";
 import type { Clock, TimerHandle } from "@waifucave/moss-core/contracts";
 import { daemonEndpoint } from "../../src/main/client";
-import { BOTS, botId, cardsAt, MODELS, PLUGINS, routinesOf, TOOL_VALUES } from "./fixtures";
+import { BOTS, botId, cardsAt, MEMORY, MODELS, PLUGINS, routinesOf, TOOL_VALUES } from "./fixtures";
 
 export const FAKE_DEVICE = "devstudio0000000001";
 
@@ -48,6 +48,8 @@ export interface FakeEngineOptions {
   /** The pid `protocol.prove` says it sees at the other end: MOSS's (the test knows it; a Unix socket's peer pid isn't
    *  read here). Default: this process's, for a client in the same process. */
   peerPid?: () => number | undefined;
+  /** A bot whose conversation is this many generated messages instead of its fixture's (paging back through it). */
+  longTalk?: { bot: string; messages: number };
 }
 
 interface Conn {
@@ -117,6 +119,13 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
     if (v.permission !== undefined) tools.setPermission(v.server, v.tool, v.permission);
   }
 
+  /** Each bot's routines, changed by `routine.edit`, and their instructions. */
+  const routines = new Map<string, RoutineView[]>();
+  const routineText = new Map<string, string>();
+  const routinesFor = (bot: string): RoutineView[] => {
+    if (!routines.has(bot)) routines.set(bot, routinesOf(bot, now));
+    return routines.get(bot)!;
+  };
   /** Each bot's conversation, as its main session's events. */
   const talk = new Map<string, Record<string, unknown>[]>();
   const summaries = new Map<string, { id: string; last?: { text: string; from: "user" | "bot" | "note"; at: number }; unread: boolean }>();
@@ -131,6 +140,16 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         ? { type: "user_message", seq: i + 1, sessionId: session, ts, threadId: "main", text: files !== undefined ? `${text} [File #1]` : text, clientName: "MOSS", ...(files !== undefined ? { files: files.map((f, n) => ({ n: n + 1, path: `/Users/someone/Documents/${f}` })) } : {}) }
         : { type: "assistant_message", seq: i + 1, sessionId: session, ts, threadId: "main", text });
     });
+    if (o.longTalk?.bot === v.id) {
+      events.length = 0;
+      const n = o.longTalk.messages;
+      for (let i = 0; i < n; i++) {
+        const ts = now - (n - i) * 1_000;
+        events.push(i % 2 === 0
+          ? { type: "user_message", seq: i + 1, sessionId: session, ts, threadId: "main", text: `Long message ${i + 1}`, clientName: "MOSS" }
+          : { type: "assistant_message", seq: i + 1, sessionId: session, ts, threadId: "main", text: `Long message ${i + 1}` });
+      }
+    }
     talk.set(v.id, events);
     const lastTalk = b.talk[b.talk.length - 1];
     summaries.set(v.id, { id: v.id, ...(lastTalk !== undefined ? { last: { text: lastTalk[1], from: lastTalk[0], at: now - b.ago * 60_000 } } : {}), unread: b.unread === true });
@@ -196,11 +215,17 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         const id = String(params.id);
         const v = bots.get(id);
         if (v === undefined) throw new RpcError(-32004, `no bot ${id}`);
-        return { session: v.mainSession, events: talk.get(id) ?? [], hasMore: false };
+        // Pages as the engine's do: the `limit` events before `before` (a seq), newest last, and whether any is older.
+        const all = talk.get(id) ?? [];
+        const before = typeof params.before === "number" ? params.before : Number.POSITIVE_INFINITY;
+        const limit = typeof params.limit === "number" ? params.limit : 100;
+        const upTo = all.filter((e) => (e.seq as number) < before);
+        const page = upTo.slice(Math.max(0, upTo.length - limit));
+        return { session: v.mainSession, events: page, hasMore: upTo.length > page.length };
       }
       case "bot.create": {
         piece("bots", method);
-        const v = await bots.create({ name: String(params.name) }, { kind: "user" });
+        const v = await bots.create({ name: String(params.name), ...(typeof params.model === "string" ? { model: params.model } : {}) }, { kind: "user" });
         talk.set(v.id, []);
         summaries.set(v.id, { id: v.id, unread: false });
         feed.set({ subject: { kind: "bots", id: v.id }, state: "idle", name: String(params.name), since: Date.now() });
@@ -218,7 +243,46 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         return { activity: feed.list("bots", { kind: "user" }) };
       case "routine.list":
         piece("routines", method);
-        return { routines: routinesOf(String(params.bot ?? ""), now) };
+        return { routines: routinesFor(String(params.bot ?? "")) };
+      case "routine.get": {
+        piece("routines", method);
+        const r = routinesFor(String(params.bot)).find((x) => x.id === params.id);
+        if (r === undefined) throw new RpcError(-32004, `no routine ${String(params.id)} of this bot on this computer`);
+        return { routine: r, instructions: routineText.get(r.id) ?? `What ${r.name} does.\n` };
+      }
+      case "routine.runNow": {
+        piece("routines", method);
+        const r = [...routines.values()].flat().find((x) => x.id === params.id);
+        if (r === undefined) throw new RpcError(-32004, `no routine ${String(params.id)} on this computer`);
+        if (r.state !== "active") throw new RpcError(-32600, `the routine ${r.id} is ${r.state}`);
+        return { session: `s_side_${r.id}` };
+      }
+      case "routine.edit": {
+        piece("routines", method);
+        const list = routinesFor(String(params.bot));
+        const i = list.findIndex((x) => x.id === params.id);
+        if (i < 0) throw new RpcError(-32004, `no routine ${String(params.id)} of this bot on this computer`);
+        const patch = params.patch as { name?: string; schedule?: string; instructions?: string; paused?: boolean };
+        if (patch.schedule !== undefined && !/^(every \d+[smhd]|(\S+ ){4}\S+)$/.test(patch.schedule)) throw new RpcError(-32602, `the schedule doesn't read: "${patch.schedule}"`);
+        const r = { ...list[i]! };
+        if (patch.name !== undefined) r.name = patch.name;
+        if (patch.schedule !== undefined) r.triggers = [{ type: "schedule", summary: patch.schedule }, ...r.triggers.filter((t) => t.type !== "schedule")];
+        if (patch.instructions !== undefined) routineText.set(r.id, `${patch.instructions}\n`);
+        if (patch.paused === true) r.state = "paused";
+        if (patch.paused === false && r.state === "paused") r.state = "active";
+        list[i] = r;
+        return { routine: r };
+      }
+      case "memory.list": {
+        const files = MEMORY[String(params.bot)];
+        if (files === undefined) return { entries: [] };
+        return { entries: Object.entries(files).map(([path, text]) => ({ path, size: Buffer.byteLength(text), modifiedAt: now - 3_600_000 })) };
+      }
+      case "memory.read": {
+        const text = MEMORY[String(params.bot)]?.[String(params.path)];
+        if (text === undefined) throw new RpcError(-32004, `no memory file ${String(params.path)}`);
+        return { text };
+      }
       case "picture.list":
         piece("pictures", method);
         return { pictures: pictures.list("bots", { kind: "user" }, typeof params.bot === "string" ? { bot: params.bot } : {}) };

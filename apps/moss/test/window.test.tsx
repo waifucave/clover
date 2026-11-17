@@ -35,7 +35,9 @@ function stub(v: MossView, page: ConversationPage | { waiting: true }): MossBrid
   return {
     view: async () => v, onView: none, showing: () => {}, conversation: async () => page, onMessage: none,
     send: async () => ({ ok: true }), pickImages: async () => [], createBot: async () => ({ ok: false, why: "no" }), markRead: () => {},
-    routines: async () => [], pictures: async () => [], openPicture: async () => false, closePicture: () => {}, onPictureFrame: none,
+    routines: async () => [], routineInstructions: async () => ({ ok: false, why: "no" }), runRoutine: async () => ({ ok: false, why: "no" }),
+    editRoutine: async () => ({ ok: false, why: "no" }), memory: async () => ({ waiting: true }), memoryFile: async () => ({ ok: false, why: "no" }),
+    pictures: async () => [], openPicture: async () => false, closePicture: () => {}, onPictureFrame: none,
     cardFrame: async () => undefined, onCardHeight: none, onCardSaid: (fn) => { saidTo.push(fn); return () => {}; }, talk: () => {}, plugins: async () => [], setAvailability: async () => false,
     addPlugin: async () => ({ ok: false, why: "no" }), settings: async () => ({ account: "waiting", signIns: "waiting", computers: "waiting", devices: "waiting" }),
     botSettings: async () => ({ waiting: true }), setBotSetting: async () => false, setLevel: async () => false,

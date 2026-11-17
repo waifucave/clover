@@ -48,10 +48,10 @@ async function until(what: () => boolean, ms = 3_000): Promise<void> {
 
 /** MOSS's window bridge over the real engine seam, as main wires it (no press gate: there is no main here). Every call
  *  the page makes is recorded by name. */
-async function setup(): Promise<{ e: FakeEngine; engine: MossEngine; bridge: MossBridge; used: string[] }> {
+async function setup(opts: { longTalk?: { bot: string; messages: number } } = {}): Promise<{ e: FakeEngine; engine: MossEngine; bridge: MossBridge; used: string[] }> {
   const home = mkdtempSync(join(tmpdir(), "ma2-"));
   homes.push(home);
-  const e = await startFakeEngine({ home, picturePng: PNG, frameMs: 100 });
+  const e = await startFakeEngine({ home, picturePng: PNG, frameMs: 100, ...(opts.longTalk !== undefined ? { longTalk: opts.longTalk } : {}) });
   closers.push(() => e.close());
   const client = (await dial(daemonEndpoint(home)))!;
   closers.push(() => client.close());
@@ -65,8 +65,9 @@ async function setup(): Promise<{ e: FakeEngine; engine: MossEngine; bridge: Mos
   const real: MossBridge = {
     view: async () => engine.view(), onView: (fn) => engine.onView(fn), showing: () => {},
     conversation: (b, before) => engine.conversation(b, before), onMessage: none,
-    send: async () => ({ ok: true }), pickImages: async () => [], createBot: async () => ({ ok: false, why: "no" }), markRead: () => {},
-    routines: (b) => engine.routines(b), pictures: (b) => engine.pictures(b), openPicture: (id) => engine.openPicture(id),
+    send: async () => ({ ok: true }), pickImages: async () => [], createBot: (n, m) => engine.createBot(n, m), markRead: () => {},
+    routines: (b) => engine.routines(b), routineInstructions: (b, id) => engine.routineInstructions(b, id), runRoutine: (id) => engine.runRoutine(id),
+    editRoutine: (b, id, p) => engine.editRoutine(b, id, p), memory: (b) => engine.memory(b), memoryFile: (b, p) => engine.memoryFile(b, p), pictures: (b) => engine.pictures(b), openPicture: (id) => engine.openPicture(id),
     closePicture: (id) => engine.closePicture(id), onPictureFrame: (fn) => engine.onPictureFrame(fn),
     cardFrame: async () => undefined, onCardHeight: none, onCardSaid: none, talk: () => {},
     plugins: () => engine.plugins(), setAvailability: (s, t, a) => engine.setAvailability(s, t, a),
@@ -354,6 +355,135 @@ describe("Settings", () => {
     // The secret's field was emptied as it was sent, and its value is drawn nowhere.
     expect(r.container.innerHTML.includes(SECRET)).toBe(false);
     expect([...r.container.querySelectorAll("input")].some((i) => i.value.includes(SECRET))).toBe(false);
+    r.unmount();
+  });
+});
+
+// ---- Round 4: what the owner's real bot needs (paging back, usable routines, its memory, a model at making) ----
+
+const { Conversation, merge } = await import("../src/window/conversation/Conversation");
+const { BotList } = await import("../src/window/list/BotList");
+const click = async (el: Element | null | undefined): Promise<void> => { await act(async () => { fireEvent.click(el!); }); };
+
+describe("a long conversation", () => {
+  test("scrolling up reads the pages before from the engine, oldest last, each message once, to the start", async () => {
+    const { e, engine } = await setup({ longTalk: { bot: "juniper", messages: 2_000 } });
+    const bot = engine.view().bots.find((b) => b.id === "juniper")!;
+    const r = render(h(Conversation, { bot, cards: [], panelOpen: false, onPanel: () => {} }));
+    const log = () => r.container.querySelector(".messages") as HTMLElement;
+    await until(() => Number(log().dataset.count) === 100);
+    // The latest page only: the newest message last.
+    expect([...r.container.querySelectorAll("[data-bubble]")].at(-1)?.textContent).toBe("Long message 2000");
+    expect(callsOf(e, "bot.conversation")).toEqual([{ id: "juniper", limit: 100 }]);
+    for (let i = 0; i < 40 && log().dataset.older !== "start"; i++) {
+      await act(async () => { fireEvent.scroll(log()); });
+      await until(() => log().dataset.older !== "loading");
+    }
+    expect(log().dataset.older).toBe("start");
+    expect(r.container.querySelector("[data-conversation-start]")?.textContent).toBe("The start of your conversation with Juniper.");
+    const texts = [...r.container.querySelectorAll("[data-bubble]")].map((b) => b.textContent);
+    expect(texts.length).toBe(2_000);
+    expect(texts[0]).toBe("Long message 1");
+    expect(texts.every((t, i) => t === `Long message ${i + 1}`)).toBe(true);
+    // Each page from where the last one began, never the same one twice.
+    const befores = callsOf(e, "bot.conversation").slice(1).map((p) => p.before as number);
+    expect(befores.length).toBe(19);
+    expect(befores.every((b, i) => i === 0 || b < befores[i - 1]!)).toBe(true);
+    // At the start, a scroll reads nothing more.
+    const n = callsOf(e, "bot.conversation").length;
+    await act(async () => { fireEvent.scroll(log()); });
+    await settle();
+    expect(callsOf(e, "bot.conversation").length).toBe(n);
+    r.unmount();
+  });
+
+  test("an older page never doubles a message that came live meanwhile", () => {
+    const m = (id: string) => ({ id, from: "bot" as const, text: id, at: 1 });
+    expect(merge([m("a"), m("b")], [m("b"), m("c")]).map((x) => x.id)).toEqual(["a", "b", "c"]);
+    const now = [m("c")];
+    expect(merge([], now)).toBe(now);
+  });
+});
+
+describe("the side panel's routines", () => {
+  test("pause and resume, run now, and edit (name, schedule, what it does) each reach the engine's routine methods", async () => {
+    const { e, engine } = await setup();
+    const bot = engine.view().bots.find((b) => b.id === "juniper")!;
+    const r = render(h(SidePanel, { bot, onClose: () => {} }));
+    await until(() => r.container.querySelectorAll("[data-routine]").length === 3);
+    const row = (id: string) => r.container.querySelector(`[data-routine=${id}]`)!;
+    // A paused one can't run now; it can be resumed.
+    expect((row("juniper-visa").querySelector("[data-routine-run]") as HTMLButtonElement).disabled).toBe(true);
+    await click(row("juniper-prices").querySelector("[data-routine-pause]"));
+    await until(() => row("juniper-prices").getAttribute("data-state") === "paused");
+    expect(callsOf(e, "routine.edit")[0]).toEqual({ bot: "juniper", id: "juniper-prices", patch: { paused: true } });
+    expect(row("juniper-prices").textContent).toContain("Paused");
+    await click(row("juniper-prices").querySelector("[data-routine-resume]"));
+    await until(() => row("juniper-prices").getAttribute("data-state") === "active");
+    expect(callsOf(e, "routine.edit")[1]).toEqual({ bot: "juniper", id: "juniper-prices", patch: { paused: false } });
+    await click(row("juniper-prices").querySelector("[data-routine-run]"));
+    await until(() => row("juniper-prices").querySelector("[data-routine-said]") !== null);
+    expect(callsOf(e, "routine.runNow")).toEqual([{ id: "juniper-prices" }]);
+    expect(row("juniper-prices").querySelector("[data-routine-said]")?.textContent).toContain("Started");
+    // Edit: what it does as its file has it now; only what changed is sent.
+    await click(row("juniper-inbox").querySelector("[data-routine-edit]"));
+    await until(() => row("juniper-inbox").querySelector("[data-routine-instructions]") !== null);
+    expect(callsOf(e, "routine.get")).toEqual([{ bot: "juniper", id: "juniper-inbox" }]);
+    expect((row("juniper-inbox").querySelector("[data-routine-instructions]") as HTMLTextAreaElement).value).toBe("What Sort the travel inbox does.");
+    await act(async () => { fireEvent.change(row("juniper-inbox").querySelector("[data-routine-schedule]")!, { target: { value: "every fortnight" } }); });
+    await click(row("juniper-inbox").querySelector("[data-routine-save]"));
+    await until(() => row("juniper-inbox").querySelector("[data-routine-said]") !== null);
+    // The engine's why, beside the routine; the form stays.
+    expect(row("juniper-inbox").querySelector("[data-routine-said]")?.textContent).toContain("the schedule doesn't read");
+    await act(async () => { fireEvent.change(row("juniper-inbox").querySelector("[data-routine-name]")!, { target: { value: "Sort the inbox" } }); });
+    await act(async () => { fireEvent.change(row("juniper-inbox").querySelector("[data-routine-schedule]")!, { target: { value: "every 2h" } }); });
+    await act(async () => { fireEvent.change(row("juniper-inbox").querySelector("[data-routine-instructions]")!, { target: { value: "Sort it, then file it." } }); });
+    await click(row("juniper-inbox").querySelector("[data-routine-save]"));
+    await until(() => row("juniper-inbox").querySelector("[data-routine-form]") === null);
+    expect(callsOf(e, "routine.edit").at(-1)).toEqual({ bot: "juniper", id: "juniper-inbox", patch: { name: "Sort the inbox", schedule: "every 2h", instructions: "Sort it, then file it." } });
+    await until(() => row("juniper-inbox").querySelector(".routine__name")?.textContent === "Sort the inbox");
+    expect(row("juniper-inbox").querySelector(".routine__when")?.textContent).toContain("every 2h");
+    r.unmount();
+  });
+});
+
+describe("a bot's memory", () => {
+  test("Settings shows the bot's memory files as the engine serves them, and a file's text as text, read only", async () => {
+    const { e, engine } = await setup();
+    const r = render(h(SettingsPage, { bots: engine.view().bots, bot: "juniper" }));
+    await until(() => r.container.querySelectorAll("[data-memory-file]").length === 2);
+    expect([...r.container.querySelectorAll("[data-memory-file]")].map((x) => x.getAttribute("data-memory-file"))).toEqual(["MEMORY.md", "trips.md"]);
+    await click(r.container.querySelector("[data-memory-file=\"MEMORY.md\"] button"));
+    await until(() => r.container.querySelector("[data-memory-text]") !== null);
+    expect(callsOf(e, "memory.read")).toEqual([{ bot: "juniper", path: "MEMORY.md" }]);
+    const text = r.container.querySelector("[data-memory-text]")!;
+    expect(text.textContent).toContain("<b>not markup</b>");
+    expect(text.querySelector("b")).toBeNull();
+    // Read only: nothing in the memory card edits.
+    const card = r.container.querySelector("#memory, [data-card=memory]") ?? text.closest("section, div")!;
+    expect(card.querySelectorAll("textarea, input, [contenteditable]").length).toBe(0);
+    r.unmount();
+    // A bot with none says so.
+    const k = render(h(SettingsPage, { bots: engine.view().bots, bot: "kite" }));
+    await until(() => k.container.querySelector("[data-memory-empty]") !== null);
+    k.unmount();
+  });
+});
+
+describe("making a bot", () => {
+  test("the + flow offers only the models the person has set up, and the bot is made with the one chosen", async () => {
+    const { e, engine } = await setup();
+    const r = render(h(BotList, { view: engine.view(), page: { page: "plugins" }, onPage: () => {} }));
+    await click(r.container.querySelector("button[aria-label=\"New bot\"]"));
+    await until(() => r.container.querySelector("[data-new-bot-model]") !== null);
+    const pick = r.container.querySelector("[data-new-bot-model]") as HTMLSelectElement;
+    expect([...pick.options].map((o) => o.value)).toEqual(["anthropic/claude-sonnet", "anthropic/claude-haiku"]);
+    expect(pick.value).toBe("anthropic/claude-sonnet");
+    await act(async () => { fireEvent.change(pick, { target: { value: "anthropic/claude-haiku" } }); });
+    await act(async () => { fireEvent.change(r.container.querySelector("input[aria-label=\"The new bot's name\"]")!, { target: { value: "Wren" } }); });
+    await click(r.container.querySelector("[data-make-bot]"));
+    await until(() => callsOf(e, "bot.create").length === 1);
+    expect(callsOf(e, "bot.create")[0]).toEqual({ name: "Wren", model: "anthropic/claude-haiku" });
     r.unmount();
   });
 });

@@ -107,3 +107,10 @@
 .ma2-publisher-id { color: var(--faint); }
 .ma2-pick { flex-wrap: nowrap; justify-content: flex-end; }
 .ma2-pick select { min-width: 0; max-width: 100%; }
+
+/* A bot's memory, read only. */
+.ma2-memory { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; min-width: 0; }
+.ma2-memory__file { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; width: 100%; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.ma2-memory__file:hover { background: var(--hover); }
+.ma2-memory__path { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.ma2-memory__text { margin: 4px 0 8px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }

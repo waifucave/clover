@@ -17,7 +17,7 @@ import { MAIN_WINDOW_ID } from "./identity";
 import type { SealedFrames } from "./sealed";
 import { talkCommandOf, type TalkCommand } from "./voice";
 import type {
-  BotEdit, BotRecordRow, BotRow, BotSetting, CardRow, ConnectionKind, ModelRow, SettingsView, ConversationPage, Message, MossView, Piece, PieceState, PictureFrameView, PictureRow, PluginRow, RoutineRow, ToolRow,
+  BotEdit, BotRecordRow, BotRow, BotSetting, CardRow, ConnectionKind, MemoryFileRow, ModelRow, SettingsView, ConversationPage, Message, MossView, Piece, PieceState, PictureFrameView, PictureRow, PluginRow, RoutineEdit, RoutineRow, ToolRow,
 } from "../shared/view";
 
 export interface EngineClient {
@@ -71,6 +71,33 @@ export function textOf(t: string | { en: string }): string {
 export function scheduleOf(r: Pick<RoutineView, "triggers">): string {
   const words = r.triggers.map((t) => t.summary.trim()).filter((s) => s !== "");
   return words.length === 0 ? "No trigger" : words.join(" · ").slice(0, 200);
+}
+
+/** The window's routine change, kept to the fields `routine.edit` takes and their sizes; undefined when nothing is left. */
+export function routineEditOf(v: unknown): RoutineEdit | undefined {
+  if (v === null || typeof v !== "object") return undefined;
+  const p = v as Record<string, unknown>;
+  const out: RoutineEdit = {};
+  const text = (x: unknown, max: number) => (typeof x === "string" && x.trim() !== "" ? x.trim().slice(0, max) : undefined);
+  const name = text(p.name, 200);
+  const schedule = text(p.schedule, 200);
+  const instructions = text(p.instructions, 60_000);
+  if (name !== undefined) out.name = name;
+  if (schedule !== undefined) out.schedule = schedule;
+  if (instructions !== undefined) out.instructions = instructions;
+  if (typeof p.paused === "boolean") out.paused = p.paused;
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
+/** A routine as the side panel shows it. */
+export function routineRowOf(x: RoutineView): RoutineRow {
+  const spec = x.triggers.find((t) => t.type === "schedule")?.summary;
+  return {
+    id: x.id, name: x.name, schedule: scheduleOf(x), paused: x.state !== "active", state: x.state,
+    ...(x.pausedWhy !== undefined ? { pausedWhy: x.pausedWhy } : {}),
+    ...(spec !== undefined ? { scheduleSpec: spec } : {}),
+    ...(x.nextRunAt !== undefined ? { nextRunAt: x.nextRunAt } : {}),
+  };
 }
 
 export class MossEngine {
@@ -386,11 +413,11 @@ export class MossEngine {
     }
   }
 
-  async createBot(name: string): Promise<{ ok: true; id: string } | { ok: false; why: string }> {
+  async createBot(name: string, model?: string): Promise<{ ok: true; id: string } | { ok: false; why: string }> {
     const client = this.client;
     if (client === undefined) return { ok: false, why: "MOSS isn't connected to its engine." };
     try {
-      const r = await client.request<{ bot: BotRecordView }>("bot.create", { name }, 15_000);
+      const r = await client.request<{ bot: BotRecordView }>("bot.create", { name, ...(model !== undefined ? { model } : {}) }, 15_000);
       this.records.set(r.bot.id, r.bot);
       this.sessionBot.set(r.bot.mainSession, r.bot.id);
       this.changed();
@@ -412,9 +439,47 @@ export class MossEngine {
   async routines(bot: string): Promise<RoutineRow[] | { waiting: true }> {
     const r = await this.read<{ routines: RoutineView[] }>("routines", "routine.list", { bot });
     if (r === undefined) return { waiting: true };
-    return r.routines.filter((x) => x.bot === bot).map((x) => ({
-      id: x.id, name: x.name, schedule: scheduleOf(x), paused: x.state !== "active", ...(x.nextRunAt !== undefined ? { nextRunAt: x.nextRunAt } : {}),
-    }));
+    return r.routines.filter((x) => x.bot === bot).map(routineRowOf);
+  }
+
+  async routineInstructions(bot: string, id: string): Promise<{ text: string } | { ok: false; why: string }> {
+    const r = await this.act<{ instructions: string }>("routine.get", { bot, id }, "Reading a routine");
+    return r.ok ? { text: r.value.instructions } : r;
+  }
+
+  async runRoutine(id: string): Promise<{ ok: true } | { ok: false; why: string }> {
+    const r = await this.act("routine.runNow", { id }, "Running a routine now", 30_000);
+    return r.ok ? { ok: true } : r;
+  }
+
+  async editRoutine(bot: string, id: string, patch: RoutineEdit): Promise<{ ok: true; routine: RoutineRow } | { ok: false; why: string }> {
+    const r = await this.act<{ routine: RoutineView }>("routine.edit", { bot, id, patch }, "Changing a routine", 15_000);
+    return r.ok ? { ok: true, routine: routineRowOf(r.value.routine) } : r;
+  }
+
+  async memory(bot: string): Promise<MemoryFileRow[] | { waiting: true }> {
+    const r = await this.read<{ entries: MemoryFileRow[] }>("memory", "memory.list", { bot });
+    if (r === undefined) return { waiting: true };
+    return r.entries.map((e) => ({ path: e.path, size: e.size, modifiedAt: e.modifiedAt }));
+  }
+
+  async memoryFile(bot: string, path: string): Promise<{ text: string } | { ok: false; why: string }> {
+    const r = await this.act<{ text: string }>("memory.read", { bot, path }, "Reading a memory file");
+    return r.ok ? { text: r.value.text } : r;
+  }
+
+  /** A change or a read the person asked for: the engine's answer, or its why in words (an engine's refusal says what
+   *  was wrong, never a secret), or that this engine doesn't serve it. */
+  private async act<T = unknown>(method: string, params: unknown, what: string, ms = 10_000): Promise<{ ok: true; value: T } | { ok: false; why: string }> {
+    const client = this.client;
+    if (client === undefined) return { ok: false, why: "MOSS isn't connected to its engine." };
+    try {
+      return { ok: true, value: await client.request<T>(method, params, ms) };
+    } catch (err) {
+      if (notServed(err)) return { ok: false, why: `${what} isn't served by this engine yet.` };
+      const message = err instanceof Error ? err.message.replace(/^[a-z]+\.[a-zA-Z.]+: /, "").slice(0, 300) : "";
+      return { ok: false, why: message === "" ? `${what} didn't work.` : `The engine said: ${message}` };
+    }
   }
 
   async pictures(bot: string): Promise<PictureRow[] | { waiting: true }> {
