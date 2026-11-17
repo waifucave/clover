@@ -1,7 +1,7 @@
 // The BotRecords conformance suite (spec revision 19, §6.1, item 114). `runBotRecordsConformance(make)` registers every
 // case against the implementation `make` builds; `tests/bot-records.test.ts` runs it against FakeBotRecords, and lane BT
 // runs it against the engine's records on a temp home. What it pins: ids from names, the user's edits, the instructions
-// rule, removal, and the one-time move.
+// rule, a bot made by a bot behind the person's OK, the archive, plugins' bot-scoped settings, and the one-time move.
 import { describe, expect, test } from "bun:test";
 import { isContractError } from "../common";
 import { FakeClock } from "../fakes/clock";
@@ -30,8 +30,8 @@ export function runBotRecordsConformance(make: BotRecordsFactory): void {
     test("the user's edit sets and clears fields; the next read has it", async () => {
       const bots = setup();
       await bots.create({ name: "Nova", model: "acme/large", effort: "high" }, user);
-      const edited = await bots.edit("nova", { name: "Nova Prime", model: null, voice: { provider: "fish", voice: "v1" }, instructions: "Be brief." });
-      expect(edited).toMatchObject({ name: "Nova Prime", effort: "high", voice: { provider: "fish", voice: "v1" } });
+      const edited = await bots.edit("nova", { name: "Nova Prime", model: null, greeting: "Hey.", instructions: "Be brief." });
+      expect(edited).toMatchObject({ name: "Nova Prime", effort: "high", greeting: "Hey." });
       expect(edited.model).toBeUndefined();
       expect(bots.instructions("nova")).toBe("Be brief.");
       expect(isContractError(await bots.edit("ghost", { name: "x" }).catch((e: unknown) => e), "not_found")).toBe(true);
@@ -50,22 +50,66 @@ export function runBotRecordsConformance(make: BotRecordsFactory): void {
       expect(bots.instructions("scout")).toBe("v3");
     });
 
-    test("removing a bot takes it from the list and is heard", async () => {
+    test("removing a bot archives it: it leaves the list, keeps its id, and comes back whole", async () => {
       const bots = setup();
       const seen: string[] = [];
       bots.watch((c) => seen.push("removed" in c ? `-${c.removed}` : `+${c.bot.id}`));
-      await bots.create({ name: "Nova" }, user);
+      await bots.create({ name: "Nova", instructions: "You are Nova.", model: "acme/large" }, user);
       await bots.remove("nova");
       expect(bots.list()).toEqual([]);
+      expect(bots.archived()).toEqual([{ id: "nova", name: "Nova", archivedAt: expect.any(Number) }]);
       expect(seen).toEqual(["+nova", "-nova"]);
       expect(isContractError(await bots.remove("nova").catch((e: unknown) => e), "not_found")).toBe(true);
+      // Its id isn't given to a new bot while it is archived.
+      expect((await bots.create({ name: "Nova" }, user)).id).toBe("nova-2");
+      expect(await bots.restore("nova")).toMatchObject({ id: "nova", model: "acme/large", instructionsBytes: 13 });
+      expect(bots.instructions("nova")).toBe("You are Nova.");
+      expect(bots.archived()).toEqual([]);
+      expect(isContractError(await bots.restore("nova").catch((e: unknown) => e), "not_found")).toBe(true);
+    });
+
+    test("a plugin's bot-scoped settings are read and set per bot; another scope, or an undeclared key, is refused", async () => {
+      const bots = setup();
+      bots.declareBotSettings("speech-kit", [{ key: "style", scope: "bot", default: "plain" }, { key: "apiRegion", scope: "account" }]);
+      bots.declareBotSettings("plain-tool", [{ key: "verbose", scope: "account" }]);
+      await bots.create({ name: "Alpha" }, user);
+      await bots.create({ name: "Nova" }, user);
+      expect(bots.pluginSettings("alpha")).toEqual([{ pluginId: "speech-kit", settings: [{ key: "style", value: "plain", set: false }] }]);
+      await bots.setPluginSetting("alpha", "speech-kit", "style", "bright");
+      expect(bots.pluginSettings("alpha")[0]!.settings).toEqual([{ key: "style", value: "bright", set: true }]);
+      expect(bots.pluginSettings("nova")[0]!.settings).toEqual([{ key: "style", value: "plain", set: false }]);
+      await bots.setPluginSetting("alpha", "speech-kit", "style", null);
+      expect(bots.pluginSettings("alpha")[0]!.settings[0]).toMatchObject({ value: "plain", set: false });
+      expect(isContractError(await bots.setPluginSetting("alpha", "speech-kit", "apiRegion", "eu").catch((e: unknown) => e), "refused")).toBe(true);
+      expect(isContractError(await bots.setPluginSetting("alpha", "speech-kit", "nope", 1).catch((e: unknown) => e), "not_found")).toBe(true);
+      expect(isContractError((() => { try { bots.pluginSettings("ghost"); } catch (e) { return e; } })(), "not_found")).toBe(true);
+    });
+
+    test("a bot makes a bot only behind the person's OK naming the maker; its model defaults to the maker's and must be set up", async () => {
+      const bots = setup();
+      await bots.create({ name: "Alpha", model: "acme/large" }, user);
+      const asked = await bots.proposeByBot("alpha", { name: "Scout", instructions: "Find things.", face: { shape: "drop" } }, ["acme/large", "acme/small"]);
+      if (!("proposal" in asked)) throw new Error("expected a proposal");
+      expect(asked.proposal).toMatchObject({ maker: "alpha", input: { name: "Scout", model: "acme/large" } });
+      expect(bots.get("scout")).toBeUndefined();
+      expect(await bots.answerProposal(asked.proposal.id, true)).toEqual({ outcome: "made", id: "scout" });
+      expect(bots.get("scout")).toMatchObject({ madeBy: { kind: "bot", id: "alpha" }, model: "acme/large", face: { shape: "drop" } });
+      expect(bots.instructions("scout")).toBe("Find things.");
+      expect(await bots.proposeByBot("alpha", { name: "Rogue", model: "acme/unset" }, ["acme/large"])).toMatchObject({ outcome: "refused" });
+      const no = await bots.proposeByBot("alpha", { name: "Maybe" }, ["acme/large"]);
+      if (!("proposal" in no)) throw new Error("expected a proposal");
+      expect(await bots.answerProposal(no.proposal.id, false)).toEqual({ outcome: "declined" });
+      expect(bots.get("maybe")).toBeUndefined();
+      expect(bots.proposals()).toEqual([]);
+      // The maker sets name, instructions, face and model, nothing else.
+      expect(isContractError(await bots.proposeByBot("alpha", { name: "X", effort: "max" } as never, ["acme/large"]).catch((e: unknown) => e), "invalid")).toBe(true);
     });
 
     test("the move: each plugin bot becomes a record of the same id, the user's layer over its plugin's; once", async () => {
       const bots = setup();
       await bots.create({ name: "Nova" }, user);
       const journal = await bots.move([
-        { plugin: "alpha", id: "alpha", name: "Alpha", instructions: "plugin words", greeting: "Hi!", model: "acme/small", voice: { provider: "fish", voice: "alpha" }, userLayer: { instructions: "the user's words", model: "acme/large" } },
+        { plugin: "alpha", id: "alpha", name: "Alpha", instructions: "plugin words", greeting: "Hi!", model: "acme/small", userLayer: { instructions: "the user's words", model: "acme/large" } },
         { plugin: "pack/luna", id: "pack/luna", name: "Luna", instructions: "Luna's words" },
         { plugin: "nova", id: "nova", name: "Nova from a plugin", instructions: "ignored" },
       ]);
@@ -74,7 +118,7 @@ export function runBotRecordsConformance(make: BotRecordsFactory): void {
         { outcome: "moved", id: "pack/luna", plugin: "pack/luna" },
         { outcome: "kept", id: "nova", plugin: "nova" },
       ]);
-      expect(bots.get("alpha")).toMatchObject({ name: "Alpha", model: "acme/large", greeting: "Hi!", voice: { provider: "fish", voice: "alpha" }, madeBy: { kind: "move", plugin: "alpha" } });
+      expect(bots.get("alpha")).toMatchObject({ name: "Alpha", model: "acme/large", greeting: "Hi!", madeBy: { kind: "move", plugin: "alpha" } });
       expect(bots.instructions("alpha")).toBe("the user's words");
       expect(bots.instructions("pack/luna")).toBe("Luna's words");
       expect(bots.get("nova")?.name).toBe("Nova");

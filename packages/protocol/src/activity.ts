@@ -45,11 +45,21 @@ export function isKindFamily(capability: string): boolean {
  *  no read of bots' conversations until the plugin asks again (`grantReadsBots`). */
 export const CONVERSATION_READ_NARROWED_AT = 19;
 
-/** Whether a plugin's `conversation.read`, OK'd at spec revision `okRevision` (undefined: before revisions were kept),
- *  reads bots' conversations now. What such an older grant still reads of code sessions is open (the lane map's
- *  undefined points). */
+/** The catalog revision an OK records now (the registry's OK record keeps it, lane B): a grant OK'd before
+ *  `CONVERSATION_READ_NARROWED_AT` reads neither kind until the plugin asks again (the controller's ruling of 2026-11-17);
+ *  bundled plugins are approved again by themselves, as at every update. */
+export const GRANT_REVISION = 19;
+
+/** Whether a plugin's `conversation.read`, OK'd at catalog revision `okRevision` (undefined: before revisions were
+ *  kept), reads bots' conversations now. */
 export function grantReadsBots(okRevision: number | undefined): boolean {
   return okRevision !== undefined && okRevision >= CONVERSATION_READ_NARROWED_AT;
+}
+
+/** Its twin for code sessions: an older grant reads no code session either (`sessions.read` is new, so a grant of it is
+ *  never older; this answers for an old `conversation.read`, which never reads code sessions). */
+export function grantReadsSessions(capability: "conversation.read" | "sessions.read", okRevision: number | undefined): boolean {
+  return capability === "sessions.read" && okRevision !== undefined && okRevision >= CONVERSATION_READ_NARROWED_AT;
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -61,9 +71,11 @@ export const ACTIVITY_STATES = ["idle", "listening", "thinking", "working", "ask
 export const ActivityState = z.enum(ACTIVITY_STATES);
 export type ActivityState = z.infer<typeof ActivityState>;
 
-/** What the feed is about: a code session, or a bot (its main conversation, side threads and agents as one). */
+/** What the feed is about: a code session, or a bot (its main conversation and side threads as one). A bot's background
+ *  coding task is a code session that carries its bot's id (`bot`), while the bot's own state shows it as work (the
+ *  controller's ruling of 2026-11-17): a reader of code sessions sees the task, a reader of bots sees the bot working. */
 export const ActivitySubject = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("sessions"), id: SessionId }),
+  z.object({ kind: z.literal("sessions"), id: SessionId, bot: BotId.optional() }),
   z.object({ kind: z.literal("bots"), id: BotId }),
 ]);
 export type ActivitySubject = z.infer<typeof ActivitySubject>;

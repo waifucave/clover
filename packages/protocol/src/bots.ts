@@ -3,24 +3,34 @@
 // data and the one-time move). Shapes pinned by lane SP; nothing here is served yet.
 //
 // * A bot is a folder under the home: `bots/<seg>/` (`<seg>` the id with `/` written `--`, §5.1), holding its record
-//   (`BOT_RECORD_FILE`: name, model, effort, voice, greeting, face pins, who made it), its instructions file
+//   (`BOT_RECORD_FILE`: name, model, effort, greeting, face pins, who made it), its instructions file
 //   (`BOT_INSTRUCTIONS_FILE`, the `<bot-instructions>` block, read at each turn), its memory and its agents' transcripts.
 //   The record is the user's: the core writes it, and no bot does (§9.1). Today's fence already keeps every bot out of
 //   `bots/<seg>/` but its `memory/` (`fence/fence.ts`, `per-caller.ts`), so the record sits at the folder's root; the
 //   instructions file has a folder of its own (`instructions/`), which lane BT, with lane C's fence, opens to the bot
 //   itself and to the bot that made it, under `instructionsEditRule`, and to no one else.
-// * Bots are listed, made, changed and removed through `bot.records`, `bot.create`, `bot.edit` and `bot.remove`; one bot's
-//   single conversation is `bot.conversation`, and its routines are `routine.list { bot }` (sessions.ts). MOSS's list
-//   reads each bot's last line and unread state (`bot.summaries`), which is conversation text, so it needs
-//   `conversation.read` where `bot.records` needs only `bots.read`.
+// * Bots are listed, made, changed and archived through `bot.records`, `bot.create`, `bot.edit` and `bot.remove` (which
+//   archives: the folder moves to the home's archive, `bot.archived` lists it and `bot.restore` brings it back; nothing is
+//   deleted without the person's own separate delete). One bot's single conversation is `bot.conversation`, and its
+//   routines are `routine.list { bot }` (sessions.ts). MOSS's list reads each bot's last line and unread state
+//   (`bot.summaries`), which is conversation text, so it needs `conversation.read` where `bot.records` needs only
+//   `bots.read`.
+// * A bot holds no plugin's data (the controller's ruling of 2026-11-17 on item 113): what a plugin keeps per bot, a
+//   speech plugin's choice for that bot included, is that plugin's own bot-scoped setting (§5.9 `Setting.scope: "bot"`).
+//   MOSS's window lists every plugin's bot-scoped settings for one bot (`bot.pluginSettings`) and draws them from their
+//   schema, generically; it sets one through `plugin.settings.set { id, key, value, bot }`.
+// * A bot makes a bot through one core tool (`MAKE_BOT_TOOL`): the new bot lands behind an OK card that names its maker;
+//   the maker sets its name, instructions and face, and its model defaults to the maker's (any model the person has set
+//   up). `bot.create` stays the person's.
 // * The one-time move (`BotMoveJournal`): each bot a plugin brought (the old `bot` entry, sessions.ts `BotView`) becomes a
-//   record with the same id, its plugin's instructions, greeting, model and default voice, the user's layer over them,
+//   record with the same id, its plugin's instructions, greeting and model, the user's layer over them,
 //   and its memory, transcripts and routines where they already are. To be retired once moved: the plugin bot format
 //   (`plugin-bot.ts`), `bot.setUserLayer`, `bot.importAvatar`, `bot.avatarFormats` and `BotView`'s `avatar`, `theme` and
 //   `layout` (§6.1, G7, G8).
 import { z } from "zod";
 import { utf16 } from "./strings";
-import { AnyPluginId, BotId, ChangeResult, Ok, SessionId, Text, Timestamp } from "./common";
+import { AnyPluginId, BotId, CardId, ChangeResult, Ok, SessionId, Text, Timestamp } from "./common";
+import { PluginSettingView } from "./plugins";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 /** The record's file and the instructions file, inside `bots/<seg>/`. */
@@ -41,13 +51,6 @@ export const BotFace = z.object({
 });
 export type BotFace = z.infer<typeof BotFace>;
 
-/** A bot's voice choice (§6.6, item 113): a provider and a voice the voice plugins offer, or none. */
-export const BotVoice = z.union([
-  z.object({ provider: utf16(128, 1), voice: utf16(256, 1), model: utf16(128).optional() }),
-  z.object({ silent: z.literal(true) }),
-]);
-export type BotVoice = z.infer<typeof BotVoice>;
-
 /** Who made a bot: the person, another bot (which may then edit its instructions with no card), or the move. */
 export const BotMaker = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("user") }),
@@ -66,7 +69,6 @@ export const BotRecord = z.object({
   /** A qualified catalog id; unset: the user's default model (§6.1). */
   model: utf16(200).optional(),
   effort: utf16(32).optional(),
-  voice: BotVoice.optional(),
   greeting: utf16(20_000).optional(),
   face: BotFace.optional(),
   madeBy: BotMaker,
@@ -89,11 +91,35 @@ export const BotPatch = z.object({
   instructions: utf16(200_000).optional(),
   model: utf16(200).nullable().optional(),
   effort: utf16(32).nullable().optional(),
-  voice: BotVoice.nullable().optional(),
   greeting: utf16(20_000).nullable().optional(),
   face: BotFace.nullable().optional(),
 });
 export type BotPatch = z.infer<typeof BotPatch>;
+
+/** The core tool a bot makes a bot with (the controller's ruling of 2026-11-17): its input, and what the bot is told. The
+ *  new bot exists only after the person's yes on the OK card, which names the maker; `model` must be one the person has
+ *  set up, and defaults to the maker's own. */
+export const MAKE_BOT_TOOL = "MakeBot";
+export const MakeBotInput = z.strictObject({
+  name: utf16(80, 1),
+  instructions: utf16(200_000).optional(),
+  face: BotFace.optional(),
+  model: utf16(200).optional(),
+});
+export type MakeBotInput = z.infer<typeof MakeBotInput>;
+export const MakeBotResult = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("made"), id: BotId }),
+  z.object({ outcome: z.literal("declined") }),
+  /** The model named isn't one the person has set up. */
+  z.object({ outcome: z.literal("refused"), why: utf16(500) }),
+]);
+export type MakeBotResult = z.infer<typeof MakeBotResult>;
+
+/** The home's archive of removed bots: each one's whole folder (record, instructions, memory, conversation), under its
+ *  segment and the time it was archived. */
+export const BOT_ARCHIVE_DIR = "archive/bots";
+export const ArchivedBot = z.object({ id: BotId, name: Text, archivedAt: Timestamp });
+export type ArchivedBot = z.infer<typeof ArchivedBot>;
 
 /** One line of MOSS's list (§6.10): the bot's last line of activity, its time and whether the user has read it. */
 export const BotSummary = z.object({
@@ -145,7 +171,7 @@ export const BOTS_METHODS = {
   botCreate: defineMethod({
     /** The user's, in MOSS's window or the CLI. A bot making a bot is an open point (the lane map's undefined points). */
     name: "bot.create", owner: "BT", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ name: Text, instructions: utf16(200_000).optional(), model: utf16(200).optional(), effort: utf16(32).optional(), voice: BotVoice.optional(), face: BotFace.optional() }),
+    params: z.object({ name: Text, instructions: utf16(200_000).optional(), model: utf16(200).optional(), effort: utf16(32).optional(), face: BotFace.optional() }),
     result: z.object({ bot: BotRecordView }),
     doc: "Makes a bot: a folder under the home's bots/ with its record and instructions file; its id comes from its name.",
   }),
@@ -161,7 +187,27 @@ export const BOTS_METHODS = {
     name: "bot.remove", owner: "BT", roles: ["app", "cli"], userOnly: true,
     params: z.object({ id: BotId }),
     result: Ok,
-    doc: "Removes a bot; what is kept of its folder, memory and conversation is an open point.",
+    doc: "Archives a bot: its whole folder moves to the home's archive, from which bot.restore brings it back; nothing is deleted.",
+  }),
+  botArchived: defineMethod({
+    name: "bot.archived", owner: "BT", roles: ["app", "cli"],
+    params: z.object({}),
+    result: z.object({ bots: z.array(ArchivedBot).max(1024) }),
+    doc: "The archived bots the person can bring back.",
+  }),
+  botRestore: defineMethod({
+    name: "bot.restore", owner: "BT", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ id: BotId }),
+    result: z.object({ bot: BotRecordView }),
+    doc: "Brings an archived bot back as it was; refused while another bot has its id.",
+  }),
+  botPluginSettings: defineMethod({
+    /** Every plugin's bot-scoped settings (§5.9 `Setting.scope: "bot"`) with their values for one bot, for MOSS's window to
+     *  draw from their schema; a value is set with `plugin.settings.set { id, key, value, bot }`. */
+    name: "bot.pluginSettings", owner: "BT", roles: ["app", "cli"],
+    params: z.object({ id: BotId }),
+    result: z.object({ plugins: z.array(z.object({ pluginId: AnyPluginId, name: Text, settings: z.array(PluginSettingView).max(256) })).max(512) }),
+    doc: "One bot's values of every plugin's bot-scoped settings, with their schema, for a window to draw generically.",
   }),
   botConversation: defineMethod({
     name: "bot.conversation", owner: "BT", roles: ["app", "cli", "remote", "layer"], capability: "conversation.read",

@@ -53,6 +53,11 @@
                           "minLength": 1,
                           "maxLength": 128,
                           "pattern": "^[A-Za-z0-9._:-]+$"
+                        },
+                        "bot": {
+                          "type": "string",
+                          "maxLength": 81,
+                          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
                         }
                       },
                       "required": [
@@ -375,6 +380,11 @@
                         "minLength": 1,
                         "maxLength": 128,
                         "pattern": "^[A-Za-z0-9._:-]+$"
+                      },
+                      "bot": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
                       }
                     },
                     "required": [
