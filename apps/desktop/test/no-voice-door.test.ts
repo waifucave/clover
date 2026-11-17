@@ -26,6 +26,11 @@ const EXEMPT: Readonly<Record<string, string>> = {
   "packages/core/src/runtime-sdk/host/run-home/settings.ts": "the agent runtime's own settings keys (its `voice`, `voiceEnabled`), not MOSS's",
   "apps/desktop/src/main/browser/screen-reader.ts": "macOS's VoiceOver, a screen reader",
   "packages/core/src/identity/wordlist.ts": "a list of words for names, one of which is the word itself",
+  // Spec revision 19 (§6.6, item 113): a bot's voice choice (a provider, a voice, a model, or none) is bot data, kept with
+  // the bot and picked in MOSS from what the voice plugins offer; the engine stores the choice and plays nothing.
+  "packages/protocol/src/bots.ts": "a bot record's voice choice (item 113), data the voice plugins read",
+  "packages/core/src/contracts/bot-records.ts": "the bot record contract's voice choice (item 113)",
+  "packages/core/src/contracts/fakes/bot-records.ts": "the bot record fake's voice choice (item 113)",
 };
 
 function sources(dir: string): string[] {
