@@ -156,5 +156,13 @@ describe("the default bot", () => {
     expect(journal.bots).toEqual([{ outcome: "moved", id: "alpha", plugin: "alpha" }]);
     await b.shutdown();
   });
+
+  test("a new bot never takes an installed plugin's id (its own-bot parts serve the bot of its id)", async () => {
+    const tarot = writePlugin(tempDir(), "tarot", { "moss.json": { manifest: 1, id: "tarot", name: "Tarot", scope: "own-bot" } });
+    const b = await boot({ home: tempDir(), plugins: (await pluginFromFolder(tarot)).inputs.map((i) => ({ ...i, approved: true })), botSource: "records" });
+    const made = await b.bots.createBot({ name: "Tarot" }, { kind: "user" });
+    expect(made.id).toBe("tarot-2");
+    await b.shutdown();
+  });
 });
 
