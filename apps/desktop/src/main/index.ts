@@ -2712,7 +2712,9 @@ async function redrawSealed(processId: number, routingId: number, url: string, t
   if (cardId === undefined || !sealed.isPending(cardId)) return;
   const contents = webContents.fromFrame(f);
   const win = contents === undefined ? null : BrowserWindow.fromWebContents(contents);
-  if (win === null || win.isDestroyed() || !win.isVisible() || win.isMinimized()) return;
+  // Not "is the window shown": a headless run's surfaces (the background host's island, the pill) draw and read themselves with
+  // the window not shown, and a page in a window that draws nothing takes the change as nothing.
+  if (win === null || win.isDestroyed()) return;
   const js = `(() => { const f = [...document.querySelectorAll("iframe")].find((x) => x.src === ${JSON.stringify(url)}); if (!f) return false; const was = f.style.visibility; f.style.visibility = "hidden"; setTimeout(() => { f.style.visibility = was; }, ${SEALED_REDRAW_HIDDEN_MS}); return true; })()`;
   const done = await Promise.race([f.parent.executeJavaScript(js, false).catch(() => false), new Promise<false>((r) => setTimeout(() => r(false), 500))]);
   log(`sealed: ${cardId} ${sealed.elementOf(token) ?? "?"} in ${surfaceName(win.id)} said nothing visible ${at} ms after it loaded: its frame ${done === true ? "was hidden and shown again so its page reads itself again" : "wasn't found in its embedder"}`);
