@@ -1590,6 +1590,22 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   // entries bring, with a metronome, a dancer and a stranger that have nothing to do with figures.
   const figureCtx = (): FigureCtx => ({
     cdp, rpc,
+    // One turn of `session` that calls `tool` (the fake's ACCEPTANCE-CALL, loading a deferred tool first); a tool card it
+    // raises is pressed in the window, as the person does; the call's result as the model got it.
+    callTool: async (session, tool, input) => {
+      const seen = ctx.requests().length;
+      const tag = randomBytes(4).toString("hex");
+      await rpc.request("session.send", { id: session, message: { text: `ACCEPTANCE-CALL ${tool} ${JSON.stringify(input)}`, clientMessageId: `tool-${tag}` } }, 30_000);
+      const cards: string[] = [];
+      const result = await until(`${tool}'s result in ${session}'s turn`, 120_000, async () => {
+        const got = ctx.requests().slice(seen).map((r) => r.toolResult).find((x) => x !== undefined);
+        if (got !== undefined) return got;
+        const card = (await rpc.request<{ cards: { id: string; kind: string; session?: string }[] }>("card.list", {}).catch(() => ({ cards: [] }))).cards.find((c) => c.kind === "tool" && c.session === session && !cards.includes(c.id));
+        if (card !== undefined && ctx.pressCard !== undefined) cards.push(await ctx.pressCard(`${tool}'s card`, (c) => c.id === card.id));
+        return undefined;
+      }, async () => `cards pressed ${cards.length}; requests since: ${ctx.requests().slice(seen).map((r) => r.lastUserText.slice(0, 40)).join(" | ")}`);
+      return { called: tool, result, cards };
+    },
     pressCard: ctx.pressCard ?? (() => fail("this run can't press a card")),
     escape: async () => { for (const type of ["keyDown", "keyUp"]) for (const d of await treeDocs(cdp)) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined); await sleep(300); },
     toCodingSession: async () => {
@@ -1865,7 +1881,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         });
         return { session, tools: (req as { tools?: string[] }).tools ?? [] };
       };
-      const STAGE_TOOLS = ["set_scene", "set_mood", "toggle_outfit", "pin_note", "stage_status"];
+      // Her room's tools (her figure's are the avatar plugin's own, for every bot and session, on demand).
+      const STAGE_TOOLS = ["set_scene", "set_mood", "pin_note", "stage_status"];
       const stageIn = (tools: readonly string[]) => STAGE_TOOLS.filter((t) => tools.some((x) => x === t || x.endsWith(`__${t}`)));
       const hers = await offered("Alpha");
       // The plain bot on Alpha's model, picked the user's way (its user layer): the user's default here is a provider with no key.
@@ -1876,18 +1893,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (plain.tools.length === 0) fail(`${name}'s turn was offered no tools at all, so it proves nothing`);
       if (stageIn(plain.tools).length > 0) fail(`${name}'s turn was offered Alpha's stage tools: ${stageIn(plain.tools).join(", ")}`);
       const toolsSaid = `her stage tools (${STAGE_TOOLS.join(", ")}) were offered to her turn and none to ${name}'s (offered ${plain.tools.length} others)`;
-      // 9. Her outfit is her setting: her tool's change shows in the setting (her figure wearing it left with the figure).
-      const outfitSet = async () => (await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "alpha" })).settings.find((x) => x.key === "outfit")?.value;
-      let outfitSaid = "";
-      try {
-        await rpc.request("session.send", { id: hers.session, message: { text: 'ACCEPTANCE-CALL toggle_outfit {"part":"lilac-dress","on":true}', clientMessageId: `outfit-${randomBytes(4).toString("hex")}` } }, 30_000);
-        await until("her tool's outfit in her setting", 60_000, async () => ((await outfitSet()) === "lilac-dress" ? true : undefined), async () => `the setting says ${JSON.stringify(await outfitSet())}`);
-        outfitSaid = "her outfit is her setting: her tool's lilac dress was in it";
-      } finally {
-        await rpc.request("plugin.settings.set", { id: "alpha", key: "outfit", value: null }, 20_000).catch(() => undefined);
-      }
       const rows = (JSON.parse(herSide) as { rows: string[] }).rows.length;
-      return `${side}; ${toolsSaid}; ${outfitSaid}; on Alpha's tab no stock bar (bar-mode none), her own controls, ${sizeSaid}, and the window's own sidebar beside it exactly as beside ${name}'s (box, ground, rule, material, its accent and text tokens and ${rows} rows the same; her skin "${skin}" reaches the bar and panels only); her toggle folded the stock sidebar to its ${railWidth} px rail and opened it again; ${panels}; more scoped wins: her composer kept her own color.surface (${herTokens.surface}) and composer.background (${herTokens.composer}) against an all-bots style, which ${name}'s composer took (${plainTokens.surface}, ${plainTokens.composer}); ${name}'s tab kept the stock bar, and Alpha's brought her chrome back`;
+      return `${side}; ${toolsSaid}; on Alpha's tab no stock bar (bar-mode none), her own controls, ${sizeSaid}, and the window's own sidebar beside it exactly as beside ${name}'s (box, ground, rule, material, its accent and text tokens and ${rows} rows the same; her skin "${skin}" reaches the bar and panels only); her toggle folded the stock sidebar to its ${railWidth} px rail and opened it again; ${panels}; more scoped wins: her composer kept her own color.surface (${herTokens.surface}) and composer.background (${herTokens.composer}) against an all-bots style, which ${name}'s composer took (${plainTokens.surface}, ${plainTokens.composer}); ${name}'s tab kept the stock bar, and Alpha's brought her chrome back`;
     } finally {
       for (const pid of installed.reverse()) await rpc.request("plugin.remove", { id: pid }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });

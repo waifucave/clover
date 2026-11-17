@@ -32,6 +32,8 @@ export interface FigureCtx {
   toCodingSession(): Promise<string>;
   /** Closes what is open over the window (a menu, a sheet). */
   escape(): Promise<void>;
+  /** A session's turn that calls one tool (`ACCEPTANCE-CALL`, a deferred one loaded first), its cards answered: the result. */
+  callTool?(session: string, tool: string, input: Record<string, unknown>): Promise<{ called: string; result: { text: string; isError: boolean }; cards: string[] }>;
 }
 
 /** The sidebar back on its Bots switch, the Avatar panel closed (where the rows after these expect the window). */
@@ -274,7 +276,26 @@ export async function figureRendererStep(f: FigureCtx): Promise<string> {
       const t = await command(f.rpc, "acceptance-figure-moves.angry");
       return t.includes('"ok":false') && t.includes("unknown-name") ? t : undefined;
     }, async () => `the cue was answered ${await command(f.rpc, "acceptance-figure-moves.angry")}`);
-    return `example-pngtuber (renderer and pack) and a controller installed behind their OK cards (the avatar plugin's renderer and figure lines); beside the coding session ${place.code} the picture-swap renderer drew Sunny; the controller's happy cue was answered ${happy.slice(5)} and the renderer swapped to its happy set; angry was answered ${angry.slice(5, 90)}`;
+    // The avatar plugin's own tools (its figure server): the coding session's call reaches the figure beside it, which
+    // judges it by the renderer's names; a bot's (Alpha's) with the figure not following bots is told plainly that
+    // nothing moved.
+    let toolsSaid = "";
+    if (f.callTool !== undefined) {
+      await f.rpc.request("plugin.settings.set", { id: "moss/character", key: "followBots", value: false }, 20_000);
+      try {
+        const lacks = await f.callTool(place.code, "set_expression", { name: "angry" });
+        if (!lacks.result.isError || !/this model has no expression "angry"; it has: happy/.test(lacks.result.text)) fail(`the coding session's set_expression wasn't refused with the model's names: ${JSON.stringify(lacks.result)}`);
+        const status = await f.callTool(place.code, "figure_status", {});
+        if (status.result.isError || !/expressions: happy/.test(status.result.text)) fail(`the coding session's figure_status didn't list the model's names: ${JSON.stringify(status.result)}`);
+        const alpha = (await f.rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.mainSession ?? fail("no Alpha");
+        const bot = await f.callTool(alpha, "set_expression", { name: "happy" });
+        if (!bot.result.isError || !/no avatar is shown/.test(bot.result.text)) fail(`Alpha's set_expression with the figure not following bots wasn't told that nothing moved: ${JSON.stringify(bot.result)}`);
+        toolsSaid = `; the avatar plugin's own tools: the coding session's ${lacks.called} was refused with the model's names ("${lacks.result.text}"), its figure_status said "${status.result.text}" (${[...lacks.cards, ...status.cards].length} card(s) answered), and Alpha's set_expression, with the figure not following bots, was told "${bot.result.text.slice(0, 60)}…"`;
+      } finally {
+        await f.rpc.request("plugin.settings.set", { id: "moss/character", key: "followBots", value: null }, 20_000).catch(() => undefined);
+      }
+    }
+    return `example-pngtuber (renderer and pack) and a controller installed behind their OK cards (the avatar plugin's renderer and figure lines); beside the coding session ${place.code} the picture-swap renderer drew Sunny; the controller's happy cue was answered ${happy.slice(5)} and the renderer swapped to its happy set; angry was answered ${angry.slice(5, 90)}${toolsSaid}`;
   } finally {
     await backToBots(f).catch(() => undefined);
     await pick(f.rpc, "").catch(() => undefined);
