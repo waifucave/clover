@@ -62,12 +62,14 @@ export function SidePanel(props: { bot: BotRow; onClose: () => void; onSettings?
       <section className="screen ma2-screen" data-picture={picture?.id ?? "none"} aria-label={`${name}'s screen, watch only`}>
         {picture !== undefined ? (
           <>
-            <div className="screen__view" role="img" aria-label={`${name}'s screen, from ${picture.publisher}`} style={{ aspectRatio: `${picture.width} / ${picture.height}` }}>
+            <div className="screen__view" role="img" aria-label={`${name}'s screen, from ${picture.publisherName ?? picture.publisher}`} style={{ aspectRatio: `${picture.width} / ${picture.height}` }}>
               {frame !== undefined ? <img src={frame} alt="" draggable={false} /> : <span className="screen__wait">Connecting…</span>}
               <span className="screen__live" aria-hidden="true">Live</span>
             </div>
             <p className="screen__from" data-publisher={picture.publisher}>
-              <span className="ma2-publisher">{picture.publisher}</span>
+              <span>From&nbsp;</span>
+              <span className="ma2-publisher">{picture.publisherName ?? picture.publisher}</span>
+              {picture.publisherName !== undefined && picture.publisherName !== picture.publisher ? <span className="ma2-publisher-id">&nbsp;({picture.publisher})</span> : null}
               {picture.screen ? <span> · your screen, MOSS's own windows blacked out</span> : null}
               <span className="ma2-watch"> · watch only</span>
             </p>
