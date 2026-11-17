@@ -1,4 +1,4 @@
-// The Notes plugin's host half (`host.entry`): its `notes` MCP server for the bots (its child brings one, Notes keeper), its turn.end hook, its /note
+// The Notes plugin's host half (`host.entry`): its `notes` MCP server for your bots and agents, its tool.after hook, its /note
 // command, and the table its page calls (`host.call`). It runs in the plugin's own fenced process, with no network and
 // no capability: that is why the OK card lets `add_note` (contained: it only changes the Notes page) and `list_notes`
 // (readOnly) run without asking, while `delete_note`, on neither list, asks every time.
@@ -6,9 +6,9 @@
 // Exports (the plugin SDK's `HostModule`):
 //   start(api) / stop()   keeps the API it is handed
 //   mcp.notes             the tools (the key under `contributes.mcpServers`)
-//   onTurnEnd             the hook: counts Notes keeper's turns (own-bot: it sees no other bot's)
+//   onToolAfter           the hook: counts the calls of its own tools (its `tools` filter: it sees no other tool's)
 //   note                  the /note command, which runs as the user
-//   ui.list               what the page reads: the notes and the turn count
+//   ui.list               what the page reads: the notes and how many times its tools were called
 import type { HostModule, McpServerTransport, HostPluginApi } from "@waifucave/moss-plugin-sdk";
 import { Notes } from "./notes";
 
@@ -109,11 +109,12 @@ export const mcp: HostModule["mcp"] = {
 
 // ---- the hook ----
 
-/** turn.end, on the sessions of the bot this plugin's tree brings: one more turn on the page's count. It only observes.
- *  Its manifest scopes it `own-bot`, and the host enforces that: it never calls this for another bot's turn or a user's
- *  own session, so the handler needs no check of its own (and a check here would prove nothing the host doesn't). */
-export async function onTurnEnd(_args: { bot?: string }): Promise<undefined> {
-  await ready().countTurn().catch(() => undefined);
+/** tool.after, on a call of one of its own tools (the manifest's `tools` filter, `mcp__example-notes-notes__*`), in any
+ *  session that has them: a bot's, or a code session's through its agent's bridge. One more use on the page's count. It
+ *  only observes (`observe: true`), so it holds no call up and changes no result; the filter is the host's, so the handler
+ *  needs no check of its own. */
+export async function onToolAfter(_args: { tool?: { name?: string } }): Promise<undefined> {
+  await ready().countUse().catch(() => undefined);
   return undefined;
 }
 
@@ -131,6 +132,6 @@ export async function note(args: { text?: unknown }): Promise<{ text: string }> 
 export const ui: HostModule["ui"] = {
   list: async () => {
     const n = ready();
-    return { notes: (await n.list()).map((x) => ({ text: x.text, at: x.at })), turns: await n.turns() };
+    return { notes: (await n.list()).map((x) => ({ text: x.text, at: x.at })), uses: await n.uses() };
   },
 };

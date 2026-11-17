@@ -8,7 +8,7 @@ import { usePluginApi, useT } from "@waifucave/moss-plugin-sdk/ui";
 
 interface Listed {
   notes: { text: string; at: number }[];
-  turns: number;
+  uses: number;
 }
 
 type Order = "newest" | "oldest";
@@ -56,7 +56,7 @@ export function NotesPage() {
   const { listed, order, setOrder } = useNotes();
   const notes = listed === undefined ? [] : [...listed.notes].sort((a, b) => (order === "newest" ? b.at - a.at : a.at - b.at));
   return (
-    <main className="np" data-notes="page" data-order={order} data-turns={listed?.turns ?? ""} data-loaded={listed !== undefined}>
+    <main className="np" data-notes="page" data-order={order} data-uses={listed?.uses ?? ""} data-loaded={listed !== undefined}>
       <style>{CSS}</style>
       <h1>{t("example-notes.page.title")}</h1>
       <div className="np__meta">
@@ -64,7 +64,7 @@ export function NotesPage() {
         <button type="button" className="np__order" data-notes="order" onClick={() => setOrder(order === "newest" ? "oldest" : "newest")}>
           {t(order === "newest" ? "example-notes.page.order.newest" : "example-notes.page.order.oldest")}
         </button>
-        <span data-notes="turns">{t("example-notes.page.turns", { turns: listed?.turns ?? 0 })}</span>
+        <span data-notes="uses">{t("example-notes.page.uses", { uses: listed?.uses ?? 0 })}</span>
       </div>
       {listed !== undefined && notes.length === 0 ? <p className="np__empty">{t("example-notes.page.empty")}</p> : null}
       <ul>

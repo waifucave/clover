@@ -2,7 +2,7 @@
   "manifest": 1,
   "id": "example-notes",
   "name": "Notes",
-  "description": "Notes for you and a Notes bot: jot things down in chat or with /note, read them on the Notes page, and let the bot tidy them up. Everything stays on your computers: it reaches no network and sends no notifications, so its note tools can run without asking.",
+  "description": "Notes for you and your agents: jot things down in chat or with /note, read them on the Notes page, and let an agent tidy them up. Everything stays on your computers: it reaches no network and sends no notifications, so its note tools can run without asking.",
   "icon": "assets/icon.svg",
   "version": "1.0.0",
   "engines": {
@@ -58,18 +58,20 @@
         ],
         "readOnly": [
           "list_notes"
-        ],
-        "scope": "bots"
+        ]
       }
     },
     "hooks": [
       {
-        "id": "count-turns",
+        "id": "count-uses",
         "on": [
-          "turn.end"
+          "tool.after"
         ],
-        "handler": "onTurnEnd",
-        "scope": "own-bot",
+        "tools": [
+          "mcp__example-notes-notes__*"
+        ],
+        "handler": "onToolAfter",
+        "observe": true,
         "timeoutMs": 2000
       }
     ],
