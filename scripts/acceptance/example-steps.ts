@@ -472,18 +472,38 @@ async function slashCommand(ctx: ExampleCtx, name: string, arg: string, pluginNa
     return undefined;
   }, () => frames(cdp));
   await sleep(500);
-  // A click in the box first, as the user would: after the app's own key dialog the window's focus is still in the app's
-  // page, and text typed then never reaches the composer.
-  const at = await cdp.centerOf(box, ".cl-composer textarea");
-  if (at === undefined) fail("the composer's text box has no place on the page");
-  await cdp.click(box, at!.x, at!.y);
-  await cdp.evaluate(box, "(() => { const t = document.querySelector('.cl-composer textarea'); t.focus(); t.select(); return true; })()");
+  // The island folds away a moment after the card pressed just before is answered, and hiding that window takes the
+  // key focus from this one (the page gets a window blur and its text box loses the focus, ~100 ms after the island's
+  // `visible=false` in the app's log): text typed across that moment is lost, the "/" itself or what follows it. So type
+  // only once the island's page is hidden. Bounded, and nothing fails here: an island that never reports hidden leaves
+  // the step as it was.
+  const islandShowing = async () => {
+    for (const d of await cdp.documents()) {
+      if (!d.url.includes("surface=island")) continue;
+      if ((await cdp.evaluate(d.session, "document.visibilityState").catch(() => "gone")) === "visible") return true;
+    }
+    return false;
+  };
+  for (const end = Date.now() + 15_000; Date.now() < end && (await islandShowing()); ) await sleep(100);
+  await sleep(300);
+  // A click in the box, as the user would: after the app's own key dialog (or a hidden island) the window's focus is not
+  // in the app's page, and text typed then never reaches the composer. Done again before each piece of typing, so a
+  // piece never goes to a box that does not hold the focus.
+  const focusBox = async () => {
+    const at = await cdp.centerOf(box, ".cl-composer textarea");
+    if (at === undefined) fail("the composer's text box has no place on the page");
+    await cdp.click(box, at!.x, at!.y);
+    await cdp.evaluate(box, "(() => { const t = document.querySelector('.cl-composer textarea'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); return true; })()");
+  };
+  await focusBox();
+  await cdp.evaluate(box, "document.querySelector('.cl-composer textarea').select()");
   await cdp.send("Input.insertText", { text: "/" }, box);
   const listShown = async () => String(await cdp.evaluate(box, "(document.querySelector('.cl-composer__slash') || {}).innerText || 'no list'").catch(() => "gone")).replace(/\s+/g, " ").slice(0, 300);
   await until(`the slash menu's /${name}`, 15_000, async () => {
     const rows = JSON.parse(String(await cdp.evaluate(box, "JSON.stringify([...document.querySelectorAll('.cl-composer__slash [role=option]')].map((e) => (e.innerText || '').replace(/\\s+/g, ' ').trim()))"))) as string[];
     return rows.some((t) => t.startsWith(`/${name}`) && t.includes(pluginName)) ? true : undefined;
   }, listShown);
+  await focusBox();
   await cdp.send("Input.insertText", { text: `${name} ${arg}` }, box);
   await sleep(300);
   const typed = String(await cdp.evaluate(box, "document.querySelector('.cl-composer textarea').value").catch(() => "?"));
