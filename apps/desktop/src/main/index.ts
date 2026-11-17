@@ -27,7 +27,7 @@ import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost 
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
 import { testBuildAppRefusal } from "./test-build";
 import { housingFor, loadScreens } from "./housing";
-import { coverAt, loadWindowsAbove, windowIdOfMediaSource, type WindowsAbove } from "./overlap";
+import { isOurProgram, loadWindowList, pressCover, windowIdOfMediaSource, type WindowList } from "./overlap";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
 import { cliLauncher, locateDaemonBinary } from "./pair/login";
@@ -520,7 +520,7 @@ async function ready(): Promise<void> {
       const cover = osCoverOf(from);
       if (cover !== undefined) {
         log(`sealed: answer refused (a window lies over the button: ${cover})`);
-        return { accepted: false, covered: true, reason: "another window lies over the button: move it away and press again" };
+        return { accepted: false, covered: true, reason: "another MOSS window lies over the button: move it away and press again" };
       }
       const key = answerKeyValue;
       if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
@@ -2127,23 +2127,25 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
   else clickThrough(s);
 }
 
-/** The OS-wide half of the overlap check (overlap.ts, R12): what lies over the place the person just pressed in window
- *  `windowId`, named by what it is (ours or another app's, never a title), or undefined when nothing does. With no window list
- *  here (Windows, Linux, a Mac without the add-on built) or no mouse-down seen for the press, the in-page check stands alone
- *  (said once). A headless run reads its own windows only. */
-let windowsAbove: WindowsAbove | undefined | null = null;
+/** The OS-wide half of the overlap check (overlap.ts, R12): which of our programs' windows lies over the place the person
+ *  just pressed in window `windowId` (another app's window never counts), named by which (this program or another of ours,
+ *  never a title), or undefined when none does. A keyboard press has no point and isn't checked here. With no window list
+ *  (Windows, Linux, a Mac without the add-on built) the in-page check stands alone (said once). A headless run (a test's,
+ *  among other runs' windows) counts its own windows only. */
+let windowList: WindowList | undefined | null = null;
 let overlapUnread = false;
 let overlapRead = false;
 function osCoverOf(windowId: number | undefined): string | undefined {
   if (windowId === undefined) return undefined;
-  if (windowsAbove === null) windowsAbove = loadWindowsAbove(join(here, "native", "screen.node"), log);
+  if (windowList === null) windowList = loadWindowList(join(here, "native", "screen.node"), log);
   const win = BrowserWindow.fromId(windowId);
-  const point = pointers.lastDown(windowId, 2_000);
   const id = win === null || win.isDestroyed() ? undefined : windowIdOfMediaSource(win.getMediaSourceId());
-  if (windowsAbove === undefined || win === null || id === undefined || point === undefined) {
-    if (!overlapUnread) { overlapUnread = true; log(`overlap: the OS window list wasn't read for a press (${windowsAbove === undefined ? "no window list here" : point === undefined ? "no mouse-down seen for it" : "no window id"}); the in-page check stands alone`); }
+  if (windowList === undefined || win === null || id === undefined) {
+    if (!overlapUnread) { overlapUnread = true; log(`overlap: the OS window list wasn't read for a press (${windowList === undefined ? "no window list here" : "no window id"}); the in-page check stands alone`); }
     return undefined;
   }
+  const list = windowList;
+  const down = pointers.lastDown(windowId, 2_000);
   const content = win.getContentBounds();
   const own = new Map<number, { origin: { x: number; y: number }; regions?: readonly Rect[] }>();
   for (const s of surfaces.values()) {
@@ -2152,12 +2154,13 @@ function osCoverOf(windowId: number | undefined): string | undefined {
     const b = s.win.getContentBounds();
     if (sid !== undefined) own.set(sid, { origin: { x: b.x, y: b.y }, regions: s.regions });
   }
-  const above = windowsAbove(id);
-  const hit = coverAt({ x: content.x + point.x, y: content.y + point.y }, above, { own, ...(headless ? { onlyPid: process.pid } : {}) });
+  const above = list.above(id);
+  const ours = (pid: number): boolean => pid === process.pid || (!headless && isOurProgram(list.bundleOf(pid)));
+  const hit = pressCover({ point: down === undefined ? undefined : { x: content.x + down.x, y: content.y + down.y }, above, ours, own });
   // Said once (counts only): the OS's list was read for a press.
-  if (!overlapRead) { overlapRead = true; log(`overlap: the OS window list read for a press (${above.length} above, ${above.filter((w) => w.pid === process.pid).length} of MOSS's own${headless ? "; headless: MOSS's own only" : ""})`); }
+  if (!overlapRead) { overlapRead = true; log(`overlap: the OS window list read for a press (${above.length} above, ${above.filter((w) => w.pid === process.pid).length} of this program's own${headless ? "; headless: its own only" : ""}${down === undefined ? "; no point: a keyboard press" : ""})`); }
   if (hit === undefined) return undefined;
-  return hit.pid === process.pid ? `one of MOSS's own windows (layer ${hit.layer})` : `another app's window (layer ${hit.layer})`;
+  return hit.pid === process.pid ? `one of this program's own windows (layer ${hit.layer})` : `another MOSS program's window (layer ${hit.layer})`;
 }
 
 /** The screen add-on (macOS), for the camera housing; undefined where there is none. */

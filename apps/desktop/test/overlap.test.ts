@@ -1,40 +1,67 @@
-// The overlap check's OS-wide half (overlap.ts, R12; lane RT): a window of any app above a sealed button refuses the press, our
-// own surfaces cover only where they draw, a see-through window covers nothing, and a headless run reads its own windows
-// only. The add-on's read is checked on a Mac where the build made it: it gives windows' numbers only, never a title, and
-// nothing here is drawn, focused or printed.
+// The overlap check's OS-wide half (overlap.ts, R12; lane RT): a window of one of OUR programs above a sealed button refuses
+// the press, another app's window never does, our own surfaces cover only where they draw, a see-through window covers
+// nothing, and a keyboard press isn't checked here. The add-on's read is checked on a Mac where the build made it: windows'
+// numbers only, never a title, and nothing here is drawn, focused or printed.
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { coverAt, loadWindowsAbove, PRESS_BOX_HALF, windowIdOfMediaSource, type OsWindow } from "../src/main/overlap";
+import { PROGRAM_IDENTIFIERS } from "@waifucave/moss-protocol";
+import { coverAt, isOurProgram, loadWindowList, PRESS_BOX_HALF, pressCover, windowIdOfMediaSource, type OsWindow } from "../src/main/overlap";
 
-const win = (over: Partial<OsWindow>): OsWindow => ({ id: 7, x: 0, y: 0, width: 100, height: 100, layer: 0, alpha: 1, pid: 4242, ...over });
+const OURS = 4242;
+const OTHER_APP = 777;
+const win = (over: Partial<OsWindow>): OsWindow => ({ id: 7, x: 0, y: 0, width: 100, height: 100, layer: 0, alpha: 1, pid: OURS, ...over });
+const bundles = new Map<number, string>([[OURS, PROGRAM_IDENTIFIERS.host.dist], [OTHER_APP, "com.example.screen-tint"]]);
+const ours = (pid: number): boolean => isOurProgram(bundles.get(pid));
 
 describe("what lies over a sealed button", () => {
-  test("another app's window over the press point covers it; one beside it doesn't; the box is the smallest button's", () => {
+  test("our programs' bundle identifiers, dist and dev, and nothing else", () => {
+    for (const p of Object.values(PROGRAM_IDENTIFIERS)) {
+      expect(isOurProgram(p.dist)).toBe(true);
+      expect(isOurProgram(p.dev)).toBe(true);
+    }
+    expect(isOurProgram("com.waifucave.moss.core")).toBe(false);
+    expect(isOurProgram("com.example.screen-tint")).toBe(false);
+    expect(isOurProgram(undefined)).toBe(false);
+  });
+
+  test("a window of another app (not ours) over the press point: the press lands", () => {
+    expect(coverAt({ x: 50, y: 50 }, [win({ pid: OTHER_APP })], { ours })).toBeUndefined();
+    // A full-screen overlay that stays on top (a tint, a recorder) never refuses a press.
+    expect(coverAt({ x: 50, y: 50 }, [win({ pid: OTHER_APP, layer: 1000, width: 5000, height: 5000 })], { ours })).toBeUndefined();
+  });
+
+  test("a window of another of our programs over the press point: refused; one beside it isn't; the box is the smallest button's", () => {
     expect(PRESS_BOX_HALF).toBe(12);
-    expect(coverAt({ x: 50, y: 50 }, [win({})])?.id).toBe(7);
-    expect(coverAt({ x: 150, y: 50 }, [win({})])).toBeUndefined();
-    // A window whose edge reaches into the 24 by 24 box covers part of the button: refused.
-    expect(coverAt({ x: 110, y: 50 }, [win({})])?.id).toBe(7);
-    expect(coverAt({ x: 113, y: 50 }, [win({})])).toBeUndefined();
+    expect(coverAt({ x: 50, y: 50 }, [win({})], { ours })?.id).toBe(7);
+    expect(coverAt({ x: 50, y: 50 }, [win({ pid: OTHER_APP }), win({ id: 9 })], { ours })?.id).toBe(9);
+    expect(coverAt({ x: 150, y: 50 }, [win({})], { ours })).toBeUndefined();
+    expect(coverAt({ x: 110, y: 50 }, [win({})], { ours })?.id).toBe(7);
+    expect(coverAt({ x: 113, y: 50 }, [win({})], { ours })).toBeUndefined();
   });
 
-  test("a see-through window (alpha 0) or an empty one covers nothing; the first that covers is named", () => {
-    expect(coverAt({ x: 50, y: 50 }, [win({ alpha: 0 }), win({ width: 0 })])).toBeUndefined();
-    expect(coverAt({ x: 50, y: 50 }, [win({ alpha: 0 }), win({ id: 9, alpha: 0.4 })])?.id).toBe(9);
+  test("a see-through window (alpha 0) or an empty one covers nothing", () => {
+    expect(coverAt({ x: 50, y: 50 }, [win({ alpha: 0 }), win({ width: 0 })], { ours })).toBeUndefined();
+    expect(coverAt({ x: 50, y: 50 }, [win({ alpha: 0 }), win({ id: 9, alpha: 0.4 })], { ours })?.id).toBe(9);
   });
 
-  test("one of our own surfaces (transparent, click-through) covers only the regions it draws", () => {
+  test("our own island and pill (transparent, click-through) cover only the regions they draw", () => {
     const own = new Map([[7, { origin: { x: 0, y: 0 }, regions: [{ x: 0, y: 0, width: 40, height: 20 }] }]]);
-    expect(coverAt({ x: 80, y: 80 }, [win({})], { own })).toBeUndefined();
-    expect(coverAt({ x: 30, y: 25 }, [win({})], { own })?.id).toBe(7);
+    expect(coverAt({ x: 80, y: 80 }, [win({})], { ours, own })).toBeUndefined();
+    expect(coverAt({ x: 30, y: 25 }, [win({})], { ours, own })?.id).toBe(7);
     // Our own window that isn't a surface (another card window) covers with all of it.
-    expect(coverAt({ x: 80, y: 80 }, [win({ id: 8, pid: process.pid })], { own })?.id).toBe(8);
+    expect(coverAt({ x: 80, y: 80 }, [win({ id: 8 })], { ours, own })?.id).toBe(8);
   });
 
-  test("a headless run reads its own windows only (the person's own apps lie above a test's invisible windows)", () => {
-    expect(coverAt({ x: 50, y: 50 }, [win({ pid: 1 })], { onlyPid: 2 })).toBeUndefined();
-    expect(coverAt({ x: 50, y: 50 }, [win({ pid: 2 })], { onlyPid: 2 })?.pid).toBe(2);
+  test("a keyboard press has no point: unchanged, not checked here", () => {
+    expect(pressCover({ point: undefined, above: [win({})], ours })).toBeUndefined();
+    expect(pressCover({ point: { x: 50, y: 50 }, above: [win({})], ours })?.id).toBe(7);
+  });
+
+  test("a headless run counts its own windows only", () => {
+    const self = (pid: number) => pid === 2;
+    expect(coverAt({ x: 50, y: 50 }, [win({ pid: 1 })], { ours: self })).toBeUndefined();
+    expect(coverAt({ x: 50, y: 50 }, [win({ pid: 2 })], { ours: self })?.pid).toBe(2);
   });
 
   test("an Electron window's media source id gives its window number", () => {
@@ -44,16 +71,17 @@ describe("what lies over a sealed button", () => {
   });
 
   test("no window list off macOS: the in-page check stands alone", () => {
-    expect(loadWindowsAbove("/nowhere/screen.node", () => {}, "linux")).toBeUndefined();
-    expect(loadWindowsAbove("/nowhere/screen.node", () => {}, "win32")).toBeUndefined();
+    expect(loadWindowList("/nowhere/screen.node", () => {}, "linux")).toBeUndefined();
+    expect(loadWindowList("/nowhere/screen.node", () => {}, "win32")).toBeUndefined();
   });
 
   const built = process.env.MOSS_TEST_SCREEN_NODE ?? join(import.meta.dir, "..", "out", "main", "native", "screen.node");
-  test.if(process.platform === "darwin" && existsSync(built))("the add-on reads windows' bounds and numbers only, and nothing for no window", () => {
-    const read = loadWindowsAbove(built, (l) => { throw new Error(l); })!;
-    expect(read).toBeFunction();
-    expect(read(0)).toEqual([]);
-    // A window number nobody holds: whatever the OS gives, each entry has the eight numbers and nothing else (no title, no name).
-    for (const w of read(2 ** 31 - 2)) expect(Object.keys(w).sort()).toEqual(["alpha", "height", "id", "layer", "pid", "width", "x", "y"]);
+  test.if(process.platform === "darwin" && existsSync(built))("the add-on reads windows' bounds and numbers only, and a bundle id by pid", () => {
+    const list = loadWindowList(built, (l) => { throw new Error(l); })!;
+    expect(list.above(0)).toEqual([]);
+    for (const w of list.above(2 ** 31 - 2)) expect(Object.keys(w).sort()).toEqual(["alpha", "height", "id", "layer", "pid", "width", "x", "y"]);
+    // This test's own process is no app bundle; a pid nobody holds is none.
+    expect(list.bundleOf(0)).toBeUndefined();
+    expect(list.bundleOf(2 ** 31 - 2)).toBeUndefined();
   });
 });

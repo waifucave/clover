@@ -4,7 +4,8 @@
 // above one of ours, from the OS's own window list, for the overlap check of a sealed press: each one's bounds, layer,
 // alpha, window number and owning process id, never a title or an owner's name (those are what the Screen Recording permission guards;
 // bounds, layer, alpha and pid are not, and reading them prompts for nothing). It reads and nothing else: no input, no
-// events, no state.
+// events, no state. A window counts for that check only when its owner is one of MOSS's own programs, so `bundleOf(pid)`
+// gives the bundle identifier of a running app by its pid (NSRunningApplication: no permission guards it, nothing prompts).
 //
 // A Node-API module, built with clang alone (apps/desktop/scripts/build.ts) and loaded by the app's main process. The
 // few Node-API calls it makes are declared here, from Node-API's stable ABI, so it needs no headers and works with
@@ -12,6 +13,7 @@
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 #include <stddef.h>
+#include <string.h>
 
 extern "C" {
 typedef struct napi_env__* napi_env;
@@ -28,6 +30,8 @@ napi_status napi_set_named_property(napi_env env, napi_value object, const char*
 napi_status napi_create_function(napi_env env, const char* name, size_t length, napi_callback cb, void* data, napi_value* result);
 napi_status napi_get_cb_info(napi_env env, napi_callback_info cbinfo, size_t* argc, napi_value* argv, napi_value* this_arg, void** data);
 napi_status napi_get_value_double(napi_env env, napi_value value, double* result);
+napi_status napi_create_string_utf8(napi_env env, const char* str, size_t length, napi_value* result);
+napi_status napi_get_undefined(napi_env env, napi_value* result);
 }
 
 static napi_value number(napi_env env, double v) {
@@ -120,6 +124,26 @@ static napi_value WindowsAbove(napi_env env, napi_callback_info info) {
   }
 }
 
+// bundleOf(pid): the bundle identifier of the running app with that pid, or undefined (no such app, or no bundle).
+static napi_value BundleOf(napi_env env, napi_callback_info info) {
+  @autoreleasepool {
+    size_t argc = 1;
+    napi_value argv[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    double pid = 0;
+    napi_value none = nullptr;
+    napi_get_undefined(env, &none);
+    if (argc < 1 || napi_get_value_double(env, argv[0], &pid) != 0 || !(pid > 0)) return none;
+    NSRunningApplication* a = [NSRunningApplication runningApplicationWithProcessIdentifier:(pid_t)pid];
+    NSString* b = a != nil ? a.bundleIdentifier : nil;
+    if (b == nil) return none;
+    const char* s = b.UTF8String;
+    napi_value out = nullptr;
+    napi_create_string_utf8(env, s, strlen(s), &out);
+    return out;
+  }
+}
+
 extern "C" __attribute__((visibility("default"))) napi_value napi_register_module_v1(napi_env env, napi_value exports) {
   napi_value fn = nullptr;
   napi_create_function(env, "screens", 7, Screens, nullptr, &fn);
@@ -127,6 +151,9 @@ extern "C" __attribute__((visibility("default"))) napi_value napi_register_modul
   napi_value above = nullptr;
   napi_create_function(env, "windowsAbove", 12, WindowsAbove, nullptr, &above);
   napi_set_named_property(env, exports, "windowsAbove", above);
+  napi_value bundle = nullptr;
+  napi_create_function(env, "bundleOf", 8, BundleOf, nullptr, &bundle);
+  napi_set_named_property(env, exports, "bundleOf", bundle);
   return exports;
 }
 
