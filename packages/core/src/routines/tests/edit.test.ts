@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MOSS_ERR, MOSS_ROLES, SESSIONS_METHODS, type Caller, type Level, type RoutineRunView } from "@waifucave/moss-protocol";
+import { ERR, MOSS_ERR, MOSS_ROLES, SESSIONS_METHODS, type Caller, type Level, type RoutineRunView } from "@waifucave/moss-protocol";
 import type { ApprovalDecision, ApprovalRequest } from "../../contracts/approval-broker";
 import { gateMossRequest } from "../../auth/moss-caller";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
@@ -64,16 +64,18 @@ const code = (e: unknown) => (e as { code?: unknown }).code;
 
 describe("routine.edit: who may call it", () => {
   test("the protocol lets only the app role call it, as the user, with no change card that would let a layer through", () => {
-    expect(M.routineEdit.roles).toEqual(["app"]);
-    expect(M.routineEdit.userOnly).toBe(true);
-    expect((M.routineEdit as { change?: unknown }).change).toBeUndefined();
+    for (const spec of [M.routineEdit, M.routineGet]) {
+      expect(spec.roles).toEqual(["app"]);
+      expect(spec.userOnly).toBe(true);
+      expect((spec as { change?: unknown }).change).toBeUndefined();
+    }
     // Every other role is refused by its allow list: a plugin's layer or host, a bot's or tool's CLI, a phone, the web, a peer.
-    for (const role of MOSS_ROLES.filter((r) => r !== "app")) {
+    for (const method of [M.routineEdit.name, M.routineGet.name]) for (const role of MOSS_ROLES.filter((r) => r !== "app")) {
       const caller: Caller = role === "peer" ? { kind: "peer", device: "dev_peer", asKind: "user" } as Caller
         : role === "layer" || role === "plugin-host" ? { kind: "plugin", pluginId: "pack/sidebar" } as Caller
         : role === "cli" ? { kind: "session", sessionId: "s_bot", sessionKind: "bot", bot: "alpha" } as Caller
         : { kind: "user", client: role === "remote" ? "ios" : role === "web" ? "web" : "cli" } as Caller;
-      expect(gateMossRequest(role, caller, M.routineEdit.name)).toMatchObject({ code: MOSS_ERR.ROLE_REFUSED });
+      expect(gateMossRequest(role, caller, method)).toMatchObject({ code: MOSS_ERR.ROLE_REFUSED });
     }
     // The user's own terminal is not a window either.
     expect(gateMossRequest("cli", { kind: "user", client: "cli" }, M.routineEdit.name)).toMatchObject({ code: MOSS_ERR.ROLE_REFUSED });
@@ -103,7 +105,11 @@ describe("routine.edit: who may call it", () => {
     for (const caller of callers) {
       const err = await methods[M.routineEdit.name]!({ bot: "alpha", id: "r_brief001", patch: { paused: true } }, { caller }).catch((e: unknown) => e);
       expect(code(err)).toBe(MOSS_ERR.NOT_THE_USER);
+      const read = await methods[M.routineGet.name]!({ bot: "alpha", id: "r_brief001" }, { caller }).catch((e: unknown) => e);
+      expect(code(read)).toBe(MOSS_ERR.NOT_THE_USER);
     }
+    expect(await methods[M.routineGet.name]!({ bot: "alpha", id: "r_brief001" }, { caller: theWindow })).toMatchObject({ routine: { id: "r_brief001", name: "Brief" }, instructions: "Do the thing.\n" });
+    expect(code(await methods[M.routineGet.name]!({ bot: "luna", id: "r_brief001" }, { caller: theWindow }).catch((e: unknown) => e))).toBe(ERR.NOT_FOUND);
     expect(readFileSync(path, "utf8")).toBe(before);
     const ok = (await methods[M.routineEdit.name]!({ bot: "alpha", id: "r_brief001", patch: { paused: true } }, { caller: theWindow })) as { routine: { state: string } };
     expect(ok.routine.state).toBe("paused");

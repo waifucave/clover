@@ -472,6 +472,12 @@ export const SESSIONS_METHODS = {
     params: z.object({ id: utf16(128, 1) }), result: z.object({ session: SessionId }),
     doc: "Runs a routine now, in a side thread on its computer.",
   }),
+  routineGet: defineMethod({
+    name: "routine.get", owner: "D", roles: ["app"], userOnly: true,
+    params: z.object({ bot: BotId, id: utf16(128, 1) }),
+    result: z.object({ routine: RoutineView, instructions: z.string() }),
+    doc: "One routine of the bot on this computer with its instructions, read from its file as it is now, for the person's edit (`routine.edit`), so an edit never writes over text the person couldn't see. The person's window only.",
+  }),
   routineEdit: defineMethod({
     name: "routine.edit", owner: "D", roles: ["app"], userOnly: true,
     params: z.object({

@@ -281,6 +281,18 @@ export class RoutineEngine {
     });
   }
 
+  /** A routine of the bot with its instructions as its file has them now (`routine.get`, the person's edit view). */
+  read(id: string, bot: string): { routine: RoutineView; instructions: string } {
+    const l = this.#loaded.get(id);
+    if (!l || l.bot !== bot) throw new ContractError("not_found", `no routine ${id} of this bot on this computer`);
+    const read = readOwnFile(this.#o.home, l.path, { maxBytes: ROUTINE_FILE_MAX_BYTES, whole: true });
+    if (!read.ok) throw new ContractError("refused", `${basename(l.path)} can't be read (${read.why})`);
+    const parsed = parseRoutine(read.data.toString("utf8"), basename(l.path, ".md"));
+    if (!parsed.ok) throw new ContractError("invalid", `${basename(l.path)} doesn't read: ${parsed.reason}`);
+    if (parsed.routine.id !== id) throw new ContractError("conflict", `${basename(l.path)} now holds another routine (${parsed.routine.id}); list the routines again`);
+    return { routine: this.#view(l), instructions: parsed.routine.body };
+  }
+
   /** The user's edit (`routine.edit`, §7): that routine's own file, read again from disk (the file is the truth: a hand
    *  edit since the last scan is what is patched, and the last write wins), rewritten as the `Routine` tool writes it,
    *  then loaded again. A new name renames the file inside the bot's own folder, never over another file; a name
