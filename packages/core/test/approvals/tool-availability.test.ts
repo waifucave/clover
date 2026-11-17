@@ -126,14 +126,14 @@ describe("off: in no model's list, and a call is refused", () => {
     try {
       w.store.setAvailability(ACME, "Export", "off");
       let err: unknown;
-      try { await w.mcp.call({ server: ACME, tool: "Export", input: {}, as: BOT }); } catch (e) { err = e; }
+      try { await w.mcp.call({ server: ACME, tool: "Export", input: {}, as: BOT, session: "s_bot" }); } catch (e) { err = e; }
       expect(isContractError(err, "refused")).toBe(true);
       expect((err as Error).message).toBe(toolOffMessage(pluginToolName(ACME, "Export")));
       expect((err as Error).message).toContain("turned the tool mcp__acme-blender__Export off in Settings");
       expect((err as Error).message).not.toContain("blocked");
       expect(w.calls).toEqual([]);
       // A tool still on runs as before.
-      await w.mcp.call({ server: ACME, tool: "Render", input: {}, as: BOT });
+      await w.mcp.call({ server: ACME, tool: "Render", input: {}, as: BOT, session: "s_bot" });
       expect(w.calls).toEqual(["Render"]);
     } finally {
       w.close();

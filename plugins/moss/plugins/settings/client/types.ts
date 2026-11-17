@@ -11,9 +11,12 @@ import type { ReactNode } from "react";
 export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "tools" | "levels" | "bots";
 
 export type ToolPermission = "allow" | "ask" | "deny";
-/** The Tools tab's data (`tool.permissions`), the bots named for their cards' rules. */
+/** Whether a model is offered a tool at all (spec §6.7): off, behind Glossary (or an agent's own tool search), or preloaded. */
+export type ToolAvailability = "off" | "on-demand" | "always";
+/** The Tools tab's data (`tool.permissions`), the bots named for their cards' rules. `availability` and `declared` come from an
+ *  engine that serves the tool setting: `declared` is what the plugin says, the default. */
 export interface ToolsView {
-  plugins: { pluginId: string; name: string; server: string; tools: { name: string; title?: string; permission: ToolPermission; isNew?: boolean; cardRules: { bot: string; botName: string; computers: string[] }[] }[] }[];
+  plugins: { pluginId: string; name: string; server: string; tools: { name: string; title?: string; permission: ToolPermission; availability?: ToolAvailability; declared?: "preload" | "on-demand"; isNew?: boolean; cardRules: { bot: string; botName: string; computers: string[] }[] }[] }[];
 }
 
 /** A plugin's state (lane B's `PLUGIN_STATES`, spec §5.1): found and waiting for the user's OK, refused, invalid, off,
@@ -133,6 +136,8 @@ export interface SettingsModalProps {
   /** Tools: what each plugin tool is set to, undefined while it loads; set one tool (or, with no tool, all the plugin lists now), or take back a card's saved rule for one bot. */
   tools?: ToolsView;
   onSetTool?: (server: string, tool: string | undefined, permission: ToolPermission) => void;
+  /** Off, on demand or always on for one tool (or, with no tool, every tool the plugin lists now): what models are offered. */
+  onSetAvailability?: (server: string, tool: string | undefined, availability: ToolAvailability) => void;
   onTakeBackRule?: (server: string, tool: string, bot: string) => void;
   /** The one-at-a-time points (on the Plugins page), and the user's pick of the active filler of one. */
   oneAtATime?: OneAtATimeView[];
