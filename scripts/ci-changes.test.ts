@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { units } from "./acceptance/shards";
+import { NOT_ON_GITHUB } from "./ci/acceptance-units";
 import { areasFor, CI_AREA_NAMES, matches, type CiArea } from "./ci-changes";
 
 const on = (changed: string[]): CiArea[] => CI_AREA_NAMES.filter((a) => areasFor(changed)[a]);
@@ -287,12 +288,23 @@ describe("CI for the lanes", () => {
     expect(ci.jobs.gate!.if).toBe("always()");
   });
 
-  test("the acceptance run is one macOS job per unit of the seven a lane's check runs, and they exist in shards.ts", () => {
+  test("the acceptance run is one macOS job per unit of the matrix, and every unit of shards.ts is in the matrix or says why not (NOT_ON_GITHUB)", () => {
     const acceptance = ci.jobs.acceptance!;
     expect(acceptance["runs-on"]).toBe("macos-latest");
-    expect(acceptance.strategy?.matrix?.unit).toEqual(["chain", "window-1", "window-2", "window-3", "workshop", "plugin-app", "browser"]);
+    const matrix = acceptance.strategy!.matrix!.unit!;
     const known = units().map((u) => u.id as string);
-    for (const u of acceptance.strategy!.matrix!.unit!) expect(known).toContain(u);
+    // One name once, and one that exists.
+    expect(new Set(matrix).size).toBe(matrix.length);
+    for (const u of matrix) expect(known).toContain(u);
+    // The chain is the long pole and every row no other unit names: it always runs.
+    expect(matrix).toContain("chain");
+    // A unit that exists is on GitHub or has its reason not to be, never neither and never both: adding a unit to
+    // shards.ts fails here until its lane adds ONE name to the matrix line of ci.yml or one entry to NOT_ON_GITHUB.
+    for (const id of known) {
+      const where = [matrix.includes(id) ? "the matrix" : "", NOT_ON_GITHUB[id] !== undefined ? "NOT_ON_GITHUB" : ""].filter(Boolean);
+      expect([id, where.length]).toEqual([id, 1]);
+    }
+    for (const reason of Object.values(NOT_ON_GITHUB)) expect(reason.length).toBeGreaterThan(20);
   });
 
   test("the macOS job's legs deal the core's tests in thirds and between them run every part the one job ran", () => {

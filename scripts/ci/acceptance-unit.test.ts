@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { units } from "../acceptance/shards";
 import { MEASURED_ON_MAC_ONLY } from "../acceptance/measured";
 import { judge, parseRows, retryNote, retryRecord, scaleFor } from "./acceptance-unit";
@@ -87,11 +89,12 @@ describe("the acceptance unit's verdict", () => {
     expect(retryRecord("window-1", red, { first: "1.5", second: "3" })).toEqual({ unit: "window-1", scales: { first: "1.5", second: "3" }, rows: [{ n: 2, name: "a model key", detail: "added" }], problems: [] });
   });
 
-  test("the units a lane's check runs own their rows between them, once each, 67 of them; `main` is the chain and the window's three", () => {
-    const seven = units().filter((u) => ["chain", "window-1", "window-2", "window-3", "workshop", "plugin-app", "browser"].includes(u.id));
-    expect(seven.length).toBe(7);
-    const names = seven.flatMap((u) => u.rows);
+  test("the units a lane's check runs (ci.yml's matrix) own their rows between them, once each; `main` is the chain and the window's three", () => {
+    const matrix = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: { acceptance: { strategy: { matrix: { unit: string[] } } } } }).jobs.acceptance.strategy.matrix.unit;
+    const mine = units().filter((u) => matrix.includes(u.id));
+    expect(mine.map((u) => u.id).sort()).toEqual([...matrix].sort());
+    const names = mine.flatMap((u) => u.rows);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(67);
+    expect(names.length).toBeGreaterThan(67);
   });
 });
