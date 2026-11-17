@@ -20,7 +20,6 @@ import { STAGE_COPY_STEP } from "./stage-copy-step";
 import { SURFACE_COPY_STEP } from "./surface-copy-step";
 import { CARDS_STEP } from "./cards-step";
 import { AGENT_STEP, FULL_STEPS, OUTSIDE_STEP, SHELL_STEP, STAGE_STEP, ELSEWHERE_NOTES } from "./steps";
-import { EXAMPLE_NOTES_STEP } from "./example-steps";
 export { PARTS_ELSEWHERE, partElsewhere, type PartElsewhere } from "./elsewhere-parts";
 
 export type Elsewhere = { owner: "MC2" | "MOSS" | "retired"; why: string };
@@ -51,7 +50,6 @@ export const ROWS_ELSEWHERE: ReadonlyMap<string, Elsewhere> = new Map<string, El
   [LISTEN_STEP, { owner: "MOSS", why: "push-to-talk where a bot's voice listens" }],
   [DRAG_STEP, { owner: "MOSS", why: "a bot's own controls dragging the window" }],
   [STAGE_COPY_STEP, { owner: "MC2", why: "a copy of the stage drawing a bot's figure" }],
-  [EXAMPLE_NOTES_STEP, { owner: "MOSS", why: "the notes example's child bot and its tools scoped to bots, on that bot's tab (with bots as records a plugin installed after the move brings no bot, so the example's bot is the MOSS unit's to make)" }],
   [STAGE_STEP, { owner: "MC2", why: "Alpha's stage tools and their levels on her stage" }],
 ]);
 
