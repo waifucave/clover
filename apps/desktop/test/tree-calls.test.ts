@@ -286,7 +286,7 @@ describe("routing a part's call", () => {
   });
 });
 
-describe("the bot editor's switch for other plugins' layout patches", () => {
+describe("the bot editor's lists: a plugin's hides switched off in one spot; a tab's layout patches are retired (G8)", () => {
   const editor = { windowId: 1, pluginId: "bot-editor" };
   const stored = { picks: [], lists: [{ spot: "status", order: ["a"], hidden: [] }, { spot: "bot.tab", bot: "luna", order: [], hidden: ["old#x"] }, { spot: "bot.tab", bot: "alpha", order: [], hidden: ["m#move"] }] };
   const go = (params: unknown, gesture = true) => {
@@ -294,14 +294,12 @@ describe("the bot editor's switch for other plugins' layout patches", () => {
     const { r } = route({ tree: editor, method: "ui.set", params, gesture, request: async (m, p) => { got.push([m, p]); return m === "ui.settings" ? stored : "app"; } });
     return { run: routeCall(r), got };
   };
-  test("one bot's switched-off patches, merged into the stored lists by main, with the user's click; nothing else", async () => {
-    const ok = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: ["mover#move", "mover#move"] }] } });
-    expect(await ok.run).toBe("app");
-    expect(ok.got).toEqual([["ui.settings", {}], ["ui.set", { patch: { lists: [stored.lists[0], stored.lists[2], { spot: "bot.tab", bot: "luna", order: [], hidden: ["mover#move"] }] } }]]);
-    // All back on: Luna's entry goes.
-    const on = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: [] }] } });
-    await on.run;
-    expect(on.got.at(-1)).toEqual(["ui.set", { patch: { lists: [stored.lists[0], stored.lists[2]] } }]);
+  test("a tab's switched-off layout patches are refused (retired), and the ones stored before stay; a plugin's hides in one spot, with the user's click; nothing else", async () => {
+    for (const hidden of [["mover#move"], []]) {
+      const retired = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden }] } });
+      await expect(retired.run).rejects.toThrow("retired with the bot tab");
+      expect(retired.got).toEqual([]);
+    }
     for (const patch of [
       { appearance: "dark" },
       { lists: [{ spot: "status", order: [], hidden: ["x"] }] },
@@ -331,7 +329,7 @@ describe("the bot editor's switch for other plugins' layout patches", () => {
       await expect(bad.run).rejects.toThrow();
       expect(bad.got).toEqual([]);
     }
-    const none = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: [] }] } }, false);
+    const none = go({ patch: { lists: [{ spot: "status", bot: "luna", order: [], hidden: [], shown: ["tidy#no-roll"] }] } }, false);
     await expect(none.run).rejects.toThrow("only right after the user's own");
     expect(verdict("moss/conversation", "ui.set", { patch: { lists: [] } })).toMatchObject({ ok: false, owned: false, why: "ui.set needs the bots.edit capability" });
     expect(treeVerdict(["bots.edit"], "ui.set", { patch: { lists: [] } })).toMatchObject({ ok: true, by: "bots.edit" });
