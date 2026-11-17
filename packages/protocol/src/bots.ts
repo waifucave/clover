@@ -29,7 +29,7 @@
 //   `layout` (§6.1, G7, G8).
 import { z } from "zod";
 import { utf16 } from "./strings";
-import { AnyPluginId, BotId, CardId, ChangeResult, Ok, SessionId, Text, Timestamp } from "./common";
+import { AnyPluginId, BotId, ChangeResult, Ok, SessionId, Text, Timestamp } from "./common";
 import { PluginSettingView } from "./plugins";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
