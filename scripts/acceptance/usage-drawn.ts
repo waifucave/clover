@@ -194,11 +194,24 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
   // A third-party plugin's tab, on the same dots (labelled with its plugin's name), drawn by that plugin's own frame.
   if (thirdParty !== undefined) {
     await choose(thirdParty.label);
+    // The island's document was served before this plugin's layer was installed, so framing its tab loads that document again
+    // (runtime.ts `refreshDocument`, Chromium's Connection-Allowlist): the new document starts with its own default tab, and on a
+    // slow machine the old one still read the dot as chosen when `choose` looked. Row 67's fault: the tab is chosen again in
+    // the document that is there now, whenever its dot doesn't read as chosen.
+    const selector = `[role=tab][aria-label=${JSON.stringify(thirdParty.label)}]`;
+    let lastCheck = Date.now();
+    let rechosen = 0;
     await until("the third-party tab's own words", 20_000, async () => {
       // Its own plugin's layer draws it: a document of its own, not the island's or the moss tree's.
       for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("moss-plugin://acceptance-tab/"))) {
         const v = await cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "");
         if (typeof v === "string" && v.includes(thirdParty.words)) return true;
+      }
+      if (Date.now() - lastCheck >= 2_000 && rechosen < 3) {
+        lastCheck = Date.now();
+        let selected = false;
+        for (const d of await here()) if ((await cdp.evaluate(d.session, `(() => { const t = document.querySelector(${JSON.stringify(selector)}); return t ? t.getAttribute('aria-selected') === 'true' : null; })()`).catch(() => null)) === true) selected = true;
+        if (!selected) { rechosen++; await choose(thirdParty.label).catch(() => undefined); }
       }
       return undefined;
     }, async () => {
