@@ -318,7 +318,8 @@ export async function figureReactsStep(f: FigureCtx): Promise<string> {
     void happy;
 
     // Speech: Alpha speaks in the run's fixture voice; MOSS Voice tells the renderer (which fills its speech point).
-    await setVoice("alpha", { provider: "acceptance-voice", voice: "tone" });
+    // Her `long` voice (2.5 s): a page drawn offscreen in a headless run renders about once a second, which a 0.6 s tone can miss.
+    await setVoice("alpha", { provider: "acceptance-voice", voice: "long" });
     voiced.push("alpha");
     const before = (await seen()).length;
     const main = (await f.rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.mainSession ?? fail("no Alpha");
