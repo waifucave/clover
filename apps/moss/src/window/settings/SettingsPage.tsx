@@ -335,7 +335,7 @@ export function PluginSettings(props: { bot: string }) {
     <>
       {[...groups.entries()].map(([pluginId, g]) => (
         <section key={pluginId} className="settings-section" data-plugin-settings={pluginId}>
-          <h2>{g.name}<span className="muted small ma2-from"> · plugin</span></h2>
+          <h2>{g.name}<span className="muted small ma2-from">&nbsp;· plugin</span></h2>
           <ul className="kv ma2-plugin-settings">
             {g.rows.map((r) => <SettingField key={`${r.pluginId}/${r.key}`} row={r} onSet={(v) => void set(r, v)} />)}
           </ul>
