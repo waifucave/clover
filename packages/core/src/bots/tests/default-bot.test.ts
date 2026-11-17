@@ -9,6 +9,7 @@ import { BOT_MOVE_JOURNAL, BotMoveJournal, type Caller } from "@waifucave/moss-p
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { projectRecords } from "../../sessions/wire";
 import { DEFAULT_BOT_GREETING, DEFAULT_BOT_INSTRUCTIONS } from "../default-bot";
+import { servesScope } from "../../runtime-sdk/turn-loop/only-backends";
 import { botPaths, userLayerFile } from "../paths";
 import { instructionsFile } from "../records";
 import { botSource, DEFAULT_BOT_SOURCE } from "../source";
@@ -163,6 +164,29 @@ describe("the default bot", () => {
     const made = await b.bots.createBot({ name: "Tarot" }, { kind: "user" });
     expect(made.id).toBe("tarot-2");
     await b.shutdown();
+  });
+
+  test("own-bot reaches a bot only when its record says it was moved from that plugin, never by an equal id, both ways", async () => {
+    const root = tempDir();
+    const scout = writePlugin(root, "scout", { "moss.json": botManifest("scout", "Scout"), "bot/instructions.md": "You are Scout." });
+    const plugins = (await pluginFromFolder(scout)).inputs.map((i) => ({ ...i, approved: true }));
+    const b = await boot({ home: tempDir(), plugins, botSource: "records", defaultBot: true });
+    const own = (plugin: string, bot: string) => servesScope("own-bot", { kind: "bot", bot }, plugin);
+    // Moved from its plugin: that plugin's own parts reach it, another's don't.
+    expect(b.bots.records!.get("scout")?.madeBy).toEqual({ kind: "move", plugin: "scout" });
+    expect(own("scout", "scout")).toBe(true);
+    expect(own("tarot", "scout")).toBe(false);
+    // The default bot keeps her old plugin's stage until lane MC2 makes it a pack.
+    expect(own("alpha", "alpha")).toBe(true);
+    // A bot the person made, whose id a plugin installed afterwards has: no plugin's own-bot parts reach it.
+    const made = await b.bots.createBot({ name: "Nova" }, { kind: "user" });
+    expect(made.id).toBe("nova");
+    expect(own("nova", "nova")).toBe(false);
+    // A bot no store knows: none.
+    expect(own("ghost", "ghost")).toBe(false);
+    await b.shutdown();
+    // With no records side running (plugins as the source), a bot's id is its plugin's, as before.
+    expect(own("nova", "nova")).toBe(true);
   });
 });
 

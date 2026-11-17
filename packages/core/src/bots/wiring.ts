@@ -43,6 +43,8 @@ import { BotRecordStore, type BotPluginSettingsPort } from "./records";
 import { botRecordMethods } from "./records-rpc";
 import { recordToolDefs } from "./records-tools";
 import { botSource, type BotSource } from "./source";
+import { DEFAULT_BOT_ID } from "./default-bot";
+import { registerBotOwnership } from "../runtime-sdk/turn-loop/only-backends";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -235,6 +237,15 @@ export function createBotSide(o: BotSideOptions): BotSide {
     });
     records = store;
   }
+  // `own-bot` with bots as records: a plugin's own-bot parts reach only a bot its record says was moved from it. The
+  // default bot (Alpha) keeps her old plugin's stage until lane MC2 makes her figure a pack (the controller's ruling).
+  const offOwnership = records === undefined ? undefined : registerBotOwnership((bot) => {
+    const rec = records!.record(bot);
+    if (rec === undefined) return { known: false };
+    if (rec.madeBy.kind === "move") return { known: true, plugin: rec.madeBy.plugin };
+    if (rec.madeBy.kind === "default" && rec.id === DEFAULT_BOT_ID) return { known: true, plugin: DEFAULT_BOT_ID };
+    return { known: true };
+  });
   const bots = new BotService({
     source, ...(records === undefined ? {} : { records }), ...(o.defaultBot === undefined ? {} : { defaultBot: o.defaultBot }),
     home: o.home, computer: o.computer, registry: o.registry, host, gate, drivers: o.drivers, clock: o.clock,
@@ -359,6 +370,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
       if (o.routines?.ingress?.poll !== false) ingress?.start();
     },
     close: async () => {
+      offOwnership?.();
       offBusy?.();
       offQuestions?.();
       offReopen?.();

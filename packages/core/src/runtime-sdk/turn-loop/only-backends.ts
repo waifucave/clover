@@ -49,9 +49,31 @@ export interface ScopeSession {
  *  - `own-bot`: as `bots`, for the bot the plugin's tree is (a bot's id is its plugin's) and the agents it starts. */
 export function servesScope(scope: PluginScope, s: ScopeSession, pluginId?: string): boolean {
   if (scope === "both") return true;
-  if (scope === "own-bot") return pluginId !== undefined && s.bot !== undefined && topPluginIdOf(s.bot) === topPluginIdOf(pluginId) && servesScope("bots", s);
+  if (scope === "own-bot") return pluginId !== undefined && s.bot !== undefined && ownsBot(pluginId, s.bot) && servesScope("bots", s);
   if (scope === "bots") return s.kind === "bot" || s.kind === "side-thread" || (s.kind === "agent" && s.bot !== undefined);
   if (scope === "agents") return s.kind === "agent" || s.kind === "coding";
+  return false;
+}
+
+/** Whose bot a bot is, for `own-bot` (lane MC, the controller's ruling of 2026-11-17): with bots as records, the plugin
+ *  a bot's record says it was MOVED from (`madeBy: { kind: "move", plugin }`), and none for any other bot, whatever its
+ *  id; a bot no records store knows has none. Each bot side with records as its source registers its store's answer
+ *  (`ownedBy`); with none registered (plugins as the source), a bot's id is its plugin's, as before. */
+export type BotOwnership = (bot: string) => { known: false } | { known: true; plugin?: string };
+const ownerships = new Set<BotOwnership>();
+
+/** Registers a records store's answer to whose bot a bot is; the returned function takes it back. */
+export function registerBotOwnership(fn: BotOwnership): () => void {
+  ownerships.add(fn);
+  return () => void ownerships.delete(fn);
+}
+
+function ownsBot(pluginId: string, bot: string): boolean {
+  if (ownerships.size === 0) return topPluginIdOf(bot) === topPluginIdOf(pluginId);
+  for (const fn of ownerships) {
+    const o = fn(bot);
+    if (o.known) return o.plugin !== undefined && topPluginIdOf(o.plugin) === topPluginIdOf(pluginId);
+  }
   return false;
 }
 
