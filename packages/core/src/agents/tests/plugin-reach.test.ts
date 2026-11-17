@@ -759,6 +759,8 @@ describe("a plugin's skills and agent definitions for an agent", () => {
     expect(r.results).toEqual(expect.arrayContaining([expect.objectContaining({ name: "kit:haiku", kind: "skill" })]));
     expect(r.results.some((x) => (x as { name: string }).name === "botsonly:limerick")).toBe(false);
     expect(r.loaded).toEqual([expect.objectContaining({ name: "kit:haiku", kind: "skill", text: expect.stringContaining("five, seven, five") }), { name: "botsonly:limerick", found: false }]);
+    // In its tag, as a bot's Glossary gives it.
+    expect(String((r.loaded[0] as { text?: string }).text)).toStartWith('<skill name="kit:haiku">\n');
     // Its tools are the bridge's names.
     const t = await glossary("s", { query: "toolbox" }, facts());
     expect(t.results).toEqual(expect.arrayContaining([expect.objectContaining({ name: TOOL, kind: "tool" })]));

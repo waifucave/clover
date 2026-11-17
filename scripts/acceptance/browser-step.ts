@@ -13,7 +13,7 @@ import { F5_IDS, f5Wrong, SURF_TOOL, writeF5, type F5Seen } from "./f5-step";
 import { islandCardHolds, islandDrawsOkCard, islandShooter, islandStripLine, islandStripLineShown, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 import { scaled } from "./time-scale";
 
-export const BROWSER_STEP = "a code session's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; the diff panel's layer reads a coding session's changed and new file and the column's layer its outputs, context and connectors; and the usage plugin's layer reads the session's counted tokens, which its Settings section and island tab draw; F5: a folder plugin's own Browser tool drives the session's tab, a folder live view lists, shows and hides it with no press and navigates only on a real press, a folder background part is refused the browser, and a folder terminal opens and speaks, its own write refused";
+export const BROWSER_STEP = "a code session's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), reaches a loopback address (a code session's tab may; a bot's never), and its first click on a site raises one card (Always allow kept for that site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; the diff panel's layer reads a coding session's changed and new file and the column's layer its outputs, context and connectors; and the usage plugin's layer reads the session's counted tokens, which its Settings section and island tab draw; F5: a folder plugin's own Browser tool drives the session's tab, a folder live view lists, shows and hides it with no press and navigates only on a real press, a folder background part is refused the browser, and a folder terminal opens and speaks, its own write refused";
 
 export const FIXTURE_NAME = "browser-fixture.test";
 /** A second name for the same server: another site, as the browser and the approval judge it. */
@@ -105,12 +105,18 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   if (!paths.includes("/") || !paths.includes("/second")) fail(`the fixture saw ${paths.join(", ") || "nothing"}: the page was not loaded by the app's browser`);
   if (!fixture.seen.some((s) => /Chrome|Electron/.test(s.agent))) fail(`no request came from a browser (${fixture.seen.map((s) => s.agent.slice(0, 30)).join(" | ")})`);
   lines.push(`the fixture saw ${paths.length} request(s) from the browser`);
-  // 6. Loopback is refused to a bot's tab, whatever the name: the filter's rule holds.
+  // 6. Loopback, by the tab's owner (browser/network.ts): refused to a bot's tab, whatever the name; a code session's tab
+  //    reaches it (its dev servers, SESSION_POLICY), as the filter's rule says.
   const before = fixture.seen.length;
   const loop = await browse(ctx, session, { verb: "navigate", url: fixture.loopbackUrl });
   const reached = fixture.seen.length > before;
-  if (reached) fail(`a bot's tab reached the loopback address (${fixture.loopbackUrl}): ${loop.text.slice(0, 200)}`);
-  lines.push("loopback refused");
+  if (tabOwner.kind === "bot") {
+    if (reached) fail(`a bot's tab reached the loopback address (${fixture.loopbackUrl}): ${loop.text.slice(0, 200)}`);
+    lines.push("loopback refused");
+  } else {
+    if (!reached || loop.isError) fail(`a code session's tab didn't reach the loopback address (${fixture.loopbackUrl}), which its rule allows: ${loop.text.slice(0, 200)}`);
+    lines.push("loopback reached (a code session's tab)");
+  }
   // 7. Acting: one card per bot and site. Looking above raised none; the first click on this site asks, and "Always allow"
   // keeps the answer for this bot and site; the next click here runs with no card; the same page under another name is
   // another site and asks again.

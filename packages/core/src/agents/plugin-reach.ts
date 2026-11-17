@@ -357,7 +357,9 @@ export function agentGlossary(d: Pick<AgentPluginReachDeps, "registry" | "server
       const item = items.find((i) => i.name === name) ?? items.find((i) => i.name.toLowerCase() === name.toLowerCase());
       if (item === undefined) return { name, found: false };
       const body = item.body ?? item.description;
-      return { name: item.name, kind: item.kind, text: body.length > SKILL_BODY_MAX_CHARS ? `${body.slice(0, SKILL_BODY_MAX_CHARS)}\n[cut at ${SKILL_BODY_MAX_CHARS} characters]` : body };
+      const capped = body.length > SKILL_BODY_MAX_CHARS ? `${body.slice(0, SKILL_BODY_MAX_CHARS)}\n[cut at ${SKILL_BODY_MAX_CHARS} characters]` : body;
+      // A skill's words as a bot's Glossary gives them (glossary.ts): inside its `<skill name="…">` tag.
+      return { name: item.name, kind: item.kind, text: item.kind === "skill" ? `<skill name="${item.name}">\n${capped.trim()}\n</skill>` : capped };
     });
     return { results, loaded };
   };
