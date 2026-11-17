@@ -132,7 +132,7 @@ async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSett
     servers: (kind, backend, bot, opts) => mcp.servers(kind, backend, bot, opts), runner: localMcpRunner(mcp, () => "Studio"),
     judge: agentToolJudge(check), registry: opened.registry, watch: (fn) => opened.registry.watch(() => fn()),
   };
-  return { home, registry: opened.registry, mcp, deps, check };
+  return { home, registry: opened.registry, mcp, deps, check, okBroker };
 }
 
 /** A world whose manager's bridge serves the plugins' tools and parts (the daemon's `lateAgentPlugins` shape: the
@@ -442,6 +442,41 @@ describe("a tool that has gone is refused at the call, whatever the agent still 
     const r = await callOf(tools);
     expect(r).toEqual({ content: [{ type: "text", text: "Blocked in Settings' Tools." }], isError: true });
     expect(w.approvals.cards().filter((c) => c.kind === "tool")).toEqual([]);
+  });
+
+  test("Always block set while the session runs: the name it kept is refused at the call with the user's words, the tool never runs, and unblocked it runs again", async () => {
+    let blocked = false;
+    const toolSetting: ToolSetting = (_ctx, t) => (blocked && t === `mcp__${TOOL}` ? { setting: "deny", message: "Blocked in Settings' Tools." } : undefined);
+    const { p } = await setup({ toolSetting });
+    const tools = agentPluginTools(p.deps);
+    expect(await names(tools)).toContain(TOOL);
+    expect((await callOf(tools)).isError).toBe(false);
+    blocked = true;
+    // Still in the list (it is the user's refusal, not an absence), and the call to it is refused with no card.
+    expect(await names(tools)).toContain(TOOL);
+    expect(await callOf(tools)).toEqual({ content: [{ type: "text", text: "Blocked in Settings' Tools." }], isError: true });
+    blocked = false;
+    expect((await callOf(tools)).isError).toBe(false);
+  });
+
+  test("a plugin whose OK is pending again after an update that asks for more: its tool is refused at the call; once the user OKs it, it runs again", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    expect((await callOf(tools)).isError).toBe(false);
+    // The update changes the plugin's code: it asks again, and until the user says yes nothing of it runs on the old OK.
+    writeFileSync(join(p.home, "plugins", "toolbox", "host", "index.js"), "export {}; // updated\n");
+    await waitFor(() => p.registry.get("toolbox")?.state === "found", "the update to wait for its OK again", 20_000);
+    await p.mcp.refresh();
+    expect(await names(tools)).not.toContain(TOOL);
+    expect(await callOf(tools)).toEqual(goneText(TOOL));
+    const { card } = await p.registry.installed("toolbox", "app");
+    expect(card).toBeDefined();
+    const shown = p.okBroker.cards().find((c) => c.id === card)!;
+    await p.okBroker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: p.okBroker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
+    await waitFor(() => p.registry.get("toolbox")?.state !== "found", "the plugin to run on the new OK", 20_000);
+    await p.mcp.refresh();
+    await p.mcp.settled(5_000);
+    expect((await callOf(tools)).isError).toBe(false);
   });
 
   test("its per-computer server no longer ticked on this computer: refused", async () => {

@@ -16,6 +16,7 @@ import { BRIDGE_TOOLS_CHANGED_NOTIFICATION } from "@waifucave/moss-protocol";
 import { RpcPeer } from "@waifucave/clover-agent-sdk/acp";
 import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
 import type { AgentQuirks } from "../../contracts/agent-backend";
+import type { FakeAcpStep } from "../testing/fake-acp-agent";
 import { bridgeMossParts, type BridgeHandlers } from "../bridge/handlers";
 import { BRIDGE_MAIN_PATH } from "../bridge/main";
 import { BRIDGE_ENV } from "../bridge/server";
@@ -124,7 +125,11 @@ function mutableTools() {
   let tools: BridgeToolDef[] = [];
   let instructions = "";
   const watchers = new Set<() => void>();
+  /** What the plugins' `settled` waits on: each call is recorded with its wait, and runs `onSettled` (a server finishing its listing). */
+  const settledCalls: number[] = [];
+  let onSettled: (() => void) | undefined;
   const source: BridgeToolSource = {
+    settled: async (ms) => { settledCalls.push(ms); onSettled?.(); },
     tools: async () => tools.map((t) => ({ ...t })),
     instructions: async () => instructions,
     call: async (_s, c) => (tools.some((t) => t.name === c.tool)
@@ -133,6 +138,8 @@ function mutableTools() {
   };
   return {
     source,
+    settledCalls,
+    onSettled(fn: (() => void) | undefined) { onSettled = fn; },
     set(next: BridgeToolDef[], words = instructions) { tools = next; instructions = words; },
     /** The plugins' watch: one call is one change event. */
     fire() { for (const fn of [...watchers]) fn(); },
@@ -141,11 +148,14 @@ function mutableTools() {
 }
 
 /** A running coding session on the scripted agent, with a spy standing in for the stdio bridge's connection. */
-async function running(o: { quirks?: AgentQuirks } = {}) {
+async function running(o: { quirks?: AgentQuirks; script?: FakeAcpStep[][] } = {}) {
   const m = mutableTools();
-  const w = (world = new World({ pluginTools: m.source, watchTools: m.watch, script: [[{ say: "Ready." }], [{ say: "Again." }]], ...(o.quirks ? { quirks: o.quirks } : {}) }));
+  const w = (world = new World({ pluginTools: m.source, watchTools: m.watch, script: o.script ?? [[{ say: "Ready." }], [{ say: "Again." }]], ...(o.quirks ? { quirks: o.quirks } : {}) }));
   const r = await w.manager.start({ caller: { kind: "user", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() }, backend: "fake", prompt: "Hello.", root: "home/Studio/project1" });
   await waitFor(() => w.report("session")[0], "the agent's session");
+  // The first turn is over before a test changes anything: its start syncs the list too, and a change made while it begins
+  // would be told by it instead of by the test's own settle (still one notification, but not the one the test counts).
+  await waitFor(() => w.host.history(r.sessionId).some((x) => x.type === "turn_ended"), "the first turn's end", 30_000);
   const told: number[] = [];
   const handlers = w.manager.bridgeHandlers();
   let n = 0;
@@ -243,6 +253,64 @@ describe("an agent that can't take a change live", () => {
     // A second turn with no further change says nothing more.
     await waitFor(() => t.w.host.history(t.r.sessionId).filter((r) => r.type === "turn_ended").length >= 2, "the second turn's end", 30_000);
     expect(notices(t.w, t.r.sessionId).length).toBe(1);
+  });
+
+  test("a turn's start waits for the plugin servers to settle and syncs: a change no watcher reported is in the list that turn begins with, and the person is told of it", async () => {
+    const t = await running();
+    await waitFor(() => t.w.host.history(t.r.sessionId).some((r) => r.type === "turn_ended"), "the first turn's end", 30_000);
+    const asked = t.m.settledCalls.length;
+    // A server that finishes listing as the turn starts: no event was fired for it (the watchers have not spoken).
+    t.m.onSettled(() => t.m.set([def("plug__late")]));
+    await again(t.w, t.r.sessionId, "m2");
+    const said = await waitFor(() => notices(t.w, t.r.sessionId)[0], "the notice for a change only the settle saw");
+    expect(said).toContain("new: plug__late");
+    expect(t.m.settledCalls.length).toBeGreaterThan(asked);
+    expect(t.m.settledCalls.at(-1)).toBeGreaterThan(0);
+    expect(await t.list()).toEqual(["Glossary", "plug__late"]);
+  });
+
+  test("next-turn: a change during a turn does not reopen the agent mid-turn; it is reopened at the next turn's start, once", async () => {
+    const next: AgentQuirks = { ...WELL_BEHAVED_QUIRKS, mcp: { ...WELL_BEHAVED_QUIRKS.mcp, toolListChanges: "next-turn" } };
+    const t = await running({ quirks: next, script: [[{ say: "Ready." }], [{ exec: { seconds: 2 } }, { say: "Done." }], [{ say: "Again." }]] });
+    await waitFor(() => t.w.host.history(t.r.sessionId).some((r) => r.type === "turn_ended"), "the first turn's end", 30_000);
+    const opened = t.w.report("session").length;
+    await again(t.w, t.r.sessionId, "m2");
+    await waitFor(() => t.w.host.history(t.r.sessionId).some((r) => r.type === "driver" && (r as { event: { type: string } }).event.type === "agent_tool_call"), "the second turn under way", 30_000);
+    t.m.set([def("plug__a")]);
+    await t.settle();
+    // Mid-turn: the session is the same one, still running its turn.
+    expect(t.w.report("session").length).toBe(opened);
+    expect(t.w.host.history(t.r.sessionId).filter((r) => r.type === "turn_ended").length).toBe(1);
+    await waitFor(() => t.w.host.history(t.r.sessionId).filter((r) => r.type === "turn_ended").length >= 2, "the second turn's end", 30_000);
+    expect(t.w.report("session").length).toBe(opened);
+    await again(t.w, t.r.sessionId, "m3");
+    await waitFor(() => t.w.report("session").length === opened + 1, "the agent opened again at the next turn");
+    await waitFor(() => t.w.host.history(t.r.sessionId).filter((r) => r.type === "turn_ended").length >= 3, "the third turn's end", 30_000);
+    expect(t.w.report("session").length).toBe(opened + 1);
+  });
+
+  test("next-session: the person is told once per change, not once per turn", async () => {
+    const t = await running({ script: [[{ say: "1." }], [{ say: "2." }], [{ say: "3." }], [{ say: "4." }]] });
+    const ended = (n: number) => waitFor(() => t.w.host.history(t.r.sessionId).filter((r) => r.type === "turn_ended").length >= n, `turn ${n}'s end`, 30_000);
+    await ended(1);
+    t.m.set([def("plug__a")]);
+    await t.settle();
+    await again(t.w, t.r.sessionId, "m2");
+    await ended(2);
+    expect(notices(t.w, t.r.sessionId).length).toBe(1);
+    // A turn with nothing changed says nothing more.
+    await again(t.w, t.r.sessionId, "m3");
+    await ended(3);
+    expect(notices(t.w, t.r.sessionId).length).toBe(1);
+    // A second change is a second notice, and it names what changed since the list the agent holds.
+    t.m.set([def("plug__a"), def("plug__b")]);
+    await t.settle();
+    await again(t.w, t.r.sessionId, "m4");
+    await ended(4);
+    const all = notices(t.w, t.r.sessionId);
+    expect(all.length).toBe(2);
+    expect(all[1]).toContain("new: plug__b");
+    expect(all[1]).not.toContain("plug__a");
   });
 
   test("an agent that declares it takes the change live is told nothing in words", async () => {
