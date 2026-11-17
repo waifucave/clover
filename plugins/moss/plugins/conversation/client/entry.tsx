@@ -94,7 +94,9 @@ const RENDERERS = spotRenderers();
 export function ConversationEntry({ props }: { props: ConversationEntryProps }) {
   const api = usePluginApi();
   const core = useCore();
-  const conv = api.conversation;
+  // MOSS Code's window shows code sessions only (spec §9.4): read through `sessions.*` (`sessions.read`); the user's
+  // answer to a question card goes through `conversation.answer` (`conversation.post`).
+  const conv = api.sessions;
   const [events, setEvents] = useState<CoreEvent[]>([]);
   const [hasEarlier, setHasEarlier] = useState(false);
   /** The session whose first page has answered (or failed): until then the view draws no empty state. */
@@ -262,7 +264,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
         )}
         renderMessageExtra={(item) => <Inner name="conversation.message.extra" props={{ ...at, item, ctx: {} }} />}
         extraInline={extraInline}
-        onAnswerQuestion={archived ? undefined : (callId: string, answer: QuestionAnswer) => conv?.answer?.(props.session, callId, answer.answers)}
+        onAnswerQuestion={archived ? undefined : (callId: string, answer: QuestionAnswer) => api.conversation?.answer?.(props.session, callId, answer.answers)}
         onOpenAgent={props.onOpenAgent}
         onOpenFile={props.onOpenFile}
         onCopy={(text) => void navigator.clipboard?.writeText(text)}
@@ -274,19 +276,17 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   );
 }
 
-/** Display names for the bots, agents and devices a transcript mentions, by `<kind>:<id>`. */
+/** Display names for the agents and devices a transcript mentions, by `<kind>:<id>` (a bot's is its id: bots are MOSS's to show). */
 function useNames(api: ReturnType<typeof usePluginApi>): { names: Record<string, string>; here?: { id: string; name: string } } {
   const [names, setNames] = useState<{ names: Record<string, string>; here?: { id: string; name: string } }>({ names: {} });
   useEffect(() => {
     let live = true;
     void Promise.all([
-      api.bots?.list().catch(() => []) ?? [],
-      api.conversation?.list?.().catch(() => []) ?? [],
+      api.sessions?.list?.().catch(() => []) ?? [],
       api.devices?.list().catch(() => []) ?? [],
-    ]).then(([bots, sessions, devices]) => {
+    ]).then(([sessions, devices]) => {
       if (!live) return;
       const out: Record<string, string> = {};
-      for (const b of bots) out[`bot:${b.id}`] = plain(b.name);
       for (const s of sessions) out[`agent:${s.id}`] = s.backend ?? s.title ?? s.id;
       for (const d of devices) out[`device:${d.id}`] = d.name;
       const here = devices.find((d) => d.isThis);

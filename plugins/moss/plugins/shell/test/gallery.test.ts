@@ -18,11 +18,9 @@ import { terminalStories } from "../../panel-terminal/gallery/stories";
 import { panelStories } from "../../panel/gallery/stories";
 import { settingsStories } from "../../settings/gallery/stories";
 import { stories as sidebarStories } from "../../sidebar/gallery/stories";
-import { botEditorStories } from "../../bot-editor/gallery/stories";
 import { pluginIndexStories } from "../../plugin-index/gallery/stories";
 import { archiveStories } from "../../archive/gallery/stories";
 import * as archiveTokens from "../../archive/client/tokens";
-import * as botEditorTokens from "../../bot-editor/client/tokens";
 import * as pluginIndexTokens from "../../plugin-index/client/tokens";
 import * as composerTokens from "../../composer/client/tokens";
 import * as conversationTokens from "../../conversation/client/tokens";
@@ -85,11 +83,11 @@ afterAll(async () => {
 describe("the gallery", () => {
   const all = [
     ...screenStories, ...conversationStories, ...composerStories, ...sidebarStories, ...panelStories,
-    ...terminalStories, ...diffStories, ...filesStories, ...settingsStories, ...botEditorStories, ...pluginIndexStories,
+    ...terminalStories, ...diffStories, ...filesStories, ...settingsStories, ...pluginIndexStories,
     ...archiveStories, ...shellStories,
   ];
   /** The screens of a tab (a bot's, an agent's, a coding session's), not a page of its own. */
-  const PAGES = ["screen/plugins-installed-1440", "screen/plugins-detail-1440", "screen/plugin-index-1440", "screen/plugin-index-for-panel-1440", "screen/bot-editor-1440", "screen/archive-1440", "screen/archive-session-1440"];
+  const PAGES = ["screen/plugins-installed-1440", "screen/plugins-detail-1440", "screen/plugin-index-1440", "screen/plugin-index-for-panel-1440", "screen/archive-1440", "screen/archive-session-1440"];
   const tabScreens = screenStories.filter((s) => !PAGES.includes(s.id));
 
   test("builds a page, a script and a stylesheet", () => {
@@ -182,7 +180,7 @@ describe("the gallery", () => {
   });
 
   test("every catalog token a part names is in lane B's catalog; the rest are part-local requests", () => {
-    const parts = { composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens, botEditorTokens, pluginIndexTokens, archiveTokens };
+    const parts = { composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens, pluginIndexTokens, archiveTokens };
     for (const [part, t] of Object.entries(parts)) {
       expect([part, t.CATALOG_TOKENS.filter((n: string) => !CATALOG_SNAPSHOT.has(n))]).toEqual([part, []]);
       expect([part, t.PART_TOKENS.filter((n: string) => !n.startsWith("plugin.moss."))]).toEqual([part, []]);
@@ -191,7 +189,7 @@ describe("the gallery", () => {
 
   test("the gallery theme sets every token any part wears", () => {
     const theme = readFileSync(join(import.meta.dir, "../gallery/theme.css"), "utf8");
-    const parts = [composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens, botEditorTokens, pluginIndexTokens, archiveTokens];
+    const parts = [composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens, pluginIndexTokens, archiveTokens];
     const missing = parts.flatMap((t) => t.TOKENS.map(t.cssVariable)).filter((v) => !theme.includes(`${v}:`));
     expect(missing).toEqual([]);
   });

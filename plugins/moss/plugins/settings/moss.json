@@ -12,7 +12,6 @@
     ]
   },
   "capabilities": [
-    "bots.read",
     "computers.read",
     "devices.read",
     "logs.read",

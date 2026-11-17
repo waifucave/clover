@@ -55,8 +55,8 @@ function useColumn(api: PluginApi, core: CoreClient | undefined, id: string | un
     let live = true;
     const quiet = <T,>(p: Promise<T> | undefined) => (p ? p.catch(() => undefined) : Promise.resolve(undefined));
     void Promise.all([
-      quiet(api.conversation?.get?.(id)),
-      quiet(api.conversation?.list?.()),
+      quiet(api.sessions?.get?.(id)),
+      quiet(api.sessions?.list?.()),
       quiet(api.computers?.list?.()),
       withChanges ? quiet(core?.call("session.changes", { id })) : Promise.resolve(undefined),
       quiet(core?.call("session.outputs", { id, limit: 4 })),

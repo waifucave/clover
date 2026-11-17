@@ -19,6 +19,12 @@ import { S } from "./strings";
 import type { ExtraSection, Language, OneAtATimeView, SettingsSection, SettingsValues, ToolAvailability, ToolPermission } from "./types";
 
 /** `tool.permissions`' answer. */
+/** A bot's id as a name when nothing better is known: `alpha` -> `Alpha`, `crew/luna` -> `Luna`. */
+export function botNameOf(id: string): string {
+  const last = id.split("/").pop() ?? id;
+  return last.length === 0 ? id : last[0]!.toUpperCase() + last.slice(1);
+}
+
 interface ToolsRaw { plugins: { pluginId: string; name: string; server: string; tools: { name: string; title?: string; permission: ToolPermission; availability?: ToolAvailability; declared?: "preload" | "on-demand"; isNew?: boolean; cardRules: { bot: string; computers: string[] }[] }[] }[] }
 
 const DEFAULT_APPEARANCE: SettingsValues["appearance"] = { theme: "system", textSize: "default" };
@@ -150,7 +156,8 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const [themePick, setThemePick] = useState<"light" | "dark" | "system" | undefined>(undefined);
   const [computers, setComputers] = useState<Awaited<ReturnType<NonNullable<NonNullable<typeof api.computers>["list"]>>>>([]);
   const [devices, setDevices] = useState<Awaited<ReturnType<NonNullable<typeof api.devices>["list"]>>>([]);
-  const [bots, setBots] = useState<{ id: string; name: string }[]>([]);
+  // A kept card rule names its bot by its id (bots are MOSS's to show; this window reads none of their data).
+  const bots: { id: string; name: string }[] = [];
   // Tools: read when the section is open, and again after each change (a card's rule taken back, a value set).
   const [toolsRaw, setToolsRaw] = useState<ToolsRaw | undefined>(undefined);
   const [toolsRev, setToolsRev] = useState(0);
@@ -186,7 +193,6 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
     if (core) load(core).then((l) => live && setLoaded(l), () => undefined);
     api.computers?.list?.().then((c) => live && setComputers(c), () => undefined);
     api.devices?.list().then((d) => live && setDevices(d), () => undefined);
-    api.bots?.list().then((b) => live && setBots(b.map((x) => ({ id: x.id, name: plain(x.name) }))), () => undefined);
     void Promise.all(OWN_SETTING_KEYS.map(async (k) => [k, await api.settings.get(k)] as const)).then(
       (pairs) => {
         if (!live) return;
@@ -241,7 +247,6 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       { id: "automatic", label: "Fully automatic" },
     ],
     devices: devices.map((d) => ({ id: d.id, name: d.name, kind: deviceKind(d), ...(d.isThis ? { here: true } : {}), ...(d.isMain ? { main: true } : {}) })),
-    bots,
   };
 
   const onChange = (path: string, value: unknown) => {
@@ -301,7 +306,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       values={values}
       onChange={onChange}
       onOpenLanguage={() => setPicking(true)}
-      {...(props.navigate ? { onOpenPlugin: (id: string) => props.navigate!({ route: "plugins", params: { id } }), onOpenPluginManager: () => props.navigate!({ route: "plugins", params: {} }), onEditBot: (id: string) => props.navigate!({ route: "bot-editor", params: { bot: id } }) } : {})}
+      {...(props.navigate ? { onOpenPlugin: (id: string) => props.navigate!({ route: "plugins", params: { id } }), onOpenPluginManager: () => props.navigate!({ route: "plugins", params: {} }) } : {})}
       {...(core
         ? {
             onOpenPluginLogs: (id: string) =>
@@ -312,7 +317,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
         : {})}
       {...(logs ? { logs: { ...logs, onBack: () => setLogs(undefined) } } : {})}
       extraSections={extra}
-      {...(toolsRaw !== undefined ? { tools: { plugins: toolsRaw.plugins.map((p) => ({ ...p, tools: p.tools.map((t) => ({ ...t, cardRules: t.cardRules.map((r) => ({ ...r, botName: bots.find((b) => b.id === r.bot)?.name ?? r.bot })) })) })) } } : {})}
+      {...(toolsRaw !== undefined ? { tools: { plugins: toolsRaw.plugins.map((p) => ({ ...p, tools: p.tools.map((t) => ({ ...t, cardRules: t.cardRules.map((r) => ({ ...r, botName: bots.find((b) => b.id === r.bot)?.name ?? botNameOf(r.bot) })) })) })) } } : {})}
       {...(core ? { onSetAvailability: (server: string, tool: string | undefined, availability: ToolAvailability) => toolsCall("tool.setAvailability", { server, ...(tool !== undefined ? { tool } : {}), availability }), onSetTool: (server: string, tool: string | undefined, permission: ToolPermission) => toolsCall("tool.setPermission", { server, ...(tool !== undefined ? { tool } : {}), permission }), onTakeBackRule: (server: string, tool: string, bot: string) => toolsCall("tool.takeBackRule", { server, tool, bot }) } : {})}
       {...(oneRaw !== undefined ? { oneAtATime: oneRaw.points.map((p) => ({ ...p, title: typeof p.title === "string" ? p.title : p.title.en })) } : {})}
       {...(core ? { onPickActive: (point: string, entry: { pluginId: string; entryId: string }) => void (core.call as (m: string, p: unknown) => Promise<unknown>)("point.active.set", { point, entry }).then(() => setOneRev((r) => r + 1), () => setFailure(S.choiceFailed(S.section.plugins))) } : {})}

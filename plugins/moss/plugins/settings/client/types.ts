@@ -8,7 +8,7 @@
 import type { ReactNode } from "react";
 
 /** MOSS's own sections. Usage is the usage plugin's, which fills `settings.section` (the controller's R3). */
-export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "tools" | "levels" | "bots";
+export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "tools" | "levels";
 
 export type ToolPermission = "allow" | "ask" | "deny";
 /** Whether a model is offered a tool at all (spec §6.7): off, behind Glossary (or an agent's own tool search), or preloaded. */

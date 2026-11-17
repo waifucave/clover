@@ -1,4 +1,5 @@
-// The composer on the runtime: the `composer` entry, for a bot's tab or an agent's live tab. It sends the user's
+// The composer on the runtime: the `composer` entry, for a session's live tab (MOSS Code's window has no bot's tab, spec
+// §9.4: the session is a code session, read with `sessions.read`). It sends the user's
 // message through `useUserSend` (the app counts it as the user's only from a real key press or click, §5.5),
 // stops the turn, switches the model (the `composer` spot's host callbacks, `useComposerHost`: what any entry in the
 // spot gets), and shows the level of the computer it runs on
@@ -72,32 +73,22 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const { cards } = useApprovals();
   // The buttons plugins add under keys of their own (the spot's `*`), in its order.
   const added = useSpotEntries("composer.action", "*", { bot: props.bot }).entries.filter((e) => e.key !== undefined);
-  // A pick changes the model the daemon holds (a bot's user layer, or the session's own): the bot and the session are read again
-  // after it, so the label says what the next turn runs on.
+  // A pick changes the session's own model: the session is read again after it, so the label says what the next turn runs on.
   const [rev, setRev] = useState(0);
-  const session = useLoad(() => api.conversation?.get?.(props.session), [api, props.session, rev]);
+  const session = useLoad(() => api.sessions?.get?.(props.session), [api, props.session, rev]);
   const kind = session?.kind ?? props.sessionKind;
-  // The bot's own changes (the user's layer) reload it.
-  const [botRev, setBotRev] = useState(0);
-  useEffect(() => {
-    if (kind !== "bot") return;
-    return api.bots?.watch?.((b) => {
-      if (b.id === props.bot.id) setBotRev((n) => n + 1);
-    });
-  }, [api, props.bot.id, kind]);
-  const bot = useLoad(() => (kind === "bot" ? api.bots?.get(props.bot.id) : undefined), [api, props.bot.id, kind, rev, botRev]);
   const computers = useLoad(() => api.computers?.list?.(), [api]);
   const catalog = useLoad(() => host?.models(), [host]);
   // The draft is the user's: it outlives a reload of the window's document (installing or turning on a plugin with
   // its own layer loads it again), per conversation.
   const [draft, setDraft] = useKept<string>(`composer.draft:${props.session}`, "");
   const [notice, setNotice] = useState<string | undefined>(undefined);
-  const where = session?.computer ?? bot?.computer;
+  const where = session?.computer;
   const computer = computers?.find((c) => c.name === where);
   const running = session?.status === "prompting" || session?.status === "starting" || session?.status === "cancelling";
   const cardPending = cards.some((c) => c.session === props.session);
-  const current = kind === "bot" ? bot?.model : session?.model;
-  const effort = kind === "bot" ? bot?.effort : session?.effort;
+  const current = session?.model;
+  const effort = session?.effort;
   const models = modelsOf(catalog);
   const currentModel = models.find((m) => m.id === current);
   const [commands, setCommands] = useState<SlashCommand[] | undefined>(undefined);

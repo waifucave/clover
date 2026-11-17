@@ -37,8 +37,8 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
   const approvals = fakeApprovals();
   const sends: { to: unknown; message: unknown }[] = [];
   const api = fakeApi({
-    bots: { list: async () => [ALPHA], get: async () => held, watch: () => () => undefined },
-    conversation: { get: async () => s },
+    // The session as the core holds it (`sessions.get`): its model is what a pick last set.
+    sessions: { list: async () => [s], get: async () => (held === ALPHA && s.kind !== "bot" ? s : { ...s, model: held.model, ...(held.effort !== undefined ? { effort: held.effort } : {}) }), watch: () => () => undefined, history: async () => ({ events: [], hasMore: false }), follow: () => () => undefined },
     computers: { list: async () => [STUDIO] },
   });
   const runtime = runtimeWith({

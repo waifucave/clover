@@ -48,14 +48,11 @@
     ]
   },
   "capabilities": [
-    "conversation.read",
     "sessions.read",
     "conversation.post",
-    "bots.read",
     "computers.read",
     "approvals",
     "approvals.all",
-    "commands.run",
-    "bots.edit"
+    "commands.run"
   ]
 }

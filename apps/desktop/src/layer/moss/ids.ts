@@ -13,7 +13,6 @@ export const modules = [
   "moss/settings",
   "moss/browser-view",
   "moss/archive",
-  "moss/bot-editor",
   "moss/plugin-index",
   "moss/island",
   "moss/live2d",

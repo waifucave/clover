@@ -129,9 +129,10 @@ describe("the conversation entry", () => {
       ...(extra.action ? { "conversation.messageAction": extra.action } : {}),
     } as never);
     const api = fakeApi({
-      bots: { list: async () => (extra.bots ?? []) as never, get: async () => { throw new Error("none"); }, watch: () => () => undefined },
-      conversation: {
+      // Code sessions (`sessions.*`), as MOSS Code's window reads them.
+      sessions: {
         list: async () => [],
+        watch: () => () => undefined,
         get: async (session: string) => ({ id: session, kind: await (extra.kind ?? "bot") }) as never,
         history: extra.liveHistory ?? (async () => ({ events: HISTORY, hasMore: false })),
         follow: (_s, l) => {

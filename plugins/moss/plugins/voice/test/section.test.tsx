@@ -6,7 +6,7 @@ import type { BotRef } from "../client/local";
 import type { EntryProps } from "@waifucave/moss-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { BotVoiceSection, VoiceSection } from "../client";
+import { VoiceSection } from "../client";
 import type { PluginApi, PointEntry, TurnState } from "@waifucave/moss-plugin-sdk";
 
 afterEach(cleanup);
@@ -65,41 +65,6 @@ describe("Settings › Voice", () => {
     await act(async () => { fireEvent.click(sw); await settle(4); });
     expect(a.stored.get("speakReplies")).toBe(false);
     expect(screen.getByRole("switch", { name: "Speak replies" }).getAttribute("aria-checked")).toBe("false");
-  });
-});
-
-describe("a bot's editor: its voice", () => {
-  test("shows the bot's voice from the plugin's bot setting, and resets it to none", async () => {
-    const a = api({ settings: { "provider@alpha": "fish-audio", "voice@alpha": "abc" } });
-    mount(a, <BotVoiceSection {...alpha} />);
-    await act(() => settle(6));
-    expect(screen.getByText("abc · fish-audio")).toBeTruthy();
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Reset" })); await settle(4); });
-    expect(screen.getByText("None")).toBeTruthy();
-    expect(a.stored.get("provider@alpha")).toBeNull();
-  });
-
-  test("its switch turns this one bot's voice off, as the user's own setting, and back on", async () => {
-    const a = api({ settings: { "provider@alpha": "fish-audio", "voice@alpha": "abc" } });
-    mount(a, <BotVoiceSection {...alpha} />);
-    await act(() => settle(6));
-    const sw = () => screen.getByRole("switch", { name: "Speaks its replies" });
-    expect(sw().getAttribute("aria-checked")).toBe("true");
-    await act(async () => { fireEvent.click(sw()); await settle(4); });
-    expect(a.stored.get("silent@alpha")).toBe(true);
-    expect(sw().getAttribute("aria-checked")).toBe("false");
-    await act(async () => { fireEvent.click(sw()); await settle(4); });
-    expect(a.stored.get("silent@alpha")).toBeNull();
-  });
-
-  test("the default from the plugin that brings the bot shows as such, with no reset, and says why it can't speak when its provider isn't set up", async () => {
-    const a = api({ byBot: { alpha: { provider: "fish-audio", voice: "hers", from: "bot", why: "Fish Audio isn't set up: add your key" } } });
-    mount(a, <BotVoiceSection {...alpha} />);
-    await act(() => settle(6));
-    expect(screen.getByText("hers · fish-audio")).toBeTruthy();
-    expect(screen.getByText("The bot's own default. A voice you choose takes its place.")).toBeTruthy();
-    expect(screen.getByRole("note").textContent).toBe("Fish Audio isn't set up: add your key");
-    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
   });
 });
 

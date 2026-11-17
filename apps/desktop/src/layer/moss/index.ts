@@ -3,7 +3,6 @@
 // the UI API's shape). Everything we ship under `moss` shares this one layer (spec §5.5). Each is bound as it is: the
 // shell's own `Shell` hears the app's commands itself.
 import * as archive from "@waifucave/moss-plugin-archive/client";
-import * as botEditor from "@waifucave/moss-plugin-bot-editor/client";
 import * as character from "@waifucave/moss-plugin-character/client";
 import * as browserView from "@waifucave/moss-plugin-browser-view/client";
 import * as composer from "@waifucave/moss-plugin-composer/client";
@@ -38,7 +37,6 @@ export const modules: Record<MossChildId, Record<string, unknown>> = {
   "moss/settings": settings,
   "moss/browser-view": browserView,
   "moss/archive": archive,
-  "moss/bot-editor": botEditor,
   "moss/plugin-index": pluginIndex,
   "moss/island": island,
   "moss/pill": pill,

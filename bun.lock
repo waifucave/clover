@@ -24,7 +24,6 @@
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "@waifucave/moss-plugin-archive": "workspace:*",
-        "@waifucave/moss-plugin-bot-editor": "workspace:*",
         "@waifucave/moss-plugin-browser-view": "workspace:*",
         "@waifucave/moss-plugin-character": "workspace:*",
         "@waifucave/moss-plugin-composer": "workspace:*",
@@ -226,25 +225,6 @@
         "@types/react-dom": "19.3.0",
         "@types/three": "0.186.0",
         "playwright": "1.64.1",
-        "typescript": "5.9.3",
-      },
-    },
-    "plugins/moss/plugins/bot-editor": {
-      "name": "@waifucave/moss-plugin-bot-editor",
-      "version": "0.0.0",
-      "dependencies": {
-        "@waifucave/moss-plugin-sdk": "workspace:*",
-        "lucide-react": "1.61.0",
-        "react": "19.3.1",
-        "react-dom": "19.3.1",
-      },
-      "devDependencies": {
-        "@happy-dom/global-registrator": "21.0.4",
-        "@testing-library/dom": "10.4.2",
-        "@testing-library/react": "16.3.3",
-        "@types/bun": "1.4.4",
-        "@types/react": "19.3.0",
-        "@types/react-dom": "19.3.0",
         "typescript": "5.9.3",
       },
     },
@@ -1429,8 +1409,6 @@
 
     "@waifucave/moss-plugin-base-theme": ["@waifucave/moss-plugin-base-theme@workspace:plugins/moss/plugins/base-theme"],
 
-    "@waifucave/moss-plugin-bot-editor": ["@waifucave/moss-plugin-bot-editor@workspace:plugins/moss/plugins/bot-editor"],
-
     "@waifucave/moss-plugin-browser": ["@waifucave/moss-plugin-browser@workspace:plugins/moss/plugins/browser"],
 
     "@waifucave/moss-plugin-browser-view": ["@waifucave/moss-plugin-browser-view@workspace:plugins/moss/plugins/browser-view"],
@@ -2489,14 +2467,6 @@
 
     "@waifucave/moss-plugin-archive/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
-    "@waifucave/moss-plugin-bot-editor/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
-
-    "@waifucave/moss-plugin-bot-editor/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
-
-    "@waifucave/moss-plugin-bot-editor/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
-
-    "@waifucave/moss-plugin-bot-editor/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
-
     "@waifucave/moss-plugin-browser-view/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
     "@waifucave/moss-plugin-browser-view/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
@@ -2796,8 +2766,6 @@
     "@waifucave/moss-moss/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
 
     "@waifucave/moss-plugin-archive/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
-
-    "@waifucave/moss-plugin-bot-editor/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
 
     "@waifucave/moss-plugin-browser-view/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
 

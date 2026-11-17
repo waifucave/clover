@@ -17,7 +17,6 @@ import "../../panel-diff/client/styles.css";
 import "../../panel-diff/gallery/stories.css";
 import "../../panel-files/client/styles.css";
 import "../../settings/client/styles.css";
-import "../../bot-editor/client/styles.css";
 import "../../character/client/styles.css";
 import "../../plugin-index/client/styles.css";
 import "../../archive/client/styles.css";
@@ -37,7 +36,6 @@ import { filesStories } from "../../panel-files/gallery/stories";
 import { terminalStories } from "../../panel-terminal/gallery/stories";
 import { panelStories } from "../../panel/gallery/stories";
 import { settingsStories } from "../../settings/gallery/stories";
-import { botEditorStories } from "../../bot-editor/gallery/stories";
 import { pluginIndexStories } from "../../plugin-index/gallery/stories";
 import { archiveStories } from "../../archive/gallery/stories";
 import { stories as sidebarStories } from "../../sidebar/gallery/stories";
@@ -59,7 +57,6 @@ export const GROUPS: { title: string; stories: Story[] }[] = [
   { title: "Changes", stories: diffStories },
   { title: "Files", stories: filesStories },
   { title: "Settings", stories: settingsStories },
-  { title: "Bot editor", stories: botEditorStories },
   { title: "Plugin index", stories: pluginIndexStories },
   { title: "Archive", stories: archiveStories },
   { title: "The shell's own parts", stories: shellStories },

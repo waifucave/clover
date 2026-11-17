@@ -27,7 +27,7 @@ function mount(node: (navigate: (r: unknown) => void, open: (id: string) => void
     "session.createPr": () => ({ ok: true }),
   });
   const api = fakeApi({
-    conversation: { get: async (id) => SESSIONS.find((x) => x.id === id)!, list: async () => SESSIONS },
+    sessions: { watch: () => () => undefined, history: async () => ({ events: [], hasMore: false }), follow: () => () => undefined,  get: async (id) => SESSIONS.find((x) => x.id === id)!, list: async () => SESSIONS },
     computers: { list: async () => [computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true })] },
   });
   const routes: unknown[] = [];

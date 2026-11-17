@@ -19,7 +19,7 @@ const FILLER: UiEntry = { pluginId: "acceptance-preview", id: "file.preview", sp
 function mount(withFiller: boolean) {
   const reads: string[] = [];
   const api = fakeApi({
-    conversation: { get: async () => CODE },
+    sessions: { list: async () => [], watch: () => () => undefined, history: async () => ({ events: [], hasMore: false }), follow: () => () => undefined,  get: async () => CODE },
     files: fakeFiles({
       list: async () => [stat("logo.png"), stat("notes.txt")],
       readText: async (path) => { reads.push(path); return "some notes"; },
