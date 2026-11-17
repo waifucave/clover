@@ -80,6 +80,8 @@ export function acpRecordEvent(event: { type: string; [key: string]: unknown }):
       const status = s("status");
       if (!id || (status !== "completed" && status !== "failed")) return undefined;
       const told = typeof event["output"] === "string" ? event["output"] : undefined;
+      // A call MOSS closed when the agent's turn was cancelled (it left the call open) reads as interrupted.
+      if (event["closedByMoss"] === true) return { type: "tool_result", callId: id, output: told ?? "Interrupted.", isError: true, interrupted: true };
       const output = told ?? (status === "completed" ? "" : event["refused"] === true ? "Refused." : "Failed.");
       return { type: "tool_result", callId: id, output, isError: status === "failed" };
     }

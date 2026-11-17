@@ -284,6 +284,10 @@ interface Hosted {
   interruptAfterCompaction: boolean;
   /** A turn another computer started and the log never ended: caught up before this computer starts one. */
   foreignTurn?: { on: string };
+  /** The calls the core closed as interrupted (a release, a stop, a turn that ended with them open, a restart): what a
+   *  driver says of one later (an agent resumed after a restart reporting it ended) is dropped, so it never reads as
+   *  run, or run again. */
+  closedCalls: Set<string>;
   /** Which other computers' late records (and runs' notes) `appendLate` has appended, by where they first came from
    *  (read from the log once). */
   late?: { seen: Set<string> };
@@ -359,6 +363,8 @@ class Replay {
   updatedAt: number | undefined;
   readonly clientIds: Hosted["clientIds"] = new Map();
   readonly questions = new Set<string>();
+  /** The calls the core closed as interrupted (`closedCalls`). */
+  readonly closedCalls = new Set<string>();
 
   apply(r: SessionRecord): void {
     // A late record (another lease's, or another computer's set aside) is history only: it never moves the status,
@@ -413,6 +419,7 @@ class Replay {
       case "driver":
         trackQuestion(this.questions, r.event);
         if (this.running) trackCall(this.openCalls, r.event);
+        if (isInterruptedClose(r.event)) this.closedCalls.add(callIdOf(r.event)!);
         break;
     }
   }
@@ -420,10 +427,24 @@ class Replay {
 
 /** Keeps a turn's tool calls that have no result yet (the runtime's `tool_call` and `tool_result` events). */
 function trackCall(open: Map<string, string>, event: { type: string; [key: string]: unknown }): void {
-  const callId = event["callId"];
-  if (typeof callId !== "string" || callId === "") return;
+  const callId = callIdOf(event);
+  if (callId === undefined) return;
   if (event.type === "tool_call") open.set(callId, typeof event["name"] === "string" ? event["name"] : "");
-  else if (event.type === "tool_result") open.delete(callId);
+  else if (event.type === "agent_tool_call") open.set(callId, typeof event["title"] === "string" ? event["title"] : "");
+  else if (event.type === "tool_result" || (event.type === "agent_tool_call_update" && (event["status"] === "completed" || event["status"] === "failed"))) open.delete(callId);
+}
+
+/** The tool call a driver event is about: a runtime's `tool_call` / `tool_result` (`callId`), or an ACP agent's
+ *  `agent_tool_call` / `agent_tool_call_update` (`id`, lane K's driver records). */
+function callIdOf(event: { type: string; [key: string]: unknown }): string | undefined {
+  const key = event.type === "agent_tool_call" || event.type === "agent_tool_call_update" ? "id" : event.type === "tool_call" || event.type === "tool_result" ? "callId" : undefined;
+  const id = key === undefined ? undefined : event[key];
+  return typeof id === "string" && id !== "" ? id : undefined;
+}
+
+/** Whether a driver event is the core's own interrupted result for a call (a release's, a stop's, a restart's). */
+function isInterruptedClose(event: { type: string; [key: string]: unknown }): boolean {
+  return event.type === "tool_result" && event["interrupted"] === true;
 }
 
 /** A record as this computer keeps a copy of it: a grant renamed so it grants nothing here, marked late if so. */
@@ -708,6 +729,7 @@ export class DurableSessionHost implements SessionHost {
     this.#approvals?.cancelSession(id);
     if (s.driver) await this.#bounded(s, s.driver, (d) => d.stop(), "stop");
     if (running && s.running === running) {
+      this.#closeOpenCalls(s, running.openCalls);
       this.#tryRecord(s, { type: "turn_ended", end: { reason: "stopped" } });
       delete s.running;
     }
@@ -775,8 +797,7 @@ export class DurableSessionHost implements SessionHost {
         // Recorded before the driver's interrupt is awaited (see `release`), with what it hadn't taken put back in line.
         // Each call still open gets its interrupted result first, as a restart's would (`#load`): the turn has ended,
         // so no boot repair closes it later, and a result the driver sends late is dropped (`ctl.record`).
-        for (const callId of running.openCalls.keys()) this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(), isError: true, interrupted: true } });
-        running.openCalls.clear();
+        this.#closeOpenCalls(s, running.openCalls);
         this.#ended(s, running, { reason: "interrupted" });
         if (s.driver) await this.#bounded(s, s.driver, (d) => d.interrupt(), "interrupt");
       }
@@ -1249,6 +1270,7 @@ export class DurableSessionHost implements SessionHost {
     if (start >= 0) for (const r of tail.slice(start + 1)) if (r.type === "driver") trackCall(open, r.event);
     for (const callId of open.keys()) {
       if (!this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(foreign.on), isError: true, interrupted: true } })) return 0;
+      s.closedCalls.add(callId);
     }
     if (!this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } })) return 0;
     delete s.foreignTurn;
@@ -1419,6 +1441,13 @@ export class DurableSessionHost implements SessionHost {
         // A turn the host has already ended (a release records its end before the driver's interrupt) says nothing
         // more: a late call or delta after its end would read as a turn still running.
         if (s.running !== running) return;
+        // A call the core already closed as interrupted (before a restart, most often: an agent resumed reporting the
+        // call it was cut off in) stays closed: what the driver says of it later is dropped.
+        const callId = callIdOf(event);
+        if (callId !== undefined && s.closedCalls.has(callId)) {
+          this.#warn(`session ${s.meta.id}: its driver's ${event.type} for call ${callId}, which MOSS had closed as interrupted, was dropped`);
+          return;
+        }
         if (TRANSIENT_EVENT_TYPES.has(event.type as never)) s.transient.emit(structuredClone(event));
         else if (CORE_ONLY_EVENT_TYPES.has(event.type)) this.#warn(`session ${s.meta.id}: its driver's ${event.type} event was dropped; only the core records those`);
         else {
@@ -1437,11 +1466,23 @@ export class DurableSessionHost implements SessionHost {
       .catch((err: unknown) => this.#warn(`session ${s.meta.id}: ending a turn failed: ${errorText(err)}`));
   }
 
+  /** Records each still-open call as interrupted (the core's own result) and remembers it closed. */
+  #closeOpenCalls(s: Hosted, open: Map<string, string>): void {
+    for (const callId of open.keys()) {
+      this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(), isError: true, interrupted: true } });
+      s.closedCalls.add(callId);
+    }
+    open.clear();
+  }
+
   #ended(s: Hosted, running: Running, end: TurnEnd): void {
     if (s.running !== running) return;
     // What the driver never subscribed to take: notes wait for the next turn, and messages get a turn of their own.
     const held = running.folds.unclaimed();
     running.folds.close();
+    // A call still open when the turn ended (its agent stopped, or failed, without saying the call ended) ended with it:
+    // recorded interrupted, so it never reads as running or as done.
+    this.#closeOpenCalls(s, running.openCalls);
     // Recorded first; if the disk refuses it, the turn has still ended, and a restart records it interrupted.
     this.#tryRecord(s, { type: "turn_ended", end });
     delete s.running;
@@ -1526,6 +1567,7 @@ export class DurableSessionHost implements SessionHost {
       asleep: false,
       clientIds: new Map(),
       questions: new Set(),
+      closedCalls: new Set(),
       cards: 0,
       deferredCompact: [],
       turnCompaction: false,
@@ -1581,6 +1623,7 @@ export class DurableSessionHost implements SessionHost {
     s.pending = replay.pending;
     for (const [k, v] of replay.clientIds) s.clientIds.set(k, v);
     for (const q of replay.questions) s.questions.add(q);
+    for (const c of replay.closedCalls) s.closedCalls.add(c);
     this.#sessions.set(meta.id, s);
     // A turn the daemon was running when it stopped is recorded interrupted, with each of its calls that has no
     // result (§3.1).
@@ -1588,7 +1631,7 @@ export class DurableSessionHost implements SessionHost {
       // Another computer's turn, synced here: it may still be running there, and is caught up only on a takeover.
       s.foreignTurn = { on: replay.runningOn };
     } else if (replay.running) {
-      for (const callId of replay.openCalls.keys()) this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(), isError: true, interrupted: true } });
+      this.#closeOpenCalls(s, replay.openCalls);
       this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } });
     }
     if (s.view.status === "prompting" || s.view.status === "cancelling" || s.view.status === "starting") this.#setStatus(s, "idle");

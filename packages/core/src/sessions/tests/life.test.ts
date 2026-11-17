@@ -377,6 +377,85 @@ describe("calls that never ended", () => {
     expect(records.at(-2)).toMatchObject({ type: "turn_ended", end: { reason: "interrupted" } });
   });
 
+  // A code session's agent speaks ACP (lane K's driver records): its calls are `agent_tool_call` / `agent_tool_call_update`
+  // by `id`. Whatever the agent (MOSS's own or a third party's), a call it was cut off in is closed by MOSS as interrupted,
+  // and what the agent says of it after a restart is dropped: never a success, never run as new.
+  const codeSession = (host: DurableSessionHost, driver = new FakeSessionDriver({ canFold: false })) => {
+    host.open({ id: "s_code", kind: "coding", computer: "Studio", backend: "moss-code" }, driver);
+    return driver;
+  };
+  const acpCall = (id: string) => ({ type: "agent_tool_call", id, kind: "other", title: "mcp__moss_0123456789abcdef__fixture__Echo", status: "pending", rawInput: {} });
+  const interrupted = (callId: string) => ({ type: "tool_result", callId, output: interruptedCallOutput(), isError: true, interrupted: true });
+
+  test("a code session's call cut off by a restart is closed interrupted, and the agent's later word on it is dropped", async () => {
+    const home = tempHome();
+    const clock = new FakeClock();
+    const first = hostOn(home, clock);
+    const d = codeSession(first.host);
+    await first.host.sendUser("s_code", user("go"));
+    await flush();
+    d.emit(acpCall("t1"));
+    d.emit({ type: "agent_tool_call_update", id: "t1", status: "completed", output: "ok" });
+    d.emit(acpCall("t2"));
+    // The daemon dies here.
+    const again = hostOn(home, clock);
+    const d2 = codeSession(again.host);
+    let records = again.host.history("s_code");
+    expect(driverEvents(records, "tool_result")).toEqual([interrupted("t2")]);
+    expect(records.at(-2)).toMatchObject({ type: "turn_ended", end: { reason: "interrupted" } });
+    // The wire: t1 done, t2 interrupted (the window's "interrupted" row), each once.
+    const wire = projectRecords(records, { kind: "coding" }).filter((e) => e.type === "tool_result");
+    expect(wire.map((e) => [e.callId, e.isError, e.interrupted === true])).toEqual([["t1", false, false], ["t2", true, true]]);
+    // The resumed agent reports the call it was cut off in as completed with the next message: dropped.
+    await again.host.sendUser("s_code", user("are you back?"));
+    await flush();
+    d2.emit({ type: "agent_tool_call_update", id: "t2", status: "completed", output: "[interrupted]" });
+    d2.emit({ type: "agent_text", text: "back" });
+    d2.end();
+    await flush();
+    records = again.host.history("s_code");
+    expect(driverEvents(records, "agent_tool_call_update").map((e) => e.id)).toEqual(["t1"]);
+    expect(driverEvents(records, "agent_text")).toHaveLength(1);
+    expect(again.warnings.some((w) => w.includes("call t2") && w.includes("dropped"))).toBe(true);
+    // A third host still knows t2 closed (from the log).
+    const third = hostOn(home, clock);
+    const d3 = codeSession(third.host);
+    await third.host.sendUser("s_code", user("again"));
+    await flush();
+    d3.emit({ type: "agent_tool_call_update", id: "t2", status: "failed" });
+    d3.end();
+    await flush();
+    expect(driverEvents(third.host.history("s_code"), "agent_tool_call_update").map((e) => e.id)).toEqual(["t1"]);
+  });
+
+  test("a code session's open call is closed interrupted when the engine lets it go (a quit), or when its agent's turn ends with it open", async () => {
+    const { host } = hostOn();
+    const d = codeSession(host);
+    await host.sendUser("s_code", user("go"));
+    await flush();
+    d.emit(acpCall("q1"));
+    await host.release("s_code");
+    expect(driverEvents(host.history("s_code"), "tool_result")).toEqual([interrupted("q1")]);
+    // Its agent's turn that ends (it stopped, or failed) with a call it never closed.
+    const other = hostOn();
+    const e = codeSession(other.host);
+    await other.host.sendUser("s_code", user("go"));
+    await flush();
+    e.emit(acpCall("f1"));
+    e.end({ reason: "failed", failure: "error", text: "the agent quit" });
+    await flush();
+    const records = other.host.history("s_code");
+    expect(driverEvents(records, "tool_result")).toEqual([interrupted("f1")]);
+    expect(records.findIndex((r) => r.type === "driver" && r.event.type === "tool_result")).toBeLessThan(records.findIndex((r) => r.type === "turn_ended"));
+  });
+
+  test("a call MOSS closed when the agent's turn was cancelled (closedByMoss) reads as interrupted", () => {
+    const records: SessionRecord[] = [
+      { type: "driver", seq: 0, sessionId: "s_code", ts: 1, event: { type: "agent_tool_call_update", id: "c", status: "failed", closedByMoss: true } } as SessionRecord,
+    ];
+    expect(projectRecords(records, { kind: "coding" })[0]).toMatchObject({ type: "tool_result", callId: "c", isError: true, interrupted: true });
+  });
+
   test("a turn another computer left open waits; a takeover ends it, saying where its calls may have run", async () => {
     // Laptop ran the bot and stopped answering mid-turn; its log reached Studio as it was (lane H's sync).
     const laptopHome = tempHome();
