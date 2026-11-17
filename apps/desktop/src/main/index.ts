@@ -318,6 +318,8 @@ if (!app.requestSingleInstanceLock()) {
     }
     // Web page entries' views keep to their own origin instead (web-views.ts).
     if (!isBrowserContents(contents) && !isWebViewContents(contents)) guardContents(contents, log);
+    // A part's sealed button page that never says it shows gets its frame's visibility changed (watchSealedDraw).
+    contents.on("did-frame-finish-load", (_e, isMainFrame, processId, routingId) => { if (!isMainFrame) watchSealedDraw(processId, routingId); });
   });
   app.on("before-quit", (event) => {
     if (leaving || shuttingDown) return;
@@ -653,6 +655,10 @@ async function ready(): Promise<void> {
       if (cardId === undefined) return;
       // Each change of a frame's own visibility verdict, once (ids and the surface's name only): what armed a fallback card, or kept
       // a press from being ready, is then in the log, not a guess.
+      if (visible === true) {
+        sealedEverSeen.add(token);
+        if (sealedEverSeen.size > 512) sealedEverSeen.delete(sealedEverSeen.values().next().value!);
+      }
       if (sealedSeen.get(token) !== (visible === true)) {
         sealedSeen.set(token, visible === true);
         if (sealedSeen.size > 256) sealedSeen.delete(sealedSeen.keys().next().value!);
@@ -929,6 +935,8 @@ let signedDevice: string | undefined;
 // own page answers on its own channel.
 /** The last visibility verdict of each sealed frame (by its token), so a change is logged once. */
 const sealedSeen = new Map<string, boolean>();
+/** The sealed frames whose page has said "visible" at least once (watchSealedDraw redraws only a page that never has). */
+const sealedEverSeen = new Set<string>();
 const fallbacks = new Map<string, { timer: ReturnType<typeof setTimeout>; win?: Electron.BrowserWindow; token?: string; strip?: boolean }>();
 const FALLBACK_DELAY_MS = 2_000;
 /** The fallback card's window: a card's own width, a height that fits what it says up to a sane most (it scrolls inside
@@ -2669,6 +2677,45 @@ async function noticeMissedPress(win: BrowserWindow, windowId: number): Promise<
   if (hit === undefined) return;
   log(`sealed: a press over ${sealed.cardOf(hit.token) ?? "?"} ${sealed.elementOf(hit.token) ?? "?"} in ${surfaceName(windowId)} reached no sealed page; it says press again`);
   await within(hit.frame.executeJavaScript(`window.__mossNotReady?.(${JSON.stringify(hit.option ?? null)})`, true) as Promise<unknown>);
+}
+
+/** A part's sealed button page that never says it shows (lane SV). Chromium can leave an out-of-process frame with the embedding
+ *  document's view of it as it was when the frame was made: on a loaded machine (seen on every busy GitHub macOS runner, and
+ *  here under load) the button's page never draws a frame (its timeline stays at 0, its observer delivers nothing), or draws but
+ *  keeps the "no room" reading of the 0x0 frame it started in. Resizing or moving the frame doesn't send it again; a change of
+ *  the frame element's own visibility does. So a loaded button page that has not said "visible" by each mark below gets that
+ *  change: its frame is hidden for 200 ms and shown again (the element's own inline visibility put back; two of the embedder's
+ *  frames hidden were not enough on a runner: run 44175337048).
+ *  Only a page that has never said "visible" since it loaded: one that did is current, and a later "not visible" is its own
+ *  reading (a cover, a scroll), where hiding its frame could take a press away (run 44179342697). It only makes the page's
+ *  reading current: a covered, see-through, clipped or scrolled-away button still reads as not showing (IntersectionObserver v2
+ *  measures it again), and a press still needs its own fresh reading. Twice at most per load,
+ *  never on a timer of its own after that; a part that undoes it only leaves its card to the fallback. */
+const SEALED_REDRAW_AT_MS: readonly number[] = [700, 2000];
+const SEALED_REDRAW_HIDDEN_MS = 200;
+function watchSealedDraw(processId: number, routingId: number): void {
+  const f = webFrameMain.fromId(processId, routingId);
+  if (f === undefined || f === null || f.parent === null) return;
+  let token: string | null = null;
+  try { const u = new URL(f.url); token = u.protocol === "moss-sealed:" && u.host === "card" ? u.searchParams.get("token") : null; } catch { token = null; }
+  if (token === null || sealed.elementOf(token)?.startsWith("button:") !== true) return;
+  const url = f.url;
+  const t = token;
+  for (const at of SEALED_REDRAW_AT_MS) setTimeout(() => void redrawSealed(processId, routingId, url, t, at), at);
+}
+async function redrawSealed(processId: number, routingId: number, url: string, token: string, at: number): Promise<void> {
+  const f = webFrameMain.fromId(processId, routingId);
+  if (f === undefined || f === null || f.detached || f.url !== url || f.parent === null || f.parent.detached) return;
+  // A page that said "visible" once reads itself: it is current, and what hides it now (a cover, a scroll) is its reading's to say.
+  if (sealedEverSeen.has(token) || sealed.isTokenVisible(token)) return;
+  const cardId = sealed.cardOf(token);
+  if (cardId === undefined || !sealed.isPending(cardId)) return;
+  const contents = webContents.fromFrame(f);
+  const win = contents === undefined ? null : BrowserWindow.fromWebContents(contents);
+  if (win === null || win.isDestroyed() || !win.isVisible() || win.isMinimized()) return;
+  const js = `(() => { const f = [...document.querySelectorAll("iframe")].find((x) => x.src === ${JSON.stringify(url)}); if (!f) return false; const was = f.style.visibility; f.style.visibility = "hidden"; setTimeout(() => { f.style.visibility = was; }, ${SEALED_REDRAW_HIDDEN_MS}); return true; })()`;
+  const done = await Promise.race([f.parent.executeJavaScript(js, false).catch(() => false), new Promise<false>((r) => setTimeout(() => r(false), 500))]);
+  log(`sealed: ${cardId} ${sealed.elementOf(token) ?? "?"} in ${surfaceName(win.id)} said nothing visible ${at} ms after it loaded: its frame ${done === true ? "was hidden and shown again so its page reads itself again" : "wasn't found in its embedder"}`);
 }
 
 /** The screen add-on (macOS), for the camera housing; undefined where there is none. */
