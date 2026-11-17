@@ -1606,7 +1606,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await rpc.request("session.send", { id: session, message: { text: `ACCEPTANCE-CALL ${tool} ${JSON.stringify(input)}`, clientMessageId: `tool-${tag}` } }, 30_000);
       const cards: string[] = [];
       const result = await until(`${tool}'s result in ${session}'s turn`, 120_000, async () => {
-        const got = ctx.requests().slice(seen).map((r) => r.toolResult).find((x) => x !== undefined);
+        // The result of THIS tool's call: the request after the one that called it (a deferred tool's Glossary load
+        // comes first, with a result of its own).
+        const since = ctx.requests().slice(seen) as { toolUse?: string; toolResult?: { text: string; isError: boolean } }[];
+        const at = since.findIndex((r) => r.toolUse !== undefined && (r.toolUse === tool || r.toolUse.endsWith(`__${tool}`)));
+        const got = at < 0 ? undefined : since.slice(at + 1).map((r) => r.toolResult).find((x) => x !== undefined);
         if (got !== undefined) return got;
         const card = (await rpc.request<{ cards: { id: string; kind: string; session?: string }[] }>("card.list", {}).catch(() => ({ cards: [] }))).cards.find((c) => c.kind === "tool" && c.session === session && !cards.includes(c.id));
         if (card !== undefined && ctx.pressCard !== undefined) cards.push(await ctx.pressCard(`${tool}'s card`, (c) => c.id === card.id));

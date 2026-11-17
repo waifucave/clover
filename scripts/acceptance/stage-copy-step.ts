@@ -41,8 +41,10 @@ export function copyOkLines(): string[] {
  *  client built to one module. Its capabilities are the bundled plugin's own, so what it may do is what its OK card says. */
 export function copyManifest(): Record<string, unknown> {
   const src = JSON.parse(renamed(readFileSync(join(PLUGINS, "character", "moss.json"), "utf8"))) as Record<string, unknown> & { contributes: Record<string, unknown>; client: Record<string, unknown> };
-  const { locales: _locales, ...contributes } = src.contributes;
-  return { ...src, id: COPY_ID, name: COPY_NAME, client: { ...src.client, entry: "client/index.js" }, contributes };
+  // Its client only: the bundled plugin's host half (its tools, its own models' import) is not what this clause copies.
+  const { locales: _locales, mcpServers: _servers, ...contributes } = src.contributes;
+  const { host: _host, ...rest } = src;
+  return { ...rest, id: COPY_ID, name: COPY_NAME, client: { ...src.client, entry: "client/index.js" }, contributes };
 }
 
 /** One client entry built to a module (everything bundled in but the layers' bare imports), with the copy's names. */

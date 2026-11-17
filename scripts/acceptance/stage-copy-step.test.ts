@@ -23,7 +23,7 @@ describe("the copy the avatar clause installs", () => {
     expect([report.ok, report.id]).toEqual([true, COPY_ID]);
     expect(JSON.stringify(manifest)).not.toContain("moss.character.");
     expect(JSON.stringify(manifest)).toContain(`${COPY_ID}.renderer`);
-    expect([...(manifest.capabilities as string[])].sort()).toEqual(["activity.read.bots", "activity.read.sessions", "overlay"]);
+    expect([...(manifest.capabilities as string[])].sort()).toEqual(["activity.read.bots", "activity.read.sessions", "files", "overlay"]);
   });
   test("its OK card lines are the catalog's words for what it holds", () => {
     for (const [cap, line] of (copyManifest().capabilities as string[]).map((c, i) => [c, copyOkLines()[i]] as const)) expect(line).toBe(capabilityOkText(cap)!);

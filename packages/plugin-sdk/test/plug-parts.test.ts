@@ -28,7 +28,7 @@ describe("a plugin in today's shape keeps its meaning and its OK lines", () => {
       "Its components reach no host; its host code can reach any host.",
       "It adds an agent definition Study buddy: instructions an agent follows when your bot hands it work.",
       "Its server stage says this tool only reads, so at the default approval level it runs without asking: stage_status.",
-      "Its server stage says these tools only change its own display, so at the default level they run without asking: celebrate, pin_note, play_motion, set_expression, set_mood, set_scene, toggle_outfit, unpin_note.",
+      "Its server stage says these tools only change its own display, so at the default level they run without asking: celebrate, pin_note, set_mood, set_scene, unpin_note.",
     ]);
   });
 
