@@ -26,7 +26,7 @@
 //   middle is finished at the next start (`archived.json`'s `state`).
 // * **The move** (`move`): once, each plugin bot to a record of the same id (below, `move`).
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, renameSync, rmSync, writeSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   BOT_ARCHIVE_DIR, BOT_INSTRUCTIONS_FILE, BOT_MOVE_JOURNAL, BOT_RECORD_FILE, BotFace, BotId, BotMoveJournal, BotPatch, BotRecord, MakeBotInput,
@@ -41,7 +41,7 @@ import { instructionsEditRule } from "@waifucave/moss-protocol";
 import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
 import { syncDir, syncFile } from "../sessions/durable-io";
 import { botSegment, mainSessionIdFor, transcriptsDir } from "../sessions/ids";
-import { plainFolder, readRecordFile } from "./made-by";
+import { BOT_RECORD_MAX_BYTES, plainFolder, readRecordFile } from "./made-by";
 import { seedMemory } from "./memory";
 import { readOwnFile } from "./own-file";
 import { botStateFile } from "./paths";
@@ -68,7 +68,12 @@ export interface BotPluginSettingsPort {
 }
 
 /** A plugin bot as the move takes it: the contract's, its plugin's starter memories, or why it couldn't be read. */
-export type MoveInput = PluginBotForMove & { memorySeed?: string; failed?: string };
+export type MoveInput = PluginBotForMove & {
+  memorySeed?: string;
+  failed?: string;
+  /** Its plugin was switched off, invalid or refused: moved straight into the archive. */
+  archive?: true;
+};
 
 export interface BotRecordStoreOptions {
   home: string;
@@ -93,6 +98,8 @@ interface ArchiveMark {
   archivedAt: number;
   /** `archiving`: the folders are on their way into the archive; `archived`: all in; `restoring`: on their way back. */
   state: "archiving" | "archived" | "restoring";
+  /** Archived by the move itself (its plugin was off): the plugin it came from. */
+  movedFrom?: string;
 }
 
 /** The folders of a bot that move with it into the archive and back: under `bots/`, `transcripts/` and `routines/`. */
@@ -140,6 +147,13 @@ function plainFolders(base: string, ...parts: string[]): string {
   return at;
 }
 
+/** A record must stay readable at the next start: its file as `writeJsonAtomic` writes it is at most
+ *  `BOT_RECORD_MAX_BYTES` (a greeting of control characters costs six bytes each as JSON). */
+function checkRecordSize(record: BotRecord): void {
+  const bytes = Buffer.byteLength(`${JSON.stringify(record, null, 2)}\n`, "utf8");
+  if (bytes > BOT_RECORD_MAX_BYTES) throw new ContractError("invalid", `that would make the bot's record ${bytes} bytes, more than the ${BOT_RECORD_MAX_BYTES} a record may hold; shorten its greeting or name`);
+}
+
 export function recordFile(home: string, id: string): string {
   return join(home, "bots", botSegment(id), BOT_RECORD_FILE);
 }
@@ -184,7 +198,11 @@ export class BotRecordStore implements BotRecords {
     let names: string[] = [];
     try { names = readdirSync(bots); } catch { names = []; }
     for (const name of names) {
-      const record = readRecordFile(join(bots, name, BOT_RECORD_FILE));
+      const file = join(bots, name, BOT_RECORD_FILE);
+      // A second name for a record (planted elsewhere): the core rewrites it as its own file first (copy and rename),
+      // so the other name stops being it; a planted name can neither erase the bot nor be written through later.
+      this.#unlink(file);
+      const record = readRecordFile(file);
       if (record === undefined) {
         // A plugin bot's folder (its memory) the move hasn't reached, or a half-made bot: not a record.
         if (existsSync(join(bots, name, BOT_RECORD_FILE))) this.#warn(`bots/${name}/bot.json isn't a bot's record; it is left as it is`);
@@ -199,6 +217,19 @@ export class BotRecordStore implements BotRecords {
     const journal = BotMoveJournal.safeParse(readJson(join(this.#home, ...BOT_MOVE_JOURNAL.split("/"))));
     if (journal.success) this.#journal = journal.data;
     else if (existsSync(join(this.#home, ...BOT_MOVE_JOURNAL.split("/")))) this.#warn(`${BOT_MOVE_JOURNAL} doesn't parse; the move is held until it is looked at`);
+  }
+
+  /** A record file with more than one name made whole again: its bytes copied to a temp file and renamed over it. */
+  #unlink(file: string): void {
+    let st: ReturnType<typeof lstatSync> | undefined;
+    try { st = lstatSync(file); } catch { return; }
+    if (!st.isFile() || st.isSymbolicLink() || st.nlink < 2 || st.size > BOT_RECORD_MAX_BYTES) return;
+    try {
+      writeTextAtomic(file, readFileSync(file, "utf8"));
+      this.#warn(`${file} had a second name; MOSS rewrote it as its own file`);
+    } catch (err) {
+      this.#warn(`${file} has a second name and couldn't be rewritten: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /** Whether the move's journal is there but unreadable: the move then never runs (it may have run). */
@@ -298,6 +329,7 @@ export class BotRecordStore implements BotRecords {
 
   /** Writes a new bot: its folders, its instructions, then its record (last). */
   #write(record: BotRecord, instructions: string): void {
+    checkRecordSize(record);
     const seg = botSegment(record.id);
     const root = plainFolders(this.#home, "bots", seg);
     plainFolders(root, "memory");
@@ -305,6 +337,12 @@ export class BotRecordStore implements BotRecords {
     writeTextAtomic(instructionsFile(this.#home, record.id), instructions);
     writeJsonAtomic(join(root, BOT_RECORD_FILE), record, { mode: 0o600 });
     this.#records.set(record.id, { record });
+  }
+
+  /** A bot's folders as `#write` makes them: plain folders all the way, never through a link (refused otherwise). */
+  #folders(id: string): void {
+    const root = plainFolders(this.#home, "bots", botSegment(id));
+    plainFolders(root, "instructions");
   }
 
   #checkFields(f: { name?: Text; instructions?: string; model?: string | null; effort?: string | null; greeting?: string | null; face?: unknown }): void {
@@ -376,8 +414,11 @@ export class BotRecordStore implements BotRecords {
       if (v === null) delete next[k];
       else if (v !== undefined) (next as Record<string, unknown>)[k] = v;
     }
+    const parsedNext = BotRecord.parse(next);
+    checkRecordSize(parsedNext);
+    this.#folders(id);
     if (p.instructions !== undefined) writeTextAtomic(instructionsFile(this.#home, id), p.instructions);
-    writeJsonAtomic(recordFile(this.#home, id), BotRecord.parse(next), { mode: 0o600 });
+    writeJsonAtomic(recordFile(this.#home, id), parsedNext, { mode: 0o600 });
     held.record = next;
     return this.#emit(id);
   }
@@ -388,6 +429,7 @@ export class BotRecordStore implements BotRecords {
     if (rule === "refused") throw new ContractError("refused", "only a bot, or the user, edits a bot's instructions");
     if (rule === "card") return { written: false, card: true };
     this.#checkFields({ instructions: text });
+    this.#folders(id);
     writeTextAtomic(instructionsFile(this.#home, id), text);
     this.#emit(id);
     return { written: true };
@@ -449,8 +491,13 @@ export class BotRecordStore implements BotRecords {
   /** Archives a bot: its record, instructions, memory, agents' transcripts, its conversation and its routines move to
    *  `archive/bots/<seg>/`; nothing is deleted. Its sessions must be let go first (the bot service does). */
   async remove(id: string): Promise<void> {
+    this.#archiveNow(id);
+  }
+
+  /** Archives a bot now (`remove`, and the move for a bot whose plugin was off: `movedFrom`). */
+  #archiveNow(id: string, movedFrom?: string): void {
     const held = this.#held(id);
-    const mark: ArchiveMark = { archive: 1, id, name: held.record.name, archivedAt: this.#o.clock.now(), state: "archiving" };
+    const mark: ArchiveMark = { archive: 1, id, name: held.record.name, archivedAt: this.#o.clock.now(), state: "archiving", ...(movedFrom === undefined ? {} : { movedFrom }) };
     const dir = archiveDir(this.#home, id);
     if (existsSync(dir)) throw new ContractError("conflict", `an archive of ${id} is already there`);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -471,6 +518,11 @@ export class BotRecordStore implements BotRecords {
     const mark = this.#archive.get(id);
     if (!mark) throw new ContractError("not_found", `no archived bot ${id}`);
     if (this.#records.has(id)) throw new ContractError("conflict", `a bot ${id} exists`);
+    // Every place it goes back to must be free before anything moves.
+    for (const { part, root } of ARCHIVED_PARTS) {
+      const to = join(root(this.#home), botSegment(id));
+      if (existsSync(join(archiveDir(this.#home, id), part)) && existsSync(to)) throw new ContractError("conflict", `${to} is already there, so ${id} can't come back; nothing was moved`);
+    }
     writeJsonAtomic(this.#markPath(id), { ...mark, state: "restoring" } satisfies ArchiveMark);
     this.#moveParts(id, false);
     rmSync(archiveDir(this.#home, id), { recursive: true, force: true });
@@ -512,62 +564,72 @@ export class BotRecordStore implements BotRecords {
     return this.#journal === undefined ? undefined : structuredClone(this.#journal);
   }
 
-  /** Each plugin bot becomes a record of the same id, once (the journal). Its instructions, greeting, model and effort
-   *  are the user's layer over its plugin's; its memory, its conversation and its routines are already under its id and
-   *  stay where they are; its plugin's starter memories are copied if this computer never copied them. An id that has a
-   *  record already is kept as it is, unless the move itself wrote it (a run a crash cut off: `moved`). A bot that can't
-   *  be read or written is `failed`, with why, and nothing of it is touched. The journal is written last: a crash before
-   *  it runs the move again, which picks up where it was. */
+  /** Each plugin bot becomes a record of the same id (the journal). Its instructions, greeting, model and effort are
+   *  the user's layer over its plugin's; its memory, its conversation and its routines are already under its id and stay
+   *  where they are; its plugin's starter memories are copied if this computer never copied them. A bot whose plugin
+   *  the person had switched off (or that is invalid or refused) goes straight into the archive, whole, for the person
+   *  to bring back on purpose (`archived`). An id that has a record already is kept as it is, unless the move itself
+   *  wrote it (a run a crash cut off: `moved`). A bot that can't be read or written is `failed`, with why, and nothing
+   *  of it is touched. The journal is written last. Run again (each start), only what the journal doesn't settle is
+   *  moved: a `failed` entry and a plugin bot it doesn't name yet; a `moved` or `kept` entry is never touched again,
+   *  and a run that settles nothing new changes nothing. */
   async move(bots: readonly MoveInput[]): Promise<BotMoveJournal> {
-    if (this.#journal) return structuredClone(this.#journal);
     if (this.journalUnreadable) throw new ContractError("conflict", `${BOT_MOVE_JOURNAL} is there but unreadable, so the move may have run; it is held until it is looked at`);
+    const before = this.#journal;
+    const settled = new Map((before?.bots ?? []).filter((b) => b.outcome !== "failed").map((b) => [b.id, b] as const));
     const outcomes: BotMoveOutcome[] = [];
     const seen = new Set<string>();
+    let changed = before === undefined;
     for (const b of bots) {
-      if (seen.has(b.id)) continue;
+      if (seen.has(b.id) || settled.has(b.id)) continue;
       seen.add(b.id);
-      if (!BotId.safeParse(b.id).success) {
-        outcomes.push({ outcome: "failed", id: b.id.slice(0, 64) || "bot", plugin: b.plugin, why: "its id isn't a bot id" });
-        continue;
-      }
-      if (b.failed !== undefined) {
-        outcomes.push({ outcome: "failed", id: b.id, plugin: b.plugin, why: b.failed.slice(0, 500) });
-        continue;
-      }
-      const there = this.#records.get(b.id)?.record;
-      if (there !== undefined) {
-        const ours = there.madeBy.kind === "move" && there.madeBy.plugin === b.plugin;
-        outcomes.push({ outcome: ours ? "moved" : "kept", id: b.id, plugin: b.plugin });
-        continue;
-      }
-      if (this.#archive.has(b.id)) {
-        outcomes.push({ outcome: "kept", id: b.id, plugin: b.plugin });
-        continue;
-      }
-      try {
-        const layer = b.userLayer ?? {};
-        const model = layer.model ?? b.model;
-        const effort = layer.effort ?? b.effort;
-        const greeting = b.greeting?.trim();
-        const record = BotRecord.parse({
-          record: 1, id: b.id, name: layer.name ?? b.name, madeBy: { kind: "move", plugin: b.plugin }, createdAt: this.#o.clock.now(),
-          ...(model !== undefined && MODEL_ID_RE.test(model) ? { model } : {}),
-          ...(effort !== undefined && EFFORT_RE.test(effort) ? { effort } : {}),
-          ...(greeting !== undefined && greeting !== "" ? { greeting: greeting.slice(0, GREETING_MAX_CHARS) } : {}),
-        } satisfies BotRecord);
-        const instructions = (layer.instructions ?? b.instructions).slice(0, INSTRUCTIONS_MAX_CHARS);
-        this.#seed(b);
-        this.#write(record, instructions);
-        this.#emit(b.id);
-        outcomes.push({ outcome: "moved", id: b.id, plugin: b.plugin });
-      } catch (err) {
-        outcomes.push({ outcome: "failed", id: b.id, plugin: b.plugin, why: (err instanceof Error ? err.message : String(err)).slice(0, 500) });
-      }
+      const one = this.#moveOne(b);
+      const was = before?.bots.find((x) => x.id === b.id);
+      if (was === undefined || JSON.stringify(was) !== JSON.stringify(one)) changed = true;
+      outcomes.push(one);
     }
-    const journal = BotMoveJournal.parse({ move: 1, at: this.#o.clock.now(), bots: outcomes.slice(0, 1024) });
+    // A failed entry whose plugin bot is gone stays as it was.
+    for (const b of before?.bots ?? []) if (b.outcome === "failed" && !seen.has(b.id)) outcomes.push(b);
+    if (!changed && before !== undefined) return structuredClone(before);
+    const merged = [...(before?.bots ?? []).filter((b) => settled.has(b.id)), ...outcomes];
+    const journal = BotMoveJournal.parse({ move: 1, at: this.#o.clock.now(), bots: merged.slice(0, 1024) });
     writeJsonAtomic(join(this.#home, ...BOT_MOVE_JOURNAL.split("/")), journal, { mode: 0o600 });
     this.#journal = journal;
     return structuredClone(journal);
+  }
+
+  #moveOne(b: MoveInput): BotMoveOutcome {
+    if (!BotId.safeParse(b.id).success) return { outcome: "failed", id: b.id.slice(0, 64) || "bot", plugin: b.plugin, why: "its id isn't a bot id" };
+    if (b.failed !== undefined) return { outcome: "failed", id: b.id, plugin: b.plugin, why: b.failed.slice(0, 500) };
+    const there = this.#records.get(b.id)?.record;
+    if (there !== undefined) {
+      const ours = there.madeBy.kind === "move" && there.madeBy.plugin === b.plugin;
+      return { outcome: ours ? "moved" : "kept", id: b.id, plugin: b.plugin };
+    }
+    if (this.#archive.has(b.id)) {
+      const ours = this.#archive.get(b.id)!.movedFrom === b.plugin;
+      return { outcome: ours ? "moved" : "kept", id: b.id, plugin: b.plugin };
+    }
+    try {
+      const layer = b.userLayer ?? {};
+      const model = layer.model ?? b.model;
+      const effort = layer.effort ?? b.effort;
+      const greeting = b.greeting?.trim();
+      const record = BotRecord.parse({
+        record: 1, id: b.id, name: layer.name ?? b.name, madeBy: { kind: "move", plugin: b.plugin }, createdAt: this.#o.clock.now(),
+        ...(model !== undefined && MODEL_ID_RE.test(model) ? { model } : {}),
+        ...(effort !== undefined && EFFORT_RE.test(effort) ? { effort } : {}),
+        ...(greeting !== undefined && greeting !== "" ? { greeting: greeting.slice(0, GREETING_MAX_CHARS) } : {}),
+      } satisfies BotRecord);
+      const instructions = (layer.instructions ?? b.instructions).slice(0, INSTRUCTIONS_MAX_CHARS);
+      this.#seed(b);
+      this.#write(record, instructions);
+      if (b.archive === true) this.#archiveNow(b.id, b.plugin);
+      else this.#emit(b.id);
+      return { outcome: "moved", id: b.id, plugin: b.plugin };
+    } catch (err) {
+      return { outcome: "failed", id: b.id, plugin: b.plugin, why: (err instanceof Error ? err.message : String(err)).slice(0, 500) };
+    }
   }
 
   /** The plugin's starter memories, when this computer never copied them (the bot service's state file says). */

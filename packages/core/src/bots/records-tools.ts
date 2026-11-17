@@ -104,29 +104,31 @@ export function recordToolDefs(deps: RecordToolsDeps, sessionId: string): CoreTo
         }
         if (!("proposal" in asked)) return fail(`The bot wasn't made: ${asked.why}.`);
         const p = asked.proposal;
-        const decision = await ask(maker, {
-          title: { type: "text", text: "Make a new bot?" },
-          what: { type: "text", text: "A bot of yours wants to make a new bot. A yes makes it, with these instructions and one conversation of its own; the bot that made it can then change its instructions." },
-          source: code(maker),
-          detail: { type: "rows", rows: [
-            { label: "Name", value: plainOf(p.input.name).toWellFormed().slice(0, 4000) },
-            { label: "Model", value: plainOf(p.input.model ?? "your default model").toWellFormed().slice(0, 4000) },
-            ...(p.input.face === undefined ? [] : [{ label: "Face", value: plainOf([p.input.face.shape, p.input.face.color, p.input.face.eyes, p.input.face.temper].filter(Boolean).join(", ") || "from its name").slice(0, 4000) }]),
-          ] },
-          command: code(p.input.instructions ?? ""),
-        });
-        if (decision === undefined) {
-          await store.answerProposal(p.id, false);
-          return fail("The bot wasn't made: MOSS can't ask the person here.");
+        // Whatever ends the ask (a refusal, a throw), the proposal never outlives it: a leaked one would hold one of the
+        // maker's PROPOSALS_PER_MAKER places until a restart.
+        let answered = false;
+        try {
+          const decision = await ask(maker, {
+            title: { type: "text", text: "Make a new bot?" },
+            what: { type: "text", text: "A bot of yours wants to make a new bot. A yes makes it, with these instructions and one conversation of its own; the bot that made it can then change its instructions." },
+            source: code(maker),
+            detail: { type: "rows", rows: [
+              { label: "Name", value: plainOf(p.input.name).toWellFormed().slice(0, 4000) },
+              { label: "Model", value: plainOf(p.input.model ?? "your default model").toWellFormed().slice(0, 4000) },
+              ...(p.input.face === undefined ? [] : [{ label: "Face", value: plainOf([p.input.face.shape, p.input.face.color, p.input.face.eyes, p.input.face.temper].filter(Boolean).join(", ") || "from its name").slice(0, 4000) }]),
+            ] },
+            command: code(p.input.instructions ?? ""),
+          });
+          if (decision === undefined) return fail("The bot wasn't made: MOSS can't ask the person here.");
+          if (!decision.allowed || decision.by !== "card") return fail(unanswered(decision, "making that bot"));
+          answered = true;
+          const made = await store.answerProposal(p.id, true);
+          await deps.bots.settled();
+          if (made.outcome !== "made") return fail("The bot wasn't made.");
+          return { text: `Made ${made.id}. It has its own conversation now: message it with SendMessage, and change its instructions with Write and Edit.`, isError: false };
+        } finally {
+          if (!answered && store.proposals().some((x) => x.id === p.id)) await store.answerProposal(p.id, false).catch(() => undefined);
         }
-        if (!decision.allowed || decision.by !== "card") {
-          await store.answerProposal(p.id, false);
-          return fail(unanswered(decision, "making that bot"));
-        }
-        const made = await store.answerProposal(p.id, true);
-        await deps.bots.settled();
-        if (made.outcome !== "made") return fail("The bot wasn't made.");
-        return { text: `Made ${made.id}. It has its own conversation now: message it with SendMessage, and change its instructions with Write and Edit.`, isError: false };
       },
     },
     {

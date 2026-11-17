@@ -17,7 +17,7 @@ import { join, posix, win32 } from "node:path";
 import { isAnyPluginId, type Caller, type Os } from "@waifucave/moss-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  agentConfigPaths, BOT_READ_DENIED, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, isBotCaller, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
+  agentConfigPaths, BOT_READ_DENIED, CLOSED_DOORS, foldName, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, isBotCaller, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
   READ_DENIED_KINDS, writesPluginLoadDeny,
   type CallerFence, type Fence, type FenceContext, type FencedKind, type FencedPath, type FenceOp, type FenceVerdict,
   type SandboxPolicy,
@@ -344,11 +344,55 @@ export class MossFence implements Fence {
       const linked = this.#hardLinked(p, !write);
       if (linked) return { allowed: false, reason: linked.kind, path: linked.path };
     }
+    // Lane BT (reads 65 and 65b): no caller but the user writes a bot's record (`bots/<seg>/bot.json`) or a file in its
+    // instructions folder (`bots/<seg>/instructions/…`) by a second name. Those are kept from a bot by their names alone,
+    // so a second name for one would let a bot edit, or empty, another bot's: refused at the guarded name itself when the
+    // file has another, and at any other name in `bots/` that shares its inode (a memory note that is really a record).
+    // A memory note linked only to other notes is the bot's own business. One lstat a path; the guarded files' inodes are
+    // read only for a file with a second name.
+    if (write && ctx?.user !== true) {
+      const bots = joinHome(this.#mossHome, this.os, "bots");
+      for (const p of all) {
+        if (!inside(p, bots, this.os)) continue;
+        let st: ReturnType<typeof lstatSync> | undefined;
+        try { st = lstatSync(p); } catch { st = undefined; }
+        if (st === undefined || !st.isFile() || st.nlink < 2) continue;
+        if (this.#botGuarded(p, bots) || this.#sharesGuardedInode(st, bots)) return { allowed: false, reason: "bot-memory", path: p };
+      }
+    }
     const fenced = set.map((i) => i.path);
     for (const p of all) {
       if (nonAsciiAlias(p, fenced, this.#mossHome, this.os) !== null) return { allowed: false, reason: "moss-home", path: this.#mossHome };
     }
     return { allowed: true };
+  }
+
+  /** Whether a path under `<home>/bots/` names a bot's record or a file in its instructions folder. */
+  #botGuarded(path: string, bots: string): boolean {
+    const [seg, name, ...rest] = path.slice(bots.length).split(/[\\/]/).filter((x) => x !== "");
+    if (seg === undefined || name === undefined) return false;
+    if (rest.length === 0) return foldName(name, this.os) === foldName("bot.json", this.os);
+    return foldName(name, this.os) === foldName("instructions", this.os);
+  }
+
+  /** Whether a file is another name of a bot's record or instructions file (same device and inode); fails closed past
+   *  `HARD_LINK_SCAN_LIMIT` files. */
+  #sharesGuardedInode(st: { dev: number; ino: number }, bots: string): boolean {
+    let seen = 0;
+    const same = (path: string): boolean => {
+      seen++;
+      try { const o = lstatSync(path); return o.isFile() && o.dev === st.dev && o.ino === st.ino; } catch { return false; }
+    };
+    let segs: string[];
+    try { segs = readdirSync(bots); } catch { return false; }
+    for (const seg of segs) {
+      if (same(join(bots, seg, "bot.json"))) return true;
+      let names: string[];
+      try { names = readdirSync(join(bots, seg, "instructions")); } catch { names = []; }
+      for (const n of names) if (same(join(bots, seg, "instructions", n))) return true;
+      if (seen > HARD_LINK_SCAN_LIMIT) return true;
+    }
+    return false;
   }
 
   /** The fenced item a file with more than one link shares its inode with (for a read, only the read-denied items);

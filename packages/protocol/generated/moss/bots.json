@@ -1542,7 +1542,7 @@
       }
     },
     "bot.move.status": {
-      "doc": "The one-time move of plugin bots into records: what it did, or which plugin bots still wait for it.",
+      "doc": "The move of plugin bots into records: what it did, which plugin bots still wait for it (tried again at each start), or why it is held.",
       "owner": "BT",
       "direction": "to-daemon",
       "roles": [
@@ -1674,6 +1674,19 @@
               "maxLength": 81,
               "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
             }
+          },
+          "held": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "reason"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

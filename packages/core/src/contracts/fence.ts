@@ -156,7 +156,10 @@ export interface SandboxPolicy {
   /** The instructions rule (`FenceContext.instructionsOf`): `<home>/bots/<x>/instructions` for the runner's own bot and
    *  each bot it made, for its main conversation and side threads alone: read and write strictly inside, as
    *  `ownMemory` (the folder itself never written over). The record beside it (`bot.json`) stays write-denied to
-   *  every runner. The OS profiles that don't carry it (macOS's, bwrap's, Windows') leave the folder denied. */
+   *  every runner. A bot's own Bash IS allowed to write these folders: the runtime's sandbox for it
+   *  (`botSandboxSettings`, fence/sandbox-settings.ts) keeps them like its memory, which is the rule. "Fail closed" holds
+   *  only for the fenced-process profiles (fence/macos-profile.ts, linux-bwrap.ts, win-sandbox.ts), which don't carry
+   *  the field and so leave the folders denied to the runners they serve. */
   ownInstructions?: string[];
   /** The drop (the owner's ask on 14c): `<home>/plugins` itself, for a bot's main conversation and side threads, whose
    *  shell may make a NEW folder there (the registry indexes it and asks the user's OK). Every entry already there that

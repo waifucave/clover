@@ -636,11 +636,16 @@ export class BotService {
   }
 
   /** `bot.move.status`: the journal, and the plugin bots that have no record. */
-  moveStatus(): { journal?: BotMoveJournal; pending: string[] } {
+  moveStatus(): { journal?: BotMoveJournal; pending: string[]; held?: { reason: string } } {
     const store = this.#records;
     const journal = store?.journal();
-    const pending = pendingPluginBots(this.#o.registry, (id) => store?.has(id) ?? false);
-    return { ...(journal === undefined ? {} : { journal }), pending };
+    // Pending: a plugin bot with no record, live or archived, that the journal doesn't settle.
+    const settled = (id: string) => store !== undefined && (store.has(id) || store.archived().some((a) => a.id === id));
+    const pending = pendingPluginBots(this.#o.registry, settled);
+    const held = store?.journalUnreadable === true
+      ? { reason: "The record of moving your bots out of their plugins can't be read, so MOSS hasn't moved them again; your bots' files are untouched. Look at user-layers/moved/bots.json in MOSS's folder, or remove it to move them now." }
+      : undefined;
+    return { ...(journal === undefined ? {} : { journal }), pending, ...(held === undefined ? {} : { held }) };
   }
 
   /** Each record bot's line in MOSS's list (`bot.summaries`). */
@@ -659,10 +664,12 @@ export class BotService {
     this.#emitSummary(live);
   }
 
-  /** The one-time move, at start, when no journal is there. */
+  #movedJson: string | undefined;
+
+  /** The move, at each start: what the journal doesn't settle yet (records.ts `move`). */
   async #runMove(): Promise<void> {
+    this.#movedJson = JSON.stringify(this.#records?.journal());
     const store = this.#records!;
-    if (store.journal() !== undefined) return;
     if (store.journalUnreadable) {
       this.#warn("the bots' move journal is there but unreadable: the move doesn't run until it is looked at");
       return;
@@ -675,7 +682,19 @@ export class BotService {
       return;
     }
     for (const b of journal.bots) if (b.outcome === "failed") this.#warn(`the plugin bot ${b.id} wasn't moved: ${b.why}`);
-    this.#events.emit({ type: "bots_moved", ts: this.#o.clock.now(), journal });
+    // A bot the move put straight into the archive (its plugin was off): its sessions, which the host picked up at its
+    // start, are let go of with their files.
+    const host = this.#o.host;
+    for (const a of store.archived()) {
+      for (const s of host.list({ bot: a.id })) {
+        if (host.isAttached(s.id)) continue;
+        try { host.forget(s.id); } catch { /* attached meanwhile: left */ }
+      }
+    }
+    if (JSON.stringify(journal) !== this.#movedJson) {
+      this.#movedJson = JSON.stringify(journal);
+      this.#events.emit({ type: "bots_moved", ts: this.#o.clock.now(), journal });
+    }
   }
 
   #onRecord(change: { bot: BotRecordView } | { removed: string }): void {

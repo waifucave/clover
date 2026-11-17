@@ -119,6 +119,31 @@ describe("the instructions rule, through the real fence", () => {
     expect(alpha.check({ op: "write", path: h.ins("echo") }).allowed).toBe(false);
   });
 
+  test("no bot writes a record or an instructions file by a second name, its own included; its own linked notes stay writable", async () => {
+    const { linkSync } = await import("node:fs");
+    const h = home();
+    const mine = h.ins("alpha");
+    expect(h.as("alpha").check({ op: "write", path: mine }).allowed).toBe(true);
+    linkSync(join(h.moss, "bots", "luna", "bot.json"), join(h.moss, "bots", "alpha", "instructions", "x.json"));
+    expect(h.as("alpha").check({ op: "write", path: join(h.moss, "bots", "alpha", "instructions", "x.json") }).allowed).toBe(false);
+    linkSync(mine, join(h.moss, "bots", "alpha", "memory", "copy.md"));
+    expect(h.as("alpha").check({ op: "write", path: mine }).allowed).toBe(false);
+    // A memory note that is really an instructions file (or a record) by another name: refused too.
+    expect(h.as("alpha").check({ op: "write", path: join(h.moss, "bots", "alpha", "memory", "copy.md") }).allowed).toBe(false);
+    linkSync(join(h.moss, "bots", "scout", "bot.json"), join(h.moss, "bots", "alpha", "memory", "scout.json"));
+    expect(h.as("alpha").check({ op: "write", path: join(h.moss, "bots", "alpha", "memory", "scout.json") }).allowed).toBe(false);
+    // Its own notes linked to each other: this rule doesn't judge them (it names the guarded file it refuses). The
+    // fence's older hard-link rule still refuses a note with a second name, as the memory item's (`#hardLinked`).
+    writeFileSync(join(h.moss, "bots", "alpha", "memory", "a.md"), "a");
+    linkSync(join(h.moss, "bots", "alpha", "memory", "a.md"), join(h.moss, "bots", "alpha", "memory", "b.md"));
+    expect(h.as("alpha").check({ op: "write", path: join(h.moss, "bots", "alpha", "memory", "a.md") })).toMatchObject({ allowed: false, reason: "bot-memory", path: join(h.moss, "bots", "alpha", "memory") });
+    // A second name for a record in its own instructions folder is this rule's, by the record's inode.
+    linkSync(join(h.moss, "bots", "luna", "bot.json"), join(h.moss, "bots", "alpha", "instructions", "luna.json"));
+    expect(h.as("alpha").check({ op: "write", path: join(h.moss, "bots", "alpha", "instructions", "luna.json") })).toMatchObject({ allowed: false, path: join(h.moss, "bots", "alpha", "instructions", "luna.json") });
+    // A new file has no second name.
+    expect(h.as("alpha").check({ op: "write", path: join(h.moss, "bots", "alpha", "memory", "new.md") }).allowed).toBe(true);
+  });
+
   test("an instructions folder that is a link is no one's to write; case variants are the same folder, never another's", () => {
     const h = home();
     // scout's instructions folder swapped for a link to luna's: alpha's reach drops scout, and the write lands on luna's

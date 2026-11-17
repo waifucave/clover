@@ -3,7 +3,7 @@
 // instructions read fresh at each turn, a bot making a bot behind the person's card, another bot's instructions behind
 // a card, remove and bring back (in one process and across a restart), and a coding task that carries its bot.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BOT_ARCHIVE_DIR, MAKE_BOT_TOOL, type Caller } from "@waifucave/moss-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
@@ -135,6 +135,9 @@ describe("a bot as engine data", () => {
     await flush();
     writeFileSync(join(home, "bots", "nova", "memory", "MEMORY.md"), "- the user said remember this\n");
     const before = projectRecords(b.host.history("b_nova"), { kind: "bot" }).length;
+    // Its coding task: a code session carrying its id, whose log lives in transcripts/nova/ with its conversation.
+    b.host.open({ id: "a_task", kind: "agent", bot: "nova", computer: "Studio", title: "fix it" }, new FakeSessionDriver());
+    expect(sessionLogPath(home, "nova", "a_task")).toContain(join("transcripts", "nova"));
     await call("bot.remove", { id: "nova" });
     expect(b.bots.list()).toEqual([]);
     expect((await call("bot.records", {})).bots).toEqual([]);
@@ -146,6 +149,9 @@ describe("a bot as engine data", () => {
     expect(existsSync(join(archive, "transcripts", "b_nova.jsonl")) || existsSync(join(archive, "transcripts"))).toBe(true);
     expect(existsSync(sessionLogPath(home, "nova", "b_nova"))).toBe(false);
     expect(b.host.get("b_nova")).toBeUndefined();
+    // The task went with it: stopped, let go of, its log in the archive.
+    expect(b.host.get("a_task")).toBeUndefined();
+    expect(existsSync(join(archive, "transcripts", "a_task.meta.json")) || readdirSync(join(archive, "transcripts")).some((f) => f.startsWith("a_task"))).toBe(true);
     // Its id is held while it is archived.
     expect(((await call("bot.create", { name: "Nova" })).bot as { id: string }).id).toBe("nova-2");
     // Back, in the same process: the same conversation, whole, and the next turn appends to it.
@@ -170,6 +176,8 @@ describe("a bot as engine data", () => {
     const seqs = b.host.history("b_nova").map((r) => r.seq);
     expect(seqs).toEqual(seqs.map((_, i) => i));
     expect(b.host.get("b_nova")).toMatchObject({ kind: "bot", bot: "nova", title: "Nova" });
+    // After a restart and the restore, the task is back, ended, still carrying its bot's id.
+    expect(b.host.get("a_task")).toMatchObject({ kind: "agent", bot: "nova", status: "stopped" });
     expect(b.warnings.filter((w) => w.includes("no readable meta"))).toEqual([]);
     await b.shutdown();
   });
@@ -356,8 +364,8 @@ describe("read-only is absolute", () => {
     await b.shutdown();
   });
 
-  test("the instructions rule from the store's own records: a record forged on the disk names no maker; a hard-linked bot.json isn't read", async () => {
-    const { linkSync, mkdirSync } = await import("node:fs");
+  test("the instructions rule from the store's own records: a record forged on the disk names no maker; a second name for a bot.json neither erases nor forges it", async () => {
+    const { linkSync, mkdirSync, statSync } = await import("node:fs");
     const home = tempDir();
     const b = await recordsBoot(home);
     await b.bots.createBot({ name: "Alpha" }, { kind: "user" });
@@ -365,17 +373,44 @@ describe("read-only is absolute", () => {
     expect(b.bots.records!.instructionsReach("alpha")).toEqual(["alpha"]);
     // Luna's record rewritten on the disk to name Alpha as maker (as only a second name for it could): the store's own
     // copy, the one the fence asks, is unchanged.
-    const forged = JSON.parse(readFileSync(recordFile(home, "luna"), "utf8"));
+    const original = readFileSync(recordFile(home, "luna"), "utf8");
+    const forged = JSON.parse(original);
     writeFileSync(recordFile(home, "luna"), JSON.stringify({ ...forged, madeBy: { kind: "bot", id: "alpha" } }));
     expect(b.bots.records!.instructionsReach("alpha")).toEqual(["alpha"]);
-    // A bot.json with a second name is no record at the next start.
+    writeFileSync(recordFile(home, "luna"), original);
+    // A second name planted for Luna's bot.json: at the next start the core rewrites the record as its own file, so Luna
+    // stays a bot and the planted name is no longer her record.
     mkdirSync(join(home, "bots", "alpha", "memory"), { recursive: true });
-    linkSync(recordFile(home, "luna"), join(home, "bots", "alpha", "memory", "luna.json"));
+    const planted = join(home, "bots", "alpha", "memory", "luna.json");
+    linkSync(recordFile(home, "luna"), planted);
     await b.shutdown();
     const again = await recordsBoot(home);
-    expect(again.bots.records!.get("luna")).toBeUndefined();
-    expect(again.bots.records!.instructionsReach("alpha")).toEqual(["alpha"]);
-    expect(again.warnings.some((w) => w.includes("isn't a bot's record"))).toBe(true);
+    expect(again.bots.records!.get("luna")).toMatchObject({ id: "luna", madeBy: { kind: "user" } });
+    expect(statSync(recordFile(home, "luna")).nlink).toBe(1);
+    writeFileSync(planted, JSON.stringify({ ...forged, madeBy: { kind: "bot", id: "alpha" } }));
+    expect(JSON.parse(readFileSync(recordFile(home, "luna"), "utf8")).madeBy).toEqual({ kind: "user" });
+    expect(again.warnings.some((w) => w.includes("had a second name"))).toBe(true);
     await again.shutdown();
+  });
+
+  test("a record the store couldn't read back is never written: an oversized greeting is refused with a plain reason", async () => {
+    const b = await recordsBoot(tempDir());
+    await b.bots.createBot({ name: "Nova" }, { kind: "user" });
+    await expect(b.bots.editBot("nova", { greeting: "\u0001".repeat(15_000) })).rejects.toThrow("more than the 65536 a record may hold");
+    expect(b.bots.records!.get("nova")?.greeting).toBeUndefined();
+    await b.shutdown();
+  });
+
+  test("a MakeBot whose card can't be asked leaves no proposal behind", async () => {
+    const clock = new FakeClock();
+    const b = await boot({
+      home: tempDir(), clock, plugins: [], botSource: "records",
+      approvals: { withdrawSession: () => {}, cancelSession: () => {}, request: async () => { throw new Error("broker gone"); } } as never,
+    });
+    await b.bots.createBot({ name: "Alpha" }, { kind: "user" });
+    const make = b.side.tools("b_alpha").find((t) => t.name === MAKE_BOT_TOOL)!;
+    for (let i = 0; i < 4; i++) await make.run({ name: `S${i}` }).catch(() => undefined);
+    expect(b.bots.records!.proposals()).toEqual([]);
+    await b.shutdown();
   });
 });

@@ -87,7 +87,8 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
   // A bot's workshop (`ownPlugins`, the plugins it built) is kept like its scratch: written inside, the folder itself held
   // by its pin, and every `.git` in it held by the run-later denies under each root.
   // The instructions rule (lane BT, `ownInstructions`): the bot's own and its made bots' instructions folders, kept
-  // like its memory.
+  // like its memory, so its own Bash (and its Write and Edit) writes inside them: that is the rule. The fenced-process
+  // profiles don't carry the field, so there (only there) the folders stay denied.
   const ownRw = [policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, policy.ownMemory, ...(policy.ownPlugins ?? []), ...(policy.ownInstructions ?? [])].filter((x): x is string => x !== undefined);
   // The drop: the plugins folder itself kept for writing (a new folder made there; its own entry held by its pin),
   // and every entry already there that isn't one of this bot's own plugins denied by name.
