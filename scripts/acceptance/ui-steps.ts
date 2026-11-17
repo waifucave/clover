@@ -702,11 +702,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     // The composer stays on screen under a conversation that has grown (the layout fills the window; the composer keeps its height).
     const box = await cdp.evaluate(talk.session, "(() => { const r = document.querySelector('[class*=\"alpha-sheet\"] .cl-composer').getBoundingClientRect(); return { bottom: Math.round(r.bottom), room: innerHeight, h: Math.round(r.height) }; })()") as { bottom: number; room: number; h: number };
     if (box.bottom > box.room || box.h < 40) fail(`Alpha's composer is off screen or squashed: bottom ${box.bottom} of ${box.room}, ${box.h} high`);
-    // More than colours: the layout's header is Alpha's own (name and model), and its stage holds the avatar the manifest names
-    // (the VRM's credit line, drawn on a canvas, not an empty box).
+    // More than colours: the layout's header is Alpha's own (name and model). Her tab has no stage now: the figure is the
+    // avatar plugin's, beside a session (the figure rows); a stage node her layout still names is left empty.
     let last = "";
-    const parts = await until("Alpha's header and stage", 60_000, async () => {
-      // The stage is drawn in the layout's own document; the header is Alpha's own part, in a frame of its own.
+    const parts = await until("Alpha's header", 60_000, async () => {
+      // The header is Alpha's own part, in a frame of its own.
       const st = await cdp.evaluate(talk.session, "(() => { const st = document.querySelector('.cl-bot-stage'); if (!st) return null; const b = st.getBoundingClientRect(); return { canvas: st.querySelectorAll('canvas').length, w: Math.round(b.width), h: Math.round(b.height), text: (st.textContent || '').trim().slice(0, 120) }; })()") as { canvas: number; w: number; h: number; text: string } | null;
       // Alpha's own layer is its own origin (`moss-plugin://alpha/`), so it is looked for in every document.
       let head: { value: string } | undefined;
@@ -716,13 +716,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         if (typeof text === "string" && text.trim() !== "") head = { value: `${head?.value ?? ""} ${text}`.trim() };
       }
       last = `stage ${JSON.stringify(st)}, header ${head === undefined ? "missing" : JSON.stringify(head.value.slice(0, 60))}`;
-      return st !== null && head !== undefined && st.canvas > 0 && !/can't be shown/.test(st.text) ? { ...st, header: head.value } : undefined;
+      return head !== undefined ? { stage: st, header: head.value } : undefined;
     }, async () => `${last} || ${await dumpFrames(cdp)}`);
     if (!parts.header.includes("Alpha")) fail(`Alpha's header says "${parts.header}"`);
     const heldModel = (await rpc.request<{ bots: { model?: string }[] }>("bot.list", {})).bots[0]?.model ?? "";
     const wire = heldModel.slice(heldModel.indexOf("/") + 1);
     if (wire === "" || !parts.header.includes(wire)) fail(`Alpha's header says "${parts.header}", but the bot's model is ${heldModel} (a pick in step 10 must show in it)`);
-    if (parts.w < 300 || parts.h < 200) fail(`Alpha's stage is ${parts.w}x${parts.h}, not the 260-620 wide column the layout declares`);
+    if (parts.stage !== null && parts.stage.canvas > 0) fail("a figure is still drawn on Alpha's tab, where the platform has no stage now");
     const renders = process.env.MOSS_ACCEPT_RENDERS;
     if (renders) {
       // Step 4 left Settings open over the tab: close it the way a person does, for the picture.
@@ -835,7 +835,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless (app open)");
       shotSaid += `; moss-core app open ${went.join(", then ")}; app where: Alpha's tab; no window shown`;
     }
-    return `Alpha's talk column is drawn, with the composer in it, on screen; the header says "${parts.header.replace(/\s+/g, " ")}" and the stage is ${parts.w}x${parts.h} with the avatar on a canvas (${parts.text})${shotSaid}`;
+    return `Alpha's talk column is drawn, with the composer in it, on screen; the header says "${parts.header.replace(/\s+/g, " ")}", and no figure is drawn on her tab (the avatar plugin's is beside a session)${shotSaid}`;
   });
 
   // 8: a pending tool card. The island draws it (the app provides the sealed kit: an island without it drew nothing, a

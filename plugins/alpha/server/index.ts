@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { stageHooks, type HookArgs } from "./hooks";
 import { serveMcp, type McpServerTransport } from "./mcp";
-import { StageStore, type AvatarApi, type StageApi } from "./store";
+import { StageStore, type StageApi } from "./store";
 import { replyGist } from "./stage";
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
 import type { ConversationApi, PluginSelf, SettingsApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
@@ -22,7 +22,6 @@ import { runStageTool, STAGE_TOOLS } from "./tools";
 interface AlphaApi extends StageApi {
   readonly plugin?: Pick<PluginSelf, "id">;
   readonly settings: Pick<SettingsApi, "get"> & Partial<Pick<SettingsApi, "set">>;
-  readonly figure?: Pick<AvatarApi, "cue" | "catalogue" | "watch">;
   /** `conversation.read`: the pin reads the reply it pins from the log. */
   readonly conversation?: Partial<Pick<ConversationApi, "get" | "history">>;
 }

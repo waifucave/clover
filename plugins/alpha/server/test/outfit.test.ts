@@ -28,11 +28,11 @@ function setup(o: { catalogue?: AvatarCatalogue; answer?: (cue: AvatarCue) => Av
   const a = fakeAvatar({ ...(o.catalogue !== undefined ? { catalogue: o.catalogue } : {}), ...(o.answer ? { answer: o.answer } : {}) });
   let t = 0;
   const api = {
-    ...f.api, figure: a.avatar,
+    ...f.api,
     settings: { get: async <T>(k: string) => settings[k] as T | undefined, set: async (k: string, v: unknown) => { set.push([k, v]); settings[k] = v; } },
     bots: { get: async (id: string) => ({ id, userLayer: o.userLayer ?? [] }) },
   };
-  const s = new StageStore(api, { now: () => (t += 200), bot: "alpha" });
+  const s = new StageStore(api, { now: () => (t += 200), bot: "alpha", figure: a.avatar });
   return { f, a, s, set, settings, run: (name: string, args: unknown = {}) => runStageTool(name, args, s, api.settings.get) };
 }
 
@@ -61,7 +61,7 @@ describe("her outfit, on her own model", () => {
     const f = fakeApi();
     const set: [string, unknown][] = [];
     const mod = await import("../index");
-    await mod.start({ ...f.api, settings: { get: async () => undefined, set: async (k: string, v: unknown) => void set.push([k, v]) }, bots: { get: async () => ({ userLayer: [] }) }, figure: fakeAvatar({ catalogue: HERS }).avatar } as never);
+    await mod.start({ ...f.api, settings: { get: async () => undefined, set: async (k: string, v: unknown) => void set.push([k, v]) }, bots: { get: async () => ({ userLayer: [] }) } } as never);
     try {
       expect(await outfitCommand({ part: "yellow-raincoat", on: true })).toEqual({ text: "Outfit: Yellow raincoat" });
       expect(set).toEqual([["outfit", "yellow-raincoat"]]);

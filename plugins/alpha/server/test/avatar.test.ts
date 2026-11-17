@@ -11,7 +11,7 @@ const setup = (o: Parameters<typeof fakeAvatar>[0] = { catalogue: MODEL }) => {
   const f = fakeApi();
   const a = fakeAvatar(o);
   let t = 0;
-  const s = new StageStore({ ...f.api, figure: a.avatar }, { now: () => (t += 200) });
+  const s = new StageStore(f.api, { now: () => (t += 200), figure: a.avatar });
   return { f, a, s, run: (name: string, args: unknown = {}) => runStageTool(name, args, s, f.api.settings.get) };
 };
 

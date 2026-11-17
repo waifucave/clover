@@ -31,7 +31,6 @@ export interface StageApi {
   readonly bots?: { get(bot: string): Promise<{ readonly userLayer?: readonly string[] }> };
   readonly points?: Pick<PointsApi, "entries">;
   /** The public avatar calls (`avatar.control`, `avatar.read`): how her stage reaches her figure, whatever draws it. */
-  readonly figure?: Pick<AvatarApi, "cue" | "catalogue">;
 }
 
 /** The expressions a celebration tries, best first. */
@@ -57,7 +56,7 @@ function readScenes(raw: unknown): Scene[] | undefined {
 export class StageStore {
   readonly #api: StageApi;
   /** The figure calls she is handed (`figure`), none today. */
-  readonly #figure: StageApi["figure"];
+  readonly #figure: Pick<AvatarApi, "cue" | "catalogue"> | undefined;
   readonly #now: () => number;
   /** Her bot's id (her plugin's). */
   readonly #bot: string;
@@ -65,10 +64,10 @@ export class StageStore {
   #window = { start: 0, n: 0 };
   #catalogWindow = { start: 0, n: 0 };
 
-  constructor(api: StageApi, o: { now?: () => number; bot?: string } = {}) {
+  constructor(api: StageApi, o: { now?: () => number; bot?: string; figure?: Pick<AvatarApi, "cue" | "catalogue"> } = {}) {
     this.#api = api;
-    const { figure } = api;
-    this.#figure = figure;
+    // Never read off the plugin API (its proxy refuses a member it hasn't got): handed in, or none.
+    this.#figure = o.figure;
     this.#now = o.now ?? Date.now;
     this.#bot = o.bot ?? "alpha";
   }

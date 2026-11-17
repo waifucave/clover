@@ -45,6 +45,9 @@ if (!result.success) {
 const assets: [string, string][] = [
   ["alpha/assets", "plugins/alpha/assets"],
   ["alpha/tab", "plugins/alpha/tab"],
+  // Alpha's figure, her avatar pack's (the 2D and 3D placeholders made by code).
+  ["moss/plugins/alpha-figure/live2d", "plugins/moss/plugins/alpha-figure/live2d"],
+  ["moss/plugins/alpha-figure/vrm", "plugins/moss/plugins/alpha-figure/vrm"],
 ];
 for (const [from, to] of assets) {
   const source = join(plugins, from);
