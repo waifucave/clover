@@ -1818,46 +1818,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (!(railWidth > 0 && railWidth <= 100)) fail(`the folded sidebar is ${railWidth} px wide, not the stock rail`);
       await press("her sidebar toggle again", ".ac__btn", "Show the sidebar");
       await until("the stock sidebar open again", 10_000, async () => (!(await collapsed()) && (await inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar:not([data-collapsed])')")) !== undefined ? true : undefined));
-      // 2b. The figure's box (`avatar.box` and `avatar.watch`, `avatar.read`): her "Right now" bubble is placed from the box her stage's renderer
-      // publishes (inline left/top, set only once a box is known), and moves when the box does: the window made a little narrower
-      // changes the stage's box, and the bubble follows it; widened again, it comes back. With the sidebar folded so the window's
-      // width leaves her the wide room the bubble and her stage tools show in.
-      await press("her sidebar toggle (for the bubble)", ".ac__btn", "Hide the sidebar");
-      await until("the stock sidebar folded", 10_000, async () => ((await collapsed()) ? true : undefined));
-      const bubble = async () => (await inTree<string>(cdp, "(() => { const e = document.querySelector('.rm__say'); return e && e.getClientRects().length > 0 && e.style.top !== '' ? e.style.left + '|' + e.style.top : null; })()"))?.value;
-      let boxSaid = "";
-      let stageTools = "";
-      try {
-        const placedAt = await until("her bubble placed from the figure's box (avatar.box)", 60_000, () => bubble(), async () => `${(await inTree<string>(cdp, "document.querySelector('.rm') ? document.querySelector('.rm').dataset.size + ' ' + (document.querySelector('.rm__say') ? 'bubble ' + document.querySelector('.rm__say').getAttribute('style') : 'no bubble') : 'no room'"))?.value}`);
-        const appTop = (await cdp.documents()).find((d) => d.url === "moss-core://app/");
-        if (appTop === undefined) fail("no app document to resize");
-        let movedTo = "";
-        try {
-          await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1240, height: 800, deviceScaleFactor: 1, mobile: false }, appTop!.session);
-          movedTo = await until("her bubble moving with the box (avatar.watch)", 30_000, async () => { const v = await bubble(); return v !== undefined && v !== placedAt ? v : undefined; }, async () => `still ${await bubble()}`);
-        } finally {
-          // Back to the window's own size (the sidebar's look is compared at it below).
-          await cdp.send("Emulation.clearDeviceMetricsOverride", {}, appTop!.session).catch(() => undefined);
-        }
-        const nums = (v: string | undefined) => (v ?? "").match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
-        const near = (v: string | undefined, w: string) => { const x = nums(v), y = nums(w); return x.length === y.length && x.length > 0 && x.every((n, i) => Math.abs(n - y[i]!) <= 8); };
-        await until("her bubble back where it was (within a few px)", 30_000, async () => (near(await bubble(), placedAt) ? true : undefined), async () => `now ${await bubble()}, was ${placedAt}`);
-        boxSaid = `her bubble was placed from the figure's box (${placedAt}), moved with it when the window narrowed (${movedTo}) and came back`;
-        // 2c. Her stage tools (in her wide room, the sidebar folded): each is present; one that the figure's renderer can do opens its list (Expression, from the model's catalogue), the others say why not.
-        const toolNames = (await inTree<string>(cdp, "(() => { const t = [...document.querySelectorAll('.rm__tool')]; return t.length ? JSON.stringify(t.map(e => e.getAttribute('aria-label') + ':' + (e.getAttribute('aria-disabled') ?? 'on'))) : null; })()"))?.value ?? "[]";
-        if (!/Expression/.test(toolNames)) fail(`her stage tools are not drawn (${toolNames})`);
-        // Her own model wears her outfits, so her Outfit tool is on (it puts on her next outfit).
-        if (!toolNames.includes('"Outfit:on"')) fail(`her Outfit tool isn't on with her own model loaded (${toolNames})`);
-        stageTools = `her stage tools were drawn (${toolNames})`;
-        if ((await inTree<boolean>(cdp, "!!document.querySelector('.rm__tool[aria-label=Expression]:not([aria-disabled])')")) !== undefined) {
-          await press("her Expression tool", ".rm__tool", "Expression");
-          await until("her expression list", 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.rm__list [role=menuitem]')"));
-          await press("her Expression tool again", ".rm__tool", "Expression");
-          stageTools += "; Expression opened a list of the model's own expressions";
-        }
-      } finally {
-        if (await collapsed()) await press("her sidebar toggle (back open)", ".ac__btn", "Show the sidebar").catch(() => undefined);
-      }
+      // (2b and 2c, her bubble placed from the figure's box and her stage tools drawn from its catalogue, left with the figure:
+      // the platform has no figure API, and the avatar plugin's figure stands beside a session; the figure rows prove it.)
       // 3. Her panel control opens the panel sheet and closes it: the Browser panel, which the bundled browser view fills (her
       // Session control opens the slim column beside her conversation, not a panel).
       const control = "Browser";
@@ -1914,29 +1876,18 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (plain.tools.length === 0) fail(`${name}'s turn was offered no tools at all, so it proves nothing`);
       if (stageIn(plain.tools).length > 0) fail(`${name}'s turn was offered Alpha's stage tools: ${stageIn(plain.tools).join(", ")}`);
       const toolsSaid = `her stage tools (${STAGE_TOOLS.join(", ")}) were offered to her turn and none to ${name}'s (offered ${plain.tools.length} others)`;
-      // 9. Her outfit is her setting: her Outfit button puts on her next outfit there, the setting changed by the user
-      // (`plugin.settings.set`, the Edit page's picker's call) shows on her stage, and her tool's change shows in the setting.
-      const worn = async () => (await inTree<string>(cdp, "(() => { const f = document.querySelector('figure.clvr-avatar[data-outfit]'); return f ? f.dataset.outfit : null; })()"))?.value;
+      // 9. Her outfit is her setting: her tool's change shows in the setting (her figure wearing it left with the figure).
       const outfitSet = async () => (await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "alpha" })).settings.find((x) => x.key === "outfit")?.value;
-      const trail = async () => `the figure: ${(await inTree<string>(cdp, "(() => { const f = document.querySelector('figure.clvr-avatar[data-outfit]'); return f ? document.querySelectorAll('figure.clvr-avatar').length + ' in its document, heard ' + (f.dataset.cues || 'nothing') : null; })()"))?.value}; her room: ${(await inTree<string>(cdp, "(() => { const r = document.querySelector('.rm[data-dressing]'); return r ? r.dataset.dressing : null; })()"))?.value}`;
-      const wears = (what: string, want: string) => until(what, 30_000, async () => ((await worn()) === want ? true : undefined), async () => `her figure wears ${await worn()}, the setting says ${JSON.stringify(await outfitSet())}; ${await trail()}`);
       let outfitSaid = "";
       try {
-        await wears("her lilac dress, the default", "lilac-dress");
-        await press("her Outfit tool", ".rm__tool", "Outfit");
-        await until("her Outfit tool's pick in her setting", 20_000, async () => ((await outfitSet()) === "navy-uniform" ? true : undefined), async () => `the setting says ${JSON.stringify(await outfitSet())}`);
-        await wears("her navy uniform on her stage", "navy-uniform");
-        await rpc.request("plugin.settings.set", { id: "alpha", key: "outfit", value: "yellow-raincoat" }, 20_000);
-        await wears("the setting's raincoat on her stage", "yellow-raincoat");
         await rpc.request("session.send", { id: hers.session, message: { text: 'ACCEPTANCE-CALL toggle_outfit {"part":"lilac-dress","on":true}', clientMessageId: `outfit-${randomBytes(4).toString("hex")}` } }, 30_000);
         await until("her tool's outfit in her setting", 60_000, async () => ((await outfitSet()) === "lilac-dress" ? true : undefined), async () => `the setting says ${JSON.stringify(await outfitSet())}`);
-        await wears("her tool's lilac dress on her stage", "lilac-dress");
-        outfitSaid = "her outfit is her setting: her Outfit tool put on the navy uniform (the setting said so and her figure wore it), the setting set to the yellow raincoat put it on her figure, and her toggle_outfit tool's lilac dress was in the setting and on her figure";
+        outfitSaid = "her outfit is her setting: her tool's lilac dress was in it";
       } finally {
         await rpc.request("plugin.settings.set", { id: "alpha", key: "outfit", value: null }, 20_000).catch(() => undefined);
       }
       const rows = (JSON.parse(herSide) as { rows: string[] }).rows.length;
-      return `${side}; ${toolsSaid}; ${outfitSaid}; on Alpha's tab no stock bar (bar-mode none), her own controls, ${sizeSaid}, and the window's own sidebar beside it exactly as beside ${name}'s (box, ground, rule, material, its accent and text tokens and ${rows} rows the same; her skin "${skin}" reaches the bar and panels only); her toggle folded the stock sidebar to its ${railWidth} px rail and opened it again; ${boxSaid}; ${panels}; ${stageTools}; more scoped wins: her composer kept her own color.surface (${herTokens.surface}) and composer.background (${herTokens.composer}) against an all-bots style, which ${name}'s composer took (${plainTokens.surface}, ${plainTokens.composer}); ${name}'s tab kept the stock bar, and Alpha's brought her chrome back`;
+      return `${side}; ${toolsSaid}; ${outfitSaid}; on Alpha's tab no stock bar (bar-mode none), her own controls, ${sizeSaid}, and the window's own sidebar beside it exactly as beside ${name}'s (box, ground, rule, material, its accent and text tokens and ${rows} rows the same; her skin "${skin}" reaches the bar and panels only); her toggle folded the stock sidebar to its ${railWidth} px rail and opened it again; ${panels}; more scoped wins: her composer kept her own color.surface (${herTokens.surface}) and composer.background (${herTokens.composer}) against an all-bots style, which ${name}'s composer took (${plainTokens.surface}, ${plainTokens.composer}); ${name}'s tab kept the stock bar, and Alpha's brought her chrome back`;
     } finally {
       for (const pid of installed.reverse()) await rpc.request("plugin.remove", { id: pid }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
@@ -1996,7 +1947,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }
       return undefined;
     }, () => dumpFrames(cdp))).value;
-    const tabShows = (what: string, ok: (m: Measured) => boolean, ms = 60_000) => shows<Measured>(name, MEASURE, what, (m) => m.canvas && m.composer && ok(m), ms);
+    const tabShows = (what: string, ok: (m: Measured) => boolean, ms = 60_000) => shows<Measured>(name, MEASURE, what, (m) => m.composer && ok(m), ms);
     // A switch in the bot editor, brought into view (the rows are below its fold), pressed, and seen to flip.
     const flip = async (label: string, to: boolean) => {
       const sw = `button[role=switch][aria-label="${label}"]`;
@@ -2037,7 +1988,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // Out of any dialog.
       await escape().catch(() => undefined);
       // The bot's layout and the mover's patch: the header just above the composer, in the mover's row, nudged 6 px up.
-      await tabShows("its tab arranged by its layout and the mover's patch, the model on its stage", (m) => m.inNudge && m.buttons >= 1 && (m.nudged ?? "").includes("-6"));
+      await tabShows("its tab arranged by its layout and the mover's patch", (m) => m.inNudge && m.buttons >= 1 && (m.nudged ?? "").includes("-6"));
       await sleep(1_500);
       const m = await tabShows("its tab, settled", () => true, 10_000);
       if (m.stage.x + m.stage.w > m.talk.x + 1) fail(`the stage isn't to the left of the transcript (${JSON.stringify(m)})`);
