@@ -689,6 +689,19 @@ body {
 body[data-answering="yes"] .seal-button.glyph { opacity: 0.6 }
 body[data-answered="no"] .seal-button.glyph { outline: 2px solid #E5484D; outline-offset: -2px }
 body:has(.seal-button.glyph) { overflow: hidden }
+/* A button page fits its frame whole and never shows a scroll bar (lane RT): with classic scroll bars (macOS "Show scroll bars:
+   Always", or a mouse with no scroll surface) a page that overflowed its frame got space-taking bars, the button showed half of
+   itself, and every press was refused. The part sizes the frame to the button (the page's size report), so the button takes its
+   own box (its unwrapped width, capped where the part caps a frame, 1200 px, then wrapping), and the status line takes only the
+   room left over (none in a frame of the button's size: the button's title says the same). */
+.seal-approve, .seal-deny { overflow: hidden; scrollbar-width: none }
+.seal-approve body, .seal-deny body { box-sizing: border-box; height: 100vh; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start }
+.seal-approve .seal-button:not(.glyph), .seal-deny .seal-button:not(.glyph) { flex: none; box-sizing: border-box; width: max-content; max-width: 1200px; white-space: normal }
+.seal-approve .state, .seal-deny .state { flex: 1 1 0; min-height: 0; overflow: hidden; align-self: stretch }
+/* The own card (the fallback card, the window's strip) may run taller than its window (the window's cap); it scrolls under its
+   sticky buttons with no bar taking room, so its buttons never move or get cut by one. */
+.seal-own { scrollbar-width: none; overflow-x: hidden }
+.own .seal-button { box-sizing: border-box; max-width: 100%; white-space: normal }
 body:has(.seal-button.glyph) .state { display: none }
 .seal-button:disabled { opacity: 0.5; cursor: wait }
 .seal-button.quiet { background: color-mix(in srgb, var(--moss-card-text, var(--seal-text)) 14%, transparent); color: var(--moss-card-text, var(--seal-text)) }
