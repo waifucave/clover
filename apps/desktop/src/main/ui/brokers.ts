@@ -696,6 +696,13 @@ export class PointerLog {
     return p !== undefined && this.now() - p.at <= VIEW_USE_WINDOW_MS && inRegions(p, [rect]);
   }
 
+  /** The person's latest mouse-down in that window (window coordinates), if it is at most `maxAgeMs` old (lane RT: where a
+   *  sealed press was made, for the OS-wide overlap check). */
+  lastDown(windowId: number, maxAgeMs: number): { x: number; y: number } | undefined {
+    const p = this.last.get(windowId);
+    return p !== undefined && this.now() - p.at <= maxAgeMs ? { x: p.x, y: p.y } : undefined;
+  }
+
   forget(windowId: number): void {
     this.last.delete(windowId);
   }

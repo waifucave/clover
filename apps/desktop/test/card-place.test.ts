@@ -200,3 +200,68 @@ describe("lane RT: the engine's router places the card, and the press gate follo
     expect(presenceOf({ exists: false, visible: false, minimized: false, front: false }, null)).toEqual({ windows: [] });
   });
 });
+
+import { PresenceReporter, type PresenceSent } from "../src/main/card-place";
+import { EngineCardRouter } from "../../../packages/core/src/surfaces/card-router";
+import { FakeClock } from "../../../packages/core/src/contracts/fakes/clock";
+import type { CardPlacement, PresenceReport } from "@waifucave/moss-protocol";
+
+describe("lane RT: a press right after a focus change is taken at once (one press, never 'press again')", () => {
+  /** The engine's real router behind a connection that, like the core, hands the app every `card_placed` before it answers the
+   *  report (here: the app's own placements map is updated inside `send`, before it resolves), a beat later than the call. */
+  function world() {
+    const router = new EngineCardRouter({ clock: new FakeClock(), hostLive: true });
+    const placed = new Map<string, CardPlacement>();
+    router.watch((c) => placed.set(c.card, c.place));
+    let front = false;
+    const sent: PresenceReport[] = [];
+    const reporter = new PresenceReporter({
+      read: () => ({ exists: true, visible: true, minimized: false, front }),
+      showing: () => ({ kind: "bot", id: "alpha" }),
+      send: async (report): Promise<PresenceSent> => {
+        sent.push(report);
+        await new Promise((r) => setTimeout(r, 20));
+        router.report({ connId: 1, program: "code" }, report);
+        return "sent";
+      },
+    });
+    return { router, placed, reporter, sent, focus: () => { front = true; } };
+  }
+
+  test("the card is on the island; the window comes to the front and the watcher hasn't settled yet: one press in the conversation answers", async () => {
+    const w = world();
+    await w.reporter.report();
+    w.router.pending({ id: "card_aaaaaa", bot: "alpha" });
+    expect(w.placed.get("card_aaaaaa")).toEqual({ kind: "island" });
+    // The person clicks the window: it comes to the front, and the press lands before the front watcher has said so.
+    w.focus();
+    await w.reporter.beforePress();
+    expect(w.placed.get("card_aaaaaa")).toEqual({ kind: "conversation", program: "code", window: "main" });
+    expect(pressMayBeTaken({ from: "window", placed: w.placed.get("card_aaaaaa"), front: true })).toBe(true);
+  });
+
+  test("the watcher settled first and its report is still on its way: the press waits for it, then is taken", async () => {
+    const w = world();
+    await w.reporter.report();
+    w.router.pending({ id: "card_aaaaaa", bot: "alpha" });
+    w.focus();
+    w.reporter.settled(true);
+    void w.reporter.report();
+    // Before the report's answer the app still has the island's place; the press waits for the report on its way.
+    expect(w.placed.get("card_aaaaaa")).toEqual({ kind: "island" });
+    await w.reporter.beforePress();
+    expect(pressMayBeTaken({ from: "window", placed: w.placed.get("card_aaaaaa"), front: true })).toBe(true);
+    // One report for the focus change, not a second one for the press.
+    expect(w.sent.filter((r) => r.windows[0]?.focused === true)).toHaveLength(1);
+  });
+
+  test("a click onto the window's own strip (neither window focused for an instant) never reports the window as left", async () => {
+    const w = world();
+    w.focus();
+    w.reporter.settled(true);
+    await w.reporter.report();
+    // The instant reads unfocused, but the watcher hasn't settled out: the next report still says focused.
+    await w.reporter.report();
+    expect(w.sent.map((r) => r.windows[0]?.focused)).toEqual([true, true]);
+  });
+});

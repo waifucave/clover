@@ -385,24 +385,29 @@ export type ProgramAnswerVerifier = { verify(device: string, program: "moss" | "
 /** The device registry, as the answer checks use it: the record and the answer key's signature check. */
 export type AnswerDevices = Pick<DeviceRegistry, "get" | "verifyAnswer">;
 
-/** Builds the verifier for device answers: the signing device may answer cards (`mayAnswerCards`), and its answer
- *  key's Ed25519 signature covers `cardAnswerSigningInput` with the option and children. The signature holds end to
+/** Builds the verifier for device answers. A proof naming a program: the device exists, isn't revoked, is a desktop or a
+ *  phone, and that program's key (`programs`) signed `programCardAnswerSigningInput`. A proof naming none: the device may
+ *  answer cards (`mayAnswerCards`, its single key), and that key's Ed25519 signature covers `cardAnswerSigningInput` with
+ *  the option and children. The signature holds end to
  *  end, so any computer may relay it (review N4); a sealed-frame proof never reaches this (the broker checks those). */
 export function deviceProofVerifier(devices: AnswerDevices, programs?: ProgramAnswerVerifier): ProofVerifier {
   return async (card, answer) => {
     const proof = answer.proof;
     if (proof.via !== "device") return false;
     const device = devices.get(proof.device);
-    if (!device || !mayAnswerCards(device)) return false;
     const signature = fromBase64(proof.signature);
-    if (!signature) return false;
-    // A proof that names its program (lane RT, ruling C) verifies with that program's key alone, over the input that
-    // names the program: one program's signature never passes as another's, nor as the device's single key.
+    if (!device || !signature) return false;
+    // One rule for every program (lane RT, ruling C): a proof that names its program verifies with that program's key alone,
+    // over the input that names the program, so one program's signature never passes as another's, nor as the device's
+    // single key. The device must exist, not be revoked, and be a desktop or a phone; the program's key may be one the
+    // program table alone holds (a home where only MOSS has run has no single key). The single key (`mayAnswerCards`)
+    // belongs only to the path with no program named.
     if (proof.program !== undefined) {
-      if (programs === undefined) return false;
+      if (programs === undefined || (device.kind !== "desktop" && device.kind !== "phone") || device.revokedAt !== undefined) return false;
       const signed = programCardAnswerSigningInput({ program: proof.program, id: card.id, hash: card.hash, option: answer.optionId, at: proof.at, children: answer.children ?? [] });
       return programs.verify(proof.device, proof.program, new TextEncoder().encode(signed), signature);
     }
+    if (!mayAnswerCards(device)) return false;
     const input = cardAnswerSigningInput({ id: card.id, hash: card.hash, option: answer.optionId, at: proof.at, children: answer.children ?? [] });
     return devices.verifyAnswer(proof.device, new TextEncoder().encode(input), signature);
   };

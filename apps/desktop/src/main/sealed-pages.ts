@@ -343,7 +343,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     // Nothing on the page changes before the fresh reading (a status line growing could move the button, and a button that moved is not
     // read as showing): the "…" and the answering mark come after it.
     // A refused answer says so on the card and the button answers again: never a "…" that stays.
-    const refused = (r) => { answering = false; document.body.dataset.answered = "no"; delete document.body.dataset.answering; const said = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; if (state !== null) state.textContent = said; closest.title = said; };
+    const refused = (r) => { answering = false; document.body.dataset.answered = "no"; delete document.body.dataset.answering; const said = r !== null && typeof r === "object" && r.covered === true ? ${JSON.stringify(WINDOW_OVER_TEXT)} : r !== null && typeof r === "object" && r.again === true ? ${JSON.stringify(PRESS_AGAIN_TEXT)} : r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; if (state !== null) state.textContent = said; closest.title = said; };
     // The press counts only if the report that follows it says the button shows uncovered: asked for now, not read from the last one.
     askFresh(closest).then((ok) => {
       if (!ok) {
@@ -488,7 +488,7 @@ export function ownCardPage(input: {
     const state = document.querySelector(".state");
     if (state !== null) state.textContent = "…";
     // A refused answer says so on the card, and its buttons answer again.
-    const refused = (r) => { document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
+    const refused = (r) => { document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && r.covered === true ? ${JSON.stringify(WINDOW_OVER_TEXT)} : r !== null && typeof r === "object" && r.again === true ? ${JSON.stringify(PRESS_AGAIN_TEXT)} : r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
     // The same rule as a part's button: the press counts only if the report that follows it says the button shows uncovered.
     void askFresh(b2).then((ok) => {
       if (!ok) {
@@ -562,6 +562,12 @@ const SHIELD = `<svg class="shield" viewBox="0 0 16 16" width="18" height="18" a
  *  registered yet): the card stays, and its buttons answer again. */
 /** Said on a card when a real press came before the page was ready to take it (shown a beat, then cleared). */
 export const PRESS_AGAIN_TEXT = "Not ready yet — press again.";
+/** Why main didn't take a press whose fresh reading said the button wasn't whole and uncovered (most often it was only just
+ *  drawn), or that came with no reading: the press didn't count, and pressing again will. The page shows PRESS_AGAIN_TEXT. */
+export const NOT_SHOWN_REASON = "the button wasn't fully showing yet: press it again";
+export const NOT_CHECKED_REASON = "the press wasn't checked just now: press it again";
+/** What the card says when a window of one of MOSS's programs lay over the button at the press (R12, the OS's own window list). */
+export const WINDOW_OVER_TEXT = "Another MOSS window is over this button — move it away and press again.";
 /** The Review on a plugin's OK or update card (the owner's ruling, 2026-11-13). */
 export const REVIEW_BUTTON_TEXT = "Review";
 export const REVIEW_NOTE_TEXT = "Review sends this plugin's files to a model. It's advice: it doesn't answer this card.";

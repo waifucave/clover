@@ -242,6 +242,10 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     expect(m, r.output).not.toBeNull();
     expect(Number(m![1])).toBeLessThan(400);
     console.log(`fresh report delay (uncovered press): ${m![1]} ms`);
+    // The OS-wide overlap check (R12) read the window list for this press (headless: MOSS's own windows only), and nothing lay over it.
+    if (process.platform === "darwin") expect(r.output).toMatch(/overlap: the OS window list read for a press \(\d+ above, \d+ of this program's own; headless: its own only\)/);
+    expect(r.output).not.toContain("a window lies over the button");
+    console.log(`overlap: ${r.output.split("\n").filter((l) => l.includes("overlap:")).join(" / ")}`);
     expect(answerCallsOf(r.home), r.output).toHaveLength(1);
   }, 120_000);
 
@@ -304,9 +308,17 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once" }, acting: true });
     expect(r.output).toContain("sealed-click: frame found");
     expect(r.output).toContain("sealed-click: press sent at");
-    // The press reached the sealed page itself (not just the main frame), and the app refused it.
+    // The press reached the sealed page itself (not just the main frame).
     expect(r.output).toContain("presses=[[");
-    expect(answerCallsOf(r.home), r.output).toHaveLength(0);
+    // The core reads computer use at the answer itself (lane RT; packages/core/src/approvals/card-methods.ts): the app's one
+    // answer goes out, and the core refuses it with the acting reason, so nothing lands.
+    const answers = answerCallsOf(r.home);
+    expect(answers, r.output).toHaveLength(1);
+    expect(r.output).toContain("sealed: core refused answer (computer use is acting right now)");
+    expect(r.output).toContain("sealed: answer refused (computer use acting)");
+    expect(r.output).not.toContain(`sealed: answer accepted for ${CARD_ID}`);
+    // The card still waits, and the page says the press didn't count (try again), never that it was answered.
+    expect(r.output).toMatch(/sealed-click: after press state=Couldn't confirm — try again\. answered=no/);
   }, 120_000);
 
   onCi("a second press does not land", async () => {

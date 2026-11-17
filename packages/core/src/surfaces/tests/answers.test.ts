@@ -26,7 +26,7 @@ function conn(connId: number, program: Program): MossConn {
   return { connId, role: "app", caller, features: [], clientName: `test-${program}`, surface: program, program, areas: new Set(), send: () => "x", notify: () => {}, follows: new Map() };
 }
 
-async function world() {
+async function world(o: { singleKey?: boolean } = {}) {
   const clock = new FakeClock();
   const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
   // This desktop: its link key, MOSS Code's single answer key, and MOSS's and the host's own keys.
@@ -34,9 +34,11 @@ async function world() {
   const codeKey = await makeFakeDevice();
   const mossKey = await makeFakeDevice();
   const hostKey = await makeFakeDevice();
-  await registry.add({ id: link.id, name: "Laptop", kind: "desktop", runsCore: true, publicKey: link.publicKey, answerKey: { publicKey: codeKey.publicKey, held: "app-keychain" } }, { via: "account", account: "acct_1" });
+  // With `singleKey: false` the desktop has no single answer key: MOSS Code's key is held in the program table alone.
+  const single = o.singleKey !== false;
+  await registry.add({ id: link.id, name: "Laptop", kind: "desktop", runsCore: true, publicKey: link.publicKey, ...(single ? { answerKey: { publicKey: codeKey.publicKey, held: "app-keychain" as const } } : {}) }, { via: "account", account: "acct_1" });
   const table = new ProgramKeyTable({ legacy: (d) => registry.get(d)?.answerKey });
-  for (const [program, key] of [["moss", mossKey], ["host", hostKey]] as const) {
+  for (const [program, key] of [["moss", mossKey], ["host", hostKey], ...(single ? [] : [["code", codeKey]] as const)] as const) {
     const statement = programAnswerKeyStatement({ device: link.id, program, publicKey: key.publicKey, held: "app-keychain" });
     expect(await table.register({ device: link.id, program, publicKey: key.publicKey, held: "app-keychain", signature: toBase64(await key.sign(enc(statement))) })).toEqual({ applied: true });
   }
@@ -50,8 +52,10 @@ async function world() {
   // Today's app (MOSS Code's window, which draws the island until the host is built) and MOSS's window.
   const code = conn(1, "code");
   const moss = conn(2, "moss");
+  const host = conn(3, "host");
   door.admit({ connId: 1, role: "app", surface: "code", signed: "code" });
   door.admit({ connId: 2, role: "app", surface: "moss", signed: "moss" });
+  door.admit({ connId: 3, role: "app", surface: "host", signed: "host" });
   const raise = async (bot: string): Promise<Card> => {
     const req: ApprovalRequest = { kind: "tool", session: `s_${bot}`, bot, origin: "user", computers: ["Studio"], effect: "execute", fields: { title: { type: "text", text: "Run a command" }, command: { type: "code", code: "git push", language: "sh" } } };
     void broker.request(req);
@@ -64,7 +68,7 @@ async function world() {
     const proof = { via: "device" as const, device: link.id, at, signature: toBase64(await signer.sign(enc(input))), ...(named !== undefined ? { program: named } : {}) };
     return methods["card.answer"]!(from, { id: card.id, hash: card.hash, option: "approve", proof }) as Promise<{ accepted: boolean; reason?: string }>;
   };
-  return { router, code, moss, raise, answer, keys: { codeKey, mossKey, hostKey }, setActing: (on: boolean) => { acting = on; } };
+  return { router, code, moss, host, raise, answer, keys: { codeKey, mossKey, hostKey }, setActing: (on: boolean) => { acting = on; } };
 }
 
 describe("card.answer across the door, the router and the program keys", () => {
@@ -102,6 +106,31 @@ describe("card.answer across the door, the router and the program keys", () => {
     expect(await w.answer(w.code, card, w.keys.codeKey, undefined)).toEqual({ accepted: false, reason: "computer use is acting right now" });
     w.setActing(false);
     // MOSS Code's key named as `code` (the program form) verifies too: its key is the device's single key.
+    expect(await w.answer(w.code, card, w.keys.codeKey, "code")).toEqual({ accepted: true });
+  });
+});
+
+describe("computer use and MOSS Code's key in the program table", () => {
+  test("while computer use acts on this computer, card.answer from every program is refused with that reason, whatever its place or key", async () => {
+    const w = await world();
+    w.router.report({ connId: 2, program: "moss" }, { windows: [{ window: "moss", focused: true, visible: true, showing: { kind: "bot", id: "bot-a" } }] });
+    const card = await w.raise("bot-a");
+    w.setActing(true);
+    const acting = { accepted: false, reason: "computer use is acting right now" };
+    expect(await w.answer(w.moss, card, w.keys.mossKey, "moss")).toEqual(acting);
+    expect(await w.answer(w.code, card, w.keys.codeKey, undefined)).toEqual(acting);
+    expect(await w.answer(w.host, card, w.keys.hostKey, "host")).toEqual(acting);
+    // The card still waits: once computer use stops, the program it is placed with answers it.
+    w.setActing(false);
+    expect(await w.answer(w.moss, card, w.keys.mossKey, "moss")).toEqual({ accepted: true });
+  });
+
+  test("a desktop with no single key: MOSS Code's key in the program table verifies only when the proof names program code", async () => {
+    const w = await world({ singleKey: false });
+    const card = await w.raise("bot-a");
+    // No window reports: the island, drawn by MOSS Code's window program today.
+    expect(w.router.placementOf(card.id)).toEqual({ kind: "island" });
+    expect(await w.answer(w.code, card, w.keys.codeKey, undefined)).toMatchObject({ accepted: false });
     expect(await w.answer(w.code, card, w.keys.codeKey, "code")).toEqual({ accepted: true });
   });
 });

@@ -361,6 +361,22 @@ describe("MOSS connections (C-M1)", () => {
     for (const c of [asCode, asHost, code, host]) c.close();
   });
 
+  test("lane RT: a presence report's own card_placed reaches the window before the report's answer (a press made then reads it)", async () => {
+    const b = await boot();
+    const code = await Client.connect(b.socketPath);
+    await code.hello("app", b.appToken);
+    await code.request("events.subscribe", { areas: ["surfaces"] });
+    b.moss.surfaces.router.pending({ id: "card_aaaaaa", bot: "alpha" });
+    await Bun.sleep(30);
+    const before = code.fromDaemon.length;
+    const r = await code.request("presence.report", { windows: [{ window: "main", focused: true, visible: true, showing: { kind: "bot", id: "alpha" } }] });
+    expect(r.result).toEqual({ ttlMs: 10_000 });
+    // No wait: the move was written on the connection before the answer.
+    const moved = code.fromDaemon.slice(before).filter((m) => m.method === "core.event" && m.params?.type === "card_placed").map((m) => m.params.place);
+    expect(moved).toEqual([{ kind: "conversation", program: "code", window: "main" }]);
+    code.close();
+  });
+
   test("lane RT: an older second copy of a window program is told to go; an older newcomer is refused", async () => {
     const b = await boot();
     const a = await Client.connect(b.socketPath);

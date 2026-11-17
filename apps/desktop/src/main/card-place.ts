@@ -121,3 +121,71 @@ export class FrontWatcher {
     this.#timer = undefined;
   }
 }
+
+/** What a report's send came to: sent (the core answered), not served (an engine before lane RT's), or failed. */
+export type PresenceSent = "sent" | "unserved" | "failed";
+
+/** This program's presence reports (lane RT, §3.5), the part index.ts can't test: what is sent is the front watcher's SETTLED
+ *  focus (a click between MOSS's own windows shows neither focused for an instant; reporting that would move the card from
+ *  under the pointer), and a press waits for the placement it is made in. The core writes `card_placed` before its answer to
+ *  `presence.report` on the same connection, so once a report's send resolves, every move it caused has been handled.
+ *  `beforePress`: a focus change not reported yet is reported now (going to the front counts at once, as the watcher's does),
+ *  and a report on its way is waited for. */
+export class PresenceReporter {
+  #settled = false;
+  #lastFocused: boolean | undefined;
+  #lastShowing = "null";
+  #inFlight: Promise<void> | undefined;
+  #unserved = false;
+
+  constructor(private readonly o: {
+    /** The window now: whether it exists, is visible, is minimised, and is in front this instant (unsettled). */
+    read: () => { exists: boolean; visible: boolean; minimized: boolean; front: boolean };
+    showing: () => Showing | null;
+    send: (report: PresenceReport) => Promise<PresenceSent>;
+    log?: (line: string) => void;
+  }) {}
+
+  /** The front watcher settled on `front`. */
+  settled(front: boolean): void {
+    this.#settled = front;
+  }
+
+  /** Whether what the window shows changed since the last report. */
+  showingChanged(showing: Showing | null): boolean {
+    return JSON.stringify(showing) !== this.#lastShowing;
+  }
+
+  /** A new connection: an earlier engine's "not served" no longer holds. */
+  reconnected(): void {
+    this.#unserved = false;
+    this.#lastFocused = undefined;
+  }
+
+  report(): Promise<void> {
+    const p = this.#send();
+    this.#inFlight = p;
+    void p.finally(() => { if (this.#inFlight === p) this.#inFlight = undefined; });
+    return p;
+  }
+
+  async #send(): Promise<void> {
+    if (this.#unserved) return;
+    const st = this.o.read();
+    const showing = st.exists ? this.o.showing() : null;
+    const focused = this.#settled;
+    const said = `${focused ? "focused" : "not focused"}, showing ${showing === null ? "nothing" : showing.kind}`;
+    this.o.log?.(`presence: the window ${st.exists ? said : "closed"}`);
+    this.#lastShowing = JSON.stringify(showing);
+    this.#lastFocused = focused;
+    const r = await this.o.send(presenceOf({ exists: st.exists, visible: st.visible, minimized: st.minimized, front: focused }, showing));
+    if (r === "unserved") this.#unserved = true;
+    if (r === "failed") this.#lastFocused = undefined;
+  }
+
+  async beforePress(): Promise<void> {
+    if (this.o.read().front && !this.#settled) this.#settled = true;
+    if (this.#lastFocused !== this.#settled) await this.report();
+    else if (this.#inFlight !== undefined) await this.#inFlight.catch(() => undefined);
+  }
+}
