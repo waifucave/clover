@@ -1569,7 +1569,7 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
   if (new RegExp(`fallback card for ${card.id}`).test(log)) fail(`the app drew its fallback card for the ${card.kind} card though the island showed its buttons`);
   // The answer came from the island's own press (read fresh and uncovered there), not from a press on the main window's card.
   const idRe = card.id.replace(/[^A-Za-z0-9_]/g, ".");
-  if (!new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in moss/island#island: fresh report uncovered after \\d+ ms`).test(log)) fail(`the ${card.kind} card was answered, but the app logged no island press read as uncovered for it (the answer did not come from the island's own press): ${log.split("\n").filter((l) => l.includes("sealed: press on")).slice(-4).join(" | ").slice(0, 400)}`);
+  if (!new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in \\S+#island: fresh report uncovered after \\d+ ms`).test(log)) fail(`the ${card.kind} card was answered, but the app logged no island press read as uncovered for it (the answer did not come from the island's own press): ${log.split("\n").filter((l) => l.includes("sealed: press on")).slice(-4).join(" | ").slice(0, 400)}`);
   if (new RegExp(`sealed: press on (?:${idRe}|\\[x\\]) \\S+ in the main window`).test(log)) fail(`the ${card.kind} card was also pressed in the main window, so the island's press is not what answered it`);
   return "pressed on the island (its own window's sealed Approve, the page ready, read uncovered fresh at the press, accepted by the app and the core, the fallback card never drawn, no press in the main window)";
 }
