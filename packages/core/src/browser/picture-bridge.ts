@@ -35,9 +35,14 @@ export interface BrowserPicturesOptions {
 }
 
 /** What the browser handlers call when the tool drives a tab. Never throws: a picture is a view, never a reason for a tool call to fail. */
-export function browserPictureBridge(o: BrowserPicturesOptions): (ctx: ApiCallContext, tabId: string) => void {
-  const live = new Map<string, Unsubscribe>();
-  return (ctx, tabId) => {
+export type BrowserPictureBridge = ((ctx: ApiCallContext, tabId: string) => void) & {
+  /** A session ended: the tab subscriptions made for it are let go, so a later frame never makes a picture for it. */
+  sessionEnded(session: string): void;
+};
+
+export function browserPictureBridge(o: BrowserPicturesOptions): BrowserPictureBridge {
+  const live = new Map<string, { session: string; stop: Unsubscribe }>();
+  const drives = (ctx: ApiCallContext, tabId: string): void => {
     if (o.frames === undefined) return;
     try {
       const call = toolCallOf(ctx, o.sessions);
@@ -65,12 +70,24 @@ export function browserPictureBridge(o: BrowserPicturesOptions): (ctx: ApiCallCo
         publisher?.end();
         publisher = undefined;
       });
-      live.set(key, () => {
-        stop();
-        publisher?.end();
+      live.set(key, {
+        session: call.session,
+        stop: () => {
+          stop();
+          publisher?.end();
+        },
       });
     } catch {
       // not a tool call a session made, or its server doesn't declare a picture: the tool goes on without one
     }
   };
+  return Object.assign(drives, {
+    sessionEnded(session: string): void {
+      for (const [key, entry] of [...live]) {
+        if (entry.session !== session) continue;
+        live.delete(key);
+        try { entry.stop(); } catch { /* already let go */ }
+      }
+    },
+  });
 }

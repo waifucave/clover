@@ -58,8 +58,7 @@
               "approval"
             ],
             "needs": [
-              "conversation.read",
-              "sessions.read"
+              "conversation.read"
             ],
             "context": [
               "bot"
@@ -94,8 +93,7 @@
               }
             },
             "needs": [
-              "conversation.read",
-              "sessions.read"
+              "conversation.read"
             ],
             "context": [
               "bot"
@@ -164,8 +162,7 @@
               }
             },
             "needs": [
-              "conversation.read",
-              "sessions.read"
+              "conversation.read"
             ],
             "context": [
               "bot"

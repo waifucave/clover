@@ -69,8 +69,12 @@ describe("a bot's state in the feed", () => {
     host.record("s_task", { type: "driver", event: { type: "agent_tool_call", id: "t1", kind: "execute", title: SECRETS[1], rawInput: { command: SECRETS[1] } } });
     expect(bots(feed)[0]).toMatchObject({ state: "working", tool: "execute" });
     expect(code(feed)).toEqual([expect.objectContaining({ subject: { kind: "sessions", id: "s_task", bot: "alpha" }, state: "working", name: "Fix the build", tool: "execute" })]);
+    const heard: string[] = [];
+    feed.watch("sessions", { kind: "user" }, (v) => heard.push(v.state));
     host.put(view({ id: "s_task", kind: "agent", bot: "alpha", status: "failed", failure: "crashed", title: "Fix the build" }));
-    expect(code(feed)[0]!.state).toBe("stuck");
+    // A session that failed is heard stuck, once, and leaves the feed.
+    expect(heard).toEqual(["stuck"]);
+    expect(code(feed)).toEqual([]);
   });
 });
 
@@ -80,8 +84,17 @@ describe("a code session's state in the feed", () => {
     host.put(view({ id: "s_code", kind: "coding", title: "Fix the build" }));
     expect(code(feed)).toEqual([expect.objectContaining({ subject: { kind: "sessions", id: "s_code" }, state: "idle", name: "Fix the build" })]);
     expect(bots(feed)).toEqual([]);
+    const heard: string[] = [];
+    feed.watch("sessions", { kind: "user" }, (v) => heard.push(v.state));
     host.put(view({ id: "s_code", kind: "coding", title: "Fix the build", status: "stopped" }));
-    expect(code(feed)[0]!.state).toBe("done");
+    // It is heard once in its last state, then it leaves the feed (and nothing more is published for it).
+    expect(heard).toEqual(["done"]);
+    expect(code(feed)).toEqual([]);
+    expect(ended).toEqual(["s_code"]);
+    host.record("s_code", { type: "turn_ended" });
+    host.put(view({ id: "s_code", kind: "coding", title: "Fix the build", status: "stopped", updatedAt: 9 }));
+    expect(code(feed)).toEqual([]);
+    expect(heard).toEqual(["done"]);
     expect(ended).toEqual(["s_code"]);
   });
 });

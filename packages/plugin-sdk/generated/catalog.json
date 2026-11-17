@@ -238,8 +238,8 @@
     },
     {
       "name": "activity.read.sessions",
-      "lets": "Read the activity feed of the user's code sessions: each one's state (idle, listening, thinking, working, asking, stuck, done, asleep), its name and the tool it works with; never what was said, a tool's arguments or a card's text",
-      "ok": "follows what your code sessions are doing: their names, their states and which tool they are using, never their words",
+      "lets": "Read the activity feed of the user's code sessions: each one's state (idle, listening, thinking, working, asking, stuck, done, asleep), its title (which a bot or the person wrote, and can come from the conversation) and the tool it works with; never the messages, a tool's arguments or a card's text",
+      "ok": "follows what your code sessions are doing: their titles, their states and which tool they are using",
       "warns": false
     },
     {

@@ -4775,7 +4775,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         activityTracker = new ActivityTracker({
           host: sessionHost, feed: activityFeed, now: () => Date.now(),
           botName: (id) => { const name = daemonParts?.bots?.bots.get(id)?.name; return typeof name === "string" ? name : undefined; },
-          onSessionEnded: (id) => livePictures.sessionEnded(id),
+          onSessionEnded: (id) => { browserDrives.sessionEnded(id); livePictures.sessionEnded(id); },
         });
         activityTracker.start();
       }

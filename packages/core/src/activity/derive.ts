@@ -28,6 +28,8 @@ interface Tracked {
   running: Map<string, string | undefined>;
   inTurn: boolean;
   doneAt: number | undefined;
+  /** The session's last state was heard, and it left the feed: nothing more is published for it. */
+  left?: boolean;
   off: Unsubscribe;
 }
 
@@ -85,8 +87,13 @@ export class ActivityTracker {
       t.running.clear();
       t.inTurn = false;
     }
+    if (ended && wasEnded) return;
     this.#publish(view);
-    if (ended && !wasEnded) this.#o.onSessionEnded?.(view.id);
+    if (ended) {
+      // A session that ended is heard once, in its last state, and then leaves the feed (a bot's own state goes on without it).
+      if (dataKindOfSession(view) === "sessions") this.#o.feed.remove({ kind: "sessions", id: view.id });
+      this.#o.onSessionEnded?.(view.id);
+    }
   }
 
   #record(id: string, record: SessionRecord): void {
@@ -144,7 +151,9 @@ export class ActivityTracker {
     const t = this.#sessions.get(view.id);
     if (t === undefined) return;
     const now = this.#o.now();
-    if (dataKindOfSession(view) === "sessions") {
+    const over = view.status === "stopped" || view.status === "failed";
+    if (dataKindOfSession(view) === "sessions" && (!over || !t.left)) {
+      t.left = over;
       const { state, tool } = this.#stateOf(t);
       const subject: ActivitySubject = { kind: "sessions", id: view.id, ...(view.bot !== undefined ? { bot: view.bot } : {}) };
       this.#o.feed.set({ subject, state, ...(view.title !== undefined && view.title !== "" ? { name: view.title.slice(0, 200) } : {}), ...(tool !== undefined ? { tool } : {}), since: now });

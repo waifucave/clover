@@ -539,8 +539,8 @@ export function Spot({ name, spotKey, entry: entryRef, only, props, fallback, fo
   const hints = useContext(SpotHints);
   const r = rt();
   const [view, setView] = useState<SpotView | undefined>(undefined);
-  // A panel's `when.session` is the kind of session the shell shows it for: the `moss` layer says so in the props it gives the spot (the main process heeds it from that layer only).
-  const propKind = name === "panel" ? (props as { sessionKind?: unknown } | undefined)?.sessionKind : undefined;
+  // A panel's `when.session` (and what a conversation's spots need to read: a code session is read with `sessions.read`) is the kind of session the shell shows it for: the `moss` layer says so in the props it gives the spot (the main process heeds it from that layer only).
+  const propKind = name === "panel" || name === "conversation" ? (props as { sessionKind?: unknown } | undefined)?.sessionKind : undefined;
   const session = hints.session ?? (typeof propKind === "string" ? propKind : undefined);
   const resolve = useCallback(() => {
     const h = { ...(session !== undefined ? { session } : {}), ...(entry !== undefined ? { entry } : {}), ...(forBot !== undefined ? { bot: forBot } : {}) };

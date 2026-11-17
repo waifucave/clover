@@ -180,9 +180,10 @@ export class RegistryCore implements PluginRegistry {
   staleGrants(): string[] {
     return this.#ordered().filter((id) => {
       const h = this.#plugins.get(id)!;
-      const top = this.#plugins.get(parentOf(id) ?? id)!;
-      return parentOf(id) === undefined && h.approved && !h.refused && h.input.dev !== true && h.input.source !== "bundled"
-        && grantAsksAgain(top.input.manifest.capabilities ?? [], h.okRevision);
+      if (!(parentOf(id) === undefined && h.approved && !h.refused && h.input.dev !== true && h.input.source !== "bundled")) return false;
+      // Every manifest in the tree: a child part's own read is narrowed as the top's is (its grant is read from the top's OK).
+      const tree = [...this.#plugins].filter(([pid]) => pid === id || pid.startsWith(`${id}/`)).map(([, p]) => p);
+      return tree.some((p) => grantAsksAgain(p.input.manifest.capabilities ?? [], h.okRevision));
     });
   }
 

@@ -49,6 +49,27 @@ describe("an OK from before revision 19", () => {
     expect(c.staleGrants()).toEqual([]);
   });
 
+  test("a tree whose CHILD part holds the read asks again too (the top lists neither)", async () => {
+    const store = memoryRegistryStore();
+    const tree = [
+      { id: "suite", manifest: manifest({ capabilities: ["notify"] }), treeHash: "sha256:s", approved: false },
+      { id: "suite/part", manifest: manifest({ capabilities: ["conversation.read"] }), treeHash: "sha256:s" },
+    ];
+    const a = new RegistryCore({ catalog: catalogPointDecl, store });
+    a.putAll(tree);
+    await a.approve("suite", "sha256:s");
+    expect(a.get("suite/part")!.granted).toContain("conversation.read");
+    for (const p of Object.values(store.state.plugins)) delete (p as { okRevision?: number }).okRevision;
+    const shown: string[] = [];
+    const cards: OkCardRaiser = { raise: (req) => (shown.push(req.id), `card_ok${shown.length}`) };
+    const b = new RegistryCore({ catalog: catalogPointDecl, store, cards });
+    b.putAll(tree.map((t) => ({ ...t, approved: undefined })));
+    expect(b.get("suite/part")!.granted).toEqual([]);
+    expect(b.staleGrants()).toEqual(["suite"]);
+    expect(await b.askStaleGrantsAgain()).toEqual(["suite"]);
+    expect(shown).toEqual(["suite"]);
+  });
+
   test("a plugin whose grants the split didn't narrow asks nothing; a bundled one is approved again by itself", async () => {
     const store = memoryRegistryStore();
     const a = new RegistryCore({ catalog: catalogPointDecl, store });

@@ -35,7 +35,7 @@ const shownRefs = (r: { shown: { entry: { pluginId: string; id: string } }[] }) 
 const shell = plugin("moss/shell", [{ spot: "app.root", component: "Window", declares: { sidebar: { shape: "single", props: {} }, main: { shape: "keyed", props: {} }, panel: { shape: "keyed", props: {} } } }]);
 const sidebar = plugin("moss/sidebar", [{ spot: "sidebar", component: "Sidebar" }]);
 const composer = plugin("moss/composer", [{ spot: "composer", component: "Composer", declares: { "composer.action": { shape: "keyed", props: {} } } }]);
-const conversation = plugin("moss/conversation", [{ spot: "conversation", component: "ConversationView" }, { spot: "conversation.message", component: "Message" }], { caps: ["conversation.read", "approvals"] });
+const conversation = plugin("moss/conversation", [{ spot: "conversation", component: "ConversationView" }, { spot: "conversation.message", component: "Message" }], { caps: ["conversation.read", "sessions.read", "approvals"] });
 const panelDiff = plugin("moss/panel-diff", [{ spot: "panel", key: "diff", component: "DiffPanel", when: { session: "coding" } }]);
 const panelSession = plugin("moss/panel", [{ spot: "panel", key: "session", component: "SessionView" }]);
 const DEFAULT = [shell, sidebar, composer, conversation, panelDiff, panelSession];
@@ -334,6 +334,30 @@ describe("entries: style and hide, `needs` and `keep`", () => {
     const r = resolveCell({ plugins: [...DEFAULT, blind], ctx: inTab("alpha") }, "conversation.message", "bot");
     expect(shownRefs(r)).toEqual(["moss/conversation#conversation.message"]);
     expect(r.skipped).toEqual([{ ref: "blind-bubbles#conversation.message", reason: "needs", detail: "conversation.read" }]);
+  });
+
+  test("`needs`: a spot that shows messages needs the capability of the data's kind: conversation.read for a bot's conversation, sessions.read for a code session (spec revision 19, §3.6)", () => {
+    const bots = plugin("bots-only", [{ spot: "conversation.message.extra", component: "Extra" }, { spot: "conversation.message", key: "bot", component: "Bubble" }, { spot: "tool.result", key: "Window", component: "Result" }], { caps: ["conversation.read"] });
+    const code = plugin("code-only", [{ spot: "conversation.message.extra", component: "Extra" }, { spot: "conversation.message", key: "bot", component: "Bubble" }, { spot: "tool.result", key: "Window", component: "Result" }], { caps: ["sessions.read"] });
+    const both = plugin("both-kinds", [{ spot: "conversation.message.extra", component: "Extra" }], { caps: ["conversation.read", "sessions.read"] });
+    const all = [...DEFAULT, bots, code, both];
+    const who = (spot: string, session: string | undefined, key?: string) => {
+      const r = resolveCell({ plugins: all, ctx: inTab("alpha", session === undefined ? {} : { session }) }, spot, key);
+      return [...shownRefs(r)].map((x) => x.split("#")[0]).filter((x) => ["bots-only", "code-only", "both-kinds"].includes(x!)).sort();
+    };
+    for (const session of [undefined, "bot", "side-thread"]) {
+      expect([session, who("conversation.message.extra", session)]).toEqual([session, ["both-kinds", "bots-only"]]);
+      expect([session, who("tool.result", session, "Window")]).toEqual([session, ["bots-only"]]);
+    }
+    for (const session of ["coding", "agent"]) {
+      expect([session, who("conversation.message.extra", session)]).toEqual([session, ["both-kinds", "code-only"]]);
+      expect([session, who("tool.result", session, "Window")]).toEqual([session, ["code-only"]]);
+      // The bots-only plugin is skipped for what it lacks, naming the capability the data needs.
+      const r = resolveCell({ plugins: all, ctx: inTab("alpha", { session }) }, "conversation.message.extra");
+      expect(r.skipped.filter((x) => x.ref.startsWith("bots-only")).map((x) => [x.reason, x.detail])).toEqual([["needs", "sessions.read"]]);
+    }
+    // The stock conversation part holds both and draws either kind.
+    expect(shownRefs(resolveCell({ plugins: all, ctx: inTab("alpha", { session: "coding" }) }, "conversation")).some((r) => r.startsWith("moss/conversation"))).toBe(true);
   });
 
   test("a plugin's own spot uses its own declaration's `needs` and `keep`", () => {
