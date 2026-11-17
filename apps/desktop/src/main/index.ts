@@ -1026,7 +1026,7 @@ async function showFallbackCard(cardId: string, strip = false): Promise<void> {
   // Compile-time first (the test mark, or the acceptance build's), so a release build carries no part of it.
   const offscreenPress = (typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless && process.env.MOSS_TEST_SEALED_PRESS === "1";
   if (!offscreenPress && !fallbackMayShow({ headless, smokeFallback, testInput: (typeof __MOSS_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }) })) {
-    log(`card: the fallback card for ${cardId} was not shown (headless)`);
+    log(`card: ${strip ? "the window's strip" : "the fallback card"} for ${cardId} was not shown (headless)`);
     return;
   }
   // The names a card says come from the daemon's own list; a bot not listed yet is asked for once, briefly.
@@ -1091,11 +1091,11 @@ async function showFallbackCard(cardId: string, strip = false): Promise<void> {
     const main = win.webContents.mainFrame;
     sealed.bindChannel(mint.token, `m:${main.processId}:${main.routingId}`);
     if (!win.isDestroyed() && offscreenPress) {
-      log(`card: the fallback card for ${cardId} (${card.kind}) is drawn offscreen for the test's press (not shown)`);
+      log(`card: ${strip ? "the window's strip" : "the fallback card"} for ${cardId} (${card.kind}) is drawn offscreen for the test's press (not shown)`);
       return;
     }
     if (!win.isDestroyed()) {
-      log(`card: the fallback card for ${cardId} (${card.kind}) is shown`);
+      log(`card: ${strip ? "the window's strip" : "the fallback card"} for ${cardId} (${card.kind}) is shown`);
       if (headless) {
         showInvisible(win);
         log(`window: shown invisible while headless (the sealed smoke's fallback card ${cardId}: opacity 0, ignores the mouse)`);
@@ -1798,18 +1798,30 @@ function mainState(): MainWindowState {
  *  and at least every `PRESENCE_REFRESH_MS`; an engine that doesn't serve it yet is asked again on the next connection. */
 let lastShowing = "null";
 let lastSaid = "";
+/** The front watcher's settled state (going out only after it held a beat: a click between MOSS's own windows shows neither
+ *  focused for an instant, and reporting that would move the card from under the pointer). */
+let settledFront = false;
+/** The report on its way, so a press waits for the placement it brings (the core sends `card_placed` before its answer). */
+let presenceInFlight: Promise<void> | undefined;
 let lastFocused: boolean | undefined;
 let presenceUnserved: DaemonClient | undefined;
-async function reportPresence(client: DaemonClient | undefined = pair?.client): Promise<void> {
+function reportPresence(client: DaemonClient | undefined = pair?.client): Promise<void> {
+  const p = sendPresence(client);
+  presenceInFlight = p;
+  void p.finally(() => { if (presenceInFlight === p) presenceInFlight = undefined; });
+  return p;
+}
+async function sendPresence(client: DaemonClient | undefined): Promise<void> {
   if (client === undefined || presenceUnserved === client) return;
   const exists = mainWindow !== undefined && !mainWindow.isDestroyed();
   const st = mainState();
   const showing = exists ? showingOf(shellStates.get(mainWindow!.id)) : null;
-  const report = presenceOf({ exists: st.exists, visible: st.visible, minimized: st.minimized, front: mainWindowFront(st) }, showing);
-  const said = `${mainWindowFront(st) ? "focused" : "not focused"}, showing ${showing === null ? "nothing" : showing.kind}`;
+  const focused = settledFront;
+  const report = presenceOf({ exists: st.exists, visible: st.visible, minimized: st.minimized, front: focused }, showing);
+  const said = `${focused ? "focused" : "not focused"}, showing ${showing === null ? "nothing" : showing.kind}`;
   if (said !== lastSaid) { lastSaid = said; log(`presence: the window ${exists ? said : "closed"}`); }
   lastShowing = JSON.stringify(showing);
-  lastFocused = mainWindowFront(st);
+  lastFocused = focused;
   try {
     await client.request("presence.report", report, 5_000);
   } catch (err) {
@@ -1817,9 +1829,13 @@ async function reportPresence(client: DaemonClient | undefined = pair?.client): 
     else lastFocused = undefined;
   }
 }
-/** Before a press is judged: a focus change not reported yet is reported now, so the placement it reads is current. */
+/** Before a press is judged: the report on its way is waited for, and a focus change not reported yet is reported now, so the
+ *  placement the press reads is current. Going to the front counts at once (as the front watcher does); going out only once
+ *  settled, so a click on the window's own strip never reads the window as left. */
 async function presenceIfStale(): Promise<void> {
-  if (lastFocused !== mainWindowFront(mainState())) await reportPresence();
+  if (mainWindowFront(mainState()) && !settledFront) settledFront = true;
+  if (lastFocused !== settledFront) await reportPresence();
+  else if (presenceInFlight !== undefined) await presenceInFlight.catch(() => undefined);
 }
 if (process.type === "browser") setInterval(() => void reportPresence(), PRESENCE_REFRESH_MS).unref?.();
 
@@ -1951,7 +1967,7 @@ function followFront(): void {
 }
 const frontWatcher = new FrontWatcher({
   read: () => mainWindowFront(mainState()),
-  changed: () => { tellSurfaces(); movePendingCards(); void reportPresence(); },
+  changed: (front) => { settledFront = front; tellSurfaces(); movePendingCards(); void reportPresence(); },
   settleMs: 120,
 });
 const surfaces = new Map<string, Surface>();

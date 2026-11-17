@@ -148,6 +148,11 @@ export class ProgramKeyTable implements ProgramAnswerKeys {
     this.#set(input);
   }
 
+  /** Whether MOSS Code's key on `device` is the device's single answer key (which `device.answerKey.set` replaces). */
+  codeIsSingleKey(device: string): boolean {
+    return this.#legacy?.(device) !== undefined;
+  }
+
   keyOf(device: string, program: Program): ProgramKey | undefined {
     if (this.#gone(device)) return undefined;
     if (program === "code") {

@@ -4433,7 +4433,11 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
   // The narrow window is the window itself resized (MOSS_TEST_WINDOW_SIZE_FILE, test-marked and acceptance builds only).
   const windowSizeFile = join(root, "stage-window-size");
   // Its IPC counters on (messages by channel, CPU by process, every 5 s): the narrow card's diagnosis.
-  const env = { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_WINDOW_SIZE_FILE: windowSizeFile, MOSS_IPC_STATS: "1", ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
+  // Whether her window is in front (the seam: a headless window is never the focused one). The engine's router (lane RT)
+  // places a card in the conversation only while the window is focused, as it is when the person clicks in it.
+  const stageFront = join(root, "stage-main-front");
+  writeFileSync(stageFront, "back");
+  const env = { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_WINDOW_SIZE_FILE: windowSizeFile, MOSS_TEST_MAIN_FRONT_FILE: stageFront, MOSS_IPC_STATS: "1", ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
   // Her tab, not the welcome guide: this app starts before its daemon, and a start that finds no provider signed in yet
   // opens the guide over the whole window, where no frame in her tab can be pressed. The user signed in long ago, so the
   // guide is done, as the app marks it once it is (index.ts welcomeFlag: the profile's app data, under the home).
@@ -4480,6 +4484,9 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
       }
       return undefined;
     }, 500);
+    // Her window focused for the presses in her conversation (the person's click focuses it); back for the island's.
+    writeFileSync(stageFront, "front");
+    await sleep(500);
     const wide = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true });
     pressed = `wide: ${wide.cards.join("; ")}`;
     // The narrow window's cards were slow (about 4 s on both surfaces, the island included). Which part: the card coming
@@ -4540,6 +4547,8 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     pressed += `; ${narrow}`;
     // The same on the island: a tool card pressed ON THE ISLAND (never the conversation, never the fallback card), then a
     // plugin-ok card (a plugin installed from a folder) the same way. Each is accepted and draws no fallback card.
+    writeFileSync(stageFront, "back");
+    await sleep(500);
     const onIsland = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), onIsland: true });
     if (onIsland.cards.length === 0) fail("the island clause's tool turn raised no card");
     pressed += `; tool card on the island: ${onIsland.cards.join("; ")}`;

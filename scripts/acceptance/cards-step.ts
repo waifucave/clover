@@ -26,6 +26,7 @@ export async function cardsStep(ctx: ExampleCtx): Promise<string> {
   try {
     return await run(ctx);
   } finally {
+    ctx.setMainFront?.(false);
     await escape(ctx.cdp).catch(() => undefined);
     await leave(ctx, A);
     await leave(ctx, B);
@@ -104,6 +105,10 @@ async function run(ctx: ExampleCtx): Promise<string> {
   done.push("B (mounted, list answered) was told of no card, by event or by list, while A's badge was");
 
   // 4. The press, in A's own frame: its iframe's src names the sealed document; the page says when it will take a press.
+  // The window is focused for it (the seam: a headless window never is), as a person's click in it makes it: the engine's
+  // router (lane RT) takes a press in the window only for a card it placed there (A's page shows no session: its strip).
+  ctx.setMainFront?.(true);
+  await sleep(500);
   const approveSrc = await attr(A, '[data-cards-a="approve"] iframe', "src");
   if (approveSrc === undefined || approveSrc === "") fail("A's approve frame has no src");
   const sealed = await until("the sealed button document A's frame loaded", 20_000, async () => (await cdp.documents()).find((d) => d.url === approveSrc));
@@ -158,7 +163,9 @@ async function run(ctx: ExampleCtx): Promise<string> {
   if (!ctx.requests().some((r) => r.toolResult?.text.includes("asked-ok"))) fail("the tool did not run after the press (no asked-ok result reached the model)");
   done.push("Approve pressed in A's own frame (accepted by the app and the core), and the tool ran (asked-ok)");
 
-  // 5. A's page out of the window (B's page opens instead): the next card's buttons are drawn by what else shows them.
+  // 5. A's page out of the window (B's page opens instead): the next card's buttons are drawn by what else shows them. The
+  // window back out of focus: the router puts the card on the island.
+  ctx.setMainFront?.(false);
   await clickTree(cdp, "B's sidebar entry", SIDEBAR_ITEMS, "Acceptance cards B");
   await until("A's page gone", 20_000, async () => ((await attr(A, '[data-cards-a="main"]', "data-ids")) === undefined ? true : undefined));
   const second = await send(session, "ACCEPTANCE-CALL ask_card {}");

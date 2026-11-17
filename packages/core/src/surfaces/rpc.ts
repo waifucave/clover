@@ -53,6 +53,8 @@ export function programKeyMethods(deps: ProgramKeyMethodsDeps): Record<string, M
         throw err;
       }
       if (r.applied) return { applied: true };
+      // MOSS Code's key is the device's single key: its own door replaces it (a card here could only be approved for nothing).
+      if (program === "code" && table.codeIsSingleKey(input.device)) throw new MossRpcError(ERR.INVALID_REQUEST, "MOSS Code's key is this desktop's single answer key: device.answerKey.set replaces it", { code: "single-key" });
       if (!p.rotation) throw new MossRpcError(ERR.INVALID_REQUEST, "this program already has an answer key: replacing it takes the current key's hand-over");
       const why = await table.checkHandOver(input, p.rotation);
       if (why !== "ok") throw new MossRpcError(ERR.INVALID_REQUEST, REFUSED[why] ?? "refused", { code: why });
