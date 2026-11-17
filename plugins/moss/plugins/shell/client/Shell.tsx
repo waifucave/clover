@@ -23,6 +23,7 @@ import type { OwnPanel, PanelView } from "./panel-types";
 import { S } from "./strings";
 import { Window, shapeOf } from "./Window";
 import { NewSession } from "./NewSession";
+import { AgentStatus } from "./Tabs";
 
 /** An entry's ref (`<plugin id>#<entry id>`). */
 const entryRef = (e: { pluginId: string; id: string }) => `${e.pluginId}#${e.id}`;
@@ -224,7 +225,10 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     : undefined;
 
   const toggles = kind ? (
-    <PanelToggles kind={kind} open={open} onToggle={(id) => setOpen(toggleView(open, id))} available={VIEWS_BY_KIND[kind].filter((id) => filled.has(id))} own={own} />
+    <>
+      {session !== undefined && <AgentStatus session={session} />}
+      <PanelToggles kind={kind} open={open} onToggle={(id) => setOpen(toggleView(open, id))} available={VIEWS_BY_KIND[kind].filter((id) => filled.has(id))} own={own} />
+    </>
   ) : undefined;
 
   const statusEntries = useSpotEntries("status").entries;

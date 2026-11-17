@@ -243,9 +243,11 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
     expect([...atItem.querySelectorAll<HTMLElement>("[data-marked]")].map((el) => el.textContent)).toEqual([expect.stringContaining("Laptop")]);
   });
 
-  test("an agent's live tab: its status over its composer", () => {
+  test("an agent's live tab: its status in the title bar, its composer", () => {
     const tab = frame("agent-tab").querySelector('.cl-window__content .cl-agent-tab[data-place="main"]')!;
-    expect(tab.querySelector(".cl-agent-tab__status")?.textContent).toContain("Codex on Studio");
+    // In main its state is in the title bar, beside the panel toggles (it takes none of the conversation's height).
+    expect(frame("agent-tab").querySelector(".cl-window__toggles .cl-agent-tab__status")?.textContent).toContain("Codex on Studio");
+    expect(tab.querySelector(".cl-agent-tab__status")).toBeNull();
     expect(tab.querySelector(".cl-composer")).toBeTruthy();
   });
 

@@ -5,7 +5,7 @@
 // `Shell` is the `app.root` entry (the window's shell, with what main tells that part); `ShellView` the shell itself.
 export { WindowShell as Shell } from "./WindowShell";
 export { Shell as ShellView, type ShellProps, type ShellRoute, type ShellStart } from "./Shell";
-export { AgentTab } from "./Tabs";
+export { AgentStatus, AgentTab } from "./Tabs";
 export { NewSession, agentsHere, type NewSessionAgent } from "./NewSession";
 export { BotTab, Window, type WindowProps } from "./Window";
 export { PanelEmpty, PanelHost } from "./PanelHost";
