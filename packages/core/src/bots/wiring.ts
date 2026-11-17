@@ -38,6 +38,7 @@ import { join } from "node:path";
 import { MAKE_BOT_TOOL } from "@waifucave/moss-protocol";
 import { OLD_PLUGIN_MANIFEST } from "../old-names";
 import { pendingPluginBots } from "./move";
+import type { PluginBotSettings } from "./plugin-bot-settings";
 import { BotRecordStore, type BotPluginSettingsPort } from "./records";
 import { botRecordMethods } from "./records-rpc";
 import { recordToolDefs } from "./records-tools";
@@ -65,7 +66,7 @@ export interface BotSideOptions {
   /** Where the bots come from (lane BT, `bots/source.ts`): THE switch's value, `MOSS_BOT_SOURCE` or `plugins`. */
   botSource?: BotSource;
   /** The plugins' bot-scoped settings, for the records' `bot.pluginSettings` (lane BT). */
-  pluginSettings?: BotPluginSettingsPort;
+  pluginSettings?: BotPluginSettingsPort & Partial<Pick<PluginBotSettings, "views">>;
   /** This computer's name in the folder tree. */
   computer: string;
   clock: Clock;
@@ -340,7 +341,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
       ...userSendMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
       // Bots as engine data (lane BT): `bot.move.status` always; the record methods with records as the source.
-      ...botRecordMethods({ bots, host }),
+      ...botRecordMethods({ bots, host, ...(o.pluginSettings?.views === undefined ? {} : { pluginSettingViews: o.pluginSettings.views.bind(o.pluginSettings) }) }),
       };
     },
     start: async () => {

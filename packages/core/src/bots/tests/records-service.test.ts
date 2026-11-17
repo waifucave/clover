@@ -276,3 +276,36 @@ describe("a bot builds a bot as a record, never as a plugin", () => {
     void botty; void packy; void tool;
   });
 });
+
+describe("a plugin's bot-scoped settings, per bot", () => {
+  test("read from the plugin host's own file and set through its setByUser; only bot-scoped fields; bot.pluginSettings lists them with their schema", async () => {
+    const { pluginBotSettings } = await import("../plugin-bot-settings");
+    const { memoryPluginSettings } = await import("../../plugin-host/api/settings");
+    const backend = memoryPluginSettings();
+    backend.write("speech-kit", { account: {}, device: {}, bot: { nova: { style: "bright" } } });
+    const setCalls: unknown[][] = [];
+    const registry = {
+      list: () => [{ id: "speech-kit", manifest: { name: "Speech kit", settings: { style: { type: "string", scope: "bot", default: "plain" }, region: { type: "string" } } } }, { id: "plain", manifest: { name: "Plain" } }],
+      get: (id: string) => (id === "speech-kit" ? { manifest: { name: "Speech kit" } } : undefined),
+    } as never;
+    const port = pluginBotSettings({
+      registry, backend,
+      settings: () => ({
+        setByUser: async (...a: unknown[]) => { setCalls.push(a); return { applied: true }; },
+        views: async () => [{ key: "style", type: "string", title: "Style", scope: "bot", required: false, value: "bright", set: true }, { key: "region", type: "string", title: "Region", scope: "account", required: false, set: false }],
+      }) as never,
+    });
+    const home = tempDir();
+    const b = await boot({ home, plugins: [], botSource: "records", pluginSettings: port });
+    await b.bots.createBot({ name: "Nova" }, { kind: "user" });
+    await b.bots.createBot({ name: "Luna" }, { kind: "user" });
+    expect(b.bots.records!.pluginSettings("nova")).toEqual([{ pluginId: "speech-kit", settings: [{ key: "style", value: "bright", set: true }] }]);
+    expect(b.bots.records!.pluginSettings("luna")).toEqual([{ pluginId: "speech-kit", settings: [{ key: "style", value: "plain", set: false }] }]);
+    await b.bots.records!.setPluginSetting("luna", "speech-kit", "style", "soft");
+    expect(setCalls).toEqual([["speech-kit", "style", "soft", "luna"]]);
+    await expect(b.bots.records!.setPluginSetting("luna", "speech-kit", "region", "eu")).rejects.toThrow("isn't a setting per bot");
+    const call = methods(b);
+    expect(await call("bot.pluginSettings", { id: "nova" })).toEqual({ plugins: [{ pluginId: "speech-kit", name: "Speech kit", settings: [{ key: "style", type: "string", title: "Style", scope: "bot", required: false, value: "bright", set: true }] }] });
+    await b.shutdown();
+  });
+});

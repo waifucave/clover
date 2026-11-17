@@ -7,11 +7,14 @@ import { ContractError } from "../contracts/common";
 import type { DurableSessionHost } from "../sessions/durable-host";
 import { projectRecords, readsSealed, type WireEvent } from "../sessions/wire";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
+import type { PluginBotSettings } from "./plugin-bot-settings";
 import type { BotService } from "./service";
 
 export interface BotRecordMethodsDeps {
   bots: BotService;
   host: Pick<DurableSessionHost, "history" | "length">;
+  /** Every plugin's bot-scoped settings for one bot, with their schema (`bot.pluginSettings`); without it, not served. */
+  pluginSettingViews?: PluginBotSettings["views"];
 }
 
 const SCAN_STEP = 200;
@@ -83,6 +86,12 @@ export function botRecordMethods(deps: BotRecordMethodsDeps): Record<string, Met
         }
       }
       return { session, events: page as Record<string, unknown>[], hasMore };
+    }),
+    ...(deps.pluginSettingViews === undefined ? {} : {
+      [M.botPluginSettings.name]: handler(M.botPluginSettings, async ({ id }) => {
+        must(id);
+        return { plugins: await deps.pluginSettingViews!(id) };
+      }),
     }),
     [M.botSummaries.name]: handler(M.botSummaries, async () => ({ summaries: bots.summaries() })),
     [M.botMarkRead.name]: handler(M.botMarkRead, async ({ id, at }, ctx) => {

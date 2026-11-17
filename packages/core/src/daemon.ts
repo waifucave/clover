@@ -79,6 +79,7 @@ import { partsServe } from "./runtime-sdk/turn-loop/only-backends";
 import { AgentStarts, agentStartPolicy } from "./agents/start-policy";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost, type MainHere } from "./plugin-host/daemon-host";
+import { pluginBotSettings } from "./bots/plugin-bot-settings";
 import { pluginUi } from "./plugin-host/ui";
 import { registryEvents } from "./plugin-host/registry-events";
 import { uiSettingsMethods } from "./plugin-host/ui-settings";
@@ -4288,6 +4289,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       bundledChoice: (p) => p.source !== "bundled" || bundledStaged === undefined ? undefined
         : stagedBotChoice({ folder: p.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
+      // Lane BT: a plugin's bot-scoped settings, read and set per bot for the records (`bot.pluginSettings`).
+      pluginSettings: pluginBotSettings({ registry, backend: filePluginSettings(mossHome), settings: () => pluginHost?.settings }),
       // A bot's model is one a plugin that is on offers (as the picker lists it), or one whose plugin is on while the
       // model plugins are still taking it in (their start or a rebuild), which the session then reopens on.
       modelOffer: (model) => modelOffer(model, {

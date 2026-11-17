@@ -106,6 +106,8 @@ export interface DaemonBotsInput {
   routines?: { secrets?: NonNullable<BotSideOptions["routines"]>["secrets"]; userTimeZone?(): string; webhookBase?: string };
   /** Lane B's plugin host (#277): when given, the bots' voices, the webhook ingress and the plugin triggers run on it. */
   pluginHost?: BotPluginHost;
+  /** Lane BT: the plugins' bot-scoped settings for the records (`bot.pluginSettings`), over the plugin host's own. */
+  pluginSettings?: BotSideOptions["pluginSettings"];
   /** The session panels' reads (`session.context`, `session.connectors`): a model's context window from the catalog, and
    *  the plugin MCP servers a session gets with their plugins' sign-ins (sessions/panel-reads.ts). */
   contextWindowOf?: SessionPanelDeps["contextWindowOf"];
@@ -447,6 +449,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ...(b.workshop ? { workshop: b.workshop } : {}),
         ...(b.appScreenshot ? { appScreenshot: b.appScreenshot } : {}),
         ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
+        ...(b.pluginSettings ? { pluginSettings: b.pluginSettings } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
         // Lane M's gate (lane D's #246): the bot side's turns are its `bot-turns` source, and none starts while it's closed.
