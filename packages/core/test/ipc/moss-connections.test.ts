@@ -234,7 +234,7 @@ describe("MOSS connections (C-M1)", () => {
     expect(r.error.code).toBe(MOSS_ERR.ROLE_REFUSED);
     const read = await bare.request("session.list", {});
     expect(read.error.code).toBe(MOSS_ERR.CAPABILITY_REFUSED);
-    expect(read.error.message).toContain("conversation.read");
+    expect(read.error.message).toContain("conversation.read or sessions.read");
     // With the capability the call passes the gate and reaches its handler (here a stand-in that refuses on its own).
     const vn = await layerOf("vn-composer");
     expect((await vn.request("session.list", {})).error.code).toBe(MOSS_ERR.NOT_THE_USER);

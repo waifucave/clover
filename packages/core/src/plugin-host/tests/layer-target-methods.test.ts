@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { API_CALLS, COMPONENT_CALLS, listenerArgOf, type ApiCallInfo } from "@waifucave/moss-plugin-sdk";
-import { allowedMethods, AnyPluginId, MOSS_ERR, MOSS_EVENTS, MOSS_METHODS, TopPluginId, type Caller } from "@waifucave/moss-protocol";
+import { allowedMethods, AnyPluginId, isKindFamily, kindCapability, MOSS_ERR, MOSS_EVENTS, MOSS_METHODS, TopPluginId, type Caller } from "@waifucave/moss-protocol";
 import { PLUGIN_OWN_EVENTS } from "../../ipc/core-events";
 import { pointsApi } from "../api/points";
 import { capabilityRefusal } from "../../auth/moss-caller";
@@ -35,7 +35,8 @@ function pluginIdKeys(method: string): string[] {
 
 describe("a layer's methods that need a capability", () => {
   const layer = [...allowedMethods("layer")];
-  const gated = layer.filter((m) => MOSS_METHODS.get(m)!.capability !== undefined && MOSS_METHODS.get(m)!.capability !== "call:*");
+  // `session.detach` only lets go of a follow the connection holds: it needs no read, so no gate.
+  const gated = layer.filter((m) => MOSS_METHODS.get(m)!.capability !== undefined && MOSS_METHODS.get(m)!.capability !== "call:*" && m !== "session.detach");
 
   test("each is refused for a plugin whose OK doesn't grant it, and runs for one whose does; the user's call isn't a plugin's", () => {
     expect(gated.length).toBeGreaterThan(30);
@@ -44,14 +45,17 @@ describe("a layer's methods that need a capability", () => {
       expect([m, capabilityRefusal("layer", plugin("x"), m, [])?.code]).toEqual([m, MOSS_ERR.CAPABILITY_REFUSED]);
       expect([m, capabilityRefusal("layer", plugin("x"), m, undefined)?.code]).toEqual([m, MOSS_ERR.CAPABILITY_REFUSED]);
       expect([m, capabilityRefusal("layer", plugin("x"), m, ["something.else"])?.code]).toEqual([m, MOSS_ERR.CAPABILITY_REFUSED]);
-      expect([m, capabilityRefusal("layer", plugin("x"), m, [cap])]).toEqual([m, null]);
+      // A family by kind runs for the capability of the kind it reaches: a bots' read here (a session id is a bot's below).
+      const have = isKindFamily(cap) ? [kindCapability(cap, "bots")] : [cap];
+      const params = isKindFamily(cap) ? { id: "s_bot", kind: "bots" } : undefined;
+      expect([m, capabilityRefusal("layer", plugin("x"), m, have, params, { sessionKind: () => "bots" })]).toEqual([m, null]);
       // The app's own connection, and a CLI's, are the user's or a session's: not this gate's.
       expect([m, capabilityRefusal("app", USER, m, [])]).toEqual([m, null]);
     }
   });
 
   test("the message names the method and the capability, never anything the call carried", () => {
-    expect(capabilityRefusal("layer", plugin("vn"), "session.history", [])?.message).toBe("session.history needs the capability conversation.read, which vn's OK doesn't list");
+    expect(capabilityRefusal("layer", plugin("vn"), "session.history", [])?.message).toBe("session.history needs the capability conversation.read or sessions.read, which vn's OK doesn't list");
   });
 });
 
@@ -70,7 +74,7 @@ const LAYER_TARGETS: Record<string, string> = {
   "bot.setUserLayer": "card",
   // A bot's id is its plugin's (§6.1): reads of any bot, each behind the capability that covers every bot.
   "bot.get": "bots.read",
-  "session.list": "conversation.read",
+  "session.list": "conversation.*",
   "memory.list": "memory.read",
   "memory.read": "memory.read",
   "routine.list": "routines.read",

@@ -135,8 +135,6 @@ the user.
 - There is no point for an app page's own menu or context menu.
 - `helper` and `host.runtime: "node"` are refused by the check (run a program from the host half, and use
   `process: "own"` for a process of its own).
-- These API calls are listed but answer "isn't available yet": `sessions.*`, `activity.*`, `pictures.*` (the split's
-  engine pieces: code sessions by `sessions.read`, the activity feed and live pictures by kind). Every other API call in
-  plugin-catalog is served in this build. `memory.*`, `routines.*`, `usage.*`, `logs.*`, `audio.*`,
+- Every API call in plugin-catalog is served in this build. `memory.*`, `routines.*`, `usage.*`, `logs.*`, `audio.*`,
   `keys.*` (the moss tree's only) and `commands.run` among them: a plugin's own data (its logs, its own bot's memory
   and routines, its own commands) needs no capability. `browser.onCdpEvent` is the MOSS Browser panel's alone.

@@ -12,7 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { MOSS_EVENTS } from "@waifucave/moss-protocol";
+import { isKindFamily, kindCapability, MOSS_EVENTS } from "@waifucave/moss-protocol";
 import { EVENT_AREAS } from "../../../../plugin-sdk/src/ui/event-areas";
 
 const PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins");
@@ -86,7 +86,9 @@ function cannotHear(part: { id: string; capabilities: string[] }, type: string, 
   if (spec === undefined) return `${type}: no such core event`;
   if (spec.scope !== "core") return `${type}: a ${spec.scope} event, not sent as core.event`;
   if (!spec.roles.includes("layer")) return `${type}: not sent to a layer`;
-  if (spec.capability !== undefined && !part.capabilities.includes(spec.capability)) return `${type}: needs ${spec.capability}, which ${part.id}'s manifest doesn't list`;
+  // A family by kind (`conversation.*`) is heard with either kind's capability (the daemon then cuts it to the kinds held).
+  const holds = (cap: string) => (isKindFamily(cap) ? (["sessions", "bots"] as const).some((k) => part.capabilities.includes(kindCapability(cap, k))) : part.capabilities.includes(cap));
+  if (spec.capability !== undefined && !holds(spec.capability)) return `${type}: needs ${spec.capability}, which ${part.id}'s manifest doesn't list`;
   if (viaOn && EVENT_AREAS[type] === undefined) return `${type}: useCore().on never subscribes its area (not in the SDK's EVENT_AREAS)`;
   return undefined;
 }

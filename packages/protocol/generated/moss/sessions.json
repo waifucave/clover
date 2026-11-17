@@ -696,7 +696,7 @@
         "web",
         "layer"
       ],
-      "capability": "conversation.read",
+      "capability": "conversation.*",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -891,7 +891,7 @@
         "web",
         "layer"
       ],
-      "capability": "conversation.read",
+      "capability": "conversation.*",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1074,7 +1074,7 @@
         "web",
         "layer"
       ],
-      "capability": "conversation.read",
+      "capability": "conversation.*",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1122,7 +1122,7 @@
         "web",
         "layer"
       ],
-      "capability": "conversation.read",
+      "capability": "conversation.*",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1164,7 +1164,7 @@
         "web",
         "layer"
       ],
-      "capability": "conversation.read",
+      "capability": "conversation.*",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1227,7 +1227,7 @@
         "web",
         "layer"
       ],
-      "capability": "conversation.read",
+      "capability": "conversation.*",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1394,7 +1394,7 @@
         "web",
         "layer"
       ],
-      "capability": "conversation.read",
+      "capability": "conversation.*",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1476,7 +1476,7 @@
         "web",
         "layer"
       ],
-      "capability": "conversation.read",
+      "capability": "conversation.*",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1538,7 +1538,7 @@
         "web",
         "layer"
       ],
-      "capability": "conversation.read",
+      "capability": "conversation.*",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -3040,7 +3040,7 @@
         "web",
         "layer"
       ],
-      "capability": "conversation.read",
+      "capability": "conversation.*",
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

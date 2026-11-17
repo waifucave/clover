@@ -562,7 +562,7 @@
       }
     },
     "picture_ended": {
-      "doc": "A live picture ended: its publisher closed it, its session ended, its plugin stopped, or a frame was too large.",
+      "doc": "A live picture ended: its publisher closed it or went, its session ended, its plugin stopped, a frame was too large, or the tool call it was tied to ended.",
       "owner": "AF",
       "scope": "core",
       "roles": [
@@ -609,7 +609,8 @@
               "publisher",
               "session",
               "plugin-stopped",
-              "too-large"
+              "too-large",
+              "call-ended"
             ]
           }
         },

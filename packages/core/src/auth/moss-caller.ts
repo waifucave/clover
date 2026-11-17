@@ -19,7 +19,7 @@
 // and then, per request: the role's allow list (B's `allowedMethods`, MOSS_ERR.ROLE_REFUSED), and a
 // `userOnly` method only for the user (MOSS_ERR.NOT_THE_USER).
 import {
-  allowedMethods, MOSS_ERR, MOSS_METHODS, PLUGIN_ROLES, type Caller, type MossRole, type SessionKind,
+  allowedMethods, isKindFamily, kindCapability, MOSS_ERR, MOSS_METHODS, pluginMayCall, PLUGIN_ROLES, type Caller, type DataKind, type MossRole, type SessionKind,
 } from "@waifucave/moss-protocol";
 import { descendsFrom, type PeerFacts } from "../platform/caller-probe";
 import type { AppPeerPolicy } from "../platform/peer-signature";
@@ -145,15 +145,50 @@ export function gateMossRequest(role: MossRole, caller: Caller, method: string):
   return null;
 }
 
+/** What the capability gate needs to know about the data a call reaches: the kind of a session by its id (the session
+ *  host's view, through `dataKindOfSession`); undefined when there is no such session. */
+export interface CapabilityTargets {
+  sessionKind?(id: string): DataKind | undefined;
+}
+
+/** The data kinds a family-gated call reaches, from the call's own params (never from a capability name). A session read
+ *  (`conversation.*`) reaches the kind of the session its `id` names, as the session host knows it, and a `kind` param
+ *  is never read for it (it could say the other kind); a list reaches every kind (the caller's result is cut to the
+ *  kinds the plugin reads). The feed and the pictures name their kind (`activity.read.*`, `picture.read.*`). Empty: the
+ *  call names no kind the gate can read. */
+function kindsOfCall(method: string, capability: string, params: unknown, targets: CapabilityTargets | undefined): readonly DataKind[] {
+  const p = typeof params === "object" && params !== null ? (params as Record<string, unknown>) : {};
+  if (method === "session.list") return ["sessions", "bots"];
+  if (capability === "conversation.*") {
+    const id = typeof p["id"] === "string" ? p["id"] : typeof p["session"] === "string" ? p["session"] : undefined;
+    const kind = id === undefined ? undefined : targets?.sessionKind?.(id);
+    return kind === undefined ? [] : [kind];
+  }
+  return p["kind"] === "sessions" || p["kind"] === "bots" ? [p["kind"]] : [];
+}
+
 /** The per-request capability gate for a plugin's own connection (a `layer`; a `plugin-host` reaches the plugin API
  *  through `pluginHost.api`, which the router gates): a method that names a capability runs only for a plugin whose OK
  *  granted it (`granted`, the registry's record; none when it isn't known). `call:*` is the method's to check against
- *  its target (`command.run`), and a user's or session's call is not a plugin's. Null to go on. */
-export function capabilityRefusal(role: MossRole, caller: Caller, method: string, granted: readonly string[] | undefined): HelloRefusal | null {
+ *  its target (`command.run`), and a user's or session's call is not a plugin's. A family by kind (`conversation.*`,
+ *  `activity.read.*`, `picture.read.*`, spec revision 19 §3.6) needs the capability of the kind the call reaches
+ *  (`pluginMayCall`, `kindCapability`): a call that names no kind it can read is refused, and a list is let through for
+ *  a plugin that reads either kind (its result is cut to the kinds it reads). Null to go on. */
+export function capabilityRefusal(role: MossRole, caller: Caller, method: string, granted: readonly string[] | undefined, params?: unknown, targets?: CapabilityTargets): HelloRefusal | null {
   if (!PLUGIN_ROLES.includes(role) || caller.kind !== "plugin") return null;
-  const capability = MOSS_METHODS.get(method)?.capability;
-  if (capability === undefined || capability === "call:*") return null;
-  if ((granted ?? []).includes(capability)) return null;
+  const spec = MOSS_METHODS.get(method);
+  const capability = spec?.capability;
+  if (spec === undefined || capability === undefined || capability === "call:*") return null;
+  const have = granted ?? [];
+  if (isKindFamily(capability)) {
+    const kinds = kindsOfCall(method, capability, params, targets);
+    if (method === "session.detach") return null;
+    const ok = method === "session.list" ? kinds.some((k) => pluginMayCall(spec, have, k)) : kinds.length > 0 && kinds.every((k) => pluginMayCall(spec, have, k));
+    if (ok) return null;
+    const names = (kinds.length === 1 ? kinds : (["bots", "sessions"] as const)).map((k) => kindCapability(capability, k)).join(" or ");
+    return { code: MOSS_ERR.CAPABILITY_REFUSED, message: `${method} needs the capability ${names}, which ${caller.pluginId}'s OK doesn't list` };
+  }
+  if (have.includes(capability)) return null;
   return { code: MOSS_ERR.CAPABILITY_REFUSED, message: `${method} needs the capability ${capability}, which ${caller.pluginId}'s OK doesn't list` };
 }
 

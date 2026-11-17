@@ -139,6 +139,18 @@ export class SpotTree {
   }
 }
 
+/** What a spot needs in this cell. A spot that needs `conversation.read` shows messages, and which capability reads them
+ *  depends on the data (spec revision 19, §3.6): a code session (`coding`, `agent`) is read with `sessions.read`, a bot's
+ *  conversation with `conversation.read`, an archived session (the previous app's, whose kind isn't told) with both. The kind
+ *  is the cell's own (`ctx.session`): the bundled conversation part tells it from the session it shows, heard from the moss
+ *  layer only, never from the part that placed the spot; a cell with no kind is a bot's, and draws no inner spot of that part. */
+export function needsInCell(needs: readonly string[], ctx: Pick<CellContext, "session">): readonly string[] {
+  const kind = ctx.session;
+  if (kind === "archived") return needs.flatMap((c) => (c === "conversation.read" ? ["conversation.read", "sessions.read"] : [c]));
+  if (kind === "coding" || kind === "agent") return needs.map((c) => (c === "conversation.read" ? "sessions.read" : c));
+  return needs;
+}
+
 /** A spot's declaration as the resolver needs it: the catalog's for a catalog name (a plugin that declares one must
  *  use it), else the first plugin declaration found. */
 export function declarationOf(spot: string, plugins: readonly UiPlugin[]): PointDeclaration | undefined {
@@ -416,7 +428,7 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
         style.push({ plugin, entry, tier });
         continue;
       }
-      const missing = (decl?.needs ?? []).filter((cap) => !plugin.capabilities.has(cap));
+      const missing = needsInCell(decl?.needs ?? [], ctx).filter((cap) => !plugin.capabilities.has(cap));
       if (missing.length > 0) {
         result.skipped.push({ ref, reason: "needs", detail: missing.join(", ") });
         continue;

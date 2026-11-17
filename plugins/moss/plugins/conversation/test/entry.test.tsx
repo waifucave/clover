@@ -1,5 +1,5 @@
 // The conversation on the runtime: the core's events projected into the view's items, and the entry that reads them.
-import { card, fakeApi, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
+import { bridgeCalls, card, fakeApi, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
 import type { EntryComponent } from "../client/local";
 import type { CardMeta } from "@waifucave/moss-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -122,7 +122,7 @@ describe("project", () => {
 describe("the conversation entry", () => {
   const HISTORY = [ev("user_message", { text: "Hello there" }), ev("assistant_message", { text: "Hi! What can I do?" })];
 
-  function mount(extra: { liveHistory?: () => Promise<{ events: CoreEvent[]; hasMore: boolean }>; archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; action?: (p: unknown) => unknown; cards?: { list: CardMeta[]; listeners: Set<() => void> } } = {}) {
+  function mount(extra: { props?: Record<string, unknown>; kind?: string | Promise<never>; liveHistory?: () => Promise<{ events: CoreEvent[]; hasMore: boolean }>; archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; action?: (p: unknown) => unknown; cards?: { list: CardMeta[]; listeners: Set<() => void> } } = {}) {
     let listener: ((e: CoreEvent) => void) | undefined;
     const core = fakeCore({
       "archive.history": extra.history ?? (() => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] })),
@@ -132,6 +132,7 @@ describe("the conversation entry", () => {
       bots: { list: async () => (extra.bots ?? []) as never, get: async () => { throw new Error("none"); }, watch: () => () => undefined },
       conversation: {
         list: async () => [],
+        get: async (session: string) => ({ id: session, kind: await (extra.kind ?? "bot") }) as never,
         history: extra.liveHistory ?? (async () => ({ events: HISTORY, hasMore: false })),
         follow: (_s, l) => {
           listener = l;
@@ -154,7 +155,7 @@ describe("the conversation entry", () => {
     });
     render(
       <TestLayer runtime={runtime}>
-        <ConversationEntry props={{ bot: { id: "alpha", name: "Alpha" }, session: "s_alpha", now: 2_000, ...(extra.archived ? { archived: true } : {}) }} />
+        <ConversationEntry props={{ bot: { id: "alpha", name: "Alpha" }, session: "s_alpha", now: 2_000, ...(extra.archived ? { archived: true } : {}), ...(extra.props ?? {}) } as never} />
       </TestLayer>,
     );
     return { core, push: (e: CoreEvent) => listener?.(e) };
@@ -283,6 +284,37 @@ describe("the conversation entry", () => {
     expect(screen.getByTestId("conversation.message").textContent).toBe("LOUD Hello there");
     expect(screen.getByText("Hi! What can I do?")).toBeTruthy();
     expect(screen.getAllByTestId("conversation.message.extra").length).toBeGreaterThan(0);
+  });
+
+  const mountWith = (kind: string | Promise<never>, props: Record<string, unknown>) => mount({ kind, props });
+
+  /** The kind each inner spot (a message, its add-ons, a tool's result) was asked for: the hint the part gave the core. */
+  const kindsAsked = () => bridgeCalls("resolve").filter((c) => ["conversation.message", "conversation.message.extra", "tool.result"].includes(String(c.args[0]))).map((c) => `${String(c.args[0])}:${(c.args[2] as { session?: string } | undefined)?.session ?? "none"}`);
+
+  test("the kind its inner spots read as comes from the session itself, never from the part that placed the conversation: a code session's spots are asked as coding, a bot's as bot", async () => {
+    // A placing part says what it likes in its props (`sessionKind`): it is not read.
+    const lie = { sessionKind: "bot", kind: "bot" };
+    for (const [kind, want] of [["coding", "coding"], ["agent", "agent"], ["bot", "bot"], ["side-thread", "side-thread"]] as const) {
+      cleanup();
+      mountWith(kind, lie);
+      await act(() => settle());
+      const asked = kindsAsked();
+      expect(asked.length).toBeGreaterThan(0);
+      expect([...new Set(asked.map((a) => a.split(":")[1]))]).toEqual([want]);
+    }
+  });
+
+  test("until the session's kind is known no inner spot is asked, and one the core can't tell the kind of draws none; an archived session's spots are asked as archived (both reads)", async () => {
+    mountWith(new Promise<never>(() => undefined), {});
+    await act(() => settle());
+    expect(kindsAsked()).toEqual([]);
+    expect(screen.getByText("Hi! What can I do?")).toBeTruthy();
+    cleanup();
+    mount({ archived: true });
+    await act(() => settle());
+    const asked = kindsAsked();
+    expect(asked.length).toBeGreaterThan(0);
+    expect([...new Set(asked.map((a) => a.split(":")[1]))]).toEqual(["archived"]);
   });
 
   test("archived: reads the old session from the core, and its approvals read as notes", async () => {

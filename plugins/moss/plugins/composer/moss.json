@@ -49,6 +49,7 @@
   },
   "capabilities": [
     "conversation.read",
+    "sessions.read",
     "conversation.post",
     "bots.read",
     "computers.read",

@@ -14,7 +14,7 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 /** The keys lane B's `McpServerSchema` allows (a strict object, `plugin-sdk/src/manifest/schema.ts` on lane/b-m0). */
 // With the lists a server may carry since R1 and F5: its read-only and web tools, what each tool needs, and the tools judged
 // as the Browser tool (`browserTools`, which this plugin's own server declares).
-const MCP_SERVER_KEYS = new Set(["type", "command", "args", "env", "url", "headers", "tools", "instructions", "perComputer", "scope", "when", "declares", "readOnly", "webSearch", "webFetch", "needs", "browserTools"]);
+const MCP_SERVER_KEYS = new Set(["type", "command", "args", "env", "url", "headers", "tools", "instructions", "perComputer", "picture", "scope", "when", "declares", "readOnly", "webSearch", "webFetch", "needs", "browserTools"]);
 
 const inside = (path: string): boolean => {
   const rel = relative(root, resolve(root, path));
@@ -52,6 +52,8 @@ describe("moss.json", () => {
     const browser = servers.browser;
     expect(browser.type).toBe("host");
     expect(browser.perComputer).toBe(true);
+    // It publishes a live picture of its pages (spec revision 19, §3.6): the OK card says so.
+    expect(browser.picture).toBe(true);
     expect(browser.tools).toEqual({ [TOOL_NAME]: "preload" });
     for (const key of Object.keys(browser)) expect([key, MCP_SERVER_KEYS.has(key)]).toEqual([key, true]);
     // The core names it mcp__<plugin namespace>__<tool>: the `moss` tree's namespace is `moss`.

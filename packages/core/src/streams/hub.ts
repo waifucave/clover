@@ -57,6 +57,8 @@ interface Stream {
   producerEnded: boolean;
   /** A points stream: it counts toward its reader's (the caller's) cap only. */
   point?: true;
+  /** A stream into the engine (a tool's live picture): it counts toward its writer's cap only. */
+  intoEngine?: true;
   writer?: { bytes: Uint8Array; resolve(): void; reject(err: unknown): void };
   openedAt: number;
   pumping: boolean;
@@ -67,6 +69,9 @@ export interface StreamHubOptions {
   log?(line: string): void;
   now?(): number;
 }
+
+/** The engine's own end of a stream (a live picture): it writes and acknowledges as this. */
+export const ENGINE = { pluginId: "@engine", side: "moss" } as const;
 
 const sideText = (s: StreamSide): string => (s === "ui" ? "a component" : s === "host" ? "its host half" : `its host half, process ${s}`);
 const seconds = (ms: number): string => `${Math.round(ms / 100) / 10} s`;
@@ -138,6 +143,32 @@ export class StreamHub {
     // It counts toward the caller's cap only: a caller can't fill a contributor's.
     const s = this.#create(name, producer, consumer, {}, true);
     return { id: s.id, stop: () => void this.#abort(s, "the reader went: its watch ended", consumer) };
+  }
+
+  /** A live picture's frames to a reader (`pictures.open`): the engine writes (through `write`, as `ENGINE`) and the
+   *  caller's watch is the reader. Counts toward the caller's cap only. */
+  openFromEngine(reader: { pluginId: string; side: HostProcess | "ui"; listener: (event: StreamEvent) => void }, name: string): { id: string; stop: Unsubscribe } {
+    const consumer: Endpoint = { pluginId: reader.pluginId, side: reader.side, listener: reader.listener };
+    const producer: Endpoint = { pluginId: ENGINE.pluginId, side: ENGINE.side };
+    const s = this.#create(name, producer, consumer, {}, true);
+    return { id: s.id, stop: () => void this.#abort(s, "the reader went: its watch ended", consumer) };
+  }
+
+  /** A live picture's frames from a publisher (`pictures.publish`): the caller's watch is the writer (its listener hears
+   *  `open` and `aborted`), and the engine reads (`onEvent` hears `chunk`, `end`, `aborted`; it acknowledges with `ack`, as
+   *  `ENGINE`). Counts toward the writer's cap only. The returned function is the writer's watch ending. */
+  openIntoEngine(writer: { pluginId: string; side: HostProcess | "ui"; listener: (event: StreamEvent) => void }, name: string, onEvent: (event: StreamEvent) => void): { id: string; stop: Unsubscribe } {
+    const producer: Endpoint = { pluginId: writer.pluginId, side: writer.side, listener: writer.listener };
+    const consumer: Endpoint = { pluginId: ENGINE.pluginId, side: ENGINE.side, listener: onEvent };
+    const s = this.#create(name, producer, consumer, {}, false, true);
+    this.#tell(producer, { type: "open", id: s.id });
+    return {
+      id: s.id,
+      stop: () => {
+        if (!this.#streams.has(s.id) || s.producerEnded) return;
+        this.#abort(s, "the writer went: its watch ended", producer);
+      },
+    };
   }
 
   /** The handler of a points stream finished without ending its stream, or failed: the stream is cancelled with why. */
@@ -235,15 +266,15 @@ export class StreamHub {
     return [...this.#acceptors.values()].reduce((n, l) => n + l.length, 0);
   }
 
-  #create(name: string, producer: Endpoint, consumer: Endpoint, meta: StreamMeta, point = false): Stream {
-    for (const pluginId of point ? [consumer.pluginId] : [...new Set([producer.pluginId, consumer.pluginId])]) {
+  #create(name: string, producer: Endpoint, consumer: Endpoint, meta: StreamMeta, point = false, intoEngine = false): Stream {
+    for (const pluginId of point ? [consumer.pluginId] : intoEngine ? [producer.pluginId] : [...new Set([producer.pluginId, consumer.pluginId])]) {
       let open = 0;
       for (const s of this.#streams.values()) if (chargedTo(s, pluginId)) open++;
       if (open >= STREAMS_OPEN_PER_PLUGIN) throw new ContractError("refused", `${pluginId} has ${STREAMS_OPEN_PER_PLUGIN} streams open, the most a plugin may; end one first`);
     }
     const s: Stream = {
       id: `strm_${randomUUID()}`, name, producer, consumer, buffer: [], buffered: 0, inFlight: 0, written: 0, sent: 0, producerEnded: false,
-      openedAt: this.#now(), pumping: false, again: false, ...(point ? { point: true } : {}),
+      openedAt: this.#now(), pumping: false, again: false, ...(point ? { point: true } : {}), ...(intoEngine ? { intoEngine: true } : {}),
     };
     this.#streams.set(s.id, s);
     this.#o.log?.(`streams: ${name} (${s.id.slice(5, 13)}) opened, ${producer.pluginId} (${sideText(producer.side)}) writing to ${consumer.pluginId} (${sideText(consumer.side)})`);
@@ -364,7 +395,8 @@ export function checkMeta(meta: unknown): StreamMeta {
 }
 
 /** The plugins a stream counts against: a points stream its caller (the reader) only; a plugin's own, its plugin. */
-function chargedTo(s: { producer: { pluginId: string }; consumer: { pluginId: string }; point?: true }, pluginId: string): boolean {
+function chargedTo(s: { producer: { pluginId: string }; consumer: { pluginId: string }; point?: true; intoEngine?: true }, pluginId: string): boolean {
+  if (s.intoEngine === true) return s.producer.pluginId === pluginId;
   return s.point === true ? s.consumer.pluginId === pluginId : s.producer.pluginId === pluginId || s.consumer.pluginId === pluginId;
 }
 

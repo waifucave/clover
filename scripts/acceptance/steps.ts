@@ -23,6 +23,7 @@ import { SURFACE_COPY_STEP } from "./surface-copy-step";
 import { CONVERSATION_COPY_STEP } from "./conversation-copy-step";
 import { STAGE_COPY_STEP } from "./stage-copy-step";
 import { API_AREAS_STEP } from "./api-areas-step";
+import { FEED_STEP } from "./feed-step";
 import { MANIFEST_FIELDS_STEP } from "./manifest-fields-step";
 import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
 import { BROWSER_STEP } from "./browser-step";
@@ -105,6 +106,7 @@ export const FULL_STEPS = [
   "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
   "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says; a pasted MCP URL's tools list to the bot and answer it",
   API_AREAS_STEP,
+  FEED_STEP,
   MANIFEST_FIELDS_STEP,
   CODE_ADAPTER_STEP,
   THIRD_PARTY_MODEL_STEP,

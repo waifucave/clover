@@ -15,7 +15,12 @@ export type LivePicturesFactory = (...args: ConstructorParameters<typeof FakeLiv
 
 const call = (extra: Partial<ToolCallContext> = {}): ToolCallContext => ({ session: "s_alpha", kind: "bots", bot: "alpha", pluginId: "acme-cu", tool: "mcp__acme__Click", callId: "call_1", declares: true, open: true, ...extra });
 const meta: PicturePublishMeta = { format: "jpeg", width: 1280, height: 800 };
-const jpeg = (n = 16) => { const b = new Uint8Array(n); b.set([0xff, 0xd8, 0xff]); return b; };
+/** A JPEG that is only a header: SOI, then a start-of-frame marker with the size, padded to `n` bytes. */
+const jpeg = (n = 32, width = 1280, height = 800) => {
+  const b = new Uint8Array(Math.max(n, 24));
+  b.set([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 0xff, width >> 8, width & 0xff, 0x03]);
+  return b;
+};
 const user = { kind: "user" as const };
 const thrown = (f: () => unknown) => { try { f(); } catch (e) { return e; } return undefined; };
 
@@ -49,16 +54,45 @@ export function runLivePicturesConformance(make: LivePicturesFactory): void {
       const r = pics.open(p.id, user);
       const got: number[] = [];
       r.onFrame((b) => got.push(b.length));
-      p.frame(jpeg(16));
-      p.frame(jpeg(32));
-      expect(r.latest()?.length).toBe(32);
-      expect(got).toEqual([16, 32]);
+      p.frame(jpeg(40));
+      p.frame(jpeg(48));
+      expect(r.latest()?.length).toBe(48);
+      expect(got).toEqual([40, 48]);
       p.frame(new TextEncoder().encode("<svg onload=alert(1)>"));
       expect(events.at(-1)).toEqual({ ended: p.id, why: "publisher" });
       expect(r.latest()).toBeUndefined();
       const big = pics.publish(call(), meta);
       big.frame(jpeg(PICTURE_FRAME_MAX_BYTES + 1));
       expect(events.at(-1)).toEqual({ ended: big.id, why: "too-large" });
+    });
+
+    test("a frame whose own header claims more pixels than the picture declared, or no readable size, ends it", () => {
+      const pics = setup();
+      const events: PictureEvent[] = [];
+      pics.watch("bots", user, (e) => events.push(e));
+      const bomb = pics.publish(call(), meta);
+      bomb.frame(jpeg(64, 60000, 60000));
+      expect(events.at(-1)).toEqual({ ended: bomb.id, why: "publisher" });
+      const bare = pics.publish(call(), meta);
+      const magicOnly = new Uint8Array(32);
+      magicOnly.set([0xff, 0xd8, 0xff]);
+      bare.frame(magicOnly);
+      expect(events.at(-1)).toEqual({ ended: bare.id, why: "publisher" });
+      const smaller = pics.publish(call(), meta);
+      smaller.frame(jpeg(64, 640, 400));
+      expect(pics.list("bots", user).map((v) => v.id)).toEqual([smaller.id]);
+    });
+
+    test("a picture outlives its call unless its publisher tied it to the call", () => {
+      const pics = setup();
+      const ends: PictureEvent[] = [];
+      pics.watch("bots", user, (e) => { if ("ended" in e) ends.push(e); });
+      const stays = pics.publish(call({ callId: "call_a" }), meta);
+      const tied = pics.publish(call({ callId: "call_b", pluginId: "tied-cu" }), { ...meta, endsWithCall: true });
+      pics.callEnded("call_a");
+      pics.callEnded("call_b");
+      expect(ends).toEqual([{ ended: tied.id, why: "call-ended" }]);
+      expect(pics.list("bots", user).map((v) => v.id)).toEqual([stays.id]);
     });
 
     test("one picture per session and publisher: a second replaces the first", () => {

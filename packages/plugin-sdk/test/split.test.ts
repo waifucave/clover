@@ -8,7 +8,7 @@ describe("reads by kind (G6)", () => {
   test("code sessions and bots are separate capabilities, each with its own line; pictures warn", () => {
     expect(capabilityOkText("sessions.read")).toBe("reads your code sessions");
     expect(capabilityOkText("activity.read.bots")).toBe("follows what all your bots are doing: their names, their states and which tool they are using, never their words");
-    expect(capabilityOkText("activity.read.sessions")).toBe("follows what your code sessions are doing: their names, their states and which tool they are using, never their words");
+    expect(capabilityOkText("activity.read.sessions")).toBe("follows what your code sessions are doing: their titles, their states and which tool they are using");
     for (const kind of ["sessions", "bots"]) {
       const c = CAPABILITIES.find((x) => x.name === `picture.read.${kind}`)!;
       expect(c.warns).toBe(true);
@@ -27,13 +27,13 @@ describe("reads by kind (G6)", () => {
     expect(apiCallAllowed("sessions.history", "ui", ["sessions.read"])).toBe(true);
   });
 
-  test("every call of the split is listed and not served yet", () => {
+  test("every call of the split is listed and served (none is marked not-yet-served)", () => {
     const split = Object.entries(API_CALLS).filter(([k]) => /^(sessions|activity|pictures)\./.test(k));
     expect(split.map(([k]) => k).sort()).toEqual([
       "activity.list", "activity.watch", "pictures.list", "pictures.open", "pictures.publish", "pictures.watch",
       "sessions.follow", "sessions.get", "sessions.history", "sessions.list", "sessions.watch",
     ]);
-    for (const [, info] of split) expect(typeof (info as { notYet?: string }).notYet).toBe("string");
+    for (const [, info] of split) expect((info as { notYet?: string }).notYet).toBeUndefined();
     expect(API_CALLS["pictures.publish"]).toMatchObject({ where: "host" });
   });
 });

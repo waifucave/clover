@@ -17,6 +17,7 @@
     "bots.read",
     "computers.read",
     "conversation.read",
+    "sessions.read",
     "account.read"
   ],
   "contributes": {

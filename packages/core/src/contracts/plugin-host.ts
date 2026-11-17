@@ -230,6 +230,9 @@ export type ApiRouter = (call: {
   caller: Caller;
   /** A component's call (`plugin.layer.api`): the session the component shows, for calls scoped to it. */
   session?: string;
+  /** The core's own record of the call this one was made inside (`InvocationTable.infoFor`), never anything the plugin
+   *  said: its id, and the `host` MCP server and tool when it is a tool call. */
+  invocation?: { id: string; server?: string; tool?: string };
 }) => Promise<unknown>;
 
 export interface PluginHost {

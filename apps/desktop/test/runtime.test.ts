@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LayerMessage } from "@waifucave/moss-plugin-sdk/ui/bridge";
-import { readUiPlugins, type UiPlugin } from "../src/main/ui/model";
+import { readUiEntry, readUiPlugins, type UiPlugin } from "../src/main/ui/model";
 import { MOUNT_TOKEN_TTL_MS, UiRuntime, type FrameRef } from "../src/main/ui/runtime";
 import { SealedFrames, type SealedCard } from "../src/main/sealed";
 import { FIXTURES, alphaView, mossViews, folderView } from "./fake-core/registry";
@@ -936,6 +936,36 @@ describe("safe mode and the registry", () => {
     const code = s.rt.resolve(shell.shellFrame, shell.info.mount, "panel", "diff", { session: "coding" });
     expect(code.items).toMatchObject([{ ref: "moss/panel-diff#diff" }]);
     expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "panel", "diff", { session: "bot" }).items).toEqual([]);
+  });
+});
+
+describe("what a conversation's inner spots need is the data's own kind (spec revision 19, §3.6)", () => {
+  /** A third-party plugin with one entry in `spot` and the capabilities it holds. */
+  function filler(id: string, caps: string[], spot: string): UiPlugin {
+    return {
+      id, topId: id, layer: id, treeHash: "0".repeat(64), assetBase: `/plugins/${id}`, css: [], source: "installed", enabledAt: 1000, capabilities: new Set(caps),
+      bots: "all", isBot: false, themes: [], locales: [], avatarFormats: [], entries: [readUiEntry(id, { spot, component: "Extra" })!],
+    } as UiPlugin;
+  }
+  const bots = filler("bots-only", ["conversation.read"], "conversation.message.extra");
+  const code = filler("code-only", ["sessions.read"], "conversation.message.extra");
+
+  /** The conversation part's own document (the moss layer), as the bot tab places it. */
+  function conversationPart() {
+    const s = setup([bots, code]);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const conv = s.rt.resolve(shell.shellFrame, tab.mount, "conversation").items[0]!;
+    return { s, shell, conv };
+  }
+  const refs = (v: { items: readonly object[] }) => v.items.map((i) => (i as { ref?: string }).ref?.split("#")[0]).sort();
+
+  test("the conversation part (the moss layer) says the session's kind: a code session's add-ons come from sessions.read plugins only, a bot's from conversation.read ones only, an archived one's from neither", () => {
+    const { s, shell, conv } = conversationPart();
+    const ask = (session: string | undefined) => refs(s.rt.resolve(shell.shellFrame, conv.mount, "conversation.message.extra", undefined, session === undefined ? {} : { session }));
+    for (const session of ["coding", "agent"]) expect([session, ask(session)]).toEqual([session, ["code-only"]]);
+    for (const session of ["bot", "side-thread", undefined]) expect([session, ask(session)]).toEqual([session, ["bots-only"]]);
+    expect(ask("archived")).toEqual([]);
   });
 });
 

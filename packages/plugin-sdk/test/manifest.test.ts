@@ -770,9 +770,9 @@ describe("the OK says what a plugin runs without being asked", () => {
   const m = (host: Record<string, unknown>, contributes: Record<string, unknown> = {}) =>
     validateManifest({ manifest: 1, id: "svc", name: "Svc", engines: { moss: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", ...host }, contributes });
   test("host.start, by where; on demand says nothing", () => {
-    expect(backgroundOkLines([m({ start: "each" })])).toEqual(["It runs in the background from the moment MOSS starts, on every computer it's installed on."]);
-    expect(backgroundOkLines([m({ start: "main" })])).toEqual(["It runs in the background from the moment MOSS starts, on your main computer."]);
-    expect(backgroundOkLines([m({ start: "chosen" })])).toEqual(["It runs in the background from the moment MOSS starts, on the computer you add it on."]);
+    expect(backgroundOkLines([m({ start: "each" })])).toEqual(["It runs in the background from the moment MOSS or MOSS Code starts, on every computer it's installed on."]);
+    expect(backgroundOkLines([m({ start: "main" })])).toEqual(["It runs in the background from the moment MOSS or MOSS Code starts, on your main computer."]);
+    expect(backgroundOkLines([m({ start: "chosen" })])).toEqual(["It runs in the background from the moment MOSS or MOSS Code starts, on the computer you add it on."]);
     expect(backgroundOkLines([m({})])).toEqual([]);
   });
   test("a pill target says it can be picked in the Dispatch pill and receives what is typed there; it comes from the tree, children's too", () => {

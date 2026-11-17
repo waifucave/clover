@@ -24,7 +24,7 @@ export { apiHas, apiMember, HARMLESS_KEYS, isDataFolder } from "./api-members";
 import { ContractError } from "../contracts/common";
 import { MCP_INVOCATION_META, resolveHandler } from "../contracts/plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../contracts/sdk-types";
-import { acceptStreams, openStream, pointStream, STREAM_CHUNK_MAX, type StreamsTransport } from "@waifucave/moss-plugin-sdk/streams";
+import { acceptStreams, openPicture, openStream, pointStream, publishPicture, STREAM_CHUNK_MAX, type StreamsTransport } from "@waifucave/moss-plugin-sdk/streams";
 import { LISTENER_ARG } from "./api-channel";
 import type { RpcPeer } from "./link";
 import { WorkerFetches } from "./fetch-worker";
@@ -137,6 +137,9 @@ function apiFailure(err: unknown, call: string): unknown {
   }
   return err;
 }
+
+/** The calls that move a stream's bytes: they carry no caller (see `#streamsOf`). */
+const STREAM_DATA_CALLS: ReadonlySet<string> = new Set(["streams.write", "streams.end", "streams.cancel", "streams.ack"]);
 
 export class HostRuntime {
   readonly #o: HostRuntimeOptions;
@@ -389,7 +392,9 @@ export class HostRuntime {
    *  end of its watches, and a watch the daemon ends tells its listener first (`aborted`). */
   #streamsOf(pluginId: string, inside: string | undefined): StreamsTransport {
     const peer = this.#o.peer;
-    const request = (call: string, args: unknown[]) => peer.request("pluginHost.api", { pluginId, callId: `api_${++this.#apiSeq}`, call, args, ...(inside === undefined ? {} : { invocation: inside }) });
+    // A stream's own calls (`write`, `end`, `cancel`, `ack`) act as the plugin and never as a caller (`streamsApi` reads none), so a
+    // stream a tool call opened goes on after that call: a live picture outlives the tool call that opened it.
+    const request = (call: string, args: unknown[]) => peer.request("pluginHost.api", { pluginId, callId: `api_${++this.#apiSeq}`, call, args, ...(inside === undefined || STREAM_DATA_CALLS.has(call) ? {} : { invocation: inside }) });
     return {
       call: (call, args) => request(call, args).then((r) => (r as { result: unknown }).result, (err: unknown) => { throw apiFailure(err, call); }),
       watch: (call, args, at) => {
@@ -551,6 +556,9 @@ export class HostRuntime {
           // A stream's two ends and a handler's stream are Web streams made from watches (the SDK's streams.ts).
           if (call === "streams.open") return openStream(this.#streamsOf(pluginId, inside), args[0] as string, args[1] as never, args[2] as never);
           if (call === "streams.accept") return acceptStreams(this.#streamsOf(pluginId, inside), args[0] as string, args[1] as never);
+          // A live picture's two ends are streams too: the frames a plugin reads (`open`) and the frames a tool publishes.
+          if (call === "pictures.open") return openPicture(this.#streamsOf(pluginId, inside), args[0] as string, args[1] as never);
+          if (call === "pictures.publish") return publishPicture(this.#streamsOf(pluginId, inside), args[0], args[1] as never);
           if (call === "points.stream") return pointStream(this.#streamsOf(pluginId, inside), args[0] as string, args[1], args[2] as string, args[3], args[4] as never, args[5] as never);
           const listeners = args.filter((a) => typeof a === "function");
           const wire = args.map((a) => (typeof a === "function" ? { [LISTENER_ARG]: true } : a));

@@ -25,6 +25,8 @@ import { outsideApi } from "../api/outside";
 import { pointsApi } from "../api/points";
 import { settingsApi } from "../api/settings";
 import { storageApi } from "../api/storage";
+import { activityApi } from "../../activity/api";
+import { picturesApi } from "../../pictures/api";
 import { streamsApi } from "../../streams/api";
 import { turnsApi } from "../../turns/api";
 
@@ -52,6 +54,8 @@ function served(): Set<string> {
     modelPluginApiHandlers(f),
     turnsApi(f),
     streamsApi(f),
+    activityApi(f),
+    picturesApi(f),
   ];
   return new Set([...lists.flatMap((l) => Object.keys(l)), ...INLINE]);
 }
@@ -117,7 +121,7 @@ describe("every call the catalog lists for host code is served", () => {
     const host = read("plugin-host/daemon-host.ts");
     const list = host.slice(host.indexOf("const handlers: ApiHandlers[] = ["), host.indexOf("const recordOf ="));
     const factories = [...list.matchAll(/\b([a-z][A-Za-z]*Api)\(/g)].map((m) => m[1]);
-    expect(factories.sort()).toEqual(["commandsApi", "confirmApi", "keysApi", "outsideApi", "pointsApi", "settingsApi", "storageApi", "streamsApi", "turnsApi"]);
+    expect(factories.sort()).toEqual(["activityApi", "commandsApi", "confirmApi", "keysApi", "outsideApi", "picturesApi", "pointsApi", "settingsApi", "storageApi", "streamsApi", "turnsApi"]);
     expect(list).toContain("areas.handlers");
     expect(list).toContain("logs.handlers");
     expect(list).toContain("...(o.handlers ?? [])");

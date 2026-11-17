@@ -33,6 +33,10 @@ import { grantsInForce, RUNNING_STATES, type PluginRecord, type PluginRegistry }
 import { TurnQueues } from "../turns/queue";
 import { turnsApi } from "../turns/api";
 import { StreamHub } from "../streams/hub";
+import { activityApi } from "../activity/api";
+import type { EngineActivityFeed } from "../activity/feed";
+import { picturesApi, type PictureSessions } from "../pictures/api";
+import type { EngineLivePictures } from "../pictures/live-pictures";
 import { streamsApi } from "../streams/api";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { areasParts, type AreaServices } from "./api/areas";
@@ -168,6 +172,11 @@ export interface StartPluginHostOptions {
   netConnect?: typeof Bun.connect;
   /** Test seam: how the proxies resolve a listed name (default: the system's resolver). */
   netResolve?: (host: string) => Promise<string[]>;
+  /** The activity feed and the live pictures (spec revision 19, §3.6): served on the plugin API (`activity.*`, `pictures.*`)
+   *  when given; `pictureSessions` says a session's kind and bot for the picture a tool call publishes. */
+  activity?: EngineActivityFeed;
+  pictures?: EngineLivePictures;
+  pictureSessions?: PictureSessions;
   /** The user's home the fence denies (the daemon passes the user's on its default home; absent, an empty stand-in, never the real one). */
   userHome?: string;
   /** How long an added pick waits for a host that runs programs to have no call in flight before its process is
@@ -516,15 +525,26 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   // Streams (§5.4): the byte streams between a plugin's halves, one hub for every plugin. A plugin that stops loses its
   // streams and its acceptors; a host half that stops or restarts loses those its process wrote or read.
   const streams = new StreamHub({ log });
+  // A live picture ends with its plugin (stopped, off, removed) and with the tool call it was tied to (`endsWithCall`).
   const offStreamsRegistry = o.registry.watch((c) => {
-    if (c.type === "removed") return streams.endPlugin(c.id, "its plugin was removed");
+    if (c.type === "removed") {
+      o.pictures?.pluginStopped(c.id);
+      return streams.endPlugin(c.id, "its plugin was removed");
+    }
     if (c.type !== "plugin") return;
     const r = o.registry.get(c.id);
-    if (r === undefined || !r.enabled || !RUNNING_STATES.has(r.state)) streams.endPlugin(c.id, `its plugin is ${r === undefined ? "gone" : r.enabled ? r.state : "off"}`);
+    if (r === undefined || !r.enabled || !RUNNING_STATES.has(r.state)) {
+      o.pictures?.pluginStopped(c.id);
+      streams.endPlugin(c.id, `its plugin is ${r === undefined ? "gone" : r.enabled ? r.state : "off"}`);
+    }
   });
   const offStreamsHost = host.watch((s) => {
-    if (s.state === "stopped" || s.state === "restarting" || s.state === "idle") streams.endPlugin(s.pluginId, `its host half is ${s.state}`, (side) => side !== "ui");
+    if (s.state === "stopped" || s.state === "restarting" || s.state === "idle") {
+      o.pictures?.pluginStopped(s.pluginId);
+      streams.endPlugin(s.pluginId, `its host half is ${s.state}`, (side) => side !== "ui");
+    }
   });
+  const offCallEnded = o.pictures === undefined ? undefined : host.invocations.onEnded((id) => o.pictures!.callEnded(id));
   // The figures the stages report (`avatar.report`): a stage that stops, goes off or is removed loses its reports, so what
   // the core answers for a bot is always from the stage drawing it now.
   const avatars = new AvatarService((event) => o.emit?.(event), Date.now, {
@@ -553,6 +573,8 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     avatars.handlers(),
     turnsApi({ queues: turns, record: (id) => o.registry.get(id) }),
     streamsApi({ hub: streams }),
+    ...(o.activity !== undefined ? [activityApi(o.activity)] : []),
+    ...(o.pictures !== undefined && o.pictureSessions !== undefined ? [picturesApi({ pictures: o.pictures, hub: streams, sessions: o.pictureSessions, now: () => (o.clock ?? new SystemClock()).now() })] : []),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
     ...(o.handlers ?? []),
     {
@@ -599,7 +621,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   // the GRANTED set holds `network:public` (any plugin's, after its OK card's warning line), on 443 or 80: that fetch is keyless,
   // through MOSS's web safeguards (runtime-sdk/model-plugins/public-fetch.ts, which allows https and the default port
   // only).
-  const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name), allowNetwork: pluginNetworkAllowed, ...(o.userEndpoint !== undefined ? { userEndpoint: o.userEndpoint } : {}) });
+  const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name), allowNetwork: pluginNetworkAllowed, ...(o.pictures !== undefined ? { pictureKind: (id: string) => o.pictures!.kindOf(id) } : {}), ...(o.userEndpoint !== undefined ? { userEndpoint: o.userEndpoint } : {}) });
   host.serveApi(guardApiRouter(gate, recordOf));
 
   // The registry's changes: a plugin removed or no longer startable (off, refused, its host code gone) is dropped, its
@@ -852,6 +874,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       offAvatarsRegistry();
       offAvatarsHost();
       offStreamsHost();
+      offCallEnded?.();
       streams.close();
       const running = o.registry.list().map((p) => p.id);
       await Promise.allSettled(running.map((id) => host.stop(id, "MOSS is stopping")));

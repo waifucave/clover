@@ -54,8 +54,6 @@ export interface ApiCallInfo {
 /** Where a call comes from: a component, or a host half in the process the core started it in (`HostProcess`). */
 export type ApiCaller = "ui" | HostProcess;
 
-/** Why the split's calls aren't served yet (spec revision 19, §13 Split 1). */
-const SPLIT_NOT_YET = "comes with the split's engine pieces (spec revision 19, §3.6)";
 
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
 /** The MOSS Browser's calls: the bundled tree's Browser tool (its host half, for the session whose tool call it serves) and
@@ -166,13 +164,13 @@ export const API_CALLS = {
   /** Spec revision 19 (§3.6, G4 to G6), shapes pinned by lane SP; lane AF serves them. Code sessions by `sessions.read`;
    *  the activity feed and live pictures by kind; `pictures.publish` by the server's manifest (`picture: true`) and the
    *  tool call it serves, with no capability. */
-  "sessions.list": { capability: "sessions.read", where: "both", notYet: SPLIT_NOT_YET }, "sessions.get": { capability: "sessions.read", where: "both", notYet: SPLIT_NOT_YET },
-  "sessions.watch": { capability: "sessions.read", where: "both", notYet: SPLIT_NOT_YET }, "sessions.history": { capability: "sessions.read", where: "both", notYet: SPLIT_NOT_YET },
-  "sessions.follow": { capability: "sessions.read", where: "both", notYet: SPLIT_NOT_YET },
-  "activity.list": { capability: "activity.read.*", where: "both", notYet: SPLIT_NOT_YET }, "activity.watch": { capability: "activity.read.*", where: "both", notYet: SPLIT_NOT_YET },
-  "pictures.list": { capability: "picture.read.*", where: "both", notYet: SPLIT_NOT_YET }, "pictures.watch": { capability: "picture.read.*", where: "both", notYet: SPLIT_NOT_YET },
-  "pictures.open": { capability: "picture.read.*", where: "both", notYet: SPLIT_NOT_YET },
-  "pictures.publish": { where: "host", notYet: SPLIT_NOT_YET },
+  "sessions.list": { capability: "sessions.read", where: "both" }, "sessions.get": { capability: "sessions.read", where: "both" },
+  "sessions.watch": { capability: "sessions.read", where: "both" }, "sessions.history": { capability: "sessions.read", where: "both" },
+  "sessions.follow": { capability: "sessions.read", where: "both" },
+  "activity.list": { capability: "activity.read.*", where: "both" }, "activity.watch": { capability: "activity.read.*", where: "both" },
+  "pictures.list": { capability: "picture.read.*", where: "both" }, "pictures.watch": { capability: "picture.read.*", where: "both" },
+  "pictures.open": { capability: "picture.read.*", where: "both" },
+  "pictures.publish": { where: "host" },
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 
 /** Whether a plugin with these capabilities has a call, where it runs (§5.4: without the capability, the call doesn't

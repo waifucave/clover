@@ -87,11 +87,11 @@ describe("the acceptance unit's verdict", () => {
     expect(retryRecord("window-1", red, { first: "1.5", second: "3" })).toEqual({ unit: "window-1", scales: { first: "1.5", second: "3" }, rows: [{ n: 2, name: "a model key", detail: "added" }], problems: [] });
   });
 
-  test("the units a lane's check runs own their rows between them, once each, 66 of them; `main` is the chain and the window's three", () => {
+  test("the units a lane's check runs own their rows between them, once each, 67 of them; `main` is the chain and the window's three", () => {
     const seven = units().filter((u) => ["chain", "window-1", "window-2", "window-3", "workshop", "plugin-app", "browser"].includes(u.id));
     expect(seven.length).toBe(7);
     const names = seven.flatMap((u) => u.rows);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(66);
+    expect(names.length).toBe(67);
   });
 });

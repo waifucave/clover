@@ -71,7 +71,8 @@ export function apiChannel(o: ApiChannelOptions): ApiChannel {
       });
       let result: unknown;
       try {
-        result = await o.router({ pluginId: p.pluginId, process: o.process, path: p.call, args, caller });
+        const invocation = o.invocations.infoFor(p.pluginId, p.invocation);
+        result = await o.router({ pluginId: p.pluginId, process: o.process, path: p.call, args, caller, ...(invocation !== undefined ? { invocation } : {}) });
       } finally {
         if (subscription !== undefined) opening.delete(subscription);
       }

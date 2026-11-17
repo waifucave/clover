@@ -423,7 +423,9 @@ export class CorePluginHost implements PluginHost {
         if (params?._meta !== undefined) delete params._meta[MCP_INVOCATION_META];
         if (as !== undefined && typeof copy.method === "string" && "id" in copy) {
           const invocation = `call_${randomUUID()}`;
-          const end = this.invocations.open(invocation, { pluginId, caller: as, ...(as.kind === "session" ? { session: as.sessionId } : {}) });
+          // A tool call: the server it runs on and its name, from the request itself (the core made it), for a live picture.
+          const named = copy.method === "tools/call" ? (copy.params as { name?: unknown } | undefined)?.name : undefined;
+          const end = this.invocations.open(invocation, { pluginId, caller: as, ...(as.kind === "session" ? { session: as.sessionId } : {}), server, ...(typeof named === "string" ? { tool: named } : {}) });
           pending.set(copy.id, () => {
             pending.delete(copy.id);
             end();

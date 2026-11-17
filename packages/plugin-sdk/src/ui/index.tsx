@@ -17,7 +17,7 @@ import { cssProperty } from "../catalogs/tokens";
 import { COMPONENT_CALLS, fromLayerWire, listenerArgOf, toLayerWire } from "../catalogs/layer-calls";
 import type { PluginApi, ShellAccount, ShellApp, ShellState, Unsubscribe } from "../api/plugin-api";
 import type { StreamMeta, StreamOpenEvent, StreamOpenOptions, StreamReadEvent } from "../api/plugin-api";
-import { acceptStreams, openStream, pointStream, type StreamsTransport } from "../api/streams";
+import { acceptStreams, openPicture, openStream, pointStream, type StreamsTransport } from "../api/streams";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
@@ -539,8 +539,8 @@ export function Spot({ name, spotKey, entry: entryRef, only, props, fallback, fo
   const hints = useContext(SpotHints);
   const r = rt();
   const [view, setView] = useState<SpotView | undefined>(undefined);
-  // A panel's `when.session` is the kind of session the shell shows it for: the `moss` layer says so in the props it gives the spot (the main process heeds it from that layer only).
-  const propKind = name === "panel" ? (props as { sessionKind?: unknown } | undefined)?.sessionKind : undefined;
+  // A panel's `when.session` (and what a conversation's spots need to read: a code session is read with `sessions.read`) is the kind of session the shell shows it for: the `moss` layer says so in the props it gives the spot (the main process heeds it from that layer only).
+  const propKind = name === "panel" || name === "conversation" ? (props as { sessionKind?: unknown } | undefined)?.sessionKind : undefined;
   const session = hints.session ?? (typeof propKind === "string" ? propKind : undefined);
   const resolve = useCallback(() => {
     const h = { ...(session !== undefined ? { session } : {}), ...(entry !== undefined ? { entry } : {}), ...(forBot !== undefined ? { bot: forBot } : {}) };
@@ -1197,6 +1197,10 @@ export function usePluginApi(): PluginApi {
         open: (name: string, opts?: StreamOpenOptions, onEvent?: (e: StreamOpenEvent) => void) => openStream(layerStreams(part.mount, part.entry.pluginId), name, opts, onEvent),
         accept: (name: string, onStream: (s: ReadableStream<Uint8Array>, meta: StreamMeta) => void) => acceptStreams(layerStreams(part.mount, part.entry.pluginId), name, onStream),
       } as unknown as Partial<PluginApi["streams"]>,
+      // A live picture's frames a component reads are a Web stream made from a watch; publishing is a host half's.
+      pictures: {
+        open: (picture: string, opts?: { maxFps?: number; signal?: AbortSignal }) => openPicture(layerStreams(part.mount, part.entry.pluginId), picture, opts),
+      } as unknown as Partial<PluginApi["pictures"]>,
       terminal: terminalApi(part.mount, part.entry.pluginId),
       shell: shellApi(part.mount),
       conversation: {

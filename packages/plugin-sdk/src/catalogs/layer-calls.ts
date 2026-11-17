@@ -62,6 +62,14 @@ export const LISTENER_ARGS = {
   "streams.open": { at: 2 },
   "streams.accept": { at: 1 },
   "points.stream": { at: 5 },
+  // A live picture's two ends are watches too (the same Web streams, the SDK's `openPicture` and `publishPicture`), and the
+  // reads by kind are plain watches.
+  "pictures.open": { at: 2 },
+  "pictures.publish": { at: 1 },
+  "pictures.watch": { at: 1 },
+  "activity.watch": { at: 1 },
+  "sessions.watch": { at: 0 },
+  "sessions.follow": { at: 1 },
 } as const satisfies Partial<Record<ApiCallPath, ListenerArg>>;
 
 /** The members whose arguments include a function, by the API's own signatures. */
@@ -75,7 +83,9 @@ type Untyped = { [P in ApiCallPath]: unknown[] extends ApiCallArgs<P> ? P : neve
  *  function can be read among them, and the table's word is all there is. */
 type Open = { [P in ApiCallPath]: unknown extends ApiCallArgs<P>[number] ? P : never }[ApiCallPath];
 type Missing = Exclude<ListenerPaths, keyof typeof LISTENER_ARGS>;
-type Extra = Exclude<keyof typeof LISTENER_ARGS, ListenerPaths | Untyped | Open>;
+/** The two ends of a live picture: Web streams the SDK makes from a watch, typed without a function argument. */
+type Streamed = "pictures.open" | "pictures.publish";
+type Extra = Exclude<keyof typeof LISTENER_ARGS, ListenerPaths | Untyped | Open | Streamed>;
 const _listenersInStep: [Missing, Extra] extends [never, never] ? true : { missing: Missing; extra: Extra } = true;
 void _listenersInStep;
 

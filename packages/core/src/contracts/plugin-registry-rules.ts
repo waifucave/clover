@@ -2,7 +2,7 @@
 // spots, unique entry ids and namespaces, private points, the catalog's declarations, and the order changes come in.
 // The fake and the real registry (`packages/core/src/registry/`) both compute their snapshots here, so the rules the
 // conformance suite pins are written once; what differs is where plugins come from (folders, OKs, the synced list).
-import { BUNDLED_ROOT_PLUGIN, NOT_AVAILABLE_YET, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/moss-protocol";
+import { BUNDLED_ROOT_PLUGIN, NOT_AVAILABLE_YET, grantReadsBots, grantReadsSessions, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/moss-protocol";
 import { CORE_SPOTS, UNIQUE_ENTRY_FIELD, type Contribution, type PluginRecord, type RegisteredPoint, type RegistryChange } from "./plugin-registry";
 import type { CoreEntries, Manifest, PointDecl } from "./sdk-types";
 
@@ -21,6 +21,10 @@ export interface RegistryPlugin {
   /** The top-level folder's tree hash now (`sha256:<hex>`). */
   hash: string;
   okHash?: string;
+  /** The catalog revision its OK was given at (`GRANT_REVISION` when the user answered the card or the build granted it;
+   *  absent: an OK from before revisions were kept). A grant older than revision 19 reads neither kind of data until the
+   *  plugin asks again (`grantsAtRevision`). */
+  okRevision?: number;
   /** A card-styling change waits for its OK. */
   cardHeld: boolean;
   /** The validator refused it: its reason. */
@@ -296,7 +300,8 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       // (§5.6), so an OK'd tree's capabilities are always the OK's or fewer; nothing is granted before the OK, after a
       // refusal or a block, or for an invalid plugin.
       // Any plugin may hold any capability (the owner, 2026-11-15: "Yes, all with a warning"): the OK is the gate.
-      granted: held.approved && top.approved && !["found", "refused", "invalid"].includes(state) ? [...(m.capabilities ?? [])] : [],
+      granted: held.approved && top.approved && !["found", "refused", "invalid"].includes(state) ? grantsAtRevision(m.capabilities ?? [], top.okRevision) : [],
+      ...(top.okRevision === undefined ? {} : { okRevision: top.okRevision }),
       issues: structuredClone(held.issues ?? []),
       provenance: held.provenance ?? { by: "user-app", at: 0 },
     });
@@ -339,4 +344,17 @@ function entriesOf(plugins: ReadonlyMap<string, RegistryPlugin>, id: string): Co
     }
   }
   return out;
+}
+
+/** What an OK given at catalog `okRevision` grants of `capabilities` (spec revision 19 §3.6, the controller's ruling of
+ *  2026-11-17): a grant made before the split reads NEITHER kind of data until the plugin asks again, so its
+ *  `conversation.read` (which then meant every conversation) and `sessions.read` are left out; everything else it was OK'd
+ *  for keeps running. The one rule every gate inherits, since each reads a plugin's grant from the record. */
+export function grantsAtRevision(capabilities: readonly string[], okRevision: number | undefined): string[] {
+  return capabilities.filter((c) => (c !== "conversation.read" || grantReadsBots(okRevision)) && (c !== "sessions.read" || grantReadsSessions("sessions.read", okRevision)));
+}
+
+/** Whether an OK given at `okRevision` holds a grant the split narrowed: the plugin asks again for it. */
+export function grantAsksAgain(capabilities: readonly string[], okRevision: number | undefined): boolean {
+  return grantsAtRevision(capabilities, okRevision).length !== capabilities.length;
 }

@@ -15,7 +15,7 @@
 //   notifications on its own connection; a plugin reads one through the plugin API's `pictures` (a byte stream).
 import { z } from "zod";
 import { utf16 } from "./strings";
-import { AnyPluginId, BotId, Ok, SessionId, Timestamp } from "./common";
+import { AnyPluginId, BotId, Ok, SessionId, Timestamp, type SessionKind } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 // -------------------------------------------------------------------------------------------------
@@ -60,6 +60,47 @@ export function grantReadsBots(okRevision: number | undefined): boolean {
  *  never older; this answers for an old `conversation.read`, which never reads code sessions). */
 export function grantReadsSessions(capability: "conversation.read" | "sessions.read", okRevision: number | undefined): boolean {
   return capability === "sessions.read" && okRevision !== undefined && okRevision >= CONVERSATION_READ_NARROWED_AT;
+}
+
+/** The kind of data a session is, the one mapping every gate uses (§3.6, the controller's ruling 6 of 2026-11-17): a bot's
+ *  main conversation and its side threads (a routine run) are `bots`; a coding session the user started is `sessions`; a
+ *  background agent is a bot's coding task, which is a code session that carries its bot's id, so `sessions` as well (the
+ *  bot's own activity shows it as work, and its `agent_message` and `agent_finished` are posted into the bot's own
+ *  conversation, which stays `bots`). */
+export function dataKindOfSession(session: { kind: SessionKind }): DataKind {
+  return session.kind === "bot" || session.kind === "side-thread" ? "bots" : "sessions";
+}
+
+/** Where each family-gated core event keeps the kind it is about (a `.*` capability needs one; an event with no row here
+ *  is heard by no plugin). Never a prefix match on a capability: the kind comes from the event's own payload. */
+const EVENT_KIND_PATH: Readonly<Record<string, (event: Record<string, unknown>) => unknown>> = {
+  session_changed: (e) => dataKindOfSessionLike(e["session"]),
+  activity_changed: (e) => ((e["activity"] as { subject?: { kind?: unknown } } | undefined)?.subject?.kind),
+  picture_changed: (e) => ((e["picture"] as { kind?: unknown } | undefined)?.kind),
+  picture_ended: (e) => e["kind"],
+};
+
+function dataKindOfSessionLike(session: unknown): DataKind | undefined {
+  const kind = (session as { kind?: unknown } | null | undefined)?.kind;
+  return kind === "bot" || kind === "side-thread" || kind === "agent" || kind === "coding" ? dataKindOfSession({ kind }) : undefined;
+}
+
+/** The kind of data a family-gated core event is about, or undefined. */
+export function eventDataKind(type: string, event: unknown): DataKind | undefined {
+  const read = EVENT_KIND_PATH[type];
+  if (read === undefined || typeof event !== "object" || event === null) return undefined;
+  const kind = read(event as Record<string, unknown>);
+  return kind === "sessions" || kind === "bots" ? kind : undefined;
+}
+
+/** Whether a plugin holding `capabilities` may hear a core event whose spec names `capability` (`pluginMayCall`'s twin for
+ *  events): no capability, anyone; a plain one, the plugin that holds it; a family by kind (`conversation.*`,
+ *  `activity.read.*`, `picture.read.*`), the capability of the event's own kind, and none when the event names no kind. */
+export function pluginMayHear(spec: { type: string; capability?: string }, capabilities: readonly string[], event: unknown): boolean {
+  if (spec.capability === undefined) return true;
+  if (!isKindFamily(spec.capability)) return capabilities.includes(spec.capability);
+  const kind = eventDataKind(spec.type, event);
+  return kind !== undefined && capabilities.includes(kindCapability(spec.capability, kind));
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -136,6 +177,9 @@ export const PicturePublishMeta = z.strictObject({
   width: z.number().int().positive().max(PICTURE_MAX_WIDTH),
   height: z.number().int().positive().max(PICTURE_MAX_HEIGHT),
   screen: z.boolean().optional(),
+  /** The picture ends when the tool call it was published in ends (`why: "call-ended"`), instead of outliving it until its
+   *  publisher ends it (the controller's ruling 5 of 2026-11-17: the default is to outlive the call). */
+  endsWithCall: z.boolean().optional(),
 });
 export type PicturePublishMeta = z.infer<typeof PicturePublishMeta>;
 
@@ -163,7 +207,7 @@ export const PictureEndedEvent = coreEvent("picture_ended", {
   id: PictureId,
   kind: DataKind,
   session: SessionId,
-  why: z.enum(["publisher", "session", "plugin-stopped", "too-large"]),
+  why: z.enum(["publisher", "session", "plugin-stopped", "too-large", "call-ended"]),
 });
 
 export const ACTIVITY_METHODS = {
@@ -209,6 +253,6 @@ export const ACTIVITY_EVENTS = {
   pictureEnded: defineEvent({
     type: "picture_ended", owner: "AF", roles: ["app", "layer"], schema: PictureEndedEvent, capability: "picture.read.*", transient: true,
     fixture: { type: "picture_ended", ts: 1781270000000, id: "pic_abcdef", kind: "bots", session: "s_alpha", why: "publisher" },
-    doc: "A live picture ended: its publisher closed it, its session ended, its plugin stopped, or a frame was too large.",
+    doc: "A live picture ended: its publisher closed it or went, its session ended, its plugin stopped, a frame was too large, or the tool call it was tied to ended.",
   }),
 } as const;

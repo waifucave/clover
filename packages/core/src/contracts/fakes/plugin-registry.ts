@@ -11,6 +11,7 @@ import {
   type SwitchResult,
 } from "../plugin-registry";
 import type { CoreEntries, Manifest, PointDecl } from "../sdk-types";
+import { GRANT_REVISION } from "@waifucave/moss-protocol";
 import { EMPTY_SNAPSHOT, computeRegistry, parentOf, registryChanges, type RegistryPlugin, type RegistrySnapshot } from "../plugin-registry-rules";
 
 export interface FakePluginInput {
@@ -288,6 +289,8 @@ export class FakePluginRegistry implements PluginRegistry {
       if (!h.appParts) p.appParts = false;
       if (i.source !== undefined) p.source = i.source;
       if (h.okHash !== undefined) p.okHash = h.okHash;
+      // The fake's OKs are all given now: at the catalog revision the split's reads by kind need (the real core's records keep it).
+      if (h.approved) p.okRevision = GRANT_REVISION;
       if (i.invalid !== undefined) p.invalid = i.invalid;
       if (h.stopped !== undefined) p.stopped = h.stopped;
       if (i.folder !== undefined) p.folder = i.folder;

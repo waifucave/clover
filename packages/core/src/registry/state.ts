@@ -33,6 +33,8 @@ export interface PluginState {
   provenance?: PluginProvenance;
   /** The tree hash the user last OK'd. */
   okHash?: string;
+  /** The catalog revision that OK was given at (`GRANT_REVISION`); absent for one from before revisions were kept. */
+  okRevision?: number;
   /** The tree hash the user refused; it stays off until its folder changes. */
   refusedHash?: string;
   /** A card-styling change waits for its OK (§5.5). */
@@ -132,6 +134,7 @@ const StoredPlugin = z.object({
   source: PluginSourceSchema.optional(),
   provenance: PluginProvenanceSchema.optional(),
   okHash: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional(),
+  okRevision: z.number().int().nonnegative().optional(),
   refusedHash: z.string().optional(),
   cardHeld: z.boolean().optional(),
   appParts: z.literal(false).optional(),

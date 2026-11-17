@@ -1363,9 +1363,9 @@ export const NOTIFIER_OK_LINE = "It is told when your bots need you or have answ
 export const PILL_TARGET_OK_LINE = "It can be picked as a target in the Dispatch pill: what you then type there goes to it, as your own words, and not to a bot.";
 
 export const HOST_START_OK_LINES = {
-  each: "It runs in the background from the moment MOSS starts, on every computer it's installed on.",
-  main: "It runs in the background from the moment MOSS starts, on your main computer.",
-  chosen: "It runs in the background from the moment MOSS starts, on the computer you add it on.",
+  each: "It runs in the background from the moment MOSS or MOSS Code starts, on every computer it's installed on.",
+  main: "It runs in the background from the moment MOSS or MOSS Code starts, on your main computer.",
+  chosen: "It runs in the background from the moment MOSS or MOSS Code starts, on the computer you add it on.",
 } as const;
 
 /** What a plugin tree runs without being asked, for its OK (§5.2, §7): the routine triggers it adds (a routine that

@@ -18,8 +18,8 @@
 // forward from the session's start, a page at a time by its `cursor`, so an old session opens at its start and the
 // next page comes as the reader nears the end (the view's `onLoadLater`), until the whole session is shown.
 import { plain } from "./local";
-import { Spot, useApprovals, useCore, usePluginApi, useSpotEntries, useTokens } from "@waifucave/moss-plugin-sdk/ui";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { Spot, SpotHints, useApprovals, useCore, usePluginApi, useSpotEntries, useTokens } from "@waifucave/moss-plugin-sdk/ui";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
 import type { AgentStatus } from "./agents";
 import { ConversationView, DEFAULT_RENDERERS, type MessageRenderers } from "./ConversationView";
 import type { MessageSpotProps } from "./context";
@@ -63,6 +63,15 @@ function messageActionsOf(entries: readonly unknown[]): MessageAction[] {
   return out;
 }
 
+/** A spot inside the transcript (a message, its add-ons, a tool's result): drawn only once this part knows the kind of the
+ *  session it shows, which it tells the core (`SpotHints`) so that what a plugin needs to read it (`sessions.read` for a code
+ *  session, `conversation.read` for a bot's conversation) is the data's own, never the placing part's say. Until then it draws
+ *  its fallback, and no plugin's entry is asked. */
+function Inner(p: ComponentProps<typeof Spot>) {
+  const known = useContext(SpotHints).session !== undefined;
+  return known ? <Spot {...p} /> : <>{p.fallback ?? null}</>;
+}
+
 /** How many past events a tab reads before following live. */
 const HISTORY_PAGE = 500;
 
@@ -72,7 +81,7 @@ function spotRenderers(): Partial<MessageRenderers> {
   for (const kind of Object.keys(DEFAULT_RENDERERS) as (keyof MessageRenderers)[]) {
     const Standard = DEFAULT_RENDERERS[kind] as ComponentType<any>;
     const Through = (p: MessageSpotProps<unknown> & Record<string, unknown>) => (
-      <Spot name="conversation.message" spotKey={kind} props={{ bot: p.bot, session: p.session, item: p.item, ctx: p.ctx }} fallback={<Standard {...p} />} />
+      <Inner name="conversation.message" spotKey={kind} props={{ bot: p.bot, session: p.session, item: p.item, ctx: p.ctx }} fallback={<Standard {...p} />} />
     );
     Through.displayName = `Spot(conversation.message:${kind})`;
     out[kind] = Through;
@@ -95,6 +104,19 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   /** Which read is current (a new session starts another), and whether a next page is on its way. */
   const reading = useRef({ session: "", loading: false });
   const archived = props.archived === true;
+  // The kind of the session shown, from the session itself (never from what the placing part says): a live session's own
+  // view says it; an archived one's can't be told, so its spots need both reads.
+  const [kindOf, setKindOf] = useState<{ session: string; kind: string } | undefined>(undefined);
+  useEffect(() => {
+    if (archived) return;
+    let live = true;
+    conv?.get?.(props.session).then((v) => live && setKindOf({ session: props.session, kind: String(v.kind) }), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, [conv, archived, props.session]);
+  const shownKind = archived ? "archived" : kindOf?.session === props.session ? kindOf.kind : undefined;
+  const hints = useMemo(() => (shownKind === undefined ? {} : { session: shownKind }), [shownKind]);
 
   useEffect(() => {
     let live = true;
@@ -222,31 +244,33 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   );
 
   return (
-    <ConversationView
-      bot={props.bot}
-      session={props.session}
-      items={items as ConversationItem[]}
-      turn={turn}
-      now={now}
-      hasEarlier={hasEarlier}
-      loaded={loadedFor === props.session}
-      {...(archived ? { initialFollow: false, hasLater: later !== undefined, onLoadLater: loadLater } : {})}
-      {...(here ? { device: here } : {})}
-      renderers={RENDERERS}
-      agentStatus={agentStatus}
-      renderToolResult={(call, standard): ReactNode => (
-        <Spot name="tool.result" spotKey={call.name} props={{ ...at, tool: call.name, item: call, ctx: {} }} fallback={standard} />
-      )}
-      renderMessageExtra={(item) => <Spot name="conversation.message.extra" props={{ ...at, item, ctx: {} }} />}
-      extraInline={extraInline}
-      onAnswerQuestion={archived ? undefined : (callId: string, answer: QuestionAnswer) => conv?.answer?.(props.session, callId, answer.answers)}
-      onOpenAgent={props.onOpenAgent}
-      onOpenFile={props.onOpenFile}
-      onCopy={(text) => void navigator.clipboard?.writeText(text)}
-      {...(messageActions.length > 0 && core !== undefined ? { messageActions, onMessageAction: runAction } : {})}
-      // Try again on a failed turn: the app's own door checks the session's log and sends the user's own words again.
-      onTryAgain={archived || !core ? undefined : () => core.call("session.resend", { session: props.session })}
-    />
+    <SpotHints.Provider value={hints}>
+      <ConversationView
+        bot={props.bot}
+        session={props.session}
+        items={items as ConversationItem[]}
+        turn={turn}
+        now={now}
+        hasEarlier={hasEarlier}
+        loaded={loadedFor === props.session}
+        {...(archived ? { initialFollow: false, hasLater: later !== undefined, onLoadLater: loadLater } : {})}
+        {...(here ? { device: here } : {})}
+        renderers={RENDERERS}
+        agentStatus={agentStatus}
+        renderToolResult={(call, standard): ReactNode => (
+          <Inner name="tool.result" spotKey={call.name} props={{ ...at, tool: call.name, item: call, ctx: {} }} fallback={standard} />
+        )}
+        renderMessageExtra={(item) => <Inner name="conversation.message.extra" props={{ ...at, item, ctx: {} }} />}
+        extraInline={extraInline}
+        onAnswerQuestion={archived ? undefined : (callId: string, answer: QuestionAnswer) => conv?.answer?.(props.session, callId, answer.answers)}
+        onOpenAgent={props.onOpenAgent}
+        onOpenFile={props.onOpenFile}
+        onCopy={(text) => void navigator.clipboard?.writeText(text)}
+        {...(messageActions.length > 0 && core !== undefined ? { messageActions, onMessageAction: runAction } : {})}
+        // Try again on a failed turn: the app's own door checks the session's log and sends the user's own words again.
+        onTryAgain={archived || !core ? undefined : () => core.call("session.resend", { session: props.session })}
+      />
+    </SpotHints.Provider>
   );
 }
 
