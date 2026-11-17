@@ -42,7 +42,9 @@ export function viewTakesInput(program: Program | undefined, tab: Pick<TabView, 
 export interface HostDoorDeps {
   supervisor: EngineHostSupervisor;
   /** Sends `host_changed` to the connections that may have it. */
-  emit(event: { type: "host_changed"; state: HostStatus["state"]; crashes: number; release?: string; bundlePath?: string; since: number }): void;
+  emit(event: { type: "host_changed"; state: HostStatus["state"]; crashes: number; release?: string; bundlePath?: string; since: number; gaveUp?: boolean }): void;
+  /** The supervisor's state changed: the windows' mounts and the pair follow (the MOSS server's `hostScreen`). */
+  screenChanged?(status: HostStatus): void;
   now(): number;
   /** The pid holding the host lock (the host's own process), when the OS has a lock. */
   lockPid(): number | null;
@@ -56,7 +58,7 @@ export interface HostDoorDeps {
   /** A tab the browser knows, by id (the MOSS Browser's `BrowserService`). */
   tab(id: string): TabView | undefined;
   /** A tab's pictures (`tab-frames.ts`); `accept` takes `host.tab.frame`. */
-  frames: TabFrames & Pick<EngineTabFrames, "accept" | "ownerGone">;
+  frames: TabFrames & Pick<EngineTabFrames, "accept" | "ownerGone" | "reown">;
   log?(line: string): void;
 }
 
@@ -81,9 +83,11 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
   let lastState: HostStatus["state"] | undefined;
   const views = new Map<string, ViewStream>();
 
+  const statusNow = (s: HostStatus) => ({ state: s.state, crashes: s.crashes, ...(s.release !== undefined ? { release: s.release } : {}), ...(s.bundlePath !== undefined ? { bundlePath: s.bundlePath } : {}), since, ...(s.gaveUp === true ? { gaveUp: true } : {}) });
   const unwatch = deps.supervisor.watch((s) => {
     if (s.state !== lastState) { lastState = s.state; since = deps.now(); }
-    deps.emit({ type: "host_changed", state: s.state, crashes: s.crashes, ...(s.release !== undefined ? { release: s.release } : {}), ...(s.bundlePath !== undefined ? { bundlePath: s.bundlePath } : {}), since });
+    deps.emit({ type: "host_changed", ...statusNow(s) });
+    deps.screenChanged?.(s);
   });
 
   const fromHost = (conn: MossConn, method: string): void => {
@@ -120,6 +124,8 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
         throw new MossRpcError(ERR.RETRY, "another host connection is still live");
       }
       host = conn;
+      // The pages' owner may have changed (a host took them from the window): open views' streams move to it.
+      queueMicrotask(() => deps.frames.reown());
       deps.supervisor.ready({ pid: deps.lockPid() ?? 0, release: p.release, bundlePath: p.bundlePath, safeMode: p.safeMode });
       log(`[host] ready: ${p.parts.surfaces} surfaces, ${p.parts.background} background parts, ${p.parts.tabs.length} tabs${p.safeMode ? ", in safe mode" : ""}`);
       return { ok: true };
@@ -142,6 +148,10 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
       // After the answer has gone: the host is told to stop as part of quitting everything.
       setTimeout(() => deps.quitEverything(), 0);
       return { done: true };
+    },
+    [HOST_METHODS.hostStatus.name]: (_conn, raw) => {
+      HOST_METHODS.hostStatus.params.parse(raw ?? {});
+      return statusNow(deps.supervisor.status());
     },
     [HOST_METHODS.hostTabFrame.name]: (conn, raw) => {
       const p = HOST_METHODS.hostTabFrame.params.parse(raw);
@@ -198,6 +208,7 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
       for (const [id, v] of [...views]) if (v.connId === conn.connId) closeView(id);
       deps.frames.ownerGone(conn.connId);
       hostClosed(conn);
+      deps.frames.reown();
     },
     dispose() {
       unwatch();

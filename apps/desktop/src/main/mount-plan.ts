@@ -31,11 +31,15 @@ export function hostOwnsScreen(state: HostState | undefined): boolean {
 /** Today's whole list, for an engine whose hello names no mount (older than the split). */
 const EVERYTHING: Pick<MountList, "points" | "browserPages" | "drawsCards"> = { points: ["themes", "locales", "app.root", "app.surface", "app.background", "app.tray"], browserPages: true, drawsCards: true };
 
-export function mountPlan(program: DesktopProgram, mount: MountList | undefined, hostState?: HostState): MountPlan {
+/** Today's list without the screen's surfaces: a host the engine gave up on (`gaveUp`) leaves no island anywhere (the
+ *  engine's door says the same), and the window draws its cards when it is focused. */
+const NO_ISLAND: Pick<MountList, "points" | "browserPages" | "drawsCards"> = { ...EVERYTHING, points: EVERYTHING.points.filter((p) => p !== "app.surface") };
+
+export function mountPlan(program: DesktopProgram, mount: MountList | undefined, hostState?: HostState, gaveUp = false): MountPlan {
   let list: Pick<MountList, "points" | "browserPages" | "drawsCards"> = mount ?? (program === "host" ? SURFACE_MOUNTS.host : EVERYTHING);
   // Once the window has heard the host's state, that decides: a host that owns the screen takes it, one that went away
-  // (stopped, absent) gives it back.
-  if (program === "code" && hostState !== undefined) list = hostOwnsScreen(hostState) ? SURFACE_MOUNTS.code : EVERYTHING;
+  // (stopped, absent) gives it back, one the engine gave up on gives back all but the island.
+  if (program === "code" && hostState !== undefined) list = hostOwnsScreen(hostState) ? SURFACE_MOUNTS.code : gaveUp ? NO_ISLAND : EVERYTHING;
   const has = (p: string) => list.points.includes(p);
   return {
     mainWindow: program === "code",

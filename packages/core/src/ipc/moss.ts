@@ -166,6 +166,8 @@ export interface MossServerDeps {
   /** Lane HS: whether a background host owns the screen and the pages now (the supervisor's state), so a `code` window
    *  mounts only its own points (`host/mounts.ts`'s `hostOwnsScreen`). Absent: none ever does. */
   hostOwnsScreen?(): boolean;
+  /** lane HS: the engine gave up starting the host (`host_changed`'s `gaveUp`): no island anywhere. */
+  hostGaveUp?(): boolean;
   /** Settles once the daemon's late doors are in: the parts that start after the socket listens (the plugin registry's
    *  `plugin.auth.*`, the links' `devices.*`, the computer node's and the bot side's methods) have each finished their
    *  first start or are waiting on something only the user can give (a locked secret store). A call to a method with no
@@ -276,6 +278,11 @@ export interface MossServer {
   /** Hears every connection that closed after its hello (its `surface` and `program` still on it), after the server let go
    *  of it: the hook for a lane that keeps state per connection (lane HS's host). Gives back the undo. */
   onClosed(fn: (conn: MossConn) => void): () => void;
+  // lane HS: start
+  /** The background host's state changed: the windows' mounts follow (the router's island with them), and the windows
+   *  leave the pair while a host owns the screen, or join it again when none does. */
+  hostScreen(owns: boolean): void;
+  // lane HS: end
   dispose(): void;
 }
 
@@ -287,7 +294,7 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   // Lane RT: the hello's surface and program (the door) and where each pending card is drawn (the router). The island is
   // live while a connection that draws it is (the host; until lane HS builds it, today's `code` window).
   // lane HS: start. A `code` window mounts the screen too only while no background host owns it (`host/mounts.ts`).
-  const door = new EngineSurfaceDoor({ legacy: () => !(deps.hostOwnsScreen?.() ?? false) });
+  const door = new EngineSurfaceDoor({ legacy: () => !(deps.hostOwnsScreen?.() ?? false), noIsland: () => deps.hostGaveUp?.() ?? false });
   /** The windows the pair took as its app (lane HS: none while a host owns the screen). */
   const pairApps = new Set<number>();
   // lane HS: end
@@ -812,6 +819,16 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       }, event, opts);
     },
 
+    // lane HS: start
+    hostScreen(owns: boolean) {
+      door.remount();
+      for (const c of conns.values()) {
+        if (c.role !== "app" || c.surface !== "code") continue;
+        if (owns && pairApps.delete(c.connId)) deps.pair?.appReleased(String(c.connId));
+        else if (!owns && !pairApps.has(c.connId)) { pairApps.add(c.connId); deps.pair?.appConnected(String(c.connId), c.features); }
+      }
+    },
+    // lane HS: end
     surfaces: { door, router },
 
     onClosed(fn) { closedHooks.add(fn); return () => { closedHooks.delete(fn); }; },

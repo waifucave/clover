@@ -2,13 +2,13 @@
 // app carrying a helper is the source, and a start checks the helper's signature before Launch Services.
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOST_LOCK_FILE, HOST_START_FILE } from "@waifucave/moss-protocol";
 import type { Runner } from "../../platform/login/live";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
-import { appRecordsSource, bundleRelease, DARWIN_O_EXLOCK, engineHostWorld, hostHelperPath, hostLockHolder, hostRequirement, parseHostCommand } from "../world";
+import { APP_RECORD_MAX_BYTES, appRecordsSource, bundleRelease, DARWIN_O_EXLOCK, isHostImage, engineHostWorld, hostHelperPath, hostLockHolder, hostRequirement, parseHostCommand } from "../world";
 
 const root = mkdtempSync(join(tmpdir(), "moss-host-world-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -162,4 +162,31 @@ test("a checkout's start on macOS goes through Launch Services with the run's en
   expect(runs[0]!.join(" ")).not.toContain("dummy123");
   expect(runs[0]!.join(" ")).not.toContain("MOSS_HOST_COMMAND");
   expect(runs[0]!.slice(runs[0]!.indexOf("--args"))).toEqual(["--args", "/repo/apps/desktop", "--moss-program=host", "--safe-mode"]);
+});
+
+describe("the reviewer's part one (S7, the records)", () => {
+  test("a pid is ended only when its image is MOSS's host helper inside an app (or the checkout's own program)", () => {
+    expect(isHostImage("/Applications/MOSS Code.app/Contents/Frameworks/MOSS Host.app/Contents/MacOS/MOSS Host")).toBe(true);
+    expect(isHostImage("/Applications/MOSS.app/Contents/Frameworks/MOSS Host Dev.app/Contents/MacOS/MOSS Host Dev")).toBe(true);
+    expect(isHostImage("/usr/bin/sshd")).toBe(false);
+    expect(isHostImage("/tmp/MOSS Host.app/Contents/MacOS/MOSS Host")).toBe(false);
+    expect(isHostImage("/w/Electron.app/Contents/MacOS/Electron", "/w/Electron.app/Contents/MacOS/Electron")).toBe(true);
+  });
+
+  test("records: a link or an oversized file is never read; a program's newest is found for the menu's Open", () => {
+    const home = mkdtempSync(join(tmpdir(), "moss-hs-rec-"));
+    try {
+      const dir = join(home, "apps");
+      mkdirSync(dir, { recursive: true });
+      const rec = (program: "moss" | "code", release: string) => JSON.stringify({ record: 1, program, bundlePath: `/A/${program}.app`, release, carries: { engine: true, host: true }, seenAt: 1 });
+      writeFileSync(join(dir, "code.json"), rec("code", "1.111.1"));
+      writeFileSync(join(home, "elsewhere.json"), rec("moss", "9.0.0"));
+      symlinkSync(join(home, "elsewhere.json"), join(dir, "linked.json"));
+      writeFileSync(join(dir, "big.json"), `${rec("moss", "8.0.0").slice(0, -1)},"pad":"${"x".repeat(APP_RECORD_MAX_BYTES)}"}`);
+      const exists = () => true;
+      expect(appRecordsSource(home, exists)?.program).toBe("code");
+      expect(appRecordsSource(home, exists, "moss")).toBeUndefined();
+      expect(appRecordsSource(home, exists, "code")?.bundlePath).toBe("/A/code.app");
+    } finally { rmSync(home, { recursive: true, force: true }); }
+  });
 });

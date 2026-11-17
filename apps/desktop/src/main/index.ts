@@ -103,6 +103,9 @@ let hostLock: HostLock | null | undefined;
 let mountNow: MountPlan = mountPlan(program, program === "host" ? SURFACE_MOUNTS.host : undefined);
 let helloMount: MountList | undefined;
 let hostStateNow: HostState | undefined;
+/** lane HS: the engine stopped trying to start the host (`host_changed`'s `gaveUp`), and whether the notice was shown. */
+let hostGaveUp = false;
+let hostDownNoticed = false;
 // lane HS: end
 const args = parseLaunchArgs(process.argv, process.env);
 const headless = args.headless;
@@ -1411,10 +1414,7 @@ function makePair(): Pair {
       else log("pair: ignored a card_requested event that isn't one");
     }
     // lane HS: the host's state, so a window lets the screen's parts go once a host owns them, and takes them back after.
-    if (type === "host_changed") {
-      const st = (params as { state?: unknown }).state;
-      if (typeof st === "string") { hostStateNow = st as HostState; applyMount(); }
-    }
+    if (type === "host_changed") hostStatusHeard(params);
     if (type === "card_placed") {
       const parsed = CardPlacedEvent.safeParse(params);
       if (parsed.success) {
@@ -1497,14 +1497,37 @@ async function hostStopEverything(): Promise<void> {
  *  window hears the host's state from then on (`host_changed`). */
 async function mounted(client: DaemonClient, hello: { mount?: MountList }): Promise<void> {
   helloMount = hello.mount;
-  if (program === "code") await client.request("events.subscribe", { areas: ["host"] }, 5_000).catch(() => undefined);
+  if (program === "code") {
+    await client.request("events.subscribe", { areas: ["host"] }, 5_000).catch(() => undefined);
+    // The state now (S2): a change between the hello and the subscription is not missed. An older engine has no read.
+    hostStatusHeard(await client.request("host.status", {}, 5_000).catch(() => undefined));
+  }
   applyMount();
   if (program === "host") await sayHostReady(client, hostDeps());
 }
 
+/** `host_changed`, or `host.status`'s answer: the window's mount follows; a host the engine gave up on is said once. */
+function hostStatusHeard(params: unknown): void {
+  const p = (params ?? {}) as { state?: unknown; gaveUp?: unknown };
+  if (typeof p.state !== "string") return;
+  hostStateNow = p.state as HostState;
+  hostGaveUp = p.state === "absent" && p.gaveUp === true;
+  applyMount();
+  if (!hostGaveUp) { hostDownNoticed = false; return; }
+  if (hostDownNoticed || program !== "code") return;
+  hostDownNoticed = true;
+  const strings = runtime.coreStrings();
+  const title = translate(strings, "moss.core.host-down.title");
+  const body = translate(strings, "moss.core.host-down.body");
+  // One plain notice, silent; a headless run shows none and says so.
+  if (headless || !Notification.isSupported()) { log(`host: the engine gave up starting the host (the notice not shown: ${headless ? "headless" : "no notifications"})`); return; }
+  log("host: the engine gave up starting the host (the notice shown)");
+  try { new Notification({ title, body, silent: true }).show(); } catch { /* the desktop has no notifications */ }
+}
+
 /** Applies the mount plan now: the screen's surfaces, the background parts, the pages, and whose menu-bar icon. */
 function applyMount(): void {
-  const next = mountPlan(program, helloMount, hostStateNow);
+  const next = mountPlan(program, helloMount, hostStateNow, hostGaveUp);
   const was = mountNow;
   mountNow = next;
   if (JSON.stringify(was) !== JSON.stringify(next)) log(`mount: ${JSON.stringify(next)}`);

@@ -673,6 +673,23 @@ describe("MOSS connections (C-M1)", () => {
     expect(b.pair.status()).toMatchObject({ appConnected: false, crashesInWindow: 1, startPending: "crash" });
   });
 
+  // lane HS (the reviewer's part one): a window the pair took leaves it when a background host takes the screen, so its
+  // quitting alone is no crash and is never restarted; when no host owns the screen again it is the pair's app again.
+  test("the pair: a window released when a host takes the screen goes with no crash; it rejoins when the host is gone", async () => {
+    const b = await boot();
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    expect(b.pair.status().appConnected).toBe(true);
+    b.moss.hostScreen(true);
+    expect(b.pair.status().appConnected).toBe(false);
+    b.moss.hostScreen(false);
+    expect(b.pair.status().appConnected).toBe(true);
+    b.moss.hostScreen(true);
+    app.close();
+    await Bun.sleep(100);
+    expect(b.pair.status()).toMatchObject({ appConnected: false, crashesInWindow: 0, startPending: null });
+  });
+
   test("the heartbeat (R9): an app that answers app.ping stays; one that stops is ended and restarts in safe mode", async () => {
     const b = await boot({ heartbeat: { intervalMs: 20, timeoutMs: 150 } });
     const alive = await Client.connect(b.socketPath);

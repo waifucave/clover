@@ -533,6 +533,66 @@
         "additionalProperties": false
       }
     },
+    "host.status": {
+      "doc": "The background host's state now, as host_changed says it.",
+      "owner": "HS",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "starting",
+              "running",
+              "safe-mode",
+              "restarting",
+              "stopped",
+              "absent"
+            ]
+          },
+          "crashes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+          },
+          "bundlePath": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "since": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "gaveUp": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "state",
+          "crashes",
+          "since"
+        ],
+        "additionalProperties": false
+      }
+    },
     "host.tab.frame": {
       "doc": "One picture of a MOSS Browser tab, from the program that runs its pages, for the windows and tools that show it.",
       "owner": "HS",
@@ -945,6 +1005,9 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "gaveUp": {
+            "type": "boolean"
           }
         },
         "required": [

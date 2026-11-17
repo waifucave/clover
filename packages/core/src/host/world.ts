@@ -16,7 +16,7 @@
 // * A source checkout (not a dist build) may name its own start (`MOSS_HOST_COMMAND`, a JSON argv), which the engine
 //   runs as its child in its own process group, so a run that started the engine ends the host with it.
 import { execFileSync, spawn } from "node:child_process";
-import { closeSync, constants, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, readlinkSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { APP_RECORDS_DIR, AppInstallRecord, HOST_LOCK_FILE, HOST_START_FILE, PROGRAM_IDENTIFIERS, compareReleases, type HostExitReason } from "@waifucave/moss-protocol";
 import { DEVELOPER_ID_CLAUSES, MOSS_TEAM_ID } from "../bundled-identities";
@@ -56,19 +56,39 @@ export function hostLockHolder(home: string, os: DaemonPlatform): number | null 
 
 /** The newest app record under `home` that carries the host and whose bundle is still on disk (a release tie goes to
  *  the later record): `ReleaseHome.hostSource`'s rule, read straight from the files until lane RL serves it. */
-export function appRecordsSource(home: string, exists: (p: string) => boolean = existsSync): AppInstallRecord | undefined {
+/** A record file's text: a regular file, never followed through a link, at most `APP_RECORD_MAX_BYTES`. */
+export const APP_RECORD_MAX_BYTES = 64 * 1024;
+const APP_RECORDS_MAX = 64;
+function readRecordFile(path: string): string | undefined {
+  let fd: number;
+  try { fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)); } catch { return undefined; }
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.size > APP_RECORD_MAX_BYTES) return undefined;
+    const buf = Buffer.alloc(st.size);
+    const n = readSync(fd, buf, 0, st.size, 0);
+    return buf.subarray(0, n).toString("utf8");
+  } catch { return undefined; } finally { closeSync(fd); }
+}
+
+/** The newest app record that carries the host (or, with `program`, that program's newest), and whose bundle is there.
+ *  Lane RL's `hostSource` replaces it when RL lands. */
+export function appRecordsSource(home: string, exists: (p: string) => boolean = existsSync, program?: AppInstallRecord["program"]): AppInstallRecord | undefined {
   const dir = join(home, APP_RECORDS_DIR);
   let names: string[];
-  try { names = readdirSync(dir).filter((n) => n.endsWith(".json")); } catch { return undefined; }
+  try { names = readdirSync(dir).filter((n) => n.endsWith(".json")).slice(0, APP_RECORDS_MAX); } catch { return undefined; }
   let best: AppInstallRecord | undefined;
   for (const name of names) {
     let rec: AppInstallRecord;
     try {
-      const parsed = AppInstallRecord.safeParse(JSON.parse(readFileSync(join(dir, name), "utf8")));
+      const text = readRecordFile(join(dir, name));
+      if (text === undefined) continue;
+      const parsed = AppInstallRecord.safeParse(JSON.parse(text));
       if (!parsed.success) continue;
       rec = parsed.data;
     } catch { continue; }
-    if (!rec.carries.host || !exists(rec.bundlePath)) continue;
+    if (program !== undefined && rec.program !== program) continue;
+    if ((program === undefined && !rec.carries.host) || !exists(rec.bundlePath)) continue;
     if (best === undefined) { best = rec; continue; }
     const c = compareReleases(rec.release, best.release);
     if (c > 0 || (c === 0 && rec.seenAt > best.seenAt)) best = rec;
@@ -256,9 +276,42 @@ export function engineHostWorld(input: EngineHostWorldInput): HostWorld & HostWo
       if (!input.stopHost(reason)) log(`[host] no host connected to stop (${reason})`);
     },
     end(pid) {
-      // Only the process that holds the host lock right now (the supervisor checked), never by name or pattern.
+      // Only the process that holds the host lock right now (the supervisor checked), never by name or pattern, and only
+      // when its image is a host: the lock file's pid is its holder's own word.
       if (pid <= 0) return;
+      const image = processImage(pid);
+      if (image === undefined || !isHostImage(image, command?.[0])) { log(`[host] the lock's holder (pid ${pid}) is not a MOSS host by its image: left alone`); return; }
       try { process.kill(pid, "SIGKILL"); log(`[host] ended the wedged host (pid ${pid})`); } catch { /* gone already */ }
     },
   };
+}
+
+/** A process's executable path (macOS `ps -o comm=`, the exec path the kernel holds; Linux `/proc/<pid>/exe`). */
+export function processImage(pid: number): string | undefined {
+  try {
+    if (process.platform === "darwin") return execFileSync("ps", ["-o", "comm=", "-p", String(pid)], { encoding: "utf8", timeout: 5_000 }).trim() || undefined;
+    if (process.platform === "linux") return readlinkSync(`/proc/${pid}/exe`);
+  } catch { /* gone, or not ours to read */ }
+  return undefined;
+}
+
+/** Whether an image is MOSS's host: the helper's executable inside an app bundle (`MOSS Host[ Dev].app` in its
+ *  Frameworks), or, in a checkout's run, the program `MOSS_HOST_COMMAND` names. */
+export function isHostImage(image: string, sourceExe?: string): boolean {
+  if (sourceExe !== undefined && image === sourceExe) return true;
+  return /\.app\/Contents\/Frameworks\/MOSS Host( Dev)?\.app\/Contents\/MacOS\/[^/]+$/.test(image);
+}
+
+/** Opens MOSS or MOSS Code for the host's menu when it isn't running: the newest record of that program, through the OS
+ *  (Launch Services on macOS, so the app is its own responsible process). A checkout's run has no records: nothing. */
+export async function launchApp(input: { home: string; os: DaemonPlatform; run: Runner; exists?: (p: string) => boolean; log?: (line: string) => void }, program: "moss" | "code"): Promise<void> {
+  const rec = appRecordsSource(input.home, input.exists ?? existsSync, program);
+  if (rec === undefined) { input.log?.(`[host] no ${program === "moss" ? "MOSS" : "MOSS Code"} on disk to open`); return; }
+  const argv = input.os === "darwin" ? ["open", "-a", rec.bundlePath] : [rec.bundlePath];
+  if (input.os !== "darwin") {
+    try { spawn(rec.bundlePath, [], { detached: true, stdio: "ignore" }).unref(); } catch (e) { input.log?.(`[host] ${rec.bundlePath} did not open: ${(e as Error).message}`); }
+    return;
+  }
+  const r = await input.run(argv);
+  if (!r.ok) input.log?.(`[host] Launch Services did not open ${rec.bundlePath}`);
 }

@@ -111,6 +111,7 @@ import { GlossaryIndex, glossaryMethods } from "./glossary";
 import { appTabPort } from "./browser/app-port";
 import { startHostSupervision, type HostSupervision } from "./host/engine";
 import { hostOwnsScreen } from "./host/mounts";
+import { pagesOwner } from "./host/tab-frames";
 import { browserCallerOf } from "./browser/service";
 import { noteCheckedHost } from "./browser/checked-hosts";
 import { hearsTabsOf } from "./browser/rpc-handlers";
@@ -3526,6 +3527,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // The user's look at what this computer's app draws (`moss-core app screenshot`): the app's own capture of its windows.
   const appDoors = {
     connections: () => mossServer?.connections() ?? [],
+    // lane HS: the window runs no pages while a background host owns the screen.
+    hostOwnsScreen: () => hostOwnsScreen(hostSupervision?.supervisor.status().state),
     ask: (conn: Parameters<MossServer["ask"]>[0], method: string, params: unknown, ms: number) => mossServer === undefined ? Promise.reject(new Error("the daemon's endpoint isn't open")) : mossServer.ask(conn, method, params, ms),
   };
   mossLaneHandlers["app.capture"] = appCaptureHandler(appDoors);
@@ -3659,6 +3662,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     handlers: mossLaneHandlers,
     // lane HS: a code window mounts the screen too only while no background host owns it.
     hostOwnsScreen: () => hostOwnsScreen(hostSupervision?.supervisor.status().state),
+    hostGaveUp: () => hostSupervision?.supervisor.status().gaveUp === true,
     lateDoors,
     codeAgent: agentDoors.codeAgent,
     bridge: agentDoors.bridge,
@@ -3898,6 +3902,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     busy: () => updateGate.verdict().busy,
     tabs: () => daemonParts?.browser?.service.tabs({ kind: "user" }) ?? [],
     quitEverything: () => { if (pairSide) pairSide.pair.quit("quit"); else if (!stopping) { server.stopAccepting(); setTimeout(() => resolvePairStopped("quit everything"), 50); } },
+    // The windows' mounts (and the router's island) and the pair follow the host's state.
+    screenChanged: (owns) => mossServer?.hostScreen(owns),
   });
   if (hostSupervision) {
     const hs = hostSupervision;
@@ -4848,6 +4854,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // bundled Browser tool reaches it through the plugin host's router. `browser: false` starts none (a test's seam).
         browser: p.browser === false ? false : {
           app: appTabPort(appDoors),
+          // lane HS: only the program that runs the pages reports and holds its tabs.
+          pagesOwnerIs: (conn) => pagesOwner(appDoors.connections(), { hostOwnsScreen: appDoors.hostOwnsScreen() })?.connId === conn.connId,
           computer: computerNameFor(defaultDeviceName(hostname())) || "Computer",
           // The tabs' changes go to the app and to the layers of plugins holding `browser` (F5: by capability): the events
           // are a live view's way to hear them (a listener can't cross a layer's call), and no other plugin hears a tab.

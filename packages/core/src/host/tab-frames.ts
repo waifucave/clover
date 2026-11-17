@@ -44,9 +44,12 @@ const BROWSER_FEATURE = "browser";
 
 /** The connection that runs the browser's pages: the host when one is connected with the browser, else today's app
  *  (`code`); never MOSS's window. The one place that decides it, for the tab requests and for whose frames count. */
-export function pagesOwner(conns: readonly MossConn[]): MossConn | undefined {
+export function pagesOwner(conns: readonly MossConn[], opts: { hostOwnsScreen?: boolean } = {}): MossConn | undefined {
   const runs = (c: MossConn) => c.role === "app" && c.features.includes(BROWSER_FEATURE);
-  return conns.find((c) => runs(c) && c.program === "host") ?? conns.find((c) => runs(c) && c.program === "code");
+  const host = conns.find((c) => runs(c) && c.program === "host");
+  // While a host owns the screen (starting, restarting) the window has no pages to give: none until the host is back.
+  if (host !== undefined || opts.hostOwnsScreen === true) return host;
+  return conns.find((c) => runs(c) && c.program === "code");
 }
 
 interface Reader { fn: (frame: TabFrame) => void; minGapMs: number; last: number }
@@ -95,6 +98,8 @@ function addReader(map: Map<string, Set<Reader>>, tab: string, fn: (frame: TabFr
 export interface EngineTabFramesDeps {
   /** The connections, for `pagesOwner`. */
   connections(): readonly MossConn[];
+  /** Whether a background host owns the screen (`pagesOwner`'s rule). */
+  hostOwnsScreen?(): boolean;
   ask(conn: MossConn, method: string, params: unknown, timeoutMs: number): Promise<unknown>;
   /** The tab's viewport now (its stream's declared size), or undefined when the browser doesn't know it. */
   viewport(tab: string): Viewport | undefined;
@@ -131,7 +136,7 @@ export class EngineTabFrames implements TabFrames {
   /** `host.tab.frame`: one frame from `conn`. */
   accept(conn: MossConn, frame: PictureFrame): FrameVerdict {
     const s = this.#streams.get(frame.stream);
-    if (s === undefined || s.owner !== conn.connId || pagesOwner(this.deps.connections())?.connId !== conn.connId) return "refused";
+    if (s === undefined || s.owner !== conn.connId || this.#owner()?.connId !== conn.connId) return "refused";
     const bytes = decodeStrictBase64(frame.data);
     if (bytes === undefined) return "refused";
     const sniffed = sniffImageMediaType(bytes);
@@ -159,8 +164,25 @@ export class EngineTabFrames implements TabFrames {
     }
   }
 
+  /** The pages' owner may have changed (a host said ready, a connection closed): each stream a reader still wants whose
+   *  owner is no longer the owner is ended there and started again with the new one, so a view never freezes. */
+  reown(): void {
+    const owner = this.#owner();
+    for (const [tab, s] of [...this.#byTab]) {
+      if (owner !== undefined && s.owner === owner.connId) continue;
+      this.#stop(tab);
+      if ((this.#readers.get(tab)?.size ?? 0) > 0) this.#start(tab);
+    }
+    // A tab with readers and no stream (its owner went before anyone took over) starts on the new owner.
+    for (const tab of this.#readers.keys()) if (!this.#byTab.has(tab)) this.#start(tab);
+  }
+
+  #owner(): MossConn | undefined {
+    return pagesOwner(this.deps.connections(), { hostOwnsScreen: this.deps.hostOwnsScreen?.() ?? false });
+  }
+
   #start(tab: string): void {
-    const owner = pagesOwner(this.deps.connections());
+    const owner = this.#owner();
     if (owner === undefined) return;
     const vp = this.deps.viewport(tab) ?? { width: PICTURE_MAX_WIDTH, height: PICTURE_MAX_HEIGHT };
     const s: TabStream = { id: `frames-${randomUUID()}`, tab, owner: owner.connId, width: Math.min(vp.width, PICTURE_MAX_WIDTH), height: Math.min(vp.height, PICTURE_MAX_HEIGHT), lastAccepted: -Infinity, seq: 0 };

@@ -10,6 +10,7 @@ import type { BrowserNetworkConfig } from "./contract";
 import { MossRpcError, type MossConn, type MossHandler } from "../ipc/moss";
 import type { AppTabPort, BrowserService } from "./service";
 import { pagesOwner } from "../host/tab-frames";
+import { BrowserError } from "./policy";
 
 /** The feature an app lists in its hello when it serves `app.tab.*`. */
 export const APP_BROWSER_FEATURE = "browser";
@@ -18,14 +19,17 @@ export const APP_TAB_TIMEOUT_MS = 30_000;
 
 export interface AppTabDeps {
   connections(): readonly MossConn[];
+  /** Whether a background host owns the screen (`pagesOwner`'s rule: the window then runs no pages). */
+  hostOwnsScreen?(): boolean;
   ask(conn: MossConn, method: string, params: unknown, timeoutMs: number): Promise<unknown>;
 }
 
 /** The port to this computer's app while one that serves tabs is connected; undefined otherwise. */
 export function appTabPort(deps: AppTabDeps): () => AppTabPort | undefined {
   return () => {
-    const app = pagesOwner(deps.connections());
-    if (app === undefined) return undefined;
+    const held = deps.hostOwnsScreen?.() ?? false;
+    const app = pagesOwner(deps.connections(), { hostOwnsScreen: held });
+    if (app === undefined) return held ? hostDownPort() : undefined;
     const ask = (method: string, params: unknown) => deps.ask(app, method, params, APP_TAB_TIMEOUT_MS);
     return {
       async open(args) {
@@ -45,11 +49,17 @@ export function appTabPort(deps: AppTabDeps): () => AppTabPort | undefined {
   };
 }
 
-/** `browser.report` and `browser.hold`: only the app's own connection (the server's role list has checked it, and the
- *  handlers check again). */
-export function browserAppHandlers(getService: () => BrowserService | undefined): Record<"browser.report" | "browser.hold", MossHandler> {
+/** While the background host owns the screen and isn't connected (starting, restarting): every call says so. */
+function hostDownPort(): AppTabPort {
+  const down = (): never => { throw new BrowserError("no_app", "the background host that runs the browser's pages isn't running; it starts again by itself"); };
+  return { open: async () => down(), command: async () => down(), list: async () => down(), configure: async () => {} };
+}
+
+/** `browser.report` and `browser.hold`: only the pages' owner's connection (the server's role list has checked the app
+ *  role; lane HS: and it must be the connection that runs the pages, `pagesOwner`). */
+export function browserAppHandlers(getService: () => BrowserService | undefined, owner: (conn: MossConn) => boolean = () => true): Record<"browser.report" | "browser.hold", MossHandler> {
   const service = (conn: MossConn): BrowserService => {
-    if (conn.role !== "app") throw new MossRpcError(MOSS_ERR.NOT_THE_USER, "only the app reports its browser");
+    if (conn.role !== "app" || !owner(conn)) throw new MossRpcError(MOSS_ERR.NOT_THE_USER, "only the program that runs the browser's pages reports them");
     const s = getService();
     if (s === undefined) throw new MossRpcError(ERR.RETRY, "the browser isn't up yet");
     return s;

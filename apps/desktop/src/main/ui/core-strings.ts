@@ -109,6 +109,8 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "moss.core.host-tray.open-code": "Open MOSS Code",
   "moss.core.host-tray.safe-mode": "Restart On-Screen Parts in Safe Mode",
   "moss.core.host-tray.stop-everything": "Stop Everything (All Bots, Agents and Both Apps)…",
+  "moss.core.host-down.title": "The island couldn't start",
+  "moss.core.host-down.body": "MOSS tried several times and stopped. Cards still show in this window while it's in front. Quit and open MOSS again to try once more.",
   "moss.core.host-tray.working.title": "Your bots and agents are still working",
   "moss.core.host-tray.working.detail": "Running now: {work}. Stopping everything ends that work, closes MOSS and MOSS Code, and turns off the island until you open MOSS again.",
   "moss.core.host-tray.working.turns": "{n} replies",

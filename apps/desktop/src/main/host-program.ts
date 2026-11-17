@@ -61,17 +61,25 @@ export interface HostLock {
 
 /** Takes the host lock under `home` for this process's life, writing its pid into the file under the lock. Null when
  *  another live host holds it (this one must quit before its hello). */
+/** How often the host tries its lock, and how long between, before it takes the holder for another host. */
+export const HOST_LOCK_TRIES = 5;
+export const HOST_LOCK_RETRY_MS = 40;
+
 export function takeHostLock(home: string, platform: NodeJS.Platform, pid: number = process.pid): HostLock | null {
   if (platform !== "darwin") return { os: false, release() {} };
   const path = join(home, HOST_LOCK_FILE);
   mkdirSync(dirname(path), { recursive: true });
-  let fd: number;
-  try {
-    fd = openSync(path, constants.O_RDWR | constants.O_CREAT | DARWIN_O_EXLOCK | DARWIN_O_NONBLOCK, 0o600);
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code;
-    if (code === "EAGAIN" || code === "EWOULDBLOCK") return null;
-    throw e;
+  // The engine's probe of the lock (a shared lock held for a moment) can be in the way: a few tries before "another host".
+  let fd: number | undefined;
+  for (let i = 0; fd === undefined; i++) {
+    try {
+      fd = openSync(path, constants.O_RDWR | constants.O_CREAT | DARWIN_O_EXLOCK | DARWIN_O_NONBLOCK, 0o600);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== "EAGAIN" && code !== "EWOULDBLOCK") throw e;
+      if (i >= HOST_LOCK_TRIES - 1) return null;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, HOST_LOCK_RETRY_MS);
+    }
   }
   ftruncateSync(fd, 0);
   writeSync(fd, `${pid}\n`, 0);

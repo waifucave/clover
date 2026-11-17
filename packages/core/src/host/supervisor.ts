@@ -14,7 +14,7 @@
 //   bundle): the engine looks again every `HOST_SOURCE_RECHECK_MS` for `HOST_SOURCE_GRACE_MS`, and when a window
 //   connects (`poke`), and only then runs headless for good.
 // * Quitting an app never stops the host: nothing here hears an app's windows at all.
-import { HOST_CRASH_LIMIT, HOST_CRASH_WINDOW_MS, HOST_RESTART_DELAYS_MS, HOST_SOURCE_GRACE_MS, HOST_SOURCE_RECHECK_MS, HOST_START_TIMEOUT_MS, type HostExitReason } from "@waifucave/moss-protocol";
+import { HOST_CRASH_LIMIT, HOST_CRASH_WINDOW_MS, HOST_RESTART_DELAYS_MS, HOST_START_ATTEMPTS, HOST_SOURCE_GRACE_MS, HOST_SOURCE_RECHECK_MS, HOST_START_TIMEOUT_MS, type HostExitReason } from "@waifucave/moss-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import type { HostStatus, HostSupervisor, HostWorld } from "../contracts/host-supervisor";
@@ -47,6 +47,10 @@ export class EngineHostSupervisor implements HostSupervisor {
   #absentSince: number | undefined;
   /** Whether the host should run at all (false once the engine stopped it on purpose). */
   #wanted = false;
+  /** Starts in a row whose host never said ready (a start the OS refused, a host that died or hung before its ready). */
+  #failedStarts = 0;
+  /** Whether the host of the current start (or the adopted one) has said ready. */
+  #saidReady = false;
 
   constructor(opts: EngineHostSupervisorOptions) {
     this.#clock = opts.clock;
@@ -68,6 +72,7 @@ export class EngineHostSupervisor implements HostSupervisor {
     const pid = this.#world.lockHolder();
     if (pid !== null) {
       this.#log(`[host] a host holds the lock (pid ${pid}): adopted, waiting for it to say it is ready`);
+      this.#saidReady = false;
       this.#set({ state: "running", pid });
       this.#arm(pid);
       return "adopted";
@@ -80,7 +85,9 @@ export class EngineHostSupervisor implements HostSupervisor {
     this.#disarm();
     this.#cancelRecheck();
     this.#cancelRestart();
-    this.#set({ state: info.safeMode ? "safe-mode" : "running", pid: info.pid, release: info.release, bundlePath: info.bundlePath, safeMode: info.safeMode });
+    this.#saidReady = true;
+    this.#failedStarts = 0;
+    this.#set({ state: info.safeMode ? "safe-mode" : "running", pid: info.pid, release: info.release, bundlePath: info.bundlePath, safeMode: info.safeMode }, ["gaveUp"]);
   }
 
   exiting(reason: HostExitReason): void {
@@ -105,6 +112,15 @@ export class EngineHostSupervisor implements HostSupervisor {
     const now = this.#clock.monotonic();
     this.#crashTimes = [...this.#crashTimes.filter((t) => now - t < HOST_CRASH_WINDOW_MS), now];
     const n = this.#crashTimes.length;
+    this.#failedStarts = this.#saidReady ? 0 : this.#failedStarts + 1;
+    this.#saidReady = false;
+    if (this.#failedStarts >= HOST_START_ATTEMPTS) {
+      // No endless "restarting": the windows have the screen again, and say so once.
+      this.#cancelRestart();
+      this.#log(`[host] the host did not start ${this.#failedStarts} times in a row: the engine stops trying until it starts again (the windows draw the cards)`);
+      this.#set({ state: "absent", crashes: n, gaveUp: true }, ["pid"]);
+      return;
+    }
     const delay = HOST_RESTART_DELAYS_MS[Math.min(n - 1, HOST_RESTART_DELAYS_MS.length - 1)]!;
     this.#log(`[host] the host crashed (${n} in the window): restarting in ${delay} ms${n >= HOST_CRASH_LIMIT ? ", in safe mode" : ""}`);
     this.#set({ state: "restarting", crashes: n }, ["pid"]);
@@ -131,7 +147,7 @@ export class EngineHostSupervisor implements HostSupervisor {
 
   /** A window connected: with no host running for want of an app, look for one again now. */
   poke(): void {
-    if (this.#wanted && this.#status.state === "absent") this.#start(false);
+    if (this.#wanted && this.#status.state === "absent" && this.#status.gaveUp !== true) this.#start(false);
   }
 
   /** Stops the timers (the engine is stopping); the host itself is the caller's to stop. */
@@ -167,7 +183,8 @@ export class EngineHostSupervisor implements HostSupervisor {
     this.#crashTimes = this.#crashTimes.filter((t) => now - t < HOST_CRASH_WINDOW_MS);
     const safeMode = forceSafe || this.#crashTimes.length >= HOST_CRASH_LIMIT;
     this.#onPurpose = undefined;
-    this.#set({ state: "starting", safeMode, crashes: this.#crashTimes.length, bundlePath: app.bundlePath, release: app.release }, ["pid"]);
+    this.#saidReady = false;
+    this.#set({ state: "starting", safeMode, crashes: this.#crashTimes.length, bundlePath: app.bundlePath, release: app.release }, ["pid", "gaveUp"]);
     this.#arm();
     this.#world.start(app.bundlePath, { safeMode });
     return "started";

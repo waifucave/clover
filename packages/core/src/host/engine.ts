@@ -10,7 +10,8 @@ import type { MossProfile } from "../profile";
 import { hostDoor, type HostDoor } from "./door";
 import { EngineHostSupervisor } from "./supervisor";
 import { EngineTabFrames } from "./tab-frames";
-import { engineHostWorld, hostLockHolder } from "./world";
+import { engineHostWorld, hostLockHolder, launchApp } from "./world";
+import { hostOwnsScreen } from "./mounts";
 
 export interface HostSupervisionInput {
   readonly home: string;
@@ -32,6 +33,8 @@ export interface HostSupervisionInput {
   quitEverything(): void;
   /** Starts an app through the OS when it isn't running (the newest record of that program). */
   launchApp?(program: "moss" | "code"): Promise<void>;
+  /** The supervisor's state changed: whether a host owns the screen now (the MOSS server's `hostScreen`). */
+  screenChanged?(owns: boolean): void;
   log?(line: string): void;
 }
 
@@ -66,18 +69,20 @@ export function startHostSupervision(input: HostSupervisionInput): HostSupervisi
   supervisor = new EngineHostSupervisor({ clock: new SystemClock(), world, log });
   const frames = new EngineTabFrames({
     connections: input.connections, ask: input.ask, log,
+    hostOwnsScreen: () => hostOwnsScreen(supervisor?.status().state),
     viewport: (id): Viewport | undefined => input.tabs().find((t) => t.id === id)?.viewport,
   });
   door = hostDoor({
     supervisor, frames, ask: input.ask, now: Date.now, log,
     emit: (e) => input.coreEvent(e),
+    screenChanged: (s) => input.screenChanged?.(hostOwnsScreen(s.state)),
     lockPid: () => hostLockHolder(input.home, input.os),
     midWork: () => midWorkOf(input.busy()),
     tab: (id) => input.tabs().find((t) => t.id === id),
     openApp: async (program) => {
       const live = input.connections().find((c) => c.role === "app" && c.program === program);
       if (live !== undefined) { live.send("app.show", { what: { kind: "window" } }); return; }
-      await input.launchApp?.(program);
+      await (input.launchApp ?? ((p: "moss" | "code") => launchApp({ home: input.home, os: input.os, run: input.run, log }, p)))(program);
     },
     quitEverything: () => {
       door?.stopHost("quit-everything");

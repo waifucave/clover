@@ -32,3 +32,9 @@ test("one card in one place: the host draws a fallback only for the island's car
   // A window with no host draws both, as today; before any placement, either may (the net).
   expect([fallbackMayDraw({ kind: "island" }, alone), fallbackMayDraw(strip, alone), fallbackMayDraw(undefined, host), fallbackMayDraw(undefined, window)]).toEqual([true, true, true, true]);
 });
+
+test("a host the engine gave up on: the window takes back all but the island (cards in the window while it is in front)", () => {
+  const plan = mountPlan("code", undefined, "absent", true);
+  expect(plan).toMatchObject({ mainWindow: true, surfaces: false, background: true, browser: true, drawsCards: true });
+  expect(mountPlan("code", undefined, "absent", false).surfaces).toBe(true);
+});

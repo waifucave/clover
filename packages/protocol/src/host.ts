@@ -30,6 +30,11 @@ export const HOST_CRASH_LIMIT = 3;
 export const HOST_CRASH_WINDOW_MS = 120_000;
 /** The engine's waits before each restart of a crashed host, the last repeated. */
 export const HOST_RESTART_DELAYS_MS = [500, 2_000, 8_000, 30_000] as const;
+/** A host that never says it is ready is started this many times in a row (once, then after each restart delay), then
+ *  no more until the engine starts again: the state is `absent` with `gaveUp`, the screen is the windows' again (the
+ *  router has no island; cards draw in a focused window) and each window shows one plain notice. A host that says it is
+ *  ready starts the count over. */
+export const HOST_START_ATTEMPTS = HOST_RESTART_DELAYS_MS.length + 1;
 /** How long a host the engine started (or found holding the lock) has to say `host.ready` before the engine counts it as
  *  a crash: a host that never connects, or dies before its hello, never closes a connection, so without this the engine
  *  would wait in `starting` for ever. Longer than the longest restart delay, and than a cold start at login. */
@@ -104,7 +109,11 @@ export const HostChangedEvent = coreEvent("host_changed", {
   /** The app bundle it runs from. */
   bundlePath: utf16(4096).optional(),
   since: Timestamp,
+  /** The engine stopped trying (`HOST_START_ATTEMPTS` starts that never said ready): with `absent`, until it starts again. */
+  gaveUp: z.boolean().optional(),
 });
+/** What `host.status` answers: `host_changed` now, without its type and time. */
+export const HostStatusResult = z.object({ state: HostState, crashes: z.number().int().nonnegative(), release: Release.optional(), bundlePath: utf16(4096).optional(), since: Timestamp, gaveUp: z.boolean().optional() });
 
 export const HOST_METHODS = {
   hostReady: defineMethod({
@@ -153,6 +162,13 @@ export const HOST_METHODS = {
     params: z.object({ id: utf16(128, 1), events: z.array(TabInputEvent).min(1).max(256) }),
     result: Ok,
     doc: "The person's input to one of the host's tabs, forwarded from MOSS Code's browser panel.",
+  }),
+  hostStatus: defineMethod({
+    /** A window reads the host's state when it connects (a `host_changed` before its subscription would be missed). */
+    name: "host.status", owner: "HS", roles: ["app", "cli"],
+    params: z.object({}).strict(),
+    result: HostStatusResult,
+    doc: "The background host's state now, as host_changed says it.",
   }),
   hostTabFrame: defineMethod({
     /** From the program that runs the browser's pages (the host; today's app until the host runs them), one frame of a

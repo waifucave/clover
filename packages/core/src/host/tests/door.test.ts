@@ -212,3 +212,57 @@ describe("the browser's views and frames", () => {
     expect(t.asked.filter((a) => a.method === "app.tab.command").at(-1)!.params).toMatchObject({ command: { kind: "stream", on: false } });
   });
 });
+
+describe("the reviewer's part one (S2, S4, S6)", () => {
+  test("host.status answers the state now, as host_changed says it, to a window that just connected", async () => {
+    const t = setup();
+    await t.supervisor.boot();
+    const w = conn("code");
+    expect(await t.call(w.c, "host.status", {})).toMatchObject({ state: "starting", crashes: 0 });
+  });
+
+  test("while a host owns the screen and isn't connected, the window is no pages' owner; with no host at all it is", () => {
+    const host = conn("host", { features: ["browser"] }).c;
+    const win = conn("code", { features: ["browser"] }).c;
+    expect(pagesOwner([win], { hostOwnsScreen: true })).toBeUndefined();
+    expect(pagesOwner([win], { hostOwnsScreen: false })?.connId).toBe(win.connId);
+    expect(pagesOwner([win, host], { hostOwnsScreen: true })?.connId).toBe(host.connId);
+  });
+
+  test("an open view's stream moves to the new pages' owner when the host says ready (its pictures never freeze)", async () => {
+    const t = setup();
+    let owns = false;
+    const asked: { conn: number; params: { command: { on: boolean; stream: string } } }[] = [];
+    const frames = new EngineTabFrames({ connections: () => t.conns, ask: async (c, _m, p) => { asked.push({ conn: c.connId, params: p as never }); return { ok: true }; }, viewport: () => ({ width: 1280, height: 800 }), hostOwnsScreen: () => owns });
+    const win = conn("code", { features: ["browser"] }).c;
+    t.conns.push(win);
+    const got: number[] = [];
+    frames.subscribe("own-tab", (f) => got.push(f.seq));
+    expect(asked.at(-1)).toMatchObject({ conn: win.connId, params: { command: { on: true } } });
+    const first = asked.at(-1)!.params.command.stream;
+    const host = conn("host", { features: ["browser"] }).c;
+    t.conns.push(host);
+    owns = true;
+    frames.reown();
+    expect(asked.slice(-2)).toMatchObject([{ conn: win.connId, params: { command: { on: false, stream: first } } }, { conn: host.connId, params: { command: { on: true } } }]);
+    const second = asked.at(-1)!.params.command.stream;
+    // The window's late frame is refused; the host's is taken.
+    expect(frames.accept(win, { stream: first, seq: 1, format: "jpeg", width: 64, height: 32, data: jpeg(64, 32), at: 1 })).toBe("refused");
+    expect(frames.accept(host, { stream: second, seq: 1, format: "jpeg", width: 64, height: 32, data: jpeg(64, 32), at: 1 })).toBe("taken");
+    expect(got).toEqual([1]);
+  });
+});
+
+test("browser.report and browser.hold are the pages' owner's alone; with the host owning the screen and gone, the tool hears it", async () => {
+  const { browserAppHandlers, appTabPort } = await import("../../browser/app-port");
+  const held: string[] = [];
+  const service = { report: () => undefined, hold: (id: string) => { held.push(id); } } as never;
+  const host = conn("host", { features: ["browser"] }).c;
+  const win = conn("code", { features: ["browser"] }).c;
+  const h = browserAppHandlers(() => service, (c) => c.connId === host.connId);
+  await expect(Promise.resolve().then(() => h["browser.hold"](win, { id: "t1", held: true }))).rejects.toThrow(/runs the browser's pages/);
+  await h["browser.hold"](host, { id: "t1", held: true });
+  expect(held).toEqual(["t1"]);
+  const port = appTabPort({ connections: () => [win], ask: async () => ({}), hostOwnsScreen: () => true })();
+  await expect(port!.list()).rejects.toThrow(/background host that runs the browser's pages isn't running; it starts again by itself/);
+});
