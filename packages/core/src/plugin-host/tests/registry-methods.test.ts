@@ -63,14 +63,13 @@ describe("what a plugin's row shows", () => {
     expect(summaryOf(record({ manifest: { contributes: { bot: { avatar: { portrait: "p.png" } } } } })).icon).toBeUndefined();
   });
 
-  test("its picture: the manifest's icon, else its bot's avatar portrait, else none", () => {
+  test("its picture: the manifest's icon, else none (a retired bot avatar's portrait is no picture of it)", () => {
     expect(iconOf({ icon: "assets/icon.png", contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/icon.png");
-    expect(iconOf({ contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/p.png");
+    expect(iconOf({ contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBeUndefined();
     expect(iconOf({ icon: "" })).toBeUndefined();
     expect(iconOf({ icon: 3 })).toBeUndefined();
     expect(iconOf({})).toBeUndefined();
     for (const bad of ["/etc/a.png", "../a.png", "a//b.png", "https://x.example/a.png", "x".repeat(4097)]) expect(iconOf({ icon: bad })).toBeUndefined();
-    expect(iconOf({ icon: "../a.png", contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/p.png");
   });
 });
 

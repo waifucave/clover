@@ -3,7 +3,7 @@
 //   * `pack:<plugin>#<entry>`: an entry of `moss.character.packs`;
 //   * `url:<file>`: a pack's figure as an earlier MOSS kept it (its file's URL), matched to the pack entry with that file;
 //   * `own:<format>:<path>`: one of the person's own models this plugin keeps in its data folder (moved there from an
-//     earlier MOSS), served to this plugin's own layer at `/_d/<path>`.
+//     earlier MOSS), served to this plugin's own layer at `/_d/character/<path>`.
 // With none picked (or the pick gone), the first pack whose format a renderer draws stands in.
 import type { PointEntry } from "@waifucave/moss-plugin-sdk";
 import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
@@ -61,8 +61,9 @@ export function ownModelsOf(raw: unknown): OwnModel[] {
   return out;
 }
 
-/** Where this plugin's own data file is served to its own layer. */
-export const ownUrl = (path: string): string => `/_d/${path.split("/").map(encodeURIComponent).join("/")}`;
+/** Where this plugin's own data file is served to its own layer: `/_d/` is the tree's data folder (`plugin-data/moss/`),
+ *  and this plugin's own is its child folder, `character/`. */
+export const ownUrl = (path: string): string => `/_d/character/${path.split("/").map(encodeURIComponent).join("/")}`;
 
 /** Every figure the person may pick: each pack entry, then each own model. */
 export function choicesOf(packs: readonly PointEntry[], own: readonly OwnModel[]): FigureChoice[] {

@@ -260,10 +260,7 @@ const OWN_CALLS: Record<string, string> = {
   "settings.get": "its settings while it runs, read only, a secret only as { set }, no bot value",
   "settings.set": "its plain settings while it runs, no card (never a secret, a bot value or a templated setting), 30 a minute",
   "points.entries": "the entries of a point its own tree declares, while it runs, each narrowed to the point's declared fields",
-  "avatar.cue": "a cue to its own bot's figure, judged by the core against the renderer's capabilities and names (`avatar.control`)",
-  "avatar.catalogue": "its own bot's figure's catalogue (`avatar.read`)",
-  "avatar.box": "its own bot's figure's box (`avatar.read`)",
-  "avatar.report": "the bundled stage's report of the renderer it drew for a bot (`avatar.report`, the `moss` tree only)",
+  "points.send": "a message on a point, between its declarer and the plugins with an active entry in it only, in order, 64 KiB and 60 a second",
   "confirm": "a question to the user on the app's own sealed card naming the plugin; the answer only",
   "confirmCard": "the same, with the card's id",
   "plugins.install": "an install through the user's door, behind its OK card naming the plugin (`plugins.install`)",
@@ -291,15 +288,15 @@ describe("plugin.layer.call, as a class", () => {
     }
   });
 
-  test("every call the SDK's layer makes through it, and every layer-callable avatar call the catalog lists, is accepted by its params", () => {
+  test("every call the SDK's layer makes through it, and the point messages' send, is accepted by its params", () => {
     const params = MOSS_METHODS.get("plugin.layer.call")!.params as unknown as { safeParse(v: unknown): { success: boolean } };
     // What the layer's own code sends: each `plugin.layer.call` with a literal `call`.
     const src = readFileSync(join(import.meta.dir, "../../../../plugin-sdk/src/ui/index.tsx"), "utf8");
     const sent = [...src.matchAll(/"plugin\.layer\.call",\s*\{\s*call:\s*"([^"]+)"/g)].map((m) => m[1]!);
     expect(sent.length).toBeGreaterThan(5);
-    // The catalog's avatar calls a layer may make (a watch is the layer's event stream, not a call).
-    const catalog = Object.entries(API_CALLS as Record<string, { where: string }>).filter(([n, c]) => n.startsWith("avatar.") && n !== "avatar.watch" && (c.where === "ui" || c.where === "both")).map(([n]) => n);
-    expect(catalog.sort()).toEqual(["avatar.box", "avatar.catalogue", "avatar.cue", "avatar.report"]);
+    // No call of the catalog is a figure's now; a point message is sent through it (its listener is a watch).
+    expect(Object.keys(API_CALLS).filter((n) => n.startsWith("avatar."))).toEqual([]);
+    const catalog = ["points.send"];
     for (const call of new Set([...sent, ...catalog])) expect([call, params.safeParse({ call, args: [] }).success]).toEqual([call, true]);
   });
 });

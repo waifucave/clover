@@ -251,6 +251,7 @@ import { coldResumeRunHomeFor, createMossSessionDrivers, sessionPermissionClassF
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
 import { splitSettingsToSdk } from "./migration/settings-split";
+import { moveFigureToAvatarPlugin } from "./migration/figure-to-avatar-plugin";
 import { moveSettingsToPlugins } from "./migration/settings-moved-to-plugins";
 import { seedBuiltinSkills } from "./migration/builtin-skills";
 import { MigrationCRefused, finishMigrationC, markCurrentLayout, migrationCManifestPath, migrationCState, oldLayoutMarkers, ranOnRunHomeBuild, repairAgentsLink, runMigrationC } from "./migration/migrate-c";
@@ -1087,6 +1088,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // Settings that moved from the core to a plugin go into that plugin's own settings, once, before anything reads them
   // (the table of rows in migration/settings-moved-to-plugins.ts).
   moveSettingsToPlugins(home, { log: (line) => console.error(line) });
+  // The figure left the core for the bundled avatar plugin: the person's pick and their own models go with it, once.
+  moveFigureToAvatarPlugin(home, { log: (line) => console.error(line) });
 
   // The skills MOSS ships that a child must be able to LOAD (`computer-use`): a managed copy in the user's
   // skill tier, `sdk/skills/` — the builtin tier is staged into no run folder. Every boot, every home, after the

@@ -1,59 +1,64 @@
-// The platform's own data points (`avatar.formats`, `avatar.packs`): the core and the app read them, so no plugin
-// declares them (the owner's ruling for the stage, F6). A filler is in force as soon as its plugin runs, and a plugin
-// that tries to declare one is refused.
+// The platform has no data points of its own now: the avatar's (`avatar.formats`, `avatar.packs`) left with the figure for
+// the bundled avatar plugin, which declares its own (spec revision 19, G7). A third-party plugin that still names one, or
+// asks for a retired capability, fails closed with the name of what replaced it; the avatar plugin's own points work as
+// any plugin's do: a filler waits for their declarer, and the declarer reads them.
 import { describe, expect, test } from "bun:test";
-import { catalogPointDecl, validateManifest } from "@waifucave/moss-plugin-sdk";
+import { DATA_POINTS, RETIRED_CAPABILITIES, RETIRED_POINTS, catalogPointDecl, isPlatformDataPoint, validateManifest } from "@waifucave/moss-plugin-sdk";
 import type { Manifest } from "../../contracts/sdk-types";
-import { pointChanges, pointsApi } from "../../plugin-host/api/points";
+import { pointsApi } from "../../plugin-host/api/points";
 import { RegistryCore, type RegistryInput } from "../core";
 import { memoryRegistryStore } from "../state";
 
 const m = (over: Partial<Manifest> = {}): Manifest => ({ manifest: 1, name: "A plugin", ...over });
-const renderer: RegistryInput = {
-  id: "pngtuber", approved: true, treeHash: "sha256:p",
-  manifest: m({ name: "Picture swap", contributes: { "avatar.formats": [{ id: "png", format: "png", name: "Pictures", entry: { extensions: [".png"] }, files: { kinds: [{ ext: [".png"], type: "image" }] } }] } as Manifest["contributes"] }),
-};
+const issues = (manifest: unknown) => validateManifest(manifest).issues.map((i) => ({ code: i.code, refuses: i.refuses, message: i.message }));
 
-describe("the platform's data points", () => {
-  test("a renderer's avatar.formats entry is active with no declarer in the registry", () => {
-    const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
-    reg.putAll([renderer]);
-    expect(reg.points().some((p) => p.name === "avatar.formats")).toBe(false);
-    expect(reg.entries("avatar.formats").map((c) => [c.pluginId, c.state])).toEqual([["pngtuber", "active"]]);
+describe("no data point is the platform's", () => {
+  test("the catalog lists none the core declares; the old names are not among its points", () => {
+    expect(Object.keys(DATA_POINTS).filter(isPlatformDataPoint)).toEqual([]);
+    for (const name of ["avatar.formats", "avatar.packs"]) expect(Object.keys(DATA_POINTS)).not.toContain(name);
   });
 
-  test("a plugin that declares avatar.formats or avatar.packs is refused: it is the platform's", () => {
-    for (const name of ["avatar.formats", "avatar.packs"]) {
-      const codes = validateManifest({ manifest: 1, id: "stage", name: "Stage", engines: { moss: "^1.0.0" }, client: { entry: "client/index.tsx" }, contributes: { ui: [{ spot: "bot.stage", id: "s", component: "S", declares: { [name]: { shape: "list", fields: { type: "object" } } } }] } }).issues?.map((i: { code: string }) => i.code) ?? [];
-      expect(codes).toContain("point_declares_core");
+  test("a third-party manifest that fills a retired point, or holds a retired capability, is refused, saying what replaced it", () => {
+    const base = { manifest: 1, id: "acme-figure", name: "Acme figure", engines: { moss: "^1.0.0" }, client: { entry: "client/index.tsx" } };
+    const filled = issues({ ...base, contributes: { "avatar.formats": [{ id: "png", format: "png" }] } });
+    // The entry is refused (it reaches nothing); the plugin's other parts stand.
+    expect(filled).toContainEqual(expect.objectContaining({ code: "point_retired", refuses: "contribution" }));
+    expect(filled.find((i) => i.code === "point_retired")!.message).toContain("moss.character.formats");
+    // (Declaring a point of that name is a plugin's own point, which nothing of the platform reads: no finding, and no filler can reach it.)
+    for (const r of RETIRED_CAPABILITIES) {
+      const held = issues({ ...base, capabilities: [r.name] });
+      const found = held.find((i) => i.code === "capability_retired");
+      expect(found, r.name).toBeDefined();
+      expect(found!.refuses).toBe("plugin");
+      expect(found!.message).toContain(r.replacedBy);
+    }
+    for (const r of RETIRED_POINTS.filter((p) => p.name.includes("stage") || p.name === "avatar")) {
+      const spot = issues({ ...base, contributes: { ui: [{ spot: r.name, key: "png", id: "s", component: "S" }] } });
+      expect(spot.some((i) => (i.code === "spot_retired" || i.code === "point_retired") && i.refuses !== "none"), r.name).toBe(true);
     }
   });
+});
 
-  test("a plugin that holds avatar.report (any id) reads the formats, one without a reading capability is refused, and a change reaches the reader", async () => {
+describe("the avatar plugin's points are a plugin's points", () => {
+  const declarer: RegistryInput = {
+    id: "acme-stage", approved: true, treeHash: "sha256:s",
+    manifest: m({ name: "Stage", host: { entry: "host/index.js", declares: { "acme-stage.formats": { shape: "list", fields: { type: "object" } } } } } as Partial<Manifest>),
+  };
+  const filler: RegistryInput = {
+    id: "acme-renderer", approved: true, treeHash: "sha256:r",
+    manifest: m({ name: "Renderer", contributes: { "acme-stage.formats": [{ id: "png", format: "png" }] } as Manifest["contributes"] }),
+  };
+
+  test("a filler waits for its declarer and is active beside it; the declarer reads its entries, another plugin is refused", () => {
     const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
-    const stage = (id: string, caps: string[]): RegistryInput => ({ id, approved: true, treeHash: `sha256:${id}`, manifest: m({ name: id, client: { entry: "client/index.js" }, capabilities: caps as Manifest["capabilities"] }) });
-    reg.putAll([stage("mystage", ["avatar.report"]), stage("nosy", []), renderer]);
+    const nosy: RegistryInput = { id: "nosy", approved: true, treeHash: "sha256:n", manifest: m({ name: "nosy", client: { entry: "client/index.js" } }) };
+    reg.putAll([filler, nosy]);
+    expect(reg.entries("acme-stage.formats").map((c) => c.state)).not.toContain("active");
+    reg.putAll([declarer, filler, nosy]);
+    expect(reg.entries("acme-stage.formats").map((c) => [c.pluginId, c.state])).toEqual([["acme-renderer", "active"]]);
     const api = pointsApi({ registry: reg, host: { invoke: async () => undefined } as never, assetUrl: (id, p) => `asset://${id}/${p}` });
     const call = (pluginId: string, args: unknown[]) => (api["points.entries"] as (c: unknown, a: unknown[]) => unknown)({ pluginId, caller: { kind: "plugin", pluginId }, record: reg.get(pluginId) }, args);
-    expect((call("mystage", ["avatar.formats"]) as { pluginId: string; value: { format: string } }[]).map((e) => [e.pluginId, e.value.format])).toEqual([["pngtuber", "png"]]);
-    expect(() => call("nosy", ["avatar.formats"])).toThrow(/platform's/);
-    expect(() => call("mystage", ["avatar.packs"])).toThrow(/bots\.avatar/);
-  });
-
-  test("a change reaches the running holders of a reading capability, never a plugin without one; a filler without it fills but reads nothing", async () => {
-    const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
-    const plug = (id: string, caps: string[], contributes?: Manifest["contributes"]): RegistryInput => ({ id, approved: true, treeHash: `sha256:${id}`, manifest: m({ name: id, client: { entry: "client/index.js" }, capabilities: caps as Manifest["capabilities"], ...(contributes ? { contributes } : {}) }) });
-    reg.putAll([plug("holder", ["avatar.report"]), plug("editor", ["bots.avatar"]), plug("nosy", [])]);
-    const heard: [string, string][] = [];
-    const stop = pointChanges({ registry: reg, assetUrl: (id, p) => `asset://${id}/${p}` }, (id, point) => heard.push([id, point]), 5);
-    reg.putAll([plug("holder", ["avatar.report"]), plug("editor", ["bots.avatar"]), plug("nosy", []), renderer]);
-    await new Promise((r) => setTimeout(r, 60));
-    stop();
-    const formats = heard.filter(([, p]) => p === "avatar.formats").map(([id]) => id).sort();
-    expect(formats).toEqual(["editor", "holder"]);
-    // The packs go to bots.avatar's holder alone.
-    expect(heard.filter(([, p]) => p === "avatar.packs").map(([id]) => id)).toEqual([]);
-    // The renderer fills the point (it is active) without the capability to read it.
-    expect(reg.entries("avatar.formats").map((c) => [c.pluginId, c.state])).toEqual([["pngtuber", "active"]]);
+    expect((call("acme-stage", ["acme-stage.formats"]) as { pluginId: string }[]).map((e) => e.pluginId)).toEqual(["acme-renderer"]);
+    expect(() => call("nosy", ["acme-stage.formats"])).toThrow();
   });
 });
