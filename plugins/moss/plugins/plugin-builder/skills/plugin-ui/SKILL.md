@@ -110,8 +110,8 @@ change. The component draws nothing the user sees; it listens (a timer, `api.eve
 - **Speaking** (MOSS Voice's way, a pattern any plugin can copy): the background part is the player. Its host half
   streams it the audio (`api.streams.open("speech", { meta })` in the host, `api.streams.accept("speech", …)` in the
   part); before it sounds, the part takes the device's speech turn (`api.turns.take("device/speech", { note })`), so it
-  never talks over another plugin's speech, and lets it go (`turn.done()`) when it has played; it moves a bot's mouth
-  with speech cues (`api.avatar.cue({ type: "speech", frames }, { bot })`, `avatar.control.all` for a bot not its own).
+  never talks over another plugin's speech, and lets it go (`turn.done()`) when it has played; it tells the plugins that
+  fill its own point `moss.voice.speech` how loud each bot speaks (`api.points.send`), never the words.
   Its controls (stop a bot, hold for push-to-talk) are `api.ui.send` messages that carry the whole state (the held
   utterances, each bot's stop count): within one tick a part gets only the newest message of each name. A background
   part's frame loads after its plugin starts, so the part tells its host half when it is listening
@@ -244,7 +244,7 @@ screen, not the parts around you.
 - **A fixed box**, set by the host, in a few places: a sidebar a plugin draws in place of the stock one (`sidebar`, an
   app-wide part: it looks the same on every tab, so no entry there is tied to a bot) is the sidebar's whole height; a `sidebar.app` badge is 48 x 18; and a plugin that hosts others may size the
   frames in its own spot from its own stylesheet (`.slot > iframe { height: 72px !important }`: a `Spot` adds no
-  element of its own, so the frame is a direct child of what holds it). Alpha's tab does so for her figure and room.
+  element of its own, so the frame is a direct child of what holds it). 
   In a fixed box, `100%` is that box, and short boxes are real: draw less, not smaller.
 - **A narrow window** (the main window under 900 px): `useMountContext().window.narrow` says so, and changes live: fold
   your layout the way the shell folds its own. A bot's tab is the window less the sidebar beside it, open or folded, so
@@ -252,17 +252,15 @@ screen, not the parts around you.
   in a frame), not the window's.
 - **What a host passes a nested part**: props (plain data, through `Spot`'s `props`) and the size of the frame (its
   stylesheet). CSS variables don't cross into another plugin's frame, so a host reads them and passes the values. The
-  stage does so for an avatar renderer: its frame fills the stage, and its props hold `{ bot, file, format, name,
-  speaking }` and `framing: { mode?, crop?, headroom? }`, the layout's `--moss-avatar-framing` (`full`, `bust`,
-  `waist`), `--moss-avatar-crop` and `--moss-avatar-headroom`, read again as the stage resizes. A renderer frames
-  the figure by its own box and that `framing`.
-- **An avatar renderer's mouth**: it declares `lipsync` in its `avatar.formats` `capabilities` and reads the speech with
-  `useAvatarSpeech()`: `{ feed, speaking }`, where `feed.subscribe(listener)` hears frames `{ t, rms, centroid }` (`t` in
-  the feed's seconds, `rms` loudness 0 to 1, `centroid` brightness in Hz) a moment before each is due and `feed.now()` is
-  the feed's clock; the same hook works in the moss layer and in a plugin's frame. The frames are the speech cue
-  (plugin-host, "The plugin API"): the stage builds the feed from what a plugin sends with `api.avatar.cue({ type: "speech",
-  frames })`, so a renderer never plays audio or hears a microphone. A renderer shows the mouth shut when `feed` is
-  undefined.
+  avatar plugin does so for its renderers: a renderer's frame fills the figure's place, and its props hold `{ mount,
+  src, file, format, name, portrait? }` and `framing: { mode?, crop?, headroom? }`, the theme's
+  `--moss-avatar-framing` (`full`, `bust`, `waist`), `--moss-avatar-crop` and `--moss-avatar-headroom`, read again as
+  the place resizes. A renderer frames the figure by its own box and that `framing`.
+- **A renderer's mouth**: it fills MOSS Voice's point `moss.voice.speech` (an entry, `{ "id": "mouth" }`) and hears
+  `{ bot, frames: [{ t, rms, centroid? }], cut? }` with `api.points.onMessage("moss.voice.speech", …)`: levels stamped in
+  epoch milliseconds a little ahead of when they sound, `rms` loudness 0 to 1, `centroid` brightness in Hz; `cut` drops
+  what isn't due yet. The SDK's `TimedSpeech` keeps them by time as a speech feed (`feed.subscribe(listener)` hears the
+  frames a moment before each is due, `feed.now()` is its clock). A renderer never plays audio or hears a microphone.
 
 plugin-examples, "A page that fits its space" (`ex-fit`, `ex-fit-tile`): an editor-shaped page that fills the main
 area, pins its footer, scrolls its middle and folds when the window is narrow, and a tile that hides a secondary line
@@ -318,14 +316,19 @@ folder, a worker, the media URL, approval cards and the app around it; WebCodecs
 only, so test them in yours. Without `isolated`, use a single-threaded build, or a program the host half runs
 (plugin-host, "Programs").
 
-## An avatar renderer
+## A renderer for the avatar plugin
 
-A plugin that draws the `avatar` spot for a format of its own takes its cues and reports its model and figure through
-`useAvatarControl()`, and lip-syncs from the spot's `speech` feed (`useAvatarSpeech().feed`). The helpers MOSS's own
-renderers use are in `@waifucave/moss-plugin-sdk/ui`, the one SDK module a page is served (import nothing from a
-subpath of it): `SpeechRing` and `frameSource` read the frame that sounds now, `LipSync` turns it into five eased vowel
-weights (`aa`, `ih`, `ou`, `ee`, `oh`, summing to at most 1; `SHUT` is a closed mouth), and `avatarBoxFromRect` makes the
-figure's box and anchors from its bounding rectangle for `setBox`. Map the weights onto your format's own mouth.
+MOSS has no avatar of its own; the bundled avatar plugin (`moss/character`) shows one figure at a time and declares its
+own points. A renderer fills its UI spot `moss.character.renderer` keyed by a format of its own, and declares the format
+in `moss.character.formats` (`{ id, format, name, capabilities: ["lipsync", "expressions", …] }`); a pack fills
+`moss.character.packs` (`{ id, name, file, format, portrait?, license? }`, the model's files beside `file` coming along by
+the kinds the point declares). The avatar plugin sends `{ mount, cue }` on the renderer spot for the drawing whose `mount`
+prop it is, and the renderer sends back `{ mount, names }` (what its model answers to) and `{ mount, box }` (where the
+figure stands) with `api.points.send`. The helpers MOSS's own renderers use are in `@waifucave/moss-plugin-sdk/ui`, the one
+SDK module a page is served (import nothing from a subpath of it): `TimedSpeech` for the mouth's levels, `SpeechRing` and
+`frameSource` read the frame that sounds now, and `LipSync` turns it into five eased vowel weights (`aa`, `ih`, `ou`, `ee`,
+`oh`, summing to at most 1; `SHUT` is a closed mouth). Map the weights onto your format's own mouth. The SDK's example
+`example-pngtuber` is a whole one in one file.
 
 ## Testing a part
 

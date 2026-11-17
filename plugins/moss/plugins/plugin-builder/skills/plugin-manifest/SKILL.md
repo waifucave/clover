@@ -97,9 +97,10 @@ Each key below is one of the core's points. A key with a dot (`alpha.scenes`) is
 spot is never a key here, it goes in `ui`. plugin-catalog lists every point and spot.
 
 - **`bot`** (one): `name`, `instructions` (a Markdown file), and optionally `model: { default: "<qualified id>",
-  effort }`, `avatar: { file, format: "vrm" | "live2d" | a renderer plugin's format, portrait }`, `theme` (one of this
+  effort }`, `theme` (one of this
   plugin's theme ids), `layout` (a layout file for its tab), `greeting`
-  (Markdown), `memory` (a folder of starter memories).
+  (Markdown), `memory` (a folder of starter memories). `avatar` is retired: it is ignored with a warning, since MOSS has no
+  avatar of its own; a bot's figure is an entry in the avatar plugin's point `moss.character.packs`.
 - **`models`** (list): `provider` (an entry id), `name`, `terms`, `catalog` (a path to rows, or the rows), `auth`
   (sign-ins, may be `[]`), and either `endpoint: { protocol: "openai-chat" | "openai-responses" |
   "anthropic-messages", baseUrl }` (no code) or `adapter` (a host export).
@@ -183,11 +184,10 @@ Every entry above may also carry `declares` (below).
   MOSS's window is in front; `cards: true` draws the pending cards while the window is not in front (needs `approvals` and
   `approvals.all`). A container that holds a sealed card (the surface's card shell, its stack, its panel) must not move, scale, fade or filter it, nor transition those, on hover, focus or press while the user can press: a sealed button is read afresh at the press, and one read while its container moves says "not visible", so the press is refused (give a hover cue that only paints, such as a rim or a shadow); `summon: ["tap"]` is the four-finger tap. `toggles` (an own surface's id) or `command` (an own command) on an
   `app.tray` entry add a line to the menu-bar menu, with the `tray` capability. The pill's send is `useUserSend` with `user.send`: text the part chooses goes to any bot, session or `pill.target` as the user on any real click or key press in its window, and the OK card says so. A send comes inside the press (within a second, in the frame's own activation) or, for hold-to-talk, once within 30 s after a press the app saw held and released in the frame it happened in (no activation needed then; one press covers one send; a new press anywhere in the window, a reload, focus a page moved, or a page's own events give none).
-- a part that does what MOSS's own Settings, Plugins page, bot editor or avatar section does: `useCore().call(method, params)`
+- a part that does what MOSS's own Settings, Plugins page, bot editor does: `useCore().call(method, params)`
   reaches the app's door for parts, where each call needs a capability (no plugin's id passes it): `app.settings` (MOSS's
   look, language, the one-at-a-time pickers), `plugins.read` / `plugins.manage` (the Plugins page: list, install, remove,
-  switch on and off, sign in, any plugin's settings), `bots.edit` (a bot's settings, model and keys), `bots.avatar` (a bot's
-  avatar from a file the user picks), `tools.permissions` (the Tools tab), `account.read` (the account's name and email),
+  switch on and off, sign in, any plugin's settings), `bots.edit` (a bot's settings, model and keys), `tools.permissions` (the Tools tab), `account.read` (the account's name and email),
   `commands.run` (a composer's slash menu); `conversation.read` reads the archive and a session's panels. Every change there is
   the user's own press in the part (a click or key the app saw land in the part's own document: a real pointerdown there, which
   your script cannot make, or the part focused at the key down), and each capability warns on the OK card.

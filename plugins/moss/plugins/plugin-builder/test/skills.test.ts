@@ -245,9 +245,10 @@ test("the entry skill's move-into-the-plugins-folder line matches a build with t
 // renderer, and the framing variables only MOSS's own renderer reads from its own element.
 describe("plugin-ui's \"Fitting the space you get\" matches the runtime", () => {
   const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
-  test("main, panel and avatar frames fill their column and scroll themselves; every other frame is as tall as its content says", () => {
+  test("main and panel frames, and a spot drawn with `fill`, fill their column and scroll themselves; every other frame is as tall as its content says", () => {
     const sdk = read("packages/plugin-sdk/src/ui/index.tsx");
-    expect(sdk).toContain('const FILL_SPOTS: readonly string[] = ["main", "panel", "avatar"];');
+    expect(sdk).toContain('const FILL_SPOTS: readonly string[] = ["main", "panel"];');
+    expect(sdk).toContain("const fill = fillAsked === true || FILL_SPOTS.includes(spot);");
     expect(sdk).toContain('const FILL_STYLE: CSSProperties = { height: "100%", flex: "1 1 0", minHeight: 0 };');
     expect(sdk).toContain('...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` })');
     // A frame's reported height becomes its height (b-tab-flash also notes the drawn url in the same branch).
@@ -257,16 +258,16 @@ describe("plugin-ui's \"Fitting the space you get\" matches the runtime", () => 
     expect(read("apps/desktop/src/layer/layer.css")).toContain('html[data-moss-spot="main"] body, html[data-moss-spot="panel"] body { overflow: auto; }');
     expect(read("apps/desktop/src/main/ui/runtime.ts")).toContain("height: Math.max(0, Math.min(100_000, Math.round(height)))");
   });
-  test("the fixed boxes, the narrow window, and the stage's props with its framing", () => {
+  test("the fixed boxes, the narrow window, and the avatar plugin's renderer props with its framing", () => {
     expect(read("plugins/moss/plugins/shell/client/styles.css")).toMatch(/\.cl-window__sidebar-content iframe \{[^}]*height: 100% !important;/);
     expect(read("plugins/moss/plugins/sidebar/client/styles.css")).toMatch(/\.cl-sidebar__app-badge > iframe \{\s*width: 48px;\s*height: 18px;/);
     expect(read("plugins/alpha/tab/layout.css")).toContain(".alpha-figure > *, .alpha-figure iframe { width: 100% !important; height: 100% !important; }");
     expect(read("apps/desktop/src/main/ui/runtime.ts")).toContain("export const NARROW_BELOW = 900;");
     expect(read("packages/plugin-sdk/src/ui/bridge.ts")).toContain("window: { narrow: boolean };");
-    const stage = read("plugins/moss/plugins/character/client/stage.tsx");
-    for (const v of AVATAR_FRAMING) expect({ v, read: stage.includes(`"${v}"`) }).toEqual({ v, read: true });
-    expect(stage).toContain("export interface AvatarFraming { mode?: \"full\" | \"bust\" | \"waist\"; crop?: number; headroom?: number }");
-    expect(read("packages/plugin-sdk/src/catalogs/spots.ts")).toContain('props: z.object({ bot: BotRef, file: z.string(), format: z.string(), speaking: z.boolean(), speech: z.looseObject({}).optional() })');
+    const figure = read("plugins/moss/plugins/character/client/figure.tsx");
+    for (const v of AVATAR_FRAMING) expect({ v, read: figure.includes(`"${v}"`) }).toEqual({ v, read: true });
+    expect(figure).toContain("export interface FigureFraming { mode?: \"full\" | \"bust\" | \"waist\"; crop?: number; headroom?: number }");
+    expect(figure).toContain("return { mount, src: c.src, file: c.src, format: c.format, name: c.name,");
     const flat = text("plugin-ui").replace(/\s+/g, " ");
     expect(flat).toContain("`useMountContext().window.narrow` says so, and changes live");
     expect(flat).toContain("`framing: { mode?, crop?, headroom? }`");
