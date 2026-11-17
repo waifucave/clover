@@ -33,6 +33,7 @@ import { UI_STEPS } from "./ui-steps";
 import { COLD_START_STEP, FULL_STEPS, IDLE_STEP, REOPEN_STEPS, STAGE_STEP, finishTable, type Row } from "./steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
+import { TOOL_SETTING_STEP } from "./tool-setting-step";
 import { CARDS_STEP } from "./cards-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
@@ -90,7 +91,7 @@ const WINDOW_ESTIMATES: Readonly<Record<string, number>> = { "window-1": 120, "w
 
 const OTHERS: readonly Unit[] = [
   { id: "examples", rows: [EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP], phase: "parallel", estimate: 90 },
-  { id: "bundled-tools", rows: [BUNDLED_TOOLS_STEP], phase: "parallel", estimate: 60 },
+  { id: "bundled-tools", rows: [BUNDLED_TOOLS_STEP, TOOL_SETTING_STEP], phase: "parallel", estimate: 90 },
   { id: "cards", rows: [CARDS_STEP], phase: "parallel", estimate: 40 },
   { id: "workshop", rows: [WORKSHOP_STEP], phase: "parallel", estimate: 60 },
   { id: "reopen", rows: REOPEN_STEPS.map((s) => s.name), phase: "parallel", estimate: 110 },

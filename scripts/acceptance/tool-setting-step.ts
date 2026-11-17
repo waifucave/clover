@@ -1,0 +1,134 @@
+// The tool setting's row (spec §6.7, lane TS), headless, on the real path: the fixture plugin's tool (acceptance-echo's
+// `Echo`, which its manifest preloads) is set off through the app's own method (`tool.setAvailability`, the very call
+// Settings' Tools tab makes), and the bot can no longer call it (the request the model gets lists no such tool, and
+// the scripted model, asked to call it, finds none); then on demand, and the bot finds and loads it through `Glossary`
+// before calling it (it reaches the model deferred); then always on, and it is offered at once (the first request lists it,
+// loaded, and no `Glossary` call comes before the call). The row ends with the tool set back to what its plugin declares.
+//
+// The Settings control itself (its radios and the declared default marked) is the settings plugin's own test
+// (plugins/moss/plugins/settings/test/settings.test.tsx); this row proves the engine's half on a real daemon and a real
+// bot session, and that the answer to the user's own press reaches the very next turn with no restart.
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { callTurn, fail, until, type ExampleCtx } from "./example-steps";
+
+export const TOOL_SETTING_STEP = "a plugin's tool set off in the user's Tools settings: the bot is no longer offered it; set to on demand, the bot finds and loads it through Glossary before calling it; set to always on, it is offered at once and called with no Glossary; the rows read each value beside the plugin's declared default, and the permission is untouched";
+
+const PLUGIN = "acceptance-echo";
+const PONG = "acceptance-echo-pong";
+
+interface Row { name: string; permission: string; availability?: string; declared?: string }
+type Offered = { name: string; defer_loading?: boolean }[];
+
+/** What the scripted model's requests since `from` offered of `Echo`: whether it was listed, and whether deferred. */
+function offeredEcho(ctx: ExampleCtx, from: number): { listed: boolean; deferred: boolean; glossary: boolean } {
+  const mine = ctx.requests().slice(from);
+  const first = mine.find((r) => (r.body as { tools?: Offered } | undefined)?.tools !== undefined);
+  const tools = ((first?.body as { tools?: Offered } | undefined)?.tools ?? []);
+  const echo = tools.find((t) => t.name.endsWith("__Echo"));
+  return { listed: echo !== undefined, deferred: echo?.defer_loading === true, glossary: mine.some((r) => r.toolUse?.endsWith("Glossary") === true) };
+}
+
+async function installed(ctx: ExampleCtx): Promise<boolean> {
+  return ctx.rpc.request("plugin.get", { id: PLUGIN }).then(() => true, () => false);
+}
+
+/** The fixture plugin, installed from its folder and OK'd over RPC when this run's home doesn't have it already (a shard
+ *  of its own has none; the full run's step 4 left it). Answers whether this step installed it. */
+async function ensurePlugin(ctx: ExampleCtx): Promise<boolean> {
+  if (await installed(ctx)) return false;
+  const folder = join(ctx.root, "plugin-src", `${PLUGIN}-tool-setting`);
+  mkdirSync(join(ctx.root, "plugin-src"), { recursive: true });
+  cpSync(join(import.meta.dir, "fixtures", PLUGIN), folder, { recursive: true });
+  // The hook's and the stdio server's targets, which nothing here uses: a port nothing listens on, a path of the run's own.
+  writeFileSync(join(folder, "hooks", "targets"), `9\n${join(ctx.root, "tool-setting-hook-escape")}\n`);
+  writeFileSync(join(folder, "stdio", "targets"), `9\n${join(ctx.root, "tool-setting-stdio-escape")}\n`);
+  const r = await ctx.rpc.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+  const card = await until("the fixture plugin's OK card", 30_000, async () => {
+    const all = await ctx.rpc.request<{ cards: { id: string; pluginId?: string }[] }>("card.list");
+    return all.cards.find((k) => (r.card !== undefined && k.id === r.card) || k.pluginId === r.id);
+  });
+  await ctx.approveCard(card.id);
+  await until("the fixture plugin running after its OK", 60_000, async () => {
+    const s = (await ctx.rpc.request<{ plugin?: { state?: string } }>("plugin.get", { id: PLUGIN }).catch(() => undefined))?.plugin?.state;
+    return s === "running" || s === "enabled" ? true : undefined;
+  });
+  return true;
+}
+
+export async function toolSettingStep(ctx: ExampleCtx, session: string): Promise<string> {
+  const made = await ensurePlugin(ctx);
+  const done: string[] = [];
+  try {
+    // The tool's server as a bot names it, from the Tools tab's own list: no guessing of the key.
+    const read = async (): Promise<{ server: string; echo: Row }> => {
+      const r = await ctx.rpc.request<{ plugins: { pluginId: string; server: string; tools: Row[] }[] }>("tool.permissions", {});
+      const p = r.plugins.find((x) => x.pluginId === PLUGIN && x.tools.some((t) => t.name === "Echo"));
+      if (p === undefined) return fail(`tool.permissions lists no Echo tool for ${PLUGIN}`);
+      return { server: p.server, echo: p.tools.find((t) => t.name === "Echo")! };
+    };
+    const setTo = async (server: string, availability: "off" | "on-demand" | "always"): Promise<void> => {
+      await ctx.rpc.request("tool.setAvailability", { server, tool: "Echo", availability });
+      const now = (await read()).echo;
+      if (now.availability !== availability) fail(`after setting ${availability} the row reads ${now.availability ?? "no availability"}`);
+    };
+
+    // With nothing chosen: what the plugin declares, preloaded, so always on; the permission is the default, ask.
+    const start = await read();
+    const { server } = start;
+    if (start.echo.declared !== "preload" || start.echo.availability !== "always" || start.echo.permission !== "ask") {
+      fail(`Echo's row with nothing chosen reads declared ${start.echo.declared}, availability ${start.echo.availability}, permission ${start.echo.permission}; its manifest preloads it, so always on and ask`);
+    }
+    let from = ctx.requests().length;
+    const base = await callTurn(ctx, session, "Echo", { text: "default" });
+    if (!base.result.text.includes(PONG) || base.result.isError) fail(`the default call answered ${base.result.text.slice(0, 160)}`);
+    const baseOffer = offeredEcho(ctx, from);
+    if (!baseOffer.listed || baseOffer.deferred) fail(`with nothing chosen Echo was ${baseOffer.listed ? "deferred" : "not offered"}; a preloaded tool is offered loaded`);
+    done.push("by default it is preloaded and answers");
+
+    // Off: not offered; the model, asked to call it, finds no such tool, and the plugin never runs.
+    await setTo(server, "off");
+    from = ctx.requests().length;
+    const off = await ctx.turn(session, `ACCEPTANCE-CALL Echo ${JSON.stringify({ text: "off" })}`, 150_000);
+    const offOffer = offeredEcho(ctx, from);
+    const said = ctx.requests().slice(from).map((r) => r.toolResult?.text ?? "").join(" ") + JSON.stringify(off.events);
+    if (offOffer.listed) fail("the tool set to off was still offered to the bot");
+    if (!said.includes("ACCEPTANCE-NO-CALL-TOOL Echo")) fail(`with Echo off the turn didn't end as a model finding no such tool (${said.slice(0, 200)})`);
+    if (ctx.requests().slice(from).some((r) => r.toolUse?.endsWith("__Echo") === true)) fail("the bot called Echo while it was off");
+    const offRow = (await read()).echo;
+    if (offRow.permission !== "ask") fail(`turning Echo off changed its permission to ${offRow.permission}`);
+    done.push("off: not offered, no call possible, its permission still ask");
+
+    // On demand: offered deferred; the bot loads it through Glossary and then calls it.
+    await setTo(server, "on-demand");
+    from = ctx.requests().length;
+    const demand = await callTurn(ctx, session, "Echo", { text: "on demand" });
+    const demandOffer = offeredEcho(ctx, from);
+    if (!demandOffer.listed || !demandOffer.deferred) fail(`on demand, Echo was ${demandOffer.listed ? "offered loaded" : "not offered"}; it should reach the model deferred`);
+    if (!demandOffer.glossary) fail("on demand, the bot called Echo without finding and loading it through Glossary first");
+    if (!demand.result.text.includes(PONG) || demand.result.isError) fail(`the on-demand call answered ${demand.result.text.slice(0, 160)}`);
+    done.push("on demand: deferred, loaded through Glossary, then answered");
+
+    // Always on: offered loaded at once, and called with no Glossary.
+    await setTo(server, "always");
+    from = ctx.requests().length;
+    const always = await callTurn(ctx, session, "Echo", { text: "always" });
+    const alwaysOffer = offeredEcho(ctx, from);
+    if (!alwaysOffer.listed || alwaysOffer.deferred) fail(`always on, Echo was ${alwaysOffer.listed ? "deferred" : "not offered"}; it should be offered loaded`);
+    if (alwaysOffer.glossary) fail("always on, the bot still went through Glossary before calling Echo");
+    if (!always.result.text.includes(PONG) || always.result.isError) fail(`the always-on call answered ${always.result.text.slice(0, 160)}`);
+    done.push("always on: offered loaded and answered with no Glossary");
+    return done.join("; ");
+  } finally {
+    // Back to what the plugin declares, whatever happened, so no later row meets a tool left off.
+    try {
+      const r = await ctx.rpc.request<{ plugins: { pluginId: string; server: string }[] }>("tool.permissions", {});
+      const server = r.plugins.find((x) => x.pluginId === PLUGIN)?.server;
+      if (server !== undefined) await ctx.rpc.request("tool.setAvailability", { server, tool: "Echo", availability: "always" });
+    } catch { /* the plugin is gone with the run */ }
+    if (made) {
+      const removed = await ctx.rpc.request<{ card?: string }>("plugin.remove", { id: PLUGIN }).catch(() => undefined);
+      if (removed?.card !== undefined) await ctx.approveCard(removed.card).catch(() => undefined);
+    }
+  }
+}

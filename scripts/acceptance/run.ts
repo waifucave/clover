@@ -83,6 +83,7 @@ import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
+import { TOOL_SETTING_STEP, toolSettingStep } from "./tool-setting-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
 import { ADDONS_STEP, addonsStep } from "./addons-step";
@@ -3481,6 +3482,8 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     // The web tools only where the run's fake search backend answers them (as steps 14 and 15): never the real web.
     [BUNDLED_TOOLS_STEP, () => bundledToolsStep(ctx, session, skipWebTurns ? "--skip-web-turns: this tree's daemon has no fake web seam"
       : target !== "source" && outsideWorld === undefined ? "this packaged core has no test seam for the outside world" : true)],
+    // The user's tool setting (off, on demand, always on) on the fixture plugin's tool, on the real path (lane TS).
+    [TOOL_SETTING_STEP, () => toolSettingStep(ctx, session)],
     [CARDS_STEP, () => cardsStep(ctx)],
     // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation.
     [WORKSHOP_STEP, () => workshopStep(ctx, session)],

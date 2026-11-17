@@ -3,6 +3,7 @@
 import { UI_STEPS } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
+import { TOOL_SETTING_STEP } from "./tool-setting-step";
 import { CARDS_STEP } from "./cards-step";
 import { ARRIVALS_STEP } from "./arrivals-step";
 import { ADDONS_STEP } from "./addons-step";
@@ -79,6 +80,7 @@ export const FULL_STEPS = [
   EXAMPLE_NOTES_STEP,
   EXAMPLE_WEATHER_STEP,
   BUNDLED_TOOLS_STEP,
+  TOOL_SETTING_STEP,
   CARDS_STEP,
   WORKSHOP_STEP,
   TAB_FLASH_STEP,
