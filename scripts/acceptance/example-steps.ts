@@ -314,8 +314,11 @@ async function notesSteps(ctx: ExampleCtx, session: string): Promise<string> {
   if (computer === undefined) fail("computer.list lists no computer");
   mkdirSync(join(ctx.userHome, "notes-tidy"), { recursive: true });
   writeFileSync(join(ctx.userHome, "notes-tidy", "notes.md"), "Buy oat milk\nbuy oat milk\nWater the plants\n");
-  // A code session started from its definition, the user's way (`agent.start` with `definition`, as New session does).
-  const tidier = (await rpc.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/notes-tidy`, definition: `${id}:tidier`, prompt: "ACCEPTANCE-CHILD: tidy the notes and say you're done." }, 60_000)).session;
+  // A code session started from its definition, the user's way (`agent.start` with `definition`, as New session does),
+  // on the model the run's key drives (Alpha's): with none named it runs the home's default, which holds no key here.
+  const model = (await rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.model;
+  if (model === undefined) fail("Alpha has no model to give the tidier's code session");
+  const tidier = (await rpc.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/notes-tidy`, definition: `${id}:tidier`, model, prompt: "ACCEPTANCE-CHILD: tidy the notes and say you're done." }, 60_000)).session;
   const row = await until("the tidier's session row", 30_000, async () => (await rpc.request<{ sessions: { id: string; backend?: string; definition?: string }[] }>("session.list", { kinds: ["coding", "agent"] }).catch(() => ({ sessions: [] }))).sessions.find((s) => s.id === tidier && s.definition === `${id}:tidier`), undefined);
   const tidierCards = (await rpc.request<{ cards: Card[] }>("card.list")).cards.filter((c) => c.session === tidier);
   if (tidierCards.length > 0) fail(`the tidier's session raised ${tidierCards.map((c) => c.kind).join(", ")}`);
