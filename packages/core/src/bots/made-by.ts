@@ -12,7 +12,7 @@ import { BOT_RECORD_FILE, BotRecord, isAnyPluginId } from "@waifucave/moss-proto
 /** The longest `bot.json` read: a record is a few hundred bytes. */
 export const BOT_RECORD_MAX_BYTES = 64 * 1024;
 
-const plainFolder = (path: string): boolean => {
+export const plainFolder = (path: string): boolean => {
   try {
     const st = lstatSync(path);
     return st.isDirectory() && !st.isSymbolicLink();
@@ -25,7 +25,8 @@ const plainFolder = (path: string): boolean => {
 export function readRecordFile(path: string): BotRecord | undefined {
   try {
     const st = lstatSync(path);
-    if (!st.isFile() || st.isSymbolicLink() || st.size > BOT_RECORD_MAX_BYTES) return undefined;
+    // A second name (a hard link) means someone other than the core could have written it: no record.
+    if (!st.isFile() || st.isSymbolicLink() || st.nlink > 1 || st.size > BOT_RECORD_MAX_BYTES) return undefined;
     const parsed = BotRecord.safeParse(JSON.parse(readFileSync(path, "utf8")));
     return parsed.success ? parsed.data : undefined;
   } catch {

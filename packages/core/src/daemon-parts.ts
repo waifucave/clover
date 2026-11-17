@@ -320,7 +320,12 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     let node: ComputerNode | undefined;
     // The one MossFence and the one approval broker on this computer: the node (its folder tree, its terminals' paste
     // card), the agents and the bot side all go through these, never a copy of their own.
-    const fence = new MossFence({ home: input.userHome, mossHome: input.mossHome });
+    const fence = new MossFence({
+      home: input.userHome, mossHome: input.mossHome,
+      // Lane BT's instructions rule from the records the core holds (never a record re-read from the disk); with plugins
+      // as the bots' source, none.
+      instructionsOf: (bot) => side?.bots.records?.instructionsReach(bot) ?? [],
+    });
     // A bot's workshop (the plugins it built: `provenance {by: "bot", bot}` in the registry's install records), followed
     // on each registry change, so its sessions' file tools and sandbox write inside them (`FenceContext.workshop`).
     if (input.bots) closers.push(fence.followWorkshop(input.bots.registry, input.bots.drops));

@@ -335,3 +335,42 @@ describe("the instructions file is the bot's to write, so the core reads it as u
     await b.shutdown();
   });
 });
+
+describe("read-only is absolute", () => {
+  test("at the read-only level neither MakeBot nor EditBotInstructions runs, and no card is raised", async () => {
+    const clock = new FakeClock();
+    const broker = new FakeApprovalBroker({ clock });
+    const b = await boot({ home: tempDir(), clock, plugins: [], botSource: "records", approvals: broker, levelOf: () => "read-only" });
+    await b.bots.createBot({ name: "Alpha" }, { kind: "user" });
+    await b.bots.createBot({ name: "Luna", instructions: "l1" }, { kind: "user" });
+    const tools = b.side.tools("b_alpha");
+    expect(await tools.find((t) => t.name === MAKE_BOT_TOOL)!.run({ name: "Scout" })).toMatchObject({ isError: true, text: expect.stringContaining("read-only") });
+    expect(await tools.find((t) => t.name === EDIT_BOT_INSTRUCTIONS_TOOL)!.run({ bot: "luna", instructions: "l2" })).toMatchObject({ isError: true, text: expect.stringContaining("read-only") });
+    expect(broker.cards()).toEqual([]);
+    expect(b.bots.records!.instructions("luna")).toBe("l1");
+    await b.shutdown();
+  });
+
+  test("the instructions rule from the store's own records: a record forged on the disk names no maker; a hard-linked bot.json isn't read", async () => {
+    const { linkSync, mkdirSync } = await import("node:fs");
+    const home = tempDir();
+    const b = await recordsBoot(home);
+    await b.bots.createBot({ name: "Alpha" }, { kind: "user" });
+    await b.bots.createBot({ name: "Luna" }, { kind: "user" });
+    expect(b.bots.records!.instructionsReach("alpha")).toEqual(["alpha"]);
+    // Luna's record rewritten on the disk to name Alpha as maker (as only a second name for it could): the store's own
+    // copy, the one the fence asks, is unchanged.
+    const forged = JSON.parse(readFileSync(recordFile(home, "luna"), "utf8"));
+    writeFileSync(recordFile(home, "luna"), JSON.stringify({ ...forged, madeBy: { kind: "bot", id: "alpha" } }));
+    expect(b.bots.records!.instructionsReach("alpha")).toEqual(["alpha"]);
+    // A bot.json with a second name is no record at the next start.
+    mkdirSync(join(home, "bots", "alpha", "memory"), { recursive: true });
+    linkSync(recordFile(home, "luna"), join(home, "bots", "alpha", "memory", "luna.json"));
+    await b.shutdown();
+    const again = await recordsBoot(home);
+    expect(again.bots.records!.get("luna")).toBeUndefined();
+    expect(again.bots.records!.instructionsReach("alpha")).toEqual(["alpha"]);
+    expect(again.warnings.some((w) => w.includes("isn't a bot's record"))).toBe(true);
+    await again.shutdown();
+  });
+});

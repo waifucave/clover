@@ -977,7 +977,8 @@ export class BotService {
     live.offSummary?.();
     // Its plugin removed (not just switched off): the LAN switch goes, so it never carries over to whatever plugin
     // later takes the id. The rest of the user layer survives a reinstall as before.
-    if (this.#o.registry.get(id) === undefined) this.#layers.clearLan(id);
+    // A record bot keeps it: an archived bot comes back as it was.
+    if (live.plugin !== undefined && this.#o.registry.get(id) === undefined) this.#layers.clearLan(id);
     const host = this.#o.host;
     await host.release(live.mainSession);
     for (const s of host.list({ bot: id, kind: "side-thread" })) {

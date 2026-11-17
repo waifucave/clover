@@ -323,6 +323,11 @@ export function createBotSide(o: BotSideOptions): BotSide {
         defs.push(...recordToolDefs({
           bots, host, ...(o.approvals?.request === undefined ? {} : { approvals: { request: o.approvals.request.bind(o.approvals) } }),
           setUp: (model) => (o.hasKeyFor?.(model) ?? true) && o.modelOffer?.(model) !== "absent",
+          // As the approval check reads it: a computer whose level isn't known is read-only.
+          readOnly: () => {
+            const computer = host.get(sessionId)?.computer ?? o.computer;
+            return o.levelOf !== undefined && (o.levelOf(computer) ?? "read-only") === "read-only";
+          },
         }, sessionId));
       }
       return defs;

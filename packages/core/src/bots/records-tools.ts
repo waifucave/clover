@@ -31,6 +31,9 @@ export interface RecordToolsDeps {
   approvals?: Pick<ApprovalBroker, "request">;
   /** Whether the person has set a model up: a key or sign-in for it, and a plugin on that offers it. */
   setUp(model: string): boolean;
+  /** Whether the session's computer is at the read-only level: then neither tool runs (read-only is absolute, as it is
+   *  for the bot's own Write of its instructions). */
+  readOnly?(): boolean;
 }
 
 const nameOf = (t: Text): string => (typeof t === "string" ? t : t.en);
@@ -80,6 +83,7 @@ export function recordToolDefs(deps: RecordToolsDeps, sessionId: string): CoreTo
       async run(raw) {
         const maker = caller();
         const store = deps.bots.records;
+        if (deps.readOnly?.() === true) return fail("MakeBot was refused: this computer's level is read-only.");
         if (maker === undefined || store === undefined || !store.has(maker)) return fail("MakeBot works only in a bot's own conversation.");
         const parsed = MakeBotInput.safeParse(raw);
         if (!parsed.success) return fail(`MakeBot takes a name, and optionally instructions, a face and a model: ${parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ")}`);
@@ -133,6 +137,7 @@ export function recordToolDefs(deps: RecordToolsDeps, sessionId: string): CoreTo
       async run(raw) {
         const editor = caller();
         const store = deps.bots.records;
+        if (deps.readOnly?.() === true) return fail("EditBotInstructions was refused: this computer's level is read-only.");
         if (editor === undefined || store === undefined) return fail("EditBotInstructions works only in a bot's own conversation.");
         const parsed = EditInput.safeParse(raw);
         if (!parsed.success) return fail("EditBotInstructions takes a bot's id and its new instructions.");

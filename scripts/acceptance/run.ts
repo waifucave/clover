@@ -3110,12 +3110,16 @@ async function main(): Promise<void> {
   if (STEPS.includes(CODE_ADAPTER_STEP) && runs("models")) record(STEPS.indexOf(CODE_ADAPTER_STEP) + 1, codeAdapterOutcome?.status ?? "BLOCKED", codeAdapterOutcome?.detail ?? "the code-adapter turn didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
   if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
-  // Last of the chain: its own daemon on the chain's home, with records as the bots' source (lane BT).
-  if (STEPS.includes(BOT_RECORDS_STEP) && runs(unitOf(BOT_RECORDS_STEP))) await botRecordsStep(false);
   if (runs("cold")) await coldStartStep(app, 1);
   if (runs("reopen")) await reopenSteps(app);
   if (runs("stage")) await stageLevelsStep(app);
   if (runs("idle")) await idleStep(app);
+  // Last of all: its own daemon on the home, with records as the bots' source (lane BT), which moves the home's bots;
+  // nothing runs on the home after it. A --keep-state run leaves the home as today's builds made it, so it skips the row.
+  if (STEPS.includes(BOT_RECORDS_STEP) && runs(unitOf(BOT_RECORDS_STEP))) {
+    if (keepState !== undefined) record(stepNumber(FULL_STEPS, BOT_RECORDS_STEP), "PASS", "not run: a --keep-state run keeps the home as today's bots left it (run it with --only-bot-records)");
+    else await botRecordsStep(false);
+  }
 }
 
 /** The bots-as-engine-data row (bot-records-step.ts): the daemon before it ended, one started with records as the bots'

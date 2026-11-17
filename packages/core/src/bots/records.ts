@@ -41,7 +41,7 @@ import { instructionsEditRule } from "@waifucave/moss-protocol";
 import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
 import { syncDir, syncFile } from "../sessions/durable-io";
 import { botSegment, mainSessionIdFor, transcriptsDir } from "../sessions/ids";
-import { readRecordFile } from "./made-by";
+import { plainFolder, readRecordFile } from "./made-by";
 import { seedMemory } from "./memory";
 import { readOwnFile } from "./own-file";
 import { botStateFile } from "./paths";
@@ -265,6 +265,19 @@ export class BotRecordStore implements BotRecords {
 
   has(id: string): boolean {
     return this.#records.has(id);
+  }
+
+  /** The instructions rule from the records the core holds (never re-read from the disk, where a planted second name
+   *  could forge a maker): `bot` itself and every bot whose record names it as maker, each while its folder and its
+   *  instructions folder are plain folders. */
+  instructionsReach(bot: string): string[] {
+    const out: string[] = [];
+    for (const { record } of this.#records.values()) {
+      if (record.id !== bot && !(record.madeBy.kind === "bot" && record.madeBy.id === bot)) continue;
+      const folder = join(this.#home, "bots", botSegment(record.id));
+      if (plainFolder(folder) && plainFolder(join(folder, "instructions"))) out.push(record.id);
+    }
+    return out;
   }
 
   instructions(id: string): string {

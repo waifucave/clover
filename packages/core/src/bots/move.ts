@@ -61,7 +61,10 @@ export function pluginBotsForMove(registry: Pick<PluginRegistry, "entries" | "ge
     out.push({
       plugin: record.id, id: b.id, name: b.entry.name, instructions: b.instructions,
       ...(b.greeting === undefined ? {} : { greeting: b.greeting }),
-      ...(b.entry.model === undefined ? {} : { model: b.entry.model.default }),
+      // Item 124: a bot's model is the person's choice. The plugin's own model tag is carried only from MOSS's own
+      // bundled plugin (its choice never asks); a third party's isn't (the bot runs on the person's default model until
+      // they pick one), so no provider the person never picked is spent on after the move. The user layer's always is.
+      ...(b.entry.model === undefined || record.source !== "bundled" ? {} : { model: b.entry.model.default }),
       ...(b.entry.model?.effort === undefined ? {} : { effort: b.entry.model.effort }),
       ...(Object.keys(userLayer).length === 0 ? {} : { userLayer }),
       ...(b.memorySeed === undefined ? {} : { memorySeed: b.memorySeed }),
