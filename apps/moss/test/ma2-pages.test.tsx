@@ -96,6 +96,7 @@ describe("the side panel", () => {
     const from = r.container.querySelector("[data-publisher]");
     expect(from?.getAttribute("data-publisher")?.length).toBeGreaterThan(0);
     expect(from?.textContent).toContain(from?.getAttribute("data-publisher") ?? "-");
+    expect(from?.textContent?.replace(/\u00a0/g, " ")).toContain("From MOSS Browser (moss/browser) · watch only");
     expect(from?.textContent).toContain("watch only");
     expect(r.container.textContent).toContain("Juniper's screen");
     // The routines: three, one of them paused, each with its schedule in words.

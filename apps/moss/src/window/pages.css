@@ -103,3 +103,4 @@
   .ma2-setting { flex-wrap: wrap; }
   .ma2-setting__control { max-width: 100%; }
 }
+.ma2-publisher-id { color: var(--faint); }
