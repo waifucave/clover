@@ -53,6 +53,7 @@ import { homedir } from "node:os";
 import { seedMemory } from "./memory";
 import { sweepOwnTempFiles } from "../fence/own-files";
 import { botPaths, botStateFile, homeTreePath, sessionScratchDir, type BotPaths } from "./paths";
+import { outdirPath } from "../sessions/outdir";
 import { botEntries, loadPluginBot, type PluginBot } from "./plugin-bot";
 import { parseUserLayerPatch, userLayerFields, UserLayerStore, type UserLayer, type UserLayerField } from "./user-layer";
 import type { BotProviderConsent, ProviderConsent } from "./provider-consent";
@@ -419,12 +420,14 @@ export class BotService {
   }
 
   /** A session's scratch folder here, made if missing, as a folder-tree path (§6.5; lane J's MCP router saves a
-   *  call's files there when it names no `saveTo`). Refused for a MOSS home outside the user's home. */
+   *  call's files there when it names no `saveTo`). Refused for a MOSS home outside the user's home. A coding session
+   *  the user drives saves into its own outputs folder (`<home>/outputs/<session>`), the one place in the home its
+   *  agent's fence lets it write (`homeAllows`, rule 1): a screenshot its Browser call took, a plugin tool's image. */
   scratchFor(sessionId: string): string {
     const view = this.#o.host.get(sessionId);
     if (!view) throw new ContractError("not_found", `no session ${sessionId}`);
     const bot = this.#o.host.callerOf(sessionId).bot;
-    const dir = sessionScratchDir(this.#o.home, { id: sessionId, ...(bot === undefined ? {} : { bot }) });
+    const dir = view.kind === "coding" ? outdirPath(this.#o.home, sessionId) : sessionScratchDir(this.#o.home, { id: sessionId, ...(bot === undefined ? {} : { bot }) });
     const tree = homeTreePath({ userHome: this.#o.userHome ?? homedir(), computer: this.#o.computer, dir });
     if (tree === undefined) throw new ContractError("invalid", `the scratch folder ${dir} isn't inside the user's home, so the folder tree can't name it`);
     mkdirSync(dir, { recursive: true });
