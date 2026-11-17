@@ -1288,7 +1288,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: MossClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean; pick?: (card: Card) => { cdp: Cdp; log: string; onIsland?: boolean } }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
+async function turn(c: MossClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean; always?: boolean; pick?: (card: Card) => { cdp: Cdp; log: string; onIsland?: boolean } }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -1314,7 +1314,13 @@ async function turn(c: MossClient, session: string, text: string, timeoutMs = 12
             // lane HS: a run with a host picks where to press by the card's placement.
             const by = by0 !== undefined && "pick" in by0 && typeof by0.pick === "function" ? { ...by0, ...by0.pick(card) } : by0;
             if (by === undefined) fail("the first app has no DevTools connection (step 1), so the card can't be pressed the real way");
-            if (by!.onIsland === true) { const how = await pressOnIsland(by!.cdp, card, by!.log); o.onPressed?.(how); seenCards.push(`a ${card.kind} card, ${how}`); continue; }
+            if (by!.onIsland === true) {
+              const always = (by as { always?: boolean }).always === true && card.options.some((x) => x.kind === "approve" && (x as { remember?: string }).remember === "always");
+              const how = await pressOnIsland(by!.cdp, card, by!.log, always ? "always" : "approve");
+              o.onPressed?.(how);
+              seenCards.push(always ? `a ${card.kind} card, answered with Always allow (${how})` : `a ${card.kind} card, ${how}`);
+              continue;
+            }
             if (by!.inConversation === true) { const how = await pressInHerTab(by!.cdp, card, by!.log, by!.narrow === true); o.onPressed?.(how); seenCards.push(`a ${card.kind} card, ${how}`); continue; }
             await pressApprove(by!.cdp, card, by!.log);
             seenCards.push(`a ${card.kind} card, its Approve pressed in the window (the app signed, the broker checked the proof)`);
@@ -1472,8 +1478,10 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
  *  page ready by its own gates), and asserts what the owner's card needs: the press is accepted by the app and the core, and the
  *  app's fallback card was never drawn for it. Only frames in the island window's own tree count: the conversation's, the pill's
  *  and the fallback's do not. */
-async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log")): Promise<string> {
+async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"), which: "approve" | "always" = "approve"): Promise<string> {
   await appGotCard(card, appLog);
+  // lane HS: the island's Always allow too, for a run whose cards are answered only where they are drawn (a host's island).
+  const BUTTON = which === "always" ? ".seal-button[data-kind=approve][data-remember]" : PLAIN_APPROVE;
   const from = readLog(appLog).length;
   const cardUrl = `moss-sealed://card/${encodeURIComponent(card.id)}/`;
   const island = () => [...cdp.frames.values()].find((f) => f.type === "page" && f.url.startsWith("moss-core://app/?surface=island"));
@@ -1493,12 +1501,12 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
     const conv = await inConversation();
     for (const d of await cdp.documents()) {
       if (!decodeURIComponent(d.url).startsWith(`${cardUrl}button:`) || conv.has(decodeURIComponent(d.url))) continue;
-      if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(PLAIN_APPROVE)})`).catch(() => false)) === true) return d;
+      if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(BUTTON)})`).catch(() => false)) === true) return d;
     }
     return undefined;
   }, 300);
   const s = found.session;
-  const btn = await until("the island's Approve button's place", 10_000, () => cdp.centerOf(s, PLAIN_APPROVE), 300);
+  const btn = await until("the island's Approve button's place", 10_000, () => cdp.centerOf(s, BUTTON), 300);
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s).catch(() => undefined);
   await until("the sealed page's ready-to-answer mark on the island", 15_000, async () => ((await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes" ? true : undefined), 100)
     .catch(async (err: unknown) => fail(`${why(err)} (the island's Approve was never ready; the app logged: ${readLog(appLog).slice(from).split("\n").filter((l) => /sealed: .*(visible|press)|fallback/.test(l)).slice(-8).join(" | ") || "nothing"})`));
@@ -4481,7 +4489,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
       approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) { if (hostCdp !== undefined) await pressWhereHeld(card); else await approve(rpc, card, { log }); } },
       denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick } }),
-      alwaysTurn: (s2, text, ms) => (hostCdp !== undefined ? turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick } }) : turn(rpc, s2, text, ms, { always: true, log })),
+      alwaysTurn: (s2, text, ms) => (hostCdp !== undefined ? turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick, always: true } }) : turn(rpc, s2, text, ms, { always: true, log })),
       inspectTurn: (s2, text, ms, inspect) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick }, inspect: async () => inspect() }),
       history: (s2) => history(rpc, s2),
       setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back"),
