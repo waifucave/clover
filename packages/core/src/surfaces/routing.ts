@@ -33,7 +33,12 @@ export function cardPressGate(s: { door: Pick<EngineSurfaceDoor, "programOf" | "
   const place = s.router.placementOf(cardId);
   // A card the router hasn't placed (it isn't pending here): the broker answers for it (unknown, or already answered).
   if (place === undefined) return undefined;
-  if (place.kind === "elsewhere") return "this card isn't drawn on this computer now";
+  if (place.kind === "elsewhere") {
+    // lane HS (the reviewer's B2, never nowhere): nothing draws the island, so MOSS Code's window shows the card on its own
+    // fallback card: a press from a window that connection reports is taken (the router's rule), never one from MOSS.
+    const own = s.router.windowsOf(connId).find((w) => w.program === "code");
+    return own !== undefined && s.router.mayPress(cardId, { kind: "window", program: "code", window: own.window }) ? undefined : "this card isn't drawn on this computer now";
+  }
   if (place.kind === "island") {
     return s.door.islandDrawer(connId) && s.router.mayPress(cardId, { kind: "island" }) ? undefined : "this card is on the island now";
   }

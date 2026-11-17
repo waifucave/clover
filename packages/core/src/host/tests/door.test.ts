@@ -11,6 +11,7 @@ import { EngineHostSupervisor } from "../supervisor";
 import { EngineTabFrames, pagesOwner } from "../tab-frames";
 import { APP_BROWSER_FEATURE } from "../../browser/app-port";
 import { EngineCardRouter } from "../../surfaces/card-router";
+import { cardPressGate } from "../../surfaces/routing";
 import { sendCoreEvent } from "../../ipc/core-events";
 import { MOSS_EVENTS } from "@waifucave/moss-protocol";
 
@@ -383,4 +384,18 @@ test("B2, never nowhere: a card placed elsewhere (nothing draws the island) take
   router.hostLive(true);
   expect(router.mayPress("card_1", { kind: "window", program: "code", window: "main" })).toBe(false);
   expect(router.mayPress("card_1", { kind: "island" })).toBe(true);
+});
+
+test("B2: the press gate takes a press on an elsewhere card from MOSS Code's reporting window only", () => {
+  const router = new EngineCardRouter({ clock: new FakeClock(), hostLive: false });
+  const programs = new Map<number, "code" | "moss">([[1, "code"], [2, "moss"], [3, "code"]]);
+  const door = { programOf: (id: number) => programs.get(id), islandDrawer: () => false };
+  const win = { windows: [{ window: "main", focused: false, visible: true, showing: null }] } as Parameters<EngineCardRouter["report"]>[1];
+  router.report({ connId: 1, program: "code" }, win);
+  router.report({ connId: 2, program: "moss" }, win);
+  expect(router.pending({ id: "card_1" })).toEqual({ kind: "elsewhere" });
+  expect(cardPressGate({ door, router }, 1, "card_1")).toBeUndefined();
+  expect(cardPressGate({ door, router }, 2, "card_1")).toBe("this card isn't drawn on this computer now");
+  // A code connection that reports no window (it draws no fallback card) is refused.
+  expect(cardPressGate({ door, router }, 3, "card_1")).toBe("this card isn't drawn on this computer now");
 });
