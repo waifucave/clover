@@ -48,6 +48,12 @@ if (where === "moss-app:" && location.host === "app" && window.top === window) {
     botSettings: (bot) => ipcRenderer.invoke("moss:bot-settings", { bot }),
     setBotSetting: (bot, pluginId, key, value) => ipcRenderer.invoke("moss:set-bot-setting", { bot, pluginId, key, value }),
     setLevel: (computer, level) => ipcRenderer.invoke("moss:set-level", { computer, level }),
+    setPermission: (server, tool, permission) => ipcRenderer.invoke("moss:set-permission", { server, tool, permission }),
+    signIn: (pluginId, index, key) => ipcRenderer.invoke("moss:sign-in", { pluginId, index, ...(key !== undefined ? { key } : {}) }),
+    signOut: (pluginId, index) => ipcRenderer.invoke("moss:sign-out", { pluginId, index }),
+    botRecord: (id) => ipcRenderer.invoke("moss:bot-record", { id }),
+    editBot: (id, patch) => ipcRenderer.invoke("moss:edit-bot", { id, patch }),
+    models: () => ipcRenderer.invoke("moss:models"),
   };
   contextBridge.exposeInMainWorld("moss", bridge);
 } else if (where === "moss-sealed:" && location.host === "card") {

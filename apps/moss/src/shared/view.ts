@@ -5,7 +5,7 @@ import type { ActivityState, BotFace, ToolAvailability } from "@waifucave/moss-p
 
 /** The engine pieces the window stands on, each served by its own lane: until a piece is served, the window says it is
  *  waiting for it, never shows something made up. */
-export type Piece = "bots" | "summaries" | "activity" | "routines" | "pictures" | "router" | "tools" | "plugins" | "account" | "devices" | "key";
+export type Piece = "bots" | "summaries" | "activity" | "routines" | "pictures" | "router" | "tools" | "plugins" | "account" | "devices" | "models" | "key";
 export type PieceState = "ready" | "waiting" | "failed";
 
 export type ConnectionKind = "connecting" | "starting-engine" | "connected" | "reconnecting" | "behind" | "refused" | "unavailable" | "stopped";
@@ -94,6 +94,8 @@ export interface ToolRow {
   server: string;
   tool: string;
   availability: ToolAvailability;
+  /** What the plugin declares, which is the default (`preload` is always on, `on-demand` on demand). */
+  declared?: ToolAvailability;
   permission: "allow" | "ask" | "deny";
 }
 
@@ -127,6 +129,35 @@ export interface BotSetting {
   max?: number;
   value?: unknown;
   set: boolean;
+}
+
+/** A bot's own record for its Edit view (the person's: name, model, effort, face pins). The instructions file's text is not
+ *  served by any engine method yet (only its size, `instructionsBytes`): the controller decides who adds a read. */
+export interface BotRecordRow {
+  id: string;
+  name: string;
+  model?: string;
+  effort?: string;
+  face?: BotFace;
+  instructionsBytes: number;
+}
+
+/** A change to a bot's record or instructions; `null` clears a field back to the default. */
+export interface BotEdit {
+  name?: string;
+  instructions?: string;
+  model?: string | null;
+  effort?: string | null;
+  face?: BotFace | null;
+}
+
+/** A model the person can give a bot (`models.list`). */
+export interface ModelRow {
+  id: string;
+  title: string;
+  provider: string;
+  /** Its provider is signed in, so it can run a turn now. */
+  ready: boolean;
 }
 
 /** What the window may ask MOSS's main process: a fixed list, never a generic call (preload.ts). */
@@ -165,6 +196,16 @@ export interface MossBridge {
   setBotSetting(bot: string, pluginId: string, key: string, value: unknown): Promise<boolean>;
   /** A computer's approval level: the engine raises a sealed card (a sensitive change), which the router places here. */
   setLevel(computer: string, level: string): Promise<boolean>;
+  /** A tool's permission (always allow / ask / always block), the person's own, after their press. */
+  setPermission(server: string, tool: string, permission: "allow" | "ask" | "deny"): Promise<boolean>;
+  /** Signs in with one of a plugin's `auth` entries: a key goes in once and never comes back; for a browser sign-in
+   *  main opens the page itself (the window never sees the link). */
+  signIn(pluginId: string, index: number, key?: string): Promise<{ state: string } | { ok: false; why: string }>;
+  /** Signs out of one entry, after the person's yes on a sealed card the router places here. */
+  signOut(pluginId: string, index: number): Promise<boolean>;
+  botRecord(id: string): Promise<BotRecordRow | { waiting: true }>;
+  editBot(id: string, patch: BotEdit): Promise<boolean>;
+  models(): Promise<ModelRow[] | { waiting: true }>;
 }
 
 /** A mood in words, said beside every face (the kit's README: "a mood is shown by motion alone"). */

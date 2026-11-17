@@ -17,7 +17,7 @@ import {
 import { FakeActivityFeed, FakeBotRecords, FakeCardRouter, FakeLivePictures, FakeProgramAnswerKeys, FakeToolSettings } from "@waifucave/moss-core/contracts/fakes";
 import type { Clock, TimerHandle } from "@waifucave/moss-core/contracts";
 import { daemonEndpoint } from "../../src/main/client";
-import { BOTS, botId, cardsAt, PLUGINS, routinesOf } from "./fixtures";
+import { BOTS, botId, cardsAt, MODELS, PLUGINS, routinesOf, TOOL_VALUES } from "./fixtures";
 
 export const FAKE_DEVICE = "devstudio0000000001";
 
@@ -104,12 +104,16 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
   const keys = new FakeProgramAnswerKeys();
   const tools = new FakeToolSettings();
   for (const p of PLUGINS) tools.declare(p.server, { ...p.tools } as Record<string, "preload" | "on-demand">);
+  for (const v of TOOL_VALUES) {
+    if (v.availability !== undefined) tools.setAvailability(v.server, v.tool, v.availability);
+    if (v.permission !== undefined) tools.setPermission(v.server, v.tool, v.permission);
+  }
 
   /** Each bot's conversation, as its main session's events. */
   const talk = new Map<string, Record<string, unknown>[]>();
   const summaries = new Map<string, { id: string; last?: { text: string; from: "user" | "bot" | "note"; at: number }; unread: boolean }>();
   for (const b of BOTS) {
-    const v = await bots.create({ name: b.name, ...(b.face !== undefined ? { face: b.face } : {}) }, { kind: "user" });
+    const v = await bots.create({ name: b.name, ...(b.face !== undefined ? { face: b.face } : {}), ...(b.model !== undefined ? { model: b.model } : {}), ...(b.instructions !== undefined ? { instructions: b.instructions } : {}) }, { kind: "user" });
     const session = v.mainSession;
     const events: Record<string, unknown>[] = [];
     const start = now - b.ago * 60_000 - b.talk.length * 90_000;
@@ -306,6 +310,22 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         piece("tools", method);
         tools.setAvailability(String(params.server), typeof params.tool === "string" ? params.tool : undefined, params.availability as never);
         return { ok: true };
+      case "tool.setPermission":
+        piece("tools", method);
+        tools.setPermission(String(params.server), typeof params.tool === "string" ? params.tool : undefined, params.permission as never);
+        return { ok: true };
+      case "plugin.auth.signIn":
+        return { state: typeof params.key === "string" ? "signed-in" : "signed-out", ...(typeof params.key === "string" ? {} : { authorizeUrl: "https://example.test/authorize" }) };
+      case "plugin.auth.signOut":
+        return { applied: false, card: "card_signout_000001" };
+      case "bot.edit": {
+        piece("bots", method);
+        const v = await bots.edit(String(params.id), params.patch as never);
+        event("bots", { type: "bot_record_changed", bot: v });
+        return { applied: true };
+      }
+      case "models.list":
+        return { models: MODELS, default: "anthropic/claude-sonnet" };
       case "plugin.install":
         return { id: "added-plugin", state: "found", card: "card_added_plugin" };
       case "account.status":
