@@ -2969,9 +2969,9 @@ async function main(): Promise<void> {
         return st === "enabled" || st === "running" ? st : undefined;
       });
       const turnOf = async (tool: string) => {
-        const seen = fake.requests.length;
-        const { events } = await turn(c, session, `ACCEPTANCE-CALL ${tool} {}`, 150_000);
-        const mine = fake.requests.slice(seen);
+        const seen = fake!.requests.length;
+        const { events } = await turn(c, session!, `ACCEPTANCE-CALL ${tool} {}`, 150_000);
+        const mine = fake!.requests.slice(seen);
         const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
         const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes("acceptance-feed-pong"));
         if (called === undefined) fail(`the bot was offered no ${tool} (${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "no plugin tools"})`);
