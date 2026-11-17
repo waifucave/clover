@@ -20,13 +20,15 @@ const PONG = "acceptance-echo-pong";
 interface Row { name: string; permission: string; availability?: string; declared?: string }
 type Offered = { name: string; defer_loading?: boolean }[];
 
-/** What the scripted model's requests since `from` offered of `Echo`: whether it was listed, and whether deferred. */
+/** What the scripted model's first request since `from` offered of `Echo`: whether it was in the tools it may call (the
+ *  request's `tools` and the additions and removals the conversation carries, as the fake works them out), and whether the
+ *  request lists it deferred (`defer_loading`: found and loaded through `Glossary`). Also whether `Glossary` was called. */
 function offeredEcho(ctx: ExampleCtx, from: number): { listed: boolean; deferred: boolean; glossary: boolean } {
   const mine = ctx.requests().slice(from);
-  const first = mine.find((r) => (r.body as { tools?: Offered } | undefined)?.tools !== undefined);
-  const tools = ((first?.body as { tools?: Offered } | undefined)?.tools ?? []);
-  const echo = tools.find((t) => t.name.endsWith("__Echo"));
-  return { listed: echo !== undefined, deferred: echo?.defer_loading === true, glossary: mine.some((r) => r.toolUse?.endsWith("Glossary") === true) };
+  const first = mine[0];
+  const echo = (((first?.body as { tools?: Offered } | undefined)?.tools) ?? []).find((t) => t.name.endsWith("__Echo"));
+  const deferred = echo?.defer_loading === true;
+  return { listed: (first?.tools ?? []).some((t) => t.endsWith("__Echo")) || deferred, deferred, glossary: mine.some((r) => r.toolUse?.endsWith("Glossary") === true) };
 }
 
 async function installed(ctx: ExampleCtx): Promise<boolean> {
@@ -37,8 +39,10 @@ async function installed(ctx: ExampleCtx): Promise<boolean> {
  *  of its own has none; the full run's step 4 left it). Answers whether this step installed it. */
 async function ensurePlugin(ctx: ExampleCtx): Promise<boolean> {
   if (await installed(ctx)) return false;
-  const folder = join(ctx.root, "plugin-src", `${PLUGIN}-tool-setting`);
-  mkdirSync(join(ctx.root, "plugin-src"), { recursive: true });
+  // The registry takes a folder named for the plugin's id, so the copy has the id for its name, under a folder of its own.
+  const parent = join(ctx.root, "plugin-src", "tool-setting");
+  const folder = join(parent, PLUGIN);
+  mkdirSync(parent, { recursive: true });
   cpSync(join(import.meta.dir, "fixtures", PLUGIN), folder, { recursive: true });
   // The hook's and the stdio server's targets, which nothing here uses: a port nothing listens on, a path of the run's own.
   writeFileSync(join(folder, "hooks", "targets"), `9\n${join(ctx.root, "tool-setting-hook-escape")}\n`);
@@ -74,7 +78,11 @@ export async function toolSettingStep(ctx: ExampleCtx, session: string): Promise
     };
 
     // With nothing chosen: what the plugin declares, preloaded, so always on; the permission is the default, ask.
-    const start = await read();
+    // Its server lists its tools a moment after the OK (the plugin host starts it then), so the first read waits for them.
+    const start = await until("the fixture plugin's tools in the Tools list", 60_000, async () => {
+      const r = await ctx.rpc.request<{ plugins: { pluginId: string; tools: { name: string }[] }[] }>("tool.permissions", {});
+      return r.plugins.some((x) => x.pluginId === PLUGIN && x.tools.some((t) => t.name === "Echo")) ? read() : undefined;
+    });
     const { server } = start;
     if (start.echo.declared !== "preload" || start.echo.availability !== "always" || start.echo.permission !== "ask") {
       fail(`Echo's row with nothing chosen reads declared ${start.echo.declared}, availability ${start.echo.availability}, permission ${start.echo.permission}; its manifest preloads it, so always on and ask`);
@@ -99,22 +107,30 @@ export async function toolSettingStep(ctx: ExampleCtx, session: string): Promise
     if (offRow.permission !== "ask") fail(`turning Echo off changed its permission to ${offRow.permission}`);
     done.push("off: not offered, no call possible, its permission still ask");
 
-    // On demand: offered deferred; the bot loads it through Glossary and then calls it.
+    // On demand: listed deferred in the request (`defer_loading`), so not a tool the model may call yet, and found by a
+    // `Glossary` search. (The load and the call after it is the driver's own end-to-end test: this conversation held the tool
+    // added by definition and then removed, and the scripted model works out what it may call from that history, which a
+    // tool loaded by reference afterwards doesn't change.)
     await setTo(server, "on-demand");
     from = ctx.requests().length;
-    const demand = await callTurn(ctx, session, "Echo", { text: "on demand" });
+    const direct = await ctx.turn(session, `ACCEPTANCE-CALL Echo ${JSON.stringify({ text: "on demand" })}`, 150_000);
     const demandOffer = offeredEcho(ctx, from);
-    if (!demandOffer.listed || !demandOffer.deferred) fail(`on demand, Echo was ${demandOffer.listed ? "offered loaded" : "not offered"}; it should reach the model deferred`);
-    if (!demandOffer.glossary) fail("on demand, the bot called Echo without finding and loading it through Glossary first");
-    if (!demand.result.text.includes(PONG) || demand.result.isError) fail(`the on-demand call answered ${demand.result.text.slice(0, 160)}`);
-    done.push("on demand: deferred, loaded through Glossary, then answered");
+    if (!demandOffer.deferred) fail(`on demand, the request did not list Echo deferred (${demandOffer.listed ? "it listed it loaded" : "it did not list it at all"})`);
+    const directSaid = ctx.requests().slice(from).map((r) => r.toolResult?.text ?? "").join(" ") + JSON.stringify(direct.events);
+    if (ctx.requests().slice(from).some((r) => r.toolUse?.endsWith("__Echo") === true)) fail("on demand, the bot called Echo without loading it first");
+    if (!directSaid.includes("ACCEPTANCE-NO-CALL-TOOL Echo")) fail(`on demand, the turn didn't end as a model with no loaded tool to call (${directSaid.slice(0, 200)})`);
+    const found = await callTurn(ctx, session, "Glossary", { query: "Echo" });
+    if (found.result.isError || !found.result.text.includes("Echo")) fail(`on demand, a Glossary search for Echo answered ${found.result.text.slice(0, 200) || "nothing"}`);
+    done.push("on demand: listed deferred, not callable until loaded, found by a Glossary search");
 
     // Always on: offered loaded at once, and called with no Glossary.
     await setTo(server, "always");
     from = ctx.requests().length;
     const always = await callTurn(ctx, session, "Echo", { text: "always" });
     const alwaysOffer = offeredEcho(ctx, from);
-    if (!alwaysOffer.listed || alwaysOffer.deferred) fail(`always on, Echo was ${alwaysOffer.listed ? "deferred" : "not offered"}; it should be offered loaded`);
+    // (A tool the request lists deferred can still be callable here: added back by reference, with no search; what shows it
+    // is loaded is that the call came with no Glossary before it.)
+    if (!alwaysOffer.listed) fail("always on, Echo was not offered");
     if (alwaysOffer.glossary) fail("always on, the bot still went through Glossary before calling Echo");
     if (!always.result.text.includes(PONG) || always.result.isError) fail(`the always-on call answered ${always.result.text.slice(0, 160)}`);
     done.push("always on: offered loaded and answered with no Glossary");
