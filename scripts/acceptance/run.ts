@@ -467,6 +467,15 @@ async function endChild(proc: ChildProcess, graceMs = 10_000): Promise<boolean> 
   return alone;
 }
 
+// lane HS: the hosts this run's engines started through Launch Services (in none of the run's process groups): each is
+// ended by its own pid, the one its engine's lock names, at the host unit's end and at cleanup.
+const startedHosts = new Set<number>();
+function endStartedHosts(): void {
+  const now = hostLockPid(home);
+  if (now !== undefined) startedHosts.add(now);
+  for (const pid of startedHosts) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+  startedHosts.clear();
+}
 let cleaned = false;
 /** The run itself is stopping the daemon (step 8, cleanup), so its exit isn't a crash. */
 let stoppingDaemon = false;
@@ -476,6 +485,7 @@ async function cleanup(): Promise<void> {
   stoppingDaemon = true;
   for (const c of clients) c.close();
   pressCdp?.close();
+  endStartedHosts();
   // The app first (so the daemon never sees it go and starts another), then the daemon.
   for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
   fake?.close();
@@ -4321,7 +4331,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     await signInKey(c);
     const session = await keyedSession(c);
     // 1. The engine started the host by itself (no app window anywhere), which holds its lock and says it is ready.
-    const hostPid = await until("the host the engine started, ready and holding its lock", 120_000, () => (readyCount(readLog(first.log)) > 0 ? hostLockPid(home) : undefined), 500);
+    const hostPid = await until("the host the engine started, ready and holding its lock", 120_000, () => { const p = hostLockPid(home); if (p !== undefined) startedHosts.add(p); return readyCount(readLog(first.log)) > 0 ? p : undefined; }, 500);
     const connectHost = async (what: string) => until(what, 60_000, async () => { try { return await Cdp.connect(hostPort); } catch { return undefined; } }, 250);
     hostCdp = await connectHost("the host's DevTools port");
     await until("the island's window in the host", 60_000, () => islandTarget(hostCdp!), 300);
@@ -4382,7 +4392,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     for (let i = 1; i <= 3; i++) {
       const before = readyCount(readLog(second.log));
       try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
-      pid = await until(`the host started again after crash ${i}`, 90_000, () => { const p = hostLockPid(home); return p !== undefined && p !== pid && processAlive(p) && readyCount(readLog(second.log)) > before ? p : undefined; }, 300);
+      pid = await until(`the host started again after crash ${i}`, 90_000, () => { const p = hostLockPid(home); if (p !== undefined) startedHosts.add(p); return p !== undefined && p !== pid && processAlive(p) && readyCount(readLog(second.log)) > before ? p : undefined; }, 300);
     }
     const daemonText = readLog(second.log);
     if (!/\[host\] ready: [^\n]*, in safe mode/.test(daemonText)) fail(`the host after three crashes is not in safe mode (the engine logged: ${daemonText.split("\n").filter((l) => l.includes("[host]")).slice(-6).join(" | ")})`);
@@ -4399,6 +4409,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
   } finally {
     c?.close();
     hostCdp?.close();
+    endStartedHosts();
   }
 }
 // lane HS: end. ------------------------------------------------------------------------------------------------------

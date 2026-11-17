@@ -125,6 +125,19 @@ export function parseHostCommand(raw: string | undefined): string[] | undefined 
   }
 }
 
+/** The `.app` a checkout's program sits in (its Electron.app), or undefined. */
+export function sourceBundleOf(program: string): string | undefined {
+  const i = program.indexOf(".app/");
+  return i >= 0 ? program.slice(0, i + 4) : undefined;
+}
+
+/** What the engine hands the host it starts from a checkout through Launch Services, which passes no environment of its
+ *  own: the home and profile, the run's test settings (`MOSS_*`), and the user home, temp folder, language and PATH. */
+export function hostEnvArgs(env: Record<string, string | undefined>): string[] {
+  const keep = (k: string) => k.startsWith("MOSS_") && k !== "MOSS_HOST_COMMAND" || ["HOME", "TMPDIR", "LANG", "PATH"].includes(k);
+  return Object.entries(env).filter(([k, v]) => v !== undefined && keep(k)).flatMap(([k, v]) => ["--env", `${k}=${v}`]);
+}
+
 export interface EngineHostWorldInput {
   readonly home: string;
   readonly os: DaemonPlatform;
@@ -207,6 +220,14 @@ export function engineHostWorld(input: EngineHostWorldInput): HostWorld & HostWo
       writeStartFile(opts.safeMode);
       if (command !== undefined) {
         log(`[host] starting the host from this checkout${opts.safeMode ? " in safe mode" : ""}`);
+        const bundle = input.os === "darwin" ? sourceBundleOf(command[0]!) : undefined;
+        if (bundle !== undefined) {
+          // Through Launch Services, as the real start is: the host is then launchd's child and its own responsible
+          // process, never the engine's (whose children the caller check never takes for the app).
+          const argv = ["open", "-n", "-g", "-a", bundle, ...hostEnvArgs(input.env), "--args", ...command.slice(1), ...(opts.safeMode ? ["--safe-mode"] : [])];
+          void input.run(argv).then((r) => { if (!r.ok) input.startFailed("Launch Services refused the host"); });
+          return;
+        }
         try {
           const child = spawn(command[0]!, [...command.slice(1), ...(opts.safeMode ? ["--safe-mode"] : [])], { stdio: "ignore", env: { ...process.env } });
           child.on("error", (e) => input.startFailed(e.message));
