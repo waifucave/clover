@@ -152,7 +152,11 @@ export class Cdp {
       // Below the fold (a long list: the Installed tab on a home with many plugins), a press at its place would land
       // outside the view and do nothing: it is scrolled into view first, as a person does.
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) {
+      // The same when something else is at the point: a button just inside the bottom edge has a classic scroll bar (a runner has no pointing
+      // device, so its bars are always drawn) over its centre, and a press there lands on the bar and does nothing.
+      const there = document.elementFromPoint(Math.min(Math.max(cx, 0), window.innerWidth - 1), Math.min(Math.max(cy, 0), window.innerHeight - 1));
+      const covered = there === null || !(there === el || el.contains(there) || there.contains(el));
+      if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight || covered) {
         el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         r = el.getBoundingClientRect();
       }
