@@ -262,6 +262,9 @@ jobs:
         working-directory: apps/desktop
         env:
           MOSS_UI_TESTS: "1"
+          # The sealed card's tests that press a real button in the main window (apps/desktop/test/sealed-ui.test.ts `onCi`): on for the macOS
+          # job. A runner has classic scroll bars (no pointing device), which is the regression test for the sealed page's fit.
+          MOSS_SEALED_UI_ON_CI: ${{ runner.os == 'macOS' && '1' || '' }}
         run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/ui-smoke.test.ts test/sealed-ui.test.ts
 
       # MOSS, the app for bots (apps/moss, lane MA): built and packaged unsigned and unpacked like MOSS Code, then its
