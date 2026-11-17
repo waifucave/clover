@@ -31,7 +31,7 @@ import { partsServe } from "../../runtime-sdk/turn-loop/only-backends";
 import { PluginMcp, localMcpRunner } from "../../runtime-sdk/turn-loop/plugin-mcp";
 import { CLAUDE_PLUGIN_FOLDER, placeInClaudeCode } from "../claude-code/placement";
 import { toolOffMessage } from "../../approvals/tool-settings";
-import { agentGlossary, agentPluginParts, agentPluginTools, agentToolJudge, BRIDGE_TOOL_NAME_MAX, bridgeShortName, bridgeToolsOf, type AgentPluginReachDeps } from "../plugin-reach";
+import { agentBackendOf, agentGlossary, agentPluginParts, agentPluginTools, agentToolJudge, BRIDGE_TOOL_NAME_MAX, bridgeShortName, bridgeToolsOf, type AgentPluginReachDeps } from "../plugin-reach";
 import type { BotMcpServer } from "../../runtime-sdk/turn-loop/servers";
 import type { AgentSessionFacts, BridgeToolSource } from "../bridge/tools";
 import type { PluginPartsSource } from "../placement";
@@ -294,6 +294,24 @@ describe("a plugin's tools on an agent's bridge", () => {
     expect(seen).toEqual([`fake:mcp__${TOOL}`, `moss:mcp__${TOOL}`, `moss-code:mcp__${TOOL}`]);
     const denied = await tools.call("s_code", { callId: "c-deny", tool: TOOL, input: { stop: true } }, { computer: "Studio", origin: "user", session: facts() });
     expect(denied).toEqual({ content: [{ type: "text", text: `${TOOL} was refused by a plugin's hook: not today` }], isError: true });
+  });
+
+  test("a call's result reaches the observer as the tool returned it, before any hook, in the session's own context; a refused call's never does", async () => {
+    const { p } = await setup();
+    const seen: { session: string; kind: string; backend: string | undefined; served: string; text: string }[] = [];
+    const hooks = {
+      toolBefore: async (_s: unknown, _t: unknown, input: unknown) => ((input as { stop?: boolean }).stop ? { deny: "not today", input } : { input }),
+      toolAfter: async () => ({ content: [{ type: "text", text: "rewritten by a hook" }], isError: false }),
+    } as unknown as TurnHooks;
+    const tools = agentPluginTools({
+      ...p.deps, hooks: () => hooks,
+      observeResult: (ctx, served, result) => seen.push({ session: ctx.sessionId, kind: ctx.kind, backend: agentBackendOf(ctx), served, text: (result as { content: { text: string }[] }).content[0]!.text }),
+    });
+    const r = await tools.call("s_code", { callId: "c-1", tool: TOOL, input: { n: 1 } }, { computer: "Studio", origin: "user", session: facts({ id: "s_code", backend: "moss-code" }) });
+    expect(r.content).toEqual([{ type: "text", text: "rewritten by a hook" }]);
+    expect(seen).toEqual([{ session: "s_code", kind: "coding", backend: "moss-code", served: `mcp__${TOOL}`, text: 'toolbox ran with {"n":1}' }]);
+    await tools.call("s_code", { callId: "c-2", tool: TOOL, input: { stop: true } }, { computer: "Studio", origin: "user", session: facts({ id: "s_code", backend: "moss-code" }) });
+    expect(seen).toHaveLength(1);
   });
 
   test("a long name: a short form that fits, the same each time; a name that fits is untouched; two cut to the same start stay apart; one that takes another's name gets more digits; only other characters leave a tool out", async () => {

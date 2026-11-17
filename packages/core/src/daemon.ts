@@ -4645,6 +4645,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         const writableAlready = (ctx: BotSessionContext, folder: string) => {
           try { return grantsCover(sandboxOf(ctx).filesystem?.allowWrite ?? [], folder, hostOs()); } catch { return false; }
         };
+        // A bundled tool's result as it came back: a web search's hits are seen addresses; a browser read's elements are noted.
+        const observeToolResult = (ctx: BotSessionContext, tool: string, response: unknown, toolInput: unknown) => {
+          const kind = bundledTool(ctx, tool);
+          if (kind === "web-search") seenUrls.searchResult(ctx.sessionId, response);
+          else if (kind === "browser" && (toolInput as { verb?: unknown } | undefined)?.verb === "read") readElements.note(ctx.sessionId, response);
+        };
         // The plugins' tools on an agent's bridge (spec §9.3): each call meets the plugins' hooks, is judged by this same
         // check as the same call in the session that owns it (the agent's own session on the card; its bot's level and
         // saved rules, or the user's coding session's own), and runs where its server is, as the agent's session.
@@ -4655,6 +4661,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
           registry,
           judge: agentToolJudge(check),
+          // What a code session's (or a bot's agent's) plugin call saw, kept as a bot's call's is.
+          observeResult: (ctx, tool, response, toolInput) => observeToolResult(ctx, tool, response, toolInput),
           log: (line) => console.error(`[agents] ${line}`),
         };
         return botDriverFactory({
@@ -4669,11 +4677,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         observe: {
           turn: (ctx, origin) => { seenUrls.turnStarted(ctx.sessionId, origin); agentStarts.turnStarted(ctx.sessionId, origin, ctx.kind === "side-thread"); },
           input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
-          toolResult: (ctx, tool, response, toolInput) => {
-            const kind = bundledTool(ctx, tool);
-            if (kind === "web-search") seenUrls.searchResult(ctx.sessionId, response);
-            else if (kind === "browser" && (toolInput as { verb?: unknown } | undefined)?.verb === "read") readElements.note(ctx.sessionId, response);
-          },
+          toolResult: (ctx, tool, response, toolInput) => observeToolResult(ctx, tool, response, toolInput),
           tasks: (ctx, live) => { if (live > 0) liveTasks.set(ctx.sessionId, live); else liveTasks.delete(ctx.sessionId); },
         },
         // The core tools (lane D's, lane K's Agent and TaskStop), and lane C's `RequestAccess` where a broker can raise its cards.

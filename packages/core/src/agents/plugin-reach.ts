@@ -55,6 +55,9 @@ export interface AgentPluginReachDeps {
   /** J's router: runs a call where its server is. */
   runner: McpRunner;
   judge: AgentToolJudge;
+  /** A call's result as its tool returned it, before any hook, in the session `agentCheckContext` makes: what the
+   *  conversation saw, as a bot's turn reports it (a web search's hits, for the seen addresses). */
+  observeResult?: (ctx: BotSessionContext, served: string, result: unknown, input: Record<string, unknown>) => void;
   /** The plugins' hooks, read at each call (the bots' `agentHookSource`). Absent: none. */
   hooks?: HookSource;
   registry: Pick<PluginRegistry, "entries" | "get" | "list" | "points">;
@@ -225,6 +228,7 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
           session: s.id, as: agentCallerOf(s), callId: c.callId, ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
         });
         const out = { content: Array.isArray(result.content) && result.content.length > 0 ? result.content : [{ type: "text", text: "" }], isError: result.isError === true };
+        try { d.observeResult?.(agentCheckContext(s, ctx.level), served, out, verdict.input); } catch { /* an observer never fails a call */ }
         if (hooks === "none") return out;
         const after = await hooks.toolAfter(hookSession, { name: served, callId: c.callId }, verdict.input, out, ctx.signal);
         const a = after as { content?: unknown; isError?: unknown } | undefined;
