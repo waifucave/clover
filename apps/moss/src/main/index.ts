@@ -18,8 +18,8 @@ import { engineHome, MAIN_WINDOW_ID, mossIdentity, parseLaunchArgs, resolveProfi
 import { fileVault, memoryVault, ProgramAnswerKey, safeStorageVault, vaultChoice } from "./answer-key";
 import { refusedLaunchSwitches } from "./debug-guard";
 import { PresenceReporter } from "./presence";
-import { answerPress, cardHeight, PressRecord } from "./press";
-import { isOurProgram, loadWindowList, pressCover, windowIdOfMediaSource, type WindowList } from "./overlap";
+import { answerPress, cardHeight, PressRecord, refusalWords } from "./press";
+import { coverOfPress, loadWindowList, windowIdOfMediaSource, type WindowList } from "./overlap";
 import { OWN_ELEMENT, SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { alwaysSentence, summarize as summarizeCard } from "./card-summary";
@@ -90,7 +90,6 @@ const answerKey = new ProgramAnswerKey((() => {
   const linuxPlainText = process.platform === "linux" && app.isPackaged && !headless && !testBuild ? (() => { try { return safeStorage.getSelectedStorageBackend() === "basic_text"; } catch { return true; } })() : false;
   const choice = vaultChoice({ packaged: app.isPackaged, headless, testBuild, profile, platform: process.platform, ...(testKeyFile !== undefined && isAbsolute(testKeyFile) ? { testKeyFile } : {}), linuxPlainText });
   if (choice.kind === "file") return fileVault(choice.file);
-  if (choice.kind === "dev-file") return fileVault(join(app.getPath("userData"), "answer-key.dev"));
   if (choice.kind === "safe-storage") return safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage);
   return memoryVault();
 })(), log);
@@ -610,23 +609,22 @@ const cardHeights = new Map<string, number>();
  *  among other runs' windows) counts its own windows only. MOSS has no surfaces of its own (no island, no pill). */
 let windowList: WindowList | undefined | null = null;
 let overlapUnread = false;
-let overlapRead = false;
+const overlapSaid = { read: false, failed: false };
 function osCoverOf(windowId: number, point: { x: number; y: number } | undefined): string | undefined {
-  if (windowList === null) windowList = loadWindowList(join(here, "native", "screen.node"), log);
-  const win = BrowserWindow.fromId(windowId);
-  const id = win === null || win.isDestroyed() ? undefined : windowIdOfMediaSource(win.getMediaSourceId());
-  if (windowList === undefined || win === null || id === undefined) {
-    if (!overlapUnread) { overlapUnread = true; log(`overlap: the OS window list wasn't read for a press (${windowList === undefined ? "no window list here" : "no window id"}); the in-page check stands alone`); }
+  try {
+    if (windowList === null) windowList = loadWindowList(join(here, "native", "screen.node"), log);
+    const win = BrowserWindow.fromId(windowId);
+    const id = win === null || win.isDestroyed() ? undefined : windowIdOfMediaSource(win.getMediaSourceId());
+    if (windowList === undefined || win === null || id === undefined) {
+      if (!overlapUnread) { overlapUnread = true; log(`overlap: the OS window list wasn't read for a press (${windowList === undefined ? "no window list here" : "no window id"}); the in-page check stands alone`); }
+      return undefined;
+    }
+    const content = win.getContentBounds();
+    return coverOfPress({ list: windowList, windowNumber: id, content, point, pid: process.pid, headless, log, said: overlapSaid });
+  } catch {
+    // Fails open (overlap.ts coverOfPress): the page's own fresh reading still stands.
     return undefined;
   }
-  const list = windowList;
-  const content = win.getContentBounds();
-  const above = list.above(id);
-  const ours = (pid: number): boolean => pid === process.pid || (!headless && isOurProgram(list.bundleOf(pid)));
-  const hit = pressCover({ point: point === undefined ? undefined : { x: content.x + point.x, y: content.y + point.y }, above, ours });
-  if (!overlapRead) { overlapRead = true; log(`overlap: the OS window list read for a press (${above.length} above, ${above.filter((w) => w.pid === process.pid).length} of MOSS's own${headless ? "; headless: its own only" : ""}${point === undefined ? "; no point: a keyboard press" : ""})`); }
-  if (hit === undefined) return undefined;
-  return hit.pid === process.pid ? `one of MOSS's own windows (layer ${hit.layer})` : `another MOSS program's window (layer ${hit.layer})`;
 }
 
 function wireSealed(): void {
@@ -644,6 +642,7 @@ function wireSealed(): void {
     if (t === undefined || new URL(f.url).searchParams.get("token") !== t) throw new Error("bad sealed answer");
     const key = f.parent !== null && !f.parent.detached ? `p:${f.parent.processId}:${f.parent.routingId}` : `m:${f.processId}:${f.routingId}`;
     const children = Array.isArray(a?.children) && a.children.every((c) => typeof c === "string") ? a.children as string[] : undefined;
+    const cardId = sealed.cardOf(t);
     return answerPress({
       sealed, record, log,
       placementOf: (id) => engine.placementOf(id),
@@ -657,7 +656,12 @@ function wireSealed(): void {
         if (client === undefined) return { accepted: false, reason: "MOSS isn't connected to its engine" };
         return client.request<{ accepted: boolean; reason?: string }>("card.answer", x, 15_000);
       },
-    }, { token: t, option: str(a?.option, 64), senderKey: key, frame: `${f.processId}:${f.routingId}`, windowId: w.id, ...(children !== undefined ? { children } : {}) });
+    }, { token: t, option: str(a?.option, 64), senderKey: key, frame: `${f.processId}:${f.routingId}`, windowId: w.id, ...(children !== undefined ? { children } : {}) }).then((r) => {
+      // Why a press was refused, in plain words, beside the card in MOSS's own window (the sealed page shows only that it
+      // was refused; its own line is lane RT's): what the engine said, or what covers the button and what to do.
+      if (!r.accepted && cardId !== undefined) mainWindow?.webContents.send("moss:card-said", cardId, refusalWords(r));
+      return r;
+    });
   });
   ipcMain.on("moss:sealed-visible", (event, a: { token?: unknown; visible?: unknown }) => {
     const s = sealedSender(event, a?.token);

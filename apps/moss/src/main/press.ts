@@ -132,13 +132,22 @@ export interface PressDeps {
   cover?: (windowId: number, point: { x: number; y: number } | undefined) => string | undefined;
 }
 
-export type PressResult = { accepted: true } | { accepted: false; reason: string };
+/** A press's outcome: refused, with what to tell the person (`reason`), and `covered` when a window lies over the button (as
+ *  MOSS Code's result says it). */
+export type PressResult = { accepted: true } | { accepted: false; reason: string; covered?: true };
+
+/** A refusal in the plain words MOSS shows beside the card. */
+export function refusalWords(r: { reason: string; covered?: true }): string {
+  const said = r.reason.trim();
+  const sentence = said.length === 0 ? "The press didn't count: press again." : `${said[0]!.toUpperCase()}${said.slice(1)}`;
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
 
 /** One press's answer, from the sealed frame's own channel (checks 2 to 6; check 1 is the IPC handler's). */
 export async function answerPress(d: PressDeps, a: { token: string; option: string | undefined; senderKey: string; frame: string; windowId: number; children?: readonly string[] }): Promise<PressResult> {
-  const refuse = (why: string, say = why): PressResult => {
+  const refuse = (why: string, say = why, covered = false): PressResult => {
     d.log(`sealed: answer refused (${why})`);
-    return { accepted: false, reason: say };
+    return { accepted: false, reason: say, ...(covered ? { covered: true as const } : {}) };
   };
   const cardId = d.sealed.cardOf(a.token);
   if (cardId === undefined) return refuse("no such sealed button");
@@ -154,7 +163,7 @@ export async function answerPress(d: PressDeps, a: { token: string; option: stri
   if (stacked !== undefined) return refuse(stacked);
   // 4b. The overlap check, at the click's own point.
   const cover = d.cover?.(a.windowId, how === "click" ? d.record.lastPoint(a.windowId) : undefined);
-  if (cover !== undefined) return refuse(`a window lies over the button: ${cover}`, "another MOSS window lies over the button: move it away and press again");
+  if (cover !== undefined) return refuse(`a window lies over the button: ${cover}`, `${cover.startsWith("one of MOSS's own") ? "one of MOSS's own windows" : "another MOSS window"} lies over the button: move it away and press again`, true);
   // 5. The key.
   const key = await d.keyReady(2_000);
   if (key.kind !== "registered") return refuse(`MOSS's answer key isn't registered (${key.kind === "refused" || key.kind === "waiting" ? key.why : key.kind})`, "this computer's answer key for MOSS isn't registered yet");

@@ -412,6 +412,8 @@ async function cardRow(s: UnitState): Promise<string> {
     .catch(() => s.x.fail(`MOSS logged no refusal for the scripted answer (it returned ${String(scripted).slice(0, 120)})`));
   if (!/no press/.test(refusedLine)) s.x.fail(`MOSS refused the scripted answer, but not for want of a press: ${refusedLine}`);
   if (!(await cardIds(s.c)).has(card.id)) s.x.fail("the card was answered by the scripted answer");
+  // The person reads why beside the card, in plain words.
+  const saidBeside = await s.w.waitFor<string>("the refusal's words beside the card", `document.querySelector(${JSON.stringify(`[data-card="${card.id}"] [data-card-said]`)})?.textContent ?? null`, 10_000);
 
   // 2. Signed as MOSS Code: MOSS's own key over MOSS Code's signing input, sent on a MOSS connection (the run's own):
   //    the engine refuses it, and the card waits on. (MOSS Code's own connection and key: the last row.)
@@ -438,7 +440,7 @@ async function cardRow(s: UnitState): Promise<string> {
     const page = await s.c.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: "alpha", limit: 200 });
     return page.events.some((e) => e.type === "assistant_message" && (e.text ?? "").startsWith("ACCEPTANCE-DONE")) ? true : undefined;
   }, 500).catch(() => false);
-  return `the ${card.kind} card placed ${placeWords(place)} and drawn in her conversation; the frame's own script answering with no press: MOSS refused it (${refusedLine.replace(/^sealed: answer refused /, "").slice(0, 80)}); signed as MOSS Code with MOSS's key: refused (${asCode.reason ?? "no reason"}); a real press on Approve accepted (${overlap?.replace(/^overlap: /, "") ?? "no overlap check off macOS"}), MOSS's key the engine's moss key for this device${landed ? "; the Write's turn went on" : ""}`;
+  return `the ${card.kind} card placed ${placeWords(place)} and drawn in her conversation; the frame's own script answering with no press: MOSS refused it (${refusedLine.replace(/^sealed: answer refused /, "").slice(0, 80)}) and said "${saidBeside.slice(0, 60)}" beside the card; signed as MOSS Code with MOSS's key: refused (${asCode.reason ?? "no reason"}); a real press on Approve accepted (${overlap?.replace(/^overlap: /, "") ?? "no overlap check off macOS"}), MOSS's key the engine's moss key for this device${landed ? "; the Write's turn went on" : ""}`;
 }
 
 /** The raw 32 bytes of an Ed25519 private key's public half. */

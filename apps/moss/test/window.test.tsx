@@ -29,13 +29,14 @@ function view(over: Partial<MossView> = {}): MossView {
 }
 
 let retried: string[] = [];
+let saidTo: ((cardId: string, words: string) => void)[] = [];
 function stub(v: MossView, page: ConversationPage | { waiting: true }): MossBridge {
   const none = () => () => {};
   return {
     view: async () => v, onView: none, showing: () => {}, conversation: async () => page, onMessage: none,
     send: async () => ({ ok: true }), pickImages: async () => [], createBot: async () => ({ ok: false, why: "no" }), markRead: () => {},
     routines: async () => [], pictures: async () => [], openPicture: async () => false, closePicture: () => {}, onPictureFrame: none,
-    cardFrame: async () => undefined, onCardHeight: none, talk: () => {}, plugins: async () => [], setAvailability: async () => false,
+    cardFrame: async () => undefined, onCardHeight: none, onCardSaid: (fn) => { saidTo.push(fn); return () => {}; }, talk: () => {}, plugins: async () => [], setAvailability: async () => false,
     addPlugin: async () => ({ ok: false, why: "no" }), settings: async () => ({ account: "waiting", signIns: "waiting", computers: "waiting", devices: "waiting" }),
     botSettings: async () => ({ waiting: true }), setBotSetting: async () => false, setLevel: async () => false,
     setPermission: async () => false, signIn: async () => ({ ok: false, why: "no" }), signOut: async () => false,
@@ -96,6 +97,16 @@ describe("MOSS's window", () => {
     const later = await draw(view(), { bot: "juniper", hasMore: false, messages: [failed, { id: "u2", from: "user", text: "again", at: Date.now() }] });
     expect(later.container.querySelector("[data-try-again]")).toBeNull();
     later.unmount();
+  });
+
+  test("a refused press says why beside its card, in plain words drawn as text", async () => {
+    saidTo = [];
+    const r = await draw(view({ cards: [{ id: "card_a1b2c3", bot: "juniper", kind: "tool", place: "conversation" }] }), { bot: "juniper", hasMore: false, messages: [] });
+    await act(async () => { for (const f of saidTo) f("card_a1b2c3", "Computer use is acting right now."); await new Promise((res) => setTimeout(res, 10)); });
+    expect(r.container.querySelector("[data-card=card_a1b2c3] [data-card-said]")?.textContent).toBe("Computer use is acting right now.");
+    await act(async () => { for (const f of saidTo) f("card_zzz", "<b>not this one</b>"); await new Promise((res) => setTimeout(res, 10)); });
+    expect(r.container.querySelectorAll("[data-card-said]").length).toBe(1);
+    r.unmount();
   });
 
   test("the cards go where the router placed them", async () => {

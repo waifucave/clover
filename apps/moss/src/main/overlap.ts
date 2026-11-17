@@ -129,3 +129,30 @@ export function pressCover(press: { point: { x: number; y: number } | undefined;
   if (press.point === undefined) return undefined;
   return coverAt(press.point, press.above, { ours: press.ours, ...(press.own !== undefined ? { own: press.own } : {}) });
 }
+
+/** One press's whole OS-wide check in a window of this program (`windowNumber`, its content's top left in global points
+ *  `content`), named by what covers it, or undefined. It fails OPEN: a window list that throws (the add-on, the OS) is
+ *  said once and the press goes on to the page's own fresh reading, never a refusal the person can't do anything about.
+ *  `headless`: a test's run counts only this process's own windows (among other runs' windows). */
+export function coverOfPress(o: {
+  list: WindowList;
+  windowNumber: number;
+  content: { x: number; y: number };
+  point: { x: number; y: number } | undefined;
+  pid: number;
+  headless: boolean;
+  log: (line: string) => void;
+  said: { read: boolean; failed: boolean };
+}): string | undefined {
+  try {
+    const above = o.list.above(o.windowNumber);
+    const ours = (pid: number): boolean => pid === o.pid || (!o.headless && isOurProgram(o.list.bundleOf(pid)));
+    const hit = pressCover({ point: o.point === undefined ? undefined : { x: o.content.x + o.point.x, y: o.content.y + o.point.y }, above, ours });
+    if (!o.said.read) { o.said.read = true; o.log(`overlap: the OS window list read for a press (${above.length} above, ${above.filter((w) => w.pid === o.pid).length} of MOSS's own${o.headless ? "; headless: its own only" : ""}${o.point === undefined ? "; no point: a keyboard press" : ""})`); }
+    if (hit === undefined) return undefined;
+    return hit.pid === o.pid ? `one of MOSS's own windows (layer ${hit.layer})` : `another MOSS program's window (layer ${hit.layer})`;
+  } catch (err) {
+    if (!o.said.failed) { o.said.failed = true; o.log(`overlap: the OS window list couldn't be read for a press (${err instanceof Error ? err.message.split("\n")[0]!.slice(0, 120) : "it threw"}); the in-page check stands alone`); }
+    return undefined;
+  }
+}

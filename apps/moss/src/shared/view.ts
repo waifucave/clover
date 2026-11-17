@@ -192,6 +192,8 @@ export interface MossBridge {
   /** A card's sealed frame for this window: its single-use `moss-sealed://` URL, or undefined. */
   cardFrame(cardId: string): Promise<string | undefined>;
   onCardHeight(fn: (cardId: string, height: number) => void): () => void;
+  /** Why a press on a card's button was refused, in plain words, to show beside the card. */
+  onCardSaid(fn: (cardId: string, words: string) => void): () => void;
   /** The microphone button: held down and let go (main runs the voice plugin's talk command). */
   talk(phase: "down" | "up"): void;
   plugins(): Promise<PluginRow[] | { waiting: true }>;

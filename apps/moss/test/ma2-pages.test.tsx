@@ -68,7 +68,7 @@ async function setup(): Promise<{ e: FakeEngine; engine: MossEngine; bridge: Mos
     send: async () => ({ ok: true }), pickImages: async () => [], createBot: async () => ({ ok: false, why: "no" }), markRead: () => {},
     routines: (b) => engine.routines(b), pictures: (b) => engine.pictures(b), openPicture: (id) => engine.openPicture(id),
     closePicture: (id) => engine.closePicture(id), onPictureFrame: (fn) => engine.onPictureFrame(fn),
-    cardFrame: async () => undefined, onCardHeight: none, talk: () => {},
+    cardFrame: async () => undefined, onCardHeight: none, onCardSaid: none, talk: () => {},
     plugins: () => engine.plugins(), setAvailability: (s, t, a) => engine.setAvailability(s, t, a),
     addPlugin: (from) => engine.addPlugin("link" in from ? from : { folder: "/nowhere" }),
     settings: () => engine.settings(), botSettings: (b) => engine.botSettings(b), setBotSetting: (b, p, k, v) => engine.setBotSetting(b, p, k, v),

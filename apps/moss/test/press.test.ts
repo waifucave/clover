@@ -13,7 +13,7 @@ import { memoryVault, ProgramAnswerKey } from "../src/main/answer-key";
 import { MossEngine } from "../src/main/engine";
 import { mossHello } from "../src/main/connection";
 import { PresenceReporter } from "../src/main/presence";
-import { answerPress, cardHeight, CARD_MAX_HEIGHT, PressRecord, stackingRule, type PressDeps } from "../src/main/press";
+import { answerPress, cardHeight, CARD_MAX_HEIGHT, refusalWords, PressRecord, stackingRule, type PressDeps } from "../src/main/press";
 import { OWN_ELEMENT, SealedFrames } from "../src/main/sealed";
 import { FAKE_DEVICE, startFakeEngine, type FakeEngine } from "./fake-engine/engine";
 
@@ -182,7 +182,12 @@ describe("a press on a card MOSS draws", () => {
     r.sealed.noteFresh(token, true);
     r.record.mouseDown(WIN, { x: 40, y: 60 });
     r.record.frameSaw(WIN, FRAME);
-    expect(await answerPress({ ...r.deps, cover }, { token, option: "allow_once", senderKey: SENDER, frame: FRAME, windowId: WIN })).toEqual({ accepted: false, reason: "another MOSS window lies over the button: move it away and press again" });
+    const covered = await answerPress({ ...r.deps, cover }, { token, option: "allow_once", senderKey: SENDER, frame: FRAME, windowId: WIN });
+    expect(covered).toEqual({ accepted: false, reason: "another MOSS window lies over the button: move it away and press again", covered: true });
+    // What the person reads beside the card: what covers the button and what to do.
+    if (covered.accepted) throw new Error("taken");
+    expect(refusalWords(covered)).toBe("Another MOSS window lies over the button: move it away and press again.");
+    expect(refusalWords({ reason: "computer use is acting right now" })).toBe("Computer use is acting right now.");
     expect(seen).toEqual([{ x: 40, y: 60 }]);
     expect(r.e.answered()).toEqual([]);
     // A key press: no point, so nothing over a point to find; it answers.

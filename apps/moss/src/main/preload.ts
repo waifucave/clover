@@ -51,6 +51,7 @@ if (where === "moss-app:" && location.host === "app" && window.top === window) {
     onPictureFrame: (fn) => listen<[PictureFrameView]>("moss:picture-frame", fn),
     cardFrame: (cardId) => ipcRenderer.invoke("moss:card-frame", { cardId }),
     onCardHeight: (fn) => listen<[string, number]>("moss:card-height", fn),
+    onCardSaid: (fn) => listen<[string, string]>("moss:card-said", fn),
     talk: (phase) => ipcRenderer.send("moss:talk", { phase }),
     plugins: () => ipcRenderer.invoke("moss:plugins"),
     setAvailability: (server, tool, availability) => ipcRenderer.invoke("moss:set-availability", { server, tool, availability }),

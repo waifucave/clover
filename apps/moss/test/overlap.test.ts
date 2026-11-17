@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { PROGRAM_IDENTIFIERS } from "@waifucave/moss-protocol";
-import { coverAt, isOurProgram, loadWindowList, PRESS_BOX_HALF, pressCover, windowIdOfMediaSource, type OsWindow } from "../src/main/overlap";
+import { coverAt, coverOfPress, isOurProgram, loadWindowList, PRESS_BOX_HALF, pressCover, windowIdOfMediaSource, type OsWindow } from "../src/main/overlap";
 
 const OURS = 4242;
 const OTHER_APP = 777;
@@ -83,5 +83,27 @@ describe("what lies over a sealed button", () => {
     // This test's own process is no app bundle; a pid nobody holds is none.
     expect(list.bundleOf(0)).toBeUndefined();
     expect(list.bundleOf(2 ** 31 - 2)).toBeUndefined();
+  });
+});
+
+describe("the whole check for one press (coverOfPress)", () => {
+  const base = { windowNumber: 5, content: { x: 100, y: 200 }, point: { x: 50, y: 50 }, pid: OURS, headless: false };
+  test("a window of ours over the press point, in global points, refuses it, named by which", () => {
+    const list = { above: () => [win({ x: 100, y: 200, pid: OURS })], bundleOf: () => undefined };
+    expect(coverOfPress({ ...base, list, log: () => {}, said: { read: false, failed: false } })).toBe("one of MOSS's own windows (layer 0)");
+    const other = { above: () => [win({ x: 100, y: 200, pid: 99 })], bundleOf: () => PROGRAM_IDENTIFIERS.code.dist };
+    expect(coverOfPress({ ...base, list: other, log: () => {}, said: { read: false, failed: false } })).toBe("another MOSS program's window (layer 0)");
+  });
+
+  test("a window list that throws fails open: no refusal, said once, and the page's own reading stands", () => {
+    const lines: string[] = [];
+    const said = { read: false, failed: false };
+    const throwing = { above: () => { throw new Error("CGWindowListCopyWindowInfo failed"); }, bundleOf: () => undefined };
+    expect(coverOfPress({ ...base, list: throwing, log: (l) => lines.push(l), said })).toBeUndefined();
+    expect(coverOfPress({ ...base, list: throwing, log: (l) => lines.push(l), said })).toBeUndefined();
+    const badBundle = { above: () => [win({ x: 100, y: 200, pid: 99 })], bundleOf: (): string => { throw new Error("no such app"); } };
+    expect(coverOfPress({ ...base, list: badBundle, log: (l) => lines.push(l), said })).toBeUndefined();
+    expect(lines.length).toBe(1);
+    expect(lines[0]).toContain("couldn't be read for a press");
   });
 });

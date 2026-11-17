@@ -9,17 +9,21 @@ import type { CardRow } from "../../shared/view";
 export function CardFrame(props: { card: CardRow }) {
   const [src, setSrc] = useState<string | undefined>(undefined);
   const [height, setHeight] = useState(220);
+  const [said, setSaid] = useState<string | undefined>(undefined);
   useEffect(() => {
     let live = true;
     void bridge().cardFrame(props.card.id).then((url) => { if (live) setSrc(url); });
     const off = bridge().onCardHeight((id, h) => { if (id === props.card.id) setHeight(h); });
-    return () => { live = false; off(); };
+    // Why a press on it was refused (MOSS's main process says; the words are MOSS's or the engine's, shown as text).
+    const offSaid = bridge().onCardSaid((id, words) => { if (id === props.card.id) setSaid(words.slice(0, 300)); });
+    return () => { live = false; off(); offSaid(); };
   }, [props.card.id]);
   return (
     <div className="card" data-card={props.card.id} data-card-place={props.card.place}>
       {src !== undefined
         ? <iframe data-card-frame={props.card.id} src={src} title="A card that needs you" style={{ height }} />
         : <p className="card__wait">Opening the card…</p>}
+      {said !== undefined ? <p className="card__said" role="status" data-card-said>{said}</p> : null}
     </div>
   );
 }
