@@ -406,7 +406,9 @@ async function ready(): Promise<void> {
   // What came of each part's ask for a card's frames, before the first one was made (the narrow card's diagnosis).
   runtime.onSealedAsk = noteAsk;
   // One place at a time (lane RT): the island is given a card's frames only for a card the engine's router placed on it.
-  runtime.cardSurfaceMayDraw = (cardId) => islandMayDraw(enginePlaces.get(cardId), mainWindowFront(mainState()));
+  // lane HS: the host's island draws only what the router placed on it (`card_placed`), never a card it hasn't placed yet
+  // (one the router then puts in MOSS Code's window would be drawn twice).
+  runtime.cardSurfaceMayDraw = (cardId) => (program === "host" ? enginePlaces.get(cardId) !== undefined && islandMayDraw(enginePlaces.get(cardId), false) : islandMayDraw(enginePlaces.get(cardId), mainWindowFront(mainState())));
   // A part's Review on a plugin's card: the app's own page for that card, shown now (a fallback already up stays).
   runtime.onCardPage = async (cardId) => {
     if (sealed.get(cardId) === undefined || !sealed.isPending(cardId)) return false;
@@ -1061,12 +1063,18 @@ const windowDraws = new Set<string>();
 /** Where the engine's router placed each pending card (lane RT: `card_placed` wins; a `card.placement` answer only fills in
  *  a card no event placed; card-place.ts `PlacementBook`). */
 const enginePlaces = new PlacementBook();
+/** lane HS: whether the router has placed a pending card in a window (the host's island then steps aside, as a window's
+ *  island does for its own window in front: the host has no window of its own to watch). */
+const windowHoldsCard = (): boolean => [...enginePlaces.entries()].some(([id, p]) => (p.kind === "strip" || p.kind === "conversation") && sealed.isPending(id));
 /** Whether the router has placed any pending card on the island (it then never steps aside, §3.5). */
 const islandHoldsCard = (): boolean => [...enginePlaces.entries()].some(([id, p]) => (p.kind === "island" || p.kind === "elsewhere") && sealed.isPending(id));
 /** The engine's word on a card's place (a `card_placed` event, or a snapshot's entry the book took): kept, and the card placed
  *  again; the surfaces hear it (the island takes or lets go). */
 function enginePlaced(cardId: string, place: CardPlacement, from: "event" | "snapshot" = "event"): void {
   const was = islandHoldsCard();
+  const onIsland = (p: CardPlacement | undefined) => p !== undefined && (p.kind === "island" || p.kind === "elsewhere");
+  const cardMoved = onIsland(enginePlaces.get(cardId)) !== onIsland(place);
+  const wasWindow = windowHoldsCard();
   if (from === "event") enginePlaces.placed(cardId, place);
   else if (enginePlaces.snapshot([{ card: cardId, place }]).length === 0) return;
   // lane HS (B1): each placement decides again whether this program keeps a fallback for the card: one stood down for its
@@ -1079,7 +1087,7 @@ function enginePlaced(cardId: string, place: CardPlacement, from: "event" | "sna
   if (was !== islandHoldsCard()) {
     for (const s of surfaces.values()) applyVisibility(s);
     tellSurfaces();
-  }
+  } else if (program === "host" && (cardMoved || wasWindow !== windowHoldsCard())) tellSurfaces(); // lane HS: the host's island draws only placed cards: each one it takes or lets go
 }
 const CONVERSATION_ASK_GRACE_MS = 400;
 function drawnInWindow(cardId: string): void {
@@ -1479,6 +1487,7 @@ function makePair(): Pair {
         sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
         disarmFallback(parsed.data.id);
         heldOffFallbacks.delete(parsed.data.id);
+        if (program === "host") tellSurfaces(); // lane HS: the host's island comes back once no window holds a card
         cardArrived.delete(parsed.data.id);
         cardPlaces.delete(parsed.data.id);
         windowDraws.delete(parsed.data.id);
@@ -2523,7 +2532,7 @@ function surfaceEnvironment(windowId: number): SurfaceEnvironment | undefined {
   if (![...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === windowId)) return undefined;
   const d = screen.getPrimaryDisplay();
   if (screens === null) screens = loadScreens(join(here, "native", "screen.node"), log);
-  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) }, mainFront: mainWindowFront(mainState()) && !islandHoldsCard() } as SurfaceEnvironment; // `mainFront` rides along: the SDK's declaration doesn't name it (the island reads it)
+  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) }, mainFront: (program === "host" ? windowHoldsCard() : mainWindowFront(mainState())) && !islandHoldsCard() } as SurfaceEnvironment; // `mainFront` rides along: the SDK's declaration doesn't name it (the island reads it)
 }
 
 /** The displays changed: each surface's part hears its environment as it is now. */
