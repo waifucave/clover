@@ -61,7 +61,10 @@ export function pluginPath(folder: string, path: string): string | undefined {
 function readText(folder: string, path: string, max: number): { ok: true; text: string } | { ok: false; reason: string } {
   const real = pluginPath(folder, path);
   if (real === undefined) return { ok: false, reason: `"${path}" isn't a file inside the plugin's folder` };
-  if (!statSync(real).isFile()) return { ok: false, reason: `"${path}" isn't a file` };
+  const st = statSync(real);
+  if (!st.isFile()) return { ok: false, reason: `"${path}" isn't a file` };
+  // Its size first, so a huge file is never read whole (four bytes at most per character).
+  if (st.size > max * 4) return { ok: false, reason: `"${path}" is longer than ${max} characters` };
   let text = readFileSync(real, "utf8");
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   if (text.length > max) return { ok: false, reason: `"${path}" is longer than ${max} characters` };

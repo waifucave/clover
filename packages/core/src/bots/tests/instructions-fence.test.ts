@@ -119,6 +119,20 @@ describe("the instructions rule, through the real fence", () => {
     expect(alpha.check({ op: "write", path: h.ins("echo") }).allowed).toBe(false);
   });
 
+  test("inside bots/ no bot writes a file with a second name, its own instructions included", async () => {
+    const { linkSync } = await import("node:fs");
+    const h = home();
+    const mine = h.ins("alpha");
+    expect(h.as("alpha").check({ op: "write", path: mine }).allowed).toBe(true);
+    linkSync(join(h.moss, "bots", "luna", "bot.json"), join(h.moss, "bots", "alpha", "instructions", "x.json"));
+    expect(h.as("alpha").check({ op: "write", path: join(h.moss, "bots", "alpha", "instructions", "x.json") }).allowed).toBe(false);
+    linkSync(mine, join(h.moss, "bots", "alpha", "memory", "copy.md"));
+    expect(h.as("alpha").check({ op: "write", path: mine }).allowed).toBe(false);
+    expect(h.as("alpha").check({ op: "write", path: join(h.moss, "bots", "alpha", "memory", "copy.md") }).allowed).toBe(false);
+    // A new file has no second name.
+    expect(h.as("alpha").check({ op: "write", path: join(h.moss, "bots", "alpha", "memory", "new.md") }).allowed).toBe(true);
+  });
+
   test("an instructions folder that is a link is no one's to write; case variants are the same folder, never another's", () => {
     const h = home();
     // scout's instructions folder swapped for a link to luna's: alpha's reach drops scout, and the write lands on luna's

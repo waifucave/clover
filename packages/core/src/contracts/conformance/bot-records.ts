@@ -117,7 +117,7 @@ export function runBotRecordsConformance(make: BotRecordsFactory): void {
       expect(isContractError(await bots.proposeByBot("alpha", { name: "X", effort: "max" } as never, ["acme/large"]).catch((e: unknown) => e), "invalid")).toBe(true);
     });
 
-    test("the move: each plugin bot becomes a record of the same id, the user's layer over its plugin's; once", async () => {
+    test("the move: each plugin bot becomes a record of the same id, the user's layer over its plugin's; a settled entry is final", async () => {
       const bots = setup();
       await bots.create({ name: "Nova" }, user);
       const journal = await bots.move([
@@ -134,9 +134,17 @@ export function runBotRecordsConformance(make: BotRecordsFactory): void {
       expect(bots.instructions("alpha")).toBe("the user's words");
       expect(bots.instructions("pack/luna")).toBe("Luna's words");
       expect(bots.get("nova")?.name).toBe("Nova");
-      expect(await bots.move([{ plugin: "late", id: "late", name: "Late", instructions: "" }])).toEqual(journal);
-      expect(bots.get("late")).toBeUndefined();
-      expect(bots.journal()).toEqual(journal);
+      // Run again: a plugin bot the journal doesn't name yet is moved, the settled ones are untouched.
+      const again = await bots.move([
+        { plugin: "late", id: "late", name: "Late", instructions: "" },
+        { plugin: "alpha", id: "alpha", name: "Alpha", instructions: "the plugin's words again" },
+      ]);
+      expect(again.bots).toEqual([...journal.bots, { outcome: "moved", id: "late", plugin: "late" }]);
+      expect(bots.get("late")).toMatchObject({ madeBy: { kind: "move", plugin: "late" } });
+      expect(bots.instructions("alpha")).toBe("the user's words");
+      // A run that settles nothing new changes nothing.
+      expect(await bots.move([{ plugin: "late", id: "late", name: "Late", instructions: "" }])).toEqual(again);
+      expect(bots.journal()).toEqual(again);
     });
   });
 }

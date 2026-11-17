@@ -1,9 +1,11 @@
 // The one-time move of plugin bots into records (spec §6.1, §13 Split 1; R5, G9; the contract's `BotRecords.move`).
 // Owner: lane BT.
 //
-// What it READS, once, when the bot service starts with records as its source and no journal is there:
-// * the plugin registry's `bot` entries, every one whatever its state (a plugin switched off still has a bot to move),
-//   one per plugin (its id is the bot's id, `pack/luna` for a pack's child);
+// What it READS, at each start of the bot service with records as its source, for the plugin bots the journal doesn't
+// settle yet (none yet, or `failed`; `moved` and `kept` are never touched again):
+// * the plugin registry's records whose manifest brings a bot, whatever their state (an entry list holds only plugins
+//   that are on, and a plugin switched off still has a bot to move), one per plugin (its id is the bot's id,
+//   `pack/luna` for a pack's child); an invalid plugin has no manifest to read, so nothing of it is moved;
 // * for each, its plugin's folder through the old loader (`loadPluginBot`): the instructions file, the greeting file and
 //   the starter-memories folder its entry names, each inside the folder and never through a link out of it;
 // * the user's layer over it (`user-layers/<seg>.json`): its name, instructions, model and effort win over the plugin's.
@@ -21,25 +23,40 @@
 //   qualified id): `failed`, with the loader's reason, nothing written;
 // * a user layer that doesn't parse: its fields that do parse are taken (the user layer's own reader), the rest ignored;
 // * a record already there under the id: `kept` (the move wrote it before a crash: `moved`);
-// * an unreadable journal: the move doesn't run, and `bot.move.status` says so.
+// * a plugin the person switched off, or invalid or refused with an OK: its bot is `moved` straight into the archive
+//   (`archive/bots/<seg>/`), its record, instructions, memory and conversation kept for the person to bring back;
+// * a `failed` entry is tried again at the next start, and a plugin bot the journal doesn't name yet is moved then;
+// * an unreadable journal: the move doesn't run, and `bot.move.status` says so (`held`, with the reason).
 import { isAnyPluginId, type Text } from "@waifucave/moss-protocol";
-import type { PluginRegistry } from "../contracts/plugin-registry";
+import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { BotEntry } from "../contracts/sdk-types";
 import { loadPluginBot } from "./plugin-bot";
 import type { MoveInput } from "./records";
 import { UserLayerStore } from "./user-layer";
 
+/** A plugin in one of these states, or switched off, has its bot moved into the archive. */
+const OFF_STATES: ReadonlySet<string> = new Set(["off", "invalid", "refused"]);
+
+/** Every plugin that brings a bot, whatever its state (an entry list holds only the plugins that are on, and a bot of
+ *  one switched off must be moved too): its record, and its manifest's `bot` entry as validated. */
+function pluginsWithBots(registry: Pick<PluginRegistry, "list" | "entries" | "get">): { record: PluginRecord; entry: BotEntry }[] {
+  const out = new Map<string, { record: PluginRecord; entry: BotEntry }>();
+  for (const record of registry.list()) {
+    const entry = (record.manifest as { contributes?: { bot?: unknown } } | undefined)?.contributes?.bot;
+    if (entry !== undefined && entry !== null && typeof entry === "object" && !Array.isArray(entry) && isAnyPluginId(record.id)) out.set(record.id, { record, entry: entry as BotEntry });
+  }
+  for (const c of registry.entries("bot")) {
+    const record = registry.get(c.pluginId);
+    if (record !== undefined && !out.has(c.pluginId) && isAnyPluginId(c.pluginId)) out.set(c.pluginId, { record, entry: c.value as BotEntry });
+  }
+  return [...out.values()];
+}
+
 /** Every plugin bot the registry knows, as the move takes it. */
-export function pluginBotsForMove(registry: Pick<PluginRegistry, "entries" | "get">, home: string): MoveInput[] {
+export function pluginBotsForMove(registry: Pick<PluginRegistry, "list" | "entries" | "get">, home: string): MoveInput[] {
   const layers = new UserLayerStore(home);
   const out: MoveInput[] = [];
-  const seen = new Set<string>();
-  for (const c of registry.entries("bot")) {
-    if (seen.has(c.pluginId) || !isAnyPluginId(c.pluginId)) continue;
-    seen.add(c.pluginId);
-    const record = registry.get(c.pluginId);
-    if (record === undefined) continue;
-    const entry = c.value as BotEntry;
+  for (const { record, entry } of pluginsWithBots(registry)) {
     const name: Text = (entry as { name?: Text }).name ?? record.id;
     if (record.source !== "bundled" && record.okHash === undefined) {
       out.push({ plugin: record.id, id: record.id, name, instructions: "", failed: "its plugin was never OK'd" });
@@ -65,17 +82,18 @@ export function pluginBotsForMove(registry: Pick<PluginRegistry, "entries" | "ge
       // bundled plugin (its choice never asks); a third party's isn't (the bot runs on the person's default model until
       // they pick one), so no provider the person never picked is spent on after the move. The user layer's always is.
       ...(b.entry.model === undefined || record.source !== "bundled" ? {} : { model: b.entry.model.default }),
-      ...(b.entry.model?.effort === undefined ? {} : { effort: b.entry.model.effort }),
+      ...(b.entry.model?.effort === undefined || record.source !== "bundled" ? {} : { effort: b.entry.model.effort }),
       ...(Object.keys(userLayer).length === 0 ? {} : { userLayer }),
       ...(b.memorySeed === undefined ? {} : { memorySeed: b.memorySeed }),
+      // A plugin the person switched off, or one that is invalid or refused: its bot goes into the archive, whole, for
+      // the person to bring back on purpose, never live.
+      ...(!record.enabled || OFF_STATES.has(record.state) ? { archive: true as const } : {}),
     });
   }
   return out;
 }
 
 /** The plugin bots that have no record yet (`bot.move.status`'s `pending`, and the ids the store holds back). */
-export function pendingPluginBots(registry: Pick<PluginRegistry, "entries">, has: (id: string) => boolean): string[] {
-  const ids = new Set<string>();
-  for (const c of registry.entries("bot")) if (isAnyPluginId(c.pluginId) && !has(c.pluginId)) ids.add(c.pluginId);
-  return [...ids];
+export function pendingPluginBots(registry: Pick<PluginRegistry, "list" | "entries" | "get">, has: (id: string) => boolean): string[] {
+  return pluginsWithBots(registry).map((p) => p.record.id).filter((id) => !has(id));
 }

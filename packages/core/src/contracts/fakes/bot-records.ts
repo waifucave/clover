@@ -169,9 +169,14 @@ export class FakeBotRecords implements BotRecords {
   }
 
   async move(bots: readonly PluginBotForMove[]): Promise<BotMoveJournal> {
-    if (this.#journal) return this.#journal;
-    const outcomes: BotMoveOutcome[] = [];
-    for (const b of bots) {
+    const before = this.#journal;
+    const settled = new Set((before?.bots ?? []).filter((b) => b.outcome !== "failed").map((b) => b.id));
+    const fresh = bots.filter((b) => !settled.has(b.id));
+    if (before !== undefined && fresh.length === 0) return before;
+    const outcomes: BotMoveOutcome[] = [...(before?.bots ?? []).filter((b) => settled.has(b.id))];
+    for (const b of fresh) {
+      const there = this.#records.get(b.id)?.record;
+      if (there !== undefined && there.madeBy.kind === "move" && there.madeBy.plugin === b.plugin) { outcomes.push({ outcome: "moved", id: b.id, plugin: b.plugin }); continue; }
       if (this.#taken(b.id)) { outcomes.push({ outcome: "kept", id: b.id, plugin: b.plugin }); continue; }
       const layer = b.userLayer ?? {};
       const model = layer.model ?? b.model;

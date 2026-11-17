@@ -344,6 +344,18 @@ export class MossFence implements Fence {
       const linked = this.#hardLinked(p, !write);
       if (linked) return { allowed: false, reason: linked.kind, path: linked.path };
     }
+    // Lane BT (read 65's S1): inside `<home>/bots/` no caller but the user writes a file with a second name. A record or
+    // an instructions file there is kept from a bot by its name alone, so a second name for one in a folder the bot
+    // writes would let it edit, or empty, another bot's. One lstat; a file that isn't there yet has no second name.
+    if (write && ctx?.user !== true) {
+      const bots = joinHome(this.#mossHome, this.os, "bots");
+      for (const p of all) {
+        if (!inside(p, bots, this.os)) continue;
+        let st: ReturnType<typeof lstatSync> | undefined;
+        try { st = lstatSync(p); } catch { st = undefined; }
+        if (st !== undefined && st.isFile() && st.nlink > 1) return { allowed: false, reason: "bot-memory", path: p };
+      }
+    }
     const fenced = set.map((i) => i.path);
     for (const p of all) {
       if (nonAsciiAlias(p, fenced, this.#mossHome, this.os) !== null) return { allowed: false, reason: "moss-home", path: this.#mossHome };

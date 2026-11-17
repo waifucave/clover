@@ -154,7 +154,8 @@ export const BotMoveOutcome = z.discriminatedUnion("outcome", [
 ]);
 export type BotMoveOutcome = z.infer<typeof BotMoveOutcome>;
 
-/** The move's journal (`BOT_MOVE_JOURNAL`), written once: the move never runs again while it exists. */
+/** The move's journal (`BOT_MOVE_JOURNAL`): at each start the move takes only what it doesn't settle yet (a `failed`
+ *  entry, a plugin bot it doesn't name); `moved` and `kept` entries are final. */
 export const BotMoveJournal = z.object({
   move: z.literal(1),
   at: Timestamp,
@@ -244,8 +245,12 @@ export const BOTS_METHODS = {
   botMoveStatus: defineMethod({
     name: "bot.move.status", owner: "BT", roles: ["app", "cli"],
     params: z.object({}),
-    result: z.object({ journal: BotMoveJournal.optional(), pending: z.array(AnyPluginId).max(1024) }),
-    doc: "The one-time move of plugin bots into records: what it did, or which plugin bots still wait for it.",
+    result: z.object({
+      journal: BotMoveJournal.optional(), pending: z.array(AnyPluginId).max(1024),
+      /** The journal is there but unreadable: the move is held, and this says why, for the person (read 65's S4). */
+      held: z.object({ reason: utf16(500) }).optional(),
+    }),
+    doc: "The move of plugin bots into records: what it did, which plugin bots still wait for it (tried again at each start), or why it is held.",
   }),
 } as const;
 

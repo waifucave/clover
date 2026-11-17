@@ -4,7 +4,7 @@
 // the source) so each bot has a conversation and memory; then with records as the source the move runs once: run
 // twice, the second changes nothing; cut off in the middle, it picks up where it was.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BOT_MOVE_JOURNAL, BotMoveJournal, type Caller } from "@waifucave/moss-protocol";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
@@ -69,9 +69,8 @@ describe("the one-time move", () => {
     expect(by["alpha"]).toEqual({ outcome: "moved", id: "alpha", plugin: "alpha" });
     expect(by["scout"]).toEqual({ outcome: "moved", id: "scout", plugin: "scout" });
     expect(by["crew/luna"]).toEqual({ outcome: "moved", id: "crew/luna", plugin: "crew/luna" });
-    // A plugin waiting for its OK lists no entries, so its bot is no bot to move (and one listed with no OK would be
-    // `failed`, "its plugin was never OK'd", move.ts).
-    expect(by["rogue"]).toBeUndefined();
+    // A plugin waiting for its OK: its bot isn't moved (its words were never OK'd), and is tried again at each start.
+    expect(by["rogue"]).toMatchObject({ outcome: "failed", why: "its plugin was never OK'd" });
     // Alpha: her plugin's instructions, model and greeting; her memory and conversation where they were.
     const alpha = moved.bots.records!.get("alpha")!;
     expect(alpha).toMatchObject({ id: "alpha", name: "Alpha", madeBy: { kind: "move", plugin: "alpha" }, model: "anthropic/claude-sonnet-5-5", effort: "medium", mainSession: "b_alpha" });
@@ -79,7 +78,9 @@ describe("the one-time move", () => {
     expect(readFileSync(join(botPaths(home, "alpha").memory, "MEMORY.md"), "utf8")).toBe(readFileSync(join(ALPHA_FOLDER, "bot/memory/MEMORY.md"), "utf8"));
     expect(projectRecords(moved.host.history("b_alpha"), { kind: "bot" }).filter((e) => e.type === "user_message").map((e) => e.text)).toEqual(["hello b_alpha"]);
     // Scout: the person's layer over its plugin's.
-    expect(moved.bots.records!.get("scout")).toMatchObject({ model: "acme/large", effort: "low", greeting: "Scout here." });
+    // Its plugin's own effort isn't carried (a third party's, N5); the person's model is.
+    expect(moved.bots.records!.get("scout")).toMatchObject({ model: "acme/large", greeting: "Scout here." });
+    expect(moved.bots.records!.get("scout")?.effort).toBeUndefined();
     expect(moved.bots.records!.instructions("scout")).toBe("You are Scout, as the person rewrote you.");
     // A pack's bot: its `/` written `--` in its folder, its id kept.
     expect(existsSync(recordFile(home, "crew/luna"))).toBe(true);
@@ -97,7 +98,7 @@ describe("the one-time move", () => {
     moved.drivers.for("b_alpha").end({ text: "yes" });
     await flush();
     const status = moved.side.methods({ localDevice: "x" })["bot.move.status"]!;
-    expect(await status({}, { caller: USER } as never)).toEqual({ journal, pending: [] });
+    expect(await status({}, { caller: USER } as never)).toEqual({ journal, pending: ["rogue"] });
     await moved.shutdown();
 
     // Run twice: the second changes nothing.
@@ -168,7 +169,7 @@ describe("what the move reads", () => {
     const rec = (id: string, folder: string, okHash?: string) => ({ id, folder, source: "local", ...(okHash === undefined ? {} : { okHash }) });
     const records: Record<string, unknown> = { okbot: rec("okbot", ok, "h1"), broken: rec("broken", broken, "h2"), never: rec("never", never) };
     const entry = (id: string) => ({ point: "bot", pluginId: id, ref: "bot", state: "active", value: { name: id, instructions: "bot/instructions.md" } });
-    const registry = { entries: () => [entry("okbot"), entry("broken"), entry("never"), entry("okbot")], get: (id: string) => records[id] } as never;
+    const registry = { list: () => [], entries: () => [entry("okbot"), entry("broken"), entry("never"), entry("okbot")], get: (id: string) => records[id] } as never;
     const got = pluginBotsForMove(registry, tempDir());
     expect(got.map((b) => [b.id, b.failed ?? "ok"])).toEqual([
       ["okbot", "ok"],
@@ -176,5 +177,50 @@ describe("what the move reads", () => {
       ["never", "its plugin was never OK'd"],
     ]);
     expect(got[0]).toMatchObject({ plugin: "okbot", instructions: "You are Ok." });
+  });
+});
+
+describe("the move, again and held", () => {
+  test("a bot whose plugin the person switched off goes straight into the archive, whole; a failed one is tried again at the next start", async () => {
+    const root = tempDir();
+    const home = tempDir();
+    const clock = new FakeClock();
+    const sleepy = writePlugin(root, "sleepy", { "moss.json": botManifest("sleepy", "Sleepy"), "bot/instructions.md": "You are Sleepy." });
+    const broken = writePlugin(root, "broken", { "moss.json": botManifest("broken", "Broken"), "bot/instructions.md": "" });
+    const plugins = [
+      ...(await pluginFromFolder(sleepy)).inputs.map((i) => ({ ...i, approved: true, enabled: false })),
+      ...(await pluginFromFolder(broken)).inputs.map((i) => ({ ...i, approved: true })),
+    ];
+    const first = await boot({ home, clock, plugins, botSource: "records" });
+    const journal = BotMoveJournal.parse(JSON.parse(readFileSync(journalPath(home), "utf8")));
+    const by = Object.fromEntries(journal.bots.map((b) => [b.id, b]));
+    expect(by["sleepy"]).toEqual({ outcome: "moved", id: "sleepy", plugin: "sleepy" });
+    expect(by["broken"]).toMatchObject({ outcome: "failed", why: expect.stringContaining("empty") });
+    expect(first.bots.list().map((v) => v.id)).toEqual([]);
+    expect(first.bots.archivedBots()).toMatchObject([{ id: "sleepy", name: "Sleepy" }]);
+    expect(existsSync(join(home, "archive", "bots", "sleepy", "bot", "bot.json"))).toBe(true);
+    await first.shutdown();
+    // Fixed by its author, the failed one moves at the next start; the archived one stays archived and settled.
+    writeFileSync(join(broken, "bot", "instructions.md"), "You are Broken, fixed.");
+    const again = await boot({ home, clock, plugins: [...plugins], botSource: "records" });
+    const second = BotMoveJournal.parse(JSON.parse(readFileSync(journalPath(home), "utf8")));
+    expect(Object.fromEntries(second.bots.map((b) => [b.id, b.outcome]))).toEqual({ sleepy: "moved", broken: "moved" });
+    expect(again.bots.list().map((v) => v.id)).toEqual(["broken"]);
+    expect(again.bots.archivedBots().map((a) => a.id)).toEqual(["sleepy"]);
+    // The person brings Sleepy back on purpose.
+    await again.bots.restoreBot("sleepy");
+    expect(again.bots.list().map((v) => v.id).sort()).toEqual(["broken", "sleepy"]);
+    await again.shutdown();
+  });
+
+  test("an unreadable journal holds the move and bot.move.status says why", async () => {
+    const home = tempDir();
+    mkdirSync(join(home, "user-layers", "moved"), { recursive: true });
+    writeFileSync(journalPath(home), "{ broken");
+    const b = await boot({ home, plugins: await fixturePlugins(tempDir()), botSource: "records" });
+    const status = await b.side.methods({ localDevice: "x" })["bot.move.status"]!({}, { caller: USER } as never) as { held?: { reason: string }; pending: string[] };
+    expect(status.held?.reason).toContain("can't be read");
+    expect(status.pending.sort()).toEqual(["alpha", "crew/luna", "rogue", "scout"]);
+    await b.shutdown();
   });
 });
