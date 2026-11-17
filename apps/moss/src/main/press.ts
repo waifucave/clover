@@ -174,3 +174,18 @@ export async function answerPress(d: PressDeps, a: { token: string; option: stri
   d.log(`sealed: answer accepted for ${out.card.id} (${how})`);
   return { accepted: true };
 }
+
+/** The tallest a card's frame grows: high enough for a plugin's whole OK card, so its page never overflows its frame (a
+ *  page that overflowed kept resizing and never read as ready); the list that holds the card scrolls instead. */
+export const CARD_MAX_HEIGHT = 4_000;
+/** How much taller than its frame a card's page must say it is before the frame grows. The card's page fills at least its
+ *  frame (it is laid out as a window), so each report is about the frame's own height, a pixel or so over from rounding:
+ *  growing on those crept the frame up to its cap, and its buttons moved under the press. */
+export const CARD_GROW_SLACK = 6;
+
+/** The height to give a card's frame for its page's report, or undefined to leave it as it is (`now`: what it has). */
+export function cardHeight(now: number | undefined, reported: number): number | undefined {
+  const want = Math.max(60, Math.min(CARD_MAX_HEIGHT, Math.round(reported)));
+  if (now !== undefined && want <= now + CARD_GROW_SLACK) return undefined;
+  return want;
+}

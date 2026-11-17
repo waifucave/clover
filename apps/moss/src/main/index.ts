@@ -18,7 +18,7 @@ import { engineHome, MAIN_WINDOW_ID, mossIdentity, parseLaunchArgs, resolveProfi
 import { fileVault, memoryVault, ProgramAnswerKey, safeStorageVault, vaultChoice } from "./answer-key";
 import { refusedLaunchSwitches } from "./debug-guard";
 import { PresenceReporter } from "./presence";
-import { answerPress, PressRecord } from "./press";
+import { answerPress, cardHeight, PressRecord } from "./press";
 import { isOurProgram, loadWindowList, pressCover, windowIdOfMediaSource, type WindowList } from "./overlap";
 import { OWN_ELEMENT, SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
@@ -601,10 +601,8 @@ function sealedSender(event: IpcMainEvent | IpcMainInvokeEvent, token: unknown):
   return { token: t, key, frame: `${f.processId}:${f.routingId}`, windowId: w.id };
 }
 
-/** The tallest a card's frame grows (its own page's height, which it reports): high enough for a plugin's whole OK card,
- *  so its page never overflows its frame (a page that overflowed kept resizing and never read as ready); the list that
- *  holds a card (the conversation, the strip) scrolls instead. */
-const CARD_MAX_HEIGHT = 4_000;
+/** The heights MOSS gave each card's frame. */
+const cardHeights = new Map<string, number>();
 
 /** The OS-wide half of the overlap check (overlap.ts, R12): which of our programs' windows lies over the place the person
  *  just pressed in MOSS's window (another app's window never counts), named by which, or undefined. With no window list
@@ -676,7 +674,12 @@ function wireSealed(): void {
   ipcMain.on("moss:sealed-size", (event, a: { token?: unknown; height?: unknown }) => {
     const s = sealedSender(event, a?.token);
     const cardId = s === undefined ? undefined : sealed.cardOf(s.token);
-    if (cardId !== undefined && typeof a.height === "number" && Number.isFinite(a.height)) mainWindow?.webContents.send("moss:card-height", cardId, Math.max(60, Math.min(CARD_MAX_HEIGHT, Math.round(a.height))));
+    if (cardId === undefined || typeof a.height !== "number" || !Number.isFinite(a.height)) return;
+    const next = cardHeight(cardHeights.get(cardId), a.height);
+    if (next === undefined) return;
+    cardHeights.set(cardId, next);
+    while (cardHeights.size > 64) cardHeights.delete(cardHeights.keys().next().value!);
+    mainWindow?.webContents.send("moss:card-height", cardId, next);
   });
   ipcMain.handle("moss:sealed-review", async (event, a: { token?: unknown; peek?: unknown }) => {
     const s = sealedSender(event, a?.token);

@@ -13,7 +13,7 @@ import { memoryVault, ProgramAnswerKey } from "../src/main/answer-key";
 import { MossEngine } from "../src/main/engine";
 import { mossHello } from "../src/main/connection";
 import { PresenceReporter } from "../src/main/presence";
-import { answerPress, PressRecord, stackingRule, type PressDeps } from "../src/main/press";
+import { answerPress, cardHeight, CARD_MAX_HEIGHT, PressRecord, stackingRule, type PressDeps } from "../src/main/press";
 import { OWN_ELEMENT, SealedFrames } from "../src/main/sealed";
 import { FAKE_DEVICE, startFakeEngine, type FakeEngine } from "./fake-engine/engine";
 
@@ -214,5 +214,19 @@ describe("a press on a card MOSS draws", () => {
     // Named as another program than the connection's, or not named: refused.
     expect(await r.client.request("card.answer", { id: card.id, hash: card.hash, option: "allow_once", proof: { via: "device", device: FAKE_DEVICE, at, signature: sig, program: "code" } })).toEqual({ accepted: false, reason: "the proof doesn't name this program" });
     expect(await r.client.request("card.answer", { id: card.id, hash: card.hash, option: "allow_once", proof: { via: "device", device: FAKE_DEVICE, at, signature: sig } })).toEqual({ accepted: false, reason: "the proof doesn't name this program" });
+  });
+});
+
+describe("a card's frame height", () => {
+  test("grows to its page's whole height, up to the cap; a report that only follows the frame (rounding) leaves it", () => {
+    expect(cardHeight(undefined, 512.4)).toBe(512);
+    expect(cardHeight(220, 1_340)).toBe(1_340);
+    // The page fills its frame: it reports the frame's own height, or a pixel over. No creep.
+    let h = 600;
+    for (let i = 0; i < 50; i++) h = cardHeight(h, h + 1) ?? h;
+    expect(h).toBe(600);
+    expect(cardHeight(600, 600)).toBeUndefined();
+    expect(cardHeight(600, 20_000)).toBe(CARD_MAX_HEIGHT);
+    expect(cardHeight(undefined, 10)).toBe(60);
   });
 });
