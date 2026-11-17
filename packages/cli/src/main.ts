@@ -5,7 +5,7 @@ import { migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serve
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveMossHome, isDefaultMossHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, stopWithin, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveMossProfile, splitTag, sdkLocalMcpServers, installMossProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, mossCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testBuildStartRefusal, testKeychainRefusal, loadBundledManifest, loadPrebuiltHostBundles } from "@waifucave/moss-core";
+import { resolveMossHome, isDefaultMossHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, stopWithin, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveMossProfile, splitTag, sdkLocalMcpServers, installMossProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, mossCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testBuildStartRefusal, testKeychainRefusal, loadBundledManifest, loadPrebuiltHostBundles, runEngineInstall, ENGINE_INSTALL_USAGE } from "@waifucave/moss-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/moss-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/moss-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -2400,6 +2400,12 @@ if (import.meta.main) {
     console.log(typeof __MOSS_TEST_BUILD__ === "string" ? `moss ${CORE_VERSION} test build (${__MOSS_TEST_BUILD__}: a test-marked build, never for release)` : `moss ${CORE_VERSION}`);
     process.exit(0);
   }
+  case "engine": {
+    // `moss-core engine install --app <bundle>`: an app puts its own engine under the home before it starts anything (RL).
+    if (sub !== "install") { console.error(ENGINE_INSTALL_USAGE); process.exit(2); }
+    process.exit(await runEngineInstall(process.argv.slice(4), { home: resolveMossHome(), out: (l) => console.log(l), err: (l) => console.error(l) }));
+    break;
+  }
   case "autostart": {
     // `moss-core autostart enable|disable|remove|start|status` — login start on this OS (spec §3.1).
     // Lane M's install hooks run `enable` and `disable`, the app runs `status --json` and `start`;
@@ -2572,6 +2578,8 @@ if (import.meta.main) {
     // process ends while the stop's tail still runs.
     const budget = typeof __MOSS_TEST_BUILD__ === "string" ? Number(process.env.MOSS_TEST_STOP_BUDGET_MS) : Number.NaN;
     const shutdown = async () => { await stopWithin(daemon, Number.isFinite(budget) && budget > 0 ? budget : undefined); bootWasGood(home, serverBin ?? process.execPath); process.exit(0); };
+    // A newer app brought its engine in (RL, `release.bring`): stop as for a signal and exit so `moss-core supervise` starts the installed copy.
+    void daemon.releaseRestart.then(async () => { clearTimeout(goodBoot); await stopWithin(daemon); process.exit(UPDATE_RESTART_EXIT_CODE); });
     // A server install (`<home>/install.json` says server, and this is its binary) updates itself.
     const target = bootTarget;
     const marker = bootMarker;

@@ -54,7 +54,7 @@ import { MossFence } from "./fence/fence";
 import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
 import { dropPluginServers, pruneDroppedTools, toolPermissionMethods, toolSettingFor } from "./approvals/tool-permissions";
 import { EngineToolSettings } from "./approvals/tool-settings";
-import { createMossServer, laneMethodHandlers, type MossHandler, type MossServer } from "./ipc/moss";
+import { createMossServer, laneMethodHandlers, MossRpcError, type MossHandler, type MossServer } from "./ipc/moss";
 import { activityMossHandlers } from "./activity/api";
 import { ActivityTracker } from "./activity/derive";
 import { EngineActivityFeed } from "./activity/feed";
@@ -168,6 +168,12 @@ import { ApprovalBroker } from "./agent/approvals";
 import { UpdateGate } from "./update/gate";
 import { acceptUpdateExit, updateHandlers, type SelfUpdate } from "./update/service";
 import { readInstallMarker } from "./update/install-marker";
+import { EngineReleaseHome } from "./update/release-home";
+import { defaultPlace, ReleaseService, releaseHandlers } from "./update/release-service";
+import { UPDATE_RESTART_EXIT_CODE } from "./platform/login/supervise";
+import { appPeerRequirement } from "./platform/peer-signature";
+import { DEVELOPER_ID_CLAUSES } from "./bundled-identities";
+import { SemverVersion } from "@waifucave/moss-protocol";
 import { ElicitationBroker } from "./runtime-sdk/url-elicitation";
 import { QuestionBroker } from "./agent/questions";
 import { createPersistedChildren, type AgentRegistry } from "./agent/bg-agent-registry";
@@ -415,6 +421,10 @@ export interface RunningDaemon {
   /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
    *  run just before an update's restart (`beforeRestart`: lane H's lease renew). */
   updateGate: UpdateGate;
+  /** RL: settles when a newer app has brought its engine in place (`release.bring`) and this process must stop and exit with
+   *  UPDATE_RESTART_EXIT_CODE, which `moss-core supervise` answers by starting the installed copy (`stopOnSignals`, and
+   *  the CLI's `daemon run`). */
+  releaseRestart: Promise<void>;
   /** M-M2: a server install's own update (`moss-core daemon run` sets it), which `update.status` and `update.apply`
    *  then serve. */
   setSelfUpdate(self: SelfUpdate): void;
@@ -596,6 +606,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  code signature by audit token against the profile's MOSS app). Tests whose own process says hello as the app
    *  inject one, or `"none"`. */
   appPeer?: AppPeerPolicy;
+  /** One release for everything (spec §3.1, RL): whether an `app` hello must be on this engine's release (a newer one gets
+   *  the release door only; an older one, or one that names none, is refused). Default: on in a release build, and in a test
+   *  build that sets `MOSS_TEST_ENGINE_RELEASE`; off elsewhere (a source run, the tests' own app clients). */
+  enforceRelease?: boolean;
   /** A test-only seam under the plugins' keyed `net.fetch` (`plugin-host/pinned-fetch.ts`): an address the rule refuses
    *  that a test's backend sits on (loopback), and a resolver and platform fetch to stand in. Production never passes
    *  it, and nothing else widens the rule that a plugin's request reaches only a public address. */
@@ -3565,6 +3579,31 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
     channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
   }));
+  // RL: one release for everything (spec §3.1). The engine's release, the apps' records, `release.status|bring|record`, and the
+  // restart a swap ends in. A test build may stamp the engine's release (`MOSS_TEST_ENGINE_RELEASE`) so the acceptance can
+  // run a "newer app" and an "older app" against it; a release build never reads it.
+  const stampedRelease = typeof __MOSS_TEST_BUILD__ === "string" ? SemverVersion.safeParse(process.env.MOSS_TEST_ENGINE_RELEASE).data : undefined;
+  const engineRelease = stampedRelease ?? CORE_VERSION;
+  const releaseProfile = resolveMossProfile();
+  const releasePolicy = {
+    platform: process.platform, profile: releaseProfile,
+    developerId: process.platform === "darwin" && appPeerRequirement(releaseProfile).includes(DEVELOPER_ID_CLAUSES),
+    records: () => releaseHome.apps(),
+  };
+  const releaseHome: EngineReleaseHome = new EngineReleaseHome({
+    home: dirs.home, engine: engineRelease, clock: new SystemClock(), place: defaultPlace(dirs.home, releasePolicy), log: (line) => console.error(line),
+  });
+  let releaseRestartNow: () => void = () => {};
+  const releaseRestart = new Promise<void>((resolve) => { releaseRestartNow = resolve; });
+  const releaseService = new ReleaseService({
+    home: releaseHome, engine: { release: engineRelease, path: process.execPath }, gate: updateGate, policy: releasePolicy, homeDir: dirs.home,
+    // TODO(lane HS): the background host's supervisor (`HostSupervisor.stop("update")`, and `boot()` after a swap that failed). Until it
+    // lands there is no host to stop.
+    host: { stop: () => {} },
+    emit: (event) => void mossServer?.coreEvent({ ...event }), restart: () => releaseRestartNow(), log: (line) => console.error(line),
+  });
+  Object.assign(mossLaneHandlers, releaseHandlers(releaseService, { error: (code, message) => new MossRpcError(code, message) }));
+  const enforceRelease = opts.enforceRelease ?? (DIST_BUILD || stampedRelease !== undefined);
   // Lane C's cards and lane K's agent.* methods: the broker and the agents come up with the parts (below) and go with
   // them, so each call reads them then; until they are up, and after they stop, a call is told to try again.
   // Settings' Tools tab: always allow / ask / always block per plugin tool (one store with the connector permissions, read live by
@@ -3605,6 +3644,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     tokens: mossTokens,
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
+    release: releaseHome,
+    enforceRelease,
     get deviceId() { return liveDeviceId; },
     handOver: async () => { await daemonLinks?.handOver(); },
     // The link sidecar (lane H): the one local process whose hello may be `remote`, `web` or `peer`.
@@ -4893,6 +4934,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     moss: mossDrivers,
     mossParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots, agents: () => daemonParts?.agents, broker: () => daemonParts?.broker },
     updateGate,
+    releaseRestart,
     setSelfUpdate(self) { selfUpdate = self; },
     dispatchChildren,
     wakes: computerUseRuntime.wakes,
@@ -5061,6 +5103,8 @@ export function stopOnSignals(daemon: RunningDaemon): void {
   // the exact regression the CLI's own `daemon run` handler was written to prevent.
   const shutdown = async () => { await stopWithin(daemon); process.exit(0); };
   void daemon.pairStopped.then(shutdown);
+  // A newer app brought its engine in (RL): stop as for a signal, and exit so `moss-core supervise` starts the installed copy.
+  void daemon.releaseRestart.then(async () => { await stopWithin(daemon); process.exit(UPDATE_RESTART_EXIT_CODE); });
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 }
