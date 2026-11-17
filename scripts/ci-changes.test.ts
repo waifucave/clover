@@ -54,7 +54,7 @@ describe("ci-changes", () => {
     expect(on(["services/forwarder/src/index.ts"])).toEqual(["workspaces", "typecheck"]);
   });
 
-  test("macOS: a merge-queue run takes two macOS jobs (its machine's and the one for core, cli, scripts and verify, which runs in legs); a pull request takes none (the local gate); Swift runs on demand only", () => {
+  test("macOS: a merge-queue run takes three macOS jobs (its machine's, the sealed-core gate's and the one for core, cli, scripts and verify, which runs in legs); a pull request takes none (the local gate); Swift runs on demand only", () => {
     type Job = { if?: string; "runs-on"?: string; strategy?: { matrix?: { include?: string | Array<{ runner: string }> } } };
     const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, Job> }).jobs;
     type Event = "pull_request" | "merge_group" | "workflow_dispatch";
@@ -80,10 +80,10 @@ describe("ci-changes", () => {
     // The machine job runs every machine, macOS among them, and never on a pull request.
     expect((jobs.machine!.strategy!.matrix!.include as Array<{ runner: string }>).map((r) => r.runner)).toContain("macos-latest");
     expect(jobs.machine!.if).toStartWith("github.event_name != 'pull_request' && ");
-    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos"]);
-    expect(macJobs(["bun.lock"])).toEqual(["machine", "macos"]);
-    expect(macJobs([".github/workflows/ci.yml"])).toEqual(["machine", "macos"]);
-    expect(macJobs(["packages/cli/src/main.ts"])).toEqual(["machine", "macos"]);
+    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "sealed-core", "macos"]);
+    expect(macJobs(["bun.lock"])).toEqual(["machine", "sealed-core", "macos"]);
+    expect(macJobs([".github/workflows/ci.yml"])).toEqual(["machine", "sealed-core", "macos"]);
+    expect(macJobs(["packages/cli/src/main.ts"])).toEqual(["machine", "sealed-core", "macos"]);
     // An apple/ change: the Swift kits on demand only, and the scripts' tests on Linux, never the macos job (its
     // scripts step runs only the scripts' own macOS tests, for a change to scripts/).
     expect(macJobs(["apple/ComputerUse/WinterBrowserHost/Sources/Host.swift"])).toEqual([]);
@@ -277,7 +277,7 @@ describe("CI for the lanes", () => {
 
   test("the lane gate is the gate without the Windows jobs, plus the acceptance run", () => {
     const windows = Object.keys(ci.jobs).filter((id) => runnersOf(ci.jobs[id]!).some((r) => r.startsWith("windows")));
-    expect(windows.sort()).toEqual(["installers-windows", "link-windows", "machine-windows", "tree-windows"]);
+    expect(windows.sort()).toEqual(["installers-windows", "link-windows", "machine-windows", "sealed-core-windows", "tree-windows"]);
     const gate = needsOf("gate");
     const lane = needsOf("lane-gate");
     expect(lane.sort()).toEqual([...gate.filter((id) => !windows.includes(id)), "acceptance"].sort());
@@ -287,10 +287,10 @@ describe("CI for the lanes", () => {
     expect(ci.jobs.gate!.if).toBe("always()");
   });
 
-  test("the acceptance run is one macOS job per unit of the four a lane's check runs, and they exist in shards.ts", () => {
+  test("the acceptance run is one macOS job per unit of the seven a lane's check runs, and they exist in shards.ts", () => {
     const acceptance = ci.jobs.acceptance!;
     expect(acceptance["runs-on"]).toBe("macos-latest");
-    expect(acceptance.strategy?.matrix?.unit).toEqual(["main", "workshop", "plugin-app", "browser"]);
+    expect(acceptance.strategy?.matrix?.unit).toEqual(["chain", "window-1", "window-2", "window-3", "workshop", "plugin-app", "browser"]);
     const known = units().map((u) => u.id as string);
     for (const u of acceptance.strategy!.matrix!.unit!) expect(known).toContain(u);
   });

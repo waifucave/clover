@@ -122,11 +122,12 @@ import { holdMachine } from "./exclusive";
 import { ownTurnEvents } from "./turn-end";
 import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
 import { AgentTranscript } from "../../packages/core/src/agents/transcript";
-import { mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, type TimedRow, type UnitId } from "./shards";
+import { expandUnitIds, mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, windowIndexes, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
 import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
 import { OUTSIDE_FOLDER, OUTSIDE_TOOL, outsideWrong, writeOutside, type ProbeAnswer } from "./outside-step";
+import { scaled } from "./time-scale";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -171,11 +172,13 @@ const tabFlashOnly = argv.includes("--only-tab-flash");
 const shards = Number(flag("--shards") ?? 1);
 if (!Number.isInteger(shards) || shards < 1 || shards > 8) { console.error("acceptance: --shards takes a number of shards, 1 to 8"); process.exit(2); }
 // --units <ids>: one shard's own run (run.ts --shards starts each): only these units' rows (shards.ts), in its own home.
-const shardUnits = flag("--units")?.split(",").filter((u) => u !== "") as UnitId[] | undefined;
+// `main` stands for the chain and the window's three units (shards.ts): `--units main` runs them all in one home, in order.
+const unitsAsked = flag("--units")?.split(",").filter((u) => u !== "") as UnitId[] | undefined;
+const shardUnits = unitsAsked === undefined ? undefined : expandUnitIds(unitsAsked);
 {
-  const known = allUnits().map((u) => u.id as string);
-  const bad = (shardUnits ?? []).filter((u) => !known.includes(u));
-  if (shardUnits !== undefined && (shardUnits.length === 0 || bad.length > 0)) { console.error(`acceptance: --units takes unit ids (${known.join(", ")})${bad.length > 0 ? `, not ${bad.join(", ")}` : ""}`); process.exit(2); }
+  const known = [...allUnits().map((u) => u.id as string), "main"];
+  const bad = (unitsAsked ?? []).filter((u) => !known.includes(u));
+  if (unitsAsked !== undefined && (unitsAsked.length === 0 || bad.length > 0)) { console.error(`acceptance: --units takes unit ids (${known.join(", ")})${bad.length > 0 ? `, not ${bad.join(", ")}` : ""}`); process.exit(2); }
 }
 /** Whether this run runs a unit's rows: every unit, unless it is a shard. */
 // The tab-flash row alone (its own serial unit, or --only-tab-flash): its app's frames out of sight sleep after
@@ -485,11 +488,12 @@ process.on("SIGHUP", () => onSignal("SIGHUP"));
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until<T>(what: string, timeoutMs: number, probe: () => Promise<T | undefined> | T | undefined, everyMs = 300): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
+  const long = scaled(timeoutMs);
+  const deadline = Date.now() + long;
   for (;;) {
     const v = await probe();
     if (v !== undefined) return v;
-    if (Date.now() > deadline) fail(`${what}: not within ${Math.round(timeoutMs / 1000)} s`);
+    if (Date.now() > deadline) fail(`${what}: not within ${Math.round(long / 1000)} s`);
     await sleep(everyMs);
   }
 }
@@ -1215,7 +1219,7 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
   // fallback card included, until the card's time is up. Each attempt notes what it pressed, for the failure line.
   const cardUrl = `moss-sealed://card/${encodeURIComponent(card.id)}/`;
   const tried: string[] = [];
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + scaled(45_000);
   let fallbackChecked = false;
   while (Date.now() < deadline) {
     const found = await until(`the ${card.kind} card's Approve (the island's button or the fallback page, drawn offscreen)`, Math.max(1_000, Math.min(20_000, deadline - Date.now())), async () => {
@@ -1755,7 +1759,7 @@ async function main(): Promise<void> {
   if (routineOnly) { await routineOnlyRun(); return; }
   if (appRowsOnly !== undefined) { await appRowsOnlyRun(app, appRowsOnly); return; }
   // A shard with no part of the main chain: its units on a keyed daemon of its own.
-  if (shardUnits !== undefined && !shardUnits.includes("main")) { await unitsRun(app, shardUnits); return; }
+  if (shardUnits !== undefined && !shardUnits.includes("chain")) { await unitsRun(app, shardUnits); return; }
   if (onlyUi !== undefined) { await onlyUiRun(app); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
@@ -3222,6 +3226,8 @@ async function keyedSession(c: MossClient): Promise<string> {
  *  reopen steps get step 4's fixture plugin first, installed and OK'd over RPC (the mid-tool-call one calls its tool). */
 async function unitsRun(app: { exe: string; args: string[] }, ids: readonly UnitId[]): Promise<void> {
   const mine = allUnits().filter((u) => ids.includes(u.id)).flatMap((u) => u.rows);
+  const windowIds = ids.filter((id) => windowIndexes(id) !== undefined);
+  let windowSetup: string | undefined;
   let echoMissing = false;
   let session: string | undefined;
   let c: MossClient | undefined;
@@ -3232,6 +3238,10 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
     c = (await appDriver()).client;
     await signInKey(c);
     session = await keyedSession(c);
+    if (windowIds.length > 0) {
+      // The window's steps run as they did after step 4: its plugin is installed (the slash menu step runs its command).
+      try { await installEcho(c); } catch (err) { windowSetup = `the window unit's setup (step 4's plugin): ${why(err)}`; }
+    }
     if (ids.includes("reopen")) {
       // Its own setup: a failure here is the reopen rows' alone, never the shard's other units'.
       try { await installEcho(c); } catch (err) { for (const r of REOPEN_STEPS) record(stepNumber(FULL_STEPS, r.name), statusOf(err), `the reopen shard's setup (step 4's plugin): ${why(err)}`); echoMissing = true; }
@@ -3267,6 +3277,17 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
     return;
   } finally {
     c?.close();
+  }
+  if (windowIds.length > 0) {
+    const names = allUnits().filter((u) => windowIds.includes(u.id)).flatMap((u) => u.rows);
+    if (windowSetup !== undefined) for (const name of names) record(stepNumber(FULL_STEPS, name), "FAIL", windowSetup);
+    else {
+      // Her tab, not the welcome guide: the guide is marked done, as the app marks it once it is.
+      const welcomeDone = join(home, "app-data", profile, "welcome-done");
+      mkdirSync(dirname(welcomeDone), { recursive: true });
+      if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
+      await uiPhase(app, true, session, pressing, new Set(windowIds.flatMap((id) => windowIndexes(id)!)));
+    }
   }
   const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "acp" || id === "builder-examples" || id === "workshop-points" || id === "tab-flash" || id === "browser" || id === "plugin-app");
   if (windowed.length > 0) await unitWindow(app, windowed, session);
@@ -5078,7 +5099,16 @@ async function keepFacts(session: string | undefined, pluginId: string | undefin
 }
 
 /** Steps 9 on: the window, driven over the DevTools protocol (ui-steps.ts), on the daemon step 8 restarted. */
-async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, session: string | undefined, pressable: boolean): Promise<void> {
+/** The window steps this run's own app runs (their place in UI_STEPS), or undefined for all: the ones of the window units this run has. */
+function windowStepsHere(): Set<number> | undefined {
+  if (shardUnits === undefined) return undefined;
+  const mine = UI_STEPS.map((_, i) => i).filter((i) => runs(unitOf(`window: ${UI_STEPS[i]}`)));
+  return mine.length === UI_STEPS.length ? undefined : new Set(mine);
+}
+
+/** The window's steps, then (unless only some were asked for) the reopened app's press and the rows after them. `only`: the steps a
+ *  window unit runs (its place in UI_STEPS), in an app of its own. */
+async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, session: string | undefined, pressable: boolean, only?: ReadonlySet<number>): Promise<void> {
   const first = UI_FIRST_ROW;
   const reopened = first + UI_STEPS.length; // after quit and reopen: the same key, one more real press
   const blockAll = (why: string) => { for (let i = 0; i <= UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
@@ -5122,7 +5152,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       cdp: cdp!, rpc, home, reply: "ACCEPTANCE-REPLY-OK", requests: () => fake?.requests ?? [], appLog: () => readLog(join(home, "logs", "app.log")),
       cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined) : undefined,
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
-      ...(onlyUi !== undefined ? { only: new Set(onlyUi) } : {}),
+      ...(only !== undefined ? { only } : onlyUi !== undefined ? { only: new Set(onlyUi) } : windowStepsHere() !== undefined ? { only: windowStepsHere()! } : {}),
       pickFolder,
       setPick: (folder) => writeFileSync(pickFile, `${folder}\n`),
       avatarFolder,
@@ -5143,7 +5173,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
         },
       } : {}),
     }, (i, status, detail) => record(first + i, status, detail));
-    if (onlyUi !== undefined) return;
+    if (onlyUi !== undefined || only !== undefined) return;
     // After quit and reopen (the owner's check 10): this app registers the SAME answer key the first one did (the run's
     // kept key file), and a card's Approve is pressed in its window, the real way.
     try {

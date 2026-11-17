@@ -24,6 +24,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { join, resolve } from "node:path";
 import type { Cdp } from "./cdp";
 import type { MossClient } from "./client";
+import { scaled } from "./time-scale";
 
 export const EXAMPLE_NOTES_STEP = "example-notes (stays inside), from its folder on the Plugins page: its OK card names its cardless tools and no network; contained and readOnly tools run with no card, the other cards; hook, skill, agent definition, /note, its TSX page (host.call, its own setting changed with no card from the page and from the Plugins page), the bot's window skin, locales (its page in its Japanese words when the user's language is Japanese, and back); turned off, then removed";
 export const EXAMPLE_WEATHER_STEP = "example-weather (reaches outside), from its folder on the Plugins page: its OK card names its host and notifications and says its tools still ask; its key through the key dialog; each call cards; its forecast reaches its host through its proxy with that key; /rain-alert notifies and a card arriving takes the notification down, and it is refused once muted on the Plugins page";
@@ -83,11 +84,12 @@ export const fail = (m: string): never => { throw new Failed(m); };
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function until<T>(what: string, ms: number, probe: () => Promise<T | undefined> | T | undefined, dump?: () => Promise<string>): Promise<T> {
-  const end = Date.now() + ms;
+  const long = scaled(ms);
+  const end = Date.now() + long;
   for (;;) {
     const v = await probe();
     if (v !== undefined) return v;
-    if (Date.now() > end) fail(`${what}: not within ${Math.round(ms / 1000)} s${dump === undefined ? "" : ` (${await dump().catch(() => "?")})`}`);
+    if (Date.now() > end) fail(`${what}: not within ${Math.round(long / 1000)} s${dump === undefined ? "" : ` (${await dump().catch(() => "?")})`}`);
     await sleep(400);
   }
 }

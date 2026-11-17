@@ -5,6 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SIDEBAR_ITEMS, escape, fail, frames, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
+import { scaled } from "./time-scale";
 
 export interface Drawn { session: string; url: string; text: string }
 
@@ -142,7 +143,7 @@ export async function reloadsSettled(ctx: ExampleCtx, quietMs = 6_000, ms = 120_
   const count = () => (ctx.appLog().match(/layers: \S+ loads again/g) ?? []).length;
   let last = count();
   let since = Date.now();
-  const end = Date.now() + ms;
+  const end = Date.now() + scaled(ms);
   while (Date.now() < end) {
     await sleep(500);
     const now = count();

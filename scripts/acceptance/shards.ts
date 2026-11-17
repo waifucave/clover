@@ -4,10 +4,16 @@
 // mean something. Kept apart from run.ts (which starts a run when loaded) so the split and the merge can be tested.
 //
 // What a unit is, from the step tables and the run's order (run.ts `main`):
-// * `main` is the chain that shares one home and its state in order: the first start, the key, the turns, the
-//   plugin installed and called, the fenced write, the restart, the window's steps on the restarted daemon (one app,
-//   one conversation: the pill counts the replies the composer made, the reopened app presses the plugin's card), the
-//   web, hook, stdio, network, shell and outside turns, the agent. Every row no other unit names is main's.
+// * `main` names the whole of what used to be one chain sharing one home, and is now four units (`expandUnitIds`):
+//   - `chain`: the first start, the key, the turns, the plugin installed and called, the fenced write, the restart, the reopened
+//     app pressing the plugin's card, and the web, hook, stdio, network, shell and outside turns and the agent: everything
+//     that reads step 4's plugin or the first daemon's state, in order. Every row no other unit names is the chain's.
+//   - `window-1`, `window-2`, `window-3`: the window's steps (UI_STEPS 0-11, 12-22, 23-30), each from a fresh home, a keyed daemon
+//     with step 4's plugin installed (the slash menu step runs its command) and an app over it, as `--only-ui` runs steps
+//     alone. They were one app and one conversation; the cut is by time (about 3, 5 and 4 minutes of steps), at 12 (the
+//     Plugins page, which opens its own folder) and 23 (the bot editor). A step that needs an earlier one's state is
+//     moved to that one's unit, not patched.
+//   `--units main` runs all four in one process, in one home, as before (the Mac's merge check and the try build use it).
 // * The rows that need only a keyed daemon, Alpha's conversation and an app over it (each proved alone by an
 //   `--only-*` run, or by its own setup in the step): the SDK's two examples (one unit: notes then weather, in the
 //   order the full run gives them), the bundled tools, the cards, the workshop, the ways a plugin arrives besides the
@@ -23,6 +29,7 @@
 //   host API, plugin CLI and index/npm rows, the agent row and its plugin-tool probes), and the workshop's own steps.
 // * Measuring units, serial after the parallel phase: the stage row (its narrow-window readings: a card's timing and
 //   a streamed reply's cost; its default-level turn runs with it), the tab flash, the cold start, the idle row.
+import { UI_STEPS } from "./ui-steps";
 import { COLD_START_STEP, FULL_STEPS, IDLE_STEP, REOPEN_STEPS, STAGE_STEP, finishTable, type Row } from "./steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
@@ -47,7 +54,7 @@ import { BROWSER_STEP } from "./browser-step";
 import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
 import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
 
-export type UnitId = "main" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "acp" | "builder-examples" | "workshop-points" | "browser" | "plugin-app" | "models" | "stage" | "tab-flash" | "cold" | "idle";
+export type UnitId = "main" | "chain" | "window-1" | "window-2" | "window-3" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "acp" | "builder-examples" | "workshop-points" | "browser" | "plugin-app" | "models" | "stage" | "tab-flash" | "cold" | "idle";
 
 export interface Unit {
   id: UnitId;
@@ -58,6 +65,28 @@ export interface Unit {
   /** About how long it takes on the source target, in seconds, as a sharded run measured it (the split's weights). */
   estimate: number;
 }
+
+/** The window's steps, in three units: the places in UI_STEPS where each starts (the last ends at its length). */
+const WINDOW_STARTS: readonly (readonly [UnitId, number])[] = [["window-1", 0], ["window-2", 12], ["window-3", 23]];
+
+/** What `main` names: the chain and the window's steps. */
+export const MAIN_PARTS: readonly UnitId[] = ["chain", ...WINDOW_STARTS.map(([id]) => id)];
+
+/** The unit ids a `--units` list names, with `main` as the parts it stands for. */
+export function expandUnitIds(ids: readonly UnitId[]): UnitId[] {
+  return [...new Set(ids.flatMap((id) => (id === "main" ? MAIN_PARTS : [id])))];
+}
+
+/** The window steps (by their place in UI_STEPS) a window unit runs, or undefined for any other unit. */
+export function windowIndexes(id: UnitId): number[] | undefined {
+  const at = WINDOW_STARTS.findIndex(([w]) => w === id);
+  if (at < 0) return undefined;
+  const from = WINDOW_STARTS[at]![1];
+  const to = WINDOW_STARTS[at + 1]?.[1] ?? UI_STEPS.length;
+  return Array.from({ length: to - from }, (_, i) => from + i);
+}
+
+const WINDOW_ESTIMATES: Readonly<Record<string, number>> = { "window-1": 120, "window-2": 200, "window-3": 170 };
 
 const OTHERS: readonly Unit[] = [
   { id: "examples", rows: [EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP], phase: "parallel", estimate: 90 },
@@ -80,10 +109,16 @@ const OTHERS: readonly Unit[] = [
   { id: "idle", rows: [IDLE_STEP], phase: "serial", estimate: 45 },
 ];
 
-/** Every unit, `main` first, its rows every row of `steps` the others don't name. */
+/** Every unit, the `chain` first, its rows every row of `steps` the others don't name; then the window's three. */
 export function units(steps: readonly string[] = FULL_STEPS): Unit[] {
-  const taken = new Set(OTHERS.flatMap((u) => u.rows));
-  return [{ id: "main", rows: steps.filter((s) => !taken.has(s)), phase: "parallel", estimate: 270 }, ...OTHERS];
+  const windows: Unit[] = WINDOW_STARTS.map(([id]) => ({
+    id,
+    rows: windowIndexes(id)!.map((i) => `window: ${UI_STEPS[i]}`).filter((r) => steps.includes(r)),
+    phase: "parallel" as const,
+    estimate: WINDOW_ESTIMATES[id]!,
+  }));
+  const taken = new Set([...OTHERS, ...windows].flatMap((u) => u.rows));
+  return [{ id: "chain", rows: steps.filter((s) => !taken.has(s)), phase: "parallel", estimate: 270 }, ...windows, ...OTHERS];
 }
 
 /** Which unit runs a row (by name). */
@@ -91,7 +126,7 @@ export function unitOf(name: string, all: readonly Unit[] = units()): UnitId | u
   return all.find((u) => u.rows.includes(name))?.id;
 }
 
-/** The parallel phase's units in `n` shards: `main`, the long pole, alone in the first (from 2 shards: anything added
+/** The parallel phase's units in `n` shards: the `chain`, the long pole, alone in the first (from 2 shards: anything added
  *  to it lengthens the whole run, and each shard pays its own start-up, so the others' estimates run high); the rest
  *  the longest first, each to the shard with the least so far (a unit is never split: its rows share a home and run in
  *  order). Shards with nothing are left out. */
@@ -99,9 +134,9 @@ export function planShards(n: number, all: readonly Unit[] = units()): UnitId[][
   if (!Number.isInteger(n) || n < 1) throw new Error("--shards takes a whole number from 1");
   const parallel = all.filter((u) => u.phase === "parallel").sort((a, b) => b.estimate - a.estimate);
   const shards: { ids: UnitId[]; load: number }[] = Array.from({ length: n }, () => ({ ids: [], load: 0 }));
-  const main = parallel.find((u) => u.id === "main");
+  const main = parallel.find((u) => u.id === "chain");
   if (n > 1 && main !== undefined) {
-    shards[0] = { ids: ["main"], load: Number.POSITIVE_INFINITY };
+    shards[0] = { ids: ["chain"], load: Number.POSITIVE_INFINITY };
     parallel.splice(parallel.indexOf(main), 1);
   }
   for (const u of parallel) {
