@@ -95,7 +95,9 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   const api = usePluginApi();
   const core = useCore();
   // MOSS Code's window shows code sessions only (spec §9.4): read through `sessions.*` (`sessions.read`); the user's
-  // answer to a question card goes through `conversation.answer` (`conversation.post`).
+  // answer to a question card goes through `conversation.answer` (`conversation.post`). An archived session (the
+  // previous app's, whose kind isn't kept) is read with both reads (`archive.history`), so the part keeps
+  // `conversation.read` for the archive alone.
   const conv = api.sessions;
   const [events, setEvents] = useState<CoreEvent[]>([]);
   const [hasEarlier, setHasEarlier] = useState(false);

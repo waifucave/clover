@@ -9,9 +9,13 @@ import { NEVER, SEND_ONLY, TREE_CALLS, needsOf, treeVerdict, type TreeCaller } f
 // them), read here from its folder; any other plugin's are what a test gives it.
 const BUNDLED = join(import.meta.dir, "../../../plugins/moss/plugins");
 const capsCache = new Map<string, ReadonlySet<string>>();
+/** A plugin that edits bots (`bots.edit`), as the bot editor the bundled tree shipped before bots left MOSS Code's window
+ *  (lane MC) held: the door still serves the capability to any plugin that holds it. */
+const BOT_EDITOR_CAPS: readonly string[] = ["bots.read", "approvals", "approvals.all", "bots.edit", "plugins.read"];
 function capsOf(pluginId: string): ReadonlySet<string> {
   const hit = capsCache.get(pluginId);
   if (hit !== undefined) return hit;
+  if (pluginId === "bot-editor") return new Set(BOT_EDITOR_CAPS);
   let caps: ReadonlySet<string> = new Set();
   if (pluginId.startsWith("moss/")) {
     try {
@@ -26,11 +30,11 @@ const verdict = (part: string, method: string, params?: unknown) => treeVerdict(
 describe("the door for parts: by capability, never by id (F2)", () => {
   test("a read passes for a part whose plugin holds its capability, whichever plugin; a method the table doesn't name isn't its business", () => {
     for (const m of ["archive.history", "archive.list"]) expect(verdict("moss/archive", m)).toMatchObject({ ok: true, by: "sessions.read+conversation.read" });
-    for (const m of ["plugin.list", "plugin.get", "plugin.ui"]) expect(verdict("moss/bot-editor", m)).toMatchObject({ ok: true, by: "plugins.read" });
+    for (const m of ["plugin.list", "plugin.get", "plugin.ui"]) expect(verdict("bot-editor", m)).toMatchObject({ ok: true, by: "plugins.read" });
     expect(verdict("moss/settings", "ui.settings")).toMatchObject({ ok: true, by: "app.settings" });
-    expect(verdict("moss/bot-editor", "ui.settings")).toMatchObject({ ok: true, by: "bots.edit" });
+    expect(verdict("bot-editor", "ui.settings")).toMatchObject({ ok: true, by: "bots.edit" });
     expect(verdict("moss/shell", "account.status")).toMatchObject({ ok: true, by: "account.read" });
-    expect(verdict("moss/bot-editor", "models.list")).toMatchObject({ ok: true, by: "bots.read" });
+    expect(verdict("bot-editor", "models.list")).toMatchObject({ ok: true, by: "bots.read" });
     // Without the capability: not a door of this table's (models.list, account.status and ui.settings aren't the layer role's).
     expect(treeVerdict(["files"], "models.list")).toMatchObject({ ok: false, owned: true, why: "models.list needs the sessions.read or bots.read capability" });
     expect(verdict("moss/conversation", "account.status")).toMatchObject({ ok: false, owned: true, why: "account.status needs the account.read capability" });
@@ -160,7 +164,7 @@ import { PART_LOG_LINES_MAX, PICK_TOKEN_MS, PickTokens, pageParams, routeCall, t
 
 // The bundled parts this file names (their ids only NAME them here; what each may do is its manifest's capabilities).
 const PLUGINS_PART = "moss/plugin-index";
-const BOT_EDITOR_PART = "moss/bot-editor";
+const BOT_EDITOR_PART = "bot-editor";
 const CONVERSATION_PART = "moss/conversation";
 const CHARACTER_PART = "moss/character";
 const SHELL_PART = "moss/shell";
@@ -244,7 +248,7 @@ describe("routing a part's call", () => {
 
   test("a bot's user layer is the bot editor's, with the user's click; no other part's; the retired avatar fields are refused", async () => {
     const patch = { id: "alpha", patch: { instructions: "x" } };
-    const editor = { windowId: 1, pluginId: "moss/bot-editor" };
+    const editor = { windowId: 1, pluginId: "bot-editor" };
     expect(await routeCall(route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: true }).r)).toBe("app");
     const none = route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: false });
     await expect(routeCall(none.r)).rejects.toThrow("only right after");
@@ -281,7 +285,7 @@ describe("routing a part's call", () => {
 });
 
 describe("the bot editor's switch for other plugins' layout patches", () => {
-  const editor = { windowId: 1, pluginId: "moss/bot-editor" };
+  const editor = { windowId: 1, pluginId: "bot-editor" };
   const stored = { picks: [], lists: [{ spot: "status", order: ["a"], hidden: [] }, { spot: "bot.tab", bot: "luna", order: [], hidden: ["old#x"] }, { spot: "bot.tab", bot: "alpha", order: [], hidden: ["m#move"] }] };
   const go = (params: unknown, gesture = true) => {
     const got: [string, unknown][] = [];
@@ -914,7 +918,7 @@ describe("Try again on the conversation: main forwards the session to the daemon
   });
 
   test("another part, or no gesture, is refused before anything is sent", async () => {
-    for (const part of ["moss/composer", "moss/bot-editor", PLUGINS_PART, "moss/settings", "moss/sidebar"]) {
+    for (const part of ["moss/composer", "bot-editor", PLUGINS_PART, "moss/settings", "moss/sidebar"]) {
       const t = resendFrom({ part });
       await expect(routeCall(t.r)).rejects.toThrow("session.resend needs the user.send capability");
       expect(t.sent).toEqual([]);

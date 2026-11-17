@@ -12,6 +12,7 @@
     ]
   },
   "capabilities": [
+    "conversation.read",
     "sessions.read",
     "conversation.post",
     "approvals",

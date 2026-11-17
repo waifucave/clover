@@ -13,6 +13,20 @@ import { SealedFrames, type SealedCard } from "../src/main/sealed";
 import { FIXTURES, alphaView, mossViews, folderView } from "./fake-core/registry";
 
 const WIN = 1;
+
+/** The bundled tree's views with the bot tab the shell filled before bots left MOSS Code's window (lane MC): the runtime
+ *  still serves the catalog's `bot.tab` spot (frames, tokens, a tab's theme and layout), so these tests mount it on the
+ *  shell as a fixture (`fixtures/shell-bot-tab.json`). */
+function withBotTab(views: ReturnType<typeof mossViews>): ReturnType<typeof mossViews> {
+  const fixture = JSON.parse(readFileSync(join(FIXTURES, "..", "shell-bot-tab.json"), "utf8")) as { ui: Record<string, unknown>[]; rootDeclares: Record<string, unknown> };
+  return views.map((v) => {
+    if (v.pluginId !== "moss/shell") return v;
+    const ui = v.ui.map((u) => (u.spot === "app.root" ? { ...u, declares: { ...(u.declares as Record<string, unknown>), ...fixture.rootDeclares } } : u));
+    // The shell as it was: it holds user.send now for its page that starts a session (lane MC), which these tests of the
+    // bot tab's documents don't need; one test grants it again on purpose.
+    return { ...v, ui: [...ui, ...fixture.ui], capabilities: [...new Set([...(v.capabilities ?? []).filter((c) => c !== "user.send"), "bots.read", "conversation.read"])] };
+  });
+}
 let pid = 100;
 function frame(url: string, parent: FrameRef | null = null, osPid = ++pid): FrameRef {
   return { processId: osPid, routingId: ++pid, url, osPid, parent };
@@ -22,7 +36,7 @@ function setup(extra: UiPlugin[] = [], opts: { safeMode?: boolean; now?: () => n
   const sent: { to: string; m: LayerMessage }[] = [];
   let n = 0;
   const rt = new UiRuntime({ os: "macos", platform: "darwin", ...(opts.safeMode ? { safeMode: true } : {}), ...(opts.now ? { now: opts.now } : {}), ...(opts.log ? { log: opts.log } : {}), token: () => `t${++n}`, send: (f, m) => sent.push({ to: `${f.processId}:${f.routingId}`, m }) });
-  const plugins = [...readUiPlugins([...mossViews(), alphaView()] as never), ...extra];
+  const plugins = [...readUiPlugins([...withBotTab(mossViews()), alphaView()] as never), ...extra];
   rt.setRegistry(plugins);
   rt.openWindow(WIN, { material: "vibrancy", ...(opts.render ? { render: true } : {}) });
   const rootFrame = frame("moss-core://app/");
@@ -1000,7 +1014,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const { s, item } = withFixtureFrame();
     s.sent.length = 0;
     // The same plugins: nothing loads again.
-    s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...composerFixture()]);
+    s.rt.setRegistry([...readUiPlugins([...withBotTab(mossViews()), alphaView()] as never), ...composerFixture()]);
     expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
     // Its client is now the core's build: the frame's document is served again, for the module it has now.
     const built = composerFixture().map((p) => ({ ...p, clientEntry: undefined, clientBuild: { base: "/x", file: "index.js", sha256: "cd".repeat(32) } }));
@@ -1274,7 +1288,7 @@ describe("the E-M1 review's fixes", () => {
     const mounts = (s.rt as unknown as { mounts: Map<string, Parameters<UiRuntime["mountForDocument"]>[0]> }).mounts;
     expect(s.rt.mountForDocument(mounts.get(shell.info.mount)!).layers).toEqual(["alpha", "moss"]);
     // A composer from a new layer is installed while the shell shows.
-    s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...composerFixture()]);
+    s.rt.setRegistry([...readUiPlugins([...withBotTab(mossViews()), alphaView()] as never), ...composerFixture()]);
     s.sent.length = 0;
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     s.rt.resolve(shell.shellFrame, tab.mount, "composer");
