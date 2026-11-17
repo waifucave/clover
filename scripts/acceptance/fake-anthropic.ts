@@ -276,7 +276,9 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           else if (b.type === "tool_removal") record.tools = record.tools.filter((t) => t !== name);
         }
       }
-      const last = messages[messages.length - 1];
+      // The last message of the conversation's own: a mid-conversation `system` message after it (the runtime's tool
+      // changes, sent after the user's turn) isn't what the request asks.
+      const last = [...messages].reverse().find((m) => m.role !== "system");
       const lastBlocks = Array.isArray(last?.content) ? (last!.content as Block[]) : [];
       // A user turn that carries results AND a new message with a directive (the runtime's own results for calls a stop
       // cut off, sent with the next message): the message is what this request asks, not the results.
