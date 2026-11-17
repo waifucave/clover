@@ -1,9 +1,12 @@
 // The overlap check's OS-wide half (overlap.ts, R12; lane RT): a window of one of OUR programs above a sealed button refuses
 // the press, another app's window never does, our own surfaces cover only where they draw, a see-through window covers
 // nothing, and a keyboard press isn't checked here. The add-on's read is checked on a Mac where the build made it: windows'
-// numbers only, never a title, and nothing here is drawn, focused or printed.
+// numbers only, never a title, and nothing here is drawn, focused or printed. The rule's tests run on every OS's CI job; the
+// native read only where this test can build the add-on itself (macOS with Xcode's tools: the macOS job and a Mac).
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PROGRAM_IDENTIFIERS } from "@waifucave/moss-protocol";
 import { coverAdvice, coverAt, coverName, isOurProgram, loadWindowList, PRESS_BOX_HALF, pressCover, pressCoverRead, windowIdOfMediaSource, type OsWindow } from "../src/main/overlap";
@@ -93,13 +96,26 @@ describe("what lies over a sealed button", () => {
     expect(loadWindowList("/nowhere/screen.node", () => {}, "win32")).toBeUndefined();
   });
 
-  const built = process.env.MOSS_TEST_SCREEN_NODE ?? join(import.meta.dir, "..", "out", "main", "native", "screen.node");
-  test.if(process.platform === "darwin" && existsSync(built))("the add-on reads windows' bounds and numbers only, and a bundle id by pid", () => {
-    const list = loadWindowList(built, (l) => { throw new Error(l); })!;
-    expect(list.above(0)).toEqual([]);
-    for (const w of list.above(2 ** 31 - 2)) expect(Object.keys(w).sort()).toEqual(["alpha", "height", "id", "layer", "pid", "width", "x", "y"]);
-    // This test's own process is no app bundle; a pid nobody holds is none.
-    expect(list.bundleOf(0)).toBeUndefined();
-    expect(list.bundleOf(2 ** 31 - 2)).toBeUndefined();
-  });
+  // The native read, against an add-on this test builds itself from native/input/macos/screen.mm (the app build's own clang
+  // line, into a temp folder), never one another run left in out/: on macOS with Xcode's tools (the macOS CI job and a Mac);
+  // everywhere else (the Linux and Windows jobs) only the pure rule above runs.
+  const clang = process.platform === "darwin" && spawnSync("xcrun", ["--find", "clang++"], { encoding: "utf8" }).status === 0;
+  test.if(clang)("the add-on (built here) reads windows' bounds and numbers only, and a bundle id by pid", () => {
+    const dir = mkdtempSync(join(tmpdir(), "moss-overlap-addon-"));
+    try {
+      const built = join(dir, "screen.node");
+      const source = join(import.meta.dir, "..", "..", "..", "native", "input", "macos", "screen.mm");
+      const r = spawnSync("xcrun", ["clang++", "-x", "objective-c++", "-std=c++17", "-fobjc-arc", "-O2", "-arch", "arm64", "-mmacosx-version-min=14.0", "-shared", "-undefined", "dynamic_lookup", "-framework", "AppKit", "-o", built, source], { encoding: "utf8" });
+      expect(r.status, r.stderr).toBe(0);
+      const list = loadWindowList(built, (l) => { throw new Error(l); })!;
+      expect(list).toBeDefined();
+      expect(list.above(0)).toEqual([]);
+      for (const w of list.above(2 ** 31 - 2)) expect(Object.keys(w).sort()).toEqual(["alpha", "height", "id", "layer", "pid", "width", "x", "y"]);
+      // A pid nobody holds has no bundle.
+      expect(list.bundleOf(0)).toBeUndefined();
+      expect(list.bundleOf(2 ** 31 - 2)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
