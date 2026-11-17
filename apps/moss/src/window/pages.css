@@ -98,7 +98,8 @@
   .ma2-settings__nav .nav-item { width: auto; flex: none; font-size: 13px; padding: 6px 10px; justify-content: flex-start; }
   .ma2-settings__nav .nav-item span { display: inline; }
   .ma2-settings__group { display: none; }
-  .ma2-key__do .ma2-field { width: 100%; }
+  .ma2-key__do { flex-basis: 100%; justify-content: flex-start; flex-wrap: nowrap; }
+  .ma2-key__do .ma2-field { width: auto; flex: 1; min-width: 0; }
   .ma2-setting { flex-wrap: wrap; }
   .ma2-setting__control { max-width: 100%; }
 }
