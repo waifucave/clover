@@ -33,6 +33,8 @@ export interface RemoteViewport {
 export interface RemoteViewDeps {
   request(method: string, params: unknown): Promise<unknown>;
   makeViewport(): RemoteViewport;
+  /** How long a view waits for a tab's place to settle (default 150 ms; 0 in the unit tests). */
+  settleMs?: number;
   log?(line: string): void;
 }
 
@@ -95,10 +97,25 @@ export class RemoteViews {
   }
 
   dispose(): void {
+    for (const t of this.#pending.values()) clearTimeout(t);
+    this.#pending.clear();
     for (const view of [...this.#open.keys()]) this.#close(view);
   }
 
+  /** The browser re-places a tab several times in a few milliseconds (the panel's own show, the engine's place): a view
+   *  follows the place it settles on, `settleMs` after the last change, never each step (an open and a close racing). */
+  readonly #pending = new Map<string, ReturnType<typeof setTimeout>>();
   #sync(view: string): void {
+    const settle = this.deps.settleMs ?? 150;
+    if (settle <= 0) { this.#syncNow(view); return; }
+    const t = this.#pending.get(view);
+    if (t !== undefined) clearTimeout(t);
+    const next = setTimeout(() => { this.#pending.delete(view); this.#syncNow(view); }, settle);
+    (next as { unref?: () => void }).unref?.();
+    this.#pending.set(view, next);
+  }
+
+  #syncNow(view: string): void {
     const target = this.#targets.get(view);
     const tab = this.#on && target !== undefined ? [...this.#tabs.values()].find((t) => t.view === view && SHOWN_HERE(t)) : undefined;
     const open = this.#open.get(view);
@@ -132,6 +149,7 @@ export class RemoteViews {
     this.#open.delete(view);
     o.closed = true;
     o.vp.destroy();
+    this.deps.log?.(`browser: view ${view} lets the host's tab ${o.tab} go`);
     if (o.stream !== undefined) {
       this.#byStream.delete(o.stream);
       void this.deps.request("browser.view.close", { stream: o.stream }).catch(() => undefined);

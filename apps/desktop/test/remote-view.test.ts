@@ -15,6 +15,7 @@ function harness() {
   const calls: { method: string; params: unknown }[] = [];
   const vps: (RemoteViewport & { drawn: number; destroyed: boolean; send(ev: ViewportInput, focused?: boolean): void })[] = [];
   const views = new RemoteViews({
+    settleMs: 0,
     request: async (method, params) => { calls.push({ method, params }); return method === "browser.view.open" ? { stream: `s${calls.length}` } : { ok: true }; },
     makeViewport: () => {
       let fn: ((ev: ViewportInput, focused: boolean) => void) | undefined;
@@ -94,4 +95,22 @@ test("the engine's stream commands are taken field by field; anything else is th
   expect(streamCommandOf({ id: "t1", command: { kind: "stream", stream: "frames-1", on: true, codecs: ["jpeg"] } })).toEqual({ id: "t1", command: { kind: "stream", stream: "frames-1", on: true, codecs: ["jpeg"] } });
   expect(streamCommandOf({ id: "t1", command: { kind: "stream-control", stream: "s", keyframe: true } })).toEqual({ id: "t1", command: { kind: "stream-control", stream: "s", keyframe: true } });
   for (const bad of [{ id: "t1", command: { kind: "stream", stream: "s", on: "yes" } }, { id: "t1", command: { kind: "stream", stream: "s", on: true, codecs: ["gif"] } }, { id: "", command: { kind: "stream", stream: "s", on: false } }, { id: "t1", command: { kind: "navigate", url: "x" } }]) expect(streamCommandOf(bad)).toBeUndefined();
+});
+
+test("a tab re-placed several times in a moment is opened once, at the place it settles on", async () => {
+  const calls: string[] = [];
+  const views = new RemoteViews({
+    settleMs: 30,
+    request: async (method) => { calls.push(method); return method === "browser.view.open" ? { stream: "s1" } : { ok: true }; },
+    makeViewport: () => ({ real: new RealInput(), place: () => undefined, draw: () => undefined, onInput: () => undefined, destroy: () => undefined }) as never,
+  });
+  views.enable(true);
+  views.setTarget("browser", target);
+  const t = tab("t1", { kind: "user" }, "browser");
+  views.tabChanged(t);
+  views.tabChanged({ ...t, place: "headless", view: undefined } as TabView);
+  views.tabChanged(t);
+  await new Promise((r) => setTimeout(r, 80));
+  expect(calls).toEqual(["browser.view.open"]);
+  views.dispose();
 });
