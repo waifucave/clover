@@ -77,6 +77,16 @@ describe("the release's identity scan", () => {
     }
   });
 
+  darwinTest("a disk image that won't mount says why: hdiutil's own words are in the problem, not only that it didn't open", () => {
+    const out = release();
+    try {
+      writeFileSync(join(out, "MOSS-Code-1.0.0.dmg"), "not a disk image");
+      expect(() => runNameScan(out, { required: true, guard, quiet: true })).toThrow(/doesn't open for the scan \(hdiutil exit \d+: /);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
   test("a signed release fails closed without the guard; an unsigned one says it skipped", () => {
     const out = release();
     try {
