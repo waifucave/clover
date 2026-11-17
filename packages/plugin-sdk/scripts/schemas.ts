@@ -3,7 +3,6 @@
 import { z } from "zod";
 import { catalogJson } from "../src/catalogs/index";
 import { IndexSchema } from "../src/formats/index-file";
-import { LayoutContributionSchema, LayoutFileSchema } from "../src/formats/layout";
 import { LocaleSchema } from "../src/formats/locale";
 import { ThemeSchema } from "../src/formats/theme";
 import { DOTTED_POINT_NAME_RE } from "../src/manifest/fields";
@@ -35,8 +34,6 @@ export function buildSdkArtifacts(): Map<string, string> {
   return new Map([
     ["moss.schema.json", json(manifestSchema())],
     ["theme.schema.json", json(toSchema(ThemeSchema, "MOSS theme", "Theme format 1: design tokens, fonts, icons and cleaned CSS (spec §5.5)."))],
-    ["layout.schema.json", json(toSchema(LayoutFileSchema, "MOSS layout", "Layout format 1: how a bot's tab arranges its parts (spec §5.5): a whole layout, or a patch that extends the stock tab and states only its changes."))],
-    ["layout-patch.schema.json", json(toSchema(LayoutContributionSchema, "MOSS tab patch", "A patch any plugin adds to bots' tabs (a `ui` entry on `bot.tab` with `layout`, spec §5.5): changes only, made on the tab as it stands at its turn, and its own CSS."))],
     ["locale.schema.json", json(toSchema(LocaleSchema, "MOSS locale", "Locale format 1: a string table for one language (spec §5.5)."))],
     ["index.schema.json", json(toSchema(IndexSchema, "MOSS plugin index", "Index format 1: a plain list of plugins, each version with its tree hash and download URL (spec §5.1)."))],
     ["catalog.json", json(catalogJson())],

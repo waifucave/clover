@@ -337,35 +337,18 @@ describe("the UI API in a layer", () => {
     expect(document.documentElement.lang).toBe("fr");
   });
 
-  test("a bot's layout draws as its tab's part: rows and columns, images, markdown as elements, spots as the part's own", async () => {
+  test("a bot's tab layout is retired with the bot tab (G8): an item that still carries one draws only the retirement words, no layout and no spot", async () => {
     views["m1:never-declared"] = { spot: "never-declared", shape: "single", hidden: false, conflict: false, items: [{
       kind: "inline", mount: "m20", ref: "luna#layout", pluginId: "luna", entryId: "layout", component: "$layout", context: CTX, tab: "luna",
-      layout: { kind: "row", children: [
-        { kind: "column", size: "240px", className: "clv-luna__side", children: [
-          { kind: "image", src: "/_t/luna/a.png" },
-          { kind: "markdown", markdown: "# Luna\nLikes *stars* and [the moon](https://example.com).\n\n- one\n- two" },
-          { kind: "text", text: "only when wide", hideBelow: 5000 },
-        ] },
-        { kind: "column", grow: 1, children: [{ kind: "spot", spot: "conversation" }, { kind: "spacer" }] },
-      ] },
+      layout: { kind: "row", children: [{ kind: "column", children: [{ kind: "text", text: "a layout's own words" }, { kind: "spot", spot: "conversation" }] }] },
     }] };
-    views["m20:conversation"] = { spot: "conversation", shape: "single", hidden: false, conflict: false, items: [{ kind: "inline", mount: "m21", ref: "moss/sidebar#sidebar", pluginId: "moss/sidebar", entryId: "sidebar", component: "Sidebar", context: CTX }] };
     await act(async () => fake.emit({ type: "respot" }));
     await tick();
     const part = document.querySelector('[data-moss-part="m20"]')!;
-    expect(part.getAttribute("data-moss-tab")).toBe("luna");
-    expect(part.querySelector('[data-moss-layout="row"] > [data-moss-layout="column"].clv-luna__side')).not.toBeNull();
-    expect(part.querySelector("img")?.getAttribute("src")).toBe("/_t/luna/a.png");
-    expect(part.querySelector("h1")?.textContent).toBe("Luna");
-    expect(part.querySelector("em")?.textContent).toBe("stars");
-    // A link shows as its text: a layout loads and opens nothing.
-    expect(part.querySelector("a")).toBeNull();
-    expect(part.textContent).toContain("the moon");
-    expect(part.querySelectorAll("li").length).toBe(2);
-    expect(part.textContent).not.toContain("only when wide");
-    // Its spot resolves as the layout part's.
-    expect(fake.calls).toContainEqual({ op: "resolve", args: ["m20", "conversation", undefined] });
-    expect(part.querySelector('[data-moss-part="m21"] nav')).not.toBeNull();
+    expect(part.textContent).toBe("A bot's tab layout is retired with the bot tab: nothing draws it.");
+    expect(part.querySelector("[data-moss-layout]")).toBeNull();
+    expect(part.textContent).not.toContain("a layout's own words");
+    expect(fake.calls).not.toContainEqual({ op: "resolve", args: ["m20", "conversation", undefined] });
   });
 
   test("a spot's entries for its declaring part, and one entry shown by its ref; questions; the moss tree's parts have useUserSend", async () => {

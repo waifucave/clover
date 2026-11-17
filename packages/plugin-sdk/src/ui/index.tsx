@@ -23,7 +23,6 @@ import type {
 } from "../api/ui-api";
 import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable, type SpotEntryView, type PendingQuestion, type UserSendTarget, type ShellMethod } from "./bridge";
 import { EMPTY_STRINGS, translate } from "./strings";
-import { LayoutRoot } from "./layout";
 
 export * from "./bridge";
 // Mouth levels from speech (./mouth), for any part that moves a mouth: the five vowel weights from a speech feed, and
@@ -547,19 +546,8 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
   const own = tokens !== parent.tokens ? tokenStyle(tokens) : undefined;
   const marks = { "data-moss-entry": item.ref, "data-moss-part": item.mount, "data-moss-tab": item.tab, "data-moss-styled": item.styled === true ? "" : undefined };
   if (item.layout !== undefined) {
-    // A bot's layout: data the runtime draws as the tab's part, its spots the part's own. A layout's root fills the
-    // place it is in, so it gets a box of its own (the theme's `contain` reaches it). Its spots get the tab's own props (the
-    // bot and the session): the conversation and the composer in it are the tab's, and read them.
-    const layout = item.layout;
-    return (
-      <div {...marks} data-moss-layout-part="" style={{ display: "flex", flexDirection: "column", flex: "1 1 auto", minHeight: 0, height: "100%", ...own }}>
-        <PartContext.Provider value={part}>
-          <PartBoundary name={item.ref}>
-            <LayoutRoot layout={layout} renderSpot={(spot, key) => <Spot name={spot} props={props as Record<string, unknown> | undefined} {...(key !== undefined ? { spotKey: key } : {})} />} />
-          </PartBoundary>
-        </PartContext.Provider>
-      </div>
-    );
+    // A bot's tab layout is retired with the bot tab (G8): the runtime sends none, and one that still comes draws only this.
+    return <div {...marks} className="moss-part-missing" role="status">A bot's tab layout is retired with the bot tab: nothing draws it.</div>;
   }
   const component = findComponent(r.modules.get(item.pluginId), item.component);
   if (component === undefined) return <div className="moss-part-missing" role="status" data-moss-entry={item.ref}>This part has no component {item.component}.</div>;
