@@ -80,7 +80,7 @@ import { MossClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 // lane HS
-import { BROWSER_HOST_STEP, HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
+import { BROWSER_HOST_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
 import { BACKGROUND_IDS, writeBackground } from "./manifest-fields-step";
 import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
@@ -3672,6 +3672,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
   // lane HS: the host unit runs alone (its own daemon starts the host).
   if (ids.includes("host")) { await hostOnlyRun(app); return; }
   if (ids.includes("browser-host")) { await browserOnlyRun(app, { withHost: true }); return; }
+  if (ids.includes("surface-copy-host")) { await browserOnlyRun(app, { withHost: true, row: "surface-copy" }); return; }
   try {
     // The previous app's session in the home's store before the daemon first opens it (the archive row).
     if (ids.includes("archive")) seedArchive(home);
@@ -4459,8 +4460,9 @@ async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<vo
 
 /** The Browser-tool row alone (--only-browser): the daemon, the dummy key through the app's own methods, Alpha on the
  *  keyed model, then the app over it (headless, its DevTools port, the window's start sampled) and the row. */
-async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHost?: boolean } = {}): Promise<void> {
-  const n = stepNumber(FULL_STEPS, o.withHost === true ? BROWSER_HOST_STEP : BROWSER_STEP);
+async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHost?: boolean; row?: "browser" | "surface-copy" } = {}): Promise<void> {
+  // lane HS: with `row: "surface-copy"`, the island and pill copies' row (65) runs on this same hosted setup instead.
+  const n = stepNumber(FULL_STEPS, o.row === "surface-copy" ? SURFACE_COPY_HOST_STEP : o.withHost === true ? BROWSER_HOST_STEP : BROWSER_STEP);
   let c: MossClient | undefined;
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
@@ -4541,7 +4543,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
       history: (s2) => history(rpc, s2),
       setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back"),
     };
-    record(n, "PASS", `${await browserStep(ctx, session, browserFixture, panelOpener(rpc))}${o.withHost === true ? `; with the host running: ${hostPresses} card(s) pressed on the host's island, ${windowPresses} in the window, the pages in the host` : ""}`);
+    record(n, "PASS", `${o.row === "surface-copy" ? await surfaceCopyStep(ctx, session) : await browserStep(ctx, session, browserFixture, panelOpener(rpc))}${o.withHost === true ? `; with the host running: ${hostPresses} card(s) pressed on the host's island, ${windowPresses} in the window, the pages in the host` : ""}`);
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {

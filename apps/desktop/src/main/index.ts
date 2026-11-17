@@ -901,7 +901,12 @@ async function ready(): Promise<void> {
 // signed by the answer key. The store holds them; the sealed scheme serves the frames; nothing logs the fields.
 const sealed = new SealedFrames();
 // The timing lines: when a surface first asks for a card's frames (the fallback's own page aside).
-sealed.onMinted = (cardId, element, windowId) => { if (element !== "own") noteStep(cardId, windowId, "frames asked"); };
+sealed.onMinted = (cardId, element, windowId) => {
+  if (element !== "own") noteStep(cardId, windowId, "frames asked");
+  // lane HS (R12): the surface that asked for a pending card's frames is its drawer, shown again if it stood down.
+  const drawer = windowId === undefined ? undefined : [...surfaces.values()].find((x) => !x.win.isDestroyed() && x.win.id === windowId);
+  if (drawer !== undefined && stoodDown.has(drawer.ref)) applyVisibility(drawer);
+};
 /** The bots' names by id, as the daemon lists them (`bot.list`), so a card says "Alpha wants to…" and not an id. Refilled
  *  on each connection and when a card's bot isn't known yet; a name never decides anything, it only fills a sentence. */
 const botNames = new Map<string, string>();
@@ -2321,10 +2326,10 @@ function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed()) return;
   // lane HS (R12): a plugin's overlay stands down while a card is pending here, so nothing it draws is over a sealed button
   // (decided, and said, whether or not the part has asked to show yet).
-  const down = overlayStandsDown(s, sealed.anyPending());
+  const down = overlayStandsDown(s, sealed.anyPending(), sealed.holdsPending(s.win.id));
   if (down !== stoodDown.has(s.ref)) {
     if (down) stoodDown.add(s.ref); else stoodDown.delete(s.ref);
-    log(`surface: ${s.ref} ${down ? "hidden while a card is pending (a plugin's on-screen part)" : "back (no card pending here)"}`);
+    log(`surface: ${s.ref} ${down ? "hidden while a card is pending (a plugin's on-screen part)" : sealed.anyPending() ? "back (it draws the pending card)" : "back (no card pending here)"}`);
   }
   if (down && s.win.isVisible()) s.win.hide();
   if (s.wantsVisible === undefined) return;

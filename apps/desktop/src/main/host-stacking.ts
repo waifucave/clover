@@ -11,9 +11,13 @@ import type { MossWindow } from "@waifucave/moss-protocol";
 /** The bundled tree's plugin: its surfaces (the island, the pill, the voice player) are the sealed windows' own. */
 export const TREE_PLUGIN = "moss";
 
-/** Whether a surface stands down: any plugin's on-screen part but the tree's, while any card is pending on this computer. */
-export function overlayStandsDown(surface: { pluginId: string }, cardPending: boolean): boolean {
-  return cardPending && surface.pluginId !== TREE_PLUGIN;
+/** Whether a surface stands down: any plugin's on-screen part but the tree's, while any card is pending on this computer,
+ *  except the one that holds a pending card's sealed frames (`holdsCard`: the card's drawer, whoever's plugin fills the
+ *  island's point; the controller's ruling). What this defends against is a second WINDOW over the buttons, which the sealed
+ *  page's own reading cannot see; a part painting over frames inside its own surface is caught by that reading. The
+ *  exemption is only against being hidden: the press's overlap check still reads every other window. */
+export function overlayStandsDown(surface: { pluginId: string }, cardPending: boolean, holdsCard = false): boolean {
+  return cardPending && surface.pluginId !== TREE_PLUGIN && !holdsCard;
 }
 
 /** The surfaces on the screen now as the engine keeps them: visible ones only, at most the protocol's 64. */

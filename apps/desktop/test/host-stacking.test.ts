@@ -34,3 +34,31 @@ test("R12 across programs: a card placed in MOSS Code's window or MOSS's hides t
     expect(store.anyPending()).toBe(false);
   }
 });
+
+// The controller's ruling (raised by lane RT, row 65): a third-party copy of the island that draws a pending card is that
+// card's drawer and is not hidden for it; every OTHER third-party on-screen part stands down, a part that claims the island's
+// point and holds no frames among them.
+test("R12: the surface holding a pending card's sealed frames is its drawer and stays; any other third-party part is hidden", () => {
+  const store = new SealedFrames(() => 1_000);
+  const copyIsland = { pluginId: "acme-island", windowId: 7 };
+  const otherPart = { pluginId: "acme-overlay", windowId: 8 };
+  const claimsIslandNoFrames = { pluginId: "acme-island-two", windowId: 9 };
+  const down = (s: { pluginId: string; windowId: number }) => overlayStandsDown(s, store.anyPending(), store.holdsPending(s.windowId));
+  store.fromCore({ id: "card_ok", kind: "plugin-ok", hash: "h", options: [{ id: "approve", kind: "approve" }, { id: "deny", kind: "deny" }], fields: {}, issuedAt: 1, expiresAt: null });
+  // As the card arrives, before any frame is asked for: every third-party part stands down, the copy island too.
+  expect([down(copyIsland), down(otherPart), down(claimsIslandNoFrames)]).toEqual([true, true, true]);
+  // The copy island asks for the card's frames (it is the drawer): it comes back; the others stay hidden.
+  expect(store.mint("card_ok", "button:approve", undefined, copyIsland.windowId)).toBeDefined();
+  store.mint("card_ok", "button:deny", undefined, copyIsland.windowId);
+  expect([down(copyIsland), down(otherPart), down(claimsIslandNoFrames)]).toEqual([false, true, true]);
+  // Another card pending elsewhere (MOSS Code's window draws it): the drawer of the first stays, only while it holds that card.
+  store.fromCore({ id: "card_tool", kind: "tool", hash: "h", options: [{ id: "approve", kind: "approve" }, { id: "deny", kind: "deny" }], fields: {}, issuedAt: 1, expiresAt: null });
+  store.mint("card_tool", "button:approve", undefined, 100);
+  expect([down(copyIsland), down(otherPart)]).toEqual([false, true]);
+  store.resolvedOutcome("card_ok", "approved");
+  expect([down(copyIsland), down(otherPart)]).toEqual([true, true]);
+  store.resolvedOutcome("card_tool", "denied");
+  expect([down(copyIsland), down(otherPart), down(claimsIslandNoFrames)]).toEqual([false, false, false]);
+  // The bundled tree's own surfaces never stand down.
+  expect(overlayStandsDown({ pluginId: "moss" }, true, false)).toBe(false);
+});

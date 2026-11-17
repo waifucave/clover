@@ -148,6 +148,13 @@ export class SealedFrames {
     return false;
   }
 
+  /** lane HS (R12, the controller's ruling on a copy of the island): whether a window holds sealed frames of a card that still
+   *  waits: it is that card's drawer, the one third-party surface not stood down for it. */
+  holdsPending(windowId: number): boolean {
+    for (const ch of this.channels.values()) if (ch.windowId === windowId && this.isPending(ch.cardId)) return true;
+    return false;
+  }
+
   /** Every card that still waits, oldest first (known, not answered or resolved, not past its expiry). */
   pendingIds(): string[] {
     return [...this.cards.keys()].filter((id) => this.isPending(id));

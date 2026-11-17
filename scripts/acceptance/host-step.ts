@@ -47,6 +47,8 @@ export function onscreenWindows(swiftScript: string): { pid: number; alpha: numb
 /** The browser rows again with the background host running (the controller's ruling): the same row, its pages in the host. */
 export const BROWSER_HOST_STEP = "the Browser rows again with the background host running (lane HS): the pages in the host, the cards pressed where the router put them, MOSS Code's panel drawing the host's tabs";
 
+export const SURFACE_COPY_HOST_STEP = "the island and pill copies' row again with the background host running (lane HS, the controller's R12 ruling): the copy island in the host is the OK card's drawer and stays while a third-party part holding no card stands down, and takes the press";
+
 /** How many times a daemon log says the host was ready. */
 export function readyCount(log: string): number {
   return (log.match(/\[host\] ready: /g) ?? []).length;
