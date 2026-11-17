@@ -70,7 +70,7 @@ import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun, type HoldStep } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
-import { APP_EVENT_AREAS, mossFront, FrontWatcher, islandMayDraw, placeFromEngine, PresenceReporter, pressMayBeTaken, placeLine, showingOf, subscribeThenListCards, type CardPlace, type PressSource } from "./card-place";
+import { APP_EVENT_AREAS, mossFront, FrontWatcher, islandMayDraw, placeFromEngine, PlacementBook, PresenceReporter, pressMayBeTaken, placeLine, showingOf, subscribeThenListCards, type CardPlace, type PressSource } from "./card-place";
 import { afterTap, afterTray, appIsRegular, mainWindowFront, surfaceShown, type MainWindowState, type PutAway } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
@@ -994,15 +994,17 @@ function noteBothVisible(cardId: string, windowId: number | undefined): void {
  *  before it is the window's own card; a move (the window comes forward or goes back) is decided at once, on what is known. */
 const cardPlaces = new Map<string, CardPlace>();
 const windowDraws = new Set<string>();
-/** Where the engine's router placed each pending card (lane RT: `card_placed`, `card.placement`). */
-const enginePlaces = new Map<string, CardPlacement>();
+/** Where the engine's router placed each pending card (lane RT: `card_placed` wins; a `card.placement` answer only fills in
+ *  a card no event placed; card-place.ts `PlacementBook`). */
+const enginePlaces = new PlacementBook();
 /** Whether the router has placed any pending card on the island (it then never steps aside, §3.5). */
-const islandHoldsCard = (): boolean => [...enginePlaces].some(([id, p]) => (p.kind === "island" || p.kind === "elsewhere") && sealed.isPending(id));
-/** The engine's word on a card's place: kept, and the card placed again; the surfaces hear it (the island takes or lets go). */
-function enginePlaced(cardId: string, place: CardPlacement): void {
+const islandHoldsCard = (): boolean => [...enginePlaces.entries()].some(([id, p]) => (p.kind === "island" || p.kind === "elsewhere") && sealed.isPending(id));
+/** The engine's word on a card's place (a `card_placed` event, or a snapshot's entry the book took): kept, and the card placed
+ *  again; the surfaces hear it (the island takes or lets go). */
+function enginePlaced(cardId: string, place: CardPlacement, from: "event" | "snapshot" = "event"): void {
   const was = islandHoldsCard();
-  enginePlaces.set(cardId, place);
-  if (enginePlaces.size > 256) enginePlaces.delete(enginePlaces.keys().next().value!);
+  if (from === "event") enginePlaces.placed(cardId, place);
+  else if (enginePlaces.snapshot([{ card: cardId, place }]).length === 0) return;
   if (cardPlaces.has(cardId)) placeCardNow(cardId);
   // The surfaces hear it only when the island's hold changes (their `mainFront`): a message on every placement made the
   // island measure itself again under the pointer.
@@ -1224,6 +1226,8 @@ function makePair(): Pair {
       // The pending cards, and their outcomes as they come: subscribed first, then listed (`subscribeThenListCards`: listed
       // first, a card raised the moment the core's parts came up was told to no connection, the upgrade pair's step 2).
       void refreshBotNames(client);
+      // The engine's placements are this connection's from its first subscription (it tells each card's place then, lane RT).
+      enginePlaces.follow(client);
       void subscribeThenListCards(client, cardWaitingAtConnect);
       return loadRegistry(client);
     },
@@ -1437,10 +1441,13 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   // `approvals` too: the cards (`card_requested`, `card_resolved`) are that area's, and an app that didn't subscribe to it
   // was never told of a card (the acceptance run's first card-arrival check found it).
   // `surfaces` (lane RT): where the engine's router places each card (`card_placed`).
+  // A new connection's router starts the book afresh before its events can come (it is followed already, at the connection's
+  // first subscription); a registry reload on the same one keeps what its events said.
+  enginePlaces.follow(client);
   await client.request("events.subscribe", { areas: [...APP_EVENT_AREAS] }).catch(() => undefined);
   void reportPresence().then(() => client.request<unknown>("card.placement", {})).then((raw) => {
     const r = SURFACES_METHODS.cardPlacement.result.safeParse(raw);
-    if (r.success) for (const p of r.data.placements) enginePlaced(p.card, p.place);
+    if (r.success && pair.client === client) for (const p of r.data.placements) enginePlaced(p.card, p.place, "snapshot");
   }).catch(() => undefined);
   const [ui, settingsRaw, statusRaw] = await Promise.all([
     optional.call(client, "plugin.ui"),

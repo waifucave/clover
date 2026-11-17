@@ -315,5 +315,48 @@ describe("a card raised the moment the core's parts come up reaches an app that 
     await old.partsUp();
     await Promise.all([list, sub]);
     expect([...old.told, ...listedOld]).toEqual([]);
+import { PlacementBook } from "../src/main/card-place";
+
+describe("lane RT: the last placement wins (the CI lane's plugin-app step 65)", () => {
+  const island = { kind: "island" } as const;
+  const strip = { kind: "strip", program: "code", window: "main" } as const;
+
+  test("the replayed order: on the island; to the window's strip (window in front); a snapshot asked before comes back 56 ms later with the island: the card stays in the window", () => {
+    const book = new PlacementBook();
+    book.follow("conn-1");
+    expect(book.placed("card_aaaaaa", island)).toBe(true);
+    expect(book.placed("card_aaaaaa", strip)).toBe(true);
+    // 56 ms later, the `card.placement` answer computed before the move arrives.
+    expect(book.snapshot([{ card: "card_aaaaaa", place: island }])).toEqual([]);
+    expect(book.get("card_aaaaaa")).toEqual(strip);
+    // The window still in front: the window's own card holds it, and the island neither draws it nor takes its press.
+    expect(placeFromEngine(book.get("card_aaaaaa"), { front: true, drawnInWindow: false })).toBe("window");
+    expect(islandMayDraw(book.get("card_aaaaaa"), true)).toBe(false);
+    expect(pressMayBeTaken({ from: "window", placed: book.get("card_aaaaaa"), front: true })).toBe(true);
+    expect(pressMayBeTaken({ from: "island", placed: book.get("card_aaaaaa"), front: true })).toBe(false);
+  });
+
+  test("a real move back to the island 56 ms later (an event) wins, and the island is the place that draws it, the window still in front", () => {
+    const book = new PlacementBook();
+    book.follow("conn-1");
+    book.placed("card_aaaaaa", island);
+    book.placed("card_aaaaaa", strip);
+    expect(book.placed("card_aaaaaa", island)).toBe(true);
+    expect(placeFromEngine(book.get("card_aaaaaa"), { front: true, drawnInWindow: false })).toBe("island");
+    expect(islandMayDraw(book.get("card_aaaaaa"), true)).toBe(true);
+    expect(pressMayBeTaken({ from: "island", placed: book.get("card_aaaaaa"), front: true })).toBe(true);
+    expect(pressMayBeTaken({ from: "window", placed: book.get("card_aaaaaa"), front: true })).toBe(false);
+  });
+
+  test("a snapshot fills in a card no event placed; a new connection starts afresh; the same event again is no change", () => {
+    const book = new PlacementBook();
+    book.follow("conn-1");
+    expect(book.snapshot([{ card: "card_bbbbbb", place: island }])).toEqual(["card_bbbbbb"]);
+    expect(book.placed("card_bbbbbb", island)).toBe(false);
+    book.follow("conn-1");
+    expect(book.get("card_bbbbbb")).toEqual(island);
+    book.follow("conn-2");
+    expect(book.get("card_bbbbbb")).toBeUndefined();
+    expect(book.snapshot([{ card: "card_bbbbbb", place: strip }])).toEqual(["card_bbbbbb"]);
   });
 });
