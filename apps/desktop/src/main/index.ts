@@ -20,7 +20,7 @@ import { RENDER_CONSOLE_MAX, RenderQueue, renderPlace, type RenderConsoleLine, t
 import type { ShellState } from "@waifucave/moss-plugin-sdk";
 import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, ipcMain, Menu, webContents, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, MOSS_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, ReleaseChangedEvent, compareReleases, CardPlacedEvent, CardRequestedEvent, CardResolvedEvent, PairStatus, PRESENCE_REFRESH_MS, SURFACES_METHODS, UiSettings, UiSettingsChangedEvent, type CardPlacement } from "@waifucave/moss-protocol";
+import { APP_METHODS, BROWSER_METHODS, TabChangedEvent, TabClosedEvent, TabView, PLUGINS_METHODS, MOSS_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, ReleaseChangedEvent, compareReleases, CardPlacedEvent, CardRequestedEvent, CardResolvedEvent, PairStatus, PRESENCE_REFRESH_MS, SURFACES_METHODS, UiSettings, UiSettingsChangedEvent, type CardPlacement } from "@waifucave/moss-protocol";
 import { systemAccentFromOs } from "@waifucave/moss-plugin-sdk";
 import { testBrowserNames } from "./browser/test-names";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
@@ -60,6 +60,8 @@ import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostProfileA
 import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
 import { fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
 import { overlayStandsDown, surfacesReport } from "./host-stacking";
+import { RemoteViews } from "./browser/remote-view";
+import { electronRemoteViewport } from "./browser/remote-viewport";
 import { TabFrameSender } from "./browser/frame-sender";
 import { SURFACE_MOUNTS, type HostState, type MountList } from "@waifucave/moss-protocol";
 // lane HS: end
@@ -1426,6 +1428,8 @@ function makePair(): Pair {
   });
   // Every message from the daemon is checked against lane B's schemas before it changes anything.
   p.onNotification((method, params) => {
+    // lane HS: a view's picture of a host's tab (`browser.view.open`'s stream), drawn in the panel that opened it.
+    if (method === "picture.frame" && program === "code" && params !== null && typeof params === "object") { remoteViewsNow?.frame(params as never); return; }
     if (method !== CORE_EVENT_NOTIFICATION || params === null || typeof params !== "object") return;
     const type = (params as { type?: unknown }).type;
     if (type === "ui_settings_changed") {
@@ -1453,6 +1457,9 @@ function makePair(): Pair {
     }
     // lane HS: the host's state, so a window lets the screen's parts go once a host owns them, and takes them back after.
     if (type === "host_changed") hostStatusHeard(params);
+    // lane HS: the host's tabs, for the panel that shows them while the window runs no pages.
+    if (type === "tab_changed" && program === "code") { const t = TabChangedEvent.safeParse(params); if (t.success) remoteViews().tabChanged(t.data.tab); }
+    if (type === "tab_closed" && program === "code") { const t = TabClosedEvent.safeParse(params); if (t.success) remoteViews().tabClosed(t.data.id); }
     if (type === "card_placed") {
       const parsed = CardPlacedEvent.safeParse(params);
       if (parsed.success) {
@@ -1536,12 +1543,25 @@ async function hostStopEverything(): Promise<void> {
 async function mounted(client: DaemonClient, hello: { mount?: MountList }): Promise<void> {
   helloMount = hello.mount;
   if (program === "code") {
-    await client.request("events.subscribe", { areas: ["host"] }, 5_000).catch(() => undefined);
+    await client.request("events.subscribe", { areas: ["host", "browser"] }, 5_000).catch(() => client.request("events.subscribe", { areas: ["host"] }, 5_000)).catch(() => undefined);
     // The state now (S2): a change between the hello and the subscription is not missed. An older engine has no read.
     hostStatusHeard(await client.request("host.status", {}, 5_000).catch(() => undefined));
   }
   applyMount();
   if (program === "host") await sayHostReady(client, hostDeps());
+}
+
+/** MOSS Code's panel over the host's tabs (the window half of the browser; browser/remote-view.ts), made on first use. */
+let remoteViewsNow: RemoteViews | undefined;
+function remoteViews(): RemoteViews {
+  remoteViewsNow ??= new RemoteViews({
+    request: (method, params) => (pair?.client === undefined ? Promise.reject(new Error("no daemon")) : pair.client.request(method, params, 10_000)),
+    makeViewport: () => {
+      return electronRemoteViewport({ preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) });
+    },
+    log,
+  });
+  return remoteViewsNow;
 }
 
 /** `host_changed`, or `host.status`'s answer: the window's mount follows; a host the engine gave up on is said once. */
@@ -1576,6 +1596,14 @@ function applyMount(): void {
     browser = undefined;
   }
   if (next.tray === "none" && program === "code" && tray !== undefined) { tray.destroy(); tray = undefined; }
+  // The window half of the browser: with no pages here, the panel shows the host's tabs (their list read once now).
+  if (program === "code") {
+    const remote = !next.browser;
+    if (remote && was?.browser !== false) {
+      void pair?.client?.request("browser.tabs", {}, 10_000).then((r) => { for (const t of ((r as { tabs?: unknown[] }).tabs ?? [])) { const p = TabView.safeParse(t); if (p.success) remoteViews().tabChanged(p.data); } }).catch(() => undefined);
+    }
+    remoteViews().enable(remote);
+  }
 }
 // lane HS: end. ----------------------------------------------------------------------------------------------------
 
@@ -2689,6 +2717,8 @@ const compositorMs = args.smoke && !app.isPackaged && Number(process.env.MOSS_SM
 
 /** Where each native view goes (ruling R8: the place the person used last), as the MOSS Browser's `setView`. */
 const views = new ViewFrames((name, target) => {
+  // lane HS: with no browser here (the host runs the pages), the panel shows the host's tab (browser/remote-view.ts).
+  if (program === "code") remoteViews().setTarget(name, target === undefined ? undefined : { windowId: target.windowId, bounds: target.bounds });
   if (browser === undefined) return;
   const win = target === undefined ? null : BrowserWindow.fromId(target.windowId);
   browser.setView(name, win === null || win.isDestroyed() ? undefined : { window: win, bounds: target!.bounds });
