@@ -195,7 +195,10 @@ describe.skipIf(!RUN)("the headless shell, for real", () => {
 
   test("dialogs are answered at once, permissions are denied, and a page's window becomes a tab of the same bot", async () => {
     expect(await evaluate("t1", "alert('hi'); confirm('sure?') ? 'yes' : 'no'")).toBe("no");
-    expect(events.some((e) => e.kind === "cdp" && e.id === "t1" && e.method === "Page.javascriptDialogOpening")).toBe(true);
+    // The browser reports its events from a setImmediate batch (HeadlessBrowser.queue), which a slow runner can run after this
+    // test's evaluate has already resolved: wait for the report, never read it at once. (A run that read it at once failed here,
+    // and the next test, which needs the navigation this one makes to /opener, then timed out waiting for t1 to reopen.)
+    await waitFor("the dialog's event", () => events.some((e) => e.kind === "cdp" && e.id === "t1" && e.method === "Page.javascriptDialogOpening") || undefined);
     for (const name of ["geolocation", "notifications", "camera", "microphone"]) {
       expect(await evaluate("t1", `navigator.permissions.query({ name: '${name}' }).then((s) => s.state)`)).toBe("denied");
     }

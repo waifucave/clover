@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { units } from "../acceptance/shards";
 import { MEASURED_ON_MAC_ONLY } from "../acceptance/measured";
-import { judge, parseRows, retryNote } from "./acceptance-unit";
+import { judge, parseRows, retryNote, retryRecord, scaleFor } from "./acceptance-unit";
 
 const TABLE = `
 MOSS acceptance (source)
@@ -73,6 +73,18 @@ describe("the acceptance unit's verdict", () => {
     const green = judge({ exit: 0, table: TABLE, progress: OK_PROGRESS, logs: [] });
     expect(retryNote(red, green)).toStartWith("### passed on retry: row 2 a model key");
     expect(retryNote(red, red)).toStartWith("### failed twice");
+  });
+
+  test("attempt 1 and attempt 2 take their own time scale, else the run's", () => {
+    expect(scaleFor(1, { MOSS_ACCEPT_TIME_SCALE_ATTEMPT_1: "1.5", MOSS_ACCEPT_TIME_SCALE_ATTEMPT_2: "3" })).toBe("1.5");
+    expect(scaleFor(2, { MOSS_ACCEPT_TIME_SCALE_ATTEMPT_1: "1.5", MOSS_ACCEPT_TIME_SCALE_ATTEMPT_2: "3" })).toBe("3");
+    expect(scaleFor(2, { MOSS_ACCEPT_TIME_SCALE: "2" })).toBe("2");
+    expect(scaleFor(1, {})).toBeUndefined();
+  });
+
+  test("a unit that passed on retry leaves the rows its first attempt failed on for the lane gate's summary", () => {
+    const red = judge({ exit: 1, table: TABLE.replace("| 2 | a model key           | PASS   ", "| 2 | a model key           | FAIL   "), progress: OK_PROGRESS, logs: [] });
+    expect(retryRecord("window-1", red, { first: "1.5", second: "3" })).toEqual({ unit: "window-1", scales: { first: "1.5", second: "3" }, rows: [{ n: 2, name: "a model key", detail: "added" }], problems: [] });
   });
 
   test("the units a lane's check runs own their rows between them, once each, 65 of them; `main` is the chain and the window's three", () => {
