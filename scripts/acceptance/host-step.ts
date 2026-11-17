@@ -44,6 +44,9 @@ export function onscreenWindows(swiftScript: string): { pid: number; alpha: numb
   return (r.stdout ?? "").split("\n").filter((l) => l.startsWith("{")).map((l) => JSON.parse(l) as { pid: number; alpha: number; w: number; h: number });
 }
 
+/** The browser rows again with the background host running (the controller's ruling): the same row, its pages in the host. */
+export const BROWSER_HOST_STEP = "the Browser rows again with the background host running (lane HS): the pages in the host, the cards pressed where the router put them, MOSS Code's panel drawing the host's tabs";
+
 /** How many times a daemon log says the host was ready. */
 export function readyCount(log: string): number {
   return (log.match(/\[host\] ready: /g) ?? []).length;

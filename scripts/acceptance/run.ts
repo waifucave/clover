@@ -80,7 +80,7 @@ import { MossClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 // lane HS
-import { HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
+import { BROWSER_HOST_STEP, HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
 import { BACKGROUND_IDS, writeBackground } from "./manifest-fields-step";
 import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
@@ -524,13 +524,66 @@ async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: s
     const rm = await until("the removal card", 30_000, async () => (await cards(c)).find((k) => k.pluginId === fixtureId), 300).catch(() => undefined);
     if (rm !== undefined) await approve(c, rm, { log: appLog });
   }).catch(() => undefined);
+  // The window half of the browser: MOSS Code's panel shows the person's own tab the host runs, from its pictures, and
+  // only a real press in the panel reaches the page.
+  const panel = await panelShowsHostTab(appCdp, appLog, hostCdp, c);
   // The Browser tool with the window and the host both up: the page loads in the host (its pages stay there).
   const seen = browserFixture!.seen.length;
   await turn(c, session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "open", url: browserFixture!.url })}`, 150_000, { always: true, log: appLog });
   await until("the bot's page loaded with the window and the host up", 60_000, () => (browserFixture!.seen.slice(seen).some((r) => r.path === "/") ? true : undefined), 300);
   if (![...hostCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url))) await until("the bot's page in the host", 30_000, () => ([...hostCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url)) ? true : undefined), 500);
   if ([...appCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url))) fail("the bot's page loaded in MOSS Code's window while the host runs the pages");
-  return `a plugin's OK card was placed in the window's strip, drawn there only (${inStrip.join(", ")}) and pressed there (${from}); Alpha's tool card with her tab focused was placed in the window's conversation and drawn there only (${inConversation.join(", ")}), then with the window back moved to the host's island and pressed there (${onIsland.slice(0, 120)}); the host drew neither past the fallback's 2 s; with both up, the Browser tool's page loaded in the host and not in the window`;
+  return `a plugin's OK card was placed in the window's strip, drawn there only (${inStrip.join(", ")}) and pressed there (${from}); Alpha's tool card with her tab focused was placed in the window's conversation and drawn there only (${inConversation.join(", ")}), then with the window back moved to the host's island and pressed there (${onIsland.slice(0, 120)}); the host drew neither past the fallback's 2 s; ${panel}; with both up, the Browser tool's page loaded in the host and not in the window`;
+}
+
+/** The window half of the browser (lane HS): the browser panel opened in Alpha's tab gives MOSS Code's view "browser" its
+ *  place; the person's own tab, opened by the run into that view, runs in the host. The window draws it from the engine's
+ *  `picture.frame`s (its viewport's canvas painted); an input its page makes up (no real press) never reaches the tab; a
+ *  real press at the page's button (DevTools input on the viewport's own contents) clicks it in the host's page. */
+async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: MossClient): Promise<string> {
+  const header = await until("the Browser button in Alpha's tab", 30_000, async () => {
+    for (const d of (await appCdp.documents()).filter((x) => x.url.startsWith("moss-plugin://"))) {
+      const at = await appCdp.centerOf(d.session, "button", "Browser").catch(() => undefined);
+      if (at !== undefined) return { session: d.session, at };
+    }
+    return undefined;
+  }, 300);
+  await appCdp.click(header.session, header.at.x, header.at.y);
+  await until("the browser panel's frame in the window", 30_000, async () => ((await appCdp.documents()).some((d) => d.url.startsWith("moss-plugin://moss/") && d.text.includes("Browser")) ? true : undefined), 300);
+  await sleep(1_500);
+  const opened = await c.request<{ tab: { id: string } }>("browser.open", { owner: { kind: "user" }, url: browserFixture!.url, show: { view: "browser", viewport: { width: 800, height: 600 } } }, 60_000);
+  const id = opened.tab.id;
+  try {
+    await until("the window's panel showing the host's tab", 30_000, () => (readLog(appLog).includes(`browser: view browser shows the host's tab ${id}`) ? true : undefined), 300);
+    const vp = await until("the panel's viewport", 30_000, async () => (await appCdp.documents()).find((d) => d.url.includes("browser-viewport.html")), 300);
+    const painted = async () => Number(await appCdp.evaluate(vp.session, "(() => { const c = document.querySelector('canvas'); if (!c || !c.width) return 0; const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4096) if (d[i] !== 0) n++; return n; })()").catch(() => 0));
+    await until("the panel's canvas painted from the host's pictures", 30_000, async () => ((await painted()) > 0 ? true : undefined), 300);
+    const page = await until("the tab's page in the host", 30_000, async () => (await hostCdp.documents()).find((d) => d.url.startsWith(browserFixture!.url)), 300);
+    const button = await until("the page's Say hello button", 15_000, async () => hostCdp.centerOf(page.session, "button", "Say hello").catch(() => undefined), 300);
+    const clicked = async () => String(await hostCdp.evaluate(page.session, "document.body.innerText").catch(() => "")).includes("hello was clicked");
+    // Made up by the page: no press the main process saw.
+    await appCdp.evaluate(vp.session, `(() => { const c = document.querySelector('canvas'); for (const t of ['mousedown', 'mouseup']) c.dispatchEvent(new MouseEvent(t, { bubbles: true, clientX: ${button.x}, clientY: ${button.y}, button: 0 })); return true; })()`).catch(() => undefined);
+    await sleep(1_500);
+    if (await clicked()) fail("the panel forwarded a press its page made up: the host's page was clicked");
+    // A real press in the panel's own view.
+    await appCdp.click(vp.session, button.x, button.y);
+    await until("the host's page clicked by the real press in the panel", 20_000, async () => ((await clicked()) ? true : undefined), 300);
+    return `MOSS Code's panel showed the person's own tab the host runs, its canvas painted from picture.frame; a press its page made up was refused, a real press in the panel clicked the page's button in the host`;
+  } finally {
+    await c.request("browser.close", { id }, 30_000).catch(() => undefined);
+  }
+}
+
+/** The Browser tool's live picture from the host's tab (lane AF's `picture-bridge.ts` over `host/tab-frames.ts`): listed for
+ *  Alpha's session, and followed with `picture.open`, its frames come as `picture.frame` jpegs of a real size. */
+async function browserPictureEndToEnd(c: MossClient, session: string): Promise<string> {
+  const pic = await until("the Browser tool's live picture of Alpha's session", 60_000, async () => (await c.request<{ pictures: { id: string; session: string; publisher: string; format?: string }[] }>("picture.list", { kind: "bots", bot: "alpha" }).catch(() => ({ pictures: [] }))).pictures.find((p) => p.session === session), 500);
+  const frames: { stream?: string; format?: string; width?: number; height?: number }[] = [];
+  c.onNotification((method, params) => { if (method === "picture.frame") frames.push(params as never); });
+  const { stream } = await c.request<{ stream: string }>("picture.open", { id: pic.id, maxFps: 5 });
+  const f = await until("a frame of the live picture", 30_000, () => frames.find((x) => x.stream === stream && (x.width ?? 0) > 0), 200);
+  await c.request("picture.close", { stream }).catch(() => undefined);
+  return `listed for Alpha's session (by ${pic.publisher}), followed, and its frames came (${f.format} ${f.width}x${f.height}) from the host's tab`;
 }
 
 /** R12's host half in the host row: the hold fixture's overlay surface runs in the host; a second plugin's OK card pending
@@ -1223,7 +1276,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: MossClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
+async function turn(c: MossClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean; pick?: (card: Card) => { cdp: Cdp; log: string; onIsland?: boolean } }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -1245,7 +1298,9 @@ async function turn(c: MossClient, session: string, text: string, timeoutMs = 12
           // A turn that presses (step 7's write) presses its cards in the window, the real way; the rest are answered
           // over RPC.
           if (o.press !== undefined && o.press !== false) {
-            const by = o.press === true ? (pressCdp === undefined ? undefined : { cdp: pressCdp, log: join(logs, "app.log") }) : o.press;
+            const by0 = o.press === true ? (pressCdp === undefined ? undefined : { cdp: pressCdp, log: join(logs, "app.log") }) : o.press;
+            // lane HS: a run with a host picks where to press by the card's placement.
+            const by = by0 !== undefined && "pick" in by0 && typeof by0.pick === "function" ? { ...by0, ...by0.pick(card) } : by0;
             if (by === undefined) fail("the first app has no DevTools connection (step 1), so the card can't be pressed the real way");
             if (by!.onIsland === true) { const how = await pressOnIsland(by!.cdp, card, by!.log); o.onPressed?.(how); seenCards.push(`a ${card.kind} card, ${how}`); continue; }
             if (by!.inConversation === true) { const how = await pressInHerTab(by!.cdp, card, by!.log, by!.narrow === true); o.onPressed?.(how); seenCards.push(`a ${card.kind} card, ${how}`); continue; }
@@ -3549,6 +3604,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
   let c: MossClient | undefined;
   // lane HS: the host unit runs alone (its own daemon starts the host).
   if (ids.includes("host")) { await hostOnlyRun(app); return; }
+  if (ids.includes("browser-host")) { await browserOnlyRun(app, { withHost: true }); return; }
   try {
     // The previous app's session in the home's store before the daemon first opens it (the archive row).
     if (ids.includes("archive")) seedArchive(home);
@@ -4336,13 +4392,26 @@ async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<vo
 
 /** The Browser-tool row alone (--only-browser): the daemon, the dummy key through the app's own methods, Alpha on the
  *  keyed model, then the app over it (headless, its DevTools port, the window's start sampled) and the row. */
-async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
-  const n = stepNumber(FULL_STEPS, BROWSER_STEP);
+async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHost?: boolean } = {}): Promise<void> {
+  const n = stepNumber(FULL_STEPS, o.withHost === true ? BROWSER_HOST_STEP : BROWSER_STEP);
   let c: MossClient | undefined;
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
+  // lane HS: with the background host (`--units browser-host`): the engine starts it from this checkout, the pages run in
+  // it, and a card is pressed where the router put it (the host's island, or the window).
+  let hostCdp: Cdp | undefined;
+  const hostLog = join(home, "logs", "host.out.log");
   try {
-    await startDaemonProc();
+    if (o.withHost === true) {
+      if (target !== "source") fail("the browser rows with a host need the engine's source seam (MOSS_HOST_COMMAND)");
+      browserFixture = startBrowserFixture();
+      const hostPort = freePort();
+      const hostApp = hostAppCopy(app);
+      const hostCommand = JSON.stringify([hostApp.exe, ...hostApp.args, "--moss-program=host", "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${hostPort}`]);
+      const d = await startDaemonProc({ MOSS_HOST_COMMAND: hostCommand, MOSS_TEST_BROWSER_NAMES: browserFixture.names, MOSS_TEST_SEALED_PRESS: "1", MOSS_DEV_DEBUG: "1" });
+      await until("the host the engine started, ready", 120_000, () => { const p = hostLockPid(home); if (p !== undefined) startedHosts.add(p); return readyCount(readLog(d.log)) > 0 ? true : undefined; }, 500);
+      hostCdp = await until("the host's DevTools port", 60_000, async () => { try { return await Cdp.connect(hostPort); } catch { return undefined; } }, 250);
+    } else await startDaemonProc();
     c = (await appDriver()).client;
     const plugin = "moss/model-anthropic";
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
@@ -4363,7 +4432,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
     const pickFile = join(root, "folder.pick");
     writeFileSync(pickFile, `${join(import.meta.dir, "fixtures", "acceptance-page")}\n`);
     const port = freePort();
-    browserFixture = startBrowserFixture();
+    browserFixture ??= startBrowserFixture();
     const frontFile = join(root, "main-front");
     const env = { ...baseEnv(), MOSS_TEST_BROWSER_NAMES: browserFixture.names, MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_TEST_PICK: pickFile, MOSS_TEST_MAIN_FRONT_FILE: frontFile, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }) };
     proc = startChild("browser-app", app.exe, [...app.args, "--moss-headless", `--moss-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
@@ -4376,6 +4445,16 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
     const log = proc.log;
+    // Where the router put a card (the window's log): the host's island takes its press there, the window elsewhere.
+    let hostPresses = 0;
+    let windowPresses = 0;
+    const lastPlace = (card: Card) => [...readLog(log).matchAll(new RegExp(`router: ${card.id} placed (\\w+)`, "g"))].at(-1)?.[1];
+    const onHostIsland = (card: Card) => hostCdp !== undefined && (lastPlace(card) === "island" || lastPlace(card) === "elsewhere");
+    const pick = (card: Card) => (onHostIsland(card) ? { cdp: hostCdp!, log: hostLog, onIsland: true } : { cdp: cdp!, log });
+    const pressWhereHeld = async (card: Card) => {
+      if (hostCdp !== undefined) await until(`the router placing ${card.id}`, 20_000, () => (lastPlace(card) !== undefined ? true : undefined), 200).catch(() => undefined);
+      if (onHostIsland(card)) { hostPresses++; await pressOnIsland(hostCdp!, card, hostLog); } else { windowPresses++; await pressApprove(cdp!, card, log); }
+    };
     const ctx: ExampleCtx = {
       cdp: cdp!, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
       appLog: () => `${readLog(log)}\n${readLog(join(home, "logs", "app.log"))}`,
@@ -4383,24 +4462,26 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
       pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
       pressCard: async (what, match) => {
         const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);
-        await pressApprove(cdp!, card, log);
+        await pressWhereHeld(card);
         return card.id;
       },
       approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await approve(rpc, card, { log }); },
       denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
-      turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
+      turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick } }),
       alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true, log }),
-      inspectTurn: (s2, text, ms, inspect) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log }, inspect: async () => inspect() }),
+      inspectTurn: (s2, text, ms, inspect) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick }, inspect: async () => inspect() }),
       history: (s2) => history(rpc, s2),
       setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back"),
     };
-    record(n, "PASS", await browserStep(ctx, session, browserFixture, panelOpener(rpc)));
+    record(n, "PASS", `${await browserStep(ctx, session, browserFixture, panelOpener(rpc))}${o.withHost === true ? `; with the host running: ${hostPresses} card(s) pressed on the host's island, ${windowPresses} in the window, the pages in the host` : ""}`);
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {
     c?.close();
     cdp?.close();
+    hostCdp?.close();
     if (proc !== undefined) await endChild(proc.proc);
+    if (o.withHost === true) { endStartedHosts(); unregisterRunApps(); }
   }
 }
 
@@ -4491,6 +4572,9 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     await until("the bot's page among the host's targets", 30_000, () => ([...hostCdp!.frames.values()].some((f) => f.url.startsWith(browserFixture!.url)) ? true : undefined), 500).catch(() => undefined);
     offScreen("with the bot's page open");
     lines.push("browser with no window: the bot's Browser tool opened the fixture page, loaded by the host's browser");
+    // 4b. The browser's own picture, end to end (lane AF's bridge over the host's frames): the tab the tool drove is a live
+    //     picture of Alpha's session, and a window that follows it gets its frames, drawn by the host's tab.
+    lines.push(`the browser's live picture: ${await browserPictureEndToEnd(c, session)}`);
     // 5. The engine restarts on the same home: it adopts the running host (its lock) and starts no second.
     stoppingDaemon = true;
     const gone = new Promise<void>((r) => first.proc.once("exit", () => r()));
