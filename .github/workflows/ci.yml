@@ -286,6 +286,9 @@ jobs:
         working-directory: apps/desktop
         env:
           MOSS_UI_TESTS: "1"
+          # A macOS runner's software VP8 encoder made 2.5 fps once with the machine busy (14 on its other runs; a Mac 10 to 30): the
+          # stream step's floor is 5 fps unset, 2 here, which still tells a working stream from a stuck one.
+          MOSS_STREAM_MIN_FPS: ${{ runner.os == 'macOS' && '2' || '' }}
         run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/browser.test.ts test/browser-stream.test.ts
 
       # Lane L-M3: the same fixtures where the display changes. Windows at 150 % and 200 % (a viewport that draws at
@@ -977,7 +980,9 @@ jobs:
         # embed-runtimes stages dist/winter (copied above): required here, skipped only in a plain local run.
         env:
           MOSS_RUNTIME_REQUIRE_BINARY: "1"
-        run: bun scripts/platform-tests.ts --root scripts --darwin
+        # 20 s a test, as the core's jobs: a cold runner's first `clang` took one of these past bun's 5 s default (the
+        # embed-cowork-native test, which then read the killed child's null status as a failed build).
+        run: bun scripts/platform-tests.ts --root scripts --darwin --timeout 20000
 
       - name: Link · the link tests over the sidecar
         if: ${{ !cancelled() && env.LINK == 'true' }}
@@ -1094,7 +1099,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Scripts · test
-        run: bun scripts/platform-tests.ts --root scripts --not-darwin
+        run: bun scripts/platform-tests.ts --root scripts --not-darwin --timeout 20000
 
       # The repo-wide source scans, which read every package's src/ and scripts/ (the native channel's anti-wiring
       # test): they run here for any such change, not only when the core's own shards do.
@@ -1152,7 +1157,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        unit: [chain, window-1, window-2, window-3, workshop, plugin-app, browser]
+        # THE line a new unit is added on (scripts/ci/acceptance-units.ts says what stays off it, and why).
+        unit: [chain, window-1, window-2, window-3, workshop, plugin-app, browser, bundled-tools, examples, reopen]
     env:
       MOSS_PINNED_BUN: "0"
       # Row 37 counts a hidden page's 100 ms ticks over 3 s (30 on a free machine, about 3 when throttled; the bar is 20): a shared runner

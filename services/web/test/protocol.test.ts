@@ -105,8 +105,9 @@ describe("the pairing exchange", () => {
 
 /** Two node-datachannel peers joined in-process, and a link on each end. */
 async function linkedPair(options: { computerFirst?: (computer: RtcLink) => void } = {}): Promise<{ page: RtcLink; computer: RtcLink }> {
-  const a = new RTCPeerConnection({ iceServers: [] });
-  const b = new RTCPeerConnection({ iceServers: [] });
+  // Bound to loopback, so a runner's own interfaces play no part (companion-web's e2e.test.ts says why).
+  const a = new RTCPeerConnection({ iceServers: [], bindAddress: "127.0.0.1" } as never);
+  const b = new RTCPeerConnection({ iceServers: [], bindAddress: "127.0.0.1" } as never);
   a.onicecandidate = (e) => void (e.candidate && b.addIceCandidate(e.candidate));
   b.onicecandidate = (e) => void (e.candidate && a.addIceCandidate(e.candidate));
   const control = a.createDataChannel("control") as unknown as ChannelLike;
