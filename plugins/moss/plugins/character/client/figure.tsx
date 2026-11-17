@@ -9,11 +9,11 @@
 // * The activity feed moves it (`mood.ts`): the session it is shown beside, or on the screen the most recent change
 //   among sessions (and bots, when the person lets it follow them).
 // * In a test or acceptance build its root carries what it follows (`data-activity`) and the last cue it sent.
-import type { PointMessage } from "@waifucave/moss-plugin-sdk";
+import type { HostMessageCall, PointMessage } from "@waifucave/moss-plugin-sdk";
 import { Spot, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FIGURE_POINT, RENDERER_SPOT, useFigure, useSetting, type FigureChoice, type FormatDecl } from "./choice";
-import { boxOrDefault, catalogueOf, cleanFigureBox, cleanFigureCue, cleanFigureNames, judgeCue, type FigureBox, type FigureCue, type FigureNames, type FigureReport } from "./figure-cues";
+import { boxOrDefault, catalogueOf, cleanFigureBox, cleanFigureCue, cleanFigureNames, judgeCue, type FigureBox, type FigureCue, type FigureCueResult, type FigureNames, type FigureReport } from "./figure-cues";
 import { cuesFor, followed, merge, type ActivityView } from "./mood";
 import { S } from "./strings";
 
@@ -71,6 +71,18 @@ function useActivity(bots: boolean): ActivityView[] {
     return () => { live = false; for (const s of stops) s(); };
   }, [api, bots]);
   return all;
+}
+
+/** The event this plugin's host half sends its figures for its tools (`server/index.ts`). */
+export const TOOL_EVENT = "figure-tool";
+
+/** Whether a figure shown at `place` (beside `session`, for a panel) takes a tool call made by `call`'s session. */
+export function figureTakesCall(at: { place: "panel" | "screen"; session?: string; followBotsSetting: boolean }, call: HostMessageCall | undefined): boolean {
+  if (call === undefined) return false;
+  // A bot's call (MOSS's conversations) moves the figure in MOSS Code only while the person lets it follow bots.
+  if (call.kind === "bot" || call.kind === "side-thread") return at.followBotsSetting;
+  // A coding session's: the panel beside that session, and the figure on the screen.
+  return at.place === "screen" || (at.session !== undefined && call.session === at.session);
 }
 
 /** How often, and how many times, the figure asks its renderer to say its names again before they arrive. */
@@ -134,17 +146,35 @@ export function Figure({ place, session }: { place: "panel" | "screen"; session?
     if (marked()) setLastCue(JSON.stringify(c));
   };
 
+  /** A cue, judged against the renderer's word and played: the plain answer (a controller's and this plugin's own tools'). */
+  const play = (raw: unknown): FigureCueResult => {
+    const cue = cleanFigureCue(raw);
+    if (cue === undefined) return { ok: false, reason: "invalid", message: "a cue is an expression, a motion, an outfit part with on or off, the pace, or a point to look at" };
+    const no = judgeCue(reportRef.current, cue);
+    if (no !== undefined) return no;
+    send(cue);
+    return { ok: true };
+  };
+  const playRef = useRef(play);
+  playRef.current = play;
+
   // Controllers: their cues judged and played, each answered; what the figure has goes to them as it changes.
   useEffect(() => api.points.onMessage(FIGURE_POINT, (m: PointMessage) => {
     const raw = m.value as { cue?: unknown; id?: unknown } | null;
     const id = typeof raw?.id === "string" && raw.id.length <= 64 ? raw.id : undefined;
-    const answer = (result: unknown) => void api.points.send(FIGURE_POINT, { ...(id !== undefined ? { id } : {}), result }, { to: m.from }).catch(() => undefined);
-    const cue = cleanFigureCue(raw?.cue ?? raw);
-    if (cue === undefined) return answer({ ok: false, reason: "invalid", message: "a cue is an expression, a motion, an outfit part with on or off, the pace, or a point to look at" });
-    const no = judgeCue(reportRef.current, cue);
-    if (no !== undefined) return answer(no);
-    send(cue);
-    answer({ ok: true });
+    void api.points.send(FIGURE_POINT, { ...(id !== undefined ? { id } : {}), result: playRef.current(raw?.cue ?? raw) }, { to: m.from }).catch(() => undefined);
+  }), [api]);
+
+  // This plugin's own tools (its host half's `figure` server): a coding session's call reaches the panel beside it and
+  // the figure on the screen; a bot's, any figure, but only while the person lets it follow bots. The answer goes back to the host half, which tells the caller.
+  const followBotsSetting = useSetting<boolean>("followBots") !== false;
+  const toolRef = useRef({ place, session, followBotsSetting });
+  toolRef.current = { place, session, followBotsSetting };
+  useEffect(() => api.host.on(TOOL_EVENT, (data, call) => {
+    const v = data as { id?: unknown; cue?: unknown; status?: unknown } | null;
+    if (typeof v?.id !== "string" || !figureTakesCall(toolRef.current, call)) return;
+    const result = v.status === true ? { ok: true, catalogue: catalogueOf(reportRef.current) ?? null } : playRef.current(v.cue);
+    void api.host.call("answered", { id: v.id, result }).catch(() => undefined);
   }), [api]);
   const catalogue = useMemo(() => JSON.stringify({ catalogue: catalogueOf(link.report) ?? null, box: boxOrDefault(link.report?.box) ?? null }), [link.report]);
   useEffect(() => {

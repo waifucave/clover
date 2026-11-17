@@ -2,7 +2,7 @@
 // renderer of the figure's format (its UI spot, keyed), the renderer's report and the cues (point messages), the
 // controllers' cues judged and answered, and the activity feed moving it.
 import { type TestEntry as UiEntry, catalogSpot, fakeApi, fakeApprovals, fakeCore, runtimeWith, settle, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
-import type { PointEntry } from "@waifucave/moss-plugin-sdk";
+import type { HostMessageCall, PointEntry } from "@waifucave/moss-plugin-sdk";
 import * as React from "react";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
@@ -10,6 +10,8 @@ import type { EntryComponent } from "../client/local";
 import { FigurePanel, FigureSettings } from "../client";
 import { chosen, choicesOf, formatsOf, ownModelsOf } from "../client/choice";
 import { cuesFor, followed } from "../client/mood";
+import { figureTakesCall, TOOL_EVENT } from "../client/figure";
+import { TOOL_EVENT as SERVER_TOOL_EVENT } from "../server/index";
 
 afterEach(cleanup);
 
@@ -22,7 +24,11 @@ const spotOf = (name: string) => (name === RENDERER ? { name, shape: "keyed" as 
 
 async function mount(o: { packs: PointEntry[]; formats: PointEntry[]; settings?: Record<string, unknown>; activity?: unknown[]; component?: React.ReactElement }) {
   const watchers: ((a: unknown) => void)[] = [];
+  // Its host half's messages (`host.on`) and what the figure answers it (`host.call`).
+  const hostListeners: ((data: unknown, call?: HostMessageCall) => void)[] = [];
+  const hostCalls: { name: string; args: unknown }[] = [];
   const api = fakeApi({
+    host: { call: async (name: string, args: unknown) => { hostCalls.push({ name, args }); return true; }, on: (_e: string, l: (data: unknown, call?: HostMessageCall) => void) => { hostListeners.push(l); return () => undefined; } },
     pluginId: "moss/character",
     points: { "moss.character.packs": o.packs, "moss.character.formats": o.formats },
     settings: o.settings ?? {},
@@ -34,7 +40,7 @@ async function mount(o: { packs: PointEntry[]; formats: PointEntry[]; settings?:
   const view = render(<TestLayer runtime={runtime}>{o.component ?? React.createElement(FigurePanel as never, { props: { app: "code", session: "s1" } } as never)}</TestLayer>);
   await act(() => settle(8));
   const drawn = () => { const el = document.querySelector("[data-draw]"); return el === null ? undefined : JSON.parse(el.getAttribute("data-draw")!) as Record<string, unknown>; };
-  return { api, view, drawn, activity: (a: unknown) => { for (const w of watchers) w(a); } };
+  return { api, view, drawn, hostCalls, tool: (data: unknown, call?: HostMessageCall) => { for (const l of hostListeners) l(data, call); }, activity: (a: unknown) => { for (const w of watchers) w(a); } };
 }
 
 describe("which figure shows (the plugin's own one-at-a-time rule)", () => {
@@ -85,6 +91,38 @@ describe("the figure in its panel", () => {
     await act(async () => { m.api.deliver(RENDERER, "moss/vrm", { mount: mountId, names: { expressions: ["happy"], motions: [], outfits: [] } }); await settle(4); });
     await act(() => Bun.sleep(1_150));
     expect(asks()).toHaveLength(1);
+  });
+
+  test("its own tools: a coding call reaches the panel only for the session beside it, a bot's only while it follows bots (off here); judged as a controller's cue, and answered to the host half", async () => {
+    const m = await mount({ packs: [pack("p", "a", "/_t/p/a.vrm", "vrm")], formats: [format("moss/vrm", "vrm", ["expressions"])], settings: { followBots: false } });
+    const mountId = m.drawn()!.mount as string;
+    await act(async () => { m.api.deliver(RENDERER, "moss/vrm", { mount: mountId, names: { expressions: ["happy"], motions: [], outfits: [] } }); await settle(4); });
+    await act(async () => {
+      m.tool({ id: "1", cue: { type: "expression", name: "happy" } }, { session: "s1", kind: "coding" });
+      m.tool({ id: "2", cue: { type: "expression", name: "angry" } }, { session: "s1", kind: "coding" });
+      m.tool({ id: "3", cue: { type: "expression", name: "happy" } }, { session: "s2", kind: "coding" });
+      m.tool({ id: "4", cue: { type: "expression", name: "happy" } }, { session: "b1", kind: "bot", bot: "alpha" });
+      m.tool({ id: "5", cue: { type: "expression", name: "happy" } });
+      m.tool({ id: "6", status: true }, { session: "s1", kind: "coding" });
+      await settle(4);
+    });
+    const answers = m.hostCalls.filter((c) => c.name === "answered").map((c) => c.args as { id: string; result: { ok: boolean; reason?: string; message?: string; catalogue?: { expressions: string[] } } });
+    expect(answers.map((a) => [a.id, a.result.ok, a.result.reason])).toEqual([["1", true, undefined], ["2", false, "unknown-name"], ["6", true, undefined]]);
+    expect(answers[1]!.result.message).toBe('this model has no expression "angry"; it has: happy');
+    expect(answers[2]!.result.catalogue!.expressions).toEqual(["happy"]);
+    expect(m.api.sent.filter((x) => x.point === RENDERER && JSON.stringify(x.value).includes("cue"))).toEqual([{ point: RENDERER, to: "moss/vrm", value: { mount: mountId, cue: { type: "expression", name: "happy" } } }]);
+  });
+
+  test("on the screen a tool call from any coding session is taken; a bot's, anywhere, only while it follows bots", () => {
+    const screen = { place: "screen" as const, followBotsSetting: false };
+    expect(figureTakesCall(screen, { session: "s9", kind: "coding" })).toBe(true);
+    expect(figureTakesCall(screen, { session: "s9", kind: "agent" })).toBe(true);
+    expect(figureTakesCall(screen, { session: "b1", kind: "bot", bot: "alpha" })).toBe(false);
+    expect(figureTakesCall({ place: "panel", session: "s1", followBotsSetting: true }, { session: "b1", kind: "bot", bot: "alpha" })).toBe(true);
+    expect(figureTakesCall({ place: "panel", session: "s1", followBotsSetting: false }, { session: "s2", kind: "coding" })).toBe(false);
+    expect(figureTakesCall({ ...screen, followBotsSetting: true }, { session: "b1", kind: "bot", bot: "alpha" })).toBe(true);
+    expect(figureTakesCall({ ...screen, followBotsSetting: true }, undefined)).toBe(false);
+    expect(TOOL_EVENT).toBe(SERVER_TOOL_EVENT);
   });
 
   test("a controller's cue is judged against the renderer's word and answered; one it can play goes to that renderer for that mount only", async () => {

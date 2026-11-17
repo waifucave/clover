@@ -231,11 +231,8 @@
         },
         "instructions": "server/instructions.md",
         "contained": [
-          "set_expression",
-          "play_motion",
           "set_scene",
           "set_mood",
-          "toggle_outfit",
           "pin_note",
           "unpin_note",
           "celebrate"

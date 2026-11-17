@@ -14,6 +14,7 @@ import { DEFAULT_OUTFIT, OUTFIT_VALUES, OUTFITS, outfitCues, pickOutfit, wearsHe
 import { STAGE_KEY } from "../stage";
 import { StageStore } from "../store";
 import { runStageTool } from "../tools";
+import { changeBy } from "./fakes";
 import { ALPHA, fakeApi, fakeAvatar, MODEL } from "./fakes";
 
 const HERS: AvatarCatalogue = {
@@ -33,7 +34,7 @@ function setup(o: { catalogue?: AvatarCatalogue; answer?: (cue: AvatarCue) => Av
     bots: { get: async (id: string) => ({ id, userLayer: o.userLayer ?? [] }) },
   };
   const s = new StageStore(api, { now: () => (t += 200), bot: "alpha", figure: a.avatar });
-  return { f, a, s, set, settings, run: (name: string, args: unknown = {}) => runStageTool(name, args, s, api.settings.get) };
+  return { f, a, s, set, settings, run: (name: string, args: Record<string, unknown> = {}) => (name === "stage_status" ? runStageTool(name, args, s, api.settings.get) : changeBy(s, name, args)) };
 }
 
 describe("her outfit, on her own model", () => {

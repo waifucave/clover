@@ -11,6 +11,10 @@
       "client/styles.css"
     ]
   },
+  "host": {
+    "entry": "server/index.ts",
+    "runtime": "bun"
+  },
   "capabilities": [
     "activity.read.sessions",
     "activity.read.bots",
@@ -33,7 +37,7 @@
     "followBots": {
       "type": "boolean",
       "title": "Follow your bots",
-      "description": "On the screen, the figure also follows what your bots are doing, not only your sessions.",
+      "description": "The figure also follows what your bots are doing, on the screen, and takes their calls to its tools (an expression, a motion), not only your coding sessions'.",
       "default": true
     },
     "ownModels": {
@@ -301,6 +305,15 @@
           }
         }
       }
-    ]
+    ],
+    "mcpServers": {
+      "figure": {
+        "type": "host",
+        "tools": {
+          "*": "on-demand"
+        },
+        "instructions": "server/instructions.md"
+      }
+    }
   }
 }

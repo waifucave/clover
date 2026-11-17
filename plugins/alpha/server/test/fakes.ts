@@ -1,3 +1,5 @@
+import type { StageChange } from "../stage";
+import type { StageStore } from "../store";
 // A fake plugin API for Alpha's server: an in-memory store, the messages sent to her tab, settings, and her scenes
 // point's entries; and timers the test runs by hand.
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
@@ -56,4 +58,15 @@ export function diskReader(dir: string) {
       return real === root || real.startsWith(root + sep);
     },
   };
+}
+
+/** What her room's buttons and commands ask of her store for her figure (an expression, a motion, an outfit part), which
+ *  her server no longer offers as tools (the avatar plugin's own do): the store's answer as words, an error when it refused. */
+export async function changeBy(store: StageStore, name: string, args: Record<string, unknown> = {}): Promise<{ content: { type: "text"; text: string }[]; isError?: true }> {
+  const s = (k: string) => (typeof args[k] === "string" ? (args[k] as string) : "");
+  const change: StageChange = name === "set_expression" ? { kind: "expression", name: s("name") }
+    : name === "play_motion" ? { kind: "motion", name: s("name") }
+    : { kind: "outfit", part: s("part"), ...(typeof args.on === "boolean" ? { on: args.on } : {}) };
+  const r = await store.change(change);
+  return r.ok ? { content: [{ type: "text", text: r.said }] } : { content: [{ type: "text", text: r.said }], isError: true };
 }
