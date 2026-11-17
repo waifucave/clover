@@ -73,6 +73,10 @@ function useActivity(bots: boolean): ActivityView[] {
   return all;
 }
 
+/** How often, and how many times, the figure asks its renderer to say its names again before they arrive. */
+const ASK_EVERY_MS = 1_000;
+const ASK_TIMES = 15;
+
 /** The renderer drawing this mount: what it reported (its names and box), and how to send it a cue. */
 function useRendererLink(mount: string, format: FormatDecl | undefined): { report: FigureReport | undefined; cue(c: FigureCue): void } {
   const api = usePluginApi();
@@ -93,11 +97,15 @@ function useRendererLink(mount: string, format: FormatDecl | undefined): { repor
     });
   }, [api, mount, renderer]);
   // This plugin may start listening after its renderer first spoke (a frame of its own loads apart, an inline one mounts
-  // first): until the model's names arrive it asks the renderer to say them again, a few times.
+  // first): until the model's names arrive it asks the renderer to say them again, once a second for a while.
   useEffect(() => {
     if (renderer === undefined || names !== undefined) return;
-    const timers = [300, 1500, 4000].map((ms) => setTimeout(() => void api.points.send(RENDERER_SPOT, { mount, ask: "report" }, { to: renderer }).catch(() => undefined), ms));
-    return () => { for (const t of timers) clearTimeout(t); };
+    let asked = 0;
+    const timer = setInterval(() => {
+      if (++asked > ASK_TIMES) return clearInterval(timer);
+      void api.points.send(RENDERER_SPOT, { mount, ask: "report" }, { to: renderer }).catch(() => undefined);
+    }, ASK_EVERY_MS);
+    return () => clearInterval(timer);
   }, [api, mount, renderer, names]);
   const report = useMemo<FigureReport | undefined>(() => (format === undefined ? undefined : { format: format.format, renderer: format.renderer, capabilities: format.capabilities, ...(names !== undefined ? { names } : {}), ...(box !== undefined ? { box } : {}) }), [format, names, box]);
   return {

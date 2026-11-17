@@ -76,6 +76,17 @@ describe("the figure in its panel", () => {
     expect(document.querySelector(".cl-figure__empty")).not.toBeNull();
   });
 
+  test("until its renderer has said what its model has, the figure asks it again each second; once it has, no more", async () => {
+    const m = await mount({ packs: [pack("p", "a", "/_t/p/a.vrm", "vrm")], formats: [format("moss/vrm", "vrm", ["expressions"])] });
+    const mountId = m.drawn()!.mount as string;
+    const asks = () => m.api.sent.filter((s) => s.point === RENDERER && (s.value as { ask?: unknown }).ask === "report");
+    await act(() => Bun.sleep(1_150));
+    expect(asks()).toEqual([{ point: RENDERER, to: "moss/vrm", value: { mount: mountId, ask: "report" } }]);
+    await act(async () => { m.api.deliver(RENDERER, "moss/vrm", { mount: mountId, names: { expressions: ["happy"], motions: [], outfits: [] } }); await settle(4); });
+    await act(() => Bun.sleep(1_150));
+    expect(asks()).toHaveLength(1);
+  });
+
   test("a controller's cue is judged against the renderer's word and answered; one it can play goes to that renderer for that mount only", async () => {
     const m = await mount({ packs: [pack("p", "a", "/_t/p/a.vrm", "vrm")], formats: [format("moss/vrm", "vrm", ["expressions"])] });
     const mountId = m.drawn()!.mount as string;

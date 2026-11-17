@@ -268,8 +268,12 @@ export async function figureRendererStep(f: FigureCtx): Promise<string> {
     }, async () => command(f.rpc, "acceptance-figure-moves.happy"));
     await until("the renderer showing the cued picture set", 15_000, async () => ((await f.cdp.evaluate(frame, RENDERER_PROBE).catch(() => undefined)) as { state?: string } | null | undefined)?.state === "happy" ? true : undefined,
       async () => JSON.stringify(await f.cdp.evaluate(frame, RENDERER_PROBE).catch(() => "?")));
-    const angry = await command(f.rpc, "acceptance-figure-moves.angry");
-    if (!angry.includes('"ok":false') || !angry.includes("unknown-name")) fail(`a cue the model has no name for wasn't answered plainly: ${angry}`);
+    // The renderer's names reach the avatar plugin a moment after it draws (it asks again until they do): until then a cue
+    // goes on to the renderer; once they have, a name the model lacks is answered plainly.
+    const angry = await until("a cue the model has no name for answered plainly", 20_000, async () => {
+      const t = await command(f.rpc, "acceptance-figure-moves.angry");
+      return t.includes('"ok":false') && t.includes("unknown-name") ? t : undefined;
+    }, async () => `the cue was answered ${await command(f.rpc, "acceptance-figure-moves.angry")}`);
     return `example-pngtuber (renderer and pack) and a controller installed behind their OK cards (the avatar plugin's renderer and figure lines); beside the coding session ${place.code} the picture-swap renderer drew Sunny; the controller's happy cue was answered ${happy.slice(5)} and the renderer swapped to its happy set; angry was answered ${angry.slice(5, 90)}`;
   } finally {
     await backToBots(f).catch(() => undefined);
