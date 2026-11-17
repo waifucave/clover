@@ -29,6 +29,13 @@ export interface PointMessagesOptions {
   now?: () => number;
 }
 
+/** Whether a point's declaration carries the line its fillers' OK cards show (`fills.ok`). */
+function hasFillsOk(decl: unknown): boolean {
+  const ok = (decl as { fills?: { ok?: unknown } } | undefined)?.fills?.ok;
+  return (typeof ok === "string" && ok.trim() !== "") || (ok !== null && typeof ok === "object" && Object.keys(ok).length > 0);
+}
+const noFillsLine = (point: string, declarer: string) => `${declarer} declares ${point} with no \`fills.ok\` line, so it carries no point messages: the line is what each filler's OK card tells the person it is handed and sends`;
+
 /** The plugins that fill `point` now: running, with an active entry in it (a UI spot's through `ui`). */
 export function fillersOf(registry: PointMessagesOptions["registry"], point: string, spot: boolean): string[] {
   const entries = spot
@@ -54,6 +61,8 @@ export class PointMessages {
     const p = this.#o.registry.points().find((x) => x.name === point && x.active);
     if (p === undefined) throw new ContractError("not_found", `no plugin declares ${point} here`);
     if (p.declaredBy === "core") throw new ContractError("refused", `${point} is a core point; it takes no messages`);
+    // Every message path has a line the person saw: the declaration's `fills.ok`, on each filler's OK card.
+    if (!hasFillsOk(p.decl)) throw new ContractError("refused", noFillsLine(point, p.declaredBy.pluginId));
     return { declarer: p.declaredBy.pluginId, spot: p.spot };
   }
 
@@ -150,6 +159,9 @@ export class PointMessages {
         const point = stringArg(args, 0, "the point");
         const listener = listenerArg<PointMessage>(args, 1);
         // No declaration is needed to listen: a part may mount before the point's declarer runs, and hears once it does.
+        // One declared with no `fills.ok` line carries no message, so listening on it is refused, saying why.
+        const p = this.#o.registry.points().find((x) => x.name === point && x.active);
+        if (p !== undefined && p.declaredBy !== "core" && !hasFillsOk(p.decl)) throw new ContractError("refused", noFillsLine(point, p.declaredBy.pluginId));
         return this.listen(ctx.pluginId, point, listener);
       },
     };

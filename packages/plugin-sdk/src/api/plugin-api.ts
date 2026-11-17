@@ -351,7 +351,8 @@ export interface PointsApi {
    *  with an active entry in it, never anyone else. From the declarer it goes to every filler (or the one `to` names);
    *  from a filler it goes to the declarer. Plain data, at most `POINT_MESSAGE_MAX_BYTES` serialized and
    *  `POINT_MESSAGES_PER_SECOND` a second per plugin; every one is delivered, in order. Filling such a point is what
-   *  its declarer's `fills` line on the filler's OK card says, so the card is the gate. */
+   *  its declarer's `fills` line on the filler's OK card says, so the card is the gate: a point declared without a
+   *  `fills.ok` line carries no messages (refused, both ways, and listening on it too). */
   send(point: string, value: unknown, opts?: { to?: string }): Promise<void>;
   /** Hears the messages on a point the plugin declares or fills (`send`), each with the plugin that sent it, while it
    *  declares or fills it. */

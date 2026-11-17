@@ -108,7 +108,7 @@ and after each change `api.ui.send("changed", …)` so an open page redraws. Eve
 - `api.points.send(point, value, { to? })` and `api.points.onMessage(point, listener)`: messages on a point, between the
   plugin that declares it and the plugins with an active entry in it, and no one else (plain data, at most 64 KiB, 60 a
   second, in order). The declarer sends to every filler, or one with `to`; a filler sends to the declarer. No capability:
-  the declaration's `fills.ok` line is on each filler's OK card. MOSS has no avatar of its own: the bundled avatar plugin
+  the declaration's `fills.ok` line is on each filler's OK card, and a point declared without one carries no messages. MOSS has no avatar of its own: the bundled avatar plugin
   (`moss/character`) declares its points, and a plugin that moves its figure fills `moss.character.figure` and sends
   `{ id?, cue }` there (`{ type: "expression" | "motion", name }`, `{ type: "outfit", part, on }`, `{ type: "pace", calm }`,
   `{ type: "lookAt", point }`), hearing back `{ id, result }` (`{ ok: true }` or `{ ok: false, reason, message }`:

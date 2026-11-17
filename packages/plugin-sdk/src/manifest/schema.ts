@@ -40,7 +40,9 @@ export const PointDeclSchema = z.strictObject({
    *  `fills` line names the point by it. */
   title: Text.optional(),
   /** The line its fillers' OK cards show (`fillsOkLines`): what a plugin that fills this point is given or does, in the
-   *  declarer's words, shown as plain text and attributed to the declarer. `warns`: shown as a caution. */
+   *  declarer's words, shown as plain text and attributed to the declarer. `warns`: shown as a caution. A point declared
+   *  without it carries no point messages: `points.send` and `points.onMessage` on it are refused, since no OK card told
+   *  the person what goes between the plugins. */
   fills: z.strictObject({ ok: utf16(300, 1), warns: z.boolean().optional() }).optional(),
   /** Files that come with each entry (`catalogs/data-files.ts`): by the name of a top-level `path` field of `fields`, the
    *  kinds of inert data file that sit beside the file it names, in its folder and below, which the app then serves to

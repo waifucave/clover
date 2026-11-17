@@ -17,12 +17,15 @@ function world() {
   };
   const entries: Contribution[] = [
     { point: "metronome.beats", pluginId: "dancer", ref: "metronome.beats/0", entryId: "feet", value: { id: "feet" }, state: "active" },
+    { point: "metronome.quiet", pluginId: "dancer", ref: "metronome.quiet/0", entryId: "hush", value: { id: "hush" }, state: "active" },
     { point: "ui", pluginId: "skin", ref: "ui/0", entryId: "brass", value: { spot: "metronome.dial", id: "brass", component: "Brass" }, state: "active" },
     { point: "ui", pluginId: "stranger", ref: "ui/0", entryId: "other", value: { spot: "elsewhere.thing", id: "other", component: "X" }, state: "active" },
   ];
   const points: RegisteredPoint[] = [
-    { name: "metronome.beats", shape: "list", declaredBy: { pluginId: "metronome", ref: "host" }, spot: false, active: true },
-    { name: "metronome.dial", shape: "keyed", declaredBy: { pluginId: "metronome", ref: "ui/0" }, spot: true, active: true },
+    { name: "metronome.beats", shape: "list", declaredBy: { pluginId: "metronome", ref: "host" }, spot: false, active: true, decl: { shape: "list", fills: { ok: "it hears the beats" } } } as RegisteredPoint,
+    { name: "metronome.dial", shape: "keyed", declaredBy: { pluginId: "metronome", ref: "ui/0" }, spot: true, active: true, decl: { shape: "keyed", fills: { ok: "it draws the dial" } } } as RegisteredPoint,
+    // Declared with no `fills.ok` line: its fillers' OK cards say nothing of messages, so none go on it.
+    { name: "metronome.quiet", shape: "list", declaredBy: { pluginId: "metronome", ref: "host" }, spot: false, active: true, decl: { shape: "list" } } as RegisteredPoint,
     { name: "hooks", shape: "list", declaredBy: "core", spot: false, active: true },
   ];
   let t = 1_000_000;
@@ -37,6 +40,16 @@ function world() {
 }
 
 describe("point messages (general: a metronome and its fillers)", () => {
+  test("a point declared with no `fills.ok` line carries no message, either way, and says why; listening on it is refused too", () => {
+    const w = world();
+    expect(() => w.handlers["points.send"]!(w.ctx("metronome"), ["metronome.quiet", 1])).toThrow(/declares metronome.quiet with no `fills.ok` line/);
+    expect(() => w.handlers["points.send"]!(w.ctx("dancer"), ["metronome.quiet", 1])).toThrow(/no `fills.ok` line/);
+    expect(() => w.handlers["points.onMessage"]!(w.ctx("dancer"), ["metronome.quiet", () => undefined])).toThrow(/no `fills.ok` line/);
+    // With the line (the beats): both ways go.
+    expect(() => w.handlers["points.send"]!(w.ctx("metronome"), ["metronome.beats", 1])).not.toThrow();
+    expect(() => w.handlers["points.send"]!(w.ctx("dancer"), ["metronome.beats", 1])).not.toThrow();
+  });
+
   test("the declarer reaches every filler; a filler reaches the declarer; nobody else hears or sends", () => {
     const w = world();
     const heard: Record<string, PointMessage[]> = { metronome: [], dancer: [], stranger: [] };
