@@ -60,6 +60,8 @@ export interface WorldOptions {
   history?: AgentEvent[];
   level?: Level;
   pluginTools?: BridgeToolSource;
+  /** Tells the manager the plugins' tools may have changed (the daemon's registry, tool-setting and listing watches). */
+  watchTools?: AgentManagerOptions["watchTools"];
   /** The watchdog's wall clock, to age a running command past its limit. */
   wallNow?: () => number;
   table?: ProcessTableReader;
@@ -182,6 +184,7 @@ export class World {
       home: this.mossHome, userHome: this.userHome, computer: this.computer, host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
       backends: () => [this.backend, ...extra], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock, ...(o.bridgeServerName ? { serverName: o.bridgeServerName } : {}) }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
+      ...(o.watchTools ? { watchTools: o.watchTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
       ...(o.log ? { log: o.log } : {}),

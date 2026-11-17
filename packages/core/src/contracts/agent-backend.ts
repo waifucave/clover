@@ -55,6 +55,11 @@ export interface AgentQuirks {
     systemPromptChannel: "_meta.antigravity.systemPrompt.append" | "acp.systemPrompt" | "_meta.systemPrompt" | null;
     /** It tells MCP servers its conversation id (Antigravity's `_meta`). */
     tellsConversationId: boolean;
+    /** What it does when MOSS says the bridge's tool list changed in a running session: `live` (it asks the server for
+     *  the list again, as MCP's `tools/list_changed` says), `next-turn` (it can't, but MOSS opens it again before the
+     *  next turn with the list as it is now, on a `session/resume`), `next-session` (neither: the change reaches its
+     *  next session, and the person is told). Left out: `next-session`, since nothing says it does better. */
+    toolListChanges?: "live" | "next-turn" | "next-session";
   };
   sessions: {
     load: { supported: boolean; replays: boolean };

@@ -34,7 +34,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { topPluginIdOf, type Caller } from "@waifucave/moss-protocol";
-import { ContractError, type Unsubscribe } from "../../contracts/common";
+import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
 import type { McpChannel, PluginHost } from "../../contracts/plugin-host";
 import type { Contribution, PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import { NAMESPACE_RE, parseInterpolation } from "@waifucave/moss-plugin-sdk";
@@ -334,6 +334,8 @@ export class PluginMcp {
   #clashSaid = "";
   #closed = false;
   readonly #off: Unsubscribe;
+  /** Told when what the servers list changed (a listing published, a server dropped or stopped): `watchListing`. */
+  readonly #listingWatchers = new Listeners<void>();
   /** Plugins whose tree changed in place while their host half ran the old one: listed again once it runs the new code
    *  (`went`: the old one stopped since), or after `TREE_RELIST_WAIT_MS` whatever the host said. */
   readonly #treeWaits = new Map<string, { went: boolean; timer: ReturnType<typeof setTimeout> }>();
@@ -553,7 +555,9 @@ export class PluginMcp {
     // listed (a listing starts it) nor called here, and a channel left open to it is closed below.
     const want = new Map(served.filter(({ key, c }) => this.#runsHere(key, c) && !this.#notServed(key, c)).map(({ key, c }) => [key, c] as const));
     this.#want = want;
-    for (const key of [...this.#listed.keys()]) if (!want.has(key)) this.#listed.delete(key);
+    let dropped = false;
+    for (const key of [...this.#listed.keys()]) if (!want.has(key)) { this.#listed.delete(key); dropped = true; }
+    if (dropped) this.#listingWatchers.emit();
     for (const [key, c] of this.#clients) {
       if (!want.has(key)) {
         c.client.close();
@@ -641,6 +645,7 @@ export class PluginMcp {
           }
           this.#listed.set(key, listed);
           this.#failed.delete(key);
+          this.#listingWatchers.emit();
           this.#sayClashes();
           try { this.#o.onListed?.(); } catch { /* a listener never fails a listing */ }
         } catch (err) {
@@ -661,8 +666,10 @@ export class PluginMcp {
           const before = this.#listed.get(key);
           if ((err as { code?: unknown } | null)?.code === "plugin_stopped" && before !== undefined) {
             this.#listed.set(key, { ...before, stopped: err instanceof Error ? err.message : "plugin stopped" });
+            this.#listingWatchers.emit();
           } else {
             this.#listed.delete(key);
+            this.#listingWatchers.emit();
             this.#clients.get(key)?.client.close();
             this.#clients.delete(key);
           }
@@ -955,6 +962,13 @@ export class PluginMcp {
     if (!isObject(r)) return { content: [{ type: "text", text: "" }], isError: true };
     return capResult({ ...(r as McpResult), content: Array.isArray(r.content) ? r.content as McpResult["content"] : [] });
   };
+
+  /** Tells `fn` whenever what the servers list changed: a server's tools published, a server dropped, a plugin stopped. A
+   *  running session's tool list follows it (the agent manager's `refreshBridgeTools`); the registry's own changes come
+   *  before the listing they cause, so they alone are too early to read the tools by. */
+  watchListing(fn: () => void): Unsubscribe {
+    return this.#listingWatchers.add(() => fn());
+  }
 
   close(): void {
     this.#closed = true;

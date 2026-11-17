@@ -60,6 +60,8 @@ export interface AgentPluginReachDeps {
   registry: Pick<PluginRegistry, "entries" | "get" | "list" | "points">;
   /** Tells `fn` when the plugins changed (`registry.watch`), for the parts placed in running sessions. */
   watch?(fn: () => void): () => void;
+  /** Waits for the plugin servers installed or enabled a moment ago to list their tools (`PluginMcp.settled`). */
+  settled?(timeoutMs: number): Promise<void>;
   /** Where a tool left off the bridge is said (its name shared, or with characters MCP clients refuse), so its author can find out why. */
   log?: (line: string) => void;
 }
@@ -176,6 +178,7 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
         ...(t.tool.load === "preload" ? { preload: true } : {}),
       }));
     },
+    ...(d.settled === undefined ? {} : { settled: (ms: number) => d.settled!(ms) }),
     async instructions(_sessionId, session) {
       if (session === undefined) return "";
       const seen = new Set<string>();
@@ -358,6 +361,7 @@ export function lateAgentPlugins(deps: () => AgentPluginReachDeps | undefined, w
     pluginTools: {
       tools: async (id, s) => { const d = deps(); return d === undefined ? [] : agentPluginTools(d).tools(id, s); },
       instructions: async (id, s) => { const d = deps(); return d === undefined ? "" : agentPluginTools(d).instructions!(id, s); },
+      settled: async (ms) => { await deps()?.settled?.(ms); },
       call: async (id, c, ctx) => {
         const d = deps();
         return d === undefined ? text(`${c.tool} was refused: MOSS's plugins aren't running for agents yet; try again in a moment.`) : agentPluginTools(d).call(id, c, ctx);

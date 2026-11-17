@@ -4586,6 +4586,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // saved rules, or the user's coding session's own), and runs where its server is, as the agent's session.
         agentReach = {
           servers: (kind, backend, bot, opts) => mcp.servers(kind, backend, bot, opts),
+          settled: (ms) => mcp.settled(ms),
           runner: node?.mcp ?? localMcpRunner(mcp, thisComputer),
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
           registry,
@@ -4846,7 +4847,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
           // The plugins' tools, skills and agent definitions, and Glossary, for every agent (spec §9.3): none until the bot
           // side's drivers are made (and so the approval check that judges each call).
-          plugins: lateAgentPlugins(() => agentReach, pluginRegistry === undefined ? undefined : (fn) => pluginRegistry.watch(() => fn())),
+          // A running agent session hears when the plugins changed (an install, an update, a removal, an enable or disable) and
+          // when the user set a tool off, on demand or always on (the tool setting), so its tool list follows (`refreshBridgeTools`).
+          plugins: lateAgentPlugins(() => agentReach, pluginRegistry === undefined ? undefined : (fn) => {
+            const offRegistry = pluginRegistry.watch(() => fn());
+            const offSettings = toolSettings.watch(() => fn());
+            // The registry's change comes before the listing it causes: the tools are read when the listing is published.
+            const offListing = pluginMcp?.watchListing(() => fn());
+            return () => { offRegistry(); offSettings(); offListing?.(); };
+          }),
         },
         // The MOSS server's core events: the terminal panel's output (owner-scoped: the opener only), and the broker's
         // cards to the app, remote clients and plugins with `approvals` (C-M3 item 2), from before the bot side starts.

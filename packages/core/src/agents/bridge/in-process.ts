@@ -18,7 +18,10 @@ export interface InProcessBridgeOptions {
 
 const result = (text: string, isError: boolean) => ({ content: [{ type: "text", text }], isError });
 
-/** The session's bridge as an in-process MCP server. Its tool list is read once, at the start, as the stdio bridge's. */
+/** The session's bridge as an in-process MCP server. The runtime takes its tool list once, when its query opens, so a list
+ *  that changed since reaches it by the manager opening the agent again before its next turn (`toolListChanges: "next-turn"`).
+ *  A call is never judged against that list: the handlers run it against the plugins' list as it is now, which refuses a tool
+ *  that has gone (off, removed, out of scope) and serves one that came after the start. */
 export async function inProcessBridgeServer(h: BridgeHandlers, o: InProcessBridgeOptions): Promise<McpSdkServerConfigWithInstance> {
   const { tools } = await h.tools(o.sessionId);
   const list: BridgeToolDef[] = [...tools];
@@ -40,7 +43,6 @@ export async function inProcessBridgeServer(h: BridgeHandlers, o: InProcessBridg
           });
           return result(JSON.stringify(r, null, 2), false);
         }
-        if (!list.some((t) => t.name === name)) return result(`No tool named ${name} is available to this agent.`, true);
         const r = await h.call(o.sessionId, { callId: randomUUID(), tool: name, input: args });
         return { content: r.content, isError: r.isError };
       } catch (err) {

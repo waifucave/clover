@@ -51,6 +51,8 @@ export function acpRecordEvent(event: { type: string; [key: string]: unknown }):
   switch (event.type) {
     case "agent_text":
       return s("text") === undefined ? undefined : { type: "assistant_message", text: s("text") };
+    case "agent_notice":
+      return s("text") === undefined ? undefined : { type: "hook_notice", text: s("text"), level: "notice" };
     case "agent_tool_call": {
       const id = s("id");
       const name = s("title") || s("kind");

@@ -15,8 +15,11 @@
 // * It never answers 401 and never asks for a sign-in: it is stdio only (S5 risk 8).
 // * Tool descriptions come from the daemon (`bridge.tools`) and stand on their own; the instructions go out as the
 //   server's own, and the essentials also travel in the agent's system prompt (S5 edit 3).
+// * The list is never kept: each `tools/list` asks the daemon, and when the daemon says the tools changed
+//   (`bridge.toolsChanged`) the bridge sends the agent `notifications/tools/list_changed`, declared at `initialize`. A
+//   call is judged by the daemon against its list as it is then, so a name the agent kept from before is refused there.
 import { randomUUID } from "node:crypto";
-import { MOSS_PROTOCOL_VERSION } from "@waifucave/moss-protocol";
+import { BRIDGE_TOOLS_CHANGED_NOTIFICATION, MOSS_PROTOCOL_VERSION } from "@waifucave/moss-protocol";
 import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer } from "@waifucave/clover-agent-sdk/acp";
 import { listedBridgeTool, type BridgeToolDef } from "./tools";
 
@@ -53,7 +56,8 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
 
   let daemon: RpcPeer | undefined;
   let broken: string | undefined;
-  let tools: { tools: BridgeToolDef[]; instructions: string } | undefined;
+  /** Whether the agent has initialized: a list change before then is nothing to tell it. */
+  let initialized = false;
 
   const ready = (async () => {
     if (!token || !sessionId || !socket) {
@@ -64,7 +68,13 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
     // refuses the hello (`unverified-caller`); the bridge tries once more (lane C's note).
     for (let attempt = 1; ; attempt++) {
       let closed = false;
-      const peer = new RpcPeer({ write: (line) => link.write(line) });
+      const peer = new RpcPeer({
+        write: (line) => link.write(line),
+        onNotification: (method) => {
+          if (method !== BRIDGE_TOOLS_CHANGED_NOTIFICATION || !initialized) return;
+          try { agent.notify("notifications/tools/list_changed", {}); } catch { /* the agent has gone */ }
+        },
+      });
       const link = await io.connect(socket, (c) => peer.feed(c), () => {
         closed = true;
         if (daemon === peer) broken ??= "the MOSS daemon went away";
@@ -95,7 +105,7 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
     if (!daemon || broken) throw new Error(broken ?? "the bridge isn't connected to MOSS");
     return daemon.request(method, params);
   };
-  const toolList = async () => (tools ??= (await fromDaemon("bridge.tools", {})) as { tools: BridgeToolDef[]; instructions: string });
+  const toolList = async () => (await fromDaemon("bridge.tools", {})) as { tools: BridgeToolDef[]; instructions: string };
 
   const textResult = (text: string, isError: boolean) => ({ content: [{ type: "text", text }], isError });
 
@@ -108,7 +118,8 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
           const asked = typeof p["protocolVersion"] === "string" ? p["protocolVersion"] : undefined;
           const version = asked && (MCP_LEGACY_VERSIONS as readonly string[]).includes(asked) ? asked : MCP_LEGACY_VERSIONS[0];
           const instructions = await toolList().then((t) => t.instructions, () => "");
-          return { protocolVersion: version, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "moss", version: VERSION }, ...(instructions ? { instructions } : {}) };
+          initialized = true;
+          return { protocolVersion: version, capabilities: { tools: { listChanged: true } }, serverInfo: { name: "moss", version: VERSION }, ...(instructions ? { instructions } : {}) };
         }
         case "ping":
           return {};
