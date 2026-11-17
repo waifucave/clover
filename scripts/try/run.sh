@@ -92,7 +92,8 @@ TIMES=()
 timed() { local name="$1"; shift; local t0; t0=$(date +%s); "$@"; local rc=$?; TIMES+=("$name|$(( $(date +%s) - t0 ))|$rc"); return $rc; }
 build() {
   local log="$1"; shift
-  NODE_AUTH_TOKEN="${NODE_AUTH_TOKEN:-$(gh auth token 2>/dev/null)}" MOSS_MAC_IDENTITY="$ID" \
+  # The identity under both names: a tree from before the rename (the upgrade pair's old twin) reads its own.
+  NODE_AUTH_TOKEN="${NODE_AUTH_TOKEN:-$(gh auth token 2>/dev/null)}" MOSS_MAC_IDENTITY="$ID" CLOVER_MAC_IDENTITY="$ID" \
     scripts/heavy bun scripts/release/build.ts "$@" 2>&1 | redact | stamp | tee "$log"
   return "${PIPESTATUS[0]}"
 }
@@ -131,11 +132,13 @@ unregister_under "$DESKTOP/out/test-build"; rm -rf "$DESKTOP/out/test-build"
 
 # ── 4. the packaged acceptance ───────────────────────────────────────────────────────────────────────────────────
 ACC="$OUT/acceptance-test-twin"; mkdir -p "$ACC"; COLS=(); PROMPT=false
-# The app a run takes (this try's twin, or the previous try's for the upgrade's first half).
+# The app a run takes (this try's twin, or the previous try's for the upgrade's first half), and the checkout whose
+# harness drives it (this one; a tree from before the rename runs its own, on its own names and home).
 RUNAPP="$WORK/twin/MOSS Code.app"
+ACCROOT="$ROOT"
 accept() {
   local label="$1"; shift
-  timed "acceptance $label" scripts/try/watch.sh "$RUNAPP" "$ROOT" "$WORK/acc/$label" "$@" > "$WORK/$label.watch" 2>&1
+  timed "acceptance $label" scripts/try/watch.sh "$RUNAPP" "$ACCROOT" "$WORK/acc/$label" "$@" > "$WORK/$label.watch" 2>&1
   local rc=$?
   mkdir -p "$ACC/$label"; cp -R "$WORK/acc/$label/logs" "$WORK/acc/$label/run.out" "$ACC/$label/" 2>/dev/null; cp "$WORK/$label.watch" "$ACC/$label/watchdog.txt"
   sed 's/^/  /' "$WORK/$label.watch"
@@ -159,13 +162,27 @@ upgrade_pair() {
   echo "try: the upgrade pair from $UPFROM ($(git rev-parse --short "$UPWANT")): its test twin, in a temporary worktree"
   git worktree add --detach "$WORK/old" "$UPWANT" >/dev/null 2>&1 || { echo "try: the previous try's worktree couldn't be made"; return 1; }
   ( cd "$WORK/old" && scripts/pinned-bun install --frozen-lockfile >/dev/null 2>&1 && build "$OUT/build-upgrade-old-twin.log" --test-build ) || { echo "try: the previous try's twin didn't build (build-upgrade-old-twin.log)"; return 1; }
-  mkdir -p "$WORK/old-twin" && ditto "$WORK/old/apps/desktop/out/test-build/mac-arm64/MOSS Code.app" "$WORK/old-twin/MOSS Code.app"
-  unregister_under "$WORK/old"; git worktree remove --force "$WORK/old" 2>/dev/null; git worktree prune 2>/dev/null
+  # The old twin's bundle by whatever name its tree gave it (a tree from before the rename builds its own app name).
+  local oldapp; oldapp="$(ls -d "$WORK/old/apps/desktop/out/test-build/mac-arm64/"*.app 2>/dev/null | head -1)"
+  [ -n "$oldapp" ] || { echo "try: the previous try's twin built no app (build-upgrade-old-twin.log)"; return 1; }
+  mkdir -p "$WORK/old-twin" && ditto "$oldapp" "$WORK/old-twin/old-twin.app"
+  unregister_under "$WORK/old"
   # Short: the daemon's socket goes under it (scripts/acceptance/state.ts).
   UPSTATE="$(mktemp -d "${TMPDIR:-/tmp}/clv-up.XXXXXX")"
-  # An older app that can't draw a card offscreen for the real press answers its cards over RPC.
-  local press=(); git grep -q MOSS_TEST_SEALED_PRESS "$UPWANT" -- apps/desktop/src/main/index.ts || press=(--no-press)
-  RUNAPP="$WORK/old-twin/MOSS Code.app"; accept "upgrade-old" --keep-state "$UPSTATE" ${press[@]+"${press[@]}"}; UPCOLS+=("upgrade-old")
+  local press=()
+  if [ -f "$WORK/old/packages/core/src/moss-dir.ts" ]; then
+    # A MOSS tree: this checkout's harness drives it. An older app that can't draw a card offscreen for the real press
+    # answers its cards over RPC.
+    git grep -q MOSS_TEST_SEALED_PRESS "$UPWANT" -- apps/desktop/src/main/index.ts || press=(--no-press)
+  else
+    # A tree from before the rename (the one-time copy's pair): its own harness on its own app, making the old
+    # install's home in the run's user home; this build's run then offers the copy (scripts/acceptance/steps.ts
+    # COPY_UPGRADE_STEPS).
+    ACCROOT="$WORK/old"
+  fi
+  RUNAPP="$WORK/old-twin/old-twin.app"; accept "upgrade-old" --keep-state "$UPSTATE" ${press[@]+"${press[@]}"}; UPCOLS+=("upgrade-old")
+  ACCROOT="$ROOT"
+  git worktree remove --force "$WORK/old" 2>/dev/null; git worktree prune 2>/dev/null
   [ "$PROMPT" = false ] || return 1
   [ -f "$UPSTATE/state.json" ] || { echo "try: the previous try's run left no state (upgrade-old/run.out says why)"; return 1; }
   RUNAPP="$WORK/twin/MOSS Code.app"; accept "upgrade-new" --upgrade-from "$UPSTATE"; UPCOLS+=("upgrade-new")

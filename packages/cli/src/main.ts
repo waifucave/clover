@@ -2546,7 +2546,7 @@ if (import.meta.main) {
       daemon = await startDaemon({
         requestRestart: () => {
           console.error("old home: restarting to swap the copy in");
-          void (async () => { try { await stopWithin(daemon); } finally { process.exit(UPDATE_RESTART_EXIT_CODE); } })();
+          void (async () => { try { await stopWithin(daemon, undefined, { keepApp: true }); } finally { process.exit(UPDATE_RESTART_EXIT_CODE); } })();
         },
       });
     } catch (err) {

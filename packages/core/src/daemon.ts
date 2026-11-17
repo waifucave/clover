@@ -304,10 +304,10 @@ const PARTS_STOP_WAIT_MS = 5_000;
 export const STOP_BUDGET_MS = 5_000;
 
 /** Stops the daemon, waiting at most `ms` for its asynchronous tail before the caller ends the process. */
-export async function stopWithin(daemon: Pick<RunningDaemon, "stop"> & Partial<Pick<RunningDaemon, "stopPending">>, ms = STOP_BUDGET_MS): Promise<void> {
+export async function stopWithin(daemon: Pick<RunningDaemon, "stop"> & Partial<Pick<RunningDaemon, "stopPending">>, ms = STOP_BUDGET_MS, o?: { keepApp?: boolean }): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const done = await Promise.race([
-    Promise.resolve().then(() => daemon.stop()).then(() => true, () => true),
+    Promise.resolve().then(() => daemon.stop(o)).then(() => true, () => true),
     new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), ms); }),
   ]);
   clearTimeout(timer);
@@ -443,8 +443,11 @@ export interface RunningDaemon {
    * The returned promise is present whenever EITHER the MOSS handle or the runtime spine exists —
    * i.e. on essentially every real daemon. A caller that then exits the process MUST await it, or
    * the process dies mid-drain with the lock still on disk.
+   *
+   * `keepApp`: a stop for a restart at once (the one-time copy of an old home, swapped in at the next start): the app
+   * isn't asked to quit, so it keeps its windows and dials the daemon that comes back, as after a crash.
    */
-  stop(): void | Promise<void>;
+  stop(o?: { keepApp?: boolean }): void | Promise<void>;
   /** What the stop's asynchronous tail still waits on, by name (empty before a stop and once it is done): what
    *  `stopWithin` names when the bound cuts it off. */
   stopPending?(): readonly string[];
@@ -4840,7 +4843,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // this at boot and make every hot-reload assertion above it a lie.
     settings: () => settings,
     stopPending: () => [...stopTail],
-    stop() {
+    stop(o?: { keepApp?: boolean }) {
       // First: no new connection (an app reopened while this daemon goes finds nothing, and starts the next one).
       server.stopAccepting();
       const stopAt = performance.now();
@@ -4859,7 +4862,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // The app is told to quit (`app.quit`, written now; no wait for it), and the pair starts nothing
       // more: no app start from here on, and this run's app token goes.
       stopping = true;
-      pairSide?.pair.quit("quit");
+      // A restart at once (`keepApp`) leaves the app running: it dials the daemon that comes back.
+      if (o?.keepApp !== true) pairSide?.pair.quit("quit");
       pairSide?.dispose();
       mossServer?.dispose();
       mark("the pair and the MOSS server");

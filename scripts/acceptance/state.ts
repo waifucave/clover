@@ -4,8 +4,10 @@
 // conversation, the plugin and the setting the first run left). The second run starts on the same paths, so nothing
 // that names a path in the home moves. The dir holds no real key: the only key is the run's random dummy, for the fake
 // provider, and state.json is the run's own (0600).
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { OLD_INSTALL_HOME_DIR, OLD_INSTALL_LOGIN_LABEL } from "../../packages/core/src/other-installs";
 
 export const STATE_FILE = "state.json";
 
@@ -37,14 +39,41 @@ export interface KeptState {
   alwaysMissing?: string;
 }
 
-/** Where the kept things live under the state dir. */
-export function statePaths(dir: string): { home: string; user: string; keychain: string } {
+/** Where the kept things live under the state dir. A state the old install's own run left (the build before the
+ *  rename: its home is the old install's folder in the user home, `oldHome`) is the one-time copy's upgrade: this
+ *  build's home is a fresh `.moss` beside it, and the old run's keychain file is never this build's (its keys don't
+ *  come over). */
+export function statePaths(dir: string): { home: string; user: string; keychain: string; oldHome?: string } {
   // The MOSS home inside the user home (`<user>/.moss`), as on the owner's Mac; a state dir an older harness made
   // keeps its sibling `home` (the upgrade pair's old half may be an older tree's run).
   const user = join(dir, "user");
   const sibling = join(dir, "home");
+  const old = join(user, OLD_INSTALL_HOME_DIR);
+  if (existsSync(old) && !existsSync(sibling)) return { home: join(user, ".moss"), user, keychain: join(dir, "kc", "acceptance.keychain-db"), oldHome: old };
   const home = existsSync(sibling) && !existsSync(join(user, ".moss")) ? sibling : join(user, ".moss");
   return { home, user, keychain: join(dir, "kc", "acceptance.keychain-db") };
+}
+
+/** The old install's run's keychain service prefix (its test services were named after its engine's label). */
+export const OLD_TEST_SERVICE_PREFIX = `${OLD_INSTALL_LOGIN_LABEL}.test.`;
+
+/** Every entry of a folder with its kind, mode and content (a link: its text), as one hash: the old home's, before and
+ *  after the copy's upgrade run, equal when it is byte for byte as it was. */
+export function treeDigest(root: string): { hash: string; files: number } {
+  const h = createHash("sha256");
+  let files = 0;
+  const walk = (rel: string) => {
+    for (const name of readdirSync(rel === "" ? root : join(root, rel)).sort()) {
+      const r = rel === "" ? name : `${rel}/${name}`;
+      const st = lstatSync(join(root, r));
+      h.update(`${r}\0${st.mode}\0`);
+      if (st.isSymbolicLink()) h.update(`link:${readlinkSync(join(root, r))}\0`);
+      else if (st.isDirectory()) walk(r);
+      else if (st.isFile()) { files++; h.update(`file:${st.size}\0`); h.update(readFileSync(join(root, r))); }
+    }
+  };
+  walk("");
+  return { hash: h.digest("hex"), files };
 }
 
 /** The test app's kept answer key (`MOSS_TEST_ANSWER_KEY`): a file beside the run's throwaway keychain file. */
@@ -81,7 +110,7 @@ export function readState(dir: string): KeptState {
   const s = raw as Partial<KeptState> | null;
   if (s === null || typeof s !== "object" || s.v !== 1) throw new Error(`${file} isn't a v1 state file`);
   if (s.target !== "source" && s.target !== "packaged") throw new Error(`${file} names no target`);
-  if (typeof s.service !== "string" || !/^com\.waifucave\.moss\.core\.test\./.test(s.service)) throw new Error(`${file}'s keychain service isn't a test service`);
+  if (typeof s.service !== "string" || !(/^com\.waifucave\.moss\.core\.test\./.test(s.service) || s.service.startsWith(OLD_TEST_SERVICE_PREFIX))) throw new Error(`${file}'s keychain service isn't a test service`);
   if (typeof s.key !== "string" || !s.key.startsWith("sk-ant-acceptance-dummy-")) throw new Error(`${file}'s key isn't the run's dummy`);
   if (typeof s.made !== "string") throw new Error(`${file} doesn't say what made it`);
   for (const k of ["session", "pluginId"] as const) if (s[k] !== undefined && typeof s[k] !== "string") throw new Error(`${file}'s ${k} isn't a string`);
@@ -90,7 +119,9 @@ export function readState(dir: string): KeptState {
   if (s.answerKeyKept !== undefined && typeof s.answerKeyKept !== "boolean") throw new Error(`${file}'s answerKeyKept isn't a boolean`);
   if (s.always !== undefined && (typeof s.always !== "object" || s.always === null || typeof s.always.tool !== "string")) throw new Error(`${file}'s always isn't { tool }`);
   if (s.alwaysMissing !== undefined && typeof s.alwaysMissing !== "string") throw new Error(`${file}'s alwaysMissing isn't a string`);
-  const missing = Object.values(statePaths(dir)).filter((p) => !existsSync(p));
+  // An old install's state: its home and keychain file are there; this build's home is made fresh.
+  const paths = statePaths(dir);
+  const missing = (paths.oldHome === undefined ? [paths.home, paths.user, paths.keychain] : [paths.oldHome, paths.user, paths.keychain]).filter((p) => !existsSync(p));
   if (missing.length > 0) throw new Error(`the state dir lacks ${missing.join(", ")}`);
   return s as KeptState;
 }

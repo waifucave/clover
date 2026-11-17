@@ -55,7 +55,13 @@ const pluginFetch = searchOnlySeam({
 }, (host) => console.error(`acceptance daemon: net.fetch to ${host} refused: the run reaches no network`),
 // The run's fake plugin index and npm registry (fake-exa.ts pluginWorldResponse): files the run writes to publish.
 process.env.MOSS_ACCEPTANCE_PLUGIN_WORLD);
-const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
+// The one-time copy of an old home staged: stop with the app kept, and exit 76 (start me again now), as `moss daemon run`
+// does; the run starts the next daemon, which swaps the copy in.
+const requestRestart = (): void => {
+  console.error("acceptance daemon: restarting to swap the old home's copy in");
+  void (async () => { try { await stopWithin(daemon, undefined, { keepApp: true }); } finally { process.exit(76); } })();
+};
+const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, requestRestart, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;
 // A stop cut off at its bound (MOSS_TEST_STOP_BUDGET_MS, the capped reopen step's): the bound a slow stop hits

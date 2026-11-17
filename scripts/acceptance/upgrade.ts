@@ -4,7 +4,11 @@
 //
 //   scripts/pinned-bun scripts/acceptance/upgrade.ts [--from <commit>]       source: tree <commit> (default: the newest
 //                                                                            try-* tag) built in a temp worktree, then
-//                                                                            this checkout
+//                                                                            this checkout. A tree from before the
+//                                                                            rename (3a3e247e3, the last one) runs its
+//                                                                            own harness and leaves the old install's
+//                                                                            home; this checkout's run then takes the
+//                                                                            one-time copy (COPY_UPGRADE_STEPS)
 //   scripts/pinned-bun scripts/acceptance/upgrade.ts --from-app <old.app> --app <new.app>
 //                                                                            the test-marked packaged twins (run them
 //                                                                            under lane M's watchdog)
@@ -86,17 +90,23 @@ try {
     console.error(`upgrade: the old tree ${fromLabel} in ${tree}; installing its dependencies`);
     const installed = spawnSync(pinnedBun, ["install", "--frozen-lockfile"], { cwd: tree, stdio: ["ignore", "ignore", "pipe"], encoding: "utf8", timeout: 900_000 });
     if (installed.status !== 0) throw new Error(`bun install in the old tree failed: ${(installed.stderr ?? "").trim().split("\n").pop()?.slice(0, 300)}`);
-    // This checkout's harness over the old tree's, but the old core's own daemon seam.
     const into = join(tree, "scripts", "acceptance");
-    for (const f of readdirSync(HARNESS)) if (f !== "daemon.ts") cpSync(join(HARNESS, f), join(into, f), { recursive: true });
-    if (!readFileSync(join(into, "daemon.ts"), "utf8").includes("pluginFetch")) {
-      console.error("upgrade: the old tree's daemon has no fake web seam: its run skips the web turns");
-      oldArgs.push("--skip-web-turns");
-    }
-    // An app that can't draw a card offscreen for the run's real press (before int/card-press): its cards go over RPC.
-    if (!readFileSync(join(tree, "apps", "desktop", "src", "main", "index.ts"), "utf8").includes("MOSS_TEST_SEALED_PRESS")) {
-      console.error("upgrade: the old tree's app can't take the real press: its run answers cards over RPC");
-      oldArgs.push("--no-press");
+    if (!existsSync(join(tree, "packages", "core", "src", "moss-dir.ts"))) {
+      // A tree from before the rename (the one-time copy's pair): its own harness, on its own names, makes the old
+      // install's home in the run's user home; this build's run then offers the copy (steps.ts COPY_UPGRADE_STEPS).
+      console.error("upgrade: the old tree is from before the rename: its own harness makes the old install's home");
+    } else {
+      // This checkout's harness over the old tree's, but the old core's own daemon seam.
+      for (const f of readdirSync(HARNESS)) if (f !== "daemon.ts") cpSync(join(HARNESS, f), join(into, f), { recursive: true });
+      if (!readFileSync(join(into, "daemon.ts"), "utf8").includes("pluginFetch")) {
+        console.error("upgrade: the old tree's daemon has no fake web seam: its run skips the web turns");
+        oldArgs.push("--skip-web-turns");
+      }
+      // An app that can't draw a card offscreen for the run's real press (before int/card-press): its cards go over RPC.
+      if (!readFileSync(join(tree, "apps", "desktop", "src", "main", "index.ts"), "utf8").includes("MOSS_TEST_SEALED_PRESS")) {
+        console.error("upgrade: the old tree's app can't take the real press: its run answers cards over RPC");
+        oldArgs.push("--no-press");
+      }
     }
     oldScript = join(into, "run.ts");
     oldCwd = tree;

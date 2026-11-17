@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DISTRUST, OLD_HALF_STATE_STEPS, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
+import { symlinkSync } from "node:fs";
+import { OLD_INSTALL_HOME_DIR } from "../../packages/core/src/other-installs";
+import { DISTRUST, OLD_HALF_STATE_STEPS, OLD_TEST_SERVICE_PREFIX, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, treeDigest, writeState, type KeptState } from "./state";
 
 const dirs: string[] = [];
 const temp = (): string => {
@@ -33,6 +35,35 @@ describe("the kept state's layout", () => {
     mkdirSync(join(old, "home"));
     mkdirSync(join(old, "user"));
     expect(statePaths(old).home).toBe(join(old, "home"));
+  });
+});
+
+describe("a state the old install's own run left (the one-time copy's upgrade)", () => {
+  test("its home is the old install's folder in the user home; this build's home is a fresh .moss beside it", () => {
+    const d = temp();
+    mkdirSync(join(d, "user", OLD_INSTALL_HOME_DIR), { recursive: true });
+    mkdirSync(join(d, "kc"), { recursive: true });
+    writeFileSync(join(d, "kc", "acceptance.keychain-db"), "x");
+    const p = statePaths(d);
+    expect(p).toEqual({ home: join(d, "user", ".moss"), user: join(d, "user"), keychain: join(d, "kc", "acceptance.keychain-db"), oldHome: join(d, "user", OLD_INSTALL_HOME_DIR) });
+    // Its service is the old install's test service; the fresh home needn't exist yet.
+    const old = { ...good, service: `${OLD_TEST_SERVICE_PREFIX}acceptance-1234` };
+    writeFileSync(join(d, "state.json"), JSON.stringify(old));
+    expect(readState(d)).toEqual(old);
+    // A same-folder state stays as it was.
+    expect(statePaths(stateDir()).oldHome).toBeUndefined();
+  });
+
+  test("the old home's digest changes with any byte, mode or link, and not otherwise", () => {
+    const d = temp();
+    writeFileSync(join(d, "a.txt"), "one");
+    mkdirSync(join(d, "sub"));
+    symlinkSync("a.txt", join(d, "sub", "link"));
+    const before = treeDigest(d);
+    expect(treeDigest(d)).toEqual(before);
+    expect(before.files).toBe(1);
+    writeFileSync(join(d, "a.txt"), "two");
+    expect(treeDigest(d).hash).not.toBe(before.hash);
   });
 });
 
