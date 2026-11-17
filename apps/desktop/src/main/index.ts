@@ -67,7 +67,7 @@ import { guardContents, hardenSession, installIpc, installUiSession, registerSch
 import { FrameWatches } from "./ui/frame-watches";
 import { LAYER_SCHEME } from "./ui/documents";
 import { micHandlers } from "./ui/microphone";
-import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
+import { LayerError, surfaceSettingHolds, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun, type HoldStep } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
@@ -1346,6 +1346,14 @@ function makePair(): Pair {
       }
     }
     if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found" || type === "plugin_ui_changed" || type === "methods_changed") scheduleReload();
+    // A plugin's setting changed (its key only): a surface of its that says `when.setting` reads them again.
+    if (type === "plugin_settings_changed") {
+      const id = (params as { pluginId?: unknown }).pluginId;
+      if (typeof id === "string" && runtime.surfaceEntries().some((w) => w.pluginId === id && w.setting !== undefined)) {
+        surfaceSettings.delete(id);
+        readSurfaceSettings(id);
+      }
+    }
     if (type === "card_requested") {
       const parsed = CardRequestedEvent.safeParse(params);
       if (parsed.success) cardArrivedNow(parsed.data.card);
@@ -1449,6 +1457,8 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   // A new connection's router starts the book afresh before its events can come (it is followed already, at the connection's
   // first subscription); a registry reload on the same one keeps what its events said.
   enginePlaces.follow(client);
+  // A surface's `when.setting` is read again on each connection (a setting changed while away sent no event here).
+  surfaceSettings.clear();
   await client.request("events.subscribe", { areas: [...APP_EVENT_AREAS] }).catch(() => undefined);
   void reportPresence().then(() => client.request<unknown>("card.placement", {})).then((raw) => {
     const r = SURFACES_METHODS.cardPlacement.result.safeParse(raw);
@@ -2124,8 +2134,29 @@ function syncBackgrounds(): void {
 }
 app.on?.("before-quit", () => { for (const b of backgrounds.values()) if (!b.win.isDestroyed()) b.win.destroy(); });
 
+/** The settings of the plugins with a surface entry that says `when.setting`, as the core last said them (by plugin, then
+ *  key). A surface whose plugin's settings aren't known yet stays closed until they are; a change of one of that
+ *  plugin's settings (`plugin_settings_changed`, its key only) reads them again. Nothing is opened for a person who never
+ *  turned the setting on. */
+const surfaceSettings = new Map<string, ReadonlyMap<string, unknown>>();
+const surfaceSettingsAsked = new Set<string>();
+function readSurfaceSettings(pluginId: string): void {
+  const client = pair.client;
+  if (client === undefined || surfaceSettingsAsked.has(pluginId)) return;
+  surfaceSettingsAsked.add(pluginId);
+  void client.request<{ settings?: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: pluginId }, 10_000).then((r) => {
+    surfaceSettings.set(pluginId, new Map((r.settings ?? []).map((x) => [x.key, x.value])));
+  }, (err: unknown) => log(`surface: ${pluginId}'s settings couldn't be read (${why(err)}); its surfaces that need one stay closed`)).finally(() => {
+    surfaceSettingsAsked.delete(pluginId);
+    syncSurfaces();
+  });
+}
 function syncSurfaces(): void {
-  const wanted = runtime.surfaceEntries();
+  const wanted = runtime.surfaceEntries().filter((w) => {
+    const holds = surfaceSettingHolds(w.setting, surfaceSettings.get(w.pluginId));
+    if (holds === undefined) readSurfaceSettings(w.pluginId);
+    return holds === true;
+  });
   // By ref: a plugin's copy of an entry id another plugin has (a folder-installed copy of the island) is its own surface.
   for (const [ref, s] of [...surfaces]) {
     if (wanted.some((w) => w.ref === ref)) continue;
@@ -2133,10 +2164,12 @@ function syncSurfaces(): void {
     surfaces.delete(ref);
     surfaceModes.delete(ref);
     if (!s.win.isDestroyed()) s.win.destroy();
+    log(`surface: ${ref} closed`);
     refreshTray();
   }
   for (const w of wanted) {
     if (surfaces.has(w.ref)) continue;
+    log(`surface: ${w.ref} opened`);
     // A surface floats above everything, on every Space, when its plugin holds `overlay` (its OK card says so); no id decides it.
     const floats = w.floats;
     const wayland = session_ === "wayland";
@@ -2905,6 +2938,9 @@ async function smoke(): Promise<void> {
   // Texts the run waits for, all of them (`|` between), and mounts it waits for (per kind, "kind:n" each, `,` between):
   // a part's frames are placed a beat after its document draws, so a test that counts mounts waits for its own counts.
   const waitTexts = (process.env.MOSS_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
+  // A surface the run waits to see open and then close again (its id), as a setting turns it off.
+  const waitGone = process.env.MOSS_SMOKE_WAIT_SURFACE_GONE;
+  let goneSeen = false;
   const waitMounts = Object.fromEntries((process.env.MOSS_SMOKE_WAIT_MOUNTS ?? "").split(",").filter((t) => t.includes(":")).map((t) => [t.slice(0, t.indexOf(":")), Number(t.slice(t.indexOf(":") + 1))])) as Partial<Record<"root" | "frame" | "inline" | "web", number>>;
   let hung = false;
   let dropped = false;
@@ -2936,7 +2972,8 @@ async function smoke(): Promise<void> {
     // only the fixture layer's sealed frames laid out, not the shell.
     const sealedWait = SMOKE_SEALED_CLICK !== undefined || SMOKE_SEALED_FALLBACK;
     if (sealedWait && sealedClicked) break;
-    if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v) && (!sealedWait || sealedClicked)) break;
+    if (waitGone !== undefined && surfaceFacts.some((x) => x.id === waitGone)) goneSeen = true;
+    if (drawn && (waitGone === undefined || (goneSeen && !surfaceFacts.some((x) => x.id === waitGone))) && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v) && (!sealedWait || sealedClicked)) break;
     // The hang test (`MOSS_SMOKE_HANG=<surface>`): once everything has drawn and the named surface's own layer has
     // rendered (its frames aren't in the main window's, so `drawn` doesn't wait for it), the surface's layer is made
     // to hang (its own mouse-down handler never returns), then the window is told it went unresponsive. Chromium says

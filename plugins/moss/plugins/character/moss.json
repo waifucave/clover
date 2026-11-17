@@ -93,6 +93,11 @@
         "id": "on-screen",
         "title": "Avatar on screen",
         "component": "FigureOnScreen",
+        "when": {
+          "setting": {
+            "onScreen": true
+          }
+        },
         "window": {
           "type": "overlay",
           "alwaysOnTop": true,

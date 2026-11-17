@@ -203,6 +203,7 @@
       "plugin_log",
       "plugin_message",
       "plugin_removed",
+      "plugin_settings_changed",
       "plugin_ui_changed",
       "release_changed",
       "routine_result",

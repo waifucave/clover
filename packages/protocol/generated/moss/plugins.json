@@ -6119,11 +6119,12 @@
       }
     },
     "plugin_settings_changed": {
-      "doc": "One of a plugin's settings changed (its key, never its value): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`.",
+      "doc": "One of a plugin's settings changed (its key, never its value): of the plugins, only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`; the app's main process gets it too, to open or close a surface entry whose `when.setting` names it.",
       "owner": "B",
       "scope": "core",
       "roles": [
-        "layer"
+        "layer",
+        "app"
       ],
       "transient": true,
       "schema": {

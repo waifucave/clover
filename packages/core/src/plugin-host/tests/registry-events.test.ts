@@ -178,15 +178,16 @@ describe("who hears them, over the real routing", () => {
     expect(tarot.got).toEqual([]);
   });
 
-  test("a plugin's settings change reaches only its own layer, as the key alone", () => {
+  test("a plugin's settings change reaches, of the plugins, only its own layer, and the app's main process, as the key alone", () => {
     const own = conn("layer", ["plugins"], { kind: "plugin", pluginId: "tarot" });
     const page = conn("layer", ["plugins"], { kind: "plugin", pluginId: "moss/plugin-index" });
     const app = conn("app", ["plugins"]);
     const e = { type: "plugin_settings_changed", ts: 1, pluginId: "tarot", key: "TAROT_KEY", value: "never sent" };
-    expect(sendCoreEvent(routing([own.c, page.c, app.c]), e)).toBe(1);
+    expect(sendCoreEvent(routing([own.c, page.c, app.c]), e)).toBe(2);
     expect(own.got).toEqual([{ type: "plugin_settings_changed", ts: 1, pluginId: "tarot", key: "TAROT_KEY" }]);
     expect(page.got).toEqual([]);
-    expect(app.got).toEqual([]);
+    // The app's main process hears the key too (a surface entry's `when.setting`), never the value.
+    expect(app.got).toEqual([{ type: "plugin_settings_changed", ts: 1, pluginId: "tarot", key: "TAROT_KEY" }]);
     // Turned off (or stopped): its frame's connection, still open, hears nothing of it.
     void reg.setEnabled("tarot", false);
     expect(sendCoreEvent(routing([own.c]), { ...e, ts: 2 })).toBe(0);

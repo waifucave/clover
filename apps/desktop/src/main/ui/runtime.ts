@@ -135,9 +135,16 @@ export const TRAY_LINES_PER_PLUGIN = 3;
 export const TRAY_LINES_MAX = 12;
 
 /** A surface to open (see `surfaceEntries`). */
-export interface SurfaceEntry { id: string; ref: string; pluginId: string; window: NonNullable<UiEntry["window"]>; floats: boolean; cards: boolean; stepsAside: boolean; tap: boolean }
+export interface SurfaceEntry { id: string; ref: string; pluginId: string; window: NonNullable<UiEntry["window"]>; floats: boolean; cards: boolean; stepsAside: boolean; tap: boolean; /** Its `when.setting`: the surface is opened only while its plugin's settings hold these values. */ setting?: Readonly<Record<string, unknown>> }
 /** A line a plugin adds to the tray menu (see `trayEntries`): `surface` is the ref of the surface it hides and shows. */
 export interface TrayEntry { ref: string; pluginId: string; /** Its plugin's name (a command's line says whose it is). */ pluginName: string; title: string; surface?: string; command?: string }
+
+/** Whether a surface's `when.setting` holds now (undefined: not known yet). */
+export function surfaceSettingHolds(want: Readonly<Record<string, unknown>> | undefined, have: ReadonlyMap<string, unknown> | undefined): boolean | undefined {
+  if (want === undefined) return true;
+  if (have === undefined) return undefined;
+  return Object.entries(want).every(([k, v]) => JSON.stringify(have.get(k) ?? null) === JSON.stringify(v ?? null));
+}
 
 export class LayerError extends Error {
   constructor(message: string) {
@@ -1117,6 +1124,7 @@ export class UiRuntime {
           cards: e.window.cards === true && caps.has("approvals") && caps.has("approvals.all"),
           stepsAside: e.window.front === "steps-aside",
           tap: e.window.summon?.includes("tap") === true,
+          ...(e.when?.setting !== undefined ? { setting: e.when.setting } : {}),
         });
       }
     }

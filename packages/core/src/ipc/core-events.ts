@@ -105,10 +105,12 @@ export function sendCoreEvent(r: CoreEventRouting, event: CoreEventInput, opts: 
       // from its payload (`pluginMayHear`); an event that names no kind is heard by no plugin, never matched by prefix.
       if (plugin === undefined || !pluginMayHear(spec, r.pluginCapabilities?.(plugin) ?? [], parsed.data)) continue;
     }
-    if (PLUGIN_OWN_EVENTS.has(spec.type) && (!PLUGIN_ROLES.includes(conn.role) || pluginOf(conn) !== (parsed.data as { pluginId?: unknown }).pluginId)) continue;
+    // A plugin's own event reaches, of the plugins, that plugin alone; of the user's clients, only those its spec names
+    // (the app's main process hears a setting's key change, for a surface entry's `when.setting`; never its value).
+    if (PLUGIN_OWN_EVENTS.has(spec.type) && PLUGIN_ROLES.includes(conn.role) && pluginOf(conn) !== (parsed.data as { pluginId?: unknown }).pluginId) continue;
     // A plugin's settings changes reach its own connection only while it is on and running (a turned-off plugin's
     // frame that still holds a connection hears nothing of them).
-    if (RUNNING_ONLY_EVENTS.has(spec.type) && r.pluginRunning?.(pluginOf(conn)!) !== true) continue;
+    if (RUNNING_ONLY_EVENTS.has(spec.type) && PLUGIN_ROLES.includes(conn.role) && r.pluginRunning?.(pluginOf(conn)!) !== true) continue;
     if (opts.to !== undefined && !opts.to(conn)) continue;
     if (opts.forPlugin !== undefined && PLUGIN_ROLES.includes(conn.role)) {
       const who = pluginOf(conn);

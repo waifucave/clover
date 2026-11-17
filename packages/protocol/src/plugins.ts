@@ -1116,9 +1116,9 @@ export const PLUGINS_EVENTS = {
     doc: "A value of one of a component's watches (`plugin.layer.watch`): only the layer connection that opened it gets it, and `ended` once when the watch is over.",
   }),
   pluginSettingsChanged: defineEvent({
-    type: "plugin_settings_changed", owner: "B", roles: ["layer"], schema: PluginSettingsChangedEvent, transient: true,
+    type: "plugin_settings_changed", owner: "B", roles: ["layer", "app"], schema: PluginSettingsChangedEvent, transient: true,
     fixture: { type: "plugin_settings_changed", ts: 1781270000000, pluginId: "luna", key: "deck" },
-    doc: "One of a plugin's settings changed (its key, never its value): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`.",
+    doc: "One of a plugin's settings changed (its key, never its value): of the plugins, only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`; the app's main process gets it too, to open or close a surface entry whose `when.setting` names it.",
   }),
   pluginStoreChanged: defineEvent({
     type: "plugin_store_changed", owner: "D", roles: ["layer"], schema: PluginStoreChangedEvent, transient: true,
