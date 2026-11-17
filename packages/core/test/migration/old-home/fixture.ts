@@ -28,14 +28,14 @@ function walDb(root: string, scratch: string, rel: string, committed: string[]):
   const db = new Database(src);
   db.run("PRAGMA journal_mode=WAL");
   db.run("PRAGMA wal_autocheckpoint=0");
-  db.run("CREATE TABLE rows (id INTEGER PRIMARY KEY, v TEXT)");
-  for (const v of committed) db.run("INSERT INTO rows (v) VALUES (?)", [v]);
+  db.run("CREATE TABLE fixture_rows (id INTEGER PRIMARY KEY, v TEXT)");
+  for (const v of committed) db.run("INSERT INTO fixture_rows (v) VALUES (?)", [v]);
   const walCommitted = lstatSync(`${src}-wal`).size;
   // A small page cache that spills: the open transaction's pages go to the WAL with no commit frame after them.
   db.run("PRAGMA cache_size=10");
   db.run("PRAGMA cache_spill=1");
   db.run("BEGIN");
-  for (let i = 0; i < 600; i++) db.run("INSERT INTO rows (v) VALUES (?)", [`UNCOMMITTED-${i}-${"x".repeat(3000)}`]);
+  for (let i = 0; i < 600; i++) db.run("INSERT INTO fixture_rows (v) VALUES (?)", [`UNCOMMITTED-${i}-${"x".repeat(3000)}`]);
   const walWithSpill = lstatSync(`${src}-wal`).size;
   const at = join(root, ...rel.split("/"));
   mkdirSync(dirname(at), { recursive: true });
@@ -138,9 +138,12 @@ export function buildOldHome(user: string, scratch: string, dirName = ".old-home
   {
     const src = join(scratch, "index.db");
     const db = new Database(src);
-    db.run("CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, title TEXT)");
-    db.run("INSERT INTO sessions VALUES (?, ?, ?)", ["s_alpha", join(old, "scratch", "alpha"), "Alpha's conversation"]);
-    db.run("INSERT INTO sessions VALUES (?, ?, ?)", ["s_code", "/Users/someone/project", `a talk about ${join(old, "x")}`]);
+    // The session store's own columns (sessions/store.ts), and a table of text that merely mentions the old path.
+    db.run("CREATE TABLE sessions (session_id TEXT PRIMARY KEY, scope TEXT NOT NULL, created_at INTEGER NOT NULL, last_seq INTEGER NOT NULL, cwd TEXT)");
+    db.run("INSERT INTO sessions VALUES (?, 'bot', 1, 0, ?)", ["s_alpha", join(old, "scratch", "alpha")]);
+    db.run("INSERT INTO sessions VALUES (?, 'code', 2, 0, ?)", ["s_code", "/Users/someone/project"]);
+    db.run("CREATE TABLE notes (id TEXT PRIMARY KEY, text TEXT)");
+    db.run("INSERT INTO notes VALUES ('n1', ?)", [`a talk about ${join(old, "x")}`]);
     db.close();
     mkdirSync(join(old, "sessions"), { recursive: true });
     copyFileSync(src, join(old, "sessions", "index.db"));

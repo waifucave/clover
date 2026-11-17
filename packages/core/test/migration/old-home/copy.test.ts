@@ -50,7 +50,7 @@ function setup() {
 const rowsOf = (path: string): string[] => {
   const db = new Database(path, { readonly: true });
   try {
-    return (db.query("SELECT v FROM rows ORDER BY id").all() as { v: string }[]).map((r) => r.v);
+    return (db.query("SELECT v FROM fixture_rows ORDER BY id").all() as { v: string }[]).map((r) => r.v);
   } finally {
     db.close();
   }
@@ -69,7 +69,7 @@ describe("the copy", () => {
     writeFileSync(join(home, "agents", "new-agent.md"), "written by MOSS\n");
     writeFileSync(join(home, "bots", "alpha", "notes-hard.md"), "changed through the copied hard link\n");
     const ledger = new Database(join(home, ...NEW_USAGE_LEDGER.split("/")));
-    ledger.run("INSERT INTO rows (v) VALUES ('after')");
+    ledger.run("INSERT INTO fixture_rows (v) VALUES ('after')");
     ledger.close();
     expect(treeHash(fx.old)).toBe(before);
     expect(readFileSync(join(fx.old, "memory", "notes.md"), "utf8")).toBe("# notes\nremember the meadow\n");
@@ -214,12 +214,13 @@ describe("the copy", () => {
     expect(hits).toEqual([]);
     applyStagedCopy(home);
     const db = new Database(join(home, "sessions", "index.db"), { readonly: true });
-    const rows = db.query("SELECT id, cwd, title FROM sessions ORDER BY id").all() as { id: string; cwd: string; title: string }[];
+    const rows = db.query("SELECT session_id, cwd FROM sessions ORDER BY session_id").all() as { session_id: string; cwd: string }[];
+    const note = db.query("SELECT text FROM notes").get() as { text: string };
     db.close();
     expect(rows[0]!.cwd).toBe(join(resolve(home), "scratch", "alpha"));
-    // A path's start only: the other row's text that merely mentions the old path is as it was.
     expect(rows[1]!.cwd).toBe("/Users/someone/project");
-    expect(rows[1]!.title).toBe(`a talk about ${join(fx.old, "x")}`);
+    // A path's start only: text that merely mentions the old path is as it was.
+    expect(note.text).toBe(`a talk about ${join(fx.old, "x")}`);
     expect(JSON.parse(readFileSync(join(home, "settings.json"), "utf8")).workingDirectories).toEqual([join(resolve(home), "scratch", "alpha")]);
     // History as it was written.
     expect(readFileSync(join(home, "sessions", "bot", "s_alpha.jsonl"), "utf8")).toContain(fx.old);
