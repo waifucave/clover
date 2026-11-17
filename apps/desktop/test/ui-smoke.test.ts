@@ -254,19 +254,20 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
 
   test("the default shell from F's plugins renders in the moss layer; the app starts the daemon and Quit stops both", () => {
     // The mounts it asserts are the ones it waits for: a placed part's mounts land a beat after its document draws.
-    const r = smoke(electron(), [root], "default", { MOSS_SMOKE_WAIT_MOUNTS: "root:4,frame:4" });
+    const r = smoke(electron(), [root], "default", { MOSS_SMOKE_WAIT_MOUNTS: "root:5,frame:5" });
     const shell = expectShell(r);
     expect(shell.composer).toBe(true);
     expect(shell.text).toContain("Alpha");
     // MOSS Voice's player, a background part, is a root and a frame of its own.
-    expect(r.facts!.mounts).toMatchObject({ root: 4, frame: 4 });
+    // The avatar plugin's on-screen figure is a surface too (hidden until the person turns it on): a root and a frame.
+    expect(r.facts!.mounts).toMatchObject({ root: 5, frame: 5 });
     expectBothStopped(r);
     expectQuiet(r);
   }, 120_000);
 
   test("a third-party part renders in a layer of its own, in its own process, themed by its tab; surfaces and menus go through the core", () => {
     // Both menus answered: the composer's (in the main window) and the surface's (in its own window).
-    const r = smoke(electron(), [root], "fixture", { MOSS_SMOKE_LAYERS: "1", MOSS_SMOKE_WAIT_TEXT: "Picked: second|Menu: second", MOSS_SMOKE_WAIT_MOUNTS: "root:5,frame:6", MOSS_TEST_MENU_PICK: "second", MOSS_SMOKE_INPUT: "1" });
+    const r = smoke(electron(), [root], "fixture", { MOSS_SMOKE_LAYERS: "1", MOSS_SMOKE_WAIT_TEXT: "Picked: second|Menu: second", MOSS_SMOKE_WAIT_MOUNTS: "root:6,frame:7", MOSS_TEST_MENU_PICK: "second", MOSS_SMOKE_INPUT: "1" });
     const shell = expectShell(r);
     const part = r.facts!.frames.find((x) => x.origin === "moss-plugin://fixture-composer");
     expect(part, r.output).toMatchObject({ bridge: "object", node: false });
@@ -287,8 +288,10 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(fixture, r.output).toMatchObject({ visible: false, bounds: { width: 360, height: 120 } });
     const surfaceFrame = fixture!.frames.find((x) => x.origin === "moss-plugin://fixture-surface");
     expect(surfaceFrame, r.output).toMatchObject({ text: "Menu: second", node: false, bridge: "object" });
-    expect(surfaces.map((x) => x.id).sort()).toEqual(["fixture", "island", "pill"]);
-    expect(r.facts!.mounts).toMatchObject({ root: 5, frame: 6 });
+    expect(surfaces.map((x) => x.id).sort()).toEqual(["fixture", "island", "on-screen", "pill"]);
+    // The avatar plugin's on-screen figure stays hidden until the person turns it on (its setting is off by default).
+    expect(surfaces.find((x) => x.id === "on-screen"), r.output).toMatchObject({ visible: false });
+    expect(r.facts!.mounts).toMatchObject({ root: 6, frame: 7 });
     for (const x of surfaces) expect(x.visible).toBe(false);
     // Menus wait for the user's input in their window: refused before the test's key press, shown after it. The log
     // lines are asserted on the run's whole output: the refused ones begin early, and a fast run's tail can cut them.
@@ -304,7 +307,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   test("a third-party layer that hangs has its process stopped; the app doesn't restart into safe mode", () => {
     // The layer hangs in its own handler; the window's `unresponsive` is raised by the run (index.ts says why), and
     // the app pings each document (3 s), stops the silent layer's process, and the census finds it gone.
-    const r = smoke(electron(), [root], "spin", { MOSS_SMOKE_HANG: "spin", MOSS_SMOKE_WAIT_TEXT: "stopped drawing", MOSS_SMOKE_WAIT_MOUNTS: "root:4,frame:4" });
+    const r = smoke(electron(), [root], "spin", { MOSS_SMOKE_HANG: "spin", MOSS_SMOKE_WAIT_TEXT: "stopped drawing", MOSS_SMOKE_WAIT_MOUNTS: "root:5,frame:5" });
     expectShell(r);
     // The whole run's output: these lines come early in it, and a fast run's 6,000-character tail cuts them.
     expect(r.all).toContain("went unresponsive; not answering: fixture-spin");
