@@ -49,7 +49,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
-import { escape, fail, frames, installFromPage, leave, sleep, toAlphasTab, treeDocs, until, type ExampleCtx } from "./example-steps";
+import { escape, fail, frames, installFromPage, leave, sleep, toSessionTab, treeDocs, until, type ExampleCtx } from "./example-steps";
 import { clickShown } from "./window-open";
 
 export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; Glossary loads it by id with its tool, and lists it to her as waiting for the OK while its card waits; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and Alpha is told, and her fix starts it again; a plugin she moves into the plugins folder with her shell (the drop) lands found behind its OK card naming her, and OK'd its tool answers; a bot she makes the same way (a plugin from PluginNew's bot template, with her own instructions) lands behind its OK card naming her, and OK'd it is in bot.list and the sidebar under Bots, its tab opens and answers a turn with her instructions in its prompt; her edit of its instructions applies with no card at its next turn; removed, it leaves bot.list";
@@ -634,7 +634,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     await until("its tab left", 8_000, async () => ((await tabShown()) ? undefined : true), async () => "its tab (its composer) is still the one showing after its bot was removed");
     said.push("removed: out of bot.list and, within seconds and with no reload, out of the sidebar, and its tab (showing at the time) was left");
     // Her tab again, for the rows after this one in the same window.
-    await toAlphasTab(ctx);
+    await toSessionTab(ctx);
     done.push(`9 a bot builds a bot: ${said.join("; ")}`);
   }));
 

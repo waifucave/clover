@@ -15,7 +15,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSyn
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { CLIENT_BARE_IMPORTS, capabilityOkText } from "../../packages/plugin-sdk/src/index";
-import { fail, layerDocs, sleep, toAlphasTab, until, type ExampleCtx } from "./example-steps";
+import { fail, layerDocs, sleep, toSessionTab, until, type ExampleCtx } from "./example-steps";
 
 export const CONVERSATION_COPY_STEP = "a folder-installed copy of the conversation, under another id and behind its OK card (reads your conversations, sends as you), takes the bundled one's place in Alpha's tab: it draws her turn, shows Try again on a failed turn, a click the page makes itself sends nothing, and one real click sends the user's message again through the app's door by its user.send, never its id";
 
@@ -74,7 +74,7 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
   let switchedOff = false;
   const refusals = () => ctx.appLog().split("\n").filter((l) => l.includes(`tree: ${COPY_ID}:`) && l.includes("refused"));
   try {
-    await toAlphasTab(ctx);
+    await toSessionTab(ctx);
     const bot = (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha");
     if (bot === undefined) return fail("no bot alpha");
     const session = bot.mainSession;
@@ -96,7 +96,7 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
     // 2. It takes the bundled one's place in Alpha's tab (the bundled one switched off, as a user would in the Plugins page).
     await rpc.request("plugin.setEnabled", { id: BUNDLED, enabled: false }, 30_000);
     switchedOff = true;
-    await toAlphasTab(ctx);
+    await toSessionTab(ctx);
     const doc = await until("the conversation copy's document in Alpha's tab", 60_000, async () => (await layerDocs(cdp, COPY_ID))[0],
       async () => (await cdp.documents()).map((d) => d.url.slice(0, 70)).join(" || "));
 

@@ -77,6 +77,10 @@ export interface ExampleCtx {
   healFake?(id: string): void;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */
   turn(session: string, text: string, ms?: number): Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
+  /** A new code session with MOSS's own agent on the keyed model, in `home/<computer>/<folder>`, attached: a code session's
+   *  tools are the ones there when it starts (the bridge says no list change), so a row that installs a plugin calls its
+   *  tools in one started after. */
+  codeSession?(folder: string): Promise<string>;
   history(session: string): Promise<Ev[]>;
   /** The report the scripted model's child agent gives (fake-anthropic.ts CHILD_REPORT). */
   childReport: string;
@@ -592,10 +596,12 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
 
     // 3. Each call cards (readOnly and contained don't hold for a plugin that reaches the network); the forecast reaches
     //    its host through its proxy, with the key, which never shows in an answer.
-    const saved = await callTurn(ctx, session, "save_place", { place: "Lisbon" });
+    // Its tools in a code session started after its install (a code session's tools are the ones there when it starts).
+    const work = ctx.codeSession !== undefined ? await ctx.codeSession("example-weather-work") : session;
+    const saved = await callTurn(ctx, work, "save_place", { place: "Lisbon" });
     if (saved.cards.length === 0) fail("save_place (contained, on a networked plugin) ran with no card");
     if (saved.result.isError || !saved.result.text.includes("Saved your place: Lisbon")) fail(`save_place answered "${saved.result.text.slice(0, 120)}"`);
-    const fc = await callTurn(ctx, session, "forecast", {});
+    const fc = await callTurn(ctx, work, "forecast", {});
     if (fc.cards.length === 0) fail("forecast (readOnly, on a networked plugin) ran with no card");
     if (fc.result.isError || !fc.result.text.includes("Forecast for Lisbon: Light rain, 14°C")) fail(`forecast answered "${fc.result.text.slice(0, 160)}" (the site saw ${JSON.stringify(site.hits)})`);
     if (!site.hits.some((h) => h.place === "Lisbon" && h.keyed)) fail(`the site saw no keyed forecast for Lisbon (${JSON.stringify(site.hits)})`);
@@ -614,7 +620,7 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
     // A card arriving takes a plugin's banner down (the core's notify service, `desktop.close`; checklist 2.41): the
     // next forecast raises its tool card, and the app is asked to close that very notification.
     const closedLine = `notify: closed (${alertId})`;
-    await callTurn(ctx, session, "forecast", {});
+    await callTurn(ctx, work, "forecast", {});
     await until("the app to be asked to close the alert once a card came", 15_000, () => (ctx.appLog().includes(closedLine) ? true : undefined), notifierLog);
     done.push(`/rain-alert sent a notification (the headless app showed none and said so); a card arriving closed it (desktop.close, ${alertId})`);
 
@@ -641,6 +647,34 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
 }
 
 export { Failed as ExampleFailed };
+
+/** Puts MOSS Code's window where a row of the shared plugin-app window needs it (lane MC: no bot's tab in it): any plugin OK
+ *  card an earlier row left waiting answered no, dialogs closed (Escape), and a code session's tab shown (its `.cl-agent-tab`
+ *  in main), through the sidebar's newest session row when another page is up. */
+export async function toSessionTab(ctx: ExampleCtx): Promise<void> {
+  const { cdp, rpc } = ctx;
+  const left = (await rpc.request<{ cards: { id: string; kind: string }[] }>("card.list", {}).catch(() => ({ cards: [] }))).cards.filter((c) => c.kind === "plugin-ok");
+  for (const c of left) await ctx.denyCard(c.id).catch(() => undefined);
+  const drawn = async (): Promise<boolean> => {
+    for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, "!!document.querySelector('.cl-window__content .cl-agent-tab[data-place=main]')").catch(() => false)) === true) return true;
+    return false;
+  };
+  for (let attempt = 0; attempt < 3 && !(await drawn()); attempt++) {
+    for (const d of await treeDocs(cdp)) for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined);
+    await sleep(300);
+    for (const d of await treeDocs(cdp)) {
+      const c = await cdp.evaluate(d.session, `(() => {
+        const el = document.querySelector(".cl-sidebar .cl-sidebar__agent .cl-sidebar__row");
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })()`).catch(() => null) as { x: number; y: number } | null;
+      if (c !== null && c !== undefined) { await cdp.click(d.session, c.x, c.y); break; }
+    }
+    await until("a code session's tab", 15_000, async () => ((await drawn()) ? true : undefined)).catch(() => undefined);
+  }
+  if (!(await drawn())) fail("no code session's tab is up, and the sidebar's session row didn't bring one back");
+}
 
 /** Puts the app where a row of the shared plugin-app window needs it: any plugin OK card an earlier row left waiting answered
  *  no, dialogs closed (Escape), and Alpha's own tab shown (her controls `.ac` drawn), through the stock sidebar's Alpha row

@@ -913,6 +913,9 @@ function watchBundledListing(run: number, log: string, graceMs = 0): void {
  *  mcp__moss__… waits on the agent runtime, which keeps `moss` for its standing server). */
 const WEB_SEARCH_TOOL = "mcp__web__WebSearch";
 const WEB_FETCH_TOOL = "mcp__web__WebFetch";
+/** A bundled web tool as a bot gets it (`mcp__web__<name>`) or as a code session's bridge gives it to MOSS's own agent
+ *  (`mcp__moss_<16 hex>__web__<name>`). */
+const isWebTool = (name: string | undefined, bot: string): boolean => name === bot || (name !== undefined && new RegExp(`^mcp__moss_[0-9a-f]{16}__${bot.slice("mcp__".length)}$`).test(name));
 /** The command hook step's outcome, from the plugin's turn on the first daemon. */
 let hookOutcome: { status: Status; detail: string } | undefined;
 /** The plugin's own host API step (acceptance-points; its turn here, on the first daemon; recorded at the end). */
@@ -1192,7 +1195,7 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
       if (first === undefined) continue; // no turn on this boot
       // Offered under their exact names.
       const web = first.tools.filter((t) => /(^|__)Web(Search|Fetch)$/.test(t));
-      const named = [WEB_SEARCH_TOOL, WEB_FETCH_TOOL].every((t) => first.tools.includes(t));
+      const named = [WEB_SEARCH_TOOL, WEB_FETCH_TOOL].every((t) => first.tools.some((x) => isWebTool(x, t)));
       if (listed && !named) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request didn't offer ${WEB_SEARCH_TOOL} and ${WEB_FETCH_TOOL} (web tools: ${web.join(", ") || "none"}; tools: ${first.tools.join(", ").slice(0, 300)})`);
       if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
     }
@@ -2529,7 +2532,18 @@ async function main(): Promise<void> {
         if (cardWrong.length > 0) wrong.push(`${juniper.id}: ${cardWrong.join("; ")}`);
         const own = await until(`${juniper.id}'s bot listed`, 30_000, async () => (await c.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((x) => x.id === juniper.id)?.mainSession)
           .catch(() => undefined);
-        if (own === undefined) wrong.push(`${juniper.id} is on, but bot.list has no bot ${juniper.id}`);
+        // With bots as records (the default source), a plugin installed after the one-time move brings no bot: its own-bot
+        // parts reach only a bot its record says was moved from it (the controller's ruling of 2026-11-17), so none.
+        // The move's journal is there only with records as the source.
+        const records = (await c.request<{ journal?: unknown }>("bot.move.status", {}).catch(() => ({ journal: undefined }))).journal !== undefined;
+        if (records) {
+          const seen = fake!.requests.length;
+          await turn(c, botSession, "ACCEPTANCE-REPLY: juniper alpha offer", 150_000);
+          const alphaTools = fake!.requests.slice(seen).filter((r) => r.lastUserText.includes("juniper alpha offer")).flatMap((r) => r.tools);
+          if (own !== undefined) wrong.push(`${juniper.id} was installed after the move, yet bot.list has a bot ${juniper.id}`);
+          else if (alphaTools.some((t) => t.includes("JuniperStage"))) wrong.push(`${juniper.id}'s own-bot JuniperStage is offered to Alpha (${alphaTools.filter((t) => t.includes("Juniper")).join(", ")})`);
+          else if (sidebar === undefined && cardWrong.length === 0) done.push(`§5.5 a plugin with a bot, installed after the move: its OK card says "${BOT_PARTS_LINES.join(" ")}" with its checkbox; it brings no bot (bot.list has no ${juniper.id}) and its own-bot JuniperStage is offered to no bot, Alpha's turn included; a bot's entry on the sidebar refused`);
+        } else if (own === undefined) wrong.push(`${juniper.id} is on, but bot.list has no bot ${juniper.id}`);
         else {
           const offeredOn = async (s: string, tag: string) => {
             const seen = fake!.requests.length;
@@ -2621,6 +2635,15 @@ async function main(): Promise<void> {
       for (const id of installed.reverse()) await c.request("plugin.remove", { id }, 60_000).catch(() => undefined);
     }
   }
+  // A code session's tools are the ones there when it starts: the rows that call step 4's plugin run in one started after
+  // its OK (the first one keeps step 3's turn, which the restart reads back).
+  if (pluginOk && turnsWork) {
+    try {
+      session = await keyedCodeSession(c, "acceptance-work-plugin");
+      await c.request("session.attach", { id: session });
+    } catch (err) { say(`a code session after step 4's plugin: ${why(err)}`); }
+  }
+
   // Step 5: a plugin's Review on its OK card (the owner's ruling, 2026-11-13), a row of its own so a red Review never
   // stops the install row and the rows that read its plugin (the controller's ruling). A second plugin, found behind its
   // OK card; its Review asked over RPC as the app's card page asks; the internal job reads that plugin's tree and its
@@ -3255,7 +3278,7 @@ async function main(): Promise<void> {
       const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
       if (called === undefined) fail(`the bot was offered no WebSearch (${offered.length} tools, MCP tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
       if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
-      if (called !== WEB_SEARCH_TOOL) fail(`the bot's WebSearch is ${called}, not ${WEB_SEARCH_TOOL}`);
+      if (!isWebTool(called, WEB_SEARCH_TOOL)) fail(`the bot's WebSearch is ${called}, not ${WEB_SEARCH_TOOL}`);
       if (result!.isError || !result!.text.includes(FAKE_SEARCH_HIT)) fail(`${called} answered without the fake backend's result: ${result!.text.slice(0, 300)}`);
       searchOutcome = { status: "PASS", detail: `the bot called ${called} and got the fake search backend's result${carded.length ? ` (${carded.join("; ")})` : ""}` };
     } catch (err) {
@@ -3283,7 +3306,7 @@ async function main(): Promise<void> {
       };
       // The address is in the user's message: it runs with no card at ask for risky actions (§9.1).
       const page = await fetchTurn(`https://${FAKE_PUBLIC_SITE}/article`);
-      if (page.called !== WEB_FETCH_TOOL) fail(`the bot's WebFetch is ${page.called}, not ${WEB_FETCH_TOOL}`);
+      if (!isWebTool(page.called, WEB_FETCH_TOOL)) fail(`the bot's WebFetch is ${page.called}, not ${WEB_FETCH_TOOL}`);
       if (page.result.isError || !page.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${page.called} didn't read the public page: ${page.result.text.slice(0, 300)}`);
       if (page.cards.length > 0) fail(`a fetch of the address the user gave raised ${page.cards.join("; ")} (it should run with no card) [packages/core/src/approvals/seen-urls.ts]`);
       // The search step's hit (stage 2): a search's hits are seen, so its page runs with no card, though no user gave it.
@@ -3322,17 +3345,17 @@ async function main(): Promise<void> {
 
   // Step 7: at "ask for risky actions" (§9.1): a write to an ordinary folder (Downloads) lands with no card; a write to a
   // sensitive place (a dot-folder in the home) raises an approval card, the app's yes is pressed, then the file lands.
-  if (session === undefined || !turnsWork) record(7, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
+  if (botSession === undefined || !turnsWork) record(7, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
   else {
     try {
       const before = fake.requests.length;
-      const plain = await turn(c, session, "ACCEPTANCE-WRITE-ORDINARY: write the file", 150_000);
+      const plain = await turn(c, botSession, "ACCEPTANCE-WRITE-ORDINARY: write the file", 150_000);
       const plainResult = fake.requests.slice(before).find((r) => r.toolResult !== undefined)?.toolResult;
       const plainLanded = existsSync(ordinaryWritePath) && readFileSync(ordinaryWritePath, "utf8") === writeContent;
       if (plain.cards.length > 0) fail(`a write to an ordinary folder raised ${plain.cards.join("; ")} (it should run with no card at ask for risky actions) [packages/core/src/approvals/ordinary-paths.ts]`);
       if (!plainLanded) fail(`the write to an ordinary folder didn't land; its result: ${(plainResult?.text ?? "none").slice(0, 200)}`);
       const seen = fake.requests.length;
-      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000, { press: pressing });
+      const { events, cards: carded } = await turn(c, botSession, "ACCEPTANCE-WRITE: write the file", 150_000, { press: pressing });
       const answered = carded.length ? carded.join("; ") : undefined;
       const mine = fake.requests.slice(seen);
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
@@ -3349,14 +3372,14 @@ async function main(): Promise<void> {
       mkdirSync(dirname(ordinaryReadPath), { recursive: true, mode: 0o700 });
       writeFileSync(ordinaryReadPath, ordinaryReadValue);
       const readSeen = fake.requests.length;
-      const secret = await turn(c, session, `ACCEPTANCE-READ ${secretReadPath}`, 150_000);
+      const secret = await turn(c, botSession, `ACCEPTANCE-READ ${secretReadPath}`, 150_000);
       const secretResult = fake.requests.slice(readSeen).find((r) => r.toolResult !== undefined)?.toolResult;
       if (secret.cards.length > 0) fail(`a Read of ~/.aws/credentials raised ${secret.cards.join("; ")} (it is refused with no card) [packages/core/src/fence/secret-reads.ts]`);
       if (secretResult === undefined) fail("the Read of ~/.aws/credentials got no result back to the model");
       if (secretResult!.text.includes(secretReadValue)) fail("the Read of ~/.aws/credentials showed the model the file's value");
       if (!secretResult!.text.includes("cloud credentials")) fail(`the Read of ~/.aws/credentials wasn't refused as a secret place: ${secretResult!.text.slice(0, 200)}`);
       const ordSeen = fake.requests.length;
-      const ord = await turn(c, session, `ACCEPTANCE-READ ${ordinaryReadPath}`, 150_000);
+      const ord = await turn(c, botSession, `ACCEPTANCE-READ ${ordinaryReadPath}`, 150_000);
       const ordResult = fake.requests.slice(ordSeen).find((r) => r.toolResult !== undefined)?.toolResult;
       if (ord.cards.length > 0) fail(`a Read of an ordinary file raised ${ord.cards.join("; ")}`);
       if (ordResult?.text.includes(ordinaryReadValue) !== true) fail(`the Read of an ordinary file didn't read it: ${(ordResult?.text ?? "none").slice(0, 200)}`);
@@ -3747,6 +3770,8 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
     if (ids.includes("reopen")) {
       // Its own setup: a failure here is the reopen rows' alone, never the shard's other units'.
       try { await installEcho(c); } catch (err) { for (const r of REOPEN_STEPS) record(stepNumber(FULL_STEPS, r.name), statusOf(err), `the reopen shard's setup (step 4's plugin): ${why(err)}`); echoMissing = true; }
+      // Its turns call the plugin's tool: in a code session started after the plugin's OK (the newest, which the window opens on).
+      if (!echoMissing) session = await keyedCodeSession(c, "acceptance-work-plugin");
     }
     if (ids.includes("stage")) {
       await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
@@ -3901,6 +3926,11 @@ function exampleCtxFor(cdp: Cdp, rpc: MossClient, log: string, pickFile: string,
     },
     // Its cards pressed in this app's window (the app that drew them logs to its own log, not the first app's).
     turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp, log } }),
+    codeSession: async (folder) => {
+      const id = await keyedCodeSession(rpc, folder);
+      await rpc.request("session.attach", { id }).catch(() => undefined);
+      return id;
+    },
     alwaysTurn: (s, text, ms) => turn(rpc, s, text, ms, { always: true, log }),
     inspectTurn: (s, text, ms, inspect) => turn(rpc, s, text, ms, { press: { cdp, log }, inspect: async () => inspect() }),
     history: (s) => history(rpc, s),
@@ -3923,18 +3953,18 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [BUNDLED_TOOLS_STEP, () => bundledToolsStep(ctx, session, skipWebTurns ? "--skip-web-turns: this tree's daemon has no fake web seam"
       : target !== "source" && outsideWorld === undefined ? "this packaged core has no test seam for the outside world" : true)],
     // The user's tool setting (off, on demand, always on) on the fixture plugin's tool, on the real path (lane TS).
-    [TOOL_SETTING_STEP, () => toolSettingStep(ctx, session)],
+    [TOOL_SETTING_STEP, () => toolSettingStep(ctx, bot)],
     // A change to the plugins' tools reaches a coding session on MOSS's own agent that is already running (lane AG).
     [CODE_TOOLS_STEP, () => codeToolsStep(ctx)],
     [CARDS_STEP, () => cardsStep(ctx)],
     // The engine's router (lane RT): a card with no session in the focused window's strip, the island with the window unfocused.
     [ROUTER_STEP, () => routerStep(ctx)],
-    // The path the owner tries first: a plugin built with the builder's tools, in a code session on MOSS's own agent.
-    [WORKSHOP_STEP, () => workshopStep(ctx, session)],
+    // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation (her scratch).
+    [WORKSHOP_STEP, () => workshopStep(ctx, bot)],
     // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
     [TAB_FLASH_STEP, () => tabFlashStep(ctx, session, launch, tabFlashAlone ? TAB_FLASH_SLEEP_MS : undefined)],
     // The bots' Browser tool, on the real path, against the run's own fixture site.
-    [BROWSER_STEP, () => (browserFixture !== undefined ? browserStep(ctx, session, browserFixture, panelOpener(ctx.rpc)) : Promise.reject(new Error("the run's browser fixture site isn't up")))],
+    [BROWSER_STEP, () => (browserFixture !== undefined ? browserStep(ctx, bot, browserFixture, panelOpener(ctx.rpc)) : Promise.reject(new Error("the run's browser fixture site isn't up")))],
     // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
     [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
     // A plugin's add-ons of its own, its own question card, and the Plugins page's Restart (checklist 1.19, 2.3, 3.26).
@@ -3947,7 +3977,7 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [BUILDER_EXAMPLES_STEP, () => builderExamplesStep(ctx, session)],
     [WORKSHOP_POINTS_STEP, () => workshopPointsStep(ctx, bot)],
     // A plugin that holds a plugin, and the core's updates reaching the notifier plugins.
-    [CHILD_STEP, () => childStep(ctx, session)],
+    [CHILD_STEP, () => childStep(ctx, bot)],
     [NOTIFY_STEP, () => notifyStep(ctx, session)],
     // The app records for a held talk button and hands the audio to Alpha's listening voice (a generated clip, never the microphone).
     [LISTEN_STEP, () => listenStep(ctx, session)],
