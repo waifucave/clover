@@ -49,7 +49,7 @@ export function oldHomeFor(q: OldHomeQuery): OldHome {
     }
     noteIgnoredEnvOverride(OLD_HOME_ENV, q.log);
   }
-  if (testBuild) return { path: undefined, why: "a test-marked build reads no old home without the override" };
+  if (testBuild) return { path: undefined, why: "this build reads no old home without the override (it is marked for tests)" };
   if (q.profile !== "dist") return { path: undefined, why: "only the real profile is offered the old home" };
   const homedir = q.homedir ?? realHomedir;
   if (!isDefaultMossHome(q.home, "dist", homedir)) return { path: undefined, why: "this engine runs on a home of its own (not the profile's default)" };
