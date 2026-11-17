@@ -74,7 +74,9 @@ const FRESH_SCRIPT = `
       }
       finish(seen && !spoiled);
     };
-    timer = setTimeout(() => finish(false), ${FRESH_LIMIT_MS});
+    // No reading within the limit: the page was too busy to read the button (a renderer starved, layers loading again around the
+    // press), which is "not ready", never "covered": it resolves null, and the press is said as "late".
+    timer = setTimeout(() => { if (done) return; done = true; stop(); try { b.fresh?.(false, Math.round(performance.now() - t0)); } catch (e) { /* going */ } resolve(null); }, ${FRESH_LIMIT_MS});
     // Observed afresh, its first report is a new reading. The page's own observer reads the button where there is one (no second
     // observer watches the same button); otherwise one of its own.
     const look = () => {

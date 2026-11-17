@@ -3,7 +3,7 @@
 // one window is its own page (`moss-app://app/`), and the only other documents in it are the sealed card frames MOSS's
 // own store mints (`moss-sealed://card/…`), whose presses MOSS's main process judges itself (press.ts) and answers with
 // MOSS's own key (answer-key.ts). Quitting MOSS stops nothing: the engine, the host and every bot keep working.
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, protocol, safeStorage, session, shell, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebFrameMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, protocol, safeStorage, session, shell, webContents, webFrameMain, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebFrameMain } from "electron";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, normalize, sep } from "node:path";
@@ -21,6 +21,7 @@ import { refusedLaunchSwitches } from "./debug-guard";
 import { PresenceReporter } from "./presence";
 import { answerPress, cardHeight, PressRecord, refusalWords, windowPointOf } from "./press";
 import { buttonAt, inWindow, MISS_BOUND_MS, MissWatch, type Box } from "./sealed-miss";
+import { watchSealedDraw, type RedrawDeps } from "./sealed-redraw";
 import { coverOfPress, loadWindowList, windowIdOfMediaSource, type WindowList } from "./overlap";
 import { OWN_ELEMENT, SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
@@ -665,6 +666,21 @@ const overlapSaid = { read: false, failed: false };
  *  measures its own buttons, and each document above it says where its iframe sits, measured with no user gesture (a
  *  plugin's document lying about it can only move where MOSS looks). */
 const missWatch = new MissWatch();
+
+/** The sealed pages that said "visible" since they loaded (at most 512), and the redraw's pieces (sealed-redraw.ts). */
+const sealedEverSeen = new Set<string>();
+const redrawDeps: RedrawDeps = {
+  frameOf: (pid, rid) => webFrameMain.fromId(pid, rid) ?? undefined,
+  sealed,
+  everSeen: sealedEverSeen,
+  inWindow: (f) => {
+    const contents = webContents.fromFrame(f as WebFrameMain);
+    const win = contents === undefined ? null : BrowserWindow.fromWebContents(contents);
+    return win !== null && !win.isDestroyed();
+  },
+  log,
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+};
 async function noticeMissedPress(win: BrowserWindow, windowId: number): Promise<void> {
   const point = missWatch.missed(windowId);
   if (point === undefined || win.isDestroyed()) return;
@@ -754,7 +770,13 @@ function wireSealed(): void {
   });
   ipcMain.on("moss:sealed-visible", (event, a: { token?: unknown; visible?: unknown }) => {
     const s = sealedSender(event, a?.token);
-    if (s !== undefined && typeof a.visible === "boolean") sealed.markVisible(s.token, a.visible);
+    if (s === undefined || typeof a.visible !== "boolean") return;
+    sealed.markVisible(s.token, a.visible);
+    // A page that said "visible" once is current: the redraw (sealed-redraw.ts) leaves it alone from then on.
+    if (a.visible) {
+      sealedEverSeen.add(s.token);
+      if (sealedEverSeen.size > 512) sealedEverSeen.delete(sealedEverSeen.values().next().value!);
+    }
   });
   ipcMain.on("moss:sealed-fresh", (event, a: { token?: unknown; seen?: unknown }) => {
     const s = sealedSender(event, a?.token);
@@ -802,6 +824,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on("web-contents-created", (_e, contents) => {
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
     contents.on("will-attach-webview", (e) => e.preventDefault());
+    // A sealed button's frame stuck under load gets its visibility changed so its page reads itself again (sealed-redraw.ts).
+    contents.on("did-frame-finish-load", (_ev, isMain, pid, rid) => { if (!isMain) watchSealedDraw(redrawDeps, pid, rid); });
   });
   // The person's Quit tells the engine first (quit.ts: `pair.quit { handOver: false }`; the engine stops itself only when
   // MOSS is the last window of ours and no host owns the screen), then the connection closes.
