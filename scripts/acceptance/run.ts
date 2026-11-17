@@ -5409,7 +5409,7 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
             if (fake!.requests.slice(asked).some((r) => r.lastUserText.includes(tag) && r.answered === "text")) block("the bot has no Echo tool (the fixture plugin isn't installed: step 4)");
             // The call running: its card (if any) answered as the app would, its tool_call in the log with no result.
             heldCall = await until("the held Echo call to be running", 60_000, async () => {
-              for (const card of await cards(c).catch(() => [])) if (card.session === undefined || card.session === session) await approve(c, card).catch(() => undefined);
+              for (const card of await cards(c).catch(() => [])) if (card.session === undefined || card.session === session) await approve(c, card, { log: appA!.log }).catch(() => undefined);
               const evs = (await history(c, session!)).filter((e) => typeof e.seq === "number" && e.seq > sent.seq);
               const call = evs.find((e) => e.type === "tool_call" && /Echo$/.test(String(e.name)));
               const id = call === undefined ? undefined : String(call.callId);
@@ -5485,7 +5485,8 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
             const after3 = (await appDriver()).client;
             const ok = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
             const before = (await history(after3, session!)).length;
-            const { events: next } = await turn(after3, session!, `${ok} are you back?`);
+            // Its cards read from the reopened app's own log (the first app's \`app.log\` never hears of them).
+            const { events: next } = await turn(after3, session!, `${ok} are you back?`, undefined, { log: appB!.log });
             const later = (await history(after3, session!)).slice(before);
             after3.close();
             if (!JSON.stringify(next).includes(`ACCEPTANCE-REPLY-OK ${ok}`)) wrong.push(`the next message got no reply of its own (stop ${stopOf(next)}${errorsOf(next).length ? `: ${errorsOf(next)[0]}` : ""})`);
