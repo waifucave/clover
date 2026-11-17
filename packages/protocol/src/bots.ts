@@ -40,14 +40,20 @@ export const BOT_INSTRUCTIONS_FILE = "instructions/instructions.md";
  *  `user-layers/` folder (a subfolder, so the user layers' loader, which reads the folder's own `.json` files, skips it). */
 export const BOT_MOVE_JOURNAL = "user-layers/moved/bots.json";
 
-/** The living-bots kit's traits (§6.9): a name makes them all, and the user may pin the shape and the colour. The kit's
- *  own names for shapes and its ten colours are the kit's (held outside the repo, item 110), so they are plain strings
- *  here. */
-export const BotFace = z.object({
-  /** A shape the kit knows; unset: made from the name. */
-  shape: utf16(32, 1).optional(),
-  /** One of the kit's ten colour names, or `#rrggbb`; unset: made from the name. */
-  color: z.union([utf16(32, 1).regex(/^[a-z-]+$/), z.string().regex(/^#[0-9a-f]{6}$/i)]).optional(),
+/** The living-bots kit's traits (§6.9; the controller's ruling of 2026-11-17): a name makes them all, and the person may
+ *  pin each of the four. The allowed values mirror the kit's own lists (`apps/moss`'s `SHAPES`, `PALETTE`'s names,
+ *  `EYES`, `TEMPERS`) as plain strings, so the engine never imports the app; a test on the app's side keeps them equal. */
+export const BOT_FACE_SHAPES = ["ball", "drop", "dome", "bowl", "pill", "loaf", "tile", "peak", "gem", "cup"] as const;
+export const BOT_FACE_COLORS = ["gold", "coral", "sky", "mint", "violet", "lagoon", "lime", "orchid", "ember", "iris"] as const;
+export const BOT_FACE_EYES = ["round", "tall", "dot", "calm"] as const;
+export const BOT_FACE_TEMPERS = ["steady", "restless", "slow", "bright"] as const;
+/** A face's pins; a trait left out comes from the name. */
+export const BotFace = z.strictObject({
+  shape: z.enum(BOT_FACE_SHAPES).optional(),
+  /** One of the kit's ten colour names, or any `#rrggbb`. */
+  color: z.union([z.enum(BOT_FACE_COLORS), z.string().regex(/^#[0-9a-f]{6}$/i)]).optional(),
+  eyes: z.enum(BOT_FACE_EYES).optional(),
+  temper: z.enum(BOT_FACE_TEMPERS).optional(),
 });
 export type BotFace = z.infer<typeof BotFace>;
 
@@ -200,6 +206,14 @@ export const BOTS_METHODS = {
     params: z.object({ id: BotId }),
     result: z.object({ bot: BotRecordView }),
     doc: "Brings an archived bot back as it was; refused while another bot has its id.",
+  }),
+  botInstructionsGet: defineMethod({
+    /** The person's own client only (`userOnly`): what they edit in MOSS's window, so an edit never writes over text they
+     *  couldn't see. A plugin, a bot, an agent or a peer is refused. Capped as the write is (200,000 characters). */
+    name: "bot.instructions.get", owner: "BT", roles: ["app", "cli", "remote"], userOnly: true,
+    params: z.object({ id: BotId }),
+    result: z.object({ text: utf16(200_000) }),
+    doc: "A bot's instructions file as it is now, for the person editing it.",
   }),
   botPluginSettings: defineMethod({
     /** Every plugin's bot-scoped settings (§5.9 `Setting.scope: "bot"`) with their values for one bot, for MOSS's window to

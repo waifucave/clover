@@ -33,6 +33,16 @@ import { WebhookIngress, type WebhookIngressOptions } from "../routines/webhooks
 import { readUiSettings } from "../plugin-host/ui-settings";
 import { workshopToolDefs, type PluginWorkshop } from "../registry/workshop";
 import { appScreenshotToolDef, type AppScreenshotDeps } from "./app-screenshot";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { MAKE_BOT_TOOL } from "@waifucave/moss-protocol";
+import { OLD_PLUGIN_MANIFEST } from "../old-names";
+import { pendingPluginBots } from "./move";
+import type { PluginBotSettings } from "./plugin-bot-settings";
+import { BotRecordStore, type BotPluginSettingsPort } from "./records";
+import { botRecordMethods } from "./records-rpc";
+import { recordToolDefs } from "./records-tools";
+import { botSource, type BotSource } from "./source";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -53,6 +63,10 @@ export interface AgentsHandle {
 
 export interface BotSideOptions {
   home: string;
+  /** Where the bots come from (lane BT, `bots/source.ts`): THE switch's value, `MOSS_BOT_SOURCE` or `plugins`. */
+  botSource?: BotSource;
+  /** The plugins' bot-scoped settings, for the records' `bot.pluginSettings` (lane BT). */
+  pluginSettings?: BotPluginSettingsPort & Partial<Pick<PluginBotSettings, "views">>;
   /** This computer's name in the folder tree. */
   computer: string;
   clock: Clock;
@@ -130,6 +144,44 @@ export interface BotSide {
   close(): Promise<void>;
 }
 
+/** `PluginInstall` with records as the bots' source: a folder whose manifest brings a bot (`contributes.bot`, in it or in
+ *  a child) is refused, and the bot is told to use `MakeBot`. Anything it can't read goes to the tool as it is. */
+export function refuseBotPlugins(tool: CoreToolDef, workshop: Pick<PluginWorkshop, "resolveFolder">, caller: { bot: string; sessionId: string }): CoreToolDef {
+  return {
+    ...tool,
+    run: async (input) => {
+      const folder = (input as { folder?: unknown } | null)?.folder;
+      if (typeof folder === "string") {
+        let real: string | undefined;
+        try { real = workshop.resolveFolder(caller, folder); } catch { real = undefined; }
+        if (real !== undefined && bringsBot(real)) {
+          return { text: `PluginInstall was refused: that plugin brings a bot, and bots aren't plugins any more. Make a bot with ${MAKE_BOT_TOOL} instead (its name, instructions and face), behind the person's card.`, isError: true };
+        }
+      }
+      return tool.run(input);
+    },
+  };
+}
+
+/** Whether a plugin folder's manifest (or a child's, one level of `plugins/`) contributes a bot. */
+function bringsBot(folder: string): boolean {
+  const has = (dir: string) => {
+    for (const name of ["moss.json", OLD_PLUGIN_MANIFEST]) {
+      try {
+        const m = JSON.parse(readFileSync(join(dir, name), "utf8")) as { contributes?: { bot?: unknown } };
+        if (m?.contributes?.bot !== undefined) return true;
+      } catch { /* not this one */ }
+    }
+    return false;
+  };
+  if (has(folder)) return true;
+  try {
+    return readdirSync(join(folder, "plugins"), { withFileTypes: true }).some((d) => d.isDirectory() && has(join(folder, "plugins", d.name)));
+  } catch {
+    return false;
+  }
+}
+
 /** The plugins with an active `triggers` entry of a type (an entry is keyed by its `type`). */
 export function triggerOwnersFrom(registry: Pick<PluginRegistry, "entries">): (type: string) => string[] {
   return (type) => registry.entries("triggers")
@@ -166,7 +218,21 @@ export function createBotSide(o: BotSideOptions): BotSide {
   });
   // The computer's one SessionGrants, over this host and the broker; also what a bot's plugin-chosen provider asks with.
   const grants = o.approvals?.request === undefined ? undefined : new SessionGrants({ host, approvals: { request: o.approvals.request.bind(o.approvals) } });
+  // Bots as engine data (lane BT), with records as the source: the store, holding back the ids of plugin bots the move
+  // hasn't moved yet.
+  const source = o.botSource ?? botSource();
+  let records: BotRecordStore | undefined;
+  if (source === "records") {
+    const store: BotRecordStore = new BotRecordStore({
+      home: o.home, clock: o.clock,
+      reserved: () => (store.journal() !== undefined ? [] : pendingPluginBots(o.registry, (id) => store.has(id))),
+      ...(o.pluginSettings === undefined ? {} : { pluginSettings: o.pluginSettings }),
+      ...(o.warn === undefined ? {} : { warn: o.warn }),
+    });
+    records = store;
+  }
   const bots = new BotService({
+    source, ...(records === undefined ? {} : { records }),
     home: o.home, computer: o.computer, registry: o.registry, host, gate, drivers: o.drivers, clock: o.clock,
     providerConsent: o.providerConsent ?? new BotProviderConsent(grants === undefined ? {} : { grants }),
     defaultModel: o.defaultModel, cacheCold: (id) => compaction.cacheCold(id),
@@ -244,9 +310,26 @@ export function createBotSide(o: BotSideOptions): BotSide {
       const bot = host.callerOf(sessionId).bot;
       if (routineTool !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(routineToolDef(routineTool, { bot }));
       // The plugin workshop's tools: a bot's own sessions (its conversation and side threads), never an agent's.
-      if (o.workshop !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(...workshopToolDefs(o.workshop, { bot, sessionId }));
+      if (o.workshop !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") {
+        const shop = workshopToolDefs(o.workshop, { bot, sessionId });
+        // Bots as engine data (lane BT, R5): a bot builds a bot with MakeBot, never as a plugin; a plugin folder that
+        // brings a bot isn't installed.
+        defs.push(...(records === undefined ? shop : shop.map((t) => (t.name !== "PluginInstall" ? t : refuseBotPlugins(t, o.workshop!, { bot, sessionId })))));
+      }
       // A look at this computer's app, for the same sessions (the bot builds and fixes what the user sees).
       if (o.appScreenshot !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(appScreenshotToolDef(o.appScreenshot, { bot }));
+      // Bots as engine data (lane BT): `MakeBot` and `EditBotInstructions` in a record bot's own sessions.
+      if (records !== undefined && bot !== undefined && records.has(bot) && host.get(sessionId)?.kind !== "agent") {
+        defs.push(...recordToolDefs({
+          bots, host, ...(o.approvals?.request === undefined ? {} : { approvals: { request: o.approvals.request.bind(o.approvals) } }),
+          setUp: (model) => (o.hasKeyFor?.(model) ?? true) && o.modelOffer?.(model) !== "absent",
+          // As the approval check reads it: a computer whose level isn't known is read-only.
+          readOnly: () => {
+            const computer = host.get(sessionId)?.computer ?? o.computer;
+            return o.levelOf !== undefined && (o.levelOf(computer) ?? "read-only") === "read-only";
+          },
+        }, sessionId));
+      }
       return defs;
     },
     methods: (deps) => {
@@ -262,6 +345,8 @@ export function createBotSide(o: BotSideOptions): BotSide {
       // `pill.target` entry's handler through the plugin host, when there is one.
       ...userSendMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
+      // Bots as engine data (lane BT): `bot.move.status` always; the record methods with records as the source.
+      ...botRecordMethods({ bots, host, ...(o.pluginSettings?.views === undefined ? {} : { pluginSettingViews: o.pluginSettings.views.bind(o.pluginSettings) }) }),
       };
     },
     start: async () => {

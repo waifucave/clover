@@ -106,6 +106,8 @@ export interface DaemonBotsInput {
   routines?: { secrets?: NonNullable<BotSideOptions["routines"]>["secrets"]; userTimeZone?(): string; webhookBase?: string };
   /** Lane B's plugin host (#277): when given, the bots' voices, the webhook ingress and the plugin triggers run on it. */
   pluginHost?: BotPluginHost;
+  /** Lane BT: the plugins' bot-scoped settings for the records (`bot.pluginSettings`), over the plugin host's own. */
+  pluginSettings?: BotSideOptions["pluginSettings"];
   /** The session panels' reads (`session.context`, `session.connectors`): a model's context window from the catalog, and
    *  the plugin MCP servers a session gets with their plugins' sign-ins (sessions/panel-reads.ts). */
   contextWindowOf?: SessionPanelDeps["contextWindowOf"];
@@ -318,7 +320,12 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     let node: ComputerNode | undefined;
     // The one MossFence and the one approval broker on this computer: the node (its folder tree, its terminals' paste
     // card), the agents and the bot side all go through these, never a copy of their own.
-    const fence = new MossFence({ home: input.userHome, mossHome: input.mossHome });
+    const fence = new MossFence({
+      home: input.userHome, mossHome: input.mossHome,
+      // Lane BT's instructions rule from the records the core holds (never a record re-read from the disk); with plugins
+      // as the bots' source, none.
+      instructionsOf: (bot) => side?.bots.records?.instructionsReach(bot) ?? [],
+    });
     // A bot's workshop (the plugins it built: `provenance {by: "bot", bot}` in the registry's install records), followed
     // on each registry change, so its sessions' file tools and sandbox write inside them (`FenceContext.workshop`).
     if (input.bots) closers.push(fence.followWorkshop(input.bots.registry, input.bots.drops));
@@ -447,6 +454,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ...(b.workshop ? { workshop: b.workshop } : {}),
         ...(b.appScreenshot ? { appScreenshot: b.appScreenshot } : {}),
         ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
+        ...(b.pluginSettings ? { pluginSettings: b.pluginSettings } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
         // Lane M's gate (lane D's #246): the bot side's turns are its `bot-turns` source, and none starts while it's closed.
@@ -474,6 +482,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         const send = input.coreEvent;
         closers.push(s.bots.onEvent((e) => {
           if (e.type === "bot_changed" || e.type === "bot_removed" || e.type === "bots_paused") send(e);
+          // Lane BT: bots as engine data (protocol bots.ts), with records as the source.
+          else if (e.type === "bot_record_changed" || e.type === "bot_record_removed" || e.type === "bot_summary_changed" || e.type === "bots_moved") send(e);
         }));
       }
       // Lane D's bot-side options, the receiving half: other computers' messages to the bots this computer runs.
