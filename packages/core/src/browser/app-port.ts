@@ -1,12 +1,15 @@
 // The app's side of the browser, as the daemon reaches it: this computer's app connection, asked with `app.tab.open`,
 // `app.tab.command` and `app.tab.list` (the daemon→app requests the MOSS server's `ask` carries; the app answers from
-// its browser host, `apps/desktop/src/main/browser`). The app is the one whose hello lists `APP_BROWSER_FEATURE`; with
-// none connected the port is absent, and the service answers that the app isn't running (it starts again by itself).
+// its browser host, `apps/desktop/src/main/browser`). The connection is the pages' owner (`host/tab-frames.ts`'s
+// `pagesOwner`, the one switch): the background host when one is connected with the browser (spec revision 19, item
+// 111), else today's app (MOSS Code's window); never MOSS's window. With none connected the port is absent, and the
+// service answers that the app isn't running (it starts again by itself).
 // The app reports back with `browser.report` and `browser.hold` (`browserAppHandlers`, from the app role only).
 import { BROWSER_METHODS, MOSS_ERR, ERR } from "@waifucave/moss-protocol";
 import type { BrowserNetworkConfig } from "./contract";
 import { MossRpcError, type MossConn, type MossHandler } from "../ipc/moss";
 import type { AppTabPort, BrowserService } from "./service";
+import { pagesOwner } from "../host/tab-frames";
 
 /** The feature an app lists in its hello when it serves `app.tab.*`. */
 export const APP_BROWSER_FEATURE = "browser";
@@ -21,7 +24,7 @@ export interface AppTabDeps {
 /** The port to this computer's app while one that serves tabs is connected; undefined otherwise. */
 export function appTabPort(deps: AppTabDeps): () => AppTabPort | undefined {
   return () => {
-    const app = deps.connections().find((c) => c.role === "app" && c.features.includes(APP_BROWSER_FEATURE));
+    const app = pagesOwner(deps.connections());
     if (app === undefined) return undefined;
     const ask = (method: string, params: unknown) => deps.ask(app, method, params, APP_TAB_TIMEOUT_MS);
     return {

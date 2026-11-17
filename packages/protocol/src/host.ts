@@ -14,12 +14,14 @@
 // * The MOSS Browser's tabs live in the host (item 111): the engine's tab requests (`app.tab.*`, browser.ts) go to the
 //   host's connection. A window shows a tab as a picture (`browser.view.open`, its frames as `picture.frame`
 //   notifications, activity.ts) and MOSS Code's panel forwards the person's input (`browser.view.input` → `host.tab.input`).
-//   MOSS's side panel only watches.
+//   MOSS's side panel only watches. The frames come to the engine from the program that runs the pages
+//   (`host.tab.frame`, a request: the server takes no client notification), at most one in flight, latest wins.
 import { z } from "zod";
 import { utf16 } from "./strings";
 import { Ok, Timestamp } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 import { Release } from "./release";
+import { PictureFrame } from "./activity";
 
 /** The host's single-instance lock, under the home (one host per home, not per user). */
 export const HOST_LOCK_FILE = "run/host.lock";
@@ -146,6 +148,16 @@ export const HOST_METHODS = {
     params: z.object({ id: utf16(128, 1), events: z.array(TabInputEvent).min(1).max(256) }),
     result: Ok,
     doc: "The person's input to one of the host's tabs, forwarded from MOSS Code's browser panel.",
+  }),
+  hostTabFrame: defineMethod({
+    /** From the program that runs the browser's pages (the host; today's app until the host runs them), one frame of a
+     *  tab stream the engine started (`app.tab.command` `stream` with `codecs: ["jpeg"]`). The sender keeps at most one in
+     *  flight and sends only its latest, so a slow engine drops frames, never queues them. The engine refuses a frame from
+     *  any other connection, over the stream's declared size, or not a jpeg, png or webp by its own header. */
+    name: "host.tab.frame", owner: "HS", roles: ["app"],
+    params: PictureFrame,
+    result: Ok,
+    doc: "One picture of a MOSS Browser tab, from the program that runs its pages, for the windows and tools that show it.",
   }),
   browserViewOpen: defineMethod({
     /** A window asks for a tab's picture; its frames come as `picture.frame` notifications on this connection. MOSS's
