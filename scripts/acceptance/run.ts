@@ -2635,15 +2635,8 @@ async function main(): Promise<void> {
       for (const id of installed.reverse()) await c.request("plugin.remove", { id }, 60_000).catch(() => undefined);
     }
   }
-  // A code session's tools are the ones there when it starts: the rows that call step 4's plugin run in one started after
-  // its OK (the first one keeps step 3's turn, which the restart reads back).
-  // AG: remove the restart when list changes reach a running session
-  if (pluginOk && turnsWork) {
-    try {
-      session = await keyedCodeSession(c, "acceptance-work-plugin");
-      await c.request("session.attach", { id: session });
-    } catch (err) { say(`a code session after step 4's plugin: ${why(err)}`); }
-  }
+  // The rows that call step 4's plugin run in the same code session, already running when it was installed: a change to
+  // the plugins' tools reaches it at its next turn (lane AG).
 
   // Step 5: a plugin's Review on its OK card (the owner's ruling, 2026-11-13), a row of its own so a red Review never
   // stops the install row and the rows that read its plugin (the controller's ruling). A second plugin, found behind its
@@ -3059,13 +3052,8 @@ async function main(): Promise<void> {
       netSite = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => (new URL(req.url).pathname === "/net-page" ? new Response(NET_BODY) : new Response("not here", { status: 404 })) });
       const port = netSite.port;
       const parse = (text: string, mark: string) => Object.fromEntries(text.slice(text.indexOf(mark)).split(/\s+/).slice(1).map((kv) => [kv.slice(0, kv.indexOf("=")), kv.slice(kv.indexOf("=") + 1)]));
-      // A code session's tools are the ones there when it starts: each probe runs in one started after its plugin's OK.
-      // AG: remove the restart when list changes reach a running session
-      let probeSession = session!;
-      const freshProbeSession = async (folder: string) => {
-        probeSession = await keyedCodeSession(c, folder);
-        await c.request("session.attach", { id: probeSession });
-      };
+      // Each probe runs in the code session that was running before its plugin's OK: the new tools reach it at its next turn.
+      const probeSession = session!;
       const probeTurn = async (ask: string, mark: string) => {
         const seen = fake!.requests.length;
         const { events, cards: carded } = await turn(c, probeSession, ask, 150_000);
@@ -3095,7 +3083,6 @@ async function main(): Promise<void> {
       writeFileSync(join(folder, "stdio", "targets"), `${port}\n${hookTarget?.port ?? 9}\n`);
       const net = await install({ from: "folder", path: folder });
       if (!net.text.includes(`localhost:${port}`)) fail(`${net.id}'s OK card doesn't name the host it's granted (localhost:${port}): ${net.text.slice(0, 300)}`);
-      await freshProbeSession("acceptance-work-net");
       // Every part runs and is said, the wrong ones together at the end (one run shows all of them).
       const wrong: string[] = [];
       const listeners = hookTarget?.connections ?? 0;
@@ -3129,7 +3116,6 @@ async function main(): Promise<void> {
         pastedId = wrapped.id;
         if (!wrapped.text.includes(OPEN_NETWORK_LINE)) wrong.push(`${wrapped.id}'s OK card doesn't say it reaches any host ("${OPEN_NETWORK_LINE}…"): ${wrapped.text.slice(0, 300)}`);
         try {
-          await freshProbeSession("acceptance-work-net-pasted");
           const pasted = await probeTurn("ACCEPTANCE-NETPROBE accnet", "acceptance-net-pong");
           pastedSeen = pasted.text.slice(pasted.text.indexOf("acceptance-net-pong") + 20, pasted.text.indexOf("acceptance-net-pong") + 200);
           if (!pasted.said.granted?.startsWith("200:") || !pasted.said.granted.includes(NET_BODY)) wrong.push(`${pasted.called} (a pasted config, open network) didn't reach the run's site: granted=${pasted.said.granted}`);
@@ -3143,7 +3129,6 @@ async function main(): Promise<void> {
         try {
           const pastedUrl = await install({ from: "wrap", kind: "mcp-url", value: remote.url });
           pastedUrlId = pastedUrl.id;
-          await freshProbeSession("acceptance-work-net-url");
           const seen = fake!.requests.length;
           const { events } = await turn(c, probeSession, `ACCEPTANCE-CALL HttpEcho {"text":"from-the-bot"}`, 150_000);
           const mine = fake!.requests.slice(seen);
@@ -3782,9 +3767,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
     if (ids.includes("reopen")) {
       // Its own setup: a failure here is the reopen rows' alone, never the shard's other units'.
       try { await installEcho(c); } catch (err) { for (const r of REOPEN_STEPS) record(stepNumber(FULL_STEPS, r.name), statusOf(err), `the reopen shard's setup (step 4's plugin): ${why(err)}`); echoMissing = true; }
-      // Its turns call the plugin's tool: in a code session started after the plugin's OK (the newest, which the window opens on).
-      // AG: remove the restart when list changes reach a running session
-      if (!echoMissing) session = await keyedCodeSession(c, "acceptance-work-plugin");
+      // Its turns call the plugin's tool in the code session started before the plugin's OK (the one the window opens on).
     }
     if (ids.includes("stage")) {
       await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
@@ -3939,11 +3922,6 @@ function exampleCtxFor(cdp: Cdp, rpc: MossClient, log: string, pickFile: string,
     },
     // Its cards pressed in this app's window (the app that drew them logs to its own log, not the first app's).
     turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp, log } }),
-    codeSession: async (folder) => {
-      const id = await keyedCodeSession(rpc, folder);
-      await rpc.request("session.attach", { id }).catch(() => undefined);
-      return id;
-    },
     alwaysTurn: (s, text, ms) => turn(rpc, s, text, ms, { always: true, log }),
     inspectTurn: (s, text, ms, inspect) => turn(rpc, s, text, ms, { press: { cdp, log }, inspect: async () => inspect() }),
     history: (s) => history(rpc, s),

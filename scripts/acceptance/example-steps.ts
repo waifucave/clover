@@ -78,10 +78,6 @@ export interface ExampleCtx {
   healFake?(id: string): void;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */
   turn(session: string, text: string, ms?: number): Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
-  /** A new code session with MOSS's own agent on the keyed model, in `home/<computer>/<folder>`, attached: a code session's
-   *  tools are the ones there when it starts (the bridge says no list change), so a row that installs a plugin calls its
-   *  tools in one started after. */
-  codeSession?(folder: string): Promise<string>;
   history(session: string): Promise<Ev[]>;
   /** The report the scripted model's child agent gives (fake-anthropic.ts CHILD_REPORT). */
   childReport: string;
@@ -466,16 +462,26 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   return done.join("; ");
 }
 
-/** Runs `/<name> <arg>` from the composer's slash menu (a click on its row, the user's gesture) in `bot`'s conversation
- *  (opened from the sidebar first: the composer is a conversation's); the result row's text. */
-async function slashCommand(ctx: ExampleCtx, name: string, arg: string, pluginName: string, bot: string): Promise<string> {
+/** Runs `/<name> <arg>` from the composer's slash menu (a click on its row, the user's gesture) in `bot`'s conversation, or
+ *  in a code session's tab (`{ session }`: MOSS Code's window has no bots), opened from the sidebar first: the composer is a
+ *  conversation's; the result row's text. */
+async function slashCommand(ctx: ExampleCtx, name: string, arg: string, pluginName: string, where: string | { session: string }): Promise<string> {
   const { cdp } = ctx;
   await escape(cdp);
-  await clickExact(cdp, `${bot} in the sidebar`, SIDEBAR_ITEMS, bot);
-  // The composer of that bot's conversation (its box is labelled "Message to <bot>"), once the switch has settled: a
+  let speaker: string;
+  if (typeof where === "string") {
+    speaker = where;
+    await clickExact(cdp, `${where} in the sidebar`, SIDEBAR_ITEMS, where);
+  } else {
+    // A code session's composer is labelled by its agent (the shell's tab names it by its backend).
+    const view = (await ctx.rpc.request<{ session: { backend?: string; title?: string } }>("session.get", { id: where.session })).session;
+    speaker = view.backend ?? view.title ?? where.session;
+    await toSessionTab(ctx);
+  }
+  // The composer of that conversation (its box is labelled "Message to <speaker>"), once the switch has settled: a
   // box the old view still shows would lose what is typed into it.
-  const label = `Message to ${bot}`;
-  const box = await until(`${bot}'s composer`, 20_000, async () => {
+  const label = `Message to ${speaker}`;
+  const box = await until(`${speaker}'s composer`, 20_000, async () => {
     for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, `(document.querySelector('.cl-composer textarea') || {}).getAttribute?.('aria-label') === ${JSON.stringify(label)}`).catch(() => false)) === true) return d.session;
     return undefined;
   }, () => frames(cdp));
@@ -597,13 +603,11 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
 
     // 3. Each call cards (readOnly and contained don't hold for a plugin that reaches the network); the forecast reaches
     //    its host through its proxy, with the key, which never shows in an answer.
-    // Its tools in a code session started after its install (a code session's tools are the ones there when it starts).
-    // AG: remove the restart when list changes reach a running session
-    const work = ctx.codeSession !== undefined ? await ctx.codeSession("example-weather-work") : session;
-    const saved = await callTurn(ctx, work, "save_place", { place: "Lisbon" });
+    // Its tools in the code session already running before its install: the new tools reach it at its next turn.
+    const saved = await callTurn(ctx, session, "save_place", { place: "Lisbon" });
     if (saved.cards.length === 0) fail("save_place (contained, on a networked plugin) ran with no card");
     if (saved.result.isError || !saved.result.text.includes("Saved your place: Lisbon")) fail(`save_place answered "${saved.result.text.slice(0, 120)}"`);
-    const fc = await callTurn(ctx, work, "forecast", {});
+    const fc = await callTurn(ctx, session, "forecast", {});
     if (fc.cards.length === 0) fail("forecast (readOnly, on a networked plugin) ran with no card");
     if (fc.result.isError || !fc.result.text.includes("Forecast for Lisbon: Light rain, 14°C")) fail(`forecast answered "${fc.result.text.slice(0, 160)}" (the site saw ${JSON.stringify(site.hits)})`);
     if (!site.hits.some((h) => h.place === "Lisbon" && h.keyed)) fail(`the site saw no keyed forecast for Lisbon (${JSON.stringify(site.hits)})`);
@@ -613,7 +617,7 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
     // 4. /rain-alert from the slash menu: a notification, which a headless run doesn't show (the app says so).
     const shownLine = /notify: a headless run shows no notification \(([^)]*)\)/g;
     const before = [...ctx.appLog().matchAll(shownLine)].length;
-    const sent = await slashCommand(ctx, "rain-alert", "Lisbon", "Weather", "Alpha");
+    const sent = await slashCommand(ctx, "rain-alert", "Lisbon", "Weather", { session });
     if (!sent.includes("Rain alert sent for Lisbon")) fail(`/rain-alert answered "${sent.slice(0, 160)}"`);
     // On a miss, what the desktop notifier said of it (its own log: never the notification's words).
     const notifierLog = async () => `the desktop notifier's log: ${((await rpc.request<{ lines: string[] }>("plugin.logs", { id: "moss/notifications", lines: 12 }).catch(() => ({ lines: ["(unreadable)"] }))).lines.join(" | ") || "empty")}`;
@@ -622,7 +626,7 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
     // A card arriving takes a plugin's banner down (the core's notify service, `desktop.close`; checklist 2.41): the
     // next forecast raises its tool card, and the app is asked to close that very notification.
     const closedLine = `notify: closed (${alertId})`;
-    await callTurn(ctx, work, "forecast", {});
+    await callTurn(ctx, session, "forecast", {});
     await until("the app to be asked to close the alert once a card came", 15_000, () => (ctx.appLog().includes(closedLine) ? true : undefined), notifierLog);
     done.push(`/rain-alert sent a notification (the headless app showed none and said so); a card arriving closed it (desktop.close, ${alertId})`);
 
@@ -631,7 +635,7 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
     await clickTree(cdp, "its notifications switch", `button[role=switch][aria-label=${JSON.stringify("Weather's notifications")}]`);
     await until(`${id} muted`, 15_000, async () => ((await rpc.request<{ muted: string[] }>("notify.mutes", {}).catch(() => ({ muted: [] as string[] }))).muted.includes(id) ? true : undefined));
     const mutedAt = [...ctx.appLog().matchAll(shownLine)].length;
-    const refused = await slashCommand(ctx, "rain-alert", "Lisbon", "Weather", "Alpha");
+    const refused = await slashCommand(ctx, "rain-alert", "Lisbon", "Weather", { session });
     if (!/muted/.test(refused)) fail(`/rain-alert while muted answered "${refused.slice(0, 160)}"`);
     await sleep(1_500);
     if ([...ctx.appLog().matchAll(shownLine)].length > mutedAt) fail("a muted plugin's notification still reached the app");

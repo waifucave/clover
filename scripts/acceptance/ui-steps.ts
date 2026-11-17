@@ -194,16 +194,10 @@ async function windowSession(rpc: MossClient): Promise<string> {
   return id ?? fail("no code session for the window to open on");
 }
 
-/** A new code session on the window session's model (MOSS's own agent, in a folder of the run's user home), opened in the window
- *  from its sidebar row: a code session's tools are the ones there when it starts, so a row that installs a plugin calls its
- *  tools in one started after. */
-async function freshWindowSession(ctx: Ctx, folder: string): Promise<string> {
+/** A code session that is already running, opened in the window from its sidebar row: a row that installs a plugin calls its
+ *  tools in one started before the install, which a change to the plugins' tools reaches at its next turn (lane AG). */
+async function showWindowSession(ctx: Ctx, id: string): Promise<string> {
   const { cdp, rpc } = ctx;
-  const model = (await windowSessionView(rpc)).model;
-  const computer = (await rpc.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? fail("computer.list lists no computer");
-  if (ctx.home === undefined) fail("the run gives no home to start a code session beside");
-  mkdirSync(join(dirname(ctx.home!), folder), { recursive: true });
-  const id = (await rpc.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/${folder}`, ...(model !== undefined ? { model } : {}) }, 60_000)).session;
   await rpc.request("session.attach", { id }).catch(() => undefined);
   const pressText = async (what: string, selector: string, text?: string, ms = 20_000) => {
     const at = await until(what, ms, async () => {
@@ -2351,14 +2345,15 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await cdp.click(at.session, at.c.x, at.c.y);
       await sleep(600);
     };
+    // The code session the window opens on, running before the install.
+    const running = await windowSession(rpc);
     const installed = await rpc.request<{ id: string; state: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
     try {
       if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
       const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
       await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined));
-      // A turn that calls the plugin's tool, in a code session started after its OK and open in the window while it runs.
-      // AG: remove the restart when list changes reach a running session
-      const session = await freshWindowSession(ctx, "window-spots-work");
+      // A turn that calls the plugin's tool, in that code session (running before its OK), open in the window while it runs.
+      const session = await showWindowSession(ctx, running);
       const tag = `WINDOW-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
       await rpc.request("session.send", { id: session, message: { text: `ACCEPTANCE-CALL Window {"text":"${tag}"}`, clientMessageId: `window-${tag}` } }, 30_000);
       const carded = "a read-only tool of its own: it ran with no card";

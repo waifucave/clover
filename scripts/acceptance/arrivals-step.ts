@@ -37,9 +37,7 @@ async function pressOk(ctx: ExampleCtx, id: string, card: string): Promise<void>
 
 /** Alpha's Glossary, called once in her conversation (a read: no card). */
 async function glossary(ctx: ExampleCtx, session: string, input: Record<string, unknown>): Promise<string> {
-  // AG: remove the restart when list changes reach a running session
-  const work = ctx.codeSession !== undefined ? await ctx.codeSession("arrivals-work") : session;
-  const t = await callTurn(ctx, work, "Glossary", input);
+  const t = await callTurn(ctx, session, "Glossary", input);
   if (t.result.isError) fail(`Glossary ${JSON.stringify(input)} failed: ${t.result.text.slice(0, 300)}`);
   if (t.cards.length > 0) fail(`Glossary ${JSON.stringify(input)} raised a card: ${t.cards.join("; ")}`);
   return t.result.text;

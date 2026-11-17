@@ -128,17 +128,15 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
 
   // The tools, called by Alpha (cards pressed in the window); the timeline gets a clip her tool added.
   let clip = "";
-  // AG: remove the restart when list changes reach a running session
-  const work = ctx.codeSession !== undefined ? await ctx.codeSession("builder-examples-work") : session;
   await check("ex-tool", async () => {
-    const t = await callTurn(ctx, work, "hello", { name: "Acceptance" });
+    const t = await callTurn(ctx, session, "hello", { name: "Acceptance" });
     if (!t.called.includes("ex-tool")) fail(`the call went to ${t.called}`);
     if (t.result.isError || !t.result.text.includes("Hello, Acceptance!")) fail(`its tool answered "${t.result.text.slice(0, 160)}"`);
     return `Alpha's call of ${t.called} answered "${t.result.text.slice(0, 40)}"`;
   });
   await check("ex-timeline's tool", async () => {
     clip = `Acceptance clip ${Date.now() % 100000}`;
-    const t = await callTurn(ctx, work, "TimelineAdd", { title: clip, start: 1, length: 3 });
+    const t = await callTurn(ctx, session, "TimelineAdd", { title: clip, start: 1, length: 3 });
     if (!t.called.includes("ex-timeline")) fail(`the call went to ${t.called}`);
     if (t.result.isError || !t.result.text.includes(clip)) fail(`its tool answered "${t.result.text.slice(0, 200)}"`);
     return `Alpha's call of ${t.called} answered "${t.result.text.slice(0, 60)}…"`;

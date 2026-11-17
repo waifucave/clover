@@ -78,9 +78,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   if (!okText.includes("It loads add-ons of its own, which MOSS doesn't check.")) fail(`its OK card doesn't say it loads add-ons of its own: ${okText.slice(0, 500)}`);
   await ctx.pressCard(`${ADDONS_ID}'s OK card`, (c) => c.id === ok.id);
   await until(`${ADDONS_ID} running after its OK`, 60_000, async () => ((await stateOf(ctx, ADDONS_ID)) === "running" ? true : undefined));
-  // AG: remove the restart when list changes reach a running session
-  const work = ctx.codeSession !== undefined ? await ctx.codeSession("addons-work") : session;
-  const g = await callTurn(ctx, work, "Glossary", { load: ADDONS_ID });
+  const g = await callTurn(ctx, session, "Glossary", { load: ADDONS_ID });
   if (!g.result.text.includes("It takes add-ons: Stamps")) fail(`Alpha's Glossary load of ${ADDONS_ID} doesn't name its add-ons: "${g.result.text.slice(0, 400)}"`);
   done.push("1 its OK card says it loads add-ons MOSS doesn't check, pressed; Glossary names them");
 
