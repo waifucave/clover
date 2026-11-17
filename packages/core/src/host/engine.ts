@@ -71,7 +71,9 @@ export function startHostSupervision(input: HostSupervisionInput): HostSupervisi
     home: input.home, os: input.os, profile: input.profile, release: input.release, run: input.run, dist: input.dist, testBuild: input.testBuild, env: input.env,
     stopHost: (reason) => door?.stopHost(reason) ?? false,
     ...(input.source !== undefined ? { source: input.source } : {}),
-    startFailed: () => supervisor?.exited(),
+    // A start that failed counts once, while the start is still the supervisor's (a host that already said ready is heard by
+    // its connection's close instead).
+    startFailed: () => { if (supervisor?.status().state === "starting") supervisor.exited(); },
     log,
   });
   supervisor = new EngineHostSupervisor({ clock: new SystemClock(), world, log });

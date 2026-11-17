@@ -91,6 +91,18 @@ describe("starting the host", () => {
   const settle = () => new Promise((r) => setTimeout(r, 10));
   const app = { record: 1 as const, program: "code" as const, bundlePath: "/A/MOSS Code.app", release: "1.111.1", carries: { engine: true, host: true }, seenAt: 1 };
 
+  test("a checkout's host command that ends at once with an error is a failed start now (not after the watchdog), told once", async () => {
+    const bad = world({ dist: false, os: "linux", env: { MOSS_HOST_COMMAND: JSON.stringify(["/bin/sh", "-c", "exit 3"]) } });
+    bad.w.start(bad.w.source()!.bundlePath, { safeMode: false });
+    for (let i = 0; i < 100 && bad.failed.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(bad.failed).toEqual(["the host's command ended at once (code 3)"]);
+    // One that ends cleanly (a host that hands over and leaves) is no failed start: its leaving is its connection's to say.
+    const fine = world({ dist: false, os: "linux", env: { MOSS_HOST_COMMAND: JSON.stringify(["/bin/sh", "-c", "exit 0"]) } });
+    fine.w.start(fine.w.source()!.bundlePath, { safeMode: false });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(fine.failed).toEqual([]);
+  });
+
   test("an app that carries no helper is no source (the engine runs headless rather than retrying)", () => {
     const { w } = world({ source: () => app, exists: () => false });
     expect(w.source()).toBeUndefined();

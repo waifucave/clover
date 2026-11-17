@@ -134,6 +134,9 @@ export function hostUnitName(profile: MossProfile): string {
   return profile === "dev" ? "moss-host-dev.service" : "moss-host.service";
 }
 
+/** How soon a checkout's host command that ends counts as a start that failed (its exit, not the start watchdog). */
+export const HOST_EARLY_EXIT_MS = 5_000;
+
 /** `MOSS_HOST_COMMAND`, a source checkout's own start of the host: a JSON array of strings, the program first. */
 export function parseHostCommand(raw: string | undefined): string[] | undefined {
   if (raw === undefined || raw === "") return undefined;
@@ -261,7 +264,13 @@ export function engineHostWorld(input: EngineHostWorldInput): HostWorld & HostWo
         }
         try {
           const child = spawn(command[0]!, [...command.slice(1), ...(opts.safeMode ? ["--safe-mode"] : [])], { stdio: "ignore", env: { ...process.env } });
-          child.on("error", (e) => input.startFailed(e.message));
+          let told = false;
+          const failed = (why: string) => { if (!told) { told = true; input.startFailed(why); } };
+          child.on("error", (e) => failed(e.message));
+          // A checkout's start that ends at once (a broken build, a wrong command) is a failed start now, not after the
+          // 45 s watchdog: a host that came up runs far longer, and its own leaving is heard by its connection's close.
+          const at = Date.now();
+          child.on("exit", (code) => { if (code !== 0 && Date.now() - at < HOST_EARLY_EXIT_MS) failed(`the host's command ended at once (code ${code ?? "none"})`); });
           child.unref();
         } catch (e) {
           queueMicrotask(() => input.startFailed((e as Error).message));
