@@ -10,7 +10,7 @@ function deps(over: Partial<HostRuntimeDeps> = {}) {
   const left: string[] = [];
   const inputs: { id: string; events: readonly TabInputEvent[] }[] = [];
   const answers: Record<string, unknown> = {};
-  const client = { request: async (method: string, params?: unknown) => { calls.push({ method, params }); return answers[method] ?? { ok: true }; } };
+  const client = { request: async <T,>(method: string, params?: unknown): Promise<T> => { calls.push({ method, params }); return (answers[method] ?? { ok: true }) as T; } };
   const d: HostRuntimeDeps = {
     release: "1.111.1", bundlePath: "/Applications/MOSS.app", safeMode: false,
     parts: () => ({ surfaces: 2, background: 1, tabs: ["t1"] }),
