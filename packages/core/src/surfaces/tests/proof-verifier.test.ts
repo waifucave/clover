@@ -28,7 +28,7 @@ async function setup(o: { single?: boolean; programs?: Program[]; kind?: "deskto
       ? cardAnswerSigningInput({ id: card.id, hash: card.hash, option: "allow_once", at: 1, children: [] })
       : programCardAnswerSigningInput({ program, id: card.id, hash: card.hash, option: "allow_once", at: 1, children: [] });
     const proof = { via: "device" as const, device: link.id, at: 1, signature: toBase64(await key.sign(enc(input))), ...(program !== undefined ? { program } : {}) };
-    return verify(card, { optionId: "allow_once", proof } as Parameters<typeof verify>[1]);
+    return verify(card, { optionId: "allow_once", proof } as Parameters<typeof verify>[1], { role: "app" });
   };
   return { registry, link, keys, signed };
 }
