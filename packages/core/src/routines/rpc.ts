@@ -6,8 +6,9 @@ import { MOSS_ERR, SESSIONS_METHODS } from "@waifucave/moss-protocol";
 import { handler, MethodError, requireUser, type MethodContext, type MethodHandler } from "../bots/rpc";
 import type { RoutineEngine } from "./engine";
 
-/** The user, on one of our programs' windows (`app`): never a CLI, a phone or the web, a plugin, a bot's or tool's
- *  session, a peer, or the core. */
+/** The user, on an `app` client: never a CLI, a phone or the web, a plugin, a bot's or tool's session, a peer, or the
+ *  core. The host, which is also an `app` and the user, is refused before this at dispatch: the methods are
+ *  `windowOnly` (ipc/moss.ts `isWindowConn`, MOSS's and MOSS Code's windows only). */
 function theWindow(ctx: MethodContext, what: string): void {
   const user = requireUser(ctx, what);
   if (user.client !== "app") throw new MethodError(MOSS_ERR.NOT_THE_USER, `only the user's window can ${what}`);

@@ -39,10 +39,12 @@ export const MOSS_ROUTINE_RUN_STEP = "MOSS's side panel: Run now on Alpha's rout
 export const MOSS_ROUTINE_PAUSE_STEP = "MOSS's side panel: Pause on Alpha's routine pauses it (routine.edit: its file says paused, the engine lists it paused, Run now is off); Resume runs it again on its schedule (the file's paused taken out)";
 export const MOSS_ROUTINE_EDIT_STEP = "MOSS's side panel: Edit on Alpha's routine shows what it does as its file has it now (routine.get) and saves a new name, schedule and instructions to its file (routine.edit); a routine above the computer's level waits for its OK card, pressed in MOSS, and an edit to it raises the card again, pressed in MOSS";
 export const MOSS_MEMORY_STEP = "MOSS's Settings, a bot's own page: its memory folder's files listed as the engine serves them (memory.list), and a file opened shows its text as text (memory.read), read only";
+export const MOSS_ROUTINE_FAIL_STEP = "MOSS's side panel: a routine whose run fails (Run now on Alpha's routine, its model's call refused) shows in her conversation that it failed and why, marked as a failure";
+export const MOSS_DROP_STEP = "MOSS's composer: a file dropped on it is said plainly (MOSS sends pictures only, with the paperclip) and nothing is sent";
 export const MOSS_BOTH_KEYS_STEP = "MOSS beside MOSS Code on one computer: with MOSS Code's own answer key registered too, MOSS still answers its card with its own key (program moss), and MOSS Code's connection can't answer a card MOSS draws, even signed with MOSS Code's own key";
 
 /** The unit's rows, in the order it runs them. */
-export const MOSS_STEPS: readonly string[] = [MOSS_LIST_STEP, MOSS_MESSAGE_STEP, MOSS_CARD_STEP, MOSS_AWAY_STEP, MOSS_PANEL_STEP, MOSS_TOOLS_STEP, MOSS_INSTRUCTIONS_STEP, MOSS_MAKE_STEP, MOSS_EDITOR_STEP, MOSS_TRY_AGAIN_STEP, MOSS_ARCHIVE_STEP, MOSS_LONG_STEP, MOSS_ROUTINE_RUN_STEP, MOSS_ROUTINE_PAUSE_STEP, MOSS_ROUTINE_EDIT_STEP, MOSS_MEMORY_STEP, MOSS_BOTH_KEYS_STEP];
+export const MOSS_STEPS: readonly string[] = [MOSS_LIST_STEP, MOSS_MESSAGE_STEP, MOSS_CARD_STEP, MOSS_AWAY_STEP, MOSS_PANEL_STEP, MOSS_TOOLS_STEP, MOSS_INSTRUCTIONS_STEP, MOSS_MAKE_STEP, MOSS_EDITOR_STEP, MOSS_TRY_AGAIN_STEP, MOSS_ARCHIVE_STEP, MOSS_LONG_STEP, MOSS_ROUTINE_RUN_STEP, MOSS_ROUTINE_PAUSE_STEP, MOSS_ROUTINE_EDIT_STEP, MOSS_MEMORY_STEP, MOSS_ROUTINE_FAIL_STEP, MOSS_DROP_STEP, MOSS_BOTH_KEYS_STEP];
 
 /** The unit's daemon: the bots as engine data (lane MC1 makes it the default; until then the unit sets it). */
 export const MOSS_ENV: Readonly<Record<string, string>> = { MOSS_BOT_SOURCE: "records" };
@@ -146,6 +148,8 @@ export async function mossUnit(x: MossUnitCtx): Promise<void> {
     await row(MOSS_ROUTINE_PAUSE_STEP, () => routinePauseRow(s));
     await row(MOSS_ROUTINE_EDIT_STEP, () => routineEditRow(s));
     await row(MOSS_MEMORY_STEP, () => memoryRow(s));
+    await row(MOSS_ROUTINE_FAIL_STEP, () => routineFailRow(s));
+    await row(MOSS_DROP_STEP, () => dropRow(s));
     // Last: it registers MOSS Code's key, so the home is no longer one where only MOSS has run.
     await row(MOSS_BOTH_KEYS_STEP, () => bothKeysRow(s));
   } catch (err) {
@@ -916,6 +920,50 @@ async function memoryRow(s: UnitState): Promise<string> {
   if (shown.markup || !shown.text.includes("<b>stays text</b>")) s.x.fail("the memory file's markup was drawn as markup");
   if (shown.fields !== 0) s.x.fail(`the memory view has ${shown.fields} field(s) to edit with`);
   return `memory.list serves ${served.join(", ")}; her page lists the same, read only; MEMORY.md opened shows its text, its markup as text`;
+}
+
+/** A routine whose run fails: written by hand for Alpha (its instructions the fake provider's refusal, until healed),
+ *  Run now in the side panel, and the note in her conversation says it failed and why. */
+async function routineFailRow(s: UnitState): Promise<string> {
+  const fid = randomBytes(3).toString("hex").toUpperCase();
+  const rid = `r_fail${randomBytes(4).toString("hex")}`;
+  const name = `Acceptance failing ${fid}`;
+  writeFileSync(join(s.x.home, "routines", "alpha", `acceptance-failing-${fid.toLowerCase()}.md`), `---\nid: ${rid}\nname: "${name}"\ntriggers:\n  - schedule: "every 24h"\n---\nACCEPTANCE-FAIL-${fid}\n`);
+  try {
+    await s.x.until("the failing routine listed", 30_000, async () => ((await routineOf(s, rid))?.state === "active" ? true : undefined), 300);
+    const sel = await routineRowInPanel(s, rid);
+    await s.w.click(`${sel} [data-routine-run]`, "Run now");
+    const run = await s.x.until("its run in routine.runs, ended", 120_000, async () => {
+      const runs = (await s.c.request<{ runs: { outcome: string; summary?: string }[] }>("routine.runs", { id: rid })).runs;
+      return runs[0] !== undefined && runs[0].outcome !== "running" ? runs[0] : undefined;
+    }, 500);
+    if (run.outcome !== "failed") s.x.fail(`the run came out ${run.outcome}, not failed`);
+    const note = await s.w.waitFor<string>("the failure drawn in her conversation", `[...document.querySelectorAll('.messages [data-routine-failed]')].map((n) => n.textContent).find((t) => t.includes(${JSON.stringify(name)})) ?? null`, 60_000);
+    if (!/failed/.test(note)) s.x.fail(`the note doesn't say it failed: "${note}"`);
+    if (!/\(.+\)|: \S/.test(note.replace(`Routine "${name}"`, ""))) s.x.fail(`the note says no why: "${note}"`);
+    return `Run now on "${name}": routine.runs says failed; her conversation shows "${note.slice(0, 140)}", marked as a failure`;
+  } finally {
+    s.x.fake.heal(fid);
+    await s.c.request("routine.edit", { bot: "alpha", id: rid, patch: { paused: true } }).catch(() => undefined);
+  }
+}
+
+/** A file dropped on the composer, by the browser's own drag events (DevTools' Input.dispatchDragEvent with a real file). */
+async function dropRow(s: UnitState): Promise<string> {
+  await openBot(s, "alpha", "Alpha");
+  const file = join(s.x.root, "acceptance-drop.pdf");
+  writeFileSync(file, "%PDF-1.4 acceptance\n");
+  const before = (await s.c.request<{ events: { type: string }[] }>("bot.conversation", { id: "alpha", limit: 200 })).events.filter((e) => e.type === "user_message").length;
+  const page = await s.w.main();
+  const at = await s.x.until("the composer's place", 10_000, () => s.w.cdp.centerOf(page, "[data-composer]"), 250);
+  const data = { items: [], files: [file], dragOperationsMask: 1 };
+  for (const type of ["dragEnter", "dragOver", "drop"]) await s.w.cdp.send("Input.dispatchDragEvent", { type, x: at.x, y: at.y, data }, page);
+  const said = await s.w.waitFor<string>("MOSS's word on the dropped file", "document.querySelector('.composer__why')?.textContent ?? null", 15_000);
+  if (!/Files aren't supported yet/.test(said)) s.x.fail(`MOSS said "${said}"`);
+  await sleep(1_000);
+  const after = (await s.c.request<{ events: { type: string }[] }>("bot.conversation", { id: "alpha", limit: 200 })).events.filter((e) => e.type === "user_message").length;
+  if (after !== before) s.x.fail("something was sent after the drop");
+  return `a PDF dropped on the composer: "${said}"; nothing sent`;
 }
 
 /** The last row: MOSS Code's own answer key registered on the same computer (as MOSS Code's window registers it,

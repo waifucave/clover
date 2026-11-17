@@ -10,7 +10,7 @@ import { gateMossRequest } from "../../auth/moss-caller";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import type { SideThreadRun } from "../../bots/service";
-import { RoutineEngine, routineFilePath } from "../engine";
+import { moveRoutineFile, RoutineEngine, routineFilePath } from "../engine";
 import { parseRoutine, patchRoutine, type RoutinePatch } from "../file";
 import { routineMethods } from "../rpc";
 
@@ -68,6 +68,8 @@ describe("routine.edit: who may call it", () => {
       expect(spec.roles).toEqual(["app"]);
       expect(spec.userOnly).toBe(true);
       expect((spec as { change?: unknown }).change).toBeUndefined();
+      // The person's window alone: the host (also an app, also the user) is refused at dispatch (moss.ts isWindowConn).
+      expect(spec.windowOnly).toBe(true);
     }
     // Every other role is refused by its allow list: a plugin's layer or host, a bot's or tool's CLI, a phone, the web, a peer.
     for (const method of [M.routineEdit.name, M.routineGet.name]) for (const role of MOSS_ROLES.filter((r) => r !== "app")) {
@@ -436,5 +438,31 @@ describe("routine.edit changes only what the patch names", () => {
         text = out.text;
       }
     }
+  });
+});
+
+describe("routine.edit: a rename", () => {
+  test("never leaves two files with one id: stopped between its two steps, one file holds the routine, and the next edit carries on", async () => {
+    const home = tempHome();
+    const path = write(home, "brief", "id: r_brief001\nname: Brief\ntriggers: []");
+    const to = routineFilePath(home, "alpha", "evening");
+    const text = readFileSync(path, "utf8").replace("name: Brief", 'name: "Evening"');
+    // A crash after the first step (the new text under the old name), before the rename.
+    expect(() => moveRoutineFile(path, to, text, () => { throw new Error("the process died here"); })).toThrow("the process died here");
+    const files = readdirSync(join(path, "..")).filter((f) => f.endsWith(".md"));
+    expect(files).toEqual(["brief.md"]);
+    expect(readFileSync(path, "utf8")).toContain('name: "Evening"');
+    // The engine loads it as one routine (no duplicate), and an edit finishes the rename.
+    const { engine } = engineOn(home, new FakeClock());
+    await engine.start();
+    expect(engine.list().map((v) => [v.id, v.state])).toEqual([["r_brief001", "active"]]);
+    const view = await engine.edit("r_brief001", "alpha", { name: "Evening" });
+    expect(view.file).toBe("home/Studio/.moss/routines/alpha/evening.md");
+    expect(readdirSync(join(path, "..")).filter((f) => f.endsWith(".md"))).toEqual(["evening.md"]);
+    // A file at the new name is never written over.
+    writeFileSync(join(path, "..", "taken.md"), "not a routine\n");
+    expect(() => moveRoutineFile(to, join(path, "..", "taken.md"), text)).toThrow("another file");
+    expect(readFileSync(join(path, "..", "taken.md"), "utf8")).toBe("not a routine\n");
+    engine.stop();
   });
 });

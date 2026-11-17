@@ -61,6 +61,8 @@ export interface Message {
   files?: Attachment[];
   /** A note that a turn ended in an error: the conversation offers Try again while it is the last thing there. */
   failed?: true;
+  /** A routine's run that failed: its note says why, marked as a failure. */
+  routineFailed?: true;
 }
 
 export interface ConversationPage {

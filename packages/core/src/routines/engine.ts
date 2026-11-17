@@ -73,14 +73,16 @@ function replaceFile(path: string, text: string): void {
   }
 }
 
-/** A new file, created exclusively and not following a link: a file already at the name refuses it. */
-function writeNewFile(path: string, text: string): void {
-  const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
-  try {
-    writeSync(fd, text);
-  } finally {
-    closeSync(fd);
-  }
+/** A routine's edit under a new name, with no moment in which two files hold its id: the new text replaces the file
+ *  under its old name (atomically, `replaceFile`), then that one file is renamed to the new name, refused if a file is
+ *  there. Stopped between the two (a crash: `between` throws in the test), the one file has the new text under the old
+ *  name, and the next edit or scan carries on from it. */
+export function moveRoutineFile(from: string, to: string, text: string, between: () => void = () => {}): void {
+  if (existsSync(to)) throw new ContractError("conflict", `${basename(to)} is another file in the bot's routines; choose another name`);
+  replaceFile(from, text);
+  between();
+  if (existsSync(to)) throw new ContractError("conflict", `${basename(to)} appeared meanwhile; the routine keeps its old file name`);
+  renameSync(from, to);
 }
 
 /** Whether two names are one file (a case-only rename on a case-insensitive disk). */
@@ -319,11 +321,7 @@ export class RoutineEngine {
       path = next;
     }
     if (path === l.path || sameFile(path, l.path)) replaceFile(l.path, out.text);
-    else {
-      // The new name, created exclusively (never over a file that appeared meanwhile), then the old one goes.
-      writeNewFile(path, out.text);
-      unlinkSync(l.path);
-    }
+    else moveRoutineFile(l.path, path, out.text);
     await this.rescan();
     const view = this.get(id);
     if (!view) throw new ContractError("not_found", `the routine ${id} didn't load again after the edit`);
