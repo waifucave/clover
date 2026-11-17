@@ -60,6 +60,7 @@ import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostProfileA
 import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
 import { fallbackHere as fallbackHereOf, fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
 import { drawerExempt, overlayStandsDown, surfacesReport } from "./host-stacking";
+import { FocusHandBack } from "./focus-handback";
 import { RemoteViews } from "./browser/remote-view";
 import { streamCommandOf } from "./browser/stream-command";
 import { electronRemoteViewport } from "./browser/remote-viewport";
@@ -2340,6 +2341,24 @@ function setFourFingerTap(on: boolean): void {
   log(`touches: four-finger tap turned ${on ? "on" : "off"}`);
 }
 
+// lane HS (row 53's cause): the island's fold hands key back to the window it took it from at the press (focus-handback.ts).
+const focusBack = new FocusHandBack();
+const isSurfaceWindow = (id: number): boolean => [...surfaces.values()].some((x) => !x.win.isDestroyed() && x.win.id === id);
+app.on("browser-window-focus", (_e, w) => focusBack.focused(w.id, isSurfaceWindow(w.id)));
+app.on("browser-window-blur", (_e, w) => focusBack.blurred(w.id, isSurfaceWindow(w.id)));
+app.on("browser-window-created", (_e, w) => { const id = w.id; w.once("closed", () => focusBack.closed(id)); });
+/** Hides a surface's window; one that is key and took key from a window of this program at a press gives it back to that
+ *  window (a press never focuses anything by itself, and nothing the person did not have in front is raised). */
+function hideSurface(s: Surface): void {
+  const back = focusBack.hiding(s.win.id, s.win.isFocused());
+  s.win.hide();
+  if (back === undefined) return;
+  const w = BrowserWindow.fromId(back);
+  if (w === null || w.isDestroyed() || !w.isVisible()) return;
+  w.focus();
+  log(`focus: ${s.ref} folded while key: key back to the window it took it from`);
+}
+
 function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed()) return;
   // lane HS (R12): a plugin's overlay stands down while a card is pending here, so nothing it draws is over a sealed button
@@ -2349,12 +2368,12 @@ function applyVisibility(s: Surface): void {
     if (down) stoodDown.add(s.ref); else stoodDown.delete(s.ref);
     log(`surface: ${s.ref} ${down ? "hidden while a card is pending (a plugin's on-screen part)" : sealed.anyPending() ? "back (it draws the pending card)" : "back (no card pending here)"}`);
   }
-  if (down && s.win.isVisible()) s.win.hide();
+  if (down && s.win.isVisible()) hideSurface(s);
   if (s.wantsVisible === undefined) return;
   const show = !down && surfaceShown({ stepsAside: s.stepsAside, holdsPlacedCard: s.cards && islandHoldsCard() }, s.wantsVisible, mainState(), modeOf(s));
   if (show && invisible !== undefined && !s.win.isVisible()) showInvisible(s.win);
   else if (show && !headless && !s.win.isVisible()) s.win.showInactive();
-  else if (!show && s.win.isVisible()) s.win.hide();
+  else if (!show && s.win.isVisible()) hideSurface(s);
   clickThrough(s);
 }
 
