@@ -370,3 +370,17 @@ test("R12 across programs: every card reaches the host's connection, wherever th
   expect(sendCoreEvent(routing, resolvedSpec.fixture as Parameters<typeof sendCoreEvent>[1])).toBe(3);
   expect(host.notes.map((n) => (n.params as { type: string }).type)).toEqual(["card_requested", "card_resolved"]);
 });
+
+test("B2, never nowhere: a card placed elsewhere (nothing draws the island) takes a press from MOSS Code's window, its fallback's place; never MOSS's", () => {
+  const clock = new FakeClock();
+  const router = new EngineCardRouter({ clock, hostLive: false });
+  router.report({ connId: 1, program: "code" }, { windows: [{ window: "main", focused: false, visible: true, showing: null }] } as Parameters<EngineCardRouter["report"]>[1]);
+  expect(router.pending({ id: "card_1" })).toEqual({ kind: "elsewhere" });
+  expect(router.mayPress("card_1", { kind: "window", program: "code", window: "main" })).toBe(true);
+  expect(router.mayPress("card_1", { kind: "window", program: "moss", window: "main" })).toBe(false);
+  expect(router.mayPress("card_1", { kind: "island" })).toBe(false);
+  // With the island drawn again, the island alone takes it (the window's press is refused, as before).
+  router.hostLive(true);
+  expect(router.mayPress("card_1", { kind: "window", program: "code", window: "main" })).toBe(false);
+  expect(router.mayPress("card_1", { kind: "island" })).toBe(true);
+});

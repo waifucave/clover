@@ -157,7 +157,13 @@ export class EngineCardRouter implements CardRouter {
 
   mayPress(id: string, from: PressPlace): boolean {
     const place = this.#cards.get(id)?.place;
-    return place !== undefined && pressMatchesPlacement(place, from);
+    if (place === undefined) return false;
+    // lane HS (the reviewer's B2, never nowhere): a card placed `elsewhere` (nothing draws the island: no host, or one the
+    // engine gave up on) is shown on MOSS Code's window's own fallback card, the one place left on this computer, so a press
+    // from that window is taken. MOSS draws no such card (it waits for MOSS to come forward), and the sealed frame's own
+    // press checks still judge the press.
+    if (place.kind === "elsewhere" && from.kind === "window" && from.program === "code") return true;
+    return pressMatchesPlacement(place, from);
   }
 
   watch(fn: (change: PlacementChange) => void): Unsubscribe {
