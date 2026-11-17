@@ -263,6 +263,8 @@ describe("lane RT: a press right after a focus change is taken at once (one pres
     // The instant reads unfocused, but the watcher hasn't settled out: the next report still says focused.
     await w.reporter.report();
     expect(w.sent.map((r) => r.windows[0]?.focused)).toEqual([true, true]);
+  });
+});
 
 describe("a card raised the moment the core's parts come up reaches an app that connected before (the upgrade pair's step 2)", () => {
   /** A core as the engine answers one connection: its calls in order, `card.list` waiting for the late doors; the parts

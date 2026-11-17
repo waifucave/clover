@@ -188,6 +188,7 @@ export class PresenceReporter {
     if (this.#lastFocused !== this.#settled) await this.report();
     else if (this.#inFlight !== undefined) await this.#inFlight.catch(() => undefined);
   }
+}
 
 /** The areas the app's own connection hears: the registry's, the app's, the cards' (`card_requested`, `card_resolved`) and
  *  where the engine's router places each card (`card_placed`, lane RT), and the release channel's. */
