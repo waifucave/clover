@@ -21,6 +21,9 @@ export interface BridgeHandlers {
   call(sessionId: string, call: { callId: string; tool: string; input: unknown }): Promise<{ content: unknown[]; isError: boolean }>;
   sendMessage(sessionId: string, m: { text: string; to?: string }): Promise<void>;
   glossary(sessionId: string, q: { query?: string | string[]; load?: string | string[] }): Promise<{ results: unknown[]; loaded: unknown[] }>;
+  /** The session's live bridge connection, given on each request it makes (the first is its `bridge.tools`): where the
+   *  manager sends `bridge.toolsChanged`. Only a connection that passed the live-token check is ever given. */
+  linked?(sessionId: string, link: { connId: number; notify(method: string, params: unknown): void }): void;
 }
 
 /** The parts of `createMossServer`'s deps the bridge needs: `bridge` and the role's `handlers`. */
@@ -44,6 +47,7 @@ export function bridgeMossParts(tokens: BridgeTokens, h: BridgeHandlers): Bridge
     if (sessionId === undefined || conn.bridgeConnection === undefined || !tokens.isLive(sessionId, conn.bridgeConnection)) {
       throw new MossRpcError(MOSS_ERR.ROLE_REFUSED, "this bridge's connection isn't its token's live one");
     }
+    h.linked?.(sessionId, { connId: conn.connId, notify: (method, params) => conn.notify(method, params) });
     return fn(conn, params);
   }]));
   return { bridge: { gate: tokens, sessionInfo: (id) => h.sessionInfo(id) }, handlers };

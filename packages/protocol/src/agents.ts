@@ -79,6 +79,11 @@ export const CODE_AGENT_LINE_NOTIFICATION = "codeAgent.line";
 export const CodeAgentLine = z.object({ line: utf16(CODE_AGENT_MAX_LINE, 1) });
 export type CodeAgentLine = z.infer<typeof CodeAgentLine>;
 
+/** The notification the daemon sends a bridge connection when the tools its session may see changed (an install, an
+ *  update, a removal, an enable or disable, the user's tool setting): the bridge forgets its list and tells its agent
+ *  (`notifications/tools/list_changed`). A notification, not a request: nothing answers it. */
+export const BRIDGE_TOOLS_CHANGED_NOTIFICATION = "bridge.toolsChanged";
+
 export const AGENTS_METHODS = {
   agentBackends: defineMethod({
     name: "agent.backends", owner: "K", roles: ["app", "cli"],

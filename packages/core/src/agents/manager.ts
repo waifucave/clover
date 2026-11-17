@@ -35,7 +35,7 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync, realpathSync, rmSync } from "node:fs";
 import { extname, isAbsolute, join, relative } from "node:path";
-import type { Level, Os, SealedValue, SessionView, TurnOrigin } from "@waifucave/moss-protocol";
+import { BRIDGE_TOOLS_CHANGED_NOTIFICATION, type Level, type Os, type SealedValue, type SessionView, type TurnOrigin } from "@waifucave/moss-protocol";
 import type { AgentBackend, AgentPermissionAnswer, AgentPermissionAsk, AgentSession } from "../contracts/agent-backend";
 import { type ActionEffect, type ApprovalBroker, type ApprovalRequest, acpOutcomeFor } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
@@ -49,7 +49,7 @@ import { acpHookCall } from "./acp-hook-call";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
-import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type AgentSessionFacts, type BridgeToolSource } from "./bridge/tools";
+import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type AgentSessionFacts, type BridgeToolDef, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
@@ -102,6 +102,10 @@ export interface AgentManagerOptions {
   oks?: AgentOks;
   /** The plugins' skills, agent definitions and hooks per session (B-M2's registry); none until then. */
   pluginParts?: PluginPartsSource;
+  /** Tells the manager the set of tools a session may see could have changed (an install, an update, a removal, an
+   *  enable or disable, the user's tool setting): `refreshBridgeTools` then runs, once the changes settle. Defaults to
+   *  `pluginParts.watch`. */
+  watchTools?: (fn: () => void) => () => void;
   /** A computer's level (§9.1), for an agent that acts without asking; read-only when it isn't known. */
   levelOf?: (computer: string) => Level | undefined;
   /** Tells the manager the levels changed (the computer registry's `watch`), so running sessions follow straight away
@@ -188,6 +192,16 @@ interface Entry {
   token: string;
   serverName: string;
   bridgeTools: string[];
+  /** What the agent holds of the bridge's tools (`toolsSignature`): the list it started with, or was last told of. */
+  toolsSig?: string;
+  /** The tool names the agent holds, for saying what changed. */
+  toolNames?: string[];
+  /** The session's live bridge connection (stdio bridge only), where `bridge.toolsChanged` goes. */
+  bridgeLink?: { connId: number; notify(method: string, params: unknown): void };
+  /** The list changed and this agent takes it only by being opened again before its next turn. */
+  toolsRestart?: boolean;
+  /** The list changed and this agent takes it at its next session only: the names it had when the person was last told. */
+  toolsUntold?: string[] | undefined;
   unwatch?: () => void;
   /** The bot's copy (`agent.json`) and the daemon's own (records.ts). */
   record: AgentRecordFile;
@@ -239,6 +253,13 @@ export interface RemoteAgentEntry {
   gone(): void;
 }
 
+/** What an agent holds of the bridge: its tools (name, words, input, loading) and the instructions, as one string. Two
+ *  views with the same signature are the same list to the agent; the order of the tools is not part of it. */
+export function toolsSignature(v: { tools: readonly BridgeToolDef[]; instructions: string }): string {
+  const tools = [...v.tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((t) => [t.name, t.description, t.inputSchema, t.preload === true]);
+  return JSON.stringify([tools, v.instructions]);
+}
+
 /** How long the plugins' changes settle before the running sessions' parts are placed again. */
 const PARTS_SETTLE_MS = 250;
 
@@ -259,6 +280,7 @@ export class AgentManager {
   readonly #unwatchLevels: (() => void) | undefined;
   readonly #unwatchParts: (() => void) | undefined;
   #partsTimer: ReturnType<typeof setTimeout> | undefined;
+  #refreshing: Promise<void> = Promise.resolve();
 
   constructor(opts: AgentManagerOptions) {
     this.#o = opts;
@@ -272,11 +294,15 @@ export class AgentManager {
     this.#unwatchLevels = opts.watchLevels?.(() => this.levelsChanged());
     // A plugin turned on, off, removed or updated: the running sessions' placed skills and agent definitions follow,
     // once the changes settle (a tree's OK switches several plugins at once).
-    this.#unwatchParts = opts.pluginParts?.watch?.(() => {
-      if (this.#partsTimer !== undefined) return;
+    // The tools each running session may see follow the same changes (`refreshBridgeTools`), in the same settle: one
+    // install is one notification.
+    this.#unwatchParts = (opts.watchTools ?? opts.pluginParts?.watch)?.(() => {
+      // Trailing: each change waits for the ones right behind it (an install is several), so it is one refresh.
+      if (this.#partsTimer !== undefined) clearTimeout(this.#partsTimer);
       this.#partsTimer = setTimeout(() => {
         this.#partsTimer = undefined;
         void this.placePartsAgain();
+        void this.refreshBridgeTools().catch((err) => this.#o.log?.(`[agents] bridge tools weren't refreshed: ${err instanceof Error ? err.message : String(err)}`));
       }, PARTS_SETTLE_MS);
     });
   }
@@ -703,9 +729,13 @@ export class AgentManager {
         // A turn withdrawn while held ends `interrupted` (the driver checks its signal next).
         await this.#hold(entry).catch(() => {});
         const renewed = await this.#renewIfOld(entry, session);
-        await this.#applyLevel(entry, renewed ?? session);
-        return renewed;
+        // Its tools changed and it takes that by being opened again (`toolListChanges: "next-turn"`).
+        const reopened = renewed === undefined ? await this.#reopenForTools(entry, session) : undefined;
+        await this.#applyLevel(entry, renewed ?? reopened ?? session);
+        return renewed ?? reopened;
       },
+      // An agent that keeps its tool list for its next session says so to the person, once per change.
+      noticeBeforeTurn: () => this.#toolsNotice(entry),
       ended: () => {
         entry.gone.abort();
         this.#o.tokens.revoke(id);
@@ -868,8 +898,13 @@ export class AgentManager {
     // Each one left out is logged; the skills and agent definitions are placed as before.
     if (parts.hooks.length > 0) this.#o.log?.(`[agents] ${e.id}: ${parts.hooks.length} plugin command hook(s) not placed (${parts.hooks.map((h) => `${h.pluginId}/${h.id}`).join(", ")}): a hook runs only under its plugin's fence, which an agent backend can't give it yet`);
     e.parts = parts.hooks.length > 0 ? { ...parts, hooks: [] } : parts;
-    const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id, this.#facts(e)).catch(() => []);
-    e.bridgeTools = [...bridgeOwnTools(e.bot).map((t) => t.name), ...tools.map((t) => t.name)];
+    // The same list `bridge.tools` answers, so a session started now holds what a running one is told of (`refreshBridgeTools`).
+    const view = await this.#bridgeView(e);
+    e.bridgeTools = view.tools.map((t) => t.name);
+    e.toolsSig = toolsSignature(view);
+    e.toolNames = e.bridgeTools;
+    e.toolsRestart = false;
+    e.toolsUntold = undefined;
     const spec: AcpStartSpec = {
       sessionId: e.id,
       ...(e.bot === undefined ? {} : { bot: e.bot }),
@@ -1239,13 +1274,10 @@ export class AgentManager {
         const e = this.#entries.get(id);
         return e ? { ...(e.bot === undefined ? {} : { bot: e.bot }) } : undefined;
       },
-      tools: async (id) => {
+      tools: (id) => this.#bridgeView(this.#entries.get(id), id),
+      linked: (id, link) => {
         const e = this.#entries.get(id);
-        const facts = e === undefined ? undefined : this.#facts(e);
-        const plugin = await source.tools(id, facts).catch(() => []);
-        const own = await source.instructions?.(id, facts).catch(() => "");
-        const essentials = bridgeInstructions({ ...(e?.bot === undefined ? {} : { bot: e.bot }), serverName: e?.serverName ?? BRIDGE_SERVER_PREFIX });
-        return { tools: [...bridgeOwnTools(e?.bot), ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
+        if (e !== undefined) e.bridgeLink = link;
       },
       call: async (id, c) => {
         let e: Entry;
@@ -1271,6 +1303,90 @@ export class AgentManager {
         return this.#o.glossary && e !== undefined ? this.#o.glossary(id, q, this.#facts(e)) : Promise.resolve({ results: [], loaded: [] });
       },
     };
+  }
+
+  /** What the bridge offers a session now: its own tools, the plugins' tools in its scope as they are this moment, and
+   *  the instructions. The one place that list is made: `bridge.tools` and a session's start both read it. */
+  async #bridgeView(e: Entry | undefined, id = e?.id ?? ""): Promise<{ tools: BridgeToolDef[]; instructions: string }> {
+    const source = this.#o.pluginTools ?? NO_PLUGIN_TOOLS;
+    const facts = e === undefined ? undefined : this.#facts(e);
+    const plugin = await source.tools(id, facts).catch(() => []);
+    const own = await source.instructions?.(id, facts).catch(() => "");
+    const essentials = bridgeInstructions({ ...(e?.bot === undefined ? {} : { bot: e.bot }), serverName: e?.serverName ?? BRIDGE_SERVER_PREFIX });
+    return { tools: [...bridgeOwnTools(e?.bot), ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
+  }
+
+  /** How a running session takes a changed tool list: what its backend declares (`mcp.toolListChanges`), and `next-turn`
+   *  only where the agent can be opened again with its history (an honest `resume`, or a `load`). Nothing declared: `next-session`. */
+  #listChangeMode(e: Entry): "live" | "next-turn" | "next-session" {
+    const q = e.backend.quirks;
+    const declared = q.mcp.toolListChanges ?? "next-session";
+    if (declared !== "next-turn") return declared;
+    return q.sessions.load.supported || (q.sessions.resume.supported && !q.sessions.resume.replays) ? "next-turn" : "next-session";
+  }
+
+  /** The plugins' tools changed for some sessions (an install, an update, a removal, an enable or disable, the tool
+   *  setting): each running session's list is made again and compared with what its agent holds. Only a real difference
+   *  does anything, so one install is one notification and a change that touches no session's tools is none:
+   *  * the stdio bridge is told (`bridge.toolsChanged`) and sends its agent `notifications/tools/list_changed`;
+   *  * an agent that can't take it live but can be opened again (`next-turn`) is, before its next turn;
+   *  * any other keeps the list it has and the person is told at its next turn (`#toolsNotice`).
+   *  A call is judged against the plugins' list at the call, whichever of these the agent did, so a name it still holds
+   *  of a tool that has gone is refused there. */
+  refreshBridgeTools(): Promise<void> {
+    // One at a time: two refreshes reading the list together would each see the change and tell the agent twice.
+    const run = this.#refreshing.then(() => this.#refreshBridgeToolsNow());
+    this.#refreshing = run.catch(() => {});
+    return run;
+  }
+
+  async #refreshBridgeToolsNow(): Promise<void> {
+    for (const e of [...this.#entries.values()]) {
+      if (e.peer || e.session === undefined || e.gone.signal.aborted) continue;
+      const view = await this.#bridgeView(e).catch(() => undefined);
+      if (view === undefined || e.gone.signal.aborted || this.#entries.get(e.id) !== e) continue;
+      const sig = toolsSignature(view);
+      if (sig === e.toolsSig) continue;
+      const before = e.toolNames ?? [];
+      e.toolsSig = sig;
+      e.toolNames = view.tools.map((t) => t.name);
+      e.bridgeTools = e.toolNames;
+      const mode = this.#listChangeMode(e);
+      if (mode === "next-turn") e.toolsRestart = true;
+      else if (mode === "next-session" && e.toolsUntold === undefined) e.toolsUntold = before;
+      try { e.bridgeLink?.notify(BRIDGE_TOOLS_CHANGED_NOTIFICATION, {}); } catch { /* the bridge has gone; the agent's own exit ends the session */ }
+    }
+  }
+
+  /** At a turn's start: an agent opened again for a changed tool list (`next-turn`), by the way a token near its expiry is
+   *  renewed: stopped, and started on a `session/resume` of its own history, which builds its list now. */
+  async #reopenForTools(e: Entry, session: AgentSession): Promise<AgentSession | undefined> {
+    if (e.toolsRestart !== true) return undefined;
+    const agentSessionId = e.daemon.agentSessionId ?? session.agentSessionId;
+    e.toolsRestart = false;
+    e.unwatch?.();
+    await session.stop();
+    await new Promise((r) => setTimeout(r, 0));
+    e.token = this.#o.tokens.mint(e.id);
+    e.transcript.redact(e.token);
+    e.transcript.call({ ts: this.#o.clock.now(), type: "tools-reopened" });
+    return this.#startAgent(e, { agentSessionId });
+  }
+
+  /** What the person is told at a turn's start when their agent keeps the tool list it started with (`next-session`):
+   *  which tools came and went, and that the agent gets them in its next session. Undefined when nothing it holds differs. */
+  #toolsNotice(e: Entry): string | undefined {
+    const was = e.toolsUntold;
+    if (was === undefined) return undefined;
+    e.toolsUntold = undefined;
+    const now = new Set(e.toolNames ?? []);
+    const old = new Set(was);
+    const added = [...now].filter((n) => !old.has(n));
+    const removed = [...old].filter((n) => !now.has(n));
+    // A tool set to another loading, or its words changed, is no name added or removed: the person hears it as a change all the same.
+    const named = (names: string[]) => names.slice(0, 5).join(", ") + (names.length > 5 ? `, and ${names.length - 5} more` : "");
+    const what = [...(added.length > 0 ? [`new: ${named(added)}`] : []), ...(removed.length > 0 ? [`gone: ${named(removed)}`] : [])].join("; ");
+    return `MOSS's plugin tools changed${what ? ` (${what})` : ""}. This agent doesn't take a change of tools in a running session, so it keeps the list it started with until its next session. A tool that has gone is refused if it calls it.`;
   }
 
   /** An agent's `SendMessage` (§9.3): it folds into its bot's conversation like any bot message. */

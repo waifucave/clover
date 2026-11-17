@@ -31,6 +31,9 @@ export interface AgentDriverOptions {
   /** Before each prompt: what changed since the last turn reaches the agent (the pause switch, its computer's level).
    *  It may wait (paused); a `refused` error refuses the turn and keeps the agent. */
   beforeTurn?(session: AgentSession): Promise<AgentSession | void>;
+  /** A line the person should read before this turn runs (the agent keeps the plugin tools it started with): recorded
+   *  in the session's log as a notice, never sent to the agent. Asked after `beforeTurn`; undefined says nothing. */
+  noticeBeforeTurn?(): string | undefined;
 }
 
 /** What the driver records in the session's log. */
@@ -40,7 +43,9 @@ export type AgentLogEvent =
   | { type: "agent_tool_call"; id: string; kind: string; title: string; status: string; rawInput?: unknown }
   | { type: "agent_tool_call_update"; id: string; status: string; refused?: boolean; closedByMoss?: boolean }
   | { type: "agent_usage"; inputTokens: number; outputTokens: number }
-  | { type: "agent_started"; agentSessionId: string };
+  | { type: "agent_started"; agentSessionId: string }
+  /** MOSS's own word to the person about this agent, not the agent's (`hook_notice` on the wire). */
+  | { type: "agent_notice"; text: string };
 
 export class AgentDriver implements SessionDriver {
   readonly canFold = false;
@@ -134,6 +139,8 @@ export class AgentDriver implements SessionDriver {
         return { reason: "interrupted" };
       }
     }
+    const notice = this.#opts.noticeBeforeTurn?.();
+    if (notice !== undefined) this.#record(ctl, { type: "agent_notice", text: notice });
     const flusher = new TextRuns((e) => this.#record(ctl, e), this.#opts.coalesceMs ?? 250);
     const off = session.onEvent((e) => flusher.push(e));
     const onAbort = () => {

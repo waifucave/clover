@@ -30,6 +30,7 @@ import { glossaryIndex } from "../../runtime-sdk/turn-loop/glossary";
 import { partsServe } from "../../runtime-sdk/turn-loop/only-backends";
 import { PluginMcp, localMcpRunner } from "../../runtime-sdk/turn-loop/plugin-mcp";
 import { CLAUDE_PLUGIN_FOLDER, placeInClaudeCode } from "../claude-code/placement";
+import { toolOffMessage } from "../../approvals/tool-settings";
 import { agentGlossary, agentPluginParts, agentPluginTools, agentToolJudge, BRIDGE_TOOL_NAME_MAX, bridgeShortName, bridgeToolsOf, type AgentPluginReachDeps } from "../plugin-reach";
 import type { BotMcpServer } from "../../runtime-sdk/turn-loop/servers";
 import type { AgentSessionFacts, BridgeToolSource } from "../bridge/tools";
@@ -53,6 +54,8 @@ afterEach(async () => {
 
 /** A stand-in for the plugin host's MCP servers: each lists its plugin's one tool (named after the plugin) and echoes
  *  a call. */
+/** The tools a plugin's server lists when a test changes them (an update that drops one); none set: its one tool. */
+const hostTools = new Map<string, string[]>();
 const host = {
   async openMcp(plugin: string, server: string): Promise<McpChannel> {
     const out = new Listeners<Record<string, unknown>>();
@@ -62,7 +65,7 @@ const host = {
     return {
       send(m: Record<string, unknown>) {
         if (m.method === "initialize") reply({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: server, version: "1" } } });
-        else if (m.method === "tools/list") reply({ jsonrpc: "2.0", id: m.id, result: { tools: [{ name: tool, description: `The ${plugin} tool.`, inputSchema: { type: "object" } }] } });
+        else if (m.method === "tools/list") reply({ jsonrpc: "2.0", id: m.id, result: { tools: (hostTools.get(plugin) ?? [tool]).map((name) => ({ name, description: `The ${plugin} tool.`, inputSchema: { type: "object" } })) } });
         else if (m.method === "tools/call") reply({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: `${tool} ran with ${JSON.stringify((m.params as { arguments?: unknown }).arguments ?? {})}` }] } });
       },
       onMessage: (fn: (m: Record<string, unknown>) => void) => out.add(fn),
@@ -84,7 +87,7 @@ const plugin = (id: string, extra: Record<string, unknown> = {}) => ({
  *  tools' names start with the same 27 letters. */
 const LONG_IDS = ["longnamedplugin-alphastudio-tool-a", "longnamedplugin-alphastudio-tool-b"];
 type ToolSetting = NonNullable<NonNullable<Parameters<typeof botApprovalCheck>[1]>["toolSetting"]>;
-async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSetting?: ToolSetting } = {}) {
+async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSetting?: ToolSetting; availability?: (server: string, tool: string) => "off" | "on-demand" | "always" | undefined; computers?: () => string[] } = {}) {
   const home = mkdtempSync(join(tmpdir(), "moss-b-reach-"));
   temps.push(home);
   const files: Record<string, unknown> = {
@@ -103,6 +106,7 @@ async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSett
       [`${b}/host/index.js`, "export {};\n"],
       [`${b}/skills/persona/SKILL.md`, `---\nname: persona\ndescription: How ${b} talks.\n---\nTalk like ${b}.\n`],
     ])),
+    ...(o.computers ? { "percomp/moss.json": plugin("percomp", { contributes: { mcpServers: { tools: { type: "host", perComputer: true } } } }), "percomp/host/index.js": "export {};\n" } : {}),
     ...(o.long ? Object.fromEntries(LONG_IDS.flatMap((id) => [[`${id}/moss.json`, plugin(id, { scope: "agents", contributes: { mcpServers: { tools: { type: "host", tools: { [id.replace(/[^a-z]/g, "")]: "preload" } } } } })], [`${id}/host/index.js`, "export {};\n"]])) : {}),
   };
   for (const [path, value] of Object.entries(files)) {
@@ -111,7 +115,7 @@ async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSett
   }
   const okBroker = new FakeApprovalBroker({ clock: new FakeClock() });
   const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker: okBroker, secrets: new MemorySecretStore(), settleMs: 50 });
-  for (const id of ["toolbox", "botsonly", "cconly", "mossonly", "elsewhere", "kit", "luna", "nova", ...(o.long ? LONG_IDS : [])]) {
+  for (const id of ["toolbox", "botsonly", "cconly", "mossonly", ...(o.computers ? ["percomp"] : []), "elsewhere", "kit", "luna", "nova", ...(o.long ? LONG_IDS : [])]) {
     for (let i = 0; i < 250 && opened.registry.get(id) === undefined; i++) await Bun.sleep(20);
     const { card } = await opened.registry.installed(id, "app");
     if (card !== undefined) {
@@ -120,12 +124,12 @@ async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSett
     }
     for (let i = 0; i < 250 && opened.registry.get(id)?.state === "found"; i++) await Bun.sleep(20);
   }
-  const mcp = new PluginMcp({ registry: opened.registry, host: host as never, self: () => "Studio", computers: () => ["Studio"] });
+  const mcp = new PluginMcp({ registry: opened.registry, host: host as never, self: () => "Studio", computers: o.computers ?? (() => ["Studio"]), ...(o.availability ? { availability: o.availability } : {}) });
   await mcp.refresh();
   closers.push(() => { mcp.close(); opened.close(); });
   const check = botApprovalCheck(broker, o.toolSetting === undefined ? {} : { toolSetting: o.toolSetting });
   const deps: AgentPluginReachDeps = {
-    servers: (kind, backend, bot) => mcp.servers(kind, backend, bot), runner: localMcpRunner(mcp, () => "Studio"),
+    servers: (kind, backend, bot, opts) => mcp.servers(kind, backend, bot, opts), runner: localMcpRunner(mcp, () => "Studio"),
     judge: agentToolJudge(check), registry: opened.registry, watch: (fn) => opened.registry.watch(() => fn()),
   };
   return { home, registry: opened.registry, mcp, deps, check };
@@ -165,21 +169,25 @@ const askingQuery = (script: (can: CanUseTool) => Promise<void>) => ((args: { pr
   return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
 }) as unknown as MossCodeDeps["query"];
 
-async function setup(o: WorldOptions & { parts?: boolean; long?: boolean; toolSetting?: ToolSetting } = {}) {
+async function setup(o: WorldOptions & { parts?: boolean; long?: boolean; toolSetting?: ToolSetting; availability?: Parameters<typeof plugins>[1] extends infer X ? (X extends { availability?: infer A } ? A : never) : never; computers?: () => string[] } = {}) {
   let tools: BridgeToolSource | undefined;
   let parts: PluginPartsSource | undefined;
+  const watchers = new Set<() => void>();
   const w = (world = new World({
     ...o,
+    watchTools: (fn) => { watchers.add(fn); return () => void watchers.delete(fn); },
     pluginTools: { tools: (id, s) => tools!.tools(id, s), instructions: (id, s) => tools!.instructions!(id, s), call: (id, c, ctx) => tools!.call(id, c, ctx) },
     ...(o.parts ? {
       pluginParts: { parts: (id, s) => parts!.parts(id, s) },
       place: (p, ctx) => placeInClaudeCode(p, { dir: ctx.dir, shim: { command: "/bin/echo", args: [] } }),
     } : {}),
   }));
-  const p = await plugins(w.approvals, { long: o.long === true, ...(o.toolSetting === undefined ? {} : { toolSetting: o.toolSetting }) });
+  const p = await plugins(w.approvals, { long: o.long === true, ...(o.toolSetting === undefined ? {} : { toolSetting: o.toolSetting }), ...(o.availability ? { availability: o.availability } : {}), ...(o.computers ? { computers: o.computers } : {}) });
   tools = agentPluginTools(p.deps);
   parts = agentPluginParts(p.deps);
-  return { w, p };
+  /** The plugins changed: what the daemon's registry, listing and tool-setting watches tell the manager. */
+  const changed = async () => { await p.mcp.refresh(); await p.mcp.settled(5_000); for (const fn of [...watchers]) fn(); await w.manager.refreshBridgeTools(); };
+  return { w, p, changed };
 }
 
 const asUser = (w: World, prompt = "Use the tool.") =>
@@ -356,6 +364,109 @@ describe("a plugin's tools on an agent's bridge", () => {
   });
 });
 
+/** Every way a plugin tool can go away from a running session, and the refusal of a call to the name the agent kept (lane AG):
+ *  the call reads the plugins' list at the moment it is made, so none of these needs the agent to have heard. */
+describe("a tool that has gone is refused at the call, whatever the agent still holds", () => {
+  const goneText = (tool: string) => ({ content: [{ type: "text", text: `No tool named ${tool} is available to this agent.` }], isError: true });
+  const callOf = (tools: ReturnType<typeof agentPluginTools>, tool = TOOL, session: Partial<AgentSessionFacts> = {}) =>
+    tools.call("s_code", { callId: `c-${Math.random()}`, tool, input: {} }, { computer: "Studio", origin: "user", session: facts(session) });
+  const names = async (tools: ReturnType<typeof agentPluginTools>, session: Partial<AgentSessionFacts> = {}) => (await tools.tools("s_code", facts(session))).map((t) => t.name);
+
+  test("uninstalled: the folder is gone; the list drops it and the call says no tool of that name", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    expect(await names(tools)).toContain(TOOL);
+    expect((await callOf(tools)).isError).toBe(false);
+    rmSync(join(p.home, "plugins", "toolbox"), { recursive: true, force: true });
+    await waitFor(() => p.registry.get("toolbox") === undefined, "the registry to notice the removal", 15_000);
+    await p.mcp.refresh();
+    expect(await names(tools)).not.toContain(TOOL);
+    expect(await callOf(tools)).toEqual(goneText(TOOL));
+  });
+
+  test("disabled, then enabled again: refused while off, served again after", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    await p.registry.setEnabled("toolbox", false);
+    await p.mcp.refresh();
+    expect(await callOf(tools)).toEqual(goneText(TOOL));
+    await p.registry.setEnabled("toolbox", true);
+    await p.mcp.refresh();
+    await p.mcp.settled(5_000);
+    expect((await callOf(tools)).isError).toBe(false);
+  });
+
+  test("an update that drops the tool: refused; a tool the update adds is served at once, with no new session", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    expect(await names(tools)).toContain(TOOL);
+    hostTools.set("toolbox", ["newer"]);
+    try {
+      await p.mcp.relist("toolbox", ["tools"]);
+      expect(await callOf(tools)).toEqual(goneText(TOOL));
+      expect(await names(tools)).toContain("toolbox-tools__newer");
+      expect(await callOf(tools, "toolbox-tools__newer")).toMatchObject({ isError: false });
+    } finally {
+      hostTools.delete("toolbox");
+    }
+  });
+
+  test("an update that changes who may reach it (onlyBackends): refused to the session it no longer serves", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    expect(await names(tools)).toContain(TOOL);
+    writeFileSync(join(p.home, "plugins", "toolbox", "moss.json"), JSON.stringify(plugin("toolbox", { scope: "agents", onlyBackends: ["claude-code"] })));
+    await waitFor(async () => { await p.mcp.refresh(); return !(await names(tools)).includes(TOOL); }, "the tool to leave the fake agent's list", 15_000);
+    expect(await callOf(tools)).toEqual(goneText(TOOL));
+    expect(await names(tools, { backend: "claude-code" })).not.toContain("never-there");
+  });
+
+  test("set off in Settings' Tools: refused with the words that say the user did it, and back on it runs", async () => {
+    const off = new Set<string>(["toolbox"]);
+    const { p } = await setup({ availability: (_server, tool) => (off.has(tool) ? "off" : undefined) });
+    const tools = agentPluginTools(p.deps);
+    expect(await names(tools)).not.toContain(TOOL);
+    const refused = await callOf(tools);
+    expect(refused.isError).toBe(true);
+    expect((refused.content[0] as { text: string }).text).toBe(toolOffMessage(`mcp__${TOOL}`));
+    off.clear();
+    expect(await names(tools)).toContain(TOOL);
+    expect((await callOf(tools)).isError).toBe(false);
+  });
+
+  test("Always block: still listed, refused at the call with the user's own message, and the tool never runs", async () => {
+    const toolSetting: ToolSetting = (_ctx, t) => (t === `mcp__${TOOL}` ? { setting: "deny", message: "Blocked in Settings' Tools." } : undefined);
+    const { p, w } = await setup({ toolSetting });
+    const tools = agentPluginTools(p.deps);
+    expect(await names(tools)).toContain(TOOL);
+    const r = await callOf(tools);
+    expect(r).toEqual({ content: [{ type: "text", text: "Blocked in Settings' Tools." }], isError: true });
+    expect(w.approvals.cards().filter((c) => c.kind === "tool")).toEqual([]);
+  });
+
+  test("its per-computer server no longer ticked on this computer: refused", async () => {
+    let here = ["Studio"];
+    const { p } = await setup({ computers: () => here });
+    const tools = agentPluginTools(p.deps);
+    const PER = "percomp-tools__percomp";
+    await p.mcp.settled(5_000);
+    expect(await names(tools)).toContain(PER);
+    expect((await callOf(tools, PER)).isError).toBe(false);
+    here = [];
+    await p.mcp.refresh();
+    expect(await names(tools)).not.toContain(PER);
+    expect(await callOf(tools, PER)).toEqual(goneText(PER));
+  });
+
+  test("the agent's kind or backend is not the one the tool serves: a name from another session's list is refused", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    // `cconly` serves Claude Code only; a session on the scripted agent that learned its name is refused.
+    expect(await callOf(tools, "cconly-tools__cconly", { backend: "fake" })).toEqual(goneText("cconly-tools__cconly"));
+    expect((await callOf(tools, "cconly-tools__cconly", { backend: "claude-code" })).isError).toBe(false);
+  });
+});
+
 describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's coding agent (moss-code): one card, the judge's", (spawn) => {
   const tool = LONG_IDS[0]!.replace(/[^a-z]/g, "");
   const real = `mcp__${LONG_IDS[0]}-tools__${tool}`;
@@ -385,6 +496,37 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     await approve(w, card.id, "approve");
     await waitFor(() => wire(w, r.transcript).includes(`${tool} ran with`), "the tool's answer");
     expect(kinds(r.sessionId)).toEqual(["tool"]);
+  });
+
+  test("a plugin enabled while the session runs: its tool is called in the next turn of the same session, and set off, the call after is not run", async () => {
+    const off = new Set<string>();
+    const { w, p, changed } = await setup({ ...codeBackend(spawn), level: "automatic", availability: (_s, t) => (off.has(t) ? "off" : undefined) });
+    // The plugin is not there when the session starts.
+    await p.registry.setEnabled("toolbox", false);
+    await p.mcp.refresh();
+    const r = await code(w, `mcp__${CODE_BRIDGE}__Glossary {}`);
+    /** The tool ran with `{"n": n}`, as the transcript writes it (its quotes escaped inside a string). */
+    const ran = (n: number) => new RegExp(`toolbox ran with \\{\\\\*"n\\\\*":${n}\\}`).test(wire(w, r.transcript));
+    await waitFor(() => w.host.history(r.sessionId).some((x) => x.type === "turn_ended"), "the first turn", 30_000);
+    expect(ran(8)).toBe(false);
+    const turns = () => w.host.history(r.sessionId).filter((x) => x.type === "turn_ended").length;
+    // Installed (enabled) now: the next turn calls it, in this session, with no new one started.
+    await p.registry.setEnabled("toolbox", true);
+    await changed();
+    await w.host.sendUser(r.sessionId, { text: `CALL mcp__${CODE_BRIDGE}__${TOOL} {"n":8}`, device: "d".repeat(16), clientMessageId: "m-on", sentAt: w.clock.now() });
+    await waitFor(() => ran(8), "the tool's answer in the same session", 30_000);
+    await waitFor(() => turns() >= 2, "the second turn's end", 30_000);
+    // Set off in Settings' Tools: the next turn's call is not run.
+    off.add("toolbox");
+    await changed();
+    await w.host.sendUser(r.sessionId, { text: `CALL mcp__${CODE_BRIDGE}__${TOOL} {"n":9}`, device: "d".repeat(16), clientMessageId: "m-off", sentAt: w.clock.now() });
+    await waitFor(() => turns() >= 3, "the third turn's end", 30_000);
+    expect(ran(9)).toBe(false);
+    // Back on: it runs again.
+    off.clear();
+    await changed();
+    await w.host.sendUser(r.sessionId, { text: `CALL mcp__${CODE_BRIDGE}__${TOOL} {"n":10}`, device: "d".repeat(16), clientMessageId: "m-on2", sentAt: w.clock.now() });
+    await waitFor(() => ran(10), "the tool's answer after it came back", 30_000);
   });
 
   test("Settings' Tools decide it with no card at all: Always block refuses it, Always allow runs it", async () => {

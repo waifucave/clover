@@ -72,7 +72,11 @@ export const MOSS_CODE_TOOLS: readonly string[] = [
 export const MOSS_CODE_QUIRKS: AgentQuirks = {
   launch: { command: {}, identity: { versionArgs: [], versionPattern: "" }, envAllow: [], envSet: {}, versions: "*" },
   capabilities: { snakeCaseDuplicates: false, httpMcpUnadvertised: false },
-  mcp: { transports: ["stdio", "http", "sse"], storesPlainText: false, passesEnvironment: false, instructionsReachPrompt: true, systemPromptChannel: "_meta.systemPrompt", tellsConversationId: false },
+  mcp: { transports: ["stdio", "http", "sse"], storesPlainText: false, passesEnvironment: false, instructionsReachPrompt: true, systemPromptChannel: "_meta.systemPrompt", tellsConversationId: false,
+    // The runtime takes an in-process server's tools once, when its query opens (agent SDK 0.0.80/0.0.81: `toWireMcpServers`,
+    // nothing re-reads `listTools()`), so a changed list reaches it by opening it again, which the manager does before
+    // the next turn (a `session/resume`, no replay), as the bot driver does for its own servers (`#serversChanged`).
+    toolListChanges: "next-turn" },
   // `session/resume` opens the transcript with no replay; there is no `load`.
   sessions: { load: { supported: false, replays: false }, resume: { supported: true, replays: false }, replayKeepsToolCallIds: true, listFiltersHonestly: false, close: true },
   // A refused call's result is an error (`failed`); a cancel interrupts the turn, which may leave calls open.
