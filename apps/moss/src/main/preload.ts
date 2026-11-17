@@ -16,6 +16,17 @@ window.addEventListener("pointerdown", (event) => {
   ipcRenderer.send("moss:press-seen");
 }, { capture: true });
 
+// The talk key (Ctrl+Shift+Space) is MOSS's main process's (voice.ts): main reads it in its own before-input-event, and
+// here, in every frame, it is kept from the page (capture phase, before any page listener), so it never types a space.
+const keepTalkKey = (event: KeyboardEvent): void => {
+  if (event.isTrusted && event.code === "Space" && event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+};
+window.addEventListener("keydown", keepTalkKey, { capture: true });
+window.addEventListener("keypress", keepTalkKey, { capture: true });
+
 function listen<T extends unknown[]>(channel: string, fn: (...args: T) => void): () => void {
   const handler = (_event: unknown, ...args: unknown[]) => fn(...(args as T));
   ipcRenderer.on(channel, handler);
