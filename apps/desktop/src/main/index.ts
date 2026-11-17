@@ -55,6 +55,13 @@ import { appShortcut, fallbackMayShow, fallbackOnVisibility, sealedInputAllowed 
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
+// lane HS: start
+import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostStartInfo, hostTrayMenu, midWorkWarning, takeHostLock, type HostLock, type HostTrayActions } from "./host-program";
+import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
+import { mountPlan, type MountPlan } from "./mount-plan";
+import { TabFrameSender } from "./browser/frame-sender";
+import { SURFACE_MOUNTS, type HostState, type MountList } from "@waifucave/moss-protocol";
+// lane HS: end
 import { DEFAULT_PREFS, readPrefs, withLegacyHidden, writePrefs, type AppPrefs } from "./prefs";
 import { FourFingerTap, loadTouches, type TouchAddon } from "./touch-tap";
 import type { TrayState } from "./tray-menu";
@@ -87,7 +94,16 @@ import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webP
   }
 }
 
-const identity = appIdentity(resolveAppProfile(process.env));
+// lane HS: start. Which program this process is: MOSS Code's window, or the background host (host-program.ts), and its
+// identity; the host's lock, taken once the single-instance lock is (below).
+const program = desktopProgram(process.argv, process.execPath);
+const identity = program === "host" ? hostIdentity(resolveAppProfile(process.env)) : appIdentity(resolveAppProfile(process.env));
+let hostLock: HostLock | null | undefined;
+/** What this process runs (mount-plan.ts): from the hello's mount list, and the host's state for a window. */
+let mountNow: MountPlan = mountPlan(program, program === "host" ? SURFACE_MOUNTS.host : undefined);
+let helloMount: MountList | undefined;
+let hostStateNow: HostState | undefined;
+// lane HS: end
 const args = parseLaunchArgs(process.argv, process.env);
 const headless = args.headless;
 /** A measuring run (`MOSS_TEST_INVISIBLE=1`, or `hidden` to leave the main window away; headless, no `--moss-capture`; unpackaged or
@@ -135,8 +151,9 @@ app.setName(identity.productName);
 if (process.platform === "win32") app.setAppUserModelId(identity.appId);
 // A headless run keeps everything it writes in its own (temporary) home; so does a test-marked build.
 if (headless || typeof __MOSS_TEST_BUILD__ === "string") {
-  app.setPath("userData", join(home, "app-data", identity.profile));
-  app.setPath("sessionData", join(home, "app-data", identity.profile, "session"));
+  // lane HS: the host's own folder, never the window's (host-program.ts).
+  app.setPath("userData", headlessUserData(home, program, identity.profile));
+  app.setPath("sessionData", join(headlessUserData(home, program, identity.profile), "session"));
 }
 // A headless run, a test-marked build and the acceptance run's build play no sound: the bots' voices still play through
 // the player (its clock and counters run), muted at Chromium's output.
@@ -171,13 +188,15 @@ if (app.isPackaged && typeof __MOSS_TEST_BUILD__ !== "string" && typeof __MOSS_A
 
 // The dev overrides (the daemon binary, the app token) count only in a dev or unpackaged run.
 const env = pairEnv(process.env, devOverridesAllowed({ packaged: app.isPackaged, profile: identity.profile }));
-const start = readStartInfo(home, process.argv);
+// lane HS: the host reads the engine's start file for it (host-program.ts), the window the pair's.
+const start = program === "host" ? hostStartInfo(home) : readStartInfo(home, process.argv);
 const safeMode = start.safeMode || args.safeMode;
 
 let runtime: UiRuntime;
 let pair: Pair;
 let browser: BrowserHost | undefined;
-let tray: AppTray | undefined;
+// lane HS: MOSS Code's tray or the host's (the one menu-bar icon once a host runs).
+let tray: { show(state: TrayState): void; destroy(): void } | undefined;
 let mainWindow: BrowserWindow | undefined;
 let leaving = false;
 let shuttingDown = false;
@@ -239,6 +258,15 @@ const installs = new InstallGate({
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
 } else {
+  // lane HS: start. The host lock, an OS lock for this process's life: a second live host quits before its hello.
+  if (program === "host") {
+    hostLock = takeHostLock(home, process.platform);
+    if (hostLock === null) {
+      process.stdout.write("[moss-app] another background host holds the lock: this one leaves\n");
+      app.exit(0);
+    }
+  }
+  // lane HS: end
   app.on("second-instance", (_event, argv) => {
     const second = parseLaunchArgs(argv);
     if (second.quit) void requestQuit("launcher");
@@ -572,7 +600,8 @@ async function ready(): Promise<void> {
         if (ready !== undefined && "refused" in ready) return { accepted: false, key: "changed", reason: `this desktop's answer key isn't the one MOSS holds for it (${why.slice(0, 120)})` };
         return { accepted: false, reason: "this desktop's answer key isn't registered yet" };
       }
-      const out = sealed.buildAnswer(token, option_, children, senderKey, key, signedDevice ?? "");
+      // lane HS: the host's proof names its program (card-answer/3).
+      const out = sealed.buildAnswer(token, option_, children, senderKey, key, signedDevice ?? "", undefined, program === "host" ? "host" : undefined);
       if ("error" in out) { log(`sealed: answer refused (${out.error})`); return { accepted: false, reason: out.error }; }
       disarmFallback(out.card.id); // a part's own button answered first: the fallback's timer is gone.
       const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option: option_, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
@@ -783,12 +812,14 @@ async function ready(): Promise<void> {
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);
 
   for (const e of ["display-metrics-changed", "display-added", "display-removed"] as const) screen.on(e as "display-added", () => tellSurfaces());
-  startBrowser();
+  // lane HS: the browser's pages only where the mount puts them (applyMount starts or stops them as it changes).
+  if (mountNow.browser) startBrowser();
   // One release for everything (spec §3.1): this app's record under the home (before any engine runs), then its engine put under
   // the home under the install lock, so the login item and every start use the NEWEST installed copy, not this app's own.
-  if (app.isPackaged || typeof __MOSS_TEST_BUILD__ === "string") writeOwnRecord(home, { program: "code", bundlePath: ownBundle, release: ownRelease }, log);
+  // lane HS: the host is no app of its own: it records nothing and puts no engine under the home.
+  if (program === "code" && (app.isPackaged || typeof __MOSS_TEST_BUILD__ === "string")) writeOwnRecord(home, { program: "code", bundlePath: ownBundle, release: ownRelease }, log);
   const bundledEngine = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
-  if (bundledEngine !== undefined && app.isPackaged && typeof __MOSS_TEST_BUILD__ !== "string") {
+  if (program === "code" && bundledEngine !== undefined && app.isPackaged && typeof __MOSS_TEST_BUILD__ !== "string") {
     const placed = await adoptHomeEngine(identity.profile, {
       install: () => installEngineCopy({ binary: bundledEngine, home, profile: identity.profile, bundlePath: ownBundle }),
       launcherFor: (binary) => cliLauncher({ binary, home, profile: identity.profile }),
@@ -802,7 +833,15 @@ async function ready(): Promise<void> {
   // The install marker: this home's daemon is the app's (or a package's), so it never updates itself (updater.ts).
   if (app.isPackaged) writeInstallMarker(home, installKindOf(process.platform, process.env), log);
   // A test-marked build never updates itself: a real release in its place would reach the login keychain.
-  if (!headless && typeof __MOSS_TEST_BUILD__ !== "string") {
+  // lane HS: start. The host's own menu-bar icon (item 112); it never updates itself (its app does, and stops it first).
+  if (program === "host" && !headless && typeof __MOSS_TEST_BUILD__ !== "string") {
+    tray = new AppTray<HostTrayActions>(join(here, "icons"), hostTrayActions(), log, hostTrayMenu, identity.productName);
+    trayState = { safeMode, strings: runtime.coreStrings(), soundMuted: prefs.soundMuted };
+    syncFourFingerTap();
+    refreshTray();
+  }
+  // lane HS: end
+  if (program === "code" && !headless && typeof __MOSS_TEST_BUILD__ !== "string") {
     // The app's own updates (updater.ts): packaged builds only, never a headless or test run (no network from those).
     void startUpdater({
       packaged: app.isPackaged,
@@ -1198,7 +1237,8 @@ function makePair(): Pair {
     endpoint: daemonEndpoint(home),
     hello: () => {
       const token = readAppToken(home, env);
-      return token === undefined ? undefined : appHello(token, app.getVersion(), MOSS_PROTOCOL_VERSION, ownRelease);
+      // lane HS: the host's hello names its surface and its release (host-program.ts).
+      return token === undefined ? undefined : program === "host" ? hostHello(token, app.getVersion(), MOSS_PROTOCOL_VERSION) : appHello(token, app.getVersion(), MOSS_PROTOCOL_VERSION, ownRelease);
     },
     // A test-marked build never registers a login item or starts the daemon through the OS (its core is started by
     // the test itself): no launcher.
@@ -1229,7 +1269,8 @@ function makePair(): Pair {
       // The engine's placements are this connection's from its first subscription (it tells each card's place then, lane RT).
       enginePlaces.follow(client);
       void subscribeThenListCards(client, cardWaitingAtConnect);
-      return loadRegistry(client);
+      // lane HS: once the registry is in, the mount applies; the host then says it is up.
+      return loadRegistry(client).then(() => mounted(client, hello));
     },
     onState: (s) => stateChanged(s),
     onDaemonQuit: (reason) => {
@@ -1250,6 +1291,8 @@ function makePair(): Pair {
   p.handle("app.tab.list", () => ({ tabs: browserHost().list() }));
   // The heartbeat (ruling R9): answered at once, from the main process, so a hung app goes unanswered.
   p.handle("app.ping", () => ({ ok: true }));
+  // lane HS: the engine's requests to the host (host-runtime.ts).
+  if (program === "host") installHostHandlers(p, hostDeps());
   // Desktop notifications for the bundled notifier (lane G): shown unless the app is in front showing that session.
   p.handle("app.notify", (params) => {
     const raw = (params ?? {}) as Record<string, unknown>;
@@ -1346,6 +1389,11 @@ function makePair(): Pair {
       if (parsed.success) cardArrivedNow(parsed.data.card);
       else log("pair: ignored a card_requested event that isn't one");
     }
+    // lane HS: the host's state, so a window lets the screen's parts go once a host owns them, and takes them back after.
+    if (type === "host_changed") {
+      const st = (params as { state?: unknown }).state;
+      if (typeof st === "string") { hostStateNow = st as HostState; applyMount(); }
+    }
     if (type === "card_placed") {
       const parsed = CardPlacedEvent.safeParse(params);
       if (parsed.success) {
@@ -1376,6 +1424,72 @@ function makePair(): Pair {
   return p;
 }
 
+// lane HS: start. ------------------------------------------------------------------------------------------------
+// The background host's glue (host-program.ts, host-runtime.ts, mount-plan.ts hold the decisions).
+const tabFrames = new TabFrameSender((params) => pair?.client?.request("host.tab.frame", params, 10_000) ?? Promise.resolve());
+
+function hostDeps(): HostRuntimeDeps {
+  return {
+    release: app.getVersion(), bundlePath: hostBundlePath(process.execPath, process.platform), safeMode,
+    parts: () => ({ surfaces: surfaces.size, background: backgrounds.size, tabs: (browser?.list() ?? []).map((t) => t.id).slice(0, 1024) }),
+    client: () => pair?.client,
+    leave: () => { hostLock?.release(); exitApp(); },
+    tabInput: (id, events) => browserHost().input(id, events),
+    log,
+  };
+}
+
+function hostTrayActions(): HostTrayActions {
+  const menu = (action: "open-moss" | "open-code") => void pair?.client?.request("host.menu", { action }, 10_000).catch((err: unknown) => log(`host: ${action} failed: ${why(err)}`));
+  return {
+    open: () => menu("open-code"),
+    openMoss: () => menu("open-moss"),
+    openCode: () => menu("open-code"),
+    stopEverything: () => void requestQuit("tray"),
+    safeMode: () => void leaveFor(hostDeps(), "safe-mode"),
+    line: (ref) => runTrayLine(ref),
+    toggleFourFingerTap: () => setFourFingerTap(!prefs.fourFingerTap),
+    toggleSoundMute: () => setSoundMuted(!prefs.soundMuted),
+  };
+}
+
+/** "Stop everything" from the host's menu, with the warning when something is mid-work (a headless run takes the test's
+ *  answer, MOSS_TEST_QUIT_CHOICE, and never shows a dialog). */
+async function hostStopEverything(): Promise<void> {
+  const outcome = await stopEverything(hostDeps(), async (working) => {
+    if (headless) return process.env.MOSS_TEST_QUIT_CHOICE !== "cancel";
+    const w = midWorkWarning(working, runtime.coreStrings());
+    const r = await dialog.showMessageBox({ type: "warning", message: w.message, detail: w.detail, buttons: w.buttons, defaultId: 0, cancelId: 0, noLink: true });
+    return r.response === 1;
+  }).catch((err: unknown) => { log(`host: stop everything failed: ${why(err)}`); return "kept" as const; });
+  log(`host: stop everything: ${outcome}`);
+}
+
+/** The hello's mount, once the registry is in: the parts this process runs follow it; the host then says it is up. A
+ *  window hears the host's state from then on (`host_changed`). */
+async function mounted(client: DaemonClient, hello: { mount?: MountList }): Promise<void> {
+  helloMount = hello.mount;
+  if (program === "code") await client.request("events.subscribe", { areas: ["host"] }, 5_000).catch(() => undefined);
+  applyMount();
+  if (program === "host") await sayHostReady(client, hostDeps());
+}
+
+/** Applies the mount plan now: the screen's surfaces, the background parts, the pages, and whose menu-bar icon. */
+function applyMount(): void {
+  const next = mountPlan(program, helloMount, hostStateNow);
+  const was = mountNow;
+  mountNow = next;
+  if (JSON.stringify(was) !== JSON.stringify(next)) log(`mount: ${JSON.stringify(next)}`);
+  if (runtime !== undefined) { syncSurfaces(); syncBackgrounds(); }
+  if (next.browser && browser === undefined) startBrowser();
+  if (!next.browser && browser !== undefined) {
+    try { browser.shutdown(); } catch (err) { log(`browser: shutdown failed: ${why(err)}`); }
+    browser = undefined;
+  }
+  if (next.tray === "none" && program === "code" && tray !== undefined) { tray.destroy(); tray = undefined; }
+}
+// lane HS: end. ----------------------------------------------------------------------------------------------------
+
 /** The answer key (a headless run's in memory: it never touches the OS's store) and the no-prompt rule's limits: an
  *  unpackaged app keeps it in memory alone (S4: no Keychain or keyring dialog from a dev build), and a Linux whose
  *  safeStorage would fall back to `basic_text` — no secret store at all — keeps it in memory, said once (S3). */
@@ -1397,6 +1511,8 @@ function answerKey(): AnswerKey {
       log("answer key: this computer's secret store is plain text (no Secret Service); the key stays in memory");
       answerKeyValue = new AnswerKey(memoryVault("none"), log);
     } else answerKeyValue = new AnswerKey(safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage), log);
+    // lane HS: the host registers and signs with its own program's key (ruling C), MOSS Code with the device's single key.
+    if (program === "host") answerKeyValue.program = "host";
   }
   return answerKeyValue;
 }
@@ -1607,6 +1723,8 @@ async function openFor(pluginId: string, target: OpenTarget): Promise<void> {
 /** Quit (§3.1): says what would stop, offers Hand over and quit, then stops both halves. */
 async function requestQuit(source: string): Promise<void> {
   if (leaving) return;
+  // lane HS: the host never quits the pair: the OS's quit (a logout) is a leave on purpose, the menu's is "stop everything".
+  if (program === "host") { if (source === "tray") await hostStopEverything(); else await leaveFor(hostDeps(), "quit-everything"); return; }
   const client = pair?.client;
   let status: unknown;
   try {
@@ -1776,6 +1894,8 @@ async function openRenderWindow(size: { width: number; height: number }, deps: C
 }
 
 async function openMainWindow(): Promise<BrowserWindow | undefined> {
+  // lane HS: the host never has a window; "open" from it is the engine's (host.menu opens MOSS Code).
+  if (!mountNow.mainWindow) return undefined;
   if (mainWindow !== undefined && !mainWindow.isDestroyed()) {
     showMainWindow(mainWindow);
     return mainWindow;
@@ -1901,6 +2021,8 @@ const presence = new PresenceReporter({
   read: () => { const st = mainState(); return { exists: st.exists, visible: st.visible, minimized: st.minimized, front: mainWindowFront(st) }; },
   showing: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? showingOf(shellStates.get(mainWindow.id)) : null),
   send: async (report) => {
+    // lane HS: the host has no windows: only windows report presence (§3.5).
+    if (program === "host") return "unserved";
     const client = pair?.client;
     if (client === undefined) return "failed";
     if (client !== presenceClient) { presenceClient = client; presence.reconnected(); }
@@ -2086,7 +2208,8 @@ function isBackgroundWindow(id: number): boolean {
 }
 
 function syncBackgrounds(): void {
-  const wanted = runtime.backgroundEntries();
+  // lane HS: only where the mount puts the background parts.
+  const wanted = mountNow.background ? runtime.backgroundEntries() : [];
   for (const [ref, b] of [...backgrounds]) {
     const now = wanted.find((w) => w.ref === ref);
     // A plugin whose `audio` changed gets a new window: the autoplay policy is fixed at a window's creation. So does one whose
@@ -2120,7 +2243,8 @@ function syncBackgrounds(): void {
 app.on?.("before-quit", () => { for (const b of backgrounds.values()) if (!b.win.isDestroyed()) b.win.destroy(); });
 
 function syncSurfaces(): void {
-  const wanted = runtime.surfaceEntries();
+  // lane HS: only where the mount puts the screen's surfaces (one island: the host's once it runs).
+  const wanted = mountNow.surfaces ? runtime.surfaceEntries() : [];
   // By ref: a plugin's copy of an entry id another plugin has (a folder-installed copy of the island) is its own surface.
   for (const [ref, s] of [...surfaces]) {
     if (wanted.some((w) => w.ref === ref)) continue;
@@ -2522,6 +2646,9 @@ function startBrowser(): void {
     report: (events) => send("browser.report", { events }),
     hold: (id, held) => send("browser.hold", { id, held }),
     assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },
+    // lane HS: a tab's pictures to the engine (host.tab.frame, one in flight, the newest waiting), for its windows' views.
+    streamData: (stream, chunk) => tabFrames.chunk(stream, chunk),
+    streamAssets: { preload: join(here, "..", "..", BROWSER_ASSETS.streamPreload.out), html: join(here, "..", "..", BROWSER_ASSETS.streamHtml.out) },
   });
   void browser.start().catch((err) => log(`browser: start failed: ${why(err)}`));
 }

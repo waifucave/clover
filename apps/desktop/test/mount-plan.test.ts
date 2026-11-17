@@ -12,6 +12,9 @@ test("MOSS Code's window: everything while no host runs; only its window once on
   expect(mountPlan("code", SURFACE_MOUNTS.code)).toEqual({ mainWindow: true, surfaces: false, background: false, tray: "none", browser: false, drawsCards: true });
   expect(mountPlan("code", LEGACY_CODE_MOUNTS, "running")).toEqual(mountPlan("code", SURFACE_MOUNTS.code));
   expect(mountPlan("code", LEGACY_CODE_MOUNTS, "absent").surfaces).toBe(true);
+  // A window that said hello while a host ran takes the screen back once it hears the host went away.
+  expect(mountPlan("code", SURFACE_MOUNTS.code, undefined).surfaces).toBe(false);
+  expect(mountPlan("code", SURFACE_MOUNTS.code, "stopped")).toEqual(mountPlan("code", LEGACY_CODE_MOUNTS));
   // An engine from before the split names no mount: today's app, whole.
   expect(mountPlan("code", undefined).surfaces).toBe(true);
 });

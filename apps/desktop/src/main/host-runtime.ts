@@ -1,0 +1,99 @@
+// The background host's side of its connection to the engine (spec revision 19, §3.1, §5.8, items 98, 112 and 116;
+// lane HS): it says it is up (`host.ready`) on every connection, answers the engine's requests (`host.stop`,
+// `host.adopt`, `host.safeMode`, `host.tab.input`), and tells the engine before it leaves on purpose (`host.exiting`).
+// Its menu's "stop everything" asks the engine (`host.menu`), which says what is mid-work before it acts. The main
+// process gives the deps; nothing here imports Electron (test/host-runtime.test.ts).
+import { HOST_METHODS, type HostExitReason, type HostParts, type MidWork, type TabInputEvent } from "@waifucave/moss-protocol";
+
+export interface HostClient {
+  request<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T>;
+}
+
+export interface HostRuntimeDeps {
+  release: string;
+  /** The app bundle (or install) this host runs from. */
+  bundlePath: string;
+  safeMode: boolean;
+  parts(): HostParts;
+  /** The engine's connection now, if any. */
+  client(): HostClient | undefined;
+  /** Leaves the process (its windows, its tabs, its lock), with no question asked. */
+  leave(): void;
+  tabInput(id: string, events: readonly TabInputEvent[]): void;
+  log(line: string): void;
+  /** Runs `fn` after `ms` (default: a timer). */
+  after?(ms: number, fn: () => void): void;
+}
+
+/** The bundle a host runs from: the outermost `.app` on macOS (the app whose copy carries it), else the program itself. */
+export function hostBundlePath(execPath: string, platform: NodeJS.Platform): string {
+  if (platform === "darwin") {
+    const i = execPath.indexOf(".app/");
+    if (i >= 0) return execPath.slice(0, i + 4);
+  }
+  return execPath;
+}
+
+export interface HandlerHost {
+  handle(method: string, fn: (params: unknown) => unknown): void;
+}
+
+/** The engine's requests to the host. */
+export function installHostHandlers(pair: HandlerHost, d: HostRuntimeDeps): void {
+  const after = d.after ?? ((ms, fn) => { setTimeout(fn, ms); });
+  pair.handle(HOST_METHODS.hostStop.name, (raw) => {
+    const p = HOST_METHODS.hostStop.params.parse(raw);
+    d.log(`host: the engine stops it (${p.reason})`);
+    // The answer goes first; the engine waits for the connection to close.
+    after(50, () => d.leave());
+    return { ok: true };
+  });
+  pair.handle(HOST_METHODS.hostAdopt.name, () => ({ release: d.release, safeMode: d.safeMode, parts: d.parts() }));
+  pair.handle(HOST_METHODS.hostSafeMode.name, (raw) => {
+    const p = HOST_METHODS.hostSafeMode.params.parse(raw);
+    if (p.on === d.safeMode) return { ok: true };
+    // Into safe mode: it leaves for it, and the engine starts it again so. Out of it: no exit reason says "start me again
+    // normally" (an `update` exit is a stop, a bare exit a crash), so it stays until its next start, which is normal.
+    if (p.on) after(0, () => void leaveFor(d, "safe-mode"));
+    else d.log("host: safe mode ends at its next start");
+    return { ok: true };
+  });
+  pair.handle(HOST_METHODS.hostTabInput.name, (raw) => {
+    const p = HOST_METHODS.hostTabInput.params.parse(raw);
+    d.tabInput(p.id, p.events);
+    return { ok: true };
+  });
+}
+
+/** `host.ready` on a new connection: what it runs, from which copy, in safe mode or not. */
+export async function sayHostReady(client: HostClient, d: Pick<HostRuntimeDeps, "release" | "bundlePath" | "safeMode" | "parts" | "log">): Promise<void> {
+  try {
+    await client.request(HOST_METHODS.hostReady.name, { release: d.release, bundlePath: d.bundlePath, safeMode: d.safeMode, parts: d.parts() }, 10_000);
+    d.log(`host: ready${d.safeMode ? " (safe mode)" : ""}`);
+  } catch (err) {
+    d.log(`host: host.ready was refused (${err instanceof Error ? err.message.slice(0, 160) : "no answer"})`);
+  }
+}
+
+/** Leaves on purpose: the engine hears why first (`host.exiting`), so the exit is no crash. */
+export async function leaveFor(d: Pick<HostRuntimeDeps, "client" | "leave" | "log">, reason: HostExitReason): Promise<void> {
+  const c = d.client();
+  await c?.request(HOST_METHODS.hostExiting.name, { reason }, 3_000).catch(() => undefined);
+  d.log(`host: leaving (${reason})`);
+  d.leave();
+}
+
+/** "Stop everything" from the host's menu: the engine answers what is mid-work, `confirm` asks the person, and the engine
+ *  stops the host, both apps and itself only when they say yes. */
+export async function stopEverything(d: Pick<HostRuntimeDeps, "client" | "log">, confirm: (working: MidWork) => Promise<boolean>): Promise<"stopped" | "kept" | "no-engine"> {
+  const c = d.client();
+  if (c === undefined) return "no-engine";
+  const first = HOST_METHODS.hostMenu.result.parse(await c.request(HOST_METHODS.hostMenu.name, { action: "quit-everything" }, 10_000));
+  if (first.done) return "stopped";
+  if (!(await confirm(first.working))) {
+    d.log("host: stop everything: kept working");
+    return "kept";
+  }
+  await c.request(HOST_METHODS.hostMenu.name, { action: "quit-everything", confirmed: true }, 10_000);
+  return "stopped";
+}

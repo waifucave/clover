@@ -16,10 +16,10 @@ const newHome = () => { const h = join(root, `h${n++}`); mkdirSync(join(h, "run"
 
 describe("which program", () => {
   test("the host by its own identifier or the source run's switch; anything else is MOSS Code's window", () => {
-    expect(desktopProgram([], "com.waifucave.moss.host")).toBe("host");
-    expect(desktopProgram([], "com.waifucave.moss.host.dev")).toBe("host");
+    expect(desktopProgram([], "/Applications/MOSS Code.app/Contents/Frameworks/MOSS Host.app/Contents/MacOS/MOSS Host")).toBe("host");
+    expect(desktopProgram([], "/Applications/MOSS.app/Contents/Frameworks/MOSS Host Dev.app/Contents/MacOS/MOSS Host Dev")).toBe("host");
     expect(desktopProgram([HOST_PROGRAM_ARG])).toBe("host");
-    expect(desktopProgram([], "com.waifucave.moss.code")).toBe("code");
+    expect(desktopProgram([], "/Applications/MOSS Code.app/Contents/MacOS/MOSS Code")).toBe("code");
     expect(desktopProgram(["--moss-program=hosts"])).toBe("code");
   });
 

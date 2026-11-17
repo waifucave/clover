@@ -26,11 +26,16 @@ export type DesktopProgram = "code" | "host";
 /** The host's switch on the command line, for a run from source (the packaged helper is the host by its identifier). */
 export const HOST_PROGRAM_ARG = "--moss-program=host";
 
-/** Which program this process is: the host when its bundle identifier is the host's or a run from source says so. */
-export function desktopProgram(argv: readonly string[], bundleId?: string): DesktopProgram {
-  if (bundleId !== undefined && (bundleId === PROGRAM_IDENTIFIERS.host.dist || bundleId === PROGRAM_IDENTIFIERS.host.dev)) return "host";
+/** The host helper's bundle names (scripts/host-helper.mjs lays them out with the host's identifier). */
+export const HOST_BUNDLE_NAMES = ["MOSS Host.app", "MOSS Host Dev.app"] as const;
+
+/** Which program this process is: the host when it runs from the host's helper bundle (whose identifier is the host's,
+ *  `PROGRAM_IDENTIFIERS.host`), or a run from source says so; anything else is MOSS Code's window. */
+export function desktopProgram(argv: readonly string[], execPath = ""): DesktopProgram {
+  if (HOST_BUNDLE_NAMES.some((n) => execPath.includes(`/${n}/Contents/MacOS/`))) return "host";
   return argv.includes(HOST_PROGRAM_ARG) ? "host" : "code";
 }
+
 
 /** The host's identity per profile: its fixed identifier, and the name its user data and protected storage take. */
 export function hostIdentity(profile: AppProfile): AppIdentity {
@@ -96,6 +101,12 @@ export function readHostStart(home: string, now: number = Date.now()): { byEngin
   }
 }
 
+/** How the host was started, in the shape the app's start info has: by the engine (its start file) or by a person. */
+export function hostStartInfo(home: string, now: number = Date.now()): { by: "daemon" | "user"; safeMode: boolean } {
+  const s = readHostStart(home, now);
+  return { by: s.byEngine ? "daemon" : "user", safeMode: s.safeMode };
+}
+
 /** The host's hello: the `app` role with `surface: "host"` and its own build's `release` (one release, lane RL: a hello
  *  with none counts as behind). It handles the engine's tab requests (`browser`), plugin layers and `app.quit`; it shows
  *  no window (`app.show` is the windows'). */
@@ -125,6 +136,8 @@ export function secondHostRetryMs(err: { code?: unknown; data?: unknown }, attem
 // -------------------------------------------------------------------------------------------------
 
 export interface HostTrayActions {
+  /** A click on the icon itself (Windows, Linux): opens MOSS Code. */
+  open?(): void;
   openMoss(): void;
   openCode(): void;
   /** "Stop everything": asks the engine (`host.menu`), which answers what is mid-work before it acts. */

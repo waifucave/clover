@@ -33,7 +33,9 @@ const EVERYTHING: Pick<MountList, "points" | "browserPages" | "drawsCards"> = { 
 
 export function mountPlan(program: DesktopProgram, mount: MountList | undefined, hostState?: HostState): MountPlan {
   let list: Pick<MountList, "points" | "browserPages" | "drawsCards"> = mount ?? (program === "host" ? SURFACE_MOUNTS.host : EVERYTHING);
-  if (program === "code" && hostOwnsScreen(hostState)) list = SURFACE_MOUNTS.code;
+  // Once the window has heard the host's state, that decides: a host that owns the screen takes it, one that went away
+  // (stopped, absent) gives it back.
+  if (program === "code" && hostState !== undefined) list = hostOwnsScreen(hostState) ? SURFACE_MOUNTS.code : EVERYTHING;
   const has = (p: string) => list.points.includes(p);
   return {
     mainWindow: program === "code",
