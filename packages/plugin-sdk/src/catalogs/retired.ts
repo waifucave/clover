@@ -19,6 +19,8 @@ export const RETIRED_CAPABILITIES: readonly RetiredName[] = [
   { name: "avatar.control", replacedBy: FIGURE },
   { name: "avatar.control.all", replacedBy: `${FIGURE}; for speech, ${SPEECH}` },
   { name: "avatar.report", replacedBy: RENDERERS },
+  { name: "avatar.watch", replacedBy: FIGURE },
+  { name: "avatar.cue", replacedBy: FIGURE },
   { name: "bots.avatar", replacedBy: `${PACKS}; the figure is picked in the avatar plugin's own Settings section` },
 ];
 
