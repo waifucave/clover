@@ -135,7 +135,7 @@ describe("the app's own fallback card page", () => {
   });
 });
 
-import { KEY_CHANGED_TEXT, KEY_FAULT_TEXT, NOT_CHECKED_REASON, NOT_SHOWN_REASON, PRESS_AGAIN_TEXT, REFUSED_TEXT } from "../src/main/sealed-pages";
+import { KEY_CHANGED_TEXT, KEY_FAULT_TEXT, NOT_CHECKED_REASON, NOT_SHOWN_REASON, PRESS_AGAIN_TEXT, REFUSED_TEXT, WINDOW_OVER_TEXT } from "../src/main/sealed-pages";
 describe("a refused answer shows on the card", () => {
   test("a press main didn't take for its fresh reading (a button only just drawn) says press again, never that it failed", () => {
     for (const reason of [NOT_SHOWN_REASON, NOT_CHECKED_REASON]) expect(reason).toMatch(/press it again$/);
@@ -147,6 +147,8 @@ describe("a refused answer shows on the card", () => {
     });
     // Both pages read main's `again` first and show the press-again line for it.
     for (const page of [b, own]) expect(page).toContain(`r.again === true ? ${JSON.stringify(PRESS_AGAIN_TEXT)}`);
+    // A window over the button (R12) says so, not "not ready".
+    for (const page of [b, own]) expect(page).toContain(`r.covered === true ? ${JSON.stringify(WINDOW_OVER_TEXT)}`);
   });
 
   test("the button page and the fallback card say so and answer again; neither leaves a lasting \"…\"", () => {

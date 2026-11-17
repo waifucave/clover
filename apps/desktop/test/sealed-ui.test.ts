@@ -242,6 +242,10 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     expect(m, r.output).not.toBeNull();
     expect(Number(m![1])).toBeLessThan(400);
     console.log(`fresh report delay (uncovered press): ${m![1]} ms`);
+    // The OS-wide overlap check (R12) read the window list for this press (headless: MOSS's own windows only), and nothing lay over it.
+    if (process.platform === "darwin") expect(r.output).toMatch(/overlap: the OS window list read for a press \(\d+ above, \d+ of MOSS's own; headless: MOSS's own only\)/);
+    expect(r.output).not.toContain("a window lies over the button");
+    console.log(`overlap: ${r.output.split("\n").filter((l) => l.includes("overlap:")).join(" / ")}`);
     expect(answerCallsOf(r.home), r.output).toHaveLength(1);
   }, 120_000);
 

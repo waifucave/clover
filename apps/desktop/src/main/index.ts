@@ -520,7 +520,7 @@ async function ready(): Promise<void> {
       const cover = osCoverOf(from);
       if (cover !== undefined) {
         log(`sealed: answer refused (a window lies over the button: ${cover})`);
-        return { accepted: false, again: true, reason: "another window lies over the button: move it away and press again" };
+        return { accepted: false, covered: true, reason: "another window lies over the button: move it away and press again" };
       }
       const key = answerKeyValue;
       if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
@@ -2133,6 +2133,7 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
  *  (said once). A headless run reads its own windows only. */
 let windowsAbove: WindowsAbove | undefined | null = null;
 let overlapUnread = false;
+let overlapRead = false;
 function osCoverOf(windowId: number | undefined): string | undefined {
   if (windowId === undefined) return undefined;
   if (windowsAbove === null) windowsAbove = loadWindowsAbove(join(here, "native", "screen.node"), log);
@@ -2151,7 +2152,10 @@ function osCoverOf(windowId: number | undefined): string | undefined {
     const b = s.win.getContentBounds();
     if (sid !== undefined) own.set(sid, { origin: { x: b.x, y: b.y }, regions: s.regions });
   }
-  const hit = coverAt({ x: content.x + point.x, y: content.y + point.y }, windowsAbove(id), { own, ...(headless ? { onlyPid: process.pid } : {}) });
+  const above = windowsAbove(id);
+  const hit = coverAt({ x: content.x + point.x, y: content.y + point.y }, above, { own, ...(headless ? { onlyPid: process.pid } : {}) });
+  // Said once (counts only): the OS's list was read for a press.
+  if (!overlapRead) { overlapRead = true; log(`overlap: the OS window list read for a press (${above.length} above, ${above.filter((w) => w.pid === process.pid).length} of MOSS's own${headless ? "; headless: MOSS's own only" : ""})`); }
   if (hit === undefined) return undefined;
   return hit.pid === process.pid ? `one of MOSS's own windows (layer ${hit.layer})` : `another app's window (layer ${hit.layer})`;
 }
