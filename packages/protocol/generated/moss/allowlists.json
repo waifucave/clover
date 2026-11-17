@@ -127,6 +127,7 @@
       "release.bring",
       "release.record",
       "release.status",
+      "routine.edit",
       "routine.list",
       "routine.runNow",
       "routine.runs",

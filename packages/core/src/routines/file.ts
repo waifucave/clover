@@ -155,6 +155,58 @@ export function serializeRoutine(r: Omit<RoutineFile, "triggers"> & { triggers: 
   return joinFrontmatter({ lines, body: `\n${r.body.trimEnd()}\n`, newline: "\n" });
 }
 
+/** What the user's `routine.edit` changes (§7). */
+export interface RoutinePatch {
+  name?: string;
+  schedule?: string;
+  instructions?: string;
+  paused?: boolean;
+}
+
+/** The file name a routine's name gives (the `Routine` tool's rule): lower-case letters, digits and dashes only, so it
+ *  never leaves the bot's folder. */
+export function routineFileName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || "routine";
+}
+
+/** A routine's file text with the user's patch applied, as the `Routine` tool would write it: the id stays (the
+ *  webhook URL and its key, kept in the credential store, hang off it), the level, zone, missed rule and every trigger
+ *  but the schedule stay, a schedule that doesn't read is refused. Comments in the frontmatter don't survive. */
+export function patchRoutine(text: string, fallbackName: string, patch: RoutinePatch): { ok: true; text: string; routine: RoutineFile } | { ok: false; reason: string } {
+  const parsed = parseRoutine(text, fallbackName);
+  if (!parsed.ok) return parsed;
+  const r = parsed.routine;
+  const name = patch.name === undefined ? r.name : patch.name.trim();
+  if (name === "" || name.length > 200) return { ok: false, reason: "a routine's name is text of at most 200 characters" };
+  const body = patch.instructions === undefined ? r.body : patch.instructions.trim();
+  if (body === "") return { ok: false, reason: "a routine needs its instructions" };
+  const schedule = patch.schedule?.trim();
+  if (schedule !== undefined) {
+    try {
+      parseSpec(schedule);
+    } catch (err) {
+      return { ok: false, reason: `the schedule doesn't read: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+  type Written = Parameters<typeof serializeRoutine>[0]["triggers"][number];
+  const kept = r.triggers.flatMap((t): Written[] => {
+    if (t.type === "schedule" && "spec" in t) return schedule === undefined ? [{ type: "schedule" as const, spec: t.spec }] : [];
+    if (t.type === "webhook" && !("fields" in t)) return [{ type: "webhook" as const, ...("ingress" in t && typeof t.ingress === "string" ? { ingress: t.ingress } : {}) }];
+    return "fields" in t ? [{ type: t.type, fields: t.fields }] : [];
+  });
+  const triggers: Written[] = schedule === undefined ? kept : [{ type: "schedule", spec: schedule }, ...kept];
+  const paused = patch.paused ?? r.paused === true;
+  const out = serializeRoutine({
+    id: r.id, name, missed: r.missed, body, triggers,
+    ...(r.level === undefined ? {} : { level: r.level }), ...(r.timezone === undefined ? {} : { timezone: r.timezone }),
+    ...(paused ? { paused: true } : {}),
+  });
+  const again = parseRoutine(out, fallbackName);
+  if (!again.ok) return { ok: false, reason: `the routine couldn't be written as a file (${again.reason})` };
+  if (again.routine.id !== r.id) return { ok: false, reason: "the routine's id would change" };
+  return { ok: true, text: out, routine: again.routine };
+}
+
 /** The file with its minted id written in, its other lines as they were (§7 "a file without one gets one"). */
 /** The text with `paused: true` in its frontmatter (MOSS pausing it; the user resumes by taking it out). */
 export function withPaused(text: string): string {

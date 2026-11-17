@@ -1,8 +1,9 @@
-// Lane D's routine methods (protocol sessions area): `routine.list`, `routine.runs`, `routine.runNow` and
-// `routine.webhookKey` (the user's only: a webhook key is shown once, then only a rotated one). Owner: lane D.
+// Lane D's routine methods (protocol sessions area): `routine.list`, `routine.runs`, `routine.runNow`,
+// `routine.webhookKey` (the user's only: a webhook key is shown once, then only a rotated one) and `routine.edit` (the
+// person's window only: it rewrites the routine's own file). Owner: lane D.
 // The list is this computer's routines; lane H's sync makes it the synced list every device shows (§8.5).
-import { SESSIONS_METHODS } from "@waifucave/moss-protocol";
-import { handler, requireUser, type MethodHandler } from "../bots/rpc";
+import { MOSS_ERR, SESSIONS_METHODS } from "@waifucave/moss-protocol";
+import { handler, MethodError, requireUser, type MethodHandler } from "../bots/rpc";
 import type { RoutineEngine } from "./engine";
 
 export function routineMethods(deps: { routines: RoutineEngine }): Record<string, MethodHandler> {
@@ -22,6 +23,14 @@ export function routineMethods(deps: { routines: RoutineEngine }): Record<string
     [M.routineWebhookKey.name]: handler(M.routineWebhookKey, async ({ id, rotate }, ctx) => {
       requireUser(ctx, "see a routine's webhook key");
       return routines.revealWebhookKey(id, rotate === undefined ? {} : { rotate });
+    }),
+    // The gate (checked again here after the server's role list and `userOnly`): the user, on one of our programs'
+    // windows (`app`); never a CLI, a phone or the web, a plugin's layer or host, a bot's or tool's session, a peer,
+    // or the core.
+    [M.routineEdit.name]: handler(M.routineEdit, async ({ bot, id, patch }, ctx) => {
+      const user = requireUser(ctx, "edit a routine");
+      if (user.client !== "app") throw new MethodError(MOSS_ERR.NOT_THE_USER, "a routine is edited from the app's window");
+      return { routine: await routines.edit(id, bot, patch) };
     }),
   };
 }
