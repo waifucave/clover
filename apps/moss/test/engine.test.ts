@@ -108,6 +108,16 @@ describe("the conversation", () => {
   });
 });
 
+describe("a bot's own choices", () => {
+  test("every plugin's bot-scoped settings for one bot, from bot.pluginSettings, drawn from their schema", async () => {
+    const { engine } = await setup();
+    const rows = await engine.botSettings("juniper");
+    if ("waiting" in rows) throw new Error("waiting");
+    expect(rows.map((r) => `${r.pluginId}/${r.key}:${r.type}`)).toEqual(["moss/voice/voice:enum", "moss/voice/silent:boolean"]);
+    expect(rows[0]?.options?.[0]).toEqual({ value: "fish:river", title: "River (Fish Audio)" });
+  });
+});
+
 describe("presence and the router's placement", () => {
   test("in front showing Juniper: Juniper's card in the conversation, Kite's in the strip", async () => {
     const { client, engine } = await setup();
