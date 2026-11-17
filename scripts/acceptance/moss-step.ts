@@ -426,6 +426,9 @@ async function cardRow(s: UnitState): Promise<string> {
   // 3. The real press, in her conversation.
   await s.w.pressApprove(card.id);
   await s.x.until("the card answered", 15_000, async () => ((await cardIds(s.c)).has(card.id) ? undefined : true), 300);
+  // The overlap check ran for the press (the OS's window list read, MOSS's own windows only in a headless run).
+  const overlap = /overlap: the OS window list (read|wasn't read) for a press \([^)\n]*\)/.exec(s.x.readLog(s.appLog))?.[0];
+  if (process.platform === "darwin" && (overlap === undefined || !overlap.includes("list read"))) s.x.fail(`the overlap check didn't read the OS's window list for the press: ${overlap ?? "MOSS said nothing of it"}`);
   // MOSS's key is the one the engine holds for the `moss` program on this device.
   const pub = Buffer.from(createPublicKeyRaw(key)).toString("base64");
   const keys = readFileSync(join(s.x.home, "devices", "program-keys.json"), "utf8");
@@ -435,7 +438,7 @@ async function cardRow(s: UnitState): Promise<string> {
     const page = await s.c.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: "alpha", limit: 200 });
     return page.events.some((e) => e.type === "assistant_message" && (e.text ?? "").startsWith("ACCEPTANCE-DONE")) ? true : undefined;
   }, 500).catch(() => false);
-  return `the ${card.kind} card placed ${placeWords(place)} and drawn in her conversation; the frame's own script answering with no press: MOSS refused it (${refusedLine.replace(/^sealed: answer refused /, "").slice(0, 80)}); signed as MOSS Code with MOSS's key: refused (${asCode.reason ?? "no reason"}); a real press on Approve accepted, MOSS's key the engine's moss key for this device${landed ? "; the Write's turn went on" : ""}`;
+  return `the ${card.kind} card placed ${placeWords(place)} and drawn in her conversation; the frame's own script answering with no press: MOSS refused it (${refusedLine.replace(/^sealed: answer refused /, "").slice(0, 80)}); signed as MOSS Code with MOSS's key: refused (${asCode.reason ?? "no reason"}); a real press on Approve accepted (${overlap?.replace(/^overlap: /, "") ?? "no overlap check off macOS"}), MOSS's key the engine's moss key for this device${landed ? "; the Write's turn went on" : ""}`;
 }
 
 /** The raw 32 bytes of an Ed25519 private key's public half. */
