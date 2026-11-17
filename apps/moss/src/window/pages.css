@@ -105,3 +105,5 @@
   .ma2-setting__control { max-width: 100%; }
 }
 .ma2-publisher-id { color: var(--faint); }
+.ma2-pick { flex-wrap: nowrap; justify-content: flex-end; }
+.ma2-pick select { min-width: 0; max-width: 100%; }
