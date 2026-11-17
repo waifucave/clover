@@ -84,6 +84,7 @@ import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, U
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
+import { ROUTER_STEP, routerStep } from "./router-step";
 import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
 import { ADDONS_STEP, addonsStep } from "./addons-step";
 import { ARCHIVE_STEP, archiveStep, seedArchive } from "./archive-step";
@@ -3418,6 +3419,8 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [BUNDLED_TOOLS_STEP, () => bundledToolsStep(ctx, session, skipWebTurns ? "--skip-web-turns: this tree's daemon has no fake web seam"
       : target !== "source" && outsideWorld === undefined ? "this packaged core has no test seam for the outside world" : true)],
     [CARDS_STEP, () => cardsStep(ctx)],
+    // The engine's router (lane RT): a card with no session in the focused window's strip, the island with the window unfocused.
+    [ROUTER_STEP, () => routerStep(ctx)],
     // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation.
     [WORKSHOP_STEP, () => workshopStep(ctx, session)],
     // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).

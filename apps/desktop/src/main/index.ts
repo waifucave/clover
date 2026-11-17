@@ -826,6 +826,8 @@ function surfaceName(windowId: number | undefined): string {
   if (windowId === undefined) return "a frame with no window";
   if (mainWindow !== undefined && !mainWindow.isDestroyed() && mainWindow.id === windowId) return "the main window";
   for (const s of surfaces.values()) if (!s.win.isDestroyed() && s.win.id === windowId) return s.ref;
+  // The app's own card pages: the window's strip (lane RT), or the safety net's fallback card.
+  for (const f of fallbacks.values()) if (f.win !== undefined && !f.win.isDestroyed() && f.win.id === windowId) return f.strip === true ? `the window's strip (window ${windowId})` : `the fallback card (window ${windowId})`;
   return `window ${windowId}`;
 }
 /** Each surface's asks for a card's frames until one is made (the timing lines' "frames asked" is the first one made):
@@ -1795,6 +1797,7 @@ function mainState(): MainWindowState {
  *  windows counting, the front watcher's settled state), visible, and which session or bot it shows. Sent on every change
  *  and at least every `PRESENCE_REFRESH_MS`; an engine that doesn't serve it yet is asked again on the next connection. */
 let lastShowing = "null";
+let lastSaid = "";
 let lastFocused: boolean | undefined;
 let presenceUnserved: DaemonClient | undefined;
 async function reportPresence(client: DaemonClient | undefined = pair?.client): Promise<void> {
@@ -1803,6 +1806,8 @@ async function reportPresence(client: DaemonClient | undefined = pair?.client): 
   const st = mainState();
   const showing = exists ? showingOf(shellStates.get(mainWindow!.id)) : null;
   const report = presenceOf({ exists: st.exists, visible: st.visible, minimized: st.minimized, front: mainWindowFront(st) }, showing);
+  const said = `${mainWindowFront(st) ? "focused" : "not focused"}, showing ${showing === null ? "nothing" : showing.kind}`;
+  if (said !== lastSaid) { lastSaid = said; log(`presence: the window ${exists ? said : "closed"}`); }
   lastShowing = JSON.stringify(showing);
   lastFocused = mainWindowFront(st);
   try {
